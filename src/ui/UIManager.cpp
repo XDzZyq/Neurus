@@ -11,11 +11,13 @@
 #include "UIContext.h"
 #include "ui/utils/I18n.h"
 
+#include "core/Log.h"
 #include "editor/events/UIEvents.h"
 #include "editor/operations/HistoryView.h"
 
 #include <QApplication>
 #include <QAction>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFont>
 #include <QLabel>
@@ -28,6 +30,7 @@
 #include <DockManager.h>
 #include <DockWidget.h>
 #include <DockAreaWidget.h>
+#include <FloatingDockContainer.h>
 
 #include <memory>
 
@@ -339,6 +342,118 @@ void UIManager::CreateMenus()
 // Docks
 // =========================================================================
 
+namespace {
+
+/**
+ * @brief Fallback dock area for a panel, used by RepairOrphanedDocks().
+ *
+ * Mirrors the arrangement CreateDocks() builds. CreateDocks() keeps its own
+ * explicit areas because it also tabs panels onto specific sibling areas;
+ * this is only the "put it somewhere sensible" placement for a dock the
+ * restored layout failed to claim.
+ */
+ads::DockWidgetArea DefaultDockArea(PanelType type)
+{
+	switch (type)
+	{
+	case PanelType::Viewport:
+	case PanelType::Outliner:
+	case PanelType::ShaderEditor:   return ads::LeftDockWidgetArea;
+	case PanelType::PropertyPanel:
+	case PanelType::RenderConfig:   return ads::RightDockWidgetArea;
+	case PanelType::Profiling:
+	case PanelType::Log:            return ads::BottomDockWidgetArea;
+	case PanelType::Count:          break;
+	}
+	return ads::CenterDockWidgetArea;
+}
+
+} // namespace
+
+void UIManager::changeEvent(QEvent* event)
+{
+	QMainWindow::changeEvent(event);
+
+	if (event->type() != QEvent::WindowStateChange)
+		return;
+
+	// Fires for maximize and minimize too, so compare against the tracked state
+	// instead of acting on every transition.
+	const bool fullScreen = isFullScreen();
+	if (fullScreen == m_floatingLocked)
+		return;
+
+	if (fullScreen)
+		DockFloatingPanels();
+	SetFloatingLocked(fullScreen);
+}
+
+void UIManager::SetFloatingLocked(bool lock)
+{
+	if (!win_dockManager)
+		return;
+
+	// Lock Floatable only. Movable stays available so a panel can still be
+	// dragged to a different dock position; ADS then finds no floatable content
+	// at drop time (FloatingDragPreview::createFloatingWidget) and the panel
+	// snaps back instead of becoming a window.
+	win_dockManager->lockDockWidgetFeaturesGlobally(
+		lock ? ads::CDockWidget::DockWidgetFloatable
+		     : ads::CDockWidget::NoDockWidgetFeatures);
+	m_floatingLocked = lock;
+}
+
+void UIManager::DockFloatingPanels()
+{
+	if (!win_dockManager)
+		return;
+
+	// Collect first: addDockWidget() empties the floating container and ADS
+	// deletes it, which would invalidate the list mid-iteration.
+	std::vector<ads::CDockWidget*> stranded;
+	for (ads::CFloatingDockContainer* container : win_dockManager->floatingWidgets())
+	{
+		if (!container)
+			continue;
+		for (ads::CDockWidget* dock : container->dockWidgets())
+			if (dock)
+				stranded.push_back(dock);
+	}
+	if (stranded.empty())
+		return;
+
+	QStringList docked;
+	for (ads::CDockWidget* dock : stranded)
+	{
+		// Reverse-lookup the panel type to reuse the same fallback areas
+		// RepairOrphanedDocks() uses; the texture dock is not a UIPanel.
+		auto area = ads::BottomDockWidgetArea;
+		for (const auto& [type, registered] : m_docks)
+			if (registered == dock)
+			{
+				area = DefaultDockArea(type);
+				break;
+			}
+
+		win_dockManager->addDockWidget(area, dock);
+		docked << dock->objectName();
+	}
+
+	NEURUS_LOG("[UIManager] Full screen cannot host separate panel windows; "
+	           "re-docked: " << docked.join(QStringLiteral(", ")).toStdString());
+}
+
+ads::CDockWidget* UIManager::MakeDock(UIPanel* panel)
+{
+	// The title is translated (display only); the objectName is the stable
+	// serialization key ADS saves and restores by. CDockWidget's ctor derives
+	// objectName from the title, so it MUST be overwritten here — otherwise a
+	// layout saved in one language cannot be restored in another.
+	auto* dock = new ads::CDockWidget(win_dockManager, panel->PanelName());
+	dock->setObjectName(panel->PanelId());
+	return dock;
+}
+
 void UIManager::CreateDocks()
 {
 	// --- Viewport (MUST be created FIRST - ADS central widget requirement) ---
@@ -347,7 +462,7 @@ void UIManager::CreateDocks()
 	viewport->winId();  // Force native window handle creation
 	NativeWindowHandle newHwnd = viewport->hwnd();
 
-	auto* viewportDock = new ads::CDockWidget(win_dockManager, viewport->PanelName());
+	auto* viewportDock = MakeDock(viewport.get());
 	viewportDock->setWidget(viewport.get(), ads::CDockWidget::ForceNoScrollArea);
 	viewportDock->setFeature(ads::CDockWidget::DockWidgetClosable, false);
 	win_dockManager->addDockWidget(ads::LeftDockWidgetArea, viewportDock);
@@ -359,7 +474,7 @@ void UIManager::CreateDocks()
 
 	// --- Left: Shader Editor ---
 	auto shaderEditor = std::make_unique<ShaderEditorPanel>();
-	auto* shaderDock = new ads::CDockWidget(win_dockManager, shaderEditor->PanelName());
+	auto* shaderDock = MakeDock(shaderEditor.get());
 	shaderDock->setWidget(shaderEditor.get(), ads::CDockWidget::ForceNoScrollArea);
 	shaderDock->resize(280, 300);
 	shaderDock->setMinimumSize(200, 200);
@@ -369,7 +484,7 @@ void UIManager::CreateDocks()
 
 	// --- Left: Outliner ---
 	auto outliner = std::make_unique<Outliner>();
-	auto* outlinerDock = new ads::CDockWidget(win_dockManager, outliner->PanelName());
+	auto* outlinerDock = MakeDock(outliner.get());
 	outlinerDock->setWidget(outliner.get());
 	outlinerDock->resize(280, 300);
 	outlinerDock->setMinimumSize(200, 200);
@@ -379,7 +494,7 @@ void UIManager::CreateDocks()
 
 	// --- Right: Property Panel ---
 	auto propertyPanel = std::make_unique<PropertyPanel>();
-	auto* propDock = new ads::CDockWidget(win_dockManager, propertyPanel->PanelName());
+	auto* propDock = MakeDock(propertyPanel.get());
 	propDock->setWidget(propertyPanel.get());
 	propDock->resize(280, 300);
 	propDock->setMinimumSize(200, 200);
@@ -389,7 +504,7 @@ void UIManager::CreateDocks()
 
 	// --- Right: Render Config ---
 	auto renderConfigPanel = std::make_unique<RenderConfigPanel>();
-	auto* configDock = new ads::CDockWidget(win_dockManager, renderConfigPanel->PanelName());
+	auto* configDock = MakeDock(renderConfigPanel.get());
 	configDock->setWidget(renderConfigPanel.get(), ads::CDockWidget::ForceNoScrollArea);
 	configDock->resize(280, 400);
 	configDock->setMinimumSize(220, 300);
@@ -399,7 +514,7 @@ void UIManager::CreateDocks()
 
 	// --- Bottom: Profiling ---
 	auto profilingPanel = std::make_unique<ProfilingPanel>();
-	auto* profilingDock = new ads::CDockWidget(win_dockManager, profilingPanel->PanelName());
+	auto* profilingDock = MakeDock(profilingPanel.get());
 	profilingDock->setWidget(profilingPanel.get(), ads::CDockWidget::ForceNoScrollArea);
 	profilingDock->resize(640, 220);
 	profilingDock->setMinimumSize(320, 140);
@@ -419,6 +534,10 @@ void UIManager::CreateDocks()
 
 	m_textureDock = new ads::CDockWidget(win_dockManager,
 	                                     I18n::instance().translateCtx("Texture Viewer", "Dock"));
+	// Not a UIPanel, so MakeDock() cannot supply the id — but the objectName is
+	// still the key ADS serializes by, and the ctor derived it from translated
+	// text. Set it explicitly, as a stable ASCII id, for the same reason.
+	m_textureDock->setObjectName(QStringLiteral("dock.textureViewer"));
 	m_textureDock->setWidget(textureWrap);
 	m_textureDock->resize(300, 200);
 	m_textureDock->setMinimumSize(200, 150);
@@ -427,7 +546,7 @@ void UIManager::CreateDocks()
 	// --- Bottom: Log Panel (tabbed onto Texture Viewer area) ---
 	auto logPanel = std::make_unique<neurus::LogPanel>();
 	auto* logPanelRaw = logPanel.get();
-	auto* logDock = new ads::CDockWidget(win_dockManager, logPanel->PanelName());
+	auto* logDock = MakeDock(logPanel.get());
 	logDock->setWidget(logPanel.get(), ads::CDockWidget::ForceNoScrollArea);
 	logDock->resize(640, 220);
 	logDock->setMinimumSize(320, 140);
@@ -535,11 +654,55 @@ void UIManager::ApplyLayout(const std::string& blob)
 	if (blob.empty()) return;
 	QByteArray packed = QByteArray::fromStdString(blob);
 	int nl = packed.indexOf('\n');
-	if (nl < 0) return;
+	if (nl < 0)
+	{
+		NEURUS_ERR("[UIManager] Layout blob is malformed (no geometry/state "
+		           "separator); keeping the default layout.");
+		return;
+	}
 	QByteArray geom  = QByteArray::fromBase64(packed.left(nl));
 	QByteArray state = QByteArray::fromBase64(packed.mid(nl + 1));
 	if (!geom.isEmpty())  restoreGeometry(geom);
-	if (!state.isEmpty()) win_dockManager->restoreState(state);
+	if (!state.isEmpty())
+	{
+		// restoreState() only reports false for XML that fails to parse or has a
+		// version mismatch. A blob whose dock names do not match ours parses fine
+		// and returns true — ADS just skips the unknown names and leaves those
+		// docks unassigned. So log the hard failure here, then repair either way.
+		if (!win_dockManager->restoreState(state))
+			NEURUS_ERR("[UIManager] Dock layout state could not be parsed; "
+			           "falling back to default dock placement.");
+		RepairOrphanedDocks();
+	}
+}
+
+void UIManager::RepairOrphanedDocks()
+{
+	// flagAsUnassigned() clears the dock area, so a null area means the restored
+	// state did not claim this dock: an unknown objectName (a foreign or stale
+	// blob) or a panel added since the project was saved.
+	//
+	// Re-dock the existing widgets rather than calling RestoreDefaultLayout():
+	// that re-runs CreateDocks(), which would destroy the Viewport and hand out a
+	// new native window handle. ApplyLayout() runs before the Application wires
+	// its signals, so nothing would be listening to re-create the VkSurfaceKHR
+	// already built from the old handle.
+	QStringList repaired;
+	auto repair = [&](ads::CDockWidget* dock, ads::DockWidgetArea area) {
+		if (!dock || dock->dockAreaWidget()) return;
+		win_dockManager->addDockWidget(area, dock);
+		dock->toggleView(true);
+		repaired << dock->objectName();
+	};
+
+	for (const auto& [type, dock] : m_docks)
+		repair(dock, DefaultDockArea(type));
+	repair(m_textureDock, ads::BottomDockWidgetArea);
+
+	if (!repaired.isEmpty())
+		NEURUS_ERR("[UIManager] Saved layout did not claim these docks; restored "
+		           "them to default areas: "
+		           << repaired.join(QStringLiteral(", ")).toStdString());
 }
 
 void UIManager::RestoreDefaultLayout()

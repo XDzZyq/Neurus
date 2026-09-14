@@ -11,6 +11,17 @@
  * - Q_OBJECT macro for MOC signal/slot generation
  * - Each panel has a PanelType enum value for O(1) lookup in the panel registry
  * - PanelName() provides the human-readable dock title (translated via I18n)
+ * - PanelId() provides the stable serialization key (never translated)
+ *
+ * Identity vs display (IMPORTANT):
+ * - PanelId() is the panel's IDENTITY. It is a fixed ASCII string that must
+ *   never change: ads::CDockWidget uses its objectName as the key when saving
+ *   and restoring layouts, so a project file is only readable as long as these
+ *   ids are stable. It is deliberately independent of the display text — not
+ *   derived from the translation key — so renaming a UI string cannot break
+ *   saved layouts.
+ * - PanelName() is DISPLAY ONLY. It follows the active language and may change
+ *   at any moment. It must never be persisted or used as a lookup key.
  *
  * i18n:
  * - The dock title is stored as a translation KEY (English by default);
@@ -72,6 +83,34 @@ public:
 
 	/** @brief Returns the human-readable (translated) panel name. */
 	QString PanelName() const;  // Defined in UIPanel.cpp (needs I18n).
+
+	/**
+	 * @brief Returns the stable, language-independent id for a PanelType.
+	 *
+	 * Used as the ads::CDockWidget objectName, which is the key ADS writes to
+	 * and reads from saved layouts. These strings are part of the project file
+	 * format: changing one invalidates every saved layout, so treat them as
+	 * frozen. They are intentionally NOT the translation keys — display text
+	 * must be free to change without breaking persistence.
+	 */
+	static const char* PanelIdFor(PanelType type)
+	{
+		switch (type)
+		{
+		case PanelType::Viewport:      return "dock.viewport";
+		case PanelType::Outliner:      return "dock.outliner";
+		case PanelType::PropertyPanel: return "dock.propertyPanel";
+		case PanelType::RenderConfig:  return "dock.renderConfig";
+		case PanelType::ShaderEditor:  return "dock.shaderEditor";
+		case PanelType::Profiling:     return "dock.profiling";
+		case PanelType::Log:           return "dock.log";
+		case PanelType::Count:         break;
+		}
+		return "dock.unknown";
+	}
+
+	/** @brief Returns this panel's stable serialization id. */
+	QString PanelId() const { return QString::fromLatin1(PanelIdFor(m_type)); }
 
 	/**
 	 * @brief Refreshes the panel's display from a UIContext snapshot.

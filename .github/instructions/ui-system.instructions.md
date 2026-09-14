@@ -95,24 +95,82 @@ mainWindow->createViewportDock(container);
 
 ### Layout Persistence
 
-- **View → Save Layout** (`Ctrl+Shift+S`): Serializes dock state to `<appdir>/layout.ads`
-- **View → Restore Default Layout**: Deletes non-viewport docks, re-creates default arrangement
-- **Auto-load**: `LoadLayout()` called in constructor - restores saved state on startup if available
-- Viewport dock is identified by `setObjectName("ViewportDock")` for `restoreState()` matching
-- Viewport created first in `CreateDocks()` (ADS requires central widget as first dock)
+Dock layout is **project state**, not app state: `UIManager::ExportLayout()` /
+`ApplyLayout()` produce and consume one opaque blob (base64 window geometry +
+`\n` + base64 ADS dock state), and `asset/components/UIComponent` carries it in
+the `.neurus.json` project file. The Application owns persistence; the UI layer
+never touches a path. **View → Restore Default Layout** re-runs `CreateDocks()`.
+
+**Identity vs display — the rule that keeps layouts portable.** ADS serializes
+dock state keyed by `objectName`, and `ads::CDockWidget`'s constructor copies the
+ctor *title* into `objectName` (`DockWidget.cpp:385-386`). Once dock titles became
+translatable, that made the serialization key language-dependent: a layout saved
+in one language restored to a blank window in another, because every lookup
+missed. So:
+
+> **Display text is translated. Identity keys never are.**
+
+- `UIPanel::PanelIdFor(PanelType)` returns a stable ASCII id (`"dock.viewport"`,
+  `"dock.outliner"`, …). It is independent of the display string as well as of
+  the language — reusing the English msgid would break every saved layout on a
+  UI-string rename.
+- Every panel dock MUST be created through `UIManager::MakeDock()`, which titles
+  it with `PanelName()` (translated) and then overwrites `objectName` with
+  `PanelId()`. Centralising this is the point: an omitted `setObjectName` at one
+  of eight call sites is invisible until someone switches language and relaunches.
+- Non-`UIPanel` docks (the Texture Viewer placeholder) set their own
+  `dock.*` objectName explicitly at the creation site.
+- `RetranslateAll()` needs no special handling: `setWindowTitle()` does not touch
+  `objectName`, which is exactly the desired split.
+
+**Degradation.** ADS silently `continue`s past objectNames it does not recognise
+and returns `true`, so `restoreState()`'s result cannot detect a foreign or stale
+blob — only unclaimed docks can. `ApplyLayout()` therefore logs the bool (real
+XML parse failures) and always follows with `RepairOrphanedDocks()`, which
+re-docks any dock whose `dockAreaWidget()` is null into a default area. It
+re-docks the **existing** widgets rather than calling `RestoreDefaultLayout()`:
+that would re-run `CreateDocks()` and hand out a new Viewport window handle, and
+`ApplyLayout()` runs before the Application wires its signals, so nothing would
+rebuild the `VkSurfaceKHR` already created from the old handle.
+
+Regression coverage: `test/ui/test_dock_identity.cpp` (ids are stable ASCII and
+language-independent; layouts round-trip in both language directions; a real
+pre-fix Chinese-keyed blob and a malformed blob both degrade to a populated
+layout, not a blank window).
 
 ### Dock Features
 
-- Viewport: closable disabled, movable/floatable enabled (can drag to float or any edge)
-- All other docks: closable + movable + floatable
-- Config flags: `OpaqueSplitterResize=false` (better Vulkan container behavior), `FocusHighlighting=true`
+- Viewport: ADS central widget — closable/movable/floatable all disabled by ADS.
+- All other docks: closable + movable + floatable.
+- Config flags: `OpaqueSplitterResize=false` (better Vulkan container behavior),
+  `FocusHighlighting=true`.
+
+**Full screen forbids tearing panels off.** A torn-off panel is a separate
+top-level window, and a separate window cannot be used inside another window's
+full-screen Space: macOS gives ADS's plain `Qt::Window` floating container
+`NSWindowCollectionBehaviorFullScreenPrimary` (`qcocoawindow.mm`,
+`setWindowFlags`) and the window server then refuses to let the user move it —
+the panel appears and is frozen. `UIManager::changeEvent()` watches
+`QEvent::WindowStateChange` (the only signal Qt gives for macOS's native green
+button) and calls `lockDockWidgetFeaturesGlobally(DockWidgetFloatable)` while
+full screen, after docking any already-floating panel back via
+`DockFloatingPanels()`.
+
+Only `Floatable` is locked, so dragging a panel to a different *dock position*
+still works — only the "release outside any dock area" gesture snaps back,
+because `FloatingDragPreview::createFloatingWidget()` finds no floatable content.
+The lock is a mask over `CDockWidget::features()`, not a rewrite of the
+per-widget flags, so leaving full screen restores whatever each panel had. ADS's
+`notifyFeaturesChanged()` also greys out the undock button and the Detach menu
+entry, making the restriction visible. Covered by
+`test/ui/test_floating_window.cpp`.
 
 ## Menu Bar
 
 | Menu | Items |
 |------|-------|
 | **File** | New, Open…, Save, Save As…, Preferences… (`Ctrl+,`), Exit (`Alt+F4`) |
-| **View** | Save Layout (`Ctrl+Shift+S`), Restore Default Layout |
+| **View** | Restore Default Layout |
 | **Edit** | Undo, Redo, Add (Mesh… / Camera / Light) |
 | **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) |
 | **Help** | About Neurus |
@@ -149,7 +207,8 @@ uses), so translators can work with Poedit / Weblate. The `I18n` singleton
 1. `UIPanel` stores its dock title as a translation *key* (`nameKey`, default
    derived from `PanelType`); `PanelName()` resolves it through `I18n` in the
    `"Dock"` context at call time, so dock titles follow the language with no
-   per-panel code.
+   per-panel code. The dock's `objectName` is a **separate, never-translated**
+   id (`PanelIdFor()`) — see *Layout Persistence* for why.
 2. Every panel may override `UIPanel::Retranslate()` to re-apply its own
    labels/buttons/combo items. Panels call `Retranslate()` once at the end of
    their constructor (so the startup language applies) and the framework calls
