@@ -281,6 +281,9 @@ void ShaderEditorPanel::Retranslate()
 	m_emptyLabel->setText(i18n.translate("No object selected"));
 	m_createBtn->setText(i18n.translate("Create Shader"));
 	m_removeBtn->setToolTip(i18n.translateCtx("Remove entry", "Tooltip"));
+
+	// The structure tree's column headers and section titles are model-side.
+	m_model->Retranslate();
 }
 
 // =========================================================================

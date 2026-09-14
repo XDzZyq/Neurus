@@ -145,8 +145,14 @@ private:
 		case PanelType::ShaderEditor:   return "Shader Editor";
 		case PanelType::Profiling:      return "Profiling";
 		case PanelType::Log:            return "Log";
-		default:                        return "Unknown";
+		case PanelType::Count:          break;
 		}
+		// Count is the enumerator bound, never a panel's type — unreachable, so
+		// this string is deliberately not a translation key (it would otherwise
+		// need a "Dock"-context catalog entry no user can ever see). Listing
+		// every enumerator instead of `default:` makes the compiler flag a new
+		// panel type that forgot its name key.
+		return "Unknown";
 	}
 
 	PanelType m_type;

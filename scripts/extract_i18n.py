@@ -195,8 +195,12 @@ class POEntry:
         return (self.context, self.msgid)
 
 
-def _parse_quoted(line, keyword):
-    """Parses 'msgid "..."' / 'msgstr "..."' continuation lines into text."""
+def _parse_quoted(line):
+    """Concatenates every quoted run on a PO line into one decoded string.
+
+    Serves both `msgid "..."` and bare `"..."` continuation lines; the keyword
+    is irrelevant because only the quoted payload is read.
+    """
     parts = []
     for m in re.finditer(r'"((?:[^"\\]|\\.)*)"', line):
         parts.append(decode_c_literal(m.group(1)))
@@ -204,43 +208,75 @@ def _parse_quoted(line, keyword):
 
 
 def parse_po(text: str) -> list:
-    """Parses a PO file into a list of POEntry (header entry included)."""
+    """Parses a PO file into a list of POEntry (header entry included).
+
+    Obsolete (`#~`) blocks are parsed like any other entry, just flagged: their
+    translations must survive the round-trip, otherwise a key that is removed
+    and later re-added loses its translation, and — because the rendered file
+    then differs from the one on disk every single time — `--check` reports the
+    catalog as permanently stale.
+
+    An entry ends at a blank line, at the next `msgctxt`, at the next `msgid`
+    that does not follow a `msgctxt`, or at an active/obsolete boundary; blank
+    separators are conventional in gettext, not required. Plural forms are
+    dropped rather than merged (`msgid_plural` must be tested before `msgid`,
+    of which it is a prefix, and only `msgstr[0]` is kept).
+    """
     entries = []
     cur = None
     field = None
 
     def finalize():
-        nonlocal cur
+        nonlocal cur, field
         if cur is not None:
             if cur.msgid or cur.msgstr or cur.context:
                 entries.append(cur)
             cur = None
+        field = None
 
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             finalize()
             continue
+
+        obsolete = False
         if line.startswith("#~"):
-            # Obsolete entry: (re)start one flagged as obsolete.
-            if cur is None:
-                cur = POEntry(obsolete=True)
-            continue
-        if line.startswith("#"):
-            continue
-        if cur is None:
-            cur = POEntry()
+            line = line[2:].strip()
+            obsolete = True
+            if not line:
+                continue  # bare marker, no payload
+        elif line.startswith("#"):
+            continue  # translator / extractor comment
+
+        if cur is not None and cur.obsolete != obsolete:
+            finalize()  # an active and an obsolete block are never one entry
+
         if line.startswith("msgctxt"):
+            finalize()  # msgctxt always opens a new entry
+            cur = POEntry(obsolete=obsolete)
             field = "context"
-            cur.context = _parse_quoted(line, "msgctxt")
+            cur.context = _parse_quoted(line)
+        elif line.startswith("msgid_plural"):
+            field = "ignored"  # must precede the msgid test (prefix)
         elif line.startswith("msgid"):
+            # A msgid straight after a msgctxt belongs to the same entry.
+            if field is not None and field != "context":
+                finalize()
+            if cur is None:
+                cur = POEntry(obsolete=obsolete)
             field = "msgid"
-            cur.msgid = _parse_quoted(line, "msgid")
+            cur.msgid = _parse_quoted(line)
         elif line.startswith("msgstr"):
-            field = "msgstr"
-            cur.msgstr = _parse_quoted(line, "msgstr")
-        elif line.startswith('"') and field:
-            value = _parse_quoted(line, None)
+            if cur is None:
+                cur = POEntry(obsolete=obsolete)
+            if line.startswith("msgstr[") and not line.startswith("msgstr[0]"):
+                field = "ignored"  # higher plural indices are dropped
+            else:
+                field = "msgstr"
+                cur.msgstr = _parse_quoted(line)
+        elif line.startswith('"') and cur is not None:
+            value = _parse_quoted(line)
             if field == "context":
                 cur.context += value
             elif field == "msgid":

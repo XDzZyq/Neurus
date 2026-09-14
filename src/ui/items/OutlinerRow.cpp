@@ -158,6 +158,16 @@ void OutlinerRow::setRenderBtnColor()
 }
 
 // =========================================================================
+// retranslate — re-apply the toggle tooltips (Outliner owns the strings)
+// =========================================================================
+
+void OutlinerRow::retranslate(const QString& viewportTip, const QString& renderTip)
+{
+	m_eyeBtn->setToolTip(viewportTip);
+	m_renderBtn->setToolTip(renderTip);
+}
+
+// =========================================================================
 // setObject — bind object identity data, reset toggles
 // =========================================================================
 

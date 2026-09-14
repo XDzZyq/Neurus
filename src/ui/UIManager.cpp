@@ -208,7 +208,7 @@ void UIManager::CreateMenus()
 	connect(openAction, &QAction::triggered, []() {
 		QString path = QFileDialog::getOpenFileName(
 			nullptr, I18n::instance().translateCtx("Open Project", "Dialog"), QString(),
-			"Neurus Project (*.neurus.json)");
+			I18n::instance().translateCtx("Neurus Project (*.neurus.json)", "Dialog"));
 		if (!path.isEmpty())
 			neurus::UIEvents::instance().requestProjectOpen(path);
 	});
@@ -224,7 +224,7 @@ void UIManager::CreateMenus()
 	connect(saveAsAction, &QAction::triggered, []() {
 		QString path = QFileDialog::getSaveFileName(
 			nullptr, I18n::instance().translateCtx("Save Project As", "Dialog"), QString(),
-			"Neurus Project (*.neurus.json)");
+			I18n::instance().translateCtx("Neurus Project (*.neurus.json)", "Dialog"));
 		if (!path.isEmpty())
 			neurus::UIEvents::instance().requestProjectSaveAs(path);
 	});
@@ -282,7 +282,7 @@ void UIManager::CreateMenus()
 	connect(meshAction, &QAction::triggered, []() {
 		QString path = QFileDialog::getOpenFileName(
 			nullptr, I18n::instance().translateCtx("Import Mesh", "Dialog"), QString(),
-			"OBJ Files (*.obj)");
+			I18n::instance().translateCtx("OBJ Files (*.obj)", "Dialog"));
 		if (!path.isEmpty())
 			neurus::UIEvents::instance().requestMeshImport(path);
 	});

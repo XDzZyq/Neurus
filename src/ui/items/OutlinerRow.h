@@ -116,6 +116,19 @@ public:
 	 */
 	void setRowIndex(int rowIndex);
 
+	/**
+	 * @brief Re-applies the two visibility-toggle tooltips.
+	 *
+	 * The tooltips are set once per row and never rewritten by Refresh(), so a
+	 * language switch has to reach every pooled row — Outliner::Retranslate()
+	 * walks the pool, and EnsureRowPool() calls this on each new row so rows
+	 * created after the switch are not left in English.
+	 *
+	 * @param viewportTip Translated tooltip for the preview-visibility toggle.
+	 * @param renderTip   Translated tooltip for the render-visibility toggle.
+	 */
+	void retranslate(const QString& viewportTip, const QString& renderTip);
+
 	/** @brief Returns the bound object UID (0 if none). */
 	int getObjectUid() const { return m_objectUid; }
 

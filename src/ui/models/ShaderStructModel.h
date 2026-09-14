@@ -56,6 +56,15 @@ public:
 	/** @brief Rebuilds the entire tree from a ShaderStruct. */
 	void setShaderStruct(const ShaderStruct* shaderStruct);
 
+	/**
+	 * @brief Re-emits the model's text after a language switch.
+	 *
+	 * Section titles and column headers are produced on demand by
+	 * sectionTitle()/headerData(), so nothing needs rebuilding — the views just
+	 * have to be told to re-fetch. Called from ShaderEditorPanel::Retranslate().
+	 */
+	void Retranslate();
+
 signals:
 	void fieldEdited(ShaderSection section, int fieldIndex, int subFieldIndex,
 	                 const QString& field, const QString& value);
@@ -72,7 +81,10 @@ private:
 	};
 
 	void buildTree();
-	void addSection(const QString& title, ShaderSection section, int count);
+	/// Section nodes carry only their ShaderSection; the display title is
+	/// resolved on demand by sectionTitle() so a language switch needs no
+	/// rebuild (see Retranslate()).
+	void addSection(ShaderSection section, int count);
 	QString nodeString(const Node* node, int column) const;
 	const S_Uniform& getUniform(int sectionIndex, int fieldIndex) const;
 	QString sectionTitle(int sectionIndex) const;

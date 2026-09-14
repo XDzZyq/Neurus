@@ -21,6 +21,7 @@ The UI layer is a **Qt6 Widgets** application with **Qt-Advanced-Docking-System 
 | `src/ui/panels/LogPanel.h/cpp` | Realtime log viewer dock: filter bar + list view (issue #39) |
 | `src/ui/panels/PreferencesDialog.h/cpp` | Preferences dialog — live-applied language + target FPS (File → Preferences…, Ctrl+,) |
 | `src/ui/utils/I18n.h/cpp` | Lightweight runtime i18n manager: dictionary-based, instant language switch |
+| `src/ui/utils/POCatalog.h/cpp` | Standalone gettext `.po` parser (`neurus::po`) behind `I18n` — no Qt widgets, unit-testable |
 | `src/ui/models/ShaderStructModel.h/cpp` | QAbstractItemModel tree for the ShaderStruct IR (3-level: sections → fields/structs → members) |
 | `src/ui/models/LogModel.h/cpp` | QAbstractListModel over the core LogBuffer |
 | `src/ui/models/LogFilterProxy.h/cpp` | QSortFilterProxyModel: level filter + text search |
@@ -181,7 +182,10 @@ Language switching is **live** — no restart, no Qt Linguist toolchain — and
 the catalogs use the **GNU gettext .po format** (the same system Blender
 uses), so translators can work with Poedit / Weblate. The `I18n` singleton
 (`src/ui/utils/I18n.h/cpp`) owns the active language code and a
-`QHash<(context, msgid), QString>` catalog:
+`QHash<(context, msgid), QString>` catalog; the **file format** half lives in
+`src/ui/utils/POCatalog.h/cpp` (`neurus::po::Parse` / `po::HeaderField`), split
+out so it is unit-testable without a singleton or a Qt resource
+(`test/ui/test_po_catalog.cpp`):
 
 - **msgid keys are the English display strings themselves.** A missing
   catalog, context or msgid makes `I18n::translate*()` return the key
@@ -201,6 +205,15 @@ uses), so translators can work with Poedit / Weblate. The `I18n` singleton
   changes. `I18n::supportedLanguages()` lists shipped languages (native
   display names); `I18n::systemLanguage()` detects the OS UI language
   (Simplified-Chinese → `zh_CN`, else `en`).
+- **The parser accepts gettext, not just our own output.** Entries end at the
+  next `msgctxt`, at the next `msgid` that does not follow a `msgctxt`, or at a
+  blank line — blank separators are conventional, not required, and treating
+  them as the only terminator made every key inherit the previous entry's
+  `msgstr` (with the metadata header at the top of every file, the first real
+  key resolved to the header text). Plural forms are **dropped, not merged**:
+  `msgid_plural` must be tested *before* `msgid`, of which it is a prefix, and
+  only `msgstr[0]` is kept. Both shapes are what hand-editing and Poedit
+  produce, which is the whole reason the `.po` format was chosen.
 
 **How retranslation reaches the widgets:**
 
@@ -221,6 +234,38 @@ uses), so translators can work with Poedit / Weblate. The `I18n` singleton
 4. The Preferences dialog also connects to `languageChanged()` directly so it
    retranslates while open.
 
+**Two rules that make retranslation order-independent.** `Retranslate()` runs
+once from the constructor and again on every switch, so a fix that only works in
+one of those two orders is not a fix:
+
+- **If a code path rewrites a string later, cache the translation — do not
+  re-stamp a literal.** `ProfilingHead` writes column 0 on every
+  `NoData ↔ Frame` transition, so it stores `m_frameLabel` / `m_noDataLabel`
+  (seeded by `retranslate()`) and writes those; a `QStringLiteral("Frame")`
+  there re-Englished the row on the next transition after a switch. Same reason
+  `Outliner::EnsureRowPool()` calls `RetranslateRow()` on each new row: rows
+  created *after* a switch would otherwise keep the constructor's English
+  tooltips, and `Refresh()` never rewrites them.
+- **A cached data key is empty before anything is bound, and `translate("")`
+  returns `""`.** `LightProperties::Retranslate()` resolves the light-type name
+  from `m_cachedType`, which is empty at constructor time and again after
+  `setObjectId()`, so it falls back to `translate("Unknown")` instead of
+  blanking the row.
+
+**Item models retranslate too.** `QAbstractItemModel` subclasses that produce
+display text (`ShaderStructModel::headerData()`, `sectionTitle()`) call `I18n`
+**on demand** and expose a `Retranslate()` that only re-emits
+(`headerDataChanged` + `dataChanged` over the section rows) — no rebuild, since
+nothing is cached. Section nodes store their `ShaderSection`, never a title
+string. The owning panel calls it from its own `Retranslate()`
+(`ShaderEditorPanel`). `QStyledItemDelegate` editors are created on demand, so
+they translate at `createEditor()` time and need no hook at all
+(`ShaderFieldDelegate`'s `"struct name"` placeholder).
+
+**Dialog filters are display text.** `QFileDialog` name filters go through
+`translateCtx(..., "Dialog")` like the dialog titles — `"Neurus Project
+(*.neurus.json)"`, `"OBJ Files (*.obj)"`, `"Log Files (*.log)"`.
+
 **Translation management (Blender-style pipeline):**
 
 - `scripts/extract_i18n.py` scans `src/ui/` for `translate()` /
@@ -228,6 +273,18 @@ uses), so translators can work with Poedit / Weblate. The `I18n` singleton
   merges them into every `res/i18n/*.po`, marks removed keys obsolete
   (`#~`, preserved across runs and restored if the key comes back), and
   reports per-language coverage.
+- ⚠️ **The gate only sees call sites, so it cannot catch a bare literal.** A
+  `setText("Frame")` produces no key, so coverage stays at 100% and CI stays
+  green while the string is permanently English. Grepping for user-visible
+  literals is the only defence; the gate proves *catalogs* are complete, not
+  that the code asked for a translation.
+- Obsolete (`#~`) blocks are parsed like any other entry, just flagged. Skipping
+  their payload made them round-trip as empty, which lost the translation, left
+  the "removed-then-re-added key keeps its translation" path dead, and — because
+  the rendered file then differed from disk on *every* run — reported the catalog
+  as permanently stale, turning CI red for good after the first string removal.
+  The invariant to preserve: **two consecutive runs must report `stale: False`
+  on the second.**
 - The dock-title scrape is a regex over `case PanelType::X: return "...";`, and
   it is **scoped to `UIPanel::DefaultNameKey`'s body** — `PanelIdFor()` has the
   identical switch shape but returns serialization ids, which must never enter
@@ -244,7 +301,7 @@ uses), so translators can work with Poedit / Weblate. The `I18n` singleton
   form (`msgstr ""` + one quoted continuation line per field), so hand-written
   fields like `X-Language-Name` and `Plural-Forms` survive every run.
 - At runtime `I18n` logs its load, e.g.
-  `[I18n] loaded 145/145 strings for 'zh_CN' (0 untranslated)`.
+  `[I18n] loaded 160/160 strings for 'zh_CN' (0 untranslated)`.
 
 **Adding a new translatable string:** write the English text as the msgid,
 wrap it in `I18n::instance().translate("...")` (or `translateCtx`/`N_` as

@@ -33,6 +33,8 @@ add_library(neurus_ui STATIC
 	utils/ShaderHighlighter.cpp
 	utils/I18n.h
 	utils/I18n.cpp
+	utils/POCatalog.h
+	utils/POCatalog.cpp
 	presets/CameraProperties.h
 	presets/CameraProperties.cpp
 	presets/MeshProperties.h

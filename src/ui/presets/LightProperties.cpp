@@ -153,7 +153,12 @@ void LightProperties::Retranslate()
 	m_group->setTitle(i18n.translate("Light"));
 	m_typeCaption->setText(i18n.translate("Type"));
 	// Re-translate the light-type name from its raw key (falls back to English).
-	m_typeLabel->setText(i18n.translate(m_cachedType.c_str()));
+	// An empty cache means no light is bound yet — at ctor time, or between
+	// setObjectId() and the next setLightType() — and translate("") returns "",
+	// which would blank the row instead of showing the placeholder.
+	m_typeLabel->setText(m_cachedType.empty()
+	                     ? i18n.translate("Unknown")
+	                     : i18n.translate(m_cachedType.c_str()));
 	m_powerLabel->setText(i18n.translate("Power"));
 	m_radiusLabel->setText(i18n.translate("Radius"));
 	m_shadowChk->setText(i18n.translate("Cast Shadow"));

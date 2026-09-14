@@ -98,6 +98,14 @@ private:
 	 */
 	void EnsureRowPool(std::size_t needed);
 
+	/**
+	 * @brief Applies the active language to one pooled row.
+	 *
+	 * Only covers text Refresh() does not rewrite every frame (the visibility
+	 * tooltips); the name and icon come from the scene data.
+	 */
+	void RetranslateRow(OutlinerRow* row);
+
 	QScrollArea* m_scrollArea = nullptr;
 	QWidget*     m_container  = nullptr;
 	QVBoxLayout* m_listLayout = nullptr;

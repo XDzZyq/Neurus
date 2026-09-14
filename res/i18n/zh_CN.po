@@ -79,6 +79,9 @@ msgstr "面光源"
 msgid "Asset"
 msgstr "资源"
 
+msgid "Attributes"
+msgstr "顶点属性"
+
 msgid "Auto-scroll"
 msgstr "自动滚动"
 
@@ -163,6 +166,9 @@ msgstr "前向"
 msgid "Frame"
 msgstr "帧"
 
+msgid "Functions"
+msgstr "函数"
+
 msgid "GPU (ms)"
 msgstr "GPU (毫秒)"
 
@@ -186,6 +192,9 @@ msgstr "信息"
 
 msgid "Inner Cone"
 msgstr "内锥角"
+
+msgid "Inputs"
+msgstr "输入"
 
 msgid "Intensity"
 msgstr "强度"
@@ -220,6 +229,9 @@ msgstr "模式："
 msgid "Moving Average"
 msgstr "移动平均"
 
+msgid "Name"
+msgstr "名称"
+
 msgid "No object selected"
 msgstr "未选中对象"
 
@@ -232,11 +244,17 @@ msgstr "无"
 msgid "Outer Cone"
 msgstr "外锥角"
 
+msgid "Outputs"
+msgstr "输出"
+
 msgid "PCF Filter"
 msgstr "PCF 过滤"
 
 msgid "Pass"
 msgstr "通道"
+
+msgid "Pass Outputs"
+msgstr "通道输出"
 
 msgid "Path"
 msgstr "路径"
@@ -261,6 +279,9 @@ msgstr "功率"
 
 msgid "Preferences file"
 msgstr "首选项文件"
+
+msgid "Push Constants"
+msgstr "推送常量"
 
 msgid "Radius"
 msgstr "半径"
@@ -340,6 +361,9 @@ msgstr "聚光灯"
 msgid "Stage:"
 msgstr "阶段："
 
+msgid "Struct Definitions"
+msgstr "结构体定义"
+
 msgid "Structure"
 msgstr "结构"
 
@@ -364,6 +388,12 @@ msgstr "透明背景"
 msgid "Type"
 msgstr "类型"
 
+msgid "Uniforms"
+msgstr "统一变量"
+
+msgid "Unknown"
+msgstr "未知"
+
 msgid "Unlimited"
 msgstr "不限"
 
@@ -372,6 +402,9 @@ msgstr "使用材质"
 
 msgid "VSSM"
 msgstr "VSSM"
+
+msgid "struct name"
+msgstr "结构体名称"
 
 msgctxt "Dialog"
 msgid "A C++20 Vulkan-HPP 1.4 real-time renderer."
@@ -396,6 +429,14 @@ msgstr "导入网格"
 msgctxt "Dialog"
 msgid "Log Files (*.log)"
 msgstr "日志文件 (*.log)"
+
+msgctxt "Dialog"
+msgid "Neurus Project (*.neurus.json)"
+msgstr "Neurus 工程 (*.neurus.json)"
+
+msgctxt "Dialog"
+msgid "OBJ Files (*.obj)"
+msgstr "OBJ 文件 (*.obj)"
 
 msgctxt "Dialog"
 msgid "Open Project"
@@ -462,5 +503,13 @@ msgid "Remove entry"
 msgstr "移除条目"
 
 msgctxt "Tooltip"
+msgid "Render visibility"
+msgstr "渲染可见性"
+
+msgctxt "Tooltip"
 msgid "Reset position, rotation, and scale to identity values."
 msgstr "将位置、旋转和缩放重置为初始值。"
+
+msgctxt "Tooltip"
+msgid "Viewport visibility"
+msgstr "视口可见性"

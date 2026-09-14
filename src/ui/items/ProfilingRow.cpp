@@ -126,11 +126,13 @@ ProfilingHead::ProfilingHead(QTreeWidget* tree)
 void ProfilingHead::setFrame(double cpuMs, double gpuMs, bool gpuShown,
                               uint32_t draws, uint32_t dispatches)
 {
-	// Column 0 - label. Only write on a mode transition.
+	// Column 0 - label. Only write on a mode transition, and write the cached
+	// translated label: a literal here would re-English the row on every
+	// NoData->Frame flip that happened after a language switch.
 	if (m_mode != Mode::Frame)
 	{
 		m_mode = Mode::Frame;
-		m_item->setText(0, QStringLiteral("Frame"));
+		m_item->setText(0, m_frameLabel);
 	}
 
 	// Column 1 - CPU ms (centi-ms dirty check).
@@ -183,12 +185,16 @@ void ProfilingHead::setFrame(double cpuMs, double gpuMs, bool gpuShown,
 void ProfilingHead::retranslate(const QString& frameLabel,
                                    const QString& noDataLabel)
 {
+	m_frameLabel  = frameLabel;
+	m_noDataLabel = noDataLabel;
+
 	// Re-text col 0 for the current mode without touching the cached numeric
-	// state (which stays valid across language switches).
+	// state (which stays valid across language switches). Uninitialized needs
+	// no write: setFrame()/setNoData() will pick the label up from the members.
 	switch (m_mode)
 	{
-	case Mode::Frame:  m_item->setText(0, frameLabel);  break;
-	case Mode::NoData: m_item->setText(0, noDataLabel); break;
+	case Mode::Frame:  m_item->setText(0, m_frameLabel);  break;
+	case Mode::NoData: m_item->setText(0, m_noDataLabel); break;
 	default:           break;
 	}
 }
@@ -199,7 +205,7 @@ void ProfilingHead::setNoData()
 		return;
 	m_mode = Mode::NoData;
 
-	m_item->setText(0, QStringLiteral("No profiling data yet"));
+	m_item->setText(0, m_noDataLabel);
 	for (int col = 1; col < 5; ++col)
 		m_item->setText(col, QString());
 

@@ -1,6 +1,7 @@
 #include "delegates/ShaderFieldDelegate.h"
 #include "models/ShaderStructModel.h"
 #include "render/shaders/ShaderStruct.h"
+#include "ui/utils/I18n.h"
 
 #include <QComboBox>
 #include <QLineEdit>
@@ -38,8 +39,10 @@ QWidget* ShaderFieldDelegate::createEditor(QWidget* parent, const QStyleOptionVi
 			return combo;
 		}
 		// NodeStructDef: struct name edit (name only, no type selector)
+		// Editors are created on demand, so translating here is enough — there
+		// is no long-lived widget for a language switch to miss.
 		auto* edit = new QLineEdit(parent);
-		edit->setPlaceholderText("struct name");
+		edit->setPlaceholderText(I18n::instance().translate("struct name"));
 		return edit;
 	}
 
