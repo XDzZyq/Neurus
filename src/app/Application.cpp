@@ -138,15 +138,27 @@ int Application::Run()
 	// receives plain values (see the UIManager ctor below). ---
 	app_preferences = std::make_unique<neurus::Preferences>();
 	const std::string prefsPath = neurus::Preferences::DefaultPath();
-	const bool prefsLoaded = app_preferences->Load(prefsPath);
 
-	// "auto" means "follow the system UI language" — resolve to a concrete
-	// code here (the Application owns I18n; Preferences stays UI-free).
-	if (app_preferences->language.empty() || app_preferences->language == "auto")
-		app_preferences->language = neurus::I18n::systemLanguage().toStdString();
-
-	if (!prefsLoaded)
+	// "auto" is stored verbatim and stays stored verbatim: I18n::setLanguage()
+	// resolves the sentinel itself, so nothing here rewrites the preference with
+	// a concrete code — otherwise the very first save would erase the user's
+	// "follow the system language" choice.
+	switch (app_preferences->Load(prefsPath))
+	{
+	case neurus::Preferences::LoadResult::Ok:
+		break;
+	case neurus::Preferences::LoadResult::Missing:
 		app_preferences->Save(prefsPath);  // First run: create the file.
+		break;
+	case neurus::Preferences::LoadResult::Corrupt:
+		// Defaults are in effect, but the file is NOT overwritten here: move it
+		// aside first so the aboutToQuit save below cannot clobber the evidence.
+		NEURUS_ERR("[Application] " << prefsPath << " is unreadable; starting "
+		           "with default preferences.");
+		neurus::Preferences::Backup(prefsPath);
+		break;
+	}
+
 	neurus::I18n::instance().setLanguage(
 		QString::fromStdString(app_preferences->language));
 	ApplyTargetFps(app_preferences->targetFps);

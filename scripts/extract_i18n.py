@@ -49,7 +49,13 @@ _N_KEY_RE = re.compile(r'N_\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 
 # Dock titles are stored as translation keys in UIPanel::DefaultNameKey:
 #   case PanelType::Viewport: return "Viewport";
+# The scrape is confined to that one function's body (see _function_body):
+# UIPanel.h has a second switch of exactly this shape, PanelIdFor(), whose
+# returns are serialization ids and must NEVER become translation keys.
 _DOCK_KEY_RE = re.compile(r'case\s+PanelType::\w+:\s*return\s*"([^"]+)";')
+
+# Name of the function whose switch holds the dock-title keys.
+_DOCK_KEY_FUNC = "DefaultNameKey"
 
 # Runtime keys that never appear as translate() literals in the UI layer:
 # scene-layer data strings resolved through I18n at runtime
@@ -117,6 +123,32 @@ def encode_c_literal(text: str) -> str:
     return "".join(out)
 
 
+def _function_body(src: str, name: str) -> str:
+    """Returns the brace-delimited body of function `name`, or "" if absent.
+
+    Only used to keep the dock-title scrape from wandering into a neighbouring
+    switch statement; a plain brace count is enough for the one hand-written
+    header it reads, and it fails closed (empty string) if the name is gone.
+    Call sites are skipped by requiring a `{` right after the parameter list,
+    so `... : DefaultNameKey(type)) {}` in a constructor is not mistaken for
+    the definition.
+    """
+    sig = re.compile(re.escape(name) + r'\s*\([^;{)]*\)\s*(?:const\s*)?\{')
+    m = sig.search(src)
+    if not m:
+        return ""
+    open_brace = m.end() - 1
+    depth = 0
+    for i in range(open_brace, len(src)):
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[open_brace:i + 1]
+    return ""
+
+
 def find_translation_keys() -> list:
     """Returns the sorted list of (context, msgid) keys used by the code."""
     keys = set()
@@ -136,8 +168,11 @@ def find_translation_keys() -> list:
                 if msgid:
                     keys.add(("", msgid))
             # Dock-title keys live in UIPanel.h (PanelName translates them).
+            # Scoped to DefaultNameKey's body: PanelIdFor() right above it has
+            # the same switch shape but returns identity ids, not display text.
             if name == "UIPanel.h":
-                for m in _DOCK_KEY_RE.finditer(src):
+                body = _function_body(src, _DOCK_KEY_FUNC)
+                for m in _DOCK_KEY_RE.finditer(body):
                     keys.add(("Dock", decode_c_literal(m.group(1))))
     keys.update(EXTRA_KEYS)
     return sorted(keys, key=lambda kv: (kv[0], kv[1]))

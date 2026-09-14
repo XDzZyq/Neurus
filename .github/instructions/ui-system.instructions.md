@@ -228,6 +228,11 @@ uses), so translators can work with Poedit / Weblate. The `I18n` singleton
   merges them into every `res/i18n/*.po`, marks removed keys obsolete
   (`#~`, preserved across runs and restored if the key comes back), and
   reports per-language coverage.
+- The dock-title scrape is a regex over `case PanelType::X: return "...";`, and
+  it is **scoped to `UIPanel::DefaultNameKey`'s body** — `PanelIdFor()` has the
+  identical switch shape but returns serialization ids, which must never enter
+  the catalog (see *Layout Persistence*). Add another switch of that shape to
+  `UIPanel.h` and the scope is what keeps it out.
 - `python3 scripts/extract_i18n.py` → update catalogs;
   `--check` → **read-only**: writes nothing and exits 1 if a catalog is stale
   (i.e. re-running the extractor would change it) or has untranslated strings;
@@ -261,11 +266,23 @@ Layer** concept (future settings: CUDA enablement, theme, shortcut schemes).
 
 - Fields: `language` (`"en"`/`"zh_CN"`, or `"auto"` = follow the system UI
   language) and `target_fps` (0 = unlimited).
-- The **Application is the sole manager**: it loads (and creates, on first
-  run) the file before the window is built, resolves `"auto"` to a concrete
-  code (it owns I18n — `Preferences` itself is UI-free), applies the saved
-  language and target FPS, saves on every edit, and saves once more on
-  `aboutToQuit`.
+- **`"auto"` is stored verbatim and stays that way.** `I18n::setLanguage()`
+  resolves the sentinel itself, so nothing on the load path rewrites the
+  preference with a concrete code — resolving it in place would turn "follow the
+  system language" into "pin to whatever the system said at first launch" the
+  moment the file was next written.
+- The **Application is the sole manager**: it loads the file before the window is
+  built, applies the saved language and target FPS, saves on every edit, and
+  saves once more on `aboutToQuit`.
+- **Loading distinguishes missing from corrupt** (`Preferences::LoadResult`), and
+  never mutates the fields on either failure — parsing goes into a scratch copy,
+  so a truncated or schema-drifted file cannot leave values half-applied:
+  - `Ok` — values in effect.
+  - `Missing` — first run; the Application writes the defaults.
+  - `Corrupt` — the Application logs it, keeps defaults, and calls
+    `Preferences::Backup()` to move the file to `preferences.json.bak`. It must
+    **not** save instead: that would destroy still-recoverable settings, and the
+    move also stops the `aboutToQuit` save from clobbering the evidence.
 - **The UI never touches the `Preferences` type.** The Application seeds the
   window with plain values (`UIManager(language, targetFps, prefsPath)`); the
   `PreferencesDialog` (File → Preferences… / `Ctrl+,`) is a pure UI widget
@@ -274,7 +291,12 @@ Layer** concept (future settings: CUDA enablement, theme, shortcut schemes).
   persists + (for language) calls `I18n::setLanguage()`, which fans out the
   live retranslation. Changes apply immediately; the dialog only has Close
   (no OK/Cancel).
-- The dialog also has a "Reset to Defaults" button (system language + 60 FPS).
+- The language combo's **row 0 is "System default"**, carrying `"auto"` as item
+  data — `I18n::supportedLanguages()` lists catalogs only, so without that row
+  the shipped default would be unreachable from the UI. It is the only row
+  Retranslate() touches; the rest name their own language.
+- "Reset to Defaults" resets to `"auto"` + 60 FPS — the shipped defaults, not
+  the currently detected system code.
 
 ## Build Integration
 

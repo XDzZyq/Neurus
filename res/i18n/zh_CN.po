@@ -346,6 +346,9 @@ msgstr "结构"
 msgid "Sun Light"
 msgstr "太阳光"
 
+msgid "System default"
+msgstr "系统默认"
+
 msgid "Take &Screenshot"
 msgstr "截取屏幕(&S)"
 

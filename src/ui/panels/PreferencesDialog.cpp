@@ -13,6 +13,17 @@
 
 namespace neurus {
 
+namespace {
+
+/// The "follow the system UI language" sentinel, stored verbatim in
+/// ~/.neurus/preferences.json and resolved by I18n::setLanguage().
+constexpr QLatin1String kAutoLanguage("auto");
+
+/// Row of the language combo that carries kAutoLanguage.
+constexpr int kAutoLanguageIndex = 0;
+
+} // namespace
+
 PreferencesDialog::PreferencesDialog(const QString& language, int targetFps,
                                      const QString& preferencesPath,
                                      QWidget* parent)
@@ -34,8 +45,13 @@ PreferencesDialog::PreferencesDialog(const QString& language, int targetFps,
 	form->setContentsMargins(10, 14, 10, 10);
 	form->setSpacing(8);
 
-	// Language: native display names, language code as item data.
+	// Language: native display names, language code as item data. Row 0 is the
+	// "auto" sentinel — it is the shipped default, so it has to be reachable
+	// from the UI, and I18n::supportedLanguages() (catalogs only) never yields
+	// it. Its text is translated; the concrete languages stay in their own
+	// language, which is why only row 0 is touched by Retranslate().
 	m_languageCombo = new QComboBox(m_generalGroup);
+	m_languageCombo->addItem(QString(), QString(kAutoLanguage));
 	for (const auto& lang : I18n::supportedLanguages())
 		m_languageCombo->addItem(lang.displayName, lang.code);
 	m_languageLabel = new QLabel(m_generalGroup);
@@ -94,6 +110,11 @@ void PreferencesDialog::Retranslate()
 	m_languageLabel->setText(i18n.translate("Language"));
 	m_fpsLabel->setText(i18n.translate("Target FPS"));
 
+	// Language combo: only the "auto" row is translated — the rest name their
+	// own language and must read the same whatever the active one is.
+	m_languageCombo->setItemText(kAutoLanguageIndex,
+	                             i18n.translate("System default"));
+
 	// FPS combo: item 0 is "Unlimited"; numeric items keep their numbers.
 	m_fpsCombo->setItemText(0, i18n.translate("Unlimited"));
 	m_fpsCombo->setItemText(1, QStringLiteral("30"));
@@ -111,10 +132,14 @@ void PreferencesDialog::SyncFrom(const QString& language, int targetFps)
 	m_language = language;
 	m_targetFps = targetFps;
 
+	// "auto" is a real row, so findData() resolves it like any other code. An
+	// unrecognised code (a catalog that was removed) falls back to "System
+	// default" rather than to a specific language.
 	const int langIndex = m_languageCombo->findData(language);
 	{
 		QSignalBlocker block(m_languageCombo);
-		m_languageCombo->setCurrentIndex(langIndex >= 0 ? langIndex : 0);
+		m_languageCombo->setCurrentIndex(langIndex >= 0 ? langIndex
+		                                                : kAutoLanguageIndex);
 	}
 
 	const int fpsIndex = m_fpsCombo->findData(targetFps);
@@ -136,14 +161,14 @@ void PreferencesDialog::OnTargetFpsChanged(int index)
 
 void PreferencesDialog::OnResetDefaults()
 {
-	// Reset to the detected system language + 60 FPS, applying + persisting
-	// immediately through the same signals as manual edits.
-	const QString systemLang = I18n::systemLanguage();
-	const int langIndex = m_languageCombo->findData(systemLang);
-	if (langIndex >= 0 && m_languageCombo->currentIndex() != langIndex)
-		m_languageCombo->setCurrentIndex(langIndex);  // triggers OnLanguageChanged
+	// Reset to the shipped defaults — "auto" (follow the system language) and
+	// 60 FPS — applying + persisting immediately through the same signals as
+	// manual edits. Resetting to the *resolved* system code instead would
+	// silently pin the preference to today's system language.
+	if (m_languageCombo->currentIndex() != kAutoLanguageIndex)
+		m_languageCombo->setCurrentIndex(kAutoLanguageIndex);  // → OnLanguageChanged
 	else
-		emit languageChangeRequested(systemLang);
+		emit languageChangeRequested(QString(kAutoLanguage));
 
 	if (m_fpsCombo->currentIndex() != 2)
 		m_fpsCombo->setCurrentIndex(2);  // triggers OnTargetFpsChanged

@@ -16,29 +16,59 @@ std::string Preferences::DefaultPath()
 	return (HomeDirectory() / ".neurus" / "preferences.json").generic_string();
 }
 
-bool Preferences::Load(const std::string& path)
+Preferences::LoadResult Preferences::Load(const std::string& path)
 {
 	std::ifstream in(path, std::ios::binary);
 	if (!in.is_open())
-		return false;  // Missing file: keep defaults.
+		return LoadResult::Missing;  // First run: keep defaults, caller saves.
+
+	// Parse into a scratch copy so a half-written or schema-drifted file cannot
+	// leave the live values partially overwritten. cereal applies each nvp as it
+	// reads it, so a throw halfway through WOULD otherwise be visible.
+	std::string scratchLanguage = language;
+	int         scratchFps      = targetFps;
 
 	try
 	{
 		cereal::JSONInputArchive ar(in);
-		ar(cereal::make_nvp("language", language),
-		   cereal::make_nvp("target_fps", targetFps));
+		ar(cereal::make_nvp("language", scratchLanguage),
+		   cereal::make_nvp("target_fps", scratchFps));
 	}
 	catch (const std::exception& e)
 	{
 		NEURUS_ERR("[Preferences] failed to load " << path << ": " << e.what());
-		language = "auto";
-		targetFps = 60;
+		return LoadResult::Corrupt;  // Fields untouched: nothing is destroyed.
+	}
+
+	language  = scratchLanguage;
+	targetFps = scratchFps;
+
+	// Note: "auto" language is intentionally left as-is here. Resolving it to a
+	// concrete code is I18n::setLanguage()'s job, so this data type stays free
+	// of any UI-layer dependency and the sentinel survives the round-trip.
+	return LoadResult::Ok;
+}
+
+bool Preferences::Backup(const std::string& path)
+{
+	const std::filesystem::path from(path);
+	std::filesystem::path       to = from;
+	to += ".bak";
+
+	std::error_code ec;
+	// rename() over an existing file is the platform's atomic replace; remove
+	// first anyway because Windows' rename fails when the target exists.
+	std::filesystem::remove(to, ec);
+	ec.clear();
+	std::filesystem::rename(from, to, ec);
+	if (ec)
+	{
+		NEURUS_ERR("[Preferences] failed to move " << path << " aside: "
+		           << ec.message());
 		return false;
 	}
 
-	// Note: "auto" language is intentionally left as-is here. Resolving it to
-	// a concrete code is the Application's responsibility (it owns I18n), so
-	// this data type stays free of any UI-layer dependency.
+	NEURUS_LOG("[Preferences] kept the unreadable file as " << to.generic_string());
 	return true;
 }
 
