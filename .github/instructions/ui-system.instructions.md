@@ -139,6 +139,26 @@ language-independent; layouts round-trip in both language directions; a real
 pre-fix Chinese-keyed blob and a malformed blob both degrade to a populated
 layout, not a blank window).
 
+**The checked-in default project carries a layout blob too.**
+`res/shadow.neurus.json` (loaded at startup by `Application`) stores the ADS
+state under `project.ui` as `geometry_base64 + "\n" + state_base64`, each half a
+`qCompress` blob. It is a build artifact of whoever last saved it, so it must be
+verified rather than trusted — a copy saved before the `PanelId` split contained
+nothing but Chinese dock names, which meant an English machine started with an
+empty window. Decode and check it externally:
+
+```python
+import base64, json, re, zlib
+blob = json.load(open("res/shadow.neurus.json"))["project"]["ui"]
+xml = zlib.decompress(base64.b64decode(blob.split("\n")[1])[4:]).decode()
+print(re.findall(r'Name="([^"]+)"', xml))   # every entry must be a dock.* id
+```
+
+Note the app loads and writes back the *build* copy
+(`build/debug/res/shadow.neurus.json`, refreshed from `res/` by a
+`copy_directory` step), so re-saving the default layout means copying the result
+back into `res/` by hand.
+
 ### Dock Features
 
 - Viewport: ADS central widget — closable/movable/floatable all disabled by ADS.
@@ -297,6 +317,14 @@ they translate at `createEditor()` time and need no hook at all
   `--verbose` → list every added/obsoleted key.
 - CI runs `--check` before the build, so a missing translation or an
   uncommitted catalog update fails the PR without dirtying the tree.
+- `scripts/test_extract_i18n.py` (stdlib `unittest`, no deps) tests the extractor
+  itself and runs in CI *before* `--check`. It exists because a bug in the script
+  does not produce a bad translation — it produces a red pipeline on every matrix
+  leg that no source change can turn green, so the script needs a suite that
+  names the real fault. It pins the convergence invariant above, the parser's
+  tolerance of hand-edited `.po` (no blank separators, `msgid_plural`,
+  `msgstr[N]`), and the `DefaultNameKey` scoping. Run it directly:
+  `python3 scripts/test_extract_i18n.py`.
 - The header entry (`msgid ""`) is round-tripped verbatim in canonical gettext
   form (`msgstr ""` + one quoted continuation line per field), so hand-written
   fields like `X-Language-Name` and `Plural-Forms` survive every run.

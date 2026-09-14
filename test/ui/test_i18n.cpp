@@ -14,6 +14,8 @@
 #include <QSignalSpy>
 #include <QString>
 
+#include <algorithm>
+
 #include "ui/utils/I18n.h"
 
 using namespace neurus;
@@ -97,18 +99,34 @@ TEST_F(I18nTest, LanguageChangedSignalContract)
 
 TEST_F(I18nTest, SupportedLanguagesContainEnglishAndChinese)
 {
+	// Containment, not identity: adding res/i18n/<code>.po is meant to be a
+	// one-file step (the CMake glob is CONFIGURE_DEPENDS and the registry sorts
+	// by display name), so a count or a positional index would turn that
+	// one-file step into a two-file step for no reason.
 	const auto langs = I18n::supportedLanguages();
-	ASSERT_EQ(langs.size(), 2);
-	EXPECT_EQ(langs[0].code, QStringLiteral("en"));
-	EXPECT_EQ(langs[1].code, QStringLiteral("zh_CN"));
-	EXPECT_FALSE(langs[0].displayName.isEmpty());
-	EXPECT_FALSE(langs[1].displayName.isEmpty());
+
+	const auto has = [&langs](const QString& code) {
+		return std::any_of(langs.cbegin(), langs.cend(), [&code](const auto& l) {
+			return l.code == code && !l.displayName.isEmpty();
+		});
+	};
+
+	EXPECT_TRUE(has(QStringLiteral("en")));      // built-in, never a .po file
+	EXPECT_TRUE(has(QStringLiteral("zh_CN")));   // res/i18n/zh_CN.po
 }
 
-TEST_F(I18nTest, SystemLanguageIsDetected)
+TEST_F(I18nTest, SystemLanguageIsOneOfTheSupportedLanguages)
 {
+	// systemLanguage() reads the host locale, so the concrete answer depends on
+	// the machine — what must hold is that it is always a language we can
+	// actually switch to, otherwise "auto" would resolve to a dead code.
 	const QString lang = I18n::systemLanguage();
-	EXPECT_TRUE(lang == QStringLiteral("en") || lang == QStringLiteral("zh_CN"));
+	const auto langs = I18n::supportedLanguages();
+
+	EXPECT_TRUE(std::any_of(langs.cbegin(), langs.cend(),
+	                        [&lang](const auto& l) { return l.code == lang; }))
+		<< "systemLanguage() returned '" << lang.toStdString()
+		<< "', which is not in supportedLanguages()";
 }
 
 TEST_F(I18nTest, AutoLanguageResolvesToSystemLanguage)

@@ -57,6 +57,15 @@ jobs:
 
       # Blender-style i18n check: fail the build if any UI string in
       # res/i18n/*.po is untranslated (run before the build for a fast fail).
+      # The extractor is tested first: a bug in it fails this job on every
+      # matrix leg regardless of the source change, so its own suite has to be
+      # the thing that reports the problem.
+      - name: Test the translation extractor
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then PY=python; else PY=python3; fi
+          $PY scripts/test_extract_i18n.py
+
       - name: Check translations
         shell: bash
         run: |
