@@ -78,3 +78,47 @@ jobs:
       - name: Run Non-GPU Tests
         working-directory: build
         run: ctest -C ${{ matrix.configuration }} --output-on-failure
+
+      # TEMPORARY (PR #47): three dock tests SEGFAULT on the macOS Debug leg
+      # only, and cannot be reproduced on a developer machine. ctest reports the
+      # signal, but our own stdout log lines die in the block-buffered pipe, so
+      # neither the last checkpoint nor the faulting frame reaches the log.
+      #
+      # `script -q /dev/null` hands the test a pty, which makes its stdout
+      # line-buffered so the log survives the crash; macOS's ReportCrash then
+      # supplies the backtrace (the Debug binary is not stripped, so the .ips
+      # frames carry function names). lldb is deliberately not used: it hangs on
+      # this Qt app instead of producing a backtrace.
+      #
+      # Remove this step once the root cause is fixed.
+      - name: Dock crash backtrace (macOS)
+        if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          set +e
+          echo "===== displays ====="
+          system_profiler SPDisplaysDataType 2>&1 | head -30
+          echo "===== binary ====="
+          BIN=$(find build -type f -perm -111 -name neurus_test | head -1)
+          echo "binary: $BIN"
+          [ -n "$BIN" ] || exit 0
+          cd "$(dirname "$BIN")/test" || exit 0
+          for t in DockIdentityTest.LayoutRoundTripsAcrossLanguages \
+                   DockIdentityTest.LayoutRoundTripsInTheOppositeDirection \
+                   FloatingWindowTest.EnteringFullScreenDocksAlreadyFloatingPanels; do
+            echo "===== rerun: $t ====="
+            script -q /dev/null ../neurus_test "--gtest_filter=$t" 2>&1 | tail -40
+            echo "exit: ${PIPESTATUS[0]}"
+          done
+          echo "===== waiting for crash reports ====="
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            ls ~/Library/Logs/DiagnosticReports/neurus_test*.ips >/dev/null 2>&1 && break
+            sleep 2
+          done
+          ls -la ~/Library/Logs/DiagnosticReports/ 2>&1 | head -40
+          for f in ~/Library/Logs/DiagnosticReports/neurus_test*.ips; do
+            [ -f "$f" ] || continue
+            echo "===== $f ====="
+            head -200 "$f"
+          done
+          exit 0
