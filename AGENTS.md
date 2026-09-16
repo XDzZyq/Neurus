@@ -387,12 +387,17 @@ Multiple parallel subagents can race on `cmake --build` or launching
    let the master agent handle it.
 5. **Never use `git stash` while editing files**
 
-**Test working directory**: CTest runs with `WorkingDirectory = build/debug/test/`.
-Running the test binary directly from `build/debug/` causes `../../../res/`
-path resolution to differ. Always use `ctest` from `build/debug/`, or if
-running the test binary directly, cd to `build/debug/test/` first. Running
-from the wrong directory can create stale reference images at incorrect
-paths (e.g. `D:\Projects\test\render\reference\`).
+**Test working directory**: CTest runs every test with `WorkingDirectory = build/`
+— `test/CMakeLists.txt` pins `gtest_discover_tests(WORKING_DIRECTORY
+"${CMAKE_BINARY_DIR}")` so `res/` (copied there by a POST_BUILD step) always
+resolves relative to the CWD. The binary itself lives one level down, in the
+per-config directory the multi-config generator picks (`build/Debug/neurus_test`
+on CI, `build/debug/neurus_test` locally). So run `ctest` from `build/`, or if
+you launch the binary directly, `cd build` first and invoke it by path —
+launching it from its own directory makes `res/` unresolvable and can write
+stale reference images to the wrong path (e.g.
+`D:\Projects\test\render\reference\`).
+
 
 ---
 
