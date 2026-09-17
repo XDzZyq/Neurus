@@ -8,6 +8,8 @@ add_library(neurus_render STATIC
 	buffers/BufferLayout.cpp
 	buffers/GPUBuffer.h
 	buffers/GPUBuffer.cpp
+	buffers/HostBuffer.h
+	buffers/HostBuffer.cpp
 	buffers/IndexBuffer.h
 	buffers/IndexBuffer.cpp
 	buffers/StagingBuffer.h
