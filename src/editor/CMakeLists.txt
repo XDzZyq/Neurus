@@ -3,6 +3,8 @@
 add_library(neurus_editor STATIC
 	Editor.h
 	Editor.cpp
+	DebugDrawBuilder.h
+	DebugDrawBuilder.cpp
 	Input.h
 	Input.cpp
 	controllers/SceneController.h

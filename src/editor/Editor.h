@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "controllers/Controllers.h"
+#include "editor/DebugDrawBuilder.h"
 #include "editor/events/EventBus.h"
 #include "editor/operations/HistoryView.h"
 #include "editor/operations/OperationManager.h"
@@ -16,6 +17,7 @@
 // Forward declarations (no render headers!)
 namespace neurus {
 class DeferredRenderer;
+class MeshData;
 class Scene;
 class UploadManager;
 struct ShaderCreateRequested;
@@ -123,11 +125,26 @@ private:
 	void OnCreateShader(const ShaderCreateRequested& e);
 	void OnSceneObjectGpuUpload(int objectUid);
 
+	/**
+	 * @brief Adds the default scene's demo debug objects (see the .cpp for why).
+	 * @param meshData The demo mesh's geometry, reused for the DebugMesh wireframe
+	 *                 so the wire-mesh path is exercised on a fresh launch. May be null.
+	 */
+	void AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData);
+
 	// --- Owned state ---
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
 	RenderConfig          m_config;
 	bool                  m_dirty = false;
+
+	/**
+	 * @brief Flattened debug/gizmo geometry published through EditorContext.
+	 *
+	 * Marked dirty by the RenderResetEvent subscription (the existing "something
+	 * visible changed" broadcast) and by every scene swap; rebuilt in Edit().
+	 */
+	DebugDrawBuilder      m_debugDraw;
 
 	// --- Editor infrastructure ---
 	EventQueue ed_eventBus;                        ///< Editor-owned event dispatch queue.
