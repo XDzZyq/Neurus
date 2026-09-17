@@ -24,6 +24,7 @@
 
 #include <string>
 
+class QGroupBox;
 class QLabel;
 
 namespace neurus {
@@ -64,6 +65,9 @@ public:
 	/** @brief Updates the equirect path label (dirty-checked). */
 	void setEquirectPath(const std::string& path);
 
+	/** @brief Re-applies group/label texts in the active language. */
+	void Retranslate();
+
 signals:
 	/** @brief Emitted when the intensity slider changes. */
 	void intensityChanged(int objectId, float intensity);
@@ -75,6 +79,12 @@ private:
 	int m_objectId = -1;
 
 	// --- Widgets ---
+	QGroupBox*    m_group           = nullptr;
+	QLabel*       m_mapLabel        = nullptr;
+	QLabel*       m_pathPrefix      = nullptr;
+	QLabel*       m_iblLabel        = nullptr;
+	QLabel*       m_intensityLabel  = nullptr;
+	QLabel*       m_rotationLabel   = nullptr;
 	ScalarSlider* m_intensitySlider = nullptr;
 	ScalarSlider* m_rotationSlider  = nullptr;
 	QLabel*       m_pathLabel       = nullptr;

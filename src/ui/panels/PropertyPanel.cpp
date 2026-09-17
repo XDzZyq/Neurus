@@ -2,6 +2,7 @@
 
 #include "Icons.h"
 #include "UIContext.h"
+#include "ui/utils/I18n.h"
 #include "presets/CameraProperties.h"
 #include "presets/EnvironmentProperties.h"
 #include "presets/LightProperties.h"
@@ -27,7 +28,7 @@ namespace neurus {
 // =========================================================================
 
 PropertyPanel::PropertyPanel(QWidget* parent)
-	: UIPanel(PanelType::PropertyPanel, QString(), parent)
+	: UIPanel(PanelType::PropertyPanel, nullptr, parent)
 {
 	auto* mainLayout = new QVBoxLayout(this);
 	mainLayout->setContentsMargins(8, 8, 8, 8);
@@ -44,7 +45,8 @@ PropertyPanel::PropertyPanel(QWidget* parent)
 	mainLayout->addWidget(m_lightProps);
 	mainLayout->addWidget(m_envProps);
 
-	m_emptyLabel = new QLabel("No selected object");
+	// Text is filled in by the Retranslate() call at the end of this ctor.
+	m_emptyLabel = new QLabel();
 	m_emptyLabel->setAlignment(Qt::AlignCenter);
 	QFont emptyFont = m_emptyLabel->font();
 	emptyFont.setPointSize(emptyFont.pointSize() + 1);
@@ -57,6 +59,33 @@ PropertyPanel::PropertyPanel(QWidget* parent)
 	m_emptyLabel->setVisible(true);
 	m_headerWidget->setVisible(false);
 	m_transformGroup->setEnabled(false);
+
+	// Apply the active language (transform labels were built in English).
+	Retranslate();
+}
+
+// =========================================================================
+// Retranslate - re-apply transform labels / empty-state text
+// =========================================================================
+
+void PropertyPanel::Retranslate()
+{
+	auto& i18n = I18n::instance();
+
+	m_emptyLabel->setText(i18n.translate("No object selected"));
+	m_transformGroup->setTitle(i18n.translate("Transform"));
+	m_posLabel->setText(i18n.translate("Position"));
+	m_rotLabel->setText(i18n.translate("Rotation"));
+	m_sclLabel->setText(i18n.translate("Scale"));
+	m_resetBtn->setText(i18n.translate("Reset Transform"));
+	m_resetBtn->setToolTip(
+		i18n.translateCtx("Reset position, rotation, and scale to identity values.", "Tooltip"));
+
+	// Type-specific subpanels.
+	m_cameraProps->Retranslate();
+	m_meshProps->Retranslate();
+	m_lightProps->Retranslate();
+	m_envProps->Retranslate();
 }
 
 // =========================================================================
@@ -231,25 +260,28 @@ void PropertyPanel::BuildTransformEditor()
 	grid->addWidget(makeAxisLabel("Z", "#3498db"), 0, 3);
 
 	// Row 1: Position — Vec3Spin spans columns 1–3
-	grid->addWidget(new QLabel("Position"), 1, 0);
+	m_posLabel = new QLabel("Position");
+	grid->addWidget(m_posLabel, 1, 0);
 	m_posSpin = new Vec3Spin(-100000.0, 100000.0, 0.01, 2, QString());
 	grid->addWidget(m_posSpin, 1, 1, 1, 3);
 
 	// Row 2: Rotation — Vec3Spin spans columns 1–3
-	grid->addWidget(new QLabel("Rotation"), 2, 0);
+	m_rotLabel = new QLabel("Rotation");
+	grid->addWidget(m_rotLabel, 2, 0);
 	m_rotSpin = new Vec3Spin(-360.0, 360.0, 1.0, 1, "\u00B0");
 	grid->addWidget(m_rotSpin, 2, 1, 1, 3);
 
 	// Row 3: Scale — Vec3Spin spans columns 1–3
-	grid->addWidget(new QLabel("Scale"), 3, 0);
+	m_sclLabel = new QLabel("Scale");
+	grid->addWidget(m_sclLabel, 3, 0);
 	m_sclSpin = new Vec3Spin(0.001, 1000.0, 0.1, 3, QString());
 	m_sclSpin->setValue(1.0, 1.0, 1.0);  // initial identity
 	grid->addWidget(m_sclSpin, 3, 1, 1, 3);
 
 	// Row 4: Reset button — spans all 4 columns
-	auto* resetBtn = new QPushButton("Reset Transform");
-	resetBtn->setToolTip("Reset position, rotation, and scale to identity values.");
-	grid->addWidget(resetBtn, 4, 0, 1, 4, Qt::AlignCenter);
+	m_resetBtn = new QPushButton("Reset Transform");
+	m_resetBtn->setToolTip("Reset position, rotation, and scale to identity values.");
+	grid->addWidget(m_resetBtn, 4, 0, 1, 4, Qt::AlignCenter);
 
 	// --- Signal wiring ---
 	// Each Vec3Spin emits valueChanged(x, y, z); one signal per transform component.
@@ -272,7 +304,7 @@ void PropertyPanel::BuildTransformEditor()
 		});
 
 	// --- Reset button ---
-	QObject::connect(resetBtn, &QPushButton::clicked, this, [this]() {
+	QObject::connect(m_resetBtn, &QPushButton::clicked, this, [this]() {
 		m_posSpin->setValue(0.0, 0.0, 0.0);
 		m_rotSpin->setValue(0.0, 0.0, 0.0);
 		m_sclSpin->setValue(1.0, 1.0, 1.0);

@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include <QString>
+
 #include <cstdint>
 #include <string>
 
@@ -147,9 +149,9 @@ public:
 	/**
 	 * @brief Switches to the "No profiling data yet" state.
 	 *
-	 * Sets col 0 to the placeholder text and clears cols 1-4. No-op if
-	 * already in NoData mode, so it is safe to call every frame while the
-	 * renderer is warming up.
+	 * Sets col 0 to the cached placeholder text (see retranslate) and clears
+	 * cols 1-4. No-op if already in NoData mode, so it is safe to call every
+	 * frame while the renderer is warming up.
 	 */
 	void setNoData();
 
@@ -157,6 +159,20 @@ public:
 	 * @brief Toggles row visibility; no-op if unchanged.
 	 */
 	void setHidden(bool hidden);
+
+	/**
+	 * @brief Stores both column-0 labels and re-applies the current mode's one.
+	 *
+	 * The labels are kept rather than only written, because setFrame() and
+	 * setNoData() rewrite column 0 on every mode transition — writing a literal
+	 * there would undo the translation the next time the mode flipped. Calling
+	 * this before the first setFrame()/setNoData() (the panel does so from its
+	 * constructor) is what seeds them.
+	 *
+	 * @param frameLabel  Translated "Frame" label.
+	 * @param noDataLabel Translated "No profiling data yet" label.
+	 */
+	void retranslate(const QString& frameLabel, const QString& noDataLabel);
 
 	/** @brief The wrapped tree item (for parenting child rows via ProfilingRow). */
 	QTreeWidgetItem* item() const { return m_item; }
@@ -166,6 +182,12 @@ private:
 
 	enum class Mode { Uninitialized, NoData, Frame };
 	Mode m_mode = Mode::Uninitialized;
+
+	// Column-0 text for each mode, in the active language. Seeded by
+	// retranslate(); the English fallbacks keep the row readable if a caller
+	// ever reaches setFrame()/setNoData() first.
+	QString m_frameLabel  = QStringLiteral("Frame");
+	QString m_noDataLabel = QStringLiteral("No profiling data yet");
 
 	// Centi-ms values use -1 as "not yet seeded"; draw/dispatch use UINT32_MAX.
 	int      m_cpuCenti   = -1;

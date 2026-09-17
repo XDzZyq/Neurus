@@ -21,6 +21,9 @@
 #include <QWidget>
 #include <glm/glm.hpp>
 
+class QGroupBox;
+class QLabel;
+
 namespace neurus {
 
 class Vec3Spin;
@@ -61,6 +64,9 @@ public:
 	 */
 	void setFov(float fov);
 
+	/** @brief Re-applies group/label texts in the active language. */
+	void Retranslate();
+
 signals:
 	/** @brief Emitted when the look-at target changes. */
 	void targetChanged(int objectId, float x, float y, float z);
@@ -72,6 +78,9 @@ private:
 	int m_objectId = -1;
 
 	// --- Widgets ---
+	QGroupBox*    m_group     = nullptr;
+	QLabel*       m_tarLabel  = nullptr;
+	QLabel*       m_fovLabel  = nullptr;
 	Vec3Spin*     m_tarSpin   = nullptr;
 	ScalarSlider* m_fovSlider = nullptr;
 

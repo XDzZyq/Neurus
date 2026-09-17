@@ -2,6 +2,7 @@
 
 #include "UIContext.h"
 #include "render/ProfilingData.h"
+#include "ui/utils/I18n.h"
 
 #include <QAbstractItemView>
 #include <QHeaderView>
@@ -17,7 +18,7 @@ namespace neurus
 // =========================================================================
 
 ProfilingPanel::ProfilingPanel(QWidget* parent)
-	: UIPanel(PanelType::Profiling, QStringLiteral("Profiling"), parent)
+	: UIPanel(PanelType::Profiling, "Profiling", parent)
 {
 	auto* layout = new QVBoxLayout(this);
 	layout->setContentsMargins(4, 4, 4, 4);
@@ -42,6 +43,25 @@ ProfilingPanel::ProfilingPanel(QWidget* parent)
 	layout->addWidget(m_tree);
 
 	m_frameHead = std::make_unique<ProfilingHead>(m_tree);
+
+	// Apply the active language (headers were built with English literals).
+	Retranslate();
+}
+
+// =========================================================================
+// Retranslate - re-apply column headers + head label
+// =========================================================================
+
+void ProfilingPanel::Retranslate()
+{
+	auto& i18n = I18n::instance();
+
+	m_tree->setHeaderLabels(QStringList{
+		i18n.translate("Pass"), i18n.translate("CPU (ms)"), i18n.translate("GPU (ms)"),
+		i18n.translate("Draws"), i18n.translate("Dispatches") });
+	m_frameHead->retranslate(i18n.translate("Frame"),
+	                         i18n.translate("No profiling data yet"));
+	m_tree->resizeColumnToContents(0);
 }
 
 // =========================================================================

@@ -46,7 +46,51 @@ The CMake build system automatically detects pre-compiled libraries and skips
 source builds for:
 
 - **shaderc** — shader compilation library (saves ~40-60s per build)
-- **qtadvanceddocking** — Qt Advanced Docking System (saves ~15s per build)
+- **qtadvanceddocking** — Qt Advanced Docking System (saves ~15s per build),
+  **only when its compatibility stamp matches this build** (see below)
+
+### qtadvanceddocking must match the Qt version exactly
+
+ADS is a Qt C++ library, so its objects carry coalesced (`linkonce_odr`)
+instantiations of Qt's inline container templates — the same symbols our own
+translation units emit. The linker keeps one definition of each for the whole
+binary, so an ADS archive is only safe to link when it was compiled against the
+*identical* Qt headers and C++ standard.
+
+Ignoring this cost a day of debugging: an archive built against Homebrew Qt
+6.11.1 linked into TUs compiled against CI's Qt 6.11.2 crashed with `SIGSEGV at
+0x1`, on the Debug leg only. Qt 6.11.2 had rewritten
+`QtPrivate::QPodArrayOps<T>` without changing its mangled names, and `-O3`
+hides the mismatch by inlining per TU.
+
+So every pre-compiled ADS archive ships a `build_info.txt` stamp beside it:
+
+```
+qt_version=6.11.2
+cxx_standard=20
+ads_version=4.5.0
+compiler=AppleClang 17.0.0.17000013
+```
+
+`cmake/Dependencies.cmake` parses it (never `include()`s it) and uses the
+archive only when `qt_version` and `cxx_standard` match this build exactly.
+Otherwise it says why and builds ADS from source instead — a slower build rather
+than a runtime crash. A missing Debug archive is also a mismatch: the Release
+one is never substituted for it.
+
+Consequences for maintainers:
+
+- **Rebuild the archives whenever Qt changes.** `brew upgrade qt` alone will
+  silently move the build onto the source fallback.
+  `scripts/build_macos_libs.sh --ads-only` rebuilds just ADS and re-stamps it.
+- The archives are produced through `cmake/ads_standalone/CMakeLists.txt`, not
+  by configuring `dep/qtadvanceddocking` directly, because the submodule
+  hardcodes `CXX_STANDARD 17` for Qt6 while Neurus is C++20 — another ODR axis,
+  since Qt's containers branch on `#if __cplusplus >= 202002L`. The wrapper pins
+  the standard and writes the stamp.
+- `-DNEURUS_ADS_FROM_SOURCE=ON` forces the source build regardless.
+- shaderc needs none of this: it exposes a C API and links no Qt, so its binary
+  does not depend on the headers we compile against.
 
 ### Source build (fallback)
 

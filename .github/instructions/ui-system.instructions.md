@@ -19,6 +19,9 @@ The UI layer is a **Qt6 Widgets** application with **Qt-Advanced-Docking-System 
 | `src/ui/panels/ProfilingPanel.h/cpp` | Real-time GPU profiling tree (Profiling dock) |
 | `src/ui/panels/ShaderEditorPanel.h/cpp` | Shader editor dock — Code mode + Structure mode (tree-based Struct Editor) |
 | `src/ui/panels/LogPanel.h/cpp` | Realtime log viewer dock: filter bar + list view (issue #39) |
+| `src/ui/panels/PreferencesDialog.h/cpp` | Preferences dialog — live-applied language + target FPS (File → Preferences…, Ctrl+,) |
+| `src/ui/utils/I18n.h/cpp` | Lightweight runtime i18n manager: dictionary-based, instant language switch |
+| `src/ui/utils/POCatalog.h/cpp` | Standalone gettext `.po` parser (`neurus::po`) behind `I18n` — no Qt widgets, unit-testable |
 | `src/ui/models/ShaderStructModel.h/cpp` | QAbstractItemModel tree for the ShaderStruct IR (3-level: sections → fields/structs → members) |
 | `src/ui/models/LogModel.h/cpp` | QAbstractListModel over the core LogBuffer |
 | `src/ui/models/LogFilterProxy.h/cpp` | QSortFilterProxyModel: level filter + text search |
@@ -93,25 +96,292 @@ mainWindow->createViewportDock(container);
 
 ### Layout Persistence
 
-- **View → Save Layout** (`Ctrl+Shift+S`): Serializes dock state to `<appdir>/layout.ads`
-- **View → Restore Default Layout**: Deletes non-viewport docks, re-creates default arrangement
-- **Auto-load**: `LoadLayout()` called in constructor - restores saved state on startup if available
-- Viewport dock is identified by `setObjectName("ViewportDock")` for `restoreState()` matching
-- Viewport created first in `CreateDocks()` (ADS requires central widget as first dock)
+Dock layout is **project state**, not app state: `UIManager::ExportLayout()` /
+`ApplyLayout()` produce and consume one opaque blob (base64 window geometry +
+`\n` + base64 ADS dock state), and `asset/components/UIComponent` carries it in
+the `.neurus.json` project file. The Application owns persistence; the UI layer
+never touches a path. **View → Restore Default Layout** re-runs `CreateDocks()`.
+
+**Identity vs display — the rule that keeps layouts portable.** ADS serializes
+dock state keyed by `objectName`, and `ads::CDockWidget`'s constructor copies the
+ctor *title* into `objectName` (`DockWidget.cpp:385-386`). Once dock titles became
+translatable, that made the serialization key language-dependent: a layout saved
+in one language restored to a blank window in another, because every lookup
+missed. So:
+
+> **Display text is translated. Identity keys never are.**
+
+- `UIPanel::PanelIdFor(PanelType)` returns a stable ASCII id (`"dock.viewport"`,
+  `"dock.outliner"`, …). It is independent of the display string as well as of
+  the language — reusing the English msgid would break every saved layout on a
+  UI-string rename.
+- Every panel dock MUST be created through `UIManager::MakeDock()`, which titles
+  it with `PanelName()` (translated) and then overwrites `objectName` with
+  `PanelId()`. Centralising this is the point: an omitted `setObjectName` at one
+  of eight call sites is invisible until someone switches language and relaunches.
+- Non-`UIPanel` docks (the Texture Viewer placeholder) set their own
+  `dock.*` objectName explicitly at the creation site.
+- `RetranslateAll()` needs no special handling: `setWindowTitle()` does not touch
+  `objectName`, which is exactly the desired split.
+
+**Degradation.** ADS silently `continue`s past objectNames it does not recognise
+and returns `true`, so `restoreState()`'s result cannot detect a foreign or stale
+blob — only unclaimed docks can. `ApplyLayout()` therefore logs the bool (real
+XML parse failures) and always follows with `RepairOrphanedDocks()`, which
+re-docks any dock whose `dockAreaWidget()` is null into a default area. It
+re-docks the **existing** widgets rather than calling `RestoreDefaultLayout()`:
+that would re-run `CreateDocks()` and hand out a new Viewport window handle, and
+`ApplyLayout()` runs before the Application wires its signals, so nothing would
+rebuild the `VkSurfaceKHR` already created from the old handle.
+
+Regression coverage: `test/ui/test_dock_identity.cpp` (ids are stable ASCII and
+language-independent; layouts round-trip in both language directions; a real
+pre-fix Chinese-keyed blob and a malformed blob both degrade to a populated
+layout, not a blank window).
+
+**The checked-in default project carries a layout blob too.**
+`res/shadow.neurus.json` (loaded at startup by `Application`) stores the ADS
+state under `project.ui` as `geometry_base64 + "\n" + state_base64`, each half a
+`qCompress` blob. It is a build artifact of whoever last saved it, so it must be
+verified rather than trusted — a copy saved before the `PanelId` split contained
+nothing but Chinese dock names, which meant an English machine started with an
+empty window. Decode and check it externally:
+
+```python
+import base64, json, re, zlib
+blob = json.load(open("res/shadow.neurus.json"))["project"]["ui"]
+xml = zlib.decompress(base64.b64decode(blob.split("\n")[1])[4:]).decode()
+print(re.findall(r'Name="([^"]+)"', xml))   # every entry must be a dock.* id
+```
+
+Note the app loads and writes back the *build* copy
+(`build/debug/res/shadow.neurus.json`, refreshed from `res/` by a
+`copy_directory` step), so re-saving the default layout means copying the result
+back into `res/` by hand.
 
 ### Dock Features
 
-- Viewport: closable disabled, movable/floatable enabled (can drag to float or any edge)
-- All other docks: closable + movable + floatable
-- Config flags: `OpaqueSplitterResize=false` (better Vulkan container behavior), `FocusHighlighting=true`
+- Viewport: ADS central widget — closable/movable/floatable all disabled by ADS.
+- All other docks: closable + movable + floatable.
+- Config flags: `OpaqueSplitterResize=false` (better Vulkan container behavior),
+  `FocusHighlighting=true`.
+
+**Full screen forbids tearing panels off.** A torn-off panel is a separate
+top-level window, and a separate window cannot be used inside another window's
+full-screen Space: macOS gives ADS's plain `Qt::Window` floating container
+`NSWindowCollectionBehaviorFullScreenPrimary` (`qcocoawindow.mm`,
+`setWindowFlags`) and the window server then refuses to let the user move it —
+the panel appears and is frozen. `UIManager::changeEvent()` watches
+`QEvent::WindowStateChange` (the only signal Qt gives for macOS's native green
+button) and calls `lockDockWidgetFeaturesGlobally(DockWidgetFloatable)` while
+full screen, after docking any already-floating panel back via
+`DockFloatingPanels()`.
+
+Only `Floatable` is locked, so dragging a panel to a different *dock position*
+still works — only the "release outside any dock area" gesture snaps back,
+because `FloatingDragPreview::createFloatingWidget()` finds no floatable content.
+The lock is a mask over `CDockWidget::features()`, not a rewrite of the
+per-widget flags, so leaving full screen restores whatever each panel had. ADS's
+`notifyFeaturesChanged()` also greys out the undock button and the Detach menu
+entry, making the restriction visible. Covered by
+`test/ui/test_floating_window.cpp`.
 
 ## Menu Bar
 
 | Menu | Items |
 |------|-------|
-| **File** | Exit (`Alt+F4`) |
-| **View** | Save Layout (`Ctrl+Shift+S`), Restore Default Layout |
+| **File** | New, Open…, Save, Save As…, Preferences… (`Ctrl+,`), Exit (`Alt+F4`) |
+| **View** | Restore Default Layout |
+| **Edit** | Undo, Redo, Add (Mesh… / Camera / Light) |
+| **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) |
 | **Help** | About Neurus |
+
+## Internationalization (i18n)
+
+Language switching is **live** — no restart, no Qt Linguist toolchain — and
+the catalogs use the **GNU gettext .po format** (the same system Blender
+uses), so translators can work with Poedit / Weblate. The `I18n` singleton
+(`src/ui/utils/I18n.h/cpp`) owns the active language code and a
+`QHash<(context, msgid), QString>` catalog; the **file format** half lives in
+`src/ui/utils/POCatalog.h/cpp` (`neurus::po::Parse` / `po::HeaderField`), split
+out so it is unit-testable without a singleton or a Qt resource
+(`test/ui/test_po_catalog.cpp`):
+
+- **msgid keys are the English display strings themselves.** A missing
+  catalog, context or msgid makes `I18n::translate*()` return the key
+  verbatim, so English is the implicit built-in fallback.
+- Per-language catalogs are embedded as Qt resources
+  (`:/i18n/<code>.po`, see `res/i18n/zh_CN.po`), parsed on demand by
+  `setLanguage()`. Values may contain `%1/%2` placeholders (callers apply
+  `.arg()`).
+- **Contexts (msgctxt) disambiguate identical English strings:**
+  `translate(key)` uses the default context; `translateCtx(key, "Dock" |
+  "Tooltip" | "Dialog" | "StatusBar" | "Placeholder")` targets a specific
+  one. Keys that are forwarded to helpers instead of written as
+  `translate("...")` literals are marked with the no-op `N_()` macro
+  (gettext convention) so the extractor can find them (menus,
+  RenderConfigPanel helper args).
+- `setLanguage()` emits `languageChanged()` only when the code actually
+  changes. `I18n::supportedLanguages()` lists shipped languages (native
+  display names); `I18n::systemLanguage()` detects the OS UI language
+  (Simplified-Chinese → `zh_CN`, else `en`).
+- **The parser accepts gettext, not just our own output.** Entries end at the
+  next `msgctxt`, at the next `msgid` that does not follow a `msgctxt`, or at a
+  blank line — blank separators are conventional, not required, and treating
+  them as the only terminator made every key inherit the previous entry's
+  `msgstr` (with the metadata header at the top of every file, the first real
+  key resolved to the header text). Plural forms are **dropped, not merged**:
+  `msgid_plural` must be tested *before* `msgid`, of which it is a prefix, and
+  only `msgstr[0]` is kept. Both shapes are what hand-editing and Poedit
+  produce, which is the whole reason the `.po` format was chosen.
+
+**How retranslation reaches the widgets:**
+
+1. `UIPanel` stores its dock title as a translation *key* (`nameKey`, default
+   derived from `PanelType`); `PanelName()` resolves it through `I18n` in the
+   `"Dock"` context at call time, so dock titles follow the language with no
+   per-panel code. The dock's `objectName` is a **separate, never-translated**
+   id (`PanelIdFor()`) — see *Layout Persistence* for why.
+2. Every panel may override `UIPanel::Retranslate()` to re-apply its own
+   labels/buttons/combo items. Panels call `Retranslate()` once at the end of
+   their constructor (so the startup language applies) and the framework calls
+   it again on every language change.
+3. `UIManager::RetranslateAll()` (connected to `I18n::languageChanged()`) is
+   the single fan-out: it re-texts every menu action from its registered
+   `(QAction*, key)` pair, updates every dock title via `setWindowTitle()`
+   (ADS propagates to the tab), calls each panel's `Retranslate()`, and
+   re-translates the Texture Viewer placeholder + Preferences dialog.
+4. The Preferences dialog also connects to `languageChanged()` directly so it
+   retranslates while open.
+
+**Two rules that make retranslation order-independent.** `Retranslate()` runs
+once from the constructor and again on every switch, so a fix that only works in
+one of those two orders is not a fix:
+
+- **If a code path rewrites a string later, cache the translation — do not
+  re-stamp a literal.** `ProfilingHead` writes column 0 on every
+  `NoData ↔ Frame` transition, so it stores `m_frameLabel` / `m_noDataLabel`
+  (seeded by `retranslate()`) and writes those; a `QStringLiteral("Frame")`
+  there re-Englished the row on the next transition after a switch. Same reason
+  `Outliner::EnsureRowPool()` calls `RetranslateRow()` on each new row: rows
+  created *after* a switch would otherwise keep the constructor's English
+  tooltips, and `Refresh()` never rewrites them.
+- **A cached data key is empty before anything is bound, and `translate("")`
+  returns `""`.** `LightProperties::Retranslate()` resolves the light-type name
+  from `m_cachedType`, which is empty at constructor time and again after
+  `setObjectId()`, so it falls back to `translate("Unknown")` instead of
+  blanking the row.
+
+**Item models retranslate too.** `QAbstractItemModel` subclasses that produce
+display text (`ShaderStructModel::headerData()`, `sectionTitle()`) call `I18n`
+**on demand** and expose a `Retranslate()` that only re-emits
+(`headerDataChanged` + `dataChanged` over the section rows) — no rebuild, since
+nothing is cached. Section nodes store their `ShaderSection`, never a title
+string. The owning panel calls it from its own `Retranslate()`
+(`ShaderEditorPanel`). `QStyledItemDelegate` editors are created on demand, so
+they translate at `createEditor()` time and need no hook at all
+(`ShaderFieldDelegate`'s `"struct name"` placeholder).
+
+**Dialog filters are display text.** `QFileDialog` name filters go through
+`translateCtx(..., "Dialog")` like the dialog titles — `"Neurus Project
+(*.neurus.json)"`, `"OBJ Files (*.obj)"`, `"Log Files (*.log)"`.
+
+**Translation management (Blender-style pipeline):**
+
+- `scripts/extract_i18n.py` scans `src/ui/` for `translate()` /
+  `translateCtx()` / `N_()` keys plus the dock-title keys in `UIPanel.h`,
+  merges them into every `res/i18n/*.po`, marks removed keys obsolete
+  (`#~`, preserved across runs and restored if the key comes back), and
+  reports per-language coverage.
+- ⚠️ **The gate only sees call sites, so it cannot catch a bare literal.** A
+  `setText("Frame")` produces no key, so coverage stays at 100% and CI stays
+  green while the string is permanently English. Grepping for user-visible
+  literals is the only defence; the gate proves *catalogs* are complete, not
+  that the code asked for a translation.
+- Obsolete (`#~`) blocks are parsed like any other entry, just flagged. Skipping
+  their payload made them round-trip as empty, which lost the translation, left
+  the "removed-then-re-added key keeps its translation" path dead, and — because
+  the rendered file then differed from disk on *every* run — reported the catalog
+  as permanently stale, turning CI red for good after the first string removal.
+  The invariant to preserve: **two consecutive runs must report `stale: False`
+  on the second.**
+- The dock-title scrape is a regex over `case PanelType::X: return "...";`, and
+  it is **scoped to `UIPanel::DefaultNameKey`'s body** — `PanelIdFor()` has the
+  identical switch shape but returns serialization ids, which must never enter
+  the catalog (see *Layout Persistence*). Add another switch of that shape to
+  `UIPanel.h` and the scope is what keeps it out.
+- `python3 scripts/extract_i18n.py` → update catalogs;
+  `--check` → **read-only**: writes nothing and exits 1 if a catalog is stale
+  (i.e. re-running the extractor would change it) or has untranslated strings;
+  `--min-coverage <pct>` → fail below a coverage threshold;
+  `--verbose` → list every added/obsoleted key.
+- CI runs `--check` before the build, so a missing translation or an
+  uncommitted catalog update fails the PR without dirtying the tree.
+- `scripts/test_extract_i18n.py` (stdlib `unittest`, no deps) tests the extractor
+  itself and runs in CI *before* `--check`. It exists because a bug in the script
+  does not produce a bad translation — it produces a red pipeline on every matrix
+  leg that no source change can turn green, so the script needs a suite that
+  names the real fault. It pins the convergence invariant above, the parser's
+  tolerance of hand-edited `.po` (no blank separators, `msgid_plural`,
+  `msgstr[N]`), and the `DefaultNameKey` scoping. Run it directly:
+  `python3 scripts/test_extract_i18n.py`.
+- The header entry (`msgid ""`) is round-tripped verbatim in canonical gettext
+  form (`msgstr ""` + one quoted continuation line per field), so hand-written
+  fields like `X-Language-Name` and `Plural-Forms` survive every run.
+- At runtime `I18n` logs its load, e.g.
+  `[I18n] loaded 160/160 strings for 'zh_CN' (0 untranslated)`.
+
+**Adding a new translatable string:** write the English text as the msgid,
+wrap it in `I18n::instance().translate("...")` (or `translateCtx`/`N_` as
+appropriate), then run `scripts/extract_i18n.py` — the new key appears in the
+catalog automatically and the coverage report tells you if it is translated.
+**Adding a new language:** drop a `<code>.po` catalog in `res/i18n/` — that is
+the only step. `src/ui/CMakeLists.txt` globs `res/i18n/*.po` into
+`qt_add_resources` (`CONFIGURE_DEPENDS`), and `I18n::supportedLanguages()`
+enumerates the embedded `:/i18n/*.po` at runtime, taking each display name from
+the catalog's `X-Language-Name` header field (falling back to
+`QLocale::nativeLanguageName()`, then the code itself).
+
+## Preferences
+
+App-level settings (distinct from the per-project `.neurus.json` files) live
+in `~/.neurus/preferences.json`, persisted with cereal JSON by the
+`Preferences` struct in **`src/app/Preferences.h/cpp`** — an **Application
+Layer** concept (future settings: CUDA enablement, theme, shortcut schemes).
+
+- Fields: `language` (`"en"`/`"zh_CN"`, or `"auto"` = follow the system UI
+  language) and `target_fps` (0 = unlimited).
+- **`"auto"` is stored verbatim and stays that way.** `I18n::setLanguage()`
+  resolves the sentinel itself, so nothing on the load path rewrites the
+  preference with a concrete code — resolving it in place would turn "follow the
+  system language" into "pin to whatever the system said at first launch" the
+  moment the file was next written.
+- The **Application is the sole manager**: it loads the file before the window is
+  built, applies the saved language and target FPS, saves on every edit, and
+  saves once more on `aboutToQuit`.
+- **Loading distinguishes missing from corrupt** (`Preferences::LoadResult`), and
+  never mutates the fields on either failure — parsing goes into a scratch copy,
+  so a truncated or schema-drifted file cannot leave values half-applied:
+  - `Ok` — values in effect.
+  - `Missing` — first run; the Application writes the defaults.
+  - `Corrupt` — the Application logs it, keeps defaults, and calls
+    `Preferences::Backup()` to move the file to `preferences.json.bak`. It must
+    **not** save instead: that would destroy still-recoverable settings, and the
+    move also stops the `aboutToQuit` save from clobbering the evidence.
+- **The UI never touches the `Preferences` type.** The Application seeds the
+  window with plain values (`UIManager(language, targetFps, prefsPath)`); the
+  `PreferencesDialog` (File → Preferences… / `Ctrl+,`) is a pure UI widget
+  holding only those plain values and emits `languageChangeRequested(QString)`
+  / `targetFpsChangeRequested(int)` → `UIEvents` → Application applies +
+  persists + (for language) calls `I18n::setLanguage()`, which fans out the
+  live retranslation. Changes apply immediately; the dialog only has Close
+  (no OK/Cancel).
+- The language combo's **row 0 is "System default"**, carrying `"auto"` as item
+  data — `I18n::supportedLanguages()` lists catalogs only, so without that row
+  the shipped default would be unreachable from the UI. It is the only row
+  Retranslate() touches; the rest name their own language.
+- "Reset to Defaults" resets to `"auto"` + 60 FPS — the shipped defaults, not
+  the currently detected system code.
 
 ## Build Integration
 

@@ -40,6 +40,9 @@ public:
 
 	void Refresh(const UIContext& ctx) override;
 
+	/** @brief Re-applies toolbar labels / buttons in the active language. */
+	void Retranslate() override;
+
 signals:
 	void createShaderRequested(const ShaderCreateRequested& e);
 	void compileRequested(const ShaderCompileRequested& e);
@@ -63,7 +66,9 @@ private:
 	void setShowEmptyState(bool show);
 
 	// --- Top toolbar ---
+	QLabel*       m_modeLabel    = nullptr;  // "Mode:"
 	QComboBox*    m_modeCombo    = nullptr;  // "Code" | "Structure"
+	QLabel*       m_stageLabel   = nullptr;  // "Stage:"
 	QComboBox*    m_stageCombo   = nullptr;  // VERTEX | FRAGMENT
 	QPushButton*  m_compileBtn   = nullptr;
 	QPushButton*  m_saveBtn      = nullptr;

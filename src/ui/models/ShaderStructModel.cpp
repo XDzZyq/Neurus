@@ -1,5 +1,7 @@
 #include "models/ShaderStructModel.h"
 
+#include "ui/utils/I18n.h"
+
 #include <QFont>
 
 namespace neurus
@@ -131,10 +133,24 @@ QVariant ShaderStructModel::headerData(int section, Qt::Orientation orientation,
 {
 	if (orientation == Qt::Horizontal && role == Qt::DisplayRole)
 	{
-		if (section == 0) return "Type";
-		if (section == 1) return "Name";
+		auto& i18n = I18n::instance();
+		if (section == 0) return i18n.translate("Type");
+		if (section == 1) return i18n.translate("Name");
 	}
 	return QVariant();
+}
+
+void ShaderStructModel::Retranslate()
+{
+	emit headerDataChanged(Qt::Horizontal, 0, 1);
+	if (!m_root || m_root->children.empty())
+		return;
+
+	// Only the section rows carry translated text, and they are exactly the
+	// top-level rows — their children are shader identifiers, which are code,
+	// not UI text. Column 0 is the one that shows the title.
+	const int last = static_cast<int>(m_root->children.size()) - 1;
+	emit dataChanged(index(0, 0), index(last, 0), { Qt::DisplayRole });
 }
 
 void ShaderStructModel::setShaderStruct(const ShaderStruct* shaderStruct)
@@ -154,17 +170,17 @@ void ShaderStructModel::buildTree()
 	if (!m_struct)
 		return;
 
-	addSection("Attributes", ShaderSection::Attributes, static_cast<int>(m_struct->AB_list.size()));
-	addSection("Pass Outputs", ShaderSection::PassOutputs, static_cast<int>(m_struct->pass_list.size()));
-	addSection("Inputs", ShaderSection::Inputs, static_cast<int>(m_struct->input_list.size()));
-	addSection("Outputs", ShaderSection::Outputs, static_cast<int>(m_struct->output_list.size()));
-	addSection("Uniforms", ShaderSection::Uniforms, static_cast<int>(m_struct->uniform_list.size()));
-	addSection("Struct Definitions", ShaderSection::StructDefs, static_cast<int>(m_struct->struct_def_list.size()));
-	addSection("Functions", ShaderSection::Functions, static_cast<int>(m_struct->func_list.size()));
-	addSection("Push Constants", ShaderSection::PushConstants, static_cast<int>(m_struct->push_constants.size()));
+	addSection(ShaderSection::Attributes, static_cast<int>(m_struct->AB_list.size()));
+	addSection(ShaderSection::PassOutputs, static_cast<int>(m_struct->pass_list.size()));
+	addSection(ShaderSection::Inputs, static_cast<int>(m_struct->input_list.size()));
+	addSection(ShaderSection::Outputs, static_cast<int>(m_struct->output_list.size()));
+	addSection(ShaderSection::Uniforms, static_cast<int>(m_struct->uniform_list.size()));
+	addSection(ShaderSection::StructDefs, static_cast<int>(m_struct->struct_def_list.size()));
+	addSection(ShaderSection::Functions, static_cast<int>(m_struct->func_list.size()));
+	addSection(ShaderSection::PushConstants, static_cast<int>(m_struct->push_constants.size()));
 }
 
-void ShaderStructModel::addSection(const QString& title, ShaderSection section, int count)
+void ShaderStructModel::addSection(ShaderSection section, int count)
 {
 	auto sectionNode = std::make_unique<Node>();
 	sectionNode->type = NodeSection;
@@ -300,16 +316,17 @@ const S_Uniform& ShaderStructModel::getUniform(int sectionIndex, int fieldIndex)
 
 QString ShaderStructModel::sectionTitle(int sectionIndex) const
 {
+	auto& i18n = I18n::instance();
 	switch (static_cast<ShaderSection>(sectionIndex))
 	{
-		case ShaderSection::Attributes: return "Attributes";
-		case ShaderSection::PassOutputs: return "Pass Outputs";
-		case ShaderSection::Inputs: return "Inputs";
-		case ShaderSection::Outputs: return "Outputs";
-		case ShaderSection::Uniforms: return "Uniforms";
-		case ShaderSection::StructDefs: return "Struct Definitions";
-		case ShaderSection::Functions: return "Functions";
-		case ShaderSection::PushConstants: return "Push Constants";
+		case ShaderSection::Attributes: return i18n.translate("Attributes");
+		case ShaderSection::PassOutputs: return i18n.translate("Pass Outputs");
+		case ShaderSection::Inputs: return i18n.translate("Inputs");
+		case ShaderSection::Outputs: return i18n.translate("Outputs");
+		case ShaderSection::Uniforms: return i18n.translate("Uniforms");
+		case ShaderSection::StructDefs: return i18n.translate("Struct Definitions");
+		case ShaderSection::Functions: return i18n.translate("Functions");
+		case ShaderSection::PushConstants: return i18n.translate("Push Constants");
 		default: return "";
 	}
 }

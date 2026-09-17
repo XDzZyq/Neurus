@@ -4,6 +4,7 @@
 #include "delegates/ShaderFieldDelegate.h"
 #include "models/ShaderStructModel.h"
 #include "UIContext.h"
+#include "ui/utils/I18n.h"
 #include "scene/Scene.h"
 #include "render/shaders/ShaderUnit.h"
 #include "render/shaders/ShaderStruct.h"
@@ -90,7 +91,8 @@ ShaderEditorPanel::ShaderEditorPanel(QWidget* parent)
 
 	// Row 1: Mode + Stage
 	auto* row1 = new QHBoxLayout();
-	row1->addWidget(new QLabel("Mode:", this));
+	m_modeLabel = new QLabel("Mode:", this);
+	row1->addWidget(m_modeLabel);
 	m_modeCombo = new QComboBox(this);
 	m_modeCombo->addItem("Code");
 	m_modeCombo->addItem("Structure");
@@ -98,7 +100,8 @@ ShaderEditorPanel::ShaderEditorPanel(QWidget* parent)
 	m_modeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	row1->addWidget(m_modeCombo, 1);
 	row1->addSpacing(8);
-	row1->addWidget(new QLabel("Stage:", this));
+	m_stageLabel = new QLabel("Stage:", this);
+	row1->addWidget(m_stageLabel);
 	m_stageCombo = new QComboBox(this);
 	m_stageCombo->addItem("VERTEX");
 	m_stageCombo->addItem("FRAGMENT");
@@ -119,7 +122,8 @@ ShaderEditorPanel::ShaderEditorPanel(QWidget* parent)
 	rootLayout->addLayout(toolbarContainer);
 
 	// --- Empty state label (shown above content stack in both modes) ---
-	m_emptyLabel = new QLabel("No object selected", this);
+	// Text is filled in by Retranslate() once the widget tree is built.
+	m_emptyLabel = new QLabel(this);
 	m_emptyLabel->setAlignment(Qt::AlignCenter);
 	m_emptyLabel->setStyleSheet("color: gray;");
 	m_emptyLabel->setVisible(false);
@@ -254,6 +258,32 @@ ShaderEditorPanel::ShaderEditorPanel(QWidget* parent)
 
 	// Start with empty state
 	setShowEmptyState(true);
+
+	// Apply the active language (toolbar was built with English literals).
+	Retranslate();
+}
+
+// =========================================================================
+// Retranslate - re-apply toolbar / button texts in the active language
+// =========================================================================
+
+void ShaderEditorPanel::Retranslate()
+{
+	auto& i18n = I18n::instance();
+
+	m_modeLabel->setText(i18n.translate("Mode:"));
+	m_modeCombo->setItemText(0, i18n.translate("Code"));
+	m_modeCombo->setItemText(1, i18n.translate("Structure"));
+	m_stageLabel->setText(i18n.translate("Stage:"));
+	// VERTEX / FRAGMENT are GLSL keywords — intentionally untranslated.
+	m_compileBtn->setText(i18n.translate("Compile"));
+	m_saveBtn->setText(i18n.translate("Save"));
+	m_emptyLabel->setText(i18n.translate("No object selected"));
+	m_createBtn->setText(i18n.translate("Create Shader"));
+	m_removeBtn->setToolTip(i18n.translateCtx("Remove entry", "Tooltip"));
+
+	// The structure tree's column headers and section titles are model-side.
+	m_model->Retranslate();
 }
 
 // =========================================================================

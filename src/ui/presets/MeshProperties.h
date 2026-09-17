@@ -25,6 +25,7 @@
 #include <string>
 
 class QCheckBox;
+class QGroupBox;
 class QLabel;
 
 namespace neurus
@@ -64,6 +65,9 @@ public:
 	/** @brief Updates the material checkbox without emitting signals (dirty-checked). */
 	void setMaterialEnabled(bool enabled);
 
+	/** @brief Re-applies group/label/checkbox texts in the active language. */
+	void Retranslate();
+
 signals:
 	/** @brief Emitted when the shadow checkbox is toggled by the user. */
 	void shadowChanged(int objectId, bool enabled);
@@ -75,9 +79,13 @@ private:
 	int m_objectId = -1;
 
 	// --- Widgets ---
-	QLabel*    m_pathLabel    = nullptr;
-	QCheckBox* m_shadowChk    = nullptr;
-	QCheckBox* m_materialChk  = nullptr;
+	QGroupBox* m_group       = nullptr;
+	QLabel*    m_assetLabel  = nullptr;
+	QLabel*    m_pathPrefix  = nullptr;
+	QLabel*    m_flagsLabel  = nullptr;
+	QLabel*    m_pathLabel   = nullptr;
+	QCheckBox* m_shadowChk   = nullptr;
+	QCheckBox* m_materialChk = nullptr;
 
 	// --- Cached values for dirty-check ---
 	std::string m_cachedPath;

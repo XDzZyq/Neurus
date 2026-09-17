@@ -45,6 +45,9 @@ public:
 
 	void Refresh(const UIContext& ctx) override;
 
+	/** @brief Re-applies toolbar texts / filter items in the active language. */
+	void Retranslate() override;
+
 	bool eventFilter(QObject* watched, QEvent* event) override;
 
 signals:

@@ -56,6 +56,12 @@ public:
 	void Refresh(const UIContext& ctx) override;
 
 	/**
+	 * @brief Re-applies all section titles / row labels / combo items in the
+	 *        active language (UIManager calls it on language changes).
+	 */
+	void Retranslate() override;
+
+	/**
 	 * @brief Builds and returns a RenderConfig from current UI values.
 	 * @return RenderConfig populated from all controls.
 	 */

@@ -59,6 +59,9 @@ public:
 	 */
 	void Refresh(const UIContext& ctx) override;
 
+	/** @brief Re-applies the category-group title in the active language. */
+	void Retranslate() override;
+
 signals:
 	/** @brief Emitted when a user clicks on a scene object row in the outliner. */
 	void objectClicked(const ObjectClicked& e);
@@ -94,6 +97,14 @@ private:
 	 *        creating new ones as necessary.
 	 */
 	void EnsureRowPool(std::size_t needed);
+
+	/**
+	 * @brief Applies the active language to one pooled row.
+	 *
+	 * Only covers text Refresh() does not rewrite every frame (the visibility
+	 * tooltips); the name and icon come from the scene data.
+	 */
+	void RetranslateRow(OutlinerRow* row);
 
 	QScrollArea* m_scrollArea = nullptr;
 	QWidget*     m_container  = nullptr;

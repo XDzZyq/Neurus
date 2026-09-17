@@ -31,6 +31,10 @@ add_library(neurus_ui STATIC
 	delegates/ShaderFieldDelegate.cpp
 	utils/ShaderHighlighter.h
 	utils/ShaderHighlighter.cpp
+	utils/I18n.h
+	utils/I18n.cpp
+	utils/POCatalog.h
+	utils/POCatalog.cpp
 	presets/CameraProperties.h
 	presets/CameraProperties.cpp
 	presets/MeshProperties.h
@@ -40,6 +44,7 @@ add_library(neurus_ui STATIC
 	presets/EnvironmentProperties.h
 	presets/EnvironmentProperties.cpp
 	panels/UIPanel.h
+	panels/UIPanel.cpp
 	panels/Outliner.h
 	panels/Outliner.cpp
 	panels/PropertyPanel.h
@@ -54,6 +59,8 @@ add_library(neurus_ui STATIC
 	panels/ShaderEditorPanel.cpp
 	panels/LogPanel.h
 	panels/LogPanel.cpp
+	panels/PreferencesDialog.h
+	panels/PreferencesDialog.cpp
 )
 
 target_link_libraries(neurus_ui PUBLIC
@@ -99,6 +106,18 @@ qt_add_resources(neurus_ui "icons"
 		"${CMAKE_SOURCE_DIR}/res/ui/icons/editor/preview_visible.svg"
 		"${CMAKE_SOURCE_DIR}/res/ui/icons/editor/render_invisible.svg"
 		"${CMAKE_SOURCE_DIR}/res/ui/icons/editor/render_visible.svg"
+)
+
+# Qt resource file (i18n dictionaries — loaded on demand by I18n)
+# Globbed so dropping res/i18n/<code>.po in is the only step needed to add a
+# language; I18n::supportedLanguages() enumerates the embedded catalogs.
+file(GLOB NEURUS_I18N_CATALOGS CONFIGURE_DEPENDS
+	"${CMAKE_SOURCE_DIR}/res/i18n/*.po")
+qt_add_resources(neurus_ui "i18n"
+	PREFIX "/i18n"
+	BASE "${CMAKE_SOURCE_DIR}/res/i18n"
+	FILES
+		${NEURUS_I18N_CATALOGS}
 )
 
 # Enable Qt MOC, UIC, RCC on this target

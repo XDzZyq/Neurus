@@ -159,7 +159,7 @@ Neurus/
 ├── cmake/                  # CMake helper modules
 ├── dep/                    # Git submodule dependencies
 │   └── qtadvanceddocking/  # Qt-Advanced-Docking-System (ADS)
-├── res/shaders/            # GLSL shader source files
+├── res/i18n/              # gettext .po translation catalogs (zh_CN.po, ...)
 ├── src/
 │   ├── render/             # Renderer layer (Vulkan-HPP)
 │   │   ├── Barrier.h/cpp            # Centralized image barrier management
@@ -240,15 +240,18 @@ Neurus/
 │   │   │   ├── ShaderFieldDelegate.h/cpp  # Type/name editors for struct fields
 │   │   │   └── LogDelegate.h/cpp     # Severity-colored row delegate
 │   │   ├── utils/                # Non-widget UI helpers
-│   │   │   └── ShaderHighlighter.h/cpp  # GLSL syntax highlighter
+│   │   │   ├── ShaderHighlighter.h/cpp  # GLSL syntax highlighter
+│   │   │   ├── POCatalog.h/cpp       # gettext .po parser (neurus::po), unit-testable on its own
+│   │   │   └── I18n.h/cpp            # Runtime i18n manager (gettext .po catalogs, live switch)
 │   │   ├── panels/               # Dock panel widgets
-│   │   │   ├── UIPanel.h         # Base class for all panels
+│   │   │   ├── UIPanel.h/cpp     # Base class for all panels (I18n.h kept out of the header)
 │   │   │   ├── Viewport.h/cpp    # Native HWND Vulkan surface widget
 │   │   │   ├── Outliner.h/cpp    # Scene object hierarchy tree
 │   │   │   ├── PropertyEditor.h/cpp  # Object property inspector
 │   │   │   ├── RenderConfigPanel.h/cpp  # Live render setting controls
 │   │   │   ├── ShaderEditorPanel.h/cpp  # Code + Structure shader editor
-│   │   │   └── LogPanel.h/cpp        # Realtime log viewer dock (issue #39)
+│   │   │   ├── LogPanel.h/cpp        # Realtime log viewer dock (issue #39)
+│   │   │   └── PreferencesDialog.h/cpp  # Preferences dialog (language, target FPS)
 │   │   └── qml/            # QML source files (legacy)
 │   ├── asset/              # Asset layer (Vulkan-free)
 │   │   ├── Project.h/cpp            # Pure registration-based serializer
@@ -274,6 +277,10 @@ Neurus/
 │   │   └── registrations/           # cereal polymorphic registration
 │   │       ├── TypeRegistration.h/cpp  # scene types + UID-level relations (force-init)
 │   │       └── TypeRegistration.cpp    # scene object types
+│   ├── app/                # Application layer (lifecycle orchestration)
+│   │   ├── Application.h/cpp  # QApplication lifecycle, signal wiring, project/preferences persistence
+│   │   ├── Preferences.h/cpp  # App-level preferences (language, target FPS) persisted to ~/.neurus/preferences.json — owned exclusively by the Application
+│   │   └── VulkanContext.h/cpp
 │   └── main.cpp            # Application entry point
 ├── test/
 │   ├── render/             # Renderer GPU tests
@@ -380,12 +387,17 @@ Multiple parallel subagents can race on `cmake --build` or launching
    let the master agent handle it.
 5. **Never use `git stash` while editing files**
 
-**Test working directory**: CTest runs with `WorkingDirectory = build/debug/test/`.
-Running the test binary directly from `build/debug/` causes `../../../res/`
-path resolution to differ. Always use `ctest` from `build/debug/`, or if
-running the test binary directly, cd to `build/debug/test/` first. Running
-from the wrong directory can create stale reference images at incorrect
-paths (e.g. `D:\Projects\test\render\reference\`).
+**Test working directory**: CTest runs every test with `WorkingDirectory = build/`
+— `test/CMakeLists.txt` pins `gtest_discover_tests(WORKING_DIRECTORY
+"${CMAKE_BINARY_DIR}")` so `res/` (copied there by a POST_BUILD step) always
+resolves relative to the CWD. The binary itself lives one level down, in the
+per-config directory the multi-config generator picks (`build/Debug/neurus_test`
+on CI, `build/debug/neurus_test` locally). So run `ctest` from `build/`, or if
+you launch the binary directly, `cd build` first and invoke it by path —
+launching it from its own directory makes `res/` unresolvable and can write
+stale reference images to the wrong path (e.g.
+`D:\Projects\test\render\reference\`).
+
 
 ---
 

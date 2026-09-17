@@ -18,6 +18,7 @@
 
 #include "Icons.h"
 #include "UIContext.h"
+#include "ui/utils/I18n.h"
 #include "items/OutlinerRow.h"
 
 #include "scene/Scene.h"
@@ -40,7 +41,7 @@ namespace neurus
 // =========================================================================
 
 Outliner::Outliner(QWidget* parent)
-	: UIPanel(PanelType::Outliner, QString(), parent)
+	: UIPanel(PanelType::Outliner, nullptr, parent)
 {
 	setFocusPolicy(Qt::StrongFocus);
 
@@ -62,6 +63,31 @@ Outliner::Outliner(QWidget* parent)
 
 	m_sceneGroup = AddCategoryGroup(QString::fromUtf8("Scene"));
 	m_groupLayout = qobject_cast<QVBoxLayout*>(m_sceneGroup->layout());
+
+	// Apply the active language (group title was built in English).
+	Retranslate();
+}
+
+// =========================================================================
+// Retranslate - re-apply the category-group title + every pooled row's tooltips
+// =========================================================================
+
+void Outliner::Retranslate()
+{
+	m_sceneGroup->setTitle(I18n::instance().translate("Scene"));
+	for (OutlinerRow* row : m_rowPool)
+		RetranslateRow(row);
+}
+
+// =========================================================================
+// RetranslateRow - the row texts Refresh() never rewrites (tooltips)
+// =========================================================================
+
+void Outliner::RetranslateRow(OutlinerRow* row)
+{
+	auto& i18n = I18n::instance();
+	row->retranslate(i18n.translateCtx("Viewport visibility", "Tooltip"),
+	                 i18n.translateCtx("Render visibility", "Tooltip"));
 }
 
 // =========================================================================
@@ -106,6 +132,11 @@ void Outliner::EnsureRowPool(std::size_t needed)
 	while (m_rowPool.size() < needed)
 	{
 		auto* row = new OutlinerRow(m_sceneGroup);
+
+		// Rows can be created after a language switch, so seed the texts that
+		// Refresh() never rewrites from the active language, not the ctor's
+		// English literals.
+		RetranslateRow(row);
 
 		// Connect row signals to Outliner signals once (permanent).
 		// Lambdas read m_objectUid at emission time, so recycling

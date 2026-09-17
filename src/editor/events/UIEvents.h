@@ -119,6 +119,16 @@ signals:
 	/** @brief Emitted when the user requests redo (Edit → Redo / Ctrl+Shift+Z). */
 	void redoRequested(const RedoRequested& e);
 
+	// --- Preferences signals ---
+
+	/** @brief Emitted when the user picks a new UI language in Preferences.
+	 *  @param language Language code, e.g. "en", "zh_CN". */
+	void languageChangeRequested(const QString& language);
+
+	/** @brief Emitted when the user picks a new render-loop target FPS.
+	 *  @param fps Frames per second (0 = unlimited). */
+	void targetFpsChangeRequested(int fps);
+
 public:
 	/**
 	 * @brief Convenience method to emit screenshotRequested from any layer.
@@ -149,6 +159,9 @@ public:
 
 	void requestUndo() { emit undoRequested(UndoRequested{}); }
 	void requestRedo() { emit redoRequested(RedoRequested{}); }
+
+	void requestLanguageChange(const QString& language) { emit languageChangeRequested(language); }
+	void requestTargetFps(int fps) { emit targetFpsChangeRequested(fps); }
 
 	void requestUIRecreation(quintptr newHwnd) { emit uiRecreated(newHwnd); }
 

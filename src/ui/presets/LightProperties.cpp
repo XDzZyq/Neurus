@@ -1,5 +1,6 @@
 #include "presets/LightProperties.h"
 #include "items/ScalarSlider.h"
+#include "ui/utils/I18n.h"
 
 #include <QCheckBox>
 #include <QFont>
@@ -40,15 +41,16 @@ LightProperties::LightProperties(QWidget* parent)
 	auto* outerLayout = new QVBoxLayout(this);
 	outerLayout->setContentsMargins(0, 0, 0, 0);
 
-	auto* groupBox = new QGroupBox("Light", this);
-	outerLayout->addWidget(groupBox);
+	m_group = new QGroupBox("Light", this);
+	outerLayout->addWidget(m_group);
 
-	auto* groupLayout = new QVBoxLayout(groupBox);
+	auto* groupLayout = new QVBoxLayout(m_group);
 	groupLayout->setSpacing(6);
 
 	// --- Row: Type label + type name (readonly, bold) ---
 	auto* typeRow = new QHBoxLayout();
-	typeRow->addWidget(new QLabel("Type"));
+	m_typeCaption = new QLabel("Type");
+	typeRow->addWidget(m_typeCaption);
 
 	m_typeLabel = new QLabel("Unknown");
 	QFont typeFont = m_typeLabel->font();
@@ -59,14 +61,16 @@ LightProperties::LightProperties(QWidget* parent)
 
 	// --- Row: Power label + ScalarSlider ---
 	auto* powerRow = new QHBoxLayout();
-	powerRow->addWidget(new QLabel("Power"));
+	m_powerLabel = new QLabel("Power");
+	powerRow->addWidget(m_powerLabel);
 	m_powerSlider = new ScalarSlider(0.0, 100.0, 1000, 10.0);
 	powerRow->addWidget(m_powerSlider, 1);
 	groupLayout->addLayout(powerRow);
 
 	// --- Row: Radius label + ScalarSlider ---
 	auto* radiusRow = new QHBoxLayout();
-	radiusRow->addWidget(new QLabel("Radius"));
+	m_radiusLabel = new QLabel("Radius");
+	radiusRow->addWidget(m_radiusLabel);
 	m_radiusSlider = new ScalarSlider(0.0, 10.0, 1000, 0.05);
 	radiusRow->addWidget(m_radiusSlider, 1);
 	groupLayout->addLayout(radiusRow);
@@ -80,7 +84,8 @@ LightProperties::LightProperties(QWidget* parent)
 	{
 		auto* row = new QHBoxLayout(m_innerConeRow);
 		row->setContentsMargins(0, 0, 0, 0);
-		row->addWidget(new QLabel("Inner Cone"));
+		m_innerConeLabel = new QLabel("Inner Cone");
+		row->addWidget(m_innerConeLabel);
 		m_innerConeSlider = new ScalarSlider(0.5, 89.0, 1000, 25.0);
 		row->addWidget(m_innerConeSlider, 1);
 	}
@@ -91,7 +96,8 @@ LightProperties::LightProperties(QWidget* parent)
 	{
 		auto* row = new QHBoxLayout(m_outerConeRow);
 		row->setContentsMargins(0, 0, 0, 0);
-		row->addWidget(new QLabel("Outer Cone"));
+		m_outerConeLabel = new QLabel("Outer Cone");
+		row->addWidget(m_outerConeLabel);
 		m_outerConeSlider = new ScalarSlider(0.5, 89.0, 1000, 35.0);
 		row->addWidget(m_outerConeSlider, 1);
 	}
@@ -101,6 +107,9 @@ LightProperties::LightProperties(QWidget* parent)
 	m_outerConeRow->setVisible(false);
 
 	outerLayout->addStretch();
+
+	// Apply the active language (labels were built in English).
+	Retranslate();
 
 	// --- Signal wiring ---
 	QObject::connect(m_powerSlider, &ScalarSlider::valueChanged, this,
@@ -138,6 +147,25 @@ LightProperties::LightProperties(QWidget* parent)
 // Setters (all dirty-checked)
 // =========================================================================
 
+void LightProperties::Retranslate()
+{
+	auto& i18n = I18n::instance();
+	m_group->setTitle(i18n.translate("Light"));
+	m_typeCaption->setText(i18n.translate("Type"));
+	// Re-translate the light-type name from its raw key (falls back to English).
+	// An empty cache means no light is bound yet — at ctor time, or between
+	// setObjectId() and the next setLightType() — and translate("") returns "",
+	// which would blank the row instead of showing the placeholder.
+	m_typeLabel->setText(m_cachedType.empty()
+	                     ? i18n.translate("Unknown")
+	                     : i18n.translate(m_cachedType.c_str()));
+	m_powerLabel->setText(i18n.translate("Power"));
+	m_radiusLabel->setText(i18n.translate("Radius"));
+	m_shadowChk->setText(i18n.translate("Cast Shadow"));
+	m_innerConeLabel->setText(i18n.translate("Inner Cone"));
+	m_outerConeLabel->setText(i18n.translate("Outer Cone"));
+}
+
 void LightProperties::setObjectId(int id)
 {
 	if (m_objectId != id)
@@ -156,7 +184,7 @@ void LightProperties::setLightType(const std::string& typeName)
 {
 	if (m_cachedType == typeName) return;
 	m_cachedType = typeName;
-	m_typeLabel->setText(QString::fromStdString(typeName));
+	m_typeLabel->setText(I18n::instance().translate(typeName.c_str()));
 }
 
 void LightProperties::setPower(float power)

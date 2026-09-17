@@ -4,6 +4,7 @@
 #include <string>
 
 class QCheckBox;
+class QGroupBox;
 class QLabel;
 
 namespace neurus {
@@ -55,6 +56,9 @@ public:
 	/** @brief Shows/hides the spot-cone rows (only meaningful for SPOTLIGHT). */
 	void setSpotConeVisible(bool visible);
 
+	/** @brief Re-applies group/label/checkbox texts in the active language. */
+	void Retranslate();
+
 signals:
 	void powerChanged(int objectId, float power);
 	void radiusChanged(int objectId, float radius);
@@ -66,7 +70,13 @@ private:
 	int m_objectId = -1;
 
 	// --- Widgets ---
+	QGroupBox*    m_group            = nullptr;
+	QLabel*       m_typeCaption      = nullptr;
 	QLabel*       m_typeLabel        = nullptr;
+	QLabel*       m_powerLabel       = nullptr;
+	QLabel*       m_radiusLabel      = nullptr;
+	QLabel*       m_innerConeLabel   = nullptr;
+	QLabel*       m_outerConeLabel   = nullptr;
 	ScalarSlider* m_powerSlider      = nullptr;
 	ScalarSlider* m_radiusSlider     = nullptr;
 	QCheckBox*    m_shadowChk        = nullptr;

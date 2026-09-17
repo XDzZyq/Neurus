@@ -63,6 +63,9 @@ public:
 	 */
 	void Refresh(const UIContext& ctx) override;
 
+	/** @brief Re-applies column headers and the head-row label in the active language. */
+	void Retranslate() override;
+
 private:
 	/** @brief Repopulates the tree from the latest profile, recycling rows. */
 	void Populate(const FrameProfile& profile);

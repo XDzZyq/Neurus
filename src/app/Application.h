@@ -12,6 +12,7 @@
 #include "render/DeferredRenderer.h"
 #include "render/Screenshot.h"
 #include "render/UploadManager.h"
+#include "app/Preferences.h"
 #include "ui/UIManager.h"
 #include "platform/PlatformSurface.h"
 
@@ -78,6 +79,12 @@ private:
 	/** @brief Aggregated document dirtiness: editor scene/config OR UI-state drift. */
 	bool IsDirty() const;
 
+	/**
+	 * @brief Applies the target-FPS preference to the render timer.
+	 * @param fps Frames per second (0 = unlimited).
+	 */
+	void ApplyTargetFps(int fps);
+
 	template<typename Panel, typename Event>
 	void ConnectUIEvent(
 		QObject* sender,
@@ -104,6 +111,7 @@ private:
 	std::string app_projectPath;    ///< Current project file path ("" = unsaved).
 	std::string app_uiLayout;       ///< Transient UI-state blob for (de)serialization.
 	std::string app_savedUiState;   ///< UI blob as last saved/loaded (dirty baseline).
+	std::unique_ptr<Preferences> app_preferences;  ///< ~/.neurus/preferences.json (loaded before the window).
 
 	// --- GPU / UI stack (destroyed in REVERSE order: renderer first, vkContext last) ---
 	// Screenshot holds refs to RenderCache (owned by DeferredRenderer) — must be destroyed BEFORE renderer.

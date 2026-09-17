@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 
 #include "core/Log.h"
+#include "ui/utils/I18n.h"
 
 namespace neurus
 {
@@ -41,8 +42,12 @@ QString LoadLogPanelStyle()
 
 } // namespace
 
+// Status-bar counter format — one spelling shared by every update site.
+// N_ registers it with the extractor without translating it here.
+static constexpr const char* kStatsFormat = N_("INFO %1 · ERROR %2");
+
 LogPanel::LogPanel(QWidget* parent)
-	: UIPanel(PanelType::Log, QStringLiteral("Log"), parent)
+	: UIPanel(PanelType::Log, "Log", parent)
 {
 	auto* root = new QVBoxLayout(this);
 	root->setContentsMargins(4, 4, 4, 4);
@@ -62,6 +67,32 @@ LogPanel::LogPanel(QWidget* parent)
 	root->addWidget(&m_view, 1);
 
 	setStyleSheet(LoadLogPanelStyle());
+
+	// Apply the active language (toolbar was built with English literals).
+	Retranslate();
+}
+
+// =========================================================================
+// Retranslate - re-apply toolbar texts in the active language
+// =========================================================================
+
+void LogPanel::Retranslate()
+{
+	auto& i18n = I18n::instance();
+
+	// Filter combo: re-text items in place (indices preserved, so the
+	// level-filter mapping in OnFilterChanged stays valid).
+	m_filter->setItemText(0, i18n.translate("All"));
+	m_filter->setItemText(1, i18n.translate("Info"));
+	m_filter->setItemText(2, i18n.translate("Errors"));
+
+	m_search->setPlaceholderText(i18n.translateCtx("Search...", "Placeholder"));
+	m_stats->setText(i18n.translate(kStatsFormat)
+	                     .arg(m_lastInfoCount).arg(m_lastErrorCount));
+	m_autoScrollBtn->setText(i18n.translate("Auto-scroll"));
+	m_pauseBtn->setText(i18n.translate("Pause"));
+	m_clearBtn->setText(i18n.translate("Clear"));
+	m_exportBtn->setText(i18n.translate("Export..."));
 }
 
 void LogPanel::BuildToolbar()
@@ -184,7 +215,7 @@ void LogPanel::Refresh(const UIContext& ctx)
 	{
 		m_lastInfoCount = info;
 		m_lastErrorCount = errors;
-		m_stats->setText(QStringLiteral("INFO %1 · ERROR %2")
+		m_stats->setText(I18n::instance().translate(kStatsFormat)
 		                     .arg(info).arg(errors));
 	}
 
@@ -238,7 +269,8 @@ void LogPanel::OnClearClicked()
 	m_lastInfoCount = 0;
 	m_model.Refresh(&LogBuffer::instance());
 	m_delegate.setSourcePad(m_model.MaxSourceChars());
-	m_stats->setText(QStringLiteral("INFO 0 · ERROR 0"));
+	m_stats->setText(I18n::instance().translate(kStatsFormat)
+	                     .arg(0).arg(0));
 }
 
 bool LogPanel::eventFilter(QObject* watched, QEvent* event)
@@ -260,16 +292,16 @@ bool LogPanel::eventFilter(QObject* watched, QEvent* event)
 void LogPanel::OnExportClicked()
 {
 	const QString path = QFileDialog::getSaveFileName(
-	    this, QStringLiteral("Save Log"), QStringLiteral("neurus.log"),
-	    QStringLiteral("Log Files (*.log)"));
+	    this, I18n::instance().translateCtx("Save Log", "Dialog"), QStringLiteral("neurus.log"),
+	    I18n::instance().translateCtx("Log Files (*.log)", "Dialog"));
 	if (path.isEmpty())
 		return;
 
 	std::ofstream file(path.toStdString(), std::ios::binary);
 	if (!file.is_open())
 	{
-		QMessageBox::warning(this, QStringLiteral("Save Log"),
-		                     QStringLiteral("Failed to open file for writing."));
+		QMessageBox::warning(this, I18n::instance().translateCtx("Save Log", "Dialog"),
+		                     I18n::instance().translateCtx("Failed to open file for writing.", "Dialog"));
 		return;
 	}
 
@@ -286,8 +318,8 @@ void LogPanel::OnExportClicked()
 	file.close();
 	if (!file.good())
 	{
-		QMessageBox::warning(this, QStringLiteral("Save Log"),
-		                     QStringLiteral("Error writing log file."));
+		QMessageBox::warning(this, I18n::instance().translateCtx("Save Log", "Dialog"),
+		                     I18n::instance().translateCtx("Error writing log file.", "Dialog"));
 		return;
 	}
 }

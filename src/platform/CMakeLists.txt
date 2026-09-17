@@ -3,6 +3,8 @@
 add_library(neurus_platform STATIC
 	PlatformSurface.h
 	PlatformSurface.cpp
+	PlatformPaths.h
+	PlatformPaths.cpp
 )
 
 target_link_libraries(neurus_platform PUBLIC Vulkan::Vulkan)

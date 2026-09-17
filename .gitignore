@@ -106,3 +106,7 @@ graphify-out/20*/
 .slim/worktrees/
 .slim/worktrees.json
 # END oh-my-opencode-slim worktrees
+
+# Python bytecode
+__pycache__/
+*.pyc

@@ -1,6 +1,7 @@
 #include "presets/CameraProperties.h"
 #include "items/Vec3Spin.h"
 #include "items/ScalarSlider.h"
+#include "ui/utils/I18n.h"
 
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -17,15 +18,15 @@ CameraProperties::CameraProperties(QWidget* parent)
 	layout->setSpacing(8);
 
 	// --- Camera group box ---
-	auto* camGroup = new QGroupBox(QStringLiteral("Camera"), this);
-	auto* camLayout = new QVBoxLayout(camGroup);
+	m_group = new QGroupBox(QStringLiteral("Camera"), this);
+	auto* camLayout = new QVBoxLayout(m_group);
 	camLayout->setSpacing(8);
-	layout->addWidget(camGroup);
+	layout->addWidget(m_group);
 
 	// --- Look-At Target row ---
 	auto* tarRow = new QHBoxLayout();
-	auto* tarLabel = new QLabel(QStringLiteral("Look-At Target"));
-	tarRow->addWidget(tarLabel);
+	m_tarLabel = new QLabel(QStringLiteral("Look-At Target"));
+	tarRow->addWidget(m_tarLabel);
 
 	m_tarSpin = new Vec3Spin(-100000.0, 100000.0, 0.01, 2, QString(), this);
 	tarRow->addWidget(m_tarSpin, 1);
@@ -43,8 +44,8 @@ CameraProperties::CameraProperties(QWidget* parent)
 
 	// --- FOV row ---
 	auto* fovRow = new QHBoxLayout();
-	auto* fovLabel = new QLabel(QStringLiteral("FOV (\u00B0)"));
-	fovRow->addWidget(fovLabel);
+	m_fovLabel = new QLabel(QStringLiteral("FOV (\u00B0)"));
+	fovRow->addWidget(m_fovLabel);
 
 	m_fovSlider = new ScalarSlider(1.0, 179.0, 178, 60.0, this);
 	fovRow->addWidget(m_fovSlider, 1);
@@ -60,6 +61,17 @@ CameraProperties::CameraProperties(QWidget* parent)
 		});
 
 	layout->addStretch();
+
+	// Apply the active language (labels were built in English).
+	Retranslate();
+}
+
+void CameraProperties::Retranslate()
+{
+	auto& i18n = I18n::instance();
+	m_group->setTitle(i18n.translate("Camera"));
+	m_tarLabel->setText(i18n.translate("Look-At Target"));
+	m_fovLabel->setText(i18n.translate("FOV (°)"));
 }
 
 void CameraProperties::setObjectId(int id)

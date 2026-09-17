@@ -8,6 +8,7 @@
 #include "items/ScalarSlider.h"
 #include "render/RenderConfig.h"
 #include "UIContext.h"
+#include "ui/utils/I18n.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -21,12 +22,33 @@
 namespace neurus
 {
 
+namespace
+{
+
+/** @brief Sets the form-row label of @p field from an i18n key. */
+void SetFormRowLabel(QFormLayout* form, QWidget* field, const char* key)
+{
+	// addRow(QString, widget) creates a QLabel for the row label.
+	if (QLabel* label = static_cast<QLabel*>(form->labelForField(field)))
+		label->setText(I18n::instance().translate(key));
+}
+
+/** @brief Re-texts a combo's items from i18n keys (order/indices preserved). */
+void SetComboItems(QComboBox* combo, std::initializer_list<const char*> keys)
+{
+	int index = 0;
+	for (const char* key : keys)
+		combo->setItemText(index++, I18n::instance().translate(key));
+}
+
+} // namespace
+
 // =========================================================================
 // Constructor / Destructor
 // =========================================================================
 
 RenderConfigPanel::RenderConfigPanel(QWidget* parent)
-	: UIPanel(PanelType::RenderConfig, QString(), parent)
+	: UIPanel(PanelType::RenderConfig, nullptr, parent)
 {
 	// --- Main layout ---
 	auto* mainLayout = new QVBoxLayout(this);
@@ -67,6 +89,65 @@ RenderConfigPanel::RenderConfigPanel(QWidget* parent)
 
 	// --- Wire all signals ---
 	ConnectAllSignals();
+
+	// Apply the active language (menus/docks were built with English literals).
+	Retranslate();
+}
+
+// =========================================================================
+// Retranslate — re-apply every section title / row label / combo item
+// =========================================================================
+
+void RenderConfigPanel::Retranslate()
+{
+	auto& i18n = I18n::instance();
+	auto* shadowsForm  = static_cast<QFormLayout*>(m_shadowsGroup->layout());
+	auto* aoForm       = static_cast<QFormLayout*>(m_aoGroup->layout());
+	auto* lightingForm = static_cast<QFormLayout*>(m_lightingGroup->layout());
+	auto* postForm     = static_cast<QFormLayout*>(m_postGroup->layout());
+	auto* pipelineForm = static_cast<QFormLayout*>(m_pipelineGroup->layout());
+
+	// --- Shadows ---
+	m_shadowsGroup->setTitle(i18n.translate("Shadows"));
+	SetFormRowLabel(shadowsForm, m_shadowAlgCombo, N_("Algorithm"));
+	SetComboItems(m_shadowAlgCombo,
+	              {N_("None"), N_("Shadow Mapping"), N_("SDF Soft Shadow"), N_("VSSM")});
+	SetFormRowLabel(shadowsForm, m_shadowPCFCombo, N_("PCF Filter"));
+	SetComboItems(m_shadowPCFCombo, {N_("Hard"), N_("Soft PCF 16"), N_("Soft PCF 64")});
+	SetFormRowLabel(shadowsForm, m_shadowBiasSlider, N_("Bias"));
+	SetFormRowLabel(shadowsForm, m_samplingModeCombo, N_("Sampling Mode"));
+	SetComboItems(m_samplingModeCombo, {N_("Fixed EMA (1/8)"), N_("Moving Average")});
+
+	// --- Ambient Occlusion ---
+	m_aoGroup->setTitle(i18n.translate("Ambient Occlusion"));
+	SetFormRowLabel(aoForm, m_aoAlgCombo, N_("Algorithm"));
+	SetComboItems(m_aoAlgCombo, {N_("None"), N_("SSAO")});
+	SetFormRowLabel(aoForm, m_aoKernelSpin, N_("Kernel Size"));
+	SetFormRowLabel(aoForm, m_aoRadiusSlider, N_("Radius"));
+
+	// --- Lighting ---
+	m_lightingGroup->setTitle(i18n.translate("Lighting"));
+	m_iblCheckBox->setText(i18n.translate("Enable IBL"));
+	m_transCheckBox->setText(i18n.translate("Transparent Background"));
+	SetFormRowLabel(lightingForm, m_exposureSlider, N_("Exposure"));
+
+	// --- Post-Processing ---
+	m_postGroup->setTitle(i18n.translate("Post-Processing"));
+	SetFormRowLabel(postForm, m_aaCombo, N_("Anti-Aliasing"));
+	SetComboItems(m_aaCombo, {N_("None"), N_("MSAA"), N_("FXAA")});
+	SetFormRowLabel(postForm, m_gammaSlider, N_("Gamma"));
+	SetFormRowLabel(postForm, m_fxaaSubpixSlider, N_("FXAA Subpix"));
+	SetFormRowLabel(postForm, m_fxaaEdgeSlider, N_("FXAA Edge"));
+	SetFormRowLabel(postForm, m_fxaaEdgeMinSlider, N_("FXAA Edge Min"));
+
+	// --- Pipeline ---
+	m_pipelineGroup->setTitle(i18n.translate("Pipeline"));
+	SetFormRowLabel(pipelineForm, m_pipelineCombo, N_("Pipeline"));
+	SetComboItems(m_pipelineCombo, {N_("Forward"), N_("Deferred")});
+	SetFormRowLabel(pipelineForm, m_ssrCombo, N_("SSR"));
+	SetComboItems(m_ssrCombo,
+	              {N_("None"), N_("Ray Marching"), N_("SDF Ray Marching"), N_("SDF Resolved")});
+	SetFormRowLabel(pipelineForm, m_samplesPerFrameSpin, N_("Samples / Frame"));
 }
 
 // =========================================================================

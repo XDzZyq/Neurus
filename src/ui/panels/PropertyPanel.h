@@ -45,6 +45,9 @@ public:
 	/** @brief Reads active object from UIContext, updates header + transform + type subpanel. */
 	void Refresh(const UIContext& ctx) override;
 
+	/** @brief Re-applies transform labels / empty-state text in the active language. */
+	void Retranslate() override;
+
 signals:
 	// --- Transform ---
 	void positionChanged(const PositionChanged& e);
@@ -91,10 +94,14 @@ private:
 	QLabel*  m_emptyLabel   = nullptr;
 
 	// --- Transform editor ---
-	QGroupBox* m_transformGroup = nullptr;
-	Vec3Spin*  m_posSpin        = nullptr;
-	Vec3Spin*  m_rotSpin        = nullptr;
-	Vec3Spin*  m_sclSpin        = nullptr;
+	QGroupBox*  m_transformGroup = nullptr;
+	QLabel*     m_posLabel       = nullptr;
+	QLabel*     m_rotLabel       = nullptr;
+	QLabel*     m_sclLabel       = nullptr;
+	QPushButton* m_resetBtn      = nullptr;
+	Vec3Spin*   m_posSpin        = nullptr;
+	Vec3Spin*   m_rotSpin        = nullptr;
+	Vec3Spin*   m_sclSpin        = nullptr;
 
 	// --- Type-specific subpanels (each owns its own QGroupBox) ---
 	CameraProperties*      m_cameraProps = nullptr;

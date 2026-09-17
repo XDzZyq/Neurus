@@ -1,5 +1,6 @@
 #include "presets/EnvironmentProperties.h"
 #include "items/ScalarSlider.h"
+#include "ui/utils/I18n.h"
 
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -16,23 +17,23 @@ EnvironmentProperties::EnvironmentProperties(QWidget* parent)
 	outerLayout->setContentsMargins(0, 0, 0, 0);
 
 	// --- Environment Group Box ---
-	auto* groupBox = new QGroupBox(QStringLiteral("Environment"), this);
-	outerLayout->addWidget(groupBox);
+	m_group = new QGroupBox(QStringLiteral("Environment"), this);
+	outerLayout->addWidget(m_group);
 
-	auto* groupLayout = new QVBoxLayout(groupBox);
+	auto* groupLayout = new QVBoxLayout(m_group);
 	groupLayout->setSpacing(6);
 
 	// --- Section: Map ---
-	auto* mapHeader = new QLabel(QStringLiteral("Map"));
-	QFont headerFont = mapHeader->font();
+	m_mapLabel = new QLabel(QStringLiteral("Map"));
+	QFont headerFont = m_mapLabel->font();
 	headerFont.setBold(true);
-	mapHeader->setFont(headerFont);
-	groupLayout->addWidget(mapHeader);
+	m_mapLabel->setFont(headerFont);
+	groupLayout->addWidget(m_mapLabel);
 
 	auto* pathRow = new QHBoxLayout();
-	auto* pathLabel = new QLabel(QStringLiteral("Path"));
-	pathLabel->setStyleSheet(QStringLiteral("QLabel { color: #aaa; }"));
-	pathRow->addWidget(pathLabel);
+	m_pathPrefix = new QLabel(QStringLiteral("Path"));
+	m_pathPrefix->setStyleSheet(QStringLiteral("QLabel { color: #aaa; }"));
+	pathRow->addWidget(m_pathPrefix);
 
 	m_pathLabel = new QLabel();
 	m_pathLabel->setWordWrap(true);
@@ -45,23 +46,28 @@ EnvironmentProperties::EnvironmentProperties(QWidget* parent)
 	groupLayout->addLayout(pathRow);
 
 	// --- Section: IBL ---
-	auto* iblHeader = new QLabel(QStringLiteral("IBL"));
-	iblHeader->setFont(headerFont);
-	groupLayout->addWidget(iblHeader);
+	m_iblLabel = new QLabel(QStringLiteral("IBL"));
+	m_iblLabel->setFont(headerFont);
+	groupLayout->addWidget(m_iblLabel);
 
 	auto* intensityRow = new QHBoxLayout();
-	intensityRow->addWidget(new QLabel(QStringLiteral("Intensity")));
+	m_intensityLabel = new QLabel(QStringLiteral("Intensity"));
+	intensityRow->addWidget(m_intensityLabel);
 	m_intensitySlider = new ScalarSlider(0.0, 10.0, 1000, 1.0, this);
 	intensityRow->addWidget(m_intensitySlider, 1);
 	groupLayout->addLayout(intensityRow);
 
 	auto* rotationRow = new QHBoxLayout();
-	rotationRow->addWidget(new QLabel(QStringLiteral("Rotation (\u00B0)")));
+	m_rotationLabel = new QLabel(QStringLiteral("Rotation (\u00B0)"));
+	rotationRow->addWidget(m_rotationLabel);
 	m_rotationSlider = new ScalarSlider(0.0, 360.0, 360, 0.0, this);
 	rotationRow->addWidget(m_rotationSlider, 1);
 	groupLayout->addLayout(rotationRow);
 
 	outerLayout->addStretch();
+
+	// Apply the active language (labels were built in English).
+	Retranslate();
 
 	// --- Signal wiring ---
 	QObject::connect(m_intensitySlider, &ScalarSlider::valueChanged, this,
@@ -81,6 +87,17 @@ EnvironmentProperties::EnvironmentProperties(QWidget* parent)
 			}
 			emit rotationChanged(m_objectId, static_cast<float>(m_rotationSlider->value()));
 		});
+}
+
+void EnvironmentProperties::Retranslate()
+{
+	auto& i18n = I18n::instance();
+	m_group->setTitle(i18n.translate("Environment"));
+	m_mapLabel->setText(i18n.translate("Map"));
+	m_pathPrefix->setText(i18n.translate("Path"));
+	m_iblLabel->setText(i18n.translate("IBL"));
+	m_intensityLabel->setText(i18n.translate("Intensity"));
+	m_rotationLabel->setText(i18n.translate("Rotation (°)"));
 }
 
 void EnvironmentProperties::setObjectId(int id)
