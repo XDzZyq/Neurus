@@ -46,13 +46,18 @@ echo "  Project root: ${PROJECT_ROOT}"
 # Parse arguments
 # ---------------------------------------------------------------------------
 CLEAN=0
+ADS_ONLY=0
 for arg in "$@"; do
     case "${arg}" in
         --clean) CLEAN=1 ;;
+        --ads-only) ADS_ONLY=1 ;;
         -h|--help)
-            echo "Usage: $0 [--clean]"
+            echo "Usage: $0 [--clean] [--ads-only]"
             echo ""
-            echo "  --clean    Remove previous build artifacts before building"
+            echo "  --clean      Remove previous build artifacts before building"
+            echo "  --ads-only   Rebuild only qtadvanceddocking, skipping shaderc."
+            echo "               ADS must be rebuilt whenever the Qt version"
+            echo "               changes; shaderc links no Qt and need not be."
             exit 0
             ;;
         *)
@@ -84,9 +89,19 @@ fi
 # ---------------------------------------------------------------------------
 SHADERC_OUT="${PROJECT_ROOT}/lib/macos/shaderc/lib"
 ADS_OUT="${PROJECT_ROOT}/lib/macos/qtadvanceddocking/lib"
+ADS_ROOT_OUT="${PROJECT_ROOT}/lib/macos/qtadvanceddocking"
 
 mkdir -p "${SHADERC_OUT}"
 mkdir -p "${ADS_OUT}"
+
+# The ADS archives carry coalesced instantiations of Qt's inline container
+# templates, so they must be compiled at the same C++ standard as the consuming
+# project — read it from the root CMakeLists rather than hardcoding it here.
+NEURUS_CXX_STANDARD=$(sed -n 's/^[[:space:]]*set(CMAKE_CXX_STANDARD[[:space:]]\{1,\}\([0-9]\{1,\}\).*/\1/p' \
+    "${PROJECT_ROOT}/CMakeLists.txt" | head -1)
+if [[ -z "${NEURUS_CXX_STANDARD}" ]]; then
+    fail "Could not read CMAKE_CXX_STANDARD from ${PROJECT_ROOT}/CMakeLists.txt"
+fi
 
 # ---------------------------------------------------------------------------
 # Helper: require command
@@ -110,6 +125,9 @@ ok "All required commands found"
 # =============================
 #  shaderc
 # =============================
+if [[ ${ADS_ONLY} -eq 1 ]]; then
+step "Skipping shaderc (--ads-only)"
+else
 step "Building shaderc"
 
 # --- Initialize submodule ---
@@ -182,6 +200,8 @@ else
     fi
 fi
 
+fi  # end of shaderc section (--ads-only)
+
 # =============================
 #  qtadvanceddocking (Release)
 # =============================
@@ -195,14 +215,17 @@ step "qtadvanceddocking: Initializing submodule"
 ok "qtadvanceddocking submodule initialized"
 
 # --- CMake Configure (Release) ---
-step "qtadvanceddocking: CMake configure (Release)"
+# Configured through cmake/ads_standalone, not dep/qtadvanceddocking directly:
+# the wrapper pins the C++ standard (the submodule hardcodes 17) and writes the
+# build_info.txt stamp that cmake/Dependencies.cmake checks before trusting
+# these archives.
+step "qtadvanceddocking: CMake configure (Release, C++${NEURUS_CXX_STANDARD})"
 ADS_RELEASE_BUILD="${PROJECT_ROOT}/build/_ads_macos_release"
-cmake -S "${PROJECT_ROOT}/dep/qtadvanceddocking" -B "${ADS_RELEASE_BUILD}" -G Ninja \
+cmake -S "${PROJECT_ROOT}/cmake/ads_standalone" -B "${ADS_RELEASE_BUILD}" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DADS_VERSION=4.5.0 \
-    -DBUILD_EXAMPLES=OFF \
-    -DBUILD_STATIC=ON \
+    -DNEURUS_ADS_SOURCE_DIR="${PROJECT_ROOT}/dep/qtadvanceddocking" \
+    -DNEURUS_ADS_CXX_STANDARD="${NEURUS_CXX_STANDARD}" \
 || fail "qtadvanceddocking Release CMake configure failed"
 ok "qtadvanceddocking Release configured"
 
@@ -233,14 +256,13 @@ ok "qtadvanceddocking Release lib copied to ${ADS_OUT}/libqtadvanceddocking-qt6_
 step "Building qtadvanceddocking — Debug"
 
 # --- CMake Configure (Debug) ---
-step "qtadvanceddocking: CMake configure (Debug)"
+step "qtadvanceddocking: CMake configure (Debug, C++${NEURUS_CXX_STANDARD})"
 ADS_DEBUG_BUILD="${PROJECT_ROOT}/build/_ads_macos_debug"
-cmake -S "${PROJECT_ROOT}/dep/qtadvanceddocking" -B "${ADS_DEBUG_BUILD}" -G Ninja \
+cmake -S "${PROJECT_ROOT}/cmake/ads_standalone" -B "${ADS_DEBUG_BUILD}" -G Ninja \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DADS_VERSION=4.5.0 \
-    -DBUILD_EXAMPLES=OFF \
-    -DBUILD_STATIC=ON \
+    -DNEURUS_ADS_SOURCE_DIR="${PROJECT_ROOT}/dep/qtadvanceddocking" \
+    -DNEURUS_ADS_CXX_STANDARD="${NEURUS_CXX_STANDARD}" \
 || fail "qtadvanceddocking Debug CMake configure failed"
 ok "qtadvanceddocking Debug configured"
 
@@ -268,6 +290,21 @@ fi
 cp "${ADS_DEBUG_LIB}" "${ADS_OUT}/libqtadvanceddocking-qt6d_static.a" \
 || fail "Failed to copy qtadvanceddocking Debug static lib"
 ok "qtadvanceddocking Debug lib copied to ${ADS_OUT}/libqtadvanceddocking-qt6d_static.a"
+
+# --- Compatibility stamp ---
+# cmake/Dependencies.cmake refuses these archives unless the stamp matches the
+# consuming build's Qt version and C++ standard, which is what stops a stale
+# archive from producing an ODR mismatch that only shows up as a runtime crash.
+step "qtadvanceddocking: Writing compatibility stamp"
+if ! diff -q "${ADS_RELEASE_BUILD}/build_info.txt" "${ADS_DEBUG_BUILD}/build_info.txt" >/dev/null 2>&1; then
+    fail "Release and Debug ADS builds disagree on Qt version / standard — refusing to stamp.
+  Release: $(cat "${ADS_RELEASE_BUILD}/build_info.txt" 2>/dev/null | tr '\n' ' ')
+  Debug:   $(cat "${ADS_DEBUG_BUILD}/build_info.txt" 2>/dev/null | tr '\n' ' ')"
+fi
+cp "${ADS_DEBUG_BUILD}/build_info.txt" "${ADS_ROOT_OUT}/build_info.txt" \
+|| fail "Failed to write ${ADS_ROOT_OUT}/build_info.txt"
+ok "Stamp written to lib/macos/qtadvanceddocking/build_info.txt"
+grep -v '^#' "${ADS_ROOT_OUT}/build_info.txt" | sed 's/^/    /'
 
 # =============================
 #  Summary

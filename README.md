@@ -129,11 +129,15 @@ screen-space ambient occlusion, image-based lighting, and full G-Buffer pipeline
 ## Dependency Management
 
 Third-party libraries that benefit from ahead-of-time compilation (shaderc,
-qtadvanceddocking) can be used as pre-compiled binaries via
+Qt Advanced Docking) can be used as pre-compiled binaries via
 [Neurus-Lib](https://github.com/XDzzzzzZyq/Neurus-Lib).
 Run `make update` to download the latest binaries into `lib/<platform>/`.
 The CMake build system prefers pre-compiled binaries and falls back to
-source builds in `dep/` automatically. See
+source builds in `dep/` automatically. Qt Advanced Docking carries an extra
+condition: because it shares Qt's inline container template instantiations with
+our own translation units, its archive is only linked when the
+`build_info.txt` stamp beside it records the same Qt version and C++ standard
+this build uses — otherwise CMake says why and builds it from source. See
 [build instructions](.github/instructions/build.instructions.md) for details.
 
 ## Code Style
