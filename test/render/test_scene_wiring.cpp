@@ -146,8 +146,31 @@ protected:
 
 			float prio = 1.0f;
 			vk::DeviceQueueCreateInfo qCI({}, m_graphicsQueueFamily, 1, &prio);
+
+			// Mirror VulkanContext::InitDevice: DeferredRenderer's passes need
+			// dynamic rendering, synchronization2, multiview (shadow cubemaps) and
+			// shaderDemoteToHelperInvocation (`discard` under SPIR-V 1.6).
+			vk::PhysicalDeviceMultiviewFeatures multiviewFeature;
+			multiviewFeature.multiview = VK_TRUE;
+			vk::PhysicalDeviceDynamicRenderingFeatures dynRendering;
+			dynRendering.dynamicRendering = VK_TRUE;
+			dynRendering.pNext = &multiviewFeature;
+			vk::PhysicalDeviceShaderDemoteToHelperInvocationFeatures demote;
+			demote.shaderDemoteToHelperInvocation = VK_TRUE;
+			demote.pNext = &dynRendering;
+			vk::PhysicalDeviceSynchronization2Features sync2;
+			sync2.synchronization2 = VK_TRUE;
+			sync2.pNext = &demote;
+			vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
+			descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
+			descriptorIndexing.pNext = &sync2;
+
+			const vk::PhysicalDeviceFeatures supported = pd.getFeatures();
 			vk::PhysicalDeviceFeatures features;
-			vk::DeviceCreateInfo devCI({}, qCI, {}, devExts, &features);
+			features.fillModeNonSolid = supported.fillModeNonSolid;
+			features.largePoints      = supported.largePoints;
+
+			vk::DeviceCreateInfo devCI({}, qCI, {}, devExts, &features, &descriptorIndexing);
 			m_device = std::make_unique<vk::raii::Device>(pd, devCI);
 			m_queue = m_device->getQueue(m_graphicsQueueFamily, 0);
 

@@ -20,6 +20,7 @@
 #include "passes/ShadowIntensityPass.h"
 #include "passes/GizmoPass.h"
 #include "passes/ComposePass.h"
+#include "passes/DebugPass.h"
 #include "passes/FXAAPass.h"
 
 #include "render/HaltonSequence.h"
@@ -144,7 +145,18 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] FXAAPass created");
 	}
 
-	// --- 8f. Build the Wave 3 shading-tail RenderGraph ---
+	// --- 8f. Create debug overlay pass (lines / points / wireframes over the
+	//         composed image; a no-op on frames with no debug geometry) ---
+	{
+		auto debugPass = std::make_unique<DebugPass>(
+			device, physicalDevice,
+			kMaxFramesInFlight);
+		r_debugPass = debugPass.get();
+		r_passes.push_back(std::move(debugPass));
+		NEURUS_LOG("[DeferredRenderer] DebugPass created");
+	}
+
+	// --- 8g. Build the Wave 3 shading-tail RenderGraph ---
 	// Initial build uses a default signature (no FXAA); recordFrame rebuilds
 	// it whenever the pipeline signature derived from RenderConfig changes.
 	RebuildMainGraph(PipelineSignature{});
@@ -347,6 +359,7 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	auto* lightingNode  = m_mainGraph.AddPass(r_lightingPass);
 	auto* gizmoNode     = m_mainGraph.AddPass(r_gizmoPass);
 	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
+	auto* debugNode     = m_mainGraph.AddPass(r_debugPass);
 
 	// Geometry (G-Buffer) → consumers
 	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          ssaoNode);
@@ -368,10 +381,16 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,       composeNode);
 	m_mainGraph.Connect(gizmoNode,    AttachmentName::GizmoHighlight, composeNode);
 
+	// Compose → debug overlay. DebugPass edits ComposedOutput in place, so it also
+	// needs the G-Buffer depth it tests against, and it — not ComposePass — is now
+	// the last writer that FXAA (or the final blit) consumes.
+	m_mainGraph.Connect(composeNode,   AttachmentName::ComposedOutput, debugNode);
+	m_mainGraph.Connect(geometryNode,  AttachmentName::Depth,          debugNode);
+
 	if (sig.fxaa)
 	{
 		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
-		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, fxaaNode);
+		m_mainGraph.Connect(debugNode, AttachmentName::ComposedOutput, fxaaNode);
 	}
 
 	m_mainGraph.Compile();

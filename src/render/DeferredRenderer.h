@@ -54,6 +54,7 @@ class ShadowIntensityPass;
 class GizmoPass;
 class ComposePass;
 class FXAAPass;
+class DebugPass;
 struct CameraUBOData;
 
 /**
@@ -253,6 +254,8 @@ private:
 	GizmoPass*    r_gizmoPass    = nullptr;
 	ComposePass*  r_composePass  = nullptr;
 	FXAAPass*     r_fxaaPass     = nullptr;
+	/// Debug/gizmo overlay; always in the graph, and a no-op when the list is empty.
+	DebugPass*    r_debugPass    = nullptr;
 
 	// --- RenderGraph (the active pipeline) ---
 	// Compile-once-per-topology DAG holding the whole deferred pipeline:

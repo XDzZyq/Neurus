@@ -119,6 +119,16 @@ public:
 	int32_t r_sample_pf   = 128;      ///< Samples per frame for progressive rendering
 	bool    r_transparent = false;    ///< Transparent background (checkerboard instead of skybox)
 
+	/**
+	 * @brief Master switch for the viewport debug/gizmo overlay.
+	 *
+	 * Gates publication, not pipeline topology: when false the Editor publishes a
+	 * null EditorContext::debugDraw and DebugPass returns before touching any
+	 * image, so the pass stays in the RenderGraph unconditionally and toggling
+	 * this costs no graph rebuild.
+	 */
+	bool    r_debug_draw  = true;
+
 	// --- FXAA parameters ---
 	float r_fxaa_subpix           = 0.75f;  ///< Sub-pixel aliasing removal amount (0.0-1.0)
 	float r_fxaa_edge_threshold   = 0.166f;  ///< Edge detection threshold (0.063-0.333)
@@ -132,6 +142,14 @@ public:
 
 	// --- Cereal serialization ---
 
+	/**
+	 * @brief Serializes every setting.
+	 *
+	 * Fields added after a project format was already in the wild are written
+	 * last and read back optionally, so an older file keeps all the settings it
+	 * does contain instead of ConfigComponent::Load discarding the whole config
+	 * and resetting the user's gamma, AO and shadow options along with it.
+	 */
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
@@ -143,6 +161,18 @@ public:
 		   CEREAL_NVP(r_fxaa_subpix), CEREAL_NVP(r_fxaa_edge_threshold),
 		   CEREAL_NVP(r_fxaa_edge_threshold_min),
 		   CEREAL_NVP(r_sampling_mode));
+
+		// --- Optional trailing fields (see the note above) ---
+
+		if constexpr (Archive::is_saving::value)
+		{
+			ar(CEREAL_NVP(r_debug_draw));
+		}
+		else
+		{
+			try { ar(CEREAL_NVP(r_debug_draw)); }
+			catch (const cereal::Exception&) { r_debug_draw = true; }
+		}
 	}
 
 	// --- Query helpers ---
@@ -163,6 +193,9 @@ public:
 
 	/** @brief Returns true if FXAA is enabled. */
 	bool RequiresFXAA() const { return r_aa == AAAlg::FXAA; }
+
+	/** @brief Returns true if the viewport debug/gizmo overlay should be drawn. */
+	bool RequiresDebugDraw() const { return r_debug_draw; }
 };
 
 } // namespace neurus
