@@ -55,6 +55,8 @@ for arg in "$@"; do
             echo "Usage: $0 [--clean] [--ads-only]"
             echo ""
             echo "  --clean      Remove previous build artifacts before building"
+            echo "               (with --ads-only, only the ADS artifacts, so the"
+            echo "               existing shaderc dylibs are kept)"
             echo "  --ads-only   Rebuild only qtadvanceddocking, skipping shaderc."
             echo "               ADS must be rebuilt whenever the Qt version"
             echo "               changes; shaderc links no Qt and need not be."
@@ -68,14 +70,30 @@ done
 
 # ---------------------------------------------------------------------------
 # Clean previous builds if requested
+#
+# Under --ads-only the clean is narrowed to the ADS artifacts: wiping
+# lib/macos/shaderc/ as well would leave the tree with no shaderc dylibs and no
+# step that rebuilds them, so the release tarball packed afterwards would
+# silently ship ADS only.
 # ---------------------------------------------------------------------------
 if [[ ${CLEAN} -eq 1 ]]; then
-    step "Cleaning previous build artifacts"
-    for dir in \
-        "${PROJECT_ROOT}/build/_shaderc_macos" \
-        "${PROJECT_ROOT}/build/_ads_macos_release" \
-        "${PROJECT_ROOT}/build/_ads_macos_debug" \
-        "${PROJECT_ROOT}/lib/macos"; do
+    if [[ ${ADS_ONLY} -eq 1 ]]; then
+        step "Cleaning previous ADS build artifacts (--ads-only)"
+        CLEAN_DIRS=(
+            "${PROJECT_ROOT}/build/_ads_macos_release"
+            "${PROJECT_ROOT}/build/_ads_macos_debug"
+            "${PROJECT_ROOT}/lib/macos/qtadvanceddocking"
+        )
+    else
+        step "Cleaning previous build artifacts"
+        CLEAN_DIRS=(
+            "${PROJECT_ROOT}/build/_shaderc_macos"
+            "${PROJECT_ROOT}/build/_ads_macos_release"
+            "${PROJECT_ROOT}/build/_ads_macos_debug"
+            "${PROJECT_ROOT}/lib/macos"
+        )
+    fi
+    for dir in "${CLEAN_DIRS[@]}"; do
         if [[ -d "${dir}" ]]; then
             echo "  Removing ${dir}"
             rm -rf "${dir}"
