@@ -351,6 +351,11 @@ Key things to check:
   black on background. If background shows non-zero, clear isn't working.
 - **HDRColor**: should show visible lighting (brighter on the lit side). If
   uniformly dark (~8) everywhere, lighting contribution is zero.
+- **`reference/debug/DebugLine_Visible.png`** (64×64, DebugPass): a two-color image
+  is the *correct* result here, not a broken one — a white overlay line on a black
+  target. Verify by counting: exactly two colors, ~250 white pixels forming a 5-row
+  band across the middle. A single unique value means the overlay did not rasterize
+  or the whole target was covered.
 
 ## Running Tests
 
@@ -613,6 +618,66 @@ These patterns were established during deferred PBR development and apply to all
   (Level/Timestamp/Source/Message/Seq), Refresh inserting new rows, Clear reset.
   `LogFilterProxyTest` (ui) covers the level filter (All/InfoOnly/ErrorsOnly),
   case-insensitive search, and level + search combined.
+- **Headless raster-pass tests** (`test/render/test_debug_pass.cpp`, issue #22): a
+  raster pass that draws into `RenderCache` attachments with `LOAD_OP_LOAD` needs
+  **no swapchain, renderer or RenderGraph** — the fixture primes the attachments by
+  hand and records the pass over them, so it runs everywhere including macOS, where
+  the presentation-based `SceneWiringTest` cases are skipped:
+  ```cpp
+  m_cache = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
+  m_pass  = std::make_unique<DebugPass>(*m_device, PhysicalDevice(), 2);
+  // Prime: clearColorImage(black) + clearDepthStencilImage(depth) via TransferDst
+  // Run:   RenderContext ctx; ctx.editor.{config,scene,debugDraw} = ...;
+  //        m_pass->Record(*BeginCmd(), *m_cache, ctx); EndSubmitWait(c);
+  ```
+  **Isolate one variable per test rather than reading one composite image.** The four
+  line tests submit the *same* segment against the *same* camera and differ only in
+  depth/x-ray: far depth + depth-tested ⇒ drawn (rasterization works); near depth +
+  depth-tested ⇒ **not** drawn (depth occlusion works); near depth + x-ray ⇒ drawn
+  (x-ray bypasses depth); empty list ⇒ 0 draws and an untouched image. Because #1 and
+  #3 produce identical pixels, "x-ray draws" cannot be faked by a pass that simply
+  ignores depth — #2 would fail.
+  **Measure position, not just area.** Geometry is chosen to be analytically
+  predictable (camera at `(0,-5,0)` looking down +Y, up = +Z, so a segment along X
+  through the origin is a horizontal band across the middle of a square target), and
+  the assertions check the lit row/column extent, not a pixel count alone.
+  **Time the marginal cost, not the absolute.** A record-submit-wait round trip is
+  dominated by fixed submission and fence latency, so timing the 10,000-segment case
+  alone measures the driver. Time 1 segment and 10,000 and assert the *difference*
+  against issue #22's 0.5 ms budget — and assert the structural half exactly
+  (10,000 segments must still be 2 draw calls). A slightly negative marginal is a
+  pass, not an anomaly.
+  **Distinguish a wireframe from a fill by area ratio, not by eye.** The wire-mesh
+  test uploads a 4×4 quad OBJ through `UploadManager::UploadMeshData`, registers the
+  MeshGPU under an arbitrary cache id, and points a `DebugWireMesh` at it. That the
+  result is *edges* is asserted by counting lit pixels against the area of their own
+  bounding box: 220 of 2116 (10%) for five thin edges, where a filled quad would light
+  nearly all of it. A regression from `PolygonMode::eLine` to `eFill` therefore has to
+  fail, which a "something was drawn" assertion would not catch.
+- **DebugDrawBuilder tests** (`test/editor/test_debug_draw_builder.cpp`, issue #22):
+  non-GPU tests that pin the three CPU-side contracts `DebugPass` trusts but cannot
+  check — the x-ray **partition** (`xraySegmentStart` / `xrayPointStart` become draw
+  ranges, so an off-by-one draws x-ray geometry depth-tested while every draw and
+  pixel count still looks plausible), the **revision** (exactly one `Touch()` per
+  rebuild; `DebugPass` skips its upload on a matching revision, so a missing Touch
+  freezes the overlay and a double Touch re-uploads every frame), and **world-space
+  baking**. Also covers dirty-flag lifecycle, `PackDebugColor`'s `0xAABBGGRR` layout
+  and clamping, opacity folded into the packed alpha, and the
+  `PointType::CUBE` → 12-edge decomposition — the last checked *geometrically*
+  (every edge axis-aligned, one side long, 4 per axis, corners on the cube surface)
+  rather than by index. Run in CI.
+  > `Scene::ResPool` is an `unordered_map`, so the order of primitives from
+  > *different* objects is unspecified. Assert over counts, boundary values, or
+  > predicates keyed off the boundary itself
+  > (`EXPECT_EQ(Has(flags, XRay), i >= xraySegmentStart)`) — never an absolute index,
+  > which would make the suite flaky across libstdc++/libc++ or a hash-seed change.
+- **Prove a passing suite is not vacuous by mutating the source.** Green tests on
+  their own prove nothing (AGENTS.md: *"Do not cheat yourself"*). Back the
+  implementation up outside the repo, inject realistic defects, and confirm that
+  *exactly the intended* tests fail — for `DebugDrawBuilder` that was: drop
+  `m_xraySegments.clear()`, move the boundary assignments *after* the `insert` calls,
+  and drop `m_list.Touch()` ⇒ 8 targeted failures. Then restore and **verify with
+  `diff` that the source is byte-identical** before rebuilding.
 
 ## Common Pitfalls Summary
 

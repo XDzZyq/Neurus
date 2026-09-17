@@ -22,6 +22,7 @@ changes through the event system.
 - `src/editor/controllers/SceneController.h/cpp` - Event-driven scene mutations (selection, transform, visibility, property edits); emits EditorEvents for GPU uploads
 - `src/editor/controllers/ShaderController.h` - Event-driven shader lifecycle (create, compile, code/struct edit, field add)
 - `src/editor/events/ShaderEvents.h` - Shader editor event structs (see events.instructions.md)
+- `src/editor/DebugDrawBuilder.h/cpp` - Flattens the Scene's debug objects into the `DebugDrawList` the renderer consumes
 
 ## Core Responsibilities
 
@@ -127,7 +128,91 @@ Editor::Edit()
         └── etc.
 ```
 
-### CameraController (Event-Driven)
+### DebugDrawBuilder (issue #22)
+
+`DebugDrawBuilder` is the **only** place that walks `Scene::dLine_list`,
+`dPoints_list` and `dMesh_list` and flattens them into the `DebugDrawList` that
+`EditorContext::debugDraw` publishes to `DebugPass`. It is a plain member of
+`Editor` (`m_debugDraw`), not a controller: it has no events of its own.
+
+**Lifecycle — dirty-flagged, never per-frame polling:**
+
+```
+RenderResetEvent  ──► m_debugDraw.MarkDirty()      // O(1), the existing
+                                                    // "something visible changed" broadcast
+Editor::Edit()
+  └── EventQueue::Process()
+  └── m_debugDraw.Rebuild(*m_scene)                 // after the queue drains, so a
+                                                    // scene change and its overlay
+                                                    // consequences land in one frame
+```
+
+`Rebuild()` returns immediately when clean, which is the common case — debug objects
+are **stateful** and rarely move. `m_dirty` starts `true` so the first `Edit()`
+populates the list. `BeginLoad()` / `FinishLoad()` / `NewScene()` also `MarkDirty()`,
+because a scene swap invalidates the whole flattened overlay.
+
+**Three contracts the renderer trusts and no GPU test can check** (all pinned by
+`test/editor/test_debug_draw_builder.cpp`):
+
+1. **Partition.** Every depth-tested primitive precedes every x-ray one;
+   `xraySegmentStart` / `xrayPointStart` mark the boundary exactly. X-ray primitives
+   are staged in member scratch vectors (`m_xraySegments` / `m_xrayPoints` — members
+   so their capacity survives across frames, cleared at the top of every `Rebuild`)
+   and concatenated at the end, so **no sort is ever needed**. `DebugPass` turns
+   those two integers straight into draw ranges, so an off-by-one draws x-ray
+   geometry with the depth test still on while every draw and pixel count still
+   looks plausible. Wire meshes are deliberately **not** partitioned — there are few
+   of them and `DebugPass` already switches pipeline per mesh.
+2. **Revision.** Exactly **one `Touch()` per rebuild**. `DebugDrawList::Clear()`
+   deliberately does *not* Touch, so a clear+refill counts as one revision. A
+   missing Touch freezes the overlay; a double Touch re-uploads every frame.
+3. **World-space baking.** `DebugDrawList` carries no matrix for segments or
+   sprites, so the builder folds each object's `GetModelMatrix()` in while copying.
+   Only `DebugWireMesh` keeps a `model` matrix, because its geometry is never copied
+   — `DebugPass` draws it straight from the mesh's MeshGPU with the transform in a
+   push constant.
+
+**Flattening rules:**
+
+- `DebugLine` vertices are **endpoint pairs**; a trailing odd vertex is dropped and
+  a lone vertex emits nothing.
+- Opacity is folded into the packed alpha (`PackTinted`), because the GPU only ever
+  sees one alpha — opacity is an authoring convenience, not a second channel.
+- `DebugPoints::PointType::CUBE` has **no sprite form** (a screen-aligned sprite
+  cannot show a cube's orientation), so it decomposes into 12 axis-aligned wireframe
+  segments of width 1.0 with half extent `GetScale() * 0.5f`. `ScreenSpaceSize` is
+  deliberately *not* set on them: their size is world-space by definition.
+- `ScreenSpaceSize` is set for sprites when `GetProjectionMode() == 0`. It is
+  meaningless for segments — segment width is always pixels.
+- A `DebugMesh` without geometry (`!HasGeometry()`) is skipped: the wireframe is
+  drawn from its MeshGPU, which does not exist until the geometry is uploaded.
+
+> **Ordering caveat for tests and callers:** `Scene::ResPool` is an
+> `unordered_map`, so the order of primitives coming from *different* objects is
+> unspecified. Never depend on an absolute index — assert over counts, boundary
+> values, or predicates keyed off the boundary itself.
+
+**MeshGPU upload for `DebugMesh`.** A wireframe needs vertex/index buffers in the
+`RenderCache`, keyed by the object id `DebugWireMesh::meshObjectId` carries — without
+them `DebugPass` silently skips the mesh, so this is the difference between a wired
+feature and an inert one. `DebugMesh` derives from `ObjectID + Transform3D`, **not**
+from `Mesh`, so `UploadManager::UploadMesh(const Mesh&)` cannot serve it by upcast;
+the geometry half is split out as `UploadManager::UploadMeshData(const MeshData&)`
+and both paths share it. Three places must stay in step:
+
+| Site | Role |
+|------|------|
+| `UploadDebugMeshGpu()` (Editor.cpp anon namespace) | the single upload path, skip-if-cached, mirroring `UploadMeshGpu()` |
+| `Editor::UploadSceneResources()` | `dMesh_list` loop, for objects present at project load |
+| `Editor::OnSceneObjectGpuUpload()` | `Get<DebugMesh>` branch, for on-demand upload of an object entering the scene |
+
+`ResourceComponent::Load` needs a matching `ForEach<DebugMesh>` block to re-wire
+`o_mesh` from `o_meshDataId`: the `ForEach<Mesh>` block above it does not reach a
+`DebugMesh`, so without it a reloaded project leaves the wireframe geometry-less and
+the upload is skipped for a reason that looks like a rendering bug.
+
+
 
 ```cpp
 void CameraController::Init(ControllerContext& ctx)

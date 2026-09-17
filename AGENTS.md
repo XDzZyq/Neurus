@@ -177,23 +177,34 @@ Neurus/
 │   │   │   └── RenderShader.h/cpp, ComputeShader.h/cpp, ShaderCompiler.h/cpp
 │   │   ├── Swapchain.h/cpp
 │   │   ├── UploadManager.h/cpp      # CPU-to-GPU upload service
+│   │   ├── GPUProfiler.h/cpp        # Timestamp-query GPU/CPU per-pass profiling
 │   │   ├── VulkanContext.h/cpp
 │   │   ├── resources/        # GPU resource structs (owned by RenderCache)
 │   │   │   ├── EnvironmentGPU.h     # IBL cubemap Textures
 │   │   │   ├── LightGPU.h           # Per-light shadow resources
 │   │   │   ├── LightingCache.h/cpp  # Light SSBO storage (point + sun)
 │   │   │   └── MeshGPU.h            # GPU-side mesh + MeshPushConstants
+│   │   ├── render_graph/     # Pass DAG orchestration
+│   │   │   ├── RenderGraph.h/cpp    # Compile-once DAG, topological Execute()
+│   │   │   └── DescriptorBinder.h   # Per-pass descriptor write helper
 │   │   ├── passes/          # Render passes
+│   │   │   ├── Pass.h/cpp, ComputePass.h  # Pass base + compute specialization
 │   │   │   ├── GeometryPass.h/cpp
 │   │   │   ├── SSAOPass.h/cpp
 │   │   │   ├── LightingPass.h/cpp
 │   │   │   ├── IBLPass.h/cpp
 │   │   │   ├── ShadowDepthPass.h/cpp
-│   │   │   └── ShadowIntensityPass.h/cpp
+│   │   │   ├── ShadowIntensityPass.h/cpp
+│   │   │   ├── GizmoPass.h/cpp      # IDBuffer edge detection -> selection highlight
+│   │   │   ├── ComposePass.h/cpp    # Highlight blend + gamma -> ComposedOutput
+│   │   │   ├── DebugPass.h/cpp      # Debug/gizmo overlay raster pass (issue #22)
+│   │   │   └── FXAAPass.h/cpp       # Luma-based post AA (conditional)
 │   │   └── buffers/          # Buffer class hierarchy
 │   │       ├── Buffer.h/cpp         # Virtual base class (Buffer)
-│   │       ├── StagingBuffer.h/cpp  # Host-visible staging
+│   │       ├── StagingBuffer.h/cpp  # Host-visible staging (upload/download ONLY)
+│   │       ├── HostBuffer.h/cpp     # Permanent host-visible mapped buffer
 │   │       ├── GPUBuffer.h/cpp      # Device-local with staging
+│   │       ├── ArrayBuffer.h        # Growable typed device buffer (ArrayBuffer<T>)
 │   │       ├── UniformBuffer.h      # Template uniform (UniformBuffer<T>)
 │   │       ├── VertexBuffer.h/cpp   # Vertex buffer (inherits GPUBuffer)
 │   │       ├── IndexBuffer.h/cpp    # Index buffer (inherits GPUBuffer)
@@ -201,11 +212,13 @@ Neurus/
 │   ├── core/              # Core layer (identity + resource pool)
 │   │   ├── UID.h/cpp              # Generic unique identifier primitive (resource base)
 │   │   ├── ResourceManager.h/cpp # Single factory + UID pool (Load<T>, polymorphic serialize)
+│   │   ├── IResourceLookup.h      # Read-only pool lookup interface
 │   │   ├── Log.h                  # NEURUS_LOG / NEURUS_ERR macros
 │   │   ├── Graph.h                # Generic DAG template
 │   │   ├── Selections.h           # Selection state container
 │   │   └── Timer.h                # Scoped timer
 │   ├── editor/             # Editor layer (logic, controllers)
+│   │   ├── DebugDrawBuilder.h/cpp  # Scene debug objects -> DebugDrawList flattening
 │   │   ├── events/          # Event system (UIEvents + typed EventQueue)
 │   │   │   ├── UIEvents.h/cpp    # Qt signal bus for UI↔Editor
 │   │   │   ├── EventBus.h        # Typed EventQueue dispatcher (no Qt)
@@ -272,6 +285,15 @@ Neurus/
 │   │   ├── Camera.h        # Camera object
 │   │   ├── Light.h         # Light objects (PointLight, SunLight)
 │   │   ├── Mesh.h          # Mesh + Transform (no GPU buffers; pooled MeshData/Shader refs)
+│   │   ├── Sprite.h        # Screen-space sprite object
+│   │   ├── Environment.h   # IBL environment object
+│   │   ├── Material.h      # Material parameters
+│   │   ├── DebugLine.h/cpp    # Debug segment-list object (retained, stateful)
+│   │   ├── DebugPoints.h/cpp  # Debug point-list object (square/rhombus/circle/cube)
+│   │   ├── DebugMesh.h/cpp    # Debug wireframe-mesh object
+│   │   ├── DebugDrawList.h    # Flattened overlay payload consumed by DebugPass
+│   │   ├── EditorContext.h    # Editor → renderer per-frame scene snapshot
+│   │   ├── DefaultScene.h/cpp # Built-in starter scene
 │   │   ├── ObjectID.h      # Scene identity + metadata (ObjectID : UID)
 │   │   ├── Transform.h     # Spatial transform
 │   │   └── registrations/           # cereal polymorphic registration
@@ -285,7 +307,8 @@ Neurus/
 ├── test/
 │   ├── render/             # Renderer GPU tests
 │   │   └── reference/      # Reference images for regression tests
-│   │       └── deferred/   # Deferred-pass reference PNGs
+│   │       ├── deferred/   # Deferred-pass reference PNGs
+│   │       └── debug/      # DebugPass overlay reference PNGs
 │   ├── editor/             # Editor unit tests (run in CI, no GPU)
 │   └── shared/             # Test infrastructure
 │       └── TestVulkanShared.h/cpp  # GPU test fixture base class
@@ -341,6 +364,29 @@ Neurus/
 - **Accumulation** (`ComposePass`): In-place read-modify-write on ShadowIntensity
   with EMA blend: `mix(prev, sample, alpha)`.
 - **Alpha**: 0 = FixedAlpha (1/8), 1 = MovingAvg (1/(n+1)).
+
+### Debug Overlay Convention (issue #22)
+
+Viewport gizmos and debug geometry are **retained and stateful**, not immediate-mode:
+Qt is stateful, so debug objects are too.
+
+- `DebugLine`, `DebugPoints` and `DebugMesh` are **first-class Scene objects** —
+  pooled, serialized and selectable like any Mesh or Light, not per-frame commands.
+- `DebugDrawBuilder` (editor) is the single flattener: it walks the Scene's three
+  debug pools into a `DebugDrawList` on a **dirty flag** (`MarkDirty()` from
+  `RenderResetEvent`, `Rebuild()` at the end of `Editor::Edit()`), never per frame.
+  See editor.instructions.md for its partition / revision / world-space contracts.
+- `DebugPass` (renderer) is the single consumer: it draws over `ComposedOutput` with
+  `LOAD_OP_LOAD`, reads but never writes the G-Buffer depth, and flips
+  `eDepthTestEnable` as dynamic state to serve x-ray — at most 6 draws per frame
+  regardless of primitive count. See renderer.instructions.md.
+- Upload is **revision-gated**: an unchanged list re-uses the buffer a frame slot
+  already holds and skips the memcpy entirely.
+- A `DebugMesh` wireframe still needs a **MeshGPU** in the RenderCache, uploaded by the
+  Editor through `UploadManager::UploadMeshData()` — `DebugMesh` is not a `Mesh`, so it
+  cannot reuse `UploadMesh()`. Without it `DebugPass` skips the mesh silently.
+- `HostBuffer` is the permanent host-visible buffer type. **`StagingBuffer` is for
+  uploads and downloads only** — never retain one as a permanent buffer object.
 
 ---
 

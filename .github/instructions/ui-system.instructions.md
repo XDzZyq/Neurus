@@ -425,6 +425,15 @@ All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
 
 Each control change emits `configValueChanged(RenderConfig cfg)`, wired by `Application` to `Editor::SetRenderConfig(cfg)`.
 
+> **Not yet exposed (issue #22 follow-up):** `RenderConfig::r_debug_draw` — the master
+> switch for the viewport debug/gizmo overlay — has no control in this panel yet. It
+> defaults to `true` and is only reachable by editing a project file. When adding it,
+> a plain checkbox in a new **Overlay** group is enough: the flag gates *publication*,
+> not graph topology, so toggling it needs no RenderGraph rebuild. The same follow-up
+> covers the missing `GO_DL` / `GO_DP` / `GO_DM` cases in `Icons::ObjectIcon` (they
+> currently fall through to the mesh icon), the Outliner add-menu entries for the
+> three debug object types, and their PropertyEditor panels.
+
 ### ProfilingPanel
 
 `ProfilingPanel` (Bottom dock) shows the per-frame GPU/CPU profile returned by
