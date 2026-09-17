@@ -307,7 +307,12 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	}
 
 	auto& renderFinished = r_renderFinishedSemaphores[imageIndex];
-	vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+	// The swapchain image's first use is a layout transition + blit at the transfer
+	// stage, not a color-attachment write, so the acquire semaphore must be waited
+	// on before transfer as well: waiting only at eColorAttachmentOutput lets the
+	// blit overwrite an image the presentation engine is still reading.
+	vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+	                                   vk::PipelineStageFlagBits::eTransfer;
 
 	vk::SubmitInfo submitInfo(*imageAvailable, waitStage, cmdBufRaw, *renderFinished);
 	r_graphicsQueue.submit(submitInfo, *fence);
