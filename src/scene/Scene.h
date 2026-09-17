@@ -40,6 +40,7 @@
 
 #include "Camera.h"
 #include "DebugLine.h"
+#include "DebugMesh.h"
 #include "DebugPoints.h"
 #include "Light.h"
 #include "Mesh.h"
@@ -195,6 +196,12 @@ public:
 			int activeUid = 0;
 			SnapshotSelectionUids(selections, selectedUids, activeUid);
 			ar(CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid));
+
+			// DebugMesh arrived after the block above; it is written last and
+			// read back optionally so files predating it still load.
+			std::vector<int> dMeshIds;
+			for (const auto& [id, obj] : dMesh_list) { (void)obj; dMeshIds.push_back(id); }
+			ar(CEREAL_NVP(dMeshIds));
 		}
 		else
 		{
@@ -236,6 +243,19 @@ public:
 			}
 			m_pendingSelectedUids = std::move(selectedUids);
 			m_pendingActiveUid = activeUid;
+
+			// Optional trailing block (see the save branch): absent in files
+			// written before DebugMesh existed, which load with no debug meshes.
+			std::vector<int> dMeshIds;
+			try
+			{
+				ar(CEREAL_NVP(dMeshIds));
+			}
+			catch (const cereal::Exception&)
+			{
+				dMeshIds.clear();
+			}
+			m_pendingDMeshIds = std::move(dMeshIds);
 		}
 	}
 
@@ -282,6 +302,7 @@ public:
 	ResPool<Sprite>      sprite_list;   ///< 2D sprite overlays
 	ResPool<DebugLine>   dLine_list;    ///< Debug line primitives
 	ResPool<DebugPoints> dPoints_list;  ///< Debug point primitives
+	ResPool<DebugMesh>   dMesh_list;    ///< Debug wireframe-mesh primitives
 	ResPool<Environment> env_list;      ///< Environment objects (IBL)
 
 	/// Selection state for scene objects. Persisted as UIDs by serialize()
@@ -370,6 +391,16 @@ public:
 	}
 
 	/**
+	 * @brief Registers a debug wireframe mesh in the scene.
+	 * @param dmesh Shared pointer to DebugMesh object.
+	 * @note Adds to dMesh_list and obj_list.
+	 */
+	void UseDebugMesh(Resource<DebugMesh> dmesh)
+	{
+		RegisterObject(dmesh, dMesh_list);
+	}
+
+	/**
 	 * @brief Registers an environment object in the scene.
 	 * @param env Shared pointer to Environment object.
 	 * @note Adds to env_list and obj_list.
@@ -433,6 +464,27 @@ public:
 	 */
 	bool RemoveEnvironment(int id) { return RemoveObject(id, env_list); }
 
+	/**
+	 * @brief Removes a debug line's scene reference.
+	 * @param id DebugLine UID.
+	 * @return true if a debug line with that UID was registered.
+	 */
+	bool RemoveDebugLine(int id) { return RemoveObject(id, dLine_list); }
+
+	/**
+	 * @brief Removes a debug point set's scene reference.
+	 * @param id DebugPoints UID.
+	 * @return true if a debug point set with that UID was registered.
+	 */
+	bool RemoveDebugPoints(int id) { return RemoveObject(id, dPoints_list); }
+
+	/**
+	 * @brief Removes a debug wireframe mesh's scene reference.
+	 * @param id DebugMesh UID.
+	 * @return true if a debug mesh with that UID was registered.
+	 */
+	bool RemoveDebugMesh(int id) { return RemoveObject(id, dMesh_list); }
+
 	// -------------------------------------------------------------------
 	// Lookup
 	// -------------------------------------------------------------------
@@ -488,6 +540,7 @@ private:
 	std::vector<int> m_pendingSpriteIds;     ///< Pending sprite UIDs
 	std::vector<int> m_pendingDLineIds;      ///< Pending debug-line UIDs
 	std::vector<int> m_pendingDPointsIds;    ///< Pending debug-point UIDs
+	std::vector<int> m_pendingDMeshIds;      ///< Pending debug-mesh UIDs
 	std::vector<int> m_pendingEnvIds;        ///< Pending environment UIDs
 	std::vector<int> m_pendingSelectedUids;  ///< Pending selection UIDs
 	int             m_pendingActiveUid = 0;  ///< Pending active-object UID

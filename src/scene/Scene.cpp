@@ -60,6 +60,7 @@ void Scene::ClearPendingReferences()
 	m_pendingSpriteIds.clear();
 	m_pendingDLineIds.clear();
 	m_pendingDPointsIds.clear();
+	m_pendingDMeshIds.clear();
 	m_pendingEnvIds.clear();
 	m_pendingSelectedUids.clear();
 	m_pendingActiveUid = 0;
@@ -73,6 +74,7 @@ void Scene::ResolveReferences(ResourceManager& resources)
 	ResolvePool<Sprite>(resources, m_pendingSpriteIds, sprite_list);
 	ResolvePool<DebugLine>(resources, m_pendingDLineIds, dLine_list);
 	ResolvePool<DebugPoints>(resources, m_pendingDPointsIds, dPoints_list);
+	ResolvePool<DebugMesh>(resources, m_pendingDMeshIds, dMesh_list);
 	ResolvePool<Environment>(resources, m_pendingEnvIds, env_list);
 
 	// Per-object data-resource wiring (Mesh -> MeshData/Shader, Environment ->
@@ -190,6 +192,7 @@ void Scene::RebuildObjList()
 	rebuild(sprite_list);
 	rebuild(dLine_list);
 	rebuild(dPoints_list);
+	rebuild(dMesh_list);
 	rebuild(env_list);
 }
 

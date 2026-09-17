@@ -11,6 +11,7 @@
 #include "asset/data/ImageData.h"
 #include "asset/data/MeshData.h"
 #include "scene/Environment.h"
+#include "scene/DebugMesh.h"
 #include "scene/Mesh.h"
 #include "render/shaders/Shader.h"
 
@@ -72,6 +73,18 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 			else
 				NEURUS_ERR("[ResourceComponent] stale Shader UID " << mesh->o_shaderId);
 		}
+	});
+	// DebugMesh carries the same MeshData reference as Mesh but is not a Mesh,
+	// so ForEach<Mesh> above never reaches it. Without this block a reloaded
+	// project would leave o_mesh null and DebugPass would skip the wireframe.
+	m_resources->ForEach<DebugMesh>([&](const std::shared_ptr<DebugMesh>& dMesh) {
+		if (!dMesh || dMesh->o_meshDataId == 0) return;
+		auto meshData = m_resources->Get<MeshData>(dMesh->o_meshDataId);
+		if (meshData)
+			dMesh->o_mesh = meshData;
+		else
+			NEURUS_ERR("[ResourceComponent] stale MeshData UID " << dMesh->o_meshDataId
+			           << " on DebugMesh");
 	});
 	m_resources->ForEach<Environment>([&](const std::shared_ptr<Environment>& env) {
 		if (!env || env->o_imageDataId == 0) return;

@@ -84,16 +84,17 @@ public:
 		   cereal::make_nvp("m_opacity", o_opacity),
 		   cereal::make_nvp("m_stipple", o_stipple),
 		   cereal::make_nvp("m_smooth", o_smooth),
-		   cereal::make_nvp("m_vertices", o_vertices));
+		   cereal::make_nvp("m_vertices", o_vertices),
+		   cereal::make_nvp("m_xray", o_xray));
 	}
 
-	// Non-copyable (UID semantics)
+	// Non-copyable and non-movable (UID semantics): ObjectID's UID base deletes
+	// both, so defaulting the move ops would only implicitly delete them and warn.
+	// Scenes hold these through Resource<T> (shared_ptr), never by value.
 	DebugLine(const DebugLine&) = delete;
 	DebugLine& operator=(const DebugLine&) = delete;
-
-	// Movable
-	DebugLine(DebugLine&&) = default;
-	DebugLine& operator=(DebugLine&&) = default;
+	DebugLine(DebugLine&&) = delete;
+	DebugLine& operator=(DebugLine&&) = delete;
 
 	// -----------------------------------------------------------------------
 	// Vertex management
@@ -161,12 +162,18 @@ public:
 	/** @brief Returns whether smooth rendering is enabled. */
 	bool GetSmooth() const { return o_smooth; }
 
+	/** @brief Enables x-ray mode: skip the depth test so the lines are never occluded. */
+	void SetXRay(bool xray) { o_xray = xray; }
+	/** @brief Returns whether x-ray mode is enabled. */
+	bool GetXRay() const { return o_xray; }
+
 private:
 	glm::vec4 o_color{1.0f, 1.0f, 1.0f, 1.0f}; ///< Line RGBA color.
 	float o_width{1.0f};                         ///< Line width in pixels.
 	float o_opacity{1.0f};                       ///< Opacity (0-1).
 	bool o_stipple{false};                       ///< Dashed line flag.
 	bool o_smooth{false};                        ///< Anti-aliased line flag.
+	bool o_xray{false};                          ///< Draw on top, ignoring depth.
 
 	std::vector<glm::vec3> o_vertices;           ///< Line segment vertex positions.
 };

@@ -23,6 +23,8 @@
 namespace neurus
 {
 
+struct DebugDrawList;
+
 /**
  * @brief Editor-owned scene + render config, shared by RenderContext/UIContext.
  */
@@ -33,6 +35,16 @@ struct EditorContext
 
 	/// @brief Opaque RenderConfig*. Cast to const RenderConfig* to read flags.
 	const void* config = nullptr;
+
+	/**
+	 * @brief This frame's debug geometry, or nullptr when debug draw is off.
+	 *
+	 * Owned by the Editor and rebuilt every Edit(); valid only for the frame it
+	 * was published in. Forward-declared rather than included so this header
+	 * stays free of glm/<vector> for the UI layer — include
+	 * scene/DebugDrawList.h where the contents are actually read.
+	 */
+	const DebugDrawList* debugDraw = nullptr;
 };
 
 } // namespace neurus
