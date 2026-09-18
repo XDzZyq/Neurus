@@ -307,8 +307,19 @@ private:
 	std::vector<vk::raii::CommandBuffer> r_commandBuffers;
 
 	// --- Synchronization ---
-	static constexpr uint32_t kMaxFramesInFlight = 2;
-	static constexpr uint64_t kFenceTimeoutNs = 100'000'000;
+	// One frame in flight. RenderCache::GetAttachment() returns a single shared
+	// Image per AttachmentName, so a second in-flight frame would write
+	// ComposedOutput/Depth while the previous frame's blit still reads them —
+	// two submits with no dependency between them. The symptom was a presented
+	// image built from two different frames (tile-shaped holes, geometry from
+	// frame N under an overlay from frame N+1). Raising this above 1 requires
+	// per-frame-slot attachments first.
+	static constexpr uint32_t kMaxFramesInFlight = 1;
+	/// Deadlock guard, not a frame budget. A Debug build with validation layers on
+	/// spends ~600 ms per frame here, so the old 100 ms made waitForFences return
+	/// eTimeout routinely and DrawFrame abandon a frame it had already acquired an
+	/// image for. Only a genuinely hung GPU should trip this.
+	static constexpr uint64_t kFenceTimeoutNs = 5'000'000'000;
 
 	std::vector<vk::raii::Fence> r_inFlightFences;
 	std::vector<vk::raii::Semaphore> r_imageAvailableSemaphores;
@@ -332,6 +343,10 @@ private:
 	GPUProfiler m_profiler;
 	FrameProfile m_frameProfile;
 	bool m_gpuResolved = false; ///< Last Resolve() produced fresh GPU sections.
+
+	/// @brief Latches the "no active camera" report so it is logged once, not
+	///        once per frame, while the unrenderable scene is on screen.
+	bool m_reportedNoCamera = false;
 
 };
 

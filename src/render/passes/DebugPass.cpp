@@ -329,6 +329,15 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	auto& composedAtt = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
 	auto& depthAtt    = cache.GetAttachment(AttachmentName::Depth, extent);
 
+	// ComposedOutput arrives in ShaderWrite, straight from ComposePass's compute
+	// dispatch, and this transition is what makes those writes visible to the
+	// raster stage: src becomes (ComputeShader, ShaderWrite), dst
+	// (ColorAttachmentOutput, ColorAttachmentWrite|Read). ComposePass must not
+	// pre-transition it to TransferSrc for the blit — a src scope of TransferRead
+	// names no writes, and on MoltenVK the compute and render encoders then
+	// overlapped: every frame kept a different random subset of the overlay's
+	// tiles, with ComposePass's output in the rest. LOAD_OP_LOAD also needs the
+	// read bit, which ColorAttachment carries.
 	Barrier::Transition(cmdBuf, composedAtt, ImageState::ColorAttachment);
 	Barrier::Transition(cmdBuf, depthAtt, ImageState::DepthAttachment);
 
@@ -454,12 +463,11 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 
 	cmdBuf.endRendering();
 
-	// Restores the contract the final blit depends on: DeferredRenderer blits
-	// ComposedOutput to the swapchain with no barrier of its own, assuming
-	// ComposePass (or FXAAPass) already left it in TransferSrc. With FXAA enabled
-	// FXAAPass transitions this image to shader-read itself, so the extra
-	// transition costs one barrier and changes nothing else.
-	Barrier::Transition(cmdBuf, composedAtt, ImageState::TransferSrc);
+	// ComposedOutput is left in ColorAttachment. Whoever reads it next — FXAAPass
+	// or the swapchain blit — transitions it and thereby picks up a src scope of
+	// (ColorAttachmentOutput, ColorAttachmentWrite) that actually covers the draws
+	// above. Handing it over pre-transitioned would hide them; see the barrier note
+	// before beginRendering.
 
 	return stats;
 }

@@ -236,6 +236,27 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
+	// --- Precondition: the scene must have an active camera ---
+	// Every pass dereferences Scene::GetActiveCamera() unconditionally to build
+	// its view-projection, so a camera-less scene faults deep inside whichever
+	// pass the graph happens to run first (a stack that says nothing about the
+	// cause). The Editor holds the invariant on both ends - NewScene()/
+	// CreateDefaultScene() seed a camera, SceneController refuses to delete the
+	// last one - so getting here means a scene-mutation path broke it. Name it
+	// once and skip the frame.
+	const auto* frameScene = static_cast<const Scene*>(ctx.editor.scene);
+	if (!frameScene || !frameScene->GetActiveCamera())
+	{
+		if (!m_reportedNoCamera)
+		{
+			m_reportedNoCamera = true;
+			NEURUS_ERR("[DeferredRenderer] Scene has no active camera - skipping frames "
+			           "until one exists");
+		}
+		return m_frameProfile;
+	}
+	m_reportedNoCamera = false;
+
 	auto& fence = r_inFlightFences[r_currentFrame];
 	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
 
@@ -588,8 +609,18 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	const vk::Image composedImage = *blitSource.ImageHandle();
 	const vk::Image swapchainImage = r_swapchain->images()[imageIndex];
 
-	// Barrier 1: Blit source is already in TransferSrc from ComposePass (or FXAAPass)
+	// Barrier 1: Blit source → TRANSFER_SRC_OPTIMAL.
+	//
+	// The transition is issued *here*, by the consumer, and not left to whichever
+	// pass wrote the image last. A producer that pre-transitions its output to the
+	// state it guesses the next consumer wants makes the following consumer's own
+	// barrier a no-op: its src scope becomes the guessed access (TransferRead),
+	// which names no writes, so the real producer writes are never made visible.
+	// That is exactly how DebugPass's overlay used to race ComposePass's compute
+	// writes into ComposedOutput — see the barrier note in DebugPass::Record.
+	//
 	// Barrier 2: Swapchain image UNDEFINED → TRANSFER_DST_OPTIMAL
+	Barrier::Transition(cmdBuf, blitSource, ImageState::TransferSrc);
 	{
 		Barrier::Transition(*cmdBuf, swapchainImage,
 			ImageState::Undefined, ImageState::TransferDst,

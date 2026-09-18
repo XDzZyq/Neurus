@@ -214,11 +214,15 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 	++stats.dispatches;
 	cmdBuf.dispatch(groupCountX, groupCountY, 1);
 
-	// --- 7. Transition ComposedOutput: General → TransferSrc (ready for swapchain blit) ---
-	{
-		auto& compAtt = cache.GetAttachment(AttachmentName::ComposedOutput, renderExtent);
-		Barrier::Transition(cmdBuf, compAtt, ImageState::TransferSrc);
-	}
+	// ComposedOutput is deliberately left in ShaderWrite. Pre-transitioning it to
+	// the state the *next* consumer is expected to want (TransferSrc for the
+	// swapchain blit) would swallow this dispatch's writes: the consumer's own
+	// barrier would then read TransferSrc, giving it a src access scope of
+	// TransferRead, which names no writes and makes none of them visible. Whoever
+	// consumes ComposedOutput — DebugPass, FXAAPass or the blit — transitions it
+	// itself and so gets a real (ComputeShader, ShaderWrite) → its-own-access
+	// dependency. Without that, DebugPass's overlay raced this dispatch on
+	// MoltenVK and each frame kept a random subset of the overlay's tiles.
 
 	return stats;
 }

@@ -271,6 +271,26 @@ again) *reads* the image through the attachment stage — a write-only
 on a tiler shows up as stale tiles blended into the frame. Passes that only
 clear-and-write are unaffected by the wider mask.
 
+**A pass transitions the images it is about to *use*, and leaves its own outputs
+in its own write state.** A producer must never pre-transition an output into the
+state it guesses the next consumer wants. `Barrier::Transition` derives the
+`srcAccessMask` from the state the image is *currently* in, so a producer that
+hands over e.g. `TransferSrc` gives the consumer's own barrier a src scope of
+`eTransferRead` — which names no writes, makes none available, and so creates a
+memory dependency covering nothing. ComposePass used to end with
+`Transition(ComposedOutput, TransferSrc)` "ready for the blit"; DebugPass's
+`TransferSrc → ColorAttachment` barrier then failed to order its overlay against
+ComposePass's compute writes, and on MoltenVK the compute and render encoders
+overlapped: every frame kept a different random subset of the overlay's tiles
+with ComposePass's output in the rest — a per-frame-random tear that no amount of
+extra serialization *after* DebugPass could fix. The rule now:
+`ComposePass`/`FXAAPass` leave their output in `ShaderWrite`, `DebugPass` leaves
+`ComposedOutput` in `ColorAttachment`, and the swapchain blit in
+`DeferredRenderer::recordFrame` transitions its own source to `TransferSrc`.
+Note that validation does not catch this — the layouts are all consistent — so
+synchronization validation plus a coloured `LOAD_OP_CLEAR` probe is the way to
+find it.
+
 **`Undefined`/`Invalid` use `eAllCommands`, never `eTopOfPipe`, as a source
 stage.** They only ever appear as the "before" state of a discard transition, so
 the access mask stays empty — but `eTopOfPipe` in a `srcStageMask` creates no
@@ -339,8 +359,11 @@ after touching barriers or submit scopes.
   overlay therefore costs **no graph rebuild** (unlike FXAA, which changes the
   `PipelineSignature`).
 - **Target**: draws into `ComposedOutput` with `LOAD_OP_LOAD` so the tonemapped
-  image survives underneath, and leaves it in `TransferSrc` — the state
-  ComposePass would have left, so the final blit and FXAAPass are unaffected.
+  image survives underneath. It transitions the image from the `ShaderWrite` state
+  ComposePass leaves it in — that barrier is the only thing ordering the overlay
+  against ComposePass's compute dispatch — and leaves it in `ColorAttachment` for
+  the blit to transition. See the barrier-ownership rule above; getting this wrong
+  tears the overlay per-tile on MoltenVK with zero validation errors.
 - **Depth**: reads the G-Buffer `Depth` with `LOAD_OP_LOAD`, `depthTestEnable` on
   and **`depthWriteEnable` off**. Debug geometry is occluded by solid objects but
   never occludes anything, including other debug geometry.
@@ -622,6 +645,25 @@ Application layer assembles the `UIContext` each frame (the Editor never produce
 it) and sets `UIContext::profile` to the returned profile (opaque `const void*`).
 The ProfilingPanel casts it back and renders the per-pass timings as a tree
 (Frame totals + per-pass rows). See ui-system.instructions.md.
+
+## Swapchain & Frame Pacing Convention
+
+- **Usage flags**: `Swapchain` requests
+  `eColorAttachment | eTransferDst | eTransferSrc`, masked by
+  `capabilities.supportedUsageFlags`. `eTransferDst` is the final blit's target;
+  `eTransferSrc` exists solely so `Screenshot` can copy the presented image back —
+  without it the capture path raises copy-source validation errors. The constructor
+  and `Recreate()` must request the same set.
+- **`kMaxFramesInFlight` is 1.** `RenderCache::GetAttachment()` returns a *single*
+  shared `Image` per `AttachmentName` (the extent argument is honoured only on the
+  first, lazy creation), so a second in-flight frame would write
+  `ComposedOutput`/`Depth` while the previous frame's blit still reads them, across
+  two submits with no dependency between them. Raising it requires per-frame-slot
+  attachments first.
+- **`kFenceTimeoutNs` is a deadlock guard, not a frame budget** (5 s). On timeout
+  `DrawFrame` abandons a frame it has already acquired an image for, so a value
+  near the real frame time silently drops frames — a Debug build with validation
+  layers on measures ~600 ms per frame, which the old 100 ms tripped every frame.
 
 ## Future Evolution
 
