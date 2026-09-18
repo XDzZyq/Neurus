@@ -41,6 +41,7 @@ add_executable(neurus_test
 	render/test_render_graph.cpp
 	editor/test_camera_controller.cpp
 	editor/test_debug_draw_builder.cpp
+	editor/test_editor_scene_lifecycle.cpp
 	editor/test_input.cpp
 	editor/test_event_bus.cpp
 	editor/test_event_bus_typed.cpp

@@ -66,6 +66,12 @@
 
 namespace {
 
+/// Starter mesh of the default scene, shared by the first-launch fallback and
+/// File > New so the two cannot drift. Relative: pooled resources store
+/// relative "res/..." paths so project files stay portable, and the asset layer
+/// resolves them against the res dir.
+constexpr const char* kDefaultSceneObj = "res/obj/sphere.obj";
+
 /**
  * @brief Resolves a resource path relative to the executable directory.
  *
@@ -195,9 +201,7 @@ int Application::Run()
 	InitEditor();
 
 	const auto projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
-	// Relative path: pooled resources store relative "res/..." paths so project
-	// files stay portable; the asset layer resolves them against the res dir.
-	const std::string objPath = "res/obj/sphere.obj";
+	const std::string objPath = kDefaultSceneObj;
 
 	try
 	{
@@ -389,7 +393,9 @@ void Application::ApplyTargetFps(int fps)
 
 void Application::OnProjectNew()
 {
-	app_editor->NewScene();
+	// Same starter content as a first launch: New is a fresh document, not an
+	// empty one (a camera-less scene is unrenderable - see Editor::NewScene).
+	app_editor->NewScene(kDefaultSceneObj);
 	app_projectPath.clear();
 	// Layout is intentionally left untouched on New; rebase the dirty
 	// baseline so a fresh project isn't reported as having unsaved changes.

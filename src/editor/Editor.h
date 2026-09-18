@@ -48,7 +48,18 @@ public:
 
 	// --- Scene lifecycle ---
 	void CreateDefaultScene(const std::string& objPath);
-	void NewScene();
+
+	/**
+	 * @brief Resets to a brand-new document holding the default starter scene.
+	 *
+	 * Builds the same content as CreateDefaultScene() (so the viewport is never
+	 * black and the scene never lacks a camera - see the scene invariant in
+	 * editor.instructions.md), then drains the GPU, clears undo history and
+	 * re-uploads scene resources + IBL.
+	 *
+	 * @param objPath Relative path of the starter mesh, e.g. "res/obj/sphere.obj".
+	 */
+	void NewScene(const std::string& objPath);
 	void BeginLoad();
 	void FinishLoad();
 
@@ -132,11 +143,26 @@ private:
 	 */
 	void AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData);
 
+	/**
+	 * @brief Re-applies the last known viewport extent to the active camera.
+	 *
+	 * A camera created by CreateDefaultScene(), or restored from a project saved
+	 * on a differently sized window, carries an aspect ratio that has nothing to
+	 * do with the current viewport (a fresh Camera is 1x1). Only a window resize
+	 * ever corrected that, so File > New used to render a squashed frame until the
+	 * user dragged the window. Called from the two scene-swap paths.
+	 */
+	void ApplyViewportToActiveCamera();
+
 	// --- Owned state ---
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
 	RenderConfig          m_config;
 	bool                  m_dirty = false;
+
+	/// Last viewport extent seen by HandleResize(); 0 until the window is shown.
+	uint32_t              m_viewportW = 0;
+	uint32_t              m_viewportH = 0;
 
 	/**
 	 * @brief Flattened debug/gizmo geometry published through EditorContext.

@@ -11,7 +11,8 @@ changes through the event system.
 - `src/editor/Input.h` - InputState struct + GetInputState() / UpdateState()
 - `src/editor/Editor.h` - Editor orchestrator (owns Scene, RenderConfig, Context, Controllers)
   - Exposes an explicit scene-load lifecycle for Application-driven persistence:
-    `NewScene()` (empty project), `BeginLoad()` (WaitIdle + fresh Scene/RenderConfig)
+    `NewScene(objPath)` (fresh document holding the **default starter scene** —
+    see the invariant below), `BeginLoad()` (WaitIdle + fresh Scene/RenderConfig)
     and `FinishLoad()` (upload scene resources, IBL). Editor no longer owns the
     project file path or performs Save/LoadProject — `Application` coordinates
     persistence and owns the project path + dirty aggregation (`Editor::IsDirty()` /
@@ -23,6 +24,64 @@ changes through the event system.
 - `src/editor/controllers/ShaderController.h` - Event-driven shader lifecycle (create, compile, code/struct edit, field add)
 - `src/editor/events/ShaderEvents.h` - Shader editor event structs (see events.instructions.md)
 - `src/editor/DebugDrawBuilder.h/cpp` - Flattens the Scene's debug objects into the `DebugDrawList` the renderer consumes
+
+## Scene Invariant: a scene always owns at least one camera
+
+Every view-projection pass builds its matrices from `Scene::GetActiveCamera()` and
+dereferences the result **without a null check** — `ShadowDepthPass.cpp:432`,
+`ShadowIntensityPass.cpp:593`, `SSAOPass.cpp:339`, `LightingPass.cpp:297`,
+`GeometryPass.cpp:214`. `GetActiveCamera()` returns `nullptr` on an empty
+`cam_list`, so a camera-less scene does not degrade — it segfaults inside
+whichever pass the graph happens to run first, on a stack that says nothing
+about the cause.
+
+The Editor is the only owner of this invariant, and holds it at both ends:
+
+- **Creation**: `CreateDefaultScene(objPath)` is the single starter-scene
+  builder (fresh Scene, pool `Clear()`, default RenderConfig, camera at
+  `(0,-5,2)` looking at the origin, mesh, point light, environment, demo debug
+  objects). `NewScene(objPath)` **delegates to it** rather than building an empty
+  scene, so File → New is a fresh *document*, not an empty one: the same content
+  a first launch shows, then `ed_operations.Clear()`, `m_dirty = false`,
+  `UploadSceneResources()` and `OnIBLLoad()`. `Application` passes the same
+  `kDefaultSceneObj` constant to both paths so they cannot drift.
+- **Deletion**: `SceneController`'s last-camera guard refuses a delete that
+  would empty `cam_list` (`SceneController.cpp:548`).
+- **Loading**: `BeginLoad()`/`FinishLoad()` inherit the camera from the project
+  file; a project saved through the paths above always has one.
+
+Why New seeds content rather than just a camera: a camera-only scene is *legal*
+but renders solid black with an empty Outliner, which is indistinguishable from a
+crash. The minimum legal scene and the minimum useful scene are not the same
+thing, and New owes the user the latter.
+
+Every scene object also sets `o_name` in its constructor (`"Camera"`, `"Mesh"`,
+`ParseLightName()` for typed lights, `"DebugLine"`, …). A blank `o_name` renders
+as an empty Outliner row that looks broken; `test_editor_scene_lifecycle.cpp`
+asserts no seeded object leaves it empty.
+
+`DeferredRenderer::DrawFrame()` carries a matching precondition check as defense
+in depth: a scene with no active camera skips the frame and logs once
+(`m_reportedNoCamera`) instead of faulting. That guard is a diagnostic, not a
+license — if it ever fires, a scene-mutation path broke the invariant and that
+path is the bug. `test/editor/test_editor_scene_lifecycle.cpp` pins the creation
+half of the contract (GPU-free, runs in CI).
+
+### The viewport extent outlives the scene
+
+`HandleResize(w, h)` caches the extent in `m_viewportW/H` **unconditionally and
+before** its own active-camera check: the extent is a property of the viewport,
+not of whichever scene happens to be loaded, and it arrives once at startup —
+long before any File → New. A camera seeded later, or restored from a project
+saved on a differently sized window, carries an aspect ratio unrelated to the
+current viewport (a fresh `Camera` is 1×1), and only a window resize ever
+corrected it, so New rendered a squashed frame until the user dragged the window.
+
+`ApplyViewportToActiveCamera()` replays the cached extent onto the active camera
+and is called from both scene-swap paths. It no-ops while the extent is still
+`0×0` (startup, before the window is shown) rather than pushing a degenerate
+aspect into the projection. Both branches are pinned by
+`test_editor_scene_lifecycle.cpp`.
 
 ## Core Responsibilities
 
