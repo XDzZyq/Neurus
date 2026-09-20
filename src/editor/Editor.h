@@ -124,29 +124,40 @@ public:
 	void HandleResize(uint32_t width, uint32_t height);
 
 	/**
-	 * @brief Uploads the current scene's mesh/light/debug-mesh GPU resources and
-	 *        rebuilds the light SSBO.
+	 * @brief Uploads the current scene's GPU resources: meshes, lights, debug
+	 *        meshes, the environment's IBL cubemaps, and the light SSBO.
 	 *
-	 * The scene-scoped half of "make this scene drawable". Uploads only objects
-	 * present in the scene: a pooled object outside it is uploaded on demand when
-	 * it re-enters (SceneObjectGpuUploadRequested).
+	 * The single "make this scene drawable" step, and the only upload entry point
+	 * callers need. Every part of it skips work that is already cached, so a
+	 * second call is nearly free - and keeping it in one piece is what stops a
+	 * caller from uploading half a scene (the first-launch fallback used to get
+	 * meshes and lights but no IBL). Objects outside the scene are uploaded on
+	 * demand when they re-enter (SceneObjectGpuUploadRequested).
 	 */
 	void UploadSceneResources();
-
-	/**
-	 * @brief (Re)generates the environment's IBL cubemaps into the render cache.
-	 *
-	 * The environment half of "make this scene drawable", and public because the
-	 * Application drives the startup sequence: it calls UploadSceneResources()
-	 * once the window is shown, and the first-launch fallback - whose scene comes
-	 * from CreateDefaultScene() and never passes through FinishLoad() - needs this
-	 * call too, or the scene holds an Environment but no EnvironmentGPU.
-	 */
-	void OnIBLLoad();
 
 	void UploadLighting();
 
 private:
+	/**
+	 * @brief Drops the outgoing scene's GPU resources, draining the device first.
+	 *
+	 * The render cache is keyed by object UID, and UIDs are restored from the
+	 * project file (UID::serialize re-reads o_id), so entries left behind by the
+	 * previous scene shadow whatever comes back under the same id: load project
+	 * A, then project B, and B draws A's geometry, shadow maps and cubemaps.
+	 * Called by the two paths that replace the scene, before the pool is cleared.
+	 */
+	void DropSceneGpuResources();
+
+	/**
+	 * @brief Uploads the scene environment's IBL cubemaps if not already cached.
+	 *
+	 * The environment half of UploadSceneResources(). The forced variant for a
+	 * live change stays GenerateIBL() (EnvironmentChanged, re-entry).
+	 */
+	void UploadEnvironmentIBL();
+
 	// --- Handlers called by EventQueue subscribers in Initialize() ---
 	void OnMeshImport(const std::string& path);
 	void OnCameraAdd();

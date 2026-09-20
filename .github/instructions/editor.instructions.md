@@ -42,20 +42,33 @@ The Editor is the only owner of this invariant, and holds it at both ends:
   `(0,-5,2)` looking at the origin, mesh, point light, environment, demo debug
   objects). `NewScene(objPath)` **delegates to it** rather than building an empty
   scene, so File → New is a fresh *document*, not an empty one: the same content
-  a first launch shows, then `ed_operations.Clear()`, `m_dirty = false`,
-  `UploadSceneResources()` and `OnIBLLoad()`. `Application` passes the same
-  `kDefaultSceneObj` constant to both paths so they cannot drift.
+  a first launch shows, then `ed_operations.Clear()`, `m_dirty = false` and
+  `UploadSceneResources()`. `Application` passes the same `kDefaultSceneObj`
+  constant to both paths so they cannot drift.
 
-**`CreateDefaultScene()` builds a scene but does not upload it.** Making a scene
-drawable is a two-part step — `UploadSceneResources()` (meshes, lights, debug
-meshes, the light SSBO) and `OnIBLLoad()` (the environment's IBL cubemaps) — and
-every caller owes both. `NewScene()` and `FinishLoad()` pay it inline; the
-Application pays it for its first-launch fallback, whose scene never passes
-through `FinishLoad()`. Missing the IBL half is the quiet failure: the
-Environment object is fully populated, so its properties read correctly in the
-Property panel, but no `EnvironmentGPU` reaches the render cache and the scene
-renders with no IBL. `OnIBLLoad()` is therefore public alongside
-`UploadSceneResources()`.
+**`CreateDefaultScene()` builds a scene but does not upload it.**
+`UploadSceneResources()` is the single "make this scene drawable" step — meshes,
+lights, debug meshes, the environment's IBL cubemaps, and the light SSBO — and
+every part of it skips work that is already cached, so calling it twice is nearly
+free. Keeping it in one piece is the point: it used to be two calls, and the
+first-launch fallback (whose scene comes from `CreateDefaultScene()` and never
+passes through `FinishLoad()`) ran only the first of them. The scene then held an
+Environment whose properties read correctly in the Property panel while its
+`EnvironmentGPU` never reached the render cache, so the scene rendered unlit.
+
+**Replacing a scene drops the outgoing scene's GPU resources first.**
+`DropSceneGpuResources()` (drains the device, then calls
+`RenderCache::RemoveSceneResources()`) is invoked by `BeginLoad()` and
+`CreateDefaultScene()`. The eviction lives in the cache because only it knows
+which of its maps are scene-scoped; the Editor contributes the drain, since the
+entries own `vk::raii` resources. This is not housekeeping: the caches are keyed
+by object UID and `UID::serialize()` *restores* `o_id` from the file, so an entry
+left behind shadows whatever returns under the same id. Load project A, then
+project B, and B draws A's geometry, shadow maps and cubemaps while its own
+properties are displayed correctly beside them. The same reasoning is why the
+environment upload is skip-if-cached while `GenerateIBL()` stays the forced
+variant for live changes (`EnvironmentChanged`, an environment re-entering the
+scene).
 - **Deletion**: `SceneController`'s last-camera guard refuses a delete that
   would empty `cam_list` (`SceneController.cpp:548`).
 - **Loading**: `BeginLoad()`/`FinishLoad()` inherit the camera from the project

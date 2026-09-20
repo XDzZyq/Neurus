@@ -202,9 +202,6 @@ int Application::Run()
 
 	const auto projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
 	const std::string objPath = kDefaultSceneObj;
-	// The default-project fallback skips FinishLoad(), so its GPU upload is
-	// completed after the window is shown - see the OnIBLLoad() call below.
-	bool createdDefaultScene = false;
 
 	try
 	{
@@ -225,7 +222,6 @@ int Application::Run()
 	{
 		NEURUS_LOG("[Application] Project file not found, creating default: " << e.what());
 		app_editor->CreateDefaultScene(objPath);
-		createdDefaultScene = true;
 		// Save for future runs (captures the current default UI layout too);
 		// relative res/... paths are stored inside the pooled data resources.
 		OnProjectSave(projectPath);
@@ -237,18 +233,14 @@ int Application::Run()
 	// Upload scene GPU resources AFTER window is shown and surface is ready.
 	// Doing this earlier (in Editor::Initialize) causes "Surface lost during recreation"
 	// on the first frame because the swapchain isn't fully ready.
+	//
+	// One call covers the whole scene - meshes, lights, debug meshes, IBL cubemaps
+	// and the light SSBO - and that is what makes the first-launch fallback
+	// correct: its scene comes from CreateDefaultScene() and never passes through
+	// FinishLoad(), so it used to end up with no IBL at all. For a loaded project
+	// it is nearly free: FinishLoad() already uploaded everything and each part
+	// skips work that is already cached.
 	app_editor->UploadSceneResources();
-
-	// A scene built by CreateDefaultScene() has no FinishLoad() to run its IBL
-	// step, and UploadSceneResources() covers meshes, lights, debug meshes and
-	// the light SSBO - not the environment. Without this call the scene's
-	// Environment object is fully populated (its properties read correctly in
-	// the Property panel) but no EnvironmentGPU is ever registered in the render
-	// cache, so the scene renders with no IBL at all. Gated on the fallback: the
-	// project path already generated its cubemaps in FinishLoad(), and that is a
-	// 2048^2 x 8-mip convolution chain, not a cheap no-op.
-	if (createdDefaultScene)
-		app_editor->OnIBLLoad();
 
 	WireSignals();
 

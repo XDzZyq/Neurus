@@ -222,6 +222,22 @@ void RenderCache::Clean()
 	rc_pipelineCache.Clear();
 }
 
+void RenderCache::RemoveSceneResources()
+{
+	rc_meshGPUs.clear();
+	rc_environmentGPUs.clear();
+	rc_lightGPUs.clear();
+	rc_uidToShadowLayer.clear();
+	rc_uidToSSBOIdx.clear();
+
+	// Shadow intensities are indexed by caster, and a new scene may have more or
+	// fewer of them, so the array is dropped and recreated at the right layer
+	// count on the next frame.
+	rc_shadowIntensityArray.reset();
+
+	NEURUS_LOG("[RenderCache] Dropped scene resources");
+}
+
 void RenderCache::CleanScreenSpace()
 {
 	rc_attachments.clear();

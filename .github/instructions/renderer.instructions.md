@@ -528,6 +528,17 @@ assigned via `RenderCache::GetShadowIntensityLayer(lightUID, extent)`.
 `RenderCache` owns cross-frame mutable GPU resources beyond framebuffer attachments.
 These resources separate GPU ownership from the Vulkan-free scene and asset layers:
 
+**Scene-scoped eviction.** Mesh, environment and light entries — plus the
+shadow-layer / SSBO-index maps and the shadow intensity array derived from them —
+are dropped together by `RenderCache::RemoveSceneResources()`. The Editor calls
+it (after draining the device first) whenever it replaces the scene, i.e. from
+`BeginLoad()` and `CreateDefaultScene()`. Keying by object UID makes this
+necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project
+file, so an entry left behind by the previous scene shadows whatever returns
+under the same id. Screen-space attachments, the pipeline cache and the
+LightingCache survive it — they are recreated lazily, versioned, or owned by
+`UploadManager` rather than by the scene.
+
 **MeshGPU** (`src/render/MeshGPU.h`)
 - Holds device-local `VertexBuffer` + `IndexBuffer` for a mesh, plus vertex/index counts
 - Created lazily via `RenderCache::GetMeshGPU(objectId, meshData, device, pd, queue, qfi)`

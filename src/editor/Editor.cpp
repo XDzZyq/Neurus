@@ -202,8 +202,6 @@ void Editor::Initialize()
 		ed_operations.Redo();
 	});
 
-	// Load IBL environment now that the scene is available
-	OnIBLLoad();
 
 	// --- Register controllers ---
 	// All four now take only the ControllerContext: no providers are needed
@@ -337,6 +335,10 @@ EditorContext Editor::GetContext() const
 
 void Editor::CreateDefaultScene(const std::string& objPath)
 {
+	// The outgoing scene's GPU resources go with it (this drains the device
+	// first); UploadSceneResources() uploads this scene's own afterwards.
+	DropSceneGpuResources();
+
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear();
 	m_config = RenderConfig{};
@@ -453,12 +455,6 @@ void Editor::NewScene(const std::string& objPath)
 {
 	try
 	{
-		// Drain GPU work before destroying the old scene's GPU resources.
-		if (ed_renderer)
-		{
-			ed_renderer->WaitIdle();
-		}
-
 		ed_operations.Clear(); // History does not span scenes.
 
 		// New builds the SAME starter scene a first launch does (camera, mesh,
@@ -482,9 +478,6 @@ void Editor::NewScene(const std::string& objPath)
 		NEURUS_LOG("[Editor] Created new scene.");
 
 		UploadSceneResources();
-
-		// Generate IBL for the new environment
-		OnIBLLoad();
 	}
 	catch (const std::exception& e)
 	{
@@ -494,9 +487,9 @@ void Editor::NewScene(const std::string& objPath)
 
 void Editor::BeginLoad()
 {
-	// Drain GPU work before destroying the old scene's GPU resources.
-	if (ed_renderer)
-		ed_renderer->WaitIdle();
+	// The outgoing scene's GPU resources go with it (this drains the device
+	// first); the project's own objects are uploaded by FinishLoad().
+	DropSceneGpuResources();
 
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
@@ -517,8 +510,7 @@ void Editor::FinishLoad()
 	// so re-adopt the live one instead of trusting it.
 	ApplyViewportToActiveCamera();
 	m_debugDraw.MarkDirty(); // debug objects came back from the project file
-	UploadSceneResources();
-	OnIBLLoad();
+	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
 }
 
 
@@ -727,17 +719,17 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 	}
 }
 
-void Editor::OnIBLLoad()
+void Editor::UploadEnvironmentIBL()
 {
 	Scene* scene = m_scene.get();
 	if (!scene)
 	{
-		NEURUS_ERR("[Editor] OnIBLLoad: no scene available");
+		NEURUS_ERR("[Editor] UploadEnvironmentIBL: no scene available");
 		return;
 	}
 	if (!ed_uploadManager || !ed_renderer)
 	{
-		NEURUS_ERR("[Editor] OnIBLLoad: UploadManager or Renderer not available");
+		NEURUS_ERR("[Editor] UploadEnvironmentIBL: UploadManager or Renderer not available");
 		return;
 	}
 
@@ -749,7 +741,20 @@ void Editor::OnIBLLoad()
 	}
 
 	auto env = scene->env_list.begin()->second;
-	NEURUS_LOG("[Editor] Using environment (ID " << env->GetObjectID() << ")");
+
+	// Skip what is already cached: this is part of the idempotent upload path,
+	// and regenerating cubemaps is by far its most expensive step (32 MB of
+	// staging plus a 2048^2 x 8-mip convolution chain). The cached entry cannot
+	// be stale here - DropSceneGpuResources() empties the cache whenever the
+	// scene is replaced, which matters because UIDs are restored from the project
+	// file and a reused id would otherwise shadow the incoming environment.
+	// Rebuilding on a live change is GenerateIBL()'s job (EnvironmentChanged, and
+	// an environment re-entering the scene).
+	const int envId = env->GetObjectID();
+	if (ed_renderer->GetRenderCache().GetEnvironmentGPU(envId))
+		return;
+
+	NEURUS_LOG("[Editor] Using environment (ID " << envId << ")");
 
 	// The environment wraps a pooled ImageData (path owned by the data layer).
 	// If the pooled pixels are unavailable (missing source file), fall back to
@@ -792,10 +797,32 @@ void Editor::UploadSceneResources()
 		UploadDebugMeshGpu(*ed_uploadManager, *ed_renderer, *dMesh);
 	}
 
+	// The environment is scene content as well: without its cubemaps the scene
+	// renders unlit while the Property panel still shows the environment.
+	UploadEnvironmentIBL();
+
 	// The light SSBO remains a scene projection (built from scene->light_list).
 	UploadLighting();
 
 	NEURUS_LOG("[Editor] Uploaded scene resources to GPU");
+}
+
+/**
+ * @brief Drops the outgoing scene's GPU resources, draining the device first.
+ *
+ * The eviction itself belongs to RenderCache (RemoveSceneResources): it owns the
+ * caches, and it is the only place that knows which of them are scene-scoped.
+ * What the Editor contributes is the drain - the cached entries own vk::raii
+ * resources, so releasing them while a frame that reads them is still executing
+ * is a validation error. Both scene-replacing paths call this before clearing
+ * the pool.
+ */
+void Editor::DropSceneGpuResources()
+{
+	if (!ed_renderer) return;
+
+	ed_renderer->WaitIdle();
+	ed_renderer->GetRenderCache().RemoveSceneResources();
 }
 
 void Editor::UploadLighting()
