@@ -134,6 +134,13 @@ protected:
 		ctx.editor.scene = &m_scene;
 		ctx.editor.debugDraw = &list;
 
+		// The pass uploads nothing: the camera UBO and the two debug SSBOs belong to
+		// RenderCache, and DeferredRenderer::recordFrame() writes them once per frame
+		// before any pass records. This fixture stands in for that frame driver, so it
+		// must do the same or DebugPass finds an invalid CameraGPU and empty buffers.
+		PublishSceneCamera(*m_cache, m_scene);
+		m_cache->UpdateDebugDraw(ctx.frameIndex, list);
+
 		auto& c = BeginCmd();
 		PassStats stats = m_pass->Record(*c, *m_cache, ctx);
 		EndSubmitWait(c);
@@ -423,7 +430,8 @@ TEST_F(DebugPassTest, TenThousandSegments_StayWithinBudget)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan GPU.";
 
 	constexpr uint32_t kCount = 10000;
-	ASSERT_LE(kCount, DebugPass::kMaxSegments) << "Test exceeds the pass capacity";
+	// No capacity assertion: DebugCache sizes its SSBOs to the list (powers of two
+	// from 4 KiB), so 10,000 segments are stored, not clamped.
 
 	// A fan of segments through the origin, half depth-tested and half x-ray, so
 	// both halves of the partition are exercised in one frame.

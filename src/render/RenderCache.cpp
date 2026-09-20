@@ -1,6 +1,7 @@
 #include "RenderCache.h"
 
 #include "core/Log.h"
+#include "scene/DebugDrawList.h"
 
 #include <algorithm>
 #include <cassert>
@@ -16,6 +17,8 @@ RenderCache::RenderCache(const vk::raii::Device& device,
                        const vk::raii::PhysicalDevice& physicalDevice)
 	: rc_device(&device)
 	, rc_physicalDevice(&physicalDevice)
+	, rc_cameraGPU(std::make_unique<CameraGPU>(device, physicalDevice))
+	, rc_debugCache(std::make_unique<DebugCache>(device, physicalDevice))
 {
 	NEURUS_LOG("[RenderCache] Created");
 }
@@ -489,6 +492,20 @@ LightingCache* RenderCache::GetLightingCache()
 const LightingCache* RenderCache::GetLightingCache() const
 {
 	return rc_lightingCache.get();
+}
+
+// ---------------------------------------------------------------------------
+// Shared camera UBO / debug overlay geometry
+// ---------------------------------------------------------------------------
+
+void RenderCache::UpdateCamera(const glm::mat4& proj, const glm::mat4& view)
+{
+	rc_cameraGPU->Update(proj, view);
+}
+
+void RenderCache::UpdateDebugDraw(uint32_t frameIndex, const DebugDrawList& list)
+{
+	rc_debugCache->Update(frameIndex, list);
 }
 
 // ---------------------------------------------------------------------------

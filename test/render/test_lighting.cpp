@@ -126,6 +126,7 @@ protected:
 
 		{
 			auto& cmd = BeginCmd();
+			PublishSceneCamera(*m_renderCache, testScene);
 			m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
 				.width = kRenderWidth, .height = kRenderHeight,
 			.editor = { .scene = &testScene },

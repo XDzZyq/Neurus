@@ -1,4 +1,4 @@
-#include "HostBuffer.h"
+#include "CPUBuffer.h"
 
 #include <cstring>
 #include <stdexcept>
@@ -9,15 +9,15 @@ namespace neurus {
 // Construction / destruction
 // ---------------------------------------------------------------------------
 
-HostBuffer::HostBuffer(const vk::raii::Device& device,
-                       const vk::raii::PhysicalDevice& physicalDevice,
-                       vk::DeviceSize size,
-                       vk::BufferUsageFlags usage,
-                       const char* debugName)
+CPUBuffer::CPUBuffer(const vk::raii::Device& device,
+                     const vk::raii::PhysicalDevice& physicalDevice,
+                     vk::DeviceSize size,
+                     vk::BufferUsageFlags usage,
+                     const char* debugName)
 {
 	if (size == 0)
 	{
-		throw std::runtime_error("HostBuffer: capacity must be non-zero (it cannot grow later).");
+		throw std::runtime_error("CPUBuffer: capacity must be non-zero (one instance cannot grow).");
 	}
 
 	createBuffer(device, physicalDevice,
@@ -33,7 +33,7 @@ HostBuffer::HostBuffer(const vk::raii::Device& device,
 	b_state = BufferState::HostWrite;
 }
 
-HostBuffer::~HostBuffer()
+CPUBuffer::~CPUBuffer()
 {
 	// b_memory is a raii handle that unmaps nothing on its own, so the mapping
 	// this class opened has to be closed here — before the handle is destroyed by
@@ -49,11 +49,11 @@ HostBuffer::~HostBuffer()
 // Write
 // ---------------------------------------------------------------------------
 
-void HostBuffer::Write(const void* data, vk::DeviceSize size)
+void CPUBuffer::Write(const void* data, vk::DeviceSize size)
 {
 	if (size > b_size)
 	{
-		throw std::runtime_error("HostBuffer::Write: data size exceeds fixed capacity.");
+		throw std::runtime_error("CPUBuffer::Write: data size exceeds this buffer's capacity.");
 	}
 
 	if (size == 0)

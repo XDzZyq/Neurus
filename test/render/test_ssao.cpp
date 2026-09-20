@@ -122,6 +122,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

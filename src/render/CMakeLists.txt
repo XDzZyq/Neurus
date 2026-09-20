@@ -6,10 +6,10 @@ add_library(neurus_render STATIC
 	buffers/Buffer.cpp
 	buffers/BufferLayout.h
 	buffers/BufferLayout.cpp
+	buffers/CPUBuffer.h
+	buffers/CPUBuffer.cpp
 	buffers/GPUBuffer.h
 	buffers/GPUBuffer.cpp
-	buffers/HostBuffer.h
-	buffers/HostBuffer.cpp
 	buffers/IndexBuffer.h
 	buffers/IndexBuffer.cpp
 	buffers/StagingBuffer.h
@@ -48,6 +48,10 @@ add_library(neurus_render STATIC
 	resources/LightGPU.h
 	resources/LightingCache.h
 	resources/LightingCache.cpp
+	resources/CameraGPU.h
+	resources/CameraGPU.cpp
+	resources/DebugCache.h
+	resources/DebugCache.cpp
 	resources/PipelineCache.h
 	resources/PipelineCache.cpp
 	Texture.h

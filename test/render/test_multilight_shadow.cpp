@@ -185,6 +185,7 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	{
 		auto& cmd = BeginCmd();
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
@@ -273,6 +274,7 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 	{
 		auto& cmd = BeginCmd();
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
@@ -339,6 +341,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	{
 		auto& cmd = BeginCmd();
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
 		// NO LightingPass here — pure isolation test
@@ -477,6 +480,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	{
 		auto& cmd = BeginCmd();
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
@@ -682,6 +686,7 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	{
 		auto& cmd = BeginCmd();
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);

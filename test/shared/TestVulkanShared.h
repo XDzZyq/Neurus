@@ -19,6 +19,7 @@
 #include "render/UploadManager.h"
 #include "render/passes/GeometryPass.h"
 #include "scene/Camera.h"
+#include "scene/EditorContext.h"
 #include "scene/Scene.h"
 
 #include <array>
@@ -214,6 +215,42 @@ protected:
 			neurus::ImageState::DepthAttachment);
 
 		fixture.EndSubmitWait(cmd);
+	}
+
+	/**
+	 * @brief Publishes the scene's active camera into the RenderCache's shared UBO.
+	 *
+	 * DeferredRenderer::recordFrame() does this once per frame, before any pass
+	 * records; a test that drives a pass directly is standing in for that frame
+	 * driver and must do the same. GeometryPass and DebugPass only *bind*
+	 * RenderCache::GetCameraGPU() — without this call it is still invalid and
+	 * both passes record nothing.
+	 *
+	 * No-op when the scene has no active camera.
+	 */
+	static void PublishSceneCamera(neurus::RenderCache& cache,
+	                               const neurus::Scene& scene)
+	{
+		if (const neurus::Camera* cam = scene.GetActiveCamera())
+		{
+			cache.UpdateCamera(cam->GetProjectionMatrix(), cam->GetViewMatrix());
+		}
+	}
+
+	/**
+	 * @brief PublishSceneCamera overload taking the context a pass will receive.
+	 *
+	 * Convenience for the common shape `PublishSceneCamera(cache, ctx.editor)`:
+	 * casts `editor.scene` back to `const Scene*` the way every pass does.
+	 * No-op when no scene is attached.
+	 */
+	static void PublishSceneCamera(neurus::RenderCache& cache,
+	                               const neurus::EditorContext& editor)
+	{
+		if (const auto* scene = static_cast<const neurus::Scene*>(editor.scene))
+		{
+			PublishSceneCamera(cache, *scene);
+		}
 	}
 
 	/**

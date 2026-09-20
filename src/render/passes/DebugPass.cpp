@@ -12,9 +12,7 @@
 #include "core/Log.h"
 
 #include "../resources/MeshGPU.h"
-#include "scene/Camera.h"
 #include "scene/DebugDrawList.h"
-#include "scene/Scene.h"
 
 #include <algorithm>
 #include <array>
@@ -59,40 +57,15 @@ DebugPass::DebugPass(const vk::raii::Device& device,
 	// real limit travels to the shader instead of a hardcoded guess.
 	p_maxPointSizePx = physicalDevice.getProperties().limits.pointSizeRange[1];
 
-	// --- Per-frame buffers, then the descriptors that name them ---
-	// Written exactly once: capacity is fixed, so these handles never change and
-	// the sets need no per-frame rewrite (nor PARTIALLY_BOUND).
-	p_frames.resize(framesInFlight);
-	for (uint32_t i = 0; i < framesInFlight; ++i)
-	{
-		FrameSlot& slot = p_frames[i];
-
-		slot.camera = std::make_unique<UniformBuffer<CameraUBOData>>(
-			device, physicalDevice, "DebugPass_CameraUBO");
-
-		slot.segments = std::make_unique<HostBuffer>(
-			device, physicalDevice,
-			sizeof(DebugSegment) * kMaxSegments,
-			vk::BufferUsageFlagBits::eStorageBuffer,
-			"DebugPass_Segments");
-
-		slot.points = std::make_unique<HostBuffer>(
-			device, physicalDevice,
-			sizeof(DebugPointSprite) * kMaxPoints,
-			vk::BufferUsageFlagBits::eStorageBuffer,
-			"DebugPass_Points");
-
-		p_descriptorSets[i].WriteBuffer(0, slot.camera->GetDescriptorInfo(),
-		                                vk::DescriptorType::eUniformBuffer);
-		p_descriptorSets[i].WriteBuffer(1, slot.segments->GetDescriptorInfo(),
-		                                vk::DescriptorType::eStorageBuffer);
-		p_descriptorSets[i].WriteBuffer(2, slot.points->GetDescriptorInfo(),
-		                                vk::DescriptorType::eStorageBuffer);
-
+	// No buffers are created here: bindings 0-2 name RenderCache's camera UBO and
+	// debug SSBOs, whose handles change when the geometry grows, so Record()
+	// writes the sets each frame instead (see LightingPass for the same pattern).
 #ifdef _DEBUG
-		p_descriptorSets[i].SetDebugName("DebugPass_Set");
-#endif
+	for (auto& set : p_descriptorSets)
+	{
+		set.SetDebugName("DebugPass_Set");
 	}
+#endif
 
 	// --- Wireframe vertex input: MeshData's layout, same as gbuffer.vert ---
 	p_meshVertexLayout.AddAttribute(0, vk::Format::eR32G32B32Sfloat, 0);   // pos    @ 0
@@ -102,8 +75,6 @@ DebugPass::DebugPass(const vk::raii::Device& device,
 	BuildPipeline(device, "DebugPass");
 
 	NEURUS_LOG("[DebugPass] framesInFlight=" << framesInFlight
-	           << " maxSegments=" << kMaxSegments
-	           << " maxPoints=" << kMaxPoints
 	           << " maxPointSizePx=" << p_maxPointSizePx);
 }
 
@@ -240,49 +211,6 @@ void DebugPass::BuildPipeline(const vk::raii::Device& device, const std::string&
 }
 
 // ---------------------------------------------------------------------------
-// Upload
-// ---------------------------------------------------------------------------
-
-void DebugPass::UploadIfChanged(FrameSlot& slot, const DebugDrawList& list)
-{
-	// The producers are stateful, so on most frames this list is byte-identical to
-	// the one already sitting in this slot's buffers. Comparing revisions turns
-	// the common case into a single integer compare.
-	if (slot.uploadedRevision == list.revision)
-	{
-		return;
-	}
-
-	const uint32_t segTotal   = static_cast<uint32_t>(list.segments.size());
-	const uint32_t pointTotal = static_cast<uint32_t>(list.points.size());
-
-	slot.segmentCount = std::min(segTotal, kMaxSegments);
-	slot.pointCount   = std::min(pointTotal, kMaxPoints);
-
-	if ((segTotal > slot.segmentCount || pointTotal > slot.pointCount) && !p_warnedOverflow)
-	{
-		p_warnedOverflow = true;
-		NEURUS_ERR("[DebugPass] debug geometry exceeds fixed capacity and is truncated: "
-		           << segTotal << "/" << kMaxSegments << " segments, "
-		           << pointTotal << "/" << kMaxPoints << " points. "
-		           "Raise kMaxSegments/kMaxPoints if this is legitimate.");
-	}
-
-	// Truncation can cut into the x-ray half; clamping the split keeps the second
-	// draw range empty rather than out of bounds.
-	slot.xraySegmentStart = std::min(list.xraySegmentStart, slot.segmentCount);
-	slot.xrayPointStart   = std::min(list.xrayPointStart, slot.pointCount);
-
-	// Plain memcpy into host-coherent memory the GPU already sees: no staging
-	// copy, no command buffer, and no barrier — queue submission makes host
-	// writes to coherent memory visible on its own.
-	slot.segments->Write(list.segments.data(), sizeof(DebugSegment) * slot.segmentCount);
-	slot.points->Write(list.points.data(), sizeof(DebugPointSprite) * slot.pointCount);
-
-	slot.uploadedRevision = list.revision;
-}
-
-// ---------------------------------------------------------------------------
 // Record
 // ---------------------------------------------------------------------------
 
@@ -298,28 +226,37 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 		return stats;
 	}
 
-	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
-	const Camera* cam = scene ? scene->GetActiveCamera() : nullptr;
-	if (!cam)
+	const CameraGPU& camera = cache.GetCameraGPU();
+	if (!camera.IsValid())
 	{
-		return stats;
+		return stats;   // no frame has published a camera yet
 	}
 
-	const size_t frameIdx = ctx.frameIndex % p_frames.size();
-	FrameSlot& slot = p_frames[frameIdx];
+	const size_t frameIdx = ctx.frameIndex % p_descriptorSets.size();
+	const DebugCache::FrameView frame = cache.GetDebugCache().GetFrame(ctx.frameIndex);
+	if (!frame.segments || !frame.points)
+	{
+		return stats;   // RenderCache::UpdateDebugDraw() has not run for this frame
+	}
 
-	// --- 2. Uploads. The camera changes almost every frame so it is copied
-	//        unconditionally; the geometry is revision-gated ---
-	const glm::mat4 proj = cam->GetProjectionMatrix();
-	const glm::mat4 view = cam->GetViewMatrix();
-	slot.camera->Upload(CameraUBOData{proj * view, view});
-
-	UploadIfChanged(slot, *list);
+	// --- 2. Point this frame's set at what the cache currently holds. Rewritten
+	//        every frame because DebugCache replaces a buffer when the geometry
+	//        outgrows it, which changes the handle the descriptor names ---
+	p_descriptorSets[frameIdx].WriteBuffer(0, camera.GetDescriptorInfo(),
+	                                       vk::DescriptorType::eUniformBuffer);
+	p_descriptorSets[frameIdx].WriteBuffer(1, frame.segments->GetDescriptorInfo(),
+	                                       vk::DescriptorType::eStorageBuffer);
+	p_descriptorSets[frameIdx].WriteBuffer(2, frame.points->GetDescriptorInfo(),
+	                                       vk::DescriptorType::eStorageBuffer);
 
 	const vk::Extent2D extent{ctx.width, ctx.height};
 
 	// proj[1][1] is negative here (Camera flips Y for Vulkan NDC), and the shaders
-	// want a magnitude, so the sign is dropped rather than propagated.
+	// want a magnitude, so the sign is dropped rather than propagated. It is read
+	// from the projection CameraGPU kept on the CPU, not from viewProj: the view
+	// rotation mixes into viewProj[1][1], so the y scale is no longer isolated
+	// there.
+	const glm::mat4& proj = camera.GetProjection();
 	const DebugPushConstants overlayPush{
 		{static_cast<float>(extent.width), static_cast<float>(extent.height)},
 		std::abs(proj[1][1]) * static_cast<float>(extent.height) * 0.5f,
@@ -385,43 +322,43 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 		return *pipe.pipelineLayout;
 	};
 
-	if (slot.segmentCount > 0)
+	if (frame.segmentCount > 0)
 	{
 		const vk::PipelineLayout layout = bindFor(kLinePipeline);
 		cmdBuf.pushConstants<DebugPushConstants>(
 			layout, vk::ShaderStageFlagBits::eVertex, 0, overlayPush);
 
-		if (slot.xraySegmentStart > 0)
+		if (frame.xraySegmentStart > 0)
 		{
 			cmdBuf.setDepthTestEnable(VK_TRUE);
-			cmdBuf.draw(kVerticesPerSegment * slot.xraySegmentStart, 1, 0, 0);
+			cmdBuf.draw(kVerticesPerSegment * frame.xraySegmentStart, 1, 0, 0);
 			++stats.drawCalls;
 		}
-		if (slot.segmentCount > slot.xraySegmentStart)
+		if (frame.segmentCount > frame.xraySegmentStart)
 		{
-			const uint32_t count = slot.segmentCount - slot.xraySegmentStart;
+			const uint32_t count = frame.segmentCount - frame.xraySegmentStart;
 			cmdBuf.setDepthTestEnable(VK_FALSE);
 			cmdBuf.draw(kVerticesPerSegment * count, 1,
-			            kVerticesPerSegment * slot.xraySegmentStart, 0);
+			            kVerticesPerSegment * frame.xraySegmentStart, 0);
 			++stats.drawCalls;
 		}
 	}
-	if (slot.pointCount > 0)
+	if (frame.pointCount > 0)
 	{
 		const vk::PipelineLayout layout = bindFor(kPointPipeline);
 		cmdBuf.pushConstants<DebugPushConstants>(
 			layout, vk::ShaderStageFlagBits::eVertex, 0, overlayPush);
 
-		if (slot.xrayPointStart > 0)
+		if (frame.xrayPointStart > 0)
 		{
 			cmdBuf.setDepthTestEnable(VK_TRUE);
-			cmdBuf.draw(slot.xrayPointStart, 1, 0, 0);
+			cmdBuf.draw(frame.xrayPointStart, 1, 0, 0);
 			++stats.drawCalls;
 		}
-		if (slot.pointCount > slot.xrayPointStart)
+		if (frame.pointCount > frame.xrayPointStart)
 		{
 			cmdBuf.setDepthTestEnable(VK_FALSE);
-			cmdBuf.draw(slot.pointCount - slot.xrayPointStart, 1, slot.xrayPointStart, 0);
+			cmdBuf.draw(frame.pointCount - frame.xrayPointStart, 1, frame.xrayPointStart, 0);
 			++stats.drawCalls;
 		}
 	}

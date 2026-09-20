@@ -580,6 +580,24 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// Advance Halton index (cycles through all Halton(2,3,5) triples)
 	m_haltonIndex++;
 
+	// --- Per-frame cache updates: one writer, before any pass records ---
+	// Both resources live in RenderCache because more than one pass reads them
+	// (GeometryPass and DebugPass share the camera UBO) and because a pass that
+	// wrote them would make the result depend on pass order. Passes only read.
+	if (const auto* scene = static_cast<const Scene*>(ctx.editor.scene))
+	{
+		if (const Camera* cam = scene->GetActiveCamera())
+		{
+			r_renderCache->UpdateCamera(cam->GetProjectionMatrix(), cam->GetViewMatrix());
+		}
+	}
+
+	if (ctx.editor.debugDraw)
+	{
+		// Revision-gated: an unchanged list copies nothing.
+		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.editor.debugDraw);
+	}
+
 	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → Gizmo → Compose → [FXAA] ---
 	// The whole deferred pipeline runs through one RenderGraph. FXAA is
 	// optional; useFXAA also selects the blit source below.

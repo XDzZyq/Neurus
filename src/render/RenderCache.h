@@ -5,6 +5,8 @@
 #include "resources/EnvironmentGPU.h"
 #include "resources/LightGPU.h"
 #include "resources/LightingCache.h"
+#include "resources/CameraGPU.h"
+#include "resources/DebugCache.h"
 #include "resources/PipelineCache.h"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -14,6 +16,8 @@
 #include <vector>
 
 namespace neurus {
+
+struct DebugDrawList;
 
 /**
  * @brief Named attachment identifiers for G-Buffer and post-FX framebuffer attachments.
@@ -74,12 +78,16 @@ class RenderCache
 {
 public:
 	/**
-	 * @brief Constructs the render cache and initializes LightingCache.
+	 * @brief Constructs the render cache with its always-present GPU resources.
+	 *
+	 * The shared camera UBO and the debug-overlay buffers are created here
+	 * (neither needs a queue, and every frame writes the camera), so their
+	 * accessors never return null. LightingCache is the exception: it uploads
+	 * through a queue, so UploadManager builds it and hands it over with
+	 * SetLightingCache().
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (retained reference, used for format/memory queries).
-	 * @param graphicsQueue     Graphics queue for staging uploads.
-	 * @param queueFamilyIndex  Queue family index for staging command pool.
 	 */
 	RenderCache(const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice);
@@ -424,6 +432,50 @@ public:
 	 */
 	uint32_t GetShadowIndex(int lightUID) const;
 
+	// --- Shared camera UBO (owned) ---
+
+	/**
+	 * @brief Uploads this frame's camera matrices into the shared camera UBO.
+	 *
+	 * The one writer of the camera buffer: called once per frame from
+	 * DeferredRenderer::recordFrame() before the graph executes, so every pass
+	 * that reads it is guaranteed the same camera regardless of pass order. Takes
+	 * matrices rather than a Camera so this layer stays free of scene types.
+	 *
+	 * @param proj  Projection matrix (already Y-flipped for Vulkan NDC).
+	 * @param view  View matrix.
+	 */
+	void UpdateCamera(const glm::mat4& proj, const glm::mat4& view);
+
+	/**
+	 * @brief The shared camera UBO. Always present; check IsValid() before reading.
+	 */
+	CameraGPU& GetCameraGPU() { return *rc_cameraGPU; }
+
+	/** @brief const overload of GetCameraGPU(). */
+	const CameraGPU& GetCameraGPU() const { return *rc_cameraGPU; }
+
+	// --- Debug overlay geometry (owned) ---
+
+	/**
+	 * @brief Uploads this frame's debug geometry, if it changed since last frame.
+	 *
+	 * Called once per frame from DeferredRenderer::recordFrame(), next to
+	 * UpdateCamera(). Cheap when nothing moved: the list's revision is compared
+	 * against what the frame's slot already holds and an unchanged list copies
+	 * nothing.
+	 *
+	 * @param frameIndex  Frame-in-flight index being recorded.
+	 * @param list        Flattened debug geometry from EditorContext::debugDraw.
+	 */
+	void UpdateDebugDraw(uint32_t frameIndex, const DebugDrawList& list);
+
+	/** @brief The debug overlay's per-frame buffers, as DebugPass reads them. */
+	DebugCache& GetDebugCache() { return *rc_debugCache; }
+
+	/** @brief const overload of GetDebugCache(). */
+	const DebugCache& GetDebugCache() const { return *rc_debugCache; }
+
 	void CleanScreenSpace();
 
 private:
@@ -464,6 +516,12 @@ private:
 
 	// --- Lighting SSBO storage (owned) ---
 	std::unique_ptr<LightingCache> rc_lightingCache;
+
+	// --- Shared camera UBO (owned, created eagerly: every frame writes it) ---
+	std::unique_ptr<CameraGPU> rc_cameraGPU;
+
+	// --- Debug overlay geometry (owned; allocates nothing until first Update) ---
+	std::unique_ptr<DebugCache> rc_debugCache;
 
 	// --- Light UID → SSBO index / shadow index maps (populated by UpdateLighting) ---
 	std::unordered_map<int, uint32_t> rc_uidToSSBOIdx;     ///< uid → SSBO element index

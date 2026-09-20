@@ -24,7 +24,7 @@
 #include "../DescriptorManager.h"
 #include "../PipelineBuilder.h"
 #include "../buffers/BufferLayout.h"
-#include "../buffers/UniformBuffer.h"
+#include "../resources/CameraGPU.h"
 #include "../shaders/ShaderLibrary.h"
 #include "../shaders/RenderShader.h"
 #include "Pass.h"
@@ -36,18 +36,6 @@
 #include <vector>
 
 namespace neurus {
-
-/**
- * @brief Camera data uploaded to the GPU each frame.
- *
- * Contains the combined view-projection matrix and the view matrix
- * (needed for view-space normal computation in the vertex shader).
- */
-struct CameraUBOData
-{
-	glm::mat4 viewProj;   ///< projection * view
-	glm::mat4 view;       ///< view matrix (for normal transform)
-};
 
 /**
  * @brief G-Buffer geometry pass using dynamic rendering.
@@ -133,10 +121,9 @@ private:
 	// --- Descriptor resources ---
 	DescriptorSetLayout p_cameraLayout;             ///< Set 0 layout definition
 
-	// --- Camera UBO (host-visible for per-frame update) ---
-	UniformBuffer<CameraUBOData> p_cameraUBO;
-
-	// --- Descriptor pool + set for camera UBO ---
+	// --- Descriptor pool + set naming RenderCache's shared camera UBO ---
+	// The buffer itself belongs to RenderCache::GetCameraGPU(), which
+	// DeferredRenderer updates once per frame; this pass only binds it.
 	DescriptorPool p_descriptorPool;
 	DescriptorSet p_cameraDescriptorSet;
 

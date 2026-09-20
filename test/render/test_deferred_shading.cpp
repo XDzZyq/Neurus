@@ -158,6 +158,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

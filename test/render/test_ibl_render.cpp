@@ -339,6 +339,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
@@ -445,6 +446,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 			};
 
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 
@@ -591,6 +593,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 			};
 
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 
