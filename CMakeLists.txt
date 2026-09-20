@@ -13,6 +13,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ---------------------------------------------------------------------------
 if(MSVC)
 	add_compile_options(/W4 /utf-8 /MP)
+	# Every TU that includes <cereal/archives/json.hpp> + <cereal/types/polymorphic.hpp>
+	# emits one COMDAT section per instantiated function. The registration TUs
+	# (editor/operations/registrations, scene/registrations) are all-macro files
+	# with nothing to fold, so they blow past MSVC's default 65535-section COFF
+	# limit (error C1128) as soon as a few more types are registered. /bigobj only
+	# widens that limit -- no codegen or ABI change -- and cereal builds itself the
+	# same way (see dep/cereal/CMakeLists.txt).
+	add_compile_options(/bigobj)
 	# Suppress MSVC-specific noisy warnings for third-party headers
 	add_compile_options(/wd4100)  # unreferenced formal parameter
 	add_compile_options(/wd4127)  # conditional expression is constant
