@@ -133,6 +133,13 @@ public:
 	void ClearPoints();
 
 	/**
+	 * @brief Replaces the whole point list.
+	 * @param points New world-space positions.
+	 * @see DebugLine::SetVertices for why the editor sets the list absolutely.
+	 */
+	void SetPoints(std::vector<glm::vec3> points) { o_points = std::move(points); }
+
+	/**
 	 * @brief Returns the number of stored points.
 	 * @return Point count.
 	 */

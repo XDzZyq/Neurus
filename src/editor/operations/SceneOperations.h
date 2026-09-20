@@ -238,6 +238,160 @@ public:
 	}
 };
 
+// ---------------------------------------------------------------------------
+// Debug object properties (issue #22)
+// ---------------------------------------------------------------------------
+//
+// One op per knob, like every other property above. The three debug types share
+// these ops because they share the events: the controller resolves the UID
+// against whichever debug pool holds it, so an op never needs to know which.
+
+/** @brief Absolute debug tint edit (RGBA). */
+class SetDebugColorOp : public TransitionOp<SetDebugColorOp, DebugColorChanged, glm::vec4>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Set Debug Color";
+
+	DebugColorChanged MakeEvent(int o, const glm::vec4& v) const
+	{
+		return DebugColorChanged{ o, v.r, v.g, v.b, v.a };
+	}
+};
+
+/** @brief Absolute debug opacity edit. */
+class SetDebugOpacityOp : public TransitionOp<SetDebugOpacityOp, DebugOpacityChanged, float>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Set Debug Opacity";
+
+	DebugOpacityChanged MakeEvent(int o, const float& v) const
+	{
+		return DebugOpacityChanged{ o, v };
+	}
+};
+
+/** @brief Absolute debug x-ray toggle. */
+class SetDebugXRayOp : public TransitionOp<SetDebugXRayOp, DebugXRayChanged, bool>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Toggle Debug X-Ray";
+
+	DebugXRayChanged MakeEvent(int o, const bool& v) const
+	{
+		return DebugXRayChanged{ o, v };
+	}
+};
+
+/** @brief Absolute debug-line width edit. */
+class SetDebugLineWidthOp : public TransitionOp<SetDebugLineWidthOp, DebugLineWidthChanged, float>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Set Debug Line Width";
+
+	DebugLineWidthChanged MakeEvent(int o, const float& v) const
+	{
+		return DebugLineWidthChanged{ o, v };
+	}
+};
+
+/** @brief Absolute debug-line stipple toggle. */
+class SetDebugStippleOp : public TransitionOp<SetDebugStippleOp, DebugLineStippleChanged, bool>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Toggle Debug Stipple";
+
+	DebugLineStippleChanged MakeEvent(int o, const bool& v) const
+	{
+		return DebugLineStippleChanged{ o, v };
+	}
+};
+
+/** @brief Absolute debug-line smoothing toggle. */
+class SetDebugSmoothOp : public TransitionOp<SetDebugSmoothOp, DebugLineSmoothChanged, bool>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Toggle Debug Smoothing";
+
+	DebugLineSmoothChanged MakeEvent(int o, const bool& v) const
+	{
+		return DebugLineSmoothChanged{ o, v };
+	}
+};
+
+/** @brief Absolute point-sprite shape edit. */
+class SetDebugPointTypeOp : public TransitionOp<SetDebugPointTypeOp, DebugPointTypeChanged, int>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Set Debug Point Type";
+
+	DebugPointTypeChanged MakeEvent(int o, const int& v) const
+	{
+		return DebugPointTypeChanged{ o, v };
+	}
+};
+
+/** @brief Absolute point-size edit. */
+class SetDebugPointScaleOp : public TransitionOp<SetDebugPointScaleOp, DebugPointScaleChanged, float>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Set Debug Point Size";
+
+	DebugPointScaleChanged MakeEvent(int o, const float& v) const
+	{
+		return DebugPointScaleChanged{ o, v };
+	}
+};
+
+/** @brief Absolute point projection-mode edit (screen-space vs world-space size). */
+class SetDebugProjectionModeOp
+	: public TransitionOp<SetDebugProjectionModeOp, DebugProjectionModeChanged, int>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Set Debug Projection Mode";
+
+	DebugProjectionModeChanged MakeEvent(int o, const int& v) const
+	{
+		return DebugProjectionModeChanged{ o, v };
+	}
+};
+
+/**
+ * @brief Absolute replacement of a debug object's position list.
+ *
+ * Stores both endpoints as whole lists, so one op undoes a coordinate edit, a
+ * row insertion and a row removal identically. The event carries the flattened
+ * form; the op keeps the glm form because that is what the scene object holds.
+ */
+class SetDebugPositionsOp
+	: public TransitionOp<SetDebugPositionsOp, DebugPositionsChanged, std::vector<glm::vec3>>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Edit Debug Positions";
+
+	DebugPositionsChanged MakeEvent(int o, const std::vector<glm::vec3>& v) const
+	{
+		std::vector<float> xyz;
+		xyz.reserve(v.size() * 3);
+		for (const glm::vec3& p : v)
+		{
+			xyz.push_back(p.x);
+			xyz.push_back(p.y);
+			xyz.push_back(p.z);
+		}
+		return DebugPositionsChanged{ o, std::move(xyz) };
+	}
+};
+
 /**
  * @brief Absolute camera pose edit (position + target), coarse-grained.
  *

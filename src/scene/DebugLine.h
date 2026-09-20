@@ -122,6 +122,17 @@ public:
 	void ClearVertices();
 
 	/**
+	 * @brief Replaces the whole vertex list.
+	 * @param vertices New vertex positions, interpreted in pairs like PushDebugLines.
+	 *
+	 * The property editor edits the list as a whole — a cell edit, an insertion and a
+	 * removal are all "the list is now this" — so the absolute setter is what the
+	 * undoable op carries, rather than a per-index one that could not express the
+	 * structural cases anyway.
+	 */
+	void SetVertices(std::vector<glm::vec3> vertices) { o_vertices = std::move(vertices); }
+
+	/**
 	 * @brief Returns the number of stored vertex positions.
 	 * @return Vertex count.
 	 */
