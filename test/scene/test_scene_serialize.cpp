@@ -88,6 +88,11 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto shader = resources.Load<RenderShader>("TestShader", "", "");
 		mesh->SetObjShader(shader);
 		scene.UseMesh(mesh);
+		// A non-identity TRS, so the matrix assertions below cannot pass by
+		// accident on an identity matrix.
+		mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+		mesh->SetRotation(glm::vec3(0.0f, 0.0f, 90.0f)); // yaw
+		mesh->SetScale(glm::vec3(2.0f));
 		meshUid = mesh->GetObjectID();
 		shaderUid = shader->GetObjectID();
 
@@ -139,6 +144,28 @@ TEST(SceneSerialize, FullRoundtrip)
 	ASSERT_NE(loadedMesh->o_mesh, nullptr);
 	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), loadedMesh->o_meshDataId);
 	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u); // content reloaded from res/
+
+	// Transform: the raw TRS round-trips as data, and the cached model matrix -
+	// the value the geometry/shadow passes actually read - is rebuilt for it.
+	// Without that rebuild the object draws at the origin with unit scale while
+	// the Property panel shows the values below.
+	EXPECT_EQ(loadedMesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
+	Transform3D expected;
+	expected.SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+	expected.SetRotation(glm::vec3(0.0f, 0.0f, 90.0f));
+	expected.SetScale(glm::vec3(2.0f));
+	EXPECT_EQ(loadedMesh->GetModelMatrix(), expected.GetModelMatrix());
+	EXPECT_NE(loadedMesh->GetModelMatrix(), glm::mat4(1.0f));
+
+	// Camera: the cached view matrix is a computed value as well, and the load
+	// path's only other rebuild of it is an aspect-ratio setter taking a detour
+	// through ApplyViewportToActiveCamera().
+	Camera* loadedCam = loadedScene.GetActiveCamera();
+	ASSERT_NE(loadedCam, nullptr);
+	EXPECT_EQ(loadedCam->GetViewMatrix(),
+	          glm::lookAt(loadedCam->GetPosition(), loadedCam->cam_tar,
+	                      glm::vec3(0.0f, 0.0f, 1.0f)))
+	    << "the loaded camera's view matrix must match its loaded position/target";
 
 	EXPECT_EQ(loadedMesh->o_shaderId, shaderUid);
 	ASSERT_NE(loadedMesh->o_shader, nullptr);
