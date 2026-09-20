@@ -180,6 +180,8 @@ Neurus/
 │   │   ├── GPUProfiler.h/cpp        # Timestamp-query GPU/CPU per-pass profiling
 │   │   ├── VulkanContext.h/cpp
 │   │   ├── resources/        # GPU resource structs (owned by RenderCache)
+│   │   │   ├── CameraGPU.h/cpp      # Shared camera UBO (viewProj + view)
+│   │   │   ├── DebugCache.h/cpp     # Per-frame DebugDrawList SSBOs (CPUBuffer pairs)
 │   │   │   ├── EnvironmentGPU.h     # IBL cubemap Textures
 │   │   │   ├── LightGPU.h           # Per-light shadow resources
 │   │   │   ├── LightingCache.h/cpp  # Light SSBO storage (point + sun)
@@ -202,7 +204,7 @@ Neurus/
 │   │   └── buffers/          # Buffer class hierarchy
 │   │       ├── Buffer.h/cpp         # Virtual base class (Buffer)
 │   │       ├── StagingBuffer.h/cpp  # Host-visible staging (upload/download ONLY)
-│   │       ├── HostBuffer.h/cpp     # Permanent host-visible mapped buffer
+│   │       ├── CPUBuffer.h/cpp      # Permanent host-visible mapped buffer
 │   │       ├── GPUBuffer.h/cpp      # Device-local with staging
 │   │       ├── ArrayBuffer.h        # Growable typed device buffer (ArrayBuffer<T>)
 │   │       ├── UniformBuffer.h      # Template uniform (UniformBuffer<T>)
@@ -214,6 +216,7 @@ Neurus/
 │   │   ├── ResourceManager.h/cpp # Single factory + UID pool (Load<T>, polymorphic serialize)
 │   │   ├── IResourceLookup.h      # Read-only pool lookup interface
 │   │   ├── Log.h                  # NEURUS_LOG / NEURUS_ERR macros
+│   │   ├── Serialize.h            # NEURUS_OPTIONAL_NVP / OptionalBlock (back-compat fields)
 │   │   ├── Graph.h                # Generic DAG template
 │   │   ├── Selections.h           # Selection state container
 │   │   └── Timer.h                # Scoped timer
@@ -385,8 +388,14 @@ Qt is stateful, so debug objects are too.
 - A `DebugMesh` wireframe still needs a **MeshGPU** in the RenderCache, uploaded by the
   Editor through `UploadManager::UploadMeshData()` — `DebugMesh` is not a `Mesh`, so it
   cannot reuse `UploadMesh()`. Without it `DebugPass` skips the mesh silently.
-- `HostBuffer` is the permanent host-visible buffer type. **`StagingBuffer` is for
-  uploads and downloads only** — never retain one as a permanent buffer object.
+- `CPUBuffer` is the permanent host-visible buffer type (named against `GPUBuffer`).
+  **`StagingBuffer` is for uploads and downloads only** — never retain one as a
+  permanent buffer object.
+- The **frame driver publishes, passes read**: `DeferredRenderer::recordFrame()` writes
+  `RenderCache`'s `CameraGPU` and `DebugCache` once per frame before any pass records;
+  `GeometryPass` and `DebugPass` only bind them. A test driving a pass directly stands in
+  for that driver — call `VulkanTestShared::PublishSceneCamera()` or the pass renders
+  nothing.
 
 ---
 

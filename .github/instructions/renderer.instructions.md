@@ -23,7 +23,7 @@ renders frames. It must remain stateless with respect to application logic.
 - `src/render/shaders/RenderShader.h/cpp, ComputeShader.h/cpp` - Render/compute pipeline wrappers (parsed + generated shaders)
 - `src/render/shaders/ShaderCompiler.h/cpp, ShaderGPU.h` - SPIR-V compilation and GPU shader module
 - `src/render/Renderer.h` - Public renderer API, frame drawing
-- `src/render/RenderCache.h/cpp` - Cross-frame resource pool; owns MeshGPU, EnvironmentGPU, LightingCache, attachments, shadow maps
+- `src/render/RenderCache.h/cpp` - Cross-frame resource pool; owns MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache, attachments, shadow maps
 - `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL)
   - `UploadMesh(const Mesh&)` null-checks `o_mesh` then delegates to
     `UploadMeshData(const MeshData&)`, which owns the 14→8 float vertex stripping.
@@ -388,31 +388,45 @@ after touching barriers or submit scopes.
   independent of primitive count — that is the structural half of issue #22's budget
   and `test_debug_pass.cpp` asserts it exactly (10,000 segments ⇒ 2 draws).
 - **Blending**: alpha-over, no culling. Debug geometry is two-sided by nature.
-- **Upload is revision-gated**: debug producers are stateful, so the list is usually
-  byte-identical to last frame's. Each frame-in-flight `FrameSlot` owns its own
-  `HostBuffer` pair and remembers the `DebugDrawList::revision` it last copied; a
-  matching revision **skips the memcpy entirely**. `uploadedRevision` starts at
-  `UINT64_MAX`, not 0, because a list legitimately at revision 0 would otherwise
+- **Upload is revision-gated, and the pass does not do it**: debug producers are
+  stateful, so the list is usually byte-identical to last frame's. The geometry lives
+  in `RenderCache`'s `DebugCache`, not in the pass: `DeferredRenderer::recordFrame()`
+  calls `RenderCache::UpdateDebugDraw(frameIndex, list)` once per frame, before any
+  pass records, and a slot whose `uploadedRevision` already matches
+  `DebugDrawList::revision` **skips the memcpy entirely**. `uploadedRevision` starts
+  at `UINT64_MAX`, not 0, because a list legitimately at revision 0 would otherwise
   never upload.
-- **Capacity is fixed, not a hint**: `kMaxSegments = 65536`, `kMaxPoints = 16384`
-  (3 MB + 0.5 MB per slot). Overflow is **clamped and logged once**, never grown —
-  a reallocation would swap the `VkBuffer` out from under descriptor sets that are
-  written once at construction and never touched again.
-- **Camera**: the pass owns its own `CameraUBOData` UBO (`{viewProj, view}`, the same
-  block as `gbuffer.vert`). There is no shared camera buffer in the renderer; this
-  mirrors GeometryPass.
+- **Capacity grows with the geometry**: `DebugCache` sizes each slot's `CPUBuffer`
+  pair in powers of two from 4 KiB, so nothing is clamped or dropped. Growth swaps
+  the `VkBuffer` handle, which is why `DebugPass::Record()` re-writes bindings 0-2
+  from the cache **every frame** — the same thing `LightingPass` does for the light
+  SSBOs, and legal for the same reason: the frame being recorded has already waited
+  on its fence. A slot is only ever written for a frame that is not in flight.
+- **Camera**: the pass binds `RenderCache::GetCameraGPU()`, the renderer's single
+  camera UBO (`{viewProj, view}`, the block `gbuffer.vert` declares), written once
+  per frame by `recordFrame()`. `GeometryPass` binds the same buffer; neither owns
+  one. `CameraGPU` also keeps the **projection matrix on the CPU**
+  (`GetProjection()`) without uploading it: DebugPass converts a world-space size to
+  pixels with `proj[1][1]`, and that factor cannot be recovered from `viewProj` once
+  the view rotation is folded in (column-major: `(proj*view)[1][1]` sums over `k`).
 
-### HostBuffer Convention
+### CPUBuffer Convention
 
-`HostBuffer` (`src/render/buffers/HostBuffer.h`) is the **permanent** host-visible,
+`CPUBuffer` (`src/render/buffers/CPUBuffer.h`) is the **permanent** host-visible,
 device-accessible buffer: mapped once at creation and written directly by the CPU.
+It is named for the mirror image of `GPUBuffer`, which is device-local.
 
-- Use it for per-slot data the CPU rewrites and the GPU reads in place — DebugPass's
+- Use it for data the CPU rewrites and the GPU reads in place — `DebugCache`'s
   segment/point SSBOs are the reference case.
 - **`StagingBuffer` is for uploads and downloads only.** Do not retain one as a
-  permanent buffer object; that is what `HostBuffer` exists for.
+  permanent buffer object; that is what `CPUBuffer` exists for.
 - Use `GPUBuffer` (device-local + staging) for data that is written rarely and read
-  hot, e.g. mesh vertex/index buffers.
+  hot, e.g. mesh vertex/index buffers. Do **not** reach for it just because a write
+  looks infrequent: `GPUBuffer::Unmap()` and `ArrayBuffer::Resize()` each submit a
+  copy and then wait for the queue to go idle. Debug geometry is re-flattened on
+  every `RenderResetEvent`, which `CameraController` enqueues on every camera change,
+  so that choice would put a full GPU stall in every frame of a viewport drag. A
+  host-visible memcpy of a few hundred KB costs nothing by comparison.
 
 
 - **Projection**: Orthographic (`glm::ortho()`) with configurable left/right/bottom/top planes and near/far planes
@@ -470,11 +484,12 @@ passed to passes through `RenderContext::editor.config` (opaque `void*`):
 - **Algorithm selection**: `r_pipeline` (Forward/Deferred), `r_aa`, `r_ao`, `r_shadow`, `r_ssr`
 - **Quality parameters**: `r_gamma`, `r_ao_ksize`, `r_ao_radius`, `r_shadow_bias` (0.02), `r_sample_pf`
 - **Overlay toggle**: `r_debug_draw` / `RequiresDebugDraw()` — gates *publication*, not
-  graph topology (see DebugPass Convention). It is written **last** in `serialize()`
-  and read back inside a `try`/`catch (cereal::Exception&)`, because a project file
-  saved before the field existed would otherwise make `ConfigComponent::Load` discard
-  the whole config and reset the user's gamma, AO and shadow settings. **Any field
-  added to `RenderConfig` from now on must follow that optional-trailing-field idiom.**
+  graph topology (see DebugPass Convention). It is written **last** in `serialize()` and
+  read back with `NEURUS_OPTIONAL_NVP(ar, r_debug_draw, true)`, because a project file
+  saved before the field existed would otherwise make `ConfigComponent::Load` discard the
+  whole config and reset the user's gamma, AO and shadow settings. **Any field added to
+  `RenderConfig` from now on must follow that optional-trailing-field idiom** — see
+  `src/core/Serialize.h`.
 - **Serialized** via cereal for project save/load
 - **Live-update**: passes cast `static_cast<const RenderConfig*>(ctx.editor.config)` each frame; scalar param changes take effect on next `DrawFrame()`
 - **Shadow bias flow**: `RenderConfigPanel` slider → `configValueChanged` → `Editor::SetRenderConfig` → `RenderContext::editor.config` → `ShadowIntensityPass` casts to `RenderConfig*`, reads `r_shadow_bias`
@@ -508,7 +523,7 @@ assigned via `RenderCache::GetShadowIntensityLayer(lightUID, extent)`.
 | ShadowMap | D32_SFLOAT | 1.0 | Per-light shadow depth (RenderCache-owned). Cubemap (6-layer 2D_ARRAY, 1024×1024) for point lights; 2D (2048×2048) for sun lights |
 | ShadowIntensity | R8_UNORM | 0 (no shadow) | Layered 2D_ARRAY, one layer per shadow-casting light (RenderCache-owned) |
 
-### RenderCache GPU Resources (MeshGPU, EnvironmentGPU)
+### RenderCache GPU Resources (MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache)
 
 `RenderCache` owns cross-frame mutable GPU resources beyond framebuffer attachments.
 These resources separate GPU ownership from the Vulkan-free scene and asset layers:
@@ -532,14 +547,43 @@ These resources separate GPU ownership from the Vulkan-free scene and asset laye
 
 **LightingCache** (`src/render/resources/LightingCache.h`)
 - Manages point light and sun light SSBOs (device-local GPUBuffers)
-- Created by `RenderCache` via `InitLightingCache(queue, qfi)` (separated from constructor
-  so queue/qfi don't need to be stored as members)
+- Built by `UploadManager` (it needs a queue) and handed over with
+  `RenderCache::SetLightingCache(std::unique_ptr<LightingCache>)`, so `RenderCache`
+  never has to store a queue/qfi of its own
 - Updated via `RenderCache::UpdateLighting(variantDict)` — accepts a map of
   `variant<PointLightStruct, SunLightStruct>` keyed by light UID
 - `RenderCache::GetLightingCache()` returns the LightingCache for per-frame SSBO binding
   by `LightingPass`
 - Also defines `PointLightStruct`, `SunLightStruct` (std140-compatible, 48 bytes),
   and `LightingPushConstants` (176 bytes) — byte-for-byte matches with GLSL shaders
+
+**CameraGPU** (`src/render/resources/CameraGPU.h`)
+- The renderer's **single** camera UBO: `CameraUBOData{viewProj, view}` (128 bytes,
+  matching the `CameraUBO` block in `gbuffer.vert` and `debug_*.vert`)
+- Constructed **eagerly** in `RenderCache`'s constructor — it needs no queue — so
+  `GetCameraGPU()` returns a reference and is never null
+- Written once per frame by `DeferredRenderer::recordFrame()` via
+  `RenderCache::UpdateCamera(proj, view)`, *before* any pass records. Passes only
+  bind it; a pass that wrote it would make the result depend on pass order
+- Keeps `proj` on the CPU behind `GetProjection()` without uploading it (see the
+  DebugPass camera bullet for why `viewProj[1][1]` is not a substitute)
+- `IsValid()` is false until the first `UpdateCamera()`. `GeometryPass` and
+  `DebugPass` both bail out of `Record()` on a false, which is also why a **test**
+  that drives either pass directly must publish a camera first — use
+  `VulkanTestShared::PublishSceneCamera(cache, scene)`
+
+**DebugCache** (`src/render/resources/DebugCache.h`)
+- Per-frame-slot `CPUBuffer` pair (segments + point sprites) holding the flattened
+  `DebugDrawList`, plus the partition boundaries and counts `DebugPass` draws from
+- Also eager in `RenderCache`'s constructor, but allocates nothing until the first
+  `UpdateDebugDraw()`; the slot vector self-sizes on `frameIndex`, so no
+  `framesInFlight` count is threaded through the renderer
+- Written once per frame by `recordFrame()` via
+  `RenderCache::UpdateDebugDraw(frameIndex, list)`; revision-gated, so an unchanged
+  list copies nothing
+- `GetFrame(frameIndex)` returns a `FrameView` of borrowed pointers + counts. Null
+  buffers mean no `UpdateDebugDraw()` has run for that slot, and `DebugPass` returns
+  without touching an image
 
 **MeshPushConstants** (`src/render/resources/MeshGPU.h`)
 - Per-mesh push-constant block sent to the vertex shader (128 bytes total)

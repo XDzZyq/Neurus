@@ -65,7 +65,7 @@ See `test_scene_wiring.cpp` for an example that enables `VK_KHR_swapchain`.
 ### Shared Static Helpers
 
 In addition to the protected member methods above, `VulkanTestShared` provides
-8 static helper functions/structs for common test operations. These eliminate
+static helper functions/structs for common test operations. These eliminate
 duplicated code across test files:
 
 | Helper | Signature | What it does |
@@ -78,6 +78,26 @@ duplicated code across test files:
 | `MakeTestCamera(w, h)` | `static CameraUBOData` | Creates a default 60° FOV camera at `(0,0,2)` looking at origin with given aspect ratio |
 | `TestTriangle()` | `static pair<vector<TestVertex>, vector<uint32_t>>` | Returns a 3-vertex triangle (XY plane, facing +Z) + 3 indices, suitable for quick geometry tests |
 | `ReadbackHdrOutput(device, pd, queue, qfi, am, w, h)` | `static vector<float>` | Reads back HDRColor RGBA16F attachment to CPU; handles layout transition, staging copy, and half→float conversion |
+| `PublishSceneCamera(cache, scene)` / `(cache, editorContext)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, standing in for `DeferredRenderer::recordFrame()`. No-op when the scene has no active camera |
+
+### Publishing the camera before recording a pass
+
+`CameraGPU` and `DebugCache` belong to `RenderCache`, and the **frame driver**
+(`DeferredRenderer::recordFrame()`) writes them once per frame *before* any pass
+records. `GeometryPass` and `DebugPass` only bind them, and both return early from
+`Record()` while `RenderCache::GetCameraGPU().IsValid()` is false.
+
+A test that drives a pass directly *is* the frame driver, so it must publish first:
+
+```cpp
+VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx.editor);
+m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+```
+
+Forget it and the pass records nothing — no validation error, just an empty
+attachment and a reference-image diff that points nowhere near the cause.
+`LightingPass` and `SSAOPass` read the `Camera` out of the context directly and need
+no publish.
 
 Usage example — replace 15+ lines of manual G-Buffer transitions with one call:
 
