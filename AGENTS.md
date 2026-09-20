@@ -245,9 +245,16 @@ Neurus/
 │   │   ├── items/               # Reusable composite QWidgets
 │   │   │   ├── ScalarSlider.h/cpp  # Slider+spinbox pair with auto-derived step
 │   │   │   ├── Vec3Spin.h/cpp      # XYZ triple-spinbox composite widget
+│   │   │   ├── ColorButton.h/cpp   # Color swatch button (QColorDialog, optional alpha)
 │   │   │   ├── OutlinerRow.h/cpp   # Pool-recyclable outliner row
 │   │   │   ├── ShaderFieldRow.h/cpp # Type/name editor row for struct fields
 │   │   │   └── CodeEditor.h/cpp    # GLSL code editor (line numbers, monospace)
+│   │   ├── presets/              # GOType-specific PropertyPanel subpanels
+│   │   │   ├── CameraProperties.h/cpp       # Target + FOV
+│   │   │   ├── MeshProperties.h/cpp         # Path + shadow/material toggles
+│   │   │   ├── LightProperties.h/cpp        # Power/radius/cone + shadow toggle
+│   │   │   ├── EnvironmentProperties.h/cpp  # Path + intensity/rotation
+│   │   │   └── DebugProperties.h/cpp        # DebugLine/Points/Mesh + position table (issue #22)
 │   │   ├── models/               # Qt item models (non-widget)
 │   │   │   ├── ShaderStructModel.h/cpp  # Tree model for ShaderStruct IR
 │   │   │   ├── LogModel.h/cpp        # QAbstractListModel over core LogBuffer
@@ -263,7 +270,7 @@ Neurus/
 │   │   │   ├── UIPanel.h/cpp     # Base class for all panels (I18n.h kept out of the header)
 │   │   │   ├── Viewport.h/cpp    # Native HWND Vulkan surface widget
 │   │   │   ├── Outliner.h/cpp    # Scene object hierarchy tree
-│   │   │   ├── PropertyEditor.h/cpp  # Object property inspector
+│   │   │   ├── PropertyPanel.h/cpp  # Object property inspector (hosts the presets/)
 │   │   │   ├── RenderConfigPanel.h/cpp  # Live render setting controls
 │   │   │   ├── ShaderEditorPanel.h/cpp  # Code + Structure shader editor
 │   │   │   ├── LogPanel.h/cpp        # Realtime log viewer dock (issue #39)
@@ -313,6 +320,7 @@ Neurus/
 │   │       ├── deferred/   # Deferred-pass reference PNGs
 │   │       └── debug/      # DebugPass overlay reference PNGs
 │   ├── editor/             # Editor unit tests (run in CI, no GPU)
+│   ├── ui/                 # Qt widget tests (QApplication from shared/test_main.cpp)
 │   └── shared/             # Test infrastructure
 │       └── TestVulkanShared.h/cpp  # GPU test fixture base class
 ├── AGENTS.md               # This file

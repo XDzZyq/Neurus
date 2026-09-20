@@ -99,7 +99,7 @@ aspect into the projection. Both branches are pinned by
    - `Editor::RegisterController<T>()` — template factory that creates controller, calls `Init(m_ctx)`, stores in `ed_controllers`
    - **`ControllerContext`** (`src/editor/controllers/ControllerContext.h`) — the ONLY thing a controller depends on: it bundles the three controller-facing interfaces (`IEventQueue&` for subscribe/enqueue/emitNow, `IResourceLookup&` for pooled-object lookup by id, `IOperationSink&` for recording undoable operations) plus providers for the two Editor-owned singletons that are NOT pooled UID objects (`scene` — the current Scene, re-queried per use because New/Load swaps it; `config` — the live RenderConfig). Controllers MUST NOT store the context or any of its members; handler lambdas capture it by value.
    - `CameraController` — event-driven orbit/zoom/dolly/pan via `CameraEvents` (rotate, push, slide, zoom); events carry `int camId` resolved against the scene's `cam_list`
-   - `SceneController` — event-driven scene mutations (selection, transform, visibility, camera/mesh/light/env property edits, scene membership add/delete); stateless with free-function handlers in the .cpp; each handler resolves the event's `int objectUid` against the current Scene (typed pool lookup) and mutates the object directly; emits `EditorEvents` (SceneModified, LightGpuChanged, LightingRebuild, RenderResetEvent) for GPU uploads and dirty tracking; see events.instructions.md for the GPU-sync flow
+   - `SceneController` — event-driven scene mutations (selection, transform, visibility, camera/mesh/light/env/debug property edits, scene membership add/delete); stateless with free-function handlers in the .cpp; each handler resolves the event's `int objectUid` against the current Scene (typed pool lookup) and mutates the object directly; emits `EditorEvents` (SceneModified, LightGpuChanged, LightingRebuild, RenderResetEvent) for GPU uploads and dirty tracking; see events.instructions.md for the GPU-sync flow
    - **Import/Add split**: `Editor::OnMeshImport`/`OnCameraAdd`/`OnLightAdd`/... only LOAD the resource into the pool and forward the object UID via `SceneObjectAddRequested`; the SceneController fetches the pooled object by UID, registers it, selects it, and records `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(...)]`. The Delete gesture (`ObjectDeleteRequested` - the Editor wraps the UI's `DeleteRequested` intent) is **forward-only**: the SceneController snapshots the selection, guards the last camera, deselects, then DEFERS the removals as ONE batched `SceneObjectDeleteRequested` carrying all selected UIDs — so the batched handler is the single removal path shared with replay (no replay-only handling) — and records `CompositeOp[SetSelectionOp(before→∅), SceneObjectAddOp(uids,false)]` (delete of N = one op). Light membership changes enqueue `LightingRebuild` (the SSBO is a scene projection). GPU caches (MeshGPU, shadow maps) are scene-scoped: `UploadSceneResources` uploads only objects present at load, and an object entering the scene (live add or undo/redo replay) or a light whose shadow was just enabled enqueues `SceneObjectGpuUploadRequested`, which the Editor resolves with an on-demand upload (skip-if-cached).
    - `ShaderController` — event-driven shader lifecycle via `ShaderEvents` (create, compile, code/struct edit, field add); enqueues `RenderResetEvent` after create/compile so temporal accumulation resets
    - **Pure-intent wrapping**: the Editor subscribes to the UI's `ObjectClicked` and `DeleteRequested` intents and forwards the dedicated scene events `ObjectSelected{ objectUid, modifiers }` and `ObjectDeleteRequested{}` (the two wrap subscriptions in `Editor::Initialize`). Panels never stamp the scene.
@@ -307,8 +307,8 @@ void CameraController::Init(ControllerContext& ctx)
 ```cpp
 void SceneController::Init(ControllerContext& ctx)
 {
-    // Selection, visibility, transform, camera/mesh/light/env property events
-    // (17 subscriptions total; see SceneEvents.h)
+    // Selection, visibility, transform, camera/mesh/light/env/debug property
+    // events, scene membership (33 subscriptions total; see SceneEvents.h)
 }
 ```
 
@@ -322,6 +322,14 @@ void SceneController::Init(ControllerContext& ctx)
 - GPU uploads delegated to Editor via EditorEvents (`LightGpuChanged`,
   `LightingRebuild`, `SceneModified`, `RenderResetEvent`) which Editor
   subscribes to and executes against its `DeferredRenderer`/`UploadManager`
+- **Debug property handlers (issue #22)** go through one `ForDebugObject(scene,
+  uid, fn)` helper that probes `dLine_list`, `dPoints_list`, `dMesh_list` in turn
+  and invokes a generic lambda on the first hit — the three debug classes share
+  no base, so the lambda is `auto&` and only compiles against members all three
+  have (color, opacity, x-ray) or is used from a type-specific handler. It
+  returns whether a pool held the UID, so an unknown UID mutates nothing, records
+  nothing and skips `Mutated()`. Each handler captures the before value inside
+  the lambda and submits its `TransitionOp` there, so undo is per-property.
 - Located in `src/editor/controllers/SceneController.h` / `.cpp`
 
 ### ShaderController (Event-Driven)

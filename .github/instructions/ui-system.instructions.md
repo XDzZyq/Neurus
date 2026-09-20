@@ -33,9 +33,11 @@ The UI layer is a **Qt6 Widgets** application with **Qt-Advanced-Docking-System 
 | `src/ui/presets/MeshProperties.h/cpp` | Mesh property editor preset (path label + shadow/material checkboxes) |
 | `src/ui/presets/LightProperties.h/cpp` | Light property editor preset (type label + power/radius sliders + shadow checkbox) |
 | `src/ui/presets/EnvironmentProperties.h/cpp` | Environment property editor preset (path label + intensity/rotation sliders) |
+| `src/ui/presets/DebugProperties.h/cpp` | Debug object property editor preset — one preset for DebugLine/DebugPoints/DebugMesh (issue #22) |
 | `src/ui/Icons.h/cpp` | Static SVG icon library with lazy-loaded QIcon cache |
 | `src/ui/items/ScalarSlider.h/cpp` | Reusable slider+spinbox composite widget |
 | `src/ui/items/Vec3Spin.h/cpp` | Reusable XYZ triple-spinbox composite widget |
+| `src/ui/items/ColorButton.h/cpp` | Color swatch button opening QColorDialog; optional alpha channel |
 | `src/ui/items/OutlinerRow.h/cpp` | Pool-recyclable outliner row with type icon, name, toggles |
 | `src/ui/qml/` | Qt resource files: QML layouts, QSS stylesheets (embedded at build time) |
 | `src/ui/VulkanWindow.h/cpp` | QVulkanWindow subclass hosting the triangle renderer |
@@ -492,8 +494,12 @@ complete scene events (see events.instructions.md, "Three event paths").
 - `PropertyPanel::Refresh()` reads `scene->selections.GetActiveObject()`,
   stores its `int` UID (lazy header update), and emits transform events
   (`PositionChanged`, `RotationChanged`, `ScaleChanged`) plus
-  camera/mesh/light/environment property events, all carrying the active
+  camera/mesh/light/environment/debug property events, all carrying the active
   object's `int objectUid`; it resolves per-id data via `Scene::GetObjectID`.
+  The debug subpanel is shared by GO_DL/GO_DP/GO_DM: `Refresh()` calls
+  `setObjectId()` **before** the setters (it invalidates the caches) and
+  `setDebugType()` to pick the visible rows. The position list is flattened to
+  xyz triples in the forwarding lambda, since `SceneEvents.h` stays glm-free.
 
 ### ShaderEditorPanel
 
@@ -558,6 +564,15 @@ Icons are embedded in the binary via `qt_add_resources(neurus_ui "icons" PREFIX 
 - Emits a single `valueChanged()` signal regardless of which control moved
 - Step and decimals auto-derived: `step = (max-min)/sliderSteps`, `decimals = ceil(-log10(step))`
 - Tick marks enabled with interval = `max(1, sliderSteps/10)`
+- `setValue()` dirty-checks against `m_v`, which mirrors **what the controls
+  currently show — user edits included** (both sync lambdas write it). A shadow
+  copy that tracked only programmatic writes would go stale the moment the user
+  touched the control, and a later push of that same value would then be silently
+  dropped while the widget still displayed the user's number — i.e. a panel could
+  never resynchronise the widget after an undo.
+- `pressed()` / `released()` bracket the whole mouse gesture. They come from an
+  event filter on the slider, not from `sliderPressed`/`sliderReleased`, which
+  miss groove clicks and would split a click+drag into two undo entries.
 
 ### Vec3Spin
 
@@ -567,6 +582,53 @@ Icons are embedded in the binary via `qt_add_resources(neurus_ui "icons" PREFIX 
 - Emits `valueChanged(x, y, z)` signal when any spinbox changes
 - `setValue(x, y, z)` with internal dirty-check — no-ops if all three values unchanged
 - Uses `QSignalBlocker` internally to prevent feedback loops during programmatic updates
+
+
+## Property Presets
+
+Presets in `src/ui/presets/` are the GOType-specific subpanels of
+`PropertyPanel`: `CameraProperties`, `MeshProperties`, `LightProperties`,
+`EnvironmentProperties` and `DebugProperties`. `PropertyPanel` owns one instance
+of each, shows exactly one per selection (`ShowTypeSubpanel`), and forwards their
+signals as typed scene events.
+
+Every preset follows the same contract:
+- A `QWidget` holding **one `QGroupBox`** — no dock, no scene access, no Vulkan.
+- `setObjectId(int)` binds the panel and **resets the dirty-check caches**, so
+  the first push after a selection change always writes through even when the new
+  object's value equals the old one's.
+- Every `set*()` is **dirty-checked** against a cached value and writes through
+  `blockSignals`/`QSignalBlocker`, because `Refresh()` re-pushes the scene's
+  values every frame and must not fight the widget the user is editing.
+- Signals carry `(int objectId, value)`; `PropertyPanel` wraps them into
+  `SceneEvents` structs stamped with `m_activeObjectId`.
+- `Retranslate()` re-applies every label via `I18n::instance().translate(...)`.
+- Rows that apply to only some subtypes are wrapped in a plain `QWidget*` row and
+  toggled with `setVisible` (spot-cone rows for a spot light; line/point rows for
+  a debug type).
+
+### DebugProperties (issue #22)
+
+One preset serves all three debug types — `DebugLine`, `DebugPoints` and
+`DebugMesh` share color / opacity / x-ray, and `setDebugType(int goType)` shows
+or hides the type-specific rows (line width + stipple + smoothing; point shape +
+size + projection mode; mesh path label).
+
+Its **position table** is the only place in the panel that edits a *list* rather
+than scalars, and is worth knowing about:
+- Edited **absolutely**: a cell edit, an Add and a Remove all emit the whole list
+  via `positionsChanged`. A structural change cannot be expressed per index, and
+  one event shape keeps undo to a single op.
+- An unparseable cell reads back as the coordinate it replaced and emits nothing,
+  so a typo mid-edit cannot teleport a vertex to the origin.
+- `m_populating` guards the emit path while `setPositions()` repopulates, so a
+  programmatic fill never looks like a user edit.
+- Beyond `kMaxRows` (512) the table shows the first 512 rows, goes
+  `NoEditTriggers` and disables Add/Remove — writing back only the visible rows
+  would silently drop the hidden tail. The count label still reports the true
+  size.
+- `DebugMesh` hides the table entirely: its geometry is a pooled `MeshData`, not
+  an editable list.
 
 
 ## Patterns

@@ -139,6 +139,18 @@ struct LightOuterCutoffChanged { int objectUid; float outerCutoff; };
 struct EnvironmentIntensityChanged { int objectUid; float intensity; };
 struct EnvironmentRotationChanged  { int objectUid; float rotation; };
 
+// Debug object properties (issue #22) — ONE set for all three debug types
+struct DebugColorChanged   { int objectUid; float r, g, b, a; };  // debug tints are vec4
+struct DebugOpacityChanged { int objectUid; float opacity; };
+struct DebugXRayChanged    { int objectUid; bool xray; };
+struct DebugLineWidthChanged   { int objectUid; float width; };
+struct DebugLineStippleChanged { int objectUid; bool stipple; };
+struct DebugLineSmoothChanged  { int objectUid; bool smooth; };
+struct DebugPointTypeChanged      { int objectUid; int pointType; };      // DebugPoints::PointType value
+struct DebugPointScaleChanged     { int objectUid; float scale; };
+struct DebugProjectionModeChanged { int objectUid; int projectionMode; }; // 0 = screen, 1 = world
+struct DebugPositionsChanged { int objectUid; std::vector<float> xyz; };  // whole list, 3 floats/position
+
 // Scene membership (Add / Delete) — UID-carrying (replay-safe; see below)
 struct SceneObjectAddRequested { int objectUid; };                          // forward (Editor import) + replay
 struct SceneObjectDeleteRequested { std::vector<int> uids; };               // single BATCHED removal path (gesture + replay)
@@ -152,6 +164,24 @@ above): they carry `int objectUid`, never object pointers. Controllers resolve
 the UID against the current Scene (typed pool lookup, e.g. `mesh_list.find`)
 via their `ControllerContext` and mutate the object directly — no pointer
 payload to dangle. `Editor::OnUIEvent` just enqueues them unchanged.
+
+**One debug event set, three pools.** The debug events above are shared by
+`DebugLine`, `DebugPoints` and `DebugMesh` rather than split per type: color,
+opacity and x-ray are literally the same property on three unrelated pools, so
+the handler resolves the UID against whichever pool holds it
+(`SceneController`'s `ForDebugObject`) instead of the event naming a type. A
+type-specific knob (line width, point shape) simply never reaches an object that
+has no such property — an unknown UID is ignored and records nothing. Every
+handler ends in `Mutated()`, which enqueues `RenderResetEvent` and so marks
+`DebugDrawBuilder` dirty: a debug property edit is only visible after a
+reflatten.
+
+`DebugPositionsChanged` is **absolute** — it carries the whole position list, so
+one event and one op cover editing a coordinate, adding a row and removing a row
+alike (a structural change cannot be expressed per index). It is flattened to
+xyz triples because this header stays glm-free; `PropertyPanel` flattens on the
+way out and the controller unflattens on the way in, dropping a trailing partial
+triple.
 
 **Membership events carry UIDs too (no scene payload).** Add/Delete is split
 into **Import** (Editor: `Load` the resource into the pool — `OnMeshImport`,
