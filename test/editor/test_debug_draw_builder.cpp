@@ -637,3 +637,139 @@ TEST(DebugDrawBuilder, WireMesh_MixedDepthModesStayInAuthoringOrder)
 		if (Has(w.flags, DebugFlag::XRay)) ++xrayCount;
 	EXPECT_EQ(xrayCount, 1) << "Each mesh keeps its own depth mode";
 }
+
+// ===========================================================================
+// G. Visibility flags
+// ===========================================================================
+//
+// ObjectID carries `is_viewport` and `is_rendered`, the pair the Outliner's two
+// per-row toggles drive through UIEvents -> VisibilityChanged ->
+// SceneController -> ObjectID::SetVisible. Every other consumer of a scene pool
+// (GeometryPass, ShadowDepthPass, UploadManager) skips an object when either
+// flag is clear, and the overlay has to do the same here: `DebugDrawList` has no
+// per-primitive enable bit, so an invisible object must simply not be flattened.
+//
+// The rebuild that follows a toggle is already wired -- SceneController enqueues
+// RenderResetEvent, whose handler calls MarkDirty() -- so these tests pin the
+// half that was missing: the filter itself.
+
+/// @test A hidden DebugLine contributes no segments.
+TEST(DebugDrawBuilder, Visibility_ViewportHiddenLineIsSkipped)
+{
+	auto line = MakeLine(3, false);
+	line->SetVisible(false, true);
+
+	Scene scene;
+	scene.UseDebugLine(line);
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+
+	EXPECT_TRUE(b.List().segments.empty());
+	EXPECT_TRUE(b.List().Empty());
+}
+
+/**
+ * @test Render visibility hides the overlay too, matching every other pass.
+ *
+ * The overlay is editor-only, so `is_viewport` is the flag that obviously
+ * applies; `is_rendered` is honoured as well because every existing consumer
+ * treats the two as an AND, and a gizmo that survived one toggle but not the
+ * other would make the Outliner's two buttons mean different things per row.
+ */
+TEST(DebugDrawBuilder, Visibility_RenderHiddenLineIsSkipped)
+{
+	auto line = MakeLine(3, false);
+	line->SetVisible(true, false);
+
+	Scene scene;
+	scene.UseDebugLine(line);
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+
+	EXPECT_TRUE(b.List().segments.empty());
+}
+
+/// @test Hiding points and wire meshes works the same way.
+TEST(DebugDrawBuilder, Visibility_HiddenPointsAndWireMeshAreSkipped)
+{
+	auto pts = MakePoints(4, false);
+	pts->SetVisible(false, true);
+
+	auto mesh = std::make_shared<DebugMesh>();
+	mesh->SetMeshData(std::make_shared<MeshData>());
+	mesh->SetVisible(false, true);
+
+	Scene scene;
+	scene.UseDebugPoints(pts);
+	scene.UseDebugMesh(mesh);
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+
+	EXPECT_TRUE(b.List().points.empty());
+	EXPECT_TRUE(b.List().wireMeshes.empty());
+	EXPECT_TRUE(b.List().Empty());
+}
+
+/**
+ * @test A hidden object drops out of the list without disturbing the x-ray
+ *       partition of the objects that remain.
+ *
+ * The boundary is a count, not an index into a fixed layout, so filtering has to
+ * happen before the partition is computed -- filtering afterwards would leave
+ * xraySegmentStart pointing past the depth-tested range it describes and make
+ * DebugPass draw the x-ray half with the depth test still enabled.
+ */
+TEST(DebugDrawBuilder, Visibility_HidingOneObjectKeepsThePartitionExact)
+{
+	auto hiddenOpaque = MakeLine(2, false);  // 2 depth-tested segments, hidden
+	hiddenOpaque->SetVisible(false, true);
+
+	Scene scene;
+	scene.UseDebugLine(hiddenOpaque);
+	scene.UseDebugLine(MakeLine(3, false));  // 3 depth-tested
+	scene.UseDebugLine(MakeLine(1, true));   // 1 x-ray
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+
+	const DebugDrawList& l = b.List();
+	ASSERT_EQ(l.segments.size(), 4u) << "The hidden line's 2 segments are gone";
+	EXPECT_EQ(l.xraySegmentStart, 3u) << "Boundary follows the surviving segments";
+	for (uint32_t i = 0; i < l.xraySegmentStart; ++i)
+		EXPECT_FALSE(Has(l.segments[i].flags, DebugFlag::XRay));
+	for (size_t i = l.xraySegmentStart; i < l.segments.size(); ++i)
+		EXPECT_TRUE(Has(l.segments[i].flags, DebugFlag::XRay));
+}
+
+/**
+ * @test Un-hiding brings the geometry back on the next rebuild.
+ *
+ * The visible path: a toggle enqueues RenderResetEvent, whose handler marks the
+ * builder dirty, and Editor::Edit() rebuilds once. Without MarkDirty() the clean
+ * builder would return early and the overlay would stay hidden until some other
+ * mutation happened to dirty it.
+ */
+TEST(DebugDrawBuilder, Visibility_UnhidingRestoresGeometryOnNextRebuild)
+{
+	auto line = MakeLine(3, false);
+	line->SetVisible(false, false);
+
+	Scene scene;
+	scene.UseDebugLine(line);
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+	ASSERT_TRUE(b.List().segments.empty());
+	const uint64_t hiddenRevision = b.List().revision;
+
+	line->SetVisible(true, true);
+	b.MarkDirty();
+	b.Rebuild(scene);
+
+	EXPECT_EQ(b.List().segments.size(), 3u);
+	EXPECT_NE(b.List().revision, hiddenRevision)
+	    << "DebugPass re-uploads only when the revision moves";
+}

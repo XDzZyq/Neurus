@@ -211,7 +211,7 @@ are **stateful** and rarely move. `m_dirty` starts `true` so the first `Edit()`
 populates the list. `BeginLoad()` / `FinishLoad()` / `NewScene()` also `MarkDirty()`,
 because a scene swap invalidates the whole flattened overlay.
 
-**Three contracts the renderer trusts and no GPU test can check** (all pinned by
+**Four contracts the renderer trusts and no GPU test can check** (all pinned by
 `test/editor/test_debug_draw_builder.cpp`):
 
 1. **Partition.** Every depth-tested primitive precedes every x-ray one;
@@ -231,6 +231,18 @@ because a scene swap invalidates the whole flattened overlay.
    Only `DebugWireMesh` keeps a `model` matrix, because its geometry is never copied
    — `DebugPass` draws it straight from the mesh's MeshGPU with the transform in a
    push constant.
+4. **Visibility filtering.** A hidden object is *not flattened*. `DebugDrawList` has
+   no per-primitive enable bit — `DebugPass` draws whole ranges — so the only way to
+   hide a debug object is to leave its primitives out of the list, and the filter has
+   to run **before** the x-ray partition so the two boundary integers count only
+   surviving primitives. `IsVisible()` ANDs `is_viewport` and `is_rendered`, the same
+   way `GeometryPass`, `ShadowDepthPass` and `UploadManager` AND them: the overlay is
+   editor-only so `is_viewport` is the flag that obviously applies, but honouring only
+   one of the pair would make the Outliner's two toggles mean different things for a
+   debug row than for a mesh row. Nothing extra is needed to *notice* a toggle —
+   `SceneController::OnVisibilityChanged` already calls `Mutated()`, which enqueues
+   `RenderResetEvent` → `MarkDirty()`, and undo replays the same event through
+   `SetVisibilityOp`.
 
 **Flattening rules:**
 

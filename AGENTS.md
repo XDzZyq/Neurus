@@ -385,6 +385,11 @@ Qt is stateful, so debug objects are too.
   regardless of primitive count. See renderer.instructions.md.
 - Upload is **revision-gated**: an unchanged list re-uses the buffer a frame slot
   already holds and skips the memcpy entirely.
+- **Hiding a debug object means not flattening it.** `DebugDrawList` has no
+  per-primitive enable bit, so `DebugDrawBuilder::Rebuild()` drops objects whose
+  `is_viewport && is_rendered` is false, before the x-ray partition is computed. The
+  Outliner toggle already reaches it: `SceneController` → `RenderResetEvent` →
+  `MarkDirty()`.
 - A `DebugMesh` wireframe still needs a **MeshGPU** in the RenderCache, uploaded by the
   Editor through `UploadManager::UploadMeshData()` — `DebugMesh` is not a `Mesh`, so it
   cannot reuse `UploadMesh()`. Without it `DebugPass` skips the mesh silently.

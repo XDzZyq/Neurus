@@ -8,6 +8,7 @@
 #include "scene/DebugLine.h"
 #include "scene/DebugMesh.h"
 #include "scene/DebugPoints.h"
+#include "scene/ObjectID.h"
 #include "scene/Scene.h"
 
 namespace neurus
@@ -87,6 +88,25 @@ void AppendCubeEdges(std::vector<DebugSegment>& out,
 	}
 }
 
+/**
+ * @brief Whether an object's visibility flags let it into the overlay.
+ *
+ * `DebugDrawList` has no per-primitive enable bit — DebugPass draws whole ranges
+ * — so hiding a debug object means not flattening it in the first place. The two
+ * flags are ANDed the way every other pool consumer ANDs them (GeometryPass,
+ * ShadowDepthPass, UploadManager): the overlay is editor-only, so `is_viewport`
+ * is the flag that obviously applies, but honouring only one of the pair would
+ * make the Outliner's two toggles mean different things for a debug row than for
+ * a mesh row.
+ *
+ * The rebuild after a toggle is already arranged: `SceneController` enqueues
+ * `RenderResetEvent`, whose handler calls MarkDirty().
+ */
+bool IsVisible(const ObjectID& obj)
+{
+	return obj.is_viewport && obj.is_rendered;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -105,19 +125,19 @@ void DebugDrawBuilder::Rebuild(const Scene& scene)
 	for (const auto& [id, obj] : scene.dLine_list)
 	{
 		(void)id;
-		if (obj)
+		if (obj && IsVisible(*obj))
 			AppendDebugLine(*obj);
 	}
 	for (const auto& [id, obj] : scene.dPoints_list)
 	{
 		(void)id;
-		if (obj)
+		if (obj && IsVisible(*obj))
 			AppendDebugPoints(*obj);
 	}
 	for (const auto& [id, obj] : scene.dMesh_list)
 	{
 		(void)id;
-		if (obj)
+		if (obj && IsVisible(*obj))
 			AppendDebugMesh(*obj);
 	}
 
