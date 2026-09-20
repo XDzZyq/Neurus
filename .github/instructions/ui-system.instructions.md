@@ -104,6 +104,23 @@ Dock layout is **project state**, not app state: `UIManager::ExportLayout()` /
 the `.neurus.json` project file. The Application owns persistence; the UI layer
 never touches a path. **View → Restore Default Layout** re-runs `CreateDocks()`.
 
+**The blob restores window geometry, never the full-screen state.**
+`saveGeometry()` carries the window *state* alongside the rectangle, and
+`restoreGeometry()` re-applies it, so a blob saved while the window was full
+screen started the app full screen. A full-screen `QMainWindow` has no frame:
+no minimize, maximize or close button, and nothing in the menus to undo it, so
+the only ways out were `Alt+F4` and File → Exit. Measured on Windows — the
+restored window had `WS_CAPTION`/`WS_MINIMIZEBOX`/`WS_MAXIMIZEBOX`/
+`WS_THICKFRAME` all clear at exactly the monitor size, while the same window
+with an emptied blob had all four set at 1600x900. `ApplyLayout()` therefore
+clears a restored full-screen flag (`setWindowState()` rather than
+`showNormal()`, which would *show* the window from there, before `Application`
+does), and full screen becomes a deliberate state instead — **View → Full
+Screen**, F11 via `QKeySequence::FullScreen`. `changeEvent()` keeps that
+checkable action in step, so the check mark follows the state however it was
+entered; `setChecked()` with an unchanged value emits nothing, so the two cannot
+bounce.
+
 **Identity vs display — the rule that keeps layouts portable.** ADS serializes
 dock state keyed by `objectName`, and `ads::CDockWidget`'s constructor copies the
 ctor *title* into `objectName` (`DockWidget.cpp:385-386`). Once dock titles became
@@ -173,7 +190,9 @@ top-level window, and a separate window cannot be used inside another window's
 full-screen Space: macOS gives ADS's plain `Qt::Window` floating container
 `NSWindowCollectionBehaviorFullScreenPrimary` (`qcocoawindow.mm`,
 `setWindowFlags`) and the window server then refuses to let the user move it —
-the panel appears and is frozen. `UIManager::changeEvent()` watches
+the panel appears and is frozen. Full screen is entered from **View → Full
+Screen** (F11) or macOS's native green button — the latter is why the source of
+the state is not always ours. `UIManager::changeEvent()` watches
 `QEvent::WindowStateChange` (the only signal Qt gives for macOS's native green
 button) and calls `lockDockWidgetFeaturesGlobally(DockWidgetFloatable)` while
 full screen, after docking any already-floating panel back via
@@ -193,7 +212,7 @@ entry, making the restriction visible. Covered by
 | Menu | Items |
 |------|-------|
 | **File** | New, Open…, Save, Save As…, Preferences… (`Ctrl+,`), Exit (`Alt+F4`) |
-| **View** | Restore Default Layout |
+| **View** | Restore Default Layout, Full Screen (`F11`) |
 | **Edit** | Undo, Redo, Add (Mesh… / Camera / Light) |
 | **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) |
 | **Help** | About Neurus |
