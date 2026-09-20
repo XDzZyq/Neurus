@@ -625,6 +625,18 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// Environment properties
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::envIntensityChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::envRotationChanged);
+
+		// Debug object properties (DebugLine / DebugPoints / DebugMesh)
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugColorChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugOpacityChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugXRayChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugLineWidthChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugStippleChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugSmoothChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPointTypeChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPointScaleChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugProjectionModeChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPositionsChanged);
 	}
 }
 
