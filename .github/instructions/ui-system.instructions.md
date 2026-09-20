@@ -337,6 +337,17 @@ they translate at `createEditor()` time and need no hook at all
 wrap it in `I18n::instance().translate("...")` (or `translateCtx`/`N_` as
 appropriate), then run `scripts/extract_i18n.py` — the new key appears in the
 catalog automatically and the coverage report tells you if it is translated.
+
+**The extractor run is only half the job — a new key lands with an empty
+`msgstr`, and an empty `msgstr` is a missing translation, not a pending one.**
+The same commit must fill in the translation for every shipped catalog and end
+with `--check` printing `OK`. Regenerating the catalog without translating it
+is the trap: the file becomes *fresh* but stays incomplete, so `--check` fails
+on coverage (`MISSING 24`) and CI goes red even though the working tree is
+clean and the extractor reports no pending changes. Both halves are one gate,
+and `make update`/`cmake` know nothing about either — run it by hand before
+committing.
+
 **Adding a new language:** drop a `<code>.po` catalog in `res/i18n/` — that is
 the only step. `src/ui/CMakeLists.txt` globs `res/i18n/*.po` into
 `qt_add_resources` (`CONFIGURE_DEPENDS`), and `I18n::supportedLanguages()`

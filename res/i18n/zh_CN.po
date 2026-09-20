@@ -61,6 +61,12 @@ msgstr "撤销(&U)"
 msgid "&View"
 msgstr "视图(&V)"
 
+msgid "(read-only)"
+msgstr "（只读）"
+
+msgid "Add"
+msgstr "添加"
+
 msgid "Algorithm"
 msgstr "算法"
 
@@ -97,6 +103,9 @@ msgstr "摄像机"
 msgid "Cast Shadow"
 msgstr "投射阴影"
 
+msgid "Circle"
+msgstr "圆形"
+
 msgid "Clear"
 msgstr "清空"
 
@@ -106,11 +115,20 @@ msgstr "关闭"
 msgid "Code"
 msgstr "代码"
 
+msgid "Color"
+msgstr "颜色"
+
 msgid "Compile"
 msgstr "编译"
 
 msgid "Create Shader"
 msgstr "创建着色器"
+
+msgid "Cube"
+msgstr "立方体"
+
+msgid "Debug"
+msgstr "调试"
 
 msgid "Deferred"
 msgstr "延迟"
@@ -241,6 +259,9 @@ msgstr "暂无性能数据"
 msgid "None"
 msgstr "无"
 
+msgid "Opacity"
+msgstr "不透明度"
+
 msgid "Outer Cone"
 msgstr "外锥角"
 
@@ -271,6 +292,9 @@ msgstr "点光源"
 msgid "Position"
 msgstr "位置"
 
+msgid "Positions"
+msgstr "位置列表"
+
 msgid "Post-Processing"
 msgstr "后处理"
 
@@ -289,6 +313,9 @@ msgstr "半径"
 msgid "Ray Marching"
 msgstr "光线步进"
 
+msgid "Remove"
+msgstr "移除"
+
 msgid "Reset Transform"
 msgstr "重置变换"
 
@@ -297,6 +324,9 @@ msgstr "恢复默认设置"
 
 msgid "Restore &Default Layout"
 msgstr "恢复默认布局(&D)"
+
+msgid "Rhombus"
+msgstr "菱形"
 
 msgid "Rotation"
 msgstr "旋转"
@@ -337,6 +367,9 @@ msgstr "缩放"
 msgid "Scene"
 msgstr "场景"
 
+msgid "Screen Space (px)"
+msgstr "屏幕空间 (像素)"
+
 msgid "Screenshot All &Passes"
 msgstr "截取所有通道(&P)"
 
@@ -346,11 +379,26 @@ msgstr "阴影映射"
 msgid "Shadows"
 msgstr "阴影"
 
+msgid "Shape"
+msgstr "形状"
+
+msgid "Size"
+msgstr "大小"
+
+msgid "Size Mode"
+msgstr "尺寸模式"
+
+msgid "Smooth"
+msgstr "平滑"
+
 msgid "Soft PCF 16"
 msgstr "软 PCF 16"
 
 msgid "Soft PCF 64"
 msgstr "软 PCF 64"
+
+msgid "Source"
+msgstr "来源"
 
 msgid "Spo&t Light"
 msgstr "聚光灯(&T)"
@@ -358,8 +406,14 @@ msgstr "聚光灯(&T)"
 msgid "Spot Light"
 msgstr "聚光灯"
 
+msgid "Square"
+msgstr "方形"
+
 msgid "Stage:"
 msgstr "阶段："
+
+msgid "Stipple"
+msgstr "点画"
 
 msgid "Struct Definitions"
 msgstr "结构体定义"
@@ -402,6 +456,24 @@ msgstr "使用材质"
 
 msgid "VSSM"
 msgstr "VSSM"
+
+msgid "Width"
+msgstr "宽度"
+
+msgid "World Space"
+msgstr "世界空间"
+
+msgid "X"
+msgstr "X"
+
+msgid "X-Ray (see through geometry)"
+msgstr "X 射线（穿透几何体）"
+
+msgid "Y"
+msgstr "Y"
+
+msgid "Z"
+msgstr "Z"
 
 msgid "struct name"
 msgstr "结构体名称"
