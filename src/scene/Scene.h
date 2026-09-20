@@ -37,6 +37,7 @@
 
 #include "scene/ObjectID.h"
 #include "core/Selections.h"
+#include "core/Serialize.h"
 
 #include "Camera.h"
 #include "DebugLine.h"
@@ -208,13 +209,10 @@ public:
 			// Read ID lists into pending members; SceneComponent drives
 			// ResolveReferences() afterwards to fill the typed pools.
 			std::vector<int> camIds, meshIds, lightIds, spriteIds, dLineIds, dPointsIds, envIds;
-			try
-			{
-				ar(CEREAL_NVP(camIds), CEREAL_NVP(meshIds), CEREAL_NVP(lightIds),
-				   CEREAL_NVP(spriteIds), CEREAL_NVP(dLineIds), CEREAL_NVP(dPointsIds),
-				   CEREAL_NVP(envIds));
-			}
-			catch (const cereal::Exception&)
+			if (!archive::OptionalBlock(ar,
+			        CEREAL_NVP(camIds), CEREAL_NVP(meshIds), CEREAL_NVP(lightIds),
+			        CEREAL_NVP(spriteIds), CEREAL_NVP(dLineIds), CEREAL_NVP(dPointsIds),
+			        CEREAL_NVP(envIds)))
 			{
 				// Legacy file (old full-pool format): degrade to an empty scene.
 				camIds.clear(); meshIds.clear(); lightIds.clear();
@@ -232,11 +230,7 @@ public:
 			// Keys must match the save branch ("selectedUids"/"activeUid").
 			std::vector<int> selectedUids;
 			int activeUid = 0;
-			try
-			{
-				ar(CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid));
-			}
-			catch (const cereal::Exception&)
+			if (!archive::OptionalBlock(ar, CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid)))
 			{
 				selectedUids.clear();
 				activeUid = 0;
@@ -247,11 +241,7 @@ public:
 			// Optional trailing block (see the save branch): absent in files
 			// written before DebugMesh existed, which load with no debug meshes.
 			std::vector<int> dMeshIds;
-			try
-			{
-				ar(CEREAL_NVP(dMeshIds));
-			}
-			catch (const cereal::Exception&)
+			if (!archive::OptionalBlock(ar, CEREAL_NVP(dMeshIds)))
 			{
 				dMeshIds.clear();
 			}

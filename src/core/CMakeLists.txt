@@ -8,6 +8,7 @@ add_library(neurus_core STATIC
 	UID.cpp
 	ResourceManager.h
 	ResourceManager.cpp
+	Serialize.h
 )
 
 # src/ (${CMAKE_CURRENT_SOURCE_DIR}/..) exposes headers as "core/X.h".

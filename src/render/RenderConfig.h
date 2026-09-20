@@ -21,6 +21,8 @@
 
 #include <cereal/cereal.hpp>
 
+#include "core/Serialize.h"
+
 namespace neurus
 {
 
@@ -164,15 +166,7 @@ public:
 
 		// --- Optional trailing fields (see the note above) ---
 
-		if constexpr (Archive::is_saving::value)
-		{
-			ar(CEREAL_NVP(r_debug_draw));
-		}
-		else
-		{
-			try { ar(CEREAL_NVP(r_debug_draw)); }
-			catch (const cereal::Exception&) { r_debug_draw = true; }
-		}
+		NEURUS_OPTIONAL_NVP(ar, r_debug_draw, true);
 	}
 
 	// --- Query helpers ---
