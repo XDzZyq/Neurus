@@ -45,6 +45,17 @@ The Editor is the only owner of this invariant, and holds it at both ends:
   a first launch shows, then `ed_operations.Clear()`, `m_dirty = false`,
   `UploadSceneResources()` and `OnIBLLoad()`. `Application` passes the same
   `kDefaultSceneObj` constant to both paths so they cannot drift.
+
+**`CreateDefaultScene()` builds a scene but does not upload it.** Making a scene
+drawable is a two-part step — `UploadSceneResources()` (meshes, lights, debug
+meshes, the light SSBO) and `OnIBLLoad()` (the environment's IBL cubemaps) — and
+every caller owes both. `NewScene()` and `FinishLoad()` pay it inline; the
+Application pays it for its first-launch fallback, whose scene never passes
+through `FinishLoad()`. Missing the IBL half is the quiet failure: the
+Environment object is fully populated, so its properties read correctly in the
+Property panel, but no `EnvironmentGPU` reaches the render cache and the scene
+renders with no IBL. `OnIBLLoad()` is therefore public alongside
+`UploadSceneResources()`.
 - **Deletion**: `SceneController`'s last-camera guard refuses a delete that
   would empty `cam_list` (`SceneController.cpp:548`).
 - **Loading**: `BeginLoad()`/`FinishLoad()` inherit the camera from the project

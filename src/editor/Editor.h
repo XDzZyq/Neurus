@@ -122,7 +122,28 @@ public:
 	}
 
 	void HandleResize(uint32_t width, uint32_t height);
+
+	/**
+	 * @brief Uploads the current scene's mesh/light/debug-mesh GPU resources and
+	 *        rebuilds the light SSBO.
+	 *
+	 * The scene-scoped half of "make this scene drawable". Uploads only objects
+	 * present in the scene: a pooled object outside it is uploaded on demand when
+	 * it re-enters (SceneObjectGpuUploadRequested).
+	 */
 	void UploadSceneResources();
+
+	/**
+	 * @brief (Re)generates the environment's IBL cubemaps into the render cache.
+	 *
+	 * The environment half of "make this scene drawable", and public because the
+	 * Application drives the startup sequence: it calls UploadSceneResources()
+	 * once the window is shown, and the first-launch fallback - whose scene comes
+	 * from CreateDefaultScene() and never passes through FinishLoad() - needs this
+	 * call too, or the scene holds an Environment but no EnvironmentGPU.
+	 */
+	void OnIBLLoad();
+
 	void UploadLighting();
 
 private:
@@ -132,7 +153,6 @@ private:
 	void OnLightAdd();
 	void OnSunLightAdd();
 	void OnSpotLightAdd();
-	void OnIBLLoad();
 	void OnCreateShader(const ShaderCreateRequested& e);
 	void OnSceneObjectGpuUpload(int objectUid);
 
