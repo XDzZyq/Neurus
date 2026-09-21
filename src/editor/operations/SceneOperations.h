@@ -311,19 +311,6 @@ public:
 	}
 };
 
-/** @brief Absolute debug-line smoothing toggle. */
-class SetDebugSmoothOp : public TransitionOp<SetDebugSmoothOp, DebugLineSmoothChanged, bool>
-{
-public:
-	using TransitionOp::TransitionOp;
-	static constexpr const char* kLabel = "Toggle Debug Smoothing";
-
-	DebugLineSmoothChanged MakeEvent(int o, const bool& v) const
-	{
-		return DebugLineSmoothChanged{ o, v };
-	}
-};
-
 /** @brief Absolute point-sprite shape edit. */
 class SetDebugPointTypeOp : public TransitionOp<SetDebugPointTypeOp, DebugPointTypeChanged, int>
 {

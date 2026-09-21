@@ -397,7 +397,6 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	// the demo mesh, so the hidden halves are the depth-occlusion proof.
 	auto axes = m_resources->Load<DebugLine>();
 	axes->SetWidth(3.0f);
-	axes->SetSmooth(true);
 	axes->SetColor(glm::vec4(0.95f, 0.75f, 0.15f, 1.0f));
 	axes->PushDebugLines(axisSpans);
 	m_scene->UseDebugLine(axes);

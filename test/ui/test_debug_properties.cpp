@@ -105,7 +105,6 @@ TEST_F(DebugPropertiesTest, ProgrammaticSettersEmitNothing)
 	QSignalSpy xray(m_props, &DebugProperties::xrayChanged);
 	QSignalSpy width(m_props, &DebugProperties::lineWidthChanged);
 	QSignalSpy stipple(m_props, &DebugProperties::stippleChanged);
-	QSignalSpy smooth(m_props, &DebugProperties::smoothChanged);
 	QSignalSpy pointType(m_props, &DebugProperties::pointTypeChanged);
 	QSignalSpy scale(m_props, &DebugProperties::pointScaleChanged);
 	QSignalSpy projection(m_props, &DebugProperties::projectionModeChanged);
@@ -116,7 +115,6 @@ TEST_F(DebugPropertiesTest, ProgrammaticSettersEmitNothing)
 	m_props->setXRay(true);
 	m_props->setLineWidth(3.0f);
 	m_props->setStipple(true);
-	m_props->setSmooth(true);
 	m_props->setPointType(2);
 	m_props->setPointScale(16.0f);
 	m_props->setProjectionMode(1);
@@ -127,7 +125,6 @@ TEST_F(DebugPropertiesTest, ProgrammaticSettersEmitNothing)
 	EXPECT_EQ(xray.count(), 0);
 	EXPECT_EQ(width.count(), 0);
 	EXPECT_EQ(stipple.count(), 0);
-	EXPECT_EQ(smooth.count(), 0);
 	EXPECT_EQ(pointType.count(), 0);
 	EXPECT_EQ(scale.count(), 0);
 	EXPECT_EQ(projection.count(), 0);

@@ -27,7 +27,7 @@
  *   - LightShadowChanged -> Light::SetShadow + LightingRebuild
  *   - EnvironmentIntensity/RotationChanged -> Environment setters
  *   - Debug{Color,Opacity,XRay}Changed -> any of the three debug pools
- *   - DebugLine{Width,Stipple,Smooth}Changed -> DebugLine setters
+ *   - DebugLine{Width,Stipple}Changed -> DebugLine setters
  *   - Debug{PointType,PointScale,ProjectionMode}Changed -> DebugPoints setters
  *   - DebugPositionsChanged -> DebugLine::SetVertices / DebugPoints::SetPoints
  */

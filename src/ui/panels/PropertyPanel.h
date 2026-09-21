@@ -80,7 +80,6 @@ signals:
 	void debugXRayChanged(const DebugXRayChanged& e);
 	void debugLineWidthChanged(const DebugLineWidthChanged& e);
 	void debugStippleChanged(const DebugLineStippleChanged& e);
-	void debugSmoothChanged(const DebugLineSmoothChanged& e);
 	void debugPointTypeChanged(const DebugPointTypeChanged& e);
 	void debugPointScaleChanged(const DebugPointScaleChanged& e);
 	void debugProjectionModeChanged(const DebugProjectionModeChanged& e);

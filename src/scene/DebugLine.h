@@ -5,7 +5,7 @@
  * DebugLine provides CPU-side storage for debug line segments used in
  * viewport rendering. Each DebugLine instance stores a collection of
  * vertex positions (interpreted as line segment endpoints), along with
- * rendering properties (color, width, opacity, stipple, smooth).
+ * rendering properties (color, width, opacity, stipple).
  *
  * Architecture:
  * - Inherits ObjectID for scene graph identity and type discrimination
@@ -33,8 +33,9 @@ namespace neurus
 /**
  * @brief Debug line primitive for viewport wireframe visualization.
  *
- * Stores line segment vertices with rendering attributes. Supports
- * stipple (dashed) and smooth (anti-aliased) line rendering modes.
+ * Stores line segment vertices with rendering attributes. The line style is
+ * solid or stipple (dashed); antialiasing is not an authored property but
+ * follows that style, applied by DebugDrawBuilder to solid lines only.
  * All data is CPU-side; GPU upload is handled by the renderer layer.
  *
  * Object type: GO_DL
@@ -59,7 +60,6 @@ public:
 	 * - Width: 1.0
 	 * - Opacity: 1.0
 	 * - Stipple: false (solid)
-	 * - Smooth: false
 	 * - o_type: GO_DL
 	 */
 	DebugLine();
@@ -83,7 +83,6 @@ public:
 		   cereal::make_nvp("m_width", o_width),
 		   cereal::make_nvp("m_opacity", o_opacity),
 		   cereal::make_nvp("m_stipple", o_stipple),
-		   cereal::make_nvp("m_smooth", o_smooth),
 		   cereal::make_nvp("m_vertices", o_vertices),
 		   cereal::make_nvp("m_xray", o_xray));
 	}
@@ -168,11 +167,6 @@ public:
 	/** @brief Returns whether stipple is enabled. */
 	bool GetStipple() const { return o_stipple; }
 
-	/** @brief Enables or disables smooth (anti-aliased) rendering. */
-	void SetSmooth(bool smooth) { o_smooth = smooth; }
-	/** @brief Returns whether smooth rendering is enabled. */
-	bool GetSmooth() const { return o_smooth; }
-
 	/** @brief Enables x-ray mode: skip the depth test so the lines are never occluded. */
 	void SetXRay(bool xray) { o_xray = xray; }
 	/** @brief Returns whether x-ray mode is enabled. */
@@ -183,7 +177,6 @@ private:
 	float o_width{1.0f};                         ///< Line width in pixels.
 	float o_opacity{1.0f};                       ///< Opacity (0-1).
 	bool o_stipple{false};                       ///< Dashed line flag.
-	bool o_smooth{false};                        ///< Anti-aliased line flag.
 	bool o_xray{false};                          ///< Draw on top, ignoring depth.
 
 	std::vector<glm::vec3> o_vertices;           ///< Line segment vertex positions.

@@ -554,14 +554,12 @@ TEST_F(DebugPropertyTest, LineKnobsChanged_OnlyReachDebugLine)
 {
 	m_eventBus.enqueue(DebugLineWidthChanged{m_dline->GetObjectID(), 4.0f});
 	m_eventBus.enqueue(DebugLineStippleChanged{m_dline->GetObjectID(), true});
-	m_eventBus.enqueue(DebugLineSmoothChanged{m_dline->GetObjectID(), true});
 	// Same events aimed at a DebugPoints must be ignored, not mis-applied.
 	m_eventBus.enqueue(DebugLineWidthChanged{m_dpoints->GetObjectID(), 9.0f});
 	Process();
 
 	EXPECT_FLOAT_EQ(m_dline->GetWidth(), 4.0f);
 	EXPECT_TRUE(m_dline->GetStipple());
-	EXPECT_TRUE(m_dline->GetSmooth());
 }
 
 TEST_F(DebugPropertyTest, PointKnobsChanged_OnlyReachDebugPoints)

@@ -144,8 +144,7 @@ struct DebugColorChanged   { int objectUid; float r, g, b, a; };  // debug tints
 struct DebugOpacityChanged { int objectUid; float opacity; };
 struct DebugXRayChanged    { int objectUid; bool xray; };
 struct DebugLineWidthChanged   { int objectUid; float width; };
-struct DebugLineStippleChanged { int objectUid; bool stipple; };
-struct DebugLineSmoothChanged  { int objectUid; bool smooth; };
+struct DebugLineStippleChanged { int objectUid; bool stipple; };          // smoothing follows it: solid = AA, dashed = none
 struct DebugPointTypeChanged      { int objectUid; int pointType; };      // DebugPoints::PointType value
 struct DebugPointScaleChanged     { int objectUid; float scale; };
 struct DebugProjectionModeChanged { int objectUid; int projectionMode; }; // 0 = screen, 1 = world

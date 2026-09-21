@@ -546,20 +546,6 @@ void OnDebugLineStippleChanged(const neurus::DebugLineStippleChanged& e, const n
 	Mutated(ctx.events);
 }
 
-void OnDebugLineSmoothChanged(const neurus::DebugLineSmoothChanged& e, const neurus::ControllerContext& ctx)
-{
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-	auto it = scene->dLine_list.find(e.objectUid);
-	if (it == scene->dLine_list.end() || !it->second) return;
-	neurus::DebugLine* line = it->second.get();
-
-	const bool before = line->GetSmooth();
-	line->SetSmooth(e.smooth);
-	ctx.ops.Submit(std::make_unique<neurus::SetDebugSmoothOp>(line->GetObjectID(), before, e.smooth));
-	Mutated(ctx.events);
-}
-
 void OnDebugPointTypeChanged(const neurus::DebugPointTypeChanged& e, const neurus::ControllerContext& ctx)
 {
 	neurus::Scene* scene = ctx.scene();
@@ -841,7 +827,6 @@ void SceneController::Init(ControllerContext& ctx)
 	ctx.events.subscribe<DebugXRayChanged>([ctx](const DebugXRayChanged& e) { OnDebugXRayChanged(e, ctx); });
 	ctx.events.subscribe<DebugLineWidthChanged>([ctx](const DebugLineWidthChanged& e) { OnDebugLineWidthChanged(e, ctx); });
 	ctx.events.subscribe<DebugLineStippleChanged>([ctx](const DebugLineStippleChanged& e) { OnDebugLineStippleChanged(e, ctx); });
-	ctx.events.subscribe<DebugLineSmoothChanged>([ctx](const DebugLineSmoothChanged& e) { OnDebugLineSmoothChanged(e, ctx); });
 	ctx.events.subscribe<DebugPointTypeChanged>([ctx](const DebugPointTypeChanged& e) { OnDebugPointTypeChanged(e, ctx); });
 	ctx.events.subscribe<DebugPointScaleChanged>([ctx](const DebugPointScaleChanged& e) { OnDebugPointScaleChanged(e, ctx); });
 	ctx.events.subscribe<DebugProjectionModeChanged>([ctx](const DebugProjectionModeChanged& e) { OnDebugProjectionModeChanged(e, ctx); });

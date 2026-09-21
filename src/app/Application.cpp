@@ -639,7 +639,6 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugXRayChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugLineWidthChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugStippleChanged);
-		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugSmoothChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPointTypeChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPointScaleChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugProjectionModeChanged);

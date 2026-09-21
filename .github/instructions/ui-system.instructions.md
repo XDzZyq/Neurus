@@ -641,8 +641,11 @@ Every preset follows the same contract:
 
 One preset serves all three debug types — `DebugLine`, `DebugPoints` and
 `DebugMesh` share color / opacity / x-ray, and `setDebugType(int goType)` shows
-or hides the type-specific rows (line width + stipple + smoothing; point shape +
-size + projection mode; mesh path label).
+or hides the type-specific rows (line width + stipple; point shape +
+size + projection mode; mesh path label). Antialiasing is deliberately **not** a
+row: `DebugDrawBuilder` derives it per primitive kind (solid line and cube edge =
+smooth, dashed line = not, sprite = always, wire mesh = never), so there is
+nothing for the user to set.
 
 Its **position table** is the only place in the panel that edits a *list* rather
 than scalars, and is worth knowing about:

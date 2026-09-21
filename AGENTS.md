@@ -398,6 +398,14 @@ Qt is stateful, so debug objects are too.
   `is_viewport && is_rendered` is false, before the x-ray partition is computed. The
   Outliner toggle already reaches it: `SceneController` → `RenderResetEvent` →
   `MarkDirty()`.
+- **Smoothing is derived, never authored — and on by default.** Nothing stores a
+  smooth bit: no scene property, no event, no op, no checkbox. `DebugDrawBuilder` is
+  the one place that decides it, per primitive kind: a solid line and every cube edge
+  get `DebugFlag::Smooth`, a **stippled** line does not (antialiasing would soften the
+  hard ends a dash is made of), point sprites always do (their shape mask is an
+  analytic distance, so a rhombus or circle is visibly stepped without it), and a
+  `DebugMesh` wireframe never does — `PolygonMode::eLine` gives the fragment stage no
+  distance to fade, so `debug_wire.frag` has no branch on the flag.
 - A `DebugMesh` wireframe still needs a **MeshGPU** in the RenderCache, uploaded by the
   Editor through `UploadManager::UploadMeshData()` — `DebugMesh` is not a `Mesh`, so it
   cannot reuse `UploadMesh()`. Without it `DebugPass` skips the mesh silently.

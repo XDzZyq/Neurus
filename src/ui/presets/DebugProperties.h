@@ -77,7 +77,6 @@ public:
 	// --- DebugLine only ---
 	void setLineWidth(float width);
 	void setStipple(bool stipple);
-	void setSmooth(bool smooth);
 
 	// --- DebugPoints only ---
 	void setPointType(int pointType);
@@ -104,7 +103,6 @@ signals:
 	void xrayChanged(int objectId, bool xray);
 	void lineWidthChanged(int objectId, float width);
 	void stippleChanged(int objectId, bool stipple);
-	void smoothChanged(int objectId, bool smooth);
 	void pointTypeChanged(int objectId, int pointType);
 	void pointScaleChanged(int objectId, float scale);
 	void projectionModeChanged(int objectId, int mode);
@@ -145,7 +143,6 @@ private:
 	QLabel*       m_widthLabel  = nullptr;
 	ScalarSlider* m_widthSlider = nullptr;
 	QCheckBox*    m_stippleChk  = nullptr;
-	QCheckBox*    m_smoothChk   = nullptr;
 
 	// --- Widgets: DebugPoints rows ---
 	QWidget*      m_pointTypeRow   = nullptr;
@@ -177,7 +174,6 @@ private:
 	int       m_cachedXRay = -1;
 	float     m_cachedWidth = -1.0f;
 	int       m_cachedStipple = -1;
-	int       m_cachedSmooth = -1;
 	int       m_cachedPointType = -1;
 	float     m_cachedScale = -1.0f;
 	int       m_cachedProjection = -1;

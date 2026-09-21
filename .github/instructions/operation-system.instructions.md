@@ -63,10 +63,10 @@ model, coalescing rules, and persistence.
     state) that must NOT re-run on replay, give it a dedicated restore event
     (ShaderCodeRestored convention) instead of the forward event — but keep
     ops minimal by default.
-- **Debug object ops** (issue #22, `SceneOperations.h`): ten `TransitionOp`s
+- **Debug object ops** (issue #22, `SceneOperations.h`): nine `TransitionOp`s
   covering the debug property events — `SetDebugColorOp` (`glm::vec4`),
   `SetDebugOpacityOp`, `SetDebugXRayOp`, `SetDebugLineWidthOp`,
-  `SetDebugStippleOp`, `SetDebugSmoothOp`, `SetDebugPointTypeOp`,
+  `SetDebugStippleOp`, `SetDebugPointTypeOp`,
   `SetDebugPointScaleOp`, `SetDebugProjectionModeOp` and
   `SetDebugPositionsOp`. Like the events they replay, they are **type-agnostic**:
   one op set serves `DebugLine`, `DebugPoints` and `DebugMesh`, and the handler

@@ -164,10 +164,10 @@ void DebugDrawBuilder::AppendDebugLine(const DebugLine& line)
 
 	const bool xray = line.GetXRay();
 	uint32_t flags = xray ? DebugFlag::XRay : DebugFlag::None;
-	if (line.GetStipple())
-		flags |= DebugFlag::Stipple;
-	if (line.GetSmooth())
-		flags |= DebugFlag::Smooth;
+	// Smoothing is derived, not authored: it fades alpha towards the quad edge,
+	// which would soften the hard ends a dash is made of. So a solid line is
+	// antialiased and a stippled one is not — the two are never both set.
+	flags |= line.GetStipple() ? DebugFlag::Stipple : DebugFlag::Smooth;
 
 	const glm::mat4 model = line.GetModelMatrix();
 	const uint32_t rgba = PackTinted(line.GetColor(), line.GetOpacity());
@@ -193,7 +193,11 @@ void DebugDrawBuilder::AppendDebugPoints(const DebugPoints& points)
 		return;
 
 	const bool xray = points.GetXRay();
-	uint32_t flags = xray ? DebugFlag::XRay : DebugFlag::None;
+	// Sprites have no dash style to protect, so the derived smoothing of
+	// AppendDebugLine is unconditional here: every shape mask is an analytic
+	// distance the fragment shader can fade, and a rhombus or circle edge is
+	// visibly stepped without it.
+	uint32_t flags = (xray ? DebugFlag::XRay : DebugFlag::None) | DebugFlag::Smooth;
 	if (points.GetProjectionMode() == 0)
 		flags |= DebugFlag::ScreenSpaceSize;
 
@@ -205,7 +209,9 @@ void DebugDrawBuilder::AppendDebugPoints(const DebugPoints& points)
 	if (points.GetPointType() == DebugPoints::PointType::CUBE)
 	{
 		std::vector<DebugSegment>& out = xray ? m_xraySegments : m_list.segments;
-		const uint32_t segFlags = xray ? DebugFlag::XRay : DebugFlag::None;
+		// Cube edges are solid by construction — DebugPoints has no line style —
+		// so they take the same smoothing a solid DebugLine gets.
+		const uint32_t segFlags = (xray ? DebugFlag::XRay : DebugFlag::None) | DebugFlag::Smooth;
 		const float half = points.GetScale() * 0.5f;
 		for (const glm::vec3& p : pts)
 			AppendCubeEdges(out, glm::vec3(model * glm::vec4(p, 1.0f)), half, 1.0f, rgba, segFlags);
@@ -236,6 +242,10 @@ void DebugDrawBuilder::AppendDebugMesh(const DebugMesh& mesh)
 	DebugWireMesh wire;
 	wire.model = mesh.GetModelMatrix();
 	wire.rgba = PackTinted(mesh.GetColor(), mesh.GetOpacity());
+	// No Smooth bit here, unlike segments and sprites: a wire mesh is rasterized
+	// by PolygonMode::eLine, so the fragment stage gets no distance-to-edge to
+	// fade — debug_wire.frag is a flat color write with nothing to branch on.
+	// Setting the flag would only advertise a behaviour no consumer implements.
 	wire.flags = mesh.GetXRay() ? DebugFlag::XRay : DebugFlag::None;
 	wire.meshObjectId = mesh.GetObjectID();
 

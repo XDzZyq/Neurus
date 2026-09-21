@@ -272,6 +272,22 @@ because a scene swap invalidates the whole flattened overlay.
 
 - `DebugLine` vertices are **endpoint pairs**; a trailing odd vertex is dropped and
   a lone vertex emits nothing.
+- **Smoothing is derived, never authored, and on by default.** The Scene stores no
+  smooth bit, `DebugProperties` shows no checkbox, and there is no event or op for it —
+  the builder decides per primitive kind:
+  - solid `DebugLine` → `Smooth`; stippled → not
+    (`flags |= GetStipple() ? Stipple : Smooth`, so the two are never both set).
+    Antialiasing fades alpha towards the quad edge, which would soften the hard ends a
+    dash is made of.
+  - point sprites → always `Smooth`, in both projection modes. `DebugPoints` has no
+    line style to protect, and `debug_point.frag`'s shape mask is an analytic distance
+    (Chebyshev / Manhattan / Euclidean), so a rhombus or circle boundary is visibly
+    stepped without the fade.
+  - CUBE edges → `Smooth`, like any solid segment.
+  - `DebugMesh` wireframes → **never** `Smooth`. They rasterize through
+    `PolygonMode::eLine`, which hands the fragment stage no distance-to-edge, so
+    `debug_wire.frag` has no branch on the flag; setting it would advertise a
+    behaviour no consumer implements.
 - Opacity is folded into the packed alpha (`PackTinted`), because the GPU only ever
   sees one alpha — opacity is an authoring convenience, not a second channel.
 - `DebugPoints::PointType::CUBE` has **no sprite form** (a screen-aligned sprite
@@ -332,7 +348,7 @@ void CameraController::Init(ControllerContext& ctx)
 void SceneController::Init(ControllerContext& ctx)
 {
     // Selection, visibility, transform, camera/mesh/light/env/debug property
-    // events, scene membership (33 subscriptions total; see SceneEvents.h)
+    // events, scene membership (32 subscriptions total; see SceneEvents.h)
 }
 ```
 

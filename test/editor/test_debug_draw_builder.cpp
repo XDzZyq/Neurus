@@ -246,8 +246,8 @@ TEST(DebugDrawBuilder, Line_BakesModelMatrixIntoWorldSpace)
 }
 
 /**
- * @test Width and the stipple/smooth switches reach the segment, and opacity is
- *       folded into the packed alpha instead of travelling as its own field.
+ * @test Width and the stipple switch reach the segment, and opacity is folded
+ *       into the packed alpha instead of travelling as its own field.
  */
 TEST(DebugDrawBuilder, Line_CarriesWidthFlagsAndTintedColor)
 {
@@ -257,7 +257,6 @@ TEST(DebugDrawBuilder, Line_CarriesWidthFlagsAndTintedColor)
 	line->SetColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 	line->SetOpacity(0.5f);
 	line->SetStipple(true);
-	line->SetSmooth(true);
 
 	Scene scene;
 	scene.UseDebugLine(line);
@@ -269,11 +268,53 @@ TEST(DebugDrawBuilder, Line_CarriesWidthFlagsAndTintedColor)
 	const DebugSegment& s = b.List().segments[0];
 	EXPECT_FLOAT_EQ(s.width, 4.0f);
 	EXPECT_TRUE(Has(s.flags, DebugFlag::Stipple));
-	EXPECT_TRUE(Has(s.flags, DebugFlag::Smooth));
 	EXPECT_FALSE(Has(s.flags, DebugFlag::XRay));
 
 	// 0xAABBGGRR: opaque red at 50% opacity -> alpha 128, red 255.
 	EXPECT_EQ(s.rgba, 0x800000FFu) << "Opacity must multiply into the packed alpha";
+}
+
+/**
+ * @test Smoothing is not an authored property: it follows the line style, on for
+ *       a solid line and off for a dashed one.
+ *
+ * Antialiasing fades alpha towards the primitive boundary, which would soften
+ * the hard ends a dash is made of — so the two are mutually exclusive rather
+ * than independently switchable, and nothing in the Scene stores a smooth bit.
+ */
+TEST(DebugDrawBuilder, Line_SmoothingFollowsTheLineStyle)
+{
+	auto solid = std::make_shared<DebugLine>();
+	solid->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+	auto dashed = std::make_shared<DebugLine>();
+	dashed->PushDebugLine(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	dashed->SetStipple(true);
+
+	Scene scene;
+	scene.UseDebugLine(solid);
+	scene.UseDebugLine(dashed);
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+
+	ASSERT_EQ(b.List().segments.size(), 2u);
+
+	// The pools are unordered_maps, so the two objects can flatten in either
+	// order — tell them apart by their axis, not by index.
+	const DebugSegment* a = nullptr;   // the solid one, along +X
+	const DebugSegment* d = nullptr;   // the dashed one, along +Y
+	for (const DebugSegment& s : b.List().segments)
+		(s.b.x > 0.5f ? a : d) = &s;
+	ASSERT_NE(a, nullptr);
+	ASSERT_NE(d, nullptr);
+
+	// Default-constructed: nothing asked for smoothing, it is on regardless.
+	EXPECT_TRUE(Has(a->flags, DebugFlag::Smooth)) << "A solid line is antialiased by default";
+	EXPECT_FALSE(Has(a->flags, DebugFlag::Stipple));
+
+	EXPECT_TRUE(Has(d->flags, DebugFlag::Stipple));
+	EXPECT_FALSE(Has(d->flags, DebugFlag::Smooth)) << "Stipple must turn smoothing off";
 }
 
 // ===========================================================================
@@ -459,6 +500,45 @@ TEST(DebugDrawBuilder, Point_BakesModelMatrixIntoWorldSpace)
 	EXPECT_EQ(b.List().points[0].p, glm::vec3(1.0f, 2.0f, 13.0f));
 }
 
+/**
+ * @test Every sprite shape is smoothed, unconditionally and for all projection
+ *       modes — DebugPoints has no line style that could turn it off.
+ *
+ * The shape mask in debug_point.frag is an analytic distance (Chebyshev,
+ * Manhattan or Euclidean), so a rhombus or circle boundary is visibly stepped
+ * without the fade. Nothing authors this, so the assertion is on a plain
+ * default-constructed object.
+ */
+TEST(DebugDrawBuilder, Point_SpritesAreAlwaysSmoothed)
+{
+	const DebugPoints::PointType shapes[] = {
+		DebugPoints::PointType::SQUARE,
+		DebugPoints::PointType::RHOMBUS,
+		DebugPoints::PointType::CIR,
+	};
+
+	for (DebugPoints::PointType type : shapes)
+	{
+		for (int mode : {0, 1})
+		{
+			auto pts = MakePoints(1, false);
+			pts->SetPointType(type);
+			pts->SetProjectionMode(mode);
+
+			Scene scene;
+			scene.UseDebugPoints(pts);
+
+			DebugDrawBuilder b;
+			b.Rebuild(scene);
+
+			ASSERT_EQ(b.List().points.size(), 1u);
+			EXPECT_TRUE(Has(b.List().points[0].flags, DebugFlag::Smooth))
+				<< "Sprites are antialiased by default, shape " << static_cast<int>(type)
+				<< " projection mode " << mode;
+		}
+	}
+}
+
 // ===========================================================================
 // E. PointType::CUBE -> 12 segments
 // ===========================================================================
@@ -528,6 +608,29 @@ TEST(DebugDrawBuilder, CubePoint_EdgesAreNeverScreenSpaceSized)
 	ASSERT_EQ(b.List().segments.size(), 12u);
 	for (const DebugSegment& s : b.List().segments)
 		EXPECT_FALSE(Has(s.flags, DebugFlag::ScreenSpaceSize));
+}
+
+/**
+ * @test Cube edges are smoothed and never stippled: they are segments of a solid
+ *       style, so they get what a solid DebugLine gets.
+ */
+TEST(DebugDrawBuilder, CubePoint_EdgesAreSmoothedLikeSolidLines)
+{
+	auto pts = MakePoints(1, false);
+	pts->SetPointType(DebugPoints::PointType::CUBE);
+
+	Scene scene;
+	scene.UseDebugPoints(pts);
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+
+	ASSERT_EQ(b.List().segments.size(), 12u);
+	for (const DebugSegment& s : b.List().segments)
+	{
+		EXPECT_TRUE(Has(s.flags, DebugFlag::Smooth));
+		EXPECT_FALSE(Has(s.flags, DebugFlag::Stipple));
+	}
 }
 
 /// @test An x-ray cube's edges join the x-ray half rather than the depth-tested one.
@@ -602,6 +705,29 @@ TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
 	EXPECT_EQ(w.rgba, 0xFF00FF00u) << "0xAABBGGRR: opaque green";
 	EXPECT_TRUE(Has(w.flags, DebugFlag::XRay));
 	EXPECT_FALSE(b.List().Empty()) << "A wire mesh alone must not read as empty";
+}
+
+/**
+ * @test A wire mesh carries no Smooth bit, unlike every segment and sprite.
+ *
+ * Wireframes are rasterized by PolygonMode::eLine, so the fragment stage has no
+ * distance-to-edge to fade and debug_wire.frag has no branch on the flag. Pinning
+ * the asymmetry keeps "smooth by default" from being read as "set the bit
+ * everywhere", which would advertise a behaviour the shader does not implement.
+ */
+TEST(DebugDrawBuilder, WireMesh_IsNotFlaggedSmooth)
+{
+	auto mesh = std::make_shared<DebugMesh>();
+	mesh->SetMeshData(std::make_shared<MeshData>());
+
+	Scene scene;
+	scene.UseDebugMesh(mesh);
+
+	DebugDrawBuilder b;
+	b.Rebuild(scene);
+
+	ASSERT_EQ(b.List().wireMeshes.size(), 1u);
+	EXPECT_FALSE(Has(b.List().wireMeshes[0].flags, DebugFlag::Smooth));
 }
 
 /**

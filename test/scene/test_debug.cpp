@@ -39,9 +39,9 @@ TEST(DebugLine, DefaultConstruction)
 	// Default opacity is 1.0
 	EXPECT_FLOAT_EQ(dl.GetOpacity(), 1.0f);
 
-	// Default flags
+	// Default flags. There is no smooth flag to check: antialiasing is derived
+	// from the line style by DebugDrawBuilder, never stored on the object.
 	EXPECT_FALSE(dl.GetStipple());
-	EXPECT_FALSE(dl.GetSmooth());
 	EXPECT_FALSE(dl.GetXRay());  // depth-tested by default, not always-on-top
 
 	// No vertices initially
@@ -158,17 +158,6 @@ TEST(DebugLine, SetStipple)
 	EXPECT_FALSE(dl.GetStipple());
 	dl.SetStipple(true);
 	EXPECT_TRUE(dl.GetStipple());
-}
-
-/**
- * @test Smooth flag can be set and retrieved.
- */
-TEST(DebugLine, SetSmooth)
-{
-	DebugLine dl;
-	EXPECT_FALSE(dl.GetSmooth());
-	dl.SetSmooth(true);
-	EXPECT_TRUE(dl.GetSmooth());
 }
 
 /**

@@ -199,6 +199,30 @@ protected:
 		return s;
 	}
 
+	/**
+	 * @brief Reads ComposedOutput back as one luma value per pixel.
+	 *
+	 * `Measure()` thresholds to a yes/no mask, which is the right question for
+	 * "did this land here". Smoothing is a question about *how much* landed, so it
+	 * needs the values themselves.
+	 */
+	std::vector<float> ReadLuma()
+	{
+		auto& color = m_cache->GetAttachment(AttachmentName::ComposedOutput, Extent());
+		auto data = color.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		const auto* h = reinterpret_cast<const uint16_t*>(data->GetPixelData().data());
+
+		std::vector<float> luma(static_cast<size_t>(kRes) * kRes);
+		for (size_t p = 0; p < luma.size(); ++p)
+		{
+			const size_t i = p * 4;
+			luma[p] = 0.299f * VulkanTestShared::HalfToFloat(h[i + 0])
+			        + 0.587f * VulkanTestShared::HalfToFloat(h[i + 1])
+			        + 0.114f * VulkanTestShared::HalfToFloat(h[i + 2]);
+		}
+		return luma;
+	}
+
 	std::unique_ptr<RenderCache> m_cache;
 	std::unique_ptr<DebugPass>   m_pass;
 	Scene                        m_scene;
@@ -406,6 +430,66 @@ TEST_F(DebugPassTest, ScreenSpacePoint_DrawsSquareAtProjectedPosition)
 	// And square-ish, not smeared across the target.
 	EXPECT_LE(lit.maxRow - lit.minRow, 20u) << "Sprite taller than its size";
 	EXPECT_LE(lit.maxCol - lit.minCol, 20u) << "Sprite wider than its size";
+}
+
+/**
+ * @test DebugFlag::Smooth gives a circle sprite a partially-covered rim; without
+ *       it every lit pixel is fully opaque.
+ *
+ * Sprites are not multisampled, so the shape mask is a hard discard: unsmoothed,
+ * a pixel is either fully inside the circle or gone, and the histogram is binary.
+ * The Smooth branch in debug_point.frag scales alpha by the distance to the
+ * boundary in pixels, which can only show up as intermediate luma. Counting those
+ * intermediate pixels is therefore the exact measurement of "is the branch live",
+ * and it is the branch DebugDrawBuilder now sets on every sprite.
+ */
+TEST_F(DebugPassTest, SmoothPoint_FadesTheSpriteRim)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan GPU.";
+
+	// One list mutated between the two renders, not two fresh ones. DebugCache
+	// keys its upload on `revision` alone, and a freshly constructed list always
+	// starts at 0 — so two new lists both Touch()ed once would present the same
+	// revision to the same frame slot and the second upload would be skipped,
+	// leaving the first sprite on screen. The real producer mutates one
+	// long-lived list whose revision only grows; this mirrors that.
+	DebugDrawList list;
+	DebugPointSprite p;
+	p.p = glm::vec3(0.0f);
+	p.size = 16.0f;
+	p.rgba = PackDebugColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+	p.shape = DebugPointShape::Circle;
+	p.flags = DebugFlag::ScreenSpaceSize;
+	list.points.push_back(p);
+	list.xrayPointStart = 1u;
+
+	const auto Partial = [&](bool smooth) {
+		PrimeAttachments(1.0f);
+
+		list.points[0].flags = DebugFlag::ScreenSpaceSize | (smooth ? DebugFlag::Smooth : DebugFlag::None);
+		list.Touch();
+
+		RunPass(list);
+
+		int partial = 0, lit = 0;
+		for (float l : ReadLuma())
+		{
+			if (l > 0.02f) ++lit;
+			if (l > 0.02f && l < 0.9f) ++partial;
+		}
+		return std::pair<int, int>{partial, lit};
+	};
+
+	const auto [hardPartial, hardLit] = Partial(false);
+	const auto [softPartial, softLit] = Partial(true);
+
+	std::cout << "[DebugPass] circle rim: hard lit=" << hardLit << " partial=" << hardPartial
+	          << " | smooth lit=" << softLit << " partial=" << softPartial << std::endl;
+
+	ASSERT_GT(hardLit, 16) << "Circle sprite did not rasterize";
+	EXPECT_LE(hardPartial, 2) << "An unsmoothed sprite is a hard discard: no rim";
+	EXPECT_GT(softPartial, 8) << "Smooth did not fade the rim — is the shader branch reached?";
+	EXPECT_GT(softLit, 16) << "Smoothing must fade the rim, not erase the sprite";
 }
 
 // ===========================================================================

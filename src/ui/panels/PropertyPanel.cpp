@@ -253,7 +253,6 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 			m_debugProps->setXRay(line->GetXRay());
 			m_debugProps->setLineWidth(line->GetWidth());
 			m_debugProps->setStipple(line->GetStipple());
-			m_debugProps->setSmooth(line->GetSmooth());
 			m_debugProps->setPositions(line->GetVertices());
 		}
 		break;
@@ -483,10 +482,6 @@ void PropertyPanel::BuildTypeSubpanels()
 	QObject::connect(m_debugProps, &DebugProperties::stippleChanged, this,
 		[this](int /*objectId*/, bool stipple) {
 			emit debugStippleChanged(DebugLineStippleChanged{m_activeObjectId, stipple});
-		});
-	QObject::connect(m_debugProps, &DebugProperties::smoothChanged, this,
-		[this](int /*objectId*/, bool smooth) {
-			emit debugSmoothChanged(DebugLineSmoothChanged{m_activeObjectId, smooth});
 		});
 	QObject::connect(m_debugProps, &DebugProperties::pointTypeChanged, this,
 		[this](int /*objectId*/, int pointType) {

@@ -391,9 +391,6 @@ msgstr "大小"
 msgid "Size Mode"
 msgstr "尺寸模式"
 
-msgid "Smooth"
-msgstr "平滑"
-
 msgid "Soft PCF 16"
 msgstr "软 PCF 16"
 

@@ -258,12 +258,6 @@ struct DebugLineStippleChanged
 	bool stipple = false;
 };
 
-struct DebugLineSmoothChanged
-{
-	int objectUid = 0;
-	bool smooth = false;
-};
-
 /** @brief Point sprite shape, as the int value of DebugPoints::PointType. */
 struct DebugPointTypeChanged
 {

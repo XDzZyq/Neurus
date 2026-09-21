@@ -129,9 +129,6 @@ void DebugProperties::BuildLineRows(QVBoxLayout* layout)
 
 	m_stippleChk = new QCheckBox("Stipple");
 	layout->addWidget(m_stippleChk);
-
-	m_smoothChk = new QCheckBox("Smooth");
-	layout->addWidget(m_smoothChk);
 }
 
 void DebugProperties::BuildPointRows(QVBoxLayout* layout)
@@ -266,12 +263,6 @@ void DebugProperties::ConnectSignals()
 			emit stippleChanged(m_objectId, checked);
 		});
 
-	QObject::connect(m_smoothChk, &QCheckBox::toggled, this,
-		[this](bool checked) {
-			if (m_objectId < 0) return;
-			emit smoothChanged(m_objectId, checked);
-		});
-
 	QObject::connect(m_pointTypeCombo, &QComboBox::currentIndexChanged, this,
 		[this](int index) {
 			if (m_objectId < 0 || index < 0) return;
@@ -309,7 +300,6 @@ void DebugProperties::setDebugType(int goType)
 
 	m_widthRow->setVisible(isLine);
 	m_stippleChk->setVisible(isLine);
-	m_smoothChk->setVisible(isLine);
 
 	m_pointTypeRow->setVisible(isPoints);
 	m_scaleRow->setVisible(isPoints);
@@ -331,7 +321,6 @@ void DebugProperties::Retranslate()
 	m_xrayChk->setText(i18n.translate("X-Ray (see through geometry)"));
 	m_widthLabel->setText(i18n.translate("Width"));
 	m_stippleChk->setText(i18n.translate("Stipple"));
-	m_smoothChk->setText(i18n.translate("Smooth"));
 	m_pointTypeLabel->setText(i18n.translate("Shape"));
 	m_scaleLabel->setText(i18n.translate("Size"));
 	m_projectionLabel->setText(i18n.translate("Size Mode"));
@@ -376,7 +365,6 @@ void DebugProperties::setObjectId(int id)
 	m_cachedXRay = -1;
 	m_cachedWidth = -1.0f;
 	m_cachedStipple = -1;
-	m_cachedSmooth = -1;
 	m_cachedPointType = -1;
 	m_cachedScale = -1.0f;
 	m_cachedProjection = -1;
@@ -423,16 +411,6 @@ void DebugProperties::setStipple(bool stipple)
 	m_stippleChk->blockSignals(true);
 	m_stippleChk->setChecked(stipple);
 	m_stippleChk->blockSignals(false);
-}
-
-void DebugProperties::setSmooth(bool smooth)
-{
-	const int val = smooth ? 1 : 0;
-	if (m_cachedSmooth == val) return;
-	m_cachedSmooth = val;
-	m_smoothChk->blockSignals(true);
-	m_smoothChk->setChecked(smooth);
-	m_smoothChk->blockSignals(false);
 }
 
 void DebugProperties::setPointType(int pointType)
