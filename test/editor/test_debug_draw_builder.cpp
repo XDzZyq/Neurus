@@ -504,7 +504,7 @@ TEST(DebugDrawBuilder, Point_BakesModelMatrixIntoWorldSpace)
  * @test Every sprite shape is smoothed, unconditionally and for all projection
  *       modes — DebugPoints has no line style that could turn it off.
  *
- * The shape mask in debug_point.frag is an analytic distance (Chebyshev,
+ * The shape mask in overlay_point.frag is an analytic distance (Chebyshev,
  * Manhattan or Euclidean), so a rhombus or circle boundary is visibly stepped
  * without the fade. Nothing authors this, so the assertion is on a plain
  * default-constructed object.

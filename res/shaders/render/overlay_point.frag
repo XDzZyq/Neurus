@@ -1,22 +1,22 @@
 #version 450
 // ---------------------------------------------------------------------------
-// Debug Point Fragment Shader — gl_PointCoord shape masking
+// Overlay Point Fragment Shader — gl_PointCoord shape masking
 //
 // gl_PointCoord runs [0,1]² across the rasterized point, so every sprite shape
 // is a discard test on the distance from its centre. All three shapes are
 // centre-symmetric, which is why the origin convention (upper-left in Vulkan,
 // lower-left in GL) does not matter here.
 //
-// DebugPoints::PointType::CUBE has no entry: it is not a sprite at all, the
-// producer decomposes it into 12 DebugSegments instead.
+// A cube has no entry: it is not a sprite at all, the producer decomposes it
+// into 12 OverlaySegments instead.
 // ---------------------------------------------------------------------------
 
-// --- Shape ids (must match neurus::DebugPointShape) ---
+// --- Shape ids (must match neurus::OverlayPointShape) ---
 const uint SHAPE_SQUARE  = 0u;
 const uint SHAPE_RHOMBUS = 1u;
 const uint SHAPE_CIRCLE  = 2u;
 
-// --- DebugFlag bits (must match neurus::DebugFlag) ---
+// --- OverlayFlag bits (must match neurus::OverlayFlag) ---
 const uint FLAG_SMOOTH = 4u;
 
 layout(location = 0) flat in vec4 vColor;

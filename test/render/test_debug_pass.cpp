@@ -443,7 +443,7 @@ TEST_F(DebugPassTest, ScreenSpacePoint_DrawsSquareAtProjectedPosition)
  *
  * Sprites are not multisampled, so the shape mask is a hard discard: unsmoothed,
  * a pixel is either fully inside the circle or gone, and the histogram is binary.
- * The Smooth branch in debug_point.frag scales alpha by the distance to the
+ * The Smooth branch in overlay_point.frag scales alpha by the distance to the
  * boundary in pixels, which can only show up as intermediate luma. Counting those
  * intermediate pixels is therefore the exact measurement of "is the branch live",
  * and it is the branch DebugDrawBuilder now sets on every sprite.

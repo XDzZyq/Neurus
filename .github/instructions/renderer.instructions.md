@@ -242,8 +242,8 @@ Blit (DebugPass::GetTarget()) → Swapchain (vkCmdBlitImage)
 
 **The overlay is last, after post-AA.** FXAA must not see debug geometry: every
 primitive that can be antialiased already is, analytically and from real coverage
-(`debug_line.frag` fades one pixel in from the quad edge using the true width,
-`debug_point.frag` fades an exact p-norm distance through `fwidth()`). A luma
+(`overlay_line.frag` fades one pixel in from the quad edge using the true width,
+`overlay_point.frag` fades an exact p-norm distance through `fwidth()`). A luma
 filter can only re-blur a gradient that was already correct, drag overlay color
 into neighbouring scene pixels, and soften the hard dash ends `DebugDrawBuilder`
 deliberately leaves un-`Smooth`ed on a stippled line. The cost is wireframe, whose
@@ -404,7 +404,7 @@ after touching barriers or submit scopes.
   never occludes anything, including other debug geometry.
 - **Three pipelines, one layout** (`p_pipelines[0..2]`): lines, points, wireframe.
   - Lines are `eTriangleList`: 6 vertices per segment expanded into a screen-space
-    quad by `debug_line.vert`. Wide-line rasterization is deliberately *not* used —
+    quad by `overlay_line.vert`. Wide-line rasterization is deliberately *not* used —
     Metal caps `lineWidth` at 1.0, so `VK_EXT_line_rasterization` would silently
     degrade on macOS.
   - Points are `ePointList` with `gl_PointSize`; the shape is masked from

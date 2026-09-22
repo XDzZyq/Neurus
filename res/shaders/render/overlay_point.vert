@@ -1,8 +1,8 @@
 #version 450
 // ---------------------------------------------------------------------------
-// Debug Point Vertex Shader — native point sprites
+// Overlay Point Vertex Shader — native point sprites
 //
-// One vertex per DebugPointSprite, drawn with VK_PRIMITIVE_TOPOLOGY_POINT_LIST.
+// One vertex per OverlayPointSprite, drawn with VK_PRIMITIVE_TOPOLOGY_POINT_LIST.
 // Unlike lines, points do not need quad expansion: gl_PointSize is honoured by
 // every backend we target (MoltenVK reports pointSizeRange [1, 511]), and the
 // fragment shader can mask gl_PointCoord to get the sprite shape for free.
@@ -11,11 +11,14 @@
 // fixed-function default, and a size above 1.0 requires the largePoints
 // feature (enabled in VulkanContext::selectOptionalFeatures).
 //
-// Layout contract: `PointSprite` below mirrors neurus::DebugPointSprite
-// (src/scene/DebugDrawList.h) field for field, including its padding.
+// Shared by every overlay payload: DebugPass draws a DebugDrawList with it and
+// TransformGizmoPass draws a GizmoDrawList, because both hold the same records.
+//
+// Layout contract: `PointSprite` below mirrors neurus::OverlayPointSprite
+// (src/scene/OverlayGeometry.h) field for field, including its padding.
 // ---------------------------------------------------------------------------
 
-// --- DebugFlag bits (must match neurus::DebugFlag) ---
+// --- OverlayFlag bits (must match neurus::OverlayFlag) ---
 const uint FLAG_SCREEN_SPACE_SIZE = 8u;
 
 struct PointSprite
@@ -41,7 +44,7 @@ layout(set = 0, binding = 2, std430) readonly buffer PointBuffer
 	PointSprite points[];
 };
 
-// --- Per-frame push constants (shared with debug_line.vert) ---
+// --- Per-frame push constants (shared with overlay_line.vert) ---
 layout(push_constant) uniform PushConstants
 {
 	vec2  viewportSize;    // Render target size in pixels.

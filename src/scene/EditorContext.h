@@ -14,6 +14,12 @@
  *   back to `const Scene*`.
  * - `config` stays an opaque `const void*` (a RenderConfig*) so this header does
  *   not pull the renderer's RenderConfig into the UI layer.
+ * - `camera` is the one Editor-side answer to "which camera are we looking
+ *   through". It comes from EditorViewport, not from Scene::GetActiveCamera(),
+ *   which is what lets a future viewport-owned free camera change one function
+ *   body instead of every consumer.
+ * - Every pointer here is borrowed and frame-scoped: valid only for the frame
+ *   Editor::GetContext() produced it in, never stored across frames.
  */
 
 #pragma once
@@ -23,7 +29,9 @@
 namespace neurus
 {
 
+class Camera;
 struct DebugDrawList;
+struct GizmoDrawList;
 
 /**
  * @brief Editor-owned scene + render config, shared by RenderContext/UIContext.
@@ -37,6 +45,17 @@ struct EditorContext
 	const void* config = nullptr;
 
 	/**
+	 * @brief The camera this frame is being viewed through, or nullptr.
+	 *
+	 * Published from EditorViewport::GetCamera(), which is deliberately the only
+	 * Editor-side definition of the viewing camera: the gizmo's projection math
+	 * and the renderer's CameraGPU read the same pointer, so they cannot disagree.
+	 * Today it is the Scene's active camera; when the viewport owns a free camera
+	 * it will not be, and nothing downstream needs to change.
+	 */
+	const Camera* camera = nullptr;
+
+	/**
 	 * @brief This frame's debug geometry, or nullptr when debug draw is off.
 	 *
 	 * Owned by the Editor and rebuilt every Edit(); valid only for the frame it
@@ -45,6 +64,18 @@ struct EditorContext
 	 * scene/DebugDrawList.h where the contents are actually read.
 	 */
 	const DebugDrawList* debugDraw = nullptr;
+
+	/**
+	 * @brief This frame's transform-gizmo guides, or nullptr when no modal
+	 *        transform gesture is active.
+	 *
+	 * Separate from `debugDraw` because the two have opposite lifetimes and
+	 * opposite visibility rules — see scene/GizmoDrawList.h. Null (rather than an
+	 * empty list) is the signal that no gesture is in progress, and there is
+	 * deliberately no RenderConfig flag gating it: interaction feedback must not
+	 * be hideable by a debug-visualization toggle.
+	 */
+	const GizmoDrawList* gizmoDraw = nullptr;
 };
 
 } // namespace neurus

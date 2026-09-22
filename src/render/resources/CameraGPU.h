@@ -25,7 +25,7 @@ namespace neurus {
  *
  * Contains the combined view-projection matrix and the view matrix (needed for
  * view-space normal computation in the vertex shader). Mirrors the `CameraUBO`
- * block in gbuffer.vert, debug_line.vert, debug_point.vert and debug_wire.vert —
+ * block in gbuffer.vert, overlay_line.vert, overlay_point.vert and debug_wire.vert —
  * all four declare it identically, which is what lets them share one buffer.
  */
 struct CameraUBOData

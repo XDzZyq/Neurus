@@ -1,6 +1,6 @@
 #version 450
 // ---------------------------------------------------------------------------
-// Debug Line Fragment Shader — stipple + edge antialiasing
+// Overlay Line Fragment Shader — stipple + edge antialiasing
 //
 // The vertex shader hands over two screen-space coordinates: vSide, which spans
 // [-1, 1] across the quad's width, and vArcPx, the distance in pixels along the
@@ -8,11 +8,11 @@
 // dashes stay a constant on-screen length no matter how the segment is oriented
 // or how far away it is.
 //
-// Blending is alpha-over (set in DebugPass); this shader only produces the
-// coverage, it never reads the target.
+// Blending is alpha-over (set by the consuming pass); this shader only produces
+// the coverage, it never reads the target.
 // ---------------------------------------------------------------------------
 
-// --- DebugFlag bits (must match neurus::DebugFlag) ---
+// --- OverlayFlag bits (must match neurus::OverlayFlag) ---
 const uint FLAG_STIPPLE = 2u;
 const uint FLAG_SMOOTH  = 4u;
 

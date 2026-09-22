@@ -280,7 +280,7 @@ because a scene swap invalidates the whole flattened overlay.
     Antialiasing fades alpha towards the quad edge, which would soften the hard ends a
     dash is made of.
   - point sprites → always `Smooth`, in both projection modes. `DebugPoints` has no
-    line style to protect, and `debug_point.frag`'s shape mask is an analytic distance
+    line style to protect, and `overlay_point.frag`'s shape mask is an analytic distance
     (Chebyshev / Manhattan / Euclidean), so a rhombus or circle boundary is visibly
     stepped without the fade.
   - CUBE edges → `Smooth`, like any solid segment.

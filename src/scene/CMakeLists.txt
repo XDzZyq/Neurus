@@ -31,7 +31,9 @@
 	DebugPoints.cpp
 	DebugMesh.h
 	DebugMesh.cpp
+	OverlayGeometry.h
 	DebugDrawList.h
+	GizmoDrawList.h
 	Environment.h
 	Environment.cpp
 	registrations/TypeRegistration.cpp

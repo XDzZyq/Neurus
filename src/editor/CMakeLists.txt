@@ -5,6 +5,8 @@ add_library(neurus_editor STATIC
 	Editor.cpp
 	DebugDrawBuilder.h
 	DebugDrawBuilder.cpp
+	EditorViewport.h
+	EditorViewport.cpp
 	Input.h
 	Input.cpp
 	controllers/SceneController.h
@@ -29,6 +31,7 @@ add_library(neurus_editor STATIC
 	operations/registrations/OperationRegistration.cpp
 	events/UIEvents.h
 	events/UIEvents.cpp
+	events/GizmoEvents.h
 )
 
 target_link_libraries(neurus_editor PUBLIC

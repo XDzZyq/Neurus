@@ -10,8 +10,8 @@
  *
  * Drawing after post-AA rather than before it is deliberate. Every debug primitive
  * that can be antialiased already is, analytically and from real coverage:
- * debug_line.frag fades one pixel in from the quad edge using the true line width,
- * debug_point.frag fades an exact p-norm distance through fwidth(). FXAA has only
+ * overlay_line.frag fades one pixel in from the quad edge using the true line width,
+ * overlay_point.frag fades an exact p-norm distance through fwidth(). FXAA has only
  * luma to work from, and a thin high-contrast line is its worst input — it re-blurs
  * a gradient that was already correct, drags overlay color into neighbouring scene
  * pixels, and softens the hard dash ends that DebugDrawBuilder deliberately leaves
@@ -32,7 +32,7 @@
  *
  * Three pipelines, one per primitive kind:
  *   [0] lines — eTriangleList, six vertices per segment expanded into a
- *       screen-space quad by debug_line.vert (Metal caps lineWidth at 1.0, so
+ *       screen-space quad by overlay_line.vert (Metal caps lineWidth at 1.0, so
  *       wide-line rasterization is not an option; see DebugSegment).
  *   [1] points — ePointList with gl_PointSize, shape masked from gl_PointCoord.
  *   [2] wireframe — eTriangleList with PolygonMode::eLine over the mesh's
@@ -75,7 +75,7 @@ struct DebugDrawList;
 /**
  * @brief Push constants shared by the line and point pipelines (16 B).
  *
- * Mirrors the `PushConstants` block in debug_line.vert and debug_point.vert.
+ * Mirrors the `PushConstants` block in overlay_line.vert and overlay_point.vert.
  * Both shaders declare the same block so the two pipelines can share one layout.
  */
 struct DebugPushConstants

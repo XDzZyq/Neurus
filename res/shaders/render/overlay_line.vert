@@ -1,8 +1,8 @@
 #version 450
 // ---------------------------------------------------------------------------
-// Debug Line Vertex Shader — screen-space quad expansion
+// Overlay Line Vertex Shader — screen-space quad expansion
 //
-// Each DebugSegment in the SSBO is drawn as six vertices (two triangles) that
+// Each OverlaySegment in the SSBO is drawn as six vertices (two triangles) that
 // form a screen-space quad of the requested pixel width. Wide-line rasterization
 // is not used: Metal (hence MoltenVK) clamps lineWidth to 1.0 and exposes none
 // of VK_KHR_line_rasterization's rectangular/smooth/stippled modes, so the quad
@@ -13,11 +13,14 @@
 // gl_VertexIndex % 6 the quad corner. That is what lets the depth-tested and
 // x-ray halves of the list be drawn as two ranges of one buffer.
 //
-// Layout contract: `Segment` below mirrors neurus::DebugSegment
-// (src/scene/DebugDrawList.h) field for field, including its padding.
+// Shared by every overlay payload: DebugPass draws a DebugDrawList with it and
+// TransformGizmoPass draws a GizmoDrawList, because both hold the same records.
+//
+// Layout contract: `Segment` below mirrors neurus::OverlaySegment
+// (src/scene/OverlayGeometry.h) field for field, including its padding.
 // ---------------------------------------------------------------------------
 
-// --- DebugFlag bits (must match neurus::DebugFlag) ---
+// --- OverlayFlag bits (must match neurus::OverlayFlag) ---
 const uint FLAG_SCREEN_SPACE_SIZE = 8u;
 
 struct Segment
@@ -45,7 +48,7 @@ layout(set = 0, binding = 1, std430) readonly buffer SegmentBuffer
 	Segment segments[];
 };
 
-// --- Per-frame push constants (shared with debug_point.vert) ---
+// --- Per-frame push constants (shared with overlay_point.vert) ---
 layout(push_constant) uniform PushConstants
 {
 	vec2  viewportSize;    // Render target size in pixels.
@@ -120,7 +123,7 @@ void main()
 	const vec2  dir   = lenPx > 1e-6 ? delta / lenPx : vec2(1.0, 0.0);
 	const vec2  nrm   = vec2(-dir.y, dir.x);
 
-	// Line thickness is always in pixels — see DebugSegment::width. World-space
+	// Line thickness is always in pixels — see OverlaySegment::width. World-space
 	// thickness would need a per-fragment depth-dependent width, which no
 	// screen-space quad can represent; use point sprites when a world-sized
 	// marker is wanted (they honour FLAG_SCREEN_SPACE_SIZE).

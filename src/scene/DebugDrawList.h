@@ -25,21 +25,21 @@
  * EditorContext) so the editor may write it and the renderer may read it
  * without either including the other.
  *
- * GPU layout contract: DebugSegment and DebugPointSprite are uploaded verbatim
- * as std430 SSBO arrays. Their field order and padding MUST stay in sync with
- * res/shaders/render/debug_line.vert and debug_point.vert; the static_asserts
- * below guard the sizes, not the field order.
+ * GPU layout contract: the vertex records themselves live in OverlayGeometry.h,
+ * because the modal transform gizmo draws with the same records and the same
+ * shaders while keeping its own payload (GizmoDrawList) — opposite lifetime,
+ * opposite authoring rules. The names below are aliases, so every existing
+ * DebugSegment / DebugFlag::XRay site keeps working and sizeof() is unchanged.
  *
- * Positions are always world-space. Producers bake their object's transform in
- * while flattening rather than passing a matrix index the shader would
- * dereference: the CPU already touches every primitive to copy it, so folding a
- * mat4 multiply into that pass costs almost nothing and removes a whole SSBO,
- * descriptor binding and indirection from the GPU side. Only DebugWireMesh keeps
- * a matrix, because its geometry is never copied — it is drawn straight from the
- * mesh's existing GPU buffers with the transform in a push constant.
+ * Positions are always world-space (see OverlayGeometry.h for why the transform
+ * is baked in rather than indexed). Only DebugWireMesh keeps a matrix, because
+ * its geometry is never copied — it is drawn straight from the mesh's existing
+ * GPU buffers with the transform in a push constant.
  */
 
 #pragma once
+
+#include "scene/OverlayGeometry.h"
 
 #include <glm/glm.hpp>
 
@@ -50,106 +50,25 @@ namespace neurus
 {
 
 /**
- * @brief Per-primitive bit flags, shared verbatim with the debug shaders.
+ * @name Debug-domain spellings of the shared overlay records
  *
- * Plain uint32_t constants rather than an enum class: the value is written
- * straight into an SSBO field and tested with bitwise AND in GLSL, so the
- * enum-class conversion boilerplate would buy nothing.
+ * Aliases, not distinct types. Two structurally identical types would force a
+ * converting copy at the cache boundary and stop DebugCache and GizmoCache
+ * sharing a memcpy shape. The separation that matters is the payload container
+ * (this file vs GizmoDrawList.h), not the record.
+ * @{
  */
-struct DebugFlag
-{
-	static constexpr uint32_t None = 0u;
+using DebugFlag        = OverlayFlag;
+using DebugSegment     = OverlaySegment;
+using DebugPointSprite = OverlayPointSprite;
+using DebugPointShape  = OverlayPointShape;
 
-	/// @brief Draw on top of everything (depth test disabled) instead of being occluded.
-	static constexpr uint32_t XRay = 1u << 0;
-
-	/// @brief Dashed line, phase computed from screen-space arc length.
-	static constexpr uint32_t Stipple = 1u << 1;
-
-	/// @brief Anti-alias edges by fading alpha near the primitive boundary.
-	static constexpr uint32_t Smooth = 1u << 2;
-
-	/**
-	 * @brief Size is in pixels (constant on screen) rather than world units.
-	 *
-	 * Point sprites honour both settings. Segments do not: a screen-space quad
-	 * has one width for its whole length, so a world-space thickness would need
-	 * a per-fragment depth-dependent width it cannot represent. DebugSegment
-	 * width is therefore always pixels, and this bit is ignored for segments.
-	 */
-	static constexpr uint32_t ScreenSpaceSize = 1u << 3;
-};
-
-/**
- * @brief Packs a linear RGBA color into a single 8-bit-per-channel word.
- *
- * Debug geometry is authored in display-referred color and drawn after
- * ComposePass has already tonemapped, so no gamma conversion happens here:
- * what is packed is what appears.
- *
- * @param color RGBA in [0,1]; values outside the range are clamped.
- * @return Color packed as 0xAABBGGRR (matches GLSL unpackUnorm4x8).
- */
+/// @brief See PackOverlayColor. Kept so debug producers need no include change.
 inline uint32_t PackDebugColor(const glm::vec4& color)
 {
-	const glm::vec4 c = glm::clamp(color, glm::vec4(0.0f), glm::vec4(1.0f)) * 255.0f + 0.5f;
-	return (static_cast<uint32_t>(c.r))
-	     | (static_cast<uint32_t>(c.g) << 8)
-	     | (static_cast<uint32_t>(c.b) << 16)
-	     | (static_cast<uint32_t>(c.a) << 24);
+	return PackOverlayColor(color);
 }
-
-/**
- * @brief One line segment. Expanded into a screen-space quad by the vertex shader.
- *
- * Thick lines are built as quads rather than rasterized as wide lines because
- * Metal (and therefore MoltenVK) caps lineWidth at 1.0 and exposes none of
- * VK_KHR_line_rasterization's rectangular/smooth/stippled modes. Quad expansion
- * costs six vertices per segment and in exchange gives arbitrary width plus
- * shader-side smoothing and stipple on every platform.
- */
-struct DebugSegment
-{
-	glm::vec3 a{0.0f};                 ///< Start point, in world space.
-	float width{1.0f};                 ///< Line width in pixels (see DebugFlag::ScreenSpaceSize).
-	glm::vec3 b{0.0f};                 ///< End point, in world space.
-	uint32_t rgba{0xFFFFFFFFu};        ///< Packed color (see PackDebugColor).
-	uint32_t flags{DebugFlag::None};   ///< DebugFlag bits.
-	uint32_t _pad[3]{0u, 0u, 0u};      ///< Pads to the 16-byte std430 struct alignment.
-};
-
-static_assert(sizeof(DebugSegment) == 48, "DebugSegment must stay 48 B to match its std430 SSBO layout");
-static_assert(alignof(DebugSegment) == 4, "DebugSegment is memcpy'd verbatim; no host padding expected");
-
-/**
- * @brief One point sprite, drawn as a native VK_PRIMITIVE_TOPOLOGY_POINT_LIST point.
- *
- * `size` becomes gl_PointSize (requires the largePoints feature, enabled in
- * VulkanContext::selectOptionalFeatures) and `shape` selects how the fragment
- * shader masks gl_PointCoord. DebugPoints::PointType::CUBE has no sprite form —
- * the producer decomposes it into 12 DebugSegments instead.
- */
-struct DebugPointSprite
-{
-	glm::vec3 p{0.0f};                 ///< Position, in world space.
-	float size{4.0f};                  ///< Sprite diameter (pixels if ScreenSpaceSize, else world units).
-	uint32_t rgba{0xFFFFFFFFu};        ///< Packed color (see PackDebugColor).
-	uint32_t shape{0u};                 ///< 0 = square, 1 = rhombus, 2 = circle (mirrors PointType).
-	uint32_t flags{DebugFlag::None};   ///< DebugFlag bits.
-	uint32_t _pad{0u};                 ///< Pads to the 16-byte std430 struct alignment.
-};
-
-static_assert(sizeof(DebugPointSprite) == 32, "DebugPointSprite must stay 32 B to match its std430 SSBO layout");
-
-/**
- * @brief Sprite shape ids, kept numerically in sync with DebugPoints::PointType.
- */
-struct DebugPointShape
-{
-	static constexpr uint32_t Square = 0u;
-	static constexpr uint32_t Rhombus = 1u;
-	static constexpr uint32_t Circle = 2u;
-};
+/** @} */
 
 /**
  * @brief A wireframe overlay drawn from an already-uploaded mesh.
