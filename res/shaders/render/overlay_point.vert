@@ -12,7 +12,7 @@
 // feature (enabled in VulkanContext::selectOptionalFeatures).
 //
 // Shared by every overlay payload: DebugPass draws a DebugDrawList with it and
-// TransformGizmoPass draws a GizmoDrawList, because both hold the same records.
+// GizmoPass draws a GizmoDrawList, because both hold the same records.
 //
 // Layout contract: `PointSprite` below mirrors neurus::OverlayPointSprite
 // (src/scene/OverlayGeometry.h) field for field, including its padding.

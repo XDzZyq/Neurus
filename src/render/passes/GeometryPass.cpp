@@ -439,7 +439,7 @@ PassIO GeometryPass::GetIO() const
 	// GeometryPass is a rasterization pass writing the G-Buffer MRT + depth.
 	// It has no image reads (camera data comes via a UBO). Binding metadata is
 	// unused — the pass self-manages its render pass and attachments; only the
-	// resource identities drive RenderGraph edges to SSAO / Lighting / Gizmo.
+	// resource identities drive RenderGraph edges to SSAO / Lighting / SelectionOutline.
 	PassIO io;
 	io.name  = "GeometryPass";
 	io.writes = {

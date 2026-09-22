@@ -197,7 +197,7 @@ Neurus/
 │   │   │   ├── IBLPass.h/cpp
 │   │   │   ├── ShadowDepthPass.h/cpp
 │   │   │   ├── ShadowIntensityPass.h/cpp
-│   │   │   ├── GizmoPass.h/cpp      # IDBuffer edge detection -> selection highlight
+│   │   │   ├── SelectionOutlinePass.h/cpp  # IDBuffer edge detection -> selection outline
 │   │   │   ├── ComposePass.h/cpp    # Highlight blend + gamma -> ComposedOutput
 │   │   │   ├── DebugPass.h/cpp      # Debug/gizmo overlay raster pass (issue #22)
 │   │   │   └── FXAAPass.h/cpp       # Luma-based post AA (conditional)

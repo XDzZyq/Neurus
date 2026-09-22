@@ -10,14 +10,14 @@ add_library(neurus_render_passes STATIC
 	FXAAPass.cpp
 	GeometryPass.h
 	GeometryPass.cpp
-	GizmoPass.h
-	GizmoPass.cpp
 	IBLPass.h
 	IBLPass.cpp
 	LightingPass.h
 	LightingPass.cpp
 	Pass.h
 	Pass.cpp
+	SelectionOutlinePass.h
+	SelectionOutlinePass.cpp
 	ShadowDepthPass.h
 	ShadowDepthPass.cpp
 	ShadowIntensityPass.h

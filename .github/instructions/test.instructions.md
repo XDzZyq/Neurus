@@ -320,7 +320,7 @@ Each attachment format maps to RGBA8 PNG differently:
 | Albedo     | `R8G8B8A8_SRGB` | `false` | raw U8 (sRGB-encoded) |
 | MetallicRoughness | `R8G8B8A8_Unorm` | `false` | raw U8 |
 | HDRColor   | `R16G16B16A16_SFLOAT` | `false` | half→float→clamp[0,1]→U8 |
-| GizmoHighlight | `R8_UNORM` | `false` | raw U8 (0=no highlight, 255=edge highlight) |
+| SelectionOutline | `R8_UNORM` | `false` | raw U8 (0=no highlight, 255=edge highlight) |
 | ComposedOutput | `R16G16B16A16_SFLOAT` | `false` | half→float→clamp[0,1]→U8 (gamma-corrected composed output) |
 
 **Background pixels** (no geometry rendered) have:
@@ -330,7 +330,7 @@ Each attachment format maps to RGBA8 PNG differently:
   alpha=0 for background normal pixels
 - Albedo: `(0,0,0,0)` → PNG black
 - MetallicRoughness: `(0,0,0,0)` → PNG black
-- GizmoHighlight: `0` → PNG black (no highlight on clear pixels)
+- SelectionOutline: `0` → PNG black (no highlight on clear pixels)
 - ComposedOutput: `(0,0,0,0)` → PNG black
 
 ### Generating and Verifying Reference Images

@@ -14,7 +14,7 @@
 // x-ray halves of the list be drawn as two ranges of one buffer.
 //
 // Shared by every overlay payload: DebugPass draws a DebugDrawList with it and
-// TransformGizmoPass draws a GizmoDrawList, because both hold the same records.
+// GizmoPass draws a GizmoDrawList, because both hold the same records.
 //
 // Layout contract: `Segment` below mirrors neurus::OverlaySegment
 // (src/scene/OverlayGeometry.h) field for field, including its padding.

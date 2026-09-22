@@ -26,7 +26,7 @@
  *     point, so GizmoCache writes it unconditionally: a revision compare costs
  *     more reasoning than the memcpy it would save.
  *   - No `xraySegmentStart` / `xrayPointStart`. Every modal guide must be visible
- *     through geometry, so TransformGizmoPass disables depth testing for the whole
+ *     through geometry, so GizmoPass disables depth testing for the whole
  *     pass and carries no depth attachment at all. There is nothing to partition.
  *   - No wire meshes. Wireframe is a debug concept (DebugWireMesh); a gizmo guide
  *     is never a mesh.

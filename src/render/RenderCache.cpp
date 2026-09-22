@@ -589,8 +589,8 @@ RenderCache::AttachmentConfig RenderCache::ConfigFor(const AttachmentName name)
 	case AttachmentName::IDBuffer:
 		return { vk::Format::eR32Uint, kColorAttachmentUsage, e2D };
 
-	// --- Gizmo ---
-	case AttachmentName::GizmoHighlight:
+	// --- Selection ---
+	case AttachmentName::SelectionOutline:
 		return { vk::Format::eR8Unorm,
 		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage, e2D };
 
@@ -630,7 +630,7 @@ const char* AttachmentNameToString(const AttachmentName name)
 	case AttachmentName::ShadowDepth:       return "ShadowDepth";
 	case AttachmentName::ShadowIntensity:   return "ShadowIntensity";
 	case AttachmentName::IDBuffer:          return "IDBuffer";
-	case AttachmentName::GizmoHighlight:    return "GizmoHighlight";
+	case AttachmentName::SelectionOutline:  return "SelectionOutline";
 	case AttachmentName::ComposedOutput:    return "ComposedOutput";
 	case AttachmentName::FXAAOutput:        return "FXAAOutput";
 	case AttachmentName::FXAAOffsets:       return "FXAAOffsets";

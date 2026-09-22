@@ -220,10 +220,10 @@ LightingPass (compute: reads G-Buffer + AO + shadow intensity array,
 IBLPass (compute: reads G-Buffer + HDRColor, applies diffuse+specular IBL, writes HDRColor)
     │
     ▼
-GizmoPass (compute: reads IDBuffer, 3×3 edge detection for activeObjectId, writes R8 highlight)
+SelectionOutlinePass (compute: reads IDBuffer, 3×3 edge detection for activeObjectId, writes R8 outline)
     │
     ▼
-ComposePass (compute: blends GizmoHighlight onto HDRColor, applies gamma correction, writes ComposedOutput)
+ComposePass (compute: blends SelectionOutline onto HDRColor, applies gamma correction, writes ComposedOutput)
     │
     ▼
 FXAAPass (compute: reads ComposedOutput, luma-based edge detection + full-iteration edge search, writes FXAAOutput)
@@ -350,21 +350,21 @@ after touching barriers or submit scopes.
 - **Lighting**: Ambient term multiplied by `(1.0 - ao)` so occluded areas receive less ambient light
 - **Radius**: Default 0.15 (appropriate for [-1, 1] scene scale)
 
-### GizmoPass Convention
+### SelectionOutlinePass Convention
 - **IDBuffer**: Reads `VK_FORMAT_R32_UINT` attachment at binding 0, written by GeometryPass
   (stores `objectId` as a 32-bit unsigned integer per pixel).
 - **Edge detection**: 3×3 Laplacian-style kernel over neighboring IDBuffer pixels.
   A pixel is highlighted when at least one neighbor has a different objectId AND
   the center pixel's objectId matches `activeObjectId` (push constant).
-- **Output**: `VK_FORMAT_R8_UNORM` attachment (`AttachmentName::GizmoHighlight`) at binding 1.
+- **Output**: `VK_FORMAT_R8_UNORM` attachment (`AttachmentName::SelectionOutline`) at binding 1.
   Highlighted pixels = 255 (edge of selected object); all others = 0.
-- **Push constant**: `uint32_t activeObjectId` — set to the currently selected object ID
-  from `RenderContext::activeObjectId`. When `activeObjectId == 0`, the pass early-outs
-  (no highlight written).
+- **Push constant**: `uint32_t activeObjectId` — read inside `Record()` from
+  `ctx.editor.scene`'s `selections.GetActiveObject()`, not from a `RenderContext`
+  field. When `activeObjectId == 0`, the shader early-outs (no highlight written).
 
 ### ComposePass Convention
 - **Inputs**: Reads `HDRColor` (binding 0, `R16G16B16A16_SFLOAT`) and
-  `GizmoHighlight` (binding 1, `R8_UNORM`).
+  `SelectionOutline` (binding 1, `R8_UNORM`).
 - **Highlight blending**: When a pixel's highlight value > 0, an orange highlight
   (`rgb(1.0, 0.5, 0.0)`) is blended at 50% alpha onto the HDR color:
   `composed = mix(hdr, highlightColor, highlight * 0.5)`.
@@ -376,9 +376,9 @@ after touching barriers or submit scopes.
 
 ### DebugPass Convention
 
-> Not to be confused with **GizmoPass** above: that is a compute pass that outlines
-> the *selected* object from the IDBuffer. `DebugPass` is a raster pass that draws
-> the scene's `DebugLine` / `DebugPoints` / `DebugMesh` objects (issue #22).
+> Not to be confused with **SelectionOutlinePass** above: that is a compute pass that
+> outlines the *selected* object from the IDBuffer. `DebugPass` is a raster pass that
+> draws the scene's `DebugLine` / `DebugPoints` / `DebugMesh` objects (issue #22).
 
 - **Gate**: `RenderConfig::r_debug_draw`. The pass stays in the RenderGraph
   unconditionally; the Editor publishes a null `EditorContext::debugDraw` when the
@@ -537,7 +537,7 @@ passed to passes through `RenderContext::editor.config` (opaque `void*`):
 ### Attachment Formats
 
 All screen-space attachments (Position, Normal, Albedo, MetallicRoughness, Depth, HDRColor,
-SSAO, GizmoHighlight, ComposedOutput, FXAAOutput) are created lazily via
+SSAO, SelectionOutline, ComposedOutput, FXAAOutput) are created lazily via
 `RenderCache::GetAttachment(name, extent)` on first use.
 Per-light shadow maps are managed via `RenderCache::GetShadowMap(lightUID, lightType)`:
 - `LightType::POINTLIGHT` → cubemap (6-layer 2D_ARRAY, D32_SFLOAT, 1024×1024 per face)
@@ -556,7 +556,7 @@ assigned via `RenderCache::GetShadowIntensityLayer(lightUID, extent)`.
 | HDRColor | R16G16B16A16_SFLOAT | (0,0,0,0) | Lighting output |
 | SSAO | R8_UNORM | 0 (no occlusion) | Screen-space ambient occlusion |
 | SSR | R16G16B16A16_SFLOAT | (0,0,0,0) | Screen-space reflections (planned) |
-| GizmoHighlight | R8_UNORM | 0 | Selected-object edge highlight (GizmoPass output) |
+| SelectionOutline | R8_UNORM | 0 | Selected-object edge highlight (SelectionOutlinePass output) |
 | ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Tonemapped scene (ComposePass output); FXAA's input, or DebugPass's target when FXAA is off |
 | FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased scene (FXAAPass output); DebugPass's target when FXAA is on |
 | FXAAOffsets | R16G16_SFLOAT | (0,0) | FXAA edge subpixel offsets (RG16F, 2-channel, sampled+storage) |

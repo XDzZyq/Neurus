@@ -39,8 +39,8 @@ enum class AttachmentName
 	// --- ID ---
 	IDBuffer,           ///< Per-pixel object ID (R32_UINT)
 
-	// --- Gizmo ---
-	GizmoHighlight,     ///< Selected-object edge highlight (R8_UNORM)
+	// --- Selection ---
+	SelectionOutline,   ///< Selected-object edge highlight (R8_UNORM)
 
 	// --- Composite ---
 	ComposedOutput,     ///< Final composed output before swapchain blit (RGBA16F)

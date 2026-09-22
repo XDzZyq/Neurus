@@ -1,10 +1,10 @@
 /**
- * @file GizmoPass.cpp
+ * @file SelectionOutlinePass.cpp
  * @brief Selected-object edge highlight compute pass implementation.
  */
 
 #include "RenderCache.h"
-#include "passes/GizmoPass.h"
+#include "passes/SelectionOutlinePass.h"
 
 #include "../PipelineBuilder.h"
 #include "Image.h"
@@ -27,26 +27,26 @@ namespace neurus {
 // Construction
 // ---------------------------------------------------------------------------
 
-GizmoPass::GizmoPass(const vk::raii::Device& device,
-                     const vk::raii::PhysicalDevice& physicalDevice,
-                     uint32_t numSets)
+SelectionOutlinePass::SelectionOutlinePass(const vk::raii::Device& device,
+                                           const vk::raii::PhysicalDevice& physicalDevice,
+                                           uint32_t numSets)
 	: ComputePass(device, physicalDevice,
-	              GizmoPass::CreateDescriptorSetLayout(device), numSets)
+	              SelectionOutlinePass::CreateDescriptorSetLayout(device), numSets)
 	// --- Self-load compute shader via ShaderLibrary ---
 	, p_shader(
-		ShaderLibrary::LoadComputeShader("gizmo_highlight",
-		                                  "res/shaders/compute/gizmo_highlight.comp"))
+		ShaderLibrary::LoadComputeShader("selection_outline",
+		                                  "res/shaders/compute/selection_outline.comp"))
 {
 	// --- Create pipeline from self-loaded shader ---
-	BuildPipeline(device, "GizmoPass");
+	BuildPipeline(device, "SelectionOutlinePass");
 
-	NEURUS_LOG("[GizmoPass] numSets=" << numSets
+	NEURUS_LOG("[SelectionOutlinePass] numSets=" << numSets
 	           << " shader=" << (p_shader ? "OK" : "FAIL"));
 
 #ifdef _DEBUG
 	for (uint32_t i = 0; i < numSets; ++i)
 	{
-		const std::string dsName = "GizmoPass_Set" + std::to_string(i);
+		const std::string dsName = "SelectionOutlinePass_Set" + std::to_string(i);
 		p_descriptorSets[i].SetDebugName(dsName.c_str());
 	}
 #endif
@@ -56,14 +56,14 @@ GizmoPass::GizmoPass(const vk::raii::Device& device,
 // Descriptor set layout
 // ---------------------------------------------------------------------------
 
-DescriptorSetLayout GizmoPass::CreateDescriptorSetLayout(const vk::raii::Device& device)
+DescriptorSetLayout SelectionOutlinePass::CreateDescriptorSetLayout(const vk::raii::Device& device)
 {
 	return BuildLayout()
 		// IDBuffer input (combined image sampler, usampler2D)
 		.AddBinding(0,
 		            vk::DescriptorType::eCombinedImageSampler,
 		            vk::ShaderStageFlagBits::eCompute)
-		// GizmoHighlight output (storage image, R8)
+		// SelectionOutline output (storage image, R8)
 		.AddBinding(1,
 		            vk::DescriptorType::eStorageImage,
 		            vk::ShaderStageFlagBits::eCompute)
@@ -74,13 +74,13 @@ DescriptorSetLayout GizmoPass::CreateDescriptorSetLayout(const vk::raii::Device&
 // Pipeline creation
 // ---------------------------------------------------------------------------
 
-void GizmoPass::BuildPipeline(const vk::raii::Device& device,
-                               const std::string& debugName)
+void SelectionOutlinePass::BuildPipeline(const vk::raii::Device& device,
+                                         const std::string& debugName)
 {
 	// --- Guard: shader must be valid ---
 	if (!p_shader)
 	{
-		throw std::runtime_error("GizmoPass: Compute shader not loaded or invalid");
+		throw std::runtime_error("SelectionOutlinePass: Compute shader not loaded or invalid");
 	}
 
 	// --- Compile and create temporary shader module ---
@@ -110,10 +110,10 @@ void GizmoPass::BuildPipeline(const vk::raii::Device& device,
 // I/O declaration
 // ---------------------------------------------------------------------------
 
-PassIO GizmoPass::GetIO() const
+PassIO SelectionOutlinePass::GetIO() const
 {
 	PassIO io;
-	io.name = "GizmoPass";
+	io.name = "SelectionOutlinePass";
 	io.reads = {
 		// IDBuffer sampled as usampler2D at binding 0.
 		{AttachmentName::IDBuffer, 0,
@@ -121,8 +121,8 @@ PassIO GizmoPass::GetIO() const
 		 vk::ImageLayout::eShaderReadOnlyOptimal},
 	};
 	io.writes = {
-		// GizmoHighlight written as a storage image at binding 1.
-		{AttachmentName::GizmoHighlight, 1,
+		// SelectionOutline written as a storage image at binding 1.
+		{AttachmentName::SelectionOutline, 1,
 		 vk::DescriptorType::eStorageImage,
 		 vk::ImageLayout::eGeneral},
 	};
@@ -133,7 +133,7 @@ PassIO GizmoPass::GetIO() const
 // Descriptor writes
 // ---------------------------------------------------------------------------
 
-void GizmoPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
+void SelectionOutlinePass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
 {
 	// Image bindings are derived from GetIO() and applied by DescriptorBinder,
 	// so the binding list lives in exactly one place (GetIO).
@@ -147,7 +147,7 @@ void GizmoPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderC
 // Record
 // ---------------------------------------------------------------------------
 
-PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
 {
 	PassStats stats{};
 
@@ -159,13 +159,13 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	// --- 1. Write descriptor set for this frame slot ---
 	WriteDescriptors(frameIndex, renderExtent, cache);
 
-	// --- 2. Transition IDBuffer to ShaderRead and GizmoHighlight to ShaderWrite ---
+	// --- 2. Transition IDBuffer to ShaderRead and SelectionOutline to ShaderWrite ---
 	{
 		auto& idAtt = cache.GetAttachment(AttachmentName::IDBuffer, renderExtent);
 		Barrier::Transition(cmdBuf, idAtt, ImageState::ColorShaderRead);
 
-		auto& gizmoAtt = cache.GetAttachment(AttachmentName::GizmoHighlight, renderExtent);
-		Barrier::Transition(cmdBuf, gizmoAtt, ImageState::ShaderWrite);
+		auto& outlineAtt = cache.GetAttachment(AttachmentName::SelectionOutline, renderExtent);
+		Barrier::Transition(cmdBuf, outlineAtt, ImageState::ShaderWrite);
 	}
 
 	// --- 3. Bind compute pipeline ---
@@ -200,10 +200,10 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	++stats.dispatches;
 	cmdBuf.dispatch(groupCountX, groupCountY, 1);
 
-	// --- 7. Transition GizmoHighlight output: General → ShaderRead for downstream passes ---
+	// --- 7. Transition SelectionOutline output: General → ShaderRead for downstream passes ---
 	{
-		auto& gizmoAtt = cache.GetAttachment(AttachmentName::GizmoHighlight, renderExtent);
-		Barrier::Transition(cmdBuf, gizmoAtt, ImageState::ColorShaderRead);
+		auto& outlineAtt = cache.GetAttachment(AttachmentName::SelectionOutline, renderExtent);
+		Barrier::Transition(cmdBuf, outlineAtt, ImageState::ColorShaderRead);
 	}
 
 	return stats;

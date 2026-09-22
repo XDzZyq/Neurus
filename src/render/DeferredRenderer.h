@@ -51,7 +51,7 @@ class LightingPass;
 class SSAOPass;
 class ShadowDepthPass;
 class ShadowIntensityPass;
-class GizmoPass;
+class SelectionOutlinePass;
 class ComposePass;
 class FXAAPass;
 class DebugPass;
@@ -251,7 +251,7 @@ private:
 	SSAOPass*   r_ssaoPass     = nullptr;
 	ShadowDepthPass* r_shadowDepthPass = nullptr;
 	ShadowIntensityPass* r_shadowIntensityPass = nullptr;
-	GizmoPass*    r_gizmoPass    = nullptr;
+	SelectionOutlinePass* r_selectionOutlinePass = nullptr;
 	ComposePass*  r_composePass  = nullptr;
 	FXAAPass*     r_fxaaPass     = nullptr;
 	/// Debug/gizmo overlay; always in the graph, runs last, and a no-op when the
@@ -260,7 +260,7 @@ private:
 
 	// --- RenderGraph (the active pipeline) ---
 	// Compile-once-per-topology DAG holding the whole deferred pipeline:
-	// Geometry → Shadows → SSAO → Lighting → {Gizmo} → Compose → [FXAA] → Debug.
+	// Geometry → Shadows → SSAO → Lighting → {SelectionOutline} → Compose → [FXAA] → Debug.
 	// recordFrame dispatches the entire pipeline via m_mainGraph.Execute(),
 	// rebuilding it (RebuildMainGraph) only when the pipeline signature
 	// derived from RenderConfig changes.

@@ -18,7 +18,7 @@
 #include "passes/SSAOPass.h"
 #include "passes/ShadowDepthPass.h"
 #include "passes/ShadowIntensityPass.h"
-#include "passes/GizmoPass.h"
+#include "passes/SelectionOutlinePass.h"
 #include "passes/ComposePass.h"
 #include "passes/DebugPass.h"
 #include "passes/FXAAPass.h"
@@ -115,14 +115,14 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] ShadowIntensityPass created");
 	}
 
-	// --- 8c. Create gizmo highlight pass (3×3 IDBuffer edge detection) ---
+	// --- 8c. Create selection outline pass (3×3 IDBuffer edge detection) ---
 	{
-		auto gizmoPass = std::make_unique<GizmoPass>(
+		auto outlinePass = std::make_unique<SelectionOutlinePass>(
 			device, physicalDevice,
 			kMaxFramesInFlight);
-		r_gizmoPass = gizmoPass.get();
-		r_passes.push_back(std::move(gizmoPass));
-		NEURUS_LOG("[DeferredRenderer] GizmoPass created");
+		r_selectionOutlinePass = outlinePass.get();
+		r_passes.push_back(std::move(outlinePass));
+		NEURUS_LOG("[DeferredRenderer] SelectionOutlinePass created");
 	}
 
 	// --- 8d. Create compose pass (highlight blend + gamma correction) ---
@@ -383,7 +383,7 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	auto* shadowInt     = m_mainGraph.AddPass(r_shadowIntensityPass);
 	auto* ssaoNode      = m_mainGraph.AddPass(r_ssaoPass);
 	auto* lightingNode  = m_mainGraph.AddPass(r_lightingPass);
-	auto* gizmoNode     = m_mainGraph.AddPass(r_gizmoPass);
+	auto* outlineNode   = m_mainGraph.AddPass(r_selectionOutlinePass);
 	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
 
 	// The overlay draws into whichever image the post chain ends with, so its target
@@ -401,16 +401,16 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	m_mainGraph.Connect(geometryNode, AttachmentName::Normal,            lightingNode);
 	m_mainGraph.Connect(geometryNode, AttachmentName::Albedo,            lightingNode);
 	m_mainGraph.Connect(geometryNode, AttachmentName::MetallicRoughness, lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::IDBuffer,          gizmoNode);
+	m_mainGraph.Connect(geometryNode, AttachmentName::IDBuffer,          outlineNode);
 
 	// Shadow depth bundle → shadow intensity → lighting
 	m_mainGraph.Connect(shadowDepth, AttachmentName::ShadowDepth,     shadowInt);
 	m_mainGraph.Connect(shadowInt,   AttachmentName::ShadowIntensity, lightingNode);
 
-	// SSAO → lighting; lighting + gizmo → compose
-	m_mainGraph.Connect(ssaoNode,     AttachmentName::SSAO,           lightingNode);
-	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,       composeNode);
-	m_mainGraph.Connect(gizmoNode,    AttachmentName::GizmoHighlight, composeNode);
+	// SSAO → lighting; lighting + selection outline → compose
+	m_mainGraph.Connect(ssaoNode,     AttachmentName::SSAO,             lightingNode);
+	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,         composeNode);
+	m_mainGraph.Connect(outlineNode,  AttachmentName::SelectionOutline, composeNode);
 
 	// Compose → [FXAA] → debug overlay. The overlay is deliberately last: its
 	// fragment shaders already antialias from real coverage, and a luma filter can
@@ -609,7 +609,7 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.editor.debugDraw);
 	}
 
-	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → Gizmo → Compose → [FXAA] → Debug ---
+	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → SelectionOutline → Compose → [FXAA] → Debug ---
 	// The whole deferred pipeline runs through one RenderGraph. FXAA is optional, and
 	// it is the only thing the topology varies on.
 
