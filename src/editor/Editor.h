@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "controllers/Controllers.h"
-#include "editor/DebugDrawBuilder.h"
+#include "editor/viewport/DebugDrawBuilder.h"
 #include "editor/events/EventBus.h"
 #include "editor/operations/HistoryView.h"
 #include "editor/operations/OperationManager.h"

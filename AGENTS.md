@@ -221,7 +221,9 @@ Neurus/
 │   │   ├── Selections.h           # Selection state container
 │   │   └── Timer.h                # Scoped timer
 │   ├── editor/             # Editor layer (logic, controllers)
-│   │   ├── DebugDrawBuilder.h/cpp  # Scene debug objects -> DebugDrawList flattening
+│   │   ├── viewport/        # World<->screen services (Vulkan-free, Qt-free)
+│   │   │   ├── EditorViewport.h/cpp   # Project/RayThrough/ProjectBox + the camera seam
+│   │   │   └── DebugDrawBuilder.h/cpp # Scene debug objects -> DebugDrawList flattening
 │   │   ├── events/          # Event system (UIEvents + typed EventQueue)
 │   │   │   ├── UIEvents.h/cpp    # Qt signal bus for UI↔Editor
 │   │   │   ├── EventBus.h        # Typed EventQueue dispatcher (no Qt)

@@ -23,7 +23,8 @@ changes through the event system.
 - `src/editor/controllers/SceneController.h/cpp` - Event-driven scene mutations (selection, transform, visibility, property edits); emits EditorEvents for GPU uploads
 - `src/editor/controllers/ShaderController.h` - Event-driven shader lifecycle (create, compile, code/struct edit, field add)
 - `src/editor/events/ShaderEvents.h` - Shader editor event structs (see events.instructions.md)
-- `src/editor/DebugDrawBuilder.h/cpp` - Flattens the Scene's debug objects into the `DebugDrawList` the renderer consumes
+- `src/editor/viewport/DebugDrawBuilder.h/cpp` - Flattens the Scene's debug objects into the `DebugDrawList` the renderer consumes
+- `src/editor/viewport/EditorViewport.h/cpp` - World<->screen service: `Project`, `RayThrough`, `ProjectBox`, `PixelsPerWorldUnit`; holds the camera the viewport looks through
 
 ## Scene Invariant: a scene always owns at least one camera
 

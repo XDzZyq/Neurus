@@ -28,7 +28,7 @@
 #include <gtest/gtest.h>
 
 #include "asset/data/MeshData.h"
-#include "editor/DebugDrawBuilder.h"
+#include "editor/viewport/DebugDrawBuilder.h"
 #include "scene/DebugLine.h"
 #include "scene/DebugMesh.h"
 #include "scene/DebugPoints.h"

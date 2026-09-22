@@ -3,7 +3,7 @@
  * @brief Scene debug objects -> DebugDrawList flattening.
  */
 
-#include "DebugDrawBuilder.h"
+#include "editor/viewport/DebugDrawBuilder.h"
 
 #include "scene/DebugLine.h"
 #include "scene/DebugMesh.h"

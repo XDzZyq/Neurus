@@ -6,7 +6,7 @@
  * way that is easy to get wrong silently — see ClipBoxEdges below.
  */
 
-#include "editor/EditorViewport.h"
+#include "editor/viewport/EditorViewport.h"
 
 #include <algorithm>
 #include <array>
