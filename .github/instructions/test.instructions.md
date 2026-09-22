@@ -674,6 +674,19 @@ These patterns were established during deferred PBR development and apply to all
   bounding box: 220 of 2116 (10%) for five thin edges, where a filled quad would light
   nearly all of it. A regression from `PolygonMode::eLine` to `eFill` therefore has to
   fail, which a "something was drawn" assertion would not catch.
+  **Assert the target, and assert the image it must NOT touch.** Since the overlay
+  runs after post-AA, `DebugPass` draws into `FXAAOutput` when FXAA is on and
+  `ComposedOutput` when it is off (`SetTarget()` from `PipelineSignature`).
+  `SetTarget_RedirectsTheOverlayToFXAAOutput` primes *both* post-chain images black,
+  retargets the pass, then measures each: lit pixels on `FXAAOutput`, **exactly zero**
+  on `ComposedOutput`. The negative half is the half that matters — a regression to a
+  hardcoded target would still light the attachment the positive half checks. The
+  geometry and band bounds are shared verbatim with
+  `DepthTestedLine_VisibleAgainstFarDepth` so the two tests differ in one variable
+  only; equal lit counts then prove one set of pipelines serves either attachment,
+  which is what their identical format and usage buy. This is the only test that
+  covers the FXAA-on topology, so the fixture's `PrimeAttachments` / `Measure` take an
+  optional `AttachmentName` rather than hardcoding `ComposedOutput`.
 - **DebugDrawBuilder tests** (`test/editor/test_debug_draw_builder.cpp`, issue #22):
   non-GPU tests that pin the three CPU-side contracts `DebugPass` trusts but cannot
   check — the x-ray **partition** (`xraySegmentStart` / `xrayPointStart` become draw

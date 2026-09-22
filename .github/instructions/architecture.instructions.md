@@ -236,7 +236,7 @@ compute pass, and full G-Buffer pipeline through the four-layer architecture.
 - `MeshGPU` and `EnvironmentGPU` as RenderCache-owned GPU resources (separated from scene/asset layers)
 - GPU-side mesh resources separated from scene `Mesh` (`MeshGPU` owned by RenderCache)
 - `GeometryRenderItem` removed (CPU/GPU concerns now fully separated)
-- Deferred PBR pipeline: ShadowDepthPass → GeometryPass (G-Buffer) → SSAOPass → Light+ShadowIntensity → LightingPass → IBLPass → GizmoPass (edge highlight) → ComposePass (gamma correction) → FXAAPass (FXAA 3.11, conditional) → Blit to swapchain
+- Deferred PBR pipeline: ShadowDepthPass → GeometryPass (G-Buffer) → SSAOPass → Light+ShadowIntensity → LightingPass → IBLPass → GizmoPass (edge highlight) → ComposePass (gamma correction) → FXAAPass (FXAA 3.11, conditional) → DebugPass (overlay, LOAD_OP_LOAD onto the last post-chain image) → Blit to swapchain
 - Centralized image barrier system (Barrier::Transition, ImageState enum)
 - Screenshot capture + TextureData PNG readback
 - GPU tests with shared VulkanTestShared base class

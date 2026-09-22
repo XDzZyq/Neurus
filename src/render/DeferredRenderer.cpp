@@ -145,8 +145,8 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] FXAAPass created");
 	}
 
-	// --- 8f. Create debug overlay pass (lines / points / wireframes over the
-	//         composed image; a no-op on frames with no debug geometry) ---
+	// --- 8f. Create debug overlay pass (lines / points / wireframes over the final
+	//         shaded image; a no-op on frames with no debug geometry) ---
 	{
 		auto debugPass = std::make_unique<DebugPass>(
 			device, physicalDevice,
@@ -385,6 +385,11 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	auto* lightingNode  = m_mainGraph.AddPass(r_lightingPass);
 	auto* gizmoNode     = m_mainGraph.AddPass(r_gizmoPass);
 	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
+
+	// The overlay draws into whichever image the post chain ends with, so its target
+	// is chosen before registration: AddPass() caches GetIO(), which names it.
+	r_debugPass->SetTarget(sig.fxaa ? AttachmentName::FXAAOutput
+	                                : AttachmentName::ComposedOutput);
 	auto* debugNode     = m_mainGraph.AddPass(r_debugPass);
 
 	// Geometry (G-Buffer) → consumers
@@ -407,17 +412,23 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,       composeNode);
 	m_mainGraph.Connect(gizmoNode,    AttachmentName::GizmoHighlight, composeNode);
 
-	// Compose → debug overlay. DebugPass edits ComposedOutput in place, so it also
-	// needs the G-Buffer depth it tests against, and it — not ComposePass — is now
-	// the last writer that FXAA (or the final blit) consumes.
-	m_mainGraph.Connect(composeNode,   AttachmentName::ComposedOutput, debugNode);
-	m_mainGraph.Connect(geometryNode,  AttachmentName::Depth,          debugNode);
-
+	// Compose → [FXAA] → debug overlay. The overlay is deliberately last: its
+	// fragment shaders already antialias from real coverage, and a luma filter can
+	// only re-blur that and smear overlay color into the scene (see DebugPass.h). So
+	// FXAA is fed the scene alone, and the overlay lands on whatever came out of it.
+	// Either way DebugPass edits its target in place — hence the G-Buffer depth edge
+	// for the occlusion test — and is the last writer the final blit consumes.
 	if (sig.fxaa)
 	{
 		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
-		m_mainGraph.Connect(debugNode, AttachmentName::ComposedOutput, fxaaNode);
+		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, fxaaNode);
+		m_mainGraph.Connect(fxaaNode,    AttachmentName::FXAAOutput,     debugNode);
 	}
+	else
+	{
+		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, debugNode);
+	}
+	m_mainGraph.Connect(geometryNode, AttachmentName::Depth, debugNode);
 
 	m_mainGraph.Compile();
 	m_builtSignature = sig;
@@ -598,11 +609,9 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.editor.debugDraw);
 	}
 
-	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → Gizmo → Compose → [FXAA] ---
-	// The whole deferred pipeline runs through one RenderGraph. FXAA is
-	// optional; useFXAA also selects the blit source below.
-	const bool useFXAA = ctx.editor.config &&
-		static_cast<const RenderConfig*>(ctx.editor.config)->RequiresFXAA();
+	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → Gizmo → Compose → [FXAA] → Debug ---
+	// The whole deferred pipeline runs through one RenderGraph. FXAA is optional, and
+	// it is the only thing the topology varies on.
 
 	// Rebuild the graph only when the config-derived signature changes (single
 	// source of truth is RenderConfig; the graph is its projection — currently
@@ -622,8 +631,12 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
 	// --- Phase 4: Blit output → swapchain image ---
-	auto& blitSource = r_renderCache->GetAttachment(
-		useFXAA ? AttachmentName::FXAAOutput : AttachmentName::ComposedOutput, extent);
+	// DebugPass is last in the graph, so its target *is* the end of the chain:
+	// FXAAOutput when FXAA is on, ComposedOutput when it is off. Asking the pass
+	// keeps that choice in RebuildMainGraph, which already owns config → topology,
+	// and is correct even on the frames where the overlay drew nothing — it then
+	// leaves the image exactly as the compute pass that filled it did.
+	auto& blitSource = r_renderCache->GetAttachment(r_debugPass->GetTarget(), extent);
 	const vk::Image composedImage = *blitSource.ImageHandle();
 	const vk::Image swapchainImage = r_swapchain->images()[imageIndex];
 

@@ -2,10 +2,33 @@
  * @file DebugPass.h
  * @brief Overlay raster pass that draws every viewport debug primitive.
  *
- * DebugPass is the single consumer of DebugDrawList. It runs after ComposePass,
- * drawing directly into ComposedOutput with LOAD_OP_LOAD so the tonemapped image
- * survives underneath, and reads (never writes) the G-Buffer depth so debug
- * geometry is occluded by solid objects unless it asks not to be.
+ * DebugPass is the single consumer of DebugDrawList. It runs last in the shading
+ * tail — after ComposePass, and after FXAAPass when anti-aliasing is on — drawing
+ * into whichever image ends that chain with LOAD_OP_LOAD so the picture underneath
+ * survives, and reads (never writes) the G-Buffer depth so debug geometry is
+ * occluded by solid objects unless it asks not to be.
+ *
+ * Drawing after post-AA rather than before it is deliberate. Every debug primitive
+ * that can be antialiased already is, analytically and from real coverage:
+ * debug_line.frag fades one pixel in from the quad edge using the true line width,
+ * debug_point.frag fades an exact p-norm distance through fwidth(). FXAA has only
+ * luma to work from, and a thin high-contrast line is its worst input — it re-blurs
+ * a gradient that was already correct, drags overlay color into neighbouring scene
+ * pixels, and softens the hard dash ends that DebugDrawBuilder deliberately leaves
+ * un-Smoothed on a stippled line. Handing FXAA the scene alone and compositing the
+ * overlay on top keeps both correct. The one thing given up is wireframe, whose
+ * PolygonMode::eLine edges have no distance-to-edge to fade and so were the only
+ * primitives FXAA genuinely helped.
+ *
+ * The color target is therefore configurable rather than fixed: FXAAPass is a
+ * ping-pong compute pass (samples ComposedOutput, writes FXAAOutput), so the last
+ * image in the chain is FXAAOutput when it runs and ComposedOutput when it does
+ * not. Both attachments are created with the same format and usage, so one set of
+ * pipelines covers either. SetTarget() is called by
+ * DeferredRenderer::RebuildMainGraph() before the pass is handed to the graph,
+ * which leaves the config → topology decision in PipelineSignature, the one place
+ * that already owns it, and lets GetIO() stay a plain declaration of concrete
+ * attachment names the graph can validate.
  *
  * Three pipelines, one per primitive kind:
  *   [0] lines — eTriangleList, six vertices per segment expanded into a
@@ -86,7 +109,7 @@ struct DebugWirePushConstants
 static_assert(sizeof(DebugWirePushConstants) == 72, "must match the GLSL PushConstants block");
 
 /**
- * @brief Draws DebugDrawList over the composed image.
+ * @brief Draws DebugDrawList over the final shaded image.
  *
  * Owns pipelines, a descriptor layout, a pool and one set per frame in flight —
  * and no buffers at all: the camera UBO and the segment/point SSBOs belong to
@@ -115,27 +138,50 @@ public:
 	          uint32_t framesInFlight);
 
 	/**
+	 * @brief Chooses the color attachment the overlay draws into.
+	 *
+	 * ComposedOutput (the default) when the overlay is the last thing to touch the
+	 * frame, FXAAOutput when FXAAPass runs in between. Must be called before
+	 * RenderGraph::AddPass(), which caches GetIO() at registration — changing the
+	 * target afterwards would leave the graph wired to the previous attachment.
+	 * Only the two post-chain color attachments are valid: they share
+	 * ComposedOutput's format and usage, which the pipelines are built against.
+	 */
+	void SetTarget(AttachmentName target) { p_target = target; }
+
+	/**
+	 * @brief The attachment this pass draws into, i.e. the last image of the frame.
+	 *
+	 * DeferredRenderer uses it as the swapchain blit source, which is correct
+	 * whether or not the overlay drew anything: Record() either leaves the target in
+	 * ColorAttachment or does not touch it at all, and the blit transitions it
+	 * either way.
+	 */
+	AttachmentName GetTarget() const { return p_target; }
+
+	/**
 	 * @brief Records the debug overlay for this frame.
 	 *
 	 *   1. Returns immediately when there is nothing to draw, leaving every image
-	 *      in the state ComposePass left it in.
+	 *      in the state the previous pass left it in.
 	 *   2. Points this frame's descriptor set at the cache's current camera UBO and
 	 *      debug buffers (their handles change whenever the geometry outgrows them).
-	 *   3. Transitions ComposedOutput to ColorAttachment and Depth to
-	 *      DepthAttachment, then begins rendering with LOAD_OP_LOAD on both.
+	 *   3. Transitions the target to ColorAttachment and Depth to DepthAttachment,
+	 *      then begins rendering with LOAD_OP_LOAD on both.
 	 *   4. Draws lines, points and wireframes, each as a depth-tested range
 	 *      followed by an x-ray range (eDepthTestEnable toggled between them).
-	 *   5. Leaves ComposedOutput in TransferSrc — the state the final blit
-	 *      assumes when FXAA is off, and the one ComposePass would have left.
+	 *   5. Leaves the target in ColorAttachment: the swapchain blit is the consumer
+	 *      and transitions it itself, which is what gives its barrier a source scope
+	 *      that actually covers these draws.
 	 */
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
 	/**
-	 * @brief Declares ComposedOutput (read + written in place) and Depth (read).
+	 * @brief Declares the target (read + written in place) and Depth (read).
 	 *
 	 * Binding metadata is unused: like the other raster passes, this one manages
 	 * its own attachments. Only the resource identities matter, so RenderGraph can
-	 * order it after ComposePass and before FXAAPass.
+	 * order it after whichever pass last wrote the target.
 	 */
 	PassIO GetIO() const override;
 
@@ -149,10 +195,11 @@ private:
 	/**
 	 * @brief Applies the settings every debug pipeline shares.
 	 *
-	 * ComposedOutput's format and alpha-over blending, depth read without depth
+	 * The post-chain color format and alpha-over blending, depth read without depth
 	 * write against the G-Buffer depth, no culling (debug geometry is two-sided by
 	 * nature), and eDepthTestEnable added to the dynamic state so x-ray needs no
-	 * second pipeline.
+	 * second pipeline. The format is shared by ComposedOutput and FXAAOutput, so the
+	 * same pipelines serve either target.
 	 */
 	void ConfigureCommonState(PipelineBuilder& builder);
 
@@ -176,6 +223,9 @@ private:
 
 	/// @brief Device pointSizeRange[1], queried once and pushed to the point shader.
 	float p_maxPointSizePx = 1.0f;
+
+	/// @brief Color target: ComposedOutput, or FXAAOutput when FXAA runs (SetTarget).
+	AttachmentName p_target = AttachmentName::ComposedOutput;
 };
 
 } // namespace neurus

@@ -226,18 +226,41 @@ GizmoPass (compute: reads IDBuffer, 3×3 edge detection for activeObjectId, writ
 ComposePass (compute: blends GizmoHighlight onto HDRColor, applies gamma correction, writes ComposedOutput)
     │
     ▼
-DebugPass (raster: draws DebugDrawList over ComposedOutput with LOAD_OP_LOAD,
-           depth-tested against the G-Buffer Depth it only reads)
+FXAAPass (compute: reads ComposedOutput, luma-based edge detection + full-iteration edge search, writes FXAAOutput)
+    │  (conditional: only when AA == AAAlg::FXAA)
+    ▼
+DebugPass (raster: draws DebugDrawList over the last post-chain image with
+           LOAD_OP_LOAD — FXAAOutput when FXAA is on, ComposedOutput when it is
+           off — depth-tested against the G-Buffer Depth it only reads)
     ├── lines      → screen-space quads (6 verts/segment, SSBO-indexed)
     ├── points     → ePointList sprites (square / rhombus / circle mask)
     └── wireframes → PolygonMode::eLine over the DebugMesh's existing MeshGPU
     │
     ▼
-FXAAPass (compute: reads ComposedOutput, luma-based edge detection + full-iteration edge search, writes FXAAOutput)
-    │  (conditional: only when AA == AAAlg::FXAA)
-    ▼
-Blit (ComposedOutput or FXAAOutput) → Swapchain (vkCmdBlitImage)
+Blit (DebugPass::GetTarget()) → Swapchain (vkCmdBlitImage)
 ```
+
+**The overlay is last, after post-AA.** FXAA must not see debug geometry: every
+primitive that can be antialiased already is, analytically and from real coverage
+(`debug_line.frag` fades one pixel in from the quad edge using the true width,
+`debug_point.frag` fades an exact p-norm distance through `fwidth()`). A luma
+filter can only re-blur a gradient that was already correct, drag overlay color
+into neighbouring scene pixels, and soften the hard dash ends `DebugDrawBuilder`
+deliberately leaves un-`Smooth`ed on a stippled line. The cost is wireframe, whose
+`PolygonMode::eLine` edges have no distance-to-edge to fade and so were the only
+primitives FXAA genuinely helped — accepted, since a `DebugMesh` overlay is a
+diagnostic, not a shipped image.
+
+`DebugPass::SetTarget()` picks the attachment, called by `RebuildMainGraph()`
+before `AddPass()` (which caches `GetIO()`). The pass itself never mentions FXAA,
+so the config → topology decision stays in `PipelineSignature`, and `GetIO()` stays
+a declaration of concrete attachment names the graph can validate — an *alias*
+name shared by both images could not work, because `RenderGraph::Connect()` matches
+producer and consumer sockets by `AttachmentName` and an unwired input is treated
+as external, which would silently leave the pass unordered. `GetTarget()` is also
+the blit source, which collapses the old `useFXAA ? FXAAOutput : ComposedOutput`
+ternary in `recordFrame()` and stays correct on frames where the overlay draws
+nothing (it then leaves the image exactly as the compute pass that filled it did).
 
 ### ImageState & Barrier Convention
 
@@ -264,8 +287,8 @@ Barrier::Transition(cmdBuf, myImage, ImageState::ColorShaderRead);
 
 **Access masks carry the read bits, not just the write bits.** `ColorAttachment`
 and `DepthAttachment` map to `…AttachmentWrite | …AttachmentRead`, because an
-attachment reached with `VK_ATTACHMENT_LOAD_OP_LOAD` (DebugPass draws over
-ComposedOutput) or consumed by the depth test without depth writes (DebugPass
+attachment reached with `VK_ATTACHMENT_LOAD_OP_LOAD` (DebugPass draws over its
+target) or consumed by the depth test without depth writes (DebugPass
 again) *reads* the image through the attachment stage — a write-only
 `dstAccessMask` leaves the previous writer's data unavailable to the load, which
 on a tiler shows up as stale tiles blended into the frame. Passes that only
@@ -285,8 +308,12 @@ overlapped: every frame kept a different random subset of the overlay's tiles
 with ComposePass's output in the rest — a per-frame-random tear that no amount of
 extra serialization *after* DebugPass could fix. The rule now:
 `ComposePass`/`FXAAPass` leave their output in `ShaderWrite`, `DebugPass` leaves
-`ComposedOutput` in `ColorAttachment`, and the swapchain blit in
+its target in `ColorAttachment`, and the swapchain blit in
 `DeferredRenderer::recordFrame` transitions its own source to `TransferSrc`.
+The same hazard shape applies unchanged now that DebugPass runs after FXAAPass —
+the upstream compute dispatch whose writes its barrier must cover is FXAA's rather
+than ComposePass's, but it is still `ShaderWrite → ColorAttachment` out of a
+compute pass, so nothing about the pattern moves.
 Note that validation does not catch this — the layouts are all consistent — so
 synchronization validation plus a coloured `LOAD_OP_CLEAR` probe is the way to
 find it.
@@ -344,8 +371,8 @@ after touching barriers or submit scopes.
 - **Gamma correction**: After highlight blending, applies `pow(color, 1.0 / gamma)` where
   `gamma` is read from `RenderConfig::r_gamma` (default 1.0) via the push constant
   `float gamma`.
-- **Output**: `ComposedOutput` (`R16G16B16A16_SFLOAT`) at binding 2, the final
-  framebuffer before swapchain blit.
+- **Output**: `ComposedOutput` (`R16G16B16A16_SFLOAT`) at binding 2, consumed by
+  FXAAPass when AA is on and by DebugPass when it is off.
 
 ### DebugPass Convention
 
@@ -358,12 +385,20 @@ after touching barriers or submit scopes.
   toggle is off and `Record()` returns before touching any image. Toggling the
   overlay therefore costs **no graph rebuild** (unlike FXAA, which changes the
   `PipelineSignature`).
-- **Target**: draws into `ComposedOutput` with `LOAD_OP_LOAD` so the tonemapped
-  image survives underneath. It transitions the image from the `ShaderWrite` state
-  ComposePass leaves it in — that barrier is the only thing ordering the overlay
-  against ComposePass's compute dispatch — and leaves it in `ColorAttachment` for
-  the blit to transition. See the barrier-ownership rule above; getting this wrong
-  tears the overlay per-tile on MoltenVK with zero validation errors.
+- **Target**: `p_target`, set by `SetTarget()` and read back by `GetTarget()` —
+  `FXAAOutput` when FXAA is on, `ComposedOutput` when it is off. Drawn with
+  `LOAD_OP_LOAD` so the shaded image survives underneath. The pass transitions it
+  from the `ShaderWrite` state the upstream compute dispatch (FXAAPass, or
+  ComposePass when FXAA is off) leaves it in — that barrier is the only thing
+  ordering the overlay against that dispatch — and leaves it in `ColorAttachment`
+  for the blit to transition. See the barrier-ownership rule above; getting this
+  wrong tears the overlay per-tile on MoltenVK with zero validation errors.
+  `SetTarget()` must be called **before** `RenderGraph::AddPass()`, which caches
+  `GetIO()`; `RebuildMainGraph()` is the only caller, so the pass never learns what
+  FXAA is and the config → topology mapping stays in `PipelineSignature`. Both
+  attachments share `ComposedOutput`'s format and usage, so one set of pipelines
+  serves either and no second pipeline variant exists. The default is
+  `ComposedOutput`, which is what a test constructing the pass directly gets.
 - **Depth**: reads the G-Buffer `Depth` with `LOAD_OP_LOAD`, `depthTestEnable` on
   and **`depthWriteEnable` off**. Debug geometry is occluded by solid objects but
   never occludes anything, including other debug geometry.
@@ -475,6 +510,11 @@ It is named for the mirror image of `GPUBuffer`, which is device-local.
 - **Sampler**: Bilinear (`VK_FILTER_LINEAR`) for sub-pixel accuracy; falls back to nearest if `R16G16B16A16_SFLOAT` format doesn't support `VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT`
 - **Config**: `RenderConfig::r_fxaa_subpix` (strength, default 0.75), `r_fxaa_edge_threshold` (default 0.166), `r_fxaa_edge_threshold_min` (default 0.0833)
 - **Gating**: `RenderConfig::RequiresFXAA()` — only records when AA algorithm is set to FXAA in RenderConfigPanel
+- **Input is the scene alone**: FXAA sits between ComposePass and DebugPass, so it
+  never sees the debug overlay. That is deliberate — see "The overlay is last,
+  after post-AA" in the pipeline section. It also means FXAA presence changes what
+  DebugPass draws into, which is why `PipelineSignature::fxaa` drives both the graph
+  edges and `DebugPass::SetTarget()`.
 
 ### RenderConfig Convention
 
@@ -517,8 +557,8 @@ assigned via `RenderCache::GetShadowIntensityLayer(lightUID, extent)`.
 | SSAO | R8_UNORM | 0 (no occlusion) | Screen-space ambient occlusion |
 | SSR | R16G16B16A16_SFLOAT | (0,0,0,0) | Screen-space reflections (planned) |
 | GizmoHighlight | R8_UNORM | 0 | Selected-object edge highlight (GizmoPass output) |
-| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Final composed output before FXAA/blit (ComposePass output) |
-| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased output (FXAAPass output, blitted when FXAA active) |
+| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Tonemapped scene (ComposePass output); FXAA's input, or DebugPass's target when FXAA is off |
+| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased scene (FXAAPass output); DebugPass's target when FXAA is on |
 | FXAAOffsets | R16G16_SFLOAT | (0,0) | FXAA edge subpixel offsets (RG16F, 2-channel, sampled+storage) |
 | ShadowMap | D32_SFLOAT | 1.0 | Per-light shadow depth (RenderCache-owned). Cubemap (6-layer 2D_ARRAY, 1024×1024) for point lights; 2D (2048×2048) for sun lights |
 | ShadowIntensity | R8_UNORM | 0 (no shadow) | Layered 2D_ARRAY, one layer per shadow-casting light (RenderCache-owned) |

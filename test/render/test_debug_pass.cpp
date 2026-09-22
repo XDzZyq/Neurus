@@ -102,20 +102,23 @@ protected:
 	 * @brief Primes both attachments: black color, uniform depth.
 	 * @param depth Value written to every depth texel. The pipeline compares with
 	 *              eLess, so 1.0 lets debug geometry through and 0.0 occludes it.
+	 * @param color Which post-chain color image to blacken. ComposedOutput is
+	 *              DebugPass's default target; FXAAOutput is the one it draws into
+	 *              when FXAAPass runs ahead of it.
 	 */
-	void PrimeAttachments(float depth)
+	void PrimeAttachments(float depth, AttachmentName color = AttachmentName::ComposedOutput)
 	{
-		auto& color = m_cache->GetAttachment(AttachmentName::ComposedOutput, Extent());
+		auto& colorAtt = m_cache->GetAttachment(color, Extent());
 		auto& dep   = m_cache->GetAttachment(AttachmentName::Depth, Extent());
 
 		auto& c = BeginCmd();
-		Barrier::Transition(*c, color, ImageState::TransferDst);
+		Barrier::Transition(*c, colorAtt, ImageState::TransferDst);
 		Barrier::Transition(*c, dep, ImageState::TransferDst);
 
 		const vk::ImageSubresourceRange colorRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 		const vk::ImageSubresourceRange depthRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1);
 
-		c.clearColorImage(*color.ImageHandle(), vk::ImageLayout::eTransferDstOptimal,
+		c.clearColorImage(*colorAtt.ImageHandle(), vk::ImageLayout::eTransferDstOptimal,
 		                  vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}),
 		                  colorRange);
 		c.clearDepthStencilImage(*dep.ImageHandle(), vk::ImageLayout::eTransferDstOptimal,
@@ -150,18 +153,20 @@ protected:
 	vk::Extent2D Extent() const { return vk::Extent2D{kRes, kRes}; }
 
 	/**
-	 * @brief Reads ComposedOutput back and measures where it is no longer black.
+	 * @brief Reads a post-chain color attachment back and measures where it is no longer black.
 	 *
 	 * The threshold is deliberately low (luma > 0.1): a debug line is drawn with
 	 * alpha-over blending, so its edge pixels are partial coverage, and the
 	 * question these tests ask is "did anything land here at all", not "how bright".
 	 *
 	 * @param u8Out Optional receiver for an 8-bit RGBA copy, for the PNG dump.
+	 * @param color Which image to read; defaults to DebugPass's default target.
 	 */
-	LitStats Measure(std::vector<uint8_t>* u8Out = nullptr)
+	LitStats Measure(std::vector<uint8_t>* u8Out = nullptr,
+	                 AttachmentName color = AttachmentName::ComposedOutput)
 	{
-		auto& color = m_cache->GetAttachment(AttachmentName::ComposedOutput, Extent());
-		auto data = color.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		auto& colorAtt = m_cache->GetAttachment(color, Extent());
+		auto data = colorAtt.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
 		const auto* h = reinterpret_cast<const uint16_t*>(data->GetPixelData().data());
 
 		if (u8Out) u8Out->resize(static_cast<size_t>(kRes) * kRes * 4);
@@ -694,3 +699,59 @@ TEST_F(DebugPassTest, WireMesh_DrawsEdgesDepthTestedAndXRay)
 		<< "X-ray must draw the same pixels as the unoccluded pass, not more or fewer";
 }
 
+
+// ===========================================================================
+// 9. Target selection: the overlay follows SetTarget(), not a fixed attachment
+// ===========================================================================
+
+/**
+ * @brief Proves DebugPass draws into whichever post-chain image it was pointed at.
+ *
+ * This is the FXAA-on topology: DeferredRenderer::RebuildMainGraph() calls
+ * SetTarget(FXAAOutput) when RenderConfig asks for FXAA, so the overlay lands on
+ * FXAA's output instead of FXAA's input. Both images are primed black first, so
+ * "ComposedOutput was left alone" is a real assertion and not an artifact of an
+ * image that was simply never written — and it is the half that would catch a
+ * regression to a hardcoded target, which would still light FXAAOutput's twin.
+ *
+ * The geometry and the band bounds are shared with
+ * DepthTestedLine_VisibleAgainstFarDepth so the two differ in exactly one
+ * variable: the target. Equal lit counts prove the pipelines work unchanged
+ * against either attachment, which is what the shared format and usage buy.
+ */
+TEST_F(DebugPassTest, SetTarget_RedirectsTheOverlayToFXAAOutput)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan GPU.";
+
+	PrimeAttachments(1.0f, AttachmentName::ComposedOutput);
+	PrimeAttachments(1.0f, AttachmentName::FXAAOutput);
+
+	m_pass->SetTarget(AttachmentName::FXAAOutput);
+	EXPECT_EQ(m_pass->GetTarget(), AttachmentName::FXAAOutput)
+		<< "GetTarget() is what DeferredRenderer blits from; it must report the target";
+
+	const DebugDrawList list = MakeLineList(/*xray=*/false);
+	const PassStats stats = RunPass(list);
+
+	const LitStats onFxaa     = Measure(nullptr, AttachmentName::FXAAOutput);
+	const LitStats onComposed = Measure(nullptr, AttachmentName::ComposedOutput);
+
+	std::cout << "[DebugPass] retarget: draws=" << stats.drawCalls
+	          << " litFXAAOutput=" << onFxaa.count
+	          << " litComposedOutput=" << onComposed.count
+	          << " rows=[" << onFxaa.minRow << "," << onFxaa.maxRow << "]" << std::endl;
+
+	EXPECT_EQ(stats.drawCalls, 1u) << "One depth-tested range = one draw";
+
+	// Same line, same camera, same band as the ComposedOutput case: the two
+	// attachments share format and usage, so one set of pipelines serves either.
+	EXPECT_GT(onFxaa.count, 160) << "Line did not rasterize into FXAAOutput";
+	EXPECT_GE(onFxaa.minRow, kBandLo) << "Line drifted above the expected band";
+	EXPECT_LE(onFxaa.maxRow, kBandHi) << "Line drifted below the expected band";
+	EXPECT_GE(onFxaa.maxCol - onFxaa.minCol, kRes / 2)
+		<< "Line does not span at least half the width";
+
+	// The old fixed target must be untouched — FXAA's input is the scene alone.
+	EXPECT_EQ(onComposed.count, 0)
+		<< "Overlay leaked into ComposedOutput: FXAA would then re-blur it";
+}

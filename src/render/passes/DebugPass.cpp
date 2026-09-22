@@ -218,8 +218,8 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 {
 	PassStats stats{};
 
-	// --- 1. Nothing to draw: touch no image, so every state ComposePass left
-	//        behind (notably ComposedOutput in TransferSrc) stays valid ---
+	// --- 1. Nothing to draw: touch no image, so every state the upstream pass left
+	//        behind stays valid, including the layout the blit expects ---
 	const DebugDrawList* list = ctx.editor.debugDraw;
 	if (!list || list->Empty())
 	{
@@ -261,28 +261,28 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 		{static_cast<float>(extent.width), static_cast<float>(extent.height)},
 		std::abs(proj[1][1]) * static_cast<float>(extent.height) * 0.5f,
 		p_maxPointSizePx};
-	// --- 3. Attachments. Both are loaded, not cleared: the tonemapped image and
-	//        the G-Buffer depth must survive underneath the overlay ---
-	auto& composedAtt = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
-	auto& depthAtt    = cache.GetAttachment(AttachmentName::Depth, extent);
+	// --- 3. Attachments. Both are loaded, not cleared: the shaded image and the
+	//        G-Buffer depth must survive underneath the overlay ---
+	auto& targetAtt = cache.GetAttachment(p_target, extent);
+	auto& depthAtt  = cache.GetAttachment(AttachmentName::Depth, extent);
 
-	// ComposedOutput arrives in ShaderWrite, straight from ComposePass's compute
-	// dispatch, and this transition is what makes those writes visible to the
-	// raster stage: src becomes (ComputeShader, ShaderWrite), dst
-	// (ColorAttachmentOutput, ColorAttachmentWrite|Read). ComposePass must not
-	// pre-transition it to TransferSrc for the blit — a src scope of TransferRead
-	// names no writes, and on MoltenVK the compute and render encoders then
-	// overlapped: every frame kept a different random subset of the overlay's
-	// tiles, with ComposePass's output in the rest. LOAD_OP_LOAD also needs the
-	// read bit, which ColorAttachment carries.
-	Barrier::Transition(cmdBuf, composedAtt, ImageState::ColorAttachment);
+	// The target arrives in ShaderWrite straight from a compute dispatch — FXAAPass's
+	// when FXAA is on, ComposePass's when it is off — and this transition is what
+	// makes those writes visible to the raster stage: src becomes (ComputeShader,
+	// ShaderWrite), dst (ColorAttachmentOutput, ColorAttachmentWrite|Read). The
+	// producer must not pre-transition it to TransferSrc for the blit — a src scope
+	// of TransferRead names no writes, and on MoltenVK the compute and render
+	// encoders then overlapped: every frame kept a different random subset of the
+	// overlay's tiles, with the compute pass's output in the rest. LOAD_OP_LOAD also
+	// needs the read bit, which ColorAttachment carries.
+	Barrier::Transition(cmdBuf, targetAtt, ImageState::ColorAttachment);
 	Barrier::Transition(cmdBuf, depthAtt, ImageState::DepthAttachment);
 
 	// Built by hand rather than through Pass::PresetClearValues / *LoadOpFor: no
 	// PassType maps to load-and-store on both attachments, which is exactly what
 	// an in-place overlay needs.
 	const vk::RenderingAttachmentInfo colorInfo(
-		*composedAtt.ImageViewHandle(),
+		*targetAtt.ImageViewHandle(),
 		vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ResolveModeFlagBits::eNone, nullptr, vk::ImageLayout::eUndefined,
 		vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore, vk::ClearValue{});
@@ -400,11 +400,10 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 
 	cmdBuf.endRendering();
 
-	// ComposedOutput is left in ColorAttachment. Whoever reads it next — FXAAPass
-	// or the swapchain blit — transitions it and thereby picks up a src scope of
-	// (ColorAttachmentOutput, ColorAttachmentWrite) that actually covers the draws
-	// above. Handing it over pre-transitioned would hide them; see the barrier note
-	// before beginRendering.
+	// The target is left in ColorAttachment. Its consumer — the swapchain blit —
+	// transitions it and thereby picks up a src scope of (ColorAttachmentOutput,
+	// ColorAttachmentWrite) that actually covers the draws above. Handing it over
+	// pre-transitioned would hide them; see the barrier note before beginRendering.
 
 	return stats;
 }
@@ -415,19 +414,24 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 
 PassIO DebugPass::GetIO() const
 {
-	// ComposedOutput appears on both sides: the overlay loads the tonemapped image
-	// and stores it back in place. RenderGraph tolerates that (a node's own name
-	// never produces a self-edge), and it is what orders this pass after
-	// ComposePass and before FXAAPass. Binding metadata is unused — like the other
-	// raster passes, this one manages its own attachments.
+	// The target appears on both sides: the overlay loads the shaded image and
+	// stores it back in place. RenderGraph tolerates that (a node's own name never
+	// produces a self-edge), and it is what orders this pass after whichever pass
+	// last wrote that attachment — ComposePass, or FXAAPass when FXAA is on. The
+	// name is p_target rather than a fixed attachment because RenderGraph::Connect()
+	// matches producer and consumer sockets by AttachmentName: a single alias name
+	// covering both images could never form an edge to FXAAPass's FXAAOutput socket,
+	// and an unwired input is treated as external, which would silently leave this
+	// pass's position in the topological order unconstrained. Binding metadata is
+	// unused — like the other raster passes, this one manages its own attachments.
 	PassIO io;
 	io.name = "DebugPass";
 	io.reads = {
-		{AttachmentName::ComposedOutput},
+		{p_target},
 		{AttachmentName::Depth},
 	};
 	io.writes = {
-		{AttachmentName::ComposedOutput},
+		{p_target},
 	};
 	return io;
 }

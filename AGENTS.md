@@ -387,10 +387,13 @@ Qt is stateful, so debug objects are too.
   debug pools into a `DebugDrawList` on a **dirty flag** (`MarkDirty()` from
   `RenderResetEvent`, `Rebuild()` at the end of `Editor::Edit()`), never per frame.
   See editor.instructions.md for its partition / revision / world-space contracts.
-- `DebugPass` (renderer) is the single consumer: it draws over `ComposedOutput` with
-  `LOAD_OP_LOAD`, reads but never writes the G-Buffer depth, and flips
+- `DebugPass` (renderer) is the single consumer and runs **last, after post-AA**: it draws
+  over the final shaded image with `LOAD_OP_LOAD` — `FXAAOutput` when FXAA is on,
+  `ComposedOutput` when it is off, chosen by `SetTarget()` from `PipelineSignature` —
+  reads but never writes the G-Buffer depth, and flips
   `eDepthTestEnable` as dynamic state to serve x-ray — at most 6 draws per frame
-  regardless of primitive count. See renderer.instructions.md.
+  regardless of primitive count. Every debug primitive is already antialiased
+  analytically, so handing FXAA the scene alone keeps both correct. See renderer.instructions.md.
 - Upload is **revision-gated**: an unchanged list re-uses the buffer a frame slot
   already holds and skips the memcpy entirely.
 - **Hiding a debug object means not flattening it.** `DebugDrawList` has no
