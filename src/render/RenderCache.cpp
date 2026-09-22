@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "scene/DebugDrawList.h"
+#include "scene/GizmoDrawList.h"
 
 #include <algorithm>
 #include <cassert>
@@ -19,6 +20,7 @@ RenderCache::RenderCache(const vk::raii::Device& device,
 	, rc_physicalDevice(&physicalDevice)
 	, rc_cameraGPU(std::make_unique<CameraGPU>(device, physicalDevice))
 	, rc_debugCache(std::make_unique<DebugCache>(device, physicalDevice))
+	, rc_gizmoCache(std::make_unique<GizmoCache>(device, physicalDevice))
 {
 	NEURUS_LOG("[RenderCache] Created");
 }
@@ -522,6 +524,11 @@ void RenderCache::UpdateCamera(const glm::mat4& proj, const glm::mat4& view)
 void RenderCache::UpdateDebugDraw(uint32_t frameIndex, const DebugDrawList& list)
 {
 	rc_debugCache->Update(frameIndex, list);
+}
+
+void RenderCache::UpdateGizmoDraw(uint32_t frameIndex, const GizmoDrawList& list)
+{
+	rc_gizmoCache->Update(frameIndex, list);
 }
 
 // ---------------------------------------------------------------------------

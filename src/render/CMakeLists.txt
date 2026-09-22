@@ -52,6 +52,8 @@ add_library(neurus_render STATIC
 	resources/CameraGPU.cpp
 	resources/DebugCache.h
 	resources/DebugCache.cpp
+	resources/GizmoCache.h
+	resources/GizmoCache.cpp
 	resources/PipelineCache.h
 	resources/PipelineCache.cpp
 	Texture.h

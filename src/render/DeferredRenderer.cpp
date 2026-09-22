@@ -609,6 +609,13 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.editor.debugDraw);
 	}
 
+	if (ctx.editor.gizmoDraw)
+	{
+		// Not revision-gated: a live gesture rebuilds every frame anyway, and the
+		// payload is a few dozen segments (see GizmoCache.h).
+		r_renderCache->UpdateGizmoDraw(ctx.frameIndex, *ctx.editor.gizmoDraw);
+	}
+
 	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → SelectionOutline → Compose → [FXAA] → Debug ---
 	// The whole deferred pipeline runs through one RenderGraph. FXAA is optional, and
 	// it is the only thing the topology varies on.

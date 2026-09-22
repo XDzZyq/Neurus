@@ -7,6 +7,7 @@
 #include "resources/LightingCache.h"
 #include "resources/CameraGPU.h"
 #include "resources/DebugCache.h"
+#include "resources/GizmoCache.h"
 #include "resources/PipelineCache.h"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -18,6 +19,7 @@
 namespace neurus {
 
 struct DebugDrawList;
+struct GizmoDrawList;
 
 /**
  * @brief Named attachment identifiers for G-Buffer and post-FX framebuffer attachments.
@@ -496,6 +498,27 @@ public:
 	/** @brief const overload of GetDebugCache(). */
 	const DebugCache& GetDebugCache() const { return *rc_debugCache; }
 
+	// --- Transform gizmo guide geometry (owned) ---
+
+	/**
+	 * @brief Uploads this frame's gizmo guide geometry.
+	 *
+	 * Called once per frame from DeferredRenderer::recordFrame(), beside
+	 * UpdateDebugDraw(). Unconditional: GizmoDrawList carries no revision, because a
+	 * live gesture rebuilds its geometry on every cursor and camera change and the
+	 * payload is a few dozen segments at peak.
+	 *
+	 * @param frameIndex  Frame-in-flight index being recorded.
+	 * @param list        Guide geometry from EditorContext::gizmoDraw.
+	 */
+	void UpdateGizmoDraw(uint32_t frameIndex, const GizmoDrawList& list);
+
+	/** @brief The gizmo overlay's per-frame buffers, as GizmoPass reads them. */
+	GizmoCache& GetGizmoCache() { return *rc_gizmoCache; }
+
+	/** @brief const overload of GetGizmoCache(). */
+	const GizmoCache& GetGizmoCache() const { return *rc_gizmoCache; }
+
 	void CleanScreenSpace();
 
 private:
@@ -542,6 +565,9 @@ private:
 
 	// --- Debug overlay geometry (owned; allocates nothing until first Update) ---
 	std::unique_ptr<DebugCache> rc_debugCache;
+
+	// --- Gizmo guide geometry (owned; allocates nothing until first Update) ---
+	std::unique_ptr<GizmoCache> rc_gizmoCache;
 
 	// --- Light UID → SSBO index / shadow index maps (populated by UpdateLighting) ---
 	std::unordered_map<int, uint32_t> rc_uidToSSBOIdx;     ///< uid → SSBO element index
