@@ -20,10 +20,10 @@
  * ## What marks it dirty
  *
  * The three things that change the picture, which is more than the three that
- * change the gesture: a cursor move, a camera change *and* a resize. Guide length
- * and arc radius are fixed pixel budgets converted through PixelsPerWorldUnit(),
- * so a pure camera dolly changes the world-space geometry even though the state
- * machine did not move at all.
+ * change the gesture: a cursor move, a camera change *and* a resize. Guide length,
+ * arc radius and arrowhead size are fixed pixel budgets converted through
+ * PixelsPerWorldUnit(), so a pure camera dolly changes the world-space geometry
+ * even though the state machine did not move at all.
  *
  * ## Empty, never null
  *

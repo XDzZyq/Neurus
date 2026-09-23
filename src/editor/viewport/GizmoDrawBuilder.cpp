@@ -5,6 +5,11 @@
  * Everything here is sized as a fixed *pixel* budget divided by
  * PixelsPerWorldUnit() at the pivot's depth, so the guide holds its apparent size
  * as the camera dollies. That is also why a camera change has to mark this dirty.
+ *
+ * Each mode decorates the ends of its guide differently, so the picture says which
+ * gesture is live before anything has moved: Move gets an arrowhead, Scale a box
+ * handle, Rotate neither — its arc already carries the meaning. Both ends are
+ * decorated, because a modal constraint is a bidirectional line.
  */
 
 #include "editor/viewport/GizmoDrawBuilder.h"
@@ -23,21 +28,36 @@ namespace
 {
 
 /// @brief Half-length of a constraint guide, in logical pixels.
-constexpr float kGuideHalfPx = 220.0f;
+constexpr float kGuideHalfPx = 110.0f;
 
-/// @brief Radius of the Rotate arc, in logical pixels.
-constexpr float kArcRadiusPx = 90.0f;
+/// @brief Radius of the Rotate arc, in logical pixels. Kept inside the guide's
+/// half-length so the ring reads as bounded by the axis rather than crossing it.
+constexpr float kArcRadiusPx = 85.0f;
 
 /// @brief Chord count for the Rotate arc. 48 keeps the polygon invisible at
 /// kArcRadiusPx while staying well inside any sane draw budget.
 constexpr int kArcChords = 48;
 
-constexpr float kActiveWidthPx = 2.5f;     ///< The chosen axis.
-constexpr float kCandidateWidthPx = 1.5f;  ///< An axis still on offer.
-constexpr float kPivotSizePx = 7.0f;       ///< The pivot dot's diameter.
+constexpr float kActiveWidthPx = 4.5f;     ///< The chosen axis.
+constexpr float kCandidateWidthPx = 3.0f;  ///< An axis still on offer.
+constexpr float kPivotSizePx = 8.0f;       ///< The pivot dot's diameter.
 
-constexpr float kActiveAlpha = 1.0f;
-constexpr float kCandidateAlpha = 0.45f;
+/// @brief How much an unchosen axis' colour is darkened.
+///
+/// Dimming happens in RGB, never in alpha: a translucent guide washes out over
+/// bright geometry and was the first thing to look wrong on screen. The only alpha
+/// the gizmo uses is the analytic edge fade OverlayFlag::Smooth applies, which is
+/// antialiasing rather than transparency.
+constexpr float kCandidateDim = 0.45f;
+
+/// @brief The Move arrowhead: how far back from the tip a barb reaches, and how far
+/// out from the axis. 15:7 is a ~25 degree half-angle, which reads as an arrow
+/// without the barbs colliding with the line's own width.
+constexpr float kArrowBackPx = 15.0f;
+constexpr float kArrowRadiusPx = 7.0f;
+
+/// @brief The Scale mode's end handle, in logical pixels. A box, per Blender.
+constexpr float kScaleHandlePx = 11.0f;
 
 constexpr float kTwoPi = 6.283185307179586f;
 
@@ -64,19 +84,90 @@ void OrthonormalBasis(const glm::vec3& n, glm::vec3& outU, glm::vec3& outV)
 	outV = glm::cross(n, outU);
 }
 
-/// @brief One constraint guide: a line through @p pivot, centred on it.
-/// Centred rather than starting at the pivot because a modal constraint is a
-/// bidirectional line, not a grabbable arrow pointing one way.
-void AppendAxisLine(GizmoDrawList& list, const glm::vec3& pivot, const glm::vec3& dir,
-                    float halfLength, GizmoAxis axis, bool active)
+/// @brief Full brightness for the chosen axis, darkened RGB for one still on offer.
+/// Alpha is always 1 — see kCandidateDim.
+uint32_t GuideColor(GizmoAxis axis, bool active)
+{
+	const glm::vec3 rgb = AxisColor(axis) * (active ? 1.0f : kCandidateDim);
+	return PackOverlayColor(glm::vec4{rgb, 1.0f});
+}
+
+/// @brief One overlay segment. The single push site the line, the barbs and the arc
+/// all go through, so the AA flag is decided in exactly one place.
+void AppendSegment(GizmoDrawList& list, const glm::vec3& a, const glm::vec3& b,
+                   float width, uint32_t rgba)
 {
 	OverlaySegment seg{};
-	seg.a = pivot - dir * halfLength;
-	seg.b = pivot + dir * halfLength;
-	seg.width = active ? kActiveWidthPx : kCandidateWidthPx;
-	seg.rgba = PackOverlayColor(glm::vec4{AxisColor(axis), active ? kActiveAlpha : kCandidateAlpha});
-	seg.flags = OverlayFlag::Smooth;  // a solid line, so analytic edge AA applies
+	seg.a = a;
+	seg.b = b;
+	seg.width = width;  // always pixels: segments ignore ScreenSpaceSize
+	seg.rgba = rgba;
+	seg.flags = OverlayFlag::Smooth;
 	list.segments.push_back(seg);
+}
+
+/// @brief The Move arrowhead: four barbs running back from @p tip along -@p dir.
+///
+/// Four barbs in two perpendicular planes, not a flat V — a V vanishes when its
+/// plane turns edge-on to the camera, which for an axis-aligned guide happens at
+/// exactly the viewpoints a user orbits to. Not a filled cone either: the overlay
+/// payload has no triangle primitive.
+void AppendArrowHead(GizmoDrawList& list, const glm::vec3& tip, const glm::vec3& dir,
+                     float back, float radius, float width, uint32_t rgba)
+{
+	glm::vec3 u{0.0f};
+	glm::vec3 v{0.0f};
+	OrthonormalBasis(dir, u, v);
+
+	const glm::vec3 base = tip - dir * back;
+	for (const glm::vec3& out : {u, -u, v, -v})
+		AppendSegment(list, tip, base + out * radius, width, rgba);
+}
+
+/// @brief The Scale mode's end handle: a box, per Blender. A sprite rather than 12
+/// segments because it needs no orientation — it marks a length, not a direction.
+void AppendScaleHandle(GizmoDrawList& list, const glm::vec3& at, uint32_t rgba)
+{
+	OverlayPointSprite box{};
+	box.p = at;
+	box.size = kScaleHandlePx;
+	box.rgba = rgba;
+	box.shape = OverlayPointShape::Square;
+	box.flags = OverlayFlag::Smooth | OverlayFlag::ScreenSpaceSize;
+	list.points.push_back(box);
+}
+
+/// @brief One constraint guide: a line through @p pivot centred on it, plus whatever
+/// end decoration the mode calls for.
+///
+/// Centred rather than starting at the pivot because a modal constraint is a
+/// bidirectional line, not a grabbable arrow pointing one way — which is also why
+/// *both* ends are decorated.
+void AppendGuide(GizmoDrawList& list, GizmoMode mode, GizmoAxis axis, bool active,
+                 const glm::vec3& pivot, const glm::vec3& dir, float halfLength,
+                 float pxPerUnit)
+{
+	const uint32_t rgba = GuideColor(axis, active);
+	const float width = active ? kActiveWidthPx : kCandidateWidthPx;
+
+	const glm::vec3 tipPos = pivot + dir * halfLength;
+	const glm::vec3 tipNeg = pivot - dir * halfLength;
+	AppendSegment(list, tipNeg, tipPos, width, rgba);
+
+	if (mode == GizmoMode::Move)
+	{
+		const float back = kArrowBackPx / pxPerUnit;
+		const float radius = kArrowRadiusPx / pxPerUnit;
+		AppendArrowHead(list, tipPos, dir, back, radius, width, rgba);
+		AppendArrowHead(list, tipNeg, -dir, back, radius, width, rgba);
+	}
+	else if (mode == GizmoMode::Scale)
+	{
+		AppendScaleHandle(list, tipPos, rgba);
+		AppendScaleHandle(list, tipNeg, rgba);
+	}
+	// Rotate gets neither: the arc is what carries the meaning, and a tip would
+	// suggest a direction a rotation axis does not have.
 }
 
 /// @brief The Rotate arc: a closed ring of chords in the plane perpendicular to @p dir.
@@ -88,22 +179,14 @@ void AppendArc(GizmoDrawList& list, const glm::vec3& pivot, const glm::vec3& dir
 	glm::vec3 v{0.0f};
 	OrthonormalBasis(dir, u, v);
 
-	const uint32_t rgba = PackOverlayColor(glm::vec4{AxisColor(axis), kActiveAlpha});
+	const uint32_t rgba = GuideColor(axis, true);
 
 	glm::vec3 prev = pivot + u * radius;
 	for (int i = 1; i <= kArcChords; ++i)
 	{
 		const float a = kTwoPi * static_cast<float>(i) / static_cast<float>(kArcChords);
 		const glm::vec3 next = pivot + (u * std::cos(a) + v * std::sin(a)) * radius;
-
-		OverlaySegment seg{};
-		seg.a = prev;
-		seg.b = next;
-		seg.width = kActiveWidthPx;
-		seg.rgba = rgba;
-		seg.flags = OverlayFlag::Smooth;
-		list.segments.push_back(seg);
-
+		AppendSegment(list, prev, next, kActiveWidthPx, rgba);
 		prev = next;
 	}
 }
@@ -114,7 +197,7 @@ void AppendPivot(GizmoDrawList& list, const glm::vec3& pivot)
 	OverlayPointSprite dot{};
 	dot.p = pivot;
 	dot.size = kPivotSizePx;
-	dot.rgba = PackOverlayColor(glm::vec4{1.0f, 1.0f, 1.0f, 0.95f});
+	dot.rgba = PackOverlayColor(glm::vec4{1.0f, 1.0f, 1.0f, 1.0f});
 	dot.shape = OverlayPointShape::Circle;
 	// The shape mask is an analytic distance, so a circle is visibly stepped without
 	// Smooth; ScreenSpaceSize is what makes `size` mean pixels rather than world units.
@@ -159,7 +242,7 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 		{
 			const glm::vec3 dir = GizmoAxisDirection(mode, candidate, gizmo.Before().rotation);
 			if (glm::length(dir) > 0.0f)
-				AppendAxisLine(m_list, pivot, dir, halfLength, candidate, false);
+				AppendGuide(m_list, mode, candidate, false, pivot, dir, halfLength, pxPerUnit);
 		}
 	}
 	else
@@ -167,7 +250,7 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 		const glm::vec3 dir = GizmoAxisDirection(mode, axis, gizmo.Before().rotation);
 		if (glm::length(dir) > 0.0f)
 		{
-			AppendAxisLine(m_list, pivot, dir, halfLength, axis, true);
+			AppendGuide(m_list, mode, axis, true, pivot, dir, halfLength, pxPerUnit);
 			if (mode == GizmoMode::Rotate)
 				AppendArc(m_list, pivot, dir, kArcRadiusPx / pxPerUnit, axis);
 		}
