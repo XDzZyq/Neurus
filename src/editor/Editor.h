@@ -7,6 +7,9 @@
 
 #include "controllers/Controllers.h"
 #include "editor/viewport/DebugDrawBuilder.h"
+#include "editor/viewport/EditorViewport.h"
+#include "editor/viewport/GizmoDrawBuilder.h"
+#include "editor/viewport/TransformGizmo.h"
 #include "editor/events/EventBus.h"
 #include "editor/operations/HistoryView.h"
 #include "editor/operations/OperationManager.h"
@@ -121,7 +124,28 @@ public:
 		ed_eventBus.enqueue<Event>(e);
 	}
 
-	void HandleResize(uint32_t width, uint32_t height);
+	/**
+	 * @brief Records a viewport resize and re-frames the active camera.
+	 *
+	 * Takes both extents because EditorViewport needs both and they are two views
+	 * of one resize: the logical size is the unit of every projection query (and
+	 * of Camera::cam_w/cam_h), the render extent exists only for the ID-buffer
+	 * readback's physical texels. Accepting them separately is how they drift.
+	 *
+	 * @param logical      Widget size in logical (Qt) pixels.
+	 * @param renderExtent Swapchain size in physical pixels.
+	 */
+	void HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent);
+
+	/**
+	 * @brief True while a modal transform gesture is live.
+	 *
+	 * Read by the Application to gate the viewport's selection pick: a confirming
+	 * LMB click must not also re-select whatever is under the cursor, and must not
+	 * pay that path's queue.waitIdle ID-buffer readback. Frame-granular and
+	 * therefore safe, since gizmo state only ever changes inside Edit().
+	 */
+	bool IsGizmoActive() const { return m_gizmo.IsActive(); }
 
 	/**
 	 * @brief Uploads the current scene's GPU resources: meshes, lights, debug
@@ -182,6 +206,9 @@ private:
 	 * do with the current viewport (a fresh Camera is 1x1). Only a window resize
 	 * ever corrected that, so File > New used to render a squashed frame until the
 	 * user dragged the window. Called from the two scene-swap paths.
+	 *
+	 * The extent comes from m_viewport.Size() — the viewport is the one place that
+	 * remembers it.
 	 */
 	void ApplyViewportToActiveCamera();
 
@@ -191,10 +218,6 @@ private:
 	RenderConfig          m_config;
 	bool                  m_dirty = false;
 
-	/// Last viewport extent seen by HandleResize(); 0 until the window is shown.
-	uint32_t              m_viewportW = 0;
-	uint32_t              m_viewportH = 0;
-
 	/**
 	 * @brief Flattened debug/gizmo geometry published through EditorContext.
 	 *
@@ -202,6 +225,29 @@ private:
 	 * visible changed" broadcast) and by every scene swap; rebuilt in Edit().
 	 */
 	DebugDrawBuilder      m_debugDraw;
+
+	/**
+	 * @brief The world<->screen service, and the Editor-side definition of "the
+	 *        camera we are looking through".
+	 *
+	 * Pushed per frame at the top of Edit() rather than queried on demand, so the
+	 * gizmo's projection math and the renderer's CameraGPU cannot disagree about
+	 * which camera the frame belongs to.
+	 */
+	EditorViewport        m_viewport;
+
+	/// Modal transform state (G/R/S). Inactive until a key arms it.
+	TransformGizmo        m_gizmo;
+
+	/**
+	 * @brief The gizmo's guide geometry, published through EditorContext::gizmoDraw.
+	 *
+	 * Sibling of m_debugDraw, but dirtied by more: guide length and arc radius are
+	 * fixed *pixel* budgets converted through PixelsPerWorldUnit(), so a cursor
+	 * move, a camera change and a resize each change the world-space geometry even
+	 * when the state machine has not moved.
+	 */
+	GizmoDrawBuilder      m_gizmoDraw;
 
 	// --- Editor infrastructure ---
 	EventQueue ed_eventBus;                        ///< Editor-owned event dispatch queue.
@@ -211,12 +257,14 @@ private:
 	 * @brief The three controller-facing interfaces + editor singleton access.
 	 *
 	 * Declared AFTER the pieces it references (bus, operations, pool, scene,
-	 * config) and BEFORE the controller list, so it outlives the controllers'
-	 * event subscriptions (handler lambdas capture it by value).
+	 * config, viewport, gizmo) and BEFORE the controller list, so it outlives the
+	 * controllers' event subscriptions (handler lambdas capture it by value).
 	 */
 	ControllerContext m_ctx{ ed_eventBus, *m_resources, ed_operations,
 	                         [this]() { return m_scene.get(); },
-	                         [this]() { return &m_config; } };
+	                         [this]() { return &m_config; },
+	                         [this]() { return &m_viewport; },
+	                         [this]() { return &m_gizmo; } };
 
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;
 

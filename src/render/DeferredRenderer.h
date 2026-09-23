@@ -55,6 +55,7 @@ class SelectionOutlinePass;
 class ComposePass;
 class FXAAPass;
 class DebugPass;
+class GizmoPass;
 struct CameraUBOData;
 
 /**
@@ -254,13 +255,17 @@ private:
 	SelectionOutlinePass* r_selectionOutlinePass = nullptr;
 	ComposePass*  r_composePass  = nullptr;
 	FXAAPass*     r_fxaaPass     = nullptr;
-	/// Debug/gizmo overlay; always in the graph, runs last, and a no-op when the
-	/// list is empty. Its target doubles as the swapchain blit source.
+	/// Debug overlay (scene DebugLine/Points/Mesh objects); always in the graph and a
+	/// no-op when the list is empty.
 	DebugPass*    r_debugPass    = nullptr;
+	/// Transform-gizmo overlay; always in the graph, runs *after* DebugPass onto the
+	/// same image, and a no-op when no modal gesture is live. As the graph's last
+	/// writer its target doubles as the swapchain blit source.
+	GizmoPass*    r_gizmoPass    = nullptr;
 
 	// --- RenderGraph (the active pipeline) ---
 	// Compile-once-per-topology DAG holding the whole deferred pipeline:
-	// Geometry → Shadows → SSAO → Lighting → {SelectionOutline} → Compose → [FXAA] → Debug.
+	// Geometry → Shadows → SSAO → Lighting → {SelectionOutline} → Compose → [FXAA] → Debug → Gizmo.
 	// recordFrame dispatches the entire pipeline via m_mainGraph.Execute(),
 	// rebuilding it (RebuildMainGraph) only when the pipeline signature
 	// derived from RenderConfig changes.

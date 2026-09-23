@@ -2,8 +2,10 @@
 
 #include "UIContext.h"
 #include "core/Log.h"
+#include "editor/Input.h"
 #include "editor/events/UIEvents.h"
 
+#include <QFocusEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPaintEvent>
@@ -86,8 +88,37 @@ void Viewport::keyPressEvent(QKeyEvent* event)
 		}
 	}
 
+	// Modal transform keys (G/R/S, X/Y/Z, Return, Escape). Auto-repeat is
+	// filtered HERE, at the Qt boundary, because a held key must arm an operator
+	// once rather than sixty times a second - the editor's event set has no
+	// repeat notion to filter on later.
+	if (!event->isAutoRepeat())
+	{
+		const Input::Key key = Input::GetKey(static_cast<uint32_t>(event->key()));
+		if (key != Input::Key_Unknown)
+		{
+			emit keyPressed(KeyPressEvent{
+				.key = key,
+				.modifiers = Input::GetModifiers(static_cast<uint32_t>(event->modifiers().toInt()))
+			});
+			// Accepted so the keystroke stops here: unaccepted, it would walk up
+			// through ADS to the QMainWindow, where a menu mnemonic could claim it.
+			event->accept();
+			return;
+		}
+	}
+
 	// Pass all other keys to the base class.
 	QWidget::keyPressEvent(event);
+}
+
+void Viewport::focusOutEvent(QFocusEvent* event)
+{
+	// A modal gesture reads viewport keys and the viewport cursor, so losing
+	// focus means it can no longer be confirmed or cancelled from here. Emitted
+	// unconditionally; the gizmo controller drops it when nothing is armed.
+	emit focusLost(ViewportFocusLost{});
+	QWidget::focusOutEvent(event);
 }
 
 void Viewport::keyReleaseEvent(QKeyEvent* event)

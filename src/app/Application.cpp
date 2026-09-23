@@ -344,7 +344,15 @@ void Application::ResizeViewport(int width, int height)
 		app_mainWindow->getViewportHwnd(),
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 	app_renderer->HandleResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-	app_editor->HandleResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+
+	// The Editor needs both extents: logical for every projection query (and for
+	// Camera::cam_w/cam_h), physical for the ID-buffer readback. The physical one is
+	// read back from the renderer AFTER its own resize, so it is the extent the
+	// swapchain actually got rather than the one we asked for.
+	const auto extent = app_renderer->GetExtent();
+	app_editor->HandleResize(
+		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
+		glm::uvec2{extent.width, extent.height});
 }
 
 // =========================================================================
@@ -557,10 +565,28 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// Forward the Delete key (remove all selected objects).
 		ConnectUIEvent(viewport, &neurus::Viewport::deleteRequested);
 
+		// Forward modal transform keystrokes (G/R/S, X/Y/Z, Return, Escape) and
+		// the focus-loss abort. Both are raw viewport facts: the Editor turns a
+		// key into a gizmo intent, and TransformGizmoController decides whether
+		// the intent means anything.
+		ConnectUIEvent(viewport, &neurus::Viewport::keyPressed);
+		ConnectUIEvent(viewport, &neurus::Viewport::focusLost);
+
 		// Handle left-click for pixel-perfect object selection via IDBuffer
 		QObject::connect(viewport, &neurus::Viewport::mousePressed,
 		                 [this, viewport](const neurus::MousePressEvent& e) {
 		                     if (e.button != Input::MouseButton::Left)
+		                         return;
+
+		                     // A left click that confirms a modal transform gesture
+		                     // must not also re-select whatever happens to be under
+		                     // the cursor, and must not pay this path's
+		                     // queue.waitIdle ID-buffer readback. This is a separate
+		                     // connection from the ConnectUIEvent above, so the
+		                     // gesture's own GizmoConfirmed still reaches the Editor.
+		                     // Frame-granular and therefore safe: gizmo state only
+		                     // ever changes inside Editor::Edit().
+		                     if (app_editor->IsGizmoActive())
 		                         return;
 
 		                     const auto renderExtent = app_renderer->GetExtent();

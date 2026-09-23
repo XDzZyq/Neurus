@@ -66,14 +66,19 @@ struct EditorContext
 	const DebugDrawList* debugDraw = nullptr;
 
 	/**
-	 * @brief This frame's transform-gizmo guides, or nullptr when no modal
-	 *        transform gesture is active.
+	 * @brief This frame's transform-gizmo guides; empty while no gesture is active.
 	 *
 	 * Separate from `debugDraw` because the two have opposite lifetimes and
-	 * opposite visibility rules — see scene/GizmoDrawList.h. Null (rather than an
-	 * empty list) is the signal that no gesture is in progress, and there is
-	 * deliberately no RenderConfig flag gating it: interaction feedback must not
-	 * be hideable by a debug-visualization toggle.
+	 * opposite visibility rules — see scene/GizmoDrawList.h. There is deliberately
+	 * no RenderConfig flag gating it: interaction feedback must not be hideable by a
+	 * debug-visualization toggle.
+	 *
+	 * The Editor publishes &GizmoDrawBuilder::List() unconditionally, so during
+	 * normal operation this is non-null and *empty* rather than null when no gesture
+	 * is in progress — the builder's "empty, never null" contract. It stays a
+	 * pointer because a default-constructed EditorContext (a test driving a pass
+	 * directly, a frame recorded before the Editor has published anything) has no
+	 * list at all, and GizmoPass early-outs on null and on empty alike.
 	 */
 	const GizmoDrawList* gizmoDraw = nullptr;
 };

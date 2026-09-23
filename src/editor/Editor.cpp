@@ -6,6 +6,7 @@
 #include "editor/events/ConfigEvents.h"
 #include "editor/events/CameraEvents.h"
 #include "editor/events/EditorEvents.h"
+#include "editor/events/GizmoEvents.h"
 #include "editor/events/ShaderEvents.h"
 #include "editor/events/SceneEvents.h"
 
@@ -13,6 +14,7 @@
 #include "editor/controllers/RenderConfigController.h"
 #include "editor/controllers/ShaderController.h"
 #include "editor/controllers/SceneController.h"
+#include "editor/controllers/TransformGizmoController.h"
 #include "editor/operations/ShaderOperations.h"
 #include "editor/events/EventBus.h"
 
@@ -119,6 +121,20 @@ void GenerateIBL(UploadManager& uploader, DeferredRenderer& renderer,
 	NEURUS_LOG("[Editor] IBL generated for environment (ID " << env->GetObjectID() << ")");
 }
 
+/**
+ * @brief UID of the scene's active object, or 0 when nothing is selected.
+ *
+ * The modal gizmo operates on the active object only (wave 1), and the intent
+ * events carry a uid rather than a pointer. 0 is a legal value to enqueue: the
+ * controller drops a GizmoModeRequested it cannot resolve, so the key handler stays
+ * free of selection logic.
+ */
+int ActiveUid(const Scene& scene)
+{
+	const ObjectID* active = scene.selections.GetActiveObject();
+	return active ? active->GetObjectID() : 0;
+}
+
 } // anonymous namespace
 
 Editor::Editor(DeferredRenderer* renderer, UploadManager* uploadManager)
@@ -204,13 +220,30 @@ void Editor::Initialize()
 
 
 	// --- Register controllers ---
-	// All four now take only the ControllerContext: no providers are needed
-	// because the context carries the event dispatch, the pooled-object lookup,
-	// the operation sink, the scene, and the render config.
+	// All five take only the ControllerContext: no providers are needed because the
+	// context carries the event dispatch, the pooled-object lookup, the operation
+	// sink, the scene, the render config, the viewport and the gizmo state.
+	//
+	// TransformGizmoController comes AFTER CameraController on purpose: dispatch runs
+	// handlers in registration order, so the gizmo's MouseMoveEvent handler sees a
+	// camera the camera controller has already updated this frame.
 	RegisterController<CameraController>();
+	RegisterController<TransformGizmoController>();
 	RegisterController<ShaderController>();
 	RegisterController<SceneController>();
 	RegisterController<RenderConfigController>();
+
+	// --- Keep the viewport's camera pointer alive across a deletion ---
+	// Registered after the controllers, so it runs after SceneController's own
+	// handler has actually removed the object: dispatch is registration-ordered.
+	// Edit() pushes the camera once per frame, but Process() drains re-entrantly
+	// enqueued events in the same call, so deleting the active camera mid-Process
+	// would otherwise leave m_viewport holding a dangling pointer for the rest of
+	// that Edit(). SceneOperations dispatches this event synchronously during
+	// undo/redo replay too, which this handler covers for free.
+	ed_eventBus.subscribe<SceneObjectDeleteRequested>([this](const SceneObjectDeleteRequested&) {
+		m_viewport.SetCamera(GetScene().GetActiveCamera());
+	});
 
 	// --- Subscribe to EnvironmentChanged to regenerate IBL cubemaps on demand ---
 	ed_eventBus.subscribe<EnvironmentChanged>([this](const EnvironmentChanged& e) {
@@ -233,8 +266,28 @@ void Editor::Initialize()
 	});
 
 	ed_eventBus.subscribe<MouseMoveEvent>([this](const MouseMoveEvent& e) {
+		// Retained FIRST and unconditionally: the cursor is a property of the
+		// viewport, not of the scene, and the null-camera return below would
+		// otherwise swallow it. TransformGizmoController does not read it back (it
+		// uses e.position, so it cannot be bitten by registration order) but every
+		// query that does needs it fresh.
+		m_viewport.SetCursor(e.position);
+
+		// The guide's length and arc radius are fixed *pixel* budgets converted
+		// through PixelsPerWorldUnit(), so the world-space geometry changes with the
+		// cursor even when the state machine has not moved. Gated on IsActive() so an
+		// idle mouse sweep does not dirty a list that is already empty.
+		if (m_gizmo.IsActive())
+			m_gizmoDraw.MarkDirty();
+
 		auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera());
 		if (!cam) return;
+
+		// Orbit is suppressed for the duration of a modal gesture, which also keeps
+		// the drag's anchor math camera-invariant. Reading gizmo state is legitimate
+		// here — it is forbidden only in the KEY handler, where a gate would swallow
+		// an axis key arriving in the same Process() call as its mode key.
+		if (m_gizmo.IsActive()) return;
 
 		if (e.middleHeld)
 		{
@@ -250,7 +303,12 @@ void Editor::Initialize()
 	// Middle-button press/release bound the orbit/pan/dolly drag gesture so it
 	// collapses to one undo entry. The typed drag events flow through the same
 	// controller chain as the camera moves themselves (no direct handling here).
+	// Left and right close a modal transform gesture instead — enqueued
+	// unconditionally, like the keys, and dropped by the controller when no gesture
+	// is live.
 	ed_eventBus.subscribe<MousePressEvent>([this](const MousePressEvent& e) {
+		if (e.button == Input::Left)  { ed_eventBus.enqueue(GizmoConfirmed{}); return; }
+		if (e.button == Input::Right) { ed_eventBus.enqueue(GizmoCancelled{}); return; }
 		if (e.button != Input::Middle) return;
 		if (auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera()))
 			ed_eventBus.enqueue(CameraDragBegin{cam->GetObjectID()});
@@ -277,6 +335,30 @@ void Editor::Initialize()
 		ed_eventBus.enqueue(ObjectDeleteRequested{});
 	});
 
+	// --- Viewport keystrokes -> modal transform intents ---
+	// Every branch enqueues UNCONDITIONALLY. Nothing here reads gizmo state, and
+	// that is load-bearing rather than stylistic: Process() is FIFO and drains
+	// re-entrantly enqueued events within the same call, so an IsActive() gate would
+	// silently eat an axis key that arrived in the same frame as its mode key. The
+	// controller is the single place that decides an intent is meaningless.
+	ed_eventBus.subscribe<KeyPressEvent>([this](const KeyPressEvent& e) {
+		switch (e.key)
+		{
+		case Input::Key_G: ed_eventBus.enqueue(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Move});   break;
+		case Input::Key_R: ed_eventBus.enqueue(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Rotate}); break;
+		case Input::Key_S: ed_eventBus.enqueue(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Scale});  break;
+
+		case Input::Key_X: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::X}); break;
+		case Input::Key_Y: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::Y}); break;
+		case Input::Key_Z: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::Z}); break;
+
+		case Input::Key_Return: ed_eventBus.enqueue(GizmoConfirmed{}); break;
+		case Input::Key_Escape: ed_eventBus.enqueue(GizmoCancelled{}); break;
+
+		default: break;
+		}
+	});
+
 	// --- Subscribe to RenderResetEvent to reset temporal accumulation ---
 	ed_eventBus.subscribe<RenderResetEvent>([this](const RenderResetEvent&) {
 		if (ed_renderer)
@@ -286,6 +368,11 @@ void Editor::Initialize()
 		// visible changed" broadcast, so it is exactly when the debug overlay may
 		// have gone stale. Marking is O(1); the rebuild happens once in Edit().
 		m_debugDraw.MarkDirty();
+
+		// The gizmo guide rides the same broadcast, which is what makes it appear on
+		// arm, follow the cursor through a drag, and vanish on confirm or cancel:
+		// every TransformGizmoController handler enqueues a RenderResetEvent.
+		m_gizmoDraw.MarkDirty();
 	});
 
 	// --- SceneController GPU-sync + dirty subscriptions ---
@@ -322,10 +409,22 @@ EditorContext Editor::GetContext() const
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 
+	// The single Editor-side definition of "the camera we are looking through",
+	// pushed at the top of Edit(). Publishing it from here rather than letting the
+	// renderer call Scene::GetActiveCamera() is what makes the planned
+	// viewport-owned free camera a one-function change.
+	ctx.camera = m_viewport.GetCamera();
+
 	// r_debug_draw gates publication rather than graph topology: with a null list
 	// DebugPass returns before touching any image, so toggling the overlay never
 	// rebuilds the RenderGraph.
 	ctx.debugDraw = m_config.RequiresDebugDraw() ? &m_debugDraw.List() : nullptr;
+
+	// Published unconditionally, and deliberately behind no RenderConfig flag:
+	// interaction feedback is not a debug visualization the user may hide. An
+	// inactive gizmo yields a cleared list rather than no list (GizmoDrawBuilder's
+	// "empty, never null" contract), and GizmoPass early-outs on an empty payload.
+	ctx.gizmoDraw = &m_gizmoDraw.List();
 	return ctx;
 }
 
@@ -838,23 +937,27 @@ void Editor::UploadLighting()
 // HandleResize() 鈥?dispatch CameraResizeEvent via event bus
 // =========================================================================
 
-void Editor::HandleResize(uint32_t width, uint32_t height)
+void Editor::HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent)
 {
 	// Remembered unconditionally, BEFORE the camera check: the extent is a
 	// property of the viewport, not of whatever scene happens to be loaded, and
 	// every later scene (File > New, File > Open) needs it to frame its camera.
-	if (width > 0 && height > 0)
+	// EditorViewport is now the one place that holds it.
+	if (logical.x > 0 && logical.y > 0)
 	{
-		m_viewportW = width;
-		m_viewportH = height;
+		m_viewport.SetViewportSize(logical, renderExtent);
+
+		// Constant-pixel guide geometry is a CPU computation against the viewport
+		// height, so a resize changes the world-space guide even mid-gesture.
+		m_gizmoDraw.MarkDirty();
 	}
 
 	auto* cam = GetScene().GetActiveCamera();
 	if (!cam) return;
 
 	ed_eventBus.enqueue(CameraResizeEvent{cam->GetObjectID(),
-	                                      static_cast<int>(width),
-	                                      static_cast<int>(height)});
+	                                      static_cast<int>(logical.x),
+	                                      static_cast<int>(logical.y)});
 }
 
 // =========================================================================
@@ -867,13 +970,14 @@ void Editor::ApplyViewportToActiveCamera()
 	// scene is being built: the camera must be correctly framed on the FIRST
 	// frame, and the event queue is only drained in the next Edit(). It stays
 	// inside the Editor's own scene, so no layer boundary is crossed.
-	if (m_viewportW == 0 || m_viewportH == 0) return; // no viewport yet (startup)
+	const glm::uvec2 size = m_viewport.Size();
+	if (size.x == 0 || size.y == 0) return; // no viewport yet (startup)
 
 	auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera());
 	if (!cam) return;
 
-	cam->ChangeCamRatio(static_cast<float>(m_viewportW),
-	                    static_cast<float>(m_viewportH));
+	cam->ChangeCamRatio(static_cast<float>(size.x),
+	                    static_cast<float>(size.y));
 }
 
 // =========================================================================
@@ -882,6 +986,13 @@ void Editor::ApplyViewportToActiveCamera()
 
 void Editor::Edit()
 {
+	// Pushed BEFORE the queue is drained, and every frame rather than on change:
+	// the gizmo's projection math and the renderer's CameraGPU both read this one
+	// pointer, so they cannot disagree about which camera the frame belongs to. The
+	// SceneObjectDeleteRequested subscription re-pushes it mid-Process, since
+	// Process() can delete the active camera within this very call.
+	m_viewport.SetCamera(GetScene().GetActiveCamera());
+
 	ed_eventBus.Process();
 
 	// After the queue is drained, so a scene change and its debug-overlay
@@ -889,6 +1000,11 @@ void Editor::Edit()
 	// is the common case: debug objects are stateful and rarely move.
 	if (m_scene)
 		m_debugDraw.Rebuild(*m_scene);
+
+	// Same timing, same dirty-flag discipline. Rebuild() clears the list and returns
+	// when no gesture is live, so a finished gesture's guide disappears on the frame
+	// its confirm was processed.
+	m_gizmoDraw.Rebuild(m_gizmo, m_viewport);
 }
 
 } // namespace neurus

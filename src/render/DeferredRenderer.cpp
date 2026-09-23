@@ -21,6 +21,7 @@
 #include "passes/SelectionOutlinePass.h"
 #include "passes/ComposePass.h"
 #include "passes/DebugPass.h"
+#include "passes/GizmoPass.h"
 #include "passes/FXAAPass.h"
 
 #include "render/HaltonSequence.h"
@@ -156,7 +157,18 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] DebugPass created");
 	}
 
-	// --- 8g. Build the Wave 3 shading-tail RenderGraph ---
+	// --- 8g. Create transform-gizmo overlay pass (the modal G/R/S guides, drawn over
+	//         everything including the debug overlay; a no-op with no live gesture) ---
+	{
+		auto gizmoPass = std::make_unique<GizmoPass>(
+			device, physicalDevice,
+			kMaxFramesInFlight);
+		r_gizmoPass = gizmoPass.get();
+		r_passes.push_back(std::move(gizmoPass));
+		NEURUS_LOG("[DeferredRenderer] GizmoPass created");
+	}
+
+	// --- 8h. Build the Wave 3 shading-tail RenderGraph ---
 	// Initial build uses a default signature (no FXAA); recordFrame rebuilds
 	// it whenever the pipeline signature derived from RenderConfig changes.
 	RebuildMainGraph(PipelineSignature{});
@@ -386,11 +398,16 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	auto* outlineNode   = m_mainGraph.AddPass(r_selectionOutlinePass);
 	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
 
-	// The overlay draws into whichever image the post chain ends with, so its target
-	// is chosen before registration: AddPass() caches GetIO(), which names it.
-	r_debugPass->SetTarget(sig.fxaa ? AttachmentName::FXAAOutput
-	                                : AttachmentName::ComposedOutput);
+	// Both overlays draw into whichever image the post chain ends with, so their target
+	// is chosen before registration: AddPass() caches GetIO(), which names it. The two
+	// must name the *same* attachment — that shared name is the socket Connect() below
+	// matches on to order them.
+	const AttachmentName tail = sig.fxaa ? AttachmentName::FXAAOutput
+	                                     : AttachmentName::ComposedOutput;
+	r_debugPass->SetTarget(tail);
 	auto* debugNode     = m_mainGraph.AddPass(r_debugPass);
+	r_gizmoPass->SetTarget(tail);
+	auto* gizmoNode     = m_mainGraph.AddPass(r_gizmoPass);
 
 	// Geometry (G-Buffer) → consumers
 	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          ssaoNode);
@@ -412,12 +429,13 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,         composeNode);
 	m_mainGraph.Connect(outlineNode,  AttachmentName::SelectionOutline, composeNode);
 
-	// Compose → [FXAA] → debug overlay. The overlay is deliberately last: its
-	// fragment shaders already antialias from real coverage, and a luma filter can
-	// only re-blur that and smear overlay color into the scene (see DebugPass.h). So
-	// FXAA is fed the scene alone, and the overlay lands on whatever came out of it.
-	// Either way DebugPass edits its target in place — hence the G-Buffer depth edge
-	// for the occlusion test — and is the last writer the final blit consumes.
+	// Compose → [FXAA] → debug overlay → gizmo overlay. The overlays are deliberately
+	// last: their fragment shaders already antialias from real coverage, and a luma
+	// filter can only re-blur that and smear overlay color into the scene (see
+	// DebugPass.h). So FXAA is fed the scene alone, and the overlays land on whatever
+	// came out of it. Both edit that image in place — hence the G-Buffer depth edge for
+	// DebugPass's occlusion test — and the gizmo is the last writer the final blit
+	// consumes.
 	if (sig.fxaa)
 	{
 		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
@@ -429,6 +447,13 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, debugNode);
 	}
 	m_mainGraph.Connect(geometryNode, AttachmentName::Depth, debugNode);
+
+	// Debug → gizmo, on the shared tail attachment. Not optional bookkeeping: Compile()
+	// treats an unwired input as *external* rather than an error, so without this edge
+	// the gizmo's position in the topological order is unconstrained and the guides
+	// could land under the debug geometry nondeterministically. No Depth edge here —
+	// GizmoPass declares no depth socket, so one would fail socket validation.
+	m_mainGraph.Connect(debugNode, tail, gizmoNode);
 
 	m_mainGraph.Compile();
 	m_builtSignature = sig;
@@ -616,7 +641,7 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		r_renderCache->UpdateGizmoDraw(ctx.frameIndex, *ctx.editor.gizmoDraw);
 	}
 
-	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → SelectionOutline → Compose → [FXAA] → Debug ---
+	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → SelectionOutline → Compose → [FXAA] → Debug → Gizmo ---
 	// The whole deferred pipeline runs through one RenderGraph. FXAA is optional, and
 	// it is the only thing the topology varies on.
 
@@ -638,12 +663,12 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
 	// --- Phase 4: Blit output → swapchain image ---
-	// DebugPass is last in the graph, so its target *is* the end of the chain:
+	// GizmoPass is last in the graph, so its target *is* the end of the chain:
 	// FXAAOutput when FXAA is on, ComposedOutput when it is off. Asking the pass
 	// keeps that choice in RebuildMainGraph, which already owns config → topology,
-	// and is correct even on the frames where the overlay drew nothing — it then
-	// leaves the image exactly as the compute pass that filled it did.
-	auto& blitSource = r_renderCache->GetAttachment(r_debugPass->GetTarget(), extent);
+	// and is correct even on the frames where neither overlay drew anything — the
+	// image is then exactly as the compute pass that filled it left it.
+	auto& blitSource = r_renderCache->GetAttachment(r_gizmoPass->GetTarget(), extent);
 	const vk::Image composedImage = *blitSource.ImageHandle();
 	const vk::Image swapchainImage = r_swapchain->images()[imageIndex];
 

@@ -156,8 +156,8 @@ TEST(EditorSceneLifecycleTest, NewScene_SeededCameraAdoptsTheViewportExtent)
 	constexpr uint32_t kH = 720;
 
 	Editor editor(nullptr, nullptr);
-	editor.HandleResize(kW, kH);   // window shown / resized
-	editor.NewScene(kObj);         // ... then File > New
+	editor.HandleResize({kW, kH}, {kW, kH});  // window shown / resized
+	editor.NewScene(kObj);                    // ... then File > New
 
 	const Camera* cam = editor.GetScene().GetActiveCamera();
 	ASSERT_NE(cam, nullptr);
