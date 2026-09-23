@@ -428,7 +428,10 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 		                               0.f, 1.f);
 		const vk::Rect2D sunScissor({0, 0}, {kSunResolution, kSunResolution});
 
-		// Get camera target for shadow ortho center
+		// Get camera target for shadow ortho center.
+		// Still reads the Scene rather than ctx.editor.camera - see the full note in
+		// LightingPass::Record(). These four pass-local reads move together, in one
+		// commit, with the viewport-owned free camera.
 		const Camera* activeCam = scene->GetActiveCamera();
 		const glm::vec3 center = activeCam->cam_tar;
 

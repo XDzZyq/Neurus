@@ -589,7 +589,10 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			const glm::vec3 up = (glm::abs(glm::dot(lightDir, kWorldUp)) > 0.999f)
 				? kAltUp : kWorldUp;
 
-			// Use camera target as ortho centre (same as ShadowDepthPass)
+			// Use camera target as ortho centre (same as ShadowDepthPass).
+			// Still reads the Scene rather than ctx.editor.camera - see the full note
+			// in LightingPass::Record(). These four pass-local reads move together,
+			// in one commit, with the viewport-owned free camera.
 			const Camera* activeCam = scene->GetActiveCamera();
 			const glm::vec3 center = activeCam->cam_tar;
 			const glm::vec3 lightEye = center - lightDir * Light::sun_depth_range;

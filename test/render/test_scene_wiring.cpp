@@ -291,7 +291,7 @@ TEST_F(SceneWiringTest, DrawFrame_EmptyScene_NoCrash)
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
 	m_renderer->WaitIdle();
 }
 
@@ -314,7 +314,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithOnlyCamera_NoCrash)
 
 	ASSERT_NE(scene.GetActiveCamera(), nullptr);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
 	m_renderer->WaitIdle();
 }
 
@@ -344,8 +344,8 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
 
 	m_renderer->WaitIdle();
 }
@@ -379,7 +379,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	// Frame 1: per-pass CPU timers + counters are recorded; GPU timestamp
 	// readback for this slot happens at the start of frame 2 (fence-based).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}});
+		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}});
 		EXPECT_GT(profile.passCount, 0u);
 		EXPECT_FALSE(profile.passes.empty());
 		for (const auto& pass : profile.passes)
@@ -395,7 +395,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 
 	// Frame 2: exercises the GPU timestamp readback path for frame 1's slot.
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}});
+		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}});
 		EXPECT_GT(profile.passCount, 0u);
 	}
 
@@ -403,7 +403,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	// guarded so pre-signaled, never-written slots are skipped on startup
 	// (VUID-vkGetQueryPoolResults-None-09401).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}});
+		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}});
 		EXPECT_GT(profile.passCount, 0u);
 		if (profile.gpuTimingAvailable)
 		{

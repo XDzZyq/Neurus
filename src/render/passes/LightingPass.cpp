@@ -294,6 +294,15 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	// --- Cast scene UID to Scene* for access to Scene-specific members ---
 	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
 
+	// One of four passes that still re-derive the viewing camera from the Scene
+	// instead of reading ctx.editor.camera, which is what DeferredRenderer's
+	// CameraGPU publication now uses. The two are the same object only because the
+	// Editor pushes GetActiveCamera() into EditorViewport; the planned
+	// viewport-owned free camera breaks that equality by design, so all four reads
+	// (here, ShadowIntensityPass.cpp, SSAOPass.cpp, ShadowDepthPass.cpp) must move
+	// in ONE commit with it. Half-migrated, CameraGPU and this invProjView would
+	// describe different cameras - a split brain that renders plausible-looking
+	// wrong lighting rather than failing.
 	const Camera* cam = scene->GetActiveCamera();
 	const glm::vec3 cameraPos = cam->GetPosition();
 	const glm::mat4 viewMatrix = cam->GetViewMatrix();

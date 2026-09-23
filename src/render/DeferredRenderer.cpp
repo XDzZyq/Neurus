@@ -248,21 +248,30 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
-	// --- Precondition: the scene must have an active camera ---
-	// Every pass dereferences Scene::GetActiveCamera() unconditionally to build
-	// its view-projection, so a camera-less scene faults deep inside whichever
-	// pass the graph happens to run first (a stack that says nothing about the
-	// cause). The Editor holds the invariant on both ends - NewScene()/
-	// CreateDefaultScene() seed a camera, SceneController refuses to delete the
-	// last one - so getting here means a scene-mutation path broke it. Name it
-	// once and skip the frame.
+	// --- Precondition: we must have a camera to look through ---
+	// ctx.editor.camera is the Editor's single definition of that camera (it comes
+	// from EditorViewport, so the planned viewport-owned free camera changes one
+	// function body and nothing here). It is checked first because it is what this
+	// frame actually publishes to the GPU below.
+	//
+	// The scene's own active camera is checked as well, and the two are not
+	// redundant: four passes still re-derive the camera themselves
+	// (LightingPass.cpp, ShadowIntensityPass.cpp, SSAOPass.cpp,
+	// ShadowDepthPass.cpp) and dereference the result unconditionally to build a
+	// view-projection, so a camera-less scene would still fault deep inside
+	// whichever pass ran first. Both halves of this check retire together with
+	// those four reads, in one commit - see the comment at each.
+	//
+	// The Editor holds the invariant on both ends - NewScene()/CreateDefaultScene()
+	// seed a camera, SceneController refuses to delete the last one - so getting
+	// here means a scene-mutation path broke it. Name it once and skip the frame.
 	const auto* frameScene = static_cast<const Scene*>(ctx.editor.scene);
-	if (!frameScene || !frameScene->GetActiveCamera())
+	if (!ctx.editor.camera || !frameScene || !frameScene->GetActiveCamera())
 	{
 		if (!m_reportedNoCamera)
 		{
 			m_reportedNoCamera = true;
-			NEURUS_ERR("[DeferredRenderer] Scene has no active camera - skipping frames "
+			NEURUS_ERR("[DeferredRenderer] No camera to render through - skipping frames "
 			           "until one exists");
 		}
 		return m_frameProfile;
@@ -620,13 +629,13 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// Both resources live in RenderCache because more than one pass reads them
 	// (GeometryPass and DebugPass share the camera UBO) and because a pass that
 	// wrote them would make the result depend on pass order. Passes only read.
-	if (const auto* scene = static_cast<const Scene*>(ctx.editor.scene))
-	{
-		if (const Camera* cam = scene->GetActiveCamera())
-		{
-			r_renderCache->UpdateCamera(cam->GetProjectionMatrix(), cam->GetViewMatrix());
-		}
-	}
+	//
+	// This is the one place that defines what the GPU believes the camera is, and
+	// it reads ctx.editor.camera rather than the Scene: that is what makes
+	// EditorViewport the single Editor-side answer to "the camera we are looking
+	// through". DrawFrame's precondition has already proved the pointer non-null.
+	r_renderCache->UpdateCamera(ctx.editor.camera->GetProjectionMatrix(),
+	                            ctx.editor.camera->GetViewMatrix());
 
 	if (ctx.editor.debugDraw)
 	{

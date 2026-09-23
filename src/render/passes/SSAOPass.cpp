@@ -336,6 +336,9 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 	// --- 0. Update per-frame SSAO params UBO (camera matrices + kernel) ---
 	{
 		SSAOParamsGpu params{};
+		// Still reads the Scene rather than ctx.editor.camera - see the full note in
+		// LightingPass::Record(). These four pass-local reads move together, in one
+		// commit, with the viewport-owned free camera.
 		const Camera* cam = scene->GetActiveCamera();
 		const glm::mat4 viewProj = cam->GetProjectionMatrix() * cam->GetViewMatrix();
 		const glm::mat4 view = cam->GetViewMatrix();
