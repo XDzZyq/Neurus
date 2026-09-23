@@ -123,6 +123,7 @@ protected:
 
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		testScene.UseCamera(testCam);
+		testScene.ActivateCamera(testCam->GetObjectID());
 
 		{
 			auto& cmd = BeginCmd();
@@ -239,6 +240,7 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 		Scene scene;
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		scene.UseCamera(testCam);
+		scene.ActivateCamera(testCam->GetObjectID());
 
 		m_lightingPass->Record(*cmd, *m_renderCache, RenderContext{
 			.width = kRenderWidth, .height = kRenderHeight,
@@ -315,6 +317,7 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 		Scene scene;
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		scene.UseCamera(testCam);
+		scene.ActivateCamera(testCam->GetObjectID());
 
 		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,

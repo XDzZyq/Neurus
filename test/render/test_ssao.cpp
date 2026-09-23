@@ -113,6 +113,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *cb.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
 
 	cb.scene->UseCamera(cb.camera);
+	cb.scene->ActivateCamera(cb.camera->GetObjectID());
 
 	RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,

@@ -148,6 +148,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
 
 	resources.scene->UseCamera(resources.camera);
+	resources.scene->ActivateCamera(resources.camera->GetObjectID());
 
 	RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,

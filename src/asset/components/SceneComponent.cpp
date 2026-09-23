@@ -41,6 +41,9 @@ void SceneComponent::Load(cereal::JSONInputArchive& ar)
 		defaultCam->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 		defaultCam->cam_tar = glm::vec3(0.0f, 0.0f, 0.0f);
 		m_scene->UseCamera(defaultCam);
+		// Behaviour-preserving: this injected camera was the one the old
+		// positional GetActiveCamera() returned, so activate it explicitly.
+		m_scene->ActivateCamera(defaultCam->GetObjectID());
 	}
 }
 

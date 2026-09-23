@@ -446,6 +446,10 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 	m_scene->UseCamera(camera);
+	// Wave 1 keeps the pre-existing behaviour: the default scene looks through
+	// its own camera. Activation is now explicit instead of falling out of
+	// unordered_map bucket order.
+	m_scene->ActivateCamera(camera->GetObjectID());
 	// A brand-new camera is born 1x1; the viewport is not. Adopt the live extent
 	// here so the very first frame of a new document is already framed correctly
 	// (File > New has no resize event of its own to piggyback on).

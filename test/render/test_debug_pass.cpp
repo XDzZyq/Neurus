@@ -89,6 +89,7 @@ protected:
 		m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		m_camera->ChangeCamRatio(static_cast<float>(kRes), static_cast<float>(kRes));
 		m_scene.UseCamera(m_camera);
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 	}
 
 	void TearDown() override

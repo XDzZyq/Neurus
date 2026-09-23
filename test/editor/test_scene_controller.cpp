@@ -36,6 +36,7 @@ protected:
 		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_env    = std::make_shared<Environment>();
 		m_scene.UseCamera(m_camera);
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseEnvironment(m_env);

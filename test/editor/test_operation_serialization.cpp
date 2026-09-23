@@ -78,6 +78,7 @@ protected:
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseCamera(m_camera);
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 
 		// The ShaderLinkOp restore handlers resolve the mesh via the POOL (the
 		// Editor pattern), so the fixture mesh must also be pooled.

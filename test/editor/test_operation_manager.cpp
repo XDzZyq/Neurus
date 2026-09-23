@@ -47,6 +47,7 @@ protected:
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseCamera(m_camera);
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 	}
 
 	void Process() { m_eventBus.Process(); }

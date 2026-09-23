@@ -82,6 +82,7 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto camera = resources.Load<Camera>();
 		camera->cam_tar = glm::vec3(0.0f, 1.0f, 0.0f);
 		scene.UseCamera(camera);
+		scene.ActivateCamera(camera->GetObjectID());
 
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
 		meshDataUid = meshData->GetObjectID();

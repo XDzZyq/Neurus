@@ -60,6 +60,7 @@ class CameraControllerTest : public ::testing::Test
 		// born the same way (Editor.cpp, SceneComponent.cpp).
 		m_camera = m_resources.Load<Camera>();
 		m_scene.UseCamera(m_camera);
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 		m_controller = std::make_unique<CameraController>();
 		m_controller->Init(m_ctx);
 	}

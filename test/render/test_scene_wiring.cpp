@@ -290,6 +290,7 @@ TEST_F(SceneWiringTest, DrawFrame_EmptyScene_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 
 	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
 	m_renderer->WaitIdle();
@@ -311,6 +312,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithOnlyCamera_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 
 	ASSERT_NE(scene.GetActiveCamera(), nullptr);
 
@@ -335,6 +337,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
@@ -367,6 +370,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);

@@ -129,6 +129,7 @@ TEST(ProjectRoundtrip, CameraOnly)
 		camera->cam_tar = glm::vec3(0.0f, 0.0f, 1.0f);
 		camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 		scene.UseCamera(camera);
+		scene.ActivateCamera(camera->GetObjectID());
 		auto p = MakeProject(scene, config, resources);
 		p.Save(tmp.path);
 	}
@@ -258,6 +259,7 @@ TEST(ProjectRoundtrip, FullScene)
 		camera->cam_tar = glm::vec3(0.0f, 0.0f, 1.0f);
 		camera->cam_pers = 45.0f;
 		scene.UseCamera(camera);
+		scene.ActivateCamera(camera->GetObjectID());
 
 		// Mesh
 		auto meshData = resources.Load<MeshData>("obj/cube.obj");
