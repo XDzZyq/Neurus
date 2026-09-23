@@ -15,9 +15,11 @@
  * - `config` stays an opaque `const void*` (a RenderConfig*) so this header does
  *   not pull the renderer's RenderConfig into the UI layer.
  * - `camera` is the one Editor-side answer to "which camera are we looking
- *   through". It comes from EditorViewport, not from Scene::GetActiveCamera(),
- *   which is what lets a future viewport-owned free camera change one function
- *   body instead of every consumer.
+ *   through". The Editor decides which camera that is - its own viewport camera or
+ *   the Scene's active one - and injects it before the frame records; every pass
+ *   that needs a viewing camera reads this pointer and none re-derives it from the
+ *   Scene. Scene::GetActiveCamera() stays meaningful as the *scene's* camera (the
+ *   future production render path), it is simply not a pass input.
  * - Every pointer here is borrowed and frame-scoped: valid only for the frame
  *   Editor::GetContext() produced it in, never stored across frames.
  */
@@ -48,10 +50,16 @@ struct EditorContext
 	 * @brief The camera this frame is being viewed through, or nullptr.
 	 *
 	 * Published from EditorViewport::GetCamera(), which is deliberately the only
-	 * Editor-side definition of the viewing camera: the gizmo's projection math
-	 * and the renderer's CameraGPU read the same pointer, so they cannot disagree.
+	 * Editor-side definition of the viewing camera: the gizmo's projection math, the
+	 * renderer's CameraGPU and every pass that builds a view-projection or centres a
+	 * shadow frustum read the same pointer, so they cannot disagree. Two cameras
+	 * disagreeing here does not fail - it renders plausible-looking wrong lighting.
 	 * Today it is the Scene's active camera; when the viewport owns a free camera
 	 * it will not be, and nothing downstream needs to change.
+	 *
+	 * A test driving a pass directly stands in for the frame driver:
+	 * VulkanTestShared::PublishSceneCamera(cache, ctx.editor) fills this and the
+	 * CameraGPU together.
 	 */
 	const Camera* camera = nullptr;
 

@@ -125,6 +125,9 @@ TEST_F(SunShadowDepthTest, OrthoDepthMap)
 		RenderContext ctx{};
 		ctx.width=kRes; ctx.height=kRes;
 		ctx.editor.scene=ts.s.get();
+		// The sun path reads the viewing camera from the context, standing in for
+		// what DeferredRenderer::recordFrame() injects.
+		VulkanTestShared::PublishSceneCamera(*m_cache, ctx.editor);
 		m_pass->Record(*cmd,*m_cache,ctx);
 		EndSubmitWait(cmd); }
 

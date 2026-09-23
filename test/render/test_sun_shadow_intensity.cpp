@@ -150,8 +150,8 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_VerifyNonZero)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		PublishSceneCamera(*m_renderCache, ctx.editor);
+		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
@@ -270,8 +270,8 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_ReferenceImage)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		PublishSceneCamera(*m_renderCache, ctx.editor);
+		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);

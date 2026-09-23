@@ -243,7 +243,7 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 		m_lightingPass->Record(*cmd, *m_renderCache, RenderContext{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-			.editor = { .scene = &scene },
+			.editor = { .scene = &scene, .camera = scene.GetActiveCamera() },
 		});
 
 		EndSubmitWait(cmd);
@@ -319,7 +319,7 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-			.editor = { .scene = &scene },
+			.editor = { .scene = &scene, .camera = scene.GetActiveCamera() },
 		};
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);

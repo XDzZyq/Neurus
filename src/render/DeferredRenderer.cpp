@@ -249,24 +249,19 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
 	// --- Precondition: we must have a camera to look through ---
-	// ctx.editor.camera is the Editor's single definition of that camera (it comes
-	// from EditorViewport, so the planned viewport-owned free camera changes one
-	// function body and nothing here). It is checked first because it is what this
-	// frame actually publishes to the GPU below.
+	// ctx.editor.camera is the whole answer, and deliberately the only one checked.
+	// The Editor decides which camera the frame is rendered through - its own
+	// viewport camera or the Scene's active one - and injects it here before
+	// recording; every pass that needs a viewing camera now reads this same pointer,
+	// so there is no second definition left to disagree with it. The scene's own
+	// active camera is *not* checked: Scene::GetActiveCamera() remains meaningful as
+	// the scene's camera, but it is no longer an input to any pass, so a scene
+	// without one is not by itself a reason to skip a frame.
 	//
-	// The scene's own active camera is checked as well, and the two are not
-	// redundant: four passes still re-derive the camera themselves
-	// (LightingPass.cpp, ShadowIntensityPass.cpp, SSAOPass.cpp,
-	// ShadowDepthPass.cpp) and dereference the result unconditionally to build a
-	// view-projection, so a camera-less scene would still fault deep inside
-	// whichever pass ran first. Both halves of this check retire together with
-	// those four reads, in one commit - see the comment at each.
-	//
-	// The Editor holds the invariant on both ends - NewScene()/CreateDefaultScene()
-	// seed a camera, SceneController refuses to delete the last one - so getting
-	// here means a scene-mutation path broke it. Name it once and skip the frame.
-	const auto* frameScene = static_cast<const Scene*>(ctx.editor.scene);
-	if (!ctx.editor.camera || !frameScene || !frameScene->GetActiveCamera())
+	// The Editor holds the invariant - NewScene()/CreateDefaultScene() seed a camera,
+	// SceneController refuses to delete the last one - so getting here means a
+	// scene-mutation path broke it. Name it once and skip the frame.
+	if (!ctx.editor.camera)
 	{
 		if (!m_reportedNoCamera)
 		{

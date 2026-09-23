@@ -240,15 +240,29 @@ protected:
 	/**
 	 * @brief PublishSceneCamera overload taking the context a pass will receive.
 	 *
-	 * Convenience for the common shape `PublishSceneCamera(cache, ctx.editor)`:
-	 * casts `editor.scene` back to `const Scene*` the way every pass does.
+	 * Does both halves of what DeferredRenderer::recordFrame() does with the
+	 * camera: fills RenderCache's shared UBO *and* injects the camera into the
+	 * EditorContext, which is where every pass now reads the viewing camera from
+	 * (LightingPass, SSAOPass, ShadowDepthPass, ShadowIntensityPass). Publishing
+	 * only the UBO would leave those four passes skipping their work.
+	 *
+	 * Takes the context by non-const reference for that reason — the real frame
+	 * driver writes `editor.camera` too, and a test standing in for it must.
 	 * No-op when no scene is attached.
+	 *
+	 * Call it **before the first pass records**, exactly where recordFrame() puts
+	 * it, and not merely before the pass that reads the camera. Ordering is now
+	 * load-bearing in a way it was not when passes reached into the Scene
+	 * themselves: ShadowDepthPass skips its whole sun cascade when
+	 * `editor.camera` is null, and a later publication cannot retroactively fill
+	 * a shadow map that was never rendered.
 	 */
 	static void PublishSceneCamera(neurus::RenderCache& cache,
-	                               const neurus::EditorContext& editor)
+	                               neurus::EditorContext& editor)
 	{
 		if (const auto* scene = static_cast<const neurus::Scene*>(editor.scene))
 		{
+			editor.camera = scene->GetActiveCamera();
 			PublishSceneCamera(cache, *scene);
 		}
 	}
