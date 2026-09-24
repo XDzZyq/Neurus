@@ -135,6 +135,23 @@ struct CameraPoseChanged
 	float tarZ = 0.0f;
 };
 
+/**
+ * @brief Absolute camera-activation set: which scene camera the viewport uses.
+ *
+ * `camUid` 0 means "deactivate" — a legal, fully supported state in which the
+ * viewport looks through the Editor's own camera. Activation is scene state and
+ * is deliberately independent of selection: the PropertyPanel keeps inspecting
+ * whatever is selected, and selecting a camera never changes the view.
+ *
+ * One event for both the gesture (the PropertyPanel checkbox) and the replay of
+ * SetActiveCameraOp, like every other scene mutation: the op stores the before
+ * and after UIDs and dispatches this to re-apply either endpoint.
+ */
+struct ActiveCameraChanged
+{
+	int camUid = 0;
+};
+
 // ---------------------------------------------------------------------------
 // Mesh property events
 // ---------------------------------------------------------------------------
@@ -333,9 +350,14 @@ struct SceneObjectDeleteRequested
  * Dedicated Editor->Controller event: the Editor emits it (wrapping the pure
  * DeleteRequested input intent). FORWARD-ONLY: the recorded composite replays
  * via SceneObjectDeleteRequested, never this gesture event. The SceneController
- * snapshots the selection, guards the last camera, deselects, removes every
- * selected object (one batched SceneObjectDeleteRequested), and records ONE
- * composite operation (selection-clear + batched delete).
+ * snapshots the selection, deselects, removes every selected object (one batched
+ * SceneObjectDeleteRequested), and records ONE composite operation
+ * (selection-clear + batched delete).
+ *
+ * Nothing is guarded: a scene with zero cameras is legal, because the Editor
+ * always has its own camera. Deleting the *activated* camera simply leaves the
+ * activation UID stale, which Scene::GetActiveCamera() reads as "none" and the
+ * undo re-add revalidates for free.
  */
 struct ObjectDeleteRequested
 {

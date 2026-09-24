@@ -59,6 +59,9 @@ signals:
 	void cameraTargetChanged(const CameraTargetChanged& e);
 	void cameraFovChanged(const CameraFovChanged& e);
 
+	/// Camera *activation* (which camera the viewport uses); 0 = the editor camera.
+	void activeCameraChanged(const ActiveCameraChanged& e);
+
 	// --- Mesh ---
 	void meshShadowChanged(const MeshShadowChanged& e);
 	void meshMaterialChanged(const MeshMaterialChanged& e);

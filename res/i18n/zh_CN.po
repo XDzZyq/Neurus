@@ -67,6 +67,9 @@ msgstr "视图(&V)"
 msgid "(read-only)"
 msgstr "（只读）"
 
+msgid "Active Camera"
+msgstr "激活相机"
+
 msgid "Add"
 msgstr "添加"
 

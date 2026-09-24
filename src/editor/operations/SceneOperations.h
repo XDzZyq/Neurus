@@ -523,6 +523,57 @@ private:
 };
 
 /**
+ * @brief Absolute camera-activation edit (activate / switch / deactivate).
+ *
+ * The exact shape of SetSelectionOp and for the same reason: activation is
+ * scene-level state (one UID on the Scene), not a per-object flag, so it does
+ * not fit TransitionOp's object-UID dispatch. The op stores the before/after
+ * UIDs and replays by dispatching one ActiveCameraChanged, so undo and redo run
+ * the same controller handler a live toggle does.
+ *
+ * `0` is a first-class value on both ends: the viewport falls back to the
+ * editor camera, which is a normal state and not an error.
+ *
+ * PreservesRedo() is deliberately NOT overridden. Unlike navigating the
+ * selection, switching the view camera is a real document change, so it
+ * truncates a pending redo chain exactly like every other scene mutation.
+ */
+class SetActiveCameraOp : public Operation
+{
+public:
+	SetActiveCameraOp() = default;
+
+	SetActiveCameraOp(int before, int after)
+		: m_before(before)
+		, m_after(after)
+	{}
+
+	void Apply(OperationContext& ctx) override
+	{
+		ctx.events.emitNow(ActiveCameraChanged{ m_after });
+	}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<SetActiveCameraOp>(m_after, m_before);
+	}
+
+	std::string Label() const override { return "Activate Camera"; }
+
+	/** @brief Serializes the before/after activation endpoints. */
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::make_nvp("before", m_before),
+		   cereal::make_nvp("after", m_after));
+	}
+
+private:
+	int m_before = 0;
+	int m_after = 0;
+};
+
+/**
  * @brief Scene-membership toggle: add (or re-add) / delete a batch of objects.
  *
  * Stores the target object UIDs plus an `add` flag. Apply() re-dispatches the

@@ -20,10 +20,12 @@
 
 #include <vector>
 
+#include "editor/events/CameraEvents.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/events/EditorEvents.h"
 #include "editor/operations/SceneOperations.h"
 #include "editor/Input.h"
+#include "editor/viewport/EditorViewport.h"
 
 #include "scene/Camera.h"
 #include "scene/DebugLine.h"
@@ -275,6 +277,56 @@ void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::Contr
 	// live navigation records the op, this handler only re-applies endpoints.
 	cam->SetPosition(glm::vec3(e.posX, e.posY, e.posZ));
 	cam->SetTarPos(glm::vec3(e.tarX, e.tarY, e.tarZ));
+	Mutated(ctx.events);
+}
+
+/**
+ * @brief Activates a scene camera (or deactivates with uid 0) as ONE undo entry.
+ *
+ * Gesture and replay path both. The op is recorded only when the value actually
+ * changes, so re-ticking the checkbox of the already-active camera records
+ * nothing; on replay OperationManager's Phase::Replaying guard mutes the Submit,
+ * exactly as for every other handler here.
+ *
+ * Scene::ActivateCamera() refuses a UID that is not in cam_list, which is what
+ * keeps the editor camera — pooled, but not scene content — unactivatable. A
+ * refused activation still records nothing, because the snapshot is unchanged.
+ *
+ * The newly activated camera then needs the viewport's extent: a camera restored
+ * from a project saved on a differently sized window, or one never framed since
+ * it was added, carries an aspect that has nothing to do with this viewport, and
+ * only a window resize would ever have corrected it. CameraController resolves
+ * CameraResizeEvent through the pool, so the enqueue is all this needs.
+ */
+void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	const int before = scene->ActiveCameraID();
+	if (e.camUid == 0)
+		scene->DeactivateCamera();
+	else if (!scene->ActivateCamera(e.camUid))
+		return; // not a scene camera: Scene logged it, nothing changed
+
+	const int after = scene->ActiveCameraID();
+	if (after == before) return; // no-op toggle: record nothing, emit nothing
+
+	ctx.ops.Submit(std::make_unique<neurus::SetActiveCameraOp>(before, after));
+
+	if (after != 0)
+	{
+		if (const neurus::EditorViewport* vp = ctx.viewport())
+		{
+			const glm::uvec2 size = vp->Size();
+			if (size.x != 0 && size.y != 0)
+			{
+				ctx.events.enqueue(neurus::CameraResizeEvent{
+					after, static_cast<int>(size.x), static_cast<int>(size.y)});
+			}
+		}
+	}
+
 	Mutated(ctx.events);
 }
 
@@ -797,6 +849,7 @@ void SceneController::Init(ControllerContext& ctx)
 	ctx.events.subscribe<CameraTargetChanged>([ctx](const CameraTargetChanged& e) { OnCameraTargetChanged(e, ctx); });
 	ctx.events.subscribe<CameraFovChanged>([ctx](const CameraFovChanged& e) { OnCameraFovChanged(e, ctx); });
 	ctx.events.subscribe<CameraPoseChanged>([ctx](const CameraPoseChanged& e) { OnCameraPoseChanged(e, ctx); });
+	ctx.events.subscribe<ActiveCameraChanged>([ctx](const ActiveCameraChanged& e) { OnActiveCameraChanged(e, ctx); });
 	ctx.events.subscribe<MeshShadowChanged>([ctx](const MeshShadowChanged& e) { OnMeshShadowChanged(e, ctx); });
 	ctx.events.subscribe<MeshMaterialChanged>([ctx](const MeshMaterialChanged& e) { OnMeshMaterialChanged(e, ctx); });
 	ctx.events.subscribe<LightPowerChanged>([ctx](const LightPowerChanged& e) { OnLightPowerChanged(e, ctx); });

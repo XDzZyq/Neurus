@@ -192,6 +192,11 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 			m_cameraProps->setObjectId(objectId);
 			m_cameraProps->setTarget(cam->cam_tar);
 			m_cameraProps->setFov(cam->cam_pers);
+			// Activation is Scene state, not a Camera property: it names which
+			// camera the viewport looks through, so it is read off the Scene and
+			// compared by UID. Selection is unrelated — a selected camera that is
+			// not activated shows an unticked box and does not change the view.
+			m_cameraProps->setActive(scene->ActiveCameraID() == objectId);
 		}
 		break;
 	}
@@ -418,6 +423,12 @@ void PropertyPanel::BuildTypeSubpanels()
 	QObject::connect(m_cameraProps, &CameraProperties::fovChanged, this,
 		[this](int /*objectId*/, float fov) {
 			emit cameraFovChanged(CameraFovChanged{m_activeObjectId, fov});
+		});
+	// Unticking sends uid 0 — the event's "deactivate" value — rather than the
+	// camera's own id, so the controller needs no separate off path.
+	QObject::connect(m_cameraProps, &CameraProperties::activeCameraChanged, this,
+		[this](int /*objectId*/, bool active) {
+			emit activeCameraChanged(ActiveCameraChanged{active ? m_activeObjectId : 0});
 		});
 
 	// Mesh

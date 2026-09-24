@@ -647,6 +647,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// Camera properties
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::cameraTargetChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::cameraFovChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::activeCameraChanged);
 
 		// Mesh properties
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::meshShadowChanged);

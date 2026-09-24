@@ -22,6 +22,7 @@
  *   - VisibilityChanged -> ObjectID::SetVisible (light -> LightingRebuild)
  *   - Position/Rotation/ScaleChanged -> Transform3D setters (light -> LightingRebuild)
  *   - CameraTarget/FovChanged -> Camera setters
+ *   - ActiveCameraChanged -> Scene::Activate/DeactivateCamera (0 = deactivate)
  *   - MeshShadow/MaterialChanged -> Mesh::EnableShadow/EnableMaterial
  *   - LightPower/Radius/Cutoff/OuterCutoffChanged -> setters + LightGpuChanged
  *   - LightShadowChanged -> Light::SetShadow + LightingRebuild
