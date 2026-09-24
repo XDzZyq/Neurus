@@ -11,6 +11,10 @@
  *     flips it chaotically whenever the axis passes edge-on.
  *  3. Degenerate Move freezes on the last valid parameter instead of clamping to a
  *     bound. Clamping would teleport the object by metres on a single pixel.
+ *  4. The two free gestures measure from m_anchorPx — the pixel the mode key was
+ *     pressed at — and solve *both* ends against the camera every drag. That is what
+ *     makes the delta exactly zero at the anchor and what lets the camera orbit
+ *     mid-gesture without the object jumping.
  */
 
 #include "editor/viewport/TransformGizmo.h"
@@ -145,9 +149,48 @@ float LatchRotationSign(const glm::vec3& axis, const glm::vec3& pivot, const Edi
 	return (facing > -kEpsilon) ? -1.0f : 1.0f;
 }
 
+/**
+ * @brief Where @p cursorPx lands on the view plane through @p planePoint.
+ * @return false with @p out untouched when there is no camera or the solve degenerates.
+ *
+ * The plane's normal is the camera's own view axis, normalize(cam_tar - eye), so the
+ * plane is exactly parallel to the screen: one pixel of cursor motion is one pixel of
+ * world motion at the pivot's depth, with no foreshortening and no depth to guess.
+ * Anchored on the *before* position rather than on the object, so the plane cannot
+ * drift as the drag carries the object off it.
+ *
+ * ScreenRay::origin sits on the near plane, not at the eye, which is exactly why this
+ * is a plane intersection from that origin and not a scale of an eye-relative depth.
+ */
+bool ViewPlanePoint(const EditorViewport& vp, glm::vec2 cursorPx, const glm::vec3& planePoint,
+                    glm::vec3& out)
+{
+	const Camera* cam = vp.GetCamera();
+	if (!cam)
+		return false;
+
+	const glm::vec3 toTarget = cam->cam_tar - cam->GetPosition();
+	const float len = glm::length(toTarget);
+	if (len < kEpsilon)
+		return false;  // a camera looking at its own eye has no view axis
+
+	const ScreenRay ray = vp.RayThrough(cursorPx);
+	if (!ray.valid)
+		return false;
+
+	const glm::vec3 n = toTarget / len;
+	const float denom = glm::dot(n, ray.direction);
+	if (std::abs(denom) < kMinAxisSeparation)
+		return false;  // grazing: the intersection is arbitrarily far off
+
+	out = ray.origin + ray.direction * (glm::dot(n, planePoint - ray.origin) / denom);
+	return true;
+}
+
 } // namespace
 
-bool TransformGizmo::Arm(GizmoMode mode, int objectUid, const Transform3D& target)
+bool TransformGizmo::Arm(GizmoMode mode, int objectUid, const Transform3D& target,
+                         glm::vec2 cursorPx)
 {
 	if (mode == GizmoMode::None || objectUid == 0)
 		return false;
@@ -166,7 +209,10 @@ bool TransformGizmo::Arm(GizmoMode mode, int objectUid, const Transform3D& targe
 	m_rotSign = -1.0f;
 	m_prevAngle = 0.0f;
 	m_accumAngle = 0.0f;
-	m_anchorPx = glm::vec2{0.0f};
+
+	// The free gesture's only anchor. A key press carries no cursor of its own, so the
+	// caller hands in the retained one; Constrain() re-latches it for Scale.
+	m_anchorPx = cursorPx;
 	return true;
 }
 
@@ -223,7 +269,7 @@ void TransformGizmo::Cancel(Transform3D& target)
 		return;
 
 	// Component-wise and only when different: every setter eagerly rebuilds the model
-	// matrix, and a gesture cancelled before an axis key ever arrived changed nothing.
+	// matrix, and the two components a gesture never touches are always unchanged.
 	if (target.GetPosition() != m_before.position)
 		target.SetPosition(m_before.position);
 	if (target.GetRotation() != m_before.rotation)
@@ -242,8 +288,22 @@ void TransformGizmo::Disarm()
 
 bool TransformGizmo::Drag(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target)
 {
-	if (m_mode == GizmoMode::None || m_axis == GizmoAxis::None || !vp.IsValid())
+	if (m_mode == GizmoMode::None || !vp.IsValid())
 		return false;
+
+	if (m_axis == GizmoAxis::None)
+	{
+		// Bare G and bare S are live gestures, as in Blender. Bare R is not: a rotation
+		// about the view axis is not `before + theta` on one stored Euler component, and
+		// that identity is what lets this whole feature avoid quaternions and matrix
+		// decomposition (see GizmoAxisDirection). R therefore waits for an axis key.
+		switch (m_mode)
+		{
+		case GizmoMode::Move:  return DragMoveFree(vp, cursorPx, target);
+		case GizmoMode::Scale: return DragScaleFree(vp, cursorPx, target);
+		default:               return false;
+		}
+	}
 
 	switch (m_mode)
 	{
@@ -321,6 +381,56 @@ bool TransformGizmo::DragScale(const EditorViewport& vp, glm::vec2 cursorPx, Tra
 	next[k] = m_before.scale[k] * factor;
 	if (std::abs(next[k]) < kMinScaleComponent)
 		next[k] = std::copysign(kMinScaleComponent, next[k]);
+
+	if (next == target.GetScale())
+		return false;
+
+	target.SetScale(next);
+	return true;
+}
+
+bool TransformGizmo::DragMoveFree(const EditorViewport& vp, glm::vec2 cursorPx,
+                                  Transform3D& target)
+{
+	// Both ends solved on the same plane, in the same frame, so the two calls share
+	// every camera term: the difference is exactly zero at the anchor pixel (no
+	// first-frame snap) and an orbit mid-gesture re-derives both ends rather than
+	// jumping. Either call failing leaves the object where it is.
+	glm::vec3 from{0.0f};
+	glm::vec3 to{0.0f};
+	if (!ViewPlanePoint(vp, m_anchorPx, m_before.position, from) ||
+	    !ViewPlanePoint(vp, cursorPx, m_before.position, to))
+		return false;
+
+	const glm::vec3 next = m_before.position + (to - from);
+	if (next == target.GetPosition())
+		return false;
+
+	target.SetPosition(next);
+	return true;
+}
+
+bool TransformGizmo::DragScaleFree(const EditorViewport& vp, glm::vec2 cursorPx,
+                                   Transform3D& target)
+{
+	const ScreenPoint pivot = vp.Project(m_before.position);
+	if (!pivot.visible)
+		return false;
+
+	// DragScale's radius ratio verbatim — same current pivot pixel, same clamp on both
+	// radii, so the factor is exactly 1 at the anchor however the camera moved.
+	const float current = std::max(glm::length(cursorPx - pivot.pixel), kMinRadiusPx);
+	const float anchor = std::max(glm::length(m_anchorPx - pivot.pixel), kMinRadiusPx);
+	const float factor = current / anchor;
+
+	// Uniform: one factor on all three components, which preserves the object's shape
+	// and, being a length ratio, keeps a mirrored component's sign.
+	glm::vec3 next = m_before.scale * factor;
+	for (int k = 0; k < 3; ++k)
+	{
+		if (std::abs(next[k]) < kMinScaleComponent)
+			next[k] = std::copysign(kMinScaleComponent, next[k]);
+	}
 
 	if (next == target.GetScale())
 		return false;

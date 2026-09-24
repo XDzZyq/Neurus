@@ -29,11 +29,11 @@ namespace
 {
 
 /// @brief Half-length of a constraint guide, in logical pixels.
-constexpr float kGuideHalfPx = 110.0f;
+constexpr float kGuideHalfPx = 72.0f;
 
 /// @brief Radius of the Rotate arc, in logical pixels. Kept inside the guide's
 /// half-length so the ring reads as bounded by the axis rather than crossing it.
-constexpr float kArcRadiusPx = 85.0f;
+constexpr float kArcRadiusPx = 55.0f;
 
 /// @brief Chord count for the Rotate arc. 48 keeps the polygon invisible at
 /// kArcRadiusPx while staying well inside any sane draw budget.
@@ -209,7 +209,7 @@ void AppendPivot(GizmoDrawList& list, const glm::vec3& pivot)
 } // namespace
 
 void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp,
-                               const TransformSnapshot* resting)
+                               const TransformSnapshot* live)
 {
 	if (!m_dirty)
 		return;
@@ -220,25 +220,27 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 	if (!vp.IsValid())
 		return;
 
-	// An armed gesture always wins over the resting handle, and it anchors on its own
-	// frozen Before() rather than on the object: mid-drag the object has already moved,
-	// so anchoring there would drag the guide along with it and destroy the reference
-	// the user is measuring against. With nothing armed and nothing selected there is
-	// no anchor at all and the list stays empty.
+	// With nothing armed and no live anchor there is nothing to draw at all. An armed
+	// gesture survives losing its anchor (deleted mid-drag) by falling back to its own
+	// frozen snapshot, so the guide does not blink out on the last frame of a delete.
 	const bool armed = gizmo.IsActive();
-	if (!armed && !resting)
+	if (!armed && !live)
 		return;
 
-	const TransformSnapshot& anchor = armed ? gizmo.Before() : *resting;
+	// The pivot follows the object: a translate gesture drags its own handle along, which
+	// is what makes the handle read as belonging to the object rather than marking where
+	// the object used to be. The rotation does *not* follow — see the header: guides that
+	// spun with the object would destroy the reference a rotation is measured against.
+	// Move and Scale leave the rotation alone, so only Rotate can tell the difference.
+	const TransformSnapshot& before = gizmo.Before();
+	const glm::vec3 pivot = live ? live->position : before.position;
+	const glm::vec3 rotation = armed ? before.rotation : live->rotation;
 
 	// Resting is Move, unconstrained — the same state G leaves the gesture in, which
 	// is why the whole picture below is shared rather than special-cased.
 	const GizmoMode mode = armed ? gizmo.Mode() : GizmoMode::Move;
 	const GizmoAxis axis = armed ? gizmo.Axis() : GizmoAxis::None;
 
-	// Constant for a whole gesture (Rotate and Scale do not move the object, Move's
-	// line is anchored at the start), so projecting it once sizes everything.
-	const glm::vec3 pivot = anchor.position;
 	const ScreenPoint screen = vp.Project(pivot);
 	if (!screen.visible)
 		return;
@@ -251,22 +253,23 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 
 	if (axis == GizmoAxis::None)
 	{
-		// Two states share this branch and brightness is what separates them. Resting
-		// draws full-strength: nothing is "unchosen" yet, so there is no contrast for
-		// dimming to carry, and this is the affordance that says where the selection is
-		// and which way its local axes point. Armed-but-unconstrained dims instead —
-		// against the axis about to light up, the dim reads as "still on offer", and the
-		// dip in brightness on pressing G is itself the feedback that a gesture started.
+		// Brightness answers exactly one question: will dragging right now move this
+		// axis? At rest the three guides are the selection's local frame and a bare G
+		// would move along them, so they are full strength. An armed free Move or Scale
+		// really is dragging all three, so it stays full strength too. Only an armed
+		// Rotate dims: it is inert until an axis key arrives, and the dim is what says
+		// "still on offer". Dimming is RGB, never alpha — see kCandidateDim.
+		const bool livePick = (mode != GizmoMode::Rotate);
 		for (const GizmoAxis candidate : {GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z})
 		{
-			const glm::vec3 dir = GizmoAxisDirection(mode, candidate, anchor.rotation);
+			const glm::vec3 dir = GizmoAxisDirection(mode, candidate, rotation);
 			if (glm::length(dir) > 0.0f)
-				AppendGuide(m_list, mode, candidate, !armed, pivot, dir, halfLength, pxPerUnit);
+				AppendGuide(m_list, mode, candidate, livePick, pivot, dir, halfLength, pxPerUnit);
 		}
 	}
 	else
 	{
-		const glm::vec3 dir = GizmoAxisDirection(mode, axis, anchor.rotation);
+		const glm::vec3 dir = GizmoAxisDirection(mode, axis, rotation);
 		if (glm::length(dir) > 0.0f)
 		{
 			AppendGuide(m_list, mode, axis, true, pivot, dir, halfLength, pxPerUnit);

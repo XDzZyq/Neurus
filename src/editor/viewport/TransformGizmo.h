@@ -9,9 +9,12 @@
  * the active object's transform without this class being armed at all, and clicking
  * it does nothing. One gesture is
  *
- *     Arm(mode) -> Constrain(axis) -> Drag(cursor)* -> Disarm() | Cancel()
+ *     Arm(mode) -> [Constrain(axis)] -> Drag(cursor)* -> Disarm() | Cancel()
  *
- * and it yields exactly one undo entry, Submitted by TransformGizmoController on
+ * with Constrain optional: an armed Move or Scale with no axis is a *free* gesture
+ * (the view plane for Move, uniform for Scale), exactly as Blender's bare G and S
+ * are. Only Rotate needs an axis before a drag does anything. It yields exactly one
+ * undo entry, Submitted by TransformGizmoController on
  * confirm. This class holds no operation sink, no event queue and no scene
  * pointer: it is pure interaction math over a Transform3D handed in per call.
  *
@@ -112,8 +115,10 @@ glm::vec3 GizmoAxisDirection(GizmoMode mode, GizmoAxis axis, const glm::vec3& ro
  *
  * The pivot is always Transform3D::GetPosition() as captured in Arm() — never
  * MeshData::center, which is a vertex centroid and not a bbox centre — and it is
- * constant for the whole gesture: Rotate and Scale do not move the position, and
- * Move's constraint line is anchored at it.
+ * constant for the whole gesture: every drag measures against it, which is what makes
+ * the math drift-free. Where the *guide* is drawn is a separate question, and
+ * GizmoDrawBuilder answers it differently: the drawn handle rides the object's live
+ * position so a translate carries it along.
  */
 class TransformGizmo
 {
@@ -122,14 +127,23 @@ public:
 
 	/**
 	 * @brief Begin a gesture on @p objectUid, snapshotting @p target.
+	 * @param cursorPx Where the mode key was pressed — the free gesture's anchor.
 	 * @return false when @p mode is None or @p objectUid is 0; nothing changes.
 	 *
-	 * Leaves the gesture armed with no axis: Wave 1 applies no transform until an
-	 * axis key arrives. Does not restore anything — a live gesture must be
-	 * Cancel()ed by the controller first, which is what makes pressing R during a
-	 * G discard the move, as in Blender.
+	 * Leaves the gesture armed with no axis, which for Move and Scale is already a
+	 * live *free* gesture: Move follows the cursor across the view plane through the
+	 * pivot, Scale scales all three components uniformly. Rotate alone is inert until
+	 * an axis key arrives — a view-axis rotation is not expressible as `before +
+	 * theta` on one stored Euler component, which is the property the whole feature
+	 * is built on (see GizmoAxisDirection).
+	 *
+	 * Does not restore anything — a live gesture must be Cancel()ed by the controller
+	 * first, which is what makes pressing R during a G discard the move, as in Blender.
+	 *
+	 * Takes the cursor but not the viewport: the free anchor is a *pixel*, re-solved
+	 * against the camera on every drag, so there is nothing to project here.
 	 */
-	bool Arm(GizmoMode mode, int objectUid, const Transform3D& target);
+	bool Arm(GizmoMode mode, int objectUid, const Transform3D& target, glm::vec2 cursorPx);
 
 	/**
 	 * @brief Latch the constraint axis and the grab anchor at @p cursorPx.
@@ -153,7 +167,8 @@ public:
 	 * @return true when a component of @p target actually changed.
 	 *
 	 * Never reads @p target's current value as an input, which is what makes the
-	 * gesture drift-free. A no-op while no axis is constrained.
+	 * gesture drift-free. With no axis constrained this runs the *free* variant for
+	 * Move and Scale, and no-ops for Rotate.
 	 */
 	bool Drag(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 
@@ -176,6 +191,10 @@ private:
 	bool DragRotate(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 	bool DragScale(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 
+	// The unconstrained gestures. Both measure from m_anchorPx, latched in Arm().
+	bool DragMoveFree(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
+	bool DragScaleFree(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
+
 	GizmoMode m_mode = GizmoMode::None;
 	GizmoAxis m_axis = GizmoAxis::None;
 	int       m_objectUid = 0;
@@ -192,9 +211,10 @@ private:
 	float m_prevAngle = 0.0f;    ///< Previous cursor bearing about the pivot, radians.
 	float m_accumAngle = 0.0f;   ///< Total unwrapped rotation, radians.
 
-	// Scale. The radius is re-measured against the *current* pivot pixel every drag,
-	// so a camera move or a resize mid-gesture cannot make the object jump.
-	glm::vec2 m_anchorPx{0.0f};  ///< Cursor pixel latched in Constrain().
+	// Scale, and the anchor of both free gestures. The radius is re-measured against
+	// the *current* pivot pixel every drag, so a camera move or a resize mid-gesture
+	// cannot make the object jump.
+	glm::vec2 m_anchorPx{0.0f};  ///< Cursor pixel latched in Arm(), re-latched in Constrain().
 };
 
 } // namespace neurus

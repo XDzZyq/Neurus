@@ -161,6 +161,10 @@ void SubmitGesture(const neurus::TransformGizmo& gizmo, neurus::ObjectID& obj,
  * Re-arming cancels first, as Blender does: pressing R during a G must not leave
  * the move half-applied. The live gesture's uid is re-resolved because it need not
  * be the object this request names.
+ *
+ * The retained cursor is handed in as the free gesture's anchor — bare G and bare S
+ * are live from this moment, so the pixel the key was pressed at is what the very next
+ * mouse move measures against. Same read, and same reason, as OnAxisRequested below.
  */
 void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::ControllerContext& ctx)
 {
@@ -178,9 +182,10 @@ void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::Controll
 		gizmo->Disarm();
 	}
 
+	const neurus::EditorViewport* vp = ctx.viewport();
 	const Target target = Resolve(ctx, e.objectUid);
-	if (target.Valid())
-		gizmo->Arm(e.mode, e.objectUid, *target.transform);
+	if (vp && target.Valid())
+		gizmo->Arm(e.mode, e.objectUid, *target.transform, vp->Cursor());
 
 	// Unconditional: the guide either appeared (armed) or vanished (the cancel above).
 	ctx.events.enqueue(neurus::RenderResetEvent{});

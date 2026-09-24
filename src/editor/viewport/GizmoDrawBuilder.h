@@ -23,10 +23,13 @@
  * A *resting* translate handle whenever something is selected and no gesture is
  * armed, and the *armed* gesture's guide while one is. They share every line of
  * geometry code: resting is exactly "Move mode, no axis chosen yet", so it reuses
- * the unconstrained branch and differs only in brightness (see Rebuild()). The
- * anchor differs though — the armed guide sits on the gesture's frozen Before()
- * snapshot, the resting handle on the object's live transform, which is why the
- * caller passes the latter in rather than the builder reaching for a Scene.
+ * the unconstrained branch and differs only in brightness (see Rebuild()).
+ *
+ * Both anchor on the object's **live** position, so a translate gesture carries its
+ * own handle along with the object. The **rotation** is the one part taken from the
+ * gesture's frozen Before() snapshot instead: guides that spun with the object would
+ * destroy the very reference a rotation is measured against. Move and Scale never
+ * change the rotation, so for them the two sources agree and only Rotate is affected.
  *
  * ## What marks it dirty
  *
@@ -78,15 +81,16 @@ public:
 	 *
 	 * Called at the end of Editor::Edit(), right after DebugDrawBuilder::Rebuild().
 	 *
-	 * @param resting Where the resting translate handle sits — the selection's active
-	 *                object — or nullptr when nothing is selected. Ignored while a
-	 *                gesture is armed, since the armed guide anchors on Before().
+	 * @param live The anchor object's current transform — the gesture's target while one
+	 *             is armed, the selection's active object otherwise — or nullptr when
+	 *             there is none. A gesture whose target was deleted mid-drag passes
+	 *             nullptr and falls back to the frozen Before() snapshot.
 	 *
-	 * An invalid viewport, a pivot behind the eye, or nothing armed *and* nothing
-	 * selected all clear the list and return.
+	 * An invalid viewport, a pivot behind the eye, or nothing armed *and* no @p live
+	 * all clear the list and return.
 	 */
 	void Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp,
-	             const TransformSnapshot* resting);
+	             const TransformSnapshot* live);
 
 	/// @brief This frame's guides. Published through EditorContext::gizmoDraw.
 	const GizmoDrawList& List() const { return m_list; }

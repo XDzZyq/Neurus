@@ -264,16 +264,22 @@ private:
 	void EnsureEditorCamera();
 
 	/**
-	 * @brief Where the resting translate handle sits: the selection's active object.
+	 * @brief The gizmo's live anchor transform: the gesture's target, else the selection.
 	 *
-	 * @param out Filled with that object's transform when this returns true.
-	 * @return false when nothing is selected, or when the active object is not a
-	 *         Transform3D at all (an Environment is not).
+	 * @param out Filled with that object's *current* transform when this returns true.
+	 * @return false when nothing is selected, when the active object is not a
+	 *         Transform3D at all (an Environment is not), or when an armed gesture's
+	 *         target has been deleted mid-gesture.
+	 *
+	 * While a gesture is armed the target is named by uid rather than by the selection,
+	 * which the Outliner can change underneath it. GizmoDrawBuilder decides how much of
+	 * this live transform the guide may follow — the translate handle tracks the object
+	 * as it moves, the rotation guides must not spin with it.
 	 *
 	 * Read fresh every Edit() rather than cached: any edit can move the object, and a
 	 * latched pointer could outlive it by a frame.
 	 */
-	bool RestingGizmoAnchor(TransformSnapshot& out) const;
+	bool GizmoAnchor(TransformSnapshot& out) const;
 
 	// --- Owned state ---
 	std::unique_ptr<Scene> m_scene;

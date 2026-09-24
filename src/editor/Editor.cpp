@@ -1096,18 +1096,39 @@ void Editor::Edit()
 	if (m_scene)
 		m_debugDraw.Rebuild(*m_scene);
 
-	// Same timing, same dirty-flag discipline. The resting translate handle sits on the
-	// selection's *active* object; a live gesture ignores it and anchors on its own
-	// snapshot instead. Passing the transform in rather than handing the builder a
-	// Scene keeps it a pure geometry flattener.
-	TransformSnapshot resting{};
-	m_gizmoDraw.Rebuild(m_gizmo, m_viewport, RestingGizmoAnchor(resting) ? &resting : nullptr);
+	// Same timing, same dirty-flag discipline. The anchor is always the *live* transform
+	// — of the gesture's target while one is armed, of the selection's active object
+	// otherwise. Passing the transform in rather than handing the builder a Scene keeps
+	// it a pure geometry flattener, and leaves it to decide which parts of the live
+	// transform a gesture may follow (see GizmoDrawBuilder::Rebuild).
+	TransformSnapshot anchor{};
+	m_gizmoDraw.Rebuild(m_gizmo, m_viewport, GizmoAnchor(anchor) ? &anchor : nullptr);
 }
 
-bool Editor::RestingGizmoAnchor(TransformSnapshot& out) const
+bool Editor::GizmoAnchor(TransformSnapshot& out) const
 {
 	if (!m_scene)
 		return false;
+
+	// An armed gesture names its own target by uid, which need not still be the active
+	// object: the Outliner can change the selection mid-gesture, and following that
+	// would tear the guide off the object actually being transformed.
+	if (m_gizmo.IsActive())
+	{
+		ObjectID* obj = m_scene->GetObjectID(m_gizmo.ObjectUid());
+		if (!obj)
+			return false;  // deleted mid-gesture; the builder falls back to the snapshot
+
+		void* transform = obj->GetTransform();
+		if (!transform)
+			return false;
+
+		const auto* t = static_cast<const Transform3D*>(transform);
+		out.position = t->GetPosition();
+		out.rotation = t->GetRotation();
+		out.scale = t->GetScale();
+		return true;
+	}
 
 	// The active object, not the whole selection: the gesture itself is active-object
 	// only (TransformGizmo holds a single uid), so a second handle would promise a
