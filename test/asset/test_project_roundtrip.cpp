@@ -80,8 +80,10 @@ static project::Project MakeProject(Scene& scene, RenderConfig& config, Resource
 // -----------------------------------------------------------------------
 
 /**
- * @test Save an empty project, load it back -- the default-camera fallback
- *       produces a single pooled camera; all other pools stay empty.
+ * @test Save an empty project, load it back -- it stays empty. Nothing is
+ *       injected to make it renderable: a camera-less scene is legal, because
+ *       the viewport looks through the Editor's own camera unless the scene
+ *       names an activated one.
  */
 TEST(ProjectRoundtrip, EmptyScene)
 {
@@ -100,7 +102,9 @@ TEST(ProjectRoundtrip, EmptyScene)
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
 		p.Load(tmp.path);
 	}
-	EXPECT_EQ(loadedScene.cam_list.size(), 1u);
+	EXPECT_TRUE(loadedScene.cam_list.empty());
+	EXPECT_EQ(loadedScene.GetActiveCamera(), nullptr);
+	EXPECT_EQ(loadedScene.ActiveCameraID(), 0);
 	EXPECT_TRUE(loadedScene.mesh_list.empty());
 	EXPECT_TRUE(loadedScene.light_list.empty());
 	EXPECT_TRUE(loadedScene.sprite_list.empty());

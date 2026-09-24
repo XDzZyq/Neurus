@@ -36,6 +36,7 @@
 #include "asset/components/ResourceComponent.h"
 #include "asset/components/ConfigComponent.h"
 #include "asset/components/UIComponent.h"
+#include "asset/components/EditorComponent.h"
 #include "asset/components/HistoryComponent.h"
 #include "scene/Scene.h"
 #include "render/DeferredRenderer.h"
@@ -100,9 +101,12 @@ static void BuildProject(neurus::project::Project& proj,
 	                                                editor.GetResourceManager());
 	proj.Register<neurus::project::ConfigComponent>(editor.GetRenderConfig());
 	proj.Register<neurus::project::UIComponent>(uiLayout);
-	// History last: legacy files without an "m_history" node load cleanly
-	// (HistoryComponent::Load clears the stacks instead of throwing).
+	// History, then editor view state: both are appended-last nodes, so legacy
+	// files that lack them load cleanly (each Load() falls back instead of
+	// throwing). Registration order IS archive read order, so nothing already
+	// written moves when a node is appended here.
 	proj.Register<neurus::project::HistoryComponent>(editor.GetOperations());
+	proj.Register<neurus::project::EditorComponent>(editor);
 }
 
 } // anonymous namespace

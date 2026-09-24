@@ -31,7 +31,10 @@ protected:
 	{
 		m_controller.Init(m_ctx);
 
-		m_camera = std::make_shared<Camera>();
+		// Pooled, like every camera the app creates: SceneController resolves
+		// camera-property events through ctx.resources, not scene->cam_list, so a
+		// non-pooled camera would silently drop every property edit.
+		m_camera = m_resources.Load<Camera>();
 		m_mesh   = std::make_shared<Mesh>();
 		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_env    = std::make_shared<Environment>();
@@ -359,14 +362,29 @@ TEST_F(SceneControllerTest, DeleteRequested_MultiSelection_RemovesAllAndRestores
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0u);
 }
 
-TEST_F(SceneControllerTest, DeleteRequested_LastCamera_Refused)
+/**
+ * @test Deleting the scene's only camera is allowed. There is no last-camera
+ *       guard: a camera-less scene is a legal document, because the viewport
+ *       looks through the Editor's own camera unless a scene camera is
+ *       activated. The deletion is one undoable entry like any other, and the
+ *       stale activation resolves to nullptr rather than to a dangling camera.
+ */
+TEST_F(SceneControllerTest, DeleteRequested_LastCamera_Allowed)
 {
 	m_scene.selections.Select(m_camera.get(), false);
 	m_eventBus.enqueue(ObjectDeleteRequested{});
 	Process();
 
+	EXPECT_EQ(m_scene.cam_list.count(m_camera->GetObjectID()), 0u);
+	EXPECT_TRUE(m_scene.cam_list.empty());
+	EXPECT_EQ(m_scene.GetActiveCamera(), nullptr);
+	EXPECT_TRUE(m_operations.CanUndo());
+
+	// Undo re-adds the camera, which re-validates the untouched activation uid.
+	m_operations.Undo();
+	Process();
 	EXPECT_EQ(m_scene.cam_list.count(m_camera->GetObjectID()), 1u);
-	EXPECT_FALSE(m_operations.CanUndo()); // nothing recorded
+	EXPECT_EQ(m_scene.GetActiveCamera(), m_camera.get());
 }
 
 TEST_F(SceneControllerTest, DeleteRequested_EmptySelection_NoOp)

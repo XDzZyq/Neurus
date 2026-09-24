@@ -43,7 +43,8 @@ protected:
 
 		m_mesh   = std::make_shared<Mesh>();
 		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-		m_camera = std::make_shared<Camera>();
+		// Pooled: camera ops are replayed against ctx.resources, not cam_list.
+		m_camera = m_resources.Load<Camera>();
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseCamera(m_camera);

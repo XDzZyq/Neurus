@@ -31,20 +31,12 @@ void SceneComponent::Load(cereal::JSONInputArchive& ar)
 
 	// The pool was restored first (ResourceComponent is registered before
 	// SceneComponent); resolve the Scene's pending ID references against it.
+	//
+	// A scene with zero cameras is loaded as-is. Nothing is injected: the viewport
+	// looks through the Editor's own camera unless the scene names an activated one
+	// (Editor::ViewCamera()), so "no camera" is a legal, fully renderable document
+	// rather than a state to repair behind the user's back.
 	m_scene->ResolveReferences(*m_resources);
-
-	if (m_scene->cam_list.empty())
-	{
-		NEURUS_ERR("[SceneComponent] No camera in scene, adding default camera.");
-		// Create through the pool so the fallback camera persists on the next save.
-		auto defaultCam = m_resources->Load<Camera>();
-		defaultCam->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
-		defaultCam->cam_tar = glm::vec3(0.0f, 0.0f, 0.0f);
-		m_scene->UseCamera(defaultCam);
-		// Behaviour-preserving: this injected camera was the one the old
-		// positional GetActiveCamera() returned, so activate it explicitly.
-		m_scene->ActivateCamera(defaultCam->GetObjectID());
-	}
 }
 
 } // namespace neurus::project

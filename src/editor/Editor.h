@@ -19,6 +19,7 @@
 
 // Forward declarations (no render headers!)
 namespace neurus {
+class Camera;
 class DeferredRenderer;
 class MeshData;
 class Scene;
@@ -55,10 +56,10 @@ public:
 	/**
 	 * @brief Resets to a brand-new document holding the default starter scene.
 	 *
-	 * Builds the same content as CreateDefaultScene() (so the viewport is never
-	 * black and the scene never lacks a camera - see the scene invariant in
-	 * editor.instructions.md), then drains the GPU, clears undo history and
-	 * re-uploads scene resources + IBL.
+	 * Builds the same content as CreateDefaultScene(), then drains the GPU,
+	 * clears undo history and re-uploads scene resources + IBL. The viewport is
+	 * never black regardless of what the scene contains: the editor camera is
+	 * re-created by the same path (see EnsureEditorCamera()).
 	 *
 	 * @param objPath Relative path of the starter mesh, e.g. "res/obj/sphere.obj".
 	 */
@@ -81,6 +82,37 @@ public:
 	 * references against it on load.
 	 */
 	ResourceManager& GetResourceManager() { return *m_resources; }
+
+	/**
+	 * @brief Returns the camera the viewport looks through.
+	 *
+	 * The editor camera by default; the scene's *activated* camera when the
+	 * Scene names one (Scene::GetActiveCamera()). Selection has nothing to do
+	 * with it — selecting a scene camera does not change the view.
+	 *
+	 * Never null in practice: EnsureEditorCamera() runs on every scene swap, so
+	 * a scene with zero cameras is a legal, fully renderable document.
+	 */
+	Camera* ViewCamera();
+	const Camera* ViewCamera() const;
+
+	/**
+	 * @brief The editor camera's pool UID (0 before the first scene exists).
+	 *
+	 * The Application registers a project::EditorComponent against this pair so
+	 * the editor camera's identity survives save/load. The camera *object* needs
+	 * no help: it lives in the ResourceManager pool, which is serialized whole.
+	 */
+	int EditorCameraID() const { return m_editorCamUid; }
+
+	/**
+	 * @brief Restores the editor camera's UID from a project file.
+	 *
+	 * Only records the id — FinishLoad() resolves it against the pool (and
+	 * creates a fresh camera when the id names nothing, e.g. a project written
+	 * before this field existed).
+	 */
+	void RestoreEditorCameraID(int uid) { m_editorCamUid = uid; }
 
 	/**
 	 * @brief Returns the shared editor state (scene + render config).
@@ -199,24 +231,50 @@ private:
 	void AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData);
 
 	/**
-	 * @brief Re-applies the last known viewport extent to the active camera.
+	 * @brief Re-applies the last known viewport extent to every view candidate.
 	 *
-	 * A camera created by CreateDefaultScene(), or restored from a project saved
-	 * on a differently sized window, carries an aspect ratio that has nothing to
-	 * do with the current viewport (a fresh Camera is 1x1). Only a window resize
-	 * ever corrected that, so File > New used to render a squashed frame until the
+	 * A camera created fresh, or restored from a project saved on a differently
+	 * sized window, carries an aspect ratio that has nothing to do with the
+	 * current viewport (a fresh Camera is 1x1). Only a window resize ever
+	 * corrected that, so File > New used to render a squashed frame until the
 	 * user dragged the window. Called from the two scene-swap paths.
+	 *
+	 * Applies to the editor camera *and* the activated scene camera, because
+	 * either may become the view camera without a resize in between: fixing only
+	 * the one currently in use means the other shows a stale aspect the moment
+	 * activation is toggled.
 	 *
 	 * The extent comes from m_viewport.Size() — the viewport is the one place that
 	 * remembers it.
 	 */
-	void ApplyViewportToActiveCamera();
+	void ApplyViewportToViewCamera();
+
+	/**
+	 * @brief Resolves, or creates, the editor camera in the resource pool.
+	 *
+	 * Must run after every m_resources->Clear() — the pool owns the camera, so a
+	 * clear drops it. When m_editorCamUid resolves to a pooled Camera (a loaded
+	 * project) the saved pose is kept; otherwise a new pooled camera is created
+	 * at the default framing.
+	 *
+	 * The editor camera is pooled but deliberately NOT scene content: it never
+	 * enters Scene::cam_list, so it cannot be selected, deleted or activated, yet
+	 * CameraController still reaches it by UID through the pool.
+	 */
+	void EnsureEditorCamera();
 
 	// --- Owned state ---
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
 	RenderConfig          m_config;
 	bool                  m_dirty = false;
+
+	/**
+	 * @brief The camera the viewport looks through unless a scene camera is
+	 *        activated. Pooled (hence serialized), but not scene content.
+	 */
+	std::shared_ptr<Camera> m_editorCamera;
+	int                     m_editorCamUid = 0;
 
 	/**
 	 * @brief Flattened debug/gizmo geometry published through EditorContext.

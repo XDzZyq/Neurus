@@ -233,11 +233,12 @@ void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerConte
 
 void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::ControllerContext& ctx)
 {
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-	auto it = scene->cam_list.find(e.objectUid);
-	if (it == scene->cam_list.end()) return;
-	neurus::Camera* cam = it->second.get();
+	// Resolved through the resource pool, not scene->cam_list, for the same reason
+	// CameraController::ResolveCamera does: the editor camera is pooled but is not
+	// scene content, so a cam_list lookup would silently drop every property edit
+	// and every CameraTransformOp/CameraFovOp replay addressed to it.
+	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
+	if (!cam) return;
 
 	const glm::vec3 pos = cam->GetPosition();
 	const glm::vec3 before = cam->cam_tar;
@@ -254,11 +255,9 @@ void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::C
 
 void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::ControllerContext& ctx)
 {
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-	auto it = scene->cam_list.find(e.objectUid);
-	if (it == scene->cam_list.end()) return;
-	neurus::Camera* cam = it->second.get();
+	// Pool lookup, not cam_list — see OnCameraTargetChanged().
+	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
+	if (!cam) return;
 
 	const float before = cam->cam_pers;
 	cam->ChangeCamPersp(e.fov);
@@ -268,11 +267,9 @@ void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::Control
 
 void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::ControllerContext& ctx)
 {
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-	auto it = scene->cam_list.find(e.objectUid);
-	if (it == scene->cam_list.end()) return;
-	neurus::Camera* cam = it->second.get();
+	// Pool lookup, not cam_list — see OnCameraTargetChanged().
+	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
+	if (!cam) return;
 
 	// Replay path for CameraTransformOp: apply the absolute pose. Non-recording;
 	// live navigation records the op, this handler only re-applies endpoints.
@@ -734,23 +731,11 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
 	const neurus::SelectionState before = SnapshotSelection(*scene);
 	if (before.selectedUids.empty()) return;
 
-	// Last-camera guard: the render passes dereference GetActiveCamera()
-	// unconditionally, so never leave the scene without a camera. Types are
-	// resolved from the SCENE (the objects being deleted are in it by
-	// definition) — no pool dependency.
-	size_t camerasToDelete = 0;
-	for (int uid : before.selectedUids)
-	{
-		const neurus::ObjectID* obj = scene->GetObjectID(uid);
-		if (obj && obj->o_type == neurus::ObjectID::GOType::GO_CAM)
-			++camerasToDelete;
-	}
-	if (camerasToDelete > 0 && scene->cam_list.size() <= camerasToDelete)
-	{
-		NEURUS_ERR("[SceneController] Refusing to delete the last camera");
-		return;
-	}
-
+	// Cameras are deleted like any other object — there is deliberately no
+	// last-camera guard. A camera-less scene is legal: Editor::ViewCamera() falls
+	// back to the editor camera, which is not scene content and cannot be deleted
+	// from here.
+	//
 	// Deselect all, then defer ONE batched removal to the single removal
 	// handler. The composite is light: [selection-clear, batched delete].
 	scene->selections.ClearSelection();

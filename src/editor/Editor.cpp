@@ -237,12 +237,14 @@ void Editor::Initialize()
 	// Registered after the controllers, so it runs after SceneController's own
 	// handler has actually removed the object: dispatch is registration-ordered.
 	// Edit() pushes the camera once per frame, but Process() drains re-entrantly
-	// enqueued events in the same call, so deleting the active camera mid-Process
+	// enqueued events in the same call, so deleting the activated camera mid-Process
 	// would otherwise leave m_viewport holding a dangling pointer for the rest of
-	// that Edit(). SceneOperations dispatches this event synchronously during
-	// undo/redo replay too, which this handler covers for free.
+	// that Edit(). Re-pushing resolves to the editor camera, which is why deleting
+	// every scene camera is a legal gesture rather than a black frame.
+	// SceneOperations dispatches this event synchronously during undo/redo replay
+	// too, which this handler covers for free.
 	ed_eventBus.subscribe<SceneObjectDeleteRequested>([this](const SceneObjectDeleteRequested&) {
-		m_viewport.SetCamera(GetScene().GetActiveCamera());
+		m_viewport.SetCamera(ViewCamera());
 	});
 
 	// --- Subscribe to EnvironmentChanged to regenerate IBL cubemaps on demand ---
@@ -280,7 +282,7 @@ void Editor::Initialize()
 		if (m_gizmo.IsActive())
 			m_gizmoDraw.MarkDirty();
 
-		auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera());
+		auto* cam = ViewCamera();
 		if (!cam) return;
 
 		// Orbit is suppressed for the duration of a modal gesture, which also keeps
@@ -310,17 +312,17 @@ void Editor::Initialize()
 		if (e.button == Input::Left)  { ed_eventBus.enqueue(GizmoConfirmed{}); return; }
 		if (e.button == Input::Right) { ed_eventBus.enqueue(GizmoCancelled{}); return; }
 		if (e.button != Input::Middle) return;
-		if (auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera()))
+		if (auto* cam = ViewCamera())
 			ed_eventBus.enqueue(CameraDragBegin{cam->GetObjectID()});
 	});
 	ed_eventBus.subscribe<MouseReleaseEvent>([this](const MouseReleaseEvent& e) {
 		if (e.button != Input::Middle) return;
-		if (auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera()))
+		if (auto* cam = ViewCamera())
 			ed_eventBus.enqueue(CameraDragEnd{cam->GetObjectID()});
 	});
 
 	ed_eventBus.subscribe<MouseScrollEvent>([this](const MouseScrollEvent& e) {
-		auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera());
+		auto* cam = ViewCamera();
 		if (!cam) return;
 
 		if (std::abs(e.delta) > 0.001f)
@@ -410,9 +412,10 @@ EditorContext Editor::GetContext() const
 	ctx.config = &m_config;
 
 	// The single Editor-side definition of "the camera we are looking through",
-	// pushed at the top of Edit(). Publishing it from here rather than letting the
-	// renderer call Scene::GetActiveCamera() is what makes the planned
-	// viewport-owned free camera a one-function change.
+	// pushed at the top of Edit() — the editor camera unless a scene camera is
+	// activated (Editor::ViewCamera()). Publishing it from here rather than letting
+	// the renderer call Scene::GetActiveCamera() is what keeps every pass ignorant
+	// of which of the two it is rendering through.
 	ctx.camera = m_viewport.GetCamera();
 
 	// r_debug_draw gates publication rather than graph topology: with a null list
@@ -442,18 +445,24 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 	m_resources->Clear();
 	m_config = RenderConfig{};
 
+	// The pool just lost the old editor camera; a new document gets a new one at
+	// the default framing.
+	m_editorCamera.reset();
+	m_editorCamUid = 0;
+	EnsureEditorCamera();
+
+	// The starter scene ships a scene camera as demo content, deliberately left
+	// DEACTIVATED: the viewport looks through the editor camera until the user
+	// activates one. Both start at the same pose, so this is invisible until the
+	// user navigates.
 	auto camera = m_resources->Load<Camera>();
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 	m_scene->UseCamera(camera);
-	// Wave 1 keeps the pre-existing behaviour: the default scene looks through
-	// its own camera. Activation is now explicit instead of falling out of
-	// unordered_map bucket order.
-	m_scene->ActivateCamera(camera->GetObjectID());
 	// A brand-new camera is born 1x1; the viewport is not. Adopt the live extent
 	// here so the very first frame of a new document is already framed correctly
 	// (File > New has no resize event of its own to piggyback on).
-	ApplyViewportToActiveCamera();
+	ApplyViewportToViewCamera();
 
 	auto meshData = m_resources->Load<MeshData>(objPath);
 	auto mesh = m_resources->Load<Mesh>(meshData);
@@ -561,15 +570,13 @@ void Editor::NewScene(const std::string& objPath)
 
 		// New builds the SAME starter scene a first launch does (camera, mesh,
 		// light, environment, demo debug objects) instead of an empty one, for
-		// two reasons:
-		//  - Correctness: an empty Scene owns no camera, and every
-		//    view-projection pass dereferences GetActiveCamera() without a null
-		//    check - see the scene invariant in editor.instructions.md.
-		//  - Usability: a camera-only scene renders solid black with nothing in
-		//    the outliner to select, which reads as a crash rather than as a
-		//    fresh document.
+		// usability rather than correctness: an empty scene renders solid black
+		// with nothing in the outliner to select, which reads as a crash rather
+		// than as a fresh document. (A camera-less scene is perfectly legal — the
+		// editor camera is what the viewport looks through.)
 		// CreateDefaultScene() owns the reset (fresh Scene, pool Clear(),
-		// default RenderConfig, MarkDirty()), so it is not repeated here.
+		// editor camera, default RenderConfig, MarkDirty()), so it is not
+		// repeated here.
 		CreateDefaultScene(objPath);
 
 		// CreateDefaultScene() marks the scene dirty because it MUTATES a scene;
@@ -597,6 +604,12 @@ void Editor::BeginLoad()
 	m_resources->Clear(); // Pool is restored from the project file next.
 	m_config = RenderConfig{};
 	ed_operations.Clear(); // History does not span scenes.
+	// The Clear() above dropped the editor camera. It is NOT re-created here: the
+	// project file may name its own (EditorComponent restores the uid, the pool
+	// restores the object), and creating one now would leak an orphan into the
+	// pool. FinishLoad() resolves or creates it once the file has been read.
+	m_editorCamera.reset();
+	m_editorCamUid = 0;
 	// Application deserializes into GetScene()/GetRenderConfig() before FinishLoad().
 }
 
@@ -608,9 +621,12 @@ void Editor::FinishLoad()
 	// serialize(load). SceneComponent then resolves the scene's ID references.
 	// Nothing mesh/shader-specific is needed here.
 	m_dirty = false;
+	// Resolve the editor camera the project named, or create one for a project
+	// written before it existed. Must precede the aspect fix-up below.
+	EnsureEditorCamera();
 	// The archived aspect belongs to whatever window the project was saved from,
 	// so re-adopt the live one instead of trusting it.
-	ApplyViewportToActiveCamera();
+	ApplyViewportToViewCamera();
 	m_debugDraw.MarkDirty(); // debug objects came back from the project file
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
 }
@@ -956,19 +972,27 @@ void Editor::HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent)
 		m_gizmoDraw.MarkDirty();
 	}
 
-	auto* cam = GetScene().GetActiveCamera();
-	if (!cam) return;
+	// Both view candidates are re-framed, not just the one currently in use:
+	// activation can switch the view camera without a resize in between, and a
+	// camera that missed a resize would then present a stale aspect. The events
+	// carry a UID and CameraController resolves it through the pool, so the editor
+	// camera (pooled, but not scene content) is reachable by the ordinary event.
+	if (m_editorCamera)
+		ed_eventBus.enqueue(CameraResizeEvent{m_editorCamUid,
+		                                      static_cast<int>(logical.x),
+		                                      static_cast<int>(logical.y)});
 
-	ed_eventBus.enqueue(CameraResizeEvent{cam->GetObjectID(),
-	                                      static_cast<int>(logical.x),
-	                                      static_cast<int>(logical.y)});
+	if (auto* cam = GetScene().GetActiveCamera())
+		ed_eventBus.enqueue(CameraResizeEvent{cam->GetObjectID(),
+		                                      static_cast<int>(logical.x),
+		                                      static_cast<int>(logical.y)});
 }
 
 // =========================================================================
-// ApplyViewportToActiveCamera() 鈥?re-frame a camera the Editor just seeded
+// ApplyViewportToViewCamera() 鈥?re-frame the cameras the Editor just seeded
 // =========================================================================
 
-void Editor::ApplyViewportToActiveCamera()
+void Editor::ApplyViewportToViewCamera()
 {
 	// Direct mutation rather than a CameraResizeEvent, because this runs while a
 	// scene is being built: the camera must be correctly framed on the FIRST
@@ -977,11 +1001,54 @@ void Editor::ApplyViewportToActiveCamera()
 	const glm::uvec2 size = m_viewport.Size();
 	if (size.x == 0 || size.y == 0) return; // no viewport yet (startup)
 
-	auto* cam = const_cast<Camera*>(GetScene().GetActiveCamera());
-	if (!cam) return;
+	const float w = static_cast<float>(size.x);
+	const float h = static_cast<float>(size.y);
 
-	cam->ChangeCamRatio(static_cast<float>(size.x),
-	                    static_cast<float>(size.y));
+	if (m_editorCamera)
+		m_editorCamera->ChangeCamRatio(w, h);
+
+	// Same both-cameras reasoning as HandleResize().
+	if (auto* cam = GetScene().GetActiveCamera())
+		cam->ChangeCamRatio(w, h);
+}
+
+// =========================================================================
+// EnsureEditorCamera() 鈥?the viewport's own camera, pooled but not in the scene
+// =========================================================================
+
+void Editor::EnsureEditorCamera()
+{
+	if (m_editorCamUid != 0)
+	{
+		m_editorCamera = m_resources->Get<Camera>(m_editorCamUid);
+		if (m_editorCamera) return; // loaded project: keep the saved pose
+	}
+
+	// No id, or an id the pool does not know (a project written before the editor
+	// camera was persisted). Create one at the default framing.
+	m_editorCamera = m_resources->Load<Camera>();
+	m_editorCamUid = m_editorCamera->GetObjectID();
+	m_editorCamera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
+	m_editorCamera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
+	NEURUS_LOG("[Editor] Editor camera created (UID " << m_editorCamUid << ")");
+}
+
+// =========================================================================
+// ViewCamera() 鈥?editor camera by default, activated scene camera when named
+// =========================================================================
+
+Camera* Editor::ViewCamera()
+{
+	if (Camera* sceneCam = GetScene().GetActiveCamera())
+		return sceneCam;
+	return m_editorCamera.get();
+}
+
+const Camera* Editor::ViewCamera() const
+{
+	if (const Camera* sceneCam = m_scene->GetActiveCamera())
+		return sceneCam;
+	return m_editorCamera.get();
 }
 
 // =========================================================================
@@ -994,8 +1061,8 @@ void Editor::Edit()
 	// the gizmo's projection math and the renderer's CameraGPU both read this one
 	// pointer, so they cannot disagree about which camera the frame belongs to. The
 	// SceneObjectDeleteRequested subscription re-pushes it mid-Process, since
-	// Process() can delete the active camera within this very call.
-	m_viewport.SetCamera(GetScene().GetActiveCamera());
+	// Process() can delete the activated camera within this very call.
+	m_viewport.SetCamera(ViewCamera());
 
 	ed_eventBus.Process();
 

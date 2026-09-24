@@ -195,8 +195,10 @@ TEST(SceneSerialize, FullRoundtrip)
 
 /**
  * @test An old-format project (no "m_resources" node, full-pool "m_scene"
- *       node) loads without throwing: the pool stays empty, the Scene fails
- *       to read its ID lists, and the default-camera fallback applies.
+ *       node) loads without throwing: the pool stays empty and the Scene fails
+ *       to read its ID lists, leaving a camera-less document. Nothing is
+ *       injected to repair it — the viewport looks through the Editor's own
+ *       camera, so zero cameras is a legal, fully renderable scene.
  */
 TEST(SceneSerialize, LegacyFileDegrades)
 {
@@ -226,9 +228,11 @@ TEST(SceneSerialize, LegacyFileDegrades)
 		p.Load(tmp.path);
 	});
 
-	// No pooled objects survived; the fallback adds a default pooled camera.
-	EXPECT_EQ(loadedResources.Size(), 1u); // the default camera
-	EXPECT_EQ(loadedScene.cam_list.size(), 1u);
+	// No pooled objects survived, and none are conjured to stand in for them.
+	EXPECT_EQ(loadedResources.Size(), 0u);
+	EXPECT_TRUE(loadedScene.cam_list.empty());
+	EXPECT_EQ(loadedScene.ActiveCameraID(), 0);
+	EXPECT_EQ(loadedScene.GetActiveCamera(), nullptr);
 	EXPECT_TRUE(loadedScene.mesh_list.empty());
 	EXPECT_TRUE(loadedScene.light_list.empty());
 	EXPECT_EQ(loadedScene.selections.GetSelectionCount(), 0u);
