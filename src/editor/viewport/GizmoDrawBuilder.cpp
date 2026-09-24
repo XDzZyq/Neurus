@@ -1,6 +1,6 @@
 /**
  * @file GizmoDrawBuilder.cpp
- * @brief Implementation of the modal gizmo's guide geometry.
+ * @brief Implementation of the resting handle and the modal gizmo's guide geometry.
  *
  * Everything here is sized as a fixed *pixel* budget divided by
  * PixelsPerWorldUnit() at the pivot's depth, so the guide holds its apparent size
@@ -9,7 +9,8 @@
  * Each mode decorates the ends of its guide differently, so the picture says which
  * gesture is live before anything has moved: Move gets an arrowhead, Scale a box
  * handle, Rotate neither — its arc already carries the meaning. Both ends are
- * decorated, because a modal constraint is a bidirectional line.
+ * decorated, because a modal constraint is a bidirectional line. The resting handle
+ * is drawn as Move with no axis chosen, so it inherits the arrowheads for free.
  */
 
 #include "editor/viewport/GizmoDrawBuilder.h"
@@ -40,7 +41,7 @@ constexpr int kArcChords = 48;
 
 constexpr float kActiveWidthPx = 4.5f;     ///< The chosen axis.
 constexpr float kCandidateWidthPx = 3.0f;  ///< An axis still on offer.
-constexpr float kPivotSizePx = 8.0f;       ///< The pivot dot's diameter.
+constexpr float kPivotSizePx = 14.0f;      ///< The pivot dot's diameter.
 
 /// @brief How much an unchosen axis' colour is darkened.
 ///
@@ -207,7 +208,8 @@ void AppendPivot(GizmoDrawList& list, const glm::vec3& pivot)
 
 } // namespace
 
-void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp)
+void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp,
+                               const TransformSnapshot* resting)
 {
 	if (!m_dirty)
 		return;
@@ -215,13 +217,28 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 	m_dirty = false;
 	m_list.Clear();
 
-	if (!gizmo.IsActive() || !vp.IsValid())
+	if (!vp.IsValid())
 		return;
 
-	// The pivot is the before-position for all three modes and constant for the whole
-	// gesture: Rotate and Scale do not move the object, and Move's line is anchored
-	// there. Projecting it once is therefore enough to size everything.
-	const glm::vec3 pivot = gizmo.Before().position;
+	// An armed gesture always wins over the resting handle, and it anchors on its own
+	// frozen Before() rather than on the object: mid-drag the object has already moved,
+	// so anchoring there would drag the guide along with it and destroy the reference
+	// the user is measuring against. With nothing armed and nothing selected there is
+	// no anchor at all and the list stays empty.
+	const bool armed = gizmo.IsActive();
+	if (!armed && !resting)
+		return;
+
+	const TransformSnapshot& anchor = armed ? gizmo.Before() : *resting;
+
+	// Resting is Move, unconstrained — the same state G leaves the gesture in, which
+	// is why the whole picture below is shared rather than special-cased.
+	const GizmoMode mode = armed ? gizmo.Mode() : GizmoMode::Move;
+	const GizmoAxis axis = armed ? gizmo.Axis() : GizmoAxis::None;
+
+	// Constant for a whole gesture (Rotate and Scale do not move the object, Move's
+	// line is anchored at the start), so projecting it once sizes everything.
+	const glm::vec3 pivot = anchor.position;
 	const ScreenPoint screen = vp.Project(pivot);
 	if (!screen.visible)
 		return;
@@ -230,24 +247,26 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 	if (pxPerUnit <= 0.0f)
 		return;
 
-	const GizmoMode mode = gizmo.Mode();
-	const GizmoAxis axis = gizmo.Axis();
 	const float halfLength = kGuideHalfPx / pxPerUnit;
 
 	if (axis == GizmoAxis::None)
 	{
-		// Armed but unconstrained: offer all three, dimmed. Nothing is transformed yet
-		// — Wave 1 has no view-plane gesture, so this state is purely a prompt.
+		// Two states share this branch and brightness is what separates them. Resting
+		// draws full-strength: nothing is "unchosen" yet, so there is no contrast for
+		// dimming to carry, and this is the affordance that says where the selection is
+		// and which way its local axes point. Armed-but-unconstrained dims instead —
+		// against the axis about to light up, the dim reads as "still on offer", and the
+		// dip in brightness on pressing G is itself the feedback that a gesture started.
 		for (const GizmoAxis candidate : {GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z})
 		{
-			const glm::vec3 dir = GizmoAxisDirection(mode, candidate, gizmo.Before().rotation);
+			const glm::vec3 dir = GizmoAxisDirection(mode, candidate, anchor.rotation);
 			if (glm::length(dir) > 0.0f)
-				AppendGuide(m_list, mode, candidate, false, pivot, dir, halfLength, pxPerUnit);
+				AppendGuide(m_list, mode, candidate, !armed, pivot, dir, halfLength, pxPerUnit);
 		}
 	}
 	else
 	{
-		const glm::vec3 dir = GizmoAxisDirection(mode, axis, gizmo.Before().rotation);
+		const glm::vec3 dir = GizmoAxisDirection(mode, axis, anchor.rotation);
 		if (glm::length(dir) > 0.0f)
 		{
 			AppendGuide(m_list, mode, axis, true, pivot, dir, halfLength, pxPerUnit);

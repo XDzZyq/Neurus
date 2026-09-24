@@ -2,9 +2,12 @@
  * @file TransformGizmo.h
  * @brief Modal transform state machine for the viewport's G / R / S gestures.
  *
- * Blender-style modal operators rather than always-on handles: nothing exists
- * until the user presses a mode key, so there is no handle geometry to hit-test
- * and no always-on cost. One gesture is
+ * Blender-style modal operators rather than draggable handles: the *gesture* does
+ * not exist until the user presses a mode key, so there is no handle geometry to
+ * hit-test and no picking cost. A resting translate handle is drawn whenever
+ * something is selected, but it is display only — GizmoDrawBuilder produces it from
+ * the active object's transform without this class being armed at all, and clicking
+ * it does nothing. One gesture is
  *
  *     Arm(mode) -> Constrain(axis) -> Drag(cursor)* -> Disarm() | Cancel()
  *

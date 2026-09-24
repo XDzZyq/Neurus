@@ -74,7 +74,10 @@ struct EditorContext
 	const DebugDrawList* debugDraw = nullptr;
 
 	/**
-	 * @brief This frame's transform-gizmo guides; empty while no gesture is active.
+	 * @brief This frame's transform-gizmo geometry; empty when nothing is selected.
+	 *
+	 * Carries the resting translate handle on the selection's active object, or the
+	 * armed gesture's guide while one is live.
 	 *
 	 * Separate from `debugDraw` because the two have opposite lifetimes and
 	 * opposite visibility rules — see scene/GizmoDrawList.h. There is deliberately
@@ -82,8 +85,8 @@ struct EditorContext
 	 * debug-visualization toggle.
 	 *
 	 * The Editor publishes &GizmoDrawBuilder::List() unconditionally, so during
-	 * normal operation this is non-null and *empty* rather than null when no gesture
-	 * is in progress — the builder's "empty, never null" contract. It stays a
+	 * normal operation this is non-null and *empty* rather than null when there is
+	 * nothing to draw — the builder's "empty, never null" contract. It stays a
 	 * pointer because a default-constructed EditorContext (a test driving a pass
 	 * directly, a frame recorded before the Editor has published anything) has no
 	 * list at all, and GizmoPass early-outs on null and on empty alike.

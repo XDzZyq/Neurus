@@ -263,6 +263,18 @@ private:
 	 */
 	void EnsureEditorCamera();
 
+	/**
+	 * @brief Where the resting translate handle sits: the selection's active object.
+	 *
+	 * @param out Filled with that object's transform when this returns true.
+	 * @return false when nothing is selected, or when the active object is not a
+	 *         Transform3D at all (an Environment is not).
+	 *
+	 * Read fresh every Edit() rather than cached: any edit can move the object, and a
+	 * latched pointer could outlive it by a frame.
+	 */
+	bool RestingGizmoAnchor(TransformSnapshot& out) const;
+
 	// --- Owned state ---
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
@@ -303,7 +315,8 @@ private:
 	 * Sibling of m_debugDraw, but dirtied by more: guide length and arc radius are
 	 * fixed *pixel* budgets converted through PixelsPerWorldUnit(), so a cursor
 	 * move, a camera change and a resize each change the world-space geometry even
-	 * when the state machine has not moved.
+	 * when the state machine has not moved. A selection change dirties it too — the
+	 * resting translate handle follows the active object.
 	 */
 	GizmoDrawBuilder      m_gizmoDraw;
 

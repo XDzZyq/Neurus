@@ -41,6 +41,7 @@
 #include "scene/Light.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
+#include "scene/Transform.h"
 
 #include <algorithm>
 #include <cmath>
@@ -277,8 +278,10 @@ void Editor::Initialize()
 
 		// The guide's length and arc radius are fixed *pixel* budgets converted
 		// through PixelsPerWorldUnit(), so the world-space geometry changes with the
-		// cursor even when the state machine has not moved. Gated on IsActive() so an
-		// idle mouse sweep does not dirty a list that is already empty.
+		// cursor even when the state machine has not moved. Gated on IsActive()
+		// because only an armed gesture reads the cursor: the resting handle is
+		// anchored on the object and sized from the camera, so an idle mouse sweep
+		// cannot change it — and a camera move dirties it through RenderResetEvent.
 		if (m_gizmo.IsActive())
 			m_gizmoDraw.MarkDirty();
 
@@ -377,6 +380,26 @@ void Editor::Initialize()
 		m_gizmoDraw.MarkDirty();
 	});
 
+	// --- Selection moves the resting handle, and selection alone emits no
+	// RenderResetEvent ---
+	//
+	// Selecting an object is not a scene modification (SceneController deliberately
+	// skips Mutated() there, so a click never dirties the project or resets temporal
+	// accumulation), so the broadcast above never fires for it. The resting translate
+	// handle nevertheless has to move to the newly active object, which is why these
+	// three subscriptions exist instead of a Mutated() call in the controller. All
+	// three paths are covered: a live click, an explicit deselect, and the absolute
+	// set a SetSelectionOp replays on undo/redo.
+	ed_eventBus.subscribe<ObjectSelected>([this](const ObjectSelected&) {
+		m_gizmoDraw.MarkDirty();
+	});
+	ed_eventBus.subscribe<ObjectDeselected>([this](const ObjectDeselected&) {
+		m_gizmoDraw.MarkDirty();
+	});
+	ed_eventBus.subscribe<SelectionChanged>([this](const SelectionChanged&) {
+		m_gizmoDraw.MarkDirty();
+	});
+
 	// --- SceneController GPU-sync + dirty subscriptions ---
 	ed_eventBus.subscribe<SceneModified>([this](const SceneModified&) {
 		m_dirty = true;
@@ -424,9 +447,10 @@ EditorContext Editor::GetContext() const
 	ctx.debugDraw = m_config.RequiresDebugDraw() ? &m_debugDraw.List() : nullptr;
 
 	// Published unconditionally, and deliberately behind no RenderConfig flag:
-	// interaction feedback is not a debug visualization the user may hide. An
-	// inactive gizmo yields a cleared list rather than no list (GizmoDrawBuilder's
-	// "empty, never null" contract), and GizmoPass early-outs on an empty payload.
+	// interaction feedback is not a debug visualization the user may hide. With
+	// nothing selected and nothing armed the builder yields a cleared list rather
+	// than no list (GizmoDrawBuilder's "empty, never null" contract), and GizmoPass
+	// early-outs on an empty payload.
 	ctx.gizmoDraw = &m_gizmoDraw.List();
 	return ctx;
 }
@@ -1072,10 +1096,37 @@ void Editor::Edit()
 	if (m_scene)
 		m_debugDraw.Rebuild(*m_scene);
 
-	// Same timing, same dirty-flag discipline. Rebuild() clears the list and returns
-	// when no gesture is live, so a finished gesture's guide disappears on the frame
-	// its confirm was processed.
-	m_gizmoDraw.Rebuild(m_gizmo, m_viewport);
+	// Same timing, same dirty-flag discipline. The resting translate handle sits on the
+	// selection's *active* object; a live gesture ignores it and anchors on its own
+	// snapshot instead. Passing the transform in rather than handing the builder a
+	// Scene keeps it a pure geometry flattener.
+	TransformSnapshot resting{};
+	m_gizmoDraw.Rebuild(m_gizmo, m_viewport, RestingGizmoAnchor(resting) ? &resting : nullptr);
+}
+
+bool Editor::RestingGizmoAnchor(TransformSnapshot& out) const
+{
+	if (!m_scene)
+		return false;
+
+	// The active object, not the whole selection: the gesture itself is active-object
+	// only (TransformGizmo holds a single uid), so a second handle would promise a
+	// multi-object transform that does not exist.
+	const ObjectID* obj = m_scene->selections.GetActiveObject();
+	if (!obj)
+		return false;
+
+	// dynamic_cast rather than ObjectID::GetTransform(), for the same reason
+	// EditorViewport::ScreenPosition() does it: the virtual is non-const and hands back
+	// a void* typed as the Transform base, while the selection stores const ObjectID*.
+	const auto* transform = dynamic_cast<const Transform3D*>(obj);
+	if (!transform)
+		return false;  // an object with no spatial transform has nothing to anchor on
+
+	out.position = transform->GetPosition();
+	out.rotation = transform->GetRotation();
+	out.scale = transform->GetScale();
+	return true;
 }
 
 } // namespace neurus

@@ -1,6 +1,7 @@
 /**
  * @file GizmoDrawBuilder.h
- * @brief Turns a live TransformGizmo gesture into the overlay payload GizmoPass draws.
+ * @brief Turns the transform gizmo — armed or resting — into the overlay payload
+ *        GizmoPass draws.
  *
  * The exact sibling of DebugDrawBuilder — a list, a dirty flag and a Rebuild() —
  * and owned by value by the Editor in the same way, one builder per overlay payload.
@@ -17,19 +18,31 @@
  * builder needs nothing from it beyond Mode(), Axis() and Before() plus the free
  * GizmoAxisDirection() — no accessor per axis.
  *
+ * ## Two things it draws, one geometry path
+ *
+ * A *resting* translate handle whenever something is selected and no gesture is
+ * armed, and the *armed* gesture's guide while one is. They share every line of
+ * geometry code: resting is exactly "Move mode, no axis chosen yet", so it reuses
+ * the unconstrained branch and differs only in brightness (see Rebuild()). The
+ * anchor differs though — the armed guide sits on the gesture's frozen Before()
+ * snapshot, the resting handle on the object's live transform, which is why the
+ * caller passes the latter in rather than the builder reaching for a Scene.
+ *
  * ## What marks it dirty
  *
- * The three things that change the picture, which is more than the three that
- * change the gesture: a cursor move, a camera change *and* a resize. Guide length,
- * arc radius and arrowhead size are fixed pixel budgets converted through
+ * Everything that changes the picture, which is more than the things that change
+ * the gesture: a cursor move during a gesture, a camera change, a resize, a
+ * selection change and any edit that moves the selected object. Guide length, arc
+ * radius and arrowhead size are fixed pixel budgets converted through
  * PixelsPerWorldUnit(), so a pure camera dolly changes the world-space geometry
- * even though the state machine did not move at all.
+ * even though nothing about the state machine moved.
  *
  * ## Empty, never null
  *
- * An inactive gizmo produces a cleared list rather than no list, so the Editor can
- * publish `&List()` unconditionally and GizmoPass's own early-out on Empty() is
- * what ends the frame. Nothing downstream has to distinguish null from empty.
+ * Nothing armed and nothing selected produces a cleared list rather than no list,
+ * so the Editor can publish `&List()` unconditionally and GizmoPass's own early-out
+ * on Empty() is what ends the frame. Nothing downstream has to distinguish null
+ * from empty.
  *
  * Layer placement: editor, Vulkan-free and Qt-free.
  */
@@ -43,9 +56,10 @@ namespace neurus
 
 class EditorViewport;
 class TransformGizmo;
+struct TransformSnapshot;
 
 /**
- * @brief Flattens one modal gesture into segments and point sprites.
+ * @brief Flattens the resting handle or one modal gesture into segments and sprites.
  *
  * Non-copyable: the renderer holds a pointer to the list this object owns.
  */
@@ -63,10 +77,16 @@ public:
 	 * @brief Regenerate the list from @p gizmo, sized against @p vp. No-op when clean.
 	 *
 	 * Called at the end of Editor::Edit(), right after DebugDrawBuilder::Rebuild().
-	 * An inactive gesture, an invalid viewport or a pivot behind the eye all clear
-	 * the list and return.
+	 *
+	 * @param resting Where the resting translate handle sits — the selection's active
+	 *                object — or nullptr when nothing is selected. Ignored while a
+	 *                gesture is armed, since the armed guide anchors on Before().
+	 *
+	 * An invalid viewport, a pivot behind the eye, or nothing armed *and* nothing
+	 * selected all clear the list and return.
 	 */
-	void Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp);
+	void Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp,
+	             const TransformSnapshot* resting);
 
 	/// @brief This frame's guides. Published through EditorContext::gizmoDraw.
 	const GizmoDrawList& List() const { return m_list; }
