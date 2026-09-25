@@ -123,9 +123,11 @@ protected:
 
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		testScene.UseCamera(testCam);
+		testScene.ActivateCamera(testCam->GetObjectID());
 
 		{
 			auto& cmd = BeginCmd();
+			PublishSceneCamera(*m_renderCache, testScene);
 			m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
 				.width = kRenderWidth, .height = kRenderHeight,
 			.editor = { .scene = &testScene },
@@ -238,11 +240,12 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 		Scene scene;
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		scene.UseCamera(testCam);
+		scene.ActivateCamera(testCam->GetObjectID());
 
 		m_lightingPass->Record(*cmd, *m_renderCache, RenderContext{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-			.editor = { .scene = &scene },
+			.editor = { .scene = &scene, .camera = scene.GetActiveCamera() },
 		});
 
 		EndSubmitWait(cmd);
@@ -314,11 +317,12 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 		Scene scene;
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		scene.UseCamera(testCam);
+		scene.ActivateCamera(testCam->GetObjectID());
 
 		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-			.editor = { .scene = &scene },
+			.editor = { .scene = &scene, .camera = scene.GetActiveCamera() },
 		};
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);

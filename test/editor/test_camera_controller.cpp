@@ -54,8 +54,13 @@ class CameraControllerTest : public ::testing::Test
 	protected:
 	void SetUp() override
 	{
-		m_camera = std::make_shared<Camera>();
+		// Created through the pool, not make_shared: CameraController resolves a
+		// camId through ControllerContext::resources, so a camera that is not
+		// registered there cannot be navigated. Every camera in the real app is
+		// born the same way (Editor.cpp, SceneComponent.cpp).
+		m_camera = m_resources.Load<Camera>();
 		m_scene.UseCamera(m_camera);
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 		m_controller = std::make_unique<CameraController>();
 		m_controller->Init(m_ctx);
 	}

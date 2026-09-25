@@ -18,8 +18,10 @@
 #include "passes/SSAOPass.h"
 #include "passes/ShadowDepthPass.h"
 #include "passes/ShadowIntensityPass.h"
-#include "passes/GizmoPass.h"
+#include "passes/SelectionOutlinePass.h"
 #include "passes/ComposePass.h"
+#include "passes/DebugPass.h"
+#include "passes/GizmoPass.h"
 #include "passes/FXAAPass.h"
 
 #include "render/HaltonSequence.h"
@@ -114,14 +116,14 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] ShadowIntensityPass created");
 	}
 
-	// --- 8c. Create gizmo highlight pass (3×3 IDBuffer edge detection) ---
+	// --- 8c. Create selection outline pass (3×3 IDBuffer edge detection) ---
 	{
-		auto gizmoPass = std::make_unique<GizmoPass>(
+		auto outlinePass = std::make_unique<SelectionOutlinePass>(
 			device, physicalDevice,
 			kMaxFramesInFlight);
-		r_gizmoPass = gizmoPass.get();
-		r_passes.push_back(std::move(gizmoPass));
-		NEURUS_LOG("[DeferredRenderer] GizmoPass created");
+		r_selectionOutlinePass = outlinePass.get();
+		r_passes.push_back(std::move(outlinePass));
+		NEURUS_LOG("[DeferredRenderer] SelectionOutlinePass created");
 	}
 
 	// --- 8d. Create compose pass (highlight blend + gamma correction) ---
@@ -144,7 +146,29 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] FXAAPass created");
 	}
 
-	// --- 8f. Build the Wave 3 shading-tail RenderGraph ---
+	// --- 8f. Create debug overlay pass (lines / points / wireframes over the final
+	//         shaded image; a no-op on frames with no debug geometry) ---
+	{
+		auto debugPass = std::make_unique<DebugPass>(
+			device, physicalDevice,
+			kMaxFramesInFlight);
+		r_debugPass = debugPass.get();
+		r_passes.push_back(std::move(debugPass));
+		NEURUS_LOG("[DeferredRenderer] DebugPass created");
+	}
+
+	// --- 8g. Create transform-gizmo overlay pass (the modal G/R/S guides, drawn over
+	//         everything including the debug overlay; a no-op with no live gesture) ---
+	{
+		auto gizmoPass = std::make_unique<GizmoPass>(
+			device, physicalDevice,
+			kMaxFramesInFlight);
+		r_gizmoPass = gizmoPass.get();
+		r_passes.push_back(std::move(gizmoPass));
+		NEURUS_LOG("[DeferredRenderer] GizmoPass created");
+	}
+
+	// --- 8h. Build the Wave 3 shading-tail RenderGraph ---
 	// Initial build uses a default signature (no FXAA); recordFrame rebuilds
 	// it whenever the pipeline signature derived from RenderConfig changes.
 	RebuildMainGraph(PipelineSignature{});
@@ -224,6 +248,31 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
+	// --- Precondition: we must have a camera to look through ---
+	// ctx.editor.camera is the whole answer, and deliberately the only one checked.
+	// The Editor decides which camera the frame is rendered through - its own
+	// viewport camera or the Scene's active one - and injects it here before
+	// recording; every pass that needs a viewing camera now reads this same pointer,
+	// so there is no second definition left to disagree with it. The scene's own
+	// active camera is *not* checked: Scene::GetActiveCamera() remains meaningful as
+	// the scene's camera, but it is no longer an input to any pass, so a scene
+	// without one is not by itself a reason to skip a frame.
+	//
+	// The Editor holds the invariant - NewScene()/CreateDefaultScene() seed a camera,
+	// SceneController refuses to delete the last one - so getting here means a
+	// scene-mutation path broke it. Name it once and skip the frame.
+	if (!ctx.editor.camera)
+	{
+		if (!m_reportedNoCamera)
+		{
+			m_reportedNoCamera = true;
+			NEURUS_ERR("[DeferredRenderer] No camera to render through - skipping frames "
+			           "until one exists");
+		}
+		return m_frameProfile;
+	}
+	m_reportedNoCamera = false;
+
 	auto& fence = r_inFlightFences[r_currentFrame];
 	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
 
@@ -295,7 +344,12 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	}
 
 	auto& renderFinished = r_renderFinishedSemaphores[imageIndex];
-	vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+	// The swapchain image's first use is a layout transition + blit at the transfer
+	// stage, not a color-attachment write, so the acquire semaphore must be waited
+	// on before transfer as well: waiting only at eColorAttachmentOutput lets the
+	// blit overwrite an image the presentation engine is still reading.
+	vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+	                                   vk::PipelineStageFlagBits::eTransfer;
 
 	vk::SubmitInfo submitInfo(*imageAvailable, waitStage, cmdBufRaw, *renderFinished);
 	r_graphicsQueue.submit(submitInfo, *fence);
@@ -345,8 +399,19 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	auto* shadowInt     = m_mainGraph.AddPass(r_shadowIntensityPass);
 	auto* ssaoNode      = m_mainGraph.AddPass(r_ssaoPass);
 	auto* lightingNode  = m_mainGraph.AddPass(r_lightingPass);
-	auto* gizmoNode     = m_mainGraph.AddPass(r_gizmoPass);
+	auto* outlineNode   = m_mainGraph.AddPass(r_selectionOutlinePass);
 	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
+
+	// Both overlays draw into whichever image the post chain ends with, so their target
+	// is chosen before registration: AddPass() caches GetIO(), which names it. The two
+	// must name the *same* attachment — that shared name is the socket Connect() below
+	// matches on to order them.
+	const AttachmentName tail = sig.fxaa ? AttachmentName::FXAAOutput
+	                                     : AttachmentName::ComposedOutput;
+	r_debugPass->SetTarget(tail);
+	auto* debugNode     = m_mainGraph.AddPass(r_debugPass);
+	r_gizmoPass->SetTarget(tail);
+	auto* gizmoNode     = m_mainGraph.AddPass(r_gizmoPass);
 
 	// Geometry (G-Buffer) → consumers
 	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          ssaoNode);
@@ -357,22 +422,42 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	m_mainGraph.Connect(geometryNode, AttachmentName::Normal,            lightingNode);
 	m_mainGraph.Connect(geometryNode, AttachmentName::Albedo,            lightingNode);
 	m_mainGraph.Connect(geometryNode, AttachmentName::MetallicRoughness, lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::IDBuffer,          gizmoNode);
+	m_mainGraph.Connect(geometryNode, AttachmentName::IDBuffer,          outlineNode);
 
 	// Shadow depth bundle → shadow intensity → lighting
 	m_mainGraph.Connect(shadowDepth, AttachmentName::ShadowDepth,     shadowInt);
 	m_mainGraph.Connect(shadowInt,   AttachmentName::ShadowIntensity, lightingNode);
 
-	// SSAO → lighting; lighting + gizmo → compose
-	m_mainGraph.Connect(ssaoNode,     AttachmentName::SSAO,           lightingNode);
-	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,       composeNode);
-	m_mainGraph.Connect(gizmoNode,    AttachmentName::GizmoHighlight, composeNode);
+	// SSAO → lighting; lighting + selection outline → compose
+	m_mainGraph.Connect(ssaoNode,     AttachmentName::SSAO,             lightingNode);
+	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,         composeNode);
+	m_mainGraph.Connect(outlineNode,  AttachmentName::SelectionOutline, composeNode);
 
+	// Compose → [FXAA] → debug overlay → gizmo overlay. The overlays are deliberately
+	// last: their fragment shaders already antialias from real coverage, and a luma
+	// filter can only re-blur that and smear overlay color into the scene (see
+	// DebugPass.h). So FXAA is fed the scene alone, and the overlays land on whatever
+	// came out of it. Both edit that image in place — hence the G-Buffer depth edge for
+	// DebugPass's occlusion test — and the gizmo is the last writer the final blit
+	// consumes.
 	if (sig.fxaa)
 	{
 		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
 		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, fxaaNode);
+		m_mainGraph.Connect(fxaaNode,    AttachmentName::FXAAOutput,     debugNode);
 	}
+	else
+	{
+		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, debugNode);
+	}
+	m_mainGraph.Connect(geometryNode, AttachmentName::Depth, debugNode);
+
+	// Debug → gizmo, on the shared tail attachment. Not optional bookkeeping: Compile()
+	// treats an unwired input as *external* rather than an error, so without this edge
+	// the gizmo's position in the topological order is unconstrained and the guides
+	// could land under the debug geometry nondeterministically. No Depth edge here —
+	// GizmoPass declares no depth socket, so one would fail socket validation.
+	m_mainGraph.Connect(debugNode, tail, gizmoNode);
 
 	m_mainGraph.Compile();
 	m_builtSignature = sig;
@@ -535,11 +620,34 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// Advance Halton index (cycles through all Halton(2,3,5) triples)
 	m_haltonIndex++;
 
-	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → Gizmo → Compose → [FXAA] ---
-	// The whole deferred pipeline runs through one RenderGraph. FXAA is
-	// optional; useFXAA also selects the blit source below.
-	const bool useFXAA = ctx.editor.config &&
-		static_cast<const RenderConfig*>(ctx.editor.config)->RequiresFXAA();
+	// --- Per-frame cache updates: one writer, before any pass records ---
+	// Both resources live in RenderCache because more than one pass reads them
+	// (GeometryPass and DebugPass share the camera UBO) and because a pass that
+	// wrote them would make the result depend on pass order. Passes only read.
+	//
+	// This is the one place that defines what the GPU believes the camera is, and
+	// it reads ctx.editor.camera rather than the Scene: that is what makes
+	// EditorViewport the single Editor-side answer to "the camera we are looking
+	// through". DrawFrame's precondition has already proved the pointer non-null.
+	r_renderCache->UpdateCamera(ctx.editor.camera->GetProjectionMatrix(),
+	                            ctx.editor.camera->GetViewMatrix());
+
+	if (ctx.editor.debugDraw)
+	{
+		// Revision-gated: an unchanged list copies nothing.
+		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.editor.debugDraw);
+	}
+
+	if (ctx.editor.gizmoDraw)
+	{
+		// Not revision-gated: a live gesture rebuilds every frame anyway, and the
+		// payload is a few dozen segments (see GizmoCache.h).
+		r_renderCache->UpdateGizmoDraw(ctx.frameIndex, *ctx.editor.gizmoDraw);
+	}
+
+	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → SelectionOutline → Compose → [FXAA] → Debug → Gizmo ---
+	// The whole deferred pipeline runs through one RenderGraph. FXAA is optional, and
+	// it is the only thing the topology varies on.
 
 	// Rebuild the graph only when the config-derived signature changes (single
 	// source of truth is RenderConfig; the graph is its projection — currently
@@ -559,13 +667,27 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
 	// --- Phase 4: Blit output → swapchain image ---
-	auto& blitSource = r_renderCache->GetAttachment(
-		useFXAA ? AttachmentName::FXAAOutput : AttachmentName::ComposedOutput, extent);
+	// GizmoPass is last in the graph, so its target *is* the end of the chain:
+	// FXAAOutput when FXAA is on, ComposedOutput when it is off. Asking the pass
+	// keeps that choice in RebuildMainGraph, which already owns config → topology,
+	// and is correct even on the frames where neither overlay drew anything — the
+	// image is then exactly as the compute pass that filled it left it.
+	auto& blitSource = r_renderCache->GetAttachment(r_gizmoPass->GetTarget(), extent);
 	const vk::Image composedImage = *blitSource.ImageHandle();
 	const vk::Image swapchainImage = r_swapchain->images()[imageIndex];
 
-	// Barrier 1: Blit source is already in TransferSrc from ComposePass (or FXAAPass)
+	// Barrier 1: Blit source → TRANSFER_SRC_OPTIMAL.
+	//
+	// The transition is issued *here*, by the consumer, and not left to whichever
+	// pass wrote the image last. A producer that pre-transitions its output to the
+	// state it guesses the next consumer wants makes the following consumer's own
+	// barrier a no-op: its src scope becomes the guessed access (TransferRead),
+	// which names no writes, so the real producer writes are never made visible.
+	// That is exactly how DebugPass's overlay used to race ComposePass's compute
+	// writes into ComposedOutput — see the barrier note in DebugPass::Record.
+	//
 	// Barrier 2: Swapchain image UNDEFINED → TRANSFER_DST_OPTIMAL
+	Barrier::Transition(cmdBuf, blitSource, ImageState::TransferSrc);
 	{
 		Barrier::Transition(*cmdBuf, swapchainImage,
 			ImageState::Undefined, ImageState::TransferDst,

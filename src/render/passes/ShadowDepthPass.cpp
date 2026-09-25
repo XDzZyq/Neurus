@@ -428,8 +428,20 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 		                               0.f, 1.f);
 		const vk::Rect2D sunScissor({0, 0}, {kSunResolution, kSunResolution});
 
-		// Get camera target for shadow ortho center
-		const Camera* activeCam = scene->GetActiveCamera();
+		// Get camera target for shadow ortho center.
+		// The camera comes from the context, not from the Scene: the Editor injects
+		// whichever camera the frame is rendered through, and the sun cascade must
+		// centre on *that* one or the shadow slides off the part of the world
+		// actually on screen. See the fuller note in LightingPass::Record().
+		//
+		// Nothing follows this block, so returning here is exactly "skip the sun
+		// path" - the point-light work above has already been recorded.
+		const Camera* activeCam = ctx.editor.camera;
+		if (!activeCam)
+		{
+			NEURUS_LOG("[ShadowDepthPass] No camera in EditorContext, skipping sun path");
+			return stats;
+		}
 		const glm::vec3 center = activeCam->cam_tar;
 
 		const float field = Light::sun_shadow_field;

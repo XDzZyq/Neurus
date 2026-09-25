@@ -177,23 +177,36 @@ Neurus/
 │   │   │   └── RenderShader.h/cpp, ComputeShader.h/cpp, ShaderCompiler.h/cpp
 │   │   ├── Swapchain.h/cpp
 │   │   ├── UploadManager.h/cpp      # CPU-to-GPU upload service
+│   │   ├── GPUProfiler.h/cpp        # Timestamp-query GPU/CPU per-pass profiling
 │   │   ├── VulkanContext.h/cpp
 │   │   ├── resources/        # GPU resource structs (owned by RenderCache)
+│   │   │   ├── CameraGPU.h/cpp      # Shared camera UBO (viewProj + view)
+│   │   │   ├── DebugCache.h/cpp     # Per-frame DebugDrawList SSBOs (CPUBuffer pairs)
 │   │   │   ├── EnvironmentGPU.h     # IBL cubemap Textures
 │   │   │   ├── LightGPU.h           # Per-light shadow resources
 │   │   │   ├── LightingCache.h/cpp  # Light SSBO storage (point + sun)
 │   │   │   └── MeshGPU.h            # GPU-side mesh + MeshPushConstants
+│   │   ├── render_graph/     # Pass DAG orchestration
+│   │   │   ├── RenderGraph.h/cpp    # Compile-once DAG, topological Execute()
+│   │   │   └── DescriptorBinder.h   # Per-pass descriptor write helper
 │   │   ├── passes/          # Render passes
+│   │   │   ├── Pass.h/cpp, ComputePass.h  # Pass base + compute specialization
 │   │   │   ├── GeometryPass.h/cpp
 │   │   │   ├── SSAOPass.h/cpp
 │   │   │   ├── LightingPass.h/cpp
 │   │   │   ├── IBLPass.h/cpp
 │   │   │   ├── ShadowDepthPass.h/cpp
-│   │   │   └── ShadowIntensityPass.h/cpp
+│   │   │   ├── ShadowIntensityPass.h/cpp
+│   │   │   ├── SelectionOutlinePass.h/cpp  # IDBuffer edge detection -> selection outline
+│   │   │   ├── ComposePass.h/cpp    # Highlight blend + gamma -> ComposedOutput
+│   │   │   ├── DebugPass.h/cpp      # Debug/gizmo overlay raster pass (issue #22)
+│   │   │   └── FXAAPass.h/cpp       # Luma-based post AA (conditional)
 │   │   └── buffers/          # Buffer class hierarchy
 │   │       ├── Buffer.h/cpp         # Virtual base class (Buffer)
-│   │       ├── StagingBuffer.h/cpp  # Host-visible staging
+│   │       ├── StagingBuffer.h/cpp  # Host-visible staging (upload/download ONLY)
+│   │       ├── CPUBuffer.h/cpp      # Permanent host-visible mapped buffer
 │   │       ├── GPUBuffer.h/cpp      # Device-local with staging
+│   │       ├── ArrayBuffer.h        # Growable typed device buffer (ArrayBuffer<T>)
 │   │       ├── UniformBuffer.h      # Template uniform (UniformBuffer<T>)
 │   │       ├── VertexBuffer.h/cpp   # Vertex buffer (inherits GPUBuffer)
 │   │       ├── IndexBuffer.h/cpp    # Index buffer (inherits GPUBuffer)
@@ -201,11 +214,16 @@ Neurus/
 │   ├── core/              # Core layer (identity + resource pool)
 │   │   ├── UID.h/cpp              # Generic unique identifier primitive (resource base)
 │   │   ├── ResourceManager.h/cpp # Single factory + UID pool (Load<T>, polymorphic serialize)
+│   │   ├── IResourceLookup.h      # Read-only pool lookup interface
 │   │   ├── Log.h                  # NEURUS_LOG / NEURUS_ERR macros
+│   │   ├── Serialize.h            # NEURUS_OPTIONAL_NVP / OptionalBlock (back-compat fields)
 │   │   ├── Graph.h                # Generic DAG template
 │   │   ├── Selections.h           # Selection state container
 │   │   └── Timer.h                # Scoped timer
 │   ├── editor/             # Editor layer (logic, controllers)
+│   │   ├── viewport/        # World<->screen services (Vulkan-free, Qt-free)
+│   │   │   ├── EditorViewport.h/cpp   # Project/RayThrough/ProjectBox + the camera seam
+│   │   │   └── DebugDrawBuilder.h/cpp # Scene debug objects -> DebugDrawList flattening
 │   │   ├── events/          # Event system (UIEvents + typed EventQueue)
 │   │   │   ├── UIEvents.h/cpp    # Qt signal bus for UI↔Editor
 │   │   │   ├── EventBus.h        # Typed EventQueue dispatcher (no Qt)
@@ -229,9 +247,16 @@ Neurus/
 │   │   ├── items/               # Reusable composite QWidgets
 │   │   │   ├── ScalarSlider.h/cpp  # Slider+spinbox pair with auto-derived step
 │   │   │   ├── Vec3Spin.h/cpp      # XYZ triple-spinbox composite widget
+│   │   │   ├── ColorButton.h/cpp   # Color swatch button (QColorDialog, optional alpha)
 │   │   │   ├── OutlinerRow.h/cpp   # Pool-recyclable outliner row
 │   │   │   ├── ShaderFieldRow.h/cpp # Type/name editor row for struct fields
 │   │   │   └── CodeEditor.h/cpp    # GLSL code editor (line numbers, monospace)
+│   │   ├── presets/              # GOType-specific PropertyPanel subpanels
+│   │   │   ├── CameraProperties.h/cpp       # Target + FOV
+│   │   │   ├── MeshProperties.h/cpp         # Path + shadow/material toggles
+│   │   │   ├── LightProperties.h/cpp        # Power/radius/cone + shadow toggle
+│   │   │   ├── EnvironmentProperties.h/cpp  # Path + intensity/rotation
+│   │   │   └── DebugProperties.h/cpp        # DebugLine/Points/Mesh + position table (issue #22)
 │   │   ├── models/               # Qt item models (non-widget)
 │   │   │   ├── ShaderStructModel.h/cpp  # Tree model for ShaderStruct IR
 │   │   │   ├── LogModel.h/cpp        # QAbstractListModel over core LogBuffer
@@ -247,7 +272,7 @@ Neurus/
 │   │   │   ├── UIPanel.h/cpp     # Base class for all panels (I18n.h kept out of the header)
 │   │   │   ├── Viewport.h/cpp    # Native HWND Vulkan surface widget
 │   │   │   ├── Outliner.h/cpp    # Scene object hierarchy tree
-│   │   │   ├── PropertyEditor.h/cpp  # Object property inspector
+│   │   │   ├── PropertyPanel.h/cpp  # Object property inspector (hosts the presets/)
 │   │   │   ├── RenderConfigPanel.h/cpp  # Live render setting controls
 │   │   │   ├── ShaderEditorPanel.h/cpp  # Code + Structure shader editor
 │   │   │   ├── LogPanel.h/cpp        # Realtime log viewer dock (issue #39)
@@ -272,6 +297,15 @@ Neurus/
 │   │   ├── Camera.h        # Camera object
 │   │   ├── Light.h         # Light objects (PointLight, SunLight)
 │   │   ├── Mesh.h          # Mesh + Transform (no GPU buffers; pooled MeshData/Shader refs)
+│   │   ├── Sprite.h        # Screen-space sprite object
+│   │   ├── Environment.h   # IBL environment object
+│   │   ├── Material.h      # Material parameters
+│   │   ├── DebugLine.h/cpp    # Debug segment-list object (retained, stateful)
+│   │   ├── DebugPoints.h/cpp  # Debug point-list object (square/rhombus/circle/cube)
+│   │   ├── DebugMesh.h/cpp    # Debug wireframe-mesh object
+│   │   ├── DebugDrawList.h    # Flattened overlay payload consumed by DebugPass
+│   │   ├── EditorContext.h    # Editor → renderer per-frame scene snapshot
+│   │   ├── DefaultScene.h/cpp # Built-in starter scene
 │   │   ├── ObjectID.h      # Scene identity + metadata (ObjectID : UID)
 │   │   ├── Transform.h     # Spatial transform
 │   │   └── registrations/           # cereal polymorphic registration
@@ -285,8 +319,10 @@ Neurus/
 ├── test/
 │   ├── render/             # Renderer GPU tests
 │   │   └── reference/      # Reference images for regression tests
-│   │       └── deferred/   # Deferred-pass reference PNGs
+│   │       ├── deferred/   # Deferred-pass reference PNGs
+│   │       └── debug/      # DebugPass overlay reference PNGs
 │   ├── editor/             # Editor unit tests (run in CI, no GPU)
+│   ├── ui/                 # Qt widget tests (QApplication from shared/test_main.cpp)
 │   └── shared/             # Test infrastructure
 │       └── TestVulkanShared.h/cpp  # GPU test fixture base class
 ├── AGENTS.md               # This file
@@ -341,6 +377,51 @@ Neurus/
 - **Accumulation** (`ComposePass`): In-place read-modify-write on ShadowIntensity
   with EMA blend: `mix(prev, sample, alpha)`.
 - **Alpha**: 0 = FixedAlpha (1/8), 1 = MovingAvg (1/(n+1)).
+
+### Debug Overlay Convention (issue #22)
+
+Viewport gizmos and debug geometry are **retained and stateful**, not immediate-mode:
+Qt is stateful, so debug objects are too.
+
+- `DebugLine`, `DebugPoints` and `DebugMesh` are **first-class Scene objects** —
+  pooled, serialized and selectable like any Mesh or Light, not per-frame commands.
+- `DebugDrawBuilder` (editor) is the single flattener: it walks the Scene's three
+  debug pools into a `DebugDrawList` on a **dirty flag** (`MarkDirty()` from
+  `RenderResetEvent`, `Rebuild()` at the end of `Editor::Edit()`), never per frame.
+  See editor.instructions.md for its partition / revision / world-space contracts.
+- `DebugPass` (renderer) is the single consumer and runs **last, after post-AA**: it draws
+  over the final shaded image with `LOAD_OP_LOAD` — `FXAAOutput` when FXAA is on,
+  `ComposedOutput` when it is off, chosen by `SetTarget()` from `PipelineSignature` —
+  reads but never writes the G-Buffer depth, and flips
+  `eDepthTestEnable` as dynamic state to serve x-ray — at most 6 draws per frame
+  regardless of primitive count. Every debug primitive is already antialiased
+  analytically, so handing FXAA the scene alone keeps both correct. See renderer.instructions.md.
+- Upload is **revision-gated**: an unchanged list re-uses the buffer a frame slot
+  already holds and skips the memcpy entirely.
+- **Hiding a debug object means not flattening it.** `DebugDrawList` has no
+  per-primitive enable bit, so `DebugDrawBuilder::Rebuild()` drops objects whose
+  `is_viewport && is_rendered` is false, before the x-ray partition is computed. The
+  Outliner toggle already reaches it: `SceneController` → `RenderResetEvent` →
+  `MarkDirty()`.
+- **Smoothing is derived, never authored — and on by default.** Nothing stores a
+  smooth bit: no scene property, no event, no op, no checkbox. `DebugDrawBuilder` is
+  the one place that decides it, per primitive kind: a solid line and every cube edge
+  get `DebugFlag::Smooth`, a **stippled** line does not (antialiasing would soften the
+  hard ends a dash is made of), point sprites always do (their shape mask is an
+  analytic distance, so a rhombus or circle is visibly stepped without it), and a
+  `DebugMesh` wireframe never does — `PolygonMode::eLine` gives the fragment stage no
+  distance to fade, so `debug_wire.frag` has no branch on the flag.
+- A `DebugMesh` wireframe still needs a **MeshGPU** in the RenderCache, uploaded by the
+  Editor through `UploadManager::UploadMeshData()` — `DebugMesh` is not a `Mesh`, so it
+  cannot reuse `UploadMesh()`. Without it `DebugPass` skips the mesh silently.
+- `CPUBuffer` is the permanent host-visible buffer type (named against `GPUBuffer`).
+  **`StagingBuffer` is for uploads and downloads only** — never retain one as a
+  permanent buffer object.
+- The **frame driver publishes, passes read**: `DeferredRenderer::recordFrame()` writes
+  `RenderCache`'s `CameraGPU` and `DebugCache` once per frame before any pass records;
+  `GeometryPass` and `DebugPass` only bind them. A test driving a pass directly stands in
+  for that driver — call `VulkanTestShared::PublishSceneCamera()` or the pass renders
+  nothing.
 
 ---
 

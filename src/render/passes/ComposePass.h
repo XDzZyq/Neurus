@@ -3,7 +3,7 @@
  * @brief Final compositing compute pass — blends gizmo highlight onto HDRColor
  *        and applies gamma correction.
  *
- * ComposePass reads the HDRColor and GizmoHighlight attachments as combined
+ * ComposePass reads the HDRColor and SelectionOutline attachments as combined
  * image samplers, blends the gizmo highlight (e.g. selected-object edge
  * outline) onto the HDRColor, applies gamma correction via push constant,
  * and writes the final composed output to the ComposedOutput attachment
@@ -16,7 +16,7 @@
  * - Inherits from ComputePass for shared infrastructure (sampler, descriptor
  *   pool/sets, barrier transitions, dispatch logic).
  * - Owns the compute pipeline.
- * - Borrows RenderCache for HDRColor, GizmoHighlight, and ComposedOutput images.
+ * - Borrows RenderCache for HDRColor, SelectionOutline, and ComposedOutput images.
  *
  * @note No UBOs or per-frame uploads — all data is read from attachments.
  *       The only push constant is a single float (gamma).
@@ -44,7 +44,7 @@ class RenderCache;
 /**
  * @brief Final compositing compute pass.
  *
- * Reads HDRColor (RGBA16F) and GizmoHighlight (R8_UNORM) as combined image
+ * Reads HDRColor (RGBA16F) and SelectionOutline (R8_UNORM) as combined image
  * samplers, blends the highlight onto the HDR output, applies gamma
  * correction, and writes to ComposedOutput (RGBA16F storage image).
  *
@@ -74,8 +74,8 @@ public:
 	 * @brief Records the compose compute dispatch into a command buffer.
 	 *
 	 *   1. Reads gamma from ctx.editor.config (RenderConfig::r_gamma).
-	 *   2. Writes HDRColor, GizmoHighlight, and ComposedOutput descriptors.
-	 *   3. Transitions HDRColor/GizmoHighlight to ColorShaderRead.
+	 *   2. Writes HDRColor, SelectionOutline, and ComposedOutput descriptors.
+	 *   3. Transitions HDRColor/SelectionOutline to ColorShaderRead.
 	 *   4. Transitions ComposedOutput to ShaderWrite.
 	 *   5. Binds pipeline, descriptor set, push constants.
 	 *   6. Dispatches ceil(width/16) x ceil(height/16) x 1 thread groups.
@@ -87,12 +87,12 @@ public:
 	 */
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
-	/// Declares HDRColor + GizmoHighlight reads and the ComposedOutput write
+	/// Declares HDRColor + SelectionOutline reads and the ComposedOutput write
 	/// for RenderGraph wiring.
 	PassIO GetIO() const override;
 
 	/**
-	 * @brief Writes all descriptors (HDRColor, GizmoHighlight, ComposedOutput)
+	 * @brief Writes all descriptors (HDRColor, SelectionOutline, ComposedOutput)
 	 *        into the specified set.
 	 * @param setIndex  Index into p_descriptorSets (0 … numSets-1).
 	 * @param extent    Render area dimensions.
@@ -106,7 +106,7 @@ private:
 	 *
 	 * Bindings:
 	 *   0: HDRColor        (combined image sampler)
-	 *   1: GizmoHighlight   (combined image sampler)
+	 *   1: SelectionOutline   (combined image sampler)
 	 *   2: ComposedOutput   (storage image, RGBA16F)
 	 */
 	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);

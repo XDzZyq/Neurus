@@ -60,7 +60,7 @@ DescriptorSetLayout ComposePass::CreateDescriptorSetLayout(const vk::raii::Devic
 		.AddBinding(0,
 		            vk::DescriptorType::eCombinedImageSampler,
 		            vk::ShaderStageFlagBits::eCompute)
-		// GizmoHighlight input (combined image sampler)
+		// SelectionOutline input (combined image sampler)
 		.AddBinding(1,
 		            vk::DescriptorType::eCombinedImageSampler,
 		            vk::ShaderStageFlagBits::eCompute)
@@ -129,13 +129,13 @@ void ComposePass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rende
 		                  vk::DescriptorType::eCombinedImageSampler);
 	}
 
-	// --- Write GizmoHighlight input (combined image sampler) ---
+	// --- Write SelectionOutline input (combined image sampler) ---
 	{
-		const auto& gizmoAtt = cache.GetAttachment(AttachmentName::GizmoHighlight, extent);
+		const auto& outlineAtt = cache.GetAttachment(AttachmentName::SelectionOutline, extent);
 
 		vk::DescriptorImageInfo imageInfo(
 			*p_sampler,                              // sampler
-			*gizmoAtt.ImageViewHandle(),             // imageView
+			*outlineAtt.ImageViewHandle(),           // imageView
 			vk::ImageLayout::eShaderReadOnlyOptimal  // imageLayout
 		);
 
@@ -182,9 +182,9 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 		auto& hdrAtt = cache.GetAttachment(AttachmentName::HDRColor, renderExtent);
 		Barrier::Transition(cmdBuf, hdrAtt, ImageState::ColorShaderRead);
 
-		// GizmoHighlight: current state → ColorShaderRead
-		auto& gizmoAtt = cache.GetAttachment(AttachmentName::GizmoHighlight, renderExtent);
-		Barrier::Transition(cmdBuf, gizmoAtt, ImageState::ColorShaderRead);
+		// SelectionOutline: current state → ColorShaderRead
+		auto& outlineAtt = cache.GetAttachment(AttachmentName::SelectionOutline, renderExtent);
+		Barrier::Transition(cmdBuf, outlineAtt, ImageState::ColorShaderRead);
 
 		// ComposedOutput: current state → ShaderWrite (compute write)
 		auto& compAtt = cache.GetAttachment(AttachmentName::ComposedOutput, renderExtent);
@@ -214,11 +214,15 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 	++stats.dispatches;
 	cmdBuf.dispatch(groupCountX, groupCountY, 1);
 
-	// --- 7. Transition ComposedOutput: General → TransferSrc (ready for swapchain blit) ---
-	{
-		auto& compAtt = cache.GetAttachment(AttachmentName::ComposedOutput, renderExtent);
-		Barrier::Transition(cmdBuf, compAtt, ImageState::TransferSrc);
-	}
+	// ComposedOutput is deliberately left in ShaderWrite. Pre-transitioning it to
+	// the state the *next* consumer is expected to want (TransferSrc for the
+	// swapchain blit) would swallow this dispatch's writes: the consumer's own
+	// barrier would then read TransferSrc, giving it a src access scope of
+	// TransferRead, which names no writes and makes none of them visible. Whoever
+	// consumes ComposedOutput — DebugPass, FXAAPass or the blit — transitions it
+	// itself and so gets a real (ComputeShader, ShaderWrite) → its-own-access
+	// dependency. Without that, DebugPass's overlay raced this dispatch on
+	// MoltenVK and each frame kept a random subset of the overlay's tiles.
 
 	return stats;
 }
@@ -227,13 +231,13 @@ PassIO ComposePass::GetIO() const
 {
 	// Binding metadata is indicative only: ComposePass still writes its own
 	// descriptors. Resource names drive RenderGraph edges — HDRColor (from
-	// LightingPass) and GizmoHighlight (from GizmoPass) are in-graph inputs;
-	// ComposedOutput feeds FXAAPass / the swapchain blit.
+	// LightingPass) and SelectionOutline (from SelectionOutlinePass) are in-graph
+	// inputs; ComposedOutput feeds FXAAPass / the swapchain blit.
 	PassIO io;
 	io.name  = "ComposePass";
 	io.reads = {
-		{AttachmentName::HDRColor,       0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-		{AttachmentName::GizmoHighlight, 1, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
+		{AttachmentName::HDRColor,         0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
+		{AttachmentName::SelectionOutline, 1, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
 	};
 	io.writes = {
 		{AttachmentName::ComposedOutput, 2, vk::DescriptorType::eStorageImage, vk::ImageLayout::eGeneral},

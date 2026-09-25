@@ -23,6 +23,7 @@
 #include "core/UID.h"
 #include "scene/Camera.h"
 #include "scene/DebugLine.h"
+#include "scene/DebugMesh.h"
 #include "scene/DebugPoints.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"
@@ -41,6 +42,7 @@ CEREAL_REGISTER_TYPE(neurus::Light)
 CEREAL_REGISTER_TYPE(neurus::Sprite)
 CEREAL_REGISTER_TYPE(neurus::DebugLine)
 CEREAL_REGISTER_TYPE(neurus::DebugPoints)
+CEREAL_REGISTER_TYPE(neurus::DebugMesh)
 CEREAL_REGISTER_TYPE(neurus::Environment)
 
 // --- Polymorphic relations (UID base -> all pooled scene types) ---
@@ -54,6 +56,7 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::Light)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::Sprite)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::DebugLine)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::DebugPoints)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::DebugMesh)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::Environment)
 
 // --- Polymorphic relations (ObjectID base -> derived) ---
@@ -63,6 +66,7 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::ObjectID, neurus::Light)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::ObjectID, neurus::Sprite)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::ObjectID, neurus::DebugLine)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::ObjectID, neurus::DebugPoints)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::ObjectID, neurus::DebugMesh)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::ObjectID, neurus::Environment)
 
 CEREAL_REGISTER_DYNAMIC_INIT(neurus_scene_types)

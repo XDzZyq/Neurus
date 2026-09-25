@@ -27,6 +27,7 @@
 #include "core/ResourceManager.h"
 #include "render/RenderConfig.h"
 #include "scene/Camera.h"
+#include "scene/DebugLine.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"
@@ -81,6 +82,7 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto camera = resources.Load<Camera>();
 		camera->cam_tar = glm::vec3(0.0f, 1.0f, 0.0f);
 		scene.UseCamera(camera);
+		scene.ActivateCamera(camera->GetObjectID());
 
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
 		meshDataUid = meshData->GetObjectID();
@@ -88,6 +90,11 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto shader = resources.Load<RenderShader>("TestShader", "", "");
 		mesh->SetObjShader(shader);
 		scene.UseMesh(mesh);
+		// A non-identity TRS, so the matrix assertions below cannot pass by
+		// accident on an identity matrix.
+		mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+		mesh->SetRotation(glm::vec3(0.0f, 0.0f, 90.0f)); // yaw
+		mesh->SetScale(glm::vec3(2.0f));
 		meshUid = mesh->GetObjectID();
 		shaderUid = shader->GetObjectID();
 
@@ -140,6 +147,28 @@ TEST(SceneSerialize, FullRoundtrip)
 	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), loadedMesh->o_meshDataId);
 	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u); // content reloaded from res/
 
+	// Transform: the raw TRS round-trips as data, and the cached model matrix -
+	// the value the geometry/shadow passes actually read - is rebuilt for it.
+	// Without that rebuild the object draws at the origin with unit scale while
+	// the Property panel shows the values below.
+	EXPECT_EQ(loadedMesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
+	Transform3D expected;
+	expected.SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+	expected.SetRotation(glm::vec3(0.0f, 0.0f, 90.0f));
+	expected.SetScale(glm::vec3(2.0f));
+	EXPECT_EQ(loadedMesh->GetModelMatrix(), expected.GetModelMatrix());
+	EXPECT_NE(loadedMesh->GetModelMatrix(), glm::mat4(1.0f));
+
+	// Camera: the cached view matrix is a computed value as well, and the load
+	// path's only other rebuild of it is an aspect-ratio setter taking a detour
+	// through ApplyViewportToActiveCamera().
+	Camera* loadedCam = loadedScene.GetActiveCamera();
+	ASSERT_NE(loadedCam, nullptr);
+	EXPECT_EQ(loadedCam->GetViewMatrix(),
+	          glm::lookAt(loadedCam->GetPosition(), loadedCam->cam_tar,
+	                      glm::vec3(0.0f, 0.0f, 1.0f)))
+	    << "the loaded camera's view matrix must match its loaded position/target";
+
 	EXPECT_EQ(loadedMesh->o_shaderId, shaderUid);
 	ASSERT_NE(loadedMesh->o_shader, nullptr);
 	EXPECT_EQ(loadedMesh->o_shader->GetObjectID(), shaderUid);
@@ -166,8 +195,10 @@ TEST(SceneSerialize, FullRoundtrip)
 
 /**
  * @test An old-format project (no "m_resources" node, full-pool "m_scene"
- *       node) loads without throwing: the pool stays empty, the Scene fails
- *       to read its ID lists, and the default-camera fallback applies.
+ *       node) loads without throwing: the pool stays empty and the Scene fails
+ *       to read its ID lists, leaving a camera-less document. Nothing is
+ *       injected to repair it — the viewport looks through the Editor's own
+ *       camera, so zero cameras is a legal, fully renderable scene.
  */
 TEST(SceneSerialize, LegacyFileDegrades)
 {
@@ -197,9 +228,11 @@ TEST(SceneSerialize, LegacyFileDegrades)
 		p.Load(tmp.path);
 	});
 
-	// No pooled objects survived; the fallback adds a default pooled camera.
-	EXPECT_EQ(loadedResources.Size(), 1u); // the default camera
-	EXPECT_EQ(loadedScene.cam_list.size(), 1u);
+	// No pooled objects survived, and none are conjured to stand in for them.
+	EXPECT_EQ(loadedResources.Size(), 0u);
+	EXPECT_TRUE(loadedScene.cam_list.empty());
+	EXPECT_EQ(loadedScene.ActiveCameraID(), 0);
+	EXPECT_EQ(loadedScene.GetActiveCamera(), nullptr);
 	EXPECT_TRUE(loadedScene.mesh_list.empty());
 	EXPECT_TRUE(loadedScene.light_list.empty());
 	EXPECT_EQ(loadedScene.selections.GetSelectionCount(), 0u);
@@ -251,4 +284,90 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	EXPECT_NE(orphan->o_meshDataId, 0);        // persisted by the pool
 	ASSERT_NE(orphan->o_mesh, nullptr);        // wired by the pool scan
 	EXPECT_EQ(orphan->o_mesh->GetObjectID(), orphan->o_meshDataId);
+}
+
+// -----------------------------------------------------------------------
+// Dropped fields: a project saved before m_smooth was removed
+// -----------------------------------------------------------------------
+
+/**
+ * @test A project written before DebugLine::m_smooth was dropped still loads.
+ *
+ * Smoothing stopped being an authored property and became something
+ * DebugDrawBuilder derives from the line style, so m_smooth left DebugLine's
+ * serialize(). That is only safe if the archive ignores keys nobody asks for.
+ * cereal's JSON archives look members up by name, so in principle a leftover
+ * "m_smooth" is skipped when its enclosing node closes — but "in principle" is
+ * exactly the assumption whose failure would break every existing user project,
+ * so it is pinned here instead of reasoned about.
+ *
+ * The legacy file is produced by a real save and then patched, rather than
+ * hand-written: cereal's polymorphic and base-class layout is an implementation
+ * detail this test has no business hard-coding.
+ */
+TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
+{
+	TempFile tmp("test_scene_serialize_legacy_smooth.neurus.json");
+
+	int lineUid = 0;
+	{
+		Scene scene;
+		RenderConfig config;
+		ResourceManager resources;
+
+		auto line = resources.Load<DebugLine>();
+		line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 2.0f, 3.0f));
+		line->SetStipple(true);
+		line->SetWidth(4.0f);
+		lineUid = line->GetObjectID();
+		scene.UseDebugLine(line);
+
+		project::Project p;
+		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::SceneComponent>(scene, resources);
+		p.Register<project::ConfigComponent>(config);
+		p.Save(tmp.path);
+	}
+
+	// Re-introduce the field exactly where a pre-refactor save would have put it.
+	{
+		std::ifstream in(tmp.path);
+		ASSERT_TRUE(in.is_open());
+		std::stringstream buf;
+		buf << in.rdbuf();
+		std::string json = buf.str();
+		in.close();
+
+		const std::string anchor = "\"m_stipple\": true,";
+		const size_t at = json.find(anchor);
+		ASSERT_NE(at, std::string::npos) << "Archive layout changed; the patch anchor is stale";
+		json.insert(at + anchor.size(), "\n\t\t\t\t\t\"m_smooth\": true,");
+
+		std::ofstream out(tmp.path, std::ios::trunc);
+		ASSERT_TRUE(out.is_open());
+		out << json;
+	}
+
+	Scene loadedScene;
+	RenderConfig loadedConfig;
+	ResourceManager loadedResources;
+	{
+		project::Project p;
+		p.Register<project::ResourceComponent>(loadedResources);
+		p.Register<project::SceneComponent>(loadedScene, loadedResources);
+		p.Register<project::ConfigComponent>(loadedConfig);
+		ASSERT_NO_THROW(p.Load(tmp.path));
+	}
+
+	// The surviving fields must be unaffected by the ignored one — including the
+	// ones written after it, where a skip that consumed the wrong node would show
+	// up as a shifted or defaulted value.
+	auto line = loadedResources.Get<DebugLine>(lineUid);
+	ASSERT_NE(line, nullptr);
+	EXPECT_TRUE(line->GetStipple());
+	EXPECT_FLOAT_EQ(line->GetWidth(), 4.0f);
+	ASSERT_EQ(line->GetVertices().size(), 2u);
+	EXPECT_EQ(line->GetVertices()[1], glm::vec3(1.0f, 2.0f, 3.0f));
+	EXPECT_FALSE(line->GetXRay());
+	EXPECT_EQ(loadedScene.dLine_list.size(), 1u);
 }

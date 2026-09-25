@@ -36,9 +36,12 @@ add_executable(neurus_test
 	render/test_temporal_shadow.cpp
 	render/test_sun_shadow_depth.cpp
 	render/test_fxaa.cpp
+	render/test_debug_pass.cpp
 	render/test_pickpixel.cpp
 	render/test_render_graph.cpp
 	editor/test_camera_controller.cpp
+	editor/test_debug_draw_builder.cpp
+	editor/test_editor_scene_lifecycle.cpp
 	editor/test_input.cpp
 	editor/test_event_bus.cpp
 	editor/test_event_bus_typed.cpp
@@ -67,10 +70,12 @@ add_executable(neurus_test
 	core/test_uid.cpp
 	core/test_resource_manager.cpp
 	ui/test_log_model.cpp
+	ui/test_debug_properties.cpp
 	ui/test_i18n.cpp
 	ui/test_po_catalog.cpp
 	ui/test_dock_identity.cpp
 	ui/test_floating_window.cpp
+	ui/test_layout_restore.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
 )

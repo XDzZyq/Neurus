@@ -65,7 +65,7 @@ See `test_scene_wiring.cpp` for an example that enables `VK_KHR_swapchain`.
 ### Shared Static Helpers
 
 In addition to the protected member methods above, `VulkanTestShared` provides
-8 static helper functions/structs for common test operations. These eliminate
+static helper functions/structs for common test operations. These eliminate
 duplicated code across test files:
 
 | Helper | Signature | What it does |
@@ -78,6 +78,26 @@ duplicated code across test files:
 | `MakeTestCamera(w, h)` | `static CameraUBOData` | Creates a default 60° FOV camera at `(0,0,2)` looking at origin with given aspect ratio |
 | `TestTriangle()` | `static pair<vector<TestVertex>, vector<uint32_t>>` | Returns a 3-vertex triangle (XY plane, facing +Z) + 3 indices, suitable for quick geometry tests |
 | `ReadbackHdrOutput(device, pd, queue, qfi, am, w, h)` | `static vector<float>` | Reads back HDRColor RGBA16F attachment to CPU; handles layout transition, staging copy, and half→float conversion |
+| `PublishSceneCamera(cache, scene)` / `(cache, editorContext)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, standing in for `DeferredRenderer::recordFrame()`. No-op when the scene has no active camera |
+
+### Publishing the camera before recording a pass
+
+`CameraGPU` and `DebugCache` belong to `RenderCache`, and the **frame driver**
+(`DeferredRenderer::recordFrame()`) writes them once per frame *before* any pass
+records. `GeometryPass` and `DebugPass` only bind them, and both return early from
+`Record()` while `RenderCache::GetCameraGPU().IsValid()` is false.
+
+A test that drives a pass directly *is* the frame driver, so it must publish first:
+
+```cpp
+VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx.editor);
+m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+```
+
+Forget it and the pass records nothing — no validation error, just an empty
+attachment and a reference-image diff that points nowhere near the cause.
+`LightingPass` and `SSAOPass` read the `Camera` out of the context directly and need
+no publish.
 
 Usage example — replace 15+ lines of manual G-Buffer transitions with one call:
 
@@ -300,7 +320,7 @@ Each attachment format maps to RGBA8 PNG differently:
 | Albedo     | `R8G8B8A8_SRGB` | `false` | raw U8 (sRGB-encoded) |
 | MetallicRoughness | `R8G8B8A8_Unorm` | `false` | raw U8 |
 | HDRColor   | `R16G16B16A16_SFLOAT` | `false` | half→float→clamp[0,1]→U8 |
-| GizmoHighlight | `R8_UNORM` | `false` | raw U8 (0=no highlight, 255=edge highlight) |
+| SelectionOutline | `R8_UNORM` | `false` | raw U8 (0=no highlight, 255=edge highlight) |
 | ComposedOutput | `R16G16B16A16_SFLOAT` | `false` | half→float→clamp[0,1]→U8 (gamma-corrected composed output) |
 
 **Background pixels** (no geometry rendered) have:
@@ -310,7 +330,7 @@ Each attachment format maps to RGBA8 PNG differently:
   alpha=0 for background normal pixels
 - Albedo: `(0,0,0,0)` → PNG black
 - MetallicRoughness: `(0,0,0,0)` → PNG black
-- GizmoHighlight: `0` → PNG black (no highlight on clear pixels)
+- SelectionOutline: `0` → PNG black (no highlight on clear pixels)
 - ComposedOutput: `(0,0,0,0)` → PNG black
 
 ### Generating and Verifying Reference Images
@@ -351,6 +371,11 @@ Key things to check:
   black on background. If background shows non-zero, clear isn't working.
 - **HDRColor**: should show visible lighting (brighter on the lit side). If
   uniformly dark (~8) everywhere, lighting contribution is zero.
+- **`reference/debug/DebugLine_Visible.png`** (64×64, DebugPass): a two-color image
+  is the *correct* result here, not a broken one — a white overlay line on a black
+  target. Verify by counting: exactly two colors, ~250 white pixels forming a 5-row
+  band across the middle. A single unique value means the overlay did not rasterize
+  or the whole target was covered.
 
 ## Running Tests
 
@@ -613,6 +638,79 @@ These patterns were established during deferred PBR development and apply to all
   (Level/Timestamp/Source/Message/Seq), Refresh inserting new rows, Clear reset.
   `LogFilterProxyTest` (ui) covers the level filter (All/InfoOnly/ErrorsOnly),
   case-insensitive search, and level + search combined.
+- **Headless raster-pass tests** (`test/render/test_debug_pass.cpp`, issue #22): a
+  raster pass that draws into `RenderCache` attachments with `LOAD_OP_LOAD` needs
+  **no swapchain, renderer or RenderGraph** — the fixture primes the attachments by
+  hand and records the pass over them, so it runs everywhere including macOS, where
+  the presentation-based `SceneWiringTest` cases are skipped:
+  ```cpp
+  m_cache = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
+  m_pass  = std::make_unique<DebugPass>(*m_device, PhysicalDevice(), 2);
+  // Prime: clearColorImage(black) + clearDepthStencilImage(depth) via TransferDst
+  // Run:   RenderContext ctx; ctx.editor.{config,scene,debugDraw} = ...;
+  //        m_pass->Record(*BeginCmd(), *m_cache, ctx); EndSubmitWait(c);
+  ```
+  **Isolate one variable per test rather than reading one composite image.** The four
+  line tests submit the *same* segment against the *same* camera and differ only in
+  depth/x-ray: far depth + depth-tested ⇒ drawn (rasterization works); near depth +
+  depth-tested ⇒ **not** drawn (depth occlusion works); near depth + x-ray ⇒ drawn
+  (x-ray bypasses depth); empty list ⇒ 0 draws and an untouched image. Because #1 and
+  #3 produce identical pixels, "x-ray draws" cannot be faked by a pass that simply
+  ignores depth — #2 would fail.
+  **Measure position, not just area.** Geometry is chosen to be analytically
+  predictable (camera at `(0,-5,0)` looking down +Y, up = +Z, so a segment along X
+  through the origin is a horizontal band across the middle of a square target), and
+  the assertions check the lit row/column extent, not a pixel count alone.
+  **Time the marginal cost, not the absolute.** A record-submit-wait round trip is
+  dominated by fixed submission and fence latency, so timing the 10,000-segment case
+  alone measures the driver. Time 1 segment and 10,000 and assert the *difference*
+  against issue #22's 0.5 ms budget — and assert the structural half exactly
+  (10,000 segments must still be 2 draw calls). A slightly negative marginal is a
+  pass, not an anomaly.
+  **Distinguish a wireframe from a fill by area ratio, not by eye.** The wire-mesh
+  test uploads a 4×4 quad OBJ through `UploadManager::UploadMeshData`, registers the
+  MeshGPU under an arbitrary cache id, and points a `DebugWireMesh` at it. That the
+  result is *edges* is asserted by counting lit pixels against the area of their own
+  bounding box: 220 of 2116 (10%) for five thin edges, where a filled quad would light
+  nearly all of it. A regression from `PolygonMode::eLine` to `eFill` therefore has to
+  fail, which a "something was drawn" assertion would not catch.
+  **Assert the target, and assert the image it must NOT touch.** Since the overlay
+  runs after post-AA, `DebugPass` draws into `FXAAOutput` when FXAA is on and
+  `ComposedOutput` when it is off (`SetTarget()` from `PipelineSignature`).
+  `SetTarget_RedirectsTheOverlayToFXAAOutput` primes *both* post-chain images black,
+  retargets the pass, then measures each: lit pixels on `FXAAOutput`, **exactly zero**
+  on `ComposedOutput`. The negative half is the half that matters — a regression to a
+  hardcoded target would still light the attachment the positive half checks. The
+  geometry and band bounds are shared verbatim with
+  `DepthTestedLine_VisibleAgainstFarDepth` so the two tests differ in one variable
+  only; equal lit counts then prove one set of pipelines serves either attachment,
+  which is what their identical format and usage buy. This is the only test that
+  covers the FXAA-on topology, so the fixture's `PrimeAttachments` / `Measure` take an
+  optional `AttachmentName` rather than hardcoding `ComposedOutput`.
+- **DebugDrawBuilder tests** (`test/editor/test_debug_draw_builder.cpp`, issue #22):
+  non-GPU tests that pin the three CPU-side contracts `DebugPass` trusts but cannot
+  check — the x-ray **partition** (`xraySegmentStart` / `xrayPointStart` become draw
+  ranges, so an off-by-one draws x-ray geometry depth-tested while every draw and
+  pixel count still looks plausible), the **revision** (exactly one `Touch()` per
+  rebuild; `DebugPass` skips its upload on a matching revision, so a missing Touch
+  freezes the overlay and a double Touch re-uploads every frame), and **world-space
+  baking**. Also covers dirty-flag lifecycle, `PackDebugColor`'s `0xAABBGGRR` layout
+  and clamping, opacity folded into the packed alpha, and the
+  `PointType::CUBE` → 12-edge decomposition — the last checked *geometrically*
+  (every edge axis-aligned, one side long, 4 per axis, corners on the cube surface)
+  rather than by index. Run in CI.
+  > `Scene::ResPool` is an `unordered_map`, so the order of primitives from
+  > *different* objects is unspecified. Assert over counts, boundary values, or
+  > predicates keyed off the boundary itself
+  > (`EXPECT_EQ(Has(flags, XRay), i >= xraySegmentStart)`) — never an absolute index,
+  > which would make the suite flaky across libstdc++/libc++ or a hash-seed change.
+- **Prove a passing suite is not vacuous by mutating the source.** Green tests on
+  their own prove nothing (AGENTS.md: *"Do not cheat yourself"*). Back the
+  implementation up outside the repo, inject realistic defects, and confirm that
+  *exactly the intended* tests fail — for `DebugDrawBuilder` that was: drop
+  `m_xraySegments.clear()`, move the boundary assignments *after* the `insert` calls,
+  and drop `m_list.Touch()` ⇒ 8 targeted failures. Then restore and **verify with
+  `diff` that the source is byte-identical** before rebuilding.
 
 ## Common Pitfalls Summary
 

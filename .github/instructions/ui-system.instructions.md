@@ -33,9 +33,11 @@ The UI layer is a **Qt6 Widgets** application with **Qt-Advanced-Docking-System 
 | `src/ui/presets/MeshProperties.h/cpp` | Mesh property editor preset (path label + shadow/material checkboxes) |
 | `src/ui/presets/LightProperties.h/cpp` | Light property editor preset (type label + power/radius sliders + shadow checkbox) |
 | `src/ui/presets/EnvironmentProperties.h/cpp` | Environment property editor preset (path label + intensity/rotation sliders) |
+| `src/ui/presets/DebugProperties.h/cpp` | Debug object property editor preset — one preset for DebugLine/DebugPoints/DebugMesh (issue #22) |
 | `src/ui/Icons.h/cpp` | Static SVG icon library with lazy-loaded QIcon cache |
 | `src/ui/items/ScalarSlider.h/cpp` | Reusable slider+spinbox composite widget |
 | `src/ui/items/Vec3Spin.h/cpp` | Reusable XYZ triple-spinbox composite widget |
+| `src/ui/items/ColorButton.h/cpp` | Color swatch button opening QColorDialog; optional alpha channel |
 | `src/ui/items/OutlinerRow.h/cpp` | Pool-recyclable outliner row with type icon, name, toggles |
 | `src/ui/qml/` | Qt resource files: QML layouts, QSS stylesheets (embedded at build time) |
 | `src/ui/VulkanWindow.h/cpp` | QVulkanWindow subclass hosting the triangle renderer |
@@ -101,6 +103,23 @@ Dock layout is **project state**, not app state: `UIManager::ExportLayout()` /
 `\n` + base64 ADS dock state), and `asset/components/UIComponent` carries it in
 the `.neurus.json` project file. The Application owns persistence; the UI layer
 never touches a path. **View → Restore Default Layout** re-runs `CreateDocks()`.
+
+**The blob restores window geometry, never the full-screen state.**
+`saveGeometry()` carries the window *state* alongside the rectangle, and
+`restoreGeometry()` re-applies it, so a blob saved while the window was full
+screen started the app full screen. A full-screen `QMainWindow` has no frame:
+no minimize, maximize or close button, and nothing in the menus to undo it, so
+the only ways out were `Alt+F4` and File → Exit. Measured on Windows — the
+restored window had `WS_CAPTION`/`WS_MINIMIZEBOX`/`WS_MAXIMIZEBOX`/
+`WS_THICKFRAME` all clear at exactly the monitor size, while the same window
+with an emptied blob had all four set at 1600x900. `ApplyLayout()` therefore
+clears a restored full-screen flag (`setWindowState()` rather than
+`showNormal()`, which would *show* the window from there, before `Application`
+does), and full screen becomes a deliberate state instead — **View → Full
+Screen**, F11 via `QKeySequence::FullScreen`. `changeEvent()` keeps that
+checkable action in step, so the check mark follows the state however it was
+entered; `setChecked()` with an unchanged value emits nothing, so the two cannot
+bounce.
 
 **Identity vs display — the rule that keeps layouts portable.** ADS serializes
 dock state keyed by `objectName`, and `ads::CDockWidget`'s constructor copies the
@@ -171,7 +190,9 @@ top-level window, and a separate window cannot be used inside another window's
 full-screen Space: macOS gives ADS's plain `Qt::Window` floating container
 `NSWindowCollectionBehaviorFullScreenPrimary` (`qcocoawindow.mm`,
 `setWindowFlags`) and the window server then refuses to let the user move it —
-the panel appears and is frozen. `UIManager::changeEvent()` watches
+the panel appears and is frozen. Full screen is entered from **View → Full
+Screen** (F11) or macOS's native green button — the latter is why the source of
+the state is not always ours. `UIManager::changeEvent()` watches
 `QEvent::WindowStateChange` (the only signal Qt gives for macOS's native green
 button) and calls `lockDockWidgetFeaturesGlobally(DockWidgetFloatable)` while
 full screen, after docking any already-floating panel back via
@@ -191,7 +212,7 @@ entry, making the restriction visible. Covered by
 | Menu | Items |
 |------|-------|
 | **File** | New, Open…, Save, Save As…, Preferences… (`Ctrl+,`), Exit (`Alt+F4`) |
-| **View** | Restore Default Layout |
+| **View** | Restore Default Layout, Full Screen (`F11`) |
 | **Edit** | Undo, Redo, Add (Mesh… / Camera / Light) |
 | **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) |
 | **Help** | About Neurus |
@@ -335,6 +356,17 @@ they translate at `createEditor()` time and need no hook at all
 wrap it in `I18n::instance().translate("...")` (or `translateCtx`/`N_` as
 appropriate), then run `scripts/extract_i18n.py` — the new key appears in the
 catalog automatically and the coverage report tells you if it is translated.
+
+**The extractor run is only half the job — a new key lands with an empty
+`msgstr`, and an empty `msgstr` is a missing translation, not a pending one.**
+The same commit must fill in the translation for every shipped catalog and end
+with `--check` printing `OK`. Regenerating the catalog without translating it
+is the trap: the file becomes *fresh* but stays incomplete, so `--check` fails
+on coverage (`MISSING 24`) and CI goes red even though the working tree is
+clean and the extractor reports no pending changes. Both halves are one gate,
+and `make update`/`cmake` know nothing about either — run it by hand before
+committing.
+
 **Adding a new language:** drop a `<code>.po` catalog in `res/i18n/` — that is
 the only step. `src/ui/CMakeLists.txt` globs `res/i18n/*.po` into
 `qt_add_resources` (`CONFIGURE_DEPENDS`), and `I18n::supportedLanguages()`
@@ -425,6 +457,15 @@ All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
 
 Each control change emits `configValueChanged(RenderConfig cfg)`, wired by `Application` to `Editor::SetRenderConfig(cfg)`.
 
+> **Not yet exposed (issue #22 follow-up):** `RenderConfig::r_debug_draw` — the master
+> switch for the viewport debug/gizmo overlay — has no control in this panel yet. It
+> defaults to `true` and is only reachable by editing a project file. When adding it,
+> a plain checkbox in a new **Overlay** group is enough: the flag gates *publication*,
+> not graph topology, so toggling it needs no RenderGraph rebuild. The same follow-up
+> covers the missing `GO_DL` / `GO_DP` / `GO_DM` cases in `Icons::ObjectIcon` (they
+> currently fall through to the mesh icon), the Outliner add-menu entries for the
+> three debug object types, and their PropertyEditor panels.
+
 ### ProfilingPanel
 
 `ProfilingPanel` (Bottom dock) shows the per-frame GPU/CPU profile returned by
@@ -483,8 +524,12 @@ complete scene events (see events.instructions.md, "Three event paths").
 - `PropertyPanel::Refresh()` reads `scene->selections.GetActiveObject()`,
   stores its `int` UID (lazy header update), and emits transform events
   (`PositionChanged`, `RotationChanged`, `ScaleChanged`) plus
-  camera/mesh/light/environment property events, all carrying the active
+  camera/mesh/light/environment/debug property events, all carrying the active
   object's `int objectUid`; it resolves per-id data via `Scene::GetObjectID`.
+  The debug subpanel is shared by GO_DL/GO_DP/GO_DM: `Refresh()` calls
+  `setObjectId()` **before** the setters (it invalidates the caches) and
+  `setDebugType()` to pick the visible rows. The position list is flattened to
+  xyz triples in the forwarding lambda, since `SceneEvents.h` stays glm-free.
 
 ### ShaderEditorPanel
 
@@ -549,6 +594,15 @@ Icons are embedded in the binary via `qt_add_resources(neurus_ui "icons" PREFIX 
 - Emits a single `valueChanged()` signal regardless of which control moved
 - Step and decimals auto-derived: `step = (max-min)/sliderSteps`, `decimals = ceil(-log10(step))`
 - Tick marks enabled with interval = `max(1, sliderSteps/10)`
+- `setValue()` dirty-checks against `m_v`, which mirrors **what the controls
+  currently show — user edits included** (both sync lambdas write it). A shadow
+  copy that tracked only programmatic writes would go stale the moment the user
+  touched the control, and a later push of that same value would then be silently
+  dropped while the widget still displayed the user's number — i.e. a panel could
+  never resynchronise the widget after an undo.
+- `pressed()` / `released()` bracket the whole mouse gesture. They come from an
+  event filter on the slider, not from `sliderPressed`/`sliderReleased`, which
+  miss groove clicks and would split a click+drag into two undo entries.
 
 ### Vec3Spin
 
@@ -558,6 +612,56 @@ Icons are embedded in the binary via `qt_add_resources(neurus_ui "icons" PREFIX 
 - Emits `valueChanged(x, y, z)` signal when any spinbox changes
 - `setValue(x, y, z)` with internal dirty-check — no-ops if all three values unchanged
 - Uses `QSignalBlocker` internally to prevent feedback loops during programmatic updates
+
+
+## Property Presets
+
+Presets in `src/ui/presets/` are the GOType-specific subpanels of
+`PropertyPanel`: `CameraProperties`, `MeshProperties`, `LightProperties`,
+`EnvironmentProperties` and `DebugProperties`. `PropertyPanel` owns one instance
+of each, shows exactly one per selection (`ShowTypeSubpanel`), and forwards their
+signals as typed scene events.
+
+Every preset follows the same contract:
+- A `QWidget` holding **one `QGroupBox`** — no dock, no scene access, no Vulkan.
+- `setObjectId(int)` binds the panel and **resets the dirty-check caches**, so
+  the first push after a selection change always writes through even when the new
+  object's value equals the old one's.
+- Every `set*()` is **dirty-checked** against a cached value and writes through
+  `blockSignals`/`QSignalBlocker`, because `Refresh()` re-pushes the scene's
+  values every frame and must not fight the widget the user is editing.
+- Signals carry `(int objectId, value)`; `PropertyPanel` wraps them into
+  `SceneEvents` structs stamped with `m_activeObjectId`.
+- `Retranslate()` re-applies every label via `I18n::instance().translate(...)`.
+- Rows that apply to only some subtypes are wrapped in a plain `QWidget*` row and
+  toggled with `setVisible` (spot-cone rows for a spot light; line/point rows for
+  a debug type).
+
+### DebugProperties (issue #22)
+
+One preset serves all three debug types — `DebugLine`, `DebugPoints` and
+`DebugMesh` share color / opacity / x-ray, and `setDebugType(int goType)` shows
+or hides the type-specific rows (line width + stipple; point shape +
+size + projection mode; mesh path label). Antialiasing is deliberately **not** a
+row: `DebugDrawBuilder` derives it per primitive kind (solid line and cube edge =
+smooth, dashed line = not, sprite = always, wire mesh = never), so there is
+nothing for the user to set.
+
+Its **position table** is the only place in the panel that edits a *list* rather
+than scalars, and is worth knowing about:
+- Edited **absolutely**: a cell edit, an Add and a Remove all emit the whole list
+  via `positionsChanged`. A structural change cannot be expressed per index, and
+  one event shape keeps undo to a single op.
+- An unparseable cell reads back as the coordinate it replaced and emits nothing,
+  so a typo mid-edit cannot teleport a vertex to the origin.
+- `m_populating` guards the emit path while `setPositions()` repopulates, so a
+  programmatic fill never looks like a user edit.
+- Beyond `kMaxRows` (512) the table shows the first 512 rows, goes
+  `NoEditTriggers` and disables Add/Remove — writing back only the visible rows
+  would silently drop the hidden tail. The count label still reports the true
+  size.
+- `DebugMesh` hides the table entirely: its geometry is a pooled `MeshData`, not
+  an editable list.
 
 
 ## Patterns

@@ -20,12 +20,17 @@
 
 #include <vector>
 
+#include "editor/events/CameraEvents.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/events/EditorEvents.h"
 #include "editor/operations/SceneOperations.h"
 #include "editor/Input.h"
+#include "editor/viewport/EditorViewport.h"
 
 #include "scene/Camera.h"
+#include "scene/DebugLine.h"
+#include "scene/DebugMesh.h"
+#include "scene/DebugPoints.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"
@@ -230,11 +235,12 @@ void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerConte
 
 void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::ControllerContext& ctx)
 {
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-	auto it = scene->cam_list.find(e.objectUid);
-	if (it == scene->cam_list.end()) return;
-	neurus::Camera* cam = it->second.get();
+	// Resolved through the resource pool, not scene->cam_list, for the same reason
+	// CameraController::ResolveCamera does: the editor camera is pooled but is not
+	// scene content, so a cam_list lookup would silently drop every property edit
+	// and every CameraTransformOp/CameraFovOp replay addressed to it.
+	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
+	if (!cam) return;
 
 	const glm::vec3 pos = cam->GetPosition();
 	const glm::vec3 before = cam->cam_tar;
@@ -251,11 +257,9 @@ void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::C
 
 void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::ControllerContext& ctx)
 {
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-	auto it = scene->cam_list.find(e.objectUid);
-	if (it == scene->cam_list.end()) return;
-	neurus::Camera* cam = it->second.get();
+	// Pool lookup, not cam_list — see OnCameraTargetChanged().
+	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
+	if (!cam) return;
 
 	const float before = cam->cam_pers;
 	cam->ChangeCamPersp(e.fov);
@@ -265,16 +269,64 @@ void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::Control
 
 void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::ControllerContext& ctx)
 {
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-	auto it = scene->cam_list.find(e.objectUid);
-	if (it == scene->cam_list.end()) return;
-	neurus::Camera* cam = it->second.get();
+	// Pool lookup, not cam_list — see OnCameraTargetChanged().
+	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
+	if (!cam) return;
 
 	// Replay path for CameraTransformOp: apply the absolute pose. Non-recording;
 	// live navigation records the op, this handler only re-applies endpoints.
 	cam->SetPosition(glm::vec3(e.posX, e.posY, e.posZ));
 	cam->SetTarPos(glm::vec3(e.tarX, e.tarY, e.tarZ));
+	Mutated(ctx.events);
+}
+
+/**
+ * @brief Activates a scene camera (or deactivates with uid 0) as ONE undo entry.
+ *
+ * Gesture and replay path both. The op is recorded only when the value actually
+ * changes, so re-ticking the checkbox of the already-active camera records
+ * nothing; on replay OperationManager's Phase::Replaying guard mutes the Submit,
+ * exactly as for every other handler here.
+ *
+ * Scene::ActivateCamera() refuses a UID that is not in cam_list, which is what
+ * keeps the editor camera — pooled, but not scene content — unactivatable. A
+ * refused activation still records nothing, because the snapshot is unchanged.
+ *
+ * The newly activated camera then needs the viewport's extent: a camera restored
+ * from a project saved on a differently sized window, or one never framed since
+ * it was added, carries an aspect that has nothing to do with this viewport, and
+ * only a window resize would ever have corrected it. CameraController resolves
+ * CameraResizeEvent through the pool, so the enqueue is all this needs.
+ */
+void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	const int before = scene->ActiveCameraID();
+	if (e.camUid == 0)
+		scene->DeactivateCamera();
+	else if (!scene->ActivateCamera(e.camUid))
+		return; // not a scene camera: Scene logged it, nothing changed
+
+	const int after = scene->ActiveCameraID();
+	if (after == before) return; // no-op toggle: record nothing, emit nothing
+
+	ctx.ops.Submit(std::make_unique<neurus::SetActiveCameraOp>(before, after));
+
+	if (after != 0)
+	{
+		if (const neurus::EditorViewport* vp = ctx.viewport())
+		{
+			const glm::uvec2 size = vp->Size();
+			if (size.x != 0 && size.y != 0)
+			{
+				ctx.events.enqueue(neurus::CameraResizeEvent{
+					after, static_cast<int>(size.x), static_cast<int>(size.y)});
+			}
+		}
+	}
+
 	Mutated(ctx.events);
 }
 
@@ -437,6 +489,192 @@ void OnEnvironmentRotationChanged(const neurus::EnvironmentRotationChanged& e, c
 }
 
 // ---------------------------------------------------------------------------
+// Debug object properties (issue #22)
+// ---------------------------------------------------------------------------
+//
+// Editing any of these is only visible after DebugDrawBuilder reflattens, which
+// is why every handler here ends in Mutated(): that enqueues RenderResetEvent,
+// whose Editor subscriber calls MarkDirty().
+
+/**
+ * @brief Applies `fn` to whichever debug pool holds `uid`.
+ * @return true if the UID named a live debug object.
+ *
+ * DebugLine, DebugPoints and DebugMesh share no base beyond ObjectID, but they
+ * do share the color / opacity / x-ray knobs, so `fn` is a generic lambda and
+ * the three unrelated pool lookups stay in one place. Type-specific knobs skip
+ * this and resolve their own pool directly — reaching a DebugMesh with a line
+ * width would be a bug, not something to silently absorb.
+ */
+template <typename Fn>
+bool ForDebugObject(neurus::Scene& scene, int uid, Fn&& fn)
+{
+	if (auto it = scene.dLine_list.find(uid); it != scene.dLine_list.end() && it->second)
+	{
+		fn(*it->second);
+		return true;
+	}
+	if (auto it = scene.dPoints_list.find(uid); it != scene.dPoints_list.end() && it->second)
+	{
+		fn(*it->second);
+		return true;
+	}
+	if (auto it = scene.dMesh_list.find(uid); it != scene.dMesh_list.end() && it->second)
+	{
+		fn(*it->second);
+		return true;
+	}
+	return false;
+}
+
+void OnDebugColorChanged(const neurus::DebugColorChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	const glm::vec4 after(e.r, e.g, e.b, e.a);
+	const bool found = ForDebugObject(*scene, e.objectUid, [&](auto& obj) {
+		const glm::vec4 before = obj.GetColor();
+		obj.SetColor(after);
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugColorOp>(obj.GetObjectID(), before, after));
+	});
+	if (found) Mutated(ctx.events);
+}
+
+void OnDebugOpacityChanged(const neurus::DebugOpacityChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	const bool found = ForDebugObject(*scene, e.objectUid, [&](auto& obj) {
+		const float before = obj.GetOpacity();
+		obj.SetOpacity(e.opacity);
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugOpacityOp>(obj.GetObjectID(), before, e.opacity));
+	});
+	if (found) Mutated(ctx.events);
+}
+
+void OnDebugXRayChanged(const neurus::DebugXRayChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	const bool found = ForDebugObject(*scene, e.objectUid, [&](auto& obj) {
+		const bool before = obj.GetXRay();
+		obj.SetXRay(e.xray);
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugXRayOp>(obj.GetObjectID(), before, e.xray));
+	});
+	if (found) Mutated(ctx.events);
+}
+
+void OnDebugLineWidthChanged(const neurus::DebugLineWidthChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+	auto it = scene->dLine_list.find(e.objectUid);
+	if (it == scene->dLine_list.end() || !it->second) return;
+	neurus::DebugLine* line = it->second.get();
+
+	const float before = line->GetWidth();
+	line->SetWidth(e.width);
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugLineWidthOp>(line->GetObjectID(), before, e.width));
+	Mutated(ctx.events);
+}
+
+void OnDebugLineStippleChanged(const neurus::DebugLineStippleChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+	auto it = scene->dLine_list.find(e.objectUid);
+	if (it == scene->dLine_list.end() || !it->second) return;
+	neurus::DebugLine* line = it->second.get();
+
+	const bool before = line->GetStipple();
+	line->SetStipple(e.stipple);
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugStippleOp>(line->GetObjectID(), before, e.stipple));
+	Mutated(ctx.events);
+}
+
+void OnDebugPointTypeChanged(const neurus::DebugPointTypeChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+	auto it = scene->dPoints_list.find(e.objectUid);
+	if (it == scene->dPoints_list.end() || !it->second) return;
+	neurus::DebugPoints* points = it->second.get();
+
+	const int before = static_cast<int>(points->GetPointType());
+	points->SetPointType(static_cast<neurus::DebugPoints::PointType>(e.pointType));
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointTypeOp>(points->GetObjectID(), before, e.pointType));
+	Mutated(ctx.events);
+}
+
+void OnDebugPointScaleChanged(const neurus::DebugPointScaleChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+	auto it = scene->dPoints_list.find(e.objectUid);
+	if (it == scene->dPoints_list.end() || !it->second) return;
+	neurus::DebugPoints* points = it->second.get();
+
+	const float before = points->GetScale();
+	points->SetScale(e.scale);
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointScaleOp>(points->GetObjectID(), before, e.scale));
+	Mutated(ctx.events);
+}
+
+void OnDebugProjectionModeChanged(const neurus::DebugProjectionModeChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+	auto it = scene->dPoints_list.find(e.objectUid);
+	if (it == scene->dPoints_list.end() || !it->second) return;
+	neurus::DebugPoints* points = it->second.get();
+
+	const int before = points->GetProjectionMode();
+	points->SetProjectionMode(e.projectionMode);
+	ctx.ops.Submit(
+		std::make_unique<neurus::SetDebugProjectionModeOp>(points->GetObjectID(), before, e.projectionMode));
+	Mutated(ctx.events);
+}
+
+/**
+ * @brief Absolute position-list edit for a DebugLine or DebugPoints.
+ *
+ * The event carries xyz triples; a trailing partial triple is dropped rather
+ * than fabricating a coordinate. DebugMesh has no editable position list — its
+ * geometry comes from a pooled MeshData — so it is not reachable here.
+ */
+void OnDebugPositionsChanged(const neurus::DebugPositionsChanged& e, const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	std::vector<glm::vec3> after;
+	after.reserve(e.xyz.size() / 3);
+	for (size_t i = 0; i + 2 < e.xyz.size(); i += 3)
+		after.emplace_back(e.xyz[i], e.xyz[i + 1], e.xyz[i + 2]);
+
+	if (auto it = scene->dLine_list.find(e.objectUid); it != scene->dLine_list.end() && it->second)
+	{
+		neurus::DebugLine* line = it->second.get();
+		const std::vector<glm::vec3> before = line->GetVertices();
+		line->SetVertices(after);
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(line->GetObjectID(), before, after));
+		Mutated(ctx.events);
+		return;
+	}
+	if (auto it = scene->dPoints_list.find(e.objectUid); it != scene->dPoints_list.end() && it->second)
+	{
+		neurus::DebugPoints* points = it->second.get();
+		const std::vector<glm::vec3> before = points->GetPoints();
+		points->SetPoints(after);
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(points->GetObjectID(), before, after));
+		Mutated(ctx.events);
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Scene membership (Add / Delete)
 // ---------------------------------------------------------------------------
 
@@ -545,23 +783,11 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
 	const neurus::SelectionState before = SnapshotSelection(*scene);
 	if (before.selectedUids.empty()) return;
 
-	// Last-camera guard: the render passes dereference GetActiveCamera()
-	// unconditionally, so never leave the scene without a camera. Types are
-	// resolved from the SCENE (the objects being deleted are in it by
-	// definition) — no pool dependency.
-	size_t camerasToDelete = 0;
-	for (int uid : before.selectedUids)
-	{
-		const neurus::ObjectID* obj = scene->GetObjectID(uid);
-		if (obj && obj->o_type == neurus::ObjectID::GOType::GO_CAM)
-			++camerasToDelete;
-	}
-	if (camerasToDelete > 0 && scene->cam_list.size() <= camerasToDelete)
-	{
-		NEURUS_ERR("[SceneController] Refusing to delete the last camera");
-		return;
-	}
-
+	// Cameras are deleted like any other object — there is deliberately no
+	// last-camera guard. A camera-less scene is legal: Editor::ViewCamera() falls
+	// back to the editor camera, which is not scene content and cannot be deleted
+	// from here.
+	//
 	// Deselect all, then defer ONE batched removal to the single removal
 	// handler. The composite is light: [selection-clear, batched delete].
 	scene->selections.ClearSelection();
@@ -623,6 +849,7 @@ void SceneController::Init(ControllerContext& ctx)
 	ctx.events.subscribe<CameraTargetChanged>([ctx](const CameraTargetChanged& e) { OnCameraTargetChanged(e, ctx); });
 	ctx.events.subscribe<CameraFovChanged>([ctx](const CameraFovChanged& e) { OnCameraFovChanged(e, ctx); });
 	ctx.events.subscribe<CameraPoseChanged>([ctx](const CameraPoseChanged& e) { OnCameraPoseChanged(e, ctx); });
+	ctx.events.subscribe<ActiveCameraChanged>([ctx](const ActiveCameraChanged& e) { OnActiveCameraChanged(e, ctx); });
 	ctx.events.subscribe<MeshShadowChanged>([ctx](const MeshShadowChanged& e) { OnMeshShadowChanged(e, ctx); });
 	ctx.events.subscribe<MeshMaterialChanged>([ctx](const MeshMaterialChanged& e) { OnMeshMaterialChanged(e, ctx); });
 	ctx.events.subscribe<LightPowerChanged>([ctx](const LightPowerChanged& e) { OnLightPowerChanged(e, ctx); });
@@ -633,6 +860,15 @@ void SceneController::Init(ControllerContext& ctx)
 	ctx.events.subscribe<LightOuterCutoffChanged>([ctx](const LightOuterCutoffChanged& e) { OnLightOuterCutoffChanged(e, ctx); });
 	ctx.events.subscribe<EnvironmentIntensityChanged>([ctx](const EnvironmentIntensityChanged& e) { OnEnvironmentIntensityChanged(e, ctx); });
 	ctx.events.subscribe<EnvironmentRotationChanged>([ctx](const EnvironmentRotationChanged& e) { OnEnvironmentRotationChanged(e, ctx); });
+	ctx.events.subscribe<DebugColorChanged>([ctx](const DebugColorChanged& e) { OnDebugColorChanged(e, ctx); });
+	ctx.events.subscribe<DebugOpacityChanged>([ctx](const DebugOpacityChanged& e) { OnDebugOpacityChanged(e, ctx); });
+	ctx.events.subscribe<DebugXRayChanged>([ctx](const DebugXRayChanged& e) { OnDebugXRayChanged(e, ctx); });
+	ctx.events.subscribe<DebugLineWidthChanged>([ctx](const DebugLineWidthChanged& e) { OnDebugLineWidthChanged(e, ctx); });
+	ctx.events.subscribe<DebugLineStippleChanged>([ctx](const DebugLineStippleChanged& e) { OnDebugLineStippleChanged(e, ctx); });
+	ctx.events.subscribe<DebugPointTypeChanged>([ctx](const DebugPointTypeChanged& e) { OnDebugPointTypeChanged(e, ctx); });
+	ctx.events.subscribe<DebugPointScaleChanged>([ctx](const DebugPointScaleChanged& e) { OnDebugPointScaleChanged(e, ctx); });
+	ctx.events.subscribe<DebugProjectionModeChanged>([ctx](const DebugProjectionModeChanged& e) { OnDebugProjectionModeChanged(e, ctx); });
+	ctx.events.subscribe<DebugPositionsChanged>([ctx](const DebugPositionsChanged& e) { OnDebugPositionsChanged(e, ctx); });
 
 	// --- Scene membership (add / delete) ---
 	ctx.events.subscribe<SceneObjectAddRequested>([ctx](const SceneObjectAddRequested& e) {

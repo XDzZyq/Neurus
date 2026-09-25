@@ -94,8 +94,23 @@ lives in `src/asset/`, GPU resource management lives in `src/render/`.
      written as UIDs (`selectedUids` + `activeUid`), mirroring `SelectionState`
      in `SceneOperations.h`. On load the UIDs are resolved back to pointers via
      `Scene::GetObjectID()` *after* `RebuildObjList()`. The selection block is
-     optional: legacy files without it load with an empty selection (the load
-     branch catches the missing-NVP `cereal::Exception`).
+     optional: legacy files without it load with an empty selection.
+   - **Optional trailing fields** (`src/core/Serialize.h`): a field appended after a
+     format shipped is absent from older files, and cereal reports that by throwing
+     `cereal::Exception` from the read — unhandled, the throw aborts the whole
+     component's `Load`, so one new setting discards every setting around it. Write
+     such fields **last** and read them through:
+     - `NEURUS_OPTIONAL_NVP(ar, field, fallback)` for a single field
+       (`RenderConfig::serialize` and `r_debug_draw`), or
+     - `neurus::archive::OptionalBlock(ar, CEREAL_NVP(a), CEREAL_NVP(b), ...)`, which
+       returns false on a load that found the block missing, when several fields must
+       be defaulted together (`Scene::serialize`'s selection and debug-pool blocks).
+
+     Order is permanent: the binary and portable-binary archives are positional, so
+     once a file exists with the field, its position is fixed. The namespace is
+     `archive`, not `serialize` — several headers declare free
+     `neurus::serialize(Archive&, T&)` overloads for cereal to find by ADL, and a
+     namespace of that name inside `neurus` redefines them.
    - The pointer↔UID conversion lives in scene-layer free functions
      `neurus::SnapshotSelectionUids` / `RestoreSelectionUids` (in `Scene.h`),
      shared by `Scene::serialize` and the editor's `SceneController` selection

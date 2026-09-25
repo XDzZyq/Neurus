@@ -294,7 +294,20 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	// --- Cast scene UID to Scene* for access to Scene-specific members ---
 	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
 
-	const Camera* cam = scene->GetActiveCamera();
+	// The viewing camera comes from the context, never from the Scene. The Editor
+	// decides which camera that is - its own viewport camera or the scene's active
+	// one - and injects it before the frame records, so a pass has no business
+	// re-deriving it. Reading Scene::GetActiveCamera() here would put this
+	// invProjView on a different camera than the CameraGPU the vertex stage used:
+	// a split brain that renders plausible-looking wrong lighting rather than
+	// failing. Scene::GetActiveCamera() remains the *scene's* camera and stays
+	// meaningful - it is simply not this pass's input.
+	const Camera* cam = ctx.editor.camera;
+	if (!cam)
+	{
+		NEURUS_LOG("[LightingPass] No camera in EditorContext, skipping");
+		return stats;
+	}
 	const glm::vec3 cameraPos = cam->GetPosition();
 	const glm::mat4 viewMatrix = cam->GetViewMatrix();
 	const glm::mat4 invProjView = glm::inverse(cam->GetProjectionMatrix() * cam->GetViewMatrix());

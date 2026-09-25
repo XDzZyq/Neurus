@@ -15,7 +15,6 @@
 #include "editor/operations/IOperationSink.h"
 #include "editor/operations/SceneOperations.h"
 #include "scene/Camera.h"
-#include "scene/Scene.h"
 
 #include <algorithm>
 #include <cmath>
@@ -40,15 +39,22 @@ constexpr float kZoomSensitivity = 1.0f;
 constexpr float kDollySensitivity = 0.05f;
 
 /**
- * @brief Resolves a camera event's camId to its live Camera (via the scene).
- * @return Non-owning Camera*, or nullptr if the id is stale.
+ * @brief Resolves a camera event's camId to its live Camera (via the resource pool).
+ *
+ * Looks the id up in the pool rather than in `scene->cam_list`, and that is the
+ * whole point: this controller manipulates *whichever* camera the UID names and
+ * deliberately does not know which one the viewport is currently looking through.
+ * The editor's own viewport camera is pooled like any other camera but is not scene
+ * content, so it is absent from `cam_list` — a scene-scoped lookup would silently
+ * refuse to navigate it. Every camera is created through
+ * `ResourceManager::Load<Camera>()`, so the pool resolves scene and editor cameras
+ * alike.
+ *
+ * @return Non-owning Camera*, or nullptr if the id is stale or names another type.
  */
 neurus::Camera* ResolveCamera(const neurus::ControllerContext& ctx, int camId)
 {
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return nullptr;
-	auto it = scene->cam_list.find(camId);
-	return it == scene->cam_list.end() ? nullptr : it->second.get();
+	return ctx.resources.Get<neurus::Camera>(camId).get();
 }
 
 // ---------------------------------------------------------------------------

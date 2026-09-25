@@ -13,6 +13,9 @@ Light::Light()
 	, Transform3D()
 {
 	o_type = ObjectID::GOType::GO_LIGHT;
+	// Untyped default: ParseLightName() would say "None", which reads as an
+	// error in the outliner. A load overwrites o_name from the archive anyway.
+	o_name = "Light";
 }
 
 Light::Light(LightType type, float power, glm::vec3 color)
@@ -23,6 +26,7 @@ Light::Light(LightType type, float power, glm::vec3 color)
 	, light_color(color)
 {
 	o_type = ObjectID::GOType::GO_LIGHT;
+	o_name = ParseLightName(light_type).second;
 }
 
 std::pair<SpriteType, std::string> Light::ParseLightName(LightType _type)

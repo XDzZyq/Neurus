@@ -58,6 +58,11 @@ ScalarSlider::ScalarSlider(double min, double max, int sliderSteps,
 		m_spin->blockSignals(true);
 		m_spin->setValue(d);
 		m_spin->blockSignals(false);
+		// m_v mirrors what the controls show, user edits included: it guards
+		// setValue(), and a shadow copy that only tracked programmatic writes
+		// would make a later push of that same value a silent no-op while the
+		// widget still displayed the user's number.
+		m_v = m_spin->value();
 		emit valueChanged();
 	});
 
@@ -68,6 +73,7 @@ ScalarSlider::ScalarSlider(double min, double max, int sliderSteps,
 		m_slider->blockSignals(true);
 		m_slider->setValue(s);
 		m_slider->blockSignals(false);
+		m_v = val;
 		emit valueChanged();
 	});
 

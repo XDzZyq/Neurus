@@ -23,8 +23,12 @@ renders frames. It must remain stateless with respect to application logic.
 - `src/render/shaders/RenderShader.h/cpp, ComputeShader.h/cpp` - Render/compute pipeline wrappers (parsed + generated shaders)
 - `src/render/shaders/ShaderCompiler.h/cpp, ShaderGPU.h` - SPIR-V compilation and GPU shader module
 - `src/render/Renderer.h` - Public renderer API, frame drawing
-- `src/render/RenderCache.h/cpp` - Cross-frame resource pool; owns MeshGPU, EnvironmentGPU, LightingCache, attachments, shadow maps
+- `src/render/RenderCache.h/cpp` - Cross-frame resource pool; owns MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache, attachments, shadow maps
 - `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL)
+  - `UploadMesh(const Mesh&)` null-checks `o_mesh` then delegates to
+    `UploadMeshData(const MeshData&)`, which owns the 14→8 float vertex stripping.
+    Scene objects that carry a `MeshData` without being a `Mesh` — `DebugMesh` —
+    call the latter directly rather than duplicating the stripping.
 - `src/render/Texture.h/cpp` - Texture resource (Image + sampler + descriptor)
 - `src/render/resources/LightingCache.h/cpp` - GPU-side light SSBO storage (point + sun, push constants)
 - `src/render/resources/MeshGPU.h` - GPU-side mesh resources (VertexBuffer + IndexBuffer) + MeshPushConstants
@@ -216,17 +220,47 @@ LightingPass (compute: reads G-Buffer + AO + shadow intensity array,
 IBLPass (compute: reads G-Buffer + HDRColor, applies diffuse+specular IBL, writes HDRColor)
     │
     ▼
-GizmoPass (compute: reads IDBuffer, 3×3 edge detection for activeObjectId, writes R8 highlight)
+SelectionOutlinePass (compute: reads IDBuffer, 3×3 edge detection for activeObjectId, writes R8 outline)
     │
     ▼
-ComposePass (compute: blends GizmoHighlight onto HDRColor, applies gamma correction, writes ComposedOutput)
+ComposePass (compute: blends SelectionOutline onto HDRColor, applies gamma correction, writes ComposedOutput)
     │
     ▼
 FXAAPass (compute: reads ComposedOutput, luma-based edge detection + full-iteration edge search, writes FXAAOutput)
     │  (conditional: only when AA == AAAlg::FXAA)
     ▼
-Blit (ComposedOutput or FXAAOutput) → Swapchain (vkCmdBlitImage)
+DebugPass (raster: draws DebugDrawList over the last post-chain image with
+           LOAD_OP_LOAD — FXAAOutput when FXAA is on, ComposedOutput when it is
+           off — depth-tested against the G-Buffer Depth it only reads)
+    ├── lines      → screen-space quads (6 verts/segment, SSBO-indexed)
+    ├── points     → ePointList sprites (square / rhombus / circle mask)
+    └── wireframes → PolygonMode::eLine over the DebugMesh's existing MeshGPU
+    │
+    ▼
+Blit (DebugPass::GetTarget()) → Swapchain (vkCmdBlitImage)
 ```
+
+**The overlay is last, after post-AA.** FXAA must not see debug geometry: every
+primitive that can be antialiased already is, analytically and from real coverage
+(`overlay_line.frag` fades one pixel in from the quad edge using the true width,
+`overlay_point.frag` fades an exact p-norm distance through `fwidth()`). A luma
+filter can only re-blur a gradient that was already correct, drag overlay color
+into neighbouring scene pixels, and soften the hard dash ends `DebugDrawBuilder`
+deliberately leaves un-`Smooth`ed on a stippled line. The cost is wireframe, whose
+`PolygonMode::eLine` edges have no distance-to-edge to fade and so were the only
+primitives FXAA genuinely helped — accepted, since a `DebugMesh` overlay is a
+diagnostic, not a shipped image.
+
+`DebugPass::SetTarget()` picks the attachment, called by `RebuildMainGraph()`
+before `AddPass()` (which caches `GetIO()`). The pass itself never mentions FXAA,
+so the config → topology decision stays in `PipelineSignature`, and `GetIO()` stays
+a declaration of concrete attachment names the graph can validate — an *alias*
+name shared by both images could not work, because `RenderGraph::Connect()` matches
+producer and consumer sockets by `AttachmentName` and an unwired input is treated
+as external, which would silently leave the pass unordered. `GetTarget()` is also
+the blit source, which collapses the old `useFXAA ? FXAAOutput : ComposedOutput`
+ternary in `recordFrame()` and stays correct on frames where the overlay draws
+nothing (it then leaves the image exactly as the compute pass that filled it did).
 
 ### ImageState & Barrier Convention
 
@@ -251,6 +285,53 @@ Barrier::Transition(cmdBuf, myImage, ImageState::ColorShaderRead);
   - Raw `VkImage` handles not wrapped in `Image` (e.g. swapchain images)
   - Same-layout memory barriers (`eGeneral → eGeneral`) within compute passes
 
+**Access masks carry the read bits, not just the write bits.** `ColorAttachment`
+and `DepthAttachment` map to `…AttachmentWrite | …AttachmentRead`, because an
+attachment reached with `VK_ATTACHMENT_LOAD_OP_LOAD` (DebugPass draws over its
+target) or consumed by the depth test without depth writes (DebugPass
+again) *reads* the image through the attachment stage — a write-only
+`dstAccessMask` leaves the previous writer's data unavailable to the load, which
+on a tiler shows up as stale tiles blended into the frame. Passes that only
+clear-and-write are unaffected by the wider mask.
+
+**A pass transitions the images it is about to *use*, and leaves its own outputs
+in its own write state.** A producer must never pre-transition an output into the
+state it guesses the next consumer wants. `Barrier::Transition` derives the
+`srcAccessMask` from the state the image is *currently* in, so a producer that
+hands over e.g. `TransferSrc` gives the consumer's own barrier a src scope of
+`eTransferRead` — which names no writes, makes none available, and so creates a
+memory dependency covering nothing. ComposePass used to end with
+`Transition(ComposedOutput, TransferSrc)` "ready for the blit"; DebugPass's
+`TransferSrc → ColorAttachment` barrier then failed to order its overlay against
+ComposePass's compute writes, and on MoltenVK the compute and render encoders
+overlapped: every frame kept a different random subset of the overlay's tiles
+with ComposePass's output in the rest — a per-frame-random tear that no amount of
+extra serialization *after* DebugPass could fix. The rule now:
+`ComposePass`/`FXAAPass` leave their output in `ShaderWrite`, `DebugPass` leaves
+its target in `ColorAttachment`, and the swapchain blit in
+`DeferredRenderer::recordFrame` transitions its own source to `TransferSrc`.
+The same hazard shape applies unchanged now that DebugPass runs after FXAAPass —
+the upstream compute dispatch whose writes its barrier must cover is FXAA's rather
+than ComposePass's, but it is still `ShaderWrite → ColorAttachment` out of a
+compute pass, so nothing about the pattern moves.
+Note that validation does not catch this — the layouts are all consistent — so
+synchronization validation plus a coloured `LOAD_OP_CLEAR` probe is the way to
+find it.
+
+**`Undefined`/`Invalid` use `eAllCommands`, never `eTopOfPipe`, as a source
+stage.** They only ever appear as the "before" state of a discard transition, so
+the access mask stays empty — but `eTopOfPipe` in a `srcStageMask` creates no
+execution dependency at all, which leaves a discard transition unordered against
+whoever last read the image. The concrete case is the swapchain image: it is
+transitioned `Undefined → TransferDst` for the final blit while the presentation
+engine may still be reading it. For the same reason the submit waits the acquire
+semaphore at `eColorAttachmentOutput | eTransfer` — the first use of a swapchain
+image on this path is a transfer, not a color-attachment write. Both were caught
+by synchronization validation (`SYNC-HAZARD-WRITE-AFTER-READ` at
+`vkQueueSubmit`); re-run it with
+`VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT`
+after touching barriers or submit scopes.
+
 ### ImageState::Invalid Convention
 
 - `ImageState::Invalid` signals an image whose GPU creation failed (e.g.
@@ -269,31 +350,120 @@ Barrier::Transition(cmdBuf, myImage, ImageState::ColorShaderRead);
 - **Lighting**: Ambient term multiplied by `(1.0 - ao)` so occluded areas receive less ambient light
 - **Radius**: Default 0.15 (appropriate for [-1, 1] scene scale)
 
-### GizmoPass Convention
+### SelectionOutlinePass Convention
 - **IDBuffer**: Reads `VK_FORMAT_R32_UINT` attachment at binding 0, written by GeometryPass
   (stores `objectId` as a 32-bit unsigned integer per pixel).
 - **Edge detection**: 3×3 Laplacian-style kernel over neighboring IDBuffer pixels.
   A pixel is highlighted when at least one neighbor has a different objectId AND
   the center pixel's objectId matches `activeObjectId` (push constant).
-- **Output**: `VK_FORMAT_R8_UNORM` attachment (`AttachmentName::GizmoHighlight`) at binding 1.
+- **Output**: `VK_FORMAT_R8_UNORM` attachment (`AttachmentName::SelectionOutline`) at binding 1.
   Highlighted pixels = 255 (edge of selected object); all others = 0.
-- **Push constant**: `uint32_t activeObjectId` — set to the currently selected object ID
-  from `RenderContext::activeObjectId`. When `activeObjectId == 0`, the pass early-outs
-  (no highlight written).
+- **Push constant**: `uint32_t activeObjectId` — read inside `Record()` from
+  `ctx.editor.scene`'s `selections.GetActiveObject()`, not from a `RenderContext`
+  field. When `activeObjectId == 0`, the shader early-outs (no highlight written).
 
 ### ComposePass Convention
 - **Inputs**: Reads `HDRColor` (binding 0, `R16G16B16A16_SFLOAT`) and
-  `GizmoHighlight` (binding 1, `R8_UNORM`).
+  `SelectionOutline` (binding 1, `R8_UNORM`).
 - **Highlight blending**: When a pixel's highlight value > 0, an orange highlight
   (`rgb(1.0, 0.5, 0.0)`) is blended at 50% alpha onto the HDR color:
   `composed = mix(hdr, highlightColor, highlight * 0.5)`.
 - **Gamma correction**: After highlight blending, applies `pow(color, 1.0 / gamma)` where
   `gamma` is read from `RenderConfig::r_gamma` (default 1.0) via the push constant
   `float gamma`.
-- **Output**: `ComposedOutput` (`R16G16B16A16_SFLOAT`) at binding 2, the final
-  framebuffer before swapchain blit.
+- **Output**: `ComposedOutput` (`R16G16B16A16_SFLOAT`) at binding 2, consumed by
+  FXAAPass when AA is on and by DebugPass when it is off.
 
-### Sun Shadow Convention
+### DebugPass Convention
+
+> Not to be confused with **SelectionOutlinePass** above: that is a compute pass that
+> outlines the *selected* object from the IDBuffer. `DebugPass` is a raster pass that
+> draws the scene's `DebugLine` / `DebugPoints` / `DebugMesh` objects (issue #22).
+
+- **Gate**: `RenderConfig::r_debug_draw`. The pass stays in the RenderGraph
+  unconditionally; the Editor publishes a null `EditorContext::debugDraw` when the
+  toggle is off and `Record()` returns before touching any image. Toggling the
+  overlay therefore costs **no graph rebuild** (unlike FXAA, which changes the
+  `PipelineSignature`).
+- **Target**: `p_target`, set by `SetTarget()` and read back by `GetTarget()` —
+  `FXAAOutput` when FXAA is on, `ComposedOutput` when it is off. Drawn with
+  `LOAD_OP_LOAD` so the shaded image survives underneath. The pass transitions it
+  from the `ShaderWrite` state the upstream compute dispatch (FXAAPass, or
+  ComposePass when FXAA is off) leaves it in — that barrier is the only thing
+  ordering the overlay against that dispatch — and leaves it in `ColorAttachment`
+  for the blit to transition. See the barrier-ownership rule above; getting this
+  wrong tears the overlay per-tile on MoltenVK with zero validation errors.
+  `SetTarget()` must be called **before** `RenderGraph::AddPass()`, which caches
+  `GetIO()`; `RebuildMainGraph()` is the only caller, so the pass never learns what
+  FXAA is and the config → topology mapping stays in `PipelineSignature`. Both
+  attachments share `ComposedOutput`'s format and usage, so one set of pipelines
+  serves either and no second pipeline variant exists. The default is
+  `ComposedOutput`, which is what a test constructing the pass directly gets.
+- **Depth**: reads the G-Buffer `Depth` with `LOAD_OP_LOAD`, `depthTestEnable` on
+  and **`depthWriteEnable` off**. Debug geometry is occluded by solid objects but
+  never occludes anything, including other debug geometry.
+- **Three pipelines, one layout** (`p_pipelines[0..2]`): lines, points, wireframe.
+  - Lines are `eTriangleList`: 6 vertices per segment expanded into a screen-space
+    quad by `overlay_line.vert`. Wide-line rasterization is deliberately *not* used —
+    Metal caps `lineWidth` at 1.0, so `VK_EXT_line_rasterization` would silently
+    degrade on macOS.
+  - Points are `ePointList` with `gl_PointSize`; the shape is masked from
+    `gl_PointCoord`. `gl_PointSize` is clamped to the device's `pointSizeRange[1]`,
+    queried once and pushed as `DebugPushConstants::maxPointSizePx` (exceeding it is
+    undefined behaviour).
+  - Wireframe is `PolygonMode::eLine` over the DebugMesh's **existing** MeshGPU
+    vertex/index buffers, so wireframe geometry is never duplicated or re-uploaded.
+    That MeshGPU has to exist first: the pass skips any `DebugWireMesh` whose
+    `meshObjectId` resolves to no cached buffers, so the Editor must upload it (see
+    "MeshGPU upload for `DebugMesh`" in editor.instructions.md). A wireframe that
+    simply does not appear is almost always a missing upload, not a pipeline bug.
+- **X-ray is dynamic state, not a fourth pipeline**: `vk::DynamicState::eDepthTestEnable`
+  is flipped between the depth-tested and x-ray halves of the partitioned
+  `DebugDrawList`. The whole frame is at most **6 draws** (3 kinds × 2 depth modes),
+  independent of primitive count — that is the structural half of issue #22's budget
+  and `test_debug_pass.cpp` asserts it exactly (10,000 segments ⇒ 2 draws).
+- **Blending**: alpha-over, no culling. Debug geometry is two-sided by nature.
+- **Upload is revision-gated, and the pass does not do it**: debug producers are
+  stateful, so the list is usually byte-identical to last frame's. The geometry lives
+  in `RenderCache`'s `DebugCache`, not in the pass: `DeferredRenderer::recordFrame()`
+  calls `RenderCache::UpdateDebugDraw(frameIndex, list)` once per frame, before any
+  pass records, and a slot whose `uploadedRevision` already matches
+  `DebugDrawList::revision` **skips the memcpy entirely**. `uploadedRevision` starts
+  at `UINT64_MAX`, not 0, because a list legitimately at revision 0 would otherwise
+  never upload.
+- **Capacity grows with the geometry**: `DebugCache` sizes each slot's `CPUBuffer`
+  pair in powers of two from 4 KiB, so nothing is clamped or dropped. Growth swaps
+  the `VkBuffer` handle, which is why `DebugPass::Record()` re-writes bindings 0-2
+  from the cache **every frame** — the same thing `LightingPass` does for the light
+  SSBOs, and legal for the same reason: the frame being recorded has already waited
+  on its fence. A slot is only ever written for a frame that is not in flight.
+- **Camera**: the pass binds `RenderCache::GetCameraGPU()`, the renderer's single
+  camera UBO (`{viewProj, view}`, the block `gbuffer.vert` declares), written once
+  per frame by `recordFrame()`. `GeometryPass` binds the same buffer; neither owns
+  one. `CameraGPU` also keeps the **projection matrix on the CPU**
+  (`GetProjection()`) without uploading it: DebugPass converts a world-space size to
+  pixels with `proj[1][1]`, and that factor cannot be recovered from `viewProj` once
+  the view rotation is folded in (column-major: `(proj*view)[1][1]` sums over `k`).
+
+### CPUBuffer Convention
+
+`CPUBuffer` (`src/render/buffers/CPUBuffer.h`) is the **permanent** host-visible,
+device-accessible buffer: mapped once at creation and written directly by the CPU.
+It is named for the mirror image of `GPUBuffer`, which is device-local.
+
+- Use it for data the CPU rewrites and the GPU reads in place — `DebugCache`'s
+  segment/point SSBOs are the reference case.
+- **`StagingBuffer` is for uploads and downloads only.** Do not retain one as a
+  permanent buffer object; that is what `CPUBuffer` exists for.
+- Use `GPUBuffer` (device-local + staging) for data that is written rarely and read
+  hot, e.g. mesh vertex/index buffers. Do **not** reach for it just because a write
+  looks infrequent: `GPUBuffer::Unmap()` and `ArrayBuffer::Resize()` each submit a
+  copy and then wait for the queue to go idle. Debug geometry is re-flattened on
+  every `RenderResetEvent`, which `CameraController` enqueues on every camera change,
+  so that choice would put a full GPU stall in every frame of a viewport drag. A
+  host-visible memcpy of a few hundred KB costs nothing by comparison.
+
+
 - **Projection**: Orthographic (`glm::ortho()`) with configurable left/right/bottom/top planes and near/far planes
 - **Depth range**: NDC Z in `[0, 1]` (Vulkan convention, requires `GLM_FORCE_DEPTH_ZERO_TO_ONE`)
 - **Frustum parameters** (`Light.h` static constexpr):
@@ -340,6 +510,11 @@ Barrier::Transition(cmdBuf, myImage, ImageState::ColorShaderRead);
 - **Sampler**: Bilinear (`VK_FILTER_LINEAR`) for sub-pixel accuracy; falls back to nearest if `R16G16B16A16_SFLOAT` format doesn't support `VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT`
 - **Config**: `RenderConfig::r_fxaa_subpix` (strength, default 0.75), `r_fxaa_edge_threshold` (default 0.166), `r_fxaa_edge_threshold_min` (default 0.0833)
 - **Gating**: `RenderConfig::RequiresFXAA()` — only records when AA algorithm is set to FXAA in RenderConfigPanel
+- **Input is the scene alone**: FXAA sits between ComposePass and DebugPass, so it
+  never sees the debug overlay. That is deliberate — see "The overlay is last,
+  after post-AA" in the pipeline section. It also means FXAA presence changes what
+  DebugPass draws into, which is why `PipelineSignature::fxaa` drives both the graph
+  edges and `DebugPass::SetTarget()`.
 
 ### RenderConfig Convention
 
@@ -348,6 +523,13 @@ passed to passes through `RenderContext::editor.config` (opaque `void*`):
 
 - **Algorithm selection**: `r_pipeline` (Forward/Deferred), `r_aa`, `r_ao`, `r_shadow`, `r_ssr`
 - **Quality parameters**: `r_gamma`, `r_ao_ksize`, `r_ao_radius`, `r_shadow_bias` (0.02), `r_sample_pf`
+- **Overlay toggle**: `r_debug_draw` / `RequiresDebugDraw()` — gates *publication*, not
+  graph topology (see DebugPass Convention). It is written **last** in `serialize()` and
+  read back with `NEURUS_OPTIONAL_NVP(ar, r_debug_draw, true)`, because a project file
+  saved before the field existed would otherwise make `ConfigComponent::Load` discard the
+  whole config and reset the user's gamma, AO and shadow settings. **Any field added to
+  `RenderConfig` from now on must follow that optional-trailing-field idiom** — see
+  `src/core/Serialize.h`.
 - **Serialized** via cereal for project save/load
 - **Live-update**: passes cast `static_cast<const RenderConfig*>(ctx.editor.config)` each frame; scalar param changes take effect on next `DrawFrame()`
 - **Shadow bias flow**: `RenderConfigPanel` slider → `configValueChanged` → `Editor::SetRenderConfig` → `RenderContext::editor.config` → `ShadowIntensityPass` casts to `RenderConfig*`, reads `r_shadow_bias`
@@ -355,7 +537,7 @@ passed to passes through `RenderContext::editor.config` (opaque `void*`):
 ### Attachment Formats
 
 All screen-space attachments (Position, Normal, Albedo, MetallicRoughness, Depth, HDRColor,
-SSAO, GizmoHighlight, ComposedOutput, FXAAOutput) are created lazily via
+SSAO, SelectionOutline, ComposedOutput, FXAAOutput) are created lazily via
 `RenderCache::GetAttachment(name, extent)` on first use.
 Per-light shadow maps are managed via `RenderCache::GetShadowMap(lightUID, lightType)`:
 - `LightType::POINTLIGHT` → cubemap (6-layer 2D_ARRAY, D32_SFLOAT, 1024×1024 per face)
@@ -374,17 +556,28 @@ assigned via `RenderCache::GetShadowIntensityLayer(lightUID, extent)`.
 | HDRColor | R16G16B16A16_SFLOAT | (0,0,0,0) | Lighting output |
 | SSAO | R8_UNORM | 0 (no occlusion) | Screen-space ambient occlusion |
 | SSR | R16G16B16A16_SFLOAT | (0,0,0,0) | Screen-space reflections (planned) |
-| GizmoHighlight | R8_UNORM | 0 | Selected-object edge highlight (GizmoPass output) |
-| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Final composed output before FXAA/blit (ComposePass output) |
-| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased output (FXAAPass output, blitted when FXAA active) |
+| SelectionOutline | R8_UNORM | 0 | Selected-object edge highlight (SelectionOutlinePass output) |
+| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Tonemapped scene (ComposePass output); FXAA's input, or DebugPass's target when FXAA is off |
+| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased scene (FXAAPass output); DebugPass's target when FXAA is on |
 | FXAAOffsets | R16G16_SFLOAT | (0,0) | FXAA edge subpixel offsets (RG16F, 2-channel, sampled+storage) |
 | ShadowMap | D32_SFLOAT | 1.0 | Per-light shadow depth (RenderCache-owned). Cubemap (6-layer 2D_ARRAY, 1024×1024) for point lights; 2D (2048×2048) for sun lights |
 | ShadowIntensity | R8_UNORM | 0 (no shadow) | Layered 2D_ARRAY, one layer per shadow-casting light (RenderCache-owned) |
 
-### RenderCache GPU Resources (MeshGPU, EnvironmentGPU)
+### RenderCache GPU Resources (MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache)
 
 `RenderCache` owns cross-frame mutable GPU resources beyond framebuffer attachments.
 These resources separate GPU ownership from the Vulkan-free scene and asset layers:
+
+**Scene-scoped eviction.** Mesh, environment and light entries — plus the
+shadow-layer / SSBO-index maps and the shadow intensity array derived from them —
+are dropped together by `RenderCache::RemoveSceneResources()`. The Editor calls
+it (after draining the device first) whenever it replaces the scene, i.e. from
+`BeginLoad()` and `CreateDefaultScene()`. Keying by object UID makes this
+necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project
+file, so an entry left behind by the previous scene shadows whatever returns
+under the same id. Screen-space attachments, the pipeline cache and the
+LightingCache survive it — they are recreated lazily, versioned, or owned by
+`UploadManager` rather than by the scene.
 
 **MeshGPU** (`src/render/MeshGPU.h`)
 - Holds device-local `VertexBuffer` + `IndexBuffer` for a mesh, plus vertex/index counts
@@ -405,14 +598,43 @@ These resources separate GPU ownership from the Vulkan-free scene and asset laye
 
 **LightingCache** (`src/render/resources/LightingCache.h`)
 - Manages point light and sun light SSBOs (device-local GPUBuffers)
-- Created by `RenderCache` via `InitLightingCache(queue, qfi)` (separated from constructor
-  so queue/qfi don't need to be stored as members)
+- Built by `UploadManager` (it needs a queue) and handed over with
+  `RenderCache::SetLightingCache(std::unique_ptr<LightingCache>)`, so `RenderCache`
+  never has to store a queue/qfi of its own
 - Updated via `RenderCache::UpdateLighting(variantDict)` — accepts a map of
   `variant<PointLightStruct, SunLightStruct>` keyed by light UID
 - `RenderCache::GetLightingCache()` returns the LightingCache for per-frame SSBO binding
   by `LightingPass`
 - Also defines `PointLightStruct`, `SunLightStruct` (std140-compatible, 48 bytes),
   and `LightingPushConstants` (176 bytes) — byte-for-byte matches with GLSL shaders
+
+**CameraGPU** (`src/render/resources/CameraGPU.h`)
+- The renderer's **single** camera UBO: `CameraUBOData{viewProj, view}` (128 bytes,
+  matching the `CameraUBO` block in `gbuffer.vert` and `debug_*.vert`)
+- Constructed **eagerly** in `RenderCache`'s constructor — it needs no queue — so
+  `GetCameraGPU()` returns a reference and is never null
+- Written once per frame by `DeferredRenderer::recordFrame()` via
+  `RenderCache::UpdateCamera(proj, view)`, *before* any pass records. Passes only
+  bind it; a pass that wrote it would make the result depend on pass order
+- Keeps `proj` on the CPU behind `GetProjection()` without uploading it (see the
+  DebugPass camera bullet for why `viewProj[1][1]` is not a substitute)
+- `IsValid()` is false until the first `UpdateCamera()`. `GeometryPass` and
+  `DebugPass` both bail out of `Record()` on a false, which is also why a **test**
+  that drives either pass directly must publish a camera first — use
+  `VulkanTestShared::PublishSceneCamera(cache, scene)`
+
+**DebugCache** (`src/render/resources/DebugCache.h`)
+- Per-frame-slot `CPUBuffer` pair (segments + point sprites) holding the flattened
+  `DebugDrawList`, plus the partition boundaries and counts `DebugPass` draws from
+- Also eager in `RenderCache`'s constructor, but allocates nothing until the first
+  `UpdateDebugDraw()`; the slot vector self-sizes on `frameIndex`, so no
+  `framesInFlight` count is threaded through the renderer
+- Written once per frame by `recordFrame()` via
+  `RenderCache::UpdateDebugDraw(frameIndex, list)`; revision-gated, so an unchanged
+  list copies nothing
+- `GetFrame(frameIndex)` returns a `FrameView` of borrowed pointers + counts. Null
+  buffers mean no `UpdateDebugDraw()` has run for that slot, and `DebugPass` returns
+  without touching an image
 
 **MeshPushConstants** (`src/render/resources/MeshGPU.h`)
 - Per-mesh push-constant block sent to the vertex shader (128 bytes total)
@@ -518,6 +740,25 @@ Application layer assembles the `UIContext` each frame (the Editor never produce
 it) and sets `UIContext::profile` to the returned profile (opaque `const void*`).
 The ProfilingPanel casts it back and renders the per-pass timings as a tree
 (Frame totals + per-pass rows). See ui-system.instructions.md.
+
+## Swapchain & Frame Pacing Convention
+
+- **Usage flags**: `Swapchain` requests
+  `eColorAttachment | eTransferDst | eTransferSrc`, masked by
+  `capabilities.supportedUsageFlags`. `eTransferDst` is the final blit's target;
+  `eTransferSrc` exists solely so `Screenshot` can copy the presented image back —
+  without it the capture path raises copy-source validation errors. The constructor
+  and `Recreate()` must request the same set.
+- **`kMaxFramesInFlight` is 1.** `RenderCache::GetAttachment()` returns a *single*
+  shared `Image` per `AttachmentName` (the extent argument is honoured only on the
+  first, lazy creation), so a second in-flight frame would write
+  `ComposedOutput`/`Depth` while the previous frame's blit still reads them, across
+  two submits with no dependency between them. Raising it requires per-frame-slot
+  attachments first.
+- **`kFenceTimeoutNs` is a deadlock guard, not a frame budget** (5 s). On timeout
+  `DrawFrame` abandons a frame it has already acquired an image for, so a value
+  near the real frame time silently drops frames — a Debug build with validation
+  layers on measures ~600 ms per frame, which the old 100 ms tripped every frame.
 
 ## Future Evolution
 

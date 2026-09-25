@@ -14,6 +14,7 @@ class CameraProperties;
 class MeshProperties;
 class LightProperties;
 class EnvironmentProperties;
+class DebugProperties;
 
 /**
  * @brief Property Panel displaying type/name header, editable transform, and
@@ -58,6 +59,9 @@ signals:
 	void cameraTargetChanged(const CameraTargetChanged& e);
 	void cameraFovChanged(const CameraFovChanged& e);
 
+	/// Camera *activation* (which camera the viewport uses); 0 = the editor camera.
+	void activeCameraChanged(const ActiveCameraChanged& e);
+
 	// --- Mesh ---
 	void meshShadowChanged(const MeshShadowChanged& e);
 	void meshMaterialChanged(const MeshMaterialChanged& e);
@@ -72,6 +76,17 @@ signals:
 	// --- Environment ---
 	void envIntensityChanged(const EnvironmentIntensityChanged& e);
 	void envRotationChanged(const EnvironmentRotationChanged& e);
+
+	// --- Debug objects (DebugLine / DebugPoints / DebugMesh) ---
+	void debugColorChanged(const DebugColorChanged& e);
+	void debugOpacityChanged(const DebugOpacityChanged& e);
+	void debugXRayChanged(const DebugXRayChanged& e);
+	void debugLineWidthChanged(const DebugLineWidthChanged& e);
+	void debugStippleChanged(const DebugLineStippleChanged& e);
+	void debugPointTypeChanged(const DebugPointTypeChanged& e);
+	void debugPointScaleChanged(const DebugPointScaleChanged& e);
+	void debugProjectionModeChanged(const DebugProjectionModeChanged& e);
+	void debugPositionsChanged(const DebugPositionsChanged& e);
 
 private:
 	void BuildHeader();
@@ -108,6 +123,7 @@ private:
 	MeshProperties*        m_meshProps   = nullptr;
 	LightProperties*       m_lightProps  = nullptr;
 	EnvironmentProperties* m_envProps    = nullptr;
+	DebugProperties*       m_debugProps  = nullptr;  ///< Serves GO_DL, GO_DP and GO_DM.
 };
 
 } // namespace neurus

@@ -4,8 +4,8 @@
  *
  * Architecture:
  * - Stateless static utility — no member variables, no state machine.
- * - Three translation methods: raw position → glm::vec2, raw modifier int → bitmask,
- *   raw button int → Input::MouseButton.
+ * - Four translation methods: raw position → glm::vec2, raw modifier int → bitmask,
+ *   raw button int → Input::MouseButton, raw key int → Input::Key.
  * - No Qt dependency — callers unwrap Qt types before calling.
  * - No more polling loop, no triple-buffer, no key state queries.
  *
@@ -71,6 +71,47 @@ public:
 	 * @return Corresponding Input::MouseButton. Falls back to Left for unrecognised values.
 	 */
 	static MouseButton GetMouseButton(uint32_t qtBtn);
+
+	// -----------------------------------------------------------------------
+	// Keyboard identifiers
+	// -----------------------------------------------------------------------
+
+	/**
+	 * @brief Keys the Editor reacts to, as an engine-side enum.
+	 *
+	 * Deliberately NOT the full keyboard: this lists only the keys some editor
+	 * system actually consumes, so an unhandled key translates to Key_Unknown
+	 * and is dropped at the boundary rather than travelling through the event
+	 * queue as a raw Qt code. Grow it one key at a time, alongside the handler
+	 * that needs it.
+	 *
+	 * The values are arbitrary and stable; they are not Qt codes. Qt::Key is
+	 * unwrapped by GetKey() in the .cpp so this header stays Qt-free.
+	 */
+	enum Key
+	{
+		Key_Unknown = 0,  ///< Not a key the editor handles; handlers must ignore it.
+
+		Key_G,            ///< Modal transform: grab/move.
+		Key_R,            ///< Modal transform: rotate.
+		Key_S,            ///< Modal transform: scale.
+
+		Key_X,            ///< Axis constraint X.
+		Key_Y,            ///< Axis constraint Y.
+		Key_Z,            ///< Axis constraint Z.
+
+		Key_Escape,       ///< Cancel the active modal operation.
+		Key_Return        ///< Confirm the active modal operation (Return and Enter both).
+	};
+
+	/**
+	 * @brief Translates a raw key integer into Input::Key.
+	 * @param qtKey Raw key value (e.g. static_cast<uint32_t>(event->key())).
+	 * @return Corresponding Input::Key, or Key_Unknown when the editor has no use
+	 *         for that key. Letter keys map irrespective of Shift/Caps, because Qt
+	 *         reports the unshifted code for plain letters.
+	 */
+	static Key GetKey(uint32_t qtKey);
 };
 
 } // namespace neurus

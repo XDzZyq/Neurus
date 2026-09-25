@@ -4,12 +4,16 @@
 #include "UIContext.h"
 #include "ui/utils/I18n.h"
 #include "presets/CameraProperties.h"
+#include "presets/DebugProperties.h"
 #include "presets/EnvironmentProperties.h"
 #include "presets/LightProperties.h"
 #include "presets/MeshProperties.h"
 #include "items/Vec3Spin.h"
 
 #include "scene/Camera.h"
+#include "scene/DebugLine.h"
+#include "scene/DebugMesh.h"
+#include "scene/DebugPoints.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"
@@ -44,6 +48,7 @@ PropertyPanel::PropertyPanel(QWidget* parent)
 	mainLayout->addWidget(m_meshProps);
 	mainLayout->addWidget(m_lightProps);
 	mainLayout->addWidget(m_envProps);
+	mainLayout->addWidget(m_debugProps);
 
 	// Text is filled in by the Retranslate() call at the end of this ctor.
 	m_emptyLabel = new QLabel();
@@ -86,6 +91,7 @@ void PropertyPanel::Retranslate()
 	m_meshProps->Retranslate();
 	m_lightProps->Retranslate();
 	m_envProps->Retranslate();
+	m_debugProps->Retranslate();
 }
 
 // =========================================================================
@@ -166,6 +172,15 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 
 	// --- Type-specific subpanel ---
 	ShowTypeSubpanel(static_cast<int>(activeObj->o_type));
+	if (activeObj->o_type == ObjectID::GOType::GO_DL ||
+	    activeObj->o_type == ObjectID::GOType::GO_DP ||
+	    activeObj->o_type == ObjectID::GOType::GO_DM)
+	{
+		// setObjectId() first: it invalidates the dirty-check caches, so the
+		// setters below always write through on a selection change.
+		m_debugProps->setObjectId(objectId);
+		m_debugProps->setDebugType(static_cast<int>(activeObj->o_type));
+	}
 	switch (activeObj->o_type)
 	{
 	case ObjectID::GOType::GO_CAM:
@@ -177,6 +192,11 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 			m_cameraProps->setObjectId(objectId);
 			m_cameraProps->setTarget(cam->cam_tar);
 			m_cameraProps->setFov(cam->cam_pers);
+			// Activation is Scene state, not a Camera property: it names which
+			// camera the viewport looks through, so it is read off the Scene and
+			// compared by UID. Selection is unrelated — a selected camera that is
+			// not activated shows an unticked box and does not change the view.
+			m_cameraProps->setActive(scene->ActiveCameraID() == objectId);
 		}
 		break;
 	}
@@ -224,6 +244,52 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 			// Path is owned by the pooled ImageData (data layer).
 			auto eqData = env->GetEquirectData();
 			m_envProps->setEquirectPath(eqData ? eqData->GetPath() : "");
+		}
+		break;
+	}
+	case ObjectID::GOType::GO_DL:
+	{
+		auto it = scene->dLine_list.find(objectId);
+		if (it != scene->dLine_list.end() && it->second)
+		{
+			auto* line = it->second.get();
+			m_debugProps->setColor(line->GetColor());
+			m_debugProps->setOpacity(line->GetOpacity());
+			m_debugProps->setXRay(line->GetXRay());
+			m_debugProps->setLineWidth(line->GetWidth());
+			m_debugProps->setStipple(line->GetStipple());
+			m_debugProps->setPositions(line->GetVertices());
+		}
+		break;
+	}
+	case ObjectID::GOType::GO_DP:
+	{
+		auto it = scene->dPoints_list.find(objectId);
+		if (it != scene->dPoints_list.end() && it->second)
+		{
+			auto* points = it->second.get();
+			m_debugProps->setColor(points->GetColor());
+			m_debugProps->setOpacity(points->GetOpacity());
+			m_debugProps->setXRay(points->GetXRay());
+			m_debugProps->setPointType(static_cast<int>(points->GetPointType()));
+			m_debugProps->setPointScale(points->GetScale());
+			m_debugProps->setProjectionMode(points->GetProjectionMode());
+			m_debugProps->setPositions(points->GetPoints());
+		}
+		break;
+	}
+	case ObjectID::GOType::GO_DM:
+	{
+		auto it = scene->dMesh_list.find(objectId);
+		if (it != scene->dMesh_list.end() && it->second)
+		{
+			auto* dmesh = it->second.get();
+			m_debugProps->setColor(dmesh->GetColor());
+			m_debugProps->setOpacity(dmesh->GetOpacity());
+			m_debugProps->setXRay(dmesh->GetXRay());
+			// Path is owned by the pooled MeshData (data layer).
+			m_debugProps->setMeshPath(
+				dmesh->o_mesh ? QString::fromStdString(dmesh->o_mesh->GetPath()) : QString());
 		}
 		break;
 	}
@@ -345,6 +411,7 @@ void PropertyPanel::BuildTypeSubpanels()
 	m_meshProps   = new MeshProperties(this);
 	m_lightProps  = new LightProperties(this);
 	m_envProps    = new EnvironmentProperties(this);
+	m_debugProps  = new DebugProperties(this);
 
 	// --- Forward signals from subpanels to PropertyPanel signals ---
 
@@ -356,6 +423,12 @@ void PropertyPanel::BuildTypeSubpanels()
 	QObject::connect(m_cameraProps, &CameraProperties::fovChanged, this,
 		[this](int /*objectId*/, float fov) {
 			emit cameraFovChanged(CameraFovChanged{m_activeObjectId, fov});
+		});
+	// Unticking sends uid 0 — the event's "deactivate" value — rather than the
+	// camera's own id, so the controller needs no separate off path.
+	QObject::connect(m_cameraProps, &CameraProperties::activeCameraChanged, this,
+		[this](int /*objectId*/, bool active) {
+			emit activeCameraChanged(ActiveCameraChanged{active ? m_activeObjectId : 0});
 		});
 
 	// Mesh
@@ -400,6 +473,54 @@ void PropertyPanel::BuildTypeSubpanels()
 			emit envRotationChanged(EnvironmentRotationChanged{m_activeObjectId, rotation});
 		});
 
+	// Debug (DebugLine / DebugPoints / DebugMesh — one preset, one event set)
+	QObject::connect(m_debugProps, &DebugProperties::colorChanged, this,
+		[this](int /*objectId*/, const glm::vec4& c) {
+			emit debugColorChanged(DebugColorChanged{m_activeObjectId, c.r, c.g, c.b, c.a});
+		});
+	QObject::connect(m_debugProps, &DebugProperties::opacityChanged, this,
+		[this](int /*objectId*/, float opacity) {
+			emit debugOpacityChanged(DebugOpacityChanged{m_activeObjectId, opacity});
+		});
+	QObject::connect(m_debugProps, &DebugProperties::xrayChanged, this,
+		[this](int /*objectId*/, bool xray) {
+			emit debugXRayChanged(DebugXRayChanged{m_activeObjectId, xray});
+		});
+	QObject::connect(m_debugProps, &DebugProperties::lineWidthChanged, this,
+		[this](int /*objectId*/, float width) {
+			emit debugLineWidthChanged(DebugLineWidthChanged{m_activeObjectId, width});
+		});
+	QObject::connect(m_debugProps, &DebugProperties::stippleChanged, this,
+		[this](int /*objectId*/, bool stipple) {
+			emit debugStippleChanged(DebugLineStippleChanged{m_activeObjectId, stipple});
+		});
+	QObject::connect(m_debugProps, &DebugProperties::pointTypeChanged, this,
+		[this](int /*objectId*/, int pointType) {
+			emit debugPointTypeChanged(DebugPointTypeChanged{m_activeObjectId, pointType});
+		});
+	QObject::connect(m_debugProps, &DebugProperties::pointScaleChanged, this,
+		[this](int /*objectId*/, float scale) {
+			emit debugPointScaleChanged(DebugPointScaleChanged{m_activeObjectId, scale});
+		});
+	QObject::connect(m_debugProps, &DebugProperties::projectionModeChanged, this,
+		[this](int /*objectId*/, int mode) {
+			emit debugProjectionModeChanged(DebugProjectionModeChanged{m_activeObjectId, mode});
+		});
+	// The event is glm-free, so the list is flattened to xyz triples here — the
+	// controller unflattens it on the way into the scene object.
+	QObject::connect(m_debugProps, &DebugProperties::positionsChanged, this,
+		[this](int /*objectId*/, const std::vector<glm::vec3>& positions) {
+			std::vector<float> xyz;
+			xyz.reserve(positions.size() * 3);
+			for (const glm::vec3& p : positions)
+			{
+				xyz.push_back(p.x);
+				xyz.push_back(p.y);
+				xyz.push_back(p.z);
+			}
+			emit debugPositionsChanged(DebugPositionsChanged{m_activeObjectId, std::move(xyz)});
+		});
+
 	// Start with all hidden
 	ShowTypeSubpanel(static_cast<int>(ObjectID::GOType::NONE_GO));
 }
@@ -415,6 +536,9 @@ void PropertyPanel::ShowTypeSubpanel(int goType)
 	m_lightProps->setVisible(goType == static_cast<int>(ObjectID::GOType::GO_LIGHT) ||
 	                         goType == static_cast<int>(ObjectID::GOType::GO_POLYLIGHT));
 	m_envProps->setVisible(goType == static_cast<int>(ObjectID::GOType::GO_ENVIR));
+	m_debugProps->setVisible(goType == static_cast<int>(ObjectID::GOType::GO_DL) ||
+	                         goType == static_cast<int>(ObjectID::GOType::GO_DP) ||
+	                         goType == static_cast<int>(ObjectID::GOType::GO_DM));
 }
 
 } // namespace neurus

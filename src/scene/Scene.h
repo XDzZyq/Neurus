@@ -37,9 +37,11 @@
 
 #include "scene/ObjectID.h"
 #include "core/Selections.h"
+#include "core/Serialize.h"
 
 #include "Camera.h"
 #include "DebugLine.h"
+#include "DebugMesh.h"
 #include "DebugPoints.h"
 #include "Light.h"
 #include "Mesh.h"
@@ -195,19 +197,28 @@ public:
 			int activeUid = 0;
 			SnapshotSelectionUids(selections, selectedUids, activeUid);
 			ar(CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid));
+
+			// DebugMesh arrived after the block above; it is written last and
+			// read back optionally so files predating it still load.
+			std::vector<int> dMeshIds;
+			for (const auto& [id, obj] : dMesh_list) { (void)obj; dMeshIds.push_back(id); }
+			ar(CEREAL_NVP(dMeshIds));
+
+			// Which scene camera the viewport looks through (0 = none, which is
+			// legal: the Editor always has its own camera). Written even when
+			// stale — the load path re-validates it against cam_list.
+			int activeCamUid = m_activeCamUid;
+			ar(CEREAL_NVP(activeCamUid));
 		}
 		else
 		{
 			// Read ID lists into pending members; SceneComponent drives
 			// ResolveReferences() afterwards to fill the typed pools.
 			std::vector<int> camIds, meshIds, lightIds, spriteIds, dLineIds, dPointsIds, envIds;
-			try
-			{
-				ar(CEREAL_NVP(camIds), CEREAL_NVP(meshIds), CEREAL_NVP(lightIds),
-				   CEREAL_NVP(spriteIds), CEREAL_NVP(dLineIds), CEREAL_NVP(dPointsIds),
-				   CEREAL_NVP(envIds));
-			}
-			catch (const cereal::Exception&)
+			if (!archive::OptionalBlock(ar,
+			        CEREAL_NVP(camIds), CEREAL_NVP(meshIds), CEREAL_NVP(lightIds),
+			        CEREAL_NVP(spriteIds), CEREAL_NVP(dLineIds), CEREAL_NVP(dPointsIds),
+			        CEREAL_NVP(envIds)))
 			{
 				// Legacy file (old full-pool format): degrade to an empty scene.
 				camIds.clear(); meshIds.clear(); lightIds.clear();
@@ -225,17 +236,35 @@ public:
 			// Keys must match the save branch ("selectedUids"/"activeUid").
 			std::vector<int> selectedUids;
 			int activeUid = 0;
-			try
-			{
-				ar(CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid));
-			}
-			catch (const cereal::Exception&)
+			if (!archive::OptionalBlock(ar, CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid)))
 			{
 				selectedUids.clear();
 				activeUid = 0;
 			}
 			m_pendingSelectedUids = std::move(selectedUids);
 			m_pendingActiveUid = activeUid;
+
+			// Optional trailing block (see the save branch): absent in files
+			// written before DebugMesh existed, which load with no debug meshes.
+			std::vector<int> dMeshIds;
+			if (!archive::OptionalBlock(ar, CEREAL_NVP(dMeshIds)))
+			{
+				dMeshIds.clear();
+			}
+			m_pendingDMeshIds = std::move(dMeshIds);
+
+			// Activated camera. Three states must stay distinguishable, so this
+			// reads the raw OptionalBlock rather than NEURUS_OPTIONAL_NVP:
+			//   >0  an explicit camera UID
+			//    0  explicitly "no scene camera activated"
+			//   -1  field absent -> file predates activation; ResolveReferences
+			//       migrates it once by activating the first camera it finds.
+			int activeCamUid = -1;
+			if (!archive::OptionalBlock(ar, CEREAL_NVP(activeCamUid)))
+			{
+				activeCamUid = -1;
+			}
+			m_pendingActiveCamUid = activeCamUid;
 		}
 	}
 
@@ -282,6 +311,7 @@ public:
 	ResPool<Sprite>      sprite_list;   ///< 2D sprite overlays
 	ResPool<DebugLine>   dLine_list;    ///< Debug line primitives
 	ResPool<DebugPoints> dPoints_list;  ///< Debug point primitives
+	ResPool<DebugMesh>   dMesh_list;    ///< Debug wireframe-mesh primitives
 	ResPool<Environment> env_list;      ///< Environment objects (IBL)
 
 	/// Selection state for scene objects. Persisted as UIDs by serialize()
@@ -318,6 +348,39 @@ public:
 	{
 		RegisterObject(camera, cam_list);
 	}
+
+	// -------------------------------------------------------------------
+	// Camera activation — which scene camera the viewport looks through
+	// -------------------------------------------------------------------
+
+	/**
+	 * @brief Activates a scene camera, making it the camera the viewport uses.
+	 *
+	 * Activation is scene state, independent of selection: selecting a camera in
+	 * the Outliner does not change the view, and the PropertyPanel keeps
+	 * inspecting whatever is selected. With no camera activated the Editor looks
+	 * through its own camera, so "none" is a normal, fully supported state.
+	 *
+	 * @param uid Camera UID; must already be registered via UseCamera().
+	 * @return false when uid is not in cam_list — which is what keeps a pooled
+	 *         but non-scene camera (the editor camera) unactivatable from here.
+	 */
+	bool ActivateCamera(int uid);
+
+	/// @brief Clears the activation; the viewport falls back to the editor camera.
+	void DeactivateCamera() { m_activeCamUid = 0; }
+
+	/**
+	 * @brief UID of the activated camera, or 0 when none is activated.
+	 *
+	 * @warning This may name a camera that is not currently in cam_list — the
+	 *          UID is deliberately left stale when a camera is removed so that
+	 *          undoing the removal restores the activation for free. Use it only
+	 *          for UID comparison (e.g. a checkbox over a selected camera); any
+	 *          caller that needs a camera must go through GetActiveCamera(),
+	 *          which validates against cam_list.
+	 */
+	int ActiveCameraID() const { return m_activeCamUid; }
 
 	/**
 	 * @brief Registers a mesh in the scene.
@@ -367,6 +430,16 @@ public:
 	void UseDebugPoints(Resource<DebugPoints> dpoints)
 	{
 		RegisterObject(dpoints, dPoints_list);
+	}
+
+	/**
+	 * @brief Registers a debug wireframe mesh in the scene.
+	 * @param dmesh Shared pointer to DebugMesh object.
+	 * @note Adds to dMesh_list and obj_list.
+	 */
+	void UseDebugMesh(Resource<DebugMesh> dmesh)
+	{
+		RegisterObject(dmesh, dMesh_list);
 	}
 
 	/**
@@ -433,6 +506,27 @@ public:
 	 */
 	bool RemoveEnvironment(int id) { return RemoveObject(id, env_list); }
 
+	/**
+	 * @brief Removes a debug line's scene reference.
+	 * @param id DebugLine UID.
+	 * @return true if a debug line with that UID was registered.
+	 */
+	bool RemoveDebugLine(int id) { return RemoveObject(id, dLine_list); }
+
+	/**
+	 * @brief Removes a debug point set's scene reference.
+	 * @param id DebugPoints UID.
+	 * @return true if a debug point set with that UID was registered.
+	 */
+	bool RemoveDebugPoints(int id) { return RemoveObject(id, dPoints_list); }
+
+	/**
+	 * @brief Removes a debug wireframe mesh's scene reference.
+	 * @param id DebugMesh UID.
+	 * @return true if a debug mesh with that UID was registered.
+	 */
+	bool RemoveDebugMesh(int id) { return RemoveObject(id, dMesh_list); }
+
 	// -------------------------------------------------------------------
 	// Lookup
 	// -------------------------------------------------------------------
@@ -445,9 +539,14 @@ public:
 	ObjectID* GetObjectID(int id);
 
 	/**
-	 * @brief Returns the active camera (first in cam_list).
-	 * @return Non-owning pointer to Camera, or nullptr if no cameras.
-	 * @note First camera in cam_list is considered active.
+	 * @brief Returns the activated camera, or nullptr when none is activated.
+	 *
+	 * Looks ActiveCameraID() up in cam_list, so a UID left over from a removed
+	 * camera reads as "none" rather than as a dangling pointer. A null return is
+	 * normal — it means the viewport should use the editor camera.
+	 *
+	 * @return Non-owning pointer to the activated Camera, or nullptr.
+	 * @see ActivateCamera
 	 */
 	Camera* GetActiveCamera();
 
@@ -459,8 +558,8 @@ public:
 	const ObjectID* GetObjectID(int id) const;
 
 	/**
-	 * @brief Returns the active camera (first in cam_list) (const).
-	 * @return Const pointer to Camera, or nullptr if no cameras.
+	 * @brief Returns the activated camera, or nullptr when none is activated (const).
+	 * @see GetActiveCamera()
 	 */
 	const Camera* GetActiveCamera() const;
 
@@ -477,6 +576,10 @@ public:
 private:
 	SceneModifStatus sc_status = SceneModifStatus::SceneChanged; ///< Current scene modification state
 
+	/// UID of the activated camera, 0 = none. Deliberately not cleared when the
+	/// camera is removed — see ActiveCameraID().
+	int m_activeCamUid = 0;
+
 	// -------------------------------------------------------------------
 	// Pending ID references (populated by serialize(load), consumed by
 	// ResolveReferences). The pool is a transient parameter, never a member.
@@ -488,9 +591,11 @@ private:
 	std::vector<int> m_pendingSpriteIds;     ///< Pending sprite UIDs
 	std::vector<int> m_pendingDLineIds;      ///< Pending debug-line UIDs
 	std::vector<int> m_pendingDPointsIds;    ///< Pending debug-point UIDs
+	std::vector<int> m_pendingDMeshIds;      ///< Pending debug-mesh UIDs
 	std::vector<int> m_pendingEnvIds;        ///< Pending environment UIDs
 	std::vector<int> m_pendingSelectedUids;  ///< Pending selection UIDs
 	int             m_pendingActiveUid = 0;  ///< Pending active-object UID
+	int             m_pendingActiveCamUid = -1; ///< Pending activated-camera UID (-1 = field absent)
 
 	/** @brief Clears all pending reference lists (legacy-file fallback). */
 	void ClearPendingReferences();

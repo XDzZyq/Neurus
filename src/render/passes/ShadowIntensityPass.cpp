@@ -589,8 +589,18 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			const glm::vec3 up = (glm::abs(glm::dot(lightDir, kWorldUp)) > 0.999f)
 				? kAltUp : kWorldUp;
 
-			// Use camera target as ortho centre (same as ShadowDepthPass)
-			const Camera* activeCam = scene->GetActiveCamera();
+			// Use camera target as ortho centre (same as ShadowDepthPass).
+			// The camera comes from the context, not from the Scene: the Editor
+			// injects whichever camera the frame is rendered through, and the sun
+			// cascade must centre on *that* one or the shadow slides off the part of
+			// the world actually on screen. See the fuller note in
+			// LightingPass::Record().
+			const Camera* activeCam = ctx.editor.camera;
+			if (!activeCam)
+			{
+				NEURUS_LOG("[ShadowIntensityPass] No camera in EditorContext, skipping sun light");
+				continue;
+			}
 			const glm::vec3 center = activeCam->cam_tar;
 			const glm::vec3 lightEye = center - lightDir * Light::sun_depth_range;
 			const glm::mat4 lightView = glm::lookAt(lightEye, center, up);

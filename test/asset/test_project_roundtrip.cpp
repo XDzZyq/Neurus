@@ -80,8 +80,10 @@ static project::Project MakeProject(Scene& scene, RenderConfig& config, Resource
 // -----------------------------------------------------------------------
 
 /**
- * @test Save an empty project, load it back -- the default-camera fallback
- *       produces a single pooled camera; all other pools stay empty.
+ * @test Save an empty project, load it back -- it stays empty. Nothing is
+ *       injected to make it renderable: a camera-less scene is legal, because
+ *       the viewport looks through the Editor's own camera unless the scene
+ *       names an activated one.
  */
 TEST(ProjectRoundtrip, EmptyScene)
 {
@@ -100,7 +102,9 @@ TEST(ProjectRoundtrip, EmptyScene)
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
 		p.Load(tmp.path);
 	}
-	EXPECT_EQ(loadedScene.cam_list.size(), 1u);
+	EXPECT_TRUE(loadedScene.cam_list.empty());
+	EXPECT_EQ(loadedScene.GetActiveCamera(), nullptr);
+	EXPECT_EQ(loadedScene.ActiveCameraID(), 0);
 	EXPECT_TRUE(loadedScene.mesh_list.empty());
 	EXPECT_TRUE(loadedScene.light_list.empty());
 	EXPECT_TRUE(loadedScene.sprite_list.empty());
@@ -129,6 +133,7 @@ TEST(ProjectRoundtrip, CameraOnly)
 		camera->cam_tar = glm::vec3(0.0f, 0.0f, 1.0f);
 		camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 		scene.UseCamera(camera);
+		scene.ActivateCamera(camera->GetObjectID());
 		auto p = MakeProject(scene, config, resources);
 		p.Save(tmp.path);
 	}
@@ -258,6 +263,7 @@ TEST(ProjectRoundtrip, FullScene)
 		camera->cam_tar = glm::vec3(0.0f, 0.0f, 1.0f);
 		camera->cam_pers = 45.0f;
 		scene.UseCamera(camera);
+		scene.ActivateCamera(camera->GetObjectID());
 
 		// Mesh
 		auto meshData = resources.Load<MeshData>("obj/cube.obj");

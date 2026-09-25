@@ -167,11 +167,13 @@ TEST_F(GeometryPassTest, Record_SingleTriangle_NoValidationError)
 	// --- Camera ---
 	auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 	testScene.UseCamera(testCam);
+	testScene.ActivateCamera(testCam->GetObjectID());
 
 	// --- Record ---
 	{
 		auto& cmd = BeginCmd();
 
+		PublishSceneCamera(*m_renderCache, testScene);
 		m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.editor = { .scene = &testScene },
@@ -217,9 +219,11 @@ TEST_F(GeometryPassTest, Record_MultipleItems_NoValidationError)
 
 	auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 	testScene.UseCamera(testCam);
+	testScene.ActivateCamera(testCam->GetObjectID());
 
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, testScene);
 		m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.editor = { .scene = &testScene },
@@ -246,9 +250,11 @@ TEST_F(GeometryPassTest, Record_EmptyRenderItems_NoCrash)
 	Scene testScene;
 	auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 	testScene.UseCamera(testCam);
+	testScene.ActivateCamera(testCam->GetObjectID());
 
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, testScene);
 		m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.editor = { .scene = &testScene },  // Scene has camera but no meshes → no geometry drawn (should not crash)
