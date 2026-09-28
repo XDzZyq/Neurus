@@ -26,26 +26,69 @@ changes through the event system.
 - `src/editor/viewport/DebugDrawBuilder.h/cpp` - Flattens the Scene's debug objects into the `DebugDrawList` the renderer consumes
 - `src/editor/viewport/EditorViewport.h/cpp` - World<->screen service: `Project`, `RayThrough`, `ProjectBox`, `PixelsPerWorldUnit`; holds the camera the viewport looks through
 
-## Scene Invariant: a scene always owns at least one camera
+## The view camera: the Editor owns one, an activated scene camera overrides it
 
-Every view-projection pass builds its matrices from `Scene::GetActiveCamera()` and
-dereferences the result **without a null check** — `ShadowDepthPass.cpp:432`,
-`ShadowIntensityPass.cpp:593`, `SSAOPass.cpp:339`, `LightingPass.cpp:297`,
-`GeometryPass.cpp:214`. `GetActiveCamera()` returns `nullptr` on an empty
-`cam_list`, so a camera-less scene does not degrade — it segfaults inside
-whichever pass the graph happens to run first, on a stack that says nothing
-about the cause.
+Every view-projection pass reads `ctx.editor.camera` — `ShadowDepthPass.cpp:439`,
+`ShadowIntensityPass.cpp:598`, `SSAOPass.cpp:343`, `LightingPass.cpp:305`, plus
+`GeometryPass` through the shared `CameraGPU` — and **no pass reads the Scene**.
+The Editor decides what that pointer is, once per frame, in `Editor::Edit()`:
 
-The Editor is the only owner of this invariant, and holds it at both ends:
+```
+Editor::ViewCamera()  =  GetScene().GetActiveCamera()   // the activated scene camera
+                         ?: m_editorCamera.get()        // otherwise the editor camera
+```
 
-- **Creation**: `CreateDefaultScene(objPath)` is the single starter-scene
-  builder (fresh Scene, pool `Clear()`, default RenderConfig, camera at
-  `(0,-5,2)` looking at the origin, mesh, point light, environment, demo debug
-  objects). `NewScene(objPath)` **delegates to it** rather than building an empty
-  scene, so File → New is a fresh *document*, not an empty one: the same content
-  a first launch shows, then `ed_operations.Clear()`, `m_dirty = false` and
-  `UploadSceneResources()`. `Application` passes the same `kDefaultSceneObj`
-  constant to both paths so they cannot drift.
+So a scene containing **zero cameras is a legal document**, and deleting every
+camera in one is a legal gesture. There is no last-camera guard and nothing is
+injected on load to repair a camera-less project; both of those existed only to
+prop up the old invariant, where the viewport looked through scene content.
+
+**The editor camera is pooled but is not scene content.** It lives in the
+`ResourceManager` so `CameraController::ResolveCamera` can resolve and orbit it by
+UID like any other camera, and it is absent from `cam_list`, so it cannot be
+selected, deleted, or activated — `Scene::ActivateCamera` validates membership in
+`cam_list` and refuses it. Orbiting to inspect a model therefore no longer edits
+scene content.
+
+**It cannot be created once in the constructor.** `m_resources->Clear()` runs in
+both scene-swap paths and drops every pooled object, so `EnsureEditorCamera()`
+(resolve `m_editorCamUid` through the pool, else `Load<Camera>()` at `(0,-5,2)`
+looking at the origin) runs on each of them:
+
+- `CreateDefaultScene()` — after `Clear()`: reset the uid, then ensure. The uid
+  therefore **changes on every File → New**, by design.
+- `BeginLoad()` — after `Clear()`: drop the reference and the uid.
+- `FinishLoad()` — ensure, then `ApplyViewportToViewCamera()`. A uid restored from
+  the file resolves to the serialized camera; a missing one mints a fresh camera.
+
+**Its identity is serialized, so the user's viewpoint survives a reopen.** The
+camera *object* rides along in `ResourceComponent`'s wholesale pool serialization;
+`project::EditorComponent` (key `"m_editor"`, registered **last** in
+`Application::BuildProject` because registration order is archive read order)
+records only which pooled camera the Editor claims as its own. Without that uid,
+`FinishLoad()` would mint a fresh camera at the default framing and the view would
+snap back on every open. A project written before the component existed simply
+lacks the node; `Load()` falls back rather than throwing.
+
+The starter scene still ships a scene camera as demo content, deliberately left
+**deactivated** — both start at the same pose, so this is invisible until the user
+navigates. `CreateDefaultScene(objPath)` is the single starter-scene builder
+(fresh Scene, pool `Clear()`, editor camera, default RenderConfig, a deactivated
+camera, mesh, point light, environment, demo debug objects); `NewScene(objPath)`
+**delegates to it** rather than building an empty scene, then adds
+`ed_operations.Clear()`, `m_dirty = false` and `UploadSceneResources()`.
+`Application` passes the same `kDefaultSceneObj` constant to both paths so they
+cannot drift.
+
+Why New seeds content rather than nothing: an empty scene renders solid black with
+an empty Outliner, which is indistinguishable from a crash. The minimum legal
+scene and the minimum useful scene are not the same thing, and New owes the user
+the latter.
+
+Every scene object also sets `o_name` in its constructor (`"Camera"`, `"Mesh"`,
+`ParseLightName()` for typed lights, `"DebugLine"`, …). A blank `o_name` renders
+as an empty Outliner row that looks broken; `test_editor_scene_lifecycle.cpp`
+asserts no seeded object leaves it empty.
 
 **`CreateDefaultScene()` builds a scene but does not upload it.**
 `UploadSceneResources()` is the single "make this scene drawable" step — meshes,
@@ -70,43 +113,53 @@ properties are displayed correctly beside them. The same reasoning is why the
 environment upload is skip-if-cached while `GenerateIBL()` stays the forced
 variant for live changes (`EnvironmentChanged`, an environment re-entering the
 scene).
-- **Deletion**: `SceneController`'s last-camera guard refuses a delete that
-  would empty `cam_list` (`SceneController.cpp:548`).
-- **Loading**: `BeginLoad()`/`FinishLoad()` inherit the camera from the project
-  file; a project saved through the paths above always has one.
 
-Why New seeds content rather than just a camera: a camera-only scene is *legal*
-but renders solid black with an empty Outliner, which is indistinguishable from a
-crash. The minimum legal scene and the minimum useful scene are not the same
-thing, and New owes the user the latter.
+`DeferredRenderer::DrawFrame()` still carries a null-camera precondition check as
+defense in depth: it skips the frame and logs once (`m_reportedNoCamera`) instead
+of faulting. That guard is a diagnostic, not a license — `ViewCamera()` cannot
+return null unless a scene-mutation path broke the contract above, and that path
+is the bug. `test/editor/test_editor_camera.cpp` pins the whole contract (GPU-free,
+runs in CI): pooled-but-not-scene-content, rebuilt after every pool clear,
+identity and pose surviving save/reopen, a camera-less project loading with
+nothing injected, deleting every scene camera, and activation taking the view with
+deactivation handing it back *at the pose it was left at*.
 
-Every scene object also sets `o_name` in its constructor (`"Camera"`, `"Mesh"`,
-`ParseLightName()` for typed lights, `"DebugLine"`, …). A blank `o_name` renders
-as an empty Outliner row that looks broken; `test_editor_scene_lifecycle.cpp`
-asserts no seeded object leaves it empty.
+**`Edit()` pushes the view camera into `EditorViewport` twice per frame**, before
+and after `ed_eventBus.Process()`. Activating or deactivating a scene camera — and
+deleting the activated one — all land inside `Process()`, and the gizmo rebuild
+that follows projects its geometry through this viewport at most once per dirty
+flag. Rebuilding against the camera the frame *started* with would leave the handle
+at the previous camera's scale and screen position. A third push lives in the
+`SceneObjectDeleteRequested` subscription, registered after the controllers so it
+runs once the object is actually gone, which is what keeps the pointer from
+dangling for the rest of that `Process()`.
 
-`DeferredRenderer::DrawFrame()` carries a matching precondition check as defense
-in depth: a scene with no active camera skips the frame and logs once
-(`m_reportedNoCamera`) instead of faulting. That guard is a diagnostic, not a
-license — if it ever fires, a scene-mutation path broke the invariant and that
-path is the bug. `test/editor/test_editor_scene_lifecycle.cpp` pins the creation
-half of the contract (GPU-free, runs in CI).
+### The viewport extent outlives the scene, and reaches both cameras
 
-### The viewport extent outlives the scene
-
-`HandleResize(w, h)` caches the extent in `m_viewportW/H` **unconditionally and
-before** its own active-camera check: the extent is a property of the viewport,
-not of whichever scene happens to be loaded, and it arrives once at startup —
-long before any File → New. A camera seeded later, or restored from a project
-saved on a differently sized window, carries an aspect ratio unrelated to the
-current viewport (a fresh `Camera` is 1×1), and only a window resize ever
+`HandleResize(logical, renderExtent)` caches both extents in `EditorViewport`
+**unconditionally and before** anything camera-related: the extent is a property
+of the viewport, not of whichever scene happens to be loaded, and it arrives once
+at startup — long before any File → New. A camera seeded later, or restored from a
+project saved on a differently sized window, carries an aspect ratio unrelated to
+the current viewport (a fresh `Camera` is 1×1), and only a window resize ever
 corrected it, so New rendered a squashed frame until the user dragged the window.
 
-`ApplyViewportToActiveCamera()` replays the cached extent onto the active camera
-and is called from both scene-swap paths. It no-ops while the extent is still
-`0×0` (startup, before the window is shown) rather than pushing a degenerate
+It then enqueues a `CameraResizeEvent` for the editor camera **and** a second one
+for the activated scene camera, if there is one. Both view candidates are
+re-framed, not just the one currently in use: activation can switch the view with
+no resize in between, and a camera that missed a resize would present a stretched
+image the moment it took over. The events carry a UID and `CameraController`
+resolves it through the *pool*, which is exactly why the editor camera is reachable
+by the ordinary event despite not being scene content.
+
+`ApplyViewportToViewCamera()` is the same correction applied *directly* rather than
+through the bus, because it runs while a scene is still being built (both scene-swap
+paths call it, and there is no drain in between). It no-ops while the extent is
+still `0×0` (startup, before the window is shown) rather than pushing a degenerate
 aspect into the projection. Both branches are pinned by
-`test_editor_scene_lifecycle.cpp`.
+`test_editor_scene_lifecycle.cpp`;
+`test_editor_camera.cpp::ResizeReframesBothTheEditorAndTheActivatedSceneCamera`
+pins the two-camera half.
 
 ## Core Responsibilities
 
@@ -123,9 +176,9 @@ aspect into the projection. Both branches are pinned by
    - `Controllers` base class: `virtual Init(ControllerContext& ctx)` binds the controller to the controller context
    - `Editor::RegisterController<T>()` — template factory that creates controller, calls `Init(m_ctx)`, stores in `ed_controllers`
    - **`ControllerContext`** (`src/editor/controllers/ControllerContext.h`) — the ONLY thing a controller depends on: it bundles the three controller-facing interfaces (`IEventQueue&` for subscribe/enqueue/emitNow, `IResourceLookup&` for pooled-object lookup by id, `IOperationSink&` for recording undoable operations) plus providers for the two Editor-owned singletons that are NOT pooled UID objects (`scene` — the current Scene, re-queried per use because New/Load swaps it; `config` — the live RenderConfig). Controllers MUST NOT store the context or any of its members; handler lambdas capture it by value.
-   - `CameraController` — event-driven orbit/zoom/dolly/pan via `CameraEvents` (rotate, push, slide, zoom); events carry `int camId` resolved against the scene's `cam_list`
+   - `CameraController` — event-driven orbit/zoom/dolly/pan via `CameraEvents` (rotate, push, slide, zoom); events carry `int camId`, which `ResolveCamera` resolves against the **resource pool**, not `cam_list`, so the editor camera (pooled, never scene content) is manipulated by the same events as any scene camera
    - `SceneController` — event-driven scene mutations (selection, transform, visibility, camera/mesh/light/env/debug property edits, scene membership add/delete); stateless with free-function handlers in the .cpp; each handler resolves the event's `int objectUid` against the current Scene (typed pool lookup) and mutates the object directly; emits `EditorEvents` (SceneModified, LightGpuChanged, LightingRebuild, RenderResetEvent) for GPU uploads and dirty tracking; see events.instructions.md for the GPU-sync flow
-   - **Import/Add split**: `Editor::OnMeshImport`/`OnCameraAdd`/`OnLightAdd`/... only LOAD the resource into the pool and forward the object UID via `SceneObjectAddRequested`; the SceneController fetches the pooled object by UID, registers it, selects it, and records `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(...)]`. The Delete gesture (`ObjectDeleteRequested` - the Editor wraps the UI's `DeleteRequested` intent) is **forward-only**: the SceneController snapshots the selection, guards the last camera, deselects, then DEFERS the removals as ONE batched `SceneObjectDeleteRequested` carrying all selected UIDs — so the batched handler is the single removal path shared with replay (no replay-only handling) — and records `CompositeOp[SetSelectionOp(before→∅), SceneObjectAddOp(uids,false)]` (delete of N = one op). Light membership changes enqueue `LightingRebuild` (the SSBO is a scene projection). GPU caches (MeshGPU, shadow maps) are scene-scoped: `UploadSceneResources` uploads only objects present at load, and an object entering the scene (live add or undo/redo replay) or a light whose shadow was just enabled enqueues `SceneObjectGpuUploadRequested`, which the Editor resolves with an on-demand upload (skip-if-cached).
+   - **Import/Add split**: `Editor::OnMeshImport`/`OnCameraAdd`/`OnLightAdd`/... only LOAD the resource into the pool and forward the object UID via `SceneObjectAddRequested`; the SceneController fetches the pooled object by UID, registers it, selects it, and records `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(...)]`. The Delete gesture (`ObjectDeleteRequested` - the Editor wraps the UI's `DeleteRequested` intent) is **forward-only**: the SceneController snapshots the selection, deselects, then DEFERS the removals as ONE batched `SceneObjectDeleteRequested` carrying all selected UIDs — so the batched handler is the single removal path shared with replay (no replay-only handling) — and records `CompositeOp[SetSelectionOp(before→∅), SceneObjectAddOp(uids,false)]` (delete of N = one op). Light membership changes enqueue `LightingRebuild` (the SSBO is a scene projection). GPU caches (MeshGPU, shadow maps) are scene-scoped: `UploadSceneResources` uploads only objects present at load, and an object entering the scene (live add or undo/redo replay) or a light whose shadow was just enabled enqueues `SceneObjectGpuUploadRequested`, which the Editor resolves with an on-demand upload (skip-if-cached).
    - `ShaderController` — event-driven shader lifecycle via `ShaderEvents` (create, compile, code/struct edit, field add); enqueues `RenderResetEvent` after create/compile so temporal accumulation resets
    - **Pure-intent wrapping**: the Editor subscribes to the UI's `ObjectClicked` and `DeleteRequested` intents and forwards the dedicated scene events `ObjectSelected{ objectUid, modifiers }` and `ObjectDeleteRequested{}` (the two wrap subscriptions in `Editor::Initialize`). Panels never stamp the scene.
    - Controllers receive discrete events (not per-frame polling); `Editor::Edit()` dispatches all enqueued events via `EventQueue::Process()`

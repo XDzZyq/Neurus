@@ -78,7 +78,7 @@ duplicated code across test files:
 | `MakeTestCamera(w, h)` | `static CameraUBOData` | Creates a default 60° FOV camera at `(0,0,2)` looking at origin with given aspect ratio |
 | `TestTriangle()` | `static pair<vector<TestVertex>, vector<uint32_t>>` | Returns a 3-vertex triangle (XY plane, facing +Z) + 3 indices, suitable for quick geometry tests |
 | `ReadbackHdrOutput(device, pd, queue, qfi, am, w, h)` | `static vector<float>` | Reads back HDRColor RGBA16F attachment to CPU; handles layout transition, staging copy, and half→float conversion |
-| `PublishSceneCamera(cache, scene)` / `(cache, editorContext)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, standing in for `DeferredRenderer::recordFrame()`. No-op when the scene has no active camera |
+| `PublishSceneCamera(cache, scene)` / `(cache, editorContext)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, standing in for `DeferredRenderer::recordFrame()`. No-op when no scene camera is activated — which is the default, so activate one (see below) |
 
 ### Publishing the camera before recording a pass
 
@@ -98,6 +98,16 @@ Forget it and the pass records nothing — no validation error, just an empty
 attachment and a reference-image diff that points nowhere near the cause.
 `LightingPass` and `SSAOPass` read the `Camera` out of the context directly and need
 no publish.
+
+**A scene camera has to be activated first.** `PublishSceneCamera` reads
+`Scene::GetActiveCamera()`, and **no camera is activated by default** — in the app
+the viewport looks through the Editor's own camera, so "none" is the normal state
+rather than a failure. A test that builds a scene with `UseCamera()` and stops there
+publishes nothing, and `LightingPass`/`SSAOPass`/`ShadowDepthPass`/
+`ShadowIntensityPass` see a null `ctx.editor.camera` and skip their work: a blank or
+shadowless reference image, not a crash. So pair every `UseCamera()` in a render
+test with `scene.ActivateCamera(cam->GetObjectID())` (the shared shadow builders in
+`test/shared/TestSimpleShadow.h` and `TestMultiShadow.h` already do).
 
 Usage example — replace 15+ lines of manual G-Buffer transitions with one call:
 

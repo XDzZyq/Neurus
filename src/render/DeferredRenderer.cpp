@@ -258,9 +258,10 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// the scene's camera, but it is no longer an input to any pass, so a scene
 	// without one is not by itself a reason to skip a frame.
 	//
-	// The Editor holds the invariant - NewScene()/CreateDefaultScene() seed a camera,
-	// SceneController refuses to delete the last one - so getting here means a
-	// scene-mutation path broke it. Name it once and skip the frame.
+	// The Editor holds the invariant with a camera of its own: EnsureEditorCamera()
+	// runs after every pool Clear() and ViewCamera() falls back to it whenever no
+	// scene camera is activated, so this pointer is null only if a scene-mutation
+	// path broke that. Name it once and skip the frame.
 	if (!ctx.editor.camera)
 	{
 		if (!m_reportedNoCamera)

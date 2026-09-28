@@ -60,8 +60,9 @@ are shared across layers.
 
 **Editor Layer** (`src/editor/`)
 - Contains application logic and scene mutation
-- Owns Controllers (CameraController, SceneController, ShaderController) via `src/editor/controllers/`
+- Owns Controllers (CameraController, TransformGizmoController, ShaderController, SceneController, RenderConfigController) via `src/editor/controllers/`
 - Manages EditorContext (scene + editor state)
+- Owns the **editor camera** — a pooled `Camera` that is not scene content. `Editor::ViewCamera()` returns the activated scene camera when the Scene names one and the editor camera otherwise, and `EditorContext::camera` carries that choice to the renderer, so no pass reads the Scene. A scene with zero cameras is a legal document. See [editor.instructions.md](editor.instructions.md).
 - Owns UIEvents (Qt signals) and EventQueue (typed EventPool)
 - Communicates with Renderer via Context and typed EventQueue
 - Must NOT directly manipulate GPU resources

@@ -41,6 +41,18 @@ model, coalescing rules, and persistence.
   selection is also persisted independently of history by `Scene::serialize`
   (as UIDs — see data-resource.instructions.md), so a reopened project restores
   its selection even with an empty undo/redo history.
+- **`SetActiveCameraOp`** (`SceneOperations.h`) makes "look through this camera"
+  undoable. Like `SetSelectionOp` it is scene-level (not per-object) state, so it
+  derives from `Operation` directly rather than from `TransitionOp`, stores the
+  before/after camera UIDs (`0` = no scene camera, which hands the view back to the
+  Editor's own camera), and `Apply()` does `emitNow(ActiveCameraChanged{after})` —
+  the same event the PropertyPanel checkbox emits, so there is no replay-only path.
+  `Inverse()` swaps the endpoints. It does NOT override `PreservesRedo()`: changing
+  the view camera is a real edit that branches history, unlike selection. The
+  handler records it only when the value actually changed, so a checkbox toggled to
+  the state it already holds is not an undo entry. The activation UID itself is
+  persisted independently of history by `Scene::serialize`, so a reopened project
+  looks through the camera it was saved with even with an empty undo stack.
 - **`CompositeOp`** (in `Operation.h`, a general-purpose core op) composes any
   sequence of `Operation`s into ONE undo entry. Group-theoretic inverse: it
   replays the sequence in forward order, and `Inverse()` returns a composite of

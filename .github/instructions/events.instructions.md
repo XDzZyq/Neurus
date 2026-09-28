@@ -123,6 +123,13 @@ struct CameraFovChanged    { int objectUid; float fov; };
 // Absolute camera pose (position + target) — replay only, dispatched by
 // CameraTransformOp on undo/redo (live navigation carries relative deltas).
 struct CameraPoseChanged   { int objectUid; float posX, posY, posZ, tarX, tarY, tarZ; };
+// Which SCENE camera the viewport looks through; 0 = none, which hands the view
+// back to the Editor's own camera. Scene state, deliberately independent of
+// selection. One event for both the PropertyPanel checkbox and SetActiveCameraOp
+// replay. The handler activates/deactivates, records the op only when the value
+// actually changed, and enqueues a CameraResizeEvent for the newly activated
+// camera so it cannot take the view with a stale aspect.
+struct ActiveCameraChanged { int camUid; };
 
 // Mesh properties
 struct MeshShadowChanged  { int objectUid; bool enabled; };
@@ -199,7 +206,7 @@ subscribes to the pure `DeleteRequested` intent (Delete key in
 Outliner/Viewport) and forwards `ObjectDeleteRequested{}` — the UI no longer
 stamps the scene. It is **forward-only** (the recorded composite replays via
 `SceneObjectDeleteRequested`, never this gesture event). The SceneController
-snapshots the selection, guards the last camera, deselects, and DEFERS the
+snapshots the selection, deselects, and DEFERS the
 actual removals as ONE batched `SceneObjectDeleteRequested` carrying all
 selected UIDs — so the batched handler is the SINGLE removal path shared by
 the gesture and by undo/redo replay (no replay-only handling), and records ONE

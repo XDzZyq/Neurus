@@ -287,7 +287,8 @@ Neurus/
 │   │   │   ├── SceneComponent.h/cpp     # Scene serialization adapter (holds ResourceManager*)
 │   │   │   ├── ResourceComponent.h/cpp  # ResourceManager pool persistence (registered first)
 │   │   │   ├── UIComponent.h/cpp        # UI-state serialization adapter
-│   │   │   └── HistoryComponent.h/cpp   # Undo/redo-stack adapter (wraps OperationManager)
+│   │   │   ├── HistoryComponent.h/cpp   # Undo/redo-stack adapter (wraps OperationManager)
+│   │   │   └── EditorComponent.h/cpp    # Editor-state adapter (the editor camera's pool UID; registered last)
 │   │   ├── registrations/           # cereal polymorphic registration (data resources)
 │   │   │   └── DataRegistration.h/cpp   # MeshData, ImageData (force-init)
 │   │   ├── data/                     # CPU-side data containers (UID-derived pooled resources)
