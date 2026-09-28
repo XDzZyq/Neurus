@@ -509,6 +509,11 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 
 	m_dirty = true;
 	m_debugDraw.MarkDirty(); // new scene => the old flattened overlay is stale
+	// Same for the handle: it is anchored on the outgoing document's selection, and
+	// the builder only ever clears its list inside a dirty Rebuild(), so without
+	// this the previous scene's handle stays on screen at the previous object's
+	// position even though nothing is selected here.
+	m_gizmoDraw.MarkDirty();
 }
 
 /**
@@ -652,6 +657,7 @@ void Editor::FinishLoad()
 	// so re-adopt the live one instead of trusting it.
 	ApplyViewportToViewCamera();
 	m_debugDraw.MarkDirty(); // debug objects came back from the project file
+	m_gizmoDraw.MarkDirty(); // and the restored selection anchors a new handle
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
 }
 
@@ -1089,6 +1095,15 @@ void Editor::Edit()
 	m_viewport.SetCamera(ViewCamera());
 
 	ed_eventBus.Process();
+
+	// Pushed AGAIN, because the drain above can have changed which camera the frame
+	// belongs to: activating or deactivating a scene camera, or deleting the
+	// activated one, all land inside Process(). The gizmo rebuild below projects and
+	// sizes its geometry through this viewport, and it runs at most once per dirty
+	// flag — so rebuilding against the camera the frame STARTED with would leave the
+	// handle at the previous camera's scale and screen position until something else
+	// happened to dirty it.
+	m_viewport.SetCamera(ViewCamera());
 
 	// After the queue is drained, so a scene change and its debug-overlay
 	// consequences land in the same frame. Returns immediately when clean, which
