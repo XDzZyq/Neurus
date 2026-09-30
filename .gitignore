@@ -10,6 +10,7 @@ out/
 *.user
 *.sln.docstates
 *.slnLaunch.user
+*.cache
 
 # Visual Studio
 .vs/
@@ -110,3 +111,6 @@ graphify-out/20*/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Claude Code
+.claude

@@ -146,8 +146,31 @@ protected:
 
 			float prio = 1.0f;
 			vk::DeviceQueueCreateInfo qCI({}, m_graphicsQueueFamily, 1, &prio);
+
+			// Mirror VulkanContext::InitDevice: DeferredRenderer's passes need
+			// dynamic rendering, synchronization2, multiview (shadow cubemaps) and
+			// shaderDemoteToHelperInvocation (`discard` under SPIR-V 1.6).
+			vk::PhysicalDeviceMultiviewFeatures multiviewFeature;
+			multiviewFeature.multiview = VK_TRUE;
+			vk::PhysicalDeviceDynamicRenderingFeatures dynRendering;
+			dynRendering.dynamicRendering = VK_TRUE;
+			dynRendering.pNext = &multiviewFeature;
+			vk::PhysicalDeviceShaderDemoteToHelperInvocationFeatures demote;
+			demote.shaderDemoteToHelperInvocation = VK_TRUE;
+			demote.pNext = &dynRendering;
+			vk::PhysicalDeviceSynchronization2Features sync2;
+			sync2.synchronization2 = VK_TRUE;
+			sync2.pNext = &demote;
+			vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
+			descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
+			descriptorIndexing.pNext = &sync2;
+
+			const vk::PhysicalDeviceFeatures supported = pd.getFeatures();
 			vk::PhysicalDeviceFeatures features;
-			vk::DeviceCreateInfo devCI({}, qCI, {}, devExts, &features);
+			features.fillModeNonSolid = supported.fillModeNonSolid;
+			features.largePoints      = supported.largePoints;
+
+			vk::DeviceCreateInfo devCI({}, qCI, {}, devExts, &features, &descriptorIndexing);
 			m_device = std::make_unique<vk::raii::Device>(pd, devCI);
 			m_queue = m_device->getQueue(m_graphicsQueueFamily, 0);
 
@@ -267,8 +290,9 @@ TEST_F(SceneWiringTest, DrawFrame_EmptyScene_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
 	m_renderer->WaitIdle();
 }
 
@@ -288,10 +312,11 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithOnlyCamera_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 
 	ASSERT_NE(scene.GetActiveCamera(), nullptr);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
 	m_renderer->WaitIdle();
 }
 
@@ -312,6 +337,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
@@ -321,8 +347,8 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}}));
 
 	m_renderer->WaitIdle();
 }
@@ -344,6 +370,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
@@ -356,7 +383,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	// Frame 1: per-pass CPU timers + counters are recorded; GPU timestamp
 	// readback for this slot happens at the start of frame 2 (fence-based).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}});
+		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}});
 		EXPECT_GT(profile.passCount, 0u);
 		EXPECT_FALSE(profile.passes.empty());
 		for (const auto& pass : profile.passes)
@@ -372,7 +399,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 
 	// Frame 2: exercises the GPU timestamp readback path for frame 1's slot.
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}});
+		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}});
 		EXPECT_GT(profile.passCount, 0u);
 	}
 
@@ -380,7 +407,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	// guarded so pre-signaled, never-written slots are skipped on startup
 	// (VUID-vkGetQueryPoolResults-None-09401).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene}});
+		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.editor = {.scene = &scene, .camera = scene.GetActiveCamera()}});
 		EXPECT_GT(profile.passCount, 0u);
 		if (profile.gpuTimingAvailable)
 		{

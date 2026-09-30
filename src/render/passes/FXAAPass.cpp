@@ -133,10 +133,9 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 	++stats.dispatches;
 	cmdBuf.dispatch(gx, gy, 1);
 
-	{
-		auto& out = cache.GetAttachment(AttachmentName::FXAAOutput, extent);
-		Barrier::Transition(cmdBuf, out, ImageState::TransferSrc);
-	}
+	// FXAAOutput stays in ShaderWrite; the swapchain blit transitions it itself.
+	// See the note at the end of ComposePass::Record for why a producer must not
+	// pre-transition its output into the consumer's expected state.
 
 	return stats;
 }

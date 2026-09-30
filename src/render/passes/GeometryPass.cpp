@@ -32,8 +32,6 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice)
 	// --- Descriptor set layout ---
 	: p_cameraLayout(CreateCameraLayout(device))
-	// --- Camera UBO (host-visible for per-frame memcpy update) ---
-	, p_cameraUBO(device, physicalDevice, "CameraUBO")
 	// --- Descriptor pool (1 set, 1 UBO) ---
 	, p_descriptorPool(device,
 	                   1,
@@ -50,9 +48,10 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;
 
-	// --- Write camera UBO to descriptor set ---
-	p_cameraDescriptorSet.WriteBuffer(0, p_cameraUBO.GetDescriptorInfo(),
-	                                  vk::DescriptorType::eUniformBuffer);
+	// The camera UBO is RenderCache's (see CameraGPU), so binding 0 is written in
+	// Record() from the cache rather than here. With one frame in flight the handle
+	// never actually changes, but writing it per frame keeps this pass correct if
+	// CameraGPU ever becomes a ring.
 
 #ifdef _DEBUG
 	p_cameraDescriptorSet.SetDebugName("GeometryPass_CameraSet");
@@ -211,15 +210,19 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
 
 	// --- Extract per-frame context ---
-	const Camera* cam = scene->GetActiveCamera();
-	const CameraUBOData cameraData{
-		cam->GetProjectionMatrix() * cam->GetViewMatrix(),
-		cam->GetViewMatrix()
-	};
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 
-	// --- 1. Upload camera data to UBO ---
-	p_cameraUBO.Upload(cameraData);
+	// --- 1. Point set 0 at RenderCache's shared camera UBO ---
+	// DeferredRenderer::recordFrame() uploads it once per frame, before any pass
+	// records, so this pass only names the buffer. Bailing out when no frame has
+	// published a camera yet keeps the descriptor from naming an unwritten UBO.
+	const CameraGPU& camera = cache.GetCameraGPU();
+	if (!camera.IsValid())
+	{
+		return stats;
+	}
+	p_cameraDescriptorSet.WriteBuffer(0, camera.GetDescriptorInfo(),
+	                                  vk::DescriptorType::eUniformBuffer);
 
 	// --- 2. Collect G-Buffer attachment image views ---
 	const std::array<AttachmentName, 5> gBufferColorAttachments = {
@@ -436,7 +439,7 @@ PassIO GeometryPass::GetIO() const
 	// GeometryPass is a rasterization pass writing the G-Buffer MRT + depth.
 	// It has no image reads (camera data comes via a UBO). Binding metadata is
 	// unused — the pass self-manages its render pass and attachments; only the
-	// resource identities drive RenderGraph edges to SSAO / Lighting / Gizmo.
+	// resource identities drive RenderGraph edges to SSAO / Lighting / SelectionOutline.
 	PassIO io;
 	io.name  = "GeometryPass";
 	io.writes = {

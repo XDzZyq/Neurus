@@ -22,10 +22,15 @@
  *   - VisibilityChanged -> ObjectID::SetVisible (light -> LightingRebuild)
  *   - Position/Rotation/ScaleChanged -> Transform3D setters (light -> LightingRebuild)
  *   - CameraTarget/FovChanged -> Camera setters
+ *   - ActiveCameraChanged -> Scene::Activate/DeactivateCamera (0 = deactivate)
  *   - MeshShadow/MaterialChanged -> Mesh::EnableShadow/EnableMaterial
  *   - LightPower/Radius/Cutoff/OuterCutoffChanged -> setters + LightGpuChanged
  *   - LightShadowChanged -> Light::SetShadow + LightingRebuild
  *   - EnvironmentIntensity/RotationChanged -> Environment setters
+ *   - Debug{Color,Opacity,XRay}Changed -> any of the three debug pools
+ *   - DebugLine{Width,Stipple}Changed -> DebugLine setters
+ *   - Debug{PointType,PointScale,ProjectionMode}Changed -> DebugPoints setters
+ *   - DebugPositionsChanged -> DebugLine::SetVertices / DebugPoints::SetPoints
  */
 
 #pragma once

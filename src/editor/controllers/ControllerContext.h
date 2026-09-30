@@ -7,10 +7,19 @@
  * IResourceLookup, and record undoable operations through IOperationSink —
  * never on the concrete EventQueue, ResourceManager, or OperationManager.
  *
- * The context additionally carries providers for the two Editor-owned
- * singletons that are NOT pooled UID objects:
- *   - scene:  the current Scene (re-queried per use, because New/Load swaps it)
- *   - config: the live RenderConfig to mutate (stable Editor member)
+ * The context additionally carries providers for the Editor-owned singletons
+ * that are NOT pooled UID objects:
+ *   - scene:    the current Scene (re-queried per use, because New/Load swaps it)
+ *   - config:   the live RenderConfig to mutate (stable Editor member)
+ *   - viewport: the world<->screen service, read-only (stable Editor member)
+ *   - gizmo:    the modal transform state machine to drive (stable Editor member)
+ *
+ * Constness here is not decoration. `config` and `gizmo` are handed over mutable
+ * because RenderConfigController and TransformGizmoController exist precisely to
+ * write them. `viewport` is handed over const because its mutators (viewport size,
+ * camera, cursor) are the Editor's per-frame job: a controller writing them would
+ * desync the projection from the extent the renderer is actually using, and every
+ * query a controller needs — Project, RayThrough, PixelsPerWorldUnit — is const.
  *
  * Ownership/lifetime rules:
  * - The context is constructed by the Editor once and outlives the
@@ -32,6 +41,8 @@ namespace neurus {
 
 class Scene;
 class RenderConfig;
+class EditorViewport;
+class TransformGizmo;
 
 /**
  * @brief The three controller-facing interfaces plus editor singleton access.
@@ -52,6 +63,18 @@ struct ControllerContext
 
 	/** @brief Returns the live Editor-owned RenderConfig to mutate. */
 	std::function<RenderConfig*()> config;
+
+	/**
+	 * @brief Returns the Editor-owned world<->screen service, for queries only.
+	 *
+	 * May return a viewport whose IsValid() is false (no camera, or zero size);
+	 * callers must check rather than assume, because every projection result
+	 * carries its own validity flag for exactly that reason.
+	 */
+	std::function<const EditorViewport*()> viewport;
+
+	/** @brief Returns the Editor-owned modal transform gizmo state to drive. */
+	std::function<TransformGizmo*()> gizmo;
 };
 
 } // namespace neurus

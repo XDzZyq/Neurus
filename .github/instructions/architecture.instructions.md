@@ -60,8 +60,9 @@ are shared across layers.
 
 **Editor Layer** (`src/editor/`)
 - Contains application logic and scene mutation
-- Owns Controllers (CameraController, SceneController, ShaderController) via `src/editor/controllers/`
+- Owns Controllers (CameraController, TransformGizmoController, ShaderController, SceneController, RenderConfigController) via `src/editor/controllers/`
 - Manages EditorContext (scene + editor state)
+- Owns the **editor camera** — a pooled `Camera` that is not scene content. `Editor::ViewCamera()` returns the activated scene camera when the Scene names one and the editor camera otherwise, and `EditorContext::camera` carries that choice to the renderer, so no pass reads the Scene. A scene with zero cameras is a legal document. See [editor.instructions.md](editor.instructions.md).
 - Owns UIEvents (Qt signals) and EventQueue (typed EventPool)
 - Communicates with Renderer via Context and typed EventQueue
 - Must NOT directly manipulate GPU resources
@@ -236,7 +237,7 @@ compute pass, and full G-Buffer pipeline through the four-layer architecture.
 - `MeshGPU` and `EnvironmentGPU` as RenderCache-owned GPU resources (separated from scene/asset layers)
 - GPU-side mesh resources separated from scene `Mesh` (`MeshGPU` owned by RenderCache)
 - `GeometryRenderItem` removed (CPU/GPU concerns now fully separated)
-- Deferred PBR pipeline: ShadowDepthPass → GeometryPass (G-Buffer) → SSAOPass → Light+ShadowIntensity → LightingPass → IBLPass → GizmoPass (edge highlight) → ComposePass (gamma correction) → FXAAPass (FXAA 3.11, conditional) → Blit to swapchain
+- Deferred PBR pipeline: ShadowDepthPass → GeometryPass (G-Buffer) → SSAOPass → Light+ShadowIntensity → LightingPass → IBLPass → SelectionOutlinePass (edge highlight) → ComposePass (gamma correction) → FXAAPass (FXAA 3.11, conditional) → DebugPass (overlay, LOAD_OP_LOAD onto the last post-chain image) → Blit to swapchain
 - Centralized image barrier system (Barrier::Transition, ImageState enum)
 - Screenshot capture + TextureData PNG readback
 - GPU tests with shared VulkanTestShared base class

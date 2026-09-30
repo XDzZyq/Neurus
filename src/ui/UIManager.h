@@ -193,6 +193,10 @@ private:
 	/// maximize/minimize.
 	bool m_floatingLocked = false;
 
+	/// View > Full Screen toggle; changeEvent() keeps its check mark in step so
+	/// it follows full screen however that state was entered.
+	QAction* m_fullScreenAction = nullptr;
+
 	// --- Panel registry (raw pointers; Qt parent-child manages lifetime) ---
 	std::map<PanelType, QWidget*> m_panels;
 

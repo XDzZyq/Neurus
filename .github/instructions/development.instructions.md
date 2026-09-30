@@ -112,10 +112,21 @@ Wire everything into the render loop and editor:
 
 ```powershell
 cmake --build build --config Debug                # 0 errors
+python scripts/extract_i18n.py --check            # 100% translated, not stale
 make check                                       # ALL pass, including regression
 $output = & "build/Debug/Neurus.exe" 2>&1        # capture output
 $output | Select-String "VUID-"                  # ZERO matches
 ```
+
+**Every new user-visible string is translated in the same commit.**
+`scripts/extract_i18n.py` only *extracts*: a key lands in `res/i18n/*.po` with an
+empty `msgstr`, so adding one `translate("...")` call is enough to make the
+catalog stale, and CI's pre-build `--check` gate stays red until the key is both
+rendered into the catalog and filled in. Run the extractor, write the
+translation for every shipped catalog, then re-run `--check` until it prints
+`OK`. The failure looks like `160/184 translated (87.0%) MISSING 24` — that is a
+missing translation, not a stale file, so regenerating the catalog does not fix
+it. See ui-system.instructions.md for the pipeline.
 
 **For reference images, always verify with Python before committing:**
 
@@ -161,6 +172,7 @@ Bugs encountered during Sun Light implementation and their fixes:
 - [ ] Build: 0 errors, 0 warnings
 - [ ] All tests pass (existing + new) -- `make check`
 - [ ] Zero VUID validation errors -- `Neurus.exe 2>&1 | grep VUID-`
+- [ ] No untranslated or stale catalogs -- `python scripts/extract_i18n.py --check`
 - [ ] Every reference image verified with Python PIL
 - [ ] User reviewed and approved
 - [ ] Commit with standard message

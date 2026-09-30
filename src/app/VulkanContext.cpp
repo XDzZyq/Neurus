@@ -71,6 +71,37 @@ VulkanContext::VulkanContext(vk::raii::Instance&& instance)
 	ctx_instance = std::make_unique<vk::raii::Instance>(std::move(instance));
 }
 
+/**
+ * @brief Enables the optional core features Neurus uses, when supported.
+ *
+ * vkCreateDevice fails with VK_ERROR_FEATURE_NOT_PRESENT if a requested
+ * feature is unavailable, so every field is gated on the device's own report.
+ * Currently only debug-geometry rendering needs optional features:
+ *   - fillModeNonSolid: VK_POLYGON_MODE_LINE for the DebugMesh wireframe overlay
+ *   - largePoints:      gl_PointSize > 1 for DebugPoint sprites
+ *
+ * wideLines is deliberately NOT requested: Metal cannot rasterize lines wider
+ * than one pixel, so MoltenVK reports wideLines = false with
+ * lineWidthRange = [1, 1], and VK_KHR_line_rasterization there offers only
+ * bresenhamLines (no rectangular/smooth/stippled). DebugPass therefore expands
+ * thick lines into screen-space quads in the vertex shader, which is portable
+ * and additionally yields the anti-aliasing and stipple that DebugLine exposes.
+ */
+static vk::PhysicalDeviceFeatures selectOptionalFeatures(const vk::raii::PhysicalDevice& pd)
+{
+	const vk::PhysicalDeviceFeatures supported = pd.getFeatures();
+
+	vk::PhysicalDeviceFeatures enabled;
+	enabled.fillModeNonSolid = supported.fillModeNonSolid;
+	enabled.largePoints      = supported.largePoints;
+
+	NEURUS_LOG("[VulkanContext] optional features: fillModeNonSolid="
+	           << (enabled.fillModeNonSolid ? "on" : "OFF")
+	           << ", largePoints=" << (enabled.largePoints ? "on" : "OFF"));
+
+	return enabled;
+}
+
 void VulkanContext::InitDevice()
 {
 	ctx_physicalDevices = vk::raii::PhysicalDevices(*ctx_instance);
@@ -102,15 +133,25 @@ void VulkanContext::InitDevice()
 	vk::PhysicalDeviceDynamicRenderingFeatures dynRendering;
 	dynRendering.dynamicRendering = VK_TRUE;
 	dynRendering.pNext = &multiviewFeature;
+
+	// Required by any fragment shader that uses `discard`: targeting Vulkan 1.3
+	// (SPIR-V 1.6) glslang lowers `discard` to OpDemoteToHelperInvocation, since
+	// OpKill is deprecated there. Core-required in 1.3, but the bit must still be
+	// asked for explicitly — without it vkCreateShaderModule reports
+	// VUID-VkShaderModuleCreateInfo-pCode-08740.
+	vk::PhysicalDeviceShaderDemoteToHelperInvocationFeatures demote;
+	demote.shaderDemoteToHelperInvocation = VK_TRUE;
+	demote.pNext = &dynRendering;
+
 	vk::PhysicalDeviceSynchronization2Features sync2;
 	sync2.synchronization2 = VK_TRUE;
-	sync2.pNext = &dynRendering;
+	sync2.pNext = &demote;
 
 	vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
 	descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
 	descriptorIndexing.pNext = &sync2;
 
-	vk::PhysicalDeviceFeatures features;
+	ctx_enabledFeatures = selectOptionalFeatures(pd);
 	std::vector<const char*> devExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
 	// VK_KHR_portability_subset is required when a profile layer simulates portability
@@ -125,7 +166,7 @@ void VulkanContext::InitDevice()
 		}
 	}
 
-	vk::DeviceCreateInfo devCI({}, queueCIs, {}, devExts, &features, &descriptorIndexing);
+	vk::DeviceCreateInfo devCI({}, queueCIs, {}, devExts, &ctx_enabledFeatures, &descriptorIndexing);
 
 	ctx_device = std::make_unique<vk::raii::Device>(pd, devCI);
 

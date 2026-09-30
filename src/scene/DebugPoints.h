@@ -99,16 +99,17 @@ public:
 		   cereal::make_nvp("m_scale", o_scale),
 		   cereal::make_nvp("m_opacity", o_opacity),
 		   cereal::make_nvp("m_projectionMode", o_projectionMode),
-		   cereal::make_nvp("m_points", o_points));
+		   cereal::make_nvp("m_points", o_points),
+		   cereal::make_nvp("m_xray", o_xray));
 	}
 
-	// Non-copyable (UID semantics)
+	// Non-copyable and non-movable (UID semantics): ObjectID's UID base deletes
+	// both, so defaulting the move ops would only implicitly delete them and warn.
+	// Scenes hold these through Resource<T> (shared_ptr), never by value.
 	DebugPoints(const DebugPoints&) = delete;
 	DebugPoints& operator=(const DebugPoints&) = delete;
-
-	// Movable
-	DebugPoints(DebugPoints&&) = default;
-	DebugPoints& operator=(DebugPoints&&) = default;
+	DebugPoints(DebugPoints&&) = delete;
+	DebugPoints& operator=(DebugPoints&&) = delete;
 
 	// -----------------------------------------------------------------------
 	// Point management
@@ -130,6 +131,13 @@ public:
 	 * @brief Removes all stored points.
 	 */
 	void ClearPoints();
+
+	/**
+	 * @brief Replaces the whole point list.
+	 * @param points New world-space positions.
+	 * @see DebugLine::SetVertices for why the editor sets the list absolutely.
+	 */
+	void SetPoints(std::vector<glm::vec3> points) { o_points = std::move(points); }
 
 	/**
 	 * @brief Returns the number of stored points.
@@ -157,9 +165,12 @@ public:
 	/** @brief Returns the point color. */
 	const glm::vec4& GetColor() const { return o_color; }
 
-	/** @brief Sets the point scale factor. */
+	/**
+	 * @brief Sets the sprite diameter.
+	 * @param scale Diameter in pixels when GetProjectionMode() == 0, else in world units.
+	 */
 	void SetScale(float scale) { o_scale = scale; }
-	/** @brief Returns the point scale factor. */
+	/** @brief Returns the sprite diameter (see SetScale for its unit). */
 	float GetScale() const { return o_scale; }
 
 	/** @brief Sets the opacity (0.0 = transparent, 1.0 = opaque). */
@@ -167,17 +178,27 @@ public:
 	/** @brief Returns the opacity value. */
 	float GetOpacity() const { return o_opacity; }
 
-	/** @brief Sets the projection mode (0 = screen, 1 = world, etc.). */
+	/**
+	 * @brief Sets the size projection mode.
+	 * @param mode 0 = screen space (constant pixel size), 1 = world space
+	 *             (shrinks with distance).
+	 */
 	void SetProjectionMode(int mode) { o_projectionMode = mode; }
 	/** @brief Returns the projection mode. */
 	int GetProjectionMode() const { return o_projectionMode; }
 
+	/** @brief Enables x-ray mode: skip the depth test so the points are never occluded. */
+	void SetXRay(bool xray) { o_xray = xray; }
+	/** @brief Returns whether x-ray mode is enabled. */
+	bool GetXRay() const { return o_xray; }
+
 private:
 	PointType o_pointType{PointType::SQUARE};    ///< Point sprite shape.
 	glm::vec4 o_color{1.0f, 1.0f, 1.0f, 1.0f};  ///< Point RGBA color.
-	float o_scale{1.0f};                          ///< Point size scale.
+	float o_scale{8.0f};                          ///< Sprite diameter (px or world units).
 	float o_opacity{1.0f};                        ///< Opacity (0-1).
-	int o_projectionMode{0};                      ///< Projection mode identifier.
+	int o_projectionMode{0};                      ///< 0 = screen space, 1 = world space.
+	bool o_xray{false};                           ///< Draw on top, ignoring depth.
 
 	std::vector<glm::vec3> o_points;              ///< Point positions.
 };

@@ -95,14 +95,29 @@ void VulkanTestShared::SetUp()
 		vk::PhysicalDeviceDynamicRenderingFeatures dynRendering;
 		dynRendering.dynamicRendering = VK_TRUE;
 		dynRendering.pNext = &multiviewFeature;
+
+		// Mirrors VulkanContext: `discard` compiles to OpDemoteToHelperInvocation
+		// under SPIR-V 1.6, which needs this bit (see VulkanContext::InitDevice).
+		vk::PhysicalDeviceShaderDemoteToHelperInvocationFeatures demote;
+		demote.shaderDemoteToHelperInvocation = VK_TRUE;
+		demote.pNext = &dynRendering;
+
 		vk::PhysicalDeviceSynchronization2Features sync2;
 		sync2.synchronization2 = VK_TRUE;
-		sync2.pNext = &dynRendering;
+		sync2.pNext = &demote;
 		vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
 		descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
 		descriptorIndexing.pNext = &sync2;
 
+		// Mirror VulkanContext::selectOptionalFeatures so DebugPass's
+		// wireframe (VK_POLYGON_MODE_LINE) and point-sprite pipelines are
+		// legal in GPU tests too. Gated on device support: requesting an
+		// unsupported feature fails device creation outright.
+		const vk::PhysicalDeviceFeatures supported = pd.getFeatures();
 		vk::PhysicalDeviceFeatures features;
+		features.fillModeNonSolid = supported.fillModeNonSolid;
+		features.largePoints      = supported.largePoints;
+
 		vk::DeviceCreateInfo devCI({}, qCI, {}, {}, &features, &descriptorIndexing);
 		m_device = std::make_unique<vk::raii::Device>(pd, devCI);
 		m_queue = m_device->getQueue(m_graphicsQueueFamily, 0);

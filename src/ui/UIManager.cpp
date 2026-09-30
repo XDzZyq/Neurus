@@ -246,6 +246,20 @@ void UIManager::CreateMenus()
 	auto* resetLayoutAction = trAction(viewMenu, N_("Restore &Default Layout"));
 	connect(resetLayoutAction, &QAction::triggered, this, &UIManager::RestoreDefaultLayout);
 
+	// Full screen has to be reachable *and* escapable from the menu: with the
+	// frame gone there is no minimize/maximize/close button to click, so this
+	// toggle is the way back. Leaving full screen clears only that flag, which
+	// keeps a window that was maximized before entering full screen maximized.
+	m_fullScreenAction = trAction(viewMenu, N_("&Full Screen"));
+	m_fullScreenAction->setCheckable(true);
+	m_fullScreenAction->setShortcut(QKeySequence::FullScreen);
+	connect(m_fullScreenAction, &QAction::toggled, this, [this](bool on) {
+		if (on)
+			showFullScreen();
+		else
+			setWindowState(windowState() & ~Qt::WindowFullScreen);
+	});
+
 	auto* editMenu = addMenu(menuBar(), N_("&Edit"));
 
 	// Undo/Redo are expandable submenus that reveal their stacks (like "Add").
@@ -380,6 +394,13 @@ void UIManager::changeEvent(QEvent* event)
 	// Fires for maximize and minimize too, so compare against the tracked state
 	// instead of acting on every transition.
 	const bool fullScreen = isFullScreen();
+
+	// Keep View > Full Screen in step with a transition we did not initiate
+	// (macOS's green button). setChecked() with an unchanged value emits no
+	// toggled(), so this cannot bounce back into the action's lambda.
+	if (m_fullScreenAction && m_fullScreenAction->isChecked() != fullScreen)
+		m_fullScreenAction->setChecked(fullScreen);
+
 	if (fullScreen == m_floatingLocked)
 		return;
 
@@ -662,7 +683,21 @@ void UIManager::ApplyLayout(const std::string& blob)
 	}
 	QByteArray geom  = QByteArray::fromBase64(packed.left(nl));
 	QByteArray state = QByteArray::fromBase64(packed.mid(nl + 1));
-	if (!geom.isEmpty())  restoreGeometry(geom);
+	if (!geom.isEmpty())
+	{
+		restoreGeometry(geom);
+		// restoreGeometry() round-trips the window *state*, not just the
+		// rectangle: a blob saved while the window was full screen restores it
+		// full screen, and a full-screen QMainWindow has no frame at all - no
+		// minimize, maximize or close button - which leaves Alt+F4 and File >
+		// Exit as the only ways out. Dock layout and window geometry are what
+		// this blob is for; full screen is a transient state with a deliberate
+		// toggle (View > Full Screen). Clear the flag rather than calling
+		// showNormal(): ApplyLayout() runs before Application shows the window,
+		// and showNormal() would show it from here instead.
+		if (isFullScreen())
+			setWindowState(windowState() & ~Qt::WindowFullScreen);
+	}
 	if (!state.isEmpty())
 	{
 		// restoreState() only reports false for XML that fails to parse or has a

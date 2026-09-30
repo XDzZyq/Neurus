@@ -331,12 +331,21 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
 	// --- Cast scene UID to Scene* for access to Scene-specific members ---
-	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
+	// (Nothing here needs the Scene any more: the camera arrives through the
+	// context. Kept out rather than kept unused.)
 
 	// --- 0. Update per-frame SSAO params UBO (camera matrices + kernel) ---
 	{
 		SSAOParamsGpu params{};
-		const Camera* cam = scene->GetActiveCamera();
+		// The viewing camera comes from the context, not from the Scene: the Editor
+		// injects whichever camera the frame is being rendered through. See the
+		// fuller note in LightingPass::Record().
+		const Camera* cam = ctx.editor.camera;
+		if (!cam)
+		{
+			NEURUS_LOG("[SSAOPass] No camera in EditorContext, skipping");
+			return stats;
+		}
 		const glm::mat4 viewProj = cam->GetProjectionMatrix() * cam->GetViewMatrix();
 		const glm::mat4 view = cam->GetViewMatrix();
 		const glm::vec3 cameraPos = cam->GetPosition();

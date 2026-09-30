@@ -195,11 +195,13 @@ TEST(SceneIntegrationTest, GetActiveCameraWithMixedObjects)
 	scene.UseCamera(cam1);
 	scene.UseCamera(cam2);
 
+	// Registration still activates nothing — activation is explicit scene state.
+	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
+
+	ASSERT_TRUE(scene.ActivateCamera(cam1->GetObjectID()));
 	Camera* active = scene.GetActiveCamera();
 	ASSERT_NE(active, nullptr);
-	// GetActiveCamera returns one of the registered cameras (order is unspecified for unordered_map)
-	EXPECT_TRUE(active->GetObjectID() == cam1->GetObjectID() ||
-	            active->GetObjectID() == cam2->GetObjectID());
+	EXPECT_EQ(active->GetObjectID(), cam1->GetObjectID());
 }
 
 // -----------------------------------------------------------------------
@@ -492,10 +494,9 @@ TEST(SceneIntegrationTest, MultipleInstancesOfSameType)
 	EXPECT_NE(scene.obj_list.find(light2->GetObjectID()), scene.obj_list.end());
 	EXPECT_NE(scene.obj_list.find(mesh1->GetObjectID()),  scene.obj_list.end());
 
-	// GetActiveCamera returns one of the registered cameras (order is unspecified for unordered_map)
+	// The activated camera is the one named, not whichever the hash order yields.
+	ASSERT_TRUE(scene.ActivateCamera(cam2->GetObjectID()));
 	Camera* active = scene.GetActiveCamera();
 	ASSERT_NE(active, nullptr);
-	EXPECT_TRUE(active->GetObjectID() == cam1->GetObjectID() ||
-	            active->GetObjectID() == cam2->GetObjectID() ||
-	            active->GetObjectID() == cam3->GetObjectID());
+	EXPECT_EQ(active->GetObjectID(), cam2->GetObjectID());
 }

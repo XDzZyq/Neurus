@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // Compose Compute Shader — final compositing + gamma correction
 //
-// Reads HDRColor (RGBA16F) and GizmoHighlight (R8), blends the highlight
+// Reads HDRColor (RGBA16F) and SelectionOutline (R8), blends the highlight
 // onto the HDR output, applies gamma correction, and writes the final
 // composed image to the output attachment.
 //

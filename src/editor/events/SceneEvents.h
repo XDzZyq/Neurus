@@ -135,6 +135,23 @@ struct CameraPoseChanged
 	float tarZ = 0.0f;
 };
 
+/**
+ * @brief Absolute camera-activation set: which scene camera the viewport uses.
+ *
+ * `camUid` 0 means "deactivate" — a legal, fully supported state in which the
+ * viewport looks through the Editor's own camera. Activation is scene state and
+ * is deliberately independent of selection: the PropertyPanel keeps inspecting
+ * whatever is selected, and selecting a camera never changes the view.
+ *
+ * One event for both the gesture (the PropertyPanel checkbox) and the replay of
+ * SetActiveCameraOp, like every other scene mutation: the op stores the before
+ * and after UIDs and dispatches this to re-apply either endpoint.
+ */
+struct ActiveCameraChanged
+{
+	int camUid = 0;
+};
+
 // ---------------------------------------------------------------------------
 // Mesh property events
 // ---------------------------------------------------------------------------
@@ -210,6 +227,91 @@ struct EnvironmentRotationChanged
 };
 
 // ---------------------------------------------------------------------------
+// Debug object property events (issue #22)
+// ---------------------------------------------------------------------------
+//
+// One set of events for all three debug types (DebugLine, DebugPoints,
+// DebugMesh): the shared knobs — color, opacity, x-ray — are literally the same
+// property on three unrelated pools, so the controller resolves the UID against
+// whichever pool holds it instead of the event naming a type. The type-specific
+// knobs simply never reach an object that has no such property.
+//
+// Every handler ends in Mutated(), which enqueues RenderResetEvent and so marks
+// DebugDrawBuilder dirty — a debug property edit is only visible after a
+// reflatten.
+
+/** @brief Debug object tint. Carries alpha: debug colors are vec4. */
+struct DebugColorChanged
+{
+	int objectUid = 0;
+	float r = 1.0f;
+	float g = 1.0f;
+	float b = 1.0f;
+	float a = 1.0f;
+};
+
+struct DebugOpacityChanged
+{
+	int objectUid = 0;
+	float opacity = 1.0f;
+};
+
+/** @brief Draw the object through geometry (depth test off). */
+struct DebugXRayChanged
+{
+	int objectUid = 0;
+	bool xray = false;
+};
+
+struct DebugLineWidthChanged
+{
+	int objectUid = 0;
+	float width = 1.0f;
+};
+
+struct DebugLineStippleChanged
+{
+	int objectUid = 0;
+	bool stipple = false;
+};
+
+/** @brief Point sprite shape, as the int value of DebugPoints::PointType. */
+struct DebugPointTypeChanged
+{
+	int objectUid = 0;
+	int pointType = 0;
+};
+
+/** @brief Point size: pixels when the projection mode is screen-space, else world units. */
+struct DebugPointScaleChanged
+{
+	int objectUid = 0;
+	float scale = 8.0f;
+};
+
+/** @brief 0 = screen-space size, 1 = world-space size. */
+struct DebugProjectionModeChanged
+{
+	int objectUid = 0;
+	int projectionMode = 0;
+};
+
+/**
+ * @brief Absolute replacement of a debug object's position list.
+ *
+ * Covers editing a coordinate, adding a row and removing a row alike — a
+ * structural change could not be expressed by a per-index event, so the list is
+ * always sent whole. Flattened to xyz triples because this header stays
+ * glm-free like every other event in it. The O(n) copy per edit is fine for
+ * hand-authored debug lists; nothing here is on a per-frame path.
+ */
+struct DebugPositionsChanged
+{
+	int objectUid = 0;
+	std::vector<float> xyz; ///< 3 floats per position, in object space.
+};
+
+// ---------------------------------------------------------------------------
 // Scene membership (Add / Delete)
 // ---------------------------------------------------------------------------
 
@@ -248,9 +350,14 @@ struct SceneObjectDeleteRequested
  * Dedicated Editor->Controller event: the Editor emits it (wrapping the pure
  * DeleteRequested input intent). FORWARD-ONLY: the recorded composite replays
  * via SceneObjectDeleteRequested, never this gesture event. The SceneController
- * snapshots the selection, guards the last camera, deselects, removes every
- * selected object (one batched SceneObjectDeleteRequested), and records ONE
- * composite operation (selection-clear + batched delete).
+ * snapshots the selection, deselects, removes every selected object (one batched
+ * SceneObjectDeleteRequested), and records ONE composite operation
+ * (selection-clear + batched delete).
+ *
+ * Nothing is guarded: a scene with zero cameras is legal, because the Editor
+ * always has its own camera. Deleting the *activated* camera simply leaves the
+ * activation UID stale, which Scene::GetActiveCamera() reads as "none" and the
+ * undo re-add revalidates for free.
  */
 struct ObjectDeleteRequested
 {

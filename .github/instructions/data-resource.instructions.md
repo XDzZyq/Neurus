@@ -86,16 +86,50 @@ lives in `src/asset/`, GPU resource management lives in `src/render/`.
      `ConfigComponent` (Editor-owned) and `UIComponent` (Application-owned UI blob
      sourced from `UIManager::ExportLayout()` / applied via `UIManager::ApplyLayout()`),
      plus `HistoryComponent` (undo/redo-stack adapter in asset/components that
-     wraps the editor's `OperationManager`). `HistoryComponent`
-     is registered last so legacy files without an `m_history` node load cleanly
-     (its `Load` clears the stacks instead of throwing).
+     wraps the editor's `OperationManager`) and `EditorComponent` (key `"m_editor"`,
+     carrying the Editor's own camera UID). The last two are registered last, in
+     that order, so legacy files without their nodes load cleanly: `HistoryComponent`
+     clears the stacks instead of throwing, and `EditorComponent` leaves the uid at
+     `0`, which makes `FinishLoad()` mint a fresh editor camera. Registration order
+     IS archive read order, so a new component belongs at the end.
+   - **The editor camera is persisted as a uid, not as an object.** The camera
+     itself is pooled, so `ResourceComponent` already serializes it with everything
+     else; `EditorComponent` records only which pooled camera the Editor claims as
+     its own. Without it the identity is lost and the user's viewpoint snaps back to
+     the default framing on every open.
    - `Scene::serialize` persists selection state alongside the typed object
      pools. Selection is held at runtime as `const ObjectID*` pointers but
      written as UIDs (`selectedUids` + `activeUid`), mirroring `SelectionState`
      in `SceneOperations.h`. On load the UIDs are resolved back to pointers via
      `Scene::GetObjectID()` *after* `RebuildObjList()`. The selection block is
-     optional: legacy files without it load with an empty selection (the load
-     branch catches the missing-NVP `cereal::Exception`).
+     optional: legacy files without it load with an empty selection.
+   - **`activeCamUid` is three-state, and that is load-bearing.** Which scene
+     camera the viewport looks through is written last in both `serialize`
+     branches and resolved in `ResolveReferences()` right after
+     `ResolvePool<Camera>`: `> 0` is an explicit UID, `0` is *explicitly none*
+     (the normal state — the Editor's own camera takes the view), and `-1` is the
+     field being *absent*, which migrates once by activating
+     `cam_list.begin()->second` so a project saved before the feature still opens
+     through the camera it was saved with. The next save writes the field, so the
+     migration never recurs. Absent and none must therefore stay distinguishable,
+     which is why this field uses the raw `archive::OptionalBlock` bool form below
+     rather than `NEURUS_OPTIONAL_NVP` with a fallback.
+   - **Optional trailing fields** (`src/core/Serialize.h`): a field appended after a
+     format shipped is absent from older files, and cereal reports that by throwing
+     `cereal::Exception` from the read — unhandled, the throw aborts the whole
+     component's `Load`, so one new setting discards every setting around it. Write
+     such fields **last** and read them through:
+     - `NEURUS_OPTIONAL_NVP(ar, field, fallback)` for a single field
+       (`RenderConfig::serialize` and `r_debug_draw`), or
+     - `neurus::archive::OptionalBlock(ar, CEREAL_NVP(a), CEREAL_NVP(b), ...)`, which
+       returns false on a load that found the block missing, when several fields must
+       be defaulted together (`Scene::serialize`'s selection and debug-pool blocks).
+
+     Order is permanent: the binary and portable-binary archives are positional, so
+     once a file exists with the field, its position is fixed. The namespace is
+     `archive`, not `serialize` — several headers declare free
+     `neurus::serialize(Archive&, T&)` overloads for cereal to find by ADL, and a
+     namespace of that name inside `neurus` redefines them.
    - The pointer↔UID conversion lives in scene-layer free functions
      `neurus::SnapshotSelectionUids` / `RestoreSelectionUids` (in `Scene.h`),
      shared by `Scene::serialize` and the editor's `SceneController` selection

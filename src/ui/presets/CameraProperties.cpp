@@ -3,6 +3,7 @@
 #include "items/ScalarSlider.h"
 #include "ui/utils/I18n.h"
 
+#include <QCheckBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -60,6 +61,22 @@ CameraProperties::CameraProperties(QWidget* parent)
 			emit fovChanged(m_objectId, static_cast<float>(m_fovSlider->value()));
 		});
 
+	// --- Active Camera row ---
+	// No label beside it: the checkbox carries its own text, and unlike the two
+	// rows above this is not a camera property at all but the Scene's choice of
+	// view camera, so it reads as a statement rather than a value to edit.
+	m_activeChk = new QCheckBox(QStringLiteral("Active Camera"), this);
+	camLayout->addWidget(m_activeChk);
+
+	QObject::connect(m_activeChk, &QCheckBox::toggled, this,
+		[this](bool checked) {
+			if (m_objectId < 0)
+			{
+				return;
+			}
+			emit activeCameraChanged(m_objectId, checked);
+		});
+
 	layout->addStretch();
 
 	// Apply the active language (labels were built in English).
@@ -72,6 +89,7 @@ void CameraProperties::Retranslate()
 	m_group->setTitle(i18n.translate("Camera"));
 	m_tarLabel->setText(i18n.translate("Look-At Target"));
 	m_fovLabel->setText(i18n.translate("FOV (°)"));
+	m_activeChk->setText(i18n.translate("Active Camera"));
 }
 
 void CameraProperties::setObjectId(int id)
@@ -83,6 +101,7 @@ void CameraProperties::setObjectId(int id)
 		// always applies — forces a full refresh for the new object.
 		m_cachedTarget = glm::vec3(FLT_MAX, FLT_MAX, FLT_MAX);
 		m_cachedFov    = -1.0f;
+		m_cachedActive = -1;
 	}
 }
 
@@ -106,6 +125,22 @@ void CameraProperties::setFov(float fov)
 	}
 	m_cachedFov = fov;
 	m_fovSlider->setValue(static_cast<double>(fov));
+}
+
+void CameraProperties::setActive(bool active)
+{
+	const int val = active ? 1 : 0;
+	if (m_cachedActive == val)
+	{
+		return;
+	}
+	m_cachedActive = val;
+	// Blocked: setChecked() would otherwise emit toggled() and send the state we
+	// were just handed straight back as a user edit — one that would record an
+	// undo entry for a change nobody made.
+	m_activeChk->blockSignals(true);
+	m_activeChk->setChecked(active);
+	m_activeChk->blockSignals(false);
 }
 
 } // namespace neurus

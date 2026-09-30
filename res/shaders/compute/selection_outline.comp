@@ -1,6 +1,6 @@
 #version 450
 // ---------------------------------------------------------------------------
-// GizmoHighlight Compute Shader — 3×3 edge detection on IDBuffer
+// SelectionOutline Compute Shader — 3×3 edge detection on IDBuffer
 //
 // Reads the IDBuffer (R32_UINT) and compares each pixel against its 8
 // neighbours. If the centre pixel matches activeObjectId AND any neighbour
@@ -17,7 +17,7 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 // --- IDBuffer input ---
 layout(binding = 0) uniform usampler2D gIDBuffer;
 
-// --- Gizmo highlight output (R8) ---
+// --- Selection outline output (R8) ---
 layout(r8, binding = 1) uniform writeonly image2D outputHighlight;
 
 // --- Push constants ---

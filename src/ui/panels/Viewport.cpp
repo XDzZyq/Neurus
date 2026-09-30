@@ -2,8 +2,10 @@
 
 #include "UIContext.h"
 #include "core/Log.h"
+#include "editor/Input.h"
 #include "editor/events/UIEvents.h"
 
+#include <QFocusEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPaintEvent>
@@ -86,8 +88,51 @@ void Viewport::keyPressEvent(QKeyEvent* event)
 		}
 	}
 
+	// Modal transform keys (G/R/S, X/Y/Z, Return, Escape). Auto-repeat is
+	// filtered HERE, at the Qt boundary, because a held key must arm an operator
+	// once rather than sixty times a second - the editor's event set has no
+	// repeat notion to filter on later.
+	if (!event->isAutoRepeat())
+	{
+		const Input::Key key = Input::GetKey(static_cast<uint32_t>(event->key()));
+		if (key != Input::Key_Unknown)
+		{
+			emit keyPressed(KeyPressEvent{
+				.key = key,
+				.modifiers = Input::GetModifiers(static_cast<uint32_t>(event->modifiers().toInt()))
+			});
+			// Accepted so the keystroke stops here: unaccepted, it would walk up
+			// through ADS to the QMainWindow, where a menu mnemonic could claim it.
+			event->accept();
+			return;
+		}
+	}
+
 	// Pass all other keys to the base class.
 	QWidget::keyPressEvent(event);
+}
+
+void Viewport::focusOutEvent(QFocusEvent* event)
+{
+	// A modal gesture reads viewport keys and the viewport cursor, so focus moving
+	// to another *widget* means it can no longer be confirmed or cancelled from
+	// here -- that is a genuine abort.
+	//
+	// The whole window or application ceasing to be frontmost is NOT. Qt installs
+	// its NSTrackingArea with NSTrackingActiveInActiveApp, so an inactive app is
+	// delivered no bare mouseMoved at all: the gesture simply pauses and resumes
+	// untouched once the app is frontmost again. Aborting on that reason reverted
+	// the transform on every app switch, IME candidate popup and notification --
+	// indistinguishable, from the user's side, from "the object stopped following
+	// the mouse", and intermittent because it depends on what stole activation.
+	//
+	// Still emitted for every other reason, and the gizmo controller drops it when
+	// nothing is armed.
+	const Qt::FocusReason reason = event->reason();
+	if (reason != Qt::ActiveWindowFocusReason && reason != Qt::PopupFocusReason)
+		emit focusLost(ViewportFocusLost{});
+
+	QWidget::focusOutEvent(event);
 }
 
 void Viewport::keyReleaseEvent(QKeyEvent* event)

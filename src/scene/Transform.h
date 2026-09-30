@@ -65,7 +65,8 @@ protected:
  *
  * Transform3D manages position, rotation (Euler angles in degrees), and scale
  * for 3D scene objects. The model matrix is computed eagerly whenever a
- * component changes, so it is always up-to-date on access.
+ * component changes - including once after deserialization - so it is always
+ * up-to-date on access.
  *
  * Coordinate System:
  * - Right-handed coordinate system, Z-up
@@ -99,8 +100,8 @@ public:
 	 * @brief Cereal serialization for TRS transform.
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
-	 * @note Only position/rotation/scale are serialized. Cached matrix
-	 *       and dirty flag are computed values, not persisted.
+	 * @note Only position/rotation/scale are serialized; `o_modelMatrix` is a
+	 *       computed value, so a load recomputes it.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
@@ -108,6 +109,15 @@ public:
 		ar(cereal::make_nvp("m_position", o_position),
 		   cereal::make_nvp("m_rotation", o_rotation),
 		   cereal::make_nvp("m_scale", o_scale));
+
+		// `o_modelMatrix` is not persisted, and the setters - the only place it is
+		// ever recomputed - are bypassed by deserialization. Without this a loaded
+		// transform keeps the identity matrix it was constructed with, so the
+		// Property panel reads the loaded TRS while GeometryPass, ShadowDepthPass
+		// and DebugDrawBuilder draw the object at the origin with unit scale.
+		// Same idiom as ImageData/MeshData/UID/RenderShader.
+		if constexpr (Archive::is_loading::value)
+			RecomputeModelMatrix();
 	}
 
 	/**
@@ -170,9 +180,9 @@ public:
 	/**
 	 * @brief Returns the model matrix (TRS).
 	 *
-	 * The matrix is always up-to-date — recomputed eagerly whenever a
-	 * component changes. Composition: Translate * Rotate * Scale with
-	 * rotation applied in ZXY order (yaw=Z, pitch=X, roll=Y).
+	 * The matrix is always up-to-date — recomputed eagerly whenever a component
+	 * changes, and once after a load. Composition: Translate * Rotate * Scale
+	 * with rotation applied in ZXY order (yaw=Z, pitch=X, roll=Y).
 	 *
 	 * @return 4x4 model matrix.
 	 */
@@ -201,11 +211,20 @@ public:
 	glm::mat3 GetNormalMatrix() const;
 
 private:
+	/**
+	 * @brief Recomputes o_modelMatrix from the current TRS.
+	 *
+	 * The only two writers of the TRS members are the setters and the `load`
+	 * branch of serialize(); both go through here, so the cached matrix cannot
+	 * go stale behind their back.
+	 */
+	void RecomputeModelMatrix();
+
 	glm::vec3 o_position{0.0f};    ///< World position.
 	glm::vec3 o_rotation{0.0f};    ///< Euler rotation in degrees (pitch=X, yaw=Z, roll=Y).
 	glm::vec3 o_scale{1.0f};       ///< Per-axis scale.
 
-	glm::mat4 o_modelMatrix{1.0f}; ///< Model matrix, recomputed eagerly on any setter call.
+	glm::mat4 o_modelMatrix{1.0f}; ///< Model matrix: rebuilt by every setter and by serialize().
 };
 
 } // namespa

@@ -8,6 +8,10 @@
 
 #include <gtest/gtest.h>
 
+#include <sstream>
+
+#include <cereal/archives/json.hpp>
+
 #include "scene/Transform.h"
 
 using namespace neurus;
@@ -267,6 +271,49 @@ TEST(Transform3D, Eager_UpdatesOnPositionChange)
 	EXPECT_FLOAT_EQ(third[3][0], 4.0f);
 	EXPECT_FLOAT_EQ(third[3][1], 5.0f);
 	EXPECT_FLOAT_EQ(third[3][2], 6.0f);
+}
+
+// -----------------------------------------------------------------------
+// Transform3D - Serialization
+// -----------------------------------------------------------------------
+
+/**
+ * @brief A deserialized transform rebuilds its cached model matrix.
+ *
+ * o_modelMatrix is a computed value, not a serialized one, and the setters -
+ * the only place it is otherwise recomputed - are bypassed by deserialization.
+ * A loaded transform therefore used to keep the identity matrix it was
+ * constructed with: a scene reloaded from a project file rendered every object
+ * at the origin with unit scale while the Property panel showed the TRS that
+ * had been loaded correctly.
+ */
+TEST(Transform3D, Load_RecomputesTheCachedModelMatrix)
+{
+	Transform3D original;
+	original.SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+	original.SetRotation(glm::vec3(0.0f, 0.0f, 90.0f)); // yaw
+	original.SetScale(glm::vec3(2.0f));
+
+	std::ostringstream out;
+	{
+		cereal::JSONOutputArchive ar(out);
+		ar(cereal::make_nvp("transform", original));
+	}
+
+	Transform3D loaded;
+	ASSERT_EQ(loaded.GetModelMatrix(), glm::mat4(1.0f)); // identity before the load
+
+	{
+		std::istringstream in(out.str());
+		cereal::JSONInputArchive ar(in);
+		ar(cereal::make_nvp("transform", loaded));
+	}
+
+	EXPECT_EQ(loaded.GetPosition(), original.GetPosition());
+	EXPECT_EQ(loaded.GetRotation(), original.GetRotation());
+	EXPECT_EQ(loaded.GetScale(), original.GetScale());
+	EXPECT_EQ(loaded.GetModelMatrix(), original.GetModelMatrix())
+	    << "a loaded transform must not keep the identity matrix it was built with";
 }
 
 // -----------------------------------------------------------------------

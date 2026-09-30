@@ -34,8 +34,12 @@ Swapchain::Swapchain(const vk::raii::PhysicalDevice& physicalDevice,
 	}
 
 	// Determine actual image usage: intersect requested usage with surface-supported usage
+	// eTransferSrc is requested for the screenshot path (Screenshot::TakeScreenshot
+	// copies the presented image to a buffer); without it every capture raised
+	// VUID-vkCmdCopyImageToBuffer-srcImage-00186 and read undefined contents.
 	constexpr vk::ImageUsageFlags kRequestedUsage =
-		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
+		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst
+		| vk::ImageUsageFlagBits::eTransferSrc;
 	r_actualUsage = kRequestedUsage & capabilities.supportedUsageFlags;
 
 	vk::SwapchainCreateInfoKHR swapchainCreateInfo(
@@ -121,8 +125,10 @@ void Swapchain::Recreate(uint32_t width, uint32_t height)
 	}
 
 	// Determine actual image usage: intersect requested usage with surface-supported usage
+	// eTransferSrc: see the note on the same constant in the constructor above.
 	constexpr vk::ImageUsageFlags kRequestedUsage =
-		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
+		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst
+		| vk::ImageUsageFlagBits::eTransferSrc;
 	r_actualUsage = kRequestedUsage & capabilities.supportedUsageFlags;
 
 	vk::SwapchainCreateInfoKHR swapchainCreateInfo(

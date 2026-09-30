@@ -74,13 +74,16 @@ protected:
 
 		m_mesh   = std::make_shared<Mesh>();
 		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-		m_camera = std::make_shared<Camera>();
+		m_camera = m_resources.Load<Camera>();
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseCamera(m_camera);
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 
 		// The ShaderLinkOp restore handlers resolve the mesh via the POOL (the
-		// Editor pattern), so the fixture mesh must also be pooled.
+		// Editor pattern), so the fixture mesh must also be pooled. The camera is
+		// pooled the same way, for the same reason: camera-property ops replay
+		// through ctx.resources.
 		m_resources.Register(m_mesh);
 	}
 

@@ -41,6 +41,18 @@ model, coalescing rules, and persistence.
   selection is also persisted independently of history by `Scene::serialize`
   (as UIDs — see data-resource.instructions.md), so a reopened project restores
   its selection even with an empty undo/redo history.
+- **`SetActiveCameraOp`** (`SceneOperations.h`) makes "look through this camera"
+  undoable. Like `SetSelectionOp` it is scene-level (not per-object) state, so it
+  derives from `Operation` directly rather than from `TransitionOp`, stores the
+  before/after camera UIDs (`0` = no scene camera, which hands the view back to the
+  Editor's own camera), and `Apply()` does `emitNow(ActiveCameraChanged{after})` —
+  the same event the PropertyPanel checkbox emits, so there is no replay-only path.
+  `Inverse()` swaps the endpoints. It does NOT override `PreservesRedo()`: changing
+  the view camera is a real edit that branches history, unlike selection. The
+  handler records it only when the value actually changed, so a checkbox toggled to
+  the state it already holds is not an undo entry. The activation UID itself is
+  persisted independently of history by `Scene::serialize`, so a reopened project
+  looks through the camera it was saved with even with an empty undo stack.
 - **`CompositeOp`** (in `Operation.h`, a general-purpose core op) composes any
   sequence of `Operation`s into ONE undo entry. Group-theoretic inverse: it
   replays the sequence in forward order, and `Inverse()` returns a composite of
@@ -63,6 +75,17 @@ model, coalescing rules, and persistence.
     state) that must NOT re-run on replay, give it a dedicated restore event
     (ShaderCodeRestored convention) instead of the forward event — but keep
     ops minimal by default.
+- **Debug object ops** (issue #22, `SceneOperations.h`): nine `TransitionOp`s
+  covering the debug property events — `SetDebugColorOp` (`glm::vec4`),
+  `SetDebugOpacityOp`, `SetDebugXRayOp`, `SetDebugLineWidthOp`,
+  `SetDebugStippleOp`, `SetDebugPointTypeOp`,
+  `SetDebugPointScaleOp`, `SetDebugProjectionModeOp` and
+  `SetDebugPositionsOp`. Like the events they replay, they are **type-agnostic**:
+  one op set serves `DebugLine`, `DebugPoints` and `DebugMesh`, and the handler
+  resolves the UID against whichever pool holds it. `SetDebugPositionsOp` stores
+  the whole `std::vector<glm::vec3>` before/after (the op layer may use glm; the
+  event may not, so `MakeEvent` flattens to xyz triples) — so a cell edit, an Add
+  and a Remove are all the same absolute op, and each is one undo entry.
 
 ## Bounded undo depth
 
@@ -99,6 +122,18 @@ value changes but must collapse to a single undo entry. Three strategies exist:
 For the concrete controller wiring (`CameraController`,
 `RenderConfigController`, `ShaderController`), see
 [editor.instructions.md](editor.instructions.md).
+
+`TransformGizmoController` is the controller-owned-gesture pattern at its purest:
+`Arm` captures the before-state, every `Drag` writes `Transform3D` **directly** and
+records nothing, and confirm submits exactly one `SetPositionOp` / `SetRotationOp` /
+`SetScaleOp` for the whole gesture — or none at all when the value is unchanged,
+which is also what makes a cancelled gesture leave no entry behind. Routing the drag
+through `PositionChanged`/`RotationChanged`/`ScaleChanged` instead would record ~60
+entries per second: `SceneController` submits on every one of those events, and those
+three ops declare no `MergeKey()`, so nothing would coalesce. The cost of bypassing
+`SceneController` is that this controller must emit `SceneModified` +
+`RenderResetEvent` itself, plus `LightGpuChanged` for a light — whose GPU position
+lives in an SSBO the transform write does not touch.
 
 `ShaderController` records delta-only ops matching each edit event's
 granularity: `SetShaderCodeOp` (before/after GLSL text), `SetShaderFieldOp`

@@ -5,6 +5,9 @@
 #include "resources/EnvironmentGPU.h"
 #include "resources/LightGPU.h"
 #include "resources/LightingCache.h"
+#include "resources/CameraGPU.h"
+#include "resources/DebugCache.h"
+#include "resources/GizmoCache.h"
 #include "resources/PipelineCache.h"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -14,6 +17,9 @@
 #include <vector>
 
 namespace neurus {
+
+struct DebugDrawList;
+struct GizmoDrawList;
 
 /**
  * @brief Named attachment identifiers for G-Buffer and post-FX framebuffer attachments.
@@ -35,8 +41,8 @@ enum class AttachmentName
 	// --- ID ---
 	IDBuffer,           ///< Per-pixel object ID (R32_UINT)
 
-	// --- Gizmo ---
-	GizmoHighlight,     ///< Selected-object edge highlight (R8_UNORM)
+	// --- Selection ---
+	SelectionOutline,   ///< Selected-object edge highlight (R8_UNORM)
 
 	// --- Composite ---
 	ComposedOutput,     ///< Final composed output before swapchain blit (RGBA16F)
@@ -74,12 +80,16 @@ class RenderCache
 {
 public:
 	/**
-	 * @brief Constructs the render cache and initializes LightingCache.
+	 * @brief Constructs the render cache with its always-present GPU resources.
+	 *
+	 * The shared camera UBO and the debug-overlay buffers are created here
+	 * (neither needs a queue, and every frame writes the camera), so their
+	 * accessors never return null. LightingCache is the exception: it uploads
+	 * through a queue, so UploadManager builds it and hands it over with
+	 * SetLightingCache().
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (retained reference, used for format/memory queries).
-	 * @param graphicsQueue     Graphics queue for staging uploads.
-	 * @param queueFamilyIndex  Queue family index for staging command pool.
 	 */
 	RenderCache(const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice);
@@ -250,6 +260,26 @@ public:
 	 * @note Call on application shutdown or when the device is lost.
 	 */
 	void Clean();
+
+	/**
+	 * @brief Drops the scene-scoped GPU resources: every mesh, light and
+	 *        environment entry plus the shadow bookkeeping derived from them.
+	 *
+	 * Called when the scene is replaced. The caches are keyed by object UID and
+	 * UIDs are restored from the project file (UID::serialize re-reads o_id), so
+	 * an entry left behind shadows whatever returns under the same id: load
+	 * project A, then project B, and B draws A's geometry, shadow maps and
+	 * cubemaps while B's own properties are displayed correctly beside them.
+	 *
+	 * Screen-space attachments, the pipeline cache and the LightingCache survive:
+	 * attachments are recreated lazily at the live extent, pipelines are keyed by
+	 * shader UID + version (a reloaded shader recompiles to a new version), and
+	 * the LightingCache is owned by UploadManager rather than by the scene.
+	 *
+	 * @note The caller must have drained the device first - the entries own
+	 *       vk::raii resources.
+	 */
+	void RemoveSceneResources();
 
 	/**
 	 * @brief Clear screen-space attachments (G-Buffer) and shadow intensities.
@@ -424,6 +454,71 @@ public:
 	 */
 	uint32_t GetShadowIndex(int lightUID) const;
 
+	// --- Shared camera UBO (owned) ---
+
+	/**
+	 * @brief Uploads this frame's camera matrices into the shared camera UBO.
+	 *
+	 * The one writer of the camera buffer: called once per frame from
+	 * DeferredRenderer::recordFrame() before the graph executes, so every pass
+	 * that reads it is guaranteed the same camera regardless of pass order. Takes
+	 * matrices rather than a Camera so this layer stays free of scene types.
+	 *
+	 * @param proj  Projection matrix (already Y-flipped for Vulkan NDC).
+	 * @param view  View matrix.
+	 */
+	void UpdateCamera(const glm::mat4& proj, const glm::mat4& view);
+
+	/**
+	 * @brief The shared camera UBO. Always present; check IsValid() before reading.
+	 */
+	CameraGPU& GetCameraGPU() { return *rc_cameraGPU; }
+
+	/** @brief const overload of GetCameraGPU(). */
+	const CameraGPU& GetCameraGPU() const { return *rc_cameraGPU; }
+
+	// --- Debug overlay geometry (owned) ---
+
+	/**
+	 * @brief Uploads this frame's debug geometry, if it changed since last frame.
+	 *
+	 * Called once per frame from DeferredRenderer::recordFrame(), next to
+	 * UpdateCamera(). Cheap when nothing moved: the list's revision is compared
+	 * against what the frame's slot already holds and an unchanged list copies
+	 * nothing.
+	 *
+	 * @param frameIndex  Frame-in-flight index being recorded.
+	 * @param list        Flattened debug geometry from EditorContext::debugDraw.
+	 */
+	void UpdateDebugDraw(uint32_t frameIndex, const DebugDrawList& list);
+
+	/** @brief The debug overlay's per-frame buffers, as DebugPass reads them. */
+	DebugCache& GetDebugCache() { return *rc_debugCache; }
+
+	/** @brief const overload of GetDebugCache(). */
+	const DebugCache& GetDebugCache() const { return *rc_debugCache; }
+
+	// --- Transform gizmo guide geometry (owned) ---
+
+	/**
+	 * @brief Uploads this frame's gizmo guide geometry.
+	 *
+	 * Called once per frame from DeferredRenderer::recordFrame(), beside
+	 * UpdateDebugDraw(). Unconditional: GizmoDrawList carries no revision, because a
+	 * live gesture rebuilds its geometry on every cursor and camera change and the
+	 * payload is a few dozen segments at peak.
+	 *
+	 * @param frameIndex  Frame-in-flight index being recorded.
+	 * @param list        Guide geometry from EditorContext::gizmoDraw.
+	 */
+	void UpdateGizmoDraw(uint32_t frameIndex, const GizmoDrawList& list);
+
+	/** @brief The gizmo overlay's per-frame buffers, as GizmoPass reads them. */
+	GizmoCache& GetGizmoCache() { return *rc_gizmoCache; }
+
+	/** @brief const overload of GetGizmoCache(). */
+	const GizmoCache& GetGizmoCache() const { return *rc_gizmoCache; }
+
 	void CleanScreenSpace();
 
 private:
@@ -464,6 +559,15 @@ private:
 
 	// --- Lighting SSBO storage (owned) ---
 	std::unique_ptr<LightingCache> rc_lightingCache;
+
+	// --- Shared camera UBO (owned, created eagerly: every frame writes it) ---
+	std::unique_ptr<CameraGPU> rc_cameraGPU;
+
+	// --- Debug overlay geometry (owned; allocates nothing until first Update) ---
+	std::unique_ptr<DebugCache> rc_debugCache;
+
+	// --- Gizmo guide geometry (owned; allocates nothing until first Update) ---
+	std::unique_ptr<GizmoCache> rc_gizmoCache;
 
 	// --- Light UID → SSBO index / shadow index maps (populated by UpdateLighting) ---
 	std::unordered_map<int, uint32_t> rc_uidToSSBOIdx;     ///< uid → SSBO element index

@@ -69,6 +69,7 @@ Editor wraps or forwards, controllers handle":
 | `src/editor/events/OperationEvents.h` | Undo/redo request events (`UndoRequested`, `RedoRequested`) |
 | `src/editor/events/ConfigEvents.h` | Render config change events |
 | `src/editor/events/ShaderEvents.h` | Shader editor events (create, compile, code/struct edit, field add) |
+| `src/editor/events/GizmoEvents.h` | Modal transform intents (arm, constrain, confirm, cancel) + the shared `GizmoMode` / `GizmoAxis` enums |
 | `src/editor/events/UIEvents.h` | QObject singleton — Qt signal definitions for UI→Editor dispatch |
 | `src/editor/events/EventBus.h` | Header-only typed event dispatcher (`EventQueue` class, zero Qt dependency) |
 
@@ -123,6 +124,13 @@ struct CameraFovChanged    { int objectUid; float fov; };
 // Absolute camera pose (position + target) — replay only, dispatched by
 // CameraTransformOp on undo/redo (live navigation carries relative deltas).
 struct CameraPoseChanged   { int objectUid; float posX, posY, posZ, tarX, tarY, tarZ; };
+// Which SCENE camera the viewport looks through; 0 = none, which hands the view
+// back to the Editor's own camera. Scene state, deliberately independent of
+// selection. One event for both the PropertyPanel checkbox and SetActiveCameraOp
+// replay. The handler activates/deactivates, records the op only when the value
+// actually changed, and enqueues a CameraResizeEvent for the newly activated
+// camera so it cannot take the view with a stale aspect.
+struct ActiveCameraChanged { int camUid; };
 
 // Mesh properties
 struct MeshShadowChanged  { int objectUid; bool enabled; };
@@ -139,6 +147,17 @@ struct LightOuterCutoffChanged { int objectUid; float outerCutoff; };
 struct EnvironmentIntensityChanged { int objectUid; float intensity; };
 struct EnvironmentRotationChanged  { int objectUid; float rotation; };
 
+// Debug object properties (issue #22) — ONE set for all three debug types
+struct DebugColorChanged   { int objectUid; float r, g, b, a; };  // debug tints are vec4
+struct DebugOpacityChanged { int objectUid; float opacity; };
+struct DebugXRayChanged    { int objectUid; bool xray; };
+struct DebugLineWidthChanged   { int objectUid; float width; };
+struct DebugLineStippleChanged { int objectUid; bool stipple; };          // smoothing follows it: solid = AA, dashed = none
+struct DebugPointTypeChanged      { int objectUid; int pointType; };      // DebugPoints::PointType value
+struct DebugPointScaleChanged     { int objectUid; float scale; };
+struct DebugProjectionModeChanged { int objectUid; int projectionMode; }; // 0 = screen, 1 = world
+struct DebugPositionsChanged { int objectUid; std::vector<float> xyz; };  // whole list, 3 floats/position
+
 // Scene membership (Add / Delete) — UID-carrying (replay-safe; see below)
 struct SceneObjectAddRequested { int objectUid; };                          // forward (Editor import) + replay
 struct SceneObjectDeleteRequested { std::vector<int> uids; };               // single BATCHED removal path (gesture + replay)
@@ -152,6 +171,24 @@ above): they carry `int objectUid`, never object pointers. Controllers resolve
 the UID against the current Scene (typed pool lookup, e.g. `mesh_list.find`)
 via their `ControllerContext` and mutate the object directly — no pointer
 payload to dangle. `Editor::OnUIEvent` just enqueues them unchanged.
+
+**One debug event set, three pools.** The debug events above are shared by
+`DebugLine`, `DebugPoints` and `DebugMesh` rather than split per type: color,
+opacity and x-ray are literally the same property on three unrelated pools, so
+the handler resolves the UID against whichever pool holds it
+(`SceneController`'s `ForDebugObject`) instead of the event naming a type. A
+type-specific knob (line width, point shape) simply never reaches an object that
+has no such property — an unknown UID is ignored and records nothing. Every
+handler ends in `Mutated()`, which enqueues `RenderResetEvent` and so marks
+`DebugDrawBuilder` dirty: a debug property edit is only visible after a
+reflatten.
+
+`DebugPositionsChanged` is **absolute** — it carries the whole position list, so
+one event and one op cover editing a coordinate, adding a row and removing a row
+alike (a structural change cannot be expressed per index). It is flattened to
+xyz triples because this header stays glm-free; `PropertyPanel` flattens on the
+way out and the controller unflattens on the way in, dropping a trailing partial
+triple.
 
 **Membership events carry UIDs too (no scene payload).** Add/Delete is split
 into **Import** (Editor: `Load` the resource into the pool — `OnMeshImport`,
@@ -170,7 +207,7 @@ subscribes to the pure `DeleteRequested` intent (Delete key in
 Outliner/Viewport) and forwards `ObjectDeleteRequested{}` — the UI no longer
 stamps the scene. It is **forward-only** (the recorded composite replays via
 `SceneObjectDeleteRequested`, never this gesture event). The SceneController
-snapshots the selection, guards the last camera, deselects, and DEFERS the
+snapshots the selection, deselects, and DEFERS the
 actual removals as ONE batched `SceneObjectDeleteRequested` carrying all
 selected UIDs — so the batched handler is the SINGLE removal path shared by
 the gesture and by undo/redo replay (no replay-only handling), and records ONE
@@ -223,10 +260,22 @@ scroll burst into one undo step.
 ### InputEvents.h
 
 ```cpp
-struct MouseMoveEvent   { int x, y; float dx, dy; Modifiers mods; };
-struct MousePressEvent  { int x, y; MouseButton btn; Modifiers mods; };
-struct MouseReleaseEvent{ int x, y; MouseButton btn; Modifiers mods; };
-struct MouseScrollEvent { int x, y; float delta; Modifiers mods; };
+struct MouseMoveEvent   { glm::vec2 position, delta; Modifiers mods; bool left/middle/rightHeld; };
+struct MousePressEvent  { MouseButton button; glm::vec2 position; Modifiers mods; };
+struct MouseReleaseEvent{ MouseButton button; glm::vec2 position; Modifiers mods; };
+struct MouseScrollEvent { float delta; glm::vec2 position; Modifiers mods; bool ...Held; };
+
+// Keyboard. `key` is an Input::Key, never a raw Qt code, so an unmapped key arrives
+// as Key_Unknown and no handler can act on a stray number. Auto-repeat is filtered at
+// the Qt boundary (Viewport::keyPressEvent): a modal operator reacts to a press, not
+// to the OS repeat rate. There is deliberately no KeyReleaseEvent — nothing is chorded
+// on a held key, and the modal operators are press-to-enter / press-to-leave.
+struct KeyPressEvent    { Input::Key key; Modifiers mods; };
+
+// A raw viewport fact, not a transform intent, which is why it lives here and not in
+// GizmoEvents.h: any controller holding a modal state machine must abandon it when the
+// user clicks into another panel.
+struct ViewportFocusLost { };
 
 // Pure UI->Editor intents (no scene pointer - the Editor wraps them):
 struct ObjectClicked    { int objectUid; int modifiers; };  // Outliner row click
@@ -305,6 +354,45 @@ Create Shader IS undoable via `ShaderLinkOp` (pool-preserving membership
 toggle - undo drops the reference, redo relinks the pooled shader by UID, via
 `ShaderLinkRestored` / `ShaderUnlinkRestored`); Compile stays non-undoable. See
 [operation-system.instructions.md](operation-system.instructions.md).
+
+### GizmoEvents.h
+
+Intents for the modal transform gesture (Editor keystroke → `TransformGizmoController`).
+`GizmoMode` and `GizmoAxis` live here rather than in `TransformGizmo.h`: an event header
+must not depend on the controller's types, and both enums are shared vocabulary between
+the events, the state machine and the draw builder.
+
+```cpp
+enum class GizmoMode { None = 0, Move, Rotate, Scale };   // G / R / S
+enum class GizmoAxis { None = 0, X, Y, Z };               // X / Y / Z, None = screen space
+
+struct GizmoModeRequested { int objectUid; GizmoMode mode; };  // only this one carries a uid
+struct GizmoAxisRequested { GizmoAxis axis; };
+struct GizmoConfirmed     { };   // LMB or Return
+struct GizmoCancelled     { };   // Esc, RMB, or viewport focus loss
+```
+
+**`GizmoAxis::None` is a live state, not an absent one.** It means the view plane for
+Move, uniform for Scale and the view axis for Rotate — both the state a bare G/R/S
+leaves behind and the state `W` returns to. So `W` enqueues
+`GizmoAxisRequested{GizmoAxis::None}`; there is no separate "unconstrain" event.
+
+**Every branch of the Editor's key handler enqueues unconditionally.** Nothing in the
+Editor reads gizmo state to decide whether to enqueue, and the controller drops what it
+cannot use. This is not defensive coding — `EventQueue::Process()` is FIFO and drains
+re-entrant enqueues within the same call, so a gate in the Editor would silently swallow
+an axis key that arrived in the same frame as its mode key.
+
+**Cursor motion is not a gizmo event.** The controller subscribes to the existing
+`MouseMoveEvent` and ignores it while nothing is armed, reading `e.position` rather than
+`EditorViewport::Cursor()` — the Editor's own subscription is what pushes the cursor into
+the viewport, and dispatch is registration-ordered, so reading it back would consume a
+one-frame-stale cursor if the two subscriptions were ever registered the other way round.
+
+Only the gesture-opening event carries a uid, following `CameraEvents.h`. The later
+events need none: the controller already holds the target it latched when the gesture
+began — which is also why changing the Outliner selection mid-gesture does not move the
+gesture.
 
 ## UIEvents (Qt Signal Bus)
 

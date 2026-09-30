@@ -87,6 +87,7 @@ protected:
 		cam->SetTarPos(glm::vec3(0.f, 0.f, 0.f));
 		cam->ChangeCamRatio(static_cast<float>(kRes), static_cast<float>(kRes));
 		r.s->UseCamera(cam);
+		r.s->ActivateCamera(cam->GetObjectID());
 		// Quad at y=-5 in XZ plane, 5 units forward from the sun shadow camera at (0,-10,0)
 		// (eye distance = sun_depth_range = 10, decoupled from far plane = 30)
 		const char* ob =
@@ -125,6 +126,9 @@ TEST_F(SunShadowDepthTest, OrthoDepthMap)
 		RenderContext ctx{};
 		ctx.width=kRes; ctx.height=kRes;
 		ctx.editor.scene=ts.s.get();
+		// The sun path reads the viewing camera from the context, standing in for
+		// what DeferredRenderer::recordFrame() injects.
+		VulkanTestShared::PublishSceneCamera(*m_cache, ctx.editor);
 		m_pass->Record(*cmd,*m_cache,ctx);
 		EndSubmitWait(cmd); }
 

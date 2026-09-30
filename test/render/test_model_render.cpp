@@ -230,6 +230,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	Scene scene;
 	scene.UseCamera(camera);
+	scene.ActivateCamera(camera->GetObjectID());
 	scene.UseMesh(mesh);
 	scene.UseLight(light);
 
@@ -262,6 +263,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

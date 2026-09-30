@@ -320,6 +320,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
+				scene.ActivateCamera(camera->GetObjectID());
 				scene.env_list[m_env->GetObjectID()] = m_env;
 
 	// Pre-register GPU resources before pass recording
@@ -339,6 +340,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
@@ -431,6 +433,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
+				scene.ActivateCamera(camera->GetObjectID());
 				scene.env_list[m_env->GetObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
 				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
@@ -445,6 +448,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 			};
 
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 
@@ -577,6 +581,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
+				scene.ActivateCamera(camera->GetObjectID());
 				scene.env_list[m_env->GetObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
 				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
@@ -591,6 +596,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 			};
 
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 

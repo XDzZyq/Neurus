@@ -36,6 +36,7 @@
 #include "asset/components/ResourceComponent.h"
 #include "asset/components/ConfigComponent.h"
 #include "asset/components/UIComponent.h"
+#include "asset/components/EditorComponent.h"
 #include "asset/components/HistoryComponent.h"
 #include "scene/Scene.h"
 #include "render/DeferredRenderer.h"
@@ -66,6 +67,12 @@
 
 namespace {
 
+/// Starter mesh of the default scene, shared by the first-launch fallback and
+/// File > New so the two cannot drift. Relative: pooled resources store
+/// relative "res/..." paths so project files stay portable, and the asset layer
+/// resolves them against the res dir.
+constexpr const char* kDefaultSceneObj = "res/obj/sphere.obj";
+
 /**
  * @brief Resolves a resource path relative to the executable directory.
  *
@@ -94,9 +101,12 @@ static void BuildProject(neurus::project::Project& proj,
 	                                                editor.GetResourceManager());
 	proj.Register<neurus::project::ConfigComponent>(editor.GetRenderConfig());
 	proj.Register<neurus::project::UIComponent>(uiLayout);
-	// History last: legacy files without an "m_history" node load cleanly
-	// (HistoryComponent::Load clears the stacks instead of throwing).
+	// History, then editor view state: both are appended-last nodes, so legacy
+	// files that lack them load cleanly (each Load() falls back instead of
+	// throwing). Registration order IS archive read order, so nothing already
+	// written moves when a node is appended here.
 	proj.Register<neurus::project::HistoryComponent>(editor.GetOperations());
+	proj.Register<neurus::project::EditorComponent>(editor);
 }
 
 } // anonymous namespace
@@ -195,9 +205,7 @@ int Application::Run()
 	InitEditor();
 
 	const auto projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
-	// Relative path: pooled resources store relative "res/..." paths so project
-	// files stay portable; the asset layer resolves them against the res dir.
-	const std::string objPath = "res/obj/sphere.obj";
+	const std::string objPath = kDefaultSceneObj;
 
 	try
 	{
@@ -229,6 +237,13 @@ int Application::Run()
 	// Upload scene GPU resources AFTER window is shown and surface is ready.
 	// Doing this earlier (in Editor::Initialize) causes "Surface lost during recreation"
 	// on the first frame because the swapchain isn't fully ready.
+	//
+	// One call covers the whole scene - meshes, lights, debug meshes, IBL cubemaps
+	// and the light SSBO - and that is what makes the first-launch fallback
+	// correct: its scene comes from CreateDefaultScene() and never passes through
+	// FinishLoad(), so it used to end up with no IBL at all. For a loaded project
+	// it is nearly free: FinishLoad() already uploaded everything and each part
+	// skips work that is already cached.
 	app_editor->UploadSceneResources();
 
 	WireSignals();
@@ -333,7 +348,15 @@ void Application::ResizeViewport(int width, int height)
 		app_mainWindow->getViewportHwnd(),
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 	app_renderer->HandleResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-	app_editor->HandleResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+
+	// The Editor needs both extents: logical for every projection query (and for
+	// Camera::cam_w/cam_h), physical for the ID-buffer readback. The physical one is
+	// read back from the renderer AFTER its own resize, so it is the extent the
+	// swapchain actually got rather than the one we asked for.
+	const auto extent = app_renderer->GetExtent();
+	app_editor->HandleResize(
+		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
+		glm::uvec2{extent.width, extent.height});
 }
 
 // =========================================================================
@@ -389,7 +412,9 @@ void Application::ApplyTargetFps(int fps)
 
 void Application::OnProjectNew()
 {
-	app_editor->NewScene();
+	// Same starter content as a first launch: New is a fresh document, not an
+	// empty one (a camera-less scene is unrenderable - see Editor::NewScene).
+	app_editor->NewScene(kDefaultSceneObj);
 	app_projectPath.clear();
 	// Layout is intentionally left untouched on New; rebase the dirty
 	// baseline so a fresh project isn't reported as having unsaved changes.
@@ -544,10 +569,28 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// Forward the Delete key (remove all selected objects).
 		ConnectUIEvent(viewport, &neurus::Viewport::deleteRequested);
 
+		// Forward modal transform keystrokes (G/R/S, X/Y/Z, Return, Escape) and
+		// the focus-loss abort. Both are raw viewport facts: the Editor turns a
+		// key into a gizmo intent, and TransformGizmoController decides whether
+		// the intent means anything.
+		ConnectUIEvent(viewport, &neurus::Viewport::keyPressed);
+		ConnectUIEvent(viewport, &neurus::Viewport::focusLost);
+
 		// Handle left-click for pixel-perfect object selection via IDBuffer
 		QObject::connect(viewport, &neurus::Viewport::mousePressed,
 		                 [this, viewport](const neurus::MousePressEvent& e) {
 		                     if (e.button != Input::MouseButton::Left)
+		                         return;
+
+		                     // A left click that confirms a modal transform gesture
+		                     // must not also re-select whatever happens to be under
+		                     // the cursor, and must not pay this path's
+		                     // queue.waitIdle ID-buffer readback. This is a separate
+		                     // connection from the ConnectUIEvent above, so the
+		                     // gesture's own GizmoConfirmed still reaches the Editor.
+		                     // Frame-granular and therefore safe: gizmo state only
+		                     // ever changes inside Editor::Edit().
+		                     if (app_editor->IsGizmoActive())
 		                         return;
 
 		                     const auto renderExtent = app_renderer->GetExtent();
@@ -604,6 +647,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// Camera properties
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::cameraTargetChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::cameraFovChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::activeCameraChanged);
 
 		// Mesh properties
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::meshShadowChanged);
@@ -619,6 +663,17 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// Environment properties
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::envIntensityChanged);
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::envRotationChanged);
+
+		// Debug object properties (DebugLine / DebugPoints / DebugMesh)
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugColorChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugOpacityChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugXRayChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugLineWidthChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugStippleChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPointTypeChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPointScaleChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugProjectionModeChanged);
+		ConnectUIEvent(propPanel, &neurus::PropertyPanel::debugPositionsChanged);
 	}
 }
 

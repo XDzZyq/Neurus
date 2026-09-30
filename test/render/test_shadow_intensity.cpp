@@ -169,6 +169,7 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.editor);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);

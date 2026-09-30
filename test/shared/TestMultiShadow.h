@@ -233,6 +233,9 @@ inline MultiShadowResources LoadMultiShadow(
 		cam->SetPosition(glm::vec3(0.0f, 1.0f, 3.0f));  // looking down at origin from above (Z-up)
 		cam->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		res.scene->UseCamera(cam);
+		// Registration no longer implies activation; the fixture renders through
+		// this camera, so it activates it explicitly.
+		res.scene->ActivateCamera(cam->GetObjectID());
 	}
 
 	NEURUS_LOG("[LoadMultiShadow] Built 2 meshes (cube + plane) + "
