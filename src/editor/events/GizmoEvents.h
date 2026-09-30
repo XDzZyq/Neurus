@@ -50,7 +50,14 @@ enum class GizmoMode
  */
 enum class GizmoAxis
 {
-	None = 0,  ///< Armed but unconstrained; no transform is applied yet.
+	/**
+	 * @brief Unconstrained — the *screen-space* variant of whichever mode is armed.
+	 *
+	 * Not an absence of gesture: an armed mode with no axis is live, and means the
+	 * view plane for Move, uniform for Scale and the view axis for Rotate. It is both
+	 * the state a bare G / R / S leaves behind and the state W returns to.
+	 */
+	None = 0,
 	X,
 	Y,
 	Z
@@ -70,14 +77,15 @@ struct GizmoModeRequested
 };
 
 /**
- * @brief User pressed X / Y / Z: constrain the live gesture to one axis.
+ * @brief User pressed X / Y / Z / W: set the live gesture's constraint.
  *
- * Dropped when no gesture is active. Pressing the same axis twice is not a toggle
- * in wave 1; it simply re-latches the anchor.
+ * Dropped when no gesture is active. Pressing the same axis twice is not a toggle;
+ * it simply re-latches the anchor. W requests GizmoAxis::None — the screen-space
+ * variant — which is how a constrained gesture goes back to being free.
  */
 struct GizmoAxisRequested
 {
-	GizmoAxis axis = GizmoAxis::None;  ///< Requested constraint axis.
+	GizmoAxis axis = GizmoAxis::None;  ///< Requested constraint; None = screen space.
 };
 
 /**

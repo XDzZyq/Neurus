@@ -99,6 +99,7 @@ public:
 		Key_X,            ///< Axis constraint X.
 		Key_Y,            ///< Axis constraint Y.
 		Key_Z,            ///< Axis constraint Z.
+		Key_W,            ///< Axis constraint: screen space (drop X/Y/Z).
 
 		Key_Escape,       ///< Cancel the active modal operation.
 		Key_Return        ///< Confirm the active modal operation (Return and Enter both).

@@ -2,18 +2,18 @@
  * @file TransformGizmo.h
  * @brief Modal transform state machine for the viewport's G / R / S gestures.
  *
- * Blender-style modal operators rather than draggable handles: the *gesture* does
- * not exist until the user presses a mode key, so there is no handle geometry to
- * hit-test and no picking cost. A resting translate handle is drawn whenever
- * something is selected, but it is display only — GizmoDrawBuilder produces it from
- * the active object's transform without this class being armed at all, and clicking
- * it does nothing. One gesture is
+ * Blender-style modal operators: the *gesture* is armed by a mode key and then reads
+ * the bare cursor, so nothing has to be grabbed for it to run. A resting translate
+ * handle is drawn whenever something is selected; it is display only for now —
+ * GizmoDrawBuilder produces it from the active object's transform without this class
+ * being armed at all. Dragging that handle directly is a planned future feature and
+ * would arm the same state machine. One gesture is
  *
  *     Arm(mode) -> [Constrain(axis)] -> Drag(cursor)* -> Disarm() | Cancel()
  *
- * with Constrain optional: an armed Move or Scale with no axis is a *free* gesture
- * (the view plane for Move, uniform for Scale), exactly as Blender's bare G and S
- * are. Only Rotate needs an axis before a drag does anything. It yields exactly one
+ * with Constrain optional: an armed gesture with no axis is a *free* gesture — the view
+ * plane for Move, uniform for Scale, the view axis for Rotate — exactly as Blender's
+ * bare G, S and R are. It yields exactly one
  * undo entry, Submitted by TransformGizmoController on
  * confirm. This class holds no operation sink, no event queue and no scene
  * pointer: it is pure interaction math over a Transform3D handed in per call.
@@ -83,9 +83,9 @@ struct TransformSnapshot
  *
  *   Rotate (the gimbal set). Bumping one stored Euler component is an exact
  *   axis-angle rotation about an axis depending only on the components *not*
- *   changed — a true one-parameter rotation subgroup. That is what lets the whole
- *   feature avoid quaternions and decomposition and keep the PropertyPanel number
- *   exactly `before + theta`:
+ *   changed — a true one-parameter rotation subgroup. That is what keeps a
+ *   constrained rotation's PropertyPanel number exactly `before + theta`, with no
+ *   matrix round trip and no representative to choose:
  *       Z (yaw)   -> world Z
  *       X (pitch) -> Rz(yaw) * X
  *       Y (roll)  -> Rz * Rx * Y, which is exactly Transform3D::GetDirection()
@@ -104,6 +104,39 @@ struct TransformSnapshot
  * without the state machine growing an accessor per axis.
  */
 glm::vec3 GizmoAxisDirection(GizmoMode mode, GizmoAxis axis, const glm::vec3& rotationDegrees);
+
+/**
+ * @brief The stored Euler triple as a rotation matrix: Rz(yaw) * Rx(pitch) * Ry(roll).
+ * @param rotationDegrees Transform3D::GetRotation() — the stored Euler triple.
+ *
+ * Transform.cpp's ComputeModelMatrix minus T and S, and the single source of truth for
+ * that product on this side: GizmoAxisDirection's Move/Scale branch is its columns.
+ */
+glm::mat3 GizmoRotationMatrix(const glm::vec3& rotationDegrees);
+
+/**
+ * @brief The inverse of GizmoRotationMatrix: the Euler triple that rebuilds @p r.
+ * @param r A pure rotation matrix (orthonormal, right-handed).
+ * @return Euler degrees (pitch=X, roll=Y, yaw=Z), pitch in [-90, 90].
+ *
+ * Needed only by the free Rotate gesture, which turns about the view axis — not a
+ * one-parameter subgroup of the stored triple, so it is composed as a matrix and read
+ * back here. Exact and closed-form, not iterative: pitch from the one matrix entry that
+ * is its sine, then roll and yaw from two atan2s.
+ *
+ * Two consequences a caller must expect, both inherent to Euler storage rather than to
+ * this solve:
+ *
+ *  - It returns the *canonical* representative. A triple carrying yaw=200 comes back as
+ *    -160 — the same orientation and the same matrix, different numbers in the
+ *    PropertyPanel. A free rotate therefore rewrites the whole triple, not one number.
+ *  - At pitch = +-90 the triple is degenerate: yaw and roll turn about the same world
+ *    axis and only their sum is observable. Roll is pinned to 0 there.
+ *
+ * A free function, like GizmoAxisDirection, so the round trip against
+ * GizmoRotationMatrix is testable without a gesture.
+ */
+glm::vec3 GizmoEulerFromRotation(const glm::mat3& r);
 
 /**
  * @brief One modal transform gesture: its mode, its constraint, its before-state.
@@ -130,23 +163,24 @@ public:
 	 * @param cursorPx Where the mode key was pressed — the free gesture's anchor.
 	 * @return false when @p mode is None or @p objectUid is 0; nothing changes.
 	 *
-	 * Leaves the gesture armed with no axis, which for Move and Scale is already a
-	 * live *free* gesture: Move follows the cursor across the view plane through the
-	 * pivot, Scale scales all three components uniformly. Rotate alone is inert until
-	 * an axis key arrives — a view-axis rotation is not expressible as `before +
-	 * theta` on one stored Euler component, which is the property the whole feature
-	 * is built on (see GizmoAxisDirection).
+	 * Leaves the gesture armed with no axis, which is already a live *free* gesture for
+	 * all three modes: Move follows the cursor across the view plane through the pivot,
+	 * Scale scales all three components uniformly, Rotate turns about the view axis.
 	 *
 	 * Does not restore anything — a live gesture must be Cancel()ed by the controller
 	 * first, which is what makes pressing R during a G discard the move, as in Blender.
 	 *
 	 * Takes the cursor but not the viewport: the free anchor is a *pixel*, re-solved
-	 * against the camera on every drag, so there is nothing to project here.
+	 * against the camera on every drag, so there is nothing to project here. The free
+	 * Rotate needs the pivot's own pixel as well, which only a viewport can give, so it
+	 * latches its zero bearing on its first drag instead (see DragRotateFree).
 	 */
 	bool Arm(GizmoMode mode, int objectUid, const Transform3D& target, glm::vec2 cursorPx);
 
 	/**
 	 * @brief Latch the constraint axis and the grab anchor at @p cursorPx.
+	 * @param axis GizmoAxis::None means *screen space* (the W key) — it drops whichever
+	 *             axis is latched and returns the gesture to its free variant.
 	 * @return false when the constraint is refused; the mode stays armed, axis-less.
 	 *
 	 * The one call that can refuse. For Move it rejects an axis within ~1.8 deg of
@@ -155,10 +189,10 @@ public:
 	 * For Rotate it also latches the screen-space sign *once*: re-deriving it per
 	 * frame flips chaotically as the axis crosses edge-on.
 	 *
-	 * Re-calling it mid-gesture (a different axis, or the same one again) re-latches
+	 * Re-calling it mid-gesture (a different axis, the same one again, or None) re-latches
 	 * the anchor, so the very next Drag() at the same cursor reproduces the
 	 * before-state exactly. That is how an axis switch cleanly undoes the partial
-	 * transform the previous axis had applied.
+	 * transform the previous axis had applied — and it is the whole of what W does.
 	 */
 	bool Constrain(GizmoAxis axis, const EditorViewport& vp, glm::vec2 cursorPx);
 
@@ -167,8 +201,8 @@ public:
 	 * @return true when a component of @p target actually changed.
 	 *
 	 * Never reads @p target's current value as an input, which is what makes the
-	 * gesture drift-free. With no axis constrained this runs the *free* variant for
-	 * Move and Scale, and no-ops for Rotate.
+	 * gesture drift-free. With no axis constrained this runs the *free* variant, which
+	 * all three modes have.
 	 */
 	bool Drag(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 
@@ -191,9 +225,10 @@ private:
 	bool DragRotate(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 	bool DragScale(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 
-	// The unconstrained gestures. Both measure from m_anchorPx, latched in Arm().
+	// The unconstrained gestures. All three measure from m_anchorPx, latched in Arm().
 	bool DragMoveFree(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 	bool DragScaleFree(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
+	bool DragRotateFree(const EditorViewport& vp, glm::vec2 cursorPx, Transform3D& target);
 
 	GizmoMode m_mode = GizmoMode::None;
 	GizmoAxis m_axis = GizmoAxis::None;
@@ -210,6 +245,7 @@ private:
 	float m_rotSign = -1.0f;     ///< Screen-to-world sign, latched once in Constrain().
 	float m_prevAngle = 0.0f;    ///< Previous cursor bearing about the pivot, radians.
 	float m_accumAngle = 0.0f;   ///< Total unwrapped rotation, radians.
+	bool  m_rotLatched = false;  ///< Is the bearing zero set? Constrain(), else first free drag.
 
 	// Scale, and the anchor of both free gestures. The radius is re-measured against
 	// the *current* pivot pixel every drag, so a camera move or a resize mid-gesture

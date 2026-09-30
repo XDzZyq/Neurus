@@ -214,6 +214,17 @@ public:
 	/// @brief True when a camera is set and the logical size is non-zero.
 	bool IsValid() const;
 
+	/**
+	 * @brief The unit view direction, pointing from the eye into the scene.
+	 * @return (0,0,0) when there is no camera or it looks at its own eye.
+	 *
+	 * normalize(cam_tar - eye), which is the normal of every screen-parallel plane
+	 * and the axis of every screen-parallel rotation. Lives here rather than in each
+	 * caller so the degenerate case is guarded once: callers test the length instead
+	 * of re-deriving the camera terms and re-choosing an epsilon.
+	 */
+	glm::vec3 ViewAxis() const;
+
 	// -----------------------------------------------------------------------
 	// Queries
 	// -----------------------------------------------------------------------

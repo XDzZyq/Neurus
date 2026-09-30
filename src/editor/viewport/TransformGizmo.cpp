@@ -15,6 +15,10 @@
  *     pressed at — and solve *both* ends against the camera every drag. That is what
  *     makes the delta exactly zero at the anchor and what lets the camera orbit
  *     mid-gesture without the object jumping.
+ *  5. The free Rotate is the one gesture that leaves the `before + theta` identity:
+ *     the view axis is not a one-parameter subgroup of the stored Euler triple, so it
+ *     composes a matrix and reads the triple back. Still derived from m_before every
+ *     drag, so property 1 is untouched.
  */
 
 #include "editor/viewport/TransformGizmo.h"
@@ -86,20 +90,59 @@ bool ClosestParamOnAxis(const glm::vec3& pivot, const glm::vec3& axis, const Scr
 
 } // namespace
 
-glm::vec3 GizmoAxisDirection(GizmoMode mode, GizmoAxis axis, const glm::vec3& rotationDegrees)
+glm::mat3 GizmoRotationMatrix(const glm::vec3& rotationDegrees)
 {
-	if (mode == GizmoMode::None || axis == GizmoAxis::None)
-		return glm::vec3{0.0f};
-
 	// The exact construction of Transform.cpp's ComputeModelMatrix, minus T and S.
 	const glm::vec3 rad = glm::radians(rotationDegrees);
 	const glm::mat4 rz = glm::rotate(glm::mat4{1.0f}, rad.z, glm::vec3{0.0f, 0.0f, 1.0f});
 	const glm::mat4 rx = glm::rotate(glm::mat4{1.0f}, rad.x, glm::vec3{1.0f, 0.0f, 0.0f});
 	const glm::mat4 ry = glm::rotate(glm::mat4{1.0f}, rad.y, glm::vec3{0.0f, 1.0f, 0.0f});
+	return glm::mat3{rz * rx * ry};
+}
+
+glm::vec3 GizmoEulerFromRotation(const glm::mat3& r)
+{
+	// Solving Rz(yaw) * Rx(pitch) * Ry(roll) = r. Written out, that product is
+	//
+	//     [ cc*cb - sc*sa*sb   -sc*ca    cc*sb + sc*sa*cb ]
+	//     [ sc*cb + cc*sa*sb    cc*ca    sc*sb - cc*sa*cb ]
+	//     [       -ca*sb          sa           ca*cb      ]
+	//
+	// with a = pitch, b = roll, c = yaw. Math-notation M(row, col) is glm's r[col][row],
+	// so every index below is transposed against that picture.
+	const float pitch = std::asin(std::clamp(r[1][2], -1.0f, 1.0f));
+
+	// cos(pitch) is non-negative over asin's whole range, so its own size is the only
+	// degeneracy test needed -- no quadrant case analysis.
+	if (std::cos(pitch) < kEpsilon)
+	{
+		// Gimbal lock. With sa = +-1 the first column collapses to cos/sin of (c +- b):
+		// yaw and roll turn about the same world axis and only that combination is
+		// observable. Pinning roll to 0 picks the one representative.
+		return glm::degrees(glm::vec3{pitch, 0.0f, std::atan2(r[0][1], r[0][0])});
+	}
+
+	// Both atan2s carry the same positive cos(pitch) factor in each argument, which
+	// cancels -- so neither needs dividing through by it first.
+	return glm::degrees(glm::vec3{pitch,
+	                              std::atan2(-r[0][2], r[2][2]),
+	                              std::atan2(-r[1][0], r[1][1])});
+}
+
+glm::vec3 GizmoAxisDirection(GizmoMode mode, GizmoAxis axis, const glm::vec3& rotationDegrees)
+{
+	if (mode == GizmoMode::None || axis == GizmoAxis::None)
+		return glm::vec3{0.0f};
 
 	if (mode == GizmoMode::Rotate)
 	{
 		// The gimbal set: the axis each stored Euler component actually turns about.
+		// Built from the partial products, which is why this branch does not go through
+		// GizmoRotationMatrix.
+		const glm::vec3 rad = glm::radians(rotationDegrees);
+		const glm::mat4 rz = glm::rotate(glm::mat4{1.0f}, rad.z, glm::vec3{0.0f, 0.0f, 1.0f});
+		const glm::mat4 rx = glm::rotate(glm::mat4{1.0f}, rad.x, glm::vec3{1.0f, 0.0f, 0.0f});
+
 		switch (axis)
 		{
 		case GizmoAxis::Z:  // yaw, the outermost rotation
@@ -114,12 +157,12 @@ glm::vec3 GizmoAxisDirection(GizmoMode mode, GizmoAxis axis, const glm::vec3& ro
 	}
 
 	// Move / Scale: the true local frame, the columns of R = Rz * Rx * Ry.
-	const glm::mat4 r = rz * rx * ry;
+	const glm::mat3 r = GizmoRotationMatrix(rotationDegrees);
 	switch (axis)
 	{
-	case GizmoAxis::X: return glm::normalize(glm::vec3{r[0]});
-	case GizmoAxis::Y: return glm::normalize(glm::vec3{r[1]});
-	case GizmoAxis::Z: return glm::normalize(glm::vec3{r[2]});
+	case GizmoAxis::X: return glm::normalize(r[0]);
+	case GizmoAxis::Y: return glm::normalize(r[1]);
+	case GizmoAxis::Z: return glm::normalize(r[2]);
 	default: return glm::vec3{0.0f};
 	}
 }
@@ -153,11 +196,11 @@ float LatchRotationSign(const glm::vec3& axis, const glm::vec3& pivot, const Edi
  * @brief Where @p cursorPx lands on the view plane through @p planePoint.
  * @return false with @p out untouched when there is no camera or the solve degenerates.
  *
- * The plane's normal is the camera's own view axis, normalize(cam_tar - eye), so the
- * plane is exactly parallel to the screen: one pixel of cursor motion is one pixel of
- * world motion at the pivot's depth, with no foreshortening and no depth to guess.
- * Anchored on the *before* position rather than on the object, so the plane cannot
- * drift as the drag carries the object off it.
+ * The plane's normal is EditorViewport::ViewAxis(), so the plane is exactly parallel to
+ * the screen: one pixel of cursor motion is one pixel of world motion at the pivot's
+ * depth, with no foreshortening and no depth to guess. Anchored on the *before* position
+ * rather than on the object, so the plane cannot drift as the drag carries the object off
+ * it.
  *
  * ScreenRay::origin sits on the near plane, not at the eye, which is exactly why this
  * is a plane intersection from that origin and not a scale of an eye-relative depth.
@@ -165,20 +208,14 @@ float LatchRotationSign(const glm::vec3& axis, const glm::vec3& pivot, const Edi
 bool ViewPlanePoint(const EditorViewport& vp, glm::vec2 cursorPx, const glm::vec3& planePoint,
                     glm::vec3& out)
 {
-	const Camera* cam = vp.GetCamera();
-	if (!cam)
-		return false;
-
-	const glm::vec3 toTarget = cam->cam_tar - cam->GetPosition();
-	const float len = glm::length(toTarget);
-	if (len < kEpsilon)
-		return false;  // a camera looking at its own eye has no view axis
+	const glm::vec3 n = vp.ViewAxis();
+	if (glm::length(n) < kEpsilon)
+		return false;  // no camera, or one looking at its own eye
 
 	const ScreenRay ray = vp.RayThrough(cursorPx);
 	if (!ray.valid)
 		return false;
 
-	const glm::vec3 n = toTarget / len;
 	const float denom = glm::dot(n, ray.direction);
 	if (std::abs(denom) < kMinAxisSeparation)
 		return false;  // grazing: the intersection is arbitrarily far off
@@ -209,6 +246,7 @@ bool TransformGizmo::Arm(GizmoMode mode, int objectUid, const Transform3D& targe
 	m_rotSign = -1.0f;
 	m_prevAngle = 0.0f;
 	m_accumAngle = 0.0f;
+	m_rotLatched = false;
 
 	// The free gesture's only anchor. A key press carries no cursor of its own, so the
 	// caller hands in the retained one; Constrain() re-latches it for Scale.
@@ -218,8 +256,23 @@ bool TransformGizmo::Arm(GizmoMode mode, int objectUid, const Transform3D& targe
 
 bool TransformGizmo::Constrain(GizmoAxis axis, const EditorViewport& vp, glm::vec2 cursorPx)
 {
-	if (m_mode == GizmoMode::None || axis == GizmoAxis::None || !vp.IsValid())
+	if (m_mode == GizmoMode::None || !vp.IsValid())
 		return false;
+
+	if (axis == GizmoAxis::None)
+	{
+		// W: back to the screen-space variant. Re-latching every free anchor here is what
+		// makes it the mirror image of an axis switch -- the one drag the controller issues
+		// next reproduces the before-state, so dropping the constraint *undoes* whatever
+		// the axis had applied rather than carrying it over into the free gesture.
+		m_anchorPx = cursorPx;
+		m_prevAngle = 0.0f;
+		m_accumAngle = 0.0f;
+		m_rotLatched = false;
+		m_axis = GizmoAxis::None;
+		m_axisDir = glm::vec3{0.0f};
+		return true;
+	}
 
 	const glm::vec3 dir = GizmoAxisDirection(m_mode, axis, m_before.rotation);
 	if (glm::length(dir) < kEpsilon)
@@ -251,6 +304,7 @@ bool TransformGizmo::Constrain(GizmoAxis axis, const EditorViewport& vp, glm::ve
 			m_prevAngle = std::atan2(d.y, d.x);
 			m_accumAngle = 0.0f;
 			m_rotSign = LatchRotationSign(unit, m_before.position, vp);
+			m_rotLatched = true;
 		}
 		else
 		{
@@ -293,15 +347,15 @@ bool TransformGizmo::Drag(const EditorViewport& vp, glm::vec2 cursorPx, Transfor
 
 	if (m_axis == GizmoAxis::None)
 	{
-		// Bare G and bare S are live gestures, as in Blender. Bare R is not: a rotation
-		// about the view axis is not `before + theta` on one stored Euler component, and
-		// that identity is what lets this whole feature avoid quaternions and matrix
-		// decomposition (see GizmoAxisDirection). R therefore waits for an axis key.
+		// All three bare gestures are live, as in Blender. Rotate's free variant is the
+		// one that cannot be `before + theta` on a single stored Euler component, so it
+		// composes and decomposes a matrix instead (see DragRotateFree).
 		switch (m_mode)
 		{
-		case GizmoMode::Move:  return DragMoveFree(vp, cursorPx, target);
-		case GizmoMode::Scale: return DragScaleFree(vp, cursorPx, target);
-		default:               return false;
+		case GizmoMode::Move:   return DragMoveFree(vp, cursorPx, target);
+		case GizmoMode::Scale:  return DragScaleFree(vp, cursorPx, target);
+		case GizmoMode::Rotate: return DragRotateFree(vp, cursorPx, target);
+		default:                return false;
 		}
 	}
 
@@ -436,6 +490,76 @@ bool TransformGizmo::DragScaleFree(const EditorViewport& vp, glm::vec2 cursorPx,
 		return false;
 
 	target.SetScale(next);
+	return true;
+}
+
+bool TransformGizmo::DragRotateFree(const EditorViewport& vp, glm::vec2 cursorPx,
+                                    Transform3D& target)
+{
+	// The axis is the view direction itself, so the object turns in the screen plane and
+	// the cursor's bearing about the pivot *is* the angle. Re-read every drag rather than
+	// latched, so orbiting mid-gesture keeps turning about what the user is looking down.
+	const glm::vec3 viewAxis = vp.ViewAxis();
+	if (glm::length(viewAxis) < kEpsilon)
+		return false;
+
+	const ScreenPoint pivot = vp.Project(m_before.position);
+	if (!pivot.visible)
+		return false;
+
+	const glm::vec2 d = cursorPx - pivot.pixel;
+	if (glm::length(d) < kMinRadiusPx)
+		return false;  // the bearing is noise this close in; hold the accumulator
+
+	// Latched on the first usable drag, not in Arm(): projecting the pivot needs a
+	// viewport, and Arm() deliberately takes none. The anchor pixel is the zero bearing
+	// when it is far enough out to have one, and this frame's cursor otherwise -- a small
+	// dead zone at the start instead of an opening jump of up to half a turn.
+	if (!m_rotLatched)
+	{
+		const glm::vec2 anchor = m_anchorPx - pivot.pixel;
+		m_prevAngle = (glm::length(anchor) >= kMinRadiusPx) ? std::atan2(anchor.y, anchor.x)
+		                                                    : std::atan2(d.y, d.x);
+		m_accumAngle = 0.0f;
+		// The view axis always points away from the eye, so this always latches +1. Going
+		// through the same function as the constrained path is what makes the two
+		// gestures' screen-to-world sense identical by construction rather than by luck.
+		m_rotSign = LatchRotationSign(viewAxis, m_before.position, vp);
+		m_rotLatched = true;
+	}
+
+	// Unwrapped accumulation, exactly as DragRotate: past 180 degrees and multiple turns
+	// both work, and a drag that returns to its start returns to zero.
+	const float bearing = std::atan2(d.y, d.x);
+	m_accumAngle += std::remainder(bearing - m_prevAngle, kTwoPi);
+	m_prevAngle = bearing;
+
+	// Zero means zero, and it has to mean it by *writing* m_before rather than by
+	// returning early: composing at no angle would canonicalise the triple, so an
+	// unturned gesture would rewrite equivalent-but-different numbers and leave
+	// SubmitGesture recording an op for nothing. Writing the snapshot back verbatim is
+	// also exactly what W needs -- it is how dropping an axis mid-gesture normalises
+	// whatever that axis had already applied.
+	if (m_accumAngle == 0.0f)
+	{
+		if (m_before.rotation == target.GetRotation())
+			return false;
+
+		target.SetRotation(m_before.rotation);
+		return true;
+	}
+
+	// The whole of the decomposition exception, two lines of it. Derived from m_before
+	// every drag like every other gesture, so it stays drift-free; the angle is the
+	// accumulator, never an increment applied to the value written last frame.
+	const glm::mat4 turn = glm::rotate(glm::mat4{1.0f}, m_rotSign * m_accumAngle, viewAxis);
+	const glm::vec3 next =
+	    GizmoEulerFromRotation(glm::mat3{turn} * GizmoRotationMatrix(m_before.rotation));
+
+	if (next == target.GetRotation())
+		return false;
+
+	target.SetRotation(next);
 	return true;
 }
 

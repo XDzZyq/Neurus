@@ -68,6 +68,10 @@ Input::Key Input::GetKey(uint32_t qtKey)
 	case Qt::Key_Y:      return Key::Key_Y;
 	case Qt::Key_Z:      return Key::Key_Z;
 
+	// W sits in the same family as X/Y/Z: it names the screen as the constraint
+	// "axis", which is what drops whichever of the three is latched.
+	case Qt::Key_W:      return Key::Key_W;
+
 	case Qt::Key_Escape: return Key::Key_Escape;
 
 	// Return and Enter are physically distinct keys (main block vs. numpad) that

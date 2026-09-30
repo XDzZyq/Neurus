@@ -22,6 +22,9 @@ namespace neurus
 namespace
 {
 
+/// @brief Below this, cam_tar - eye has no meaningful direction to normalize.
+constexpr float kMinViewAxisLength = 1e-3f;
+
 /**
  * @brief The 8 corners of a local AABB, indexed so bit 0 = x, bit 1 = y, bit 2 = z.
  *
@@ -91,6 +94,18 @@ float EditorViewport::DeviceRatio() const
 bool EditorViewport::IsValid() const
 {
 	return p_camera != nullptr && v_logical.x > 0u && v_logical.y > 0u;
+}
+
+glm::vec3 EditorViewport::ViewAxis() const
+{
+	if (!p_camera)
+		return glm::vec3{0.0f};
+
+	// A camera whose target sits on its own eye has no view direction at all. Returning
+	// the zero vector rather than normalizing it keeps the NaN out of every caller.
+	const glm::vec3 toTarget = p_camera->cam_tar - p_camera->GetPosition();
+	const float len = glm::length(toTarget);
+	return (len > kMinViewAxisLength) ? toTarget / len : glm::vec3{0.0f};
 }
 
 // ---------------------------------------------------------------------------

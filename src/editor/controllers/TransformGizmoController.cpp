@@ -192,7 +192,13 @@ void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::Controll
 }
 
 /**
- * @brief X / Y / Z: constrain the live gesture, then normalize back to the before-state.
+ * @brief X / Y / Z / W: set the live gesture's constraint, then normalize back to
+ *        the before-state.
+ *
+ * W arrives here as GizmoAxis::None, which Constrain() reads as "screen space": it
+ * drops the latched axis and re-latches the free anchors. Same call, same
+ * normalizing drag below, so the transition out of a constraint is as exact as the
+ * transition into one.
  */
 void OnAxisRequested(const neurus::GizmoAxisRequested& e, const neurus::ControllerContext& ctx)
 {

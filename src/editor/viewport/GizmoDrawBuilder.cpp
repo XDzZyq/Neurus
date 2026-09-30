@@ -35,6 +35,11 @@ constexpr float kGuideHalfPx = 72.0f;
 /// half-length so the ring reads as bounded by the axis rather than crossing it.
 constexpr float kArcRadiusPx = 55.0f;
 
+/// @brief Radius of the screen-parallel ring a free Rotate turns about.
+/// Outside the three gimbal rings, so it reads as the one enclosing all of them —
+/// which is also where Blender puts its view-axis ring.
+constexpr float kViewArcRadiusPx = 68.0f;
+
 /// @brief Chord count for the Rotate arc. 48 keeps the polygon invisible at
 /// kArcRadiusPx while staying well inside any sane draw budget.
 constexpr int kArcChords = 48;
@@ -171,23 +176,25 @@ void AppendGuide(GizmoDrawList& list, GizmoMode mode, GizmoAxis axis, bool activ
 	// suggest a direction a rotation axis does not have.
 }
 
-/// @brief The Rotate arc: a closed ring of chords in the plane perpendicular to @p dir.
-/// It shows the plane the rotation happens in, which a single line cannot.
+/// @brief The Rotate ring: a closed loop of chords in the plane perpendicular to @p dir.
+/// It shows the plane the rotation happens in, which a single line cannot — so Rotate
+/// draws these where Move and Scale draw AppendGuide's line.
 void AppendArc(GizmoDrawList& list, const glm::vec3& pivot, const glm::vec3& dir,
-               float radius, GizmoAxis axis)
+               float radius, GizmoAxis axis, bool active)
 {
 	glm::vec3 u{0.0f};
 	glm::vec3 v{0.0f};
 	OrthonormalBasis(dir, u, v);
 
-	const uint32_t rgba = GuideColor(axis, true);
+	const uint32_t rgba = GuideColor(axis, active);
+	const float width = active ? kActiveWidthPx : kCandidateWidthPx;
 
 	glm::vec3 prev = pivot + u * radius;
 	for (int i = 1; i <= kArcChords; ++i)
 	{
 		const float a = kTwoPi * static_cast<float>(i) / static_cast<float>(kArcChords);
 		const glm::vec3 next = pivot + (u * std::cos(a) + v * std::sin(a)) * radius;
-		AppendSegment(list, prev, next, kActiveWidthPx, rgba);
+		AppendSegment(list, prev, next, width, rgba);
 		prev = next;
 	}
 }
@@ -253,18 +260,41 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 
 	if (axis == GizmoAxis::None)
 	{
-		// Brightness answers exactly one question: will dragging right now move this
+		// Brightness answers exactly one question: will dragging right now drive this
 		// axis? At rest the three guides are the selection's local frame and a bare G
-		// would move along them, so they are full strength. An armed free Move or Scale
-		// really is dragging all three, so it stays full strength too. Only an armed
-		// Rotate dims: it is inert until an axis key arrives, and the dim is what says
-		// "still on offer". Dimming is RGB, never alpha — see kCandidateDim.
+		// would move along them, so they are full strength. An armed free Move or
+		// Scale really is dragging all three, so it stays full strength too. Only an
+		// armed Rotate dims: a bare R is live, but it turns about the *view* axis, so
+		// none of these three is the one being dragged — the dim is what says "still on
+		// offer", and X/Y/Z take the offer up mid-gesture. Dimming is RGB, never alpha
+		// — see kCandidateDim.
 		const bool livePick = (mode != GizmoMode::Rotate);
 		for (const GizmoAxis candidate : {GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z})
 		{
 			const glm::vec3 dir = GizmoAxisDirection(mode, candidate, rotation);
-			if (glm::length(dir) > 0.0f)
+			if (glm::length(dir) <= 0.0f)
+				continue;
+
+			// A rotation is a plane, not a line, so Rotate offers its three gimbal axes
+			// as rings: three rings in three planes at one radius read as the sphere the
+			// object turns inside, and each one is the path the cursor would sweep.
+			if (mode == GizmoMode::Rotate)
+				AppendArc(m_list, pivot, dir, kArcRadiusPx / pxPerUnit, candidate, livePick);
+			else
 				AppendGuide(m_list, mode, candidate, livePick, pivot, dir, halfLength, pxPerUnit);
+		}
+
+		// And the axis a free Rotate actually turns about, enclosing the other three.
+		// Armed only, so the resting handle keeps its plain three-arrow picture.
+		// GizmoAxis::None falls through AxisColor's default to white — exactly the "not
+		// one of the three coloured axes" reading this needs — at full strength because
+		// it is the one that is live.
+		if (armed && mode == GizmoMode::Rotate)
+		{
+			const glm::vec3 viewAxis = vp.ViewAxis();
+			if (glm::length(viewAxis) > 0.0f)
+				AppendArc(m_list, pivot, viewAxis, kViewArcRadiusPx / pxPerUnit,
+				          GizmoAxis::None, true);
 		}
 	}
 	else
@@ -273,8 +303,11 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 		if (glm::length(dir) > 0.0f)
 		{
 			AppendGuide(m_list, mode, axis, true, pivot, dir, halfLength, pxPerUnit);
+			// A constrained Rotate gets both: the bare line says which axis is latched,
+			// the ring says which plane the cursor sweeps. Full strength — it is the one
+			// that is live, and it is the only ring on screen.
 			if (mode == GizmoMode::Rotate)
-				AppendArc(m_list, pivot, dir, kArcRadiusPx / pxPerUnit, axis);
+				AppendArc(m_list, pivot, dir, kArcRadiusPx / pxPerUnit, axis, true);
 		}
 	}
 

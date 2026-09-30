@@ -357,6 +357,11 @@ void Editor::Initialize()
 		case Input::Key_Y: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::Y}); break;
 		case Input::Key_Z: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::Z}); break;
 
+		// W is the fourth member of that set, not a separate feature: it names the
+		// screen as the constraint, which is exactly GizmoAxis::None -- the view plane
+		// for Move, uniform for Scale, the view axis for Rotate.
+		case Input::Key_W: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::None}); break;
+
 		case Input::Key_Return: ed_eventBus.enqueue(GizmoConfirmed{}); break;
 		case Input::Key_Escape: ed_eventBus.enqueue(GizmoCancelled{}); break;
 
