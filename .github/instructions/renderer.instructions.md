@@ -508,6 +508,13 @@ after touching barriers or submit scopes.
 - **Always in the graph, no `RenderConfig` gate.** It returns early on a null or
   empty payload, so entering and leaving a modal never recompiles the DAG — the
   precedent `DebugPass` already sets.
+- **All three simplifications are pinned by tests**
+  (`test/render/test_gizmo_pass.cpp`), and the sharpest one is a deliberate mirror:
+  `AxisLine_DrawsThroughNearDepth` submits the same segment, camera and near-primed
+  depth buffer as `DebugPassTest.DepthTestedLine_OccludedByNearDepth` and expects the
+  opposite result, with no `XRay` flag to explain it away. Its reference PNG is
+  byte-identical to `DebugPass`'s, which is the shared-shader claim made falsifiable
+  rather than a copy-paste accident. See test.instructions.md.
 
 ### CPUBuffer Convention
 
@@ -717,6 +724,11 @@ LightingCache survive it — they are recreated lazily, versioned, or owned by
 - **No x-ray partition**, for the reason in the GizmoPass Convention above: with
   depth off for the whole pass there is no `xraySegmentStart`/`xrayPointStart` to
   record or clamp.
+- The `if (ctx.editor.gizmoDraw)` guard and the unconditional copy are both load-
+  bearing, and both are tested: a **null** payload must leave the ring with zero
+  slots allocated (the cheap state the pass sits in for almost every frame), while an
+  **empty** one — the frame a gesture ends on — must still update and retire the
+  counts to zero, or the finished guide stays resident and keeps drawing.
 
 **MeshPushConstants** (`src/render/resources/MeshGPU.h`)- Per-mesh push-constant block sent to the vertex shader (128 bytes total)
 - Two mat4s: `model` (local-to-world transform) and `normalMatrix`

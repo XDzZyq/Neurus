@@ -329,7 +329,8 @@ Neurus/
 │   ├── render/             # Renderer GPU tests
 │   │   └── reference/      # Reference images for regression tests
 │   │       ├── deferred/   # Deferred-pass reference PNGs
-│   │       └── debug/      # DebugPass overlay reference PNGs
+│   │       ├── debug/      # DebugPass overlay reference PNGs
+│   │       └── gizmo/      # GizmoPass guide reference PNGs
 │   ├── editor/             # Editor unit tests (run in CI, no GPU)
 │   ├── ui/                 # Qt widget tests (QApplication from shared/test_main.cpp)
 │   └── shared/             # Test infrastructure

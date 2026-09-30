@@ -386,6 +386,14 @@ Key things to check:
   target. Verify by counting: exactly two colors, ~250 white pixels forming a 5-row
   band across the middle. A single unique value means the overlay did not rasterize
   or the whole target was covered.
+- **`reference/gizmo/GizmoAxisLine.png`** (64×64, GizmoPass): the same two-color
+  image, and **byte-identical** to `DebugLine_Visible.png` — verified with numpy, not
+  assumed. That is the expected result, not a copy-paste accident: the two overlay
+  passes share `overlay_line.vert/frag` and the same 16-byte push block, and the test
+  submits the same segment against the same camera. The difference lives in the depth
+  buffer, which is primed to *near* here, so an identical image is the proof that
+  GizmoPass has no depth attachment. Verify the same way (exactly two colors, ~250
+  white pixels, rows 29-33, cols 7-56).
 
 ## Running Tests
 
@@ -697,6 +705,37 @@ These patterns were established during deferred PBR development and apply to all
   which is what their identical format and usage buy. This is the only test that
   covers the FXAA-on topology, so the fixture's `PrimeAttachments` / `Measure` take an
   optional `AttachmentName` rather than hardcoding `ComposedOutput`.
+- **GizmoPass tests** (`test/render/test_gizmo_pass.cpp`): the same headless fixture,
+  aimed at the three ways `GizmoPass` is deliberately *simpler* than `DebugPass`. Each
+  claim gets one test and the tests are readable as a contrast with the file above.
+  **Prove "no depth attachment" by re-running DebugPass's occlusion test and expecting
+  the opposite.** `AxisLine_DrawsThroughNearDepth` submits the same segment, the same
+  camera and the same fully-near depth prime as
+  `DebugPassTest.DepthTestedLine_OccludedByNearDepth`, with **no** `XRay` flag — and
+  asserts the line is drawn. A regression that quietly attached the G-Buffer depth
+  fails exactly this test and nothing else, and the missing flag is what stops it from
+  being the x-ray path under another name.
+  **Null and empty are different code paths, so test both.** A *null*
+  `ctx.editor.gizmoDraw` is the real "no gesture in progress" signal and must cost
+  nothing: the test asserts `GizmoCache::GetFrameCount() == 0`, which is stronger than
+  a pixel count because the cache allocates its first ring slot inside `Update()`. An
+  *empty* list is the frame a gesture *ends* on; it must still upload, so the test runs
+  a real guide first and then asserts the counts were retired to zero — a skipped
+  update would leave stale geometry resident and keep drawing it.
+  **Assert the draw count against the payload that would split.** 49 segments + 1
+  point is the real constrained-Rotate guide, and half the segments carry an `XRay`
+  bit. `DebugPass` would spend up to six draws on that; `GizmoPass` must spend exactly
+  two, because it has no partition to split on and nothing reads the flag.
+  **Test draw order with color, not with position.** Depth is off and blending is
+  alpha-over, so submission order alone decides what wins where two guides overlap.
+  A red axis line plus a white pivot sprite makes the winner readable from the green
+  channel: green at the centre ⇒ points were submitted last, and the line's far end
+  staying pure red ⇒ the sprite is not silently oversized.
+  **A black prime cannot catch a LOAD_OP_CLEAR.** `GizmoPass` draws into the finished
+  image, so clearing would discard the whole render — but cleared black and loaded
+  black are the same pixels. `LoadOpLoad_PreservesTheShadedImage` primes the target to
+  0.25 grey and checks two corners survive, which is why `PrimeAttachments` takes a
+  clear color as well as an `AttachmentName`.
 - **DebugDrawBuilder tests** (`test/editor/test_debug_draw_builder.cpp`, issue #22):
   non-GPU tests that pin the three CPU-side contracts `DebugPass` trusts but cannot
   check — the x-ray **partition** (`xraySegmentStart` / `xrayPointStart` become draw
