@@ -182,6 +182,7 @@ Neurus/
 │   │   ├── resources/        # GPU resource structs (owned by RenderCache)
 │   │   │   ├── CameraGPU.h/cpp      # Shared camera UBO (viewProj + view)
 │   │   │   ├── DebugCache.h/cpp     # Per-frame DebugDrawList SSBOs (CPUBuffer pairs)
+│   │   │   ├── GizmoCache.h/cpp     # Per-frame GizmoDrawList SSBOs (CPUBuffer pairs)
 │   │   │   ├── EnvironmentGPU.h     # IBL cubemap Textures
 │   │   │   ├── LightGPU.h           # Per-light shadow resources
 │   │   │   ├── LightingCache.h/cpp  # Light SSBO storage (point + sun)
@@ -199,7 +200,8 @@ Neurus/
 │   │   │   ├── ShadowIntensityPass.h/cpp
 │   │   │   ├── SelectionOutlinePass.h/cpp  # IDBuffer edge detection -> selection outline
 │   │   │   ├── ComposePass.h/cpp    # Highlight blend + gamma -> ComposedOutput
-│   │   │   ├── DebugPass.h/cpp      # Debug/gizmo overlay raster pass (issue #22)
+│   │   │   ├── DebugPass.h/cpp      # Debug-object overlay raster pass (issue #22)
+│   │   │   ├── GizmoPass.h/cpp      # Transform-gizmo overlay: last pass, no depth, no x-ray
 │   │   │   └── FXAAPass.h/cpp       # Luma-based post AA (conditional)
 │   │   └── buffers/          # Buffer class hierarchy
 │   │       ├── Buffer.h/cpp         # Virtual base class (Buffer)
@@ -223,15 +225,19 @@ Neurus/
 │   ├── editor/             # Editor layer (logic, controllers)
 │   │   ├── viewport/        # World<->screen services (Vulkan-free, Qt-free)
 │   │   │   ├── EditorViewport.h/cpp   # Project/RayThrough/ProjectBox + the camera seam
-│   │   │   └── DebugDrawBuilder.h/cpp # Scene debug objects -> DebugDrawList flattening
+│   │   │   ├── DebugDrawBuilder.h/cpp # Scene debug objects -> DebugDrawList flattening
+│   │   │   ├── TransformGizmo.h/cpp   # Modal G/R/S state machine + GizmoAxisDirection
+│   │   │   └── GizmoDrawBuilder.h/cpp # Gizmo state -> GizmoDrawList (pixel-budget guides)
 │   │   ├── events/          # Event system (UIEvents + typed EventQueue)
 │   │   │   ├── UIEvents.h/cpp    # Qt signal bus for UI↔Editor
 │   │   │   ├── EventBus.h        # Typed EventQueue dispatcher (no Qt)
 │   │   │   ├── CameraEvents.h    # Camera event structs
+│   │   │   ├── GizmoEvents.h     # Modal transform event structs (arm/axis/drag/confirm)
 │   │   │   └── ShaderEvents.h    # Shader editor event structs
 │   │   ├── controllers/     # Controller implementations
 │   │   │   ├── Controllers.h     # Base class for all controllers
 │   │   │   ├── CameraController.h/cpp  # Event-driven camera controls
+│   │   │   ├── TransformGizmoController.h/cpp  # Modal gizmo gesture -> one undo entry
 │   │   │   └── ShaderController.h/cpp  # Event-driven shader lifecycle
 │   │   ├── operations/      # Undo/redo (see operation-system.instructions.md)
 │   │   │   ├── Operation.h              # Base op + TransitionOp CRTP
@@ -304,7 +310,9 @@ Neurus/
 │   │   ├── DebugLine.h/cpp    # Debug segment-list object (retained, stateful)
 │   │   ├── DebugPoints.h/cpp  # Debug point-list object (square/rhombus/circle/cube)
 │   │   ├── DebugMesh.h/cpp    # Debug wireframe-mesh object
+│   │   ├── OverlayGeometry.h  # Shared overlay records (OverlaySegment/PointSprite, flags)
 │   │   ├── DebugDrawList.h    # Flattened overlay payload consumed by DebugPass
+│   │   ├── GizmoDrawList.h    # Gizmo overlay payload consumed by GizmoPass (no scene objects)
 │   │   ├── EditorContext.h    # Editor → renderer per-frame scene snapshot
 │   │   ├── DefaultScene.h/cpp # Built-in starter scene
 │   │   ├── ObjectID.h      # Scene identity + metadata (ObjectID : UID)
@@ -419,10 +427,48 @@ Qt is stateful, so debug objects are too.
   **`StagingBuffer` is for uploads and downloads only** — never retain one as a
   permanent buffer object.
 - The **frame driver publishes, passes read**: `DeferredRenderer::recordFrame()` writes
-  `RenderCache`'s `CameraGPU` and `DebugCache` once per frame before any pass records;
-  `GeometryPass` and `DebugPass` only bind them. A test driving a pass directly stands in
-  for that driver — call `VulkanTestShared::PublishSceneCamera()` or the pass renders
-  nothing.
+  `RenderCache`'s `CameraGPU`, `DebugCache` and `GizmoCache` once per frame before any
+  pass records; `GeometryPass`, `DebugPass` and `GizmoPass` only bind them. A test
+  driving a pass directly stands in for that driver — call
+  `VulkanTestShared::PublishSceneCamera()` or the pass renders nothing.
+
+### Transform Gizmo Convention
+
+The modal transform handle (Blender-style `G` / `R` / `S`) is a **separate system from
+the debug overlay**, deliberately: it is transient editor UI, not scene content.
+
+- **A gizmo handle is not a Scene object** and must not reuse `DebugLine` /
+  `DebugPoints` / `DebugMesh`. It is not pooled, not serialized, not selectable and
+  never appears in the Outliner. `GizmoDrawBuilder` synthesizes a fresh
+  `GizmoDrawList` from `TransformGizmo` state; both share `OverlayGeometry.h`'s
+  records with `DebugDrawList` and nothing else.
+- **Two members, one seam** (`Editor`): `m_gizmo` is the state machine (what the
+  gesture *means*), `m_gizmoDraw` is the picture (what it *looks like*). Neither is a
+  controller — `TransformGizmoController` owns the event wiring.
+- **Every drag derives from the gesture's snapshot, never from the value written last
+  frame.** That is what makes a cursor round trip land on the *exact* starting value
+  and what makes re-constraining (`X` → `Y`, or `W` back to screen space) undo the
+  previous axis's partial transform for free.
+- **Two axis sets, from the stored Euler triple — never from `mat3(model)`'s
+  columns** (which carry scale: zero scale → zero axis, mirrored → flipped axis).
+  Rotate uses the *gimbal* axes (`Z` → world Z, `X` → `Rz·X`, `Y` → `Rz·Rx·Y`);
+  Move/Scale use the true *local* axes (the columns of `R = Rz·Rx·Ry`). They share Y
+  always, X iff `roll == 0`, Z iff pitch *and* roll are both 0.
+- **The guide is a fixed pixel budget**, so the camera is an input to the picture:
+  a camera change must `MarkDirty()` the builder or the handle keeps the previous
+  camera's scale.
+- **One gesture is exactly one undo entry** (or none when nothing moved) — see
+  operation-system.instructions.md. The drag writes `Transform3D` directly and
+  records nothing, so the controller must emit `SceneModified` + `RenderResetEvent`
+  itself, plus `LightGpuChanged` for a light.
+- **`GizmoPass` runs last, after `DebugPass`,** into the same post-AA image with
+  `LOAD_OP_LOAD` and **no depth attachment at all** — every guide is unconditionally
+  x-ray, so there is no partition and exactly two draws. See
+  renderer.instructions.md.
+- **Draggable handles are a sanctioned future feature**, not a rejected one: the
+  pixel-space projection (`EditorViewport::Project`) and the guide geometry needed
+  for an analytic CPU hit-test are already in place. If picking is added it stays
+  CPU-analytic — no GPU handle-ID buffer.
 
 ---
 

@@ -23,7 +23,7 @@ renders frames. It must remain stateless with respect to application logic.
 - `src/render/shaders/RenderShader.h/cpp, ComputeShader.h/cpp` - Render/compute pipeline wrappers (parsed + generated shaders)
 - `src/render/shaders/ShaderCompiler.h/cpp, ShaderGPU.h` - SPIR-V compilation and GPU shader module
 - `src/render/Renderer.h` - Public renderer API, frame drawing
-- `src/render/RenderCache.h/cpp` - Cross-frame resource pool; owns MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache, attachments, shadow maps
+- `src/render/RenderCache.h/cpp` - Cross-frame resource pool; owns MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache, GizmoCache, attachments, shadow maps
 - `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL)
   - `UploadMesh(const Mesh&)` null-checks `o_mesh` then delegates to
     `UploadMeshData(const MeshData&)`, which owns the 14→8 float vertex stripping.
@@ -237,7 +237,13 @@ DebugPass (raster: draws DebugDrawList over the last post-chain image with
     └── wireframes → PolygonMode::eLine over the DebugMesh's existing MeshGPU
     │
     ▼
-Blit (DebugPass::GetTarget()) → Swapchain (vkCmdBlitImage)
+GizmoPass (raster: draws GizmoDrawList over the SAME image with LOAD_OP_LOAD —
+           no depth attachment at all, so every guide is unconditionally x-ray)
+    ├── lines      → screen-space quads (the shared overlay_line pipeline)
+    └── points     → ePointList sprites (the shared overlay_point pipeline)
+    │
+    ▼
+Blit (GizmoPass::GetTarget()) → Swapchain (vkCmdBlitImage)
 ```
 
 **The overlay is last, after post-AA.** FXAA must not see debug geometry: every
@@ -257,9 +263,10 @@ so the config → topology decision stays in `PipelineSignature`, and `GetIO()` 
 a declaration of concrete attachment names the graph can validate — an *alias*
 name shared by both images could not work, because `RenderGraph::Connect()` matches
 producer and consumer sockets by `AttachmentName` and an unwired input is treated
-as external, which would silently leave the pass unordered. `GetTarget()` is also
-the blit source, which collapses the old `useFXAA ? FXAAOutput : ComposedOutput`
-ternary in `recordFrame()` and stays correct on frames where the overlay draws
+as external, which would silently leave the pass unordered. `GizmoPass::SetTarget()`
+is handed the same attachment in the same place, and `GizmoPass::GetTarget()` is the
+blit source, which collapses the old `useFXAA ? FXAAOutput : ComposedOutput`
+ternary in `recordFrame()` and stays correct on frames where either overlay draws
 nothing (it then leaves the image exactly as the compute pass that filled it did).
 
 ### ImageState & Barrier Convention
@@ -307,13 +314,16 @@ ComposePass's compute writes, and on MoltenVK the compute and render encoders
 overlapped: every frame kept a different random subset of the overlay's tiles
 with ComposePass's output in the rest — a per-frame-random tear that no amount of
 extra serialization *after* DebugPass could fix. The rule now:
-`ComposePass`/`FXAAPass` leave their output in `ShaderWrite`, `DebugPass` leaves
-its target in `ColorAttachment`, and the swapchain blit in
-`DeferredRenderer::recordFrame` transitions its own source to `TransferSrc`.
+`ComposePass`/`FXAAPass` leave their output in `ShaderWrite`, `DebugPass` and
+`GizmoPass` leave their (shared) target in `ColorAttachment`, and the swapchain
+blit in `DeferredRenderer::recordFrame` transitions its own source to `TransferSrc`.
 The same hazard shape applies unchanged now that DebugPass runs after FXAAPass —
 the upstream compute dispatch whose writes its barrier must cover is FXAA's rather
 than ComposePass's, but it is still `ShaderWrite → ColorAttachment` out of a
-compute pass, so nothing about the pattern moves.
+compute pass, so nothing about the pattern moves. `GizmoPass` then transitions the
+same image `ColorAttachment → ColorAttachment`, which is *not* a no-op:
+`Barrier::Transition` does not early-out when before == after, so the
+write-after-write dependency between the two overlay passes is still emitted.
 Note that validation does not catch this — the layouts are all consistent — so
 synchronization validation plus a coloured `LOAD_OP_CLEAR` probe is the way to
 find it.
@@ -372,7 +382,8 @@ after touching barriers or submit scopes.
   `gamma` is read from `RenderConfig::r_gamma` (default 1.0) via the push constant
   `float gamma`.
 - **Output**: `ComposedOutput` (`R16G16B16A16_SFLOAT`) at binding 2, consumed by
-  FXAAPass when AA is on and by DebugPass when it is off.
+  FXAAPass when AA is on and by the overlay passes (DebugPass, then GizmoPass) when
+  it is off.
 
 ### DebugPass Convention
 
@@ -445,6 +456,59 @@ after touching barriers or submit scopes.
   pixels with `proj[1][1]`, and that factor cannot be recovered from `viewProj` once
   the view rotation is folded in (column-major: `(proj*view)[1][1]` sums over `k`).
 
+### GizmoPass Convention
+
+> Not to be confused with **DebugPass** above: that draws the scene's `DebugLine` /
+> `DebugPoints` / `DebugMesh` *objects*. `GizmoPass` draws the modal transform
+> handle's guides, which are not Scene objects at all — the Editor synthesizes them
+> from `TransformGizmo` state into a `GizmoDrawList` every frame. The name used to
+> belong to the selection-outline compute pass, renamed to `SelectionOutlinePass` so
+> that "gizmo" means exactly one thing in this renderer.
+
+- **Position: last in the frame**, after `DebugPass`, into the same post-AA image
+  with `LOAD_OP_LOAD` (`FXAAOutput` when FXAA is on, `ComposedOutput` when it is
+  off — the same `SetTarget()` contract). `DeferredRenderer::RebuildMainGraph()`
+  therefore adds an **explicit** `Connect(debugNode, tail, gizmoNode)` edge: this
+  pass declares no depth socket, so unlike `DebugPass` it shares no other resource
+  with the chain and its topological position would otherwise be unconstrained. Two
+  consecutive raster passes writing one attachment need no new barrier code —
+  `Barrier::Transition` does not early-out when `before == after`, so transitioning a
+  target `DebugPass` already left in `ColorAttachment` still emits the
+  write-after-write dependency.
+- **The blit source is `GizmoPass::GetTarget()`**, because this pass is the end of the
+  chain. Correct whether or not anything was drawn: `Record()` either leaves the
+  target in `ColorAttachment` or does not touch it, and the blit transitions it
+  either way.
+- **Three deliberate simplifications against `DebugPass`:**
+  1. **No depth attachment at all.** A constraint line the object hides is a line
+     that cannot be read, so every guide is unconditionally x-ray. That removes
+     `SetDepthFormat`, `SetDepthStencil` and the `eDepthTestEnable` dynamic state,
+     and `beginRendering` passes a null depth attachment. `GetIO()` names only the
+     target, read and written in place — the one place this pass visibly diverges.
+  2. **No x-ray partition.** X-ray is the only thing `DebugDrawList`'s partition
+     exists for, so `GizmoDrawList` stores no `xraySegmentStart` and the pass issues
+     exactly **two** draws (segments, then points) regardless of primitive count.
+     Draw order alone decides what lands on top, with depth off and alpha-over
+     blending.
+  3. **No wire pipeline.** A guide is lines plus one point sprite; there is no
+     `MeshGPU` in the picture, hence no vertex layout, no `drawIndexed` and no
+     72-byte push block.
+- **Shared shaders, separate payload**: the two pipelines are built over the same
+  `overlay_line` / `overlay_point` pair `DebugPass` uses, because the hard parts —
+  screen-space quad expansion for a constant *pixel* line width (MoltenVK caps
+  `lineWidth` at 1.0) and analytic edge antialiasing — are already solved and tested
+  there. The descriptor layout and the 16-byte push block are copied unchanged;
+  `ShaderLibrary`'s first argument is a log tag rather than a cache key, so
+  `"GizmoLine"` and `"DebugLine"` coexist over one file.
+- **The pass uploads nothing.** Geometry lives in `RenderCache`'s `GizmoCache` and
+  the camera in its `CameraGPU`, both written once per frame by
+  `DeferredRenderer::recordFrame()` before any pass records. `Record()` re-points
+  this frame's descriptor set at the cache's current handles every frame, since
+  growth swaps the `VkBuffer`.
+- **Always in the graph, no `RenderConfig` gate.** It returns early on a null or
+  empty payload, so entering and leaving a modal never recompiles the DAG — the
+  precedent `DebugPass` already sets.
+
 ### CPUBuffer Convention
 
 `CPUBuffer` (`src/render/buffers/CPUBuffer.h`) is the **permanent** host-visible,
@@ -510,11 +574,11 @@ It is named for the mirror image of `GPUBuffer`, which is device-local.
 - **Sampler**: Bilinear (`VK_FILTER_LINEAR`) for sub-pixel accuracy; falls back to nearest if `R16G16B16A16_SFLOAT` format doesn't support `VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT`
 - **Config**: `RenderConfig::r_fxaa_subpix` (strength, default 0.75), `r_fxaa_edge_threshold` (default 0.166), `r_fxaa_edge_threshold_min` (default 0.0833)
 - **Gating**: `RenderConfig::RequiresFXAA()` — only records when AA algorithm is set to FXAA in RenderConfigPanel
-- **Input is the scene alone**: FXAA sits between ComposePass and DebugPass, so it
-  never sees the debug overlay. That is deliberate — see "The overlay is last,
-  after post-AA" in the pipeline section. It also means FXAA presence changes what
-  DebugPass draws into, which is why `PipelineSignature::fxaa` drives both the graph
-  edges and `DebugPass::SetTarget()`.
+- **Input is the scene alone**: FXAA sits between ComposePass and the two overlay
+  passes, so it never sees the debug overlay or the gizmo. That is deliberate — see
+  "The overlay is last, after post-AA" in the pipeline section. It also means FXAA
+  presence changes what they draw into, which is why `PipelineSignature::fxaa` drives
+  the graph edges, `DebugPass::SetTarget()` and `GizmoPass::SetTarget()` alike.
 
 ### RenderConfig Convention
 
@@ -557,13 +621,13 @@ assigned via `RenderCache::GetShadowIntensityLayer(lightUID, extent)`.
 | SSAO | R8_UNORM | 0 (no occlusion) | Screen-space ambient occlusion |
 | SSR | R16G16B16A16_SFLOAT | (0,0,0,0) | Screen-space reflections (planned) |
 | SelectionOutline | R8_UNORM | 0 | Selected-object edge highlight (SelectionOutlinePass output) |
-| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Tonemapped scene (ComposePass output); FXAA's input, or DebugPass's target when FXAA is off |
-| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased scene (FXAAPass output); DebugPass's target when FXAA is on |
+| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Tonemapped scene (ComposePass output); FXAA's input, or the overlay target (DebugPass then GizmoPass) when FXAA is off |
+| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased scene (FXAAPass output); the overlay target (DebugPass then GizmoPass) when FXAA is on |
 | FXAAOffsets | R16G16_SFLOAT | (0,0) | FXAA edge subpixel offsets (RG16F, 2-channel, sampled+storage) |
 | ShadowMap | D32_SFLOAT | 1.0 | Per-light shadow depth (RenderCache-owned). Cubemap (6-layer 2D_ARRAY, 1024×1024) for point lights; 2D (2048×2048) for sun lights |
 | ShadowIntensity | R8_UNORM | 0 (no shadow) | Layered 2D_ARRAY, one layer per shadow-casting light (RenderCache-owned) |
 
-### RenderCache GPU Resources (MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache)
+### RenderCache GPU Resources (MeshGPU, EnvironmentGPU, LightingCache, CameraGPU, DebugCache, GizmoCache)
 
 `RenderCache` owns cross-frame mutable GPU resources beyond framebuffer attachments.
 These resources separate GPU ownership from the Vulkan-free scene and asset layers:
@@ -636,8 +700,25 @@ LightingCache survive it — they are recreated lazily, versioned, or owned by
   buffers mean no `UpdateDebugDraw()` has run for that slot, and `DebugPass` returns
   without touching an image
 
-**MeshPushConstants** (`src/render/resources/MeshGPU.h`)
-- Per-mesh push-constant block sent to the vertex shader (128 bytes total)
+**GizmoCache** (`src/render/resources/GizmoCache.h`)
+- A structural sibling of `DebugCache`: the same per-frame-slot `CPUBuffer` pair
+  (segments + point sprites) and the same `EnsureCapacity` with its 4096-byte floor,
+  holding the flattened `GizmoDrawList` that `GizmoPass` draws from. The floor is
+  load-bearing, not incidental — it is what guarantees both buffers are non-null once
+  `Update()` has run, and a null `VkBuffer` is not something a descriptor may name.
+- Written once per frame by `recordFrame()` via
+  `RenderCache::UpdateGizmoDraw(frameIndex, list)`, guarded by
+  `if (ctx.editor.gizmoDraw)`.
+- **No revision gate** (unlike `DebugCache`): a live gesture rebuilds its guide on
+  every cursor *or camera* move, and when no gesture is live nothing is drawn at all,
+  so `GizmoDrawList` carries no revision counter and `Update()` copies
+  unconditionally — a few dozen arc chords is less than the compare is worth
+  reasoning about.
+- **No x-ray partition**, for the reason in the GizmoPass Convention above: with
+  depth off for the whole pass there is no `xraySegmentStart`/`xrayPointStart` to
+  record or clamp.
+
+**MeshPushConstants** (`src/render/resources/MeshGPU.h`)- Per-mesh push-constant block sent to the vertex shader (128 bytes total)
 - Two mat4s: `model` (local-to-world transform) and `normalMatrix`
 
 **GeometryRenderItem** (removed)

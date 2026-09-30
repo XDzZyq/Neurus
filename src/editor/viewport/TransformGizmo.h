@@ -90,8 +90,10 @@ struct TransformSnapshot
  *       X (pitch) -> Rz(yaw) * X
  *       Y (roll)  -> Rz * Rx * Y, which is exactly Transform3D::GetDirection()
  *
- *   Move / Scale (the true local set) — the columns of R = Rz * Rx * Ry. Only Y
- *   coincides with the gimbal set; X and Z differ whenever roll != 0. For an
+ *   Move / Scale (the true local set) — the columns of R = Rz * Rx * Ry. Y is the
+ *   one axis the two sets always share, and each of the other two diverges on a
+ *   different angle: X coincides iff roll == 0, Z iff pitch and roll are both 0 —
+ *   so a pure pitch already separates the two Z axes while leaving X alone. For an
  *   unrotated object all three reduce to world XYZ.
  *
  * Derived from the stored Euler angles and never from the columns of

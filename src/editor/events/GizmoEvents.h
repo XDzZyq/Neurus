@@ -45,8 +45,9 @@ enum class GizmoMode
  * The axis this names is mode-dependent, and that is not an inconsistency: the
  * model matrix is T * Rz(yaw) * Rx(pitch) * Ry(roll) * S, so Rotate must use the
  * gimbal axes (the one-parameter subgroups of the stored Euler triple) while Move
- * and Scale must use the true local axes (the columns of R). They coincide only
- * when roll == 0. See TransformGizmo for the derivation.
+ * and Scale must use the true local axes (the columns of R). The two sets share Y
+ * always, X only when roll == 0, and Z only when pitch and roll are both 0. See
+ * TransformGizmo for the derivation.
  */
 enum class GizmoAxis
 {

@@ -8,7 +8,7 @@ changes through the event system.
 
 ## Location
 
-- `src/editor/Input.h` - InputState struct + GetInputState() / UpdateState()
+- `src/editor/Input.h` - Stateless static translation helpers only: `GetMousePos`, `GetModifiers`, `GetMouseButton`, `GetKey` (raw Qt values -> engine enums). There is no `InputState` struct and no per-frame polling — input reaches the Editor as typed events.
 - `src/editor/Editor.h` - Editor orchestrator (owns Scene, RenderConfig, Context, Controllers)
   - Exposes an explicit scene-load lifecycle for Application-driven persistence:
     `NewScene(objPath)` (fresh document holding the **default starter scene** —
@@ -22,8 +22,12 @@ changes through the event system.
 - `src/editor/controllers/CameraController.h` - Event-driven camera manipulation (orbit/zoom/dolly/pan)
 - `src/editor/controllers/SceneController.h/cpp` - Event-driven scene mutations (selection, transform, visibility, property edits); emits EditorEvents for GPU uploads
 - `src/editor/controllers/ShaderController.h` - Event-driven shader lifecycle (create, compile, code/struct edit, field add)
+- `src/editor/controllers/TransformGizmoController.h/cpp` - Drives the modal G/R/S gesture; one undo entry per gesture
 - `src/editor/events/ShaderEvents.h` - Shader editor event structs (see events.instructions.md)
+- `src/editor/events/GizmoEvents.h` - Modal transform intents + the shared `GizmoMode`/`GizmoAxis` vocabulary
 - `src/editor/viewport/DebugDrawBuilder.h/cpp` - Flattens the Scene's debug objects into the `DebugDrawList` the renderer consumes
+- `src/editor/viewport/TransformGizmo.h/cpp` - Modal transform state machine + `GizmoAxisDirection` / `GizmoEulerFromRotation`
+- `src/editor/viewport/GizmoDrawBuilder.h/cpp` - Gesture state + viewport -> `GizmoDrawList` (fixed pixel budget)
 - `src/editor/viewport/EditorViewport.h/cpp` - World<->screen service: `Project`, `RayThrough`, `ProjectBox`, `PixelsPerWorldUnit`; holds the camera the viewport looks through
 
 ## The view camera: the Editor owns one, an activated scene camera overrides it
@@ -180,6 +184,7 @@ pins the two-camera half.
    - `SceneController` — event-driven scene mutations (selection, transform, visibility, camera/mesh/light/env/debug property edits, scene membership add/delete); stateless with free-function handlers in the .cpp; each handler resolves the event's `int objectUid` against the current Scene (typed pool lookup) and mutates the object directly; emits `EditorEvents` (SceneModified, LightGpuChanged, LightingRebuild, RenderResetEvent) for GPU uploads and dirty tracking; see events.instructions.md for the GPU-sync flow
    - **Import/Add split**: `Editor::OnMeshImport`/`OnCameraAdd`/`OnLightAdd`/... only LOAD the resource into the pool and forward the object UID via `SceneObjectAddRequested`; the SceneController fetches the pooled object by UID, registers it, selects it, and records `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(...)]`. The Delete gesture (`ObjectDeleteRequested` - the Editor wraps the UI's `DeleteRequested` intent) is **forward-only**: the SceneController snapshots the selection, deselects, then DEFERS the removals as ONE batched `SceneObjectDeleteRequested` carrying all selected UIDs — so the batched handler is the single removal path shared with replay (no replay-only handling) — and records `CompositeOp[SetSelectionOp(before→∅), SceneObjectAddOp(uids,false)]` (delete of N = one op). Light membership changes enqueue `LightingRebuild` (the SSBO is a scene projection). GPU caches (MeshGPU, shadow maps) are scene-scoped: `UploadSceneResources` uploads only objects present at load, and an object entering the scene (live add or undo/redo replay) or a light whose shadow was just enabled enqueues `SceneObjectGpuUploadRequested`, which the Editor resolves with an on-demand upload (skip-if-cached).
    - `ShaderController` — event-driven shader lifecycle via `ShaderEvents` (create, compile, code/struct edit, field add); enqueues `RenderResetEvent` after create/compile so temporal accumulation resets
+   - `TransformGizmoController` — event-driven modal transform via `GizmoEvents` (arm, constrain, drag, confirm, cancel); owns nothing, calls exactly one `TransformGizmo` method per event, and is registered **after** `CameraController` so a drag handler sees the camera pose this frame's orbit already produced. The drag writes `Transform3D` directly and submits nothing; confirm submits exactly **one** `SetPositionOp`/`SetRotationOp`/`SetScaleOp` for the whole gesture, so it must emit `SceneModified` + `RenderResetEvent` itself (and `LightGpuChanged` for a light, whose GPU position lives in an SSBO the transform write does not touch)
    - **Pure-intent wrapping**: the Editor subscribes to the UI's `ObjectClicked` and `DeleteRequested` intents and forwards the dedicated scene events `ObjectSelected{ objectUid, modifiers }` and `ObjectDeleteRequested{}` (the two wrap subscriptions in `Editor::Initialize`). Panels never stamp the scene.
    - Controllers receive discrete events (not per-frame polling); `Editor::Edit()` dispatches all enqueued events via `EventQueue::Process()`
 
@@ -376,6 +381,86 @@ and both paths share it. Three places must stay in step:
 `o_mesh` from `o_meshDataId`: the `ForEach<Mesh>` block above it does not reach a
 `DebugMesh`, so without it a reloaded project leaves the wireframe geometry-less and
 the upload is skipped for a reason that looks like a rendering bug.
+
+### TransformGizmo + GizmoDrawBuilder (modal transform)
+
+Blender-style modal transform: `G` / `R` / `S` arm a gesture on the **active object**,
+`X` / `Y` / `Z` constrain it, `W` drops back to screen space, LMB or Return confirms,
+Esc / RMB / viewport focus loss cancels. Two Editor-owned members, split by
+responsibility and both Qt-free and Vulkan-free:
+
+| Member | Role |
+|---|---|
+| `m_gizmo` (`TransformGizmo`) | the state machine: what is armed, on what, since what snapshot |
+| `m_gizmoDraw` (`GizmoDrawBuilder`) | the picture: state + viewport → `GizmoDrawList` |
+
+Neither is a controller (`TransformGizmoController` is, and owns nothing). The gizmo
+is **not** a Scene object and must not reuse the Debug objects: its geometry is
+derived every rebuild from gesture state, is never serialized, never selectable, and
+never appears in the Outliner.
+
+**Every drag derives from the snapshot, never from last frame's value.** `Arm()` takes
+`m_before` once; `Drag()` computes the transform as a function of `(m_before, cursor)`
+alone. Accumulating deltas would drift by construction and would make a cursor round
+trip land near — not on — the starting value. Because nothing accumulates, a return to
+the anchor pixel reproduces `m_before` *bitwise*, which is what
+`test_transform_gizmo.cpp` asserts with `==` rather than a tolerance.
+
+**Re-constraining normalizes back to the before-state, and that is the whole of W.**
+`Constrain()` re-latches its anchors at the current cursor and the controller then
+issues one `Drag()` at that same cursor, which must reproduce `m_before` exactly. An
+axis switch therefore *undoes* the previous axis's partial transform with no special
+case, and W is just `GizmoAxis::None` travelling the same path.
+
+**Two axis sets, because the model matrix is `T * Rz(yaw) * Rx(pitch) * Ry(roll) * S`.**
+Rotate uses the gimbal set (`Z → world Z`, `X → Rz·X`, `Y → Rz·Rx·Y`), so a
+constrained rotation's PropertyPanel number stays exactly `before + theta` with no
+matrix round trip. Move and Scale use the true local set (the columns of `R`). The two
+share Y always, X only when `roll == 0`, and Z only when pitch *and* roll are zero — a
+pure pitch already separates the two Z axes. Both are derived from the stored Euler
+triple, never from `mat3(model)`'s columns, which carry scale and would hand back a
+zero axis on a zero scale component and a flipped one on a mirrored object.
+
+A **free** rotate turns about the view axis and is composed as `R_view(θ) · R_before`,
+then read back through `GizmoEulerFromRotation` (the ZXY extraction). That extraction
+returns the *canonical* representative, so a stored yaw of 200° comes back as −160° —
+the same matrix, different numbers in the panel. Hence the zero-angle case writes
+`m_before.rotation` back rather than returning early: an unturned gesture must not
+silently canonicalise the triple.
+
+**Guide geometry is a fixed pixel budget, so the camera is an input.** Every length in
+`GizmoDrawBuilder` is a constant in logical pixels divided by
+`PixelsPerWorldUnit(vp, depth)`, which is what holds the handle's apparent size as the
+camera dollies — and is why a camera change must `MarkDirty()` even though the state
+machine has not moved. `Rebuild()` early-returns when clean and the builder starts
+dirty. It runs in `Edit()` **after** the queue drains and after the second
+`SetCamera(ViewCamera())` push, for exactly that reason.
+
+**The anchor is the live transform; only part of it is followed.** `Editor::GizmoAnchor`
+resolves the *gesture's own* uid while one is armed (the Outliner can change the
+selection mid-gesture, and following that would tear the guide off the object being
+transformed) and the selection's active object otherwise. The builder then decides what
+to honour: the **pivot rides the live position**, so a Move drags its own handle along,
+but the **rotation does not** — guides that spun with the object would destroy the
+reference the rotation is being measured against. An armed gesture whose target was
+deleted mid-drag falls back to its frozen snapshot rather than blinking out.
+
+**Empty, never null.** The Editor publishes `&m_gizmoDraw.List()` unconditionally;
+"nothing armed and nothing selected" is an empty list, and `GizmoPass` early-outs on
+null and empty alike. Counts are the only handle a CPU test has on which mode is live
+(a Move guide is 9 segments, a Scale guide 1 + 2 sprites, a Rotate ring 48 chords), and
+`test_gizmo_draw_builder.cpp` asserts over counts, predicates and the *longest* segment
+— never an index, because primitive order is an implementation detail.
+
+**Dimming is RGB, never alpha** (`kCandidateDim`): a translucent guide washes out over
+bright geometry. The only alpha the gizmo uses is `OverlayFlag::Smooth`'s analytic edge
+fade, which is antialiasing rather than transparency — so every primitive in every state
+is fully opaque.
+
+**Draggable handles are a sanctioned future feature**, not an excluded one. The pieces
+it needs are already in place: `EditorViewport::Project` for a pixel distance-to-segment
+hit test (CPU-analytic, no GPU handle-ID buffer), press precedence ahead of the IDBuffer
+pick, and drag-and-release mapped onto the existing confirm.
 
 
 

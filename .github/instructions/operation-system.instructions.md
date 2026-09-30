@@ -123,6 +123,18 @@ For the concrete controller wiring (`CameraController`,
 `RenderConfigController`, `ShaderController`), see
 [editor.instructions.md](editor.instructions.md).
 
+`TransformGizmoController` is the controller-owned-gesture pattern at its purest:
+`Arm` captures the before-state, every `Drag` writes `Transform3D` **directly** and
+records nothing, and confirm submits exactly one `SetPositionOp` / `SetRotationOp` /
+`SetScaleOp` for the whole gesture — or none at all when the value is unchanged,
+which is also what makes a cancelled gesture leave no entry behind. Routing the drag
+through `PositionChanged`/`RotationChanged`/`ScaleChanged` instead would record ~60
+entries per second: `SceneController` submits on every one of those events, and those
+three ops declare no `MergeKey()`, so nothing would coalesce. The cost of bypassing
+`SceneController` is that this controller must emit `SceneModified` +
+`RenderResetEvent` itself, plus `LightGpuChanged` for a light — whose GPU position
+lives in an SSBO the transform write does not touch.
+
 `ShaderController` records delta-only ops matching each edit event's
 granularity: `SetShaderCodeOp` (before/after GLSL text), `SetShaderFieldOp`
 (before/after of one whole `ShaderStruct` element — a `ShaderFieldValue` variant

@@ -43,6 +43,8 @@ add_executable(neurus_test
 	editor/test_debug_draw_builder.cpp
 	editor/test_editor_camera.cpp
 	editor/test_editor_scene_lifecycle.cpp
+	editor/test_editor_viewport.cpp
+	editor/test_gizmo_draw_builder.cpp
 	editor/test_input.cpp
 	editor/test_event_bus.cpp
 	editor/test_event_bus_typed.cpp
@@ -52,6 +54,7 @@ add_executable(neurus_test
 	editor/test_render_config_controller.cpp
 	editor/test_shader_controller.cpp
 	editor/test_shader_editor_panel.cpp
+	editor/test_transform_gizmo.cpp
 	scene/test_camera.cpp
 	scene/test_mesh.cpp
 	scene/test_uid.cpp
