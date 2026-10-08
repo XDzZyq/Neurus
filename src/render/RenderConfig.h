@@ -145,28 +145,33 @@ public:
 	// --- Cereal serialization ---
 
 	/**
-	 * @brief Serializes every setting.
+	 * @brief Serializes every setting, each one independently optional.
 	 *
-	 * Fields added after a project format was already in the wild are written
-	 * last and read back optionally, so an older file keeps all the settings it
-	 * does contain instead of ConfigComponent::Load discarding the whole config
-	 * and resetting the user's gamma, AO and shadow options along with it.
+	 * No render setting is load-bearing for identity, so none of them is worth
+	 * failing a load over: a key this build does not find keeps the member at its
+	 * in-class default and the settings around it still load. That is what stops
+	 * `ConfigComponent::Load` from discarding the user's gamma, AO and shadow
+	 * options because one unrelated field was renamed between two builds.
+	 *
+	 * The defaults live only in the member initializers above — nothing here
+	 * restates them, so they cannot drift. The contract that makes that work is
+	 * `archive::LoadFresh`, which `ConfigComponent::Load` reads through: the
+	 * object being filled is default-constructed, so "absent" means "default"
+	 * rather than "whatever the running session happened to have".
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(CEREAL_NVP(r_pipeline), CEREAL_NVP(r_aa), CEREAL_NVP(r_ao),
-		   CEREAL_NVP(r_shadow), CEREAL_NVP(r_ssr),
-		   CEREAL_NVP(r_gamma), CEREAL_NVP(r_shadow_bias),
-		   CEREAL_NVP(r_ao_ksize), CEREAL_NVP(r_ao_radius),
-		   CEREAL_NVP(r_sample_pf), CEREAL_NVP(r_transparent),
-		   CEREAL_NVP(r_fxaa_subpix), CEREAL_NVP(r_fxaa_edge_threshold),
-		   CEREAL_NVP(r_fxaa_edge_threshold_min),
-		   CEREAL_NVP(r_sampling_mode));
-
-		// --- Optional trailing fields (see the note above) ---
-
-		NEURUS_OPTIONAL_NVP(ar, r_debug_draw, true);
+		archive::Optional(ar,
+		                  CEREAL_NVP(r_pipeline), CEREAL_NVP(r_aa), CEREAL_NVP(r_ao),
+		                  CEREAL_NVP(r_shadow), CEREAL_NVP(r_ssr),
+		                  CEREAL_NVP(r_gamma), CEREAL_NVP(r_shadow_bias),
+		                  CEREAL_NVP(r_ao_ksize), CEREAL_NVP(r_ao_radius),
+		                  CEREAL_NVP(r_sample_pf), CEREAL_NVP(r_transparent),
+		                  CEREAL_NVP(r_fxaa_subpix), CEREAL_NVP(r_fxaa_edge_threshold),
+		                  CEREAL_NVP(r_fxaa_edge_threshold_min),
+		                  CEREAL_NVP(r_sampling_mode),
+		                  CEREAL_NVP(r_debug_draw));
 	}
 
 	// --- Query helpers ---

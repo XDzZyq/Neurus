@@ -24,6 +24,7 @@
 #include <cereal/types/base_class.hpp>
 #include <cereal/types/vector.hpp>
 
+#include "core/Serialize.h"
 #include "scene/ObjectID.h"
 #include "Transform.h"
 
@@ -93,14 +94,14 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ObjectID>(this),
-		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)),
-		   cereal::make_nvp("m_pointType", o_pointType),
-		   cereal::make_nvp("m_color", o_color),
-		   cereal::make_nvp("m_scale", o_scale),
-		   cereal::make_nvp("m_opacity", o_opacity),
-		   cereal::make_nvp("m_projectionMode", o_projectionMode),
-		   cereal::make_nvp("m_points", o_points),
-		   cereal::make_nvp("m_xray", o_xray));
+		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
+		archive::Optional(ar, cereal::make_nvp("m_pointType", o_pointType),
+		                  cereal::make_nvp("m_color", o_color),
+		                  cereal::make_nvp("m_scale", o_scale),
+		                  cereal::make_nvp("m_opacity", o_opacity),
+		                  cereal::make_nvp("m_projectionMode", o_projectionMode),
+		                  cereal::make_nvp("m_points", o_points),
+		                  cereal::make_nvp("m_xray", o_xray));
 	}
 
 	// Non-copyable and non-movable (UID semantics): ObjectID's UID base deletes

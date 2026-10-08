@@ -27,6 +27,8 @@
 
 #include <cereal/cereal.hpp>
 
+#include "core/Serialize.h"
+
 #include "GlmSerialization.h"
 
 namespace neurus {
@@ -106,9 +108,9 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::make_nvp("m_position", o_position),
-		   cereal::make_nvp("m_rotation", o_rotation),
-		   cereal::make_nvp("m_scale", o_scale));
+		archive::Optional(ar, cereal::make_nvp("m_position", o_position),
+		                  cereal::make_nvp("m_rotation", o_rotation),
+		                  cereal::make_nvp("m_scale", o_scale));
 
 		// `o_modelMatrix` is not persisted, and the setters - the only place it is
 		// ever recomputed - are bypassed by deserialization. Without this a loaded

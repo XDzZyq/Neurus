@@ -33,6 +33,7 @@
 #include <cereal/types/base_class.hpp>
 #include <glm/glm.hpp>
 
+#include "core/Serialize.h"
 #include "scene/ObjectID.h"
 #include "Transform.h"
 
@@ -95,11 +96,11 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ObjectID>(this),
-		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)),
-		   cereal::make_nvp("m_meshDataId", o_meshDataId),
-		   cereal::make_nvp("m_color", o_color),
-		   cereal::make_nvp("m_opacity", o_opacity),
-		   cereal::make_nvp("m_xray", o_xray));
+		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
+		archive::Optional(ar, cereal::make_nvp("m_meshDataId", o_meshDataId),
+		                  cereal::make_nvp("m_color", o_color),
+		                  cereal::make_nvp("m_opacity", o_opacity),
+		                  cereal::make_nvp("m_xray", o_xray));
 	}
 
 	// Neither copyable nor movable: UID deletes both copy operations, which

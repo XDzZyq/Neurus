@@ -23,6 +23,8 @@
 #include <cereal/types/base_class.hpp>
 #include <cereal/types/vector.hpp>
 
+#include "core/Serialize.h"
+
 #include <vector>
 
 namespace neurus {
@@ -120,10 +122,11 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ObjectID>(this),
-		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)),
-		   CEREAL_NVP(cam_w), CEREAL_NVP(cam_h),
-		   CEREAL_NVP(cam_pers), CEREAL_NVP(cam_near), CEREAL_NVP(cam_far),
-		   CEREAL_NVP(cam_tar), CEREAL_NVP(cam_floatData));
+		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
+		archive::Optional(ar, CEREAL_NVP(cam_w), CEREAL_NVP(cam_h),
+		                  CEREAL_NVP(cam_pers), CEREAL_NVP(cam_near),
+		                  CEREAL_NVP(cam_far), CEREAL_NVP(cam_tar),
+		                  CEREAL_NVP(cam_floatData));
 
 		// o_cachedView/o_cachedProj are caches of the fields above, and every setter
 		// that maintains them (SetPosition/SetTarPos/ChangeCamRatio/ChangeCamPersp)

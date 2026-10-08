@@ -26,6 +26,7 @@
 
 #include <cereal/types/base_class.hpp>
 
+#include "core/Serialize.h"
 #include "scene/ObjectID.h"
 #include "Transform.h"
 
@@ -95,10 +96,13 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ObjectID>(this),
-		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)),
-		   CEREAL_NVP(o_meshDataId), CEREAL_NVP(o_shaderId),
-		   CEREAL_NVP(using_shadow), CEREAL_NVP(using_material),
-		   CEREAL_NVP(using_sdf), CEREAL_NVP(is_closure));
+		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
+		// A zero data/shader id is already a handled, reported state in
+		// ResourceComponent::Load, so an absent id costs this mesh its geometry
+		// and nothing else in the pool.
+		archive::Optional(ar, CEREAL_NVP(o_meshDataId), CEREAL_NVP(o_shaderId),
+		                  CEREAL_NVP(using_shadow), CEREAL_NVP(using_material),
+		                  CEREAL_NVP(using_sdf), CEREAL_NVP(is_closure));
 	}
 
 	Mesh(const Mesh&) = delete;

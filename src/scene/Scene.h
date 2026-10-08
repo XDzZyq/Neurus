@@ -254,7 +254,7 @@ public:
 			m_pendingDMeshIds = std::move(dMeshIds);
 
 			// Activated camera. Three states must stay distinguishable, so this
-			// reads the raw OptionalBlock rather than NEURUS_OPTIONAL_NVP:
+			// reads the raw OptionalBlock rather than a defaulting helper:
 			//   >0  an explicit camera UID
 			//    0  explicitly "no scene camera activated"
 			//   -1  field absent -> file predates activation; ResolveReferences

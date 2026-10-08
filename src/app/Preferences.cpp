@@ -1,6 +1,7 @@
 #include "app/Preferences.h"
 
 #include "core/Log.h"
+#include "core/Serialize.h"
 #include "platform/PlatformPaths.h"
 
 #include <cereal/archives/json.hpp>
@@ -22,17 +23,22 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 	if (!in.is_open())
 		return LoadResult::Missing;  // First run: keep defaults, caller saves.
 
-	// Parse into a scratch copy so a half-written or schema-drifted file cannot
-	// leave the live values partially overwritten. cereal applies each nvp as it
-	// reads it, so a throw halfway through WOULD otherwise be visible.
-	std::string scratchLanguage = language;
-	int         scratchFps      = targetFps;
+	// Parse into a default-constructed Preferences, not a copy of the live
+	// values, and swap it in only once the parse succeeds. Two things fall out of
+	// that: a truncated or schema-drifted file cannot leave the live values half
+	// overwritten (cereal applies each nvp as it reads it), and a key the file
+	// lacks resolves to the in-class default above rather than to whatever the
+	// running session happened to hold. The member initializers stay the only
+	// definition of these defaults.
+	Preferences fresh;
 
 	try
 	{
 		cereal::JSONInputArchive ar(in);
-		ar(cereal::make_nvp("language", scratchLanguage),
-		   cereal::make_nvp("target_fps", scratchFps));
+		// Each key independently: a file written by a build that spelled one of
+		// them differently still yields the other, instead of Corrupt.
+		archive::Optional(ar, cereal::make_nvp("language", fresh.language),
+		                  cereal::make_nvp("target_fps", fresh.targetFps));
 	}
 	catch (const std::exception& e)
 	{
@@ -40,8 +46,8 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 		return LoadResult::Corrupt;  // Fields untouched: nothing is destroyed.
 	}
 
-	language  = scratchLanguage;
-	targetFps = scratchFps;
+	language  = fresh.language;
+	targetFps = fresh.targetFps;
 
 	// Note: "auto" language is intentionally left as-is here. Resolving it to a
 	// concrete code is I18n::setLanguage()'s job, so this data type stays free

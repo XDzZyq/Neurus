@@ -218,7 +218,7 @@ Neurus/
 │   │   ├── ResourceManager.h/cpp # Single factory + UID pool (Load<T>, polymorphic serialize)
 │   │   ├── IResourceLookup.h      # Read-only pool lookup interface
 │   │   ├── Log.h                  # NEURUS_LOG / NEURUS_ERR macros
-│   │   ├── Serialize.h            # NEURUS_OPTIONAL_NVP / OptionalBlock (back-compat fields)
+│   │   ├── Serialize.h            # archive::Optional / LoadFresh / OptionalBlock (version-tolerant fields)
 │   │   ├── Graph.h                # Generic DAG template
 │   │   ├── Selections.h           # Selection state container
 │   │   └── Timer.h                # Scoped timer

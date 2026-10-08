@@ -595,12 +595,14 @@ passed to passes through `RenderContext::editor.config` (opaque `void*`):
 - **Algorithm selection**: `r_pipeline` (Forward/Deferred), `r_aa`, `r_ao`, `r_shadow`, `r_ssr`
 - **Quality parameters**: `r_gamma`, `r_ao_ksize`, `r_ao_radius`, `r_shadow_bias` (0.02), `r_sample_pf`
 - **Overlay toggle**: `r_debug_draw` / `RequiresDebugDraw()` — gates *publication*, not
-  graph topology (see DebugPass Convention). It is written **last** in `serialize()` and
-  read back with `NEURUS_OPTIONAL_NVP(ar, r_debug_draw, true)`, because a project file
-  saved before the field existed would otherwise make `ConfigComponent::Load` discard the
-  whole config and reset the user's gamma, AO and shadow settings. **Any field added to
-  `RenderConfig` from now on must follow that optional-trailing-field idiom** — see
-  `src/core/Serialize.h`.
+  graph topology (see DebugPass Convention). It is written **last** in `serialize()`, and
+  like every other `RenderConfig` field it is read through `archive::Optional`, because a
+  project file saved before the field existed would otherwise make `ConfigComponent::Load`
+  discard the whole config and reset the user's gamma, AO and shadow settings. Absence
+  leaves the member at its in-class `= true`; nothing in the load path restates that
+  value. **Any field added to `RenderConfig` from now on goes in the same `Optional` call,
+  with its default only in the member initializer** — see `src/core/Serialize.h` and the
+  version-tolerance table in data-resource.instructions.md.
 - **Serialized** via cereal for project save/load
 - **Live-update**: passes cast `static_cast<const RenderConfig*>(ctx.editor.config)` each frame; scalar param changes take effect on next `DrawFrame()`
 - **Shadow bias flow**: `RenderConfigPanel` slider → `configValueChanged` → `Editor::SetRenderConfig` → `RenderContext::editor.config` → `ShadowIntensityPass` casts to `RenderConfig*`, reads `r_shadow_bias`
