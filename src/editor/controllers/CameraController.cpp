@@ -47,7 +47,7 @@ constexpr float kDollySensitivity = 0.05f;
  * The editor's own viewport camera is pooled like any other camera but is not scene
  * content, so it is absent from `cam_list` — a scene-scoped lookup would silently
  * refuse to navigate it. Every camera is created through
- * `ResourceManager::Load<Camera>()`, so the pool resolves scene and editor cameras
+ * `ResourceManager::Load<Camera>()`, so the pool resolves scene and viewport cameras
  * alike.
  *
  * @return Non-owning Camera*, or nullptr if the id is stale or names another type.

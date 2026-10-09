@@ -358,16 +358,16 @@ public:
 	 *
 	 * Activation is scene state, independent of selection: selecting a camera in
 	 * the Outliner does not change the view, and the PropertyPanel keeps
-	 * inspecting whatever is selected. With no camera activated the Editor looks
+	 * inspecting whatever is selected. With no camera activated the viewport looks
 	 * through its own camera, so "none" is a normal, fully supported state.
 	 *
 	 * @param uid Camera UID; must already be registered via UseCamera().
 	 * @return false when uid is not in cam_list — which is what keeps a pooled
-	 *         but non-scene camera (the editor camera) unactivatable from here.
+	 *         but non-scene camera (the viewport camera) unactivatable from here.
 	 */
 	bool ActivateCamera(int uid);
 
-	/// @brief Clears the activation; the viewport falls back to the editor camera.
+	/// @brief Clears the activation; the viewport falls back to its own camera.
 	void DeactivateCamera() { m_activeCamUid = 0; }
 
 	/**
@@ -543,7 +543,7 @@ public:
 	 *
 	 * Looks ActiveCameraID() up in cam_list, so a UID left over from a removed
 	 * camera reads as "none" rather than as a dangling pointer. A null return is
-	 * normal — it means the viewport should use the editor camera.
+	 * normal — it means the viewport should use its own camera.
 	 *
 	 * @return Non-owning pointer to the activated Camera, or nullptr.
 	 * @see ActivateCamera

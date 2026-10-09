@@ -168,7 +168,10 @@ void SubmitGesture(const neurus::TransformGizmo& gizmo, neurus::ObjectID& obj,
  */
 void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::ControllerContext& ctx)
 {
-	neurus::TransformGizmo* gizmo = ctx.gizmo();
+	// The gizmo is reached through its owner, which is also where the anchor cursor
+	// comes from: one handle, so the two cannot disagree about which viewport.
+	neurus::EditorViewport* vp = ctx.viewport();
+	neurus::TransformGizmo* gizmo = vp ? &vp->Gizmo() : nullptr;
 	if (!gizmo) return;
 
 	if (gizmo->IsActive())
@@ -182,9 +185,8 @@ void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::Controll
 		gizmo->Disarm();
 	}
 
-	const neurus::EditorViewport* vp = ctx.viewport();
 	const Target target = Resolve(ctx, e.objectUid);
-	if (vp && target.Valid())
+	if (target.Valid())
 		gizmo->Arm(e.mode, e.objectUid, *target.transform, vp->Cursor());
 
 	// Unconditional: the guide either appeared (armed) or vanished (the cancel above).
@@ -202,11 +204,9 @@ void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::Controll
  */
 void OnAxisRequested(const neurus::GizmoAxisRequested& e, const neurus::ControllerContext& ctx)
 {
-	neurus::TransformGizmo* gizmo = ctx.gizmo();
+	neurus::EditorViewport* vp = ctx.viewport();
+	neurus::TransformGizmo* gizmo = vp ? &vp->Gizmo() : nullptr;
 	if (!gizmo || !gizmo->IsActive()) return;
-
-	const neurus::EditorViewport* vp = ctx.viewport();
-	if (!vp) return;
 
 	const Target target = Resolve(ctx, gizmo->ObjectUid());
 	if (!target.Valid()) return;
@@ -230,11 +230,9 @@ void OnAxisRequested(const neurus::GizmoAxisRequested& e, const neurus::Controll
 /** @brief Cursor motion drives the drag. Dropped whole when no gesture is live. */
 void OnMouseMove(const neurus::MouseMoveEvent& e, const neurus::ControllerContext& ctx)
 {
-	neurus::TransformGizmo* gizmo = ctx.gizmo();
+	neurus::EditorViewport* vp = ctx.viewport();
+	neurus::TransformGizmo* gizmo = vp ? &vp->Gizmo() : nullptr;
 	if (!gizmo || !gizmo->IsActive()) return;
-
-	const neurus::EditorViewport* vp = ctx.viewport();
-	if (!vp) return;
 
 	const Target target = Resolve(ctx, gizmo->ObjectUid());
 	if (!target.Valid()) return;
@@ -252,7 +250,8 @@ void OnMouseMove(const neurus::MouseMoveEvent& e, const neurus::ControllerContex
 /** @brief LMB / Return: keep the transform, record one op, disarm. */
 void OnConfirmed(const neurus::ControllerContext& ctx)
 {
-	neurus::TransformGizmo* gizmo = ctx.gizmo();
+	neurus::EditorViewport* vp = ctx.viewport();
+	neurus::TransformGizmo* gizmo = vp ? &vp->Gizmo() : nullptr;
 	if (!gizmo || !gizmo->IsActive()) return;
 
 	const Target target = Resolve(ctx, gizmo->ObjectUid());
@@ -269,7 +268,8 @@ void OnConfirmed(const neurus::ControllerContext& ctx)
 /** @brief Esc / RMB / focus loss: restore the snapshot, disarm, record nothing. */
 void OnAborted(const neurus::ControllerContext& ctx)
 {
-	neurus::TransformGizmo* gizmo = ctx.gizmo();
+	neurus::EditorViewport* vp = ctx.viewport();
+	neurus::TransformGizmo* gizmo = vp ? &vp->Gizmo() : nullptr;
 	if (!gizmo || !gizmo->IsActive()) return;
 
 	const Target target = Resolve(ctx, gizmo->ObjectUid());

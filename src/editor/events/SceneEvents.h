@@ -139,7 +139,7 @@ struct CameraPoseChanged
  * @brief Absolute camera-activation set: which scene camera the viewport uses.
  *
  * `camUid` 0 means "deactivate" — a legal, fully supported state in which the
- * viewport looks through the Editor's own camera. Activation is scene state and
+ * viewport looks through the viewport's own camera. Activation is scene state and
  * is deliberately independent of selection: the PropertyPanel keeps inspecting
  * whatever is selected, and selecting a camera never changes the view.
  *

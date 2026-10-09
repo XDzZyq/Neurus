@@ -174,7 +174,7 @@ TEST(SceneCameraActivation, DeactivateCamera_LeavesNoSceneCameraInUse)
 
 /**
  * @test A pooled camera that was never handed to UseCamera cannot be activated.
- *       This is exactly the editor camera's situation — it lives in the
+ *       This is exactly the viewport camera's situation — it lives in the
  *       ResourceManager so CameraController can resolve and orbit it, but it is
  *       not scene content and must not be reachable as a *scene* activation.
  */
@@ -375,7 +375,7 @@ TEST(SceneCameraActivation, ActivationRoundTripsThroughAProjectFile)
  *       though it contains cameras. "Explicitly none" and "field absent" are
  *       different states and only the latter migrates — otherwise every
  *       camera-bearing scene would silently reacquire a scene camera on reload
- *       and the editor camera would be unreachable in practice.
+ *       and the viewport camera would be unreachable in practice.
  */
 TEST(SceneCameraActivation, ExplicitNoneRoundTripsAsNoneAndNeverMigrates)
 {

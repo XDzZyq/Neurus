@@ -3,19 +3,22 @@
 #include "asset/Serializable.h"
 
 namespace neurus {
-class Editor;
+class EditorViewport;
 }
 
 namespace neurus::project {
 
 /**
- * @brief Serialization adapter for Editor-owned view state.
+ * @brief Serialization adapter for the editor viewport's view state.
  *
- * Carries exactly one field today: the pool UID of the **editor camera** — the
+ * Carries exactly one field today: the pool UID of the **viewport camera** — the
  * camera the viewport looks through unless a scene camera is activated. The
  * camera *object* needs no adapter, because it is a pooled resource and
  * ResourceComponent serializes the ResourceManager pool wholesale; only the
- * Editor's claim on which pooled camera is its own has to be recorded.
+ * viewport's claim on which pooled camera is its own has to be recorded.
+ *
+ * It binds to the EditorViewport, not to the Editor: the Editor has no camera
+ * API left to ask, and the viewport is the one object that owns this id.
  *
  * Registered LAST in Project (after HistoryComponent): registration order is
  * archive read order, so appending puts the new node where a file written before
@@ -27,7 +30,7 @@ namespace neurus::project {
 class EditorComponent : public Serializable
 {
 public:
-	explicit EditorComponent(Editor& editor);
+	explicit EditorComponent(EditorViewport& viewport);
 
 	const char* Key() const noexcept override { return "m_editor"; }
 
@@ -35,7 +38,7 @@ public:
 	void Load(cereal::JSONInputArchive& ar) override;
 
 private:
-	Editor* m_editor;
+	EditorViewport* m_viewport;
 };
 
 } // namespace neurus::project

@@ -223,8 +223,9 @@ Neurus/
 │   │   ├── Selections.h           # Selection state container
 │   │   └── Timer.h                # Scoped timer
 │   ├── editor/             # Editor layer (logic, controllers)
-│   │   ├── viewport/        # World<->screen services (Vulkan-free, Qt-free)
-│   │   │   ├── EditorViewport.h/cpp   # Project/RayThrough/ProjectBox + the camera seam
+│   │   ├── viewport/        # Viewport composition root (Vulkan-free, Qt-free)
+│   │   │   ├── EditorViewport.h/cpp   # Owns the viewport camera + the builders below;
+│   │   │   │                          #   Project/RayThrough/ProjectBox, resize, overlays
 │   │   │   ├── DebugDrawBuilder.h/cpp # Scene debug objects -> DebugDrawList flattening
 │   │   │   ├── TransformGizmo.h/cpp   # Modal G/R/S state machine + GizmoAxisDirection
 │   │   │   └── GizmoDrawBuilder.h/cpp # Gizmo state -> GizmoDrawList (pixel-budget guides)
@@ -294,7 +295,7 @@ Neurus/
 │   │   │   ├── ResourceComponent.h/cpp  # ResourceManager pool persistence (registered first)
 │   │   │   ├── UIComponent.h/cpp        # UI-state serialization adapter
 │   │   │   ├── HistoryComponent.h/cpp   # Undo/redo-stack adapter (wraps OperationManager)
-│   │   │   └── EditorComponent.h/cpp    # Editor-state adapter (the editor camera's pool UID; registered last)
+│   │   │   └── EditorComponent.h/cpp    # Editor-state adapter (the viewport camera's pool UID; registered last)
 │   │   ├── registrations/           # cereal polymorphic registration (data resources)
 │   │   │   └── DataRegistration.h/cpp   # MeshData, ImageData (force-init)
 │   │   ├── data/                     # CPU-side data containers (UID-derived pooled resources)
@@ -395,9 +396,10 @@ Qt is stateful, so debug objects are too.
 
 - `DebugLine`, `DebugPoints` and `DebugMesh` are **first-class Scene objects** —
   pooled, serialized and selectable like any Mesh or Light, not per-frame commands.
-- `DebugDrawBuilder` (editor) is the single flattener: it walks the Scene's three
-  debug pools into a `DebugDrawList` on a **dirty flag** (`MarkDirty()` from
-  `RenderResetEvent`, `Rebuild()` at the end of `Editor::Edit()`), never per frame.
+- `DebugDrawBuilder` (owned by `EditorViewport`) is the single flattener: it walks the
+  Scene's three debug pools into a `DebugDrawList` on a **dirty flag**
+  (`MarkOverlaysDirty()` from `RenderResetEvent`, `RebuildOverlays()` at the end of
+  `Editor::Edit()`), never per frame.
   See editor.instructions.md for its partition / revision / world-space contracts.
 - `DebugPass` (renderer) is the single consumer and runs **last, after post-AA**: it draws
   over the final shaded image with `LOAD_OP_LOAD` — `FXAAOutput` when FXAA is on,
@@ -443,9 +445,10 @@ the debug overlay**, deliberately: it is transient editor UI, not scene content.
   never appears in the Outliner. `GizmoDrawBuilder` synthesizes a fresh
   `GizmoDrawList` from `TransformGizmo` state; both share `OverlayGeometry.h`'s
   records with `DebugDrawList` and nothing else.
-- **Two members, one seam** (`Editor`): `m_gizmo` is the state machine (what the
-  gesture *means*), `m_gizmoDraw` is the picture (what it *looks like*). Neither is a
-  controller — `TransformGizmoController` owns the event wiring.
+- **Two members, one seam** (`EditorViewport`): `v_gizmo` is the state machine (what
+  the gesture *means*), `v_gizmoDraw` is the picture (what it *looks like*). Neither is
+  a controller — `TransformGizmoController` owns the event wiring, reaching the state
+  machine through its owner, `ControllerContext::viewport()->Gizmo()`.
 - **Every drag derives from the gesture's snapshot, never from the value written last
   frame.** That is what makes a cursor round trip land on the *exact* starting value
   and what makes re-constraining (`X` → `Y`, or `W` back to screen space) undo the

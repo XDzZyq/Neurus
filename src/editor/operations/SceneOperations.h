@@ -531,8 +531,8 @@ private:
  * UIDs and replays by dispatching one ActiveCameraChanged, so undo and redo run
  * the same controller handler a live toggle does.
  *
- * `0` is a first-class value on both ends: the viewport falls back to the
- * editor camera, which is a normal state and not an error.
+ * `0` is a first-class value on both ends: the viewport falls back to its own
+ * camera, which is a normal state and not an error.
  *
  * PreservesRedo() is deliberately NOT overridden. Unlike navigating the
  * selection, switching the view camera is a real document change, so it

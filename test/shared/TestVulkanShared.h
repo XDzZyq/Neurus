@@ -229,7 +229,7 @@ protected:
 	 * No-op when no scene camera is activated — and nothing is activated by
 	 * default, so `UseCamera()` alone is not enough: a render test must also call
 	 * `Scene::ActivateCamera(uid)`. In the app the viewport looks through the
-	 * Editor's own camera, so "no activated scene camera" is the normal state, not
+	 * viewport's own camera, so "no activated scene camera" is the normal state, not
 	 * a failure the Scene will repair.
 	 */
 	static void PublishSceneCamera(neurus::RenderCache& cache,

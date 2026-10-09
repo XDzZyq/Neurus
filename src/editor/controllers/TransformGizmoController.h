@@ -47,8 +47,8 @@ namespace neurus {
 /**
  * @brief Event handlers for the modal G / R / S transform gesture.
  *
- * Owns no state: the gesture lives in the Editor-owned TransformGizmo reached
- * through ControllerContext::gizmo.
+ * Owns no state: the gesture lives in the TransformGizmo owned by the Editor's
+ * viewport, reached as `ControllerContext::viewport()->Gizmo()`.
  */
 class TransformGizmoController : public Controllers
 {

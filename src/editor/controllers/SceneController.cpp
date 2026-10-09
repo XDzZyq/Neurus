@@ -236,7 +236,7 @@ void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerConte
 void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::ControllerContext& ctx)
 {
 	// Resolved through the resource pool, not scene->cam_list, for the same reason
-	// CameraController::ResolveCamera does: the editor camera is pooled but is not
+	// CameraController::ResolveCamera does: the viewport camera is pooled but is not
 	// scene content, so a cam_list lookup would silently drop every property edit
 	// and every CameraTransformOp/CameraFovOp replay addressed to it.
 	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
@@ -289,7 +289,7 @@ void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::Contr
  * exactly as for every other handler here.
  *
  * Scene::ActivateCamera() refuses a UID that is not in cam_list, which is what
- * keeps the editor camera — pooled, but not scene content — unactivatable. A
+ * keeps the viewport camera — pooled, but not scene content — unactivatable. A
  * refused activation still records nothing, because the snapshot is unchanged.
  *
  * The newly activated camera then needs the viewport's extent: a camera restored
@@ -784,9 +784,9 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
 	if (before.selectedUids.empty()) return;
 
 	// Cameras are deleted like any other object — there is deliberately no
-	// last-camera guard. A camera-less scene is legal: Editor::ViewCamera() falls
-	// back to the editor camera, which is not scene content and cannot be deleted
-	// from here.
+	// last-camera guard. A camera-less scene is legal: EditorViewport::SyncCamera()
+	// falls back to the viewport camera, which is not scene content and cannot be
+	// deleted from here.
 	//
 	// Deselect all, then defer ONE batched removal to the single removal
 	// handler. The composite is light: [selection-clear, batched delete].

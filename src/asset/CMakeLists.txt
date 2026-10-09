@@ -53,5 +53,5 @@ target_compile_features(neurus_asset PUBLIC cxx_std_20)
 # through the project file. That is a reverse asset->editor dependency, confined
 # to that one .cpp; every final binary links neurus_editor alongside neurus_asset,
 # so no extra link target is declared here.
-# components/EditorComponent.cpp does the same for editor/Editor.h (the editor
-# camera's pool UID).
+# components/EditorComponent.cpp does the same for editor/viewport/EditorViewport.h
+# (the viewport camera's pool UID).

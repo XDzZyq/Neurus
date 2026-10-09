@@ -82,7 +82,7 @@ static project::Project MakeProject(Scene& scene, RenderConfig& config, Resource
 /**
  * @test Save an empty project, load it back -- it stays empty. Nothing is
  *       injected to make it renderable: a camera-less scene is legal, because
- *       the viewport looks through the Editor's own camera unless the scene
+ *       the viewport looks through the viewport's own camera unless the scene
  *       names an activated one.
  */
 TEST(ProjectRoundtrip, EmptyScene)

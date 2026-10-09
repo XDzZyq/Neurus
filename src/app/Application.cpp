@@ -106,7 +106,7 @@ static void BuildProject(neurus::project::Project& proj,
 	// throwing). Registration order IS archive read order, so nothing already
 	// written moves when a node is appended here.
 	proj.Register<neurus::project::HistoryComponent>(editor.GetOperations());
-	proj.Register<neurus::project::EditorComponent>(editor);
+	proj.Register<neurus::project::EditorComponent>(editor.GetViewport());
 }
 
 } // anonymous namespace
@@ -225,9 +225,15 @@ int Application::Run()
 	catch (const std::exception& e)
 	{
 		NEURUS_LOG("[Application] Project file not found, creating default: " << e.what());
+		// Same two steps as File > New (OnProjectNew): an empty document, then the
+		// default content. BeginLoad() above reset the scene but deliberately left
+		// the viewport camera uncreated for the file to name, so NewScene() is what
+		// mints it here. The upload waits until after show(), below.
+		app_editor->NewScene();
 		app_editor->CreateDefaultScene(objPath);
 		// Save for future runs (captures the current default UI layout too);
 		// relative res/... paths are stored inside the pooled data resources.
+		// This also rebases the dirty baseline (OnProjectSave -> ClearDirty()).
 		OnProjectSave(projectPath);
 	}
 
@@ -349,12 +355,13 @@ void Application::ResizeViewport(int width, int height)
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 	app_renderer->HandleResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
-	// The Editor needs both extents: logical for every projection query (and for
+	// The viewport needs both extents: logical for every projection query (and for
 	// Camera::cam_w/cam_h), physical for the ID-buffer readback. The physical one is
 	// read back from the renderer AFTER its own resize, so it is the extent the
-	// swapchain actually got rather than the one we asked for.
+	// swapchain actually got rather than the one we asked for. It goes straight to
+	// the EditorViewport — the Editor holds no extent and no camera of its own.
 	const auto extent = app_renderer->GetExtent();
-	app_editor->HandleResize(
+	app_editor->GetViewport().HandleResize(
 		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
 		glm::uvec2{extent.width, extent.height});
 }
@@ -412,9 +419,26 @@ void Application::ApplyTargetFps(int fps)
 
 void Application::OnProjectNew()
 {
-	// Same starter content as a first launch: New is a fresh document, not an
-	// empty one (a camera-less scene is unrenderable - see Editor::NewScene).
-	app_editor->NewScene(kDefaultSceneObj);
+	// File > New is a new *project*, not a new scene, so it is two editor steps:
+	// reset the document to empty, then fill it with the same default content a
+	// first launch gets. Keeping them apart is what lets NewScene() mean "empty"
+	// (no mesh, no light, no camera) while the menu still hands the user
+	// something to look at rather than a black viewport.
+	try
+	{
+		app_editor->NewScene();
+		app_editor->CreateDefaultScene(kDefaultSceneObj);
+		// That content IS the new document's baseline, not an unsaved edit.
+		app_editor->ClearDirty();
+		// The window is long since shown here, so uploading now is safe (unlike the
+		// first-launch path in Run(), which waits until after show()).
+		app_editor->UploadSceneResources();
+	}
+	catch (const std::exception& e)
+	{
+		NEURUS_ERR("Failed to create new project: " << e.what());
+	}
+
 	app_projectPath.clear();
 	// Layout is intentionally left untouched on New; rebase the dirty
 	// baseline so a fresh project isn't reported as having unsaved changes.
@@ -590,7 +614,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		                     // gesture's own GizmoConfirmed still reaches the Editor.
 		                     // Frame-granular and therefore safe: gizmo state only
 		                     // ever changes inside Editor::Edit().
-		                     if (app_editor->IsGizmoActive())
+		                     if (app_editor->GetViewport().IsGizmoActive())
 		                         return;
 
 		                     const auto renderExtent = app_renderer->GetExtent();

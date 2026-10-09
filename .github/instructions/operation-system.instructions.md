@@ -45,7 +45,7 @@ model, coalescing rules, and persistence.
   undoable. Like `SetSelectionOp` it is scene-level (not per-object) state, so it
   derives from `Operation` directly rather than from `TransitionOp`, stores the
   before/after camera UIDs (`0` = no scene camera, which hands the view back to the
-  Editor's own camera), and `Apply()` does `emitNow(ActiveCameraChanged{after})` —
+  viewport's own camera), and `Apply()` does `emitNow(ActiveCameraChanged{after})` —
   the same event the PropertyPanel checkbox emits, so there is no replay-only path.
   `Inverse()` swaps the endpoints. It does NOT override `PreservesRedo()`: changing
   the view camera is a real edit that branches history, unlike selection. The

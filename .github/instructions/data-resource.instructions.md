@@ -87,16 +87,20 @@ lives in `src/asset/`, GPU resource management lives in `src/render/`.
      sourced from `UIManager::ExportLayout()` / applied via `UIManager::ApplyLayout()`),
      plus `HistoryComponent` (undo/redo-stack adapter in asset/components that
      wraps the editor's `OperationManager`) and `EditorComponent` (key `"m_editor"`,
-     carrying the Editor's own camera UID). The last two are registered last, in
+     field `viewportCamUid`, carrying the viewport camera's UID). The last two are
+     registered last, in
      that order, so legacy files without their nodes load cleanly: `HistoryComponent`
      clears the stacks instead of throwing, and `EditorComponent` leaves the uid at
-     `0`, which makes `FinishLoad()` mint a fresh editor camera. Registration order
+     `0`, which makes `FinishLoad()` mint a fresh viewport camera. Registration order
      IS archive read order, so a new component belongs at the end.
-   - **The editor camera is persisted as a uid, not as an object.** The camera
+   - **The viewport camera is persisted as a uid, not as an object.** The camera
      itself is pooled, so `ResourceComponent` already serializes it with everything
-     else; `EditorComponent` records only which pooled camera the Editor claims as
-     its own. Without it the identity is lost and the user's viewpoint snaps back to
-     the default framing on every open.
+     else; `EditorComponent` records only which pooled camera the viewport claims as
+     its own, and binds to `EditorViewport` rather than to `Editor` (which has no
+     camera API). Without it the identity is lost and the user's viewpoint snaps back
+     to the default framing on every open. A file written before the rename carries
+     the field as `editorCamUid`; `Load()` reads either name, as an explicit
+     migration rather than a default.
    - `Scene::serialize` persists selection state alongside the typed object
      pools. Selection is held at runtime as `const ObjectID*` pointers but
      written as UIDs (`selectedUids` + `activeUid`), mirroring `SelectionState`
@@ -107,7 +111,7 @@ lives in `src/asset/`, GPU resource management lives in `src/render/`.
      camera the viewport looks through is written last in both `serialize`
      branches and resolved in `ResolveReferences()` right after
      `ResolvePool<Camera>`: `> 0` is an explicit UID, `0` is *explicitly none*
-     (the normal state — the Editor's own camera takes the view), and `-1` is the
+     (the normal state — the viewport's own camera takes the view), and `-1` is the
      field being *absent*, which migrates once by activating
      `cam_list.begin()->second` so a project saved before the feature still opens
      through the camera it was saved with. The next save writes the field, so the

@@ -125,7 +125,7 @@ struct CameraFovChanged    { int objectUid; float fov; };
 // CameraTransformOp on undo/redo (live navigation carries relative deltas).
 struct CameraPoseChanged   { int objectUid; float posX, posY, posZ, tarX, tarY, tarZ; };
 // Which SCENE camera the viewport looks through; 0 = none, which hands the view
-// back to the Editor's own camera. Scene state, deliberately independent of
+// back to the viewport's own camera. Scene state, deliberately independent of
 // selection. One event for both the PropertyPanel checkbox and SetActiveCameraOp
 // replay. The handler activates/deactivates, records the op only when the value
 // actually changed, and enqueues a CameraResizeEvent for the newly activated

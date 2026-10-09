@@ -101,7 +101,7 @@ no publish.
 
 **A scene camera has to be activated first.** `PublishSceneCamera` reads
 `Scene::GetActiveCamera()`, and **no camera is activated by default** — in the app
-the viewport looks through the Editor's own camera, so "none" is the normal state
+the viewport looks through the viewport's own camera, so "none" is the normal state
 rather than a failure. A test that builds a scene with `UseCamera()` and stops there
 publishes nothing, and `LightingPass`/`SSAOPass`/`ShadowDepthPass`/
 `ShadowIntensityPass` see a null `ctx.editor.camera` and skip their work: a blank or

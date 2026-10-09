@@ -645,7 +645,7 @@ These resources separate GPU ownership from the Vulkan-free scene and asset laye
 shadow-layer / SSBO-index maps and the shadow intensity array derived from them —
 are dropped together by `RenderCache::RemoveSceneResources()`. The Editor calls
 it (after draining the device first) whenever it replaces the scene, i.e. from
-`BeginLoad()` and `CreateDefaultScene()`. Keying by object UID makes this
+`BeginLoad()` and `NewScene()`. Keying by object UID makes this
 necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project
 file, so an entry left behind by the previous scene shadows whatever returns
 under the same id. Screen-space attachments, the pipeline cache and the

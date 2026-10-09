@@ -33,9 +33,9 @@ void SceneComponent::Load(cereal::JSONInputArchive& ar)
 	// SceneComponent); resolve the Scene's pending ID references against it.
 	//
 	// A scene with zero cameras is loaded as-is. Nothing is injected: the viewport
-	// looks through the Editor's own camera unless the scene names an activated one
-	// (Editor::ViewCamera()), so "no camera" is a legal, fully renderable document
-	// rather than a state to repair behind the user's back.
+	// looks through its own camera unless the scene names an activated one
+	// (EditorViewport::SyncCamera()), so "no camera" is a legal, fully renderable
+	// document rather than a state to repair behind the user's back.
 	m_scene->ResolveReferences(*m_resources);
 }
 

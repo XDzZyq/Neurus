@@ -388,7 +388,7 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
  * @brief `UID::o_id` is never defaulted — a pool reference depends on it.
  *
  * Every cross-reference in a project (Scene's ID lists, Mesh::o_meshDataId,
- * the editor camera's UID) is resolved by this number. Defaulting it would
+ * the viewport camera's UID) is resolved by this number. Defaulting it would
  * produce an object that loads cleanly and then fails to resolve, which is far
  * worse to diagnose than a refused load.
  */

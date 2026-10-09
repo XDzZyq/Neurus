@@ -62,7 +62,7 @@ are shared across layers.
 - Contains application logic and scene mutation
 - Owns Controllers (CameraController, TransformGizmoController, ShaderController, SceneController, RenderConfigController) via `src/editor/controllers/`
 - Manages EditorContext (scene + editor state)
-- Owns the **editor camera** — a pooled `Camera` that is not scene content. `Editor::ViewCamera()` returns the activated scene camera when the Scene names one and the editor camera otherwise, and `EditorContext::camera` carries that choice to the renderer, so no pass reads the Scene. A scene with zero cameras is a legal document. See [editor.instructions.md](editor.instructions.md).
+- Owns `EditorViewport`, the viewport composition root — the **viewport camera** (a pooled `Camera` that is not scene content), the debug/gizmo builders and the resize. `EditorViewport::GetCamera()` publishes the activated scene camera when the Scene names one and the viewport camera otherwise, and `EditorContext::camera` carries that choice to the renderer, so no pass reads the Scene. The Editor itself holds no camera and exposes no camera API — only `GetViewport()` and the timing (`SyncCamera` in `Edit()`). A scene with zero cameras is a legal document. See [editor.instructions.md](editor.instructions.md).
 - Owns UIEvents (Qt signals) and EventQueue (typed EventPool)
 - Communicates with Renderer via Context and typed EventQueue
 - Must NOT directly manipulate GPU resources

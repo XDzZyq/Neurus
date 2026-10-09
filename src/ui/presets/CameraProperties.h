@@ -95,7 +95,7 @@ signals:
 	 * @brief Emitted when the activation checkbox is toggled by the user.
 	 *
 	 * @param active True to make this camera the view camera, false to return the
-	 *               view to the editor camera (the Scene's "none" state).
+	 *               view to the viewport's own camera (the Scene's "none" state).
 	 */
 	void activeCameraChanged(int objectId, bool active);
 

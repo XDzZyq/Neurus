@@ -237,15 +237,15 @@ void Editor::Initialize()
 	// --- Keep the viewport's camera pointer alive across a deletion ---
 	// Registered after the controllers, so it runs after SceneController's own
 	// handler has actually removed the object: dispatch is registration-ordered.
-	// Edit() pushes the camera once per frame, but Process() drains re-entrantly
+	// Edit() syncs the camera once per frame, but Process() drains re-entrantly
 	// enqueued events in the same call, so deleting the activated camera mid-Process
 	// would otherwise leave m_viewport holding a dangling pointer for the rest of
-	// that Edit(). Re-pushing resolves to the editor camera, which is why deleting
-	// every scene camera is a legal gesture rather than a black frame.
+	// that Edit(). Re-syncing resolves to the viewport's own camera, which is why
+	// deleting every scene camera is a legal gesture rather than a black frame.
 	// SceneOperations dispatches this event synchronously during undo/redo replay
 	// too, which this handler covers for free.
 	ed_eventBus.subscribe<SceneObjectDeleteRequested>([this](const SceneObjectDeleteRequested&) {
-		m_viewport.SetCamera(ViewCamera());
+		m_viewport.SyncCamera(GetScene());
 	});
 
 	// --- Subscribe to EnvironmentChanged to regenerate IBL cubemaps on demand ---
@@ -273,26 +273,18 @@ void Editor::Initialize()
 		// viewport, not of the scene, and the null-camera return below would
 		// otherwise swallow it. TransformGizmoController does not read it back (it
 		// uses e.position, so it cannot be bitten by registration order) but every
-		// query that does needs it fresh.
+		// query that does needs it fresh. The viewport dirties its own gizmo guide
+		// from here — a live gesture follows the cursor through a pixel budget.
 		m_viewport.SetCursor(e.position);
 
-		// The guide's length and arc radius are fixed *pixel* budgets converted
-		// through PixelsPerWorldUnit(), so the world-space geometry changes with the
-		// cursor even when the state machine has not moved. Gated on IsActive()
-		// because only an armed gesture reads the cursor: the resting handle is
-		// anchored on the object and sized from the camera, so an idle mouse sweep
-		// cannot change it — and a camera move dirties it through RenderResetEvent.
-		if (m_gizmo.IsActive())
-			m_gizmoDraw.MarkDirty();
-
-		auto* cam = ViewCamera();
+		const Camera* cam = m_viewport.GetCamera();
 		if (!cam) return;
 
 		// Orbit is suppressed for the duration of a modal gesture, which also keeps
 		// the drag's anchor math camera-invariant. Reading gizmo state is legitimate
 		// here — it is forbidden only in the KEY handler, where a gate would swallow
 		// an axis key arriving in the same Process() call as its mode key.
-		if (m_gizmo.IsActive()) return;
+		if (m_viewport.IsGizmoActive()) return;
 
 		if (e.middleHeld)
 		{
@@ -315,17 +307,17 @@ void Editor::Initialize()
 		if (e.button == Input::Left)  { ed_eventBus.enqueue(GizmoConfirmed{}); return; }
 		if (e.button == Input::Right) { ed_eventBus.enqueue(GizmoCancelled{}); return; }
 		if (e.button != Input::Middle) return;
-		if (auto* cam = ViewCamera())
+		if (const Camera* cam = m_viewport.GetCamera())
 			ed_eventBus.enqueue(CameraDragBegin{cam->GetObjectID()});
 	});
 	ed_eventBus.subscribe<MouseReleaseEvent>([this](const MouseReleaseEvent& e) {
 		if (e.button != Input::Middle) return;
-		if (auto* cam = ViewCamera())
+		if (const Camera* cam = m_viewport.GetCamera())
 			ed_eventBus.enqueue(CameraDragEnd{cam->GetObjectID()});
 	});
 
 	ed_eventBus.subscribe<MouseScrollEvent>([this](const MouseScrollEvent& e) {
-		auto* cam = ViewCamera();
+		const Camera* cam = m_viewport.GetCamera();
 		if (!cam) return;
 
 		if (std::abs(e.delta) > 0.001f)
@@ -375,14 +367,13 @@ void Editor::Initialize()
 			ed_renderer->ResetShadowAccumulation();
 
 		// Same signal, second consumer: this is the codebase's existing "something
-		// visible changed" broadcast, so it is exactly when the debug overlay may
-		// have gone stale. Marking is O(1); the rebuild happens once in Edit().
-		m_debugDraw.MarkDirty();
-
+		// visible changed" broadcast, so it is exactly when the overlays may have
+		// gone stale. Marking is O(1); the rebuild happens once in Edit().
+		//
 		// The gizmo guide rides the same broadcast, which is what makes it appear on
 		// arm, follow the cursor through a drag, and vanish on confirm or cancel:
 		// every TransformGizmoController handler enqueues a RenderResetEvent.
-		m_gizmoDraw.MarkDirty();
+		m_viewport.MarkOverlaysDirty();
 	});
 
 	// --- Selection moves the resting handle, and selection alone emits no
@@ -396,13 +387,13 @@ void Editor::Initialize()
 	// three paths are covered: a live click, an explicit deselect, and the absolute
 	// set a SetSelectionOp replays on undo/redo.
 	ed_eventBus.subscribe<ObjectSelected>([this](const ObjectSelected&) {
-		m_gizmoDraw.MarkDirty();
+		m_viewport.MarkGizmoDirty();
 	});
 	ed_eventBus.subscribe<ObjectDeselected>([this](const ObjectDeselected&) {
-		m_gizmoDraw.MarkDirty();
+		m_viewport.MarkGizmoDirty();
 	});
 	ed_eventBus.subscribe<SelectionChanged>([this](const SelectionChanged&) {
-		m_gizmoDraw.MarkDirty();
+		m_viewport.MarkGizmoDirty();
 	});
 
 	// --- SceneController GPU-sync + dirty subscriptions ---
@@ -440,23 +431,23 @@ EditorContext Editor::GetContext() const
 	ctx.config = &m_config;
 
 	// The single Editor-side definition of "the camera we are looking through",
-	// pushed at the top of Edit() — the editor camera unless a scene camera is
-	// activated (Editor::ViewCamera()). Publishing it from here rather than letting
-	// the renderer call Scene::GetActiveCamera() is what keeps every pass ignorant
-	// of which of the two it is rendering through.
+	// chosen by EditorViewport::SyncCamera() at the top of Edit() — the viewport's
+	// own camera unless a scene camera is activated. Publishing it from here rather
+	// than letting the renderer call Scene::GetActiveCamera() is what keeps every
+	// pass ignorant of which of the two it is rendering through.
 	ctx.camera = m_viewport.GetCamera();
 
 	// r_debug_draw gates publication rather than graph topology: with a null list
 	// DebugPass returns before touching any image, so toggling the overlay never
 	// rebuilds the RenderGraph.
-	ctx.debugDraw = m_config.RequiresDebugDraw() ? &m_debugDraw.List() : nullptr;
+	ctx.debugDraw = m_config.RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr;
 
 	// Published unconditionally, and deliberately behind no RenderConfig flag:
 	// interaction feedback is not a debug visualization the user may hide. With
 	// nothing selected and nothing armed the builder yields a cleared list rather
 	// than no list (GizmoDrawBuilder's "empty, never null" contract), and GizmoPass
 	// early-outs on an empty payload.
-	ctx.gizmoDraw = &m_gizmoDraw.List();
+	ctx.gizmoDraw = &m_viewport.GizmoList();
 	return ctx;
 }
 
@@ -464,34 +455,59 @@ EditorContext Editor::GetContext() const
 // Scene lifecycle
 // =========================================================================
 
+void Editor::NewScene()
+{
+	try
+	{
+		// The outgoing scene's GPU resources go with it (this drains the device
+		// first). Nothing is uploaded in return: the new scene is empty, and a
+		// caller that adds content uploads once it is done adding.
+		DropSceneGpuResources();
+
+		m_scene = std::make_unique<Scene>();
+		m_resources->Clear();
+		m_config = RenderConfig{};
+		ed_operations.Clear(); // History does not span scenes.
+
+		// The pool just lost the old viewport camera; a new document gets a new one
+		// at the default framing, already adopting the live viewport extent (File >
+		// New has no resize event of its own to piggyback on, and a brand-new Camera
+		// is born 1x1). This is what keeps an empty scene renderable: the viewport
+		// camera is the view, not scene content.
+		m_viewport.ForgetCamera();
+		m_viewport.EnsureCamera(*m_resources);
+		m_viewport.SyncCamera(*m_scene);
+
+		// An empty document is its own saved baseline, not an unsaved edit.
+		m_dirty = false;
+
+		// New scene => the old flattened overlay is stale. Same for the handle: it is
+		// anchored on the outgoing document's selection, and the builder only ever
+		// clears its list inside a dirty Rebuild(), so without this the previous
+		// scene's handle stays on screen at the previous object's position even
+		// though nothing is selected here.
+		m_viewport.MarkOverlaysDirty();
+
+		NEURUS_LOG("[Editor] Created new scene.");
+	}
+	catch (const std::exception& e)
+	{
+		NEURUS_ERR("Failed to create new scene: " << e.what());
+	}
+}
+
 void Editor::CreateDefaultScene(const std::string& objPath)
 {
-	// The outgoing scene's GPU resources go with it (this drains the device
-	// first); UploadSceneResources() uploads this scene's own afterwards.
-	DropSceneGpuResources();
-
-	m_scene = std::make_unique<Scene>();
-	m_resources->Clear();
-	m_config = RenderConfig{};
-
-	// The pool just lost the old editor camera; a new document gets a new one at
-	// the default framing.
-	m_editorCamera.reset();
-	m_editorCamUid = 0;
-	EnsureEditorCamera();
-
 	// The starter scene ships a scene camera as demo content, deliberately left
-	// DEACTIVATED: the viewport looks through the editor camera until the user
+	// DEACTIVATED: the viewport looks through its own camera until the user
 	// activates one. Both start at the same pose, so this is invisible until the
-	// user navigates.
+	// user navigates. It is left at its own 1x1 framing on purpose — a deactivated
+	// camera adopts the viewport extent when it becomes the view camera, not before
+	// (EditorViewport::SyncCamera()).
 	auto camera = m_resources->Load<Camera>();
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 	m_scene->UseCamera(camera);
-	// A brand-new camera is born 1x1; the viewport is not. Adopt the live extent
-	// here so the very first frame of a new document is already framed correctly
-	// (File > New has no resize event of its own to piggyback on).
-	ApplyViewportToViewCamera();
 
 	auto meshData = m_resources->Load<MeshData>(objPath);
 	auto mesh = m_resources->Load<Mesh>(meshData);
@@ -512,13 +528,11 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 
 	AddDefaultDebugObjects(meshData);
 
+	// This mutated a scene, so it is dirty by the same rule as any other edit. A
+	// caller for which this content IS the document's baseline (File > New, first
+	// launch) rebases with ClearDirty().
 	m_dirty = true;
-	m_debugDraw.MarkDirty(); // new scene => the old flattened overlay is stale
-	// Same for the handle: it is anchored on the outgoing document's selection, and
-	// the builder only ever clears its list inside a dirty Rebuild(), so without
-	// this the previous scene's handle stays on screen at the previous object's
-	// position even though nothing is selected here.
-	m_gizmoDraw.MarkDirty();
+	m_viewport.MarkOverlaysDirty();  // the flattened overlay predates these objects
 }
 
 /**
@@ -596,38 +610,6 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	}
 }
 
-void Editor::NewScene(const std::string& objPath)
-{
-	try
-	{
-		ed_operations.Clear(); // History does not span scenes.
-
-		// New builds the SAME starter scene a first launch does (camera, mesh,
-		// light, environment, demo debug objects) instead of an empty one, for
-		// usability rather than correctness: an empty scene renders solid black
-		// with nothing in the outliner to select, which reads as a crash rather
-		// than as a fresh document. (A camera-less scene is perfectly legal — the
-		// editor camera is what the viewport looks through.)
-		// CreateDefaultScene() owns the reset (fresh Scene, pool Clear(),
-		// editor camera, default RenderConfig, MarkDirty()), so it is not
-		// repeated here.
-		CreateDefaultScene(objPath);
-
-		// CreateDefaultScene() marks the scene dirty because it MUTATES a scene;
-		// as the content of a brand-new document it is the saved baseline, not an
-		// unsaved edit (Application rebases its own dirty baseline in step).
-		m_dirty = false;
-
-		NEURUS_LOG("[Editor] Created new scene.");
-
-		UploadSceneResources();
-	}
-	catch (const std::exception& e)
-	{
-		NEURUS_ERR("Failed to create new scene: " << e.what());
-	}
-}
-
 void Editor::BeginLoad()
 {
 	// The outgoing scene's GPU resources go with it (this drains the device
@@ -638,12 +620,11 @@ void Editor::BeginLoad()
 	m_resources->Clear(); // Pool is restored from the project file next.
 	m_config = RenderConfig{};
 	ed_operations.Clear(); // History does not span scenes.
-	// The Clear() above dropped the editor camera. It is NOT re-created here: the
+	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own (EditorComponent restores the uid, the pool
 	// restores the object), and creating one now would leak an orphan into the
 	// pool. FinishLoad() resolves or creates it once the file has been read.
-	m_editorCamera.reset();
-	m_editorCamUid = 0;
+	m_viewport.ForgetCamera();
 	// Application deserializes into GetScene()/GetRenderConfig() before FinishLoad().
 }
 
@@ -655,14 +636,15 @@ void Editor::FinishLoad()
 	// serialize(load). SceneComponent then resolves the scene's ID references.
 	// Nothing mesh/shader-specific is needed here.
 	m_dirty = false;
-	// Resolve the editor camera the project named, or create one for a project
-	// written before it existed. Must precede the aspect fix-up below.
-	EnsureEditorCamera();
-	// The archived aspect belongs to whatever window the project was saved from,
-	// so re-adopt the live one instead of trusting it.
-	ApplyViewportToViewCamera();
-	m_debugDraw.MarkDirty(); // debug objects came back from the project file
-	m_gizmoDraw.MarkDirty(); // and the restored selection anchors a new handle
+	// Resolve the viewport camera the project named, or create one for a project
+	// written before it existed. The archived aspect belongs to whatever window the
+	// project was saved from, so both calls re-adopt the live extent instead of
+	// trusting the file's.
+	m_viewport.EnsureCamera(*m_resources);
+	m_viewport.SyncCamera(*m_scene);
+	// Debug objects came back from the project file, and the restored selection
+	// anchors a new handle.
+	m_viewport.MarkOverlaysDirty();
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
 }
 
@@ -989,185 +971,34 @@ void Editor::UploadLighting()
 }
 
 // =========================================================================
-// HandleResize() 鈥?dispatch CameraResizeEvent via event bus
-// =========================================================================
-
-void Editor::HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent)
-{
-	// Remembered unconditionally, BEFORE the camera check: the extent is a
-	// property of the viewport, not of whatever scene happens to be loaded, and
-	// every later scene (File > New, File > Open) needs it to frame its camera.
-	// EditorViewport is now the one place that holds it.
-	if (logical.x > 0 && logical.y > 0)
-	{
-		m_viewport.SetViewportSize(logical, renderExtent);
-
-		// Constant-pixel guide geometry is a CPU computation against the viewport
-		// height, so a resize changes the world-space guide even mid-gesture.
-		m_gizmoDraw.MarkDirty();
-	}
-
-	// Both view candidates are re-framed, not just the one currently in use:
-	// activation can switch the view camera without a resize in between, and a
-	// camera that missed a resize would then present a stale aspect. The events
-	// carry a UID and CameraController resolves it through the pool, so the editor
-	// camera (pooled, but not scene content) is reachable by the ordinary event.
-	if (m_editorCamera)
-		ed_eventBus.enqueue(CameraResizeEvent{m_editorCamUid,
-		                                      static_cast<int>(logical.x),
-		                                      static_cast<int>(logical.y)});
-
-	if (auto* cam = GetScene().GetActiveCamera())
-		ed_eventBus.enqueue(CameraResizeEvent{cam->GetObjectID(),
-		                                      static_cast<int>(logical.x),
-		                                      static_cast<int>(logical.y)});
-}
-
-// =========================================================================
-// ApplyViewportToViewCamera() 鈥?re-frame the cameras the Editor just seeded
-// =========================================================================
-
-void Editor::ApplyViewportToViewCamera()
-{
-	// Direct mutation rather than a CameraResizeEvent, because this runs while a
-	// scene is being built: the camera must be correctly framed on the FIRST
-	// frame, and the event queue is only drained in the next Edit(). It stays
-	// inside the Editor's own scene, so no layer boundary is crossed.
-	const glm::uvec2 size = m_viewport.Size();
-	if (size.x == 0 || size.y == 0) return; // no viewport yet (startup)
-
-	const float w = static_cast<float>(size.x);
-	const float h = static_cast<float>(size.y);
-
-	if (m_editorCamera)
-		m_editorCamera->ChangeCamRatio(w, h);
-
-	// Same both-cameras reasoning as HandleResize().
-	if (auto* cam = GetScene().GetActiveCamera())
-		cam->ChangeCamRatio(w, h);
-}
-
-// =========================================================================
-// EnsureEditorCamera() 鈥?the viewport's own camera, pooled but not in the scene
-// =========================================================================
-
-void Editor::EnsureEditorCamera()
-{
-	if (m_editorCamUid != 0)
-	{
-		m_editorCamera = m_resources->Get<Camera>(m_editorCamUid);
-		if (m_editorCamera) return; // loaded project: keep the saved pose
-	}
-
-	// No id, or an id the pool does not know (a project written before the editor
-	// camera was persisted). Create one at the default framing.
-	m_editorCamera = m_resources->Load<Camera>();
-	m_editorCamUid = m_editorCamera->GetObjectID();
-	m_editorCamera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
-	m_editorCamera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	NEURUS_LOG("[Editor] Editor camera created (UID " << m_editorCamUid << ")");
-}
-
-// =========================================================================
-// ViewCamera() 鈥?editor camera by default, activated scene camera when named
-// =========================================================================
-
-Camera* Editor::ViewCamera()
-{
-	if (Camera* sceneCam = GetScene().GetActiveCamera())
-		return sceneCam;
-	return m_editorCamera.get();
-}
-
-const Camera* Editor::ViewCamera() const
-{
-	if (const Camera* sceneCam = m_scene->GetActiveCamera())
-		return sceneCam;
-	return m_editorCamera.get();
-}
-
-// =========================================================================
 // Edit() 鈥?process all enqueued events (called from newFrame)
 // =========================================================================
 
 void Editor::Edit()
 {
-	// Pushed BEFORE the queue is drained, and every frame rather than on change:
-	// the gizmo's projection math and the renderer's CameraGPU both read this one
-	// pointer, so they cannot disagree about which camera the frame belongs to. The
-	// SceneObjectDeleteRequested subscription re-pushes it mid-Process, since
-	// Process() can delete the activated camera within this very call.
-	m_viewport.SetCamera(ViewCamera());
+	// Chosen BEFORE the queue is drained, and every frame rather than on change: the
+	// gizmo's projection math and the renderer's CameraGPU both read the viewport's
+	// one published pointer, so they cannot disagree about which camera the frame
+	// belongs to. The SceneObjectDeleteRequested subscription re-syncs it mid-Process,
+	// since Process() can delete the activated camera within this very call.
+	m_viewport.SyncCamera(GetScene());
 
 	ed_eventBus.Process();
 
-	// Pushed AGAIN, because the drain above can have changed which camera the frame
+	// Chosen AGAIN, because the drain above can have changed which camera the frame
 	// belongs to: activating or deactivating a scene camera, or deleting the
 	// activated one, all land inside Process(). The gizmo rebuild below projects and
-	// sizes its geometry through this viewport, and it runs at most once per dirty
+	// sizes its geometry through the viewport, and it runs at most once per dirty
 	// flag — so rebuilding against the camera the frame STARTED with would leave the
 	// handle at the previous camera's scale and screen position until something else
 	// happened to dirty it.
-	m_viewport.SetCamera(ViewCamera());
+	m_viewport.SyncCamera(GetScene());
 
-	// After the queue is drained, so a scene change and its debug-overlay
-	// consequences land in the same frame. Returns immediately when clean, which
-	// is the common case: debug objects are stateful and rarely move.
+	// After the queue is drained, so a scene change and its overlay consequences land
+	// in the same frame. Which overlays are dirty, what they anchor on and what they
+	// cost are all viewport questions — the Editor's part is only the timing.
 	if (m_scene)
-		m_debugDraw.Rebuild(*m_scene);
-
-	// Same timing, same dirty-flag discipline. The anchor is always the *live* transform
-	// — of the gesture's target while one is armed, of the selection's active object
-	// otherwise. Passing the transform in rather than handing the builder a Scene keeps
-	// it a pure geometry flattener, and leaves it to decide which parts of the live
-	// transform a gesture may follow (see GizmoDrawBuilder::Rebuild).
-	TransformSnapshot anchor{};
-	m_gizmoDraw.Rebuild(m_gizmo, m_viewport, GizmoAnchor(anchor) ? &anchor : nullptr);
-}
-
-bool Editor::GizmoAnchor(TransformSnapshot& out) const
-{
-	if (!m_scene)
-		return false;
-
-	// An armed gesture names its own target by uid, which need not still be the active
-	// object: the Outliner can change the selection mid-gesture, and following that
-	// would tear the guide off the object actually being transformed.
-	if (m_gizmo.IsActive())
-	{
-		ObjectID* obj = m_scene->GetObjectID(m_gizmo.ObjectUid());
-		if (!obj)
-			return false;  // deleted mid-gesture; the builder falls back to the snapshot
-
-		void* transform = obj->GetTransform();
-		if (!transform)
-			return false;
-
-		const auto* t = static_cast<const Transform3D*>(transform);
-		out.position = t->GetPosition();
-		out.rotation = t->GetRotation();
-		out.scale = t->GetScale();
-		return true;
-	}
-
-	// The active object, not the whole selection: the gesture itself is active-object
-	// only (TransformGizmo holds a single uid), so a second handle would promise a
-	// multi-object transform that does not exist.
-	const ObjectID* obj = m_scene->selections.GetActiveObject();
-	if (!obj)
-		return false;
-
-	// dynamic_cast rather than ObjectID::GetTransform(), for the same reason
-	// EditorViewport::ScreenPosition() does it: the virtual is non-const and hands back
-	// a void* typed as the Transform base, while the selection stores const ObjectID*.
-	const auto* transform = dynamic_cast<const Transform3D*>(obj);
-	if (!transform)
-		return false;  // an object with no spatial transform has nothing to anchor on
-
-	out.position = transform->GetPosition();
-	out.rotation = transform->GetRotation();
-	out.scale = transform->GetScale();
-	return true;
+		m_viewport.RebuildOverlays(*m_scene);
 }
 
 } // namespace neurus

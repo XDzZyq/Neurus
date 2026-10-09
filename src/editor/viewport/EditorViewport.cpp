@@ -1,9 +1,11 @@
 /**
  * @file EditorViewport.cpp
- * @brief Implementation of the editor's world <-> screen projection service.
+ * @brief Implementation of the editor's viewport: camera, screen space, overlays.
  *
- * The only subtle part is ProjectBox's near-plane handling, and it is subtle in a
- * way that is easy to get wrong silently — see ClipBoxEdges below.
+ * The camera and overlay halves are deliberately thin — a lifecycle against the
+ * resource pool and four forwarding calls. The only subtle part is ProjectBox's
+ * near-plane handling, and it is subtle in a way that is easy to get wrong
+ * silently — see ClipBoxEdges below.
  */
 
 #include "editor/viewport/EditorViewport.h"
@@ -12,8 +14,11 @@
 #include <array>
 #include <cmath>
 
+#include "core/Log.h"
+#include "core/ResourceManager.h"
 #include "scene/Camera.h"
 #include "scene/ObjectID.h"
+#include "scene/Scene.h"
 #include "scene/Transform.h"
 
 namespace neurus
@@ -60,8 +65,103 @@ glm::vec2 PixelOf(const glm::vec4& clip, const glm::vec2& size)
 } // namespace
 
 // ---------------------------------------------------------------------------
+// The viewport camera
+// ---------------------------------------------------------------------------
+
+void EditorViewport::EnsureCamera(ResourceManager& pool)
+{
+	if (v_camUid != 0)
+	{
+		v_camera = pool.Get<Camera>(v_camUid);
+		if (v_camera)
+		{
+			// A loaded project: the pose is the user's, so only the framing is
+			// (re-)applied. The extent is a property of this window, never of the file.
+			FrameCamera(v_camera.get());
+			return;
+		}
+	}
+
+	// No id, or an id this pool does not know (a project written before the viewport
+	// camera was persisted). Mint one at the default framing.
+	v_camera = pool.Load<Camera>();
+	v_camUid = v_camera->GetObjectID();
+	v_camera->SetPosition(kDefaultEye);
+	v_camera->SetTarPos(kDefaultTarget);
+
+	// Framed here rather than waiting for the next SyncCamera(), because a scene can
+	// be built and queried before any frame is drawn: a fresh Camera is 1x1, and a
+	// projection against that is squashed rather than merely unframed.
+	FrameCamera(v_camera.get());
+
+	NEURUS_LOG("[Viewport] Viewport camera created (UID " << v_camUid << ")");
+}
+
+void EditorViewport::ForgetCamera()
+{
+	v_camera.reset();
+	v_camUid = 0;
+
+	// The published pointer went with it. Leaving it would hand the next frame a
+	// camera the pool has already dropped.
+	p_camera = nullptr;
+}
+
+void EditorViewport::SyncCamera(Scene& scene)
+{
+	Camera* sceneCam = scene.GetActiveCamera();
+
+	// The activated scene camera wins; the viewport's own is the fallback. Note that
+	// this is activation, not selection — selecting a camera leaves the view alone.
+	p_camera = sceneCam ? static_cast<const Camera*>(sceneCam)
+	                    : static_cast<const Camera*>(v_camera.get());
+
+	// Both candidates, not just the chosen one: activation can switch the view with
+	// no resize in between, and a camera that missed one would present a stretched
+	// image the moment it took over. A *deactivated* scene camera is left alone — it
+	// picks the extent up when it becomes the view camera.
+	FrameCamera(v_camera.get());
+	FrameCamera(sceneCam);
+}
+
+void EditorViewport::FrameCamera(Camera* cam) const
+{
+	if (!cam) return;
+	if (v_logical.x == 0u || v_logical.y == 0u) return; // no viewport yet (startup)
+
+	const float w = static_cast<float>(v_logical.x);
+	const float h = static_cast<float>(v_logical.y);
+
+	// Guarded on an actual change: ChangeCamRatio() recomputes the projection, and
+	// this runs twice per frame for both candidates.
+	if (cam->cam_w == w && cam->cam_h == h) return;
+
+	cam->ChangeCamRatio(w, h);
+}
+
+// ---------------------------------------------------------------------------
 // Mutators
 // ---------------------------------------------------------------------------
+
+void EditorViewport::HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent)
+{
+	// A zero extent is dropped rather than stored: it is what the window reports
+	// before it is first shown, and it would divide by zero in the projection. The
+	// previous extent is a better answer than none.
+	if (logical.x == 0u || logical.y == 0u) return;
+
+	SetViewportSize(logical, renderExtent);
+
+	// Immediately, not via the event queue: a resize must be in effect for the frame
+	// that follows it, and the queue is only drained in the next Edit(). The
+	// activated scene camera, which needs a Scene to find, is re-framed by the next
+	// SyncCamera() — which runs before any draw.
+	FrameCamera(v_camera.get());
+
+	// Constant-pixel guide geometry is a CPU computation against the viewport
+	// height, so a resize changes the world-space guide even mid-gesture.
+	v_gizmoDraw.MarkDirty();
+}
 
 void EditorViewport::SetViewportSize(glm::uvec2 logical, glm::uvec2 renderExtent)
 {
@@ -77,6 +177,74 @@ void EditorViewport::SetCamera(const Camera* cam)
 void EditorViewport::SetCursor(glm::vec2 logicalPixel)
 {
 	v_cursor = logicalPixel;
+
+	// Only while a gesture is live: the guide follows the cursor through a pixel
+	// budget, so its world-space geometry changes even when nothing else did. A
+	// resting handle is anchored on the object, so an idle mouse sweep must not
+	// rebuild it on every motion event.
+	if (v_gizmo.IsActive())
+		v_gizmoDraw.MarkDirty();
+}
+
+// ---------------------------------------------------------------------------
+// Overlays
+// ---------------------------------------------------------------------------
+
+void EditorViewport::RebuildOverlays(const Scene& scene)
+{
+	// Returns immediately when clean, which is the common case: debug objects are
+	// stateful and rarely move.
+	v_debugDraw.Rebuild(scene);
+
+	// The anchor is always the *live* transform — of the gesture's target while one
+	// is armed, of the selection's active object otherwise. Passing the transform in
+	// rather than handing the builder a Scene keeps it a pure geometry flattener,
+	// and leaves it to decide which parts of the live transform a gesture may follow
+	// (see GizmoDrawBuilder::Rebuild).
+	TransformSnapshot anchor{};
+	const bool hasAnchor = GizmoAnchor(scene, anchor);
+	v_gizmoDraw.Rebuild(v_gizmo, *this, hasAnchor ? &anchor : nullptr);
+}
+
+void EditorViewport::MarkOverlaysDirty()
+{
+	v_debugDraw.MarkDirty();
+	v_gizmoDraw.MarkDirty();
+}
+
+void EditorViewport::MarkGizmoDirty()
+{
+	v_gizmoDraw.MarkDirty();
+}
+
+bool EditorViewport::GizmoAnchor(const Scene& scene, TransformSnapshot& out) const
+{
+	// An armed gesture names its own target by uid, which need not still be the
+	// active object: the Outliner can change the selection mid-gesture, and
+	// following that would tear the guide off the object actually being transformed.
+	const ObjectID* obj = v_gizmo.IsActive() ? scene.GetObjectID(v_gizmo.ObjectUid())
+	                                         // The active object, not the whole
+	                                         // selection: the gesture itself is
+	                                         // active-object only (TransformGizmo
+	                                         // holds a single uid), so a second
+	                                         // handle would promise a multi-object
+	                                         // transform that does not exist.
+	                                         : scene.selections.GetActiveObject();
+	if (!obj)
+		return false;  // nothing selected, or deleted mid-gesture (the builder then
+		               // falls back to the gesture's own snapshot)
+
+	// dynamic_cast rather than ObjectID::GetTransform(), for the same reason
+	// ScreenPosition() does it: the virtual is non-const and hands back a void*
+	// typed as the Transform base, while both lookups above are const.
+	const auto* transform = dynamic_cast<const Transform3D*>(obj);
+	if (!transform)
+		return false;  // an object with no spatial transform has nothing to anchor on
+
+	out.position = transform->GetPosition();
+	out.rotation = transform->GetRotation();
+	out.scale    = transform->GetScale();
+	return true;
 }
 
 // ---------------------------------------------------------------------------

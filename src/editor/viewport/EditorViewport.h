@@ -1,6 +1,7 @@
 /**
  * @file EditorViewport.h
- * @brief Editor-layer world <-> screen space service for the 3D viewport.
+ * @brief The editor's viewport: the camera it looks through, the world <-> screen
+ *        conversions that camera defines, and the overlays drawn over it.
  *
  * One object answers every "where is this on screen" and "what is under the
  * cursor" question in the editor. Before it existed, that knowledge was spread
@@ -8,20 +9,36 @@
  * multiply in the Application's pick path, and whatever each caller derived from
  * Scene::GetActiveCamera() — three places that could disagree.
  *
- * Two future features shaped this API more than the transform gizmo did:
+ * ## It owns the viewport camera, so the Editor knows nothing about one
  *
- *   1. The viewport will own a free camera instead of borrowing the Scene's
- *      active one. That is why the camera is *pushed in* per frame rather than
- *      fetched from a Scene, and why GetCamera() exists: it is the single
- *      Editor-side definition of "the camera we are looking through", consumed by
- *      the gizmo and republished to the renderer through EditorContext::camera.
- *      Swapping in a viewport-owned camera changes one function body.
- *   2. The viewport will answer object queries (screen position, screen bounding
- *      box). Those are free functions below rather than members, so the class
- *      stays ignorant of scene types and testable against a bare Camera.
+ * The viewport camera is created and kept here: pooled in the ResourceManager (so
+ * it is serialized with the pool, and CameraController resolves it by UID like any
+ * other camera) but deliberately NOT scene content — it never enters
+ * Scene::cam_list, so it cannot be selected, deleted or activated. That is what
+ * makes a scene with zero cameras a legal, fully renderable document.
  *
- * Layer placement: editor, Vulkan-free and Qt-free. It reads Camera (scene layer)
- * and nothing else.
+ * Which camera a frame is rendered through is a viewport question, not an Editor
+ * one: SyncCamera() takes the scene's *activated* camera when it names one and the
+ * viewport's own otherwise, and GetCamera() is the single answer everything else
+ * reads — the gizmo's projection math, every pick, and EditorContext::camera.
+ *
+ * ## It owns the overlays, for the same reason
+ *
+ * DebugDrawBuilder, TransformGizmo and GizmoDrawBuilder all compute against this
+ * camera and this extent — a fixed *pixel* budget means nothing without them. They
+ * are members here and keep their own single responsibilities: this class is their
+ * composition root, not their implementation, which is why the surface it adds for
+ * them is four forwarding calls and two list accessors.
+ *
+ * The one thing it does NOT own is the Scene. That arrives as a parameter to the
+ * two per-frame calls that need it, so nothing here dangles across File > New or
+ * File > Open and the class stays ignorant of what a scene contains.
+ *
+ * The second feature that shaped this API: object queries (screen position, screen
+ * bounding box) are free functions below rather than members, so the class stays
+ * ignorant of scene types and is testable against a bare Camera.
+ *
+ * Layer placement: editor, Vulkan-free and Qt-free.
  *
  * ## Everything here is in LOGICAL pixels
  *
@@ -51,13 +68,21 @@
 
 #pragma once
 
+#include <memory>
+
 #include <glm/glm.hpp>
+
+#include "editor/viewport/DebugDrawBuilder.h"
+#include "editor/viewport/GizmoDrawBuilder.h"
+#include "editor/viewport/TransformGizmo.h"
 
 namespace neurus
 {
 
 class Camera;
 class ObjectID;
+class ResourceManager;
+class Scene;
 
 /**
  * @brief A world point projected to the screen.
@@ -130,13 +155,17 @@ struct ScreenRay
 };
 
 /**
- * @brief World <-> screen projection service for the editor's 3D viewport.
+ * @brief The editor's 3D viewport: its camera, its screen space, its overlays.
  *
- * The public surface is wide (three setters, five trivial accessors, four
- * queries) but the responsibility is single: convert between world space and this
- * viewport's screen space. The setters are the Editor's alone — the same contract
- * the mutable Scene and RenderConfig providers in ControllerContext already carry
- * — which is why controllers receive a `const EditorViewport*`.
+ * The surface is wide because the viewport is where several thin things meet — a
+ * camera lifecycle, an extent, a cursor, four projection queries and three overlay
+ * collaborators — but each of them is a one-liner over a member that keeps its own
+ * single responsibility. What the class itself implements is only the world <->
+ * screen conversion.
+ *
+ * The mutators are the Editor's alone — the same contract the mutable Scene and
+ * RenderConfig providers in ControllerContext already carry — which is why
+ * controllers receive a `const EditorViewport*`.
  */
 class EditorViewport
 {
@@ -155,9 +184,109 @@ public:
 	 */
 	static constexpr float kGuardBandViewports = 4.0f;
 
+	/// @brief Where a freshly minted viewport camera stands, and what it looks at.
+	static constexpr glm::vec3 kDefaultEye{0.0f, -5.0f, 2.0f};
+	static constexpr glm::vec3 kDefaultTarget{0.0f, 0.0f, 0.0f};
+
+	EditorViewport() = default;
+
+	EditorViewport(const EditorViewport&) = delete;
+	EditorViewport& operator=(const EditorViewport&) = delete;
+
+	// -----------------------------------------------------------------------
+	// The viewport camera — pooled, never scene content
+	// -----------------------------------------------------------------------
+
+	/**
+	 * @brief Resolves, or creates, the viewport camera in the resource pool.
+	 *
+	 * Must run after every ResourceManager::Clear() — the pool owns the camera, so
+	 * a clear drops it. When the stored UID resolves to a pooled Camera (a loaded
+	 * project) the saved pose is kept; otherwise a new pooled camera is created at
+	 * kDefaultEye/kDefaultTarget, already framed to the current extent.
+	 *
+	 * The pool is a parameter rather than a stored reference: these two calls are
+	 * the only place the viewport needs one, and a member would have to be wired up
+	 * before anything could project a point.
+	 */
+	void EnsureCamera(ResourceManager& pool);
+
+	/**
+	 * @brief Drops the camera and its UID, because the pool that owned it was cleared.
+	 *
+	 * The scene-swap paths call this before ResourceManager::Clear() mints anything
+	 * new. Keeping the stale UID instead would resolve, after a reload, to whatever
+	 * object the pool later hands that id to.
+	 */
+	void ForgetCamera();
+
+	/**
+	 * @brief The viewport camera's pool UID (0 before the first scene exists).
+	 *
+	 * The Application registers a project::EditorComponent against this pair so the
+	 * viewport camera's identity survives save/load. The camera *object* needs no
+	 * help: it lives in the ResourceManager pool, which is serialized whole.
+	 */
+	int CameraID() const { return v_camUid; }
+
+	/**
+	 * @brief Restores the viewport camera's UID from a project file.
+	 *
+	 * Only records the id — the next EnsureCamera() resolves it against the pool
+	 * (and creates a fresh camera when the id names nothing, e.g. a project written
+	 * before this field existed).
+	 */
+	void RestoreCameraID(int uid) { v_camUid = uid; }
+
+	/**
+	 * @brief The viewport's own camera, or nullptr before EnsureCamera().
+	 *
+	 * Distinct from GetCamera(), which is whichever camera the current frame is
+	 * rendered through — the two differ exactly while a scene camera is activated.
+	 */
+	Camera* ViewportCamera() { return v_camera.get(); }
+	const Camera* ViewportCamera() const { return v_camera.get(); }
+
+	/**
+	 * @brief Chooses the camera this frame is rendered through, and frames it.
+	 * @param scene Read for its *activated* camera only; never retained.
+	 *
+	 * The scene's activated camera wins, the viewport's own is the fallback — which
+	 * is the whole of "an activated scene camera takes the view". Selection has
+	 * nothing to do with it: selecting a scene camera does not change the view.
+	 *
+	 * Both candidates are brought up to the current extent, not just the one chosen:
+	 * activation can switch the view with no resize in between, and a camera that
+	 * missed one would present a stretched image the moment it took over. A
+	 * *deactivated* scene camera is deliberately left alone — it adopts the extent
+	 * when it becomes the view camera, not before.
+	 *
+	 * Called at the top of Editor::Edit() and again after the event queue drains,
+	 * because activating, deactivating or deleting a camera all land inside that
+	 * drain.
+	 */
+	void SyncCamera(Scene& scene);
+
 	// -----------------------------------------------------------------------
 	// Mutators — Editor only
 	// -----------------------------------------------------------------------
+
+	/**
+	 * @brief Takes a viewport resize: the new extents, in both units.
+	 * @param logical      Widget size in logical (Qt) pixels.
+	 * @param renderExtent Swapchain size in physical pixels.
+	 *
+	 * The entry point for the resize event, as opposed to SetViewportSize() which is
+	 * the bare setter underneath it: this also re-frames the viewport camera
+	 * immediately (so a resize needs no frame to take effect) and dirties the gizmo
+	 * guide, whose geometry is a pixel budget against the viewport height. A
+	 * zero-sized extent is ignored rather than stored — it would divide by zero in
+	 * the projection, and it is what the window reports before it is first shown.
+	 *
+	 * The activated scene camera, if any, is re-framed by the next SyncCamera():
+	 * that one needs a Scene and runs before any draw.
+	 */
+	void HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent);
 
 	/**
 	 * @brief Sets both viewport extents.
@@ -171,26 +300,88 @@ public:
 	void SetViewportSize(glm::uvec2 logical, glm::uvec2 renderExtent);
 
 	/**
-	 * @brief Publishes the camera to look through for the coming frame.
+	 * @brief Publishes a camera to look through directly, bypassing SyncCamera().
 	 * @param cam Borrowed, not owned; nullptr is legal and makes every query invalid.
 	 *
-	 * Pushed every frame rather than held long-term, because the pointed-at camera
-	 * can be deleted between frames. Nothing here outlives one frame's use.
+	 * The primitive SyncCamera() is built on, and the way to point a viewport at a
+	 * camera when there is no Scene to choose from — a projection query needs
+	 * nothing else. Borrowed rather than held: the pointed-at camera can be deleted
+	 * between frames, so nothing here outlives one frame's use.
 	 */
 	void SetCamera(const Camera* cam);
 
-	/// @brief Records the latest cursor position, in logical pixels.
+	/**
+	 * @brief Records the latest cursor position, in logical pixels.
+	 *
+	 * Dirties the gizmo guide while a gesture is live: the guide's length and arc
+	 * radius are fixed *pixel* budgets converted through PixelsPerWorldUnit(), so
+	 * the world-space geometry changes with the cursor even when the state machine
+	 * has not moved. A resting handle is anchored on the object and sized from the
+	 * camera, so an idle mouse sweep cannot change it.
+	 */
 	void SetCursor(glm::vec2 logicalPixel);
+
+	// -----------------------------------------------------------------------
+	// Overlays — the debug flattener and the gizmo
+	// -----------------------------------------------------------------------
+
+	/**
+	 * @brief Rebuilds both overlay payloads if they are dirty.
+	 * @param scene Walked for debug objects and for the gizmo's anchor; never retained.
+	 *
+	 * Runs at the end of Editor::Edit(), after the event queue drains, so a scene
+	 * change and its overlay consequences land in the same frame. Returns almost
+	 * immediately when clean, which is the common case.
+	 */
+	void RebuildOverlays(const Scene& scene);
+
+	/**
+	 * @brief Marks both overlays stale: something visible changed.
+	 *
+	 * Driven by RenderResetEvent — the codebase's existing "something visible
+	 * changed" broadcast — and by every scene swap. Marking is O(1); the rebuild
+	 * happens once, in RebuildOverlays().
+	 */
+	void MarkOverlaysDirty();
+
+	/**
+	 * @brief Marks only the gizmo guide stale.
+	 *
+	 * Its geometry depends on more than scene content: a selection change moves the
+	 * resting handle, and a camera or extent change rescales a pixel budget.
+	 */
+	void MarkGizmoDirty();
+
+	/// @brief The flattened debug overlay, published through EditorContext::debugDraw.
+	const DebugDrawList& DebugList() const { return v_debugDraw.List(); }
+
+	/// @brief The gizmo guide geometry, published through EditorContext::gizmoDraw.
+	const GizmoDrawList& GizmoList() const { return v_gizmoDraw.List(); }
+
+	/// @brief The modal transform state machine, for TransformGizmoController to drive.
+	TransformGizmo& Gizmo() { return v_gizmo; }
+
+	/**
+	 * @brief True while a modal transform gesture is live.
+	 *
+	 * Read by the Application to gate the viewport's selection pick: a confirming
+	 * LMB click must not also re-select whatever is under the cursor, and must not
+	 * pay that path's queue.waitIdle ID-buffer readback. Frame-granular and
+	 * therefore safe, since gizmo state only ever changes inside Editor::Edit().
+	 */
+	bool IsGizmoActive() const { return v_gizmo.IsActive(); }
 
 	// -----------------------------------------------------------------------
 	// Accessors
 	// -----------------------------------------------------------------------
 
 	/**
-	 * @brief The camera this viewport looks through, or nullptr.
+	 * @brief The camera this frame is rendered through, or nullptr.
 	 *
-	 * The seam the planned free camera replaces. Everything editor-side that needs
-	 * a camera goes through here instead of Scene::GetActiveCamera().
+	 * The viewport's own camera unless a scene camera is activated (SyncCamera()).
+	 * Everything editor-side that needs a camera goes through here instead of
+	 * Scene::GetActiveCamera(), which is what keeps every consumer — the gizmo, the
+	 * picks, every render pass — ignorant of which of the two it has.
 	 */
 	const Camera* GetCamera() const { return p_camera; }
 
@@ -268,8 +459,34 @@ public:
 	                      const glm::vec3& localMax) const;
 
 private:
-	/// @brief Borrowed camera, re-pushed every frame. Never owned.
+	/**
+	 * @brief Fills @p out with the transform the gizmo handle should sit on.
+	 * @return False when there is nothing to draw a handle for.
+	 *
+	 * Two sources, in order: the armed object (the gesture owns it by UID, and its
+	 * transform keeps moving while the drag runs) and otherwise the active
+	 * selection. The UID path cannot be replaced by the selection one — a gesture
+	 * survives a selection change, and reading the selection mid-drag would move
+	 * the handle to a different object.
+	 */
+	bool GizmoAnchor(const Scene& scene, TransformSnapshot& out) const;
+
+	/// @brief Brings one camera up to the current logical extent, if it needs it.
+	void FrameCamera(Camera* cam) const;
+
+	/// @brief Borrowed camera this frame renders through. Never owned.
 	const Camera* p_camera = nullptr;
+
+	/**
+	 * @brief The viewport's own camera, owned jointly with the ResourceManager pool.
+	 *
+	 * A shared_ptr because the pool hands out shared ownership; the pool is what
+	 * serializes it, and a Clear() there is why ForgetCamera()/EnsureCamera() exist.
+	 */
+	std::shared_ptr<Camera> v_camera;
+
+	/// @brief The pool UID of v_camera; 0 when there is none. Survives save/load.
+	int v_camUid = 0;
 
 	/// @brief Logical (Qt) viewport size; the unit of every query result.
 	glm::uvec2 v_logical{0u, 0u};
@@ -279,6 +496,15 @@ private:
 
 	/// @brief Last cursor position in logical pixels.
 	glm::vec2 v_cursor{0.0f};
+
+	/// @brief Scene debug objects, flattened on a dirty flag into one payload.
+	DebugDrawBuilder v_debugDraw;
+
+	/// @brief The modal G/R/S state machine: what the gesture means.
+	TransformGizmo v_gizmo;
+
+	/// @brief The gizmo's picture, derived from v_gizmo and this viewport.
+	GizmoDrawBuilder v_gizmoDraw;
 };
 
 // ---------------------------------------------------------------------------

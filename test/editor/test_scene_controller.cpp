@@ -365,7 +365,7 @@ TEST_F(SceneControllerTest, DeleteRequested_MultiSelection_RemovesAllAndRestores
 /**
  * @test Deleting the scene's only camera is allowed. There is no last-camera
  *       guard: a camera-less scene is a legal document, because the viewport
- *       looks through the Editor's own camera unless a scene camera is
+ *       looks through the viewport's own camera unless a scene camera is
  *       activated. The deletion is one undoable entry like any other, and the
  *       stale activation resolves to nullptr rather than to a dangling camera.
  */
