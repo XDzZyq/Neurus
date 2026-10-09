@@ -463,8 +463,13 @@ the debug overlay**, deliberately: it is transient editor UI, not scene content.
   camera's scale.
 - **One gesture is exactly one undo entry** (or none when nothing moved) — see
   operation-system.instructions.md. The drag writes `Transform3D` directly and
-  records nothing, so the controller must emit `SceneModified` + `RenderResetEvent`
-  itself, plus `LightGpuChanged` for a light.
+  records nothing, so the controller notifies for itself — through `neurus::notify`
+  (`src/editor/controllers/MutationNotify.h`), the mutation policy it **shares** with
+  `SceneController`, so the two paths to the same mutation cannot drift. Two tiers:
+  a drag frame is `ObjectPreviewed` (cheap light sync + repaint, and never
+  `SceneModified` — that flag is one-way, so a cancelled gesture must not set it),
+  a confirm is `ObjectMutated` (dirty + the full light-dict rebuild). The cancel path
+  is itself a preview, which is why a whole G-drag-Esc round trip leaves no trace.
 - **`GizmoPass` runs last, after `DebugPass`,** into the same post-AA image with
   `LOAD_OP_LOAD` and **no depth attachment at all** — every guide is unconditionally
   x-ray, so there is no partition and exactly two draws. See
@@ -519,16 +524,39 @@ Multiple parallel subagents can race on `cmake --build` or launching
    let the master agent handle it.
 5. **Never use `git stash` while editing files**
 
-**Test working directory**: CTest runs every test with `WorkingDirectory = build/`
-— `test/CMakeLists.txt` pins `gtest_discover_tests(WORKING_DIRECTORY
-"${CMAKE_BINARY_DIR}")` so `res/` (copied there by a POST_BUILD step) always
-resolves relative to the CWD. The binary itself lives one level down, in the
-per-config directory the multi-config generator picks (`build/Debug/neurus_test`
-on CI, `build/debug/neurus_test` locally). So run `ctest` from `build/`, or if
-you launch the binary directly, `cd build` first and invoke it by path —
-launching it from its own directory makes `res/` unresolvable and can write
-stale reference images to the wrong path (e.g.
-`D:\Projects\test\render\reference\`).
+### Two build trees exist, and only one of them is live
+
+`cmake --preset macos` and CI configure `build/` as a **Ninja Multi-Config** tree.
+The tree local work actually builds is the **single-config** `build/debug`
+(`CMAKE_BUILD_TYPE=Debug`) — the one rule 1 above names. They are separate trees
+with separate test discovery, so a command aimed at the wrong one does not fail,
+it answers about a different codebase:
+
+| tree | generator | run its tests with | binaries |
+|------|-----------|--------------------|----------|
+| `build/debug` | `Ninja` (single-config) | `cd build/debug && ctest` | `build/debug/Neurus`, `build/debug/neurus_test` |
+| `build/` | `Ninja Multi-Config` | `cd build && ctest -C Debug` | `build/Debug/...` per config |
+
+**A bare `ctest` in `build/` prints `Total Tests: 0` and exits 0.** A multi-config
+tree has no tests without `-C`, so that run is a green that executed nothing —
+and a stale `-C Debug` run is worse, because it reports a plausible pass count
+from whatever its last configure saw (841 here, from September, against the live
+tree's 946). Always verify from `build/debug`, and read an unexpected suite total
+as "wrong tree", not as tests that disappeared.
+
+macOS filesystems are case-insensitive by default, so the Multi-Config tree's
+Debug output directory `build/Debug` **is** `build/debug`, the single-config
+tree's root. Re-running `cmake --preset macos` and building Debug writes into the
+live tree. Pick one tree per machine and stay in it.
+
+**Test working directory**: `test/CMakeLists.txt` pins
+`gtest_discover_tests(WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")`, so every test
+runs with its CWD at its own tree's *root* — where the POST_BUILD step copies
+`res/`. For `build/debug` the root and the binary are the same directory; for a
+multi-config tree the binary is one level down (`build/Debug/neurus_test` on CI),
+which is why CI runs `ctest` from `build/`. Launching the binary by hand from
+anywhere else makes `res/` unresolvable and can write reference images to a path
+outside the tree entirely (e.g. `D:\Projects\test\render\reference\`).
 
 
 ---

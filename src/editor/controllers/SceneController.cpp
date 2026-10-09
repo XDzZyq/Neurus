@@ -14,12 +14,19 @@
  *   - LightingRebuild{}          -> full light SSBO dict rebuild
  *   - SceneModified{}            -> mark project dirty
  * Every mutation also enqueues RenderResetEvent{} (temporal accumulation).
+ *
+ * Which of those a given mutation implies is NOT decided here: it is
+ * `neurus::notify` in MutationNotify.h, shared with TransformGizmoController so the
+ * two paths to the same mutation cannot drift. A handler that knows it is on a light
+ * calls neurus::notify::LightStructChanged; one that does not calls neurus::notify::ObjectMutated
+ * and lets the policy branch on the type.
  */
 
 #include "editor/controllers/SceneController.h"
 
 #include <vector>
 
+#include "editor/controllers/MutationNotify.h"
 #include "editor/events/CameraEvents.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/events/EditorEvents.h"
@@ -41,31 +48,6 @@
 #include "core/Log.h"
 
 namespace {
-
-// ---------------------------------------------------------------------------
-// Emit helpers
-// ---------------------------------------------------------------------------
-
-/** @brief Scene mutation: mark dirty + reset temporal accumulation. */
-void Mutated(neurus::IEventQueue& events)
-{
-	events.enqueue(neurus::SceneModified{});
-	events.enqueue(neurus::RenderResetEvent{});
-}
-
-/** @brief Single-light SSBO struct change. */
-void LightStructChanged(int objectUid, neurus::IEventQueue& events)
-{
-	events.enqueue(neurus::LightGpuChanged{objectUid});
-	Mutated(events);
-}
-
-/** @brief Full light SSBO dict rebuild. */
-void LightingRebuilt(neurus::IEventQueue& events)
-{
-	events.enqueue(neurus::LightingRebuild{});
-	Mutated(events);
-}
 
 // ---------------------------------------------------------------------------
 // Selection
@@ -148,15 +130,10 @@ void OnVisibilityChanged(const neurus::VisibilityChanged& e, const neurus::Contr
 	ctx.ops.Submit(std::make_unique<neurus::SetVisibilityOp>(
 		obj->GetObjectID(), before, neurus::VisibilityState{ e.viewportVisible, e.renderVisible }));
 
-	if (obj->o_type == neurus::ObjectID::GOType::GO_LIGHT ||
-	    obj->o_type == neurus::ObjectID::GOType::GO_POLYLIGHT)
-	{
-		// Shader variants (point/sun) are filtered by UploadLighting based on
-		// visibility, so the full dict must be rebuilt.
-		LightingRebuilt(ctx.events);
-		return;
-	}
-	Mutated(ctx.events);
+	// A light's visibility reaches the dict rather than its entry: UploadLighting
+	// filters shader variants (point/sun) by visibility while walking light_list.
+	// neurus::notify::ObjectMutated is what knows that.
+	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,11 +155,7 @@ void OnPositionChanged(const neurus::PositionChanged& e, const neurus::Controlle
 	transform->SetPosition(after);
 	ctx.ops.Submit(std::make_unique<neurus::SetPositionOp>(obj->GetObjectID(), before, after));
 
-	if (obj->o_type == neurus::ObjectID::GOType::GO_LIGHT ||
-	    obj->o_type == neurus::ObjectID::GOType::GO_POLYLIGHT)
-		LightingRebuilt(ctx.events);
-	else
-		Mutated(ctx.events);
+	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
 
 void OnRotationChanged(const neurus::RotationChanged& e, const neurus::ControllerContext& ctx)
@@ -200,11 +173,7 @@ void OnRotationChanged(const neurus::RotationChanged& e, const neurus::Controlle
 	transform->SetRotation(after);
 	ctx.ops.Submit(std::make_unique<neurus::SetRotationOp>(obj->GetObjectID(), before, after));
 
-	if (obj->o_type == neurus::ObjectID::GOType::GO_LIGHT ||
-	    obj->o_type == neurus::ObjectID::GOType::GO_POLYLIGHT)
-		LightingRebuilt(ctx.events);
-	else
-		Mutated(ctx.events);
+	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
 
 void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerContext& ctx)
@@ -222,11 +191,7 @@ void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerConte
 	transform->SetScale(after);
 	ctx.ops.Submit(std::make_unique<neurus::SetScaleOp>(obj->GetObjectID(), before, after));
 
-	if (obj->o_type == neurus::ObjectID::GOType::GO_LIGHT ||
-	    obj->o_type == neurus::ObjectID::GOType::GO_POLYLIGHT)
-		LightingRebuilt(ctx.events);
-	else
-		Mutated(ctx.events);
+	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +217,7 @@ void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::C
 		cam->GetObjectID(),
 		neurus::CameraPose{ pos, before },
 		neurus::CameraPose{ pos, after }));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::ControllerContext& ctx)
@@ -264,7 +229,7 @@ void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::Control
 	const float before = cam->cam_pers;
 	cam->ChangeCamPersp(e.fov);
 	ctx.ops.Submit(std::make_unique<neurus::CameraFovOp>(cam->GetObjectID(), before, e.fov));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::ControllerContext& ctx)
@@ -277,7 +242,7 @@ void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::Contr
 	// live navigation records the op, this handler only re-applies endpoints.
 	cam->SetPosition(glm::vec3(e.posX, e.posY, e.posZ));
 	cam->SetTarPos(glm::vec3(e.tarX, e.tarY, e.tarZ));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 /**
@@ -327,7 +292,7 @@ void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::C
 		}
 	}
 
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +310,7 @@ void OnMeshShadowChanged(const neurus::MeshShadowChanged& e, const neurus::Contr
 	const bool before = mesh->using_shadow;
 	mesh->EnableShadow(e.enabled);
 	ctx.ops.Submit(std::make_unique<neurus::SetMeshShadowOp>(mesh->GetObjectID(), before, e.enabled));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnMeshMaterialChanged(const neurus::MeshMaterialChanged& e, const neurus::ControllerContext& ctx)
@@ -359,7 +324,7 @@ void OnMeshMaterialChanged(const neurus::MeshMaterialChanged& e, const neurus::C
 	const bool before = mesh->using_material;
 	mesh->EnableMaterial(e.enabled);
 	ctx.ops.Submit(std::make_unique<neurus::SetMeshMaterialOp>(mesh->GetObjectID(), before, e.enabled));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +342,7 @@ void OnLightPowerChanged(const neurus::LightPowerChanged& e, const neurus::Contr
 	const float before = light->light_power;
 	light->SetPower(e.power);
 	ctx.ops.Submit(std::make_unique<neurus::SetLightPowerOp>(light->GetObjectID(), before, e.power));
-	LightStructChanged(e.objectUid, ctx.events);
+	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
 void OnLightColorChanged(const neurus::LightColorChanged& e, const neurus::ControllerContext& ctx)
@@ -392,7 +357,7 @@ void OnLightColorChanged(const neurus::LightColorChanged& e, const neurus::Contr
 	const glm::vec3 after(e.r, e.g, e.b);
 	light->SetColor(after);
 	ctx.ops.Submit(std::make_unique<neurus::SetLightColorOp>(light->GetObjectID(), before, after));
-	LightStructChanged(e.objectUid, ctx.events);
+	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
 void OnLightRadiusChanged(const neurus::LightRadiusChanged& e, const neurus::ControllerContext& ctx)
@@ -406,7 +371,7 @@ void OnLightRadiusChanged(const neurus::LightRadiusChanged& e, const neurus::Con
 	const float before = light->light_radius;
 	light->SetRadius(e.radius);
 	ctx.ops.Submit(std::make_unique<neurus::SetLightRadiusOp>(light->GetObjectID(), before, e.radius));
-	LightStructChanged(e.objectUid, ctx.events);
+	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
 void OnLightShadowChanged(const neurus::LightShadowChanged& e, const neurus::ControllerContext& ctx)
@@ -420,7 +385,7 @@ void OnLightShadowChanged(const neurus::LightShadowChanged& e, const neurus::Con
 	const bool before = light->use_shadow;
 	light->SetShadow(e.enabled);
 	ctx.ops.Submit(std::make_unique<neurus::SetLightShadowOp>(light->GetObjectID(), before, e.enabled));
-	LightingRebuilt(ctx.events);
+	neurus::notify::LightingRebuilt(ctx.events);
 
 	// Enabling shadow requires the LightGPU (shadow depth maps) to exist; it
 	// was never uploaded if the light was shadowless at load/add time.
@@ -439,7 +404,7 @@ void OnLightCutoffChanged(const neurus::LightCutoffChanged& e, const neurus::Con
 	const float before = light->spot_cutoff;
 	light->SetCutoff(e.cutoff);
 	ctx.ops.Submit(std::make_unique<neurus::SetLightCutoffOp>(light->GetObjectID(), before, e.cutoff));
-	LightStructChanged(e.objectUid, ctx.events);
+	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
 void OnLightOuterCutoffChanged(const neurus::LightOuterCutoffChanged& e, const neurus::ControllerContext& ctx)
@@ -453,7 +418,7 @@ void OnLightOuterCutoffChanged(const neurus::LightOuterCutoffChanged& e, const n
 	const float before = light->spot_outer_cutoff;
 	light->SetOuterCutoff(e.outerCutoff);
 	ctx.ops.Submit(std::make_unique<neurus::SetLightOuterCutoffOp>(light->GetObjectID(), before, e.outerCutoff));
-	LightStructChanged(e.objectUid, ctx.events);
+	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
 // ---------------------------------------------------------------------------
@@ -471,7 +436,7 @@ void OnEnvironmentIntensityChanged(const neurus::EnvironmentIntensityChanged& e,
 	const float before = env->GetIntensity();
 	env->SetIntensity(e.intensity);
 	ctx.ops.Submit(std::make_unique<neurus::SetEnvIntensityOp>(env->GetObjectID(), before, e.intensity));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnEnvironmentRotationChanged(const neurus::EnvironmentRotationChanged& e, const neurus::ControllerContext& ctx)
@@ -485,7 +450,7 @@ void OnEnvironmentRotationChanged(const neurus::EnvironmentRotationChanged& e, c
 	const float before = env->GetRotation();
 	env->SetRotation(e.rotation);
 	ctx.ops.Submit(std::make_unique<neurus::SetEnvRotationOp>(env->GetObjectID(), before, e.rotation));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 // ---------------------------------------------------------------------------
@@ -493,7 +458,7 @@ void OnEnvironmentRotationChanged(const neurus::EnvironmentRotationChanged& e, c
 // ---------------------------------------------------------------------------
 //
 // Editing any of these is only visible after DebugDrawBuilder reflattens, which
-// is why every handler here ends in Mutated(): that enqueues RenderResetEvent,
+// is why every handler here ends in neurus::notify::Mutated(): that enqueues RenderResetEvent,
 // whose Editor subscriber calls MarkDirty().
 
 /**
@@ -538,7 +503,7 @@ void OnDebugColorChanged(const neurus::DebugColorChanged& e, const neurus::Contr
 		obj.SetColor(after);
 		ctx.ops.Submit(std::make_unique<neurus::SetDebugColorOp>(obj.GetObjectID(), before, after));
 	});
-	if (found) Mutated(ctx.events);
+	if (found) neurus::notify::Mutated(ctx.events);
 }
 
 void OnDebugOpacityChanged(const neurus::DebugOpacityChanged& e, const neurus::ControllerContext& ctx)
@@ -551,7 +516,7 @@ void OnDebugOpacityChanged(const neurus::DebugOpacityChanged& e, const neurus::C
 		obj.SetOpacity(e.opacity);
 		ctx.ops.Submit(std::make_unique<neurus::SetDebugOpacityOp>(obj.GetObjectID(), before, e.opacity));
 	});
-	if (found) Mutated(ctx.events);
+	if (found) neurus::notify::Mutated(ctx.events);
 }
 
 void OnDebugXRayChanged(const neurus::DebugXRayChanged& e, const neurus::ControllerContext& ctx)
@@ -564,7 +529,7 @@ void OnDebugXRayChanged(const neurus::DebugXRayChanged& e, const neurus::Control
 		obj.SetXRay(e.xray);
 		ctx.ops.Submit(std::make_unique<neurus::SetDebugXRayOp>(obj.GetObjectID(), before, e.xray));
 	});
-	if (found) Mutated(ctx.events);
+	if (found) neurus::notify::Mutated(ctx.events);
 }
 
 void OnDebugLineWidthChanged(const neurus::DebugLineWidthChanged& e, const neurus::ControllerContext& ctx)
@@ -578,7 +543,7 @@ void OnDebugLineWidthChanged(const neurus::DebugLineWidthChanged& e, const neuru
 	const float before = line->GetWidth();
 	line->SetWidth(e.width);
 	ctx.ops.Submit(std::make_unique<neurus::SetDebugLineWidthOp>(line->GetObjectID(), before, e.width));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnDebugLineStippleChanged(const neurus::DebugLineStippleChanged& e, const neurus::ControllerContext& ctx)
@@ -592,7 +557,7 @@ void OnDebugLineStippleChanged(const neurus::DebugLineStippleChanged& e, const n
 	const bool before = line->GetStipple();
 	line->SetStipple(e.stipple);
 	ctx.ops.Submit(std::make_unique<neurus::SetDebugStippleOp>(line->GetObjectID(), before, e.stipple));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnDebugPointTypeChanged(const neurus::DebugPointTypeChanged& e, const neurus::ControllerContext& ctx)
@@ -606,7 +571,7 @@ void OnDebugPointTypeChanged(const neurus::DebugPointTypeChanged& e, const neuru
 	const int before = static_cast<int>(points->GetPointType());
 	points->SetPointType(static_cast<neurus::DebugPoints::PointType>(e.pointType));
 	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointTypeOp>(points->GetObjectID(), before, e.pointType));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnDebugPointScaleChanged(const neurus::DebugPointScaleChanged& e, const neurus::ControllerContext& ctx)
@@ -620,7 +585,7 @@ void OnDebugPointScaleChanged(const neurus::DebugPointScaleChanged& e, const neu
 	const float before = points->GetScale();
 	points->SetScale(e.scale);
 	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointScaleOp>(points->GetObjectID(), before, e.scale));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 void OnDebugProjectionModeChanged(const neurus::DebugProjectionModeChanged& e, const neurus::ControllerContext& ctx)
@@ -635,7 +600,7 @@ void OnDebugProjectionModeChanged(const neurus::DebugProjectionModeChanged& e, c
 	points->SetProjectionMode(e.projectionMode);
 	ctx.ops.Submit(
 		std::make_unique<neurus::SetDebugProjectionModeOp>(points->GetObjectID(), before, e.projectionMode));
-	Mutated(ctx.events);
+	neurus::notify::Mutated(ctx.events);
 }
 
 /**
@@ -661,7 +626,7 @@ void OnDebugPositionsChanged(const neurus::DebugPositionsChanged& e, const neuru
 		const std::vector<glm::vec3> before = line->GetVertices();
 		line->SetVertices(after);
 		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(line->GetObjectID(), before, after));
-		Mutated(ctx.events);
+		neurus::notify::Mutated(ctx.events);
 		return;
 	}
 	if (auto it = scene->dPoints_list.find(e.objectUid); it != scene->dPoints_list.end() && it->second)
@@ -670,7 +635,7 @@ void OnDebugPositionsChanged(const neurus::DebugPositionsChanged& e, const neuru
 		const std::vector<glm::vec3> before = points->GetPoints();
 		points->SetPoints(after);
 		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(points->GetObjectID(), before, after));
-		Mutated(ctx.events);
+		neurus::notify::Mutated(ctx.events);
 	}
 }
 
@@ -712,13 +677,6 @@ bool RemoveSceneObject(neurus::Scene& scene, int uid)
 	    || scene.RemoveEnvironment(uid);
 }
 
-/** @brief True if the object is a light (SSBO is a scene projection). */
-bool IsLightObject(const neurus::ObjectID* obj)
-{
-	return obj && (obj->o_type == neurus::ObjectID::GOType::GO_LIGHT
-	               || obj->o_type == neurus::ObjectID::GOType::GO_POLYLIGHT);
-}
-
 /** @brief Adds a pooled object to the scene, selects it, and records ONE composite op. */
 void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
                                const neurus::ControllerContext& ctx)
@@ -750,10 +708,7 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
 	scene->selections.Select(obj.get(), false);
 
 	// Light SSBO mirrors scene->light_list: rebuild after the light is in.
-	if (IsLightObject(obj.get()))
-		LightingRebuilt(ctx.events);
-	else
-		Mutated(ctx.events);
+	neurus::notify::ObjectMutated(*obj, ctx.events);
 
 	// One undo entry: add + select (composed selection op restores on undo).
 	std::vector<std::unique_ptr<neurus::Operation>> seq;
@@ -818,17 +773,21 @@ void OnSceneObjectDeleteRequested(const neurus::SceneObjectDeleteRequested& e,
 	bool removedAny = false;
 	for (int uid : e.uids)
 	{
-		if (IsLightObject(scene->GetObjectID(uid)))
+		const neurus::ObjectID* obj = scene->GetObjectID(uid);
+		if (obj && obj->IsLight())
 			removedLight = true;
 		if (RemoveSceneObject(*scene, uid))
 			removedAny = true;
 	}
 	if (!removedAny) return; // all stale — safe no-op
 
+	// The one site that branches by hand rather than through neurus::notify::ObjectMutated:
+	// a delete is a batch, so the question is "was ANY of them a light", which no
+	// single-object policy can answer.
 	if (removedLight)
-		LightingRebuilt(ctx.events);
+		neurus::notify::LightingRebuilt(ctx.events);
 	else
-		Mutated(ctx.events);
+		neurus::notify::Mutated(ctx.events);
 }
 
 } // anonymous namespace

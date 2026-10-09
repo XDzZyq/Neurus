@@ -75,6 +75,18 @@ public:
 	mutable bool is_rendered = true;           ///< Included in rendering pipeline
 
 	/**
+	 * @brief True for either light type, both of which project into the light SSBO.
+	 *
+	 * A member rather than a predicate in each caller: "is this a light" decides
+	 * whether a mutation needs GPU light work, and two of the ten GOTypes answer
+	 * yes, so every copy of the test is a place to forget the second one.
+	 */
+	bool IsLight() const
+	{
+		return o_type == GOType::GO_LIGHT || o_type == GOType::GO_POLYLIGHT;
+	}
+
+	/**
 	 * @brief Sets visibility flags for viewport and rendering.
 	 * @param v Viewport visibility (editor display).
 	 * @param r Render visibility (included in render passes).

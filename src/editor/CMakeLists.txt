@@ -17,6 +17,7 @@ add_library(neurus_editor STATIC
 	controllers/SceneController.cpp
 	controllers/Controllers.h
 	controllers/ControllerContext.h
+	controllers/MutationNotify.h
 	controllers/CameraController.h
 	controllers/CameraController.cpp
 	controllers/RenderConfigController.h

@@ -9,33 +9,38 @@
  *
  * ## Two notification tiers, not one
  *
- * A drag and a confirm are different events for the GPU and for the project:
+ * A drag and a confirm are different events for the GPU and for the project, and
+ * which is which is **not decided here**: it is `neurus::notify` in
+ * MutationNotify.h, shared with SceneController so the two paths to the same
+ * mutation cannot drift.
  *
- *   - Dragged()   -> LightGpuChanged (a light only) + RenderResetEvent.
- *                    Cheap, per frame. It does NOT mark the project modified:
- *                    the gesture may still be cancelled, and a cancelled gesture
- *                    must leave no trace at all -- which is why the cancel path
- *                    also goes through Dragged() and not through Confirmed().
- *   - Confirmed() -> LightingRebuild (a light only) + SceneModified +
- *                    RenderResetEvent. The same end state a PropertyPanel edit
- *                    would leave, because SceneController's own transform
- *                    handlers rebuild the whole light dict.
+ *   - notify::ObjectPreviewed() -- the transient tier, for a live drag. Cheap GPU
+ *     sync + repaint, and deliberately no SceneModified: the gesture may still be
+ *     cancelled, and a cancelled gesture must leave no trace at all -- which is why
+ *     the cancel path also goes through the preview tier and not the committed one.
+ *   - notify::ObjectMutated() -- the committed tier, for a kept gesture. The same
+ *     end state a PropertyPanel edit would leave, because SceneController's own
+ *     transform handlers call exactly this.
  *
  * A light needs either tier because the drag writes Transform3D only, while the
- * light's GPU position lives in an SSBO struct nothing else refreshes.
+ * light's GPU position lives in an SSBO struct nothing else refreshes. Which tier
+ * buys which light work -- one struct while dragging, the whole dict on commit --
+ * is MutationNotify.h's file comment to explain.
  *
  * ## RenderResetEvent is also the repaint
  *
- * Every handler enqueues it, including the cancel path -- Editor.cpp's
- * RenderResetEvent subscription is what marks the overlay builders dirty, so this
- * is how the guide geometry appears, follows the cursor and disappears again. A
- * handler that mutates nothing still enqueues it when the *guide* changed.
+ * Every handler enqueues it (as notify::Repaint, or folded into a tier), including
+ * the cancel path -- Editor.cpp's RenderResetEvent subscription is what marks the
+ * overlay builders dirty, so this is how the guide geometry appears, follows the
+ * cursor and disappears again. A handler that mutates nothing still repaints when
+ * the *guide* changed.
  */
 
 #include "editor/controllers/TransformGizmoController.h"
 
 #include <memory>
 
+#include "editor/controllers/MutationNotify.h"
 #include "editor/events/EditorEvents.h"
 #include "editor/events/GizmoEvents.h"
 #include "editor/events/InputEvents.h"
@@ -83,33 +88,6 @@ Target Resolve(const neurus::ControllerContext& ctx, int uid)
 	target.obj = obj;
 	target.transform = static_cast<neurus::Transform3D*>(transformPtr);
 	return target;
-}
-
-bool IsLight(const neurus::ObjectID& obj)
-{
-	return obj.o_type == neurus::ObjectID::GOType::GO_LIGHT ||
-	       obj.o_type == neurus::ObjectID::GOType::GO_POLYLIGHT;
-}
-
-// ---------------------------------------------------------------------------
-// Emit helpers -- see the file comment for why there are two
-// ---------------------------------------------------------------------------
-
-/** @brief A live, still-revertible mutation: GPU sync + repaint, no dirty flag. */
-void Dragged(neurus::ObjectID& obj, neurus::IEventQueue& events)
-{
-	if (IsLight(obj))
-		events.enqueue(neurus::LightGpuChanged{obj.GetObjectID()});
-	events.enqueue(neurus::RenderResetEvent{});
-}
-
-/** @brief The gesture was kept: full GPU sync + project dirty + repaint. */
-void Confirmed(neurus::ObjectID& obj, neurus::IEventQueue& events)
-{
-	if (IsLight(obj))
-		events.enqueue(neurus::LightingRebuild{});
-	events.enqueue(neurus::SceneModified{});
-	events.enqueue(neurus::RenderResetEvent{});
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +158,7 @@ void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::Controll
 		if (prev.Valid())
 		{
 			gizmo->Cancel(*prev.transform);
-			Dragged(*prev.obj, ctx.events);
+			neurus::notify::ObjectPreviewed(*prev.obj, ctx.events);
 		}
 		gizmo->Disarm();
 	}
@@ -190,7 +168,7 @@ void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::Controll
 		gizmo->Arm(e.mode, e.objectUid, *target.transform, vp->Cursor());
 
 	// Unconditional: the guide either appeared (armed) or vanished (the cancel above).
-	ctx.events.enqueue(neurus::RenderResetEvent{});
+	neurus::notify::Repaint(ctx.events);
 }
 
 /**
@@ -224,7 +202,7 @@ void OnAxisRequested(const neurus::GizmoAxisRequested& e, const neurus::Controll
 	// is what makes switching axis mid-gesture *undo* the previous axis's partial
 	// transform rather than compound with it.
 	gizmo->Drag(*vp, cursor, *target.transform);
-	Dragged(*target.obj, ctx.events);
+	neurus::notify::ObjectPreviewed(*target.obj, ctx.events);
 }
 
 /** @brief Cursor motion drives the drag. Dropped whole when no gesture is live. */
@@ -244,7 +222,7 @@ void OnMouseMove(const neurus::MouseMoveEvent& e, const neurus::ControllerContex
 	if (!gizmo->Drag(*vp, e.position, *target.transform))
 		return;  // nothing moved -- no GPU sync, no repaint
 
-	Dragged(*target.obj, ctx.events);
+	neurus::notify::ObjectPreviewed(*target.obj, ctx.events);
 }
 
 /** @brief LMB / Return: keep the transform, record one op, disarm. */
@@ -258,11 +236,11 @@ void OnConfirmed(const neurus::ControllerContext& ctx)
 	if (target.Valid())
 	{
 		SubmitGesture(*gizmo, *target.obj, *target.transform, ctx);
-		Confirmed(*target.obj, ctx.events);
+		neurus::notify::ObjectMutated(*target.obj, ctx.events);
 	}
 
 	gizmo->Disarm();
-	ctx.events.enqueue(neurus::RenderResetEvent{});  // the guide has to disappear
+	neurus::notify::Repaint(ctx.events);  // the guide has to disappear
 }
 
 /** @brief Esc / RMB / focus loss: restore the snapshot, disarm, record nothing. */
@@ -276,11 +254,13 @@ void OnAborted(const neurus::ControllerContext& ctx)
 	if (target.Valid())
 	{
 		gizmo->Cancel(*target.transform);
-		Dragged(*target.obj, ctx.events);  // deliberately not Confirmed(): net zero change
+		// The preview tier on purpose, never the committed one: the snapshot is back,
+		// so the net change is zero and the project must not end up dirty for it.
+		neurus::notify::ObjectPreviewed(*target.obj, ctx.events);
 	}
 
 	gizmo->Disarm();
-	ctx.events.enqueue(neurus::RenderResetEvent{});
+	neurus::notify::Repaint(ctx.events);
 }
 
 } // namespace

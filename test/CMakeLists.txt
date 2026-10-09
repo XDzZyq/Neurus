@@ -55,6 +55,7 @@ add_executable(neurus_test
 	editor/test_shader_controller.cpp
 	editor/test_shader_editor_panel.cpp
 	editor/test_transform_gizmo.cpp
+	editor/test_transform_gizmo_controller.cpp
 	editor/test_viewport_camera.cpp
 	scene/test_camera.cpp
 	scene/test_mesh.cpp
