@@ -249,7 +249,7 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
 	// --- Precondition: we must have a camera to look through ---
-	// ctx.editor.camera is the whole answer, and deliberately the only one checked.
+	// ctx.snapshot.camera is the whole answer, and deliberately the only one checked.
 	// The Editor decides which camera the frame is rendered through - its own
 	// viewport camera or the Scene's active one - and injects it here before
 	// recording; every pass that needs a viewing camera now reads this same pointer,
@@ -263,7 +263,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// SyncCamera() falls back to it whenever no scene camera is activated, so this
 	// pointer is null only if a scene-mutation path broke that. Name it once and
 	// skip the frame.
-	if (!ctx.editor.camera)
+	if (!ctx.snapshot.camera)
 	{
 		if (!m_reportedNoCamera)
 		{
@@ -628,23 +628,23 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// wrote them would make the result depend on pass order. Passes only read.
 	//
 	// This is the one place that defines what the GPU believes the camera is, and
-	// it reads ctx.editor.camera rather than the Scene: that is what makes
+	// it reads ctx.snapshot.camera rather than the Scene: that is what makes
 	// EditorViewport the single Editor-side answer to "the camera we are looking
 	// through". DrawFrame's precondition has already proved the pointer non-null.
-	r_renderCache->UpdateCamera(ctx.editor.camera->GetProjectionMatrix(),
-	                            ctx.editor.camera->GetViewMatrix());
+	r_renderCache->UpdateCamera(ctx.snapshot.camera->GetProjectionMatrix(),
+	                            ctx.snapshot.camera->GetViewMatrix());
 
-	if (ctx.editor.debugDraw)
+	if (ctx.snapshot.debugDraw)
 	{
 		// Revision-gated: an unchanged list copies nothing.
-		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.editor.debugDraw);
+		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.snapshot.debugDraw);
 	}
 
-	if (ctx.editor.gizmoDraw)
+	if (ctx.snapshot.gizmoDraw)
 	{
 		// Not revision-gated: a live gesture rebuilds every frame anyway, and the
 		// payload is a few dozen segments (see GizmoCache.h).
-		r_renderCache->UpdateGizmoDraw(ctx.frameIndex, *ctx.editor.gizmoDraw);
+		r_renderCache->UpdateGizmoDraw(ctx.frameIndex, *ctx.snapshot.gizmoDraw);
 	}
 
 	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → SelectionOutline → Compose → [FXAA] → Debug → Gizmo ---
@@ -653,10 +653,12 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 
 	// Rebuild the graph only when the config-derived signature changes (single
 	// source of truth is RenderConfig; the graph is its projection — currently
-	// just FXAA presence).
-	if (const auto* cfg = static_cast<const RenderConfig*>(ctx.editor.config))
+	// just FXAA presence). Unconditional, because Settings() is never null: the
+	// `if (const auto* cfg = ...)` this replaced skipped the check entirely on a
+	// null config, so the topology was never evaluated rather than evaluated
+	// against the defaults.
 	{
-		const PipelineSignature sig = PipelineSignature::From(*cfg);
+		const PipelineSignature sig = PipelineSignature::From(ctx.snapshot.Settings());
 		if (!(sig == m_builtSignature))
 			RebuildMainGraph(sig);
 	}

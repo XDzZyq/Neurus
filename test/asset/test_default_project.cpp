@@ -23,7 +23,7 @@
 #include "asset/data/ImageData.h"
 #include "asset/data/MeshData.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"

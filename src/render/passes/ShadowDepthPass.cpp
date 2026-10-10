@@ -274,11 +274,10 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 {
 	PassStats stats{};
 
-	// Guard: skip if no scene
-	if (!ctx.editor.scene) { NEURUS_LOG("[ShadowDepthPass] No scene, skipping"); return stats; }
+	// SceneContext's null policy: `scene` must be checked.
+	if (!ctx.snapshot.HasScene()) { NEURUS_LOG("[ShadowDepthPass] No scene, skipping"); return stats; }
 
-	// --- Cast scene UID to Scene* for access to Scene-specific members ---
-	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
+	const Scene* scene = ctx.snapshot.scene;
 
 	const vk::Viewport viewport(0.f, 0.f,
 	                            static_cast<float>(p_resolution),
@@ -436,10 +435,10 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 		//
 		// Nothing follows this block, so returning here is exactly "skip the sun
 		// path" - the point-light work above has already been recorded.
-		const Camera* activeCam = ctx.editor.camera;
+		const Camera* activeCam = ctx.snapshot.camera;
 		if (!activeCam)
 		{
-			NEURUS_LOG("[ShadowDepthPass] No camera in EditorContext, skipping sun path");
+			NEURUS_LOG("[ShadowDepthPass] No camera in SceneContext, skipping sun path");
 			return stats;
 		}
 		const glm::vec3 center = activeCam->cam_tar;

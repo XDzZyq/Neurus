@@ -7,7 +7,7 @@
 #include "passes/ComposePass.h"
 
 #include "../PipelineBuilder.h"
-#include "../RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "Image.h"
 #include "render/Barrier.h"
 #include "RenderContext.h"
@@ -169,9 +169,8 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
-	// --- Read gamma from config ---
-	const auto* config = static_cast<const RenderConfig*>(ctx.editor.config);
-	const float gamma = config ? config->r_gamma : 1.0f;
+	// --- Read gamma from config (Settings() is never null — see SceneContext.h) ---
+	const float gamma = ctx.snapshot.Settings().r_gamma;
 
 	// --- 1. Write descriptor set for this frame slot ---
 	WriteDescriptors(frameIndex, renderExtent, cache);

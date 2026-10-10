@@ -334,13 +334,13 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 		.width = kRenderWidth,
 		.height = kRenderHeight,
 		.frameIndex = 0,
-		.editor = { .scene = &scene },
+		.snapshot = { .scene = &scene },
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.editor);
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
@@ -444,11 +444,11 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 			RenderContext ctx{
 				.width = kRenderWidth, .height = kRenderHeight,
 				.frameIndex = 0,
-				.editor = { .scene = &scene },
+				.snapshot = { .scene = &scene },
 			};
 
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.editor);
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 
@@ -592,11 +592,11 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 			RenderContext ctx{
 				.width = kRenderWidth, .height = kRenderHeight,
 				.frameIndex = 0,
-				.editor = { .scene = &scene },
+				.snapshot = { .scene = &scene },
 			};
 
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.editor);
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 

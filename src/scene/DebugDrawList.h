@@ -13,7 +13,7 @@
  *   selection bounds — retained objects mutated on events)     ─┘
  *
  * The Editor flattens those objects into this list and publishes it through
- * EditorContext::debugDraw; DebugPass copies the vectors into shader-readable
+ * SceneContext::debugDraw; DebugPass copies the vectors into shader-readable
  * buffers and issues one draw per primitive kind.
  *
  * Because the producers are stateful, the list only changes when one of them
@@ -22,7 +22,7 @@
  * — the overwhelming majority — where nothing moved.
  *
  * Layer placement: this header lives in the Vulkan-free scene layer (like
- * EditorContext) so the editor may write it and the renderer may read it
+ * SceneContext) so the editor may write it and the renderer may read it
  * without either including the other.
  *
  * GPU layout contract: the vertex records themselves live in OverlayGeometry.h,

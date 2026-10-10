@@ -151,6 +151,16 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 {
 	PassStats stats{};
 
+	// SceneContext's null policy: `scene` must be checked. The push constant below
+	// reads the active selection off the Scene, so without one there is nothing to
+	// outline — and dereferencing would crash on a frame recorded before a scene
+	// exists, which is a legal frame.
+	if (!ctx.snapshot.HasScene())
+	{
+		NEURUS_LOG("[SelectionOutlinePass] No scene, skipping");
+		return stats;
+	}
+
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
@@ -182,8 +192,7 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 	{
 		// Query the active selection from the scene (avoids redundant field in RenderContext)
 		uint32_t activeObjectId = 0;
-		const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
-		const auto* activeObj = scene->selections.GetActiveObject();
+		const auto* activeObj = ctx.snapshot.scene->selections.GetActiveObject();
 		if (activeObj)
 			activeObjectId = static_cast<uint32_t>(activeObj->GetObjectID());
 

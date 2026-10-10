@@ -38,7 +38,7 @@
  *
  * Layer placement: the Vulkan-free scene layer, like DebugDrawList.h, so the
  * editor may write it and the renderer may read it without either including the
- * other. EditorContext forward-declares it.
+ * other. SceneContext forward-declares it.
  */
 
 #pragma once
@@ -54,8 +54,10 @@ namespace neurus
  * @brief Everything the transform gizmo pass draws this frame.
  *
  * Produced by the editor-side gizmo while a modal gesture is active and published
- * through EditorContext::gizmo; a null pointer (not an empty list) is what tells
- * the renderer no gesture is in progress.
+ * through SceneContext::gizmoDraw. Unlike debugDraw, the pointer is published
+ * **unconditionally** (Editor::GetContext()): interaction feedback is not a debug
+ * visualization the user may hide, so with nothing armed the builder yields a
+ * cleared list rather than no list, and GizmoPass early-outs on Empty().
  */
 struct GizmoDrawList
 {

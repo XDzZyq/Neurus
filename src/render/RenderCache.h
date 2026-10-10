@@ -488,7 +488,7 @@ public:
 	 * nothing.
 	 *
 	 * @param frameIndex  Frame-in-flight index being recorded.
-	 * @param list        Flattened debug geometry from EditorContext::debugDraw.
+	 * @param list        Flattened debug geometry from SceneContext::debugDraw.
 	 */
 	void UpdateDebugDraw(uint32_t frameIndex, const DebugDrawList& list);
 
@@ -509,7 +509,7 @@ public:
 	 * payload is a few dozen segments at peak.
 	 *
 	 * @param frameIndex  Frame-in-flight index being recorded.
-	 * @param list        Guide geometry from EditorContext::gizmoDraw.
+	 * @param list        Guide geometry from SceneContext::gizmoDraw.
 	 */
 	void UpdateGizmoDraw(uint32_t frameIndex, const GizmoDrawList& list);
 

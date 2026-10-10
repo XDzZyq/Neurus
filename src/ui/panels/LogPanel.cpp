@@ -173,7 +173,7 @@ void LogPanel::BuildToolbar()
 
 void LogPanel::Refresh(const UIContext& ctx)
 {
-	const auto* buffer = static_cast<const LogBuffer*>(ctx.log);
+	const auto* buffer = ctx.log;
 	if (!buffer)
 		return;
 

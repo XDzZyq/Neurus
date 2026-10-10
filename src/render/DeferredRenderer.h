@@ -21,7 +21,7 @@
 #include "GPUProfiler.h"
 #include "ProfilingData.h"
 #include "passes/Pass.h"
-#include "RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "RenderContext.h"
 #include "Swapchain.h"
 #include "render_graph/RenderGraph.h"

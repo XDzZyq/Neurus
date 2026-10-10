@@ -6,7 +6,7 @@
 #include "panels/RenderConfigPanel.h"
 
 #include "items/ScalarSlider.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "UIContext.h"
 #include "ui/utils/I18n.h"
 
@@ -378,70 +378,73 @@ void RenderConfigPanel::ConnectAllSignals()
 
 void RenderConfigPanel::Refresh(const UIContext& ctx)
 {
-	const auto* config = static_cast<const RenderConfig*>(ctx.editor.config);
-	if (!config) return;
+	// Settings() is never null (see scene/SceneContext.h): with no published
+	// config the panel shows RenderConfig's own declared defaults, which is what
+	// the renderer is drawing with on the same frame. The `if (!config) return;`
+	// this replaced left every widget at whatever the last frame put there.
+	const RenderConfig& cfg = ctx.snapshot.Settings();
 
 	// --- Shadows ---
 	{
 		QSignalBlocker b1(m_shadowAlgCombo);
 		QSignalBlocker b2(m_shadowsGroup);
-		switch (config->r_shadow)
+		switch (cfg.r_shadow)
 		{
 		case ShadowAlg::None:           m_shadowAlgCombo->setCurrentIndex(0); break;
 		case ShadowAlg::ShadowMapping:  m_shadowAlgCombo->setCurrentIndex(1); break;
 		case ShadowAlg::SDFSoftShadow:  m_shadowAlgCombo->setCurrentIndex(2); break;
 		case ShadowAlg::VSSM:           m_shadowAlgCombo->setCurrentIndex(3); break;
 		}
-		m_shadowsGroup->setChecked(config->r_shadow != ShadowAlg::None);
+		m_shadowsGroup->setChecked(cfg.r_shadow != ShadowAlg::None);
 
-		m_shadowBiasSlider->setValue(config->r_shadow_bias);
+		m_shadowBiasSlider->setValue(cfg.r_shadow_bias);
 
 		QSignalBlocker b3(m_samplingModeCombo);
 		m_samplingModeCombo->setCurrentIndex(
-			static_cast<int>(config->r_sampling_mode));
+			static_cast<int>(cfg.r_sampling_mode));
 	}
 
 	// --- Ambient Occlusion ---
 	{
 		QSignalBlocker b1(m_aoAlgCombo);
 		QSignalBlocker b2(m_aoGroup);
-		switch (config->r_ao)
+		switch (cfg.r_ao)
 		{
 		case AOAlg::None: m_aoAlgCombo->setCurrentIndex(0); break;
 		case AOAlg::SSAO: m_aoAlgCombo->setCurrentIndex(1); break;
 		}
-		m_aoGroup->setChecked(config->r_ao != AOAlg::None);
+		m_aoGroup->setChecked(cfg.r_ao != AOAlg::None);
 
 		QSignalBlocker b3(m_aoKernelSpin);
-		m_aoKernelSpin->setValue(config->r_ao_ksize);
+		m_aoKernelSpin->setValue(cfg.r_ao_ksize);
 
-		m_aoRadiusSlider->setValue(config->r_ao_radius);
+		m_aoRadiusSlider->setValue(cfg.r_ao_radius);
 	}
 
 	// --- Post-Processing ---
 	{
 		QSignalBlocker b1(m_aaCombo);
-		switch (config->r_aa)
+		switch (cfg.r_aa)
 		{
 		case AAAlg::None: m_aaCombo->setCurrentIndex(0); break;
 		case AAAlg::MSAA: m_aaCombo->setCurrentIndex(1); break;
 		case AAAlg::FXAA: m_aaCombo->setCurrentIndex(2); break;
 		}
 
-		m_gammaSlider->setValue(config->r_gamma);
+		m_gammaSlider->setValue(cfg.r_gamma);
 
-		m_fxaaSubpixSlider->setValue(config->r_fxaa_subpix);
-		m_fxaaEdgeSlider->setValue(config->r_fxaa_edge_threshold);
-		m_fxaaEdgeMinSlider->setValue(config->r_fxaa_edge_threshold_min);
+		m_fxaaSubpixSlider->setValue(cfg.r_fxaa_subpix);
+		m_fxaaEdgeSlider->setValue(cfg.r_fxaa_edge_threshold);
+		m_fxaaEdgeMinSlider->setValue(cfg.r_fxaa_edge_threshold_min);
 
 		QSignalBlocker bt(m_transCheckBox);
-		m_transCheckBox->setChecked(config->r_transparent);
+		m_transCheckBox->setChecked(cfg.r_transparent);
 	}
 
 	// --- Pipeline ---
 	{
 		QSignalBlocker b1(m_pipelineCombo);
-		switch (config->r_pipeline)
+		switch (cfg.r_pipeline)
 		{
 		case RenderPipeLine::Forward:  m_pipelineCombo->setCurrentIndex(0); break;
 		case RenderPipeLine::Deferred: m_pipelineCombo->setCurrentIndex(1); break;
@@ -449,7 +452,7 @@ void RenderConfigPanel::Refresh(const UIContext& ctx)
 		}
 
 		QSignalBlocker b2(m_ssrCombo);
-		switch (config->r_ssr)
+		switch (cfg.r_ssr)
 		{
 		case SSRAlg::None:                    m_ssrCombo->setCurrentIndex(0); break;
 		case SSRAlg::RayMarching:             m_ssrCombo->setCurrentIndex(1); break;
@@ -458,7 +461,7 @@ void RenderConfigPanel::Refresh(const UIContext& ctx)
 		}
 
 		QSignalBlocker b3(m_samplesPerFrameSpin);
-		m_samplesPerFrameSpin->setValue(config->r_sample_pf);
+		m_samplesPerFrameSpin->setValue(cfg.r_sample_pf);
 	}
 }
 

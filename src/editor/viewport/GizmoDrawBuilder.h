@@ -92,7 +92,7 @@ public:
 	void Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp,
 	             const TransformSnapshot* live);
 
-	/// @brief This frame's guides. Published through EditorContext::gizmoDraw.
+	/// @brief This frame's guides. Published through SceneContext::gizmoDraw.
 	const GizmoDrawList& List() const { return m_list; }
 
 	bool IsDirty() const { return m_dirty; }

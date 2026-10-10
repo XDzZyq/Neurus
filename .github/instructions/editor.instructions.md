@@ -18,7 +18,7 @@ changes through the event system.
     project file path or performs Save/LoadProject — `Application` coordinates
     persistence and owns the project path + dirty aggregation (`Editor::IsDirty()` /
     `ClearDirty()` still track scene/config edits).
-- `src/editor/EditorContext.h` - Editor + scene state container
+- `src/scene/SceneContext.h/cpp` - The frame's scene view, produced by `Editor::GetContext()` and shared by value with the UI layer
 - `src/editor/controllers/Controllers.h` - Base class for all controllers
 - `src/editor/controllers/CameraController.h` - Event-driven camera manipulation (orbit/zoom/dolly/pan)
 - `src/editor/controllers/SceneController.h/cpp` - Event-driven scene mutations (selection, transform, visibility, property edits); emits EditorEvents for GPU uploads
@@ -33,7 +33,7 @@ changes through the event system.
 
 ## The view camera: the viewport owns one, an activated scene camera overrides it
 
-Every view-projection pass reads `ctx.editor.camera` — `ShadowDepthPass.cpp:439`,
+Every view-projection pass reads `ctx.snapshot.camera` — `ShadowDepthPass.cpp:439`,
 `ShadowIntensityPass.cpp:598`, `SSAOPass.cpp:343`, `LightingPass.cpp:305`, plus
 `GeometryPass` through the shared `CameraGPU` — and **no pass reads the Scene**.
 `EditorViewport` decides what that pointer is, in `SyncCamera(Scene&)`:
@@ -47,7 +47,7 @@ EditorViewport::GetCamera()  =  p_camera   // published, never recomputed
 
 **The Editor owns no camera and exposes no camera API.** It holds the viewport
 (`GetViewport()`) and contributes only the *timing*: `Editor::Edit()` calls
-`SyncCamera(GetScene())`, and `EditorContext::camera` is filled from
+`SyncCamera(GetScene())`, and `SceneContext::camera` is filled from
 `GetViewport().GetCamera()`. Everything about which camera the frame belongs to,
 how it is framed, and how long it lives is the viewport's business. That is also
 why `GetCamera()` is a *published* pointer rather than a fresh choice per call: the
@@ -227,8 +227,8 @@ and `ZeroResizeIsIgnored` pins the dropped extent.
    structs, and the `ConnectUIEvent`/`OnUIEvent` template forwarding pattern.
 
 2. **Context Provisioning**
-   - `EditorContext` aggregates scene state and editor state
-   - Provides immutable data to Renderer
+   - `SceneContext` (`src/scene/SceneContext.h`) aggregates the frame's scene view
+   - Provides immutable data to Renderer and UI
    - Updated by Editor logic, read by other layers
 
 3. **Controller Orchestration**
@@ -251,31 +251,40 @@ and `ZeroResizeIsIgnored` pins the dropped extent.
 
 ## Key Components
 
-### EditorContext
+### SceneContext
 
 ```cpp
-class EditorContext : public QObject {
-    Q_OBJECT
-public:
-    explicit EditorContext(QObject* parent = nullptr);
+// src/scene/SceneContext.h — Vulkan-free, Qt-free, includes nothing
+struct SceneContext
+{
+    const Scene*         scene     = nullptr;  // check HasScene()
+    const RenderConfig*  config    = nullptr;  // read via Settings(), never directly
+    const Camera*        camera    = nullptr;  // check HasCamera()
+    const DebugDrawList* debugDraw = nullptr;  // null when r_debug_draw is off
+    const GizmoDrawList* gizmoDraw = nullptr;  // empty, never null, in production
 
-    // Scene state (immutable view for Renderer)
-
-    // Editor state
-
-    // Selection state (future)
-
-private:
-    // Scene graph (future)
-    // Selection manager (future)
+    bool HasScene() const;
+    bool HasCamera() const;
+    const RenderConfig& Settings() const;      // defined in SceneContext.cpp
 };
 ```
 
 **Design:**
-- Pure data class - holds state, no rendering logic
-- QObject subclass for signal/slot and QML exposure
-- Non-copyable
-- RAII - constructor fully initializes, destructor cleans up
+- Plain aggregate, no base class, no Qt — it lives in the Vulkan-free scene layer so
+  both `src/render/` and `src/ui/` may include it, and is embedded **by value** as
+  `snapshot` into `RenderContext` and `UIContext`
+- `Editor::GetContext()` is the only producer in production: it fills `scene`,
+  `config`, the viewport's published `camera` (see "The view camera" above), the
+  debug list when `RequiresDebugDraw()` and the gizmo list unconditionally
+- **Every member is a typed pointer named by forward declaration**, so the header
+  pulls in nothing yet no consumer casts. Growth is by composition — a sibling
+  struct embedded next to this one — never by a `void*` slot
+- Every pointer is borrowed and frame-scoped: valid only for the frame
+  `GetContext()` produced it in, never stored across frames
+- **Null policy**: `config` is always safe through `Settings()`, which falls back to
+  `RenderConfig`'s own in-class defaults and so is the single source of truth for
+  render-setting defaults; `scene`, `camera`, `debugDraw` and `gizmoDraw` MUST be
+  checked
 
 ### Controllers (Base Class)
 
@@ -330,7 +339,7 @@ Editor::Edit()
 
 `DebugDrawBuilder` is the **only** place that walks `Scene::dLine_list`,
 `dPoints_list` and `dMesh_list` and flattens them into the `DebugDrawList` that
-`EditorContext::debugDraw` publishes to `DebugPass`. It is a plain member of
+`SceneContext::debugDraw` publishes to `DebugPass`. It is a plain member of
 `EditorViewport` (`m_debugDraw`), not a controller: it has no events of its own.
 The Editor reaches it only through `MarkOverlaysDirty()` / `RebuildOverlays(scene)`,
 and never sees the builder itself.
@@ -653,7 +662,7 @@ UIEvents::newFrame() → Editor::Edit(input) → Renderer::DrawFrame(scene)
 - Mutate scene objects (future)
 - Own Controllers and managers
 - Emit and subscribe to UIEvents signals and EventQueue typed events
-- Update EditorContext state
+- Update SceneContext state
 - Call into scene management systems
 
 ### ❌ Editor MUST NOT:
@@ -665,7 +674,7 @@ UIEvents::newFrame() → Editor::Edit(input) → Renderer::DrawFrame(scene)
 ## Integration with Other Layers
 
 **With Renderer:**
-- Provides scene data via EditorContext
+- Provides scene data via SceneContext
 - Receives rendering events via UIEvents (Qt signals)
 - Sends Editor events via EventQueue (typed event dispatcher)
 - Renderer NEVER calls back into Editor directly
@@ -674,7 +683,7 @@ UIEvents::newFrame() → Editor::Edit(input) → Renderer::DrawFrame(scene)
 **With UI:**
 - UI emits signals via UIEvents
 - Editor subscribes to UI-relevant signals
-- UI reads EditorContext for display (future)
+- UI reads the published `SceneContext` (embedded in `UIContext` as `snapshot`) for display
 - Two-way via UIEvents, NOT direct C++ calls
 
 **With Data & Resource:**
@@ -686,7 +695,7 @@ UIEvents::newFrame() → Editor::Edit(input) → Renderer::DrawFrame(scene)
 
 - UIEvents singleton with UI↔Editor signals (newFrame, windowResized, etc.)
 - EventQueue typed event dispatcher for Editor↔Renderer events
-- EditorContext stub (empty, placeholder for future scene state)
+- `SceneContext`: the frame's scene view (scene, config, camera, debug + gizmo draw lists), produced by `Editor::GetContext()` and shared by value with the UI layer
 - Editor orchestrator with `RegisterController<T>()` and `Edit()` for input translation
 - Controllers base class with `Init(ControllerContext&)` virtual interface (IEventQueue + IResourceLookup + IOperationSink + scene/config providers)
 - CameraController: event-driven orbit/zoom/dolly/pan via CameraEvents (int camId payloads)

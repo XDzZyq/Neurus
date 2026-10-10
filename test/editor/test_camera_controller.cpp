@@ -29,7 +29,7 @@
 #include "core/ResourceManager.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 
 using namespace neurus;
 

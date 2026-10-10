@@ -13,13 +13,14 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include "core/RenderConfig.h"
 #include "platform/PlatformSurface.h"
 #include "render/Barrier.h"
 #include "render/RenderCache.h"
 #include "render/UploadManager.h"
 #include "render/passes/GeometryPass.h"
 #include "scene/Camera.h"
-#include "scene/EditorContext.h"
+#include "scene/SceneContext.h"
 #include "scene/Scene.h"
 
 #include <array>
@@ -246,7 +247,7 @@ protected:
 	 *
 	 * Does both halves of what DeferredRenderer::recordFrame() does with the
 	 * camera: fills RenderCache's shared UBO *and* injects the camera into the
-	 * EditorContext, which is where every pass now reads the viewing camera from
+	 * SceneContext, which is where every pass now reads the viewing camera from
 	 * (LightingPass, SSAOPass, ShadowDepthPass, ShadowIntensityPass). Publishing
 	 * only the UBO would leave those four passes skipping their work.
 	 *
@@ -258,17 +259,43 @@ protected:
 	 * it, and not merely before the pass that reads the camera. Ordering is now
 	 * load-bearing in a way it was not when passes reached into the Scene
 	 * themselves: ShadowDepthPass skips its whole sun cascade when
-	 * `editor.camera` is null, and a later publication cannot retroactively fill
-	 * a shadow map that was never rendered.
+	 * `snapshot.camera` is null, and a later publication cannot retroactively
+	 * fill a shadow map that was never rendered.
 	 */
 	static void PublishSceneCamera(neurus::RenderCache& cache,
-	                               neurus::EditorContext& editor)
+	                               neurus::SceneContext& snapshot)
 	{
-		if (const auto* scene = static_cast<const neurus::Scene*>(editor.scene))
+		if (const neurus::Scene* scene = snapshot.scene)
 		{
-			editor.camera = scene->GetActiveCamera();
+			snapshot.camera = scene->GetActiveCamera();
 			PublishSceneCamera(cache, *scene);
 		}
+	}
+
+	/**
+	 * @brief The shadow settings every shadow reference image was baked with.
+	 *
+	 * These are **not** RenderConfig's declared defaults (`0.02f` / FixedEMA). They
+	 * are the two values ShadowIntensityPass used to fall back to when no config was
+	 * published, and every shadow reference PNG on disk encodes that fallback. A
+	 * test that drives the pass directly publishes no config unless it says so, so
+	 * without this it would silently render at the declared defaults instead and
+	 * report a mismatch that is really a change of input.
+	 *
+	 * Publishing explicitly is the point: it puts the test on the same footing as
+	 * production, where `Editor::GetContext()` always publishes `m_config`, and it
+	 * stops a pass's null-config fallback from being load-bearing for a reference
+	 * image. A suite that wants different settings sets them on the returned value.
+	 *
+	 * Returned by value, so the caller must keep it alive for as long as the
+	 * snapshot borrows it — `SceneContext::config` is frame-scoped, not owning.
+	 */
+	static neurus::RenderConfig ShadowReferenceConfig()
+	{
+		neurus::RenderConfig config{};
+		config.r_shadow_bias   = 0.0005f;
+		config.r_sampling_mode = 1u;  // ShadowAlphaMode::MovingAvg
+		return config;
 	}
 
 	/**

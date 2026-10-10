@@ -107,7 +107,7 @@ void UIManager::Refresh(const UIContext& ctx)
 {
 	// Cache the latest undo/redo labels so the Edit submenus can display the
 	// stacks on demand (the snapshot pointer is only valid for this call).
-	if (const auto* history = static_cast<const HistoryView*>(ctx.history))
+	if (const auto* history = ctx.history)
 	{
 		m_undoLabels.clear();
 		for (const auto& label : history->undo)

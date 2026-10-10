@@ -30,7 +30,7 @@
 #include "render/Barrier.h"
 #include "render/Image.h"
 #include "render/RenderCache.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/UploadManager.h"
 #include "render/passes/DebugPass.h"
@@ -134,9 +134,9 @@ protected:
 		ctx.width = kRes;
 		ctx.height = kRes;
 		ctx.frameIndex = 0;
-		ctx.editor.config = &m_config;
-		ctx.editor.scene = &m_scene;
-		ctx.editor.debugDraw = &list;
+		ctx.snapshot.config = &m_config;
+		ctx.snapshot.scene = &m_scene;
+		ctx.snapshot.debugDraw = &list;
 
 		// The pass uploads nothing: the camera UBO and the two debug SSBOs belong to
 		// RenderCache, and DeferredRenderer::recordFrame() writes them once per frame

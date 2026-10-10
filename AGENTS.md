@@ -166,8 +166,7 @@ Neurus/
 │   │   ├── DeferredRenderer.h/cpp   # Deferred PBR pipeline (active renderer)
 │   │   ├── Image.h/cpp              # GPU image with state tracking (ImageState)
 │   │   ├── RenderCache.h/cpp        # Cross-frame mutable resource pool
-│   │   ├── RenderConfig.h           # User-settable pipeline options
-│   │   ├── RenderContext.h          # Per-frame immutable scene snapshot
+│   │   ├── RenderContext.h          # Per-frame immutable scene snapshot (embeds SceneContext)
 │   │   ├── shaders/          # Shader pipeline (parse/generate/compile)
 │   │   │   ├── Shader.h/cpp, ShaderGPU.h   # Per-mesh shader + GPU module
 │   │   │   ├── ShaderUnit.h     # Per-stage state: code, parsed IR, SPIR-V, version
@@ -218,6 +217,7 @@ Neurus/
 │   │   ├── ResourceManager.h/cpp # Single factory + UID pool (Load<T>, polymorphic serialize)
 │   │   ├── IResourceLookup.h      # Read-only pool lookup interface
 │   │   ├── Log.h                  # NEURUS_LOG / NEURUS_ERR macros
+│   │   ├── RenderConfig.h         # User-settable pipeline options (Vulkan-free; read by 4 layers)
 │   │   ├── Serialize.h            # archive::Optional / LoadFresh / OptionalBlock (version-tolerant fields)
 │   │   ├── Graph.h                # Generic DAG template
 │   │   ├── Selections.h           # Selection state container
@@ -314,7 +314,7 @@ Neurus/
 │   │   ├── OverlayGeometry.h  # Shared overlay records (OverlaySegment/PointSprite, flags)
 │   │   ├── DebugDrawList.h    # Flattened overlay payload consumed by DebugPass
 │   │   ├── GizmoDrawList.h    # Gizmo overlay payload consumed by GizmoPass (no scene objects)
-│   │   ├── EditorContext.h    # Editor → renderer per-frame scene snapshot
+│   │   ├── SceneContext.h/cpp # Per-frame scene snapshot shared by RenderContext + UIContext
 │   │   ├── DefaultScene.h/cpp # Built-in starter scene
 │   │   ├── ObjectID.h      # Scene identity + metadata (ObjectID : UID)
 │   │   ├── Transform.h     # Spatial transform
@@ -387,7 +387,10 @@ Neurus/
   Sun: UV-space `shadowUV + (jitter.x, jitter.y) * uvRadius`.
 - **Accumulation** (`ComposePass`): In-place read-modify-write on ShadowIntensity
   with EMA blend: `mix(prev, sample, alpha)`.
-- **Alpha**: 0 = FixedAlpha (1/8), 1 = MovingAvg (1/(n+1)).
+- **Alpha**: 0 = FixedAlpha (1/8), 1 = MovingAvg (1/(n+1)). Both the mode
+  (`r_sampling_mode`) and the shadow bias are read through
+  `SceneContext::Settings()`, so the only place either default is written is
+  `RenderConfig`'s member initializers -- no pass restates one.
 
 ### Debug Overlay Convention (issue #22)
 

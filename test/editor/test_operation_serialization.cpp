@@ -31,7 +31,7 @@
 #include "editor/Input.h"
 #include "asset/components/HistoryComponent.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "asset/data/MeshData.h"
 #include "editor/operations/OperationContext.h"
 #include "editor/operations/OperationManager.h"

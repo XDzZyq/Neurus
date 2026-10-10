@@ -40,6 +40,7 @@ add_executable(neurus_test
 	render/test_gizmo_pass.cpp
 	render/test_pickpixel.cpp
 	render/test_render_graph.cpp
+	render/test_null_scene_passes.cpp
 	editor/test_camera_controller.cpp
 	editor/test_debug_draw_builder.cpp
 	editor/test_editor_scene_lifecycle.cpp

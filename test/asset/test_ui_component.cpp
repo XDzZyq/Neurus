@@ -20,7 +20,7 @@
 #include "asset/components/ResourceComponent.h"
 #include "asset/components/ConfigComponent.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "scene/Scene.h"
 
 using namespace neurus;

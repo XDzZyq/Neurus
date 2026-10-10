@@ -11,8 +11,8 @@ renders frames. It must remain stateless with respect to application logic.
 - `src/render/Swapchain.h` - Swapchain creation, image acquisition, presentation, recreation
 - `src/render/Image.h/cpp` - GPU image with ImageState tracking (including Invalid) and mipmap generation
 - `src/render/Barrier.h/cpp` - Centralized image barrier management (ImageState → Vulkan layout/stage/access)
-- `src/render/RenderConfig.h` - User-settable render config: algorithms, quality params, shadow bias
-- `src/render/RenderContext.h` - Per-frame immutable scene snapshot with opaque config pointer.
+- `src/core/RenderConfig.h` - User-settable render config: algorithms, quality params, shadow bias
+- `src/render/RenderContext.h` - Per-frame immutable scene snapshot; embeds `SceneContext snapshot` (all typed pointers).
 - `src/render/ProfilingData.h` - Vulkan-free profiling POD (PassProfile, FrameProfile)
 - `src/render/GPUProfiler.h/cpp` - GPU timestamp query pool (per-frame, per-pass)
 - `src/render/shaders/Shader.h/cpp` - Per-mesh shader container (multi-stage, owns ShaderUnits)
@@ -369,7 +369,7 @@ after touching barriers or submit scopes.
 - **Output**: `VK_FORMAT_R8_UNORM` attachment (`AttachmentName::SelectionOutline`) at binding 1.
   Highlighted pixels = 255 (edge of selected object); all others = 0.
 - **Push constant**: `uint32_t activeObjectId` — read inside `Record()` from
-  `ctx.editor.scene`'s `selections.GetActiveObject()`, not from a `RenderContext`
+  `ctx.snapshot.scene`'s `selections.GetActiveObject()`, not from a `RenderContext`
   field. When `activeObjectId == 0`, the shader early-outs (no highlight written).
 
 ### ComposePass Convention
@@ -392,7 +392,7 @@ after touching barriers or submit scopes.
 > draws the scene's `DebugLine` / `DebugPoints` / `DebugMesh` objects (issue #22).
 
 - **Gate**: `RenderConfig::r_debug_draw`. The pass stays in the RenderGraph
-  unconditionally; the Editor publishes a null `EditorContext::debugDraw` when the
+  unconditionally; the Editor publishes a null `SceneContext::debugDraw` when the
   toggle is off and `Record()` returns before touching any image. Toggling the
   overlay therefore costs **no graph rebuild** (unlike FXAA, which changes the
   `PipelineSignature`).
@@ -547,7 +547,7 @@ It is named for the mirror image of `GPUBuffer`, which is device-local.
 - **Shadow map resolution**: 2048×2048, `VK_FORMAT_D32_SFLOAT`
 - **PCF**: Percentage-closer filtering via `sampler2DShadow` with UV offset kernel, ortho depth comparison
 - **Shadow intensity**: Written to per-light layer in `ShadowIntensity` 2D array via `SunShadowIntensityEval` compute shader
-- **Shadow bias**: Depth bias read from `RenderConfig::r_shadow_bias` (default 0.02) via `ctx.editor.config`.
+- **Shadow bias**: Depth bias read from `RenderConfig::r_shadow_bias` (default 0.02) via `ctx.snapshot.Settings()`. The pass states no fallback of its own — it used to hardcode `0.0005f` when no config was published, 40x off the declared default.
 - **Shadow mode**: Supports `HARD`, `SOFT_PCF_16`, `SOFT_PCF_64` modes matching point light shadow pipeline
 
 ### Temporal Shadow Accumulation Convention
@@ -559,7 +559,9 @@ It is named for the mirror image of `GPUBuffer`, which is device-local.
   The compute shader reads the previous accumulated value via `imageLoad`, evaluates
   a single jittered shadow sample, and blends via EMA (exponential moving average)
   using `mix(prevAccum, sample, alpha)`, writing back via `imageStore`.
-- **Alpha modes**: Two blend modes controlled by `RenderConfig::r_sampling_mode`:
+- **Alpha modes**: Two blend modes controlled by `RenderConfig::r_sampling_mode`,
+  read via `ctx.snapshot.Settings()` so the declared default (0 = Fixed EMA) is the
+  one a frame with no published config gets:
   - Fixed EMA (0): `alpha = 1/8` — fast convergence
   - Moving Average (1): `alpha = 1/(iteration + 1)` — true averaging, resets on scene change
 - **Iteration**: Global frame counter `m_iteration` in `DeferredRenderer`, exposed
@@ -589,8 +591,8 @@ It is named for the mirror image of `GPUBuffer`, which is device-local.
 
 ### RenderConfig Convention
 
-`RenderConfig` (`src/render/RenderConfig.h`) is user-facing config owned by Editor,
-passed to passes through `RenderContext::editor.config` (opaque `void*`):
+`RenderConfig` (`src/core/RenderConfig.h`) is user-facing config owned by Editor,
+reached by passes through `RenderContext::snapshot.Settings()`:
 
 - **Algorithm selection**: `r_pipeline` (Forward/Deferred), `r_aa`, `r_ao`, `r_shadow`, `r_ssr`
 - **Quality parameters**: `r_gamma`, `r_ao_ksize`, `r_ao_radius`, `r_shadow_bias` (0.02), `r_sample_pf`
@@ -604,8 +606,13 @@ passed to passes through `RenderContext::editor.config` (opaque `void*`):
   with its default only in the member initializer** — see `src/core/Serialize.h` and the
   version-tolerance table in data-resource.instructions.md.
 - **Serialized** via cereal for project save/load
-- **Live-update**: passes cast `static_cast<const RenderConfig*>(ctx.editor.config)` each frame; scalar param changes take effect on next `DrawFrame()`
-- **Shadow bias flow**: `RenderConfigPanel` slider → `configValueChanged` → `Editor::SetRenderConfig` → `RenderContext::editor.config` → `ShadowIntensityPass` casts to `RenderConfig*`, reads `r_shadow_bias`
+- **Live-update**: passes read `ctx.snapshot.Settings()` each frame — no cast, and never
+  null: with no published config it resolves to a default-constructed `RenderConfig`, so
+  the in-class member initializers are the only place a default is written. **A pass must
+  not spell a fallback literal of its own** (`cfg ? cfg->x : 0.0005f` is how the shadow
+  bias came to differ 40x from the declaration). Scalar param changes take effect on next
+  `DrawFrame()`
+- **Shadow bias flow**: `RenderConfigPanel` slider → `configValueChanged` → `Editor::SetRenderConfig` → `SceneContext::config` → `ShadowIntensityPass` reads `Settings().r_shadow_bias`
 
 ### Attachment Formats
 
@@ -717,7 +724,7 @@ LightingCache survive it — they are recreated lazily, versioned, or owned by
   `Update()` has run, and a null `VkBuffer` is not something a descriptor may name.
 - Written once per frame by `recordFrame()` via
   `RenderCache::UpdateGizmoDraw(frameIndex, list)`, guarded by
-  `if (ctx.editor.gizmoDraw)`.
+  `if (ctx.snapshot.gizmoDraw)`.
 - **No revision gate** (unlike `DebugCache`): a live gesture rebuilds its guide on
   every cursor *or camera* move, and when no gesture is live nothing is drawn at all,
   so `GizmoDrawList` carries no revision counter and `Update()` copies
@@ -726,7 +733,7 @@ LightingCache survive it — they are recreated lazily, versioned, or owned by
 - **No x-ray partition**, for the reason in the GizmoPass Convention above: with
   depth off for the whole pass there is no `xraySegmentStart`/`xrayPointStart` to
   record or clamp.
-- The `if (ctx.editor.gizmoDraw)` guard and the unconditional copy are both load-
+- The `if (ctx.snapshot.gizmoDraw)` guard and the unconditional copy are both load-
   bearing, and both are tested: a **null** payload must leave the ring with zero
   slots allocated (the cheap state the pass sits in for almost every frame), while an
   **empty** one — the frame a gesture ends on — must still update and retire the
@@ -832,8 +839,9 @@ the frame totals.
 
 **Surface**: `DeferredRenderer::DrawFrame()` returns the `FrameProfile`; the
 Application layer assembles the `UIContext` each frame (the Editor never produces
-it) and sets `UIContext::profile` to the returned profile (opaque `const void*`).
-The ProfilingPanel casts it back and renders the per-pass timings as a tree
+it) and sets `UIContext::profile` to the returned profile (a typed
+`const FrameProfile*`, forward-declared in `UIContext.h`).
+The ProfilingPanel reads it directly and renders the per-pass timings as a tree
 (Frame totals + per-pass rows). See ui-system.instructions.md.
 
 ## Swapchain & Frame Pacing Convention

@@ -4,7 +4,7 @@
  *        the Editor publishes to the renderer is never null.
  *
  * GeometryPass, LightingPass, SSAOPass, ShadowDepthPass and ShadowIntensityPass
- * all build a view-projection from `EditorContext::camera`, so a null camera
+ * all build a view-projection from `SceneContext::camera`, so a null camera
  * either faults or makes the pass skip silently. That makes "the Editor always
  * has a view camera" a precondition of the render graph — and one only the
  * Editor can hold, since it owns every path that creates or empties a scene.

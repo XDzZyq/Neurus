@@ -42,7 +42,7 @@
 #include "editor/viewport/EditorViewport.h"
 #include "editor/viewport/TransformGizmo.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "scene/Camera.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"

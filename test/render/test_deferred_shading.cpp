@@ -153,13 +153,13 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
-		.editor = { .scene = resources.scene.get() },
+		.snapshot = { .scene = resources.scene.get() },
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.editor);
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

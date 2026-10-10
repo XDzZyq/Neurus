@@ -10,7 +10,7 @@ The UI layer is a **Qt6 Widgets** application with **Qt-Advanced-Docking-System 
 |------|---------|
 | `src/ui/UIManager.h/cpp` | QMainWindow subclass with ADS dock manager + menus |
 | `src/ui/UIManager.h/cpp` | Per-frame `Refresh()` pipeline, panel registry (`GetPanel<T>`) |
-| `src/ui/UIContext.h/cpp` | Per-frame UI data snapshot (carries RenderConfig pointer) |
+| `src/ui/UIContext.h/cpp` | Per-frame UI data snapshot (embeds the scene-layer `SceneContext`) |
 | `src/ui/panels/UIPanel.h` | Base class for all dock panels with `PanelType` enum |
 | `src/ui/panels/Viewport.h/cpp` | Native HWND Vulkan surface widget (Viewport dock) |
 | `src/ui/panels/Outliner.h/cpp` | Scene object hierarchy tree (Outliner dock) |
@@ -435,15 +435,23 @@ target_compile_definitions(Neurus PRIVATE ADS_STATIC)
 All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
 - `PanelType` enum identifies each panel (Viewport, Outliner, PropertyEditor, RenderConfig, Log)
 - `virtual void Refresh(const UIContext& ctx)` — called per-frame to sync panel UI with application state
-- `UIContext` embeds an `EditorContext editor` (from `Editor::GetContext()`) with
-  `editor.scene` (opaque `const UID*`, cast to `const Scene*`) and `editor.config`
-  (opaque `const void*`, cast to `const RenderConfig*`)
-- `UIContext` also carries a `const void* profile` pointer to the `FrameProfile`
-  returned by `DeferredRenderer::DrawFrame()`. The Application assembles the
-  UIContext each frame (the Editor never produces it) and the ProfilingPanel casts
-  `profile` to `const FrameProfile*` to render a real-time per-pass tree (Frame
+- `UIContext` embeds a `SceneContext snapshot` (from `Editor::GetContext()`) whose
+  every member is a typed pointer declared by forward declaration — `snapshot.scene`
+  (`const Scene*`), `snapshot.camera` (`const Camera*`), the two overlay draw lists,
+  and the render settings read through `snapshot.Settings()`, which never returns
+  null (it falls back to `RenderConfig`'s own in-class defaults, so no panel restates
+  a default literal). `scene` and `camera` must still be checked —
+  `snapshot.HasScene()` / `HasCamera()` — before dereferencing.
+- `UIContext` also carries three typed pointers of its own, each forward-declared in
+  `UIContext.h`: `const FrameProfile* profile` (the profile returned by
+  `DeferredRenderer::DrawFrame()`), `const LogBuffer* log` and
+  `const HistoryView* history`. The Application assembles the
+  UIContext each frame (the Editor never produces it) and the ProfilingPanel reads
+  `profile` directly to render a real-time per-pass tree (Frame
   totals + per-pass rows). Collection is always active while the app runs
-  (`Application::InitRenderer` enables it)
+  (`Application::InitRenderer` enables it). All three are null in a
+  default-constructed `UIContext` — what a widget test builds — so a panel checks
+  before dereferencing
 - `UIManager` stores panels in `std::map<PanelType, ads::CDockWidget*> m_panelDocks`
 
 ### RenderConfigPanel
@@ -482,7 +490,7 @@ GPU (ms), Draws, Dispatches):
 ### LogPanel
 
 `LogPanel` (Bottom dock, tabbed with Texture Viewer) is a realtime log viewer
-reading the core `LogBuffer` via `UIContext::log` (opaque `const LogBuffer*`,
+reading the core `LogBuffer` via `UIContext::log` (a typed `const LogBuffer*`,
 polled in `Refresh()`):
 
 - **Row rendering**: `QListView` + `LogModel` (custom `QAbstractListModel` over

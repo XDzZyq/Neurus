@@ -30,7 +30,7 @@
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 #include "scene/ObjectID.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 
 using namespace neurus;
 

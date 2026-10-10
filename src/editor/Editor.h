@@ -11,8 +11,8 @@
 #include "editor/operations/HistoryView.h"
 #include "editor/operations/OperationManager.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
-#include "scene/EditorContext.h"
+#include "core/RenderConfig.h"
+#include "scene/SceneContext.h"
 
 // Forward declarations (no render headers!)
 namespace neurus {
@@ -114,20 +114,22 @@ public:
 	const EditorViewport& GetViewport() const { return m_viewport; }
 
 	/**
-	 * @brief Returns the shared editor state (scene + render config).
+	 * @brief Returns this frame's scene view — scene, config, camera, overlays.
 	 *
-	 * The Application embeds this into both RenderContext and UIContext each
-	 * frame, so the Editor is the single source of truth for scene/config and
-	 * never builds a RenderContext or UIContext itself.
+	 * This is the **only** code that fills a SceneContext in production. The
+	 * Application embeds the returned value into both RenderContext and
+	 * UIContext each frame, so the Editor is the single source of truth for what
+	 * is being looked at, and never builds a RenderContext or UIContext itself.
+	 * Every member is typed (see scene/SceneContext.h) — no consumer casts.
 	 */
-	EditorContext GetContext() const;
+	SceneContext GetContext() const;
 
 	/**
 	 * @brief Returns a read-only snapshot of the undo/redo history.
 	 *
 	 * The Application carries this into UIContext each frame so the History
 	 * panel can display the stacks without touching Editor-owned operations.
-	 * It is intentionally kept out of EditorContext because the Renderer has
+	 * It is intentionally kept out of SceneContext because the Renderer has
 	 * no use for history state.
 	 */
 	HistoryView GetHistory() const { return ed_operations.GetHistoryView(); }

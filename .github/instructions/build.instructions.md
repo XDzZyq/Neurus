@@ -137,7 +137,7 @@ split that TU, not to add the flag.
 ## Testing
 
 - Framework: Google Test
-- Non-GPU tests run in CI (UIEvents, EventQueue, EditorContext)
+- Non-GPU tests run in CI (UIEvents, EventQueue, SceneContext)
 - GPU tests require a Vulkan 1.4-capable device
 - Run all tests: `make check` (or `cd build && ctest -C Debug --output-on-failure`)
 - Run specific tests: `make check FILTER="-R DeferredShading"`

@@ -1,7 +1,7 @@
 #include "RenderCache.h"
 #include "passes/FXAAPass.h"
 #include "../PipelineBuilder.h"
-#include "../RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "Barrier.h"
 #include "Image.h"
 #include "RenderContext.h"
@@ -103,7 +103,10 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 
 	const vk::Extent2D extent{ctx.width, ctx.height};
 	const uint32_t fi = ctx.frameIndex;
-	const auto* cfg = static_cast<const RenderConfig*>(ctx.editor.config);
+
+	// Settings() is never null and resolves to RenderConfig's own in-class
+	// defaults, so the three tuning values below carry no literal of their own.
+	const RenderConfig& cfg = ctx.snapshot.Settings();
 
 	WriteDescriptors(fi, extent, cache);
 
@@ -117,9 +120,9 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 	FXAAPushConstants pc = {};
 	pc.rcpWidth       = 1.0f / float(extent.width);
 	pc.rcpHeight      = 1.0f / float(extent.height);
-	pc.qualitySubpix  = cfg ? cfg->r_fxaa_subpix            : 0.75f;
-	pc.edgeThreshold  = cfg ? cfg->r_fxaa_edge_threshold    : 0.166f;
-	pc.edgeThresholdMin = cfg ? cfg->r_fxaa_edge_threshold_min : 0.0833f;
+	pc.qualitySubpix  = cfg.r_fxaa_subpix;
+	pc.edgeThreshold  = cfg.r_fxaa_edge_threshold;
+	pc.edgeThresholdMin = cfg.r_fxaa_edge_threshold_min;
 
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 	cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,

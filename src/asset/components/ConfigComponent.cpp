@@ -1,5 +1,5 @@
 #include "asset/components/ConfigComponent.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "core/Log.h"
 #include "core/Serialize.h"
 

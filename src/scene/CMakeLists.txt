@@ -34,6 +34,8 @@
 	OverlayGeometry.h
 	DebugDrawList.h
 	GizmoDrawList.h
+	SceneContext.h
+	SceneContext.cpp
 	Environment.h
 	Environment.cpp
 	registrations/TypeRegistration.cpp

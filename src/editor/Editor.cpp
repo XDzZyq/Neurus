@@ -421,12 +421,12 @@ Scene& Editor::GetScene()
 }
 
 // =========================================================================
-// GetContext 鈥?shared editor state (scene + config) for Render/UI contexts
+// GetContext — the one producer of a SceneContext in production
 // =========================================================================
 
-EditorContext Editor::GetContext() const
+SceneContext Editor::GetContext() const
 {
-	EditorContext ctx;
+	SceneContext ctx;
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 

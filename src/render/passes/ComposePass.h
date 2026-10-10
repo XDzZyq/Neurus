@@ -73,7 +73,8 @@ public:
 	/**
 	 * @brief Records the compose compute dispatch into a command buffer.
 	 *
-	 *   1. Reads gamma from ctx.editor.config (RenderConfig::r_gamma).
+	 *   1. Reads gamma from ctx.snapshot.Settings().r_gamma (never null — with no
+	 *      published config it is RenderConfig's own declared default).
 	 *   2. Writes HDRColor, SelectionOutline, and ComposedOutput descriptors.
 	 *   3. Transitions HDRColor/SelectionOutline to ColorShaderRead.
 	 *   4. Transitions ComposedOutput to ShaderWrite.

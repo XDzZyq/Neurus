@@ -31,7 +31,7 @@
 #include "render/Barrier.h"
 #include "render/Image.h"
 #include "render/RenderCache.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/passes/GizmoPass.h"
 #include "render/resources/GizmoCache.h"
@@ -156,9 +156,9 @@ protected:
 		ctx.width = kRes;
 		ctx.height = kRes;
 		ctx.frameIndex = 0;
-		ctx.editor.config = &m_config;
-		ctx.editor.scene = &m_scene;
-		ctx.editor.gizmoDraw = list;
+		ctx.snapshot.config = &m_config;
+		ctx.snapshot.scene = &m_scene;
+		ctx.snapshot.gizmoDraw = list;
 
 		PublishSceneCamera(*m_cache, m_scene);
 		if (list) m_cache->UpdateGizmoDraw(ctx.frameIndex, *list);

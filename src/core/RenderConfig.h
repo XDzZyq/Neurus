@@ -7,8 +7,15 @@
  * execution and can be toggled at runtime.
  *
  * Architecture:
- * - Pure data class with query helpers — owned by Application or Editor.
- * - Linked to render passes via RenderContext (per-frame) or direct reference.
+ * - Pure data class with query helpers — owned by the Editor (`Editor::m_config`).
+ * - Lives in `src/core/` rather than `src/render/` because it is Vulkan-free and
+ *   is read by four layers (asset, editor, render, UI). A type's directory names
+ *   its dependency layer, not its owner — as `Camera` and `Mesh` live in
+ *   `src/scene/` while the Editor owns them. `src/core/` is the only genuine leaf:
+ *   it has no dependency on `src/render/`, and this type's only project
+ *   dependency is `core/Serialize.h`.
+ * - Reaches the render passes by value-embedded pointer in `SceneContext`
+ *   (`src/scene/SceneContext.h`), read through `SceneContext::Settings()`.
  * - Changes take effect on the next RecordCommandBuffer / DrawFrame() call.
  *
  * @note This is NOT a per-frame struct — it persists across frames and is
@@ -34,15 +41,6 @@ enum class RenderPipeLine : char
 	Forward,  ///< Forward rendering (single-pass)
 	Deferred, ///< Deferred rendering (multi-pass with G-Buffer) — current
 	Custom0   ///< Custom pipeline slot (reserved)
-};
-
-/**
- * @brief Temporal sampling accumulation strategy.
- */
-enum class SamplingType : char
-{
-	Average,          ///< Simple average of samples
-	IncrementAverage  ///< Incremental averaging (progressive refinement)
 };
 
 /**
@@ -125,7 +123,7 @@ public:
 	 * @brief Master switch for the viewport debug/gizmo overlay.
 	 *
 	 * Gates publication, not pipeline topology: when false the Editor publishes a
-	 * null EditorContext::debugDraw and DebugPass returns before touching any
+	 * null SceneContext::debugDraw and DebugPass returns before touching any
 	 * image, so the pass stays in the RenderGraph unconditionally and toggling
 	 * this costs no graph rebuild.
 	 */

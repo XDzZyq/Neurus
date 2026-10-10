@@ -70,7 +70,7 @@ void ProfilingPanel::Retranslate()
 
 void ProfilingPanel::Refresh(const UIContext& ctx)
 {
-	const auto* profile = static_cast<const FrameProfile*>(ctx.profile);
+	const auto* profile = ctx.profile;
 	if (!profile)
 	{
 		// No renderer profile yet: hide every pooled row and reset detection.

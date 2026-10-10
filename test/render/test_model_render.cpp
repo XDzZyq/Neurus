@@ -258,12 +258,12 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
-		.editor = { .scene = &scene },
+		.snapshot = { .scene = &scene },
 	};
 
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.editor);
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

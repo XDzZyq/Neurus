@@ -168,7 +168,7 @@ void Outliner::Refresh(const UIContext& ctx)
 	auto ids = ctx.GetObjectIDs();
 
 	// --- Query selection state from the scene's Selections<const ObjectID*> ---
-	const Scene* scene = static_cast<const Scene*>(ctx.editor.scene);
+	const Scene* scene = ctx.snapshot.scene;
 
 	// Ensure pool is large enough for valid objects.
 	EnsureRowPool(ids.size());

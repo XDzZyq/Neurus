@@ -10,7 +10,7 @@
 #include "RenderContext.h"
 #include "Image.h"
 #include "render/Barrier.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "shaders/ShaderLibrary.h"
 #include "shaders/ComputeShader.h"
 #include "Texture.h"
@@ -291,8 +291,16 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 {
 	PassStats stats{};
 
-	// --- Cast scene UID to Scene* for access to Scene-specific members ---
-	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
+	// SceneContext's null policy: `scene` must be checked. A frame recorded before
+	// a scene exists is legal, and this pass dereferences `scene` unconditionally
+	// below (light_list, env_list), so the check belongs here rather than at each
+	// use. Same predicate, same position, in all five scene-reading passes.
+	if (!ctx.snapshot.HasScene())
+	{
+		NEURUS_LOG("[LightingPass] No scene, skipping");
+		return stats;
+	}
+	const Scene* scene = ctx.snapshot.scene;
 
 	// The viewing camera comes from the context, never from the Scene. The Editor
 	// decides which camera that is - its own viewport camera or the scene's active
@@ -302,10 +310,10 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	// a split brain that renders plausible-looking wrong lighting rather than
 	// failing. Scene::GetActiveCamera() remains the *scene's* camera and stays
 	// meaningful - it is simply not this pass's input.
-	const Camera* cam = ctx.editor.camera;
+	const Camera* cam = ctx.snapshot.camera;
 	if (!cam)
 	{
-		NEURUS_LOG("[LightingPass] No camera in EditorContext, skipping");
+		NEURUS_LOG("[LightingPass] No camera in SceneContext, skipping");
 		return stats;
 	}
 	const glm::vec3 cameraPos = cam->GetPosition();
@@ -468,11 +476,7 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 		pc.iblEnabled = !scene->env_list.empty() ? 1 : 0;
 
 		// Transparent background (checkerboard) from RenderConfig
-		if (ctx.editor.config)
-		{
-			const auto* cfg = static_cast<const RenderConfig*>(ctx.editor.config);
-			pc.transEnabled = cfg->r_transparent ? 1 : 0;
-		}
+		pc.transEnabled = ctx.snapshot.Settings().r_transparent ? 1 : 0;
 
 		// Copy inverse(proj * view) matrix for skybox background ray
 		const float* ipv = &invProjView[0][0];

@@ -28,7 +28,7 @@
 #include "asset/components/ConfigComponent.h"
 #include "asset/data/MeshData.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "scene/Camera.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"

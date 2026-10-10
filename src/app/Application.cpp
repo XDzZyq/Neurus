@@ -511,16 +511,16 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                         // shared state; the Editor never builds a RenderContext or
 	                         // UIContext itself. DrawFrame returns the per-frame profile,
 	                         // which the UIContext carries to the panels.
-	                         const neurus::EditorContext editor = app_editor->GetContext();
+	                         const neurus::SceneContext snapshot = app_editor->GetContext();
 
 	                         neurus::RenderContext rctx;
-	                         rctx.editor = editor;
+	                         rctx.snapshot = snapshot;
 	                         auto profile = app_renderer->DrawFrame(rctx);
 
 	                         const neurus::HistoryView history = app_editor->GetHistory();
 
 	                         neurus::UIContext ctx;
-	                         ctx.editor = editor;
+	                         ctx.snapshot = snapshot;
 	                         ctx.profile = &profile;
 	                         ctx.log = &neurus::LogBuffer::instance();
 	                         ctx.history = &history;

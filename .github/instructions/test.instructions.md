@@ -78,7 +78,7 @@ duplicated code across test files:
 | `MakeTestCamera(w, h)` | `static CameraUBOData` | Creates a default 60° FOV camera at `(0,0,2)` looking at origin with given aspect ratio |
 | `TestTriangle()` | `static pair<vector<TestVertex>, vector<uint32_t>>` | Returns a 3-vertex triangle (XY plane, facing +Z) + 3 indices, suitable for quick geometry tests |
 | `ReadbackHdrOutput(device, pd, queue, qfi, am, w, h)` | `static vector<float>` | Reads back HDRColor RGBA16F attachment to CPU; handles layout transition, staging copy, and half→float conversion |
-| `PublishSceneCamera(cache, scene)` / `(cache, editorContext)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, standing in for `DeferredRenderer::recordFrame()`. No-op when no scene camera is activated — which is the default, so activate one (see below) |
+| `PublishSceneCamera(cache, scene)` / `(cache, sceneContext)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, standing in for `DeferredRenderer::recordFrame()`. No-op when no scene camera is activated — which is the default, so activate one (see below) |
 
 ### Publishing the camera before recording a pass
 
@@ -90,7 +90,7 @@ records. `GeometryPass` and `DebugPass` only bind them, and both return early fr
 A test that drives a pass directly *is* the frame driver, so it must publish first:
 
 ```cpp
-VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx.editor);
+VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx.snapshot);
 m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 ```
 
@@ -104,7 +104,7 @@ no publish.
 the viewport looks through the viewport's own camera, so "none" is the normal state
 rather than a failure. A test that builds a scene with `UseCamera()` and stops there
 publishes nothing, and `LightingPass`/`SSAOPass`/`ShadowDepthPass`/
-`ShadowIntensityPass` see a null `ctx.editor.camera` and skip their work: a blank or
+`ShadowIntensityPass` see a null `ctx.snapshot.camera` and skip their work: a blank or
 shadowless reference image, not a crash. So pair every `UseCamera()` in a render
 test with `scene.ActivateCamera(cam->GetObjectID())` (the shared shadow builders in
 `test/shared/TestSimpleShadow.h` and `TestMultiShadow.h` already do).
@@ -665,7 +665,7 @@ These patterns were established during deferred PBR development and apply to all
   m_cache = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
   m_pass  = std::make_unique<DebugPass>(*m_device, PhysicalDevice(), 2);
   // Prime: clearColorImage(black) + clearDepthStencilImage(depth) via TransferDst
-  // Run:   RenderContext ctx; ctx.editor.{config,scene,debugDraw} = ...;
+  // Run:   RenderContext ctx; ctx.snapshot.{config,scene,debugDraw} = ...;
   //        m_pass->Record(*BeginCmd(), *m_cache, ctx); EndSubmitWait(c);
   ```
   **Isolate one variable per test rather than reading one composite image.** The four
@@ -716,7 +716,7 @@ These patterns were established during deferred PBR development and apply to all
   fails exactly this test and nothing else, and the missing flag is what stops it from
   being the x-ray path under another name.
   **Null and empty are different code paths, so test both.** A *null*
-  `ctx.editor.gizmoDraw` is the real "no gesture in progress" signal and must cost
+  `ctx.snapshot.gizmoDraw` is the real "no gesture in progress" signal and must cost
   nothing: the test asserts `GizmoCache::GetFrameCount() == 0`, which is stronger than
   a pixel count because the cache allocates its first ring slot inside `Update()`. An
   *empty* list is the frame a gesture *ends* on; it must still upload, so the test runs

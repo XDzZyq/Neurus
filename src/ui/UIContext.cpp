@@ -11,18 +11,18 @@ namespace neurus
 {
 
 // =========================================================================
-// GetObjectIDs — collect all scene object UIDs from the opaque scene pointer
+// GetObjectIDs — collect all scene object UIDs from the published scene
 // =========================================================================
 
 std::vector<int> UIContext::GetObjectIDs() const
 {
 	std::vector<int> result;
-	if (!editor.scene)
+	if (!snapshot.HasScene())
 	{
 		return result;
 	}
 
-	const Scene* s = static_cast<const Scene*>(editor.scene);
+	const Scene* s = snapshot.scene;
 	result.reserve(s->obj_list.size());
 	for (const auto& [id, obj] : s->obj_list)
 	{

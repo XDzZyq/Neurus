@@ -57,7 +57,7 @@
 #include "editor/events/EventBus.h"
 #include "editor/operations/ConfigOperations.h"
 #include "editor/operations/OperationManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
 #include "scene/GlmSerialization.h"

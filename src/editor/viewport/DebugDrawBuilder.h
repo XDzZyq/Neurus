@@ -9,7 +9,7 @@
  *
  *   Scene (dLine_list / dPoints_list / dMesh_list)
  *        -> DebugDrawBuilder::Rebuild()
- *        -> DebugDrawList  (published via EditorContext::debugDraw)
+ *        -> DebugDrawList  (published via SceneContext::debugDraw)
  *
  * Because the producers are stateful, rebuilding is driven by the existing
  * "something visible changed" broadcast (RenderResetEvent) rather than by a
@@ -71,7 +71,7 @@ public:
 	 */
 	void Rebuild(const Scene& scene);
 
-	/** @brief Returns the flattened list for publication through EditorContext. */
+	/** @brief Returns the flattened list for publication through SceneContext. */
 	const DebugDrawList& List() const { return m_list; }
 
 	/** @brief Returns true if a rebuild is pending. */

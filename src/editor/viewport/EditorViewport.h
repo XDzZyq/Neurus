@@ -20,7 +20,7 @@
  * Which camera a frame is rendered through is a viewport question, not an Editor
  * one: SyncCamera() takes the scene's *activated* camera when it names one and the
  * viewport's own otherwise, and GetCamera() is the single answer everything else
- * reads — the gizmo's projection math, every pick, and EditorContext::camera.
+ * reads — the gizmo's projection math, every pick, and SceneContext::camera.
  *
  * ## It owns the overlays, for the same reason
  *
@@ -352,10 +352,10 @@ public:
 	 */
 	void MarkGizmoDirty();
 
-	/// @brief The flattened debug overlay, published through EditorContext::debugDraw.
+	/// @brief The flattened debug overlay, published through SceneContext::debugDraw.
 	const DebugDrawList& DebugList() const { return v_debugDraw.List(); }
 
-	/// @brief The gizmo guide geometry, published through EditorContext::gizmoDraw.
+	/// @brief The gizmo guide geometry, published through SceneContext::gizmoDraw.
 	const GizmoDrawList& GizmoList() const { return v_gizmoDraw.List(); }
 
 	/// @brief The modal transform state machine, for TransformGizmoController to drive.

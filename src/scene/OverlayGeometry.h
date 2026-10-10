@@ -28,7 +28,7 @@
  * mat4 multiply into that pass costs almost nothing and removes a whole SSBO,
  * descriptor binding and indirection from the GPU side.
  *
- * Layer placement: the Vulkan-free scene layer, like EditorContext.h, so the
+ * Layer placement: the Vulkan-free scene layer, like SceneContext.h, so the
  * editor may write these records and the renderer may read them without either
  * including the other.
  */
