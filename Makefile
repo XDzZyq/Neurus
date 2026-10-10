@@ -89,6 +89,7 @@ help:
 
 update:
 	git submodule update --init --recursive --depth 1
-	git submodule update --init --depth 1 lib/src/googletest
+	# googletest is `update = none` (lazy) in lib/.gitmodules; init it on demand.
+	git -C lib -c "submodule.src/googletest.update=checkout" submodule update --init --depth 1 src/googletest
 	$(PYTHON) lib/scripts/fetch_prebuilt.py
 	cmake --preset $(PRESET) $(if $(BINARY_DIR),-B $(BINARY_DIR),)
