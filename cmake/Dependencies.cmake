@@ -62,8 +62,9 @@ option(NEURUS_ADS_FROM_SOURCE
 #
 # A pre-compiled ADS archive is only safe to link when it was compiled against
 # the same Qt headers and C++ standard as this build (see the note in the
-# qtadvanceddocking branch below). cmake/ads_standalone stamps every archive it
-# produces with a flat key=value build_info.txt recording both; this checks it.
+# qtadvanceddocking branch below). lib/scripts/ads_standalone stamps every
+# archive it produces with a flat key=value build_info.txt recording both;
+# this checks it.
 #
 # The stamp is parsed, never included(), so nothing from a downloaded artifact
 # is ever executed as CMake code.
