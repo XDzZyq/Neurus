@@ -29,6 +29,13 @@
 	DebugLine.cpp
 	DebugPoints.h
 	DebugPoints.cpp
+	DebugMesh.h
+	DebugMesh.cpp
+	OverlayGeometry.h
+	DebugDrawList.h
+	GizmoDrawList.h
+	SceneContext.h
+	SceneContext.cpp
 	Environment.h
 	Environment.cpp
 	registrations/TypeRegistration.cpp

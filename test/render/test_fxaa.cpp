@@ -17,7 +17,7 @@
 #include "render/Barrier.h"
 #include "render/Image.h"
 #include "render/RenderCache.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "render/RenderContext.h"
 #include "render/passes/FXAAPass.h"
 
@@ -130,7 +130,7 @@ TEST_F(FXAATest, StairPattern_MatchesAnalyticalGradient)
 
 	RenderContext ctx;
 	ctx.width = kW; ctx.height = kH; ctx.frameIndex = 0;
-	ctx.editor.config = &cfg; ctx.editor.scene = nullptr;
+	ctx.snapshot.config = &cfg; ctx.snapshot.scene = nullptr;
 
 	auto& c = BeginCmd();
 	m_fxaaPass->Record(*c, *m_cache, ctx);

@@ -188,10 +188,10 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ObjectID>(this),
-		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)),
-		   CEREAL_NVP(o_imageDataId),
-		   cereal::make_nvp("m_intensity", o_intensity),
-		   cereal::make_nvp("m_rotation", o_rotation));
+		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
+		archive::Optional(ar, CEREAL_NVP(o_imageDataId),
+		                  cereal::make_nvp("m_intensity", o_intensity),
+		                  cereal::make_nvp("m_rotation", o_rotation));
 	}
 
 private:

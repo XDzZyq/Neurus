@@ -10,7 +10,11 @@
  * Architecture:
  * - QWidget subclass with QFormLayout inside QScrollArea
  * - Controls grouped under collapsible QGroupBox sections
- * - No Vulkan or Renderer header includes — pure UI layer
+ * - No Vulkan or Renderer header includes — pure UI layer. `RenderConfig`, which
+ *   `Save()` returns by value, reaches this header through
+ *   `editor/events/ConfigEvents.h` and lives in `src/core/`; before it moved there
+ *   this claim was false, since a UI header was transitively pulling in a
+ *   `render/`-path header.
  * - Emits configValueChanged() Qt signal; wired by Application to renderConfigChanged()
  *
  * @note UI Layer — communicates via Qt signals (no direct Renderer coupling).

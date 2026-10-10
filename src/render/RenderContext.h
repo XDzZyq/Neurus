@@ -11,9 +11,14 @@
  * Architecture:
  * - Pure data struct with no methods — owned and populated by the caller
  *   (DeferredRenderer or test fixture) each frame.
- * - Passes iterate scene->mesh_list for meshes and scene->light_list for lights.
- * - Nullable pointer field (`scene`) lets passes that don't need it
- *   (e.g. standalone tests) work without a scene.
+ * - Passes iterate snapshot.scene->mesh_list for meshes and ->light_list for lights.
+ * - The frame's scene view is embedded **by value** as `snapshot` and declared
+ *   in exactly one place (scene/SceneContext.h), shared with UIContext. This
+ *   struct never re-declares `scene`, `config`, `camera`, `debugDraw` or
+ *   `gizmoDraw`, and nothing maps them field-by-field.
+ * - `snapshot` answers for its own members' nullability — `HasScene()`,
+ *   `HasCamera()`, `Settings()` — so a pass that needs nothing from the scene
+ *   (a standalone test) still works with a default-constructed snapshot.
  *
  * @note This is NOT a GPU push-constant block — it's CPU-side metadata
  *       carried through the pass execution chain.
@@ -25,7 +30,7 @@
 
 #include <glm/glm.hpp>
 
-#include "scene/EditorContext.h"
+#include "scene/SceneContext.h"
 
 namespace neurus
 {
@@ -47,10 +52,14 @@ struct RenderContext
 	/// @brief Ring-buffer slot index for per-frame descriptor pools / UBOs.
 	uint32_t frameIndex = 0;
 
-	/// @brief Editor-owned scene + render config snapshot (shared with UIContext).
-	/// Passes cast editor.scene to const Scene* and editor.config to
-	/// const RenderConfig* to access camera/mesh/light data and quality flags.
-	EditorContext editor;
+	/// @brief The frame's scene view, shared by value with UIContext.
+	///
+	/// Every member is a typed pointer (see scene/SceneContext.h), so a pass
+	/// reads `snapshot.scene` / `snapshot.camera` with no cast, and reaches the
+	/// render settings through `snapshot.Settings()`, which is never null and
+	/// resolves to RenderConfig's own declared defaults. The null policy for the
+	/// other members lives at that header, stated once, so no pass re-decides it.
+	SceneContext snapshot;
 
 	/// @brief Per-frame random 3D direction for shadow jitter (normalized unit-ball vector).
 	/// Point lights use: pos_jittered = pos + light.radius * jitter

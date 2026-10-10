@@ -86,16 +86,98 @@ lives in `src/asset/`, GPU resource management lives in `src/render/`.
      `ConfigComponent` (Editor-owned) and `UIComponent` (Application-owned UI blob
      sourced from `UIManager::ExportLayout()` / applied via `UIManager::ApplyLayout()`),
      plus `HistoryComponent` (undo/redo-stack adapter in asset/components that
-     wraps the editor's `OperationManager`). `HistoryComponent`
-     is registered last so legacy files without an `m_history` node load cleanly
-     (its `Load` clears the stacks instead of throwing).
+     wraps the editor's `OperationManager`) and `EditorComponent` (key `"m_editor"`,
+     field `viewportCamUid`, carrying the viewport camera's UID). The last two are
+     registered last, in
+     that order, so legacy files without their nodes load cleanly: `HistoryComponent`
+     clears the stacks instead of throwing, and `EditorComponent` leaves the uid at
+     `0`, which makes `FinishLoad()` mint a fresh viewport camera. Registration order
+     IS archive read order, so a new component belongs at the end.
+   - **The viewport camera is persisted as a uid, not as an object.** The camera
+     itself is pooled, so `ResourceComponent` already serializes it with everything
+     else; `EditorComponent` records only which pooled camera the viewport claims as
+     its own, and binds to `EditorViewport` rather than to `Editor` (which has no
+     camera API). Without it the identity is lost and the user's viewpoint snaps back
+     to the default framing on every open. A file written before the rename carries
+     the field as `editorCamUid`; `Load()` reads either name, as an explicit
+     migration rather than a default.
    - `Scene::serialize` persists selection state alongside the typed object
      pools. Selection is held at runtime as `const ObjectID*` pointers but
      written as UIDs (`selectedUids` + `activeUid`), mirroring `SelectionState`
      in `SceneOperations.h`. On load the UIDs are resolved back to pointers via
      `Scene::GetObjectID()` *after* `RebuildObjList()`. The selection block is
-     optional: legacy files without it load with an empty selection (the load
-     branch catches the missing-NVP `cereal::Exception`).
+     optional: legacy files without it load with an empty selection.
+   - **`activeCamUid` is three-state, and that is load-bearing.** Which scene
+     camera the viewport looks through is written last in both `serialize`
+     branches and resolved in `ResolveReferences()` right after
+     `ResolvePool<Camera>`: `> 0` is an explicit UID, `0` is *explicitly none*
+     (the normal state — the viewport's own camera takes the view), and `-1` is the
+     field being *absent*, which migrates once by activating
+     `cam_list.begin()->second` so a project saved before the feature still opens
+     through the camera it was saved with. The next save writes the field, so the
+     migration never recurs. Absent and none must therefore stay distinguishable,
+     which is why this field uses the raw `archive::OptionalBlock` bool form below
+     rather than a helper that just leaves the member alone.
+   - **Optional value fields** (`src/core/Serialize.h`): every field that is a
+     *value* — a setting, a parameter, a name, a flag — is read optionally; only
+     identity and history stay strict. cereal reports an absent key by throwing
+     `cereal::Exception` from the read, and unhandled that throw aborts the whole
+     component's `Load`, so one unrecognised key would otherwise discard every
+     setting around it. The three shapes:
+     - `neurus::archive::Optional(ar, CEREAL_NVP(a), CEREAL_NVP(b), ...)` — the
+       default. Each field independently; absence **leaves the member alone**.
+     - `neurus::archive::LoadFresh(ar, "key", live)` — for the two sites that load
+       into an object already in use (`ConfigComponent::Load`, and `Preferences::Load`
+       by hand): reads into a default-constructed temporary and assigns it over the
+       live one, so "absent" means *the in-class default*, not "inherit the last
+       project the user had open".
+     - `neurus::archive::OptionalBlock(ar, ...)` — returns false when the whole
+       block was missing, for the cases that must tell *absent* from *empty*
+       (`Scene::serialize`'s selection and debug-pool blocks, `activeCamUid`).
+   - **What stays strict, and why**: `UID::o_id` (every cross-reference resolves
+     through it), a pooled resource's source path (`MeshData/ImageData::m_path`,
+     `Shader::m_name`, `RenderShader::m_vertPath/m_fragPath`), `Light::light_type`
+     (defaulting it yields `NONELIGHT`, an invisible light with no error anywhere),
+     and every undo/redo `Operation`'s own fields — a half-read op replays a
+     `m_before` nobody ever had. An op's *endpoint contents* do follow the per-field
+     rule, because `SetRenderConfigOp` embeds a `RenderConfig`; only the endpoint
+     node itself is required.
+   - **One definition of every default.** A field's default is written once, in its
+     in-class member initializer. `Optional()` has no fallback parameter, so there
+     is no second place one could be spelled — the helper that took one
+     (`NEURUS_OPTIONAL_NVP`) was deleted for exactly that reason, and
+     `test/asset/test_serialize_optional.cpp` compares a load with every optional
+     key renamed away against a default-constructed object to keep it that way.
+     The same file pins the other direction with a real file: it loads the shipped
+     `res/default.neurus.json` (written before any of this existed, still missing
+     `r_debug_draw`), re-saves it, and asserts the re-saved document kept every
+     member name the original had — gaining keys is allowed, losing one is not.
+   - **Version tolerance** (what this does and does not buy an *older* build
+     opening a *newer* file):
+
+     | Newer file has… | Older build does | Where |
+     |---|---|---|
+     | a field this build lacks | ignores it | cereal's `finishNode()` does not check that members were consumed |
+     | a field renamed since | defaults that one field, keeps the rest | `archive::Optional` |
+     | a whole component node this build lacks | ignores it | `Project::load` iterates *its* components and finds each by name |
+     | a component node this build has but the file lacks | defaults it, reports one line | `LoadFresh`'s false branch |
+     | **a pooled object type this build does not know** | **fails the whole pool** | `ResourceComponent::Load` — known limit, left open on purpose |
+     | **an enum value out of this build's range** | **keeps it as-is** | known limit, left open on purpose |
+
+     Order on disk does not matter on load: cereal's name-keyed lookup scans the
+     node's members from the first and only moves the cursor on a hit, so a failed
+     lookup leaves the read position untouched. Keep the *write* order stable anyway
+     — a reordered save is a needlessly different file, and `Light::serialize` splits
+     its call three ways for no other reason. `Optional` static-asserts on a text
+     archive for this reason; a positional archive could not report absence without
+     desynchronising. The namespace is `archive`, not `serialize` — several headers
+     declare free `neurus::serialize(Archive&, T&)` overloads for cereal to find by
+     ADL, and a namespace of that name inside `neurus` redefines them.
+   - **`base_class` adds a node.** `cereal::base_class<ObjectID>(this)` writes a
+     `"value0"` object, so a `Mesh`'s `o_id` sits two `"value0"` levels deep
+     (`value0.value0.o_id`) and the mesh's own fields are flat beside `"transform"`.
+     Hand-writing a legacy archive for a test means reproducing that nesting; saving
+     a real object and patching the text is the safer idiom.
    - The pointer↔UID conversion lives in scene-layer free functions
      `neurus::SnapshotSelectionUids` / `RestoreSelectionUids` (in `Scene.h`),
      shared by `Scene::serialize` and the editor's `SceneController` selection

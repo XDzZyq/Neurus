@@ -39,9 +39,10 @@ TEST(DebugLine, DefaultConstruction)
 	// Default opacity is 1.0
 	EXPECT_FLOAT_EQ(dl.GetOpacity(), 1.0f);
 
-	// Default flags
+	// Default flags. There is no smooth flag to check: antialiasing is derived
+	// from the line style by DebugDrawBuilder, never stored on the object.
 	EXPECT_FALSE(dl.GetStipple());
-	EXPECT_FALSE(dl.GetSmooth());
+	EXPECT_FALSE(dl.GetXRay());  // depth-tested by default, not always-on-top
 
 	// No vertices initially
 	EXPECT_EQ(dl.GetVertexCount(), 0);
@@ -160,17 +161,6 @@ TEST(DebugLine, SetStipple)
 }
 
 /**
- * @test Smooth flag can be set and retrieved.
- */
-TEST(DebugLine, SetSmooth)
-{
-	DebugLine dl;
-	EXPECT_FALSE(dl.GetSmooth());
-	dl.SetSmooth(true);
-	EXPECT_TRUE(dl.GetSmooth());
-}
-
-/**
  * @test ClearVertices removes all stored vertices.
  */
 TEST(DebugLine, ClearVertices)
@@ -216,14 +206,18 @@ TEST(DebugPoints, DefaultConstruction)
 	// Default color is white (fully opaque)
 	EXPECT_EQ(dp.GetColor(), glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
 
-	// Default scale is 1.0
-	EXPECT_FLOAT_EQ(dp.GetScale(), 1.0f);
+	// Default scale is 8.0: the default projection mode is screen space, so
+	// scale is a pixel diameter, and a 1 px sprite is effectively invisible.
+	EXPECT_FLOAT_EQ(dp.GetScale(), 8.0f);
 
 	// Default opacity is 1.0
 	EXPECT_FLOAT_EQ(dp.GetOpacity(), 1.0f);
 
 	// Default projection mode is 0
 	EXPECT_EQ(dp.GetProjectionMode(), 0);
+
+	// Depth-tested by default, not always-on-top
+	EXPECT_FALSE(dp.GetXRay());
 
 	// No points initially
 	EXPECT_EQ(dp.GetPointCount(), 0);

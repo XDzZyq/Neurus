@@ -24,6 +24,7 @@
 
 #include <cereal/types/base_class.hpp>
 
+#include "core/Serialize.h"
 #include "scene/ObjectID.h"
 
 namespace neurus
@@ -124,8 +125,8 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<ObjectID>(this),
-		   CEREAL_NVP(spr_opacity), CEREAL_NVP(spr_type));
+		ar(cereal::base_class<ObjectID>(this));
+		archive::Optional(ar, CEREAL_NVP(spr_opacity), CEREAL_NVP(spr_type));
 	}
 
 	// -------------------------------------------------------------------

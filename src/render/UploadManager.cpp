@@ -79,13 +79,18 @@ MeshGPU UploadManager::UploadMesh(const Mesh& mesh)
 		return MeshGPU{};
 	}
 
-	const auto& rawMesh = mesh.o_mesh->GetMeshData();
+	return UploadMeshData(*mesh.o_mesh);
+}
+
+MeshGPU UploadManager::UploadMeshData(const MeshData& meshData)
+{
+	const auto& rawMesh = meshData.GetMeshData();
 	const size_t vertexCount = rawMesh.dataArray.size() / 14;  // 14 floats per vertex (source format)
 	const size_t indexCount = rawMesh.indexArray.size();
 
 	if (vertexCount == 0 || indexCount == 0)
 	{
-		NEURUS_ERR("[UploadManager] UploadMesh: empty mesh data ("
+		NEURUS_ERR("[UploadManager] UploadMeshData: empty mesh data ("
 		           << vertexCount << " verts, " << indexCount << " indices)");
 		return MeshGPU{};
 	}

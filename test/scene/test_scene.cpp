@@ -272,7 +272,7 @@ TEST(SceneTest, UseCameraRegistersInBothPools)
 }
 
 /**
- * @test UseCamera with multiple cameras; GetActiveCamera returns first.
+ * @test UseCamera alone activates nothing; ActivateCamera picks the view camera.
  */
 TEST(SceneTest, UseCameraMultipleGetActiveCamera)
 {
@@ -289,12 +289,17 @@ TEST(SceneTest, UseCameraMultipleGetActiveCamera)
 	// obj_list should have both
 	EXPECT_EQ(scene.obj_list.size(), 2u);
 
-	// GetActiveCamera returns first camera (not null)
+	// Registration does not activate: a scene with cameras may still have none
+	// activated, in which case the Editor looks through its own camera.
+	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
+	EXPECT_EQ(scene.ActiveCameraID(), 0);
+
+	// Activation is explicit and names exactly one camera — no dependence on
+	// unordered_map bucket order.
+	ASSERT_TRUE(scene.ActivateCamera(cam2->GetObjectID()));
 	Camera* active = scene.GetActiveCamera();
 	ASSERT_NE(active, nullptr);
-	// GetActiveCamera returns one of the registered cameras (order is unspecified for unordered_map)
-	EXPECT_TRUE(active->GetObjectID() == cam1->GetObjectID() ||
-	            active->GetObjectID() == cam2->GetObjectID());
+	EXPECT_EQ(active->GetObjectID(), cam2->GetObjectID());
 }
 
 // -----------------------------------------------------------------------
@@ -416,6 +421,7 @@ TEST(SceneConstAccessTest, ConstScene_GetActiveCamera_ReturnsValidPointer)
 	auto cam = std::make_shared<Camera>();
 	int camID = cam->GetObjectID();
 	scene.UseCamera(cam);
+	ASSERT_TRUE(scene.ActivateCamera(camID));
 
 	// Obtain a const reference
 	const Scene& constScene = scene;

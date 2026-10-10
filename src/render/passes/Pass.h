@@ -98,7 +98,7 @@ public:
 	 */
 	enum class PassType
 	{
-		G_BUFFER,   ///< 4 color attachments + depth (Position, Normal, Albedo, MetallicRoughness + Depth)
+		G_BUFFER,   ///< 5 color attachments + depth (Position, Normal, Albedo, MetallicRoughness, IDBuffer + Depth)
 		LIGHTING,   ///< 1 color attachment, no depth
 		SHADOW,     ///< Depth-only (0 color attachments)
 		COMPOSITE,  ///< 1 color attachment (DONT_CARE load), no depth
@@ -144,7 +144,7 @@ public:
 	/**
 	 * @brief Returns the expected number of color attachments for a pass type.
 	 * @param passType Pass type to query.
-	 * @return Number of color attachments (G_BUFFER=4, LIGHTING/COMPOSITE/POST_FX=1, SHADOW=0).
+	 * @return Number of color attachments (G_BUFFER=5, LIGHTING/COMPOSITE/POST_FX=1, SHADOW=0).
 	 */
 	static uint32_t ColorAttachmentCount(PassType passType);
 

@@ -43,22 +43,27 @@ static glm::mat4 ComputeModelMatrix(const glm::vec3& position,
 // Setters — eagerly recompute model matrix
 // -----------------------------------------------------------------------
 
+void Transform3D::RecomputeModelMatrix()
+{
+	o_modelMatrix = ComputeModelMatrix(o_position, o_rotation, o_scale);
+}
+
 void Transform3D::SetPosition(const glm::vec3& pos)
 {
 	o_position = pos;
-	o_modelMatrix = ComputeModelMatrix(o_position, o_rotation, o_scale);
+	RecomputeModelMatrix();
 }
 
 void Transform3D::SetRotation(const glm::vec3& degrees)
 {
 	o_rotation = degrees;
-	o_modelMatrix = ComputeModelMatrix(o_position, o_rotation, o_scale);
+	RecomputeModelMatrix();
 }
 
 void Transform3D::SetScale(const glm::vec3& scale)
 {
 	o_scale = scale;
-	o_modelMatrix = ComputeModelMatrix(o_position, o_rotation, o_scale);
+	RecomputeModelMatrix();
 }
 
 // -----------------------------------------------------------------------

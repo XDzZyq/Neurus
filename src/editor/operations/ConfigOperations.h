@@ -22,7 +22,7 @@
 
 #include "editor/events/ConfigEvents.h"
 #include "editor/operations/Operation.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 
 namespace neurus {
 

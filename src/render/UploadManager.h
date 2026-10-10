@@ -15,6 +15,7 @@ namespace neurus {
 // Forward declarations
 class IBLPass;
 class Mesh;              // scene/Mesh.h
+class MeshData;          // asset/data/MeshData.h
 class Environment;       // scene/Environment.h
 class Light;             // scene/Light.h
 class Scene;             // scene/Scene.h
@@ -57,6 +58,19 @@ struct Pipeline;         // render/Pipeline.h
 
 	/** @brief Upload mesh geometry to GPU. Returns device-local buffers by value. */
 	MeshGPU UploadMesh(const Mesh& mesh);
+
+	/**
+	 * @brief Upload raw CPU mesh geometry to GPU.
+	 *
+	 * The geometry half of UploadMesh(), split out so scene objects that carry a
+	 * MeshData without being a Mesh (notably DebugMesh, which derives from
+	 * ObjectID + Transform3D) can produce a MeshGPU through the same path
+	 * instead of duplicating the vertex-stripping logic.
+	 *
+	 * @param meshData CPU-side mesh (14-float interleaved vertices + uint32 indices).
+	 * @return Device-local MeshGPU, or an empty MeshGPU if the data is empty.
+	 */
+	MeshGPU UploadMeshData(const MeshData& meshData);
 
 	/** @brief Upload environment map to GPU. Generates diffuse + specular cubemaps. */
 	EnvironmentGPU UploadEnvironment(const Environment& env,

@@ -19,12 +19,14 @@ Camera::Camera(float w, float h, float per, float n, float f)
 	, cam_far(f)
 {
 	o_type = ObjectID::GOType::GO_CAM;
+	o_name = "Camera";
 	RecomputeMatrices();
 }
 
 Camera::Camera()
 {
 	o_type = ObjectID::GOType::GO_CAM;
+	o_name = "Camera";
 	RecomputeMatrices();
 }
 

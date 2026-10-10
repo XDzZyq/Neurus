@@ -51,6 +51,17 @@ public:
 	vk::Queue transferQueue() const { return ctx_transferQueue; }
 	const std::string& gpuName() const { return ctx_gpuName; }
 
+	/**
+	 * @brief Core device features actually enabled at device creation.
+	 *
+	 * Requesting an unsupported feature makes vkCreateDevice fail with
+	 * VK_ERROR_FEATURE_NOT_PRESENT, so InitDevice() enables each optional
+	 * feature only if the physical device reports it. Passes must consult
+	 * this before using a feature-gated pipeline state (e.g. DebugPass
+	 * checks fillModeNonSolid before building its wireframe pipeline).
+	 */
+	const vk::PhysicalDeviceFeatures& enabledFeatures() const { return ctx_enabledFeatures; }
+
 private:
 	static vk::raii::Instance createInstanceInternal();
 	uint32_t selectPhysicalDeviceIndex();
@@ -70,6 +81,7 @@ private:
 	vk::Queue ctx_transferQueue = nullptr;
 
 	std::string ctx_gpuName;
+	vk::PhysicalDeviceFeatures ctx_enabledFeatures;
 };
 
 } // namespace neurus

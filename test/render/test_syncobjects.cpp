@@ -38,7 +38,9 @@ TEST_F(SyncObjectsDeviceTest, Barrier_ToVulkanImageState_Basic)
 
 	auto state = Barrier::ToVulkanImageState(ImageState::Undefined);
 	EXPECT_EQ(state.layout, vk::ImageLayout::eUndefined);
-	EXPECT_EQ(state.stage, vk::PipelineStageFlagBits2::eTopOfPipe);
+	// eAllCommands, not eTopOfPipe: a discard transition still needs an execution
+	// dependency against whoever last read the image (see Barrier.cpp).
+	EXPECT_EQ(state.stage, vk::PipelineStageFlagBits2::eAllCommands);
 	EXPECT_EQ(state.access, vk::AccessFlagBits2::eNone);
 
 	state = Barrier::ToVulkanImageState(ImageState::ColorAttachment);

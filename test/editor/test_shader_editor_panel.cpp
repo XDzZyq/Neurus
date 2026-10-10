@@ -28,7 +28,7 @@
 #include "editor/events/ShaderEvents.h"
 #include "editor/operations/OperationManager.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/Shader.h"
 #include "render/shaders/ShaderUnit.h"
@@ -118,7 +118,7 @@ protected:
 		m_scene.UseMesh(m_mesh);
 		m_scene.selections.Select(m_mesh.get(), /*increment=*/false);
 
-		m_uiContext.editor.scene = &m_scene;
+		m_uiContext.snapshot.scene = &m_scene;
 
 		// Wire the panel exactly like Application::ConnectUIEvent: Qt signal
 		// -> EventQueue (deferred to the next Process()).

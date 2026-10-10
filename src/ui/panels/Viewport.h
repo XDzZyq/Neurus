@@ -8,6 +8,7 @@
 #include "editor/events/InputEvents.h"
 #include "editor/events/SceneEvents.h"
 
+class QFocusEvent;
 class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
@@ -116,6 +117,29 @@ signals:
 	 */
 	void deleteRequested(const neurus::DeleteRequested& event);
 
+	/**
+	 * @brief Emitted when a key the editor handles is pressed in the viewport.
+	 * @param event KeyPressEvent carrying an Input::Key and the modifiers.
+	 *
+	 * Only keys Input::GetKey() recognises are forwarded, and auto-repeat is
+	 * filtered here at the Qt boundary so a held key arms a modal operator once.
+	 * Deliberately not a QShortcut: a Qt::WindowShortcut on G/R/S/X/Y/Z would
+	 * steal those letters from the shader editor and from every property
+	 * spinbox, and cannot filter auto-repeat.
+	 */
+	void keyPressed(const neurus::KeyPressEvent& event);
+
+	/**
+	 * @brief Emitted when the viewport loses keyboard focus.
+	 * @param event ViewportFocusLost (empty - the fact is the whole payload).
+	 *
+	 * A modal transform gesture is driven by viewport keys and the viewport
+	 * cursor, so clicking into another panel mid-gesture must abort it rather
+	 * than leave an invisible operator armed against a widget that no longer
+	 * receives its keys.
+	 */
+	void focusLost(const neurus::ViewportFocusLost& event);
+
 protected:
 	/**
 	 * @brief Override to prevent Qt from drawing a background.
@@ -136,9 +160,10 @@ protected:
 	 * @brief Handles keyboard input.
 	 * @param event The key event.
 	 *
-	 * F12 triggers screenshot via UIEvents; Ctrl+F12 triggers attachment
-	 * dump. All other keys chain to the base class. No longer calls
-	 * Input::RecordKeyPress().
+	 * Delete emits deleteRequested; F12 triggers a screenshot via UIEvents and
+	 * Ctrl+F12 an attachment dump. Everything Input::GetKey() recognises is
+	 * translated and emitted as keyPressed, accepted so ADS and the QMainWindow
+	 * menus do not also see it. All remaining keys chain to the base class.
 	 */
 	void keyPressEvent(QKeyEvent* event) override;
 
@@ -146,9 +171,17 @@ protected:
 	 * @brief Handles key release events.
 	 * @param event The key event.
 	 *
-	 * Chains to the base class. No longer calls Input::RecordKeyRelease().
+	 * Chains to the base class. There is deliberately no KeyReleaseEvent in the
+	 * editor's event set: a modal operator is closed by a confirm or a cancel,
+	 * never by letting go of the key that armed it.
 	 */
 	void keyReleaseEvent(QKeyEvent* event) override;
+
+	/**
+	 * @brief Emits focusLost so a live modal gesture can abort.
+	 * @param event The focus event.
+	 */
+	void focusOutEvent(QFocusEvent* event) override;
 
 	/**
 	 * @brief Handles mouse movement and emits the mouseMoved signal.

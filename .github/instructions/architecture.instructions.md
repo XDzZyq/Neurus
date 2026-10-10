@@ -50,7 +50,7 @@ are shared across layers.
 - Owns ALL GPU resources (device, swapchain, pipeline, command buffers, buffers, images, descriptors, RenderCache, Barrier state mapping)
 - Owns VkDevice, VkSwapchainKHR, VkPipeline, VkCommandPool
 - Consumes read-only VkSurfaceKHR from UI layer
-- Consumes per-frame RenderContext (immutable scene snapshot) for pass dispatch
+- Consumes per-frame RenderContext (immutable scene snapshot, embedding `SceneContext snapshot`) for pass dispatch
 - Centralized image barrier management via `Barrier::Transition` (ImageState → Vulkan layout/stage/access)
 - Owns `MeshGPU` (GPU-side mesh resources: VertexBuffer + IndexBuffer) via `RenderCache::GetMeshGPU()`
 - Owns `EnvironmentGPU` (GPU-side IBL resources: diffuse + specular cubemap Textures) via `RenderCache::CreateEnvironmentGPU()`
@@ -60,8 +60,9 @@ are shared across layers.
 
 **Editor Layer** (`src/editor/`)
 - Contains application logic and scene mutation
-- Owns Controllers (CameraController, SceneController, ShaderController) via `src/editor/controllers/`
-- Manages EditorContext (scene + editor state)
+- Owns Controllers (CameraController, TransformGizmoController, ShaderController, SceneController, RenderConfigController) via `src/editor/controllers/`
+- Manages SceneContext (the frame's scene view, shared with the UI layer)
+- Owns `EditorViewport`, the viewport composition root — the **viewport camera** (a pooled `Camera` that is not scene content), the debug/gizmo builders and the resize. `EditorViewport::GetCamera()` publishes the activated scene camera when the Scene names one and the viewport camera otherwise, and `SceneContext::camera` carries that choice to the renderer, so no pass reads the Scene. The Editor itself holds no camera and exposes no camera API — only `GetViewport()` and the timing (`SyncCamera` in `Edit()`). A scene with zero cameras is a legal document. See [editor.instructions.md](editor.instructions.md).
 - Owns UIEvents (Qt signals) and EventQueue (typed EventPool)
 - Communicates with Renderer via Context and typed EventQueue
 - Must NOT directly manipulate GPU resources
@@ -131,13 +132,29 @@ not carried in events: scene-scoped handlers obtain it from the context.
 - Editor↔Renderer event dispatch with deferred `Process()`
 
 **Context System** (Data)
-- `EditorContext` - Scene + editor state
-- `UIContext` - Per-frame UI snapshot carrying `RenderConfig` pointer
+- `SceneContext` (`src/scene/SceneContext.h`) - the frame's scene view, produced
+  once by `Editor::GetContext()` and embedded **by value** as `snapshot` into both
+  `RenderContext` and `UIContext`
+- `UIContext` - Per-frame UI snapshot: the embedded `snapshot` plus typed
+  profile/log/history pointers
 - Read-only access to scene data for Renderer
 - Data flows: Editor mutates, Renderer consumes
-- `RenderConfig` owned by Editor directly (no longer via Project);
-  per-frame snapshots via `RenderContext::config` (`void*`)
-- `Editor::SetRenderConfig()` writes UI config changes directly to Editor-owned RenderConfig → RenderContext
+- **Every context member is a typed pointer declared by forward declaration in
+  the context's own header** (`const Scene*`, `const RenderConfig*`,
+  `const Camera*`, `const DebugDrawList*`, `const GizmoDrawList*`;
+  `const FrameProfile*`, `const LogBuffer*`, `const HistoryView*` in `UIContext`),
+  and **growth is by composition** — a sibling struct embedded by value next to
+  `snapshot` — never by a `void*` slot. A forward declaration adds no include, so
+  the typed pointer costs the layer isolation nothing; the type erasure it replaced
+  cost 18 `static_cast` sites and two wrong null policies.
+- `RenderConfig` (`src/core/RenderConfig.h`) owned by Editor directly (no longer
+  via Project); passes and panels read it through `ctx.snapshot.Settings()`, which
+  never returns null and falls back to `RenderConfig`'s own in-class member
+  initializers — the single source of truth for render-setting defaults
+- Null policy: `config` is always safe through `Settings()`; `scene`, `camera`,
+  `debugDraw` and `gizmoDraw` MUST be checked (`HasScene()`, `HasCamera()`, or a
+  plain null test)
+- `Editor::SetRenderConfig()` writes UI config changes directly to Editor-owned RenderConfig → SceneContext
 
 ### Vulkan Ownership Graph (Critical)
 
@@ -236,7 +253,7 @@ compute pass, and full G-Buffer pipeline through the four-layer architecture.
 - `MeshGPU` and `EnvironmentGPU` as RenderCache-owned GPU resources (separated from scene/asset layers)
 - GPU-side mesh resources separated from scene `Mesh` (`MeshGPU` owned by RenderCache)
 - `GeometryRenderItem` removed (CPU/GPU concerns now fully separated)
-- Deferred PBR pipeline: ShadowDepthPass → GeometryPass (G-Buffer) → SSAOPass → Light+ShadowIntensity → LightingPass → IBLPass → GizmoPass (edge highlight) → ComposePass (gamma correction) → FXAAPass (FXAA 3.11, conditional) → Blit to swapchain
+- Deferred PBR pipeline: ShadowDepthPass → GeometryPass (G-Buffer) → SSAOPass → Light+ShadowIntensity → LightingPass → IBLPass → SelectionOutlinePass (edge highlight) → ComposePass (gamma correction) → FXAAPass (FXAA 3.11, conditional) → DebugPass (overlay, LOAD_OP_LOAD onto the last post-chain image) → Blit to swapchain
 - Centralized image barrier system (Barrier::Transition, ImageState enum)
 - Screenshot capture + TextureData PNG readback
 - GPU tests with shared VulkanTestShared base class

@@ -162,13 +162,16 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// -------------------------------------------------------------------
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
-	ctx.editor.scene = shadowRes.scene.get();
+	ctx.snapshot.scene = shadowRes.scene.get();
+	const RenderConfig config = ShadowReferenceConfig();
+	ctx.snapshot.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Record all passes in a single command buffer
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);

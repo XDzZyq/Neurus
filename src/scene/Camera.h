@@ -23,6 +23,8 @@
 #include <cereal/types/base_class.hpp>
 #include <cereal/types/vector.hpp>
 
+#include "core/Serialize.h"
+
 #include <vector>
 
 namespace neurus {
@@ -113,16 +115,28 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 * @note Cached projection matrix and frustum dirty flag are not
-	 *       serialized (computed values regenerated on deserialization).
+	 *       serialized: they are computed values, rebuilt by the `load` branch
+	 *       below.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ObjectID>(this),
-		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)),
-		   CEREAL_NVP(cam_w), CEREAL_NVP(cam_h),
-		   CEREAL_NVP(cam_pers), CEREAL_NVP(cam_near), CEREAL_NVP(cam_far),
-		   CEREAL_NVP(cam_tar), CEREAL_NVP(cam_floatData));
+		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
+		archive::Optional(ar, CEREAL_NVP(cam_w), CEREAL_NVP(cam_h),
+		                  CEREAL_NVP(cam_pers), CEREAL_NVP(cam_near),
+		                  CEREAL_NVP(cam_far), CEREAL_NVP(cam_tar),
+		                  CEREAL_NVP(cam_floatData));
+
+		// o_cachedView/o_cachedProj are caches of the fields above, and every setter
+		// that maintains them (SetPosition/SetTarPos/ChangeCamRatio/ChangeCamPersp)
+		// is bypassed by deserialization, so the load has to rebuild them. Nothing
+		// else in the load path rebuilds the VIEW matrix: FinishLoad() reaches
+		// RecomputeMatrices() through ApplyViewportToActiveCamera() ->
+		// ChangeCamRatio(), which is the only reason a stale view ever stayed
+		// latent. Same idiom as Transform3D/ImageData/MeshData/UID.
+		if constexpr (Archive::is_loading::value)
+			RecomputeMatrices();
 	}
 
 	/**

@@ -113,15 +113,17 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *cb.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
 
 	cb.scene->UseCamera(cb.camera);
+	cb.scene->ActivateCamera(cb.camera->GetObjectID());
 
 	RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
-		.editor = { .scene = cb.scene.get() },
+		.snapshot = { .scene = cb.scene.get() },
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

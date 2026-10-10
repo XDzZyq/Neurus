@@ -10,17 +10,24 @@ VulkanImageState Barrier::ToVulkanImageState(ImageState state)
 {
 	switch (state)
 	{
+	// Undefined/Invalid only ever appear as the *source* of a transition, i.e. a
+	// discard: the old contents are not preserved, so no cache flush is needed and
+	// the access mask stays empty. The stage is eAllCommands rather than eTopOfPipe
+	// because eTopOfPipe in a srcStageMask creates no execution dependency at all —
+	// a discard transition of an image someone else is still reading (a freshly
+	// acquired swapchain image, read by the presentation engine) would be unordered
+	// against that read. An execution-only dependency is enough to order it.
 	case ImageState::Undefined:
 		return {
 			vk::ImageLayout::eUndefined,
-			vk::PipelineStageFlagBits2::eTopOfPipe,
+			vk::PipelineStageFlagBits2::eAllCommands,
 			vk::AccessFlagBits2::eNone
 		};
 
 	case ImageState::Invalid:
 		return {
 			vk::ImageLayout::eUndefined,
-			vk::PipelineStageFlagBits2::eTopOfPipe,
+			vk::PipelineStageFlagBits2::eAllCommands,
 			vk::AccessFlagBits2::eNone
 		};
 
@@ -38,11 +45,19 @@ VulkanImageState Barrier::ToVulkanImageState(ImageState state)
 			vk::AccessFlagBits2::eTransferWrite
 		};
 
+	// The read bits are not optional: an attachment reached with
+	// VK_ATTACHMENT_LOAD_OP_LOAD (DebugPass draws over ComposedOutput) or read by
+	// the depth test without depth writes (DebugPass again) *reads* the image
+	// through the attachment stage, so a write-only dstAccessMask leaves the
+	// preceding writer's data unavailable to the load — on a tiler that surfaces
+	// as stale tiles blended into the frame. Passes that only clear-and-write are
+	// unaffected by the wider mask.
 	case ImageState::ColorAttachment:
 		return {
 			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-			vk::AccessFlagBits2::eColorAttachmentWrite
+			vk::AccessFlagBits2::eColorAttachmentWrite |
+			    vk::AccessFlagBits2::eColorAttachmentRead
 		};
 
 	case ImageState::DepthAttachment:
@@ -50,7 +65,8 @@ VulkanImageState Barrier::ToVulkanImageState(ImageState state)
 			vk::ImageLayout::eDepthStencilAttachmentOptimal,
 			vk::PipelineStageFlagBits2::eEarlyFragmentTests |
 			    vk::PipelineStageFlagBits2::eLateFragmentTests,
-			vk::AccessFlagBits2::eDepthStencilAttachmentWrite
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
+			    vk::AccessFlagBits2::eDepthStencilAttachmentRead
 		};
 
 	case ImageState::ColorShaderRead:

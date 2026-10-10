@@ -28,7 +28,7 @@
 #include "editor/operations/OperationContext.h"
 #include "editor/operations/OperationManager.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "scene/Scene.h"
 
 using namespace neurus;

@@ -1,6 +1,8 @@
 #include "RenderCache.h"
 
 #include "core/Log.h"
+#include "scene/DebugDrawList.h"
+#include "scene/GizmoDrawList.h"
 
 #include <algorithm>
 #include <cassert>
@@ -16,6 +18,9 @@ RenderCache::RenderCache(const vk::raii::Device& device,
                        const vk::raii::PhysicalDevice& physicalDevice)
 	: rc_device(&device)
 	, rc_physicalDevice(&physicalDevice)
+	, rc_cameraGPU(std::make_unique<CameraGPU>(device, physicalDevice))
+	, rc_debugCache(std::make_unique<DebugCache>(device, physicalDevice))
+	, rc_gizmoCache(std::make_unique<GizmoCache>(device, physicalDevice))
 {
 	NEURUS_LOG("[RenderCache] Created");
 }
@@ -217,6 +222,22 @@ void RenderCache::Clean()
 	rc_uidToShadowLayer.clear();
 	rc_lightingCache.reset();
 	rc_pipelineCache.Clear();
+}
+
+void RenderCache::RemoveSceneResources()
+{
+	rc_meshGPUs.clear();
+	rc_environmentGPUs.clear();
+	rc_lightGPUs.clear();
+	rc_uidToShadowLayer.clear();
+	rc_uidToSSBOIdx.clear();
+
+	// Shadow intensities are indexed by caster, and a new scene may have more or
+	// fewer of them, so the array is dropped and recreated at the right layer
+	// count on the next frame.
+	rc_shadowIntensityArray.reset();
+
+	NEURUS_LOG("[RenderCache] Dropped scene resources");
 }
 
 void RenderCache::CleanScreenSpace()
@@ -492,6 +513,25 @@ const LightingCache* RenderCache::GetLightingCache() const
 }
 
 // ---------------------------------------------------------------------------
+// Shared camera UBO / debug overlay geometry
+// ---------------------------------------------------------------------------
+
+void RenderCache::UpdateCamera(const glm::mat4& proj, const glm::mat4& view)
+{
+	rc_cameraGPU->Update(proj, view);
+}
+
+void RenderCache::UpdateDebugDraw(uint32_t frameIndex, const DebugDrawList& list)
+{
+	rc_debugCache->Update(frameIndex, list);
+}
+
+void RenderCache::UpdateGizmoDraw(uint32_t frameIndex, const GizmoDrawList& list)
+{
+	rc_gizmoCache->Update(frameIndex, list);
+}
+
+// ---------------------------------------------------------------------------
 // Attachment configuration
 // ---------------------------------------------------------------------------
 
@@ -556,8 +596,8 @@ RenderCache::AttachmentConfig RenderCache::ConfigFor(const AttachmentName name)
 	case AttachmentName::IDBuffer:
 		return { vk::Format::eR32Uint, kColorAttachmentUsage, e2D };
 
-	// --- Gizmo ---
-	case AttachmentName::GizmoHighlight:
+	// --- Selection ---
+	case AttachmentName::SelectionOutline:
 		return { vk::Format::eR8Unorm,
 		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage, e2D };
 
@@ -597,7 +637,7 @@ const char* AttachmentNameToString(const AttachmentName name)
 	case AttachmentName::ShadowDepth:       return "ShadowDepth";
 	case AttachmentName::ShadowIntensity:   return "ShadowIntensity";
 	case AttachmentName::IDBuffer:          return "IDBuffer";
-	case AttachmentName::GizmoHighlight:    return "GizmoHighlight";
+	case AttachmentName::SelectionOutline:  return "SelectionOutline";
 	case AttachmentName::ComposedOutput:    return "ComposedOutput";
 	case AttachmentName::FXAAOutput:        return "FXAAOutput";
 	case AttachmentName::FXAAOffsets:       return "FXAAOffsets";

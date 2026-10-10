@@ -58,11 +58,14 @@ struct Preferences
 	/**
 	 * @brief Loads settings from @p path. Never throws, never partially applies.
 	 *
-	 * Parsing happens into a scratch copy, so a file that is truncated or has
-	 * drifted schema leaves the current values exactly as they were.
+	 * Parsing happens into a default-constructed Preferences and is swapped in
+	 * only on success, so a file that is truncated or has drifted schema leaves
+	 * the current values exactly as they were — and a key the file is missing
+	 * resolves to the default declared above, not to the live value.
 	 *
 	 * @param path Filesystem path (see DefaultPath()).
-	 * @return Ok, Missing, or Corrupt (see LoadResult).
+	 * @return Ok, Missing, or Corrupt (see LoadResult). A file that parses but
+	 *         contains neither key is Ok with both defaults.
 	 */
 	LoadResult Load(const std::string& path);
 

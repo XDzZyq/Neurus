@@ -28,6 +28,13 @@
 *.tga       binary
 *.dds       binary
 *.ktx       binary
+# Radiance HDR: a text header followed by a binary RLE payload. Left to
+# `* text=auto`, git may classify one as text and normalise its line endings --
+# which is fatal, because stb_image's stbi_is_hdr() matches the magic bytes
+# "#?RADIANCE\n" exactly and rejects a CRLF header. One committed CRLF reference
+# (test/render/reference/ibl/faces.hdr/cube_face_+Y.hdr) made
+# IBLConversionTest.SaveCubemapFacesAsHDR_ProducesValidFiles unloadable.
+*.hdr       binary
 *.ico       binary
 *.ttf       binary
 *.otf       binary

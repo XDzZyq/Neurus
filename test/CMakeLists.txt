@@ -36,9 +36,16 @@ add_executable(neurus_test
 	render/test_temporal_shadow.cpp
 	render/test_sun_shadow_depth.cpp
 	render/test_fxaa.cpp
+	render/test_debug_pass.cpp
+	render/test_gizmo_pass.cpp
 	render/test_pickpixel.cpp
 	render/test_render_graph.cpp
+	render/test_null_scene_passes.cpp
 	editor/test_camera_controller.cpp
+	editor/test_debug_draw_builder.cpp
+	editor/test_editor_scene_lifecycle.cpp
+	editor/test_editor_viewport.cpp
+	editor/test_gizmo_draw_builder.cpp
 	editor/test_input.cpp
 	editor/test_event_bus.cpp
 	editor/test_event_bus_typed.cpp
@@ -48,6 +55,9 @@ add_executable(neurus_test
 	editor/test_render_config_controller.cpp
 	editor/test_shader_controller.cpp
 	editor/test_shader_editor_panel.cpp
+	editor/test_transform_gizmo.cpp
+	editor/test_transform_gizmo_controller.cpp
+	editor/test_viewport_camera.cpp
 	scene/test_camera.cpp
 	scene/test_mesh.cpp
 	scene/test_uid.cpp
@@ -57,9 +67,11 @@ add_executable(neurus_test
 	scene/test_scene.cpp
 	scene/test_scene_integration.cpp
 	scene/test_scene_serialize.cpp
+	scene/test_scene_camera_activation.cpp
 	scene/test_debug.cpp
 	asset/test_project_roundtrip.cpp
 	asset/test_default_project.cpp
+	asset/test_serialize_optional.cpp
 	asset/test_ui_component.cpp
 	core/test_graph.cpp
 	core/test_selections.cpp
@@ -67,10 +79,12 @@ add_executable(neurus_test
 	core/test_uid.cpp
 	core/test_resource_manager.cpp
 	ui/test_log_model.cpp
+	ui/test_debug_properties.cpp
 	ui/test_i18n.cpp
 	ui/test_po_catalog.cpp
 	ui/test_dock_identity.cpp
 	ui/test_floating_window.cpp
+	ui/test_layout_restore.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
 )

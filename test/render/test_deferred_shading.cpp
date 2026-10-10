@@ -148,16 +148,18 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
 
 	resources.scene->UseCamera(resources.camera);
+	resources.scene->ActivateCamera(resources.camera->GetObjectID());
 
 	RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
-		.editor = { .scene = resources.scene.get() },
+		.snapshot = { .scene = resources.scene.get() },
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
+		PublishSceneCamera(*m_renderCache, ctx.snapshot);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

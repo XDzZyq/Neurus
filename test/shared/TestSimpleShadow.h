@@ -144,6 +144,9 @@ inline SimpleShadowResources LoadSimpleShadow(
 		cam->SetPosition(glm::vec3(0.0f, 0.001f, 2.0f));  // small Y offset avoids degenerate lookAt
 		cam->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		res.scene->UseCamera(cam);
+		// Registration no longer implies activation; the fixture renders through
+		// this camera, so it activates it explicitly.
+		res.scene->ActivateCamera(cam->GetObjectID());
 	}
 
 	NEURUS_LOG("[LoadSimpleShadow] Built 2 meshes (cube + plane) + 1 point light + 1 camera");

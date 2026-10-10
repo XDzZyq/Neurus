@@ -19,6 +19,8 @@ add_library(neurus_ui STATIC
 	items/ShaderFieldRow.cpp
 	items/CodeEditor.h
 	items/CodeEditor.cpp
+	items/ColorButton.h
+	items/ColorButton.cpp
 	models/LogModel.h
 	models/LogModel.cpp
 	models/LogFilterProxy.h
@@ -43,6 +45,8 @@ add_library(neurus_ui STATIC
 	presets/LightProperties.cpp
 	presets/EnvironmentProperties.h
 	presets/EnvironmentProperties.cpp
+	presets/DebugProperties.h
+	presets/DebugProperties.cpp
 	panels/UIPanel.h
 	panels/UIPanel.cpp
 	panels/Outliner.h

@@ -11,7 +11,7 @@
  * - Owns the graphics pipeline, descriptor set layout, descriptor pool,
  *   camera UBO, and camera descriptor set (set 0).
  * - Borrows RenderCache (non-owning reference) for MeshGPU lookups.
- * - Reads mesh list from RenderContext::editor.scene->mesh_list.
+ * - Reads mesh list from RenderContext::snapshot.scene->mesh_list.
  * - For each Mesh: looks up MeshGPU via RenderCache::GetMeshGPU(),
  *   reads model matrix from Mesh::GetTransform().
  *
@@ -24,7 +24,7 @@
 #include "../DescriptorManager.h"
 #include "../PipelineBuilder.h"
 #include "../buffers/BufferLayout.h"
-#include "../buffers/UniformBuffer.h"
+#include "../resources/CameraGPU.h"
 #include "../shaders/ShaderLibrary.h"
 #include "../shaders/RenderShader.h"
 #include "Pass.h"
@@ -36,18 +36,6 @@
 #include <vector>
 
 namespace neurus {
-
-/**
- * @brief Camera data uploaded to the GPU each frame.
- *
- * Contains the combined view-projection matrix and the view matrix
- * (needed for view-space normal computation in the vertex shader).
- */
-struct CameraUBOData
-{
-	glm::mat4 viewProj;   ///< projection * view
-	glm::mat4 view;       ///< view matrix (for normal transform)
-};
 
 /**
  * @brief G-Buffer geometry pass using dynamic rendering.
@@ -83,7 +71,7 @@ public:
 	 *   1. Uploads camera data to the UBO (host-visible memcpy).
 	 *   2. Begins the G_BUFFER dynamic rendering pass.
 	 *   3. Sets viewport and scissor.
-	 *   4. Iterates ctx.editor.scene->mesh_list, looks up MeshGPU via cache.GetMeshGPU(),
+	 *   4. Iterates ctx.snapshot.scene->mesh_list, looks up MeshGPU via cache.GetMeshGPU(),
 	 *      reads model/normal matrices from mesh->GetTransform(), pushes constants,
 	 *      binds vertex/index buffers, and draws indexed.
 	 *   5. Ends the dynamic rendering pass.
@@ -133,10 +121,9 @@ private:
 	// --- Descriptor resources ---
 	DescriptorSetLayout p_cameraLayout;             ///< Set 0 layout definition
 
-	// --- Camera UBO (host-visible for per-frame update) ---
-	UniformBuffer<CameraUBOData> p_cameraUBO;
-
-	// --- Descriptor pool + set for camera UBO ---
+	// --- Descriptor pool + set naming RenderCache's shared camera UBO ---
+	// The buffer itself belongs to RenderCache::GetCameraGPU(), which
+	// DeferredRenderer updates once per frame; this pass only binds it.
 	DescriptorPool p_descriptorPool;
 	DescriptorSet p_cameraDescriptorSet;
 

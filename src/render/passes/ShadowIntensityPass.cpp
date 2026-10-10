@@ -5,7 +5,7 @@
 
 #include "RenderCache.h"
 #include "passes/ShadowIntensityPass.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 
 #include "../PipelineBuilder.h"
 #include "Image.h"
@@ -418,17 +418,25 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
-	// --- Early out: no scene ---
-	if (!ctx.editor.scene)
+	// --- Early out: no scene (SceneContext's null policy) ---
+	if (!ctx.snapshot.HasScene())
 	{
 		NEURUS_LOG("[ShadowIntensityPass] No scene, skipping");
 		return stats;
 	}
 
-	// --- Cast scene UID to Scene* for access to Scene-specific members ---
-	const auto* scene = static_cast<const Scene*>(ctx.editor.scene);
-	const auto* config = static_cast<const RenderConfig*>(ctx.editor.config);
-	const float shadowBias = config ? config->r_shadow_bias : 0.0005f;
+	const Scene* scene = ctx.snapshot.scene;
+
+	// Settings() is never null and falls back to RenderConfig's own in-class
+	// defaults, so there is no literal here to drift from the declaration. The
+	// ternary this replaced had drifted 40x (0.0005f against a declared 0.02f).
+	const RenderConfig& settings = ctx.snapshot.Settings();
+	const float shadowBias = settings.r_shadow_bias;
+
+	// One answer for both the point and the sun path below, which used to read the
+	// config separately and both defaulted to MovingAvg where RenderConfig declares
+	// FixedEMA (r_sampling_mode = 0).
+	const ShadowAlphaMode alphaMode = static_cast<ShadowAlphaMode>(settings.r_sampling_mode);
 
 	{
 		int shadowCount = 0;
@@ -498,14 +506,6 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		{
 			const auto& pos = light->GetPosition();
 			const uint32_t layer = cache.GetShadowIntensityLayer(uid, renderExtent);
-
-			// Read alpha mode from config
-			ShadowAlphaMode alphaMode = ShadowAlphaMode::MovingAvg;
-			if (ctx.editor.config)
-			{
-				const auto* cfg = static_cast<const RenderConfig*>(ctx.editor.config);
-				alphaMode = static_cast<ShadowAlphaMode>(cfg->r_sampling_mode);
-			}
 
 			ShadowEvalPushConstants pc = {};
 			pc.lightPosX   = pos.x;
@@ -589,22 +589,24 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			const glm::vec3 up = (glm::abs(glm::dot(lightDir, kWorldUp)) > 0.999f)
 				? kAltUp : kWorldUp;
 
-			// Use camera target as ortho centre (same as ShadowDepthPass)
-			const Camera* activeCam = scene->GetActiveCamera();
+			// Use camera target as ortho centre (same as ShadowDepthPass).
+			// The camera comes from the context, not from the Scene: the Editor
+			// injects whichever camera the frame is rendered through, and the sun
+			// cascade must centre on *that* one or the shadow slides off the part of
+			// the world actually on screen. See the fuller note in
+			// LightingPass::Record().
+			const Camera* activeCam = ctx.snapshot.camera;
+			if (!activeCam)
+			{
+				NEURUS_LOG("[ShadowIntensityPass] No camera in SceneContext, skipping sun light");
+				continue;
+			}
 			const glm::vec3 center = activeCam->cam_tar;
 			const glm::vec3 lightEye = center - lightDir * Light::sun_depth_range;
 			const glm::mat4 lightView = glm::lookAt(lightEye, center, up);
 			const glm::mat4 lightViewProj = lightProj * lightView;
 
 			const uint32_t layer = cache.GetShadowIntensityLayer(uid, renderExtent);
-
-			// Read alpha mode from config
-			ShadowAlphaMode alphaMode = ShadowAlphaMode::MovingAvg;
-			if (ctx.editor.config)
-			{
-				const auto* cfg = static_cast<const RenderConfig*>(ctx.editor.config);
-				alphaMode = static_cast<ShadowAlphaMode>(cfg->r_sampling_mode);
-			}
 
 			SunShadowEvalPushConstants pc = {};
 			pc.lightViewProj = lightViewProj;

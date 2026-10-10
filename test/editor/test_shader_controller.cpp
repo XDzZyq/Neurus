@@ -45,7 +45,7 @@
 #include "editor/operations/registrations/OperationRegistration.h"
 #include "editor/operations/ShaderOperations.h"
 #include "core/ResourceManager.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/Shader.h"
 #include "render/shaders/ShaderParser.h"

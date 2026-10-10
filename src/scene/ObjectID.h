@@ -25,6 +25,7 @@
 #include <cereal/cereal.hpp>
 #include <cereal/types/string.hpp>
 
+#include "core/Serialize.h"
 #include "core/UID.h"
 
 namespace neurus
@@ -72,6 +73,18 @@ public:
 
 	mutable bool is_viewport = true;           ///< Visible in viewport (editor-only)
 	mutable bool is_rendered = true;           ///< Included in rendering pipeline
+
+	/**
+	 * @brief True for either light type, both of which project into the light SSBO.
+	 *
+	 * A member rather than a predicate in each caller: "is this a light" decides
+	 * whether a mutation needs GPU light work, and two of the ten GOTypes answer
+	 * yes, so every copy of the test is a place to forget the second one.
+	 */
+	bool IsLight() const
+	{
+		return o_type == GOType::GO_LIGHT || o_type == GOType::GO_POLYLIGHT;
+	}
 
 	/**
 	 * @brief Sets visibility flags for viewport and rendering.
@@ -137,14 +150,21 @@ public:
 
 	/**
 	 * @brief Cereal serialization for object identity and metadata.
+	 *
+	 * The UID hook stays strict — identity is what every cross-reference in the
+	 * pool resolves through, so its absence must surface. The metadata around it
+	 * is optional: each concrete default ctor already sets `o_type` and `o_name`
+	 * (see Mesh::Mesh), so a field a file lacks keeps the right value.
+	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<UID>(this), CEREAL_NVP(o_name), CEREAL_NVP(o_type),
-		   CEREAL_NVP(is_viewport), CEREAL_NVP(is_rendered));
+		ar(cereal::base_class<UID>(this));
+		archive::Optional(ar, CEREAL_NVP(o_name), CEREAL_NVP(o_type),
+		                  CEREAL_NVP(is_viewport), CEREAL_NVP(is_rendered));
 	}
 };
 

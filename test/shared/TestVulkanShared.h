@@ -13,12 +13,14 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include "core/RenderConfig.h"
 #include "platform/PlatformSurface.h"
 #include "render/Barrier.h"
 #include "render/RenderCache.h"
 #include "render/UploadManager.h"
 #include "render/passes/GeometryPass.h"
 #include "scene/Camera.h"
+#include "scene/SceneContext.h"
 #include "scene/Scene.h"
 
 #include <array>
@@ -214,6 +216,86 @@ protected:
 			neurus::ImageState::DepthAttachment);
 
 		fixture.EndSubmitWait(cmd);
+	}
+
+	/**
+	 * @brief Publishes the scene's active camera into the RenderCache's shared UBO.
+	 *
+	 * DeferredRenderer::recordFrame() does this once per frame, before any pass
+	 * records; a test that drives a pass directly is standing in for that frame
+	 * driver and must do the same. GeometryPass and DebugPass only *bind*
+	 * RenderCache::GetCameraGPU() — without this call it is still invalid and
+	 * both passes record nothing.
+	 *
+	 * No-op when no scene camera is activated — and nothing is activated by
+	 * default, so `UseCamera()` alone is not enough: a render test must also call
+	 * `Scene::ActivateCamera(uid)`. In the app the viewport looks through the
+	 * viewport's own camera, so "no activated scene camera" is the normal state, not
+	 * a failure the Scene will repair.
+	 */
+	static void PublishSceneCamera(neurus::RenderCache& cache,
+	                               const neurus::Scene& scene)
+	{
+		if (const neurus::Camera* cam = scene.GetActiveCamera())
+		{
+			cache.UpdateCamera(cam->GetProjectionMatrix(), cam->GetViewMatrix());
+		}
+	}
+
+	/**
+	 * @brief PublishSceneCamera overload taking the context a pass will receive.
+	 *
+	 * Does both halves of what DeferredRenderer::recordFrame() does with the
+	 * camera: fills RenderCache's shared UBO *and* injects the camera into the
+	 * SceneContext, which is where every pass now reads the viewing camera from
+	 * (LightingPass, SSAOPass, ShadowDepthPass, ShadowIntensityPass). Publishing
+	 * only the UBO would leave those four passes skipping their work.
+	 *
+	 * Takes the context by non-const reference for that reason — the real frame
+	 * driver writes `editor.camera` too, and a test standing in for it must.
+	 * No-op when no scene is attached.
+	 *
+	 * Call it **before the first pass records**, exactly where recordFrame() puts
+	 * it, and not merely before the pass that reads the camera. Ordering is now
+	 * load-bearing in a way it was not when passes reached into the Scene
+	 * themselves: ShadowDepthPass skips its whole sun cascade when
+	 * `snapshot.camera` is null, and a later publication cannot retroactively
+	 * fill a shadow map that was never rendered.
+	 */
+	static void PublishSceneCamera(neurus::RenderCache& cache,
+	                               neurus::SceneContext& snapshot)
+	{
+		if (const neurus::Scene* scene = snapshot.scene)
+		{
+			snapshot.camera = scene->GetActiveCamera();
+			PublishSceneCamera(cache, *scene);
+		}
+	}
+
+	/**
+	 * @brief The shadow settings every shadow reference image was baked with.
+	 *
+	 * These are **not** RenderConfig's declared defaults (`0.02f` / FixedEMA). They
+	 * are the two values ShadowIntensityPass used to fall back to when no config was
+	 * published, and every shadow reference PNG on disk encodes that fallback. A
+	 * test that drives the pass directly publishes no config unless it says so, so
+	 * without this it would silently render at the declared defaults instead and
+	 * report a mismatch that is really a change of input.
+	 *
+	 * Publishing explicitly is the point: it puts the test on the same footing as
+	 * production, where `Editor::GetContext()` always publishes `m_config`, and it
+	 * stops a pass's null-config fallback from being load-bearing for a reference
+	 * image. A suite that wants different settings sets them on the returned value.
+	 *
+	 * Returned by value, so the caller must keep it alive for as long as the
+	 * snapshot borrows it — `SceneContext::config` is frame-scoped, not owning.
+	 */
+	static neurus::RenderConfig ShadowReferenceConfig()
+	{
+		neurus::RenderConfig config{};
+		config.r_shadow_bias   = 0.0005f;
+		config.r_sampling_mode = 1u;  // ShadowAlphaMode::MovingAvg
+		return config;
 	}
 
 	/**

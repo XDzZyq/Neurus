@@ -4,6 +4,8 @@ add_library(neurus_render_passes STATIC
 	ComposePass.h
 	ComposePass.cpp
 	ComputePass.h
+	DebugPass.h
+	DebugPass.cpp
 	FXAAPass.h
 	FXAAPass.cpp
 	GeometryPass.h
@@ -16,6 +18,8 @@ add_library(neurus_render_passes STATIC
 	LightingPass.cpp
 	Pass.h
 	Pass.cpp
+	SelectionOutlinePass.h
+	SelectionOutlinePass.cpp
 	ShadowDepthPass.h
 	ShadowDepthPass.cpp
 	ShadowIntensityPass.h

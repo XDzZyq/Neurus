@@ -25,7 +25,7 @@ Point Light (point source). Mapping the pipeline revealed these touchpoints:
 | Layer | Point Light | Sun Light |
 |-------|------------|-----------|
 | Scene | `PointLight` struct | `SunLight` struct |
-| RenderContext | `pointLights` vector + SSBO backing | `sunLights` vector + SSBO backing |
+| LightingCache | `PointLightStruct` SSBO | `SunLightStruct` SSBO (passes walk `ctx.snapshot.scene->light_list`) |
 | RenderCache | Cubemap shadow map (6-layer 2D_ARRAY, 1024x1024) | 2D orthographic shadow map (2048x2048) |
 | ShadowDepthPass | 6-face cubemap geometry pass | Single-view 2D orthographic pass |
 | ShadowIntensityPass | `samplerCubeShadow` + direction-based PCF | `sampler2DShadow` + ortho depth PCF |
@@ -57,7 +57,10 @@ and can be done in parallel:
 - **Push constant struct**: `SunShadowPushConstants` with `mat4 lightViewProj`.
 - **GLSL shaders**: `sun_shadow_depth.vert/.frag`, `sun_shadow_intensity.comp`,
   `shade_sun_light.glsl`.
-- **RenderContext**: Add `std::vector<SunLightGpu> sunLights` and backing SSBO.
+- **LightingCache**: Add the `SunLightStruct` SSBO and its `UpdateSunLights()`
+  writer. Nothing goes into `RenderContext` — it carries only `width`, `height`,
+  `frameIndex`, the `SceneContext snapshot`, `jitter` and `iteration`, and passes
+  reach the lights through `ctx.snapshot.scene->light_list`.
 - **RenderCache**: Add `GetShadowMap(lightUID, LightType::SUNLIGHT)` support for
   2D orthographic depth maps at 2048×2048 resolution. Extend
   `GetShadowIntensityLayer(lightUID, extent)` to assign layers to sun lights.
@@ -112,10 +115,21 @@ Wire everything into the render loop and editor:
 
 ```powershell
 cmake --build build --config Debug                # 0 errors
+python scripts/extract_i18n.py --check            # 100% translated, not stale
 make check                                       # ALL pass, including regression
 $output = & "build/Debug/Neurus.exe" 2>&1        # capture output
 $output | Select-String "VUID-"                  # ZERO matches
 ```
+
+**Every new user-visible string is translated in the same commit.**
+`scripts/extract_i18n.py` only *extracts*: a key lands in `res/i18n/*.po` with an
+empty `msgstr`, so adding one `translate("...")` call is enough to make the
+catalog stale, and CI's pre-build `--check` gate stays red until the key is both
+rendered into the catalog and filled in. Run the extractor, write the
+translation for every shipped catalog, then re-run `--check` until it prints
+`OK`. The failure looks like `160/184 translated (87.0%) MISSING 24` — that is a
+missing translation, not a stale file, so regenerating the catalog does not fix
+it. See ui-system.instructions.md for the pipeline.
 
 **For reference images, always verify with Python before committing:**
 
@@ -161,6 +175,7 @@ Bugs encountered during Sun Light implementation and their fixes:
 - [ ] Build: 0 errors, 0 warnings
 - [ ] All tests pass (existing + new) -- `make check`
 - [ ] Zero VUID validation errors -- `Neurus.exe 2>&1 | grep VUID-`
+- [ ] No untranslated or stale catalogs -- `python scripts/extract_i18n.py --check`
 - [ ] Every reference image verified with Python PIL
 - [ ] User reviewed and approved
 - [ ] Commit with standard message

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 
 namespace neurus {
 

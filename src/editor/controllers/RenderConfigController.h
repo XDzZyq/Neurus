@@ -23,7 +23,7 @@
 #include <functional>
 
 #include "editor/controllers/Controllers.h"
-#include "render/RenderConfig.h"
+#include "core/RenderConfig.h"
 
 namespace neurus {
 
