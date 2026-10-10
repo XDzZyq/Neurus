@@ -72,7 +72,7 @@ help:
 	@echo "Neurus Build System"
 	@echo "==================="
 	@echo ""
-	@echo "  make update         - Init submodules, download pre-compiled deps, configure CMake"
+	@echo "  make update         - Init submodules, download pre-compiled deps via lib/, configure CMake"
 	@echo "  make configure      - Configure Debug build (VS 2022)"
 	@echo "  make build          - Build everything (Debug)"
 	@echo "  make build app      - Build Neurus.exe only"
@@ -88,7 +88,7 @@ help:
 # --- Dependency Setup ---
 
 update:
-	git submodule update --init --recursive
-	$(PYTHON) scripts/setup_dependencies.py
+	git submodule update --init --recursive --depth 1
+	git submodule update --init --depth 1 lib/src/googletest
+	$(PYTHON) lib/scripts/fetch_prebuilt.py
 	cmake --preset $(PRESET) $(if $(BINARY_DIR),-B $(BINARY_DIR),)
-	@echo ""
