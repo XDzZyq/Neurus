@@ -76,8 +76,9 @@ imgui.ini
 result/
 output/
 
-# Pre-compiled third-party libraries (downloaded via make update)
-lib/
+# lib/ is the Neurus-Lib submodule (upstream sources + downloaded prebuilt
+# libraries). The prebuilt/ download target is git-ignored inside Neurus-Lib
+# itself — not here — so this path must stay un-ignored for submodule ops.
 
 # Temp
 tmp/

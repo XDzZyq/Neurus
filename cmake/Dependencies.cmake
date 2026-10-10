@@ -2,13 +2,13 @@
 # Neurus Dependencies - Pre-compiled Binary Library Resolution
 #
 # Priority:
-#   1. lib/<platform>/<dep>/  (pre-compiled, fast)
-#   2. dep/<dep>/             (source build, fallback)
-#   3. find_package()         (system SDK)
+#   1. lib/prebuilt/<platform>/<dep>/  (pre-compiled, fast)
+#   2. lib/src/<dep>/                  (source build, fallback)
+#   3. find_package()                  (system SDK)
 #
 # Functions:
 #   neurus_detect_platform()         - set NEURUS_PLATFORM (windows/linux/macos)
-#   neurus_find_dependency(name)     - resolve a dep from lib/ or dep/
+#   neurus_find_dependency(name)     - resolve a dep from lib/prebuilt/ or lib/src/
 # ---------------------------------------------------------------------------
 
 function(neurus_detect_platform)
@@ -26,20 +26,20 @@ endfunction()
 # ---------------------------------------------------------------------------
 # neurus_find_dependency(name)
 #
-# Resolves a dependency, preferring pre-compiled binaries in lib/<platform>/<name>/
-# over source builds in dep/<name>/.
+# Resolves a dependency, preferring pre-compiled binaries in
+# lib/prebuilt/<platform>/<name>/ over source builds in lib/src/<name>/.
 #
 # For each dependency, the function:
-#   1. Checks if lib/<platform>/<name>/lib/ contains the pre-compiled library
+#   1. Checks if lib/prebuilt/<platform>/<name>/lib/ contains the pre-compiled library
 #   2. If found: creates an IMPORTED target pointing to the binary
-#   3. If not found: falls back to add_subdirectory(dep/<name>)
+#   3. If not found: falls back to add_subdirectory(lib/src/<name>)
 #
 # The expected lib/ layout for each dependency:
-#   lib/<platform>/<name>/
+#   lib/prebuilt/<platform>/<name>/
 #     lib/           - .lib / .dll / .so files
 #     include/       - (optional) build-specific headers
 #
-# Headers are sourced from dep/<name>/ for API headers (which don't change
+# Headers are sourced from lib/src/<name>/ for API headers (which don't change
 # between source and pre-compiled builds).
 #
 # Supported dependencies:
@@ -114,15 +114,15 @@ endfunction()
 function(neurus_find_dependency name)
 
 	# --- Determine paths ---
-	set(LIB_DIR "${CMAKE_SOURCE_DIR}/lib/${NEURUS_PLATFORM}/${name}")
-	set(DEP_DIR "${CMAKE_SOURCE_DIR}/dep/${name}")
+	set(LIB_DIR "${CMAKE_SOURCE_DIR}/lib/prebuilt/${NEURUS_PLATFORM}/${name}")
+	set(DEP_DIR "${CMAKE_SOURCE_DIR}/lib/src/${name}")
 
 	# -----------------------------------------------------------------------
 	# shaderc (shared library)
 	# -----------------------------------------------------------------------
 	if(name STREQUAL "shaderc")
 
-		# shaderc headers are in the dep/ submodule
+		# shaderc headers are in the lib/src/ submodule
 		set(SHADERC_INCLUDE_DIR "${DEP_DIR}/libshaderc/include")
 
 		if(EXISTS "${LIB_DIR}/lib/shaderc_shared.lib")
@@ -159,7 +159,7 @@ function(neurus_find_dependency name)
 		else()
 			message(STATUS "Pre-compiled shaderc not found in ${LIB_DIR}, building from source")
 
-			# Source build from dep/shaderc (existing behavior)
+			# Source build from lib/src/shaderc (existing behavior)
 			set(SHADERC_SKIP_TESTS ON CACHE BOOL "" FORCE)
 			set(SHADERC_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
 			set(SHADERC_SKIP_INSTALL ON CACHE BOOL "" FORCE)
@@ -249,7 +249,7 @@ function(neurus_find_dependency name)
 			set(BUILD_STATIC ON)
 			add_subdirectory("${DEP_DIR}")
 
-			# dep/qtadvanceddocking/src/CMakeLists.txt pins its target to
+			# lib/src/qtadvanceddocking/src/CMakeLists.txt pins its target to
 			# CXX_STANDARD 17 for Qt6. Qt's inline containers carry
 			# `#if __cplusplus >= 202002L` branches (QCommonArrayOps::
 			# appendIteratorRange, for one), which is the same ODR hazard as a

@@ -19,7 +19,7 @@ if(MSVC)
 	# with nothing to fold, so they blow past MSVC's default 65535-section COFF
 	# limit (error C1128) as soon as a few more types are registered. /bigobj only
 	# widens that limit -- no codegen or ABI change -- and cereal builds itself the
-	# same way (see dep/cereal/CMakeLists.txt).
+	# same way (see lib/src/cereal/CMakeLists.txt).
 	add_compile_options(/bigobj)
 	# Suppress MSVC-specific noisy warnings for third-party headers
 	add_compile_options(/wd4100)  # unreferenced formal parameter
@@ -48,16 +48,16 @@ add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
 # ---------------------------------------------------------------------------
 
 # GLM (header-only math library)
-add_subdirectory(dep/glm EXCLUDE_FROM_ALL)
-target_include_directories(glm INTERFACE dep/glm)
+add_subdirectory(lib/src/glm EXCLUDE_FROM_ALL)
+target_include_directories(glm INTERFACE lib/src/glm)
 
 # STB (header-only image library - stub, only stb_image.h needed later)
 add_library(stb INTERFACE)
-target_include_directories(stb INTERFACE dep/stb)
+target_include_directories(stb INTERFACE lib/src/stb)
 
 # Cereal (header-only serialization library)
 add_library(cereal INTERFACE)
-target_include_directories(cereal INTERFACE dep/cereal/include)
+target_include_directories(cereal INTERFACE lib/src/cereal/include)
 
 # Vulkan (from SDK)
 find_package(Vulkan REQUIRED)
@@ -72,8 +72,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick Qml Widgets Test)
 # Pre-compiled / Source Dependency Resolution
 # ---------------------------------------------------------------------------
 # Dependencies.cmake provides neurus_find_dependency() which prefers
-# pre-compiled libraries in lib/<platform>/<name>/ over source builds in
-# dep/<name>/. Run `make update` to download pre-compiled binaries.
+# pre-compiled libraries in lib/prebuilt/<platform>/<name>/ over source builds
+# in lib/src/<name>/. Run `make update` to download pre-compiled binaries.
 # ---------------------------------------------------------------------------
 include(cmake/Dependencies.cmake)
 neurus_detect_platform()
@@ -109,6 +109,6 @@ add_subdirectory(src)
 
 if(NEURUS_BUILD_TESTS)
 	enable_testing()
-	add_subdirectory(dep/googletest EXCLUDE_FROM_ALL)
+	add_subdirectory(lib/src/googletest EXCLUDE_FROM_ALL)
 	add_subdirectory(test)
 endif()
