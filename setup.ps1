@@ -57,7 +57,7 @@ if ($env:VULKAN_SDK -and $env:CMAKE_PREFIX_PATH) {
     }
 
     # Build
-    cmake --build build/debug --config Debug
+    cmake --build build --config Debug
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Build failed." -ForegroundColor Red
         exit 1
@@ -65,8 +65,8 @@ if ($env:VULKAN_SDK -and $env:CMAKE_PREFIX_PATH) {
 
     Write-Host ""
     Write-Host "=== Build Successful ===" -ForegroundColor Green
-    Write-Host "  Run: .\build\debug\Debug\Neurus.exe"
-    Write-Host "  Test: cd build\debug; ctest -C Debug --output-on-failure"
+    Write-Host "  Run: .\build\Debug\Neurus.exe"
+    Write-Host "  Test: cd build; ctest -C Debug --output-on-failure"
 }
 else {
     Write-Host "[NOT READY] Install the missing prerequisites above, then re-run this script." -ForegroundColor Yellow
