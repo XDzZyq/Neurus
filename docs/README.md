@@ -9,7 +9,6 @@ isolation; this page indexes every document in the set.
 - [Layers](architecture/layers.md) - responsibilities of the renderer, editor, UI, asset, scene and core layers
 - [Data Flow](architecture/data-flow.md) - the isolation chain, the three event paths, and context objects
 - [Ownership](architecture/ownership.md) - the Vulkan ownership graph
-- [Coordinate System](architecture/coordinate-system.md) - the Z-up, +Y forward convention
 
 ## Rendering
 
@@ -45,6 +44,7 @@ isolation; this page indexes every document in the set.
 - [Serialization](core/serialization.md)
 - [Render Config](core/render-config.md)
 - [Logging](core/logging.md)
+- [Coordinate System](core/coordinate-system.md) - the Z-up, +Y forward convention
 - [Scene Objects](scene/objects.md)
 - [Transform](scene/transform.md)
 - [Overlays](scene/overlays.md)

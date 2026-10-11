@@ -18,7 +18,7 @@
 - `GetNormalMatrix()` returns the inverse transpose of the upper-left 3x3 of the model matrix, which keeps normals correct under non-uniform scaling.
 - Not thread-safe: access from the main thread only.
 
-Rotation is stored as `(pitch = X, roll = Y, yaw = Z)` in degrees, converted to radians at compute time. The full convention is documented in [Coordinate System](../architecture/coordinate-system.md).
+Rotation is stored as `(pitch = X, roll = Y, yaw = Z)` in degrees, converted to radians at compute time. The full convention is documented in [Coordinate System](../core/coordinate-system.md).
 
 ## Model matrix composition
 
@@ -47,4 +47,4 @@ The model matrix is always up to date:
 - The camera projection flips Y for Vulkan NDC (`proj[1][1] *= -1`).
 - `CameraController` spherical coordinates use `elevation = asin(dir.z)` and `azimuth = atan2(dir.x, dir.y)`.
 
-All of these are covered in [Coordinate System](../architecture/coordinate-system.md).
+All of these are covered in [Coordinate System](../core/coordinate-system.md).

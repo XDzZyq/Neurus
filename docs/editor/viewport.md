@@ -3,7 +3,7 @@
 `EditorViewport` is the composition root for the editor's 3D view: it owns the
 viewport camera, the world-to-screen conversions that camera defines, and the
 overlay builders that draw over it. Projected coordinates follow the codebase's
-[Coordinate System](../architecture/coordinate-system.md) (Z-up, +Y forward,
+[Coordinate System](../core/coordinate-system.md) (Z-up, +Y forward,
 right-hand).
 
 ## The composition root
