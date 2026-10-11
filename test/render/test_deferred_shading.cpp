@@ -151,9 +151,9 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	resources.scene->ActivateCamera(resources.camera->GetObjectID());
 
 	RenderContext ctx{
+		.scene = resources.scene.get(),
 			.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
-		.scene = resources.scene.get(),
 	};
 
 	// --- Record geometry pass ---

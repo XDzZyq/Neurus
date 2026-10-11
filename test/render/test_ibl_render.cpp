@@ -331,10 +331,10 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	m_renderCache->UpdateLighting(lightDict);
 
 	RenderContext ctx{
+		.scene = &scene,
 		.width = kRenderWidth,
 		.height = kRenderHeight,
 		.frameIndex = 0,
-		.scene = &scene,
 	};
 
 	// --- Record geometry pass ---
@@ -442,9 +442,9 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				m_renderCache->UpdateLighting(lightDict);
 
 			RenderContext ctx{
+				.scene = &scene,
 				.width = kRenderWidth, .height = kRenderHeight,
 				.frameIndex = 0,
-				.scene = &scene,
 			};
 
 		auto& cmd = BeginCmd();
@@ -590,9 +590,9 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				m_renderCache->UpdateLighting(lightDict);
 
 			RenderContext ctx{
+				.scene = &scene,
 				.width = kRenderWidth, .height = kRenderHeight,
 				.frameIndex = 0,
-				.scene = &scene,
 			};
 
 		auto& cmd = BeginCmd();
