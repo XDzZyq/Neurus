@@ -399,13 +399,12 @@ void PropertyPanel::SetEnabled(bool enabled)
 
 	// Deliberately does NOT touch the type subpanels: choosing which one is
 	// visible is ShowTypeSubpanel()'s single job, and Refresh() always calls it
-	// right after. Hiding them here used to hide-then-re-show the visible
-	// subpanel on every frame for any object whose GetTransform() is null
-	// (DebugLine, DebugPoints). A hide/show pair inside one frame strips focus
-	// from whatever control lives in that panel -- Qt re-homes it on the
-	// Viewport -- so the swatch flickered between hoverable and not and the
-	// color picker could not keep focus. DebugMesh/Mesh are unaffected because
-	// their GetTransform() is non-null, which is why only line/points broke.
+	// right after. Hiding them here hid-then-re-showed the visible subpanel on
+	// every frame for any object whose GetTransform() is null, and a hide/show
+	// pair inside one frame strips focus from whatever control lives in that
+	// panel -- Qt re-homes it on the Viewport. (DebugLine and DebugPoints were
+	// the objects that hit this, until they gained transforms; Sprite is the one
+	// that still has none.)
 }
 
 // =========================================================================

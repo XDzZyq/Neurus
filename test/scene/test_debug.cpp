@@ -69,6 +69,26 @@ TEST(DebugLine, InheritsTransform3D)
 }
 
 /**
+ * @test GetTransform() exposes the object's own Transform3D.
+ *
+ * Consumers resolve a target's transform polymorphically through
+ * ObjectID::GetTransform() -- the gizmo, the property panel and the Scene's
+ * per-frame transform update all bail out on nullptr. A DebugLine that returns
+ * nullptr is invisible to every one of them.
+ */
+TEST(DebugLine, GetTransformReturnsItsOwnTransform)
+{
+	DebugLine dl;
+	ASSERT_NE(dl.GetTransform(), nullptr);
+
+	// The handle is this object: writing through it is the object's own TRS.
+	auto* xf = static_cast<Transform3D*>(dl.GetTransform());
+	xf->SetPosition(glm::vec3(2.0f, 4.0f, 6.0f));
+	EXPECT_EQ(dl.GetPosition(), glm::vec3(2.0f, 4.0f, 6.0f));
+	EXPECT_FLOAT_EQ(dl.GetModelMatrix()[3][1], 4.0f);
+}
+
+/**
  * @test PushDebugLine adds a pair of vertices (start/end).
  */
 TEST(DebugLine, PushDebugLine_SingleSegment)
@@ -240,6 +260,21 @@ TEST(DebugPoints, InheritsTransform3D)
 	Transform* base = &dp;
 	Transform3D* ptr = dynamic_cast<Transform3D*>(base->GetTransformPtr());
 	EXPECT_NE(ptr, nullptr);
+}
+
+/**
+ * @test GetTransform() exposes the object's own Transform3D (see the DebugLine
+ *       case for why every polymorphic transform consumer depends on it).
+ */
+TEST(DebugPoints, GetTransformReturnsItsOwnTransform)
+{
+	DebugPoints dp;
+	ASSERT_NE(dp.GetTransform(), nullptr);
+
+	auto* xf = static_cast<Transform3D*>(dp.GetTransform());
+	xf->SetPosition(glm::vec3(-1.0f, 0.0f, 3.0f));
+	EXPECT_EQ(dp.GetPosition(), glm::vec3(-1.0f, 0.0f, 3.0f));
+	EXPECT_FLOAT_EQ(dp.GetModelMatrix()[3][2], 3.0f);
 }
 
 /**

@@ -9,7 +9,9 @@
  *
  * Architecture:
  * - Inherits ObjectID for scene graph identity and type discrimination
- * - Inherits Transform3D for world-space placement
+ * - Inherits Transform3D; vertices are stored in its local space, so the whole
+ *   line can be moved/rotated/scaled as a unit (DebugDrawBuilder bakes the model
+ *   matrix into the world-space overlay payload)
  * - Vertex storage via std::vector<glm::vec3> - no GPU resources
  * - PushDebugLine/PushDebugLines for adding segment data
  *
@@ -172,6 +174,17 @@ public:
 	void SetXRay(bool xray) { o_xray = xray; }
 	/** @brief Returns whether x-ray mode is enabled. */
 	bool GetXRay() const { return o_xray; }
+
+	/**
+	 * @brief Returns this object's Transform component.
+	 *
+	 * Vertices are stored in the transform's local space and DebugDrawBuilder
+	 * bakes `GetModelMatrix()` into the world-space overlay payload, so every
+	 * vertex moves with the transform. Overriding this is what makes the object
+	 * reachable by the gizmo, the property panel and Scene::UpdateObjTransforms;
+	 * Mesh/DebugMesh are the pattern.
+	 */
+	void* GetTransform() override { return static_cast<Transform*>(this); }
 
 private:
 	glm::vec4 o_color{1.0f, 1.0f, 1.0f, 1.0f}; ///< Line RGBA color.

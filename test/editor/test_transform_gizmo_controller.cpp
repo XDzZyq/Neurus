@@ -44,6 +44,8 @@
 #include "core/ResourceManager.h"
 #include "core/RenderConfig.h"
 #include "scene/Camera.h"
+#include "scene/DebugLine.h"
+#include "scene/DebugPoints.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
@@ -230,6 +232,38 @@ TEST_F(TransformGizmoControllerTest, ConfirmingALightRebuildsTheDict)
 
 	EXPECT_EQ(m_tally.lightDict, 1);
 	EXPECT_EQ(m_tally.modified, 1);
+}
+
+// --- 6. Debug line/points are ordinary gizmo targets ------------------------
+
+/**
+ * @test A DebugLine is gizmo-targetable, exactly like a mesh.
+ *
+ * DebugLine/DebugPoints already inherit Transform3D and DebugDrawBuilder already
+ * bakes their matrix into world space, but neither overrode GetTransform(), so
+ * the gizmo could not arm on them (the resting handle still drew, via a separate
+ * dynamic_cast). This pins that G/R/S now moves them and a confirm records
+ * exactly one op and one dirty mark.
+ */
+TEST_F(TransformGizmoControllerTest, DebugLineIsGizmoTargetable)
+{
+	auto line = std::make_shared<DebugLine>();
+	line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	m_scene.UseDebugLine(line);
+
+	auto* xf = static_cast<Transform3D*>(line->GetTransform());
+	ASSERT_NE(xf, nullptr) << "a DebugLine must expose a transform to be targetable";
+	const glm::vec3 start = xf->GetPosition();
+
+	Arm(GizmoMode::Move, line->GetObjectID());
+	DragTo(kW * 0.75f);
+
+	EXPECT_NE(xf->GetPosition(), start) << "the drag must move the debug line";
+	EXPECT_EQ(m_tally.modified, 0) << "still revertible while the gesture is live";
+
+	Confirm();
+	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u) << "one gesture, one undo entry";
+	EXPECT_EQ(m_tally.modified, 1) << "one gesture, one dirty mark";
 }
 
 /// @test A mesh asks for no light work in either tier.

@@ -553,13 +553,21 @@ complete scene events (see events.instructions.md, "Three event paths").
   alone decides which one is visible.** `Refresh()` runs every frame and calls
   `SetEnabled()` *before* `ShowTypeSubpanel()`, so hiding the subpanels inside
   `SetEnabled(false)` hid the visible one and the next line re-showed it. For an
-  object whose `GetTransform()` is null (DebugLine, DebugPoints) that hide/show
-  pair fired **every frame**; the transient hide stripped focus from any control
-  in the panel and Qt re-homed it on the `Viewport`, so the color swatch
-  flickered between hoverable and not and the picker never kept focus. Objects
-  with a transform (Mesh, DebugMesh, Light, Camera) never took that branch, which
-  is why only line/points misbehaved. Hiding all subpanels when nothing is
-  selected is instead done explicitly on `Refresh()`'s two early-return paths.
+  object whose `GetTransform()` is null that hide/show pair fired **every frame**;
+  the transient hide stripped focus from any control in the panel and Qt
+  re-homed it on the `Viewport`, so the color swatch flickered between hoverable
+  and not and the picker never kept focus. (DebugLine/DebugPoints were the type
+  that hit this until they gained transforms; `Sprite` is the one that still has
+  none.) Hiding all subpanels when nothing is selected is instead done explicitly
+  on `Refresh()`'s two early-return paths.
+- **`DebugLine` and `DebugPoints` are transformable like any other scene
+  object.** Both inherit `Transform3D` and override `GetTransform()` to return
+  themselves, so the gizmo's G/R/S and the panel's Transform group act on them,
+  and `DebugDrawBuilder` bakes `GetModelMatrix()` into the world-space overlay
+  payload. Their stored vertex/point list is therefore **local space, relative to
+  the transform**: the Positions table edits local coordinates, and moving the
+  transform moves the whole line/point set. `Sprite` remains the only scene type
+  with no transform.
 
 ### ShaderEditorPanel
 

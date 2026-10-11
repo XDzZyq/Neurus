@@ -9,7 +9,9 @@
  *
  * Architecture:
  * - Inherits ObjectID for scene graph identity and type discrimination
- * - Inherits Transform3D for world-space placement
+ * - Inherits Transform3D; points are stored in its local space, so the whole
+ *   set can be moved/rotated/scaled as a unit (DebugDrawBuilder bakes the model
+ *   matrix into the world-space overlay payload)
  * - Point storage via std::vector<glm::vec3> - no GPU resources
  * - PointType enum for choosing point sprite shape
  * - PushDebugPoint/PushDebugPoints for adding point data
@@ -118,13 +120,13 @@ public:
 
 	/**
 	 * @brief Adds a single debug point at the given position.
-	 * @param point World-space position of the point.
+	 * @param point Local-space position of the point (relative to the transform).
 	 */
 	void PushDebugPoint(const glm::vec3& point);
 
 	/**
 	 * @brief Appends multiple debug points.
-	 * @param points Vector of world-space positions.
+	 * @param points Vector of local-space positions (relative to the transform).
 	 */
 	void PushDebugPoints(const std::vector<glm::vec3>& points);
 
@@ -135,7 +137,7 @@ public:
 
 	/**
 	 * @brief Replaces the whole point list.
-	 * @param points New world-space positions.
+	 * @param points New local-space positions (relative to the transform).
 	 * @see DebugLine::SetVertices for why the editor sets the list absolutely.
 	 */
 	void SetPoints(std::vector<glm::vec3> points) { o_points = std::move(points); }
@@ -192,6 +194,17 @@ public:
 	void SetXRay(bool xray) { o_xray = xray; }
 	/** @brief Returns whether x-ray mode is enabled. */
 	bool GetXRay() const { return o_xray; }
+
+	/**
+	 * @brief Returns this object's Transform component.
+	 *
+	 * Points are stored in the transform's local space and DebugDrawBuilder bakes
+	 * `GetModelMatrix()` into the world-space overlay payload, so every point
+	 * moves with the transform. Overriding this is what makes the object
+	 * reachable by the gizmo, the property panel and Scene::UpdateObjTransforms;
+	 * Mesh/DebugMesh are the pattern.
+	 */
+	void* GetTransform() override { return static_cast<Transform*>(this); }
 
 private:
 	PointType o_pointType{PointType::SQUARE};    ///< Point sprite shape.
