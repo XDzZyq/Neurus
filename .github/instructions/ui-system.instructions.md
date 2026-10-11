@@ -37,9 +37,20 @@ The UI layer is a **Qt6 Widgets** application with **Qt-Advanced-Docking-System 
 | `src/ui/Icons.h/cpp` | Static SVG icon library with lazy-loaded QIcon cache |
 | `src/ui/items/ScalarSlider.h/cpp` | Reusable slider+spinbox composite widget |
 | `src/ui/items/Vec3Spin.h/cpp` | Reusable XYZ triple-spinbox composite widget |
-| `src/ui/items/ColorButton.h/cpp` | Color swatch button opening QColorDialog; optional alpha channel |
+| `src/ui/items/ColorButton.h/cpp` | Color swatch button opening QColorDialog asynchronously (`open()`); optional alpha channel |
 | `src/ui/items/OutlinerRow.h/cpp` | Pool-recyclable outliner row with type icon, name, toggles |
 | `src/ui/qml/` | Qt resource files: QML layouts, QSS stylesheets (embedded at build time) |
+
+**ColorButton opens its dialog asynchronously — do not use `QColorDialog::getColor()`.**
+`getColor()` shows the dialog through `QDialog::exec()`, a *nested modal event loop*.
+Inside it this app's 16 ms render timer keeps re-entering `Application::newFrame()`
+(edit → draw → `Refresh()`), and on Windows (where `QColorDialog` is Qt's own widget
+dialog, not the native one — the Win32 `ChooseColor` helper is compiled out upstream)
+the loop also returns keyboard focus to the viewport when it closes. The swatch then
+looked like it never opened the picker. `ColorButton` keeps one reusable
+`QColorDialog` and shows it with `open()` (window-modal, asynchronous), applying the
+result via `colorSelected` — no nested loop, no focus theft. The same reasoning
+applies to any future modal dialog in the UI layer.
 | `src/ui/VulkanWindow.h/cpp` | QVulkanWindow subclass hosting the triangle renderer |
 
 ## Rendering Architecture
@@ -538,6 +549,17 @@ complete scene events (see events.instructions.md, "Three event paths").
   `setObjectId()` **before** the setters (it invalidates the caches) and
   `setDebugType()` to pick the visible rows. The position list is flattened to
   xyz triples in the forwarding lambda, since `SceneEvents.h` stays glm-free.
+- **`SetEnabled(false)` must not hide the type subpanels — `ShowTypeSubpanel()`
+  alone decides which one is visible.** `Refresh()` runs every frame and calls
+  `SetEnabled()` *before* `ShowTypeSubpanel()`, so hiding the subpanels inside
+  `SetEnabled(false)` hid the visible one and the next line re-showed it. For an
+  object whose `GetTransform()` is null (DebugLine, DebugPoints) that hide/show
+  pair fired **every frame**; the transient hide stripped focus from any control
+  in the panel and Qt re-homed it on the `Viewport`, so the color swatch
+  flickered between hoverable and not and the picker never kept focus. Objects
+  with a transform (Mesh, DebugMesh, Light, Camera) never took that branch, which
+  is why only line/points misbehaved. Hiding all subpanels when nothing is
+  selected is instead done explicitly on `Refresh()`'s two early-return paths.
 
 ### ShaderEditorPanel
 

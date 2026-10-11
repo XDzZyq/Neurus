@@ -127,6 +127,7 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 	if (!scene)
 	{
 		SetEnabled(false);
+		ShowTypeSubpanel(static_cast<int>(ObjectID::GOType::NONE_GO));
 		m_activeObjectId = 0;
 		return;
 	}
@@ -135,6 +136,7 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 	if (!activeObj)
 	{
 		SetEnabled(false);
+		ShowTypeSubpanel(static_cast<int>(ObjectID::GOType::NONE_GO));
 		m_activeObjectId = 0;
 		return;
 	}
@@ -395,10 +397,15 @@ void PropertyPanel::SetEnabled(bool enabled)
 	m_transformGroup->setEnabled(enabled);
 	m_emptyLabel->setVisible(!enabled);
 
-	if (!enabled)
-	{
-		ShowTypeSubpanel(static_cast<int>(ObjectID::GOType::NONE_GO));
-	}
+	// Deliberately does NOT touch the type subpanels: choosing which one is
+	// visible is ShowTypeSubpanel()'s single job, and Refresh() always calls it
+	// right after. Hiding them here used to hide-then-re-show the visible
+	// subpanel on every frame for any object whose GetTransform() is null
+	// (DebugLine, DebugPoints). A hide/show pair inside one frame strips focus
+	// from whatever control lives in that panel -- Qt re-homes it on the
+	// Viewport -- so the swatch flickered between hoverable and not and the
+	// color picker could not keep focus. DebugMesh/Mesh are unaffected because
+	// their GetTransform() is non-null, which is why only line/points broke.
 }
 
 // =========================================================================

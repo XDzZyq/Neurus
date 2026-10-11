@@ -6,6 +6,7 @@
 #include "items/ColorButton.h"
 
 #include <QColorDialog>
+#include <QDialog>
 
 namespace neurus
 {
@@ -47,15 +48,33 @@ void ColorButton::UpdateSwatch()
 
 void ColorButton::PickColor()
 {
-	QColorDialog::ColorDialogOptions options;
-	if (m_withAlpha)
-		options |= QColorDialog::ShowAlphaChannel;
+	// One reusable dialog, shown with open() - window-modal and asynchronous -
+	// instead of the static QColorDialog::getColor(), whose exec() spins a
+	// nested modal event loop. That nested loop re-enters this app's per-frame
+	// render timer and, on Windows, hands keyboard focus back to the viewport
+	// when it closes, which made the swatch appear not to open the picker.
+	if (!m_dialog)
+	{
+		m_dialog = new QColorDialog(m_color, this);
+		m_dialog->setOption(QColorDialog::ShowAlphaChannel, m_withAlpha);
+		QObject::connect(m_dialog, &QColorDialog::colorSelected,
+		                 this, &ColorButton::OnColorSelected);
+	}
 
-	const QColor picked = QColorDialog::getColor(m_color, this, QString(), options);
-	if (!picked.isValid() || picked == m_color)
+	m_dialog->setCurrentColor(m_color);
+	// QColorDialog declares its own open(receiver, member) overloads, which
+	// hide QDialog::open(); name the base explicitly.
+	static_cast<QDialog*>(m_dialog)->open();
+	m_dialog->raise();
+	m_dialog->activateWindow();
+}
+
+void ColorButton::OnColorSelected(const QColor& c)
+{
+	if (!c.isValid() || c == m_color)
 		return;  // cancelled, or the user re-picked the same color
 
-	m_color = picked;
+	m_color = c;
 	UpdateSwatch();
 	emit colorChanged(m_color);
 }

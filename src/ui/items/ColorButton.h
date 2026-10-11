@@ -19,6 +19,8 @@
 #include <QColor>
 #include <QPushButton>
 
+class QColorDialog;
+
 namespace neurus
 {
 
@@ -61,11 +63,19 @@ private:
 	/** @brief Repaints the swatch from m_color. */
 	void UpdateSwatch();
 
-	/** @brief Opens the dialog; emits colorChanged() only on accept + change. */
+	/** @brief Opens (or raises) the color dialog. */
 	void PickColor();
+
+	/** @brief Applies a color chosen in the dialog; emits colorChanged(). */
+	void OnColorSelected(const QColor& c);
 
 	QColor m_color{ 255, 255, 255, 255 };
 	bool   m_withAlpha = false;
+
+	/// Lazily created and owned by this button. A QColorDialog shown with
+	/// open() rather than the static getColor()/exec() so no nested modal
+	/// event loop re-enters the app's per-frame render timer.
+	QColorDialog* m_dialog = nullptr;
 };
 
 } // namespace neurus
