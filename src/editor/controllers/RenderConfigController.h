@@ -1,21 +1,14 @@
 /**
  * @file RenderConfigController.h
- * @brief Render-config controller — applies + records whole-config edits.
+ * @brief Render-config controller - applies + records whole-config edits.
  *
- * RenderConfigController is the single mutation path for RenderConfig. It
- * subscribes to RenderConfigChangedEvent (emitted by the UI panel and replayed
- * by SetRenderConfigOp) and writes the new config into the Editor-owned
- * RenderConfig, reached through the ControllerContext's config provider — so
- * the controller holds no reference to the config (or any context member).
+ * The single mutation path for RenderConfig: it writes the new config into the
+ * Editor-owned instance reached through the context's config provider, so it
+ * holds no reference to the config.
  *
- * Undo bounding mirrors the camera drag gesture: a slider drag brackets its
- * stream of value changes with ConfigEditBegin / ConfigEditEnd, so the whole
- * drag collapses to a single SetRenderConfigOp recorded on release. Discrete
- * edits (checkbox, combo box) arrive without a gesture and are recorded
- * immediately, one op each.
- *
- * @note RenderConfig is a scene-level (not pooled) Editor singleton, so it is
- *       reached through the context's config provider rather than the pool.
+ * Undo bounding mirrors a camera drag gesture: a slider drag brackets its stream
+ * of changes with ConfigEditBegin/ConfigEditEnd and collapses to one op recorded
+ * on release; discrete edits record immediately, one op each.
  */
 
 #pragma once

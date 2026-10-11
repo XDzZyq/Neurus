@@ -5,15 +5,10 @@
  * Provides:
  *   NEURUS_LOG - debug-only info logging (compiled out in Release).
  *   NEURUS_ERR - always-on error logging (prints in all builds).
- *   LogBuffer  - thread-safe fixed-capacity ring buffer; every macro
- *                emission appends a LogEntry here in addition to the
- *                existing stdout/stderr output (TTY colors preserved).
+ *   LogBuffer  - thread-safe fixed-capacity ring buffer that every macro
+ *                emission appends to, in addition to stdout/stderr output.
  *
  * Both macros automatically inject __func__ and __LINE__ for traceability.
- *
- * Usage:
- *   NEURUS_LOG("[Swapchain] " << extent.width << "x" << extent.height);
- *   NEURUS_ERR("[Texture] failed: " << reason);
  */
 
 #pragma once
@@ -69,10 +64,9 @@ constexpr std::size_t kLogCapacity = 10000;
 /**
  * @brief Thread-safe fixed-capacity ring buffer for log entries.
  *
- * Header-only Meyers singleton so `neurus_core` stays an INTERFACE
- * library. Magic statics make `instance()` thread-safe; an internal
- * mutex guards all accessors. Counts track entries currently in the
- * buffer (InfoCount + ErrorCount == Size()).
+ * Header-only Meyers singleton; an internal mutex guards all accessors.
+ * Counts track entries currently in the buffer (InfoCount + ErrorCount ==
+ * Size()).
  */
 class LogBuffer
 {
@@ -164,8 +158,8 @@ public:
 
 	/**
 	 * @brief Monotonic seq of the newest entry (0 when empty/cleared).
-	 * @note Model polls this each frame to detect growth (insert rows)
-	 *       or a Clear (seq drops -> reset model).
+	 * @note A consumer polls this each frame to detect growth (insert rows)
+	 *       or a Clear (seq drops -> reset).
 	 */
 	uint64_t HeadSeq() const
 	{
@@ -188,18 +182,16 @@ private:
 } // namespace neurus
 
 /**
- * @brief Debug-only info log. Prints to std::cout (TTY-colored in Debug)
- *        and appends a LogEntry to the LogBuffer. Compiled out entirely
- *        in Release builds (no append, no count, no cost).
+ * @brief Debug-only info log. Prints to std::cout (TTY-colored in Debug) and
+ *        appends a LogEntry to the LogBuffer. Compiled out entirely in
+ *        Release builds (no append, no count, no cost).
  *
- * Debug detection: MSVC's CRT auto-defines _DEBUG in Debug builds. Clang/GCC
- * do not; they rely on the standard NDEBUG macro (absent in Debug). Accept
- * either signal so the log is active in Debug on every supported compiler.
+ * Debug detection accepts either MSVC's _DEBUG or a missing NDEBUG, so the
+ * log is active in Debug on every supported compiler.
  *
  * @note `msg` is streamed into an ostringstream exactly ONCE, preserving
- *       single-evaluation semantics (NEURUS_LOG(getCount()) calls
- *       getCount() once). __func__/__LINE__ expand at the invocation site
- *       and feed both the buffer entry and the console line.
+ *       single-evaluation semantics. __func__/__LINE__ expand at the call
+ *       site and feed both the buffer entry and the console line.
  */
 #if defined(_DEBUG) || !defined(NDEBUG)
 #define NEURUS_LOG(msg) \

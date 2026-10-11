@@ -1,10 +1,7 @@
 /**
  * @file OutlinerRow.cpp
- * @brief OutlinerRow implementation — two-phase config: setObject (data) then setSelectionMode + setRowIndex (visual).
- *
- * Type icons are loaded from the Icons cache as QPixmaps.
- * Visibility toggle buttons swap between visible/invisible icons
- * sourced from the Icons cache on each toggle.
+ * @brief OutlinerRow implementation - two-phase config: setObject (data) then
+ *        setSelectionMode + setRowIndex (visual).
  */
 
 #include "items/OutlinerRow.h"
@@ -118,8 +115,8 @@ OutlinerRow::OutlinerRow(QWidget* parent)
 	renderFx->setEnabled(true);
 	m_renderBtn->setGraphicsEffect(renderFx);
 
-	// Connect signals — lambdas read m_objectUid at emission time.
-	// Each toggle records its state and applies the colorize tint.
+	// Lambdas read m_objectUid at emission time; each toggle records its state
+	// and applies the colorize tint.
 	QObject::connect(m_eyeBtn, &QPushButton::toggled, this,
 		[this](bool) {
 			m_eyeVisible = m_eyeBtn->isChecked();
@@ -174,7 +171,6 @@ void OutlinerRow::retranslate(const QString& viewportTip, const QString& renderT
 void OutlinerRow::setObject(const QIcon& icon,
                             const QString& name, int objectUid)
 {
-	// Update name text
 	m_nameBtn->setText(name);
 	if (m_objectUid == objectUid)
 		return;

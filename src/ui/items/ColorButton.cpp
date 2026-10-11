@@ -36,8 +36,7 @@ void ColorButton::setColor(const QColor& c)
 void ColorButton::UpdateSwatch()
 {
 	// The alpha is shown as a solid blend against the panel rather than a
-	// checkerboard: a debug tint is drawn over the viewport, so the swatch is
-	// only ever a hint at the hue, not a preview of the composite.
+	// checkerboard: the swatch is a hint at the hue, not a preview.
 	const QColor opaque(m_color.red(), m_color.green(), m_color.blue());
 	const QString border = opaque.lightnessF() > 0.5 ? "#404040" : "#a0a0a0";
 	setStyleSheet(QString("QPushButton { background-color: %1; border: 1px solid %2; "
@@ -50,9 +49,7 @@ void ColorButton::PickColor()
 {
 	// One reusable dialog, shown with open() - window-modal and asynchronous -
 	// instead of the static QColorDialog::getColor(), whose exec() spins a
-	// nested modal event loop. That nested loop re-enters this app's per-frame
-	// render timer and, on Windows, hands keyboard focus back to the viewport
-	// when it closes, which made the swatch appear not to open the picker.
+	// nested modal event loop that re-enters the app's per-frame render timer.
 	if (!m_dialog)
 	{
 		m_dialog = new QColorDialog(m_color, this);

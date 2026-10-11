@@ -9,11 +9,8 @@
  *
  * Naming convention: "folder:name" (e.g. "scene:mesh" → scene/mesh.svg).
  *
- * Architecture:
- * - Fully static class — no instantiation needed.
- * - Initialize() populates the path registry; called once by UIManager.
- * - GetIcon() lazily loads and caches QIcon objects process-wide.
- * - Lives in src/ui/ — pure UI layer, no Vulkan or Renderer dependencies.
+ * Fully static class; Initialize() populates the path registry, GetIcon()
+ * lazily loads and caches QIcon objects process-wide.
  */
 
 #pragma once
@@ -41,8 +38,6 @@ public:
 
 	/**
 	 * @brief Returns the type icon for a scene object GOType.
-	 *
-	 * GOType int values: 1=MESH, 3=LIGHT, 4=CAMERA, others=MESH fallback.
 	 */
 	static QIcon ObjectIcon(int goType);
 

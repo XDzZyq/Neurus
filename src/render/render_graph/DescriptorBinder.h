@@ -2,20 +2,15 @@
  * @file DescriptorBinder.h
  * @brief Writes a pass's declared image attachments into its descriptor set.
  *
- * DescriptorBinder turns a pass's `PassIO` declaration (see Pass.h) into
- * concrete descriptor writes, replacing hand-written per-pass descriptor
- * plumbing. Each `AttachmentBinding` carries the shader binding slot, the
+ * DescriptorBinder turns a pass's `PassIO` declaration into concrete descriptor
+ * writes. Each `AttachmentBinding` carries the shader binding slot, the
  * descriptor type (combined image sampler vs storage image), and the image
- * layout the shader expects.
+ * layout the shader expects. A single shared sampler is supplied by the caller
+ * and used for every combined-image-sampler binding; storage-image bindings
+ * ignore it.
  *
- * Wave 2 scope: images only. UBO / SSBO / sampler-only bindings remain
- * hand-written on the pass. A single shared sampler is supplied by the
- * caller and used for every combined-image-sampler binding; storage-image
- * bindings ignore it.
- *
- * @note This is a pure translation helper — it performs no barriers and no
- *       layout transitions. The caller (pass or RenderGraph) is responsible
- *       for transitioning attachments to `imageLayout` before dispatch.
+ * @note Performs no barriers and no layout transitions. The caller must
+ *       transition attachments to `imageLayout` before dispatch.
  */
 
 #pragma once

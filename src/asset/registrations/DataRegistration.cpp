@@ -2,9 +2,8 @@
  * @file DataRegistration.cpp
  * @brief Cereal polymorphic registration for pooled data resources.
  *
- * Registers MeshData and ImageData (asset layer, CPU-side data resources) as
- * polymorphic leaves of the core UID base, so the ResourceManager pool
- * (unordered_map<int, shared_ptr<UID>>) can serialize them by type name.
+ * Registers MeshData and ImageData as polymorphic leaves of the UID base so
+ * the resource pool can serialize them by type name.
  */
 
 #include <cereal/archives/json.hpp>
@@ -13,9 +12,6 @@
 #include "asset/data/ImageData.h"
 #include "asset/data/MeshData.h"
 #include "core/UID.h"
-
-// --- Base type registration (UID is in the scene TypeRegistration TU, but
-//     re-registering the leaves here is required for this TU to be complete) ---
 
 // --- Derived data-resource registration ---
 CEREAL_REGISTER_TYPE(neurus::MeshData)

@@ -34,11 +34,6 @@ struct SamplerConfig
  * automatically for sampled textures.
  *
  * Non-copyable, movable.
- *
- * Usage:
- *   Texture tex = Texture::FromData(device, physDev, queue, qfi,
- *                                    512, 512, pixels, vk::Format::eR8G8B8A8Srgb);
- *   if (tex.IsValid()) { ... }
  */
 class Texture
 {
@@ -87,9 +82,7 @@ public:
 	/**
 	 * @brief Creates a Texture from raw in-memory pixel data.
 	 *
-	 * Allocates a staging buffer, uploads the pixel data, copies it to a
-	 * device-local Image, generates mipmaps, and transitions the layout
-	 * to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL.
+	 * Uploads through a staging buffer and generates mipmaps.
 	 *
 	 * @param device           Logical device.
 	 * @param physicalDevice   Physical device for memory queries.
@@ -202,7 +195,6 @@ public:
 	/**
 	 * @brief Reads back a Texture from the GPU and writes it as PNG.
 	 *
-	 * Convenience wrapper that delegates to SaveImage() via texture.GetImage().
 	 * @return true on success.
 	 */
 	static bool SaveTexture(const vk::raii::Device& device,
@@ -224,7 +216,7 @@ public:
 	 * and PNG output.  The image is left in the layout it was found in.
 	 *
 	 * @param image       Image to capture (layout is temporarily transitioned).
-	 * @param remapSigned Passed to ConvertHalfToU8 for normal‑map data.
+	 * @param remapSigned Remap signed values for normal-map data.
 	 * @return true on success.
 	 */
 	static bool SaveImage(Image& image,

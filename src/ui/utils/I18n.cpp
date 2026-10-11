@@ -48,9 +48,8 @@ QString I18n::translateCtx(const char* key, const char* context) const
 
 QList<I18n::LanguageInfo> I18n::supportedLanguages()
 {
-	// English is implicit: the msgids ARE the English strings, so it has no
-	// catalog. Every other language is discovered from the embedded catalogs,
-	// making a new res/i18n/<code>.po the only edit needed to add a language.
+	// English is implicit: msgids ARE the English strings. Every other language
+	// is discovered from the embedded catalogs.
 	QList<LanguageInfo> langs{ { QStringLiteral("en"), QStringLiteral("English") } };
 
 	const QFileInfoList files = QDir(QStringLiteral(":/i18n"))

@@ -17,19 +17,17 @@ namespace neurus {
 Viewport::Viewport(QWidget* parent)
 	: UIPanel(PanelType::Viewport, nullptr, parent)
 {
-	// Ensure a dedicated native window handle exists for Vulkan surface creation
+	// Dedicated native window handle for Vulkan surface creation.
 	setAttribute(Qt::WA_NativeWindow);
 
-	// Tell Qt this widget paints all its pixels - no background fill needed.
-	// Vulkan handles all rendering for this widget's area.
+	// This widget paints all its pixels: no background fill is needed.
 	setAttribute(Qt::WA_OpaquePaintEvent);
 	setAttribute(Qt::WA_NoSystemBackground);
 	setAutoFillBackground(false);
 
-	// Enable keyboard focus for input handling
 	setFocusPolicy(Qt::StrongFocus);
 
-	// Enable mouse tracking so mouseMoveEvent fires even without a button held
+	// Deliver moves even when no button is held.
 	setMouseTracking(true);
 }
 
@@ -37,25 +35,19 @@ Viewport::~Viewport() = default;
 
 void Viewport::Refresh(const UIContext& /*ctx*/)
 {
-	// The viewport is pure input forwarding + Vulkan rendering - it holds no
-	// scene state. All events it emits (mouse, Delete) are pure intents; the
-	// Editor wraps the active scene and forwards dedicated events to
-	// controllers.
+	// Nothing to refresh: the viewport holds no scene state.
 }
 
 void Viewport::paintEvent(QPaintEvent* /*event*/)
 {
-	// No-op: all rendering is handled by Vulkan. This override prevents
-	// Qt from drawing a default widget background behind the Vulkan content.
+	// No-op; the override stops Qt from filling the widget background.
 }
 
 void Viewport::resizeEvent(QResizeEvent* event)
 {
-	// Emit the resized signal with the new dimensions so the Renderer
-	// can recreate the swapchain at the correct size.
+	// Publish the new dimensions so the swapchain can be recreated.
 	emit resized(event->size().width(), event->size().height());
 
-	// Chain to base class for standard Qt resize handling.
 	QWidget::resizeEvent(event);
 }
 
@@ -63,8 +55,6 @@ void Viewport::keyPressEvent(QKeyEvent* event)
 {
 	if (event->key() == Qt::Key_Delete)
 	{
-		// Delete: pure intent - remove ALL selected objects. The Editor wraps
-		// the active scene and forwards the batched ObjectDeleteRequested.
 		emit deleteRequested(DeleteRequested{});
 		event->accept();
 		return;
@@ -74,24 +64,20 @@ void Viewport::keyPressEvent(QKeyEvent* event)
 	{
 		if (event->modifiers() == Qt::NoModifier)
 		{
-			// F12: capture swapchain screenshot via event system
 			NEURUS_LOG("[Screenshot] F12 pressed - requesting screenshot via UIEvents");
 			UIEvents::instance().requestScreenshot();
 			return;
 		}
 		else if (event->modifiers() == Qt::ControlModifier)
 		{
-			// Ctrl+F12: dump all G-Buffer attachments via event system
 			NEURUS_LOG("[Screenshot] Ctrl+F12 pressed - requesting attachment dump via UIEvents");
 			UIEvents::instance().requestScreenshotAll();
 			return;
 		}
 	}
 
-	// Modal transform keys (G/R/S, X/Y/Z, Return, Escape). Auto-repeat is
-	// filtered HERE, at the Qt boundary, because a held key must arm an operator
-	// once rather than sixty times a second - the editor's event set has no
-	// repeat notion to filter on later.
+	// Auto-repeat is filtered here, at the Qt boundary: a held key must arm an
+	// operator once, and no downstream layer sees repeat information.
 	if (!event->isAutoRepeat())
 	{
 		const Input::Key key = Input::GetKey(static_cast<uint32_t>(event->key()));
@@ -102,32 +88,21 @@ void Viewport::keyPressEvent(QKeyEvent* event)
 				.modifiers = Input::GetModifiers(static_cast<uint32_t>(event->modifiers().toInt()))
 			});
 			// Accepted so the keystroke stops here: unaccepted, it would walk up
-			// through ADS to the QMainWindow, where a menu mnemonic could claim it.
+			// to the window, where a menu mnemonic could claim it.
 			event->accept();
 			return;
 		}
 	}
 
-	// Pass all other keys to the base class.
 	QWidget::keyPressEvent(event);
 }
 
 void Viewport::focusOutEvent(QFocusEvent* event)
 {
-	// A modal gesture reads viewport keys and the viewport cursor, so focus moving
-	// to another *widget* means it can no longer be confirmed or cancelled from
-	// here -- that is a genuine abort.
-	//
-	// The whole window or application ceasing to be frontmost is NOT. Qt installs
-	// its NSTrackingArea with NSTrackingActiveInActiveApp, so an inactive app is
-	// delivered no bare mouseMoved at all: the gesture simply pauses and resumes
-	// untouched once the app is frontmost again. Aborting on that reason reverted
-	// the transform on every app switch, IME candidate popup and notification --
-	// indistinguishable, from the user's side, from "the object stopped following
-	// the mouse", and intermittent because it depends on what stole activation.
-	//
-	// Still emitted for every other reason, and the gizmo controller drops it when
-	// nothing is armed.
+	// A modal gesture reads viewport keys and the cursor, so focus moving to
+	// another widget is a genuine abort. Losing frontmost activation is not:
+	// an inactive app is delivered no mouse moves, so the gesture pauses and
+	// resumes untouched. The controller ignores the signal when nothing is armed.
 	const Qt::FocusReason reason = event->reason();
 	if (reason != Qt::ActiveWindowFocusReason && reason != Qt::PopupFocusReason)
 		emit focusLost(ViewportFocusLost{});

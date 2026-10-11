@@ -1,11 +1,8 @@
 /**
  * @file PixelFormat.h
- * @brief Vulkan‑free pixel format enum for CPU‑side image data.
+ * @brief Vulkan-free pixel format enum for CPU-side image data.
  *
- * Maps to Vulkan `vk::Format` equivalents via comments.  Zero Vulkan includes.
- * Pure C++ standard library only — no external dependencies beyond <cstdint>.
- *
- * Analogous to MeshData.h (pure CPU data, no Vulkan/GPU resources).
+ * Pure CPU data: the standard library only, zero Vulkan includes.
  */
 #pragma once
 
@@ -14,26 +11,9 @@
 namespace neurus {
 
 /**
- * @brief CPU‑side pixel format identifiers.
+ * @brief CPU-side pixel format identifiers.
  *
- * These correspond to Vulkan `vk::Format` values used throughout the
- * render pipeline.  The mapping is documented per‑enumerator; the
- * numeric values deliberately differ from Vulkan's — do NOT cast.
- *
- * | PixelFormat         | vk::Format equivalent              | Bytes/px | Channels |
- * |---------------------|------------------------------------|----------|----------|
- * | Undefined           | vk::Format::eUndefined             | 0        | 0        |
- * | RGBA8U              | vk::Format::eR8G8B8A8Unorm         | 4        | 4        |
- * | RGBA8S              | vk::Format::eR8G8B8A8Srgb          | 4        | 4        |
- * | RGBA32F             | vk::Format::eR32G32B32A32Sfloat    | 16       | 4        |
- * | RGBA16F             | vk::Format::eR16G16B16A16Sfloat    | 8        | 4        |
- * | R8U                 | vk::Format::eR8Unorm               | 1        | 1        |
- * | D32F                | vk::Format::eD32Sfloat             | 4        | 1        |
- * | BGRA8U              | vk::Format::eB8G8R8A8Unorm         | 4        | 4        |
- * | BGRA8S              | vk::Format::eB8G8R8A8Srgb          | 4        | 4        |
- * | RGBA16U             | vk::Format::eR16G16B16A16Unorm     | 8        | 4        |
- * | RGBA16SN            | vk::Format::eR16G16B16A16Snorm     | 8        | 4        |
- * | R8S                 | vk::Format::eR8Srgb                | 1        | 1        |
+ * The numeric values deliberately differ from Vulkan's - do NOT cast.
  */
 enum class PixelFormat
 {
@@ -131,11 +111,7 @@ inline uint32_t ChannelCount(PixelFormat fmt)
 	}
 }
 
-/**
- * @brief True if the format is sRGB (gamma‑encoded).
- *
- * RGBA8S, BGRA8S, and R8S return true.  All other formats are linear.
- */
+/** @brief True if the format is sRGB (gamma-encoded). */
 inline bool IsSRGB(PixelFormat fmt)
 {
 	return fmt == PixelFormat::RGBA8S
@@ -144,10 +120,9 @@ inline bool IsSRGB(PixelFormat fmt)
 }
 
 /**
- * @brief True if the format is high‑dynamic range (floating‑point).
+ * @brief True if the format is high-dynamic-range (floating-point).
  *
- * RGBA32F and RGBA16F are HDR.
- * D32F is a depth format and not considered "HDR" for colour purposes.
+ * D32F is a depth format, not colour, and is deliberately excluded.
  */
 inline bool IsHDR(PixelFormat fmt)
 {
@@ -155,11 +130,7 @@ inline bool IsHDR(PixelFormat fmt)
 	    || fmt == PixelFormat::RGBA16F;
 }
 
-/**
- * @brief True if the format is BGRA byte order.
- *
- * BGRA8U and BGRA8S return true. All other formats return false.
- */
+/** @brief True if the format is BGRA byte order. */
 inline bool IsBGRFormat(PixelFormat fmt)
 {
 	return fmt == PixelFormat::BGRA8U

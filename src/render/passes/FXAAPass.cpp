@@ -39,7 +39,7 @@ vk::raii::Sampler FXAAPass::CreateBilinearSampler(const vk::raii::Device& device
 {
 	vk::SamplerCreateInfo ci(
 		{},
-		vk::Filter::eLinear,                             // magFilter — bilinear for sub-pixel resample
+		vk::Filter::eLinear,                             // magFilter - bilinear for sub-pixel resample
 		vk::Filter::eLinear,                             // minFilter
 		vk::SamplerMipmapMode::eNearest,
 		vk::SamplerAddressMode::eClampToEdge,
@@ -136,9 +136,9 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 	++stats.dispatches;
 	cmdBuf.dispatch(gx, gy, 1);
 
-	// FXAAOutput stays in ShaderWrite; the swapchain blit transitions it itself.
-	// See the note at the end of ComposePass::Record for why a producer must not
-	// pre-transition its output into the consumer's expected state.
+	// A producer must not pre-transition its output into the consumer's
+	// expected state; FXAAOutput stays in ShaderWrite and the swapchain blit
+	// transitions it itself.
 
 	return stats;
 }
@@ -146,8 +146,7 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 PassIO FXAAPass::GetIO() const
 {
 	// Binding metadata is indicative only: FXAAPass still writes its own
-	// descriptors. ComposedOutput (from ComposePass) is the in-graph input;
-	// FXAAOutput is consumed by the swapchain blit outside the graph.
+	// descriptors.
 	PassIO io;
 	io.name  = "FXAAPass";
 	io.reads = {

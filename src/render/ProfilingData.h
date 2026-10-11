@@ -19,11 +19,8 @@ namespace neurus {
 /**
  * @brief One pass's CPU/GPU timing + counters for a single frame.
  *
- * Each Pass reports its own draw/dispatch counts by returning a PassStats from
- * Record(); the RenderGraph snapshots them into this struct while profiling.
- * @c gpuMs is only meaningful when the device
- * supports timestamp queries (see FrameProfile::gpuTimingAvailable); otherwise
- * it stays 0.
+ * @c gpuMs is only meaningful when the device supports timestamp queries
+ * (see FrameProfile::gpuTimingAvailable); otherwise it stays 0.
  */
 struct PassProfile
 {
@@ -37,11 +34,9 @@ struct PassProfile
 /**
  * @brief Per-frame rendering profile: CPU + GPU timing and draw-call metrics.
  *
- * Produced by DeferredRenderer::DrawFrame() (recordFrame + timestamp readback)
- * and returned to the caller (Application forwards it to the Editor, which
- * exposes it through UIContext for the Viewport overlay). GPU timings are read
- * back after the frame's fence signals, so they lag the CPU/counter data by
- * one to two frames (standard for fence-based timestamp readback).
+ * GPU timings are read back after the frame's fence signals, so they lag the
+ * CPU/counter data by one to two frames (standard for fence-based timestamp
+ * readback).
  */
 struct FrameProfile
 {

@@ -3,15 +3,12 @@
  * @brief Undoable operation for whole-RenderConfig edits.
  *
  * RenderConfig is scene-level (not per-object) state, so it does not fit the
- * UID-based TransitionOp. SetRenderConfigOp stores the absolute before/after
- * config values and replays by dispatching the same RenderConfigChangedEvent
- * the UI panel emits, keeping mutation on the single controller path.
+ * UID-based TransitionOp: SetRenderConfigOp stores the absolute before/after
+ * values and replays by dispatching the same event the UI emits.
  *
- * Unlike the camera/light transition ops, config edits are deliberately NOT
- * mergeable: the empty (default) MergeKey means each recorded op is its own
- * undo entry. Continuous slider drags are instead bounded by the controller's
- * ConfigEditBegin/ConfigEditEnd gesture (see RenderConfigController), collapsing
- * one drag to a single op recorded on release.
+ * Config edits are deliberately NOT mergeable: continuous slider drags are
+ * bounded by the controller's edit gesture instead, collapsing one drag to a
+ * single op recorded on release.
  */
 
 #pragma once

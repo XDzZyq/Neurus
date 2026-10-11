@@ -2,18 +2,9 @@
  * @file Mesh.h
  * @brief 3D mesh object for renderable geometry in the scene hierarchy.
  *
- * Mesh is the primary renderable object, representing 3D geometry with material,
- * transform, and shader properties. It inherits from ObjectID (scene identity) and
- * Transform3D (spatial placement). Mesh objects are consumed by the Renderer to
- * produce final images.
+ * Mesh is the primary renderable object, combining geometry, material,
+ * shader and transform.
  *
- * Architecture:
- * - Owned by scene graph (shared_ptr in Scene containers)
- * - Renderer reads mesh data, material, and transform as immutable
- * - Editor mutates mesh properties via events and controllers
- * - LOD support deferred (post-MVP)
- *
- * @note GPU resources (buffers, textures) are owned by MeshData and Material, not Mesh.
  * @note Multiple meshes can share the same MeshData and Material via shared_ptr.
  */
 
@@ -41,19 +32,9 @@ class Shader;
 /**
  * @brief 3D mesh object representing renderable geometry with material and transform.
  *
- * Mesh combines MeshData (vertex/index buffers), Material (textures and properties),
- * void* shader (GPU program), and Transform3D (position/rotation/scale) to form a
- * complete renderable object. It supports shadow casting, material shading, and SDF
- * (Signed Distance Field) generation for soft shadows.
- *
- * Resource Ownership:
- * - MeshData: Shared ownership (multiple meshes can reference same geometry)
- * - Material: Shared ownership (multiple meshes can share materials)
- * - Shader:   Void pointer (owner is external; Mesh does not manage lifetime)
- * - Transform: Owned directly (each mesh has unique transform via Transform3D)
- *
- * @note Inheritance: ObjectID for scene identity, Transform3D for spatial transform.
- * @note Thread-safety: Not thread-safe. Access from main thread only.
+ * Combines MeshData (geometry), Material (surface properties), a shader
+ * reference, and a Transform3D for placement. Supports shadow casting,
+ * material shading and SDF generation for soft shadows.
  */
 class Mesh : public ObjectID, public Transform3D
 {
@@ -75,8 +56,8 @@ public:
 	bool using_sdf      = true;
 	bool is_closure     = true;
 
-	/// Pooled-resource references (0 = none). The ResourceManager owns the
-	/// objects; these IDs let Scene::ResolveDataReferences re-wire them on load.
+	/// Pooled-resource references (0 = none): the serialized forms of the
+	/// o_mesh / o_shader pointers, re-wired from these IDs on load.
 	int o_meshDataId = 0;      ///< Pooled MeshData UID (geometry source)
 	int o_shaderId   = 0;      ///< Pooled Shader (RenderShader) UID
 
@@ -84,9 +65,8 @@ public:
 	/**
 	 * @brief Constructs a mesh referencing pooled geometry.
 	 * @param meshData Shared MeshData (pooled resource) to reference.
-	 * @note Sets o_mesh and o_meshDataId; the mesh is registered in the pool
-	 *       separately via ResourceManager::Load<Mesh>(meshData).
-	 * @note No path is accepted - file paths belong to the data layer
+	 * @note Sets o_mesh and o_meshDataId.
+	 * @note No path is accepted; file paths belong to the data layer
 	 *       (MeshData holds the source OBJ path).
 	 */
 	explicit Mesh(std::shared_ptr<MeshData> meshData);
@@ -97,9 +77,8 @@ public:
 	{
 		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
-		// A zero data/shader id is already a handled, reported state in
-		// ResourceComponent::Load, so an absent id costs this mesh its geometry
-		// and nothing else in the pool.
+		// A zero data/shader id is already a handled, reported state on load,
+		// so an absent id costs this mesh its geometry and nothing else.
 		archive::Optional(ar, CEREAL_NVP(o_meshDataId), CEREAL_NVP(o_shaderId),
 		                  CEREAL_NVP(using_shadow), CEREAL_NVP(using_material),
 		                  CEREAL_NVP(using_sdf), CEREAL_NVP(is_closure));

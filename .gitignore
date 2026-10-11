@@ -1,6 +1,9 @@
 # Build artifacts
 build/
 build-*/
+# The product docs mirror the source tree; keep docs/build/ tracked even though
+# build/ is a build-artifact ignore.
+!docs/build/
 out/
 *.sln
 *.vcxproj

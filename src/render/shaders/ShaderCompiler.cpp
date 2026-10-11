@@ -51,7 +51,6 @@ std::vector<uint32_t> ShaderCompiler::CompileGlslToSpv(
 		return {};
 	}
 
-	// Success - copy SPIR-V words into a vector
 	std::vector<uint32_t> spirv;
 	spirv.assign(result.cbegin(), result.cend());
 	return spirv;
@@ -74,9 +73,8 @@ void ShaderCompiler::SetGenerateDebugInfo(bool enable)
 	{
 		m_options.SetGenerateDebugInfo();
 	}
-	// Note: there is no shaderc API to *disable* debug info once set.
-	// Callers that need separate debug / release compilation
-	// should create separate ShaderCompiler instances.
+	// Note: shaderc has no API to disable debug info once set; callers needing
+	// both variants must create separate ShaderCompiler instances.
 }
 
 } // namespace neurus

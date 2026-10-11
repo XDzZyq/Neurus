@@ -19,17 +19,8 @@ class DescriptorSet;
 /**
  * @brief Fluent builder for accumulating VkDescriptorSetLayoutBinding entries.
  *
- * Used via the free function BuildLayout() to construct binding vectors
- * with a readable chained syntax.
- *
- * @code
- *   return BuildLayout()
- *       .AddBinding(0, vk::DescriptorType::eUniformBuffer,
- *                   vk::ShaderStageFlagBits::eVertex)
- *       .AddBinding(1, vk::DescriptorType::eCombinedImageSampler,
- *                   vk::ShaderStageFlagBits::eFragment)
- *       .Build(device);
- * @endcode
+ * Chained via the free function BuildLayout() to assemble binding vectors
+ * with a readable syntax.
  */
 class DescriptorSetLayoutBuilder
 {
@@ -109,8 +100,7 @@ public:
 	 * @brief Default-constructs a null descriptor set layout.
 	 *
 	 * The layout is nullptr until assigned via the parameterised constructor
-	 * or move assignment.  Useful when a subclass declares the member but
-	 * defers creation to the constructor body.
+	 * or move assignment.
 	 */
 	DescriptorSetLayout() = default;
 
@@ -184,9 +174,6 @@ public:
 	/**
 	 * @brief Constructs from an already-allocated vk::raii::DescriptorSet.
 	 *
-	 * Typically called by DescriptorPool::Allocate(). Do not construct
-	 * directly.
-	 *
 	 * @param set    An allocated descriptor set (moved in).
 	 * @param device Logical device for updateDescriptorSets calls.
 	 */
@@ -204,8 +191,7 @@ public:
 	 * Calls vkUpdateDescriptorSets immediately with the provided info.
 	 *
 	 * @param binding    Shader binding number.
-	 * @param bufferInfo Pre-filled VkDescriptorBufferInfo (use
-	 *                   Buffer::GetDescriptorInfo()).
+	 * @param bufferInfo Pre-filled VkDescriptorBufferInfo.
 	 * @param type       Descriptor type (default: eUniformBuffer).
 	 */
 	void WriteBuffer(uint32_t binding,
@@ -250,11 +236,9 @@ private:
 /**
  * @brief Owns a vk::raii::DescriptorPool and allocates DescriptorSet objects.
  *
- * The pool is created with VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
- * so individual DescriptorSet objects can be freed safely before the pool.
- *
- * Use CalculatePoolSizes() to auto-derive pool sizes from the layouts you
- * intend to allocate.
+ * Created with VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT so
+ * individual DescriptorSet objects can be freed safely before the pool.
+ * Use CalculatePoolSizes() to derive pool sizes from the layouts to allocate.
  *
  * Non-copyable, movable.
  */
@@ -265,8 +249,7 @@ public:
 	 * @brief Default-constructs a null descriptor pool.
 	 *
 	 * The pool is nullptr until assigned via the parameterised constructor
-	 * or move assignment.  Useful when a subclass declares the member but
-	 * defers creation to the constructor body.
+	 * or move assignment.
 	 */
 	DescriptorPool() = default;
 

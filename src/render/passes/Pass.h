@@ -2,13 +2,9 @@
  * @file Pass.h
  * @brief Abstract base class for all render passes + pass type queries.
  *
- * Every render pass in the deferred pipeline (GeometryPass, LightingPass,
- * etc.) inherits from this interface.  It enforces a common entry point
- * via Record() and ensures non-copyable RAII semantics for all GPU-
- * owning passes.
- *
- * Also hosts the PassType enum and associated static query helpers that
- * were previously on RenderPassManager.
+ * Every render pass in the deferred pipeline inherits from this interface.
+ * It enforces a common entry point via Record() and non-copyable, movable
+ * RAII semantics for all GPU-owning passes.
  */
 
 #pragma once
@@ -28,18 +24,15 @@ namespace neurus {
 
 /**
  * @brief One declared image resource used by a pass, plus its optional
- *        descriptor-binding slot (consumed by the DescriptorBinder in Wave 2).
+ *        descriptor-binding slot.
  *
- * @c resource is an AttachmentName. Most name a single RenderCache attachment;
- * ShadowDepth / ShadowIntensity are logical resources resolved by their owning
- * pass (see RenderCache.h) but still identified here as one object.
+ * @c resource is an AttachmentName naming a RenderCache attachment.
  * @c descriptorType and @c imageLayout describe how the pass sees the resource
- * through its descriptor set:
- *   - Sampled input:  eCombinedImageSampler + eShaderReadOnlyOptimal (default)
- *   - Compute write:  eStorageImage         + eGeneral
- *
- * The fields exist on both read and write bindings because compute shaders
- * bind writable attachments via storage-image descriptors just like reads.
+ * through its descriptor set: a sampled input is eCombinedImageSampler +
+ * eShaderReadOnlyOptimal (default), a compute write is eStorageImage +
+ * eGeneral. The fields exist on both read and write bindings because compute
+ * shaders bind writable attachments via storage-image descriptors just like
+ * reads.
  */
 struct AttachmentBinding
 {
@@ -51,15 +44,11 @@ struct AttachmentBinding
 
 /**
  * @brief Plain-data description of a pass's image-attachment I/O, returned by
- *        Pass::GetIO() and consumed by RenderGraph to build the DAG.
+ *        Pass::GetIO().
  *
  * `name` is used for topological error messages and debug labels.
  * `reads`/`writes` list the image attachments the pass consumes/produces.
- * Wave 1 scope: images only; UBO/SSBO/sampler bindings stay hand-written
- * on the pass and are not modeled here.
- *
- * Kept inline with Pass so passes remain unaware of RenderGraph types while
- * exposing enough for the graph to wire itself.
+ * Images only; UBO/SSBO/sampler bindings stay hand-written on the pass.
  */
 struct PassIO
 {
@@ -72,8 +61,8 @@ struct PassIO
  * @brief CPU-side command counters returned by Pass::Record().
  *
  * Passes tally their own draw/dispatch calls while recording and hand them
- * back so the caller (RenderGraph) can aggregate per-pass metrics. Keeps
- * passes stateless with respect to profiling — no members, no reset step.
+ * back for per-pass metrics, so passes stay stateless with respect to
+ * profiling - no members, no reset step.
  */
 struct PassStats
 {
@@ -116,9 +105,8 @@ public:
 	/**
 	 * @brief Records the pass's commands into a command buffer.
 	 *
-	 * Each derived pass receives the per-frame context (immutable) and a
-	 * mutable cache reference so it can lazily create or retrieve GPU
-	 * resources (pipelines, descriptor sets, buffers) during recording.
+	 * Receives the per-frame context (immutable) and a mutable cache so the
+	 * pass can lazily create or retrieve GPU resources during recording.
 	 *
 	 * @param cmdBuf   Command buffer in the recording state.
 	 * @param cache    Mutable render cache for lazy GPU resource creation.
@@ -130,16 +118,12 @@ public:
 	/**
 	 * @brief Declares this pass's read/write attachment dependencies.
 	 *
-	 * Returns a plain POD describing which RenderCache attachments the pass
-	 * consumes and produces.  The RenderGraph consumes this to build the
-	 * DAG; passes remain unaware of RenderGraph types.
-	 *
-	 * Default returns an empty PassIO — passes that don't participate in the
-	 * graph (or haven't been migrated yet) simply omit the override.
+	 * Default returns an empty PassIO - passes that do not participate in
+	 * the graph simply omit the override.
 	 */
 	virtual PassIO GetIO() const { return {}; }
 
-	// --- Pass type queries (moved from RenderPassManager) ---
+	// --- Pass type queries ---
 
 	/**
 	 * @brief Returns the expected number of color attachments for a pass type.
@@ -192,9 +176,9 @@ protected:
 	 * @brief Builds all pipelines for this pass and pushes them into
 	 *        p_pipelines.
 	 *
-	 * Override in each subclass to create graphics / compute pipelines from
-	 * the subclass's specific shaders, descriptor layouts, and push-constant
-	 * ranges.  Each pipeline is push_back()'d into p_pipelines in order.
+	 * Override to create pipelines from the subclass's shaders, descriptor
+	 * layouts and push-constant ranges. Each pipeline is push_back()'d into
+	 * p_pipelines in order.
 	 *
 	 * @param device     Logical device.
 	 * @param debugName  Human-readable name for the pass (e.g. "SSAOPass").

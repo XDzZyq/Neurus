@@ -3,19 +3,10 @@
  * @brief Scene identity + metadata base class for all scene graph objects.
  *
  * ObjectID extends the core UID primitive with scene-specific metadata:
- * - Object name for display in editor UI
+ * - Object name for display
  * - Type enumeration for runtime type discrimination
  * - Visibility flags for viewport and rendering
  * - Polymorphic accessors for optional components (Transform, Shader, Material)
- *
- * All scene objects (Camera, Light, Mesh, ...) inherit from ObjectID to
- * participate in the scene graph.
- *
- * Architecture:
- * - UID (core/UID.h) provides globally unique integer IDs
- * - ObjectID extends UID with scene-specific metadata
- * - Scene containers hold ObjectID-derived objects as shared_ptr
- * - ID-based lookups enable efficient object management
  */
 
 #pragma once
@@ -34,23 +25,14 @@ namespace neurus
 /**
  * @brief Base class for all scene graph objects with type and component access.
  *
- * ObjectID extends UID with scene-specific functionality:
- * - Object name for display in editor UI
- * - Type enumeration for runtime type discrimination
- * - Visibility flags for viewport and rendering
- * - Polymorphic accessors for optional components (Transform, Shader, Material)
- *
- * All scene objects inherit from ObjectID to participate in the scene graph.
- * Type-specific data is stored in derived classes (Camera, Light, Mesh, etc.).
+ * Extends UID with the object name, GOType tag, visibility flags and the
+ * optional-component accessors; type-specific data lives in derived classes.
  */
 class ObjectID : public UID
 {
 public:
 	/**
-	 * @brief Enumeration of scene object types.
-	 *
-	 * Used for runtime type identification without RTTI. Enables type-specific
-	 * rendering paths and UI display.
+	 * @brief Scene object type, used for runtime type identification without RTTI.
 	 */
 	enum class GOType
 	{
@@ -68,18 +50,17 @@ public:
 	};
 
 public:
-	std::string o_name;                        ///< Display name in editor UI
+	std::string o_name;                        ///< Display name
 	GOType o_type = GOType::NONE_GO;           ///< Runtime type identifier
 
-	mutable bool is_viewport = true;           ///< Visible in viewport (editor-only)
+	mutable bool is_viewport = true;           ///< Visible in viewport
 	mutable bool is_rendered = true;           ///< Included in rendering pipeline
 
 	/**
-	 * @brief True for either light type, both of which project into the light SSBO.
+	 * @brief True for either light type (GO_LIGHT, GO_POLYLIGHT).
 	 *
-	 * A member rather than a predicate in each caller: "is this a light" decides
-	 * whether a mutation needs GPU light work, and two of the ten GOTypes answer
-	 * yes, so every copy of the test is a place to forget the second one.
+	 * A member rather than a predicate in each caller, so the two-type test
+	 * lives in one place.
 	 */
 	bool IsLight() const
 	{
@@ -88,7 +69,7 @@ public:
 
 	/**
 	 * @brief Sets visibility flags for viewport and rendering.
-	 * @param v Viewport visibility (editor display).
+	 * @param v Viewport visibility.
 	 * @param r Render visibility (included in render passes).
 	 */
 	void SetVisible(bool v, bool r)
@@ -98,9 +79,8 @@ public:
 	}
 
 	/**
-	 * @brief Returns pointer to object's shader, if applicable.
-	 * @return Void pointer cast to Shader*, or nullptr if no shader.
-	 * @note Override in derived classes that own shaders (Mesh, Material, etc.).
+	 * @brief Returns pointer to object's shader, or nullptr if it has none.
+	 * @return Void pointer cast to Shader*.
 	 */
 	virtual void* GetShader()
 	{
@@ -108,10 +88,9 @@ public:
 	}
 
 	/**
-	 * @brief Returns pointer to the ShaderUnit for a given shader stage, if applicable.
+	 * @brief Returns pointer to the ShaderUnit for a shader stage, or nullptr.
 	 * @param shaderType Integer representing the ShaderType to query.
-	 * @return Void pointer cast to ShaderUnit*, or nullptr if not found.
-	 * @note Override in derived classes that own shaders (Mesh, Material, etc.).
+	 * @return Void pointer cast to ShaderUnit*.
 	 */
 	virtual void* GetShaderUnit(int /*shaderType*/) const
 	{
@@ -119,9 +98,8 @@ public:
 	}
 
 	/**
-	 * @brief Returns pointer to object's transform, if applicable.
-	 * @return Void pointer cast to Transform*, or nullptr if no transform.
-	 * @note Override in derived classes with Transform component (Camera, Light, Mesh).
+	 * @brief Returns pointer to object's transform, or nullptr if it has none.
+	 * @return Void pointer cast to Transform*.
 	 */
 	virtual void* GetTransform()
 	{
@@ -129,9 +107,8 @@ public:
 	}
 
 	/**
-	 * @brief Returns pointer to object's material, if applicable.
-	 * @return Void pointer cast to Material*, or nullptr if no material.
-	 * @note Override in derived classes with Material component (Mesh).
+	 * @brief Returns pointer to object's material, or nullptr if it has none.
+	 * @return Void pointer cast to Material*.
 	 */
 	virtual void* GetMaterial()
 	{
@@ -151,10 +128,9 @@ public:
 	/**
 	 * @brief Cereal serialization for object identity and metadata.
 	 *
-	 * The UID hook stays strict — identity is what every cross-reference in the
-	 * pool resolves through, so its absence must surface. The metadata around it
-	 * is optional: each concrete default ctor already sets `o_type` and `o_name`
-	 * (see Mesh::Mesh), so a field a file lacks keeps the right value.
+	 * The UID hook stays strict - identity is what cross-references resolve
+	 * through - while the metadata around it is optional: each concrete
+	 * default constructor already sets `o_type` and `o_name`.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.

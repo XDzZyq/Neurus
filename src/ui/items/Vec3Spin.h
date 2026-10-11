@@ -2,15 +2,8 @@
  * @file Vec3Spin.h
  * @brief Composite widget: three QDoubleSpinBox in a horizontal row.
  *
- * Vec3Spin encapsulates three QDoubleSpinBox instances in a single QWidget.
- * No labels — the parent provides row context.
- *
- * Architecture:
- * - QWidget subclass with internal QHBoxLayout
- * - Owns the three QDoubleSpinBox child widgets
- * - setValue() with dirty-check: skips spinbox update if values unchanged
- * - No Vulkan or Renderer dependencies — pure Qt UI layer
- * - Lives in src/ui/items/ alongside ScalarSlider and OutlinerRow
+ * No labels - the parent provides row context. setValue() dirty-checks against
+ * the cached triplet and skips unchanged spinboxes.
  */
 
 #pragma once
@@ -47,9 +40,7 @@ public:
 	/**
 	 * @brief Sets all three spinbox values without emitting signals.
 	 *
-	 * Dirty-checks against cached values — no-op if (x,y,z) unchanged.
-	 * Uses QSignalBlocker on all three spinboxes to suppress valueChanged
-	 * during programmatic updates.
+	 * No-op when (x, y, z) equals the cached values.
 	 */
 	void setValue(double x, double y, double z);
 

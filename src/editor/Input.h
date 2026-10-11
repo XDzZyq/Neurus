@@ -2,14 +2,8 @@
  * @file Input.h
  * @brief Pure static translation helpers for converting raw input values to engine types.
  *
- * Architecture:
- * - Stateless static utility — no member variables, no state machine.
- * - Four translation methods: raw position → glm::vec2, raw modifier int → bitmask,
- *   raw button int → Input::MouseButton, raw key int → Input::Key.
- * - No Qt dependency — callers unwrap Qt types before calling.
- * - No more polling loop, no triple-buffer, no key state queries.
- *
- * @note Editor Layer: Input is part of the Editor system, not UI or Renderer.
+ * Stateless: raw positions, modifier/button/key integers in, engine values out.
+ * No Qt dependency - callers unwrap Qt types before calling.
  */
 
 #pragma once
@@ -79,14 +73,9 @@ public:
 	/**
 	 * @brief Keys the Editor reacts to, as an engine-side enum.
 	 *
-	 * Deliberately NOT the full keyboard: this lists only the keys some editor
-	 * system actually consumes, so an unhandled key translates to Key_Unknown
-	 * and is dropped at the boundary rather than travelling through the event
-	 * queue as a raw Qt code. Grow it one key at a time, alongside the handler
-	 * that needs it.
-	 *
-	 * The values are arbitrary and stable; they are not Qt codes. Qt::Key is
-	 * unwrapped by GetKey() in the .cpp so this header stays Qt-free.
+	 * Deliberately NOT the full keyboard: only keys some editor system consumes,
+	 * so an unhandled key becomes Key_Unknown and is dropped at the boundary.
+	 * The values are arbitrary and stable; they are not Qt codes.
 	 */
 	enum Key
 	{

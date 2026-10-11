@@ -1,5 +1,10 @@
 # Git Workflow
 
+Branch, worktree and commit conventions. The mechanics of the build tree and
+worktree tooling are in [tips.instructions.md](tips.instructions.md); who may
+commit is in [roles.instructions.md](roles.instructions.md). Product docs live
+under [`docs/`](../../docs/README.md).
+
 ## Issue & Label Conventions
 
 - **Title**: clean, no prefix. Category expressed via label instead (e.g. title `Transform Editor panel` + label `UI & UX`, not `feat(ui): Transform Editor panel`).
@@ -12,10 +17,12 @@
 - Any files should not include absolute path.
 - Complete and double check all aspects (tests, coding style, document) of the
   current task before commit.
-- Only master agent can commit and merge. If the tasks of subagents may have
-  code overlaps, use Branches and Git Worktree for parallelism and isolation.
-  Don't forget to remove the branch and worktree after the task is completed.
-- Use `worktree_create` tools for creating worktree. The worktree directory should be outside the main workspace.
+- Only the master agent can commit and merge. If subagent tasks may overlap in
+  files, use Branches and Git Worktree for parallelism and isolation - and see
+  [roles.instructions.md](roles.instructions.md) for lane patterns. Do not
+  forget to remove the branch and worktree once the task is complete.
+- Use the worktree tooling to create a worktree. Keep the worktree directory
+  outside the main workspace (see [tips.instructions.md](tips.instructions.md)).
 
 ## Lessons Learned
 
@@ -30,13 +37,16 @@
 - When `master` has progressed (new features added after your branch point), merge conflicts will occur.
 - Example: `master` had IBL pass additions not present in the feature branch. Resolution: keep IBL code from master, but adapt it to use the refactored patterns from the feature branch.
 
-**`task()` subagents cannot target a worktree directory.**
-- Subagents spawned via `task()` always operate in the main workspace root.
-- Use the tools and skills `opencode-worktree` for parallelism and isolation of feature work.
+**Subagents may not be able to target a worktree directory.**
+- A subagent launched with the `task` tool operates in the main workspace root.
+- For isolation, prefer the worktree tooling and move the session's working
+  directory into the worktree where the harness supports it; otherwise serialize
+  overlapping work (see [roles.instructions.md](roles.instructions.md)).
 
 **Build and test from the main workspace after merge.**
 - After merging, the main workspace contains the combined code.
-- Run `cmake --build build --config Debug` and `make check` (which uses `build/`) from the main workspace.
+- Run the Debug build and `make check` from the main workspace, in the live build
+  tree named in [tips.instructions.md](tips.instructions.md).
 - The worktree's build directory is separate - do not rely on stale worktree builds.
 
 **Worktree cleanup can be tricky.**

@@ -20,12 +20,9 @@ struct VulkanImageState
 /**
  * @brief Centralized barrier management for image layout transitions.
  *
- * All image layout transitions should go through Barrier::Transition().
- * Never use raw vk::ImageMemoryBarrier or vk::ImageMemoryBarrier2 directly
- * for Image objects — use Barrier instead.
- *
- * Usage:
- *   Barrier::Transition(cmdBuf, myImage, ImageState::ColorShaderRead);
+ * All image layout transitions should go through Barrier::Transition();
+ * never use raw vk::ImageMemoryBarrier or vk::ImageMemoryBarrier2 directly
+ * for Image objects.
  */
 class Barrier
 {
@@ -41,14 +38,11 @@ public:
 	/**
 	 * @brief Records a pipeline barrier transitioning an Image to a new state.
 	 *
-	 * Uses the image's current m_state as the source and @p after as the
-	 * destination.  Generates the appropriate vk::ImageMemoryBarrier2 using
-	 * ToVulkanImageState() and records it via vkCmdPipelineBarrier2.
-	 *
-	 * After the barrier, the image's m_state is updated to @p after.
+	 * Uses the image's current state as the source and @p after as the
+	 * destination, then updates the image's state to @p after.
 	 *
 	 * @param cmd    Command buffer handle (raw VkCommandBuffer).
-	 * @param image  Image to transition (m_state is read and updated).
+	 * @param image  Image to transition (its state is read and updated).
 	 * @param after  Target logical state.
 	 */
 	static void Transition(VkCommandBuffer cmd,
@@ -68,12 +62,12 @@ public:
 	/**
 	 * @brief Records a pipeline barrier transitioning an Image, with explicit subresource range.
 	 *
-	 * Same as Transition(cmd, image, after) but uses @p subresourceRange instead
-	 * of the image's default m_subresourceRange.  Useful for per-mip or per-face
-	 * transitions (e.g. during mipmap generation).
+	 * Same as Transition(cmd, image, after) but uses @p subresourceRange
+	 * instead of the image's default subresource range - useful for per-mip
+	 * or per-face transitions (e.g. during mipmap generation).
 	 *
-	 * @note This does NOT update image.im_state — callers should manage state
-	 *       manually for partial transitions or use the simpler overload.
+	 * @note This does NOT update the image's state - callers manage state
+	 *       manually for partial transitions.
 	 *
 	 * @param cmd               Command buffer handle (raw VkCommandBuffer).
 	 * @param image             Image to transition.
@@ -99,8 +93,8 @@ public:
 	/**
 	 * @brief Records a pipeline barrier for a raw vk::Image with explicit before/after states.
 	 *
-	 * For images not wrapped in a neurus::Image (e.g. swapchain images), provides
-	 * the same centralized state→layout mapping without tracking state.
+	 * For images not wrapped in neurus::Image (e.g. swapchain images): the
+	 * same state-to-layout mapping, without tracking state.
 	 *
 	 * @param cmd               Command buffer handle (raw VkCommandBuffer).
 	 * @param image             Raw Vulkan image handle.
@@ -129,11 +123,10 @@ public:
 	/**
 	 * @brief Records a release barrier after a transfer-queue image upload.
 	 *
-	 * Makes transfer writes available to subsequent graphics usage WITHOUT a
+	 * Makes transfer writes available to subsequent graphics usage without a
 	 * graphics-stage dstStageMask, which is invalid on transfer-only command
-	 * pools (VUID-vkCmdPipelineBarrier2-dstStageMask-09676). The image layout
-	 * still becomes ShaderReadOnlyOptimal so the graphics side can sample it;
-	 * the consuming pass re-transitions the image on first use.
+	 * pools (VUID-vkCmdPipelineBarrier2-dstStageMask-09676). The layout becomes
+	 * ShaderReadOnlyOptimal; the consuming pass re-transitions on first use.
 	 *
 	 * @param cmd               Command buffer (raw VkCommandBuffer).
 	 * @param image             Raw Vulkan image handle.
@@ -161,11 +154,9 @@ public:
 	/**
 	 * @brief Records a buffer memory barrier, tracking state.
 	 *
-	 * Reads buffer.State() as the source, emits a vk::BufferMemoryBarrier2
-	 * mapping @p after through ToVulkanBufferState(), and updates
-	 * buffer.b_state to @p after.
-	 *
-	 * Follows the same pattern as Transition(Image&, ...).
+	 * Reads the buffer's current state as the source, maps @p after to its
+	 * Vulkan stage and access flags, then updates the buffer's state to
+	 * @p after.
 	 *
 	 * @param cmd    Command buffer (raw VkCommandBuffer).
 	 * @param buffer Buffer to transition.

@@ -3,27 +3,11 @@
  * @brief Scene container holding all scene objects and scene-wide state.
  *
  * Provides the Scene class which aggregates cameras, lights, meshes,
- * sprites, debug primitives, and other renderable objects into a unified
- * scene graph via typed object pools (ResPool).
+ * sprites, debug primitives and other objects into a unified scene graph via
+ * typed object pools (ResPool).
  *
- * Architecture:
- * - Scene: Owns all scene objects via shared_ptr maps, indexed by UID
- * - Each object type has a dedicated ResPool (cam_list, mesh_list, etc.)
- * - A master obj_list holds all ObjectID instances for global lookup
- * - Renderer reads Scene as immutable scene graph via GetObjectID()
- *
- * Scene Modification Tracking:
- * - SceneModifStatus bitfield flags track which aspects changed
- * - Renderer can optimize updates by checking status flags
- * - Flags reset after processing to avoid redundant work
- *
- * Object Lifetime:
- * - Objects owned via shared_ptr (reference counted)
- * - Removing from map triggers destruction if no other references exist
- * - GPU resources released in object destructors
- *
- * @note Inheritance: Scene inherits UID for unique scene identifier.
- * @note Thread-safety: Not thread-safe. Access from main thread only.
+ * @note Inheritance: Scene inherits UID for a unique scene identifier.
+ * @note Not thread-safe. Access from main thread only.
  */
 
 #pragma once
@@ -59,8 +43,6 @@ class ResourceManager;
  * @param selections Runtime selection holding const ObjectID* pointers.
  * @param outSelectedUids Filled with the selected objects' UIDs (order preserved).
  * @param outActiveUid Set to the active object's UID, or 0 if none.
- * @note Scene-layer conversion shared by Scene::serialize and the editor's
- *       selection snapshot; keeps pointer↔UID logic in the layer that owns it.
  */
 inline void SnapshotSelectionUids(const Selections<const ObjectID*>& selections,
                                   std::vector<int>& outSelectedUids, int& outActiveUid);
@@ -76,23 +58,11 @@ inline void RestoreSelectionUids(Scene& scene, const std::vector<int>& selectedU
 /**
  * @brief Container for all scene objects, environments, and scene-wide state.
  *
- * Scene aggregates all renderable and non-renderable objects in a scene.
- * It provides typed pools (ResPool) for each object category, enabling
- * efficient iteration and lookup by ID. Active objects (camera, environment)
- * are cached for fast access during rendering.
+ * Provides typed pools (ResPool) per object category for efficient iteration
+ * and lookup by UID; active objects (camera, environment) are cached. Scene
+ * modification status tracks which aspects changed since the last check.
  *
- * Scene Modification Tracking:
- * - SceneModifStatus flags track which aspects of the scene changed
- * - Renderer can optimize updates by checking status flags
- * - Flags reset after processing to avoid redundant work
- *
- * Object Lifetime:
- * - Objects owned via shared_ptr (reference counted)
- * - Removing from map triggers destruction if no other references exist
- * - GPU resources released in object destructors
- *
- * @note Inheritance: UID provides unique scene identifier.
- * @note Thread-safety: Not thread-safe. Access from main thread only.
+ * @note Not thread-safe. Access from main thread only.
  */
 class Scene : public UID
 {
@@ -109,8 +79,7 @@ public:
 	/**
 	 * @brief Typed object pool indexed by unique object ID.
 	 *
-	 * Maps an object's UID (int) to its shared_ptr. Enables O(1) lookup
-	 * and removal of objects from the scene.
+	 * Maps an object's UID to its shared_ptr, enabling O(1) lookup and removal.
 	 *
 	 * @tparam Object Scene object type stored in this pool.
 	 */
@@ -124,9 +93,8 @@ public:
 	/**
 	 * @brief Scene modification status flags for change tracking.
 	 *
-	 * Bitfield enum that tracks which aspects of the scene have been
-	 * modified since the last render cycle. Renderer queries these
-	 * flags to determine which resources need updating.
+	 * Tracks which aspects of the scene changed since the last check; flags
+	 * are set on change and cleared after processing.
 	 */
 	enum SceneModifStatus
 	{
@@ -147,32 +115,21 @@ public:
 	// Construction / destruction
 	// -------------------------------------------------------------------
 
-	/**
-	 * @brief Constructs an empty scene.
-	 */
+	/** @brief Constructs an empty scene. */
 	Scene();
 
-	/**
-	 * @brief Destroys the scene and all owned objects.
-	 * @note GPU resources released via object destructors.
-	 */
+	/** @brief Destroys the scene and all owned objects. */
 	~Scene();
 
 	/**
 	 * @brief Cereal serialization for scene ID references and selection state.
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
-	 * @note Scene owns no pooled objects: it serializes ONLY typed ID lists
-	 *       (the ResourceManager pool owns and serializes the real objects).
-	 *       obj_list (master pool) is reconstructed from the typed pools by
-	 *       ResolveReferences after the ID lists resolve.
-	 * @note Selection is stored at runtime as pointers (const ObjectID*) but
-	 *       persisted as object UIDs; ResolveReferences restores the selection
-	 *       AFTER obj_list is rebuilt. The selection block is optional:
-	 *       legacy project files that predate it load with an empty selection.
-	 * @note Legacy files (old full-pool "m_scene" format) fail to read the ID
-	 *       lists and degrade to an empty scene + default-camera fallback
-	 *       (SceneComponent).
+	 * @note Scene owns no pooled objects: it serializes only typed ID lists
+	 *       (the ResourceManager pool owns and serializes the real objects),
+	 *       which ResolveReferences later restores into the pools.
+	 * @note Selection is persisted as object UIDs and restored after obj_list
+	 *       is rebuilt; legacy files without the block load with none.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
@@ -204,9 +161,9 @@ public:
 			for (const auto& [id, obj] : dMesh_list) { (void)obj; dMeshIds.push_back(id); }
 			ar(CEREAL_NVP(dMeshIds));
 
-			// Which scene camera the viewport looks through (0 = none, which is
-			// legal: the Editor always has its own camera). Written even when
-			// stale — the load path re-validates it against cam_list.
+			// Which scene camera the viewport looks through (0 = none is
+			// legal). Written even when stale; the load path re-validates it
+			// against cam_list.
 			int activeCamUid = m_activeCamUid;
 			ar(CEREAL_NVP(activeCamUid));
 		}
@@ -273,35 +230,31 @@ public:
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Updates scene status flag (bitwise OR on set, AND NOT on clear).
-	 * @param tar Target status flag(s) to modify (int for OR-of-enum convenience).
-	 * @param value If true, set flag(s); if false, clear flag(s).
-	 * @note Multiple flags can be combined via bitwise OR in tar.
+	 * @brief Sets or clears scene status flag(s).
+	 * @param tar Flag(s) to modify (combine with bitwise OR).
+	 * @param value True sets the flag(s), false clears them.
 	 */
 	void UpdateSceneStatus(int tar, bool value);
 
 	/**
-	 * @brief Directly sets scene status (replaces existing value).
-	 * @param tar New status bitfield value.
+	 * @brief Directly replaces the scene status bitfield.
+	 * @param tar New status value.
 	 * @param value Unused (legacy parameter, kept for API compatibility).
 	 */
 	void SetSceneStatus(int tar, bool value);
 
 	/**
-	 * @brief Checks if a specific status flag is set.
+	 * @brief Checks if any of the given status flags is set.
 	 * @param tar Status flag(s) to check.
 	 * @return True if any of the specified flags are set.
 	 */
 	bool CheckStatus(SceneModifStatus tar);
 
-	/**
-	 * @brief Resets scene status to NoChanges.
-	 * @note Called after Renderer processes all scene updates.
-	 */
+	/** @brief Resets scene status to NoChanges. */
 	void ResetStatus();
 
 	// -------------------------------------------------------------------
-	// Object pools (public for direct iteration by Renderer)
+	// Object pools
 	// -------------------------------------------------------------------
 
 	ResPool<ObjectID>    obj_list;      ///< All scene objects (base type, master pool)
@@ -314,22 +267,16 @@ public:
 	ResPool<DebugMesh>   dMesh_list;    ///< Debug wireframe-mesh primitives
 	ResPool<Environment> env_list;      ///< Environment objects (IBL)
 
-	/// Selection state for scene objects. Persisted as UIDs by serialize()
-	/// (see the serialize note); resolved to pointers on load.
-	/// Stores const ObjectID* — compatible with both Editor (mutable objects via GetObjectID)
-	/// and Outliner (const ObjectID* from GetObjectIDs enumeration).
+	/// Selection state. Persisted as UIDs by serialize() and resolved to
+	/// pointers on load.
 	Selections<const ObjectID*> selections;
 
 	/**
 	 * @brief Resolves the pending ID references against the resource pool.
 	 *
-	 * Fills the typed pools from the ResourceManager (fetched by ID + cast),
-	 * rebuilds obj_list, and restores the selection. Called by
-	 * SceneComponent::Load AFTER the pool has been deserialized (pool first,
-	 * then Scene). Per-object data-resource wiring (Mesh -> MeshData/Shader,
-	 * Environment -> ImageData) is NOT here - it is a pool-wide concern done
-	 * by ResourceComponent::Load (the pool's own restore step), so pooled
-	 * orphans (undo history) stay self-contained and uploadable.
+	 * Fills the typed pools from the ResourceManager (fetch by ID and cast),
+	 * rebuilds obj_list and restores the selection. Must run after the pool
+	 * has been deserialized (pool first, then Scene).
 	 *
 	 * @param resources The ResourceManager pool (transient parameter, never a member).
 	 */
@@ -340,9 +287,8 @@ public:
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Registers a camera in the scene.
+	 * @brief Registers a camera in the scene (cam_list and obj_list).
 	 * @param camera Shared pointer to Camera object.
-	 * @note Adds to cam_list and obj_list.
 	 */
 	void UseCamera(Resource<Camera> camera)
 	{
@@ -350,20 +296,17 @@ public:
 	}
 
 	// -------------------------------------------------------------------
-	// Camera activation — which scene camera the viewport looks through
+	// Camera activation - which scene camera the viewport looks through
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Activates a scene camera, making it the camera the viewport uses.
+	 * @brief Activates a scene camera as the one the viewport uses.
 	 *
-	 * Activation is scene state, independent of selection: selecting a camera in
-	 * the Outliner does not change the view, and the PropertyPanel keeps
-	 * inspecting whatever is selected. With no camera activated the viewport looks
-	 * through its own camera, so "none" is a normal, fully supported state.
+	 * Activation is scene state, independent of selection; with no camera
+	 * activated the viewport falls back to its own camera.
 	 *
 	 * @param uid Camera UID; must already be registered via UseCamera().
-	 * @return false when uid is not in cam_list — which is what keeps a pooled
-	 *         but non-scene camera (the viewport camera) unactivatable from here.
+	 * @return false when uid is not in cam_list.
 	 */
 	bool ActivateCamera(int uid);
 
@@ -373,19 +316,17 @@ public:
 	/**
 	 * @brief UID of the activated camera, or 0 when none is activated.
 	 *
-	 * @warning This may name a camera that is not currently in cam_list — the
-	 *          UID is deliberately left stale when a camera is removed so that
-	 *          undoing the removal restores the activation for free. Use it only
-	 *          for UID comparison (e.g. a checkbox over a selected camera); any
-	 *          caller that needs a camera must go through GetActiveCamera(),
-	 *          which validates against cam_list.
+	 * @warning May name a camera that is not currently in cam_list: the UID is
+	 *          deliberately left stale when a camera is removed so that undoing
+	 *          the removal restores the activation for free. Use it only for
+	 *          UID comparison; callers that need a camera must go through
+	 *          GetActiveCamera(), which validates against cam_list.
 	 */
 	int ActiveCameraID() const { return m_activeCamUid; }
 
 	/**
-	 * @brief Registers a mesh in the scene.
+	 * @brief Registers a mesh in the scene (mesh_list and obj_list).
 	 * @param mesh Shared pointer to Mesh object.
-	 * @note Adds to mesh_list and obj_list.
 	 */
 	void UseMesh(Resource<Mesh> mesh)
 	{
@@ -393,9 +334,8 @@ public:
 	}
 
 	/**
-	 * @brief Registers a light in the scene.
+	 * @brief Registers a light in the scene (light_list and obj_list).
 	 * @param light Shared pointer to Light object.
-	 * @note Adds to light_list and obj_list.
 	 */
 	void UseLight(Resource<Light> light)
 	{
@@ -403,9 +343,8 @@ public:
 	}
 
 	/**
-	 * @brief Registers a sprite in the scene.
+	 * @brief Registers a sprite in the scene (sprite_list and obj_list).
 	 * @param sprite Shared pointer to Sprite object.
-	 * @note Adds to sprite_list and obj_list.
 	 */
 	void UseSprite(Resource<Sprite> sprite)
 	{
@@ -413,9 +352,8 @@ public:
 	}
 
 	/**
-	 * @brief Registers debug lines in the scene.
+	 * @brief Registers debug lines in the scene (dLine_list and obj_list).
 	 * @param dline Shared pointer to DebugLine object.
-	 * @note Adds to dLine_list and obj_list.
 	 */
 	void UseDebugLine(Resource<DebugLine> dline)
 	{
@@ -423,9 +361,8 @@ public:
 	}
 
 	/**
-	 * @brief Registers debug points in the scene.
+	 * @brief Registers debug points in the scene (dPoints_list and obj_list).
 	 * @param dpoints Shared pointer to DebugPoints object.
-	 * @note Adds to dPoints_list and obj_list.
 	 */
 	void UseDebugPoints(Resource<DebugPoints> dpoints)
 	{
@@ -433,9 +370,8 @@ public:
 	}
 
 	/**
-	 * @brief Registers a debug wireframe mesh in the scene.
+	 * @brief Registers a debug wireframe mesh in the scene (dMesh_list and obj_list).
 	 * @param dmesh Shared pointer to DebugMesh object.
-	 * @note Adds to dMesh_list and obj_list.
 	 */
 	void UseDebugMesh(Resource<DebugMesh> dmesh)
 	{
@@ -443,9 +379,8 @@ public:
 	}
 
 	/**
-	 * @brief Registers an environment object in the scene.
+	 * @brief Registers an environment object in the scene (env_list and obj_list).
 	 * @param env Shared pointer to Environment object.
-	 * @note Adds to env_list and obj_list.
 	 */
 	void UseEnvironment(Resource<Environment> env)
 	{
@@ -458,11 +393,8 @@ public:
 	 * @param id Object UID.
 	 * @param typePool Type-specific pool to remove from.
 	 * @return true if the object was registered under this type.
-	 * @note Mirrors RegisterObject(): erases from the typed pool and the
-	 *       master obj_list and clears the object from the selection. The
-	 *       pooled resource itself is NOT removed from the ResourceManager —
-	 *       deleting only drops the scene reference, so the operation stays
-	 *       invertible (undo re-registers without any reload).
+	 * @note Also clears the object from the selection; the pooled resource
+	 *       itself stays in the ResourceManager, so undo can re-register it.
 	 */
 	template<typename T>
 	bool RemoveObject(int id, ResPool<T>& typePool)
@@ -542,8 +474,7 @@ public:
 	 * @brief Returns the activated camera, or nullptr when none is activated.
 	 *
 	 * Looks ActiveCameraID() up in cam_list, so a UID left over from a removed
-	 * camera reads as "none" rather than as a dangling pointer. A null return is
-	 * normal — it means the viewport should use its own camera.
+	 * camera reads as "none" rather than as a dangling pointer.
 	 *
 	 * @return Non-owning pointer to the activated Camera, or nullptr.
 	 * @see ActivateCamera
@@ -569,7 +500,6 @@ public:
 
 	/**
 	 * @brief Updates all object transforms in the scene hierarchy.
-	 * @note Stub for MVP - implementation deferred until scene objects exist.
 	 */
 	void UpdateObjTransforms();
 
@@ -582,7 +512,7 @@ private:
 
 	// -------------------------------------------------------------------
 	// Pending ID references (populated by serialize(load), consumed by
-	// ResolveReferences). The pool is a transient parameter, never a member.
+	// ResolveReferences).
 	// -------------------------------------------------------------------
 
 	std::vector<int> m_pendingCamIds;        ///< Pending camera UIDs (from project file)
@@ -602,10 +532,6 @@ private:
 
 	/**
 	 * @brief Rebuilds obj_list from all typed pools after deserialization.
-	 *
-	 * Iterates each typed pool (cam_list, mesh_list, etc.) and inserts
-	 * aliasing shared_ptr<ObjectID> entries into obj_list, matching the
-	 * same pattern as RegisterObject().
 	 */
 	void RebuildObjList();
 
@@ -614,8 +540,8 @@ private:
 	 * @tparam T Object type (Camera, Mesh, Light, Sprite, DebugLine, DebugPoints).
 	 * @param obj Shared pointer to the object.
 	 * @param typePool Type-specific pool to register in.
-	 * @note Uses shared_ptr aliasing constructor to store the base ObjectID* in
-	 *       obj_list while sharing ownership with the typed shared_ptr.
+	 * @note Stores an aliasing shared_ptr<ObjectID> in obj_list, sharing
+	 *       ownership with the typed shared_ptr.
 	 */
 	template<typename T>
 	void RegisterObject(Resource<T> obj, ResPool<T>& typePool)
@@ -628,7 +554,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// Selection UID conversion (shared by serialize and the editor controller)
+// Selection UID conversion
 // ---------------------------------------------------------------------------
 
 inline void SnapshotSelectionUids(const Selections<const ObjectID*>& selections,

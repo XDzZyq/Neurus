@@ -18,10 +18,9 @@ OperationManager::OperationManager(EventQueue& bus, size_t maxUndoDepth)
 
 void OperationManager::Submit(std::unique_ptr<Operation> op)
 {
-	// Replay re-runs the originating handler, which calls Submit again;
-	// suppress it so history is not corrupted by its own playback. This is the
-	// EXPECTED path on every undo/redo (handlers are re-entered by replay), so
-	// it is informational, not an error condition.
+	// Replay re-runs the originating handler, which calls Submit again; suppress
+	// it so history is not corrupted by its own playback. This is the EXPECTED
+	// path on every undo/redo, so it is informational, not an error condition.
 	if (m_phase == Phase::Replaying)
 	{
 		NEURUS_LOG("[OperationManager] Submit suppressed during replay (expected): "
@@ -30,9 +29,8 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 	}
 	if (!op) return;
 
-	// Coalesce a stream of same-key edits (e.g. camera scroll/drag) into the
-	// undo-stack top so a continuous manipulation is a single undo step. The
-	// live state is already up to date; merging only extends the recorded range.
+	// Coalesce a stream of same-key edits into the undo-stack top; the live state
+	// is already up to date, so merging only extends the recorded range.
 	const std::string key = op->MergeKey();
 	if (!key.empty() && !m_undo.empty() && m_undo.back()->MergeKey() == key)
 	{
@@ -44,9 +42,9 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 		return;
 	}
 
-	// A new forward edit normally invalidates the redo timeline. Transparent
-	// ops (e.g. selection) preserve it: because operations are absolute
-	// state-sets, a pending redo still replays correctly after them.
+	// A new forward edit normally invalidates the redo timeline; transparent ops
+	// (e.g. selection) preserve it, which is safe because operations are
+	// absolute state-sets.
 	const bool preservesRedo = op->PreservesRedo();
 	m_undo.push_back(std::move(op));
 	if (!preservesRedo) m_redo.clear();
@@ -99,7 +97,7 @@ void OperationManager::Redo()
 	std::unique_ptr<Operation> gInverse = std::move(m_redo.back());
 	m_redo.pop_back();
 
-	// (g⁻¹)⁻¹ = g — the original forward edit.
+	// The inverse of the inverse is the original forward edit.
 	std::unique_ptr<Operation> forward = gInverse->Inverse();
 	if (Replay(*forward))
 		m_undo.push_back(std::move(forward));
@@ -137,13 +135,13 @@ HistoryView OperationManager::GetHistoryView() const
 	HistoryView view;
 	view.revision = m_revision;
 
-	// Undo entries: oldest → newest (front → back); the last is the next Undo.
+	// Undo entries: oldest to newest (front to back); the last is the next Undo.
 	view.undo.reserve(m_undo.size());
 	for (const auto& op : m_undo)
 		view.undo.push_back(op->Label());
 
-	// Redo entries: replay order — the next Redo is m_redo.back(), so walk the
-	// stack top → bottom to list them in the order Redo would reapply them.
+	// Redo entries in replay order: the next Redo is the stack top, so walk it
+	// top to bottom.
 	view.redo.reserve(m_redo.size());
 	for (auto it = m_redo.rbegin(); it != m_redo.rend(); ++it)
 		view.redo.push_back((*it)->Label());
@@ -158,17 +156,15 @@ bool OperationManager::Replay(Operation& op)
 
 	OperationContext ctx{ m_bus };
 
-	// m_phase must be restored on every exit path (success or caught handler
-	// exception). A stuck Replaying phase would silently suppress every later
-	// Submit(), making all further undo/redo recording appear dead (the user's
-	// "undo stopped working" symptom).
+	// m_phase must be restored on every exit path: a stuck Replaying phase would
+	// silently suppress every later Submit(), making all further undo/redo
+	// recording appear dead.
 	const Phase prior = m_phase;
 	m_phase = Phase::Replaying;
 
 	// Contain handler exceptions: a single broken handler must not abort the
-	// undo/redo call (or propagate into the Qt event loop). The exception is
-	// logged loudly and reported as failure so the caller drops the op instead
-	// of moving it onto the opposite stack.
+	// undo/redo call or propagate further. The op is reported as failed so the
+	// caller drops it instead of moving it onto the opposite stack.
 	try
 	{
 		op.Apply(ctx);

@@ -62,9 +62,8 @@ CameraProperties::CameraProperties(QWidget* parent)
 		});
 
 	// --- Active Camera row ---
-	// No label beside it: the checkbox carries its own text, and unlike the two
-	// rows above this is not a camera property at all but the Scene's choice of
-	// view camera, so it reads as a statement rather than a value to edit.
+	// No label beside it: the checkbox carries its own text, and this row is
+	// the Scene's choice of view camera rather than a camera property.
 	m_activeChk = new QCheckBox(QStringLiteral("Active Camera"), this);
 	camLayout->addWidget(m_activeChk);
 
@@ -98,7 +97,7 @@ void CameraProperties::setObjectId(int id)
 	{
 		m_objectId = id;
 		// Reset caches to sentinel values so the next setTarget() / setFov()
-		// always applies — forces a full refresh for the new object.
+		// always applies for the new object.
 		m_cachedTarget = glm::vec3(FLT_MAX, FLT_MAX, FLT_MAX);
 		m_cachedFov    = -1.0f;
 		m_cachedActive = -1;
@@ -135,9 +134,8 @@ void CameraProperties::setActive(bool active)
 		return;
 	}
 	m_cachedActive = val;
-	// Blocked: setChecked() would otherwise emit toggled() and send the state we
-	// were just handed straight back as a user edit — one that would record an
-	// undo entry for a change nobody made.
+	// Blocked: setChecked() would otherwise emit toggled() and send the state
+	// just handed to us straight back as a user edit, recording an undo entry.
 	m_activeChk->blockSignals(true);
 	m_activeChk->setChecked(active);
 	m_activeChk->blockSignals(false);

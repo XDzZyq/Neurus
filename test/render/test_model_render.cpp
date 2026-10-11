@@ -256,9 +256,9 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// Step 11: Build RenderContext & record geometry pass (G-Buffer write)
 	// -----------------------------------------------------------------------
 	RenderContext ctx{
+		.scene = &scene,
 			.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
-		.scene = &scene,
 	};
 
 	{

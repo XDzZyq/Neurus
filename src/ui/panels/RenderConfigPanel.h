@@ -2,22 +2,10 @@
  * @file RenderConfigPanel.h
  * @brief Render Config dock panel exposing live-adjustable rendering settings.
  *
- * The RenderConfigPanel provides Qt widgets (sliders, combo boxes, checkboxes)
- * for all fields in RenderConfig plus additional runtime toggles (shadow PCF
- * mode, IBL toggle, exposure). Changes emit `configValueChanged()` to trigger
- * real-time renderer updates via UIEvents::renderConfigChanged().
- *
- * Architecture:
- * - QWidget subclass with QFormLayout inside QScrollArea
- * - Controls grouped under collapsible QGroupBox sections
- * - No Vulkan or Renderer header includes — pure UI layer. `RenderConfig`, which
- *   `Save()` returns by value, reaches this header through
- *   `editor/events/ConfigEvents.h` and lives in `src/core/`; before it moved there
- *   this claim was false, since a UI header was transitively pulling in a
- *   `render/`-path header.
- * - Emits configValueChanged() Qt signal; wired by Application to renderConfigChanged()
- *
- * @note UI Layer — communicates via Qt signals (no direct Renderer coupling).
+ * Provides Qt widgets (sliders, combo boxes, checkboxes) for all fields in
+ * RenderConfig plus additional runtime toggles (shadow PCF mode, IBL toggle,
+ * exposure). Changes emit configValueChanged() so the new settings can be
+ * applied in real time.
  */
 
 #pragma once
@@ -52,16 +40,15 @@ public:
 	/**
 	 * @brief Refreshes the panel from a UIContext snapshot.
 	 *
-	 * Extracts the RenderConfig pointer from the context and populates
-	 * all controls with current values. Emits no signals (QSignalBlocker).
+	 * Populates all controls with the current values without emitting signals.
 	 *
-	 * @param ctx Read-only UI context carrying the current RenderConfig.
+	 * @param ctx Read-only UI context.
 	 */
 	void Refresh(const UIContext& ctx) override;
 
 	/**
 	 * @brief Re-applies all section titles / row labels / combo items in the
-	 *        active language (UIManager calls it on language changes).
+	 *        active language.
 	 */
 	void Retranslate() override;
 

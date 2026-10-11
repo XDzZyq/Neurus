@@ -2,23 +2,10 @@
  * @file ProfilingPanel.h
  * @brief GPU rendering profiling dock panel (real-time per-pass timings).
  *
- * Replaces the Debug-menu viewport overlay: displays the FrameProfile
- * returned by DeferredRenderer::DrawFrame() as a tree - a bold "Frame"
- * totals row (CPU record ms, GPU frame ms, total draws/dispatches) with one
- * child row per pass (CPU ms, GPU ms, draws, dispatches).
- *
- * Architecture:
- * - UIPanel subclass (matches Outliner / RenderConfigPanel pattern)
- * - QTreeWidget with 5 columns inside a QVBoxLayout
- * - Refresh() copies the latest FrameProfile from UIContext and rebuilds the
- *   tree only when the frame totals actually changed (no per-frame churn)
- * - Displayed timings (CPU/GPU ms) are smoothed with a per-value exponential
- *   moving average so the numbers don't jitter frame to frame; draw/dispatch
- *   counts are shown raw
- * - No Vulkan or Renderer headers - reads the Vulkan-free ProfilingData POD
- *   through the opaque UIContext::frameProfile pointer
- *
- * @note UI Layer - communicates via UIContext, no direct Renderer coupling.
+ * Displays the frame profile as a tree: a bold "Frame" totals row (CPU record
+ * ms, GPU frame ms, total draws/dispatches) with one child row per pass (CPU
+ * ms, GPU ms, draws, dispatches). Displayed timings are smoothed with a
+ * per-value exponential moving average; draw/dispatch counts are shown raw.
  */
 
 #pragma once
@@ -55,11 +42,10 @@ public:
 	/**
 	 * @brief Per-frame refresh from UIContext.
 	 *
-	 * Reads the opaque frameProfile pointer and repopulates the tree when the
-	 * frame totals change. GPU timestamps lag the CPU data by 1-2 frames by
-	 * design (fence-based readback); the panel just renders what it is given.
+	 * Repopulates the tree only when the frame totals change. GPU timings may
+	 * lag the CPU data by a frame or two; the panel renders whatever it is given.
 	 *
-	 * @param ctx Read-only UI context carrying Editor/Project state.
+	 * @param ctx Read-only UI context.
 	 */
 	void Refresh(const UIContext& ctx) override;
 
@@ -74,8 +60,7 @@ private:
 	 * @brief Ensures the pass-row pool has at least @p needed child rows,
 	 *        creating new ones under the persistent Frame item as necessary.
 	 *
-	 * Rows are recycled across frames (never destroyed), mirroring the
-	 * Outliner/OutlinerRow pool pattern — no per-frame `new QTreeWidgetItem`.
+	 * Rows are recycled across frames, never destroyed.
 	 */
 	bool EnsureRowPool(std::size_t needed);
 
@@ -85,9 +70,8 @@ private:
 	std::unique_ptr<ProfilingHead> m_frameHead;
 
 	/// Persistent per-pass child rows — grows as needed, never shrinks.
-	/// Each ProfilingRow wraps a QTreeWidgetItem and dirty-checks its columns
-	/// so the steady-state per-frame repopulate skips redundant setText calls
-	/// (see ui-system.instructions.md -> "Lazy Updates via Logical State Tracking").
+	/// Each row dirty-checks its columns, so the steady-state per-frame
+	/// repopulate skips redundant setText calls.
 	std::vector<std::unique_ptr<ProfilingRow>> m_rowPool;
 
 	// --- Change detection: repopulate only when a new profile arrived ---

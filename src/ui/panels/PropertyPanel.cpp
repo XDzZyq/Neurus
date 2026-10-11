@@ -160,7 +160,7 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 		const glm::vec3& rot = xform->GetRotation();
 		const glm::vec3& scl = xform->GetScale();
 
-		// Vec3Spin::setValue handles dirty-check internally
+		// Vec3Spin::setValue dirty-checks internally.
 		m_posSpin->setValue(pos.x, pos.y, pos.z);
 		m_rotSpin->setValue(rot.x, rot.y, rot.z);
 		m_sclSpin->setValue(scl.x, scl.y, scl.z);
@@ -195,9 +195,8 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 			m_cameraProps->setTarget(cam->cam_tar);
 			m_cameraProps->setFov(cam->cam_pers);
 			// Activation is Scene state, not a Camera property: it names which
-			// camera the viewport looks through, so it is read off the Scene and
-			// compared by UID. Selection is unrelated — a selected camera that is
-			// not activated shows an unticked box and does not change the view.
+			// camera the viewport looks through and is compared by UID, so a
+			// selected-but-inactive camera shows an unticked box.
 			m_cameraProps->setActive(scene->ActiveCameraID() == objectId);
 		}
 		break;
@@ -209,7 +208,7 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 		{
 			auto* mesh = it->second.get();
 			m_meshProps->setObjectId(objectId);
-			// Path is owned by the pooled MeshData (data layer).
+			// Path comes from the pooled MeshData.
 			m_meshProps->setMeshPath(mesh->o_mesh ? mesh->o_mesh->GetPath() : "");
 			m_meshProps->setShadowEnabled(mesh->using_shadow);
 			m_meshProps->setMaterialEnabled(mesh->using_material);
@@ -243,7 +242,7 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 			m_envProps->setObjectId(objectId);
 			m_envProps->setIntensity(env->GetIntensity());
 			m_envProps->setRotation(env->GetRotation());
-			// Path is owned by the pooled ImageData (data layer).
+			// Path comes from the pooled ImageData.
 			auto eqData = env->GetEquirectData();
 			m_envProps->setEquirectPath(eqData ? eqData->GetPath() : "");
 		}
@@ -289,7 +288,7 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 			m_debugProps->setColor(dmesh->GetColor());
 			m_debugProps->setOpacity(dmesh->GetOpacity());
 			m_debugProps->setXRay(dmesh->GetXRay());
-			// Path is owned by the pooled MeshData (data layer).
+			// Path comes from the pooled MeshData.
 			m_debugProps->setMeshPath(
 				dmesh->o_mesh ? QString::fromStdString(dmesh->o_mesh->GetPath()) : QString());
 		}
@@ -327,26 +326,22 @@ void PropertyPanel::BuildTransformEditor()
 	grid->addWidget(makeAxisLabel("Y", "#2ecc71"), 0, 2);
 	grid->addWidget(makeAxisLabel("Z", "#3498db"), 0, 3);
 
-	// Row 1: Position — Vec3Spin spans columns 1–3
 	m_posLabel = new QLabel("Position");
 	grid->addWidget(m_posLabel, 1, 0);
 	m_posSpin = new Vec3Spin(-100000.0, 100000.0, 0.01, 2, QString());
 	grid->addWidget(m_posSpin, 1, 1, 1, 3);
 
-	// Row 2: Rotation — Vec3Spin spans columns 1–3
 	m_rotLabel = new QLabel("Rotation");
 	grid->addWidget(m_rotLabel, 2, 0);
 	m_rotSpin = new Vec3Spin(-360.0, 360.0, 1.0, 1, "\u00B0");
 	grid->addWidget(m_rotSpin, 2, 1, 1, 3);
 
-	// Row 3: Scale — Vec3Spin spans columns 1–3
 	m_sclLabel = new QLabel("Scale");
 	grid->addWidget(m_sclLabel, 3, 0);
 	m_sclSpin = new Vec3Spin(0.001, 1000.0, 0.1, 3, QString());
 	m_sclSpin->setValue(1.0, 1.0, 1.0);  // initial identity
 	grid->addWidget(m_sclSpin, 3, 1, 1, 3);
 
-	// Row 4: Reset button — spans all 4 columns
 	m_resetBtn = new QPushButton("Reset Transform");
 	m_resetBtn->setToolTip("Reset position, rotation, and scale to identity values.");
 	grid->addWidget(m_resetBtn, 4, 0, 1, 4, Qt::AlignCenter);
@@ -397,14 +392,9 @@ void PropertyPanel::SetEnabled(bool enabled)
 	m_transformGroup->setEnabled(enabled);
 	m_emptyLabel->setVisible(!enabled);
 
-	// Deliberately does NOT touch the type subpanels: choosing which one is
-	// visible is ShowTypeSubpanel()'s single job, and Refresh() always calls it
-	// right after. Hiding them here hid-then-re-showed the visible subpanel on
-	// every frame for any object whose GetTransform() is null, and a hide/show
-	// pair inside one frame strips focus from whatever control lives in that
-	// panel -- Qt re-homes it on the Viewport. (DebugLine and DebugPoints were
-	// the objects that hit this, until they gained transforms; Sprite is the one
-	// that still has none.)
+	// Deliberately does NOT touch the type subpanels: ShowTypeSubpanel() owns
+	// which one is visible and Refresh() always calls it right after. Hiding
+	// them here would strip focus from the control living in the visible panel.
 }
 
 // =========================================================================
@@ -479,7 +469,7 @@ void PropertyPanel::BuildTypeSubpanels()
 			emit envRotationChanged(EnvironmentRotationChanged{m_activeObjectId, rotation});
 		});
 
-	// Debug (DebugLine / DebugPoints / DebugMesh — one preset, one event set)
+	// Debug (one preset serves DebugLine / DebugPoints / DebugMesh)
 	QObject::connect(m_debugProps, &DebugProperties::colorChanged, this,
 		[this](int /*objectId*/, const glm::vec4& c) {
 			emit debugColorChanged(DebugColorChanged{m_activeObjectId, c.r, c.g, c.b, c.a});
@@ -512,8 +502,7 @@ void PropertyPanel::BuildTypeSubpanels()
 		[this](int /*objectId*/, int mode) {
 			emit debugProjectionModeChanged(DebugProjectionModeChanged{m_activeObjectId, mode});
 		});
-	// The event is glm-free, so the list is flattened to xyz triples here — the
-	// controller unflattens it on the way into the scene object.
+	// The event carries plain xyz triples, so the glm list is flattened here.
 	QObject::connect(m_debugProps, &DebugProperties::positionsChanged, this,
 		[this](int /*objectId*/, const std::vector<glm::vec3>& positions) {
 			std::vector<float> xyz;
@@ -527,7 +516,6 @@ void PropertyPanel::BuildTypeSubpanels()
 			emit debugPositionsChanged(DebugPositionsChanged{m_activeObjectId, std::move(xyz)});
 		});
 
-	// Start with all hidden
 	ShowTypeSubpanel(static_cast<int>(ObjectID::GOType::NONE_GO));
 }
 

@@ -2,17 +2,9 @@
  * @file Parameters.h
  * @brief ParaType enum and GLSL type string conversion utilities.
  *
- * Provides the ParaType enumeration for identifying shader parameter types
- * (float, vec2, mat4, sampler2D, etc.) and static conversion helpers for
- * mapping between ParaType and GLSL type strings.
- *
- * Architecture:
- * - Used by layers that need to describe shader uniform/parameter types
- * - Does NOT own values or provide storage (cf. OpenGL Parameters class)
- * - Pure type metadata - no runtime state beyond the static helpers
- * - All conversion functions are inline and header-only
- *
- * @note ParaType is designed to match shader uniform types, not UI types.
+ * Pure type metadata: identifies shader parameter types (float, vec2, mat4,
+ * sampler2D, etc.) and maps between them and GLSL type strings. Holds no
+ * values and no runtime state.
  */
 
 #pragma once
@@ -25,8 +17,7 @@ namespace neurus {
 /**
  * @brief Enumeration of supported shader parameter types.
  *
- * Maps to GLSL shader uniform types. NONE is an invalid/sentinel value
- * indicating an uninitialized or unrecognized parameter type.
+ * Maps to GLSL shader uniform types; NONE is the invalid/sentinel value.
  */
 enum class ParaType : int
 {

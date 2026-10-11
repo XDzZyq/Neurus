@@ -78,7 +78,6 @@ void Buffer::createBuffer(const vk::raii::Device& device,
 #ifdef _DEBUG
 	if (!b_debugName.empty())
 	{
-		// Name the buffer
 		{
 			vk::DebugUtilsObjectNameInfoEXT nameInfo(
 				vk::ObjectType::eBuffer,
@@ -87,7 +86,6 @@ void Buffer::createBuffer(const vk::raii::Device& device,
 			b_device->setDebugUtilsObjectNameEXT(nameInfo);
 		}
 
-		// Name the device memory
 		{
 			std::string memName = b_debugName + "_Mem";
 			vk::DebugUtilsObjectNameInfoEXT nameInfo(

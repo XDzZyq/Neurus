@@ -1,8 +1,6 @@
 /**
  * @file Pass.cpp
  * @brief Pass type query helpers implementation.
- *
- * Static methods moved from RenderPassManager to the Pass base class.
  */
 
 #include "passes/Pass.h"
@@ -112,11 +110,9 @@ std::vector<vk::ClearValue> Pass::PresetClearValues(PassType passType)
 	const uint32_t colorCount = ColorAttachmentCount(passType);
 	const bool hasDepth = HasDepth(passType);
 
-	// Color clear values - all black (0, 0, 0, 0)
 	const vk::ClearValue blackColor(vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}));
 	result.insert(result.end(), colorCount, blackColor);
 
-	// Depth clear value - far plane (1.0f)
 	if (hasDepth)
 	{
 		const vk::ClearValue depthClear(vk::ClearDepthStencilValue(1.0f, 0));

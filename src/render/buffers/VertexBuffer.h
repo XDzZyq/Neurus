@@ -9,27 +9,18 @@ namespace neurus {
 /**
  * @brief Device-local vertex buffer with staging-backed upload.
  *
- * Inherits from GPUBuffer for GPU buffer lifecycle (device-local allocation,
- * staging-backed Map/Unmap/Upload). Specializes the buffer usage to VERTEX_BUFFER.
- * GPUBuffer automatically adds TRANSFER_DST for staging support.
+ * Inherits the buffer lifecycle (device-local allocation, staging-backed
+ * Map/Unmap/Upload) from GPUBuffer and specializes the usage to
+ * VERTEX_BUFFER.
  *
  * @note Template-free design - vertex data is passed as raw bytes + stride.
  *       Callers must ensure the data pointer remains valid during construction.
- *
- * Usage:
- *   VertexBuffer vbo(device, physicalDevice, queue, qfi,
- *                    vertexData, dataSize, sizeof(Vertex), numVertices);
- *   vk::Buffer handle = vbo.buffer();
- *   uint32_t count = vbo.GetVertexCount();
  */
 class VertexBuffer : public GPUBuffer
 {
 public:
 	/**
 	 * @brief Creates a device-local vertex buffer and uploads vertex data.
-	 *
-	 * Creates a GPUBuffer internally with VERTEX_BUFFER | TRANSFER_DST usage
-	 * and DEVICE_LOCAL memory, then calls Upload() with the provided data.
 	 *
 	 * @param device           Borrowed logical device (outlives this buffer).
 	 * @param physicalDevice   Borrowed physical device for memory queries.

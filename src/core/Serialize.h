@@ -2,79 +2,25 @@
  * @file Serialize.h
  * @brief Version-tolerant cereal helpers: fields that may be absent from a file.
  *
- * Two builds of the app rarely agree on a field list. An older build opening a
- * newer project, or a newer build opening an older one, hits the same wall: a
- * name the reader asks for is not in the file, cereal reports that by throwing
- * `cereal::Exception`, and the throw unwinds past the whole component's Load.
- * Because the catch blocks are deliberately coarse — `ResourceComponent::Load`
- * calls `ResourceManager::Clear()`, `ConfigComponent::Load` assigns a fresh
- * `RenderConfig` — one unknown field can discard an entire scene or every
- * render setting around it.
- *
- * The cure is to read such a field on its own and let it keep its default when
- * the file has nothing to say about it. This header holds the three shapes of
- * that, so the pattern cannot drift between call sites:
+ * Two builds of the app rarely agree on a field list, and cereal reports a
+ * missing field by throwing, which unwinds past the whole component's Load -
+ * so one unknown field can discard an entire scene. These helpers read such a
+ * field on its own and let it keep its default:
  *
  *   - Optional()        one or more fields, each independent (the default).
- *   - LoadFresh()       a whole object read into a default-constructed temporary
- *                       and assigned over a live one, for the two sites that
- *                       load into an object that is already in use.
- *   - OptionalBlock()   several fields all-or-nothing, returning a bool, for
- *                       detecting a whole legacy block (see Scene::serialize).
+ *   - LoadFresh()       a whole object read into a default-constructed
+ *                       temporary, for a load into an object already in use.
+ *   - OptionalBlock()   several fields all-or-nothing, returning a bool.
  *
- * ## One definition of every default
+ * For "absent" to mean "default", the object must start at its defaults: its
+ * in-class member initializers are the only place a default is written, and
+ * nothing in a load path restates it. Value fields, not identity: UID::o_id,
+ * the base_class hooks, the resource pool, ID lists and operations stay
+ * strict, because absence there means a broken reference.
  *
- * A field's default is written **once**, in its in-class member initializer (or
- * the type's default constructor, for `o_type` and `o_name`). Nothing in a load
- * path restates it, and that is enforced rather than asked for:
- *
- *   - Optional() on absence *leaves the member alone*. There is no fallback
- *     parameter to pass, so there is no second place a default could be spelled
- *     — a helper that took one was deleted for exactly that reason.
- *   - That only holds if the object starts at its defaults, which is free for
- *     anything cereal constructs (every pooled scene object) but not for a load
- *     into a live object. The two such sites — `ConfigComponent::Load` and
- *     `Preferences::Load` — do not reset by hand; they read into a
- *     freshly-constructed instance and assign it over the live one, so the
- *     defaults come from that construction. LoadFresh() is that move for a whole
- *     object; `Preferences::Load` does it by declaring a default `Preferences`.
- *   - `test/asset/test_serialize_optional.cpp` loads a near-empty archive and
- *     compares the result field-by-field against a default-constructed object,
- *     which fails if the two ever disagree.
- *
- * ## What this does and does not buy
- *
- * A field the reader never asks for is already harmless: cereal's JSON input
- * archive looks members up by name and `finishNode()` never checks that an
- * object's members were all consumed, so a *newer* file's extra fields and
- * extra top-level components are skipped silently. Nothing here is needed for
- * that case. What these helpers add is tolerance for a field that was
- * **renamed, moved or removed** between the two builds — in either direction.
- *
- * Two version-drift hazards are out of scope and remain fatal to the block that
- * hits them (see data-resource.instructions.md):
- *   - a pooled object type this build has not registered, which still throws
- *     out of `ResourceManager::serialize` and clears the whole pool;
- *   - an enum value outside this build's range, which loads as-is.
- *
- * ## Which fields may be optional
- *
- * Value fields, not identity. `UID::o_id`, the `cereal::base_class<>` hooks,
- * the resource pool itself, `Scene`'s ID lists, a data resource's path and
- * every undo/redo Operation stay strict: absence there means a broken
- * reference or a replay that would corrupt the scene, which must surface
- * instead of being papered over.
- *
- * ## Name-keyed archives only
- *
- * Per-field optionality needs an archive that can report "no such name" without
- * losing its place. Every archive in this project is `cereal::JSONInputArchive`
- * (asset/Project.h, app/Preferences.cpp), whose `search()` scans the current
- * object from its first member, assigns the cursor only on a hit, and clears
- * its pending name before it can throw — so a failed lookup leaves the cursor
- * and the node stack untouched and **field order does not matter**. The
- * positional binary archives cannot do that, so Optional() static_asserts
- * against them rather than corrupting a stream.
+ * @note Works with name-keyed (text) archives only; the positional binary
+ *       archives cannot report "no such name", so Optional() static_asserts
+ *       against them rather than corrupting the stream.
  */
 
 #pragma once
@@ -88,38 +34,29 @@
 
 namespace neurus::archive {
 // Named `archive` rather than `serialize`: several headers declare free
-// `neurus::serialize(Archive&, T&)` overloads for cereal to find by ADL (see
-// render/shaders/ShaderStructSerialize.h), and a namespace of that name inside
-// neurus would be a redefinition of those names.
+// `neurus::serialize(Archive&, T&)` overloads for cereal to find by ADL, and
+// a namespace of that name inside neurus would be a redefinition of those
+// names.
 
 /**
  * @brief Reads or writes one field that may be absent from the archive.
  *
  * Saving writes @p field and returns true. Loading reads it, and on absence
- * leaves the member exactly as it was and returns false — so the value the
- * caller ends up with is whatever the object was constructed with. That is the
- * point: the member's in-class initializer stays the single source of truth for
- * its default, with no literal duplicated into the load path.
- *
- * The caller therefore owes one thing: the object must start at its defaults.
- * True for free of anything cereal constructs (every pooled scene object), and
- * arranged explicitly where a load writes into a live object — see
- * `ConfigComponent::Load`, which assigns `RenderConfig{}` before reading.
+ * leaves the member exactly as it was and returns false - so the value the
+ * caller ends up with is what the object was constructed with, and the
+ * member's in-class initializer stays the single source of truth for its
+ * default.
  *
  * @param ar     Archive being saved to or loaded from.
  * @param field  The field to transfer, normally a `CEREAL_NVP(x)` or
- *               `cereal::make_nvp("key", x)` wrapper so the name-keyed archives
- *               can look it up. Its name is logged when it turns out absent.
- * @return true when the field was transferred; false only on a load that found
- *         it missing.
+ *               `cereal::make_nvp("key", x)` wrapper so the name-keyed
+ *               archives can look it up. Its name is logged when absent.
+ * @return true when the field was transferred; false only on a load that
+ *         found it missing.
  *
- * @note Either the whole field is in the file or none of it is. A compound
- *       field (a glm::vec3, a vector) whose node exists but whose *contents*
- *       are incomplete throws from inside the node, which unwinds past the
- *       archive's matching `finishNode()` and leaves the cursor somewhere
- *       unhelpful. cereal never writes a node like that; a file that contains
- *       one is corrupt rather than merely a different version, and that is not
- *       what this helper is for.
+ * @note Either the whole field is in the file or none of it is: a compound
+ *       field whose node exists but whose contents are incomplete is corrupt,
+ *       not version drift, and is not what this helper is for.
  */
 template<class Archive, class Field>
 bool OptionalField(Archive& ar, Field&& field)
@@ -143,8 +80,7 @@ bool OptionalField(Archive& ar, Field&& field)
 		catch (const cereal::Exception&)
 		{
 			// Expected whenever two builds disagree on a field list, so this is
-			// info, not an error — same level as the legacy-file paths in
-			// HistoryComponent::Load and EditorComponent::Load.
+			// info, not an error.
 			if constexpr (requires { field.name; })
 			{
 				NEURUS_LOG("[archive] field '" << field.name
@@ -158,14 +94,9 @@ bool OptionalField(Archive& ar, Field&& field)
 /**
  * @brief Transfers each field independently, keeping the default of any absent one.
  *
- * The usual entry point. Unlike OptionalBlock() the fields do not share a fate:
- * one name the file lacks does not stop the ones around it from loading, which
- * is what makes a renamed or removed field cost exactly itself.
- *
- * @code
- *   archive::Optional(ar, CEREAL_NVP(light_power), CEREAL_NVP(light_color),
- *                         cereal::make_nvp("m_radius", light_radius));
- * @endcode
+ * The usual entry point. Unlike OptionalBlock() the fields do not share a
+ * fate: one name the file lacks does not stop the ones around it from
+ * loading, so a renamed or removed field costs exactly itself.
  *
  * @return How many fields were absent (0 on any save).
  */
@@ -186,21 +117,14 @@ std::size_t Optional(Archive& ar, Fields&&... fields)
  * @brief Loads one named object into a default-constructed temporary, then
  *        assigns it over @p live.
  *
- * For the sites that read into an object the app is already using, where
- * Optional()'s "absence keeps the current value" would otherwise mean "absence
- * keeps whatever the running session had" — a default that depends on when the
- * user opened the file, which is no default at all.
- *
- * The temporary is the whole point: every field of @p live ends up either read
- * from the archive or freshly constructed, so the member initializers stay the
- * only definition of the defaults and no call site has to remember to reset.
- *
- * @code
- *   archive::LoadFresh(ar, "proj_config", *m_config);
- * @endcode
+ * For sites that read into an object the app is already using, where
+ * Optional()'s "absence keeps the current value" would mean "absence keeps
+ * whatever the running session had". The temporary is the point: every field
+ * of @p live ends up either read from the archive or freshly constructed, so
+ * the member initializers stay the only definition of the defaults.
  *
  * @param ar    Archive being loaded from (load-only: saving has nothing to
- *              default, and `ar(cereal::make_nvp(key, live))` is the save).
+ *              default).
  * @param key   Archive key holding the object.
  * @param live  Object to overwrite. Must be default-constructible and
  *              assignable.
@@ -224,14 +148,13 @@ bool LoadFresh(Archive& ar, const char* key, T& live)
  *
  * Saving writes @p fields and returns true. Loading reads them and returns
  * false if the archive does not contain them, leaving the caller to install
- * whatever defaults the block needs — which is why this returns a bool instead
+ * whatever defaults the block needs - which is why this returns a bool instead
  * of taking a fallback value: a block is often several fields that must be reset
- * together (see Scene::serialize).
+ * together.
  *
  * Prefer Optional() unless the group genuinely is a unit. This form exists for
- * recognising a whole legacy *format* — Scene's pre-pool ID lists, its selection
- * block — and for fields where "absent" must stay distinguishable from any value
- * the field can hold (Scene's three-state `activeCamUid`).
+ * recognising a whole legacy format, and for fields where "absent" must stay
+ * distinguishable from any value the field can hold.
  *
  * @param ar      Archive being saved to or loaded from.
  * @param fields  Fields to transfer, normally `CEREAL_NVP(x)` wrappers so the
@@ -271,23 +194,18 @@ bool OptionalBlock(Archive& ar, Fields&&... fields)
  * @brief Transfers one optional field by member name.
  *
  * Sugar over Optional() for the common case where the archive key is spelled
- * exactly like the member:
- * @code
- *   NEURUS_OPTIONAL(ar, r_debug_draw);
- * @endcode
- * expands to a save of `r_debug_draw`, or a load that leaves it at its in-class
- * default when the file has no such field. @p field must name a member
- * directly, since CEREAL_NVP stringifies it as the archive key; a member whose
- * key differs needs the function form with `cereal::make_nvp`.
+ * exactly like the member, so it expands to a save of @p field, or a load
+ * that leaves it at its in-class default when the file has no such field.
+ * @p field must name a member directly, since CEREAL_NVP stringifies it as
+ * the archive key; a member whose key differs needs the function form with
+ * `cereal::make_nvp`.
  */
 #define NEURUS_OPTIONAL(ar, field)                                                \
 	((void)::neurus::archive::Optional((ar), CEREAL_NVP(field)))
 
-// There is deliberately no `NEURUS_OPTIONAL_NVP(ar, field, fallback)`. It used
-// to exist, and it was the one construct in the codebase that let a default be
-// written a second time — `RenderConfig::r_debug_draw` carried `= true` in the
-// class and `, true` in the loader, free to disagree. Absence now means "keep
-// what the constructor set", so the fallback argument has nothing to say. A
-// field that genuinely needs a load-time value *different* from its constructed
-// one is a migration, not a default: write it as an explicit `if (!Optional(...))`
+// There is deliberately no `NEURUS_OPTIONAL_NVP(ar, field, fallback)`: a
+// fallback argument is a second place a default can be written, free to
+// disagree with the class. Absence now means "keep what the constructor set";
+// a field that genuinely needs a load-time value different from its
+// constructed one is a migration, written as an explicit `if (!Optional(...))`
 // at the call site, where the reason can be stated.

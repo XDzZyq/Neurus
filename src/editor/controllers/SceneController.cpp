@@ -2,24 +2,9 @@
  * @file SceneController.cpp
  * @brief Event-driven scene mutation handlers (selection, transforms, props).
  *
- * Stateless -- all handlers are free functions in an anonymous namespace.
- * Each handler receives a discrete scene event carrying an integer object UID,
- * resolves it against the current Scene (via the ControllerContext), and
- * applies the mutation. Scene-owned state (selection, membership) is reached
- * through the context's scene provider; pooled-object lookups (add/delete)
- * go through the context's IResourceLookup.
- *
- * GPU uploads are delegated to Editor via EditorEvents:
- *   - LightGpuChanged{objectUid} -> single light SSBO struct update
- *   - LightingRebuild{}          -> full light SSBO dict rebuild
- *   - SceneModified{}            -> mark project dirty
- * Every mutation also enqueues RenderResetEvent{} (temporal accumulation).
- *
- * Which of those a given mutation implies is NOT decided here: it is
- * `neurus::notify` in MutationNotify.h, shared with TransformGizmoController so the
- * two paths to the same mutation cannot drift. A handler that knows it is on a light
- * calls neurus::notify::LightStructChanged; one that does not calls neurus::notify::ObjectMutated
- * and lets the policy branch on the type.
+ * Every handler resolves an integer UID against the current scene and applies
+ * one mutation, then routes the consequences through neurus::notify - the shared
+ * mutation policy - rather than deciding them locally.
  */
 
 #include "editor/controllers/SceneController.h"
@@ -130,9 +115,8 @@ void OnVisibilityChanged(const neurus::VisibilityChanged& e, const neurus::Contr
 	ctx.ops.Submit(std::make_unique<neurus::SetVisibilityOp>(
 		obj->GetObjectID(), before, neurus::VisibilityState{ e.viewportVisible, e.renderVisible }));
 
-	// A light's visibility reaches the dict rather than its entry: UploadLighting
-	// filters shader variants (point/sun) by visibility while walking light_list.
-	// neurus::notify::ObjectMutated is what knows that.
+	// A light's visibility reaches the light dict rather than its entry, which
+	// neurus::notify::ObjectMutated knows.
 	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
 
@@ -200,10 +184,9 @@ void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerConte
 
 void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::ControllerContext& ctx)
 {
-	// Resolved through the resource pool, not scene->cam_list, for the same reason
-	// CameraController::ResolveCamera does: the viewport camera is pooled but is not
-	// scene content, so a cam_list lookup would silently drop every property edit
-	// and every CameraTransformOp/CameraFovOp replay addressed to it.
+	// Resolved through the resource pool, not the scene's camera list: the viewport
+	// camera is pooled but is not scene content, so a scene-scoped lookup would drop
+	// every property edit addressed to it.
 	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
 	if (!cam) return;
 
@@ -222,7 +205,7 @@ void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::C
 
 void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::ControllerContext& ctx)
 {
-	// Pool lookup, not cam_list — see OnCameraTargetChanged().
+	// Pool lookup, not the scene camera list - see OnCameraTargetChanged().
 	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
 	if (!cam) return;
 
@@ -234,12 +217,11 @@ void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::Control
 
 void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::ControllerContext& ctx)
 {
-	// Pool lookup, not cam_list — see OnCameraTargetChanged().
+	// Pool lookup, not the scene camera list - see OnCameraTargetChanged().
 	neurus::Camera* cam = ctx.resources.Get<neurus::Camera>(e.objectUid).get();
 	if (!cam) return;
 
-	// Replay path for CameraTransformOp: apply the absolute pose. Non-recording;
-	// live navigation records the op, this handler only re-applies endpoints.
+	// Replay path for CameraTransformOp: apply the absolute pose, non-recording.
 	cam->SetPosition(glm::vec3(e.posX, e.posY, e.posZ));
 	cam->SetTarPos(glm::vec3(e.tarX, e.tarY, e.tarZ));
 	neurus::notify::Mutated(ctx.events);
@@ -249,19 +231,9 @@ void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::Contr
  * @brief Activates a scene camera (or deactivates with uid 0) as ONE undo entry.
  *
  * Gesture and replay path both. The op is recorded only when the value actually
- * changes, so re-ticking the checkbox of the already-active camera records
- * nothing; on replay OperationManager's Phase::Replaying guard mutes the Submit,
- * exactly as for every other handler here.
- *
- * Scene::ActivateCamera() refuses a UID that is not in cam_list, which is what
- * keeps the viewport camera — pooled, but not scene content — unactivatable. A
- * refused activation still records nothing, because the snapshot is unchanged.
- *
- * The newly activated camera then needs the viewport's extent: a camera restored
- * from a project saved on a differently sized window, or one never framed since
- * it was added, carries an aspect that has nothing to do with this viewport, and
- * only a window resize would ever have corrected it. CameraController resolves
- * CameraResizeEvent through the pool, so the enqueue is all this needs.
+ * changes. Activating a UID that is not scene content is refused, which keeps the
+ * viewport camera unactivatable. The newly activated camera needs the viewport's
+ * extent, so a resize event is enqueued for it.
  */
 void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::ControllerContext& ctx)
 {
@@ -454,22 +426,19 @@ void OnEnvironmentRotationChanged(const neurus::EnvironmentRotationChanged& e, c
 }
 
 // ---------------------------------------------------------------------------
-// Debug object properties (issue #22)
+// Debug object properties
 // ---------------------------------------------------------------------------
 //
-// Editing any of these is only visible after DebugDrawBuilder reflattens, which
-// is why every handler here ends in neurus::notify::Mutated(): that enqueues RenderResetEvent,
-// whose Editor subscriber calls MarkDirty().
+// Editing any of these is only visible after the overlay is re-flattened, which
+// is why every handler here ends in neurus::notify::Mutated().
 
 /**
  * @brief Applies `fn` to whichever debug pool holds `uid`.
  * @return true if the UID named a live debug object.
  *
- * DebugLine, DebugPoints and DebugMesh share no base beyond ObjectID, but they
- * do share the color / opacity / x-ray knobs, so `fn` is a generic lambda and
- * the three unrelated pool lookups stay in one place. Type-specific knobs skip
- * this and resolve their own pool directly — reaching a DebugMesh with a line
- * width would be a bug, not something to silently absorb.
+ * The three debug types share the color / opacity / x-ray knobs but no base
+ * beyond ObjectID, so `fn` is a generic lambda and the three lookups stay in one
+ * place. Type-specific knobs skip this and resolve their own pool directly.
  */
 template <typename Fn>
 bool ForDebugObject(neurus::Scene& scene, int uid, Fn&& fn)
@@ -607,8 +576,8 @@ void OnDebugProjectionModeChanged(const neurus::DebugProjectionModeChanged& e, c
  * @brief Absolute position-list edit for a DebugLine or DebugPoints.
  *
  * The event carries xyz triples; a trailing partial triple is dropped rather
- * than fabricating a coordinate. DebugMesh has no editable position list — its
- * geometry comes from a pooled MeshData — so it is not reachable here.
+ * than fabricating a coordinate. DebugMesh has no editable position list, so it
+ * is not reachable here.
  */
 void OnDebugPositionsChanged(const neurus::DebugPositionsChanged& e, const neurus::ControllerContext& ctx)
 {
@@ -691,10 +660,8 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
 	const neurus::SelectionState before = SnapshotSelection(*scene);
 	UsePooledObject(*scene, ctx.resources, e.objectUid);
 
-	// GPU caches are scene-scoped (Editor::UploadSceneResources uploads only
-	// objects present at load), so an object entering the scene - live add or
+	// GPU caches are scene-scoped, so an object entering the scene - live add or
 	// undo/redo replay - must have its GPU resources uploaded on demand.
-	// Light SSBO handling stays with LightingRebuilt below.
 	const auto objType = obj->o_type;
 	if (objType == neurus::ObjectID::GOType::GO_MESH
 	    || objType == neurus::ObjectID::GOType::GO_LIGHT
@@ -722,12 +689,10 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
 /**
  * @brief FORWARD-ONLY entry: deselect all, delete every selected object, record ONE composite op.
  *
- * This is the user-intent entry point and is never replayed — the recorded
- * composite replays via SceneObjectDeleteRequested, not this gesture event.
- * The actual removals are DEFERRED as ONE batched SceneObjectDeleteRequested
- * (drained within the same Process()), so the removal logic lives in exactly
- * one handler — OnSceneObjectDeleteRequested — shared by the gesture and by
- * undo/redo replay.
+ * This is the user-intent entry point and is never replayed; the recorded
+ * composite replays through the batched removal handler. The actual removals are
+ * deferred as ONE batched request, so the removal logic lives in exactly one
+ * handler, shared by the gesture and by undo/redo replay.
  */
 void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
                              const neurus::ControllerContext& ctx)
@@ -738,13 +703,9 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
 	const neurus::SelectionState before = SnapshotSelection(*scene);
 	if (before.selectedUids.empty()) return;
 
-	// Cameras are deleted like any other object — there is deliberately no
-	// last-camera guard. A camera-less scene is legal: EditorViewport::SyncCamera()
-	// falls back to the viewport camera, which is not scene content and cannot be
-	// deleted from here.
-	//
-	// Deselect all, then defer ONE batched removal to the single removal
-	// handler. The composite is light: [selection-clear, batched delete].
+	// Cameras are deleted like any other object - there is deliberately no
+	// last-camera guard. A camera-less scene is legal: the viewport falls back to
+	// its own camera, which is not scene content and cannot be deleted here.
 	scene->selections.ClearSelection();
 
 	ctx.events.enqueue(neurus::SceneObjectDeleteRequested{before.selectedUids});
@@ -759,9 +720,8 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
  * @brief The removal path (forward gesture + replay, never "replay-only").
  *
  * Removes the given scene references as a batch and emits the
- * dirty/reset/lighting events once. No selection logic (the gesture
- * deselects; the composite restores on undo) and no recording (the gesture
- * records the composite; replay is muted). Stale UIDs are safe no-ops.
+ * dirty/reset/lighting events once. No selection logic and no recording: the
+ * gesture records the composite, replay is muted. Stale UIDs are safe no-ops.
  */
 void OnSceneObjectDeleteRequested(const neurus::SceneObjectDeleteRequested& e,
                                   const neurus::ControllerContext& ctx)
@@ -779,10 +739,10 @@ void OnSceneObjectDeleteRequested(const neurus::SceneObjectDeleteRequested& e,
 		if (RemoveSceneObject(*scene, uid))
 			removedAny = true;
 	}
-	if (!removedAny) return; // all stale — safe no-op
+	if (!removedAny) return; // all stale - safe no-op
 
-	// The one site that branches by hand rather than through neurus::notify::ObjectMutated:
-	// a delete is a batch, so the question is "was ANY of them a light", which no
+	// The one site that branches by hand rather than through neurus::notify: a
+	// delete is a batch, so the question is "was ANY of them a light", which no
 	// single-object policy can answer.
 	if (removedLight)
 		neurus::notify::LightingRebuilt(ctx.events);
@@ -797,7 +757,7 @@ namespace neurus {
 void SceneController::Init(ControllerContext& ctx)
 {
 	// The context is captured BY VALUE so the stored handler lambdas are fully
-	// self-contained (the context's references + providers copy cheaply).
+	// self-contained.
 	ctx.events.subscribe<ObjectSelected>([ctx](const ObjectSelected& e) { OnObjectSelected(e, ctx); });
 	ctx.events.subscribe<ObjectDeselected>([ctx](const ObjectDeselected& e) { OnObjectDeselected(e, ctx); });
 	ctx.events.subscribe<SelectionChanged>([ctx](const SelectionChanged& e) { OnSelectionChanged(e, ctx); });

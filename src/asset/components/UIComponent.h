@@ -10,10 +10,8 @@ namespace neurus::project
 /**
  * @brief Serializable component wrapping an opaque UI-state blob.
  *
- * The blob is produced and consumed entirely by the UI layer
- * (UIManager::ExportLayout / ApplyLayout) and bundles the main-window
- * geometry plus the ADS dock-manager state. Asset/Application layers
- * treat it as an opaque string, keeping this component Qt-free.
+ * The blob is produced and consumed entirely by the UI layer; this component
+ * treats it as an opaque string, keeping itself Qt-free.
  */
 class UIComponent : public Serializable
 {

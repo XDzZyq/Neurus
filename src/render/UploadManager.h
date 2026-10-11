@@ -62,10 +62,8 @@ struct Pipeline;         // render/Pipeline.h
 	/**
 	 * @brief Upload raw CPU mesh geometry to GPU.
 	 *
-	 * The geometry half of UploadMesh(), split out so scene objects that carry a
-	 * MeshData without being a Mesh (notably DebugMesh, which derives from
-	 * ObjectID + Transform3D) can produce a MeshGPU through the same path
-	 * instead of duplicating the vertex-stripping logic.
+	 * The geometry half of UploadMesh(), for callers that hold a MeshData
+	 * without a Mesh.
 	 *
 	 * @param meshData CPU-side mesh (14-float interleaved vertices + uint32 indices).
 	 * @return Device-local MeshGPU, or an empty MeshGPU if the data is empty.
@@ -83,14 +81,11 @@ struct Pipeline;         // render/Pipeline.h
 	/**
 	 * @brief Convert a map of lights to GPU structs (variant-based).
 	 *
-	 * Pure CPU conversion — no GPU operations.  Iterates the light map,
-	 * converts each light to PointLightStruct / SunLightStruct /
-	 * SpotLightStruct with shadowMapIndex set to -1, and returns a map
-	 * keyed by light UID.  The caller (RenderCache::UpdateLighting)
-	 * assigns real shadow indices.
+	 * Pure CPU conversion - no GPU operations. Each struct gets
+	 * shadowMapIndex = -1; the caller assigns real shadow indices.
 	 *
 	 * @param lights  Map of light UID to shared pointers to Light objects.
-	 * @return Map: light UID → variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
+	 * @return Map: light UID -> variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
 	 */
 	std::unordered_map<int, std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>
 	UploadLighting(const std::unordered_map<int, std::shared_ptr<Light>>& lights);
@@ -98,10 +93,8 @@ struct Pipeline;         // render/Pipeline.h
 	/**
 	 * @brief Convert a single light to its GPU struct (variant-based).
 	 *
-	 * Pure CPU conversion — no GPU operations.  Returns a variant containing
-	 * the appropriate GPU struct with shadowMapIndex set to -1.
-	 * Returns an empty variant (default-initialized PointLightStruct) for
-	 * LightType::NONELIGHT.
+	 * Pure CPU conversion - no GPU operations. Returns the appropriate GPU
+	 * struct with shadowMapIndex = -1, or a default struct for NONELIGHT.
 	 *
 	 * @param light  The light to convert.
 	 * @return variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
@@ -115,12 +108,9 @@ struct Pipeline;         // render/Pipeline.h
 	/**
 	 * @brief Creates a LightingCache (light SSBO storage) using the transfer queue.
 	 *
-	 * The LightingCache holds device-local SSBOs for point and sun light data.
-	 * Staging uploads use the transfer queue for true async operation.
-	 *
 	 * @param device          Logical device.
 	 * @param physicalDevice  Physical device (for buffer memory queries).
-	 * @return Fully constructed LightingCache, ready to be passed to RenderCache::SetLightingCache().
+	 * @return Fully constructed LightingCache.
 	 */
 	std::unique_ptr<LightingCache> CreateLightingCache(const vk::raii::Device& device,
 	                                               const vk::raii::PhysicalDevice& physicalDevice);

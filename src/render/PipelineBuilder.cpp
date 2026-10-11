@@ -303,7 +303,6 @@ Pipeline PipelineBuilder::BuildGraphicsPipeline(const vk::raii::Device& device)
 	p_dynamicState = vk::PipelineDynamicStateCreateInfo({}, p_dynamicStates);
 
 	// --- Color blend state ---
-	// If attachments were added, build the state; otherwise, use empty
 	if (!p_colorBlendAttachments.empty())
 	{
 		p_colorBlend = vk::PipelineColorBlendStateCreateInfo(
@@ -313,7 +312,6 @@ Pipeline PipelineBuilder::BuildGraphicsPipeline(const vk::raii::Device& device)
 	}
 	else
 	{
-		// Empty color blend (no attachments)
 		p_colorBlend = vk::PipelineColorBlendStateCreateInfo({}, VK_FALSE,
 			vk::LogicOp::eCopy, nullptr);
 	}

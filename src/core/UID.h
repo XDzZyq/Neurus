@@ -6,13 +6,6 @@
  * needs identity tracking inherits from UID: scene graph objects via
  * ObjectID (scene layer), and data resources (MeshData, ImageData, Shader)
  * directly.
- *
- * Architecture:
- * - UID provides globally unique integer IDs (sequential, not thread-safe)
- * - ObjectID (scene/ObjectID.h) extends UID with scene-specific metadata
- * - Data resources inherit UID directly and serialize themselves, bound by
- *   UID + cereal polymorphism in the ResourceManager pool
- * - ID-based lookups enable efficient object management
  */
 
 #pragma once
@@ -25,13 +18,13 @@ namespace neurus
 /**
  * @brief Base class providing globally unique integer IDs.
  *
- * UID generates sequential unique IDs for all instances. Each UID tracks
- * a monotonically increasing ID counter to ensure no collisions.
+ * UID generates sequential unique IDs for all instances from a monotonically
+ * increasing counter, so IDs never collide.
  *
- * @note Thread-safety: Not thread-safe. IDs should be allocated on main thread.
- * @note Lifetime: IDs are never reused, even after object destruction.
- * @note Value semantics: non-copyable and non-movable - identity must not be
- *       duplicated or transferred. Objects are held via shared_ptr.
+ * @note Not thread-safe. IDs should be allocated on the main thread.
+ * @note IDs are never reused, even after object destruction.
+ * @note Non-copyable and non-movable - identity must not be duplicated or
+ *       transferred. Objects are held via shared_ptr.
  */
 class UID
 {
@@ -50,24 +43,16 @@ public:
 	 */
 	virtual ~UID() = default;
 
-	/**
-	 * @brief Deleted copy constructor - UIDs must be unique.
-	 */
+	/** @brief Deleted copy constructor - UIDs must be unique. */
 	UID(const UID&) = delete;
 
-	/**
-	 * @brief Deleted copy assignment - UIDs must be unique.
-	 */
+	/** @brief Deleted copy assignment - UIDs must be unique. */
 	UID& operator=(const UID&) = delete;
 
-	/**
-	 * @brief Deleted move constructor - UIDs must be unique.
-	 */
+	/** @brief Deleted move constructor - UIDs must be unique. */
 	UID(UID&&) = delete;
 
-	/**
-	 * @brief Deleted move assignment - UIDs must be unique.
-	 */
+	/** @brief Deleted move assignment - UIDs must be unique. */
 	UID& operator=(UID&&) = delete;
 
 	/**
@@ -91,9 +76,8 @@ public:
 	/**
 	 * @brief Cereal serialization for the unique ID.
 	 *
-	 * Serializes o_id to preserve identity across save/load cycles.
-	 * On deserialization, bumps s_count to stay ahead of the loaded ID
-	 * so newly created objects do not collide with restored ones.
+	 * On load, bumps s_count past the restored ID so newly created objects do
+	 * not collide with restored ones.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.

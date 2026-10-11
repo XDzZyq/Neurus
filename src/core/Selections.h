@@ -4,23 +4,7 @@
  *
  * Selections provides a type-safe container for tracking user selections.
  * It supports single and multi-selection modes with fast lookup via hash set.
- * Stores T values directly — caller chooses the type (int, ObjectID*, etc.).
- *
- * Architecture:
- * - Template-based for use with any value type
- * - Scene owns Selections<ObjectID*> for scene object selection
- * - Editor delegates to Scene::selections via pointer
- * - UI queries selections to highlight/display selected objects
- * - Controllers mutate selections in response to user input
- *
- * Selection Patterns:
- * - Single select: Replace current selection
- * - Multi-select (increment): Add to selection set
- * - Deselect: Remove from selection set
- * - Active object: Tracked via m_active, separate from selection list
- *
- * @note Core Layer: Selections is part of the core type system
- * @note Thread-safety: Not thread-safe. Must be used from main thread only.
+ * The active value is tracked separately from the selection order.
  */
 
 #pragma once
@@ -39,24 +23,15 @@ namespace neurus
  * @brief Generic selection state manager supporting single and multi-selection,
  *        storing T values directly.
  *
- * Selections maintains an ordered list of selected values with fast
- * O(1) hash lookup. The active object is tracked explicitly via
- * m_active, separate from the selection list ordering.
+ * Maintains an ordered list of selected values with fast O(1) hash lookup.
+ * The active value is tracked explicitly via m_active, separate from the
+ * selection list ordering.
  *
- * T must be equality-comparable and hashable via std::hash<T>.
- * T{} is used as the "null" sentinel (nullptr for pointers, 0 for ints).
+ * T must be default-constructible, equality-comparable and hashable via
+ * std::hash<T>. T{} is used as the "null" sentinel (nullptr for pointers,
+ * 0 for ints).
  *
- * Usage Examples:
- * - Selections<int>       for ID-based tests
- * - Selections<ObjectID*> for scene object selection
- * - Selections<Material*> for material selection
- *
- * Selection Modes:
- * - increment=false: Single selection (replace existing)
- * - increment=true: Multi-selection (add to set)
- *
- * @tparam T Value type to store. Must be default-constructible,
- *           equality-comparable, and hashable.
+ * @tparam T Value type to store.
  */
 
 enum class SelectionMode : uint32_t 
@@ -91,14 +66,9 @@ public:
 
 	/**
 	 * @brief Selects a value.
-	 *
-	 * If increment=false (single selection):
-	 * - Clears existing selection
-	 * - Adds obj as the only selected value
-	 *
-	 * If increment=true (multi-selection):
-	 * - If obj not in selection: adds to end and becomes active
-	 * - If obj already selected: becomes active (moved to end of list)
+	 * @param obj Value to select.
+	 * @param increment false replaces the selection; true adds to it. Either
+	 *                  way @p obj becomes the active value.
 	 */
 	void Select(const T& obj, bool increment)
 	{
@@ -134,11 +104,9 @@ public:
 
 	/**
 	 * @brief Deselects a value.
-	 *
-	 * Removes obj from selection set. If obj was the active object,
-	 * the last remaining value becomes active, or T{} if empty.
-		SelectionMode mode = scene->selections.GetMode(obj);
-		m_rowPool[poolIndex]->SetStyle(mode, poolIndex);
+	 * @param obj Value to deselect.
+	 * @param increment Unused (legacy parameter, kept for API compatibility).
+	 * @note If @p obj was active, the last remaining value becomes active.
 	 */
 	void Deselect(const T& obj, bool increment)
 	{
@@ -185,11 +153,7 @@ public:
 		return m_selectedList.front();
 	}
 
-	/**
-	 * @brief Checks if a value is selected.
-	 *
-	 * Fast O(1) lookup using internal hash set.
-	 */
+	/** @brief Checks if a value is selected (O(1) hash lookup). */
 	bool IsSelected(const T& obj) const
 	{
 		return m_selectionSet.find(obj) != m_selectionSet.end();
@@ -240,9 +204,8 @@ public:
 	 * @brief Replaces the entire selection set with an absolute state.
 	 * @param list Ordered selected values (becomes the new selection order).
 	 * @param active Active value (T{} for none).
-	 * @note Absolute setter used by undo/redo replay: it overwrites the whole
-	 *       set at once rather than mutating incrementally, so restoring a
-	 *       recorded endpoint is order-preserving and independent of history.
+	 * @note Absolute setter for replaying a recorded end state, independent of
+	 *       the incremental history.
 	 */
 	void RestoreState(std::vector<T> list, const T& active)
 	{
@@ -257,22 +220,20 @@ public:
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Serializes the selection list (ordered list of values).
-	 *
-	 * For Selections<int> (test usage), this directly serializes int values.
-	 * For Selections<ObjectID*> (scene usage), serialization requires
-	 * a custom archive or pointer registration — not stored by default.
+	 * @brief Serializes the ordered selection list.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
+	 * @note Only the list is stored; on load the hash set is rebuilt and the
+	 *       last list element becomes active.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
 		ar(cereal::make_nvp("selectedValues", m_selectedList));
 
-		// On deserialization, rebuild the hash set from the loaded list
-		// and set the active pointer to the last element.
+		// Rebuild the hash set and make the last element active; the active
+		// value is not stored separately.
 		if constexpr (Archive::is_loading::value)
 		{
 			m_selectionSet.clear();

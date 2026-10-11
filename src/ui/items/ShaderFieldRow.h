@@ -13,7 +13,7 @@ namespace neurus
 /**
  * @brief Reusable widget for a single shader field (type combo + name field).
  *
- * Supports lazy dirty-check via setField() caching to avoid redundant widget updates.
+ * setField() dirty-checks against cached values to avoid redundant updates.
  */
 class ShaderFieldRow : public QWidget
 {

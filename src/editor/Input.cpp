@@ -2,9 +2,7 @@
  * @file Input.cpp
  * @brief Implementation of Input static translation helpers.
  *
- * Qt types are unwrapped by callers — Input.cpp only deals with raw C++ types.
- * The internal conversions match Qt::KeyboardModifier / Qt::MouseButton values,
- * but no Qt headers are exposed through Input.h.
+ * Qt types are unwrapped by callers; only raw C++ types are translated here.
  */
 
 #include "editor/Input.h"
@@ -14,7 +12,7 @@
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// GetMousePos — float pair → glm::vec2
+// GetMousePos - float pair to glm::vec2
 // ---------------------------------------------------------------------------
 
 glm::vec2 Input::GetMousePos(float x, float y)
@@ -23,7 +21,7 @@ glm::vec2 Input::GetMousePos(float x, float y)
 }
 
 // ---------------------------------------------------------------------------
-// GetModifiers — uint32_t → Modifiers bitmask
+// GetModifiers - uint32_t to Modifiers bitmask
 // ---------------------------------------------------------------------------
 
 Input::Modifiers Input::GetModifiers(uint32_t qtMods)
@@ -38,7 +36,7 @@ Input::Modifiers Input::GetModifiers(uint32_t qtMods)
 }
 
 // ---------------------------------------------------------------------------
-// GetMouseButton — uint32_t → MouseButton
+// GetMouseButton - uint32_t to MouseButton
 // ---------------------------------------------------------------------------
 
 Input::MouseButton Input::GetMouseButton(uint32_t qtBtn)
@@ -53,7 +51,7 @@ Input::MouseButton Input::GetMouseButton(uint32_t qtBtn)
 }
 
 // ---------------------------------------------------------------------------
-// GetKey — uint32_t → Key
+// GetKey - uint32_t to Key
 // ---------------------------------------------------------------------------
 
 Input::Key Input::GetKey(uint32_t qtKey)
@@ -74,15 +72,13 @@ Input::Key Input::GetKey(uint32_t qtKey)
 
 	case Qt::Key_Escape: return Key::Key_Escape;
 
-	// Return and Enter are physically distinct keys (main block vs. numpad) that
-	// mean the same thing to every editor operation, so they collapse here rather
-	// than forcing each handler to test both.
+	// Return and Enter are physically distinct keys that mean the same thing to
+	// every editor operation, so they collapse here.
 	case Qt::Key_Return:
 	case Qt::Key_Enter:  return Key::Key_Return;
 
 	// Everything else is deliberately dropped at the boundary: the event queue
-	// carries Input::Key, never a raw Qt code, so an unmapped key cannot leak
-	// through as a number some handler might compare against by accident.
+	// carries Input::Key, never a raw Qt code.
 	default:             return Key::Key_Unknown;
 	}
 }

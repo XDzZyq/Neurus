@@ -1,9 +1,6 @@
 /**
  * @file Project.cpp
- * @brief Pure registration-based serializer implementation.
- *
- * Project no longer owns Scene, RenderConfig, or any concrete data.
- * It simply iterates registered Serializable components during Save/Load.
+ * @brief Registration-based serializer implementation.
  */
 
 #include "asset/Project.h"

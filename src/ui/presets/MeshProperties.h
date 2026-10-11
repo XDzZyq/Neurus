@@ -3,19 +3,9 @@
  * @brief Reusable QWidget subpanel for editing Mesh properties.
  *
  * Displays the pooled MeshData source path (read-only label, fed via
- * setMeshPath()), using_shadow (checkbox), and using_material (checkbox).
- * All edits emit signals carrying the object ID for routing through the
- * Editor event system.
- *
- * Supports lazy update via dirty-check: each setter caches the last
- * value and no-ops if unchanged. setObjectId() resets all caches when
- * the editing target changes.
- *
- * Architecture:
- * - QWidget subclass with two QGroupBox sections: "Mesh Asset" (path) and
- *   "Mesh Flags" (checkboxes)
- * - No Vulkan or Renderer dependencies — pure Qt UI layer
- * - Lives in src/ui/items/ alongside ScalarSlider, OutlinerRow, and Vec3Spin
+ * setMeshPath()), the using_shadow checkbox and the using_material checkbox.
+ * Edits are emitted as signals carrying the object ID; each setter
+ * dirty-checks against the last value it wrote.
  */
 
 #pragma once
@@ -34,13 +24,9 @@ namespace neurus
 /**
  * @brief Mesh-specific property editor subpanel.
  *
- * Layout:
- *   [Mesh Asset group]
- *     Source path   (readonly QLabel, gray, word-wrapped, text-selectable;
- *                    path owned by the pooled MeshData)
- *   [Mesh Flags group]
- *     Cast Shadow   (QCheckBox)
- *     Use Material  (QCheckBox)
+ * Layout: a "Mesh" group with an Asset path label (selectable, word-wrapped;
+ * the path is owned by the pooled MeshData) and the Cast Shadow / Use Material
+ * checkboxes.
  */
 class MeshProperties : public QWidget
 {

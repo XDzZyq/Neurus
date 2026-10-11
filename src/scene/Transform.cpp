@@ -2,13 +2,8 @@
  * @file Transform.cpp
  * @brief Implementation of Transform3D methods.
  *
- * Provides TRS matrix computation, direction vector calculation,
- * and normal matrix derivation from Euler angle rotation.
- *
- * Coordinate System: Z-up, right-hand, +Y forward.
- *   - X = right, Y = forward, Z = up
- *   - Euler order: pitch (X), yaw (Z), roll (Y)
- *   - Model matrix: T * Rz(yaw) * Rx(pitch) * Ry(roll) * S
+ * Provides TRS matrix computation, direction vector calculation and normal
+ * matrix derivation. Model matrix: T * Rz(yaw) * Rx(pitch) * Ry(roll) * S.
  */
 
 #include "scene/Transform.h"
@@ -84,12 +79,8 @@ glm::vec3 Transform3D::GetDirection() const
 	rot = glm::rotate(rot, rad.x, glm::vec3(1.0f, 0.0f, 0.0f)); // Pitch (X)
 	rot = glm::rotate(rot, rad.y, glm::vec3(0.0f, 1.0f, 0.0f)); // Roll  (Y = forward)
 
-	// Local forward = +Y (0, 1, 0), rotate by the 3x3 rotation part
-	// Ry(roll) has no effect on (0,1,0) since it's axis-aligned.
-	// Effective: d = Rz(yaw) * Rx(pitch) * (0,1,0)
-	//   d.x = -cos(pitch) * sin(yaw)
-	//   d.y =  cos(pitch) * cos(yaw)
-	//   d.z =  sin(pitch)
+	// Local forward = +Y (0, 1, 0). Ry(roll) leaves it unchanged because it is
+	// axis-aligned, so the result is Rz(yaw) * Rx(pitch) * (0, 1, 0).
 	const glm::vec3 forward = glm::vec3(rot * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
 	return glm::normalize(forward);
 }

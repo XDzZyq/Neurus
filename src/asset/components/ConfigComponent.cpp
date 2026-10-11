@@ -15,12 +15,9 @@ void ConfigComponent::Save(cereal::JSONOutputArchive& ar) const
 
 void ConfigComponent::Load(cereal::JSONInputArchive& ar)
 {
-    // Read into a default-constructed RenderConfig rather than straight into the
-    // live one. Every field of RenderConfig is optional, so a key the file lacks
-    // keeps whatever the object being filled already held — and the live config
-    // holds the *running session's* settings, which would make "absent" mean
-    // "inherit the last project the user had open". A fresh instance makes it
-    // mean the in-class default instead, with the default stated only there.
+    // Read into a default-constructed RenderConfig: every field is optional,
+    // so a key the file lacks resolves to the in-class default rather than to
+    // the previous session's value, and a malformed file cannot half-apply.
     try
     {
         if (!archive::LoadFresh(ar, "proj_config", *m_config))

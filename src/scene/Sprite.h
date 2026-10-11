@@ -2,17 +2,10 @@
  * @file Sprite.h
  * @brief Billboard icon sprite for in-viewport object markers.
  *
- * Sprites are simple 2D billboards rendered in the viewport as visual
- * markers for scene objects (lights, cameras, environment probes, etc.).
+ * Sprites are 2D billboards drawn in the viewport as visual markers for
+ * scene objects (lights, cameras, environment probes, etc.). Pure CPU data:
+ * the icon reference, type and opacity.
  *
- * Architecture:
- * - Sprite inherits ObjectID for scene graph identity and type tracking
- * - Holds a shared_ptr<Texture> reference (GPU resource owned by Renderer)
- * - ParsePath() resolves icon file paths based on SpriteType
- * - Pure data class - no GPU rendering logic
- *
- * @note GPU rendering of sprites is a separate concern and lives in the
- *       Renderer layer (future: sprite shader pipeline).
  * @note Texture is forward-declared only. shared_ptr works with incomplete
  *       types because the deleter is type-erased at construction time.
  */
@@ -58,17 +51,8 @@ enum SpriteType : int
 /**
  * @brief Billboard icon sprite for scene object markers.
  *
- * Provides:
- * - Type-to-path resolution via ParsePath()
- * - Shared Texture reference for icon rendering
- * - Opacity control for alpha blending
- *
- * Usage:
- * @code
- *   Sprite sprite;
- *   sprite.spr_type = SpriteType::POINT_LIGHT_SPRITE;
- *   std::string iconPath = sprite.ParsePath();
- * @endcode
+ * Resolves the icon path for its type via ParsePath() and carries the shared
+ * icon texture and opacity.
  *
  * @note Non-copyable (inherited from UID). Default opacity is 0.9f.
  */
@@ -83,10 +67,10 @@ public:
 	static constexpr float kDefaultOpacity = 0.9f;
 
 	// -------------------------------------------------------------------
-	// Public members (direct access for scene / renderer iteration)
+	// Public members (direct access)
 	// -------------------------------------------------------------------
 
-	/** @brief Shared reference to the icon texture (owned by Renderer / Resource layer). */
+	/** @brief Shared reference to the icon texture. */
 	std::shared_ptr<Texture> spr_tex;
 
 	/** @brief Opacity for alpha-blended rendering (0.0 = invisible, 1.0 = opaque). */
@@ -99,19 +83,14 @@ public:
 	// Construction / destruction
 	// -------------------------------------------------------------------
 
-	/**
-	 * @brief Constructs a Sprite with default values.
-	 *
-	 * Initializes base ObjectID with GO_SPRITE type.
-	 * Texture pointer is null by default.
-	 */
+	/** @brief Constructs a Sprite with default values (GO_SPRITE, null texture). */
 	Sprite();
 
 	/**
 	 * @brief Default virtual destructor.
 	 *
-	 * shared_ptr<Texture> works with forward-declared Texture because
-	 * the deleter is type-erased at construction time, not destruction.
+	 * shared_ptr<Texture> works with the forward-declared Texture because the
+	 * deleter is type-erased at construction time, not destruction.
 	 */
 	~Sprite() override = default;
 
@@ -119,8 +98,8 @@ public:
 	 * @brief Cereal serialization for sprite.
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
-	 * @note spr_tex (shared_ptr<Texture>) is a GPU resource and is
-	 *       NOT serialized. It must be re-resolved after deserialization.
+	 * @note spr_tex is not serialized; it must be re-resolved after
+	 *       deserialization.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
@@ -134,9 +113,9 @@ public:
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Resolves the file path to the icon texture for the current spr_type.
+	 * @brief Resolves the icon file path for the current spr_type.
 	 *
-	 * @return Icon file path string, or empty string for NONE_SPRITE.
+	 * @return Icon file path, or empty string for NONE_SPRITE.
 	 * @note Paths are relative to the application resource directory.
 	 */
 	std::string ParsePath() const;

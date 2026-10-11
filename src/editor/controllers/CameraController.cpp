@@ -1,11 +1,9 @@
 /**
  * @file CameraController.cpp
- * @brief Event-driven camera navigation: orbit (rotate), dolly (push), pan (slide), zoom.
+ * @brief Event-driven camera navigation: orbit, dolly, pan and zoom handlers.
  *
- * Stateless — all handlers are free functions in an anonymous namespace.
- * Each handler receives a discrete camera event, extracts the camera
- * pointer and delta values, and applies the corresponding transform math.
- * Speed control is external — Editor scales deltas before enqueuing events.
+ * All handlers are free functions over a resolved Camera; delta scaling is
+ * external (the enqueuer normalizes before enqueuing events).
  */
 
 #include "editor/controllers/CameraController.h"
@@ -41,14 +39,9 @@ constexpr float kDollySensitivity = 0.05f;
 /**
  * @brief Resolves a camera event's camId to its live Camera (via the resource pool).
  *
- * Looks the id up in the pool rather than in `scene->cam_list`, and that is the
- * whole point: this controller manipulates *whichever* camera the UID names and
- * deliberately does not know which one the viewport is currently looking through.
- * The editor's own viewport camera is pooled like any other camera but is not scene
- * content, so it is absent from `cam_list` — a scene-scoped lookup would silently
- * refuse to navigate it. Every camera is created through
- * `ResourceManager::Load<Camera>()`, so the pool resolves scene and viewport cameras
- * alike.
+ * The pool, not `scene->cam_list`: the controller manipulates whichever camera
+ * the UID names, and the viewport's own camera is pooled like any other but is
+ * not scene content, so a scene-scoped lookup would refuse to navigate it.
  *
  * @return Non-owning Camera*, or nullptr if the id is stale or names another type.
  */
@@ -64,7 +57,7 @@ neurus::Camera* ResolveCamera(const neurus::ControllerContext& ctx, int camId)
 /**
  * @brief Notifies downstream systems of a camera transform change.
  * @param camera Camera that was modified.
- * @note Stub — will enqueue a CameraTransformChanged event in the future.
+ * @note Currently a no-op hook.
  */
 void NotifyCameraChanged(const neurus::Camera& camera)
 {
@@ -73,15 +66,13 @@ void NotifyCameraChanged(const neurus::Camera& camera)
 
 /**
  * @brief Records the coupled camera pose transition for undo/redo.
- * @tparam Op Concrete op type: CameraTransformOp (drag, non-mergeable) or
- *         CameraZoomOp (scroll, mergeable).
+ * @tparam Op CameraTransformOp (drag, non-mergeable) or CameraZoomOp (scroll, mergeable).
  * @param ops Operation sink.
  * @param camera Camera after the navigation math ran.
  * @param beforePos Camera position captured before the edit.
  * @param beforeTar Look-at target captured before the edit.
- * @note No-op if the pose did not change (degenerate/clamped moves), so the
- *       history is not polluted. The op type — not a flag — decides whether
- *       consecutive same-camera edits coalesce.
+ * @note No-op when the pose did not change, so the history is not polluted; the
+ *       op type decides whether consecutive same-camera edits coalesce.
  */
 template<typename Op>
 void RecordCameraPose(neurus::IOperationSink& ops, const neurus::Camera& camera,
@@ -102,7 +93,7 @@ void RecordCameraPose(neurus::IOperationSink& ops, const neurus::Camera& camera,
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Handles CameraZoomEvent — moves camera toward/away from target.
+ * @brief Handles CameraZoomEvent: moves camera toward/away from target.
  */
 void OnCameraZoom(const neurus::CameraZoomEvent& e, const neurus::ControllerContext& ctx)
 {
@@ -117,7 +108,7 @@ void OnCameraZoom(const neurus::CameraZoomEvent& e, const neurus::ControllerCont
 	const float radius = glm::length(dir);
 	if (radius < 1e-6f) return;
 
-	// Zoom factor: scroll up → closer, scroll down → farther
+	// Zoom factor: scroll up moves closer, scroll down farther
 	const float factor = std::pow(0.8f, e.scroll_dir * kZoomSensitivity);
 	const float newRadius = radius * factor;
 
@@ -133,7 +124,7 @@ void OnCameraZoom(const neurus::CameraZoomEvent& e, const neurus::ControllerCont
 }
 
 /**
- * @brief Handles CameraRotateEvent — orbits camera around target.
+ * @brief Handles CameraRotateEvent: orbits camera around target.
  */
 void OnCameraRotate(const neurus::CameraRotateEvent& e, const neurus::ControllerContext& ctx)
 {
@@ -152,9 +143,9 @@ void OnCameraRotate(const neurus::CameraRotateEvent& e, const neurus::Controller
 
 	// Compute spherical coordinates (Z-up)
 	const float elevation = std::asin(dir.z);                     // [-PI/2, PI/2]
-	const float azimuth   = std::atan2(dir.x, dir.y);             // [-PI, PI] — angle from +Y (forward)
+	const float azimuth   = std::atan2(dir.x, dir.y);             // angle from +Y (forward)
 
-	// Apply mouse delta (inverted for natural drag feel)
+	// Apply mouse delta
 	const float deltaAzimuth   = e.mouse_delta_x * kOrbitSensitivity;
 	const float deltaElevation = e.mouse_delta_y * kOrbitSensitivity;
 
@@ -177,7 +168,7 @@ void OnCameraRotate(const neurus::CameraRotateEvent& e, const neurus::Controller
 }
 
 /**
- * @brief Handles CameraPushEvent — dollies camera along view direction (Ctrl+MMB).
+ * @brief Handles CameraPushEvent: dollies camera along view direction.
  */
 void OnCameraPush(const neurus::CameraPushEvent& e, const neurus::ControllerContext& ctx)
 {
@@ -204,7 +195,7 @@ void OnCameraPush(const neurus::CameraPushEvent& e, const neurus::ControllerCont
 }
 
 /**
- * @brief Handles CameraSlideEvent — pans camera parallel to view plane (Shift+MMB).
+ * @brief Handles CameraSlideEvent: pans camera parallel to the view plane.
  */
 void OnCameraSlide(const neurus::CameraSlideEvent& e, const neurus::ControllerContext& ctx)
 {
@@ -215,7 +206,7 @@ void OnCameraSlide(const neurus::CameraSlideEvent& e, const neurus::ControllerCo
 	const glm::vec3 pos = camera.GetPosition();
 	const glm::vec3& target = camera.cam_tar;
 
-	// Forward: target → camera (viewing direction is camera looking at target)
+	// Forward: target -> camera (viewing direction is camera looking at target)
 	glm::vec3 forward = pos - target;
 	if (glm::length(forward) < 1e-6f) return;
 	forward = glm::normalize(forward);
@@ -231,7 +222,7 @@ void OnCameraSlide(const neurus::CameraSlideEvent& e, const neurus::ControllerCo
 	}
 	right = glm::normalize(right);
 
-	// Up: cross(right, forward) — camera-local up (not world up)
+	// Up: cross(right, forward): camera-local up, not world up
 	const glm::vec3 up = glm::cross(right, forward);
 
 	// Compute translation: horizontal mouse = right, vertical mouse = up
@@ -245,7 +236,7 @@ void OnCameraSlide(const neurus::CameraSlideEvent& e, const neurus::ControllerCo
 }
 
 /**
- * @brief Handles CameraResizeEvent — updates camera aspect ratio on viewport resize.
+ * @brief Handles CameraResizeEvent: updates camera aspect ratio on viewport resize.
  */
 void OnCameraResize(const neurus::CameraResizeEvent& e, const neurus::ControllerContext& ctx)
 {
@@ -261,7 +252,7 @@ void OnCameraResize(const neurus::CameraResizeEvent& e, const neurus::Controller
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// Init — subscribe to camera events
+// Init - subscribe to camera events
 // ---------------------------------------------------------------------------
 
 void CameraController::Init(ControllerContext& ctx)
@@ -311,7 +302,7 @@ void CameraController::Init(ControllerContext& ctx)
 		ctx.events.enqueue(RenderResetEvent{});
 	});
 
-	// Resize is viewport-driven (aspect ratio), not a user edit — not recorded.
+	// Resize is viewport-driven, not a user edit - not recorded.
 	ctx.events.subscribe<CameraResizeEvent>([ctx](const CameraResizeEvent& e) {
 		OnCameraResize(e, ctx);
 		ctx.events.enqueue(RenderResetEvent{});

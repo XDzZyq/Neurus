@@ -28,20 +28,16 @@ void ShaderStruct::ResetTypeTable()
 
 std::string ShaderStruct::ParseType(ParaType type)
 {
-	// Delegate to Parameters.h for all known ParaType values.
-	// The type_table is only used for custom/extended type lookups
-	// (samplerCube, image2D, user-defined types) via ParseType(string).
-	// Direct indexing into type_table by enum value is incorrect because
-	// the refactored ParaType enum (NONE=-1, STRING=3, CUSTOM=10) no longer
-	// aligns with the legacy type_table layout.
+	// Only neurus::ToString() is authoritative: the ParaType enum no longer
+	// aligns with the legacy type_table layout, so indexing it by enum value
+	// would be wrong.
 	return neurus::ToString(type);
 }
 
 ParaType ShaderStruct::ParseType(const std::string& type)
 {
-	// Search the type table first (handles dynamic custom types)
-	// Built-in types are at indices 0-9; everything beyond is a custom type
-	// and must always return ParaType::CUSTOM for round-trip stability.
+	// Entries beyond the built-in range are custom types and must round-trip
+	// as ParaType::CUSTOM.
 	for (size_t i = 0; i < type_table.size(); ++i)
 	{
 		if (type_table[i] == type)
@@ -142,8 +138,7 @@ bool ShaderStruct::IsAvailType(const std::string& type)
 
 void ShaderStruct::ADD_TYPE(const std::string& name)
 {
-	// Only add if not already present among custom types (index >= TEXTURE)
-	// type_table indices 0-9 are reserved for ParaType enum values
+	// Only add if not already present among the custom types.
 	static constexpr size_t kBuiltinCount = 11; // float through samplerCube
 
 	for (size_t i = kBuiltinCount; i < type_table.size(); ++i)
@@ -301,7 +296,6 @@ void ShaderStruct::SetVersion(int v)
 void ShaderStruct::AddExtension(const std::string& ext)
 {
 	is_struct_changed = true;
-	// Deduplicate
 	for (const auto& existing : extensions)
 	{
 		if (existing == ext)

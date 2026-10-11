@@ -27,9 +27,8 @@ void EditorComponent::Save(cereal::JSONOutputArchive& ar) const
 
 void EditorComponent::Load(cereal::JSONInputArchive& ar)
 {
-	// 0 is the "no saved id" value, and the only one spelled here: the next
-	// EditorViewport::EnsureCamera() reads it as "mint a fresh camera", so there is
-	// no default pose or framing restated in this load path.
+	// 0 means "no saved id": the viewport mints a fresh camera for it, so no
+	// default pose or framing is restated here.
 	int camUid = 0;
 
 	try
@@ -37,15 +36,10 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 		ar.setNextName("m_editor");
 		ar.startNode();
 
-		// A rename, not a default, so it is an explicit two-step rather than an
-		// Optional() over both: "viewportCamUid" is what this build writes, and
-		// "editorCamUid" is what every file written before the camera moved from the
-		// Editor into the EditorViewport carries. Either name resolves to the same
-		// pooled camera, so an older project keeps its saved view instead of
-		// silently reopening at the default framing.
-		//
-		// Note the comparison: archive::Optional returns how many fields were
-		// ABSENT, not whether it succeeded, so the legacy read is gated on != 0.
+		// "viewportCamUid" is what this build writes; "editorCamUid" is the
+		// pre-rename spelling, still read so an older project keeps its saved
+		// view. Note that archive::Optional returns how many fields were
+		// ABSENT, so the legacy read is gated on != 0.
 		if (archive::Optional(ar, cereal::make_nvp("viewportCamUid", camUid)) != 0)
 			archive::Optional(ar, cereal::make_nvp("editorCamUid", camUid));
 
@@ -53,8 +47,8 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 	}
 	catch (const cereal::Exception& e)
 	{
-		// Missing "m_editor" node entirely: a project saved before the viewport
-		// camera was persisted at all. Expected, so logged at info level.
+		// Missing "m_editor" node: a project saved before the viewport camera
+		// was persisted. Expected, so logged at info level.
 		NEURUS_LOG("EditorComponent::Load: " << e.what() << " - using a fresh viewport camera.");
 		camUid = 0;
 	}

@@ -1,17 +1,11 @@
 /**
  * @file POCatalog.h
- * @brief GNU gettext .po parsing — the file-format half of I18n.
+ * @brief GNU gettext .po parsing - the file-format half of I18n.
  *
- * Split out of I18n so the format handling can be tested directly: it is pure
- * text processing with no singleton, no Qt resources and no active-language
- * state, and the interesting cases (entries without blank separators, plural
- * forms) are awkward to reach through a catalog embedded in the binary.
- *
- * Only the subset Neurus needs is supported: msgctxt / msgid / msgstr with
- * quoted continuation lines. Plural forms are recognised solely so they cannot
- * corrupt the singular entry (see Parse).
- *
- * @note UI Layer utility — Qt only, no Vulkan, no Renderer.
+ * Pure text processing with no singleton, no Qt resources and no
+ * active-language state, so the format can be tested directly. Only the subset
+ * Neurus needs is supported: msgctxt / msgid / msgstr with quoted continuation
+ * lines.
  */
 
 #pragma once
@@ -38,18 +32,15 @@ struct Stats
  * @brief Parses a .po file into @p out, keeping only translated entries.
  *
  * Untranslated entries (empty msgstr) and the metadata header (msgid "") are
- * counted but not stored — I18n falls back to the English key for them.
+ * counted but not stored - I18n falls back to the English key for them.
  *
  * An entry ends at the next msgctxt, at the next msgid that does not belong to
  * a msgctxt just seen, or at a blank line. Blank lines are conventional rather
- * than required, so treating them as the only terminator made an entry inherit
- * the previous one's msgstr — with the header at the top of every file, the
- * first real key resolved to the header text.
+ * than required.
  *
  * Plural forms are dropped, not merged: msgid_plural is ignored (it must be
  * tested before msgid, of which it is a prefix), msgstr[0] is taken as the
- * translation, and higher indices are ignored. Neurus has no plural keys, but
- * hand-editing and Poedit both emit them.
+ * translation, and higher indices are ignored.
  *
  * @param data Raw .po file bytes (UTF-8).
  * @param out  Catalog to insert into (not cleared).

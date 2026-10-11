@@ -1,22 +1,16 @@
 /**
  * @file OperationManager.h
- * @brief Undo/redo history over event-replay operations (Design B).
+ * @brief Undo/redo history over event-replay operations.
  *
- * Holds two stacks of forward operations. Undo pops the top forward op `g`,
- * emits `g.Inverse()` synchronously (which re-runs the controller handler and
- * re-applies the mutation), and pushes the inverse onto the redo stack. Redo
- * is symmetric: it emits `(g⁻¹).Inverse() = g`.
+ * Holds two stacks of forward operations: undo emits the top op's Inverse()
+ * synchronously (re-running the controller handler), redo emits the inverse of
+ * the inverse. Replay is guarded by Phase::Replaying, so the Submit() the
+ * re-run handler performs is suppressed rather than corrupting the stacks.
  *
- * Replay is synchronous and guarded by Phase::Replaying, so Submit() (called
- * by the re-run handler) is suppressed and does not corrupt the stacks. This
- * is only safe because Apply() dispatches via IEventQueue::emitNow (direct
- * dispatch), never through the deferred queue.
- *
- * The manager needs NO scene or resource access: operations are pure value
- * descriptors that replay by dispatching events carrying integer object UIDs;
- * the controller handlers resolve the ids against their ControllerContext at
- * replay time. Implements IOperationSink so controllers can record without
- * knowing the concrete type.
+ * Needs no scene or resource access: operations are pure value descriptors that
+ * dispatch events carrying integer UIDs, resolved by the handlers at replay
+ * time. Implements IOperationSink so controllers record without knowing the
+ * concrete type.
  */
 
 #pragma once
@@ -46,8 +40,7 @@ public:
 	/**
 	 * @brief Constructs the manager.
 	 * @param bus Event queue operations replay their events on.
-	 * @param maxUndoDepth Cap on undo-stack entries; oldest are evicted past it
-	 *        (default kDefaultMaxUndoDepth). Bounds memory for long sessions.
+	 * @param maxUndoDepth Cap on undo-stack entries; oldest are evicted past it.
 	 */
 	OperationManager(EventQueue& bus, size_t maxUndoDepth = kDefaultMaxUndoDepth);
 
@@ -64,46 +57,43 @@ public:
 	bool CanRedo() const { return !m_redo.empty(); }
 
 	/**
-	 * @brief Builds a read-only snapshot of both stacks for the History panel.
-	 * @return Labels (oldest-first undo, replay-order redo) plus the current revision.
+	 * @brief Builds a read-only snapshot of both stacks for display.
+	 * @return Labels (oldest-first undo, replay-order redo) plus the revision.
 	 */
 	HistoryView GetHistoryView() const;
 
 	/** @brief Clears both stacks (e.g. on New/Load scene). */
 	void Clear();
 
-	// --- Persistence hooks (used by project::HistoryComponent) ---
-	/** @brief Undo stack, oldest→newest (next-undo last). Read-only. */
+	// --- Persistence hooks ---
+	/** @brief Undo stack, oldest to newest (next-undo last). Read-only. */
 	const std::vector<std::unique_ptr<Operation>>& GetUndoStack() const { return m_undo; }
-	/** @brief Redo stack, bottom→top (next-redo last). Read-only. */
+	/** @brief Redo stack, bottom to top (next-redo last). Read-only. */
 	const std::vector<std::unique_ptr<Operation>>& GetRedoStack() const { return m_redo; }
 
 	/**
 	 * @brief Replaces both stacks wholesale (project load).
 	 * @param undo New undo stack (ownership taken).
 	 * @param redo New redo stack (ownership taken).
-	 * @note Does NOT replay: the ops are absolute state-sets restored as-is;
-	 *       the live scene is loaded separately. Bumps the revision so the UI
-	 *       refreshes its history view.
+	 * @note Does NOT replay: the ops are absolute state-sets restored as-is; the
+	 *       live scene is loaded separately.
 	 */
 	void RestoreHistory(std::vector<std::unique_ptr<Operation>> undo,
 	                    std::vector<std::unique_ptr<Operation>> redo);
 
 private:
-	/** @brief Replay phase — Submit() is suppressed while Replaying. */
+	/** @brief Replay phase - Submit() is suppressed while Replaying. */
 	enum class Phase { Idle, Replaying };
 
 	/**
 	 * @brief Emits an operation synchronously under the replay guard.
-	 * @return true if the operation applied (or was skipped because no scene
-	 *         provider exists — an environmental no-op that still advances the
-	 *         stacks), false only if Apply() threw and the op must be dropped.
+	 * @return true if the operation applied, false only if Apply() threw and the
+	 *         op must be dropped.
 	 */
 	bool Replay(Operation& op);
 
 	/**
-	 * @brief Evicts the oldest undo entries so the stack stays within
-	 *        m_maxUndoDepth. Redo is unaffected (bounded implicitly by undo).
+	 * @brief Evicts the oldest undo entries so the stack stays within the depth.
 	 */
 	void EnforceUndoLimit();
 

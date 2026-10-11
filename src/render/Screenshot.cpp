@@ -27,7 +27,6 @@ namespace neurus {
 
 /**
  * @brief Converts a Vulkan vk::Format to the CPU-side PixelFormat equivalent.
- * Used when constructing ImageData from swapchain or GPU image formats.
  */
 static PixelFormat vkFormatToPixelFormat(vk::Format format)
 {
@@ -52,7 +51,6 @@ static PixelFormat vkFormatToPixelFormat(vk::Format format)
 
 /**
  * @brief Returns bytes per pixel for a Vulkan vk::Format.
- * Used as a local replacement for PixelFormat::PixelByteSize which takes PixelFormat.
  */
 static uint32_t vkFormatByteSize(vk::Format format)
 {
@@ -133,7 +131,7 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 		const auto shadowUIDs = renderCache.GetShadowMapUIDs();
 		for (int lightUID : shadowUIDs)
 		{
-			// Try cubemap→equirect (point lights) — returns empty for non-cubemaps
+			// Cubemaps (point lights) only; returns empty otherwise.
 			{
 				const std::string result = ExportShadowDepthEquirect(
 					renderCache, lightUID, "screenshots/shadow_cubemap", cubemapResolution);
@@ -142,7 +140,7 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 					++count;
 				}
 			}
-			// Try 2D depth export (sun lights) — returns empty for cubemaps
+			// 2D depth maps (sun lights) only; returns empty otherwise.
 			{
 				const std::string result = ExportShadowDepth(
 					renderCache, lightUID, "screenshots/sun_shadow");
@@ -191,7 +189,7 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 	if (!lgpu || !lgpu->shadowDepthMap) return {};
 	auto& cubemap = *lgpu->shadowDepthMap;
 
-	// This method only handles cubemaps; 2D shadow maps are handled by ExportShadowDepth.
+	// Cubemaps only; 2D shadow maps are handled by ExportShadowDepth().
 	if (cubemap.Type() != Image::ImageType::eCube)
 	{
 		return {};
@@ -234,7 +232,6 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 		DescriptorPool::CalculatePoolSizes({&c2eLayout}, 1));
 	auto c2eSet = std::move(c2ePool.Allocate(c2eLayout, 1).front());
 
-	// Write descriptors
 	{
 		vk::DescriptorImageInfo cubeInfo(cubeSampler, *cubemap.ImageViewHandle(),
 		                                  vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -396,7 +393,7 @@ std::string Screenshot::ExportShadowDepth(RenderCache& renderCache,
 	                   PixelFormat::R8U);
 	const bool saved = grayImg.SavePNG(path);
 
-	// Restore original layout — ReadImageData transitions to TransferSrc.
+	// Restore the original layout - ReadImageData transitions to TransferSrc.
 	if (saved && depthMap.State() != originalState)
 	{
 		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
@@ -634,8 +631,6 @@ bool Screenshot::CaptureAttachment(const vk::raii::Device& device,
 		return false;
 	}
 
-	// All GPU operations (layout transitions, readback) and CPU operations
-	// (format conversion, PNG write) are handled by Texture::SaveImage.
 	return Texture::SaveImage(vulkanImage, device, physicalDevice,
 	                               queue, queueFamilyIndex, path);
 }
@@ -657,12 +652,11 @@ bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
 		return false;
 	}
 
-	// Save original layout — ReadImageData transitions the image to
+	// Save the original layout - ReadImageData transitions the image to
 	// TRANSFER_SRC_OPTIMAL for readback and does not restore it.
 	const auto originalState = vulkanImage.State();
 
-	// Read back the specified layer using the Layer() subresource range.
-	// ReadImageData handles layout transition, copy-to-buffer, submit, and wait.
+	// Read back the specified layer via the Layer() subresource range.
 	const auto layerRange = vulkanImage.Layer(layerIndex);
 	auto imageData = vulkanImage.ReadImageData(
 		device, physicalDevice, queue, queueFamilyIndex, &layerRange);

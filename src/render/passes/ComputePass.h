@@ -2,18 +2,11 @@
  * @file ComputePass.h
  * @brief Abstract compute shader pass base class.
  *
- * Extracts shared infrastructure (sampler, descriptor pool/sets, barrier
- * transitions, dispatch logic) from LightingPass and SSAOPass into a common
- * base class.  Subclasses implement WriteDescriptors() to define their
- * own descriptor bindings and create their compute pipelines.
+ * Extracts shared infrastructure (sampler, descriptor pool/sets, dispatch
+ * helper) so subclasses only implement their own descriptor bindings and
+ * compute pipelines.
  *
- * Architecture:
- * - Inherits from Pass (non-copyable, movable, pure virtual Record).
- * - Owns the descriptor set layout, pool, sets, and sampler.
- * - Subclasses own their Pipeline (pipeline + layout), push constants,
- *   and any pass-specific UBOs / SSBOs.
- *
- * @note p_descriptorSetLayout is moved in via the constructor — subclasses
+ * @note p_descriptorSetLayout is moved in via the constructor - subclasses
  *       create their own layout via their static CreateDescriptorSetLayout()
  *       factory before calling this constructor.
  */
@@ -36,16 +29,9 @@ class RenderCache;
 /**
  * @brief Abstract base class for compute shader passes.
  *
- * Provides:
- * - Nearest-neighbour sampler for G-Buffer reads
- * - Descriptor pool / set lifecycle (pool creation, allocation, debug names)
- * - Compute dispatch helper (bind pipeline → push constants → dispatch)
- *
- * Subclasses must:
- * - Create their own descriptor set layout (static factory)
- * - Implement WriteDescriptors() to write pass-specific bindings
- * - Create their compute pipeline (pass-specific SPIR-V)
- * - Implement Record() from Pass
+ * Provides a nearest-neighbour sampler, descriptor pool/set lifecycle and a
+ * compute dispatch helper. Subclasses supply their descriptor set layout,
+ * WriteDescriptors() and pipeline, and implement Record().
  */
 class ComputePass : public Pass
 {
@@ -72,10 +58,10 @@ public:
 	/**
 	 * @brief Writes all descriptor bindings into the specified set.
 	 *
-	 * Called every frame before dispatch.  One set per in-flight frame
-	 * prevents updating a set while the GPU is still reading it.
+	 * Called every frame before dispatch; one set per in-flight frame avoids
+	 * updating a set while the GPU is still reading it.
 	 *
-	 * @param setIndex  Index into p_descriptorSets (0 … numSets-1).
+	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 */
 	virtual void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) = 0;
 
@@ -85,14 +71,7 @@ protected:
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Creates a nearest-neighbour sampler for G-Buffer reads.
-	 *
-	 * Byte-identical to LightingPass::CreateSampler():
-	 *   - Nearest filtering (mag, min, mipmap)
-	 *   - Clamp-to-edge addressing
-	 *   - No anisotropy
-	 *   - CompareOp::eAlways
-	 *   - FloatTransparentBlack border colour
+	 * @brief Creates the shared nearest-neighbour, clamp-to-edge sampler.
 	 *
 	 * @param device         Logical device.
 	 * @param physicalDevice Physical device (unused, kept for API symmetry).
@@ -105,8 +84,6 @@ protected:
 	 * @brief Creates the descriptor pool, allocates descriptor sets, and
 	 *        assigns debug names (in _DEBUG builds).
 	 *
-	 * Called from the constructor body after p_descriptorSetLayout is set.
-	 *
 	 * @param numSets Number of descriptor sets to allocate.
 	 */
 	void CreateDescriptorSets(uint32_t numSets);
@@ -117,15 +94,7 @@ protected:
 
 	/**
 	 * @brief Binds the pipeline and descriptor set, pushes constants, and
-	 *        dispatches at ceil(extent/16) × ceil(extent/16) thread groups.
-	 *
-	 * Equivalent to:
-	 * @code
-	 *   cmdBuf.bindPipeline(eCompute, pipeline);
-	 *   cmdBuf.bindDescriptorSets(eCompute, layout, 0, {descriptorSet}, {});
-	 *   cmdBuf.pushConstants(layout, eCompute, 0, pushSize, pushData);
-	 *   cmdBuf.dispatch(ceil(W/16), ceil(H/16), 1);
-	 * @endcode
+	 *        dispatches at ceil(extent/16) x ceil(extent/16) thread groups.
 	 *
 	 * @param cmdBuf        Command buffer in recording state.
 	 * @param extent        Render area dimensions (determines group count).

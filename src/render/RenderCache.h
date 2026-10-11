@@ -53,11 +53,9 @@ enum class AttachmentName
 
 	// --- Shadow ---
 	// Logical shadow resources. Unlike the single-image attachments above,
-	// these are resolved specially by their owning pass (ShadowDepth is a
-	// per-light bundle in LightGPU; ShadowIntensity is a 2D array via
-	// GetShadowIntensityArray). They still read as one logical object to the
-	// rest of the pipeline / RenderGraph, so they live here — but are NOT
-	// fetched through GetAttachment().
+	// these are resolved specially by their owning pass and are NOT fetched
+	// through GetAttachment(): ShadowDepth is a per-light bundle in LightGPU,
+	// ShadowIntensity a 2D array via GetShadowIntensityArray().
 	ShadowDepth,        ///< Per-light shadow depth maps (logical bundle).
 	ShadowIntensity,    ///< Unified shadow-intensity 2D array.
 
@@ -83,10 +81,9 @@ public:
 	 * @brief Constructs the render cache with its always-present GPU resources.
 	 *
 	 * The shared camera UBO and the debug-overlay buffers are created here
-	 * (neither needs a queue, and every frame writes the camera), so their
-	 * accessors never return null. LightingCache is the exception: it uploads
-	 * through a queue, so UploadManager builds it and hands it over with
-	 * SetLightingCache().
+	 * (neither needs a queue), so their accessors never return null. The
+	 * LightingCache is the exception: it uploads through a queue, so it is
+	 * built externally and handed over with SetLightingCache().
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (retained reference, used for format/memory queries).
@@ -97,10 +94,7 @@ public:
 	/**
 	 * @brief Sets the LightingCache (light SSBO storage) for this cache.
 	 *
-	 * Must be called before any UpdateLighting() calls.  The LightingCache
-	 * is typically created by UploadManager::CreateLightingCache() using
-	 * the transfer queue so that SSBO staging uploads do not block the
-	 * graphics queue.
+	 * Must be called before any UpdateLighting() calls.
 	 *
 	 * @param lightingCache  Fully constructed LightingCache (moved in).
 	 */
@@ -123,7 +117,6 @@ public:
 	 * force re-creation at a new extent.
 	 *
 	 * Newly created images start in ImageState::Undefined.
-	 * Use Barrier::Transition() to move them to a usable state.
 	 *
 	 * @param name   Attachment identifier.
 	 * @param extent Image dimensions for lazy creation.
@@ -141,8 +134,7 @@ public:
 	/**
 	 * @brief Returns the cached MeshGPU for an object, or nullptr.
 	 *
-	 * Read-only lookup - does NOT create.  Used for per-frame query
-	 * of previously-uploaded mesh GPU resources.
+	 * Read-only lookup - does NOT create.
 	 *
 	 * @param objectId Unique object ID of the mesh.
 	 * @return Non-owning pointer, or nullptr if not found.
@@ -187,8 +179,6 @@ public:
 
 	/**
 	 * @brief Returns all light UIDs that currently have LightGPU entries.
-	 *
-	 * Iterates rc_lightGPUs keys. Returns an empty vector if no entries exist.
 	 *
 	 * @return Vector of light UID integers.
 	 */
@@ -282,17 +272,6 @@ public:
 	void RemoveSceneResources();
 
 	/**
-	 * @brief Clear screen-space attachments (G-Buffer) and shadow intensities.
-	 *
-	 * Preserves LightGPU-owned shadow maps which retain their fixed
-	 * resolution. Screen-space attachments (Position through SSR in
-	 * rc_attachments) and per-pixel shadow intensities are discarded
-	 * and must be re-created on the next frame.
-	 *
-	 * @note Call on swapchain resize (screen-space images change size,
-	 *       shadow cubemaps do not).
-	 */
-	/**
 	 * @brief Removes the cached MeshGPU for a given object ID.
 	 * Safe to call for objects with no MeshGPU yet.
 	 * @param objectId Object ID to remove.
@@ -322,8 +301,7 @@ public:
 	/**
 	 * @brief Returns the cached EnvironmentGPU for an environment, or nullptr.
 	 *
-	 * Read-only lookup - does NOT create.  Used by LightingPass for per-frame
-	 * IBL descriptor binding.
+	 * Read-only lookup - does NOT create.
 	 *
 	 * @param envId Unique object ID of the environment.
 	 * @return Non-owning pointer, or nullptr if not yet created.
@@ -430,15 +408,13 @@ public:
 	/**
 	 * @brief Updates a single light in the SSBO without rebuilding the array.
 	 *
-	 * Looks up @a lightUID in the internal uid→index maps, stamps
-	 * shadowMapIndex, and delegates to LightingCache::UpdatePointLight,
-	 * UpdateSunLight or UpdateSpotLight.  No-op if the uid is not found
-	 * (light added after the last full rebuild — call UpdateLighting first).
+	 * Looks up @a lightUID in the internal uid -> index maps, restores the
+	 * light's shadowMapIndex, and writes the entry.  No-op if the uid is not
+	 * found (a light added after the last full rebuild - call UpdateLighting
+	 * first).
 	 *
 	 * @param lightUID  Unique light identifier.
-	 * @param light     Variant containing the updated GPU struct
-	 *                  (shadowMapIndex = -1 is OK; it will be restored
-	 *                  from the shadow index map).
+	 * @param light     Variant containing the updated GPU struct.
 	 */
 	void UpdateLight(int lightUID,
 	                 const std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>& light);
@@ -459,10 +435,10 @@ public:
 	/**
 	 * @brief Uploads this frame's camera matrices into the shared camera UBO.
 	 *
-	 * The one writer of the camera buffer: called once per frame from
-	 * DeferredRenderer::recordFrame() before the graph executes, so every pass
-	 * that reads it is guaranteed the same camera regardless of pass order. Takes
-	 * matrices rather than a Camera so this layer stays free of scene types.
+	 * The one writer of the camera buffer: called once per frame before the
+	 * graph executes, so every pass that reads it sees the same camera
+	 * regardless of pass order. Takes matrices rather than a Camera so this
+	 * layer stays free of scene types.
 	 *
 	 * @param proj  Projection matrix (already Y-flipped for Vulkan NDC).
 	 * @param view  View matrix.
@@ -482,13 +458,11 @@ public:
 	/**
 	 * @brief Uploads this frame's debug geometry, if it changed since last frame.
 	 *
-	 * Called once per frame from DeferredRenderer::recordFrame(), next to
-	 * UpdateCamera(). Cheap when nothing moved: the list's revision is compared
-	 * against what the frame's slot already holds and an unchanged list copies
-	 * nothing.
+	 * Cheap when nothing moved: the list's revision is compared against what
+	 * the frame's slot already holds and an unchanged list copies nothing.
 	 *
 	 * @param frameIndex  Frame-in-flight index being recorded.
-	 * @param list        Flattened debug geometry from RenderContext::debugDraw.
+	 * @param list        Flattened debug geometry.
 	 */
 	void UpdateDebugDraw(uint32_t frameIndex, const DebugDrawList& list);
 
@@ -503,13 +477,12 @@ public:
 	/**
 	 * @brief Uploads this frame's gizmo guide geometry.
 	 *
-	 * Called once per frame from DeferredRenderer::recordFrame(), beside
-	 * UpdateDebugDraw(). Unconditional: GizmoDrawList carries no revision, because a
-	 * live gesture rebuilds its geometry on every cursor and camera change and the
-	 * payload is a few dozen segments at peak.
+	 * Unconditional: GizmoDrawList carries no revision, because a live gesture
+	 * rebuilds its geometry on every cursor and camera change and the payload
+	 * is a few dozen segments at peak.
 	 *
 	 * @param frameIndex  Frame-in-flight index being recorded.
-	 * @param list        Guide geometry from RenderContext::gizmoDraw.
+	 * @param list        Guide geometry.
 	 */
 	void UpdateGizmoDraw(uint32_t frameIndex, const GizmoDrawList& list);
 
@@ -519,6 +492,14 @@ public:
 	/** @brief const overload of GetGizmoCache(). */
 	const GizmoCache& GetGizmoCache() const { return *rc_gizmoCache; }
 
+	/**
+	 * @brief Clear screen-space attachments (G-Buffer) and shadow intensities.
+	 *
+	 * Shadow cubemaps survive (they retain their fixed resolution); the
+	 * discarded attachments are re-created lazily on the next frame.
+	 *
+	 * @note Call on swapchain resize.
+	 */
 	void CleanScreenSpace();
 
 private:

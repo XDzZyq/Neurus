@@ -2,28 +2,10 @@
  * @file RenderGraph.h
  * @brief DAG orchestrator that owns render-pass nodes and their image edges.
  *
- * Wave 1 scope:
- *   - Node pool (one Node per registered pass) built on top of the template
- *     `neurus::Graph<AttachmentName, PassEntry>` from `core/Graph.h`.
- *   - Per-resource named sockets materialized from each pass's `PassIO`
- *     description (`Pass::GetIO()`).
- *   - Connect(): validates producer/consumer sockets exist for the given
- *     resource and delegates to the underlying Graph<>::Connect (which
- *     already rejects self-loops and duplicates).
- *   - Compile(): guarantees every declared input is wired, then produces a
- *     Kahn topological order (throws on cycle).
- *   - Execute(): iterates the compiled order and invokes `pass->Record()`,
- *     driving GPU timestamp + per-pass CPU profiling around each call.
- *     No barrier or descriptor injection yet — those arrive in Wave 2+.
- *
- * The graph consumes passes through their `Pass` interface only: it asks
- * each pass for a plain `PassIO` POD to wire the DAG. Passes remain
- * completely unaware of the RenderGraph type.
- *
- * Later waves will layer in:
- *   - Automatic Barrier::Transition emission between consecutive passes.
- *   - Auto-generated image-descriptor updates (DescriptorBinder).
- *   - Aliasing / lifetime tracking for transient resources.
+ * Nodes are built on top of the template `Graph<AttachmentName, PassEntry>`
+ * from `core/Graph.h`, with one named socket per resource declared in the
+ * pass's `PassIO`. The graph consumes passes through that plain POD only, so
+ * passes stay unaware of the RenderGraph type.
  */
 
 #pragma once
@@ -90,10 +72,8 @@ public:
 	/**
 	 * @brief Validate connectivity and cache the topological execution order.
 	 *
-	 * Inputs without an in-graph producer are treated as external (supplied by
-	 * a RenderCache attachment or a pass still on the legacy path) and are not
-	 * an error — this is expected during incremental migration. Cycles are
-	 * detected by Kahn's algorithm and surface as `std::runtime_error`.
+	 * Inputs without an in-graph producer are treated as external and are not
+	 * an error; cycles surface as `std::runtime_error`.
 	 */
 	void Compile();
 
@@ -101,19 +81,10 @@ public:
 	 * @brief Walk the compiled order and invoke each pass's Record(), driving
 	 *        GPU + CPU profiling around every pass.
 	 *
-	 * For each pass the graph brackets the recording with
-	 * `profiler.BeginPass()/EndPass()` (GPU timestamps) and times the CPU-side
-	 * `Record()` call with std::chrono. The `PassStats` returned by `Record()`
-	 * (draw calls, dispatches) plus the measured CPU time are appended to
-	 * @p frameProfile.passes in execution order. GPU times stay 0 here and are
-	 * back-filled by DeferredRenderer once `GPUProfiler::Resolve()` succeeds.
-	 * Passes themselves remain completely unaware of profiling.
+	 * Clears and repopulates @p frameProfile.passes in execution order and
+	 * recomputes its aggregate counters; GPU times are left for the caller.
 	 *
-	 * @p frameProfile.passes is cleared and repopulated; the aggregate counters
-	 * (drawCalls, dispatches, passCount, cpuRecordMs) are recomputed. GPU fields
-	 * are left untouched for the caller to fill.
-	 *
-	 * @pre  Compile() has been called since the last topology change.
+	 * @pre    Compile() has been called since the last topology change.
 	 * @throws std::runtime_error if the graph has not been compiled.
 	 */
 	void Execute(vk::CommandBuffer cmd,
@@ -134,10 +105,8 @@ public:
 	/**
 	 * @brief Remove all nodes and clear the compiled order.
 	 *
-	 * Used to rebuild the graph from scratch when the active pass set changes
-	 * (e.g. the user toggles FXAA), so the DAG always reflects exactly the
-	 * passes that will run. Pass objects are non-owning and outlive the graph,
-	 * so only the node/socket bookkeeping is discarded.
+	 * Pass objects are non-owning and outlive the graph, so only the
+	 * node/socket bookkeeping is discarded.
 	 */
 	void Clear();
 

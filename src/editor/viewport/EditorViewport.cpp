@@ -2,10 +2,8 @@
  * @file EditorViewport.cpp
  * @brief Implementation of the editor's viewport: camera, screen space, overlays.
  *
- * The camera and overlay halves are deliberately thin — a lifecycle against the
- * resource pool and four forwarding calls. The only subtle part is ProjectBox's
- * near-plane handling, and it is subtle in a way that is easy to get wrong
- * silently — see ClipBoxEdges below.
+ * The only subtle part is ProjectBox's near-plane handling, which is easy to get
+ * wrong silently - see ClipBoxEdges below.
  */
 
 #include "editor/viewport/EditorViewport.h"
@@ -33,8 +31,8 @@ constexpr float kMinViewAxisLength = 1e-3f;
 /**
  * @brief The 8 corners of a local AABB, indexed so bit 0 = x, bit 1 = y, bit 2 = z.
  *
- * The bit encoding is what makes the edge list below trivial: two corners share an
- * edge exactly when their indices differ in one bit.
+ * The bit encoding makes the edge list trivial: two corners share an edge exactly
+ * when their indices differ in one bit.
  */
 std::array<glm::vec3, 8> BoxCorners(const glm::vec3& lo, const glm::vec3& hi)
 {
@@ -82,16 +80,14 @@ void EditorViewport::EnsureCamera(ResourceManager& pool)
 		}
 	}
 
-	// No id, or an id this pool does not know (a project written before the viewport
-	// camera was persisted). Mint one at the default framing.
+	// No id, or an id this pool does not know. Mint one at the default framing.
 	v_camera = pool.Load<Camera>();
 	v_camUid = v_camera->GetObjectID();
 	v_camera->SetPosition(kDefaultEye);
 	v_camera->SetTarPos(kDefaultTarget);
 
-	// Framed here rather than waiting for the next SyncCamera(), because a scene can
-	// be built and queried before any frame is drawn: a fresh Camera is 1x1, and a
-	// projection against that is squashed rather than merely unframed.
+	// Framed here rather than waiting for the next SyncCamera(): a fresh Camera is
+	// 1x1, and a projection against that is squashed rather than merely unframed.
 	FrameCamera(v_camera.get());
 
 	NEURUS_LOG("[Viewport] Viewport camera created (UID " << v_camUid << ")");
@@ -111,15 +107,14 @@ void EditorViewport::SyncCamera(Scene& scene)
 {
 	Camera* sceneCam = scene.GetActiveCamera();
 
-	// The activated scene camera wins; the viewport's own is the fallback. Note that
-	// this is activation, not selection — selecting a camera leaves the view alone.
+	// The activated scene camera wins; the viewport's own is the fallback. This is
+	// activation, not selection - selecting a camera leaves the view alone.
 	p_camera = sceneCam ? static_cast<const Camera*>(sceneCam)
 	                    : static_cast<const Camera*>(v_camera.get());
 
 	// Both candidates, not just the chosen one: activation can switch the view with
 	// no resize in between, and a camera that missed one would present a stretched
-	// image the moment it took over. A *deactivated* scene camera is left alone — it
-	// picks the extent up when it becomes the view camera.
+	// image the moment it took over.
 	FrameCamera(v_camera.get());
 	FrameCamera(sceneCam);
 }
@@ -146,16 +141,14 @@ void EditorViewport::FrameCamera(Camera* cam) const
 void EditorViewport::HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent)
 {
 	// A zero extent is dropped rather than stored: it is what the window reports
-	// before it is first shown, and it would divide by zero in the projection. The
-	// previous extent is a better answer than none.
+	// before it is first shown, and it would divide by zero in the projection.
 	if (logical.x == 0u || logical.y == 0u) return;
 
 	SetViewportSize(logical, renderExtent);
 
-	// Immediately, not via the event queue: a resize must be in effect for the frame
-	// that follows it, and the queue is only drained in the next Edit(). The
-	// activated scene camera, which needs a Scene to find, is re-framed by the next
-	// SyncCamera() — which runs before any draw.
+	// Immediately, not via the event queue: a resize must be in effect for the
+	// frame that follows it. The activated scene camera is re-framed by the next
+	// SyncCamera().
 	FrameCamera(v_camera.get());
 
 	// Constant-pixel guide geometry is a CPU computation against the viewport
@@ -179,9 +172,7 @@ void EditorViewport::SetCursor(glm::vec2 logicalPixel)
 	v_cursor = logicalPixel;
 
 	// Only while a gesture is live: the guide follows the cursor through a pixel
-	// budget, so its world-space geometry changes even when nothing else did. A
-	// resting handle is anchored on the object, so an idle mouse sweep must not
-	// rebuild it on every motion event.
+	// budget, so its world-space geometry changes even when nothing else did.
 	if (v_gizmo.IsActive())
 		v_gizmoDraw.MarkDirty();
 }
@@ -196,11 +187,9 @@ void EditorViewport::RebuildOverlays(const Scene& scene)
 	// stateful and rarely move.
 	v_debugDraw.Rebuild(scene);
 
-	// The anchor is always the *live* transform — of the gesture's target while one
+	// The anchor is always the *live* transform - of the gesture's target while one
 	// is armed, of the selection's active object otherwise. Passing the transform in
-	// rather than handing the builder a Scene keeps it a pure geometry flattener,
-	// and leaves it to decide which parts of the live transform a gesture may follow
-	// (see GizmoDrawBuilder::Rebuild).
+	// keeps the builder a pure geometry flattener.
 	TransformSnapshot anchor{};
 	const bool hasAnchor = GizmoAnchor(scene, anchor);
 	v_gizmoDraw.Rebuild(v_gizmo, *this, hasAnchor ? &anchor : nullptr);
@@ -220,23 +209,22 @@ void EditorViewport::MarkGizmoDirty()
 bool EditorViewport::GizmoAnchor(const Scene& scene, TransformSnapshot& out) const
 {
 	// An armed gesture names its own target by uid, which need not still be the
-	// active object: the Outliner can change the selection mid-gesture, and
-	// following that would tear the guide off the object actually being transformed.
+	// active object: the selection can change mid-gesture, and following that would
+	// tear the guide off the object actually being transformed.
 	const ObjectID* obj = v_gizmo.IsActive() ? scene.GetObjectID(v_gizmo.ObjectUid())
 	                                         // The active object, not the whole
-	                                         // selection: the gesture itself is
-	                                         // active-object only (TransformGizmo
-	                                         // holds a single uid), so a second
-	                                         // handle would promise a multi-object
-	                                         // transform that does not exist.
+	                                         // selection: a gesture holds a single
+	                                         // uid, so a second handle would promise
+	                                         // a multi-object transform that does not
+	                                         // exist.
 	                                         : scene.selections.GetActiveObject();
 	if (!obj)
 		return false;  // nothing selected, or deleted mid-gesture (the builder then
 		               // falls back to the gesture's own snapshot)
 
-	// dynamic_cast rather than ObjectID::GetTransform(), for the same reason
-	// ScreenPosition() does it: the virtual is non-const and hands back a void*
-	// typed as the Transform base, while both lookups above are const.
+	// dynamic_cast rather than ObjectID::GetTransform(), as in ScreenPosition():
+	// the virtual is non-const and hands back a void* typed as the Transform base,
+	// while both lookups above are const.
 	const auto* transform = dynamic_cast<const Transform3D*>(obj);
 	if (!transform)
 		return false;  // an object with no spatial transform has nothing to anchor on
@@ -286,8 +274,8 @@ glm::vec2 EditorViewport::ToRenderPixels(glm::vec2 logical) const
 		return logical;
 
 	// Per-axis rather than one DeviceRatio() multiply: the two axes are equal on
-	// every display we have seen, and scaling them independently costs nothing
-	// while removing the assumption entirely.
+	// every display seen so far, and scaling them independently costs nothing while
+	// removing the assumption.
 	const glm::vec2 scale = glm::vec2(v_render) / glm::vec2(v_logical);
 	return logical * scale;
 }
@@ -393,14 +381,10 @@ struct PixelAccumulator
 /**
  * @brief Adds the near-plane crossing of every edge with one endpoint in front.
  *
- * This is the part that must happen in homogeneous clip space, before the
- * perspective divide. A corner with w <= 0 has already been mirrored through the
- * origin by the divide, so no post-divide clamp can recover where its edge
- * actually leaves the screen — the rect would come out wrapped around the centre
- * and look like a plausible (if wrong) answer.
- *
- * w is affine in world position, so it varies linearly along an edge and the
- * crossing parameter below is exact, not an approximation.
+ * This must happen in homogeneous clip space, before the perspective divide: a
+ * corner with w <= 0 has already been mirrored through the origin by the divide,
+ * so a post-divide clamp would produce a plausible but wrong rect. w is affine in
+ * world position, so the crossing parameter below is exact.
  */
 void ClipBoxEdges(const std::array<glm::vec4, 8>& clip,
                   float nearW,
@@ -481,10 +465,8 @@ float PixelsPerWorldUnit(const EditorViewport& vp, float viewDepth)
 
 	const glm::mat4 proj = vp.GetCamera()->GetProjectionMatrix();
 
-	// proj[1][1] carries the FOV term and no aspect term (Camera.cpp puts aspect in
-	// proj[0][0]), which is exactly why this is aspect-independent and why the same
-	// world length is the same number of pixels in a tall window and a wide one.
-	// abs() because Camera negates it for Vulkan's NDC Y direction.
+	// proj[1][1] carries the FOV term and no aspect term, which is why this is
+	// aspect-independent; abs() because the projection negates it for Vulkan NDC.
 	const float halfHeight = static_cast<float>(vp.Size().y) * 0.5f;
 	return std::abs(proj[1][1]) * halfHeight / std::max(viewDepth, EditorViewport::kMinW);
 }
@@ -499,9 +481,8 @@ ScreenRect ProjectBounds(const EditorViewport& vp,
 ScreenPoint ScreenPosition(const EditorViewport& vp, const ObjectID& object)
 {
 	// dynamic_cast rather than ObjectID::GetTransform(): that virtual is non-const
-	// and hands back a void* typed as the Transform base, while what is needed here
-	// is a const Transform3D. An object without one (an Environment) yields an
-	// invisible point, never a silent (0,0,0).
+	// and hands back a void* typed as the Transform base. An object without a
+	// Transform3D yields an invisible point, never a silent (0,0,0).
 	const auto* transform = dynamic_cast<const Transform3D*>(&object);
 	if (transform == nullptr)
 		return ScreenPoint{};

@@ -2,13 +2,10 @@
 
 /**
  * @file PlatformSurface.h
- * @brief Abstract platform surface — isolates Vulkan surface creation from OS details.
+ * @brief Abstract platform surface: Vulkan surface creation without OS ifdefs.
  *
- * Each platform (Win32, macOS, Linux/X11, etc.) provides a subclass that knows
- * how to create a VkSurfaceKHR from a native window handle. The Application
- * layer uses this interface without any #ifdef.
- *
- * Architecture: Platform layer (leaf dependency — only Vulkan headers).
+ * Each platform (Win32, macOS, X11, ...) supplies a subclass that knows how
+ * to create a VkSurfaceKHR from that platform's native window handle.
  */
 
 #include <vulkan/vulkan_raii.hpp>
@@ -28,17 +25,15 @@ public:
 	/// Vulkan instance extensions required by this platform's surface type.
 	virtual std::vector<const char*> requiredInstanceExtensions() const = 0;
 
-	/// Instance create flags (e.g., eEnumeratePortabilityKHR on macOS). Default: none.
+	/// Instance create flags (e.g., eEnumeratePortabilityKHR on macOS).
 	virtual vk::InstanceCreateFlags instanceCreateFlags() const { return {}; }
 
 	/// Create a VkSurfaceKHR from a native window handle.
-	/// On macOS this internally configures the CAMetalLayer.
 	virtual vk::raii::SurfaceKHR createSurface(
 		const vk::raii::Instance& instance,
 		NativeWindowHandle windowHandle) const = 0;
 
-	/// Notify the platform of a resize (e.g., update CAMetalLayer drawable size).
-	/// Default: no-op.
+	/// Notify the platform of a resize. Default: no-op.
 	virtual void onResize(NativeWindowHandle windowHandle,
 	                      uint32_t width, uint32_t height) const {}
 };

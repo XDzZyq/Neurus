@@ -3,19 +3,9 @@
  * @brief Scene-domain events (UI -> Editor -> SceneController).
  *
  * Events are ephemeral value structs that carry plain INTEGER ids instead of
- * object/scene pointers: raw pointers can dangle after an object is deleted,
- * while a UID stays a stable identity that controllers resolve against the
- * current scene/pool at dispatch time.
- *
- * - int objectUid - the scene object being mutated (0 = none). Controllers
- *   resolve it to a live object via the ControllerContext (scene lookup for
- *   property edits, pool lookup for membership).
- * - The scene is NOT carried in events: scene-scoped handlers obtain the
- *   current Scene from the ControllerContext, so a scene swap on New/Load can
- *   never leave an event holding a stale scene pointer.
- *
- * The UI layer emits PURE INPUT INTENTS on the UI->Editor path; scene editing
- * events carry int objectUid and Editor::OnUIEvent enqueues them unchanged.
+ * pointers: a UID stays a stable identity that controllers resolve against the
+ * current scene at dispatch time. Each event carries `objectUid`; the scene
+ * itself is never carried, so a scene swap can never leave a stale pointer.
  */
 
 #pragma once
@@ -45,10 +35,9 @@ struct ObjectDeselected
 /**
  * @brief Absolute selection-set state applied to the scene.
  *
- * Emitted only when replaying a SetSelectionOp: live selection events
- * (ObjectSelected/ObjectDeselected) mutate the set incrementally, so the
- * undoable operation stores the absolute selected-UID list plus the active
- * UID and dispatches this to restore the whole set at once.
+ * Emitted only when replaying a SetSelectionOp: live selection events mutate
+ * the set incrementally, so the undoable operation stores the absolute list and
+ * dispatches this to restore it at once.
  */
 struct SelectionChanged
 {
@@ -120,9 +109,8 @@ struct CameraFovChanged
 /**
  * @brief Absolute camera pose (position + look-at target) set.
  *
- * Emitted only when replaying a CameraTransformOp: live navigation events
- * (rotate/slide/push/zoom) carry relative deltas and cannot be replayed, so
- * the undoable operation stores the absolute endpoints and dispatches this.
+ * Emitted only when replaying a CameraTransformOp: live navigation events carry
+ * relative deltas and cannot be replayed, so the op stores absolute endpoints.
  */
 struct CameraPoseChanged
 {
@@ -138,14 +126,9 @@ struct CameraPoseChanged
 /**
  * @brief Absolute camera-activation set: which scene camera the viewport uses.
  *
- * `camUid` 0 means "deactivate" — a legal, fully supported state in which the
- * viewport looks through the viewport's own camera. Activation is scene state and
- * is deliberately independent of selection: the PropertyPanel keeps inspecting
- * whatever is selected, and selecting a camera never changes the view.
- *
- * One event for both the gesture (the PropertyPanel checkbox) and the replay of
- * SetActiveCameraOp, like every other scene mutation: the op stores the before
- * and after UIDs and dispatches this to re-apply either endpoint.
+ * `camUid` 0 means "deactivate" - a legal state in which the viewport looks
+ * through its own camera. Activation is independent of selection. One event for
+ * both the live toggle and the replay of SetActiveCameraOp.
  */
 struct ActiveCameraChanged
 {
@@ -227,18 +210,14 @@ struct EnvironmentRotationChanged
 };
 
 // ---------------------------------------------------------------------------
-// Debug object property events (issue #22)
+// Debug object property events
 // ---------------------------------------------------------------------------
 //
-// One set of events for all three debug types (DebugLine, DebugPoints,
-// DebugMesh): the shared knobs — color, opacity, x-ray — are literally the same
-// property on three unrelated pools, so the controller resolves the UID against
-// whichever pool holds it instead of the event naming a type. The type-specific
-// knobs simply never reach an object that has no such property.
-//
-// Every handler ends in Mutated(), which enqueues RenderResetEvent and so marks
-// DebugDrawBuilder dirty — a debug property edit is only visible after a
-// reflatten.
+// One set of events for all three debug types: the shared knobs - color,
+// opacity, x-ray - are the same property on three unrelated pools, so the
+// controller resolves the UID against whichever pool holds it. A debug property
+// edit is only visible after the overlay is re-flattened, which the mutation
+// notification arranges.
 
 /** @brief Debug object tint. Carries alpha: debug colors are vec4. */
 struct DebugColorChanged
@@ -299,11 +278,9 @@ struct DebugProjectionModeChanged
 /**
  * @brief Absolute replacement of a debug object's position list.
  *
- * Covers editing a coordinate, adding a row and removing a row alike — a
- * structural change could not be expressed by a per-index event, so the list is
- * always sent whole. Flattened to xyz triples because this header stays
- * glm-free like every other event in it. The O(n) copy per edit is fine for
- * hand-authored debug lists; nothing here is on a per-frame path.
+ * Covers editing a coordinate, adding a row and removing a row alike, so the
+ * list is always sent whole. Flattened to xyz triples because this header stays
+ * glm-free. The O(n) copy is fine for hand-authored debug lists.
  */
 struct DebugPositionsChanged
 {
@@ -318,12 +295,10 @@ struct DebugPositionsChanged
 /**
  * @brief Adds an object to the scene.
  *
- * Emitted by the Editor after loading a resource into the pool (mesh import,
- * camera/light add) AND by SceneObjectAddOp on undo/redo replay (the
- * originating event — replay runs the same handler as a live edit; the
- * handler's Submit is muted by Phase::Replaying). Carries the object UID; the
- * SceneController fetches the pooled object from the resource pool by UID,
- * registers it, selects it, and records the composite operation.
+ * Emitted after a resource is loaded into the pool AND on undo/redo replay, so
+ * replay runs the same handler as a live edit. Carries the object UID; the
+ * controller fetches the pooled object, registers it, selects it, and records
+ * the composite operation.
  */
 struct SceneObjectAddRequested
 {
@@ -334,10 +309,9 @@ struct SceneObjectAddRequested
  * @brief Removes a BATCH of objects' scene references.
  *
  * The SINGLE removal path: emitted by the delete gesture (one event carrying
- * all selected UIDs) AND by SceneObjectAddOp (delete direction) on undo/redo
- * replay. The handler removes exactly these UIDs — no selection logic, no
- * operation recording (the gesture records the composite; replay is muted).
- * The pooled resources are never removed from the pool.
+ * all selected UIDs) AND on undo/redo replay. The handler removes exactly these
+ * UIDs - no selection logic, no operation recording. The pooled resources are
+ * never removed from the pool.
  */
 struct SceneObjectDeleteRequested
 {
@@ -347,17 +321,13 @@ struct SceneObjectDeleteRequested
 /**
  * @brief Editor->Controller delete gesture: delete ALL selected objects (Delete key).
  *
- * Dedicated Editor->Controller event: the Editor emits it (wrapping the pure
- * DeleteRequested input intent). FORWARD-ONLY: the recorded composite replays
- * via SceneObjectDeleteRequested, never this gesture event. The SceneController
- * snapshots the selection, deselects, removes every selected object (one batched
- * SceneObjectDeleteRequested), and records ONE composite operation
- * (selection-clear + batched delete).
+ * FORWARD-ONLY: the recorded composite replays via SceneObjectDeleteRequested,
+ * never this gesture event. The controller snapshots the selection, deselects,
+ * removes every selected object, and records ONE composite operation.
  *
- * Nothing is guarded: a scene with zero cameras is legal, because the Editor
- * always has its own camera. Deleting the *activated* camera simply leaves the
- * activation UID stale, which Scene::GetActiveCamera() reads as "none" and the
- * undo re-add revalidates for free.
+ * Nothing is guarded: a scene with zero cameras is legal, and deleting the
+ * activated camera simply leaves a stale activation UID, which the active-camera
+ * lookup reads as "none".
  */
 struct ObjectDeleteRequested
 {

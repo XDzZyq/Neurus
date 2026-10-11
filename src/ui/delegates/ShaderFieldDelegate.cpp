@@ -38,15 +38,15 @@ QWidget* ShaderFieldDelegate::createEditor(QWidget* parent, const QStyleOptionVi
 			populateTypeCombo(combo);
 			return combo;
 		}
-		// NodeStructDef: struct name edit (name only, no type selector)
-		// Editors are created on demand, so translating here is enough — there
-		// is no long-lived widget for a language switch to miss.
+		// NodeStructDef: struct name edit (name only, no type selector).
+		// Editors are created on demand, so translating here is enough.
 		auto* edit = new QLineEdit(parent);
 		edit->setPlaceholderText(I18n::instance().translate("struct name"));
 		return edit;
 	}
 
-	// Column 1: name / varName edit (not reached for struct defs — they span both columns)
+	// Column 1: name / varName edit; not reached for struct defs, which span
+	// both columns.
 	return new QLineEdit(parent);
 }
 
@@ -92,7 +92,7 @@ void ShaderFieldDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
 	QStyledItemDelegate::paint(painter, option, index);
 
 	// Section / struct-def rows span the full row; draw the "+" at its right
-	// edge (a plain-delegate control — no index widgets to fight the resets).
+	// edge. A plain-delegate control, so no index widgets fight the resets.
 	const int nodeType = index.data(ShaderStructModel::RoleNodeType).toInt();
 	if (nodeType == ShaderStructModel::NodeSection ||
 	    nodeType == ShaderStructModel::NodeStructDef)

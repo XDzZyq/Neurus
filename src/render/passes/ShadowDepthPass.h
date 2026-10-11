@@ -39,7 +39,7 @@ public:
 	// constant through gl_FragDepth override).
 	static constexpr float kStaticFarPlane = 1000.0f;
 
-	// 6 mat4 face view-projection matrices → 384 bytes in std430
+	// 6 mat4 face view-projection matrices - 384 bytes in std430
 	static constexpr vk::DeviceSize kFaceVPSize = kShadowFaceCount * sizeof(glm::mat4);
 
 	// Push constant layout (80 bytes total):
@@ -68,8 +68,8 @@ public:
 
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& /*cache*/, const RenderContext& ctx) override;
 
-	/// Declares the ShadowDepthBundle write for RenderGraph wiring. Per-light
-	/// depth maps live in LightGPU; the bundle is a single ordering token.
+	/// Declares the ShadowDepth bundle write; the per-light maps are addressed
+	/// internally and appear as a single ordering token.
 	PassIO GetIO() const override;
 
 	// --- Accessors ---
@@ -100,7 +100,7 @@ private:
 	// --- Shaders (self-loaded via ShaderLibrary) ---
 	std::unique_ptr<RenderShader> p_multiviewShader;  ///< Point-light cubemap depth+colour (multiview)
 	std::unique_ptr<RenderShader> p_sunShader;         ///< Sun-light orthographic depth-only
-	// (Pipelines inherited from Pass — p_pipelines[0]=multiview, p_pipelines[1]=sun)
+	// (Pipelines inherited from Pass - p_pipelines[0]=multiview, p_pipelines[1]=sun)
 
 };
 

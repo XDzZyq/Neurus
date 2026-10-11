@@ -48,14 +48,10 @@ struct MouseScrollEvent
 /**
  * @brief Key press over the viewport, already translated out of Qt.
  *
- * `key` is an Input::Key, not a raw Qt code, so an unmapped key arrives as
- * Key_Unknown and no handler can accidentally act on a number. Auto-repeat is
- * filtered at the Qt boundary (Viewport::keyPressEvent), because a modal operator
- * must react to a press, not to the OS repeat rate.
- *
- * There is deliberately no KeyReleaseEvent: nothing in the editor is chorded on a
- * held key today, and the modal transform operators are press-to-enter /
- * press-to-leave rather than hold-to-act.
+ * `key` is an Input::Key, so an unmapped key arrives as Key_Unknown and no
+ * handler can act on a raw number. Auto-repeat is filtered at the Qt boundary,
+ * because a modal operator must react to a press, not the OS repeat rate. There
+ * is deliberately no release event: nothing is chorded on a held key.
  */
 struct KeyPressEvent
 {
@@ -66,10 +62,8 @@ struct KeyPressEvent
 /**
  * @brief The viewport lost keyboard focus.
  *
- * Lives here rather than with the gizmo events because it is a raw viewport input
- * fact, not a transform intent: any controller holding a modal state machine must
- * abandon it when the user clicks into another panel, or the next keystroke would
- * be interpreted against a gesture the user has visually left behind.
+ * A raw viewport input fact, not a transform intent: any controller holding a
+ * modal state machine must abandon it when the user clicks elsewhere.
  */
 struct ViewportFocusLost
 {
@@ -78,8 +72,7 @@ struct ViewportFocusLost
 /**
  * @brief Pure UI->Editor intent: user clicked a scene-object row in the Outliner.
  *
- * Carries the object's integer UID only. The Editor wraps the intent and
- * forwards the dedicated ObjectSelected event to controllers.
+ * Carries the object's integer UID only.
  */
 struct ObjectClicked
 {

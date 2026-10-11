@@ -20,8 +20,8 @@ namespace
 /**
  * @brief Folds an object's opacity into its color and packs the result.
  *
- * Opacity is a separate knob on every debug object purely for authoring
- * convenience; the GPU only ever sees one alpha, so it is multiplied in here.
+ * Opacity is a separate authoring knob; the GPU only ever sees one alpha, so it
+ * is multiplied in here.
  */
 uint32_t PackTinted(const glm::vec4& color, float opacity)
 {
@@ -29,7 +29,7 @@ uint32_t PackTinted(const glm::vec4& color, float opacity)
 }
 
 /// @brief Maps DebugPoints::PointType to the shader's shape id.
-/// @note CUBE never reaches here — it is decomposed into segments instead.
+/// @note CUBE never reaches here - it is decomposed into segments instead.
 uint32_t ShapeOf(DebugPoints::PointType type)
 {
 	switch (type)
@@ -50,8 +50,7 @@ uint32_t ShapeOf(DebugPoints::PointType type)
  * @param flags  Per-segment DebugFlag bits.
  *
  * PointType::CUBE is the one point shape with no sprite form: a screen-aligned
- * sprite cannot show a cube's orientation. Drawing its wireframe keeps the
- * shape meaningful at the cost of 12 segments per point.
+ * sprite cannot show a cube's orientation, so its wireframe is drawn instead.
  */
 void AppendCubeEdges(std::vector<DebugSegment>& out,
                      const glm::vec3& center,
@@ -91,16 +90,10 @@ void AppendCubeEdges(std::vector<DebugSegment>& out,
 /**
  * @brief Whether an object's visibility flags let it into the overlay.
  *
- * `DebugDrawList` has no per-primitive enable bit — DebugPass draws whole ranges
- * — so hiding a debug object means not flattening it in the first place. The two
- * flags are ANDed the way every other pool consumer ANDs them (GeometryPass,
- * ShadowDepthPass, UploadManager): the overlay is editor-only, so `is_viewport`
- * is the flag that obviously applies, but honouring only one of the pair would
- * make the Outliner's two toggles mean different things for a debug row than for
- * a mesh row.
- *
- * The rebuild after a toggle is already arranged: `SceneController` enqueues
- * `RenderResetEvent`, whose handler calls MarkDirty().
+ * The list has no per-primitive enable bit, so hiding a debug object means not
+ * flattening it in the first place. Both flags are ANDed, as every other pool
+ * consumer does, so the two toggles mean the same thing for a debug row as for
+ * any other row.
  */
 bool IsVisible(const ObjectID& obj)
 {
@@ -142,7 +135,7 @@ void DebugDrawBuilder::Rebuild(const Scene& scene)
 	}
 
 	// Depth-tested primitives are already in the main vectors; appending the
-	// x-ray halves now gives the partition DebugPass draws from, with no sort.
+	// x-ray halves now gives the partition with no sort.
 	m_list.xraySegmentStart = static_cast<uint32_t>(m_list.segments.size());
 	m_list.xrayPointStart = static_cast<uint32_t>(m_list.points.size());
 	m_list.segments.insert(m_list.segments.end(), m_xraySegments.begin(), m_xraySegments.end());
@@ -164,9 +157,8 @@ void DebugDrawBuilder::AppendDebugLine(const DebugLine& line)
 
 	const bool xray = line.GetXRay();
 	uint32_t flags = xray ? DebugFlag::XRay : DebugFlag::None;
-	// Smoothing is derived, not authored: it fades alpha towards the quad edge,
-	// which would soften the hard ends a dash is made of. So a solid line is
-	// antialiased and a stippled one is not — the two are never both set.
+	// Smoothing is derived, not authored: the fade would soften the hard ends a
+	// dash is made of, so a solid line is antialiased and a stippled one is not.
 	flags |= line.GetStipple() ? DebugFlag::Stipple : DebugFlag::Smooth;
 
 	const glm::mat4 model = line.GetModelMatrix();
@@ -193,10 +185,9 @@ void DebugDrawBuilder::AppendDebugPoints(const DebugPoints& points)
 		return;
 
 	const bool xray = points.GetXRay();
-	// Sprites have no dash style to protect, so the derived smoothing of
-	// AppendDebugLine is unconditional here: every shape mask is an analytic
-	// distance the fragment shader can fade, and a rhombus or circle edge is
-	// visibly stepped without it.
+	// Sprites have no dash style to protect, so derived smoothing is unconditional
+	// here: every shape mask is an analytic distance, and a rhombus or circle edge
+	// is visibly stepped without it.
 	uint32_t flags = (xray ? DebugFlag::XRay : DebugFlag::None) | DebugFlag::Smooth;
 	if (points.GetProjectionMode() == 0)
 		flags |= DebugFlag::ScreenSpaceSize;
@@ -209,8 +200,8 @@ void DebugDrawBuilder::AppendDebugPoints(const DebugPoints& points)
 	if (points.GetPointType() == DebugPoints::PointType::CUBE)
 	{
 		std::vector<DebugSegment>& out = xray ? m_xraySegments : m_list.segments;
-		// Cube edges are solid by construction — DebugPoints has no line style —
-		// so they take the same smoothing a solid DebugLine gets.
+		// Cube edges are solid by construction, so they take the same smoothing a
+		// solid line gets.
 		const uint32_t segFlags = (xray ? DebugFlag::XRay : DebugFlag::None) | DebugFlag::Smooth;
 		const float half = points.GetScale() * 0.5f;
 		for (const glm::vec3& p : pts)
@@ -234,23 +225,21 @@ void DebugDrawBuilder::AppendDebugPoints(const DebugPoints& points)
 
 void DebugDrawBuilder::AppendDebugMesh(const DebugMesh& mesh)
 {
-	// Wireframe is drawn from the mesh's MeshGPU, which only exists once the
-	// geometry has been uploaded; without it there is nothing to reference.
+	// Wireframe needs uploaded geometry; without it there is nothing to reference.
 	if (!mesh.HasGeometry())
 		return;
 
 	DebugWireMesh wire;
 	wire.model = mesh.GetModelMatrix();
 	wire.rgba = PackTinted(mesh.GetColor(), mesh.GetOpacity());
-	// No Smooth bit here, unlike segments and sprites: a wire mesh is rasterized
-	// by PolygonMode::eLine, so the fragment stage gets no distance-to-edge to
-	// fade — debug_wire.frag is a flat color write with nothing to branch on.
-	// Setting the flag would only advertise a behaviour no consumer implements.
+	// No Smooth bit here, unlike segments and sprites: the wireframe is rasterized
+	// as lines, so the fragment stage gets no distance-to-edge to fade and the flag
+	// would advertise a behaviour no consumer implements.
 	wire.flags = mesh.GetXRay() ? DebugFlag::XRay : DebugFlag::None;
 	wire.meshObjectId = mesh.GetObjectID();
 
-	// Wire meshes are not partitioned: there are few of them and DebugPass
-	// already switches pipeline per mesh to honour its depth mode.
+	// Wire meshes are not partitioned: there are few of them, and the consumer
+	// switches pipeline per mesh to honour its depth mode anyway.
 	m_list.wireMeshes.push_back(wire);
 }
 

@@ -2,19 +2,9 @@
  * @file TypeRegistration.cpp
  * @brief Cereal polymorphic type registration for scene objects.
  *
- * Registers all serializable scene types with cereal's polymorphic
- * serialization system. This enables serializing derived types through
- * base class pointers (e.g. shared_ptr<UID> in the ResourceManager pool,
- * shared_ptr<ObjectID> in Scene::obj_list).
- *
- * These macros generate template specializations at global scope.
- * They MUST reside in a .cpp file (not a header) to avoid ODR violations.
- *
- * NOTE: the ResourceManager pool holds shared_ptr<UID>, so the UID-level
- * relations below are what make pool serialization load-bearing. Include
- * scene/registrations/TypeRegistration.h at every serialization site so this
- * static-library TU is not dead-stripped (see the memory note in
- * operation-system.instructions.md).
+ * Registers all serializable scene types so derived types can be serialized
+ * through base-class pointers. The macros generate template specializations at
+ * global scope, so they must live in a .cpp file to avoid ODR violations.
  */
 
 #include <cereal/archives/json.hpp>
@@ -46,9 +36,8 @@ CEREAL_REGISTER_TYPE(neurus::DebugMesh)
 CEREAL_REGISTER_TYPE(neurus::Environment)
 
 // --- Polymorphic relations (UID base -> all pooled scene types) ---
-// The ResourceManager pool stores shared_ptr<UID>; cereal looks up the
-// binding by (static base type, dynamic type) pair, so every level of the
-// hierarchy that can appear in the pool must be registered.
+// The pool stores shared_ptr<UID>, so every level of the hierarchy that can
+// appear in it must be registered.
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::ObjectID)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::Camera)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::Mesh)

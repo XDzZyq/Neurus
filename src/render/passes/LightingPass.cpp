@@ -44,7 +44,6 @@ LightingPass::LightingPass(const vk::raii::Device& device,
 		ShaderLibrary::LoadComputeShader("pbr_lighting",
 		                                  "res/shaders/compute/pbr_lighting.comp"))
 {
-	// --- Create pipeline from self-loaded shader ---
 	BuildPipeline(device, "LightingPass");
 
 	// --- Create 1x1 black cubemap empty placeholder for IBL bindings when no env exists ---
@@ -138,26 +137,22 @@ DescriptorSetLayout LightingPass::CreateDescriptorSetLayout(const vk::raii::Devi
 void LightingPass::BuildPipeline(const vk::raii::Device& device,
                                   const std::string& debugName)
 {
-	// --- Guard: shader must be valid ---
 	if (!p_shader)
 	{
 		throw std::runtime_error("LightingPass: Compute shader not loaded or invalid");
 	}
 
-	// --- Compile and create temporary shader module ---
 	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
 	                                  ShaderType::COMPUTE, debugName);
 	vk::ShaderModuleCreateInfo smCI({}, spv);
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
 
-	// --- Push constant range ---
 	vk::PushConstantRange pushRange(
 		vk::ShaderStageFlagBits::eCompute,
 		0,
-		sizeof(LightingPushConstants));  // 176 bytes, from LightingCache.h
+		sizeof(LightingPushConstants));  // 176 bytes
 
-	// --- Build compute pipeline ---
 	PipelineBuilder builder;
 	p_pipelines.push_back(
 		builder.AddShaderStage(stageCI)
@@ -182,7 +177,6 @@ void LightingPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rend
 		AttachmentName::MetallicRoughness,
 	};
 
-	// --- Write G-Buffer input descriptors (combined image samplers) ---
 	for (uint32_t i = 0; i < 4; ++i)
 	{
 		const auto& attachment = cache.GetAttachment(gBufferInputs[i], extent);
@@ -211,7 +205,7 @@ void LightingPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rend
 		                  vk::DescriptorType::eStorageImage);
 	}
 
-	// --- Write light SSBO (from RenderCache::LightingCache) ---
+	// --- Write point light SSBO ---
 	{
 		const auto* lightingCache = cache.GetLightingCache();
 		const GPUBuffer* pointSSBO = lightingCache ? lightingCache->GetPointLightSSBO() : nullptr;
@@ -226,7 +220,7 @@ void LightingPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rend
 		// guarantees the shader never accesses binding 5.
 	}
 
-	// --- Write sun light SSBO (from RenderCache::LightingCache) ---
+	// --- Write sun light SSBO ---
 	{
 		const auto* lightingCache = cache.GetLightingCache();
 		const GPUBuffer* sunSSBO = lightingCache ? lightingCache->GetSunLightSSBO() : nullptr;
@@ -240,7 +234,7 @@ void LightingPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rend
 		// because sunLightCount=0 guarantees the shader never accesses binding 6.
 	}
 
-	// --- Write spot light SSBO (from RenderCache::LightingCache) ---
+	// --- Write spot light SSBO ---
 	{
 		const auto* lightingCache = cache.GetLightingCache();
 		const GPUBuffer* spotSSBO = lightingCache ? lightingCache->GetSpotLightSSBO() : nullptr;
@@ -269,7 +263,7 @@ void LightingPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rend
 	}
 
 	// --- Write shadow intensity array (binding 10, sampler2DArray) ---
-	//     Single layered image — no per-layer dummy images needed.
+	//     Single layered image - no per-layer dummy images needed.
 	{
 		auto& shadowArray = cache.GetShadowIntensityArray(extent);
 
@@ -291,10 +285,9 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 {
 	PassStats stats{};
 
-	// RenderContext's null policy: `scene` must be checked. A frame recorded before
-	// a scene exists is legal, and this pass dereferences `scene` unconditionally
-	// below (light_list, env_list), so the check belongs here rather than at each
-	// use. Same predicate, same position, in all five scene-reading passes.
+	// A frame recorded before a scene exists is legal, and this pass
+	// dereferences `scene` below (light_list, env_list), so the check belongs
+	// here rather than at each use.
 	if (!ctx.HasScene())
 	{
 		NEURUS_LOG("[LightingPass] No scene, skipping");
@@ -302,14 +295,9 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	}
 	const Scene* scene = ctx.scene;
 
-	// The viewing camera comes from the context, never from the Scene. The Editor
-	// decides which camera that is - its own viewport camera or the scene's active
-	// one - and injects it before the frame records, so a pass has no business
-	// re-deriving it. Reading Scene::GetActiveCamera() here would put this
-	// invProjView on a different camera than the CameraGPU the vertex stage used:
-	// a split brain that renders plausible-looking wrong lighting rather than
-	// failing. Scene::GetActiveCamera() remains the *scene's* camera and stays
-	// meaningful - it is simply not this pass's input.
+	// The viewing camera comes from the context, never from the Scene: the
+	// editor injects the camera it wants rendered. Re-deriving it here would
+	// split this pass's invProjView from the CameraGPU the vertex stage used.
 	const Camera* cam = ctx.camera;
 	if (!cam)
 	{
@@ -322,10 +310,9 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t frameIndex = ctx.frameIndex;
 
-	// --- 1. Write descriptor set for this frame slot ---
 	WriteDescriptors(frameIndex, renderExtent, cache);
 
-	// --- 1b. Write IBL cubemap descriptors (bindings 8-9) from RenderCache EnvironmentGPU ---
+	// IBL cubemap descriptors (bindings 8-9).
 	{
 		DescriptorSet& dstSet = p_descriptorSets[frameIndex];
 		const bool hasEnv = !scene->env_list.empty();
@@ -360,8 +347,8 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 			}
 		}
 
-		// If either IBL binding was NOT written (no env, or env GPU data unavailable),
-		// initialize empty cube placeholder and write it to the missing bindings.
+		// If either IBL binding was not written (no env, or its GPU data is
+		// missing), bind the empty placeholder cube instead.
 		if (!wroteIrradiance || !wroteSpecular)
 		{
 			if (!p_emptyInitialized)
@@ -385,9 +372,7 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 		}
 	}
 
-	// --- 2. Transition all images for compute shader access ---
-	//     Uses Barrier::Transition which reads the image's current ImageState
-	//     and emits the appropriate vk::ImageMemoryBarrier2.
+	// Transition all images for compute shader access.
 	{
 		const std::array<AttachmentName, 4> gBufferInputs = {
 			AttachmentName::Position,
@@ -402,11 +387,10 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 			Barrier::Transition(cmdBuf, attachment, ImageState::ColorShaderRead);
 		}
 
-		// HDRColor: current state → ShaderWrite (compute write)
 		auto& hdrColor = cache.GetAttachment(AttachmentName::HDRColor, renderExtent);
 		Barrier::Transition(cmdBuf, hdrColor, ImageState::ShaderWrite);
 
-		// SSAO: if never written (Undefined), clear to 1.0 (no occlusion), then ShaderRead
+		// SSAO never written this frame: clear to 1.0 (no occlusion) first.
 		auto& ssao = cache.GetAttachment(AttachmentName::SSAO, renderExtent);
 		if (ssao.State() == ImageState::Undefined)
 		{
@@ -442,21 +426,17 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 		}
 	}
 
-	// --- 3. Bind compute pipeline ---
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 
-	// --- 4. Bind descriptor set ---
 	cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
 	                          *p_pipelines[0].pipelineLayout,
 	                          0,                                    // firstSet
 	                          {p_descriptorSets[frameIndex].handle()},
 	                          {});
 
-	// --- 5. Push constants ---
 	{
 		LightingPushConstants pc = {};
 
-		// Get light counts from RenderCache::LightingCache
 		const auto* lightingCache = cache.GetLightingCache();
 		pc.lightCount    = lightingCache ? static_cast<int32_t>(lightingCache->GetPointLightCount()) : 0;
 		pc.sunLightCount = lightingCache ? static_cast<int32_t>(lightingCache->GetSunLightCount()) : 0;
@@ -472,10 +452,9 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 			pc.view[i] = vm[i];
 		}
 
-		// Enable IBL when scene has an environment
 		pc.iblEnabled = !scene->env_list.empty() ? 1 : 0;
 
-		// Transparent background (checkerboard) from RenderConfig
+		// Transparent background (checkerboard).
 		pc.transEnabled = ctx.Settings().r_transparent ? 1 : 0;
 
 		// Copy inverse(proj * view) matrix for skybox background ray
@@ -492,13 +471,12 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 			pc);
 	}
 
-	// --- 6. Dispatch ---
 	const uint32_t groupCountX = (renderExtent.width  + 15) / 16;
 	const uint32_t groupCountY = (renderExtent.height + 15) / 16;
 	++stats.dispatches;
 	cmdBuf.dispatch(groupCountX, groupCountY, 1);
 
-	// --- 7. Transition HDRColor: General → ColorShaderRead for subsequent passes ---
+	// Return HDRColor to a shader-readable layout for the later passes.
 	{
 		auto& hdrColor = cache.GetAttachment(AttachmentName::HDRColor, renderExtent);
 		Barrier::Transition(cmdBuf, hdrColor, ImageState::ColorShaderRead);
@@ -510,10 +488,7 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 PassIO LightingPass::GetIO() const
 {
 	// Binding metadata is indicative only: LightingPass still writes its own
-	// descriptors (including UBOs, the shadow-intensity array and IBL cubemaps
-	// which are not modeled here). Resource names drive RenderGraph edges —
-	// SSAO is the in-graph producer edge; the G-Buffer reads are external
-	// inputs from GeometryPass; HDRColor feeds ComposePass.
+	// descriptors. Resource names drive the RenderGraph edges.
 	PassIO io;
 	io.name  = "LightingPass";
 	io.reads = {
@@ -522,8 +497,7 @@ PassIO LightingPass::GetIO() const
 		{AttachmentName::Albedo,            2, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
 		{AttachmentName::MetallicRoughness, 3, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
 		{AttachmentName::SSAO,              4, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-		// Shadow intensity array is produced by ShadowIntensityPass; establishes
-		// the in-graph ShadowIntensity → Lighting ordering edge.
+		// Establishes the ShadowIntensity to Lighting ordering edge.
 		{AttachmentName::ShadowIntensity,   5, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
 	};
 	io.writes = {

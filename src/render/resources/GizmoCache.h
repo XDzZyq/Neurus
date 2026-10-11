@@ -54,17 +54,11 @@ struct GizmoDrawList;
 /**
  * @brief Owns the per-frame-in-flight gizmo geometry buffers and their counts.
  *
- * One slot per frame in flight: a slot is refilled while another may still be in
- * the GPU's hands, which is the whole reason the ring exists. Slots are created on
- * demand — `Update(frameIndex, list)` grows the ring to cover the frame indices the
- * renderer actually uses, so no frames-in-flight count has to be threaded through
- * RenderCache's constructor.
- *
- * Capacity grows with the geometry and never shrinks. A slot's buffer is replaced
- * when the list outgrows it, which swaps the VkBuffer handle, so consumers must
- * re-write their descriptors from the cache every frame (GizmoPass does, exactly as
- * DebugPass and LightingPass do). That is legal precisely because a frame waits on
- * its own fence before recording: the slot being rewritten is not in flight.
+ * One slot per frame in flight, so a slot can be refilled while another may
+ * still be in the GPU's hands. Slots are created on demand by Update();
+ * capacity grows with the geometry and never shrinks. A replaced buffer swaps
+ * its VkBuffer handle, so consumers re-write descriptors from the cache every
+ * frame - legal because each frame waits on its own fence before recording.
  *
  * Non-copyable (owns GPU buffers), non-movable (CPUBuffer holds a mapping).
  */
@@ -86,10 +80,9 @@ public:
 	/**
 	 * @brief Copies @p list into @p frameIndex's buffers, unconditionally.
 	 *
-	 * Called once per frame by RenderCache::UpdateGizmoDraw() before any pass
-	 * records. Unlike DebugCache::Update() there is no revision gate — see the file
-	 * comment. An empty list still updates the counts to zero, which is what makes a
-	 * finished gesture's guide disappear.
+	 * Called once per frame before any pass records; an empty list still
+	 * zeroes the counts, which is what makes a finished gesture's guide
+	 * disappear.
 	 *
 	 * @param frameIndex  Frame-in-flight index; the ring grows to include it.
 	 * @param list        This frame's gizmo guide geometry.
@@ -97,10 +90,10 @@ public:
 	void Update(uint32_t frameIndex, const GizmoDrawList& list);
 
 	/**
-	 * @brief What a frame's slot currently holds, as GizmoPass needs to draw it.
+	 * @brief What a frame's slot currently holds.
 	 *
-	 * The buffers are null and the counts zero until the first Update() for that
-	 * frame index; a consumer that finds no buffer simply draws nothing.
+	 * The buffers are null and the counts zero until the first Update() for
+	 * that frame index; a consumer that finds no buffer draws nothing.
 	 */
 	struct FrameView
 	{
@@ -133,11 +126,9 @@ private:
 	/**
 	 * @brief Ensures @p buffer holds at least @p bytes, reallocating if not.
 	 *
-	 * Grows to the next power of two at or above the request (and never shrinks) so
-	 * a list that creeps upwards does not reallocate every frame. A request of 0
-	 * still allocates the minimum when the buffer does not exist yet: a frame with
-	 * any gizmo geometry at all writes both descriptor bindings, and a null buffer
-	 * handle is not something a descriptor may name.
+	 * Grow-only, to the next power of two at or above the request. A request
+	 * of 0 still allocates the minimum, because a frame with any geometry at
+	 * all writes both descriptor bindings and a null buffer is not bindable.
 	 *
 	 * @param buffer     Slot member to grow in place.
 	 * @param bytes      Required capacity; the floor is the minimum allocation.

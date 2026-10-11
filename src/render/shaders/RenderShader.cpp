@@ -35,7 +35,6 @@ void RenderShader::ReloadContent()
 	if (m_vertPath.empty() && m_fragPath.empty())
 		return;   // identity shell (empty paths)
 
-	// Re-point the ShaderUnits at the stored source paths and re-parse.
 	m_stages[ShaderType::VERTEX].path   = m_vertPath;
 	m_stages[ShaderType::FRAGMENT].path = m_fragPath;
 	ParseAndGenerate();

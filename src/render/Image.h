@@ -17,8 +17,8 @@ class Barrier;
 /**
  * @brief High-level image state used by Barrier for layout transitions.
  *
- * Maps to the appropriate vk::ImageLayout, vk::PipelineStageFlags2,
- * and vk::AccessFlags2 via Barrier::ToVulkanImageState().
+ * Maps to the corresponding vk::ImageLayout, vk::PipelineStageFlags2 and
+ * vk::AccessFlags2.
  */
 enum class ImageState
 {
@@ -99,9 +99,8 @@ public:
 	/**
 	 * @brief Creates a GPU image from CPU-side ImageData (loads from file and uploads).
 	 *
-	 * Uses ImageData for dimensions, format, and pixel content.  Automatically
-	 * creates the image, uploads pixel data via staging buffer, and leaves the
-	 * image in ImageState::ColorShaderRead.
+	 * Uploads the pixel data via a staging buffer and leaves the image in
+	 * ImageState::ColorShaderRead.
 	 *
 	 * @param device          Logical device.
 	 * @param physicalDevice  Physical device for memory allocation.
@@ -123,10 +122,9 @@ public:
 	                           uint32_t mipLevels = 1);
 
 	/**
-	 * @brief Default constructor — creates an empty/invalid Image.
+	 * @brief Default constructor - creates an empty/invalid Image.
 	 *
-	 * All GPU handles are null, and the state is Undefined (callers should
-	 * set to ImageState::Invalid).  This facilitates return-by-value from
+	 * All GPU handles are null, which facilitates return-by-value from
 	 * factory functions on failure paths.
 	 */
 	Image() = default;
@@ -142,8 +140,9 @@ public:
 	/**
 	 * @brief Generates mipmaps via vkCmdBlitImage.
 	 *
-	 * The image must be in ImageState::TransferDst (all levels).  Level 0 is
-	 * blitted to level 1, then 1→2, etc.  All levels end in ImageState::ColorShaderRead.
+	 * The image must be in ImageState::TransferDst (all levels). Level 0 is
+	 * blitted to level 1, then 1 to 2, etc. All levels end in
+	 * ImageState::ColorShaderRead.
 	 *
 	 * @note The image must have VK_IMAGE_USAGE_TRANSFER_SRC_BIT and
 	 *       VK_IMAGE_USAGE_TRANSFER_DST_BIT.
@@ -155,12 +154,10 @@ public:
 	/**
 	 * @brief Reads image data from the GPU back into an ImageData.
 	 *
-	 * Transitions the specified subresource range to ImageState::TransferSrc,
-	 * records vkCmdCopyImageToBuffer into a staging buffer, submits, waits,
-	 * and returns the pixel data as ImageData.
-	 *
-	 * The image is left in ImageState::TransferSrc after the call.
-	 * The caller is responsible for transitioning back if needed.
+	 * Transitions the specified subresource range to ImageState::TransferSrc
+	 * and reads the pixel data back through a staging buffer. The image is
+	 * left in ImageState::TransferSrc - the caller transitions it back if
+	 * needed.
 	 *
 	 * @param device            Logical device.
 	 * @param physicalDevice    Physical device for memory allocation.
@@ -185,14 +182,10 @@ public:
 	/**
 	 * @brief Reads back a single pixel at the specified coordinates from the GPU.
 	 *
-	 * Creates a minimal staging buffer, records vkCmdCopyImageToBuffer for a
-	 * 1×1 pixel region at (@p x, @p y), submits, and waits synchronously.
-	 * Designed for viewport mouse-picking — fast enough for click events
-	 * (sub-millisecond GPU transfer + pipeline drain).
-	 *
-	 * The image must have VK_IMAGE_USAGE_TRANSFER_SRC_BIT.
-	 * The image is restored to its original state after readback — callers
-	 * do not need to manage layout transitions afterward.
+	 * Reads a 1x1 pixel region at (@p x, @p y) through a minimal staging
+	 * buffer, submitting and waiting synchronously. The image must have
+	 * VK_IMAGE_USAGE_TRANSFER_SRC_BIT and is restored to its original state
+	 * after the readback.
 	 *
 	 * @param device            Logical device.
 	 * @param physicalDevice    Physical device for memory allocation.
@@ -224,13 +217,9 @@ public:
 	/**
 	 * @brief Underlying vk::raii::ImageView handle for 2D_ARRAY access.
 	 *
-	 * Valid only when the image was created with arrayView=true for e2D images,
-	 * or for eCube images (returns the multiview 2D_ARRAY view).  For e2D images
-	 * without arrayView=true, returns the same as ImageViewHandle() (2D view).
-	 *
-	 * @note Required by LightingPass binding 9 (sampler2DArray) for shadow
-	 *       intensity images, and by ShadowDepthPass for multiview cubemap
-	 *       rendering (ArrayView(), same thing).
+	 * Valid only when the image was created with arrayView=true, or for eCube
+	 * images (returns the multiview 2D_ARRAY view). For e2D images without
+	 * arrayView=true, returns the same as ImageViewHandle().
 	 */
 	const vk::raii::ImageView& ImageViewArrayHandle() const;
 
@@ -258,7 +247,7 @@ public:
 	/** @brief Image type. */
 	ImageType Type() const { return im_imageType; }
 
-	/** @brief Current logical image state (updated by Barrier::Transition). */
+	/** @brief Current logical image state. */
 	ImageState State() const { return im_state; }
 
 	// --- Format conversion helpers ---
@@ -313,10 +302,9 @@ private:
 	/**
 	 * @brief Uploads ImageData to this GPU image via staging buffer.
 	 *
-	 * Creates a host-visible staging buffer, copies the pixel data to it,
-	 * records vkCmdCopyBufferToImage, submits, and waits.
-	 * Transitions: Undefined → TransferDst → (copy) → ColorShaderRead (mip 0 only).
-	 * Other mip levels remain in TransferDst — ready for GenerateMipmaps().
+	 * Transitions: Undefined -> TransferDst -> (copy) -> ColorShaderRead
+	 * (mip 0 only). Other mip levels remain in TransferDst, ready for
+	 * GenerateMipmaps().
 	 */
 	void UploadImageData(const vk::raii::Device& device,
 	                     const vk::raii::PhysicalDevice& physicalDevice,

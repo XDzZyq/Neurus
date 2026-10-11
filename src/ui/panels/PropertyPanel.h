@@ -20,15 +20,9 @@ class DebugProperties;
  * @brief Property Panel displaying type/name header, editable transform, and
  *        type-specific property subpanels for the active scene object.
  *
- * Refresh() reads the active object's integer UID from UIContext::scene→
- * selections each frame (comparing the int for lazy header updates), displaying
- * its o_name with type icon and populating the Position / Rotation / Scale
- * Vec3Spin widgets from its Transform3D. Additionally, shows/hides a type-specific
- * subpanel (Camera, Mesh, Light, Environment) based on GOType.
- *
- * Editing any field emits a granular signal routed through ConnectUIEvent to Editor.
- *
- * @note Pure UI layer — no scene mutation. Signals flow through ConnectUIEvent to Editor.
+ * Refresh() reads the active object's integer UID, updates the header, the
+ * transform spins and the subpanel matching its GOType. Editing any field
+ * emits a granular signal; the panel never mutates the scene itself.
  */
 class PropertyPanel : public UIPanel
 {

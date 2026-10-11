@@ -2,36 +2,18 @@
  * @file ShaderOperations.h
  * @brief Undoable operations for per-mesh shader content edits (delta-only).
  *
- * Shader content edits are per-object state (a mesh's shader stage), so these
- * ops are UID-keyed like the TransitionOp family. Rather than snapshotting the
- * whole stage source, each op carries only the delta for one edit dimension,
- * mirroring the granularity of the forward edit events:
+ * Shader content edits are per-object state, so these ops are UID-keyed like the
+ * TransitionOp family. Rather than snapshotting the whole stage source, each op
+ * carries only the delta for one edit dimension, keeping the serialized history
+ * compact.
  *
- *   - SetShaderCodeOp   : ShaderCodeEdited      -> before/after GLSL text
- *   - SetShaderFieldOp   : ShaderStructEdited    -> before/after of one element
- *   - AddShaderFieldOp   : ShaderFieldAdded      -> append/remove one default entry
+ * Replay dispatches a dedicated restore event so mutation stays on the single
+ * controller path and the version bumps only on undo/redo (forward live edits
+ * skip the bump to avoid a panel reload mid-typing). Replay restores CPU-side
+ * source only; the user presses Compile to push to the GPU.
  *
- * This keeps the serialized history compact: a field edit stores the two
- * endpoints of one ShaderStruct element (not two whole-IR copies), and a
- * field-add stores nothing but a section + index + direction flag.
- *
- * Replay dispatches a dedicated restore event (ShaderCodeRestored /
- * ShaderFieldRestored / ShaderFieldAddRestored / ShaderFieldRemoved) so mutation
- * stays on the single ShaderController path AND the ShaderUnit version bumps only
- * on undo/redo (forward live edits deliberately skip the bump to avoid a
- * cursor-jumping panel reload mid-typing).
- *
- * Scope: content edits plus the Create-Shader membership toggle (ShaderLinkOp,
- * a pool-preserving link/unlink - see below). Compile remains a non-undoable
- * lifecycle action. Replay restores CPU-side source only and bumps the
- * ShaderUnit version
- * so the editor panel refreshes; it does NOT recompile to SPIR-V (the user
- * presses Compile to push to the GPU), matching the "content edits don't compile"
- * model.
- *
- * Edits are deliberately NOT mergeable (empty MergeKey): a code-edit burst is
- * bracketed by the controller's ShaderEditBegin/ShaderEditEnd gesture and
- * recorded once on focus-out; discrete struct/field edits record one op each.
+ * Edits are deliberately NOT mergeable: a code-edit burst is bracketed by the
+ * controller's edit gesture and recorded once on focus-out.
  */
 
 #pragma once
@@ -99,10 +81,9 @@ private:
  * @brief Undoable edit of one ShaderStruct element (before -> after).
  *
  * Identifies the section + entry index and carries the whole addressed element
- * (a ShaderFieldValue variant) at both endpoints. Replays by dispatching
- * ShaderFieldRestored, which assigns the element back into the live IR and bumps
- * the version. Storing the whole element (not a stringified {field,value}) keeps
- * inversion a plain endpoint swap and reuses the future shader-IR serialization.
+ * at both endpoints. Replays by dispatching ShaderFieldRestored, which assigns
+ * the element back into the live IR and bumps the version. Storing the whole
+ * element keeps inversion a plain endpoint swap.
  */
 class SetShaderFieldOp : public Operation
 {
@@ -159,12 +140,8 @@ private:
  *
  * Carries the section + sub-index and a direction flag. Because undo/redo is
  * strictly LIFO, the added entry is always the last element, so undo simply
- * removes the last entry and redo re-appends an identical default.
- *
- *   m_add == true  -> Apply dispatches ShaderFieldAddRestored (re-append default)
- *   m_add == false -> Apply dispatches ShaderFieldRemoved     (drop last entry)
- *
- * Inverse flips the flag, making the op its own logical inverse.
+ * removes the last entry and redo re-appends an identical default. Inverse
+ * flips the flag, making the op its own logical inverse.
  */
 class AddShaderFieldOp : public Operation
 {
@@ -216,17 +193,11 @@ private:
 /**
  * @brief Undoable Create Shader - a pool-preserving membership toggle.
  *
- * Follows the SceneObjectAddOp convention: stores the target mesh UID + the
- * pooled RenderShader UID + a direction flag. Apply() dispatches a dedicated
- * restore event (ShaderLinkRestored when linking, ShaderUnlinkRestored when
- * unlinking) so replay NEVER re-enters the forward create handler (which would
- * reload, re-parse, recompile, and mint a NEW pooled shader). The pooled
- * shader is never removed - undo only drops the mesh's reference, so redo
- * relinks the SAME object by UID and the op survives project save/load
- * (pool + history both persist).
- *
- * Inverse() flips the flag (the SceneObjectAddOp / AddShaderFieldOp
- * convention), making the op its own logical inverse.
+ * Stores the target mesh UID + the pooled RenderShader UID + a direction flag.
+ * Apply() dispatches a dedicated restore event so replay NEVER re-enters the
+ * forward create handler (which would reload, re-parse, recompile and mint a NEW
+ * pooled shader). The pooled shader is never removed - undo only drops the
+ * mesh's reference, so redo relinks the SAME object.
  */
 class ShaderLinkOp : public Operation
 {
@@ -248,8 +219,7 @@ public:
 	void Apply(OperationContext& ctx) override
 	{
 		// Replayed events carry the mesh UID + pooled shader UID; the Editor
-		// resolves them (mesh via the pool, shader via the pool) and no-ops
-		// stale ids.
+		// resolves them and no-ops stale ids.
 		if (m_add)
 			ctx.events.emitNow(ShaderLinkRestored{ m_uid, m_shaderId });
 		else

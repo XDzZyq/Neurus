@@ -25,19 +25,10 @@ namespace neurus {
 /**
  * @brief Standard render shader with vertex and fragment stages.
  *
- * RenderShader is the primary shader type for rasterisation rendering.
- * It manages parsing GLSL source into ShaderStruct IR and generating
- * Vulkan GLSL for both vertex and fragment stages. All GPU compilation
- * and module creation is handled externally by ShaderLibrary.
+ * Manages parsing GLSL source into ShaderStruct IR and generating Vulkan
+ * GLSL for both stages.
  *
- * Usage:
- * @code
- *   RenderShader shader("PBR", "pbr.vert", "pbr.frag");
- *   shader.ParseAndGenerate();
- *   auto& vertCode = shader.GetGeneratedCode(ShaderType::VERTEX);
- * @endcode
- *
- * @note Non-copyable (inherits from Shader). Movable. Not thread-safe.
+ * @note Non-copyable, non-movable (UID semantics). Not thread-safe.
  */
 class RenderShader : public Shader
 {
@@ -45,9 +36,8 @@ public:
 	/**
 	 * @brief Constructs a render shader with file paths to GLSL source.
 	 *
-	 * Default arguments make this the default ctor used by cereal's
-	 * polymorphic load; content loads later via ReloadContent() (pool)
-	 * or an explicit ParseAndGenerate() call (ShaderLibrary).
+	 * The default arguments make this the constructor cereal's polymorphic
+	 * load uses; content loads later via ReloadContent().
 	 *
 	 * @param name     Human-readable shader name (for logging and cache keys).
 	 * @param vertPath Path to the vertex shader GLSL source file.
@@ -66,36 +56,27 @@ public:
 	/**
 	 * @brief (Re)loads both shader stages from disk.
 	 *
-	 * Called at the end of serialize(load) so a pooled RenderShader restores
-	 * its parsed IR + generated code. No-op for empty paths (identity shell).
+	 * Called at the end of serialize(load); no-op for empty paths.
 	 */
 	void ReloadContent();
 
 	/**
 	 * @brief Compiles every stage's GLSL to SPIR-V in place and bumps versions.
 	 *
-	 * Mirrors the runtime create flow (Editor::OnCreateShader): each stage's
-	 * `spv` is built from its generated `code` and the stage version bumped;
-	 * Shader::m_version bumps once if every present stage compiled. Stages
-	 * that already hold SPIR-V are skipped (idempotent).
-	 *
-	 * Used after project load, where serialization restores only the source
-	 * paths and re-parses content but never recompiles - without this,
-	 * GeometryPass cannot create the per-mesh pipeline.
+	 * Each stage's spv is built from its generated code; stages that already
+	 * hold SPIR-V are skipped. Used after load, since serialization restores
+	 * source paths and re-parses content but never recompiles.
 	 *
 	 * @return true if every present stage compiled to non-empty SPIR-V.
 	 */
 	bool CompileToSpv();
 
 	/**
-	 * @brief Cereal serialization - name (via Shader) + both source paths,
-	 *        then content reload (re-parse both stages) + SPIR-V recompile.
+	 * @brief Cereal serialization - name (via Shader) + both source paths.
 	 *
-	 * Load restores the object's own state per the ResourceManager design
-	 * (each pooled object's serialize(load) restores its content): paths are
-	 * restored, ReloadContent() re-parses the stages from disk, and
-	 * CompileToSpv() regenerates the derived SPIR-V so GeometryPass can build
-	 * the per-mesh pipeline immediately (no post-load recompile step).
+	 * On load, ReloadContent() re-parses the stages from disk and
+	 * CompileToSpv() regenerates the derived SPIR-V, so pipelines are ready
+	 * immediately after a project load.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -117,12 +98,6 @@ public:
 
 	/**
 	 * @brief Parses both shader files and generates GLSL code.
-	 *
-	 * Flow:
-	 *   1. ShaderParser::ParseShaderFile() for both vertex and fragment files
-	 *      -> populates ShaderStruct IRs in m_stages.
-	 *   2. ShaderGenerator::Generate() for each stage
-	 *      -> produces complete Vulkan GLSL source strings.
 	 *
 	 * @return true if both stages parsed and generated successfully.
 	 */
@@ -150,11 +125,7 @@ public:
 	const std::string& GetFragPath() const;
 
 	/**
-	 * @brief Re-parses and re-generates a single shader stage.
-	 *
-	 * Re-reads the source file for the given type, re-parses into the
-	 * ShaderStruct IR, and re-generates GLSL code. CPU-only -- no
-	 * GPU compilation takes place.
+	 * @brief Re-parses and re-generates a single shader stage (CPU-only).
 	 *
 	 * @param type Stage to recompile (VERTEX or FRAGMENT).
 	 * @return true if re-parse and re-generation succeeded.

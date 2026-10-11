@@ -9,50 +9,19 @@ namespace neurus {
 /**
  * @brief CPU-written buffer that shaders read directly, with no staging copy.
  *
- * The counterpart of GPUBuffer: the memory lives where the CPU can write it
- * (HOST_VISIBLE | HOST_COHERENT) rather than where the GPU reads it fastest
- * (DEVICE_LOCAL), and the trade is made per resource according to how often the
- * CPU rewrites it.
- *
- * Why not the other two:
- *   - GPUBuffer is device-local, so every write costs a staging copy plus a
- *     queue submit and a waitIdle — correct for geometry uploaded once, far too
- *     expensive for data that changes as the user drags a gizmo. ArrayBuffer<T>
- *     wraps that same GPUBuffer, so it inherits the stall: it is the right
- *     vehicle for the light SSBOs, which change when a light is edited, but a
- *     debug overlay is re-flattened on every RenderResetEvent — which
- *     CameraController raises on every frame of a camera drag — and issue #22
- *     asks for 10,000 segments in under 0.5 ms, less than one waitIdle costs.
- *   - StagingBuffer is a transfer staging area by contract: it exists to be the
- *     source or destination of a copy and owns a transient command pool for
- *     exactly that. It is not a permanent buffer object and must not be used as
- *     one.
- *
- * CPUBuffer is the permanent form: mapped once for its whole lifetime, created
- * with whatever shader-readable usage the caller needs (eStorageBuffer,
- * eUniformBuffer, ...). Write() is a plain memcpy into memory the GPU can
- * already see — no command buffer, no submit, no barrier, since host writes to
- * coherent memory are made visible by queue submission (a VkMemoryBarrier is
- * unnecessary for HOST_COHERENT host writes ordered before a submit).
- *
- * Usage:
- *   CPUBuffer segs(device, pd, bytes, vk::BufferUsageFlagBits::eStorageBuffer,
- *                  "Debug Segments");
- *   set.WriteBuffer(1, segs.GetDescriptorInfo(), eStorageBuffer);  // see note
- *   segs.Write(list.data(), n * sizeof(Segment));                  // on change
+ * The memory lives where the CPU can write it (HOST_VISIBLE | HOST_COHERENT)
+ * rather than where the GPU reads it fastest (DEVICE_LOCAL), so Write() is a
+ * plain memcpy into memory the GPU already sees: no command buffer, no submit,
+ * no barrier.
  *
  * @note Capacity is fixed per instance: Write() refuses anything larger, and
- *       growing means constructing a new CPUBuffer, which swaps the VkBuffer
- *       handle and so invalidates every descriptor that named the old one. A
- *       caller that grows (DebugCache does) must therefore rewrite those
- *       descriptors, and may only replace a buffer whose frame is known
- *       complete.
+ *       growing means constructing a new buffer, which invalidates every
+ *       descriptor that named the old one.
  * @note Not synchronized. A buffer the GPU may still be reading needs one
- *       instance per frame in flight, written only after that frame's fence has
- *       been waited on.
- * @note Neither copyable nor movable: the destructor owns the unmap, so moving
- *       would need a hand-written pair only to leave the mapping dangling in the
- *       source. Hold these by unique_ptr when a container is needed.
+ *       instance per frame in flight, written only after that frame's fence
+ *       has been waited on.
+ * @note Neither copyable nor movable: the destructor owns the unmap. Hold
+ *       these by unique_ptr when a container is needed.
  */
 class CPUBuffer : public Buffer
 {

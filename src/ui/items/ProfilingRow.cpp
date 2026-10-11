@@ -2,12 +2,6 @@
  * @file ProfilingRow.cpp
  * @brief ProfilingRow + ProfilingHead implementations - dirty-checked lazy
  *        column updates for the Profiling panel.
- *
- * Each column caches the last *displayed* value and only invokes
- * QTreeWidgetItem::setText when that displayed value changes. The timing
- * columns compare on centi-ms (2-decimal) resolution so a sub-0.005ms EMA
- * drift - which rounds to the same "X.XX" string - skips both the QString
- * allocation and the QTreeModel dataChanged notification.
  */
 
 #include "items/ProfilingRow.h"
@@ -39,16 +33,15 @@ ProfilingRow::ProfilingRow(QTreeWidgetItem* parent)
 void ProfilingRow::setPass(const std::string& name, double cpuMs, double gpuMs,
                            bool gpuShown, uint32_t draws, uint32_t dispatches)
 {
-	// Column 0 - pass name. Stable across frames; skip the fromStdString
-	// allocation + setText when the name is unchanged.
+	// Column 0 - pass name. Skip the fromStdString + setText when unchanged.
 	if (m_name != name)
 	{
 		m_name = name;
 		m_item->setText(0, QString::fromStdString(name));
 	}
 
-	// Column 1 - CPU ms. Round to centi-ms so sub-0.005ms EMA drift does not
-	// trigger a write. Same centi value guarantees the same 2-decimal QString.
+	// Column 1 - CPU ms, rounded to centi-ms so a sub-0.005ms EMA drift does
+	// not trigger a write.
 	const int cpuCenti = static_cast<int>(std::round(cpuMs * 100.0));
 	if (m_cpuCenti != cpuCenti)
 	{
@@ -56,8 +49,8 @@ void ProfilingRow::setPass(const std::string& name, double cpuMs, double gpuMs,
 		m_item->setText(1, QString::number(cpuMs, 'f', 2));
 	}
 
-	// Column 2 - GPU ms, or "--" when timings aren't ready. Track the
-	// shown/hidden transition separately from the numeric dirty check.
+	// Column 2 - GPU ms, or "--" when timings aren't ready. The shown/hidden
+	// transition is tracked separately from the numeric dirty check.
 	if (!gpuShown)
 	{
 		if (m_gpuShown)
@@ -77,14 +70,14 @@ void ProfilingRow::setPass(const std::string& name, double cpuMs, double gpuMs,
 		}
 	}
 
-	// Column 3 - draw calls. Stable across frames; skip when unchanged.
+	// Column 3 - draw calls.
 	if (m_draws != draws)
 	{
 		m_draws = draws;
 		m_item->setText(3, QString::number(draws));
 	}
 
-	// Column 4 - dispatches. Stable across frames; skip when unchanged.
+	// Column 4 - dispatches.
 	if (m_dispatches != dispatches)
 	{
 		m_dispatches = dispatches;
@@ -126,9 +119,9 @@ ProfilingHead::ProfilingHead(QTreeWidget* tree)
 void ProfilingHead::setFrame(double cpuMs, double gpuMs, bool gpuShown,
                               uint32_t draws, uint32_t dispatches)
 {
-	// Column 0 - label. Only write on a mode transition, and write the cached
-	// translated label: a literal here would re-English the row on every
-	// NoData->Frame flip that happened after a language switch.
+	// Column 0 - label. Only written on a mode transition, and from the cached
+	// label, so a NoData->Frame flip after a language switch does not
+	// re-English the row.
 	if (m_mode != Mode::Frame)
 	{
 		m_mode = Mode::Frame;
@@ -190,7 +183,7 @@ void ProfilingHead::retranslate(const QString& frameLabel,
 
 	// Re-text col 0 for the current mode without touching the cached numeric
 	// state (which stays valid across language switches). Uninitialized needs
-	// no write: setFrame()/setNoData() will pick the label up from the members.
+	// no write: setFrame()/setNoData() pick the label up from the members.
 	switch (m_mode)
 	{
 	case Mode::Frame:  m_item->setText(0, m_frameLabel);  break;

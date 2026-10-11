@@ -6,15 +6,6 @@
  * position/rotation/scale (TRS) matrix computation. The model matrix is
  * recomputed eagerly on every SetPosition/SetRotation/SetScale call.
  *
- * Architecture:
- * - Transform is abstract base with virtual GetTransformPtr() for polymorphic access
- * - Transform3D provides Euler-angle 3D transforms using glm::mat4
- * - Model matrix is always up-to-date (eager computation)
- *
- * Transform Composition:
- * - Model matrix = Translate * RotateX * RotateY * RotateZ * Scale
- * - Normal matrix = inverse-transpose of upper-left 3x3 model matrix
- *
  * @note All scene objects with spatial placement should inherit Transform3D.
  * @note Transforms are not thread-safe. Access from main thread only.
  */
@@ -36,8 +27,8 @@ namespace neurus {
 /**
  * @brief Abstract base class for transform components.
  *
- * Provides the polymorphic interface for spatial transforms.
- * Derived classes implement dimension-specific matrix math.
+ * Provides the polymorphic interface for spatial transforms; derived classes
+ * implement the dimension-specific matrix math.
  */
 class Transform
 {
@@ -65,25 +56,12 @@ protected:
 /**
  * @brief 3D transform component with TRS (translate/rotate/scale) matrix computation.
  *
- * Transform3D manages position, rotation (Euler angles in degrees), and scale
- * for 3D scene objects. The model matrix is computed eagerly whenever a
- * component changes - including once after deserialization - so it is always
- * up-to-date on access.
+ * Holds position, rotation (Euler degrees, pitch=X, yaw=Z, roll=Y) and scale.
+ * Coordinate system: right-handed, Z-up; X = right, Y = forward, Z = up;
+ * local forward is +Y. Model = T * Rz(yaw) * Rx(pitch) * Ry(roll) * S.
  *
- * Coordinate System:
- * - Right-handed coordinate system, Z-up
- * - X = right, Y = forward, Z = up
- * - Euler rotation order: pitch (X), yaw (Z), roll (Y)
- * - Rotation angles stored in degrees, converted to radians at compute time
- *
- * Model Matrix Composition:
- * - Model = T(position) * Rz(yaw) * Rx(pitch) * Ry(roll) * S(scale)
- * - Applied to vertex v: T * (Rz * (Rx * (Ry * (S * v))))
- * - Order: scale, roll (Y), pitch (X), yaw (Z), translate
- *
- * Forward Direction:
- * - Local forward = +Y (0, 1, 0). GetDirection() rotates to world-space.
- * - Up = +Z (0, 0, 1). Yaw rotates around Z.
+ * The matrix is recomputed eagerly whenever a component changes - including
+ * once after a load - so it is always up to date on access.
  */
 class Transform3D : public Transform
 {
@@ -112,12 +90,10 @@ public:
 		                  cereal::make_nvp("m_rotation", o_rotation),
 		                  cereal::make_nvp("m_scale", o_scale));
 
-		// `o_modelMatrix` is not persisted, and the setters - the only place it is
-		// ever recomputed - are bypassed by deserialization. Without this a loaded
-		// transform keeps the identity matrix it was constructed with, so the
-		// Property panel reads the loaded TRS while GeometryPass, ShadowDepthPass
-		// and DebugDrawBuilder draw the object at the origin with unit scale.
-		// Same idiom as ImageData/MeshData/UID/RenderShader.
+		// `o_modelMatrix` is not persisted and the setters that normally
+		// recompute it are bypassed by deserialization, so a load would
+		// otherwise keep the identity matrix the transform was constructed
+		// with.
 		if constexpr (Archive::is_loading::value)
 			RecomputeModelMatrix();
 	}
@@ -129,27 +105,24 @@ public:
 	virtual Transform3D* GetTransformPtr() override { return this; }
 
 	// -----------------------------------------------------------------------
-	// Setters - mark cached matrix dirty
+	// Setters - eagerly recompute the model matrix
 	// -----------------------------------------------------------------------
 
 	/**
 	 * @brief Sets the world position.
 	 * @param pos New position in world space.
-	 * @note Model matrix is recomputed immediately.
 	 */
 	virtual void SetPosition(const glm::vec3& pos);
 
 	/**
 	 * @brief Sets the rotation as Euler angles.
 	 * @param degrees Rotation in degrees (pitch=X, yaw=Z, roll=Y).
-	 * @note Model matrix is recomputed immediately.
 	 */
 	virtual void SetRotation(const glm::vec3& degrees);
 
 	/**
 	 * @brief Sets the local scale.
 	 * @param scale Per-axis scale factors.
-	 * @note Model matrix is recomputed immediately.
 	 */
 	virtual void SetScale(const glm::vec3& scale);
 
@@ -182,20 +155,17 @@ public:
 	/**
 	 * @brief Returns the model matrix (TRS).
 	 *
-	 * The matrix is always up-to-date — recomputed eagerly whenever a component
-	 * changes, and once after a load. Composition: Translate * Rotate * Scale
-	 * with rotation applied in ZXY order (yaw=Z, pitch=X, roll=Y).
+	 * Composition: Translate * Rz(yaw) * Rx(pitch) * Ry(roll) * Scale.
 	 *
 	 * @return 4x4 model matrix.
 	 */
 	glm::mat4 GetModelMatrix() const;
 
 	/**
-	 * @brief Computes the local-space forward direction vector.
+	 * @brief Computes the forward direction vector.
 	 *
-	 * Rotates the forward vector (0,1,0) by the current Euler rotation
-	 * (yaw=Z, pitch=X, roll=Y). Returns a normalized direction vector.
-	 * When no rotation is applied, returns (0,1,0) (+Y forward).
+	 * Rotates local forward +Y by the current Euler rotation
+	 * (yaw=Z, pitch=X, roll=Y); returns a normalized vector.
 	 *
 	 * @return Normalized forward direction vector.
 	 */
@@ -204,22 +174,15 @@ public:
 	/**
 	 * @brief Computes the normal matrix for transforming surface normals.
 	 *
-	 * The normal matrix is the inverse transpose of the upper-left 3x3
-	 * portion of the model matrix. This ensures correct normal orientation
-	 * under non-uniform scaling.
+	 * Inverse-transpose of the model matrix's upper-left 3x3, so normals stay
+	 * correct under non-uniform scaling.
 	 *
 	 * @return 3x3 normal matrix.
 	 */
 	glm::mat3 GetNormalMatrix() const;
 
 private:
-	/**
-	 * @brief Recomputes o_modelMatrix from the current TRS.
-	 *
-	 * The only two writers of the TRS members are the setters and the `load`
-	 * branch of serialize(); both go through here, so the cached matrix cannot
-	 * go stale behind their back.
-	 */
+	/** @brief Recomputes o_modelMatrix from the current TRS values. */
 	void RecomputeModelMatrix();
 
 	glm::vec3 o_position{0.0f};    ///< World position.

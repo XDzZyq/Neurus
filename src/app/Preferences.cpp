@@ -23,20 +23,16 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 	if (!in.is_open())
 		return LoadResult::Missing;  // First run: keep defaults, caller saves.
 
-	// Parse into a default-constructed Preferences, not a copy of the live
-	// values, and swap it in only once the parse succeeds. Two things fall out of
-	// that: a truncated or schema-drifted file cannot leave the live values half
-	// overwritten (cereal applies each nvp as it reads it), and a key the file
-	// lacks resolves to the in-class default above rather than to whatever the
-	// running session happened to hold. The member initializers stay the only
-	// definition of these defaults.
+	// Parse into a default-constructed Preferences and adopt it only once the
+	// parse succeeds: a truncated or schema-drifted file cannot half-overwrite
+	// the live values, and a missing key resolves to the in-class default.
 	Preferences fresh;
 
 	try
 	{
 		cereal::JSONInputArchive ar(in);
-		// Each key independently: a file written by a build that spelled one of
-		// them differently still yields the other, instead of Corrupt.
+		// Each key independently: a file missing one of them still yields the
+		// other instead of Corrupt.
 		archive::Optional(ar, cereal::make_nvp("language", fresh.language),
 		                  cereal::make_nvp("target_fps", fresh.targetFps));
 	}
@@ -49,9 +45,8 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 	language  = fresh.language;
 	targetFps = fresh.targetFps;
 
-	// Note: "auto" language is intentionally left as-is here. Resolving it to a
-	// concrete code is I18n::setLanguage()'s job, so this data type stays free
-	// of any UI-layer dependency and the sentinel survives the round-trip.
+	// "auto" is deliberately left as-is: resolving the sentinel is not this
+	// type's job, so the stored value survives the round-trip.
 	return LoadResult::Ok;
 }
 
@@ -80,7 +75,6 @@ bool Preferences::Backup(const std::string& path)
 
 bool Preferences::Save(const std::string& path) const
 {
-	// Ensure the ~/.neurus/ directory exists before writing.
 	const std::filesystem::path parent =
 		std::filesystem::path(path).parent_path();
 	if (!parent.empty())

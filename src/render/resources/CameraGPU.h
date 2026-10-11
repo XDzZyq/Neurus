@@ -23,10 +23,9 @@ namespace neurus {
 /**
  * @brief Camera data uploaded to the GPU each frame (128 B).
  *
- * Contains the combined view-projection matrix and the view matrix (needed for
- * view-space normal computation in the vertex shader). Mirrors the `CameraUBO`
- * block in gbuffer.vert, overlay_line.vert, overlay_point.vert and debug_wire.vert —
- * all four declare it identically, which is what lets them share one buffer.
+ * Holds the combined view-projection and view matrices; the view matrix is
+ * needed for view-space normal computation in the vertex shader. The layout
+ * must match the GLSL `CameraUBO` block.
  */
 struct CameraUBOData
 {
@@ -39,14 +38,10 @@ static_assert(sizeof(CameraUBOData) == 128, "must match the GLSL CameraUBO block
 /**
  * @brief Owns the shared camera UBO and the matrices currently in it.
  *
- * One buffer, not a ring: the renderer runs with `kMaxFramesInFlight == 1`
- * (RenderCache::GetAttachment hands out a single Image per AttachmentName, so a
- * second in-flight frame would already share its G-Buffer), and each frame waits
- * on its fence before recording, so the CPU never overwrites a UBO the GPU is
- * still reading. That also keeps every consumer's descriptor write a one-time
- * cost: the VkBuffer handle never changes. If frames in flight ever grow beyond
- * one, this becomes a ring indexed by frame and every consumer needs one
- * descriptor set per frame — the same change DebugCache already carries.
+ * One buffer, not a ring: frames in flight are capped at one and each frame
+ * waits on its fence before recording, so the CPU never overwrites a UBO the
+ * GPU is still reading. That also keeps descriptor writes one-time, since the
+ * VkBuffer handle never changes. A larger frame count would make this a ring.
  *
  * Non-copyable (owns a GPU buffer), movable.
  */
@@ -69,14 +64,11 @@ public:
 	/**
 	 * @brief Uploads this frame's camera matrices (host-coherent memcpy).
 	 *
-	 * Called once per frame by RenderCache::UpdateCamera(), before any pass
-	 * records. Passes must not call it: two writers would mean the pass order
-	 * decides which camera the frame is drawn with.
-	 *
-	 * Takes the projection and view matrices separately rather than their product
-	 * so the projection stays available on the CPU — DebugPass needs proj[1][1] to
-	 * convert a world-space size into pixels, and that factor cannot be recovered
-	 * from viewProj once the view rotation is folded in.
+	 * Called once per frame before any pass records; passes must not call it,
+	 * or the pass order would decide which camera the frame is drawn with.
+	 * Takes the projection and view separately rather than their product so
+	 * the projection stays available on the CPU: it cannot be recovered from
+	 * viewProj once the view rotation is folded in.
 	 *
 	 * @param proj  Projection matrix (already Y-flipped for Vulkan NDC).
 	 * @param view  View matrix.

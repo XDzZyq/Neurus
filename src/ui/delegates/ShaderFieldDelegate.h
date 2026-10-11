@@ -15,13 +15,10 @@ namespace neurus {
 /**
  * @brief Delegate for editing shader struct fields in a QTreeView.
  *
- * Renders a QComboBox for type columns and a QLineEdit for name columns.
- * Section headers are not editable. Section / struct-def rows have their title
- * spanning the full row (setFirstColumnSpanned); this delegate paints a "+"
- * button at the right edge of that spanned cell and emits addClicked on a left
- * click there — a plain-delegate control, so the tree keeps NO per-row index
- * widgets (those fought with the frequent model resets and macOS
- * accessibility, causing the reported input-loss after clicking "+").
+ * Renders a QComboBox for type columns and a QLineEdit for name columns. On
+ * section / struct-def rows it paints a "+" button at the right edge of the
+ * spanned cell and emits addClicked on a left click there - a plain-delegate
+ * control, so the tree keeps no per-row index widgets.
  */
 class ShaderFieldDelegate : public QStyledItemDelegate
 {

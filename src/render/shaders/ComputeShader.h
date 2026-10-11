@@ -44,8 +44,7 @@ namespace neurus {
 /**
  * @brief Compute shader with IR-based parse->generate pipeline.
  *
- * ComputeShader manages a single compute-stage shader. GPU compilation
- * (SPIR-V, ShaderModule creation) is handled externally by ShaderLibrary.
+ * Manages a single compute-stage ShaderUnit.
  */
 class ComputeShader : public Shader
 {
@@ -53,9 +52,7 @@ public:
 	/**
 	 * @brief Default uniform configuration entry.
 	 *
-	 * Ported from OpenGL's ComputeShader::Default pattern. Each entry
-	 * describes a uniform parameter that should be set to a specific
-	 * default value when the shader is instantiated.
+	 * Describes a uniform parameter and the default value to give it.
 	 */
 	struct Default
 	{
@@ -84,11 +81,7 @@ public:
 	// ----------------------------------
 
 	/**
-	 * @brief Parses, generates the compute shader GLSL.
-	 *
-	 * Pipeline:
-	 *   1. ShaderParser::ParseShaderFile(compPath, COMPUTE)
-	 *   2. ShaderGenerator::Generate() -> regenerated GLSL source
+	 * @brief Parses and generates the compute shader GLSL.
 	 *
 	 * @return true if all steps succeeded, false on parse/generation error.
 	 */
@@ -107,9 +100,6 @@ public:
 	/**
 	 * @brief Retrieves the compute workgroup size from the parsed GLSL.
 	 *
-	 * Reads local_size_x, local_size_y, local_size_z from the ShaderStruct IR
-	 * stored in m_stages[COMPUTE].parsed.
-	 *
 	 * @param[out] x Workgroup size in X dimension.
 	 * @param[out] y Workgroup size in Y dimension.
 	 * @param[out] z Workgroup size in Z dimension.
@@ -117,10 +107,7 @@ public:
 	void GetWorkgroupSize(uint32_t& x, uint32_t& y, uint32_t& z) const;
 
 	/**
-	 * @brief Re-parses and re-generates the shader from source.
-	 *
-	 * CPU-only -- re-reads the source file, re-parses via ShaderParser,
-	 * and re-generates GLSL via ShaderGenerator.
+	 * @brief Re-parses and re-generates the shader from source (CPU-only).
 	 *
 	 * @return true if re-parse and re-generation succeeded.
 	 */
@@ -154,8 +141,7 @@ public:
 	/**
 	 * @brief Returns the vector of default uniform configurations.
 	 *
-	 * These are per-instance (not static like the OpenGL version).
-	 * Each entry describes a uniform name, its GLSL type, and default value.
+	 * Each entry holds a uniform name, its GLSL type and default value.
 	 */
 	const std::vector<Default>& GetDefaults() const { return m_defaults; }
 

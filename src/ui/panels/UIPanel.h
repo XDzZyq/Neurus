@@ -2,35 +2,13 @@
  * @file UIPanel.h
  * @brief Base class for all dock panel widgets in the UI layer.
  *
- * UIPanel provides the common QWidget base for dockable panels (Outliner,
- * PropertyPanel, RenderConfigPanel). All panels inherit UIPanel so the
- * dock system can treat them uniformly.
+ * UIPanel provides the common QWidget base for dockable panels so the dock
+ * system can treat them uniformly: a PanelType for registry lookup, a
+ * human-readable dock title, and a stable serialization id.
  *
- * Architecture:
- * - Inherits QWidget — panels are embeddable in ads::CDockWidget
- * - Q_OBJECT macro for MOC signal/slot generation
- * - Each panel has a PanelType enum value for O(1) lookup in the panel registry
- * - PanelName() provides the human-readable dock title (translated via I18n)
- * - PanelId() provides the stable serialization key (never translated)
- *
- * Identity vs display (IMPORTANT):
- * - PanelId() is the panel's IDENTITY. It is a fixed ASCII string that must
- *   never change: ads::CDockWidget uses its objectName as the key when saving
- *   and restoring layouts, so a project file is only readable as long as these
- *   ids are stable. It is deliberately independent of the display text — not
- *   derived from the translation key — so renaming a UI string cannot break
- *   saved layouts.
- * - PanelName() is DISPLAY ONLY. It follows the active language and may change
- *   at any moment. It must never be persisted or used as a lookup key.
- *
- * i18n:
- * - The dock title is stored as a translation KEY (English by default);
- *   PanelName() resolves it through I18n at call time, so dock titles follow
- *   the active language without any per-panel code.
- * - Panels with additional user-visible text override Retranslate() to
- *   re-apply their strings; UIManager calls it on every language change.
- *
- * @note UI Layer — no Vulkan or Renderer dependencies.
+ * Identity vs display: PanelId() is a fixed ASCII string that is persisted in
+ * saved layouts and must never change; PanelName() follows the active language
+ * and must never be persisted or used as a lookup key.
  */
 
 #pragma once
@@ -87,11 +65,9 @@ public:
 	/**
 	 * @brief Returns the stable, language-independent id for a PanelType.
 	 *
-	 * Used as the ads::CDockWidget objectName, which is the key ADS writes to
-	 * and reads from saved layouts. These strings are part of the project file
-	 * format: changing one invalidates every saved layout, so treat them as
-	 * frozen. They are intentionally NOT the translation keys — display text
-	 * must be free to change without breaking persistence.
+	 * These strings are the ads::CDockWidget objectName and are part of the
+	 * saved layout format: changing one invalidates every saved layout, so
+	 * treat them as frozen. They are intentionally NOT the translation keys.
 	 */
 	static const char* PanelIdFor(PanelType type)
 	{
@@ -115,20 +91,14 @@ public:
 	/**
 	 * @brief Refreshes the panel's display from a UIContext snapshot.
 	 *
-	 * Called by UIManager::Refresh() each frame. Each subclass implements
-	 * this to extract the data it needs from the context (RenderConfig,
-	 * Scene, etc.) and update its widgets.
-	 *
-	 * @param ctx Read-only UI context carrying Editor/Project state.
+	 * @param ctx Read-only UI context.
 	 */
 	virtual void Refresh(const neurus::UIContext& ctx) = 0;
 
 	/**
 	 * @brief Re-applies all user-visible texts in the current language.
 	 *
-	 * Called by UIManager on every I18n::languageChanged() so panels switch
-	 * language instantly without a restart. Panels without translatable
-	 * text (e.g. Viewport) keep the default no-op.
+	 * Panels without translatable text (e.g. Viewport) keep the default no-op.
 	 */
 	virtual void Retranslate() {}
 
@@ -147,11 +117,9 @@ private:
 		case PanelType::Log:            return "Log";
 		case PanelType::Count:          break;
 		}
-		// Count is the enumerator bound, never a panel's type — unreachable, so
-		// this string is deliberately not a translation key (it would otherwise
-		// need a "Dock"-context catalog entry no user can ever see). Listing
-		// every enumerator instead of `default:` makes the compiler flag a new
-		// panel type that forgot its name key.
+		// Unreachable: Count is the enumerator bound, never a panel's type.
+		// Listed explicitly (no `default:`) so the compiler flags a new panel
+		// type that forgot its name key.
 		return "Unknown";
 	}
 

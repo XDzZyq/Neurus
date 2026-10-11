@@ -1,9 +1,6 @@
 /**
  * @file DefaultScene.cpp
- * @brief Implementation of CreateDefaultScene factory function.
- *
- * Constructs a pre-configured Scene with camera, mesh, and light
- * following the OpenGL SceneConfigs factory pattern.
+ * @brief Implementation of the CreateDefaultScene factory function.
  */
 
 #include "scene/DefaultScene.h"
@@ -26,7 +23,7 @@ std::shared_ptr<Scene> CreateDefaultScene(const std::string& objPath)
 	auto scene = std::make_shared<Scene>();
 
 	// --- Camera ---
-	// Default constructor: FOV 60°, near 0.1, far 100, pos(0,0,0), tar(0,0,0)
+	// Camera defaults: FOV 60, near 0.1, far 100.
 	NEURUS_LOG("[DefaultScene] Creating camera...");
 	auto camera = std::make_shared<Camera>();
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));

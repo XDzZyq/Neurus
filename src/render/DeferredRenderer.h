@@ -60,24 +60,12 @@ struct CameraUBOData;
 
 /**
  * @brief Deferred renderer orchestrating GeometryPass → LightingPass → composite.
- *
- * Usage:
- *   DeferredRenderer renderer(device, physDev, queue, qfi, surface,
- *                              w, h);
- *   // SPIR-V shaders are embedded in DeferredRenderer.cpp - no params needed.
- *   // Each frame:
- *   renderer.DrawFrame();
  */
 class DeferredRenderer
 {
 public:
 	/**
 	 * @brief Creates the full deferred pipeline.
-	 *
-	 * Construction order: Swapchain → RenderCache →
-	 * GeometryPass → LightingPass → sync objects. Mesh buffers are uploaded
-	 * directly to GPU by Mesh objects. LightingPass owns its own light SSBO.
-	 * SPIR-V shaders are embedded at compile time (no constructor parameters needed).
 	 *
 	 * @param device           Logical device (borrowed, must outlive this object).
 	 * @param physicalDevice   Physical device (borrowed).
@@ -104,20 +92,14 @@ public:
 	DeferredRenderer& operator=(DeferredRenderer&&) = delete;
 
 	/**
-	 * @brief Draws a single frame: acquire → record → submit → present.
+	 * @brief Draws a single frame: acquire, record, submit, present.
 	 *
-	 * Receives the editor-produced RenderContext (scene pointer, render
-	 * extent and frameIndex blank), fills in the render-specific fields
-	 * from the swapchain, and dispatches to all render passes.
+	 * Fills in the render-specific fields of @p ctx from the swapchain and
+	 * dispatches to all render passes. Handles swapchain recreation on
+	 * VK_ERROR_OUT_OF_DATE_KHR. Safe to call repeatedly (fence-guarded,
+	 * kMaxFramesInFlight frames in flight).
 	 *
-	 * Handles swapchain recreation on VK_ERROR_OUT_OF_DATE_KHR. Safe to
-	 * call repeatedly (fence-guarded, max kMaxFramesInFlight in flight).
-	 *
-	 * Profiling is always on: the returned profile carries per-pass CPU
-	 * times/counters from the frame just recorded and GPU times read back from
-	 * the fence that just signaled (1-2 frame lag by design).
-	 *
-	 * @param editorCtx Editor-produced context with scene set.
+	 * @param ctx RenderContext with the scene set.
 	 * @return The latest frame profile (owned by the renderer; valid until the
 	 *         next DrawFrame call).
 	 */
@@ -151,9 +133,6 @@ public:
 
 	/**
 	 * @brief Returns a reference to the RenderCache for external access.
-	 *
-	 * Used by the Screenshot class to enumerate and capture attachments,
-	 * shadow maps, and shadow intensity arrays.
 	 */
 	RenderCache& GetRenderCache() { return *r_renderCache; }
 
@@ -162,12 +141,9 @@ public:
 	/**
 	 * @brief Reads a single pixel from the IDBuffer attachment and returns the object ID.
 	 *
-	 * Performs a GPU→CPU readback via Image::PickPixel() using a transient
-	 * command buffer. The GPU is drained (queue.waitIdle) before the readback
-	 * to ensure the IDBuffer from the most recent frame is available.
-	 *
-	 * The IDBuffer image state is restored to ColorAttachment afterward so
-	 * the next GeometryPass can write to it.
+	 * Drains the GPU (queue.waitIdle) before the readback to ensure the
+	 * IDBuffer from the most recent frame is available. The image state is
+	 * restored to ColorAttachment afterward.
 	 *
 	 * @param x Pixel x-coordinate (0 = left edge).
 	 * @param y Pixel y-coordinate (0 = top edge, Vulkan convention).
@@ -179,10 +155,9 @@ public:
 	 * @brief Handles viewport resize by proactively recreating swapchain and
 	 *        dependent resources.
 	 *
-	 * Calls Swapchain::Recreate() with the new dimensions, then rebuilds
-	 * attachments, semaphores, and command buffers. This avoids waiting for
-	 * VK_ERROR_OUT_OF_DATE_KHR on the next AcquireNextImage, preventing a
-	 * one-frame rendering glitch at the wrong size.
+	 * Recreates the swapchain with the new dimensions and rebuilds attachments,
+	 * semaphores and command buffers, avoiding a one-frame rendering glitch at
+	 * the wrong size.
 	 *
 	 * Safe to call multiple times (idempotent for same dimensions).
 	 * No-op if the window is minimized (zero-area surface).
@@ -195,17 +170,14 @@ public:
 	/**
 	 * @brief Handles viewport recreation by rebuilding the swapchain with a new surface.
 	 *
-	 * Destroy the old swapchain and create a new one bound to the given surface.
 	 * Rebuilds all dependent resources (attachments, semaphores, command buffers).
-	 * Used when the Viewport widget is recreated with a new native HWND.
 	 *
-	 * @param newSurface New presentation surface (from the recreated Viewport).
+	 * @param newSurface New presentation surface.
 	 */
 	void HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurface);
 
 	/**
-	 * @brief Resets shadow accumulation. Called by Editor when camera/light/scene changes.
-	 * Sets the global shadow frame counter to 0, causing the next frame to overwrite (alpha=1).
+	 * @brief Resets shadow accumulation, so the next frame overwrites (alpha = 1).
 	 */
 	void ResetShadowAccumulation();
 
@@ -213,14 +185,12 @@ private:
 	/**
 	 * @brief Records the full deferred pipeline into a command buffer.
 	 *
-	 * Sequence:
-	 *   1. GeometryPass::Record() → G-Buffer MRT (reads scene.mesh_list via MeshGPU)
-	 *   2. ShadowDepthPass::Record() → cubemap depth (reads scene.mesh_list via MeshGPU)
-	 *   3. LightingPass::Record() → compute PBR → HDRColor (uses own light SSBO)
-	 *   4. Blit HDRColor → swapchain image
-	 *   5. Transition swapchain image to present layout
+	 * Dispatches the main RenderGraph, rebuilding it when the pipeline
+	 * signature changes.
 	 *
-	 * @param editorCtx Editor-produced context (scene set; width/height/frameIndex blank).
+	 * @param cmdBuf     Command buffer to record into.
+	 * @param imageIndex Swapchain image index being rendered into.
+	 * @param editorCtx  Render context (scene set; width/height/frameIndex blank).
 	 */
 	void recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32_t imageIndex,
 	                 const RenderContext& editorCtx);
@@ -255,35 +225,26 @@ private:
 	SelectionOutlinePass* r_selectionOutlinePass = nullptr;
 	ComposePass*  r_composePass  = nullptr;
 	FXAAPass*     r_fxaaPass     = nullptr;
-	/// Debug overlay (scene DebugLine/Points/Mesh objects); always in the graph and a
-	/// no-op when the list is empty.
+	/// Debug overlay pass; always in the graph and a no-op when the list is empty.
 	DebugPass*    r_debugPass    = nullptr;
-	/// Transform-gizmo overlay; always in the graph, runs *after* DebugPass onto the
-	/// same image, and a no-op when no modal gesture is live. As the graph's last
-	/// writer its target doubles as the swapchain blit source.
+	/// Transform-gizmo overlay; always in the graph, runs after DebugPass onto
+	/// the same image, and a no-op when no modal gesture is live. As the graph's
+	/// last writer its target doubles as the swapchain blit source.
 	GizmoPass*    r_gizmoPass    = nullptr;
 
 	// --- RenderGraph (the active pipeline) ---
-	// Compile-once-per-topology DAG holding the whole deferred pipeline:
-	// Geometry → Shadows → SSAO → Lighting → {SelectionOutline} → Compose → [FXAA] → Debug → Gizmo.
-	// recordFrame dispatches the entire pipeline via m_mainGraph.Execute(),
-	// rebuilding it (RebuildMainGraph) only when the pipeline signature
-	// derived from RenderConfig changes.
+	// Compile-once-per-topology DAG holding the whole deferred pipeline; recordFrame
+	// dispatches it and rebuilds it (RebuildMainGraph) only when the pipeline
+	// signature derived from RenderConfig changes.
 	RenderGraph m_mainGraph;
 
 	/**
 	 * @brief Topology-affecting projection of RenderConfig.
 	 *
-	 * RenderConfig is the single source of truth for render settings. The
-	 * graph is a *derived* view of it: this signature captures exactly the
-	 * config choices that change which passes are in the graph. recordFrame
-	 * compares the current signature against the last-built one and rebuilds
-	 * the graph only when they differ — so there is no independent per-node
-	 * "enabled" state to fall out of sync with RenderConfig.
-	 *
-	 * Add a field here whenever a new pass becomes conditional (e.g. AO/shadow
-	 * once those passes are graph-managed). This struct is the one place that
-	 * maps config → graph topology.
+	 * The graph is a derived view of RenderConfig: this signature captures
+	 * exactly the config choices that change which passes are in the graph,
+	 * so the graph is rebuilt only when they differ - there is no independent
+	 * per-node "enabled" state to fall out of sync with RenderConfig.
 	 */
 	struct PipelineSignature
 	{
@@ -313,18 +274,14 @@ private:
 	std::vector<vk::raii::CommandBuffer> r_commandBuffers;
 
 	// --- Synchronization ---
-	// One frame in flight. RenderCache::GetAttachment() returns a single shared
-	// Image per AttachmentName, so a second in-flight frame would write
-	// ComposedOutput/Depth while the previous frame's blit still reads them —
-	// two submits with no dependency between them. The symptom was a presented
-	// image built from two different frames (tile-shaped holes, geometry from
-	// frame N under an overlay from frame N+1). Raising this above 1 requires
-	// per-frame-slot attachments first.
+	// One frame in flight: the render cache returns one shared attachment per
+	// name, so a second in-flight frame would write an attachment the previous
+	// frame's blit still reads. Raising this above 1 requires per-frame-slot
+	// attachments first.
 	static constexpr uint32_t kMaxFramesInFlight = 1;
-	/// Deadlock guard, not a frame budget. A Debug build with validation layers on
-	/// spends ~600 ms per frame here, so the old 100 ms made waitForFences return
-	/// eTimeout routinely and DrawFrame abandon a frame it had already acquired an
-	/// image for. Only a genuinely hung GPU should trip this.
+	/// Deadlock guard, not a frame budget: a Debug build with validation layers
+	/// spends ~600 ms per frame here, so a short timeout would fire routinely.
+	/// Only a genuinely hung GPU should trip this.
 	static constexpr uint64_t kFenceTimeoutNs = 5'000'000'000;
 
 	std::vector<vk::raii::Fence> r_inFlightFences;

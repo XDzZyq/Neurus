@@ -78,9 +78,8 @@ void Scene::ResolveReferences(ResourceManager& resources)
 	ResolvePool<DebugMesh>(resources, m_pendingDMeshIds, dMesh_list);
 	ResolvePool<Environment>(resources, m_pendingEnvIds, env_list);
 
-	// Per-object data-resource wiring (Mesh -> MeshData/Shader, Environment ->
-	// ImageData) is a POOL-wide concern handled by ResourceComponent::Load -
-	// the pool's own restore step - so pooled orphans (undo history) stay
+	// Per-object data-resource wiring is the pool's own restore step and is
+	// deliberately not done here, so pooled orphans (undo history) stay
 	// self-contained and uploadable after a reload.
 
 	// Rebuild obj_list from the now-populated typed pools, then restore the
@@ -89,10 +88,9 @@ void Scene::ResolveReferences(ResourceManager& resources)
 	RestoreSelectionUids(*this, m_pendingSelectedUids, m_pendingActiveUid);
 
 	// Camera activation. cam_list is populated by now, so the UID can be
-	// validated; -1 means the file predates the field, in which case we migrate
-	// once by activating whichever camera the old positional GetActiveCamera()
-	// would have picked, so an upgraded project opens through the camera it was
-	// saved with. The next save writes the field explicitly.
+	// validated; -1 means the file predates the field: migrate once by
+	// activating whichever camera the old positional GetActiveCamera() would
+	// have picked. The next save writes the field explicitly.
 	if (m_pendingActiveCamUid >= 0)
 	{
 		m_activeCamUid = m_pendingActiveCamUid;
@@ -195,7 +193,6 @@ void Scene::RebuildObjList()
 {
 	obj_list.clear();
 
-	// Lambda that inserts aliasing shared_ptr<ObjectID> for each entry in a pool.
 	auto rebuild = [this](auto& pool)
 	{
 		for (auto& [id, obj] : pool)

@@ -50,8 +50,7 @@ static const std::unordered_map<std::string, S_Const>& GetBuildInConstantsInstan
 			}
 		},
 
-		// Colour-space / tone-mapping functions (placeholders - bodies populated
-		// by the shader code generator or configured at initialisation time)
+		// Colour-space / tone-mapping placeholders (empty bodies)
 		{
 			"B_Gamma",
 			{

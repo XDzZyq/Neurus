@@ -43,18 +43,15 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 	catch (const cereal::Exception& e)
 	{
 		// Legacy project file (no "m_resources" node): leave the pool empty.
-		// The Scene's ID lists will also fail to load and degrade to the
-		// default-camera fallback.
 		NEURUS_ERR("ResourceComponent::Load: " << e.what() << " - using empty resource pool.");
 		m_resources->Clear();
 	}
 
 	// Wire data references for EVERY pooled mesh/environment, not just the
-	// scene members: pooled objects stay referenced by undo history after
-	// deletion, so their data refs must be wired for on-demand GPU uploads
-	// (SceneObjectGpuUploadRequested) after a reload. The pool's data-resource
-	// entries have already reloaded their content (their own serialize(load)),
-	// so this is pure pointer wiring - no disk I/O.
+	// scene members: a pooled object can stay referenced elsewhere after
+	// deletion, so its data refs must be wired for on-demand GPU uploads
+	// after a reload. Pure pointer wiring - the pool's data-resource entries
+	// have already reloaded their content via their own serialize(load).
 	m_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh) {
 		if (!mesh) return;
 		if (mesh->o_meshDataId != 0)
@@ -75,8 +72,7 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		}
 	});
 	// DebugMesh carries the same MeshData reference as Mesh but is not a Mesh,
-	// so ForEach<Mesh> above never reaches it. Without this block a reloaded
-	// project would leave o_mesh null and DebugPass would skip the wireframe.
+	// so ForEach<Mesh> above never reaches it.
 	m_resources->ForEach<DebugMesh>([&](const std::shared_ptr<DebugMesh>& dMesh) {
 		if (!dMesh || dMesh->o_meshDataId == 0) return;
 		auto meshData = m_resources->Get<MeshData>(dMesh->o_meshDataId);
@@ -91,8 +87,8 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		auto imageData = m_resources->Get<ImageData>(env->o_imageDataId);
 		if (!imageData)
 		{
-			// Keep o_imageDataId (do not zero it) so the broken reference is
-			// visible and reported instead of being silently dropped forever.
+			// Keep o_imageDataId (do not zero it) so the broken reference
+			// stays visible and reported instead of being silently dropped.
 			NEURUS_ERR("[ResourceComponent] stale ImageData UID " << env->o_imageDataId);
 			return;
 		}

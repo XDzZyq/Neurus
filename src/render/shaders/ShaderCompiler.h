@@ -11,16 +11,11 @@ namespace neurus {
 /**
  * @brief Internal shaderc wrapper for GLSL-to-SPIR-V compilation.
  *
- * Owns a single shaderc::Compiler instance and a persistent set of
- * shaderc::CompileOptions that can be modified via the public API.
- *
- * This class is **internal** to src/render/shaders/ - only ShaderLibrary
- * should instantiate or use it.  Renderer passes and DeferredRenderer
- * never see this type.
+ * Owns one shaderc::Compiler and a persistent CompileOptions the public API
+ * modifies. Internal to src/render/shaders/.
  *
  * @note shaderc::Compiler is expensive to construct (initializes glslang
- *       internally), so keep one ShaderCompiler alive for the lifetime
- *       of the ShaderLibrary owner.
+ *       internally), so keep one instance alive.
  */
 class ShaderCompiler
 {
@@ -28,10 +23,8 @@ public:
 	/**
 	 * @brief Creates the shaderc compiler and default compile options.
 	 *
-	 * Defaults:
-	 *   - Target environment: Vulkan 1.3
-	 *   - SPIR-V version:     1.6
-	 *   - Optimization:       performance in Release, zero in Debug
+	 * Targets Vulkan 1.3 / SPIR-V 1.6; optimizes for performance in Release,
+	 * zero in Debug.
 	 */
 	ShaderCompiler();
 	~ShaderCompiler() = default;
@@ -61,41 +54,26 @@ public:
 		const std::string& inputName);
 
 	/**
-	 * @brief Returns the compiler's last error message (clear-text).
+	 * @brief Returns the compiler's last error message.
 	 *
-	 * The message is reset on each successful compilation and populated
-	 * on failure.
+	 * Cleared at the start of each compilation; populated on failure.
 	 */
 	const std::string& GetErrorMessage() const { return m_lastError; }
 
-	/**
-	 * @brief Sets the optimization level for subsequent compilations.
-	 *
-	 * shaderc_optimization_level_zero     - no optimization
-	 * shaderc_optimization_level_size     - smallest code
-	 * shaderc_optimization_level_performance - fastest code
-	 */
+	/** @brief Sets the optimization level for subsequent compilations. */
 	void SetOptimizationLevel(shaderc_optimization_level level);
 
 	/**
-	 * @brief Adds a preprocessor macro definition (e.g. "USE_SHADOWS" → "1").
+	 * @brief Adds a preprocessor macro definition (e.g. "USE_SHADOWS" to "1").
 	 *
-	 * Macros are carried forward across compilations unless explicitly
-	 * cleared.  Repeated calls with the same name overwrite the previous
-	 * value.
+	 * Macros persist across compilations; a repeated name overwrites.
 	 *
 	 * @param name  Macro name (without -D prefix).
-	 * @param value Macro value (default "1").
+	 * @param value Macro value.
 	 */
 	void AddMacroDefinition(const std::string& name, const std::string& value);
 
-	/**
-	 * @brief Controls whether debug info (source-level debugging) is
-	 *        embedded in the compiled SPIR-V.
-	 *
-	 * Debug builds should emit debug info so tools like RenderDoc can
-	 * display source-level shader debugging.
-	 */
+	/** @brief Controls whether debug info is embedded in the compiled SPIR-V. */
 	void SetGenerateDebugInfo(bool enable);
 
 private:

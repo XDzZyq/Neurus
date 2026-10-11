@@ -3,15 +3,13 @@
  * @brief Read-only fetch/lookup interface for the UID object pool.
  *
  * Controllers depend on this narrow interface instead of the concrete
- * ResourceManager: they can FETCH pooled objects by integer id (and query
- * membership) but cannot mutate the pool (no Load/Register/Remove/Clear) or
- * drive its serialization. This mirrors IOperationSink: the controller-facing
- * surface is the minimal one that keeps the dependency inverted.
+ * ResourceManager: they can fetch pooled objects by integer id (and query
+ * membership) but cannot mutate the pool or drive its serialization.
  *
- * Objects are fetched as shared_ptr because the pool owns them; a controller
- * handler typically derives a raw pointer from the temporary shared_ptr and
- * uses it within the handler scope (the pool keeps pooled objects alive, so
- * id-based lookup never dangles).
+ * Objects are fetched as shared_ptr because the pool owns them; a caller
+ * typically derives a raw pointer from the temporary shared_ptr and uses it
+ * within the handler scope (the pool keeps pooled objects alive, so id-based
+ * lookup never dangles).
  */
 
 #pragma once

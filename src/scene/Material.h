@@ -16,28 +16,8 @@ class Texture;
 /**
  * @brief Material descriptor for PBR rendering.
  *
- * Material encapsulates all surface appearance parameters for physically-based
- * rendering. Each parameter can be a float constant, a color (vec3), or a
- * texture map, discriminated by MatDataType.
- *
- * Material Parameters:
- * - MAT_ALBEDO:   Base color / diffuse albedo
- * - MAT_METAL:    Metallic factor (0 = dielectric, 1 = conductor)
- * - MAT_ROUGH:    Roughness (0 = smooth/mirror, 1 = rough/matte)
- * - MAT_SPEC:     Specular reflectance at normal incidence (F0)
- * - MAT_EMIS_COL: Emissive color
- * - MAT_EMIS_STR: Emissive strength multiplier
- * - MAT_ALPHA:    Opacity / transparency
- * - MAT_NORMAL:   Normal map (tangent-space)
- * - MAT_BUMP:     Bump / height map
- *
- * Usage:
- * @code
- *   Material mat;
- *   mat.SetMatParam(Material::MAT_ALBEDO, glm::vec3(1.0f, 0.766f, 0.336f));
- *   mat.SetMatParam(Material::MAT_METAL, 1.0f);
- *   mat.SetMatParam(Material::MAT_ROUGH, 0.3f);
- * @endcode
+ * Holds all surface appearance parameters. Each parameter is a float
+ * constant, a colour (vec3) or a texture map, discriminated by MatDataType.
  *
  * @note Not thread-safe. Material state must not be modified during rendering.
  */
@@ -48,11 +28,7 @@ public:
 	// Enums
 	// ---------------------------------------------------------------------------
 
-	/**
-	 * @brief Material parameter types.
-	 *
-	 * Indexed so that MAT_END can serve as a count / sentinel.
-	 */
+	/** @brief Material parameter types. */
 	enum MatParaType
 	{
 		MAT_NONE = -1,   ///< Invalid / uninitialized
@@ -68,9 +44,7 @@ public:
 		MAT_END          ///< Sentinel - number of parameter types
 	};
 
-	/**
-	 * @brief Data-type discriminator for a material parameter.
-	 */
+	/** @brief Data-type discriminator for a material parameter. */
 	enum MatDataType
 	{
 		MPARA_FLT,  ///< Float constant
@@ -99,7 +73,7 @@ public:
 	/**
 	 * @brief Maps each MatParaType to its corresponding shader uniform name.
 	 *
-	 * Indexed by MatParaType value (MAT_ALBEDO = 0, …, MAT_BUMP = 8).
+	 * Indexed by MatParaType value (MAT_ALBEDO = 0, ..., MAT_BUMP = 8).
 	 * Initialised in InitParamData().
 	 */
 	static std::vector<std::string> mat_uniform_name;
@@ -123,9 +97,7 @@ public:
 	 */
 	Material();
 
-	/**
-	 * @brief Virtual destructor (dtor is default).
-	 */
+	/** @brief Destroys the Material. */
 	~Material() = default;
 
 	// Non-copyable, movable
@@ -139,15 +111,8 @@ public:
 	// ---------------------------------------------------------------------------
 
 	/**
-	 * @brief Initialises every MatParaType with sensible PBR defaults.
-	 *
-	 * Defaults:
-	 * - Albedo:     white (1, 1, 1)
-	 * - Metallic:   0.0
-	 * - Roughness:  0.5
-	 * - Specular:   (0.04, 0.04, 0.04)  - dielectric F0
-	 * - Emissive:   black, strength 0
-	 * - Alpha:      1.0 (opaque)
+	 * @brief Initialises every MatParaType with sensible PBR defaults
+	 * (albedo white, metallic 0, roughness 0.5, specular 0.04, alpha 1).
 	 *
 	 * Called automatically by the constructor.
 	 */
@@ -157,32 +122,16 @@ public:
 	// Parameter setters
 	// ---------------------------------------------------------------------------
 
-	/**
-	 * @brief Sets the data type for a parameter (without changing its value).
-	 * @param _tar Target parameter.
-	 * @param _type New data type.
-	 */
+	/** @brief Sets the data type for a parameter, leaving its value unchanged. */
 	void SetMatParam(MatParaType _tar, MatDataType _type);
 
-	/**
-	 * @brief Sets a parameter to a float constant.
-	 * @param _tar Target parameter.
-	 * @param _var Float value.
-	 */
+	/** @brief Sets a parameter to a float constant. */
 	void SetMatParam(MatParaType _tar, float _var);
 
-	/**
-	 * @brief Sets a parameter to a colour constant.
-	 * @param _tar Target parameter.
-	 * @param _col RGB colour (values in [0, 1]).
-	 */
+	/** @brief Sets a parameter to an RGB colour constant (values in [0, 1]). */
 	void SetMatParam(MatParaType _tar, const glm::vec3& _col);
 
-	/**
-	 * @brief Sets a parameter to a texture map.
-	 * @param _tar Target parameter.
-	 * @param _tex Shared pointer to the Texture.
-	 */
+	/** @brief Sets a parameter to a texture map. */
 	void SetMatParam(MatParaType _tar, std::shared_ptr<Texture> _tex);
 
 	// ---------------------------------------------------------------------------
@@ -203,8 +152,7 @@ public:
 	 * @brief Parses a configuration string and updates mat_params.
 	 *
 	 * @param _config Material configuration string.
-	 *
-	 * @note Stub - actual JSON/file parsing will be added post-MVP.
+	 * @note Stub; parsing is not implemented yet.
 	 */
 	void ParseConfig(const std::string& _config);
 
@@ -215,11 +163,7 @@ public:
 	/**
 	 * @brief Binds all material textures to their respective shader slots.
 	 *
-	 * Iterates through mat_params and binds every parameter with
-	 * MatDataType == MPARA_TEX.
-	 *
-	 * @note Stub for MVP. Actual Vulkan texture binding happens in the render
-	 *       pass. This method currently returns without performing any work.
+	 * @note Stub; currently returns without performing any work.
 	 */
 	void BindMatTexture() const;
 

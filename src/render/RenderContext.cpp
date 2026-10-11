@@ -2,11 +2,10 @@
  * @file RenderContext.cpp
  * @brief The one place a missing RenderConfig is turned into the defaults.
  *
- * This translation unit exists only so RenderContext.h can keep RenderConfig on a
- * forward declaration while Settings() still needs the complete type. That trade
- * is the point of the file: the fallback is written once in
- * core/RenderConfig.h's DefaultRenderConfig() instead of as a
- * `cfg ? cfg->x : <literal>` ternary at every reader.
+ * Exists so RenderContext.h can forward-declare RenderConfig while Settings()
+ * still needs the complete type: the fallback is written once, in
+ * DefaultRenderConfig(), instead of as a `cfg ? cfg->x : <literal>` ternary at
+ * every reader.
  *
  * Vulkan-free, and must stay so: RenderContext describes the frame, not the GPU.
  */

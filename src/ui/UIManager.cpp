@@ -52,7 +52,7 @@ UIManager::UIManager(const QString& language, int targetFps,
 	setWindowTitle("Neurus");
 	resize(1600, 900);
 
-	// Disable opaque splitter resize for better Vulkan window container behavior
+	// Non-opaque splitter resize plays better with the native viewport window.
 	ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, false);
 	ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting, true);
 
@@ -61,8 +61,7 @@ UIManager::UIManager(const QString& language, int targetFps,
 	CreateDocks();
 	CreateMenus();
 
-	// Language switch (e.g. from Preferences) retranslates the whole window
-	// immediately — no restart needed.
+	// Language switch retranslates the whole window immediately, no restart.
 	connect(&I18n::instance(), &I18n::languageChanged,
 	        this, &UIManager::RetranslateAll);
 
@@ -246,10 +245,9 @@ void UIManager::CreateMenus()
 	auto* resetLayoutAction = trAction(viewMenu, N_("Restore &Default Layout"));
 	connect(resetLayoutAction, &QAction::triggered, this, &UIManager::RestoreDefaultLayout);
 
-	// Full screen has to be reachable *and* escapable from the menu: with the
-	// frame gone there is no minimize/maximize/close button to click, so this
-	// toggle is the way back. Leaving full screen clears only that flag, which
-	// keeps a window that was maximized before entering full screen maximized.
+	// Full screen must be reachable and escapable from the menu: with the frame
+	// gone there is no other way back. Leaving full screen clears only that
+	// flag, so a window that was maximized stays maximized.
 	m_fullScreenAction = trAction(viewMenu, N_("&Full Screen"));
 	m_fullScreenAction->setCheckable(true);
 	m_fullScreenAction->setShortcut(QKeySequence::FullScreen);
@@ -262,9 +260,8 @@ void UIManager::CreateMenus()
 
 	auto* editMenu = addMenu(menuBar(), N_("&Edit"));
 
-	// Undo/Redo are expandable submenus that reveal their stacks (like "Add").
-	// The actual trigger actions live on the window so Ctrl+Z / Ctrl+Y keep
-	// working without a clickable menu action.
+	// Undo/Redo are expandable submenus that reveal their stacks. The trigger
+	// actions live on the window so Ctrl+Z / Ctrl+Y work without a menu action.
 	auto* undoTrigger = new QAction(this);
 	undoTrigger->setShortcut(QKeySequence::Undo);
 	connect(undoTrigger, &QAction::triggered, []() {
@@ -361,10 +358,8 @@ namespace {
 /**
  * @brief Fallback dock area for a panel, used by RepairOrphanedDocks().
  *
- * Mirrors the arrangement CreateDocks() builds. CreateDocks() keeps its own
- * explicit areas because it also tabs panels onto specific sibling areas;
- * this is only the "put it somewhere sensible" placement for a dock the
- * restored layout failed to claim.
+ * Only the "put it somewhere sensible" placement for a dock the restored
+ * layout failed to claim; CreateDocks() keeps its own explicit areas.
  */
 ads::DockWidgetArea DefaultDockArea(PanelType type)
 {
@@ -395,9 +390,9 @@ void UIManager::changeEvent(QEvent* event)
 	// instead of acting on every transition.
 	const bool fullScreen = isFullScreen();
 
-	// Keep View > Full Screen in step with a transition we did not initiate
-	// (macOS's green button). setChecked() with an unchanged value emits no
-	// toggled(), so this cannot bounce back into the action's lambda.
+	// Keep View > Full Screen in step with a transition we did not initiate.
+	// setChecked() with an unchanged value emits no toggled(), so this cannot
+	// bounce back into the action's lambda.
 	if (m_fullScreenAction && m_fullScreenAction->isChecked() != fullScreen)
 		m_fullScreenAction->setChecked(fullScreen);
 
@@ -414,10 +409,9 @@ void UIManager::SetFloatingLocked(bool lock)
 	if (!win_dockManager)
 		return;
 
-	// Lock Floatable only. Movable stays available so a panel can still be
-	// dragged to a different dock position; ADS then finds no floatable content
-	// at drop time (FloatingDragPreview::createFloatingWidget) and the panel
-	// snaps back instead of becoming a window.
+	// Lock Floatable only: Movable stays available so a panel can still be
+	// dragged to a different dock position. With no floatable content at drop
+	// time, the panel snaps back instead of becoming a window.
 	win_dockManager->lockDockWidgetFeaturesGlobally(
 		lock ? ads::CDockWidget::DockWidgetFloatable
 		     : ads::CDockWidget::NoDockWidgetFeatures);
@@ -429,8 +423,8 @@ void UIManager::DockFloatingPanels()
 	if (!win_dockManager)
 		return;
 
-	// Collect first: addDockWidget() empties the floating container and ADS
-	// deletes it, which would invalidate the list mid-iteration.
+	// Collect first: addDockWidget() empties the floating container and deletes
+	// it, which would invalidate the list mid-iteration.
 	std::vector<ads::CDockWidget*> stranded;
 	for (ads::CFloatingDockContainer* container : win_dockManager->floatingWidgets())
 	{
@@ -467,9 +461,8 @@ void UIManager::DockFloatingPanels()
 ads::CDockWidget* UIManager::MakeDock(UIPanel* panel)
 {
 	// The title is translated (display only); the objectName is the stable
-	// serialization key ADS saves and restores by. CDockWidget's ctor derives
-	// objectName from the title, so it MUST be overwritten here — otherwise a
-	// layout saved in one language cannot be restored in another.
+	// serialization key ADS saves and restores by, and CDockWidget's ctor
+	// derives it from the title, so it MUST be overwritten here.
 	auto* dock = new ads::CDockWidget(win_dockManager, panel->PanelName());
 	dock->setObjectName(panel->PanelId());
 	return dock;
@@ -555,9 +548,8 @@ void UIManager::CreateDocks()
 
 	m_textureDock = new ads::CDockWidget(win_dockManager,
 	                                     I18n::instance().translateCtx("Texture Viewer", "Dock"));
-	// Not a UIPanel, so MakeDock() cannot supply the id — but the objectName is
-	// still the key ADS serializes by, and the ctor derived it from translated
-	// text. Set it explicitly, as a stable ASCII id, for the same reason.
+	// Not a UIPanel, so MakeDock() cannot supply the id; set the stable ASCII
+	// objectName explicitly for the same serialization reason.
 	m_textureDock->setObjectName(QStringLiteral("dock.textureViewer"));
 	m_textureDock->setWidget(textureWrap);
 	m_textureDock->resize(300, 200);
@@ -576,7 +568,7 @@ void UIManager::CreateDocks()
 	m_panels[PanelType::Log] = logPanel.release();
 	m_docks[PanelType::Log] = logDock;
 
-	// Error notifier: LogPanel signal -> status bar (3s, throttled by delta)
+	// Error notifier: LogPanel signal -> status bar (3s).
 	QObject::connect(logPanelRaw, &neurus::LogPanel::errorNotified,
 	                 this, [this](int delta, const QString& first) {
 	                     statusBar()->showMessage(
@@ -584,7 +576,7 @@ void UIManager::CreateDocks()
 	                             .arg(delta).arg(first), 3000);
 	                 });
 
-	// Notify Application of the new native window handle for surface recreation
+	// Notify the new native window handle for surface recreation.
 	UIEvents::instance().requestUIRecreation(reinterpret_cast<quintptr>(newHwnd));
 }
 
@@ -634,9 +626,8 @@ void UIManager::OpenPreferences()
 		m_preferencesDialog = new PreferencesDialog(
 			m_currentLanguage, m_targetFps, m_preferencesPath, this);
 
-		// Dialog changes update the local cache and are routed through the
-		// UIEvents bus so the Application applies + persists them
-		// (UI → UIEvents → Application).
+		// Dialog changes update the local cache and are routed on the UIEvents
+		// bus so they get applied and persisted.
 		connect(m_preferencesDialog, &PreferencesDialog::languageChangeRequested,
 		        this, [this](const QString& lang) {
 		            m_currentLanguage = lang;
@@ -687,23 +678,18 @@ void UIManager::ApplyLayout(const std::string& blob)
 	{
 		restoreGeometry(geom);
 		// restoreGeometry() round-trips the window *state*, not just the
-		// rectangle: a blob saved while the window was full screen restores it
-		// full screen, and a full-screen QMainWindow has no frame at all - no
-		// minimize, maximize or close button - which leaves Alt+F4 and File >
-		// Exit as the only ways out. Dock layout and window geometry are what
-		// this blob is for; full screen is a transient state with a deliberate
-		// toggle (View > Full Screen). Clear the flag rather than calling
-		// showNormal(): ApplyLayout() runs before Application shows the window,
-		// and showNormal() would show it from here instead.
+		// rectangle: a blob saved in full screen would restore it full screen,
+		// with no frame and no obvious way back. Clear the flag rather than
+		// calling showNormal(), which would show the window from here.
 		if (isFullScreen())
 			setWindowState(windowState() & ~Qt::WindowFullScreen);
 	}
 	if (!state.isEmpty())
 	{
 		// restoreState() only reports false for XML that fails to parse or has a
-		// version mismatch. A blob whose dock names do not match ours parses fine
-		// and returns true — ADS just skips the unknown names and leaves those
-		// docks unassigned. So log the hard failure here, then repair either way.
+		// version mismatch. A blob whose dock names do not match ours parses
+		// fine and returns true, leaving those docks unassigned - so log the
+		// hard failure here, then repair either way.
 		if (!win_dockManager->restoreState(state))
 			NEURUS_ERR("[UIManager] Dock layout state could not be parsed; "
 			           "falling back to default dock placement.");
@@ -714,14 +700,12 @@ void UIManager::ApplyLayout(const std::string& blob)
 void UIManager::RepairOrphanedDocks()
 {
 	// flagAsUnassigned() clears the dock area, so a null area means the restored
-	// state did not claim this dock: an unknown objectName (a foreign or stale
-	// blob) or a panel added since the project was saved.
+	// state did not claim this dock: an unknown objectName (foreign or stale
+	// blob) or a panel added since the layout was saved.
 	//
 	// Re-dock the existing widgets rather than calling RestoreDefaultLayout():
-	// that re-runs CreateDocks(), which would destroy the Viewport and hand out a
-	// new native window handle. ApplyLayout() runs before the Application wires
-	// its signals, so nothing would be listening to re-create the VkSurfaceKHR
-	// already built from the old handle.
+	// that would destroy and re-create the Viewport, invalidating the native
+	// window handle the surface was already built from.
 	QStringList repaired;
 	auto repair = [&](ads::CDockWidget* dock, ads::DockWidgetArea area) {
 		if (!dock || dock->dockAreaWidget()) return;
@@ -742,9 +726,9 @@ void UIManager::RepairOrphanedDocks()
 
 void UIManager::RestoreDefaultLayout()
 {
-	// Clear panel/dock maps before dock manager destroys its children.
-	// Dock widgets and their contained panels are owned by CDockManager
-	// via Qt parent-child; clearing the maps just drops our non-owning pointers.
+	// Clear panel/dock maps before the dock manager destroys its children:
+	// docks and panels are owned via Qt parent-child, the maps hold
+	// non-owning pointers only.
 	m_panels.clear();
 	m_docks.clear();
 

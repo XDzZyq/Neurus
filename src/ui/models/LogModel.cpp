@@ -106,10 +106,9 @@ void LogModel::Refresh(const LogBuffer* buffer)
 		return;
 	}
 
-	// Size unchanged but seq advanced: the ring wrapped (oldest replaced
-	// by newest). Drop the oldest row and append the newest row instead of
-	// a full model reset, so a view scrolled up into history keeps its
-	// position rather than being yanked back to the bottom on every append.
+	// Size unchanged but seq advanced: the ring wrapped (oldest replaced by
+	// newest). Drop the oldest row and append the newest instead of resetting
+	// the model, so a view scrolled into history keeps its position.
 	if (newSeq > m_lastSeq)
 	{
 		beginRemoveRows(QModelIndex(), 0, 0);

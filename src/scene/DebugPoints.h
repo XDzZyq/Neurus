@@ -2,21 +2,8 @@
  * @file DebugPoints.h
  * @brief Debug point primitive for viewport visualization.
  *
- * DebugPoints provides CPU-side storage for debug point primitives used
- * in viewport rendering. Each DebugPoints instance stores a collection of
- * point positions, along with rendering properties (point type, color,
- * scale, opacity, projection mode).
- *
- * Architecture:
- * - Inherits ObjectID for scene graph identity and type discrimination
- * - Inherits Transform3D; points are stored in its local space, so the whole
- *   set can be moved/rotated/scaled as a unit (DebugDrawBuilder bakes the model
- *   matrix into the world-space overlay payload)
- * - Point storage via std::vector<glm::vec3> - no GPU resources
- * - PointType enum for choosing point sprite shape
- * - PushDebugPoint/PushDebugPoints for adding point data
- *
- * @note No GPU resources or shaders - pure CPU data container.
+ * Stores a collection of point positions together with their rendering
+ * properties (point type, color, scale, opacity, projection mode).
  */
 
 #pragma once
@@ -36,31 +23,15 @@ namespace neurus
 /**
  * @brief Debug point primitive for viewport visualization.
  *
- * Stores point positions with rendering attributes including point
- * type (SQUARE, RHOMBUS, CIR, CUBE), color, scale, opacity, and
- * projection mode. All data is CPU-side; GPU upload is handled by
- * the renderer layer.
+ * Stores point positions with their rendering attributes (point type,
+ * color, scale, opacity, projection mode) as CPU-side data.
  *
  * Object type: GO_DP
- *
- * Usage:
- * @code
- *   DebugPoints dp;
- *   dp.PushDebugPoint({0,0,0});            // single point
- *   dp.PushDebugPoints({...});              // multiple points
- *   dp.SetPointType(DebugPoints::CIR);     // circle sprites
- *   dp.SetColor({1,0,0,1});               // red color
- *   dp.SetScale(3.0f);
- * @endcode
  */
 class DebugPoints : public ObjectID, public Transform3D
 {
 public:
-	/**
-	 * @brief Point sprite type enum.
-	 *
-	 * Determines the visual shape of each rendered point.
-	 */
+	/** @brief Visual shape of each rendered point. */
 	enum class PointType
 	{
 		SQUARE,   ///< Axis-aligned square sprite.
@@ -69,22 +40,10 @@ public:
 		CUBE      ///< 3D cube sprite (volumetric).
 	};
 
-	/**
-	 * @brief Constructs a DebugPoints with default properties.
-	 *
-	 * Defaults:
-	 * - PointType: SQUARE
-	 * - Color: white (1,1,1,1)
-	 * - Scale: 1.0
-	 * - Opacity: 1.0
-	 * - ProjectionMode: 0
-	 * - o_type: GO_DP
-	 */
+	/** @brief Constructs a DebugPoints with default properties. */
 	DebugPoints();
 
-	/**
-	 * @brief Destroys the DebugPoints.
-	 */
+	/** @brief Destroys the DebugPoints. */
 	~DebugPoints() override = default;
 
 	/**
@@ -107,8 +66,7 @@ public:
 	}
 
 	// Non-copyable and non-movable (UID semantics): ObjectID's UID base deletes
-	// both, so defaulting the move ops would only implicitly delete them and warn.
-	// Scenes hold these through Resource<T> (shared_ptr), never by value.
+	// both, so defaulting them here would only implicitly delete and warn.
 	DebugPoints(const DebugPoints&) = delete;
 	DebugPoints& operator=(const DebugPoints&) = delete;
 	DebugPoints(DebugPoints&&) = delete;
@@ -138,19 +96,15 @@ public:
 	/**
 	 * @brief Replaces the whole point list.
 	 * @param points New local-space positions (relative to the transform).
-	 * @see DebugLine::SetVertices for why the editor sets the list absolutely.
 	 */
 	void SetPoints(std::vector<glm::vec3> points) { o_points = std::move(points); }
 
-	/**
-	 * @brief Returns the number of stored points.
-	 * @return Point count.
-	 */
+	/** @brief Returns the number of stored points. */
 	int GetPointCount() const { return static_cast<int>(o_points.size()); }
 
 	/**
 	 * @brief Returns a const reference to the point storage.
-	 * @return Const reference to vector of point positions.
+	 * @return Const reference to the vector of local-space positions.
 	 */
 	const std::vector<glm::vec3>& GetPoints() const { return o_points; }
 
@@ -178,7 +132,7 @@ public:
 
 	/** @brief Sets the opacity (0.0 = transparent, 1.0 = opaque). */
 	void SetOpacity(float opacity) { o_opacity = opacity; }
-	/** @brief Returns the opacity value. */
+	/** @brief Returns the opacity (0-1). */
 	float GetOpacity() const { return o_opacity; }
 
 	/**
@@ -198,11 +152,8 @@ public:
 	/**
 	 * @brief Returns this object's Transform component.
 	 *
-	 * Points are stored in the transform's local space and DebugDrawBuilder bakes
-	 * `GetModelMatrix()` into the world-space overlay payload, so every point
-	 * moves with the transform. Overriding this is what makes the object
-	 * reachable by the gizmo, the property panel and Scene::UpdateObjTransforms;
-	 * Mesh/DebugMesh are the pattern.
+	 * Points are stored in the transform's local space, so the whole set
+	 * moves, rotates and scales as one.
 	 */
 	void* GetTransform() override { return static_cast<Transform*>(this); }
 

@@ -24,28 +24,6 @@ class BufferLayout;
  * Accumulates state via chained method calls and produces a Pipeline struct
  * (which owns both the vk::raii::Pipeline and its vk::raii::PipelineLayout)
  * on BuildGraphicsPipeline() or BuildComputePipeline().
- *
- * Usage (graphics):
- *   Pipeline p = PipelineBuilder()
- *       .AddShaderStage(vertModule, vk::ShaderStageFlagBits::eVertex)
- *       .AddShaderStage(fragModule, vk::ShaderStageFlagBits::eFragment)
- *       .SetVertexInput(layout)
- *       .SetInputAssembly()
- *       .SetRasterization()
- *       .SetMultisampling()
- *       .SetDepthStencil(true, true)
- *       .SetColorBlendAttachment()
- *       .SetColorFormats({ vk::Format::eB8G8R8A8Srgb })
- *       .BuildGraphicsPipeline(device);
- *
- * Usage (compute):
- *   Pipeline p = PipelineBuilder()
- *       .AddShaderStage(compModule, vk::ShaderStageFlagBits::eCompute)
- *       .AddDescriptorSetLayout(*descSetLayout.layout())
- *       .SetDebugName("MyComputePass")
- *       .BuildComputePipeline(device);
- *   cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
- *                             *p.pipelineLayout, ...);
  */
 class PipelineBuilder
 {
@@ -69,9 +47,6 @@ public:
 
 	/**
 	 * @brief Sets vertex input state from a BufferLayout.
-	 *
-	 * Calls BufferLayout::GetBindingDescription() and
-	 * GetAttributeDescriptions() to derive the VkPipelineVertexInputState.
 	 *
 	 * @param layout  Vertex attribute layout describing bindings + attributes.
 	 * @return *this for chaining.
@@ -322,10 +297,9 @@ public:
 	/**
 	 * @brief Builds the graphics pipeline from accumulated state.
 	 *
-	 * Creates a VkPipelineLayout internally from the descriptor set layouts
-	 * and push-constant ranges. Appends VkPipelineRenderingCreateInfo for
-	 * dynamic rendering. Returns a Pipeline struct that owns both the
-	 * vk::raii::Pipeline and its pipeline layout.
+	 * Creates the pipeline layout from the descriptor set layouts and
+	 * push-constant ranges, and appends VkPipelineRenderingCreateInfo for
+	 * dynamic rendering.
 	 *
 	 * @param device  Logical device.
 	 * @return Fully constructed Pipeline (type = Geometry).
@@ -340,10 +314,8 @@ public:
 	/**
 	 * @brief Builds the compute pipeline from accumulated state.
 	 *
-	 * Creates a VkPipelineLayout from the descriptor set layouts and
-	 * push-constant ranges. Returns a Pipeline struct that owns both the
-	 * vk::raii::Pipeline and its pipeline layout — the layout is available
-	 * for descriptor-set binding at command-recording time.
+	 * Creates the pipeline layout from the descriptor set layouts and
+	 * push-constant ranges; the returned Pipeline owns both.
 	 *
 	 * @param device  Logical device.
 	 * @return Fully constructed Pipeline (type = Compute).

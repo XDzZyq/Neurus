@@ -1,40 +1,17 @@
 /**
  * @file ShaderController.h
- * @brief Shader lifecycle controller — event-driven, no per-frame polling.
+ * @brief Shader lifecycle controller - event-driven, no per-frame polling.
  *
- * ShaderController translates shader editor events (create, compile, code edit,
- * struct edit) into shader data mutations. All shader logic is triggered by
- * events enqueued from the UI layer (ShaderEditorPanel).
+ * Translates shader editor events (create, compile, code edit, struct edit) into
+ * shader data mutations. Stateless: all handler logic lives as free functions in
+ * the .cpp. The target is resolved by integer UID from the scene on every event,
+ * so the controller never holds a raw pointer.
  *
- * Stateless — all handler logic lives as free functions in the .cpp file.
- *
- * Event Mapping:
- *   - ShaderCreateRequested  → OnCreateShader  (load default, parse, compile, bump version)
- *   - ShaderCompileRequested → OnCompileShader (compile stage, store spv, bump version)
- *   - ShaderCodeEdited       → OnCodeEdited    (update ShaderUnit::code, no version bump)
- *   - ShaderStructEdited     → SetFieldValue   (mutate one ShaderStruct field, no bump)
- *   - ShaderFieldAdded       → AppendDefault   (append one default entry, no bump)
- *
- * Undo/redo (content edits only):
- *   - ShaderEditBegin/End bracket a code-editor burst; one SetShaderCodeOp is
- *     recorded on focus-out. Discrete struct edits record one SetShaderFieldOp
- *     each; field adds record one AddShaderFieldOp each.
- *   - Replay uses dedicated restore events (ShaderCodeRestored /
- *     ShaderFieldRestored / ShaderFieldAddRestored / ShaderFieldRemoved): each
- *     re-applies one edit dimension and bumps the ShaderUnit version so the
- *     panel refreshes. CPU-only, no recompile.
- *   - Compile stays a non-undoable lifecycle action; Create Shader is
- *     undoable via ShaderLinkOp (the Editor records it; undo drops the pooled
- *     reference, redo relinks it - see editor.instructions.md).
- *
- * Architecture:
- *   - Bound to a ControllerContext via Init() — no per-frame Update() polling.
- *   - Resolves the target mesh by integer UID (from each event) against the
- *     current scene via the context — no raw pointers in events.
- *   - No Editor*, no DeferredRenderer*, no UploadManager* — pure shader logic.
- *
- * @note ShaderController does not own the shader — it operates on a mesh
- *       resolved by UID from the scene (via the context).
+ * Undo/redo covers content edits only: a code-editor burst is bracketed by
+ * ShaderEditBegin/End and records one op on focus-out, discrete struct edits
+ * record one op each, and replay uses dedicated restore events that re-apply one
+ * edit dimension and bump the version without recompiling. Compile stays a
+ * non-undoable lifecycle action; create is recorded by the Editor.
  */
 
 #pragma once
@@ -55,9 +32,8 @@ public:
 	/**
 	 * @brief Subscribes to shader events on the given context.
 	 *
-	 * Registers lambda handlers that forward each event to the
-	 * corresponding free-function handler. Must be called once during
-	 * initialization, before any events are enqueued.
+	 * Registers lambda handlers that forward each event to the corresponding
+	 * free-function handler.
 	 *
 	 * @param ctx Controller context (events, resources, ops, scene).
 	 */

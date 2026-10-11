@@ -11,11 +11,9 @@ public:
 
 	/**
 	 * @brief Subscribes the controller to its events.
-	 * @param ctx Controller context: event dispatch (IEventQueue), pooled-object
-	 *            lookup (IResourceLookup), and the operation sink
-	 *            (IOperationSink). Controllers must NOT retain the context or
-	 *            any of its members; handler lambdas may capture it by
-	 *            reference (the Editor owns it and it outlives the bus).
+	 * @param ctx Controller context: event dispatch, pooled-object lookup and
+	 *            the operation sink. Controllers must NOT retain the context or
+	 *            any of its members; handler lambdas may capture it by reference.
 	 */
 	virtual void Init(ControllerContext& ctx) = 0;
 };

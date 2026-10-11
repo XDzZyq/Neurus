@@ -2,14 +2,8 @@
  * @file Timer.h
  * @brief Scoped timer for debug-mode performance instrumentation.
  *
- * prints elapsed wall-clock time via NEURUS_LOG on destruction.
- * Zero runtime cost in Release (NEURUS_LOG compiles to no-op).
- *
- * Usage:
- *   {
- *       NEURUS_TIMER("mesh load");
- *       MeshData::LoadObj(path);   // ... work ...
- *   }                              // prints "[func:line] mesh load: 12.345 ms"
+ * Prints elapsed wall-clock time via NEURUS_LOG on destruction; zero runtime
+ * cost in Release (NEURUS_LOG compiles to a no-op).
  */
 
 #pragma once
@@ -23,14 +17,13 @@ namespace neurus {
 /**
  * @brief Records wall-clock time from construction to destruction.
  *
- * Outputs "label: X.XXX ms" through NEURUS_LOG in debug builds.
- * Measurement precision is high_resolution_clock (sub-microsecond on Windows).
+ * Logs "label: X.XXX ms" through NEURUS_LOG.
  */
 class ScopedTimer
 {
 public:
 	/**
-	 * @param label Human-readable operation name (e.g. "shader parse", "mesh GenBuffers").
+	 * @param label Human-readable operation name.
 	 */
 	explicit ScopedTimer(std::string label)
 		: m_label(std::move(label))

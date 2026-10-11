@@ -3,24 +3,14 @@
  * @brief Template DAG node-graph with typed sockets and topological sort.
  *
  * Provides four cooperating template classes:
- *   SocketIn<SData, NData>   — input slot, fed by one upstream SocketOut
- *   SocketOut<SData, NData>  — output slot, fans out to N downstream SocketIn
- *   Node<SData, NData>       — processing unit owning its sockets + NData
- *   Graph<SData, NData>      — pool of Nodes, connections, Kahn topological sort
+ *   SocketIn<SData, NData>   - input slot, fed by one upstream SocketOut
+ *   SocketOut<SData, NData>  - output slot, fans out to N downstream SocketIn
+ *   Node<SData, NData>       - processing unit owning its sockets + NData
+ *   Graph<SData, NData>      - pool of Nodes, connections, Kahn topological sort
  *
- * Nodes are independent of Graph — they can be constructed standalone and
- * moved into a Graph later (presets).  Sockets hold their SData payload by
- * value; for shared ownership pass std::shared_ptr<T> as SData.
- *
- * Usage:
- * @code
- * Graph<float, std::string> g;
- * auto* n = g.AddNode("add", "a + b");
- * n->AddInput("a")->data = 1.0f;
- * n->AddInput("b")->data = 2.0f;
- * n->AddOutput("sum")->data = 3.0f;
- * auto sorted = g.TopologicalSort();
- * @endcode
+ * Sockets hold their SData payload by value; for shared ownership pass
+ * std::shared_ptr<T> as SData. Nodes are independent of Graph - they can be
+ * constructed standalone and moved into a Graph later (presets).
  */
 
 #pragma once
@@ -99,7 +89,7 @@ public:
  * @brief Graph node owning a set of input and output sockets plus node data.
  *
  * Nodes can be constructed independently (presets) then moved into a Graph
- * via Graph::AddNode(std::unique_ptr<Node>) — socket owner pointers remain valid.
+ * via Graph::AddNode(std::unique_ptr<Node>) - socket owner pointers remain valid.
  *
  * @tparam SData  Socket-level data type.
  * @tparam NData  Node-level data type.
@@ -159,8 +149,8 @@ public:
 /**
  * @brief Owns a pool of Nodes and manages their connections.
  *
- * Provides Kahn's-algorithm topological sort.  Duplicate connections and
- * self-loops are rejected by Connect().  If a SocketIn already has a source,
+ * Provides Kahn's-algorithm topological sort. Duplicate connections and
+ * self-loops are rejected by Connect(); if a SocketIn already has a source,
  * Connect() breaks the old connection before establishing the new one.
  *
  * @tparam SData  Socket-level data type.
@@ -298,7 +288,6 @@ public:
 		const size_t n = nodes.size();
 		std::vector<size_t> inDegree(n, 0);
 
-		// 1. Build in-degree from SocketOut → SocketIn edges
 		for (const auto& node : nodes)
 		{
 			for (const auto& out : node->outputs)
@@ -314,14 +303,12 @@ public:
 			}
 		}
 
-		// 2. Seed queue with zero-in-degree nodes
 		std::vector<size_t> queue;
 		queue.reserve(n);
 		for (size_t i = 0; i < n; ++i)
 			if (inDegree[i] == 0)
 				queue.push_back(i);
 
-		// 3. Kahn sweep
 		std::vector<NodeType*> sorted;
 		sorted.reserve(n);
 		while (!queue.empty())
@@ -343,9 +330,9 @@ public:
 			}
 		}
 
-		// 4. Cycle check — if not every node was emitted, the unprocessed nodes
-		//    (in-degree still > 0) are the ones on/downstream of a cycle. Name
-		//    them so a misconfigured graph is debuggable in one read.
+		// Cycle check: if not every node was emitted, the unprocessed nodes
+		// (in-degree still > 0) are the ones on/downstream of a cycle. Name
+		// them so a misconfigured graph is debuggable in one read.
 		if (sorted.size() != n)
 		{
 			std::string cyclic;
@@ -387,7 +374,7 @@ private:
 		}
 	}
 
-	// O(n) lookup — fine for <1K nodes; replace with unordered_map if needed
+	// O(n) lookup; revisit if node counts grow past the hundreds
 	size_t IndexOf(const NodeType* node) const
 	{
 		for (size_t i = 0; i < nodes.size(); ++i)

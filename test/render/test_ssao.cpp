@@ -116,8 +116,8 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	cb.scene->ActivateCamera(cb.camera->GetObjectID());
 
 	RenderContext ctx{
-			.width = kRenderWidth, .height = kRenderHeight,
 		.scene = cb.scene.get(),
+			.width = kRenderWidth, .height = kRenderHeight,
 	};
 
 	// --- Record geometry pass ---

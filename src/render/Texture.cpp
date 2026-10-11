@@ -132,7 +132,6 @@ Texture Texture::FromFile(const vk::raii::Device& device,
 	                                  pixelData, dataSize, effectiveFormat,
 	                                  /*generateMipmaps=*/true, config);
 
-	// Free STB data
 	if (isHdr) { stbi_image_free(dataf); }
 	else       { stbi_image_free(data); }
 
@@ -193,7 +192,6 @@ Texture Texture::ForAttachment(const vk::raii::Device& device,
 			/*mipLevels=*/1,
 			Image::ImageType::e2D);
 
-		// Create sampler only if the image will be sampled
 		if (usage & vk::ImageUsageFlagBits::eSampled)
 		{
 			tex.tex_sampler = createSampler(device, config, 1);

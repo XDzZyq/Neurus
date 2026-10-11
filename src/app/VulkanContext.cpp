@@ -72,20 +72,13 @@ VulkanContext::VulkanContext(vk::raii::Instance&& instance)
 }
 
 /**
- * @brief Enables the optional core features Neurus uses, when supported.
+ * @brief Enables the optional core features this application uses, when supported.
  *
  * vkCreateDevice fails with VK_ERROR_FEATURE_NOT_PRESENT if a requested
  * feature is unavailable, so every field is gated on the device's own report.
- * Currently only debug-geometry rendering needs optional features:
- *   - fillModeNonSolid: VK_POLYGON_MODE_LINE for the DebugMesh wireframe overlay
- *   - largePoints:      gl_PointSize > 1 for DebugPoint sprites
- *
- * wideLines is deliberately NOT requested: Metal cannot rasterize lines wider
- * than one pixel, so MoltenVK reports wideLines = false with
- * lineWidthRange = [1, 1], and VK_KHR_line_rasterization there offers only
- * bresenhamLines (no rectangular/smooth/stippled). DebugPass therefore expands
- * thick lines into screen-space quads in the vertex shader, which is portable
- * and additionally yields the anti-aliasing and stipple that DebugLine exposes.
+ * Currently fillModeNonSolid (line polygon mode) and largePoints (point
+ * sprites larger than one pixel) are requested. wideLines is deliberately
+ * NOT requested - it is unsupported on some backends.
  */
 static vk::PhysicalDeviceFeatures selectOptionalFeatures(const vk::raii::PhysicalDevice& pd)
 {
@@ -114,7 +107,6 @@ void VulkanContext::InitDevice()
 	           << " | limits.maxPushConstantsSize = "
 	           << props.limits.maxPushConstantsSize);
 
-	// Find queue families
 	ctx_graphicsQueueFamily = findGraphicsQueueFamily();
 	ctx_transferQueueFamily = findTransferQueueFamily();
 
@@ -135,10 +127,9 @@ void VulkanContext::InitDevice()
 	dynRendering.pNext = &multiviewFeature;
 
 	// Required by any fragment shader that uses `discard`: targeting Vulkan 1.3
-	// (SPIR-V 1.6) glslang lowers `discard` to OpDemoteToHelperInvocation, since
-	// OpKill is deprecated there. Core-required in 1.3, but the bit must still be
-	// asked for explicitly — without it vkCreateShaderModule reports
-	// VUID-VkShaderModuleCreateInfo-pCode-08740.
+	// (SPIR-V 1.6) lowers `discard` to OpDemoteToHelperInvocation, and the bit
+	// must still be asked for explicitly - without it vkCreateShaderModule
+	// reports VUID-VkShaderModuleCreateInfo-pCode-08740.
 	vk::PhysicalDeviceShaderDemoteToHelperInvocationFeatures demote;
 	demote.shaderDemoteToHelperInvocation = VK_TRUE;
 	demote.pNext = &dynRendering;
@@ -154,8 +145,8 @@ void VulkanContext::InitDevice()
 	ctx_enabledFeatures = selectOptionalFeatures(pd);
 	std::vector<const char*> devExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-	// VK_KHR_portability_subset is required when a profile layer simulates portability
-	// (e.g. VP_LUNARG_desktop_baseline). Check if supported and add to extensions.
+	// VK_KHR_portability_subset is required when a profile layer simulates
+	// portability (e.g. VP_LUNARG_desktop_baseline): add it when advertised.
 	auto availableDevExtensions = pd.enumerateDeviceExtensionProperties();
 	for (const auto& ext : availableDevExtensions)
 	{
@@ -176,7 +167,6 @@ void VulkanContext::InitDevice()
 
 void VulkanContext::InitQueue(const vk::raii::SurfaceKHR& surface)
 {
-	// Re-evaluate queue family that supports presentation to this surface
 	ctx_graphicsQueueFamily = findGraphicsQueueFamilyWithPresent(surface);
 	ctx_graphicsQueue = ctx_device->getQueue(ctx_graphicsQueueFamily, 0);
 }
@@ -227,7 +217,7 @@ uint32_t VulkanContext::findTransferQueueFamily()
 	auto& pd = ctx_physicalDevices[ctx_selectedDeviceIndex];
 	auto qf = pd.getQueueFamilyProperties();
 
-	// Prefer a dedicated transfer-only queue (has eTransfer but not eGraphics).
+	// Prefer a dedicated transfer-only queue (eTransfer but not eGraphics).
 	for (uint32_t i = 0; i < (uint32_t)qf.size(); ++i)
 	{
 		if (qf[i].queueFlags & vk::QueueFlagBits::eTransfer &&

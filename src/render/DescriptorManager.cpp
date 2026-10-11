@@ -204,7 +204,7 @@ std::vector<DescriptorSet> DescriptorPool::Allocate(
 		return {};
 	}
 
-	// Build allocation info with count copies of the same layout
+	// Count copies of the same layout
 	std::vector<vk::DescriptorSetLayout> rawLayouts(
 		count, *layout.layout());
 
@@ -222,7 +222,6 @@ std::vector<DescriptorSet> DescriptorPool::Allocate(
 			std::to_string(count) + " descriptor set(s). Pool exhausted.");
 	}
 
-	// Wrap each vk::raii::DescriptorSet in our DescriptorSet
 	std::vector<DescriptorSet> result;
 	result.reserve(vkSets.size());
 	for (auto& vkSet : vkSets)
@@ -237,8 +236,8 @@ std::vector<vk::DescriptorPoolSize> DescriptorPool::CalculatePoolSizes(
 	const std::vector<const DescriptorSetLayout*>& layouts,
 	uint32_t multiplier)
 {
-	// Accumulate descriptor counts by type using linear search
-	// (pool types are few enough that O(n²) is fine)
+	// Accumulate descriptor counts by type; linear search is fine, the pool
+	// types are few.
 	std::vector<std::pair<vk::DescriptorType, uint32_t>> typeCounts;
 
 	for (const auto* layout : layouts)
@@ -268,7 +267,6 @@ std::vector<vk::DescriptorPoolSize> DescriptorPool::CalculatePoolSizes(
 		}
 	}
 
-	// Convert to pool sizes with multiplier applied
 	std::vector<vk::DescriptorPoolSize> result;
 	result.reserve(typeCounts.size());
 	for (const auto& [type, count] : typeCounts)

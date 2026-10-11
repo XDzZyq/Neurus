@@ -138,7 +138,7 @@ container template instantiations with our own translation units, its archive
 is only linked when the `build_info.txt` stamp beside it records the same Qt
 version and C++ standard this build uses — otherwise CMake says why and builds
 it from source. See
-[build instructions](.github/instructions/build.instructions.md) for details.
+[the build guide](docs/build/build.md) for details.
 
 ## Code Style
 

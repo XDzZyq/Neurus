@@ -52,7 +52,6 @@ Image::Image(const vk::raii::Device& device,
 			debugName);
 		device.setDebugUtilsObjectNameEXT(nameInfo);
 
-		// Name the device memory
 		{
 			std::string memName(debugName);
 			memName += "_Mem";
@@ -218,11 +217,10 @@ void Image::createImageView(const vk::raii::Device& device, const char* debugNam
 		break;
 	case ImageType::e2D:
 	default:
-		// Default view always 2D (needed by ShadowIntensityPass binding 2: image2D).
-		// When arrayView=true, additionally create a 2D_ARRAY view (needed by
-		// LightingPass binding 9: sampler2DArray).
-		// Aspect derived from format so depth-only formats (D32) get the correct
-		// eDepth aspect, while color formats get eColor.
+		// Default view is always 2D; when arrayView=true an additional 2D_ARRAY
+		// view is created below. Aspect is derived from the format so depth-only
+		// formats (D32) get the correct eDepth aspect, while color formats get
+		// eColor.
 		viewType = vk::ImageViewType::e2D;
 		aspect = AspectFromFormat(im_format);
 		break;
@@ -450,7 +448,6 @@ std::shared_ptr<ImageData> Image::ReadImageData(const vk::raii::Device& device,
 		? im_extent
 		: readExtent;
 
-	// Determine what to read (default: mip 0, layer 0)
 	const auto range = subresourceRange
 		? *subresourceRange
 		: vk::ImageSubresourceRange(AspectFromFormat(im_format), 0, 1, 0, 1);

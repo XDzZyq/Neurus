@@ -1,9 +1,6 @@
 /**
  * @file UploadManager.cpp
- * @brief CPU-to-GPU upload service — scaffold.
- *
- * Task 4 scaffold: constructor stores refs, creates CommandPool, stub methods
- * return empty GPU structs.  Real upload logic is added in Tasks 5–7.
+ * @brief CPU-to-GPU upload service.
  */
 
 #include "UploadManager.h"
@@ -95,8 +92,8 @@ MeshGPU UploadManager::UploadMeshData(const MeshData& meshData)
 		return MeshGPU{};
 	}
 
-	// --- Strip vertex data: 14 floats → 8 floats (pos+normal+uv) ---
-	// Matches GeometryPass::BufferLayout (32-byte stride).
+	// --- Strip vertex data: 14 floats -> 8 floats (pos+normal+uv) ---
+	// Results in the 32-byte stride the GPU-side vertex layout expects.
 	constexpr size_t kSrcStride = 14;
 	constexpr size_t kDstStride = 8;
 	std::vector<float> strippedVertices(vertexCount * kDstStride);
@@ -144,8 +141,7 @@ EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env,
 
 	// --- 1. Load equirectangular ImageData (CPU-side) ---
 	// Use the environment's wrapped (pooled) ImageData; if it is invalid
-	// (missing source file), fall back to the pink-purple gradient. No path
-	// loading here - paths belong to the data layer.
+	// (missing source file), fall back to the pink-purple gradient.
 	std::shared_ptr<ImageData> equirectData = env.GetEquirectData();
 	if (!equirectData || !equirectData->IsValid())
 	{
@@ -391,7 +387,7 @@ UploadManager::UploadLighting(const Light& light)
 		return gpu;
 	}
 
-	// NONELIGHT — return default PointLightStruct (empty variant alternative)
+	// NONELIGHT - return a default PointLightStruct.
 	NEURUS_ERR("[UploadManager] Unhandled light type: " << static_cast<int>(light.light_type));
 	return PointLightStruct{};
 }
