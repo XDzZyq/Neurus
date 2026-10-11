@@ -139,10 +139,17 @@ split that TU, not to add the flag.
 ## Testing
 
 - Framework: Google Test
-- Non-GPU tests run in CI (UIEvents, EventQueue, SceneContext)
+- Non-GPU tests run in CI (UIEvents, EventQueue, UIContext/RenderContext)
 - GPU tests require a Vulkan 1.4-capable device
-- Run all tests: `make check` (or `cd build && ctest -C Debug --output-on-failure`)
+- Run all tests: `make check` (or `cd build/debug && ctest --output-on-failure`)
 - Run specific tests: `make check FILTER="-R DeferredShading"`
+- **Run them from `build/debug`, not `build/`.** There are two trees and they are
+  not interchangeable: `build/` is multi-config (`cmake --preset win|macos`) and
+  `build/debug` is single-config Ninja. A bare `ctest` in `build/` finds no tests
+  and **exits 0** — a green that ran nothing — while `ctest -C Debug` there reads
+  a stale `build/CTestTestfile.cmake` and reports whatever it last saw (841 on
+  this machine, against the live 959). See the "Two build trees" section in
+  `AGENTS.md`; `make check` now picks `build/debug` automatically.
 - Build only the test binary: `make build test` (or `make test`)
 - On local machine, launch `Neurus.exe` to check terminal output and runtime errors.
 - See `.github/instructions/test.instructions.md` for full testing standards and patterns.

@@ -14,8 +14,8 @@
  *   `src/scene/` while the Editor owns them. `src/core/` is the only genuine leaf:
  *   it has no dependency on `src/render/`, and this type's only project
  *   dependency is `core/Serialize.h`.
- * - Reaches the render passes by value-embedded pointer in `SceneContext`
- *   (`src/scene/SceneContext.h`), read through `SceneContext::Settings()`.
+ * - Reaches the render passes by value-embedded pointer in `RenderContext`
+ *   (`src/render/RenderContext.h`), read through `RenderContext::Settings()`.
  * - Changes take effect on the next RecordCommandBuffer / DrawFrame() call.
  *
  * @note This is NOT a per-frame struct — it persists across frames and is
@@ -123,7 +123,7 @@ public:
 	 * @brief Master switch for the viewport debug/gizmo overlay.
 	 *
 	 * Gates publication, not pipeline topology: when false the Editor publishes a
-	 * null SceneContext::debugDraw and DebugPass returns before touching any
+	 * null RenderContext::debugDraw and DebugPass returns before touching any
 	 * image, so the pass stays in the RenderGraph unconditionally and toggling
 	 * this costs no graph rebuild.
 	 */
@@ -194,6 +194,30 @@ public:
 	/** @brief Returns true if the viewport debug/gizmo overlay should be drawn. */
 	bool RequiresDebugDraw() const { return r_debug_draw; }
 };
+
+/**
+ * @brief The immutable defaults a null RenderConfig resolves to.
+ *
+ * The one place a missing config is answered. Both carriers of a config pointer
+ * — `RenderContext` (renderer-facing) and `UIContext` (UI-facing) — return this
+ * from their own `Settings()`, so the fallback is written once here rather than
+ * as a `cfg ? cfg->x : <literal>` ternary at every reader.
+ *
+ * A function-local static, so it *is* these in-class member initializers rather
+ * than a second copy of them: adding or changing a default above changes this
+ * with no edit here. Const and immutable, so sharing one instance across frames
+ * and threads is safe.
+ *
+ * Why it matters: ShadowIntensityPass used to restate `r_shadow_bias` as
+ * 0.0005f against a declared 0.02f — a 40x divergence that lived in the tree.
+ * Anything that reads a setting must come through here or through a non-null
+ * pointer, so that class of drift has nowhere left to hide.
+ */
+inline const RenderConfig& DefaultRenderConfig()
+{
+	static const RenderConfig kDefaults{};
+	return kDefaults;
+}
 
 } // namespace neurus
 

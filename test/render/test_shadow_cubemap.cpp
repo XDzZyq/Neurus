@@ -295,10 +295,10 @@ TEST_F(ShadowCubemapTest, AllFacesDepth)
 
 		RenderContext ctx{};
 		ctx.width = kRes; ctx.height = kRes;
-		ctx.snapshot.scene = shadowRes.scene.get();
+		ctx.scene = shadowRes.scene.get();
 		// Point-light-only scene, but ShadowDepthPass still walks its sun path and
 		// reads the viewing camera from the context; publish it as the frame driver would.
-		VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx.snapshot);
+		VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);

@@ -418,19 +418,19 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
-	// --- Early out: no scene (SceneContext's null policy) ---
-	if (!ctx.snapshot.HasScene())
+	// --- Early out: no scene (RenderContext's null policy) ---
+	if (!ctx.HasScene())
 	{
 		NEURUS_LOG("[ShadowIntensityPass] No scene, skipping");
 		return stats;
 	}
 
-	const Scene* scene = ctx.snapshot.scene;
+	const Scene* scene = ctx.scene;
 
 	// Settings() is never null and falls back to RenderConfig's own in-class
 	// defaults, so there is no literal here to drift from the declaration. The
 	// ternary this replaced had drifted 40x (0.0005f against a declared 0.02f).
-	const RenderConfig& settings = ctx.snapshot.Settings();
+	const RenderConfig& settings = ctx.Settings();
 	const float shadowBias = settings.r_shadow_bias;
 
 	// One answer for both the point and the sun path below, which used to read the
@@ -595,10 +595,10 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			// cascade must centre on *that* one or the shadow slides off the part of
 			// the world actually on screen. See the fuller note in
 			// LightingPass::Record().
-			const Camera* activeCam = ctx.snapshot.camera;
+			const Camera* activeCam = ctx.camera;
 			if (!activeCam)
 			{
-				NEURUS_LOG("[ShadowIntensityPass] No camera in SceneContext, skipping sun light");
+				NEURUS_LOG("[ShadowIntensityPass] No camera in RenderContext, skipping sun light");
 				continue;
 			}
 			const glm::vec3 center = activeCam->cam_tar;

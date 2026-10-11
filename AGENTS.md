@@ -165,7 +165,12 @@ Neurus/
 │   │   ├── DeferredRenderer.h/cpp   # Deferred PBR pipeline (active renderer)
 │   │   ├── Image.h/cpp              # GPU image with state tracking (ImageState)
 │   │   ├── RenderCache.h/cpp        # Cross-frame mutable resource pool
-│   │   ├── RenderContext.h          # Per-frame immutable scene snapshot (embeds SceneContext)
+│   │   ├── RenderContext.h          # Per-frame view: Editor's semantic half + renderer's frame half
+│   │   ├── RenderContext.cpp        # Settings() fallback (needs the complete RenderConfig)
+│   │   ├── overlay/         # Overlay payload records shared by the debug + gizmo systems
+│   │   │   ├── OverlayGeometry.h    # Shared vertex records (OverlaySegment/PointSprite, flags)
+│   │   │   ├── DebugDrawList.h      # Retained payload consumed by DebugPass / DebugCache
+│   │   │   └── GizmoDrawList.h      # Transient payload consumed by GizmoPass / GizmoCache
 │   │   ├── shaders/          # Shader pipeline (parse/generate/compile)
 │   │   │   ├── Shader.h/cpp, ShaderGPU.h   # Per-mesh shader + GPU module
 │   │   │   ├── ShaderUnit.h     # Per-stage state: code, parsed IR, SPIR-V, version
@@ -310,10 +315,6 @@ Neurus/
 │   │   ├── DebugLine.h/cpp    # Debug segment-list object (retained, stateful)
 │   │   ├── DebugPoints.h/cpp  # Debug point-list object (square/rhombus/circle/cube)
 │   │   ├── DebugMesh.h/cpp    # Debug wireframe-mesh object
-│   │   ├── OverlayGeometry.h  # Shared overlay records (OverlaySegment/PointSprite, flags)
-│   │   ├── DebugDrawList.h    # Flattened overlay payload consumed by DebugPass
-│   │   ├── GizmoDrawList.h    # Gizmo overlay payload consumed by GizmoPass (no scene objects)
-│   │   ├── SceneContext.h/cpp # Per-frame scene snapshot shared by RenderContext + UIContext
 │   │   ├── DefaultScene.h/cpp # Built-in starter scene
 │   │   ├── ObjectID.h      # Scene identity + metadata (ObjectID : UID)
 │   │   ├── Transform.h     # Spatial transform
@@ -388,7 +389,7 @@ Neurus/
   with EMA blend: `mix(prev, sample, alpha)`.
 - **Alpha**: 0 = FixedAlpha (1/8), 1 = MovingAvg (1/(n+1)). Both the mode
   (`r_sampling_mode`) and the shadow bias are read through
-  `SceneContext::Settings()`, so the only place either default is written is
+  `RenderContext::Settings()` / `UIContext::Settings()`, so the only place either default is written is
   `RenderConfig`'s member initializers -- no pass restates one.
 
 ### Debug Overlay Convention (issue #22)

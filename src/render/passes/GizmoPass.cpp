@@ -14,7 +14,7 @@
 #include "shaders/ShaderLibrary.h"
 #include "core/Log.h"
 
-#include "scene/GizmoDrawList.h"
+#include "render/overlay/GizmoDrawList.h"
 
 #include <array>
 #include <cmath>
@@ -193,7 +193,7 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	// --- 1. No gesture: touch no image, so every state the upstream pass left behind
 	//        stays valid, including the layout the swapchain blit expects. This is
 	//        also what lets the pass sit in the graph unconditionally ---
-	const GizmoDrawList* list = ctx.snapshot.gizmoDraw;
+	const GizmoDrawList* list = ctx.gizmoDraw;
 	if (!list || list->Empty())
 	{
 		return stats;

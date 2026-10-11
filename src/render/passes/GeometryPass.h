@@ -11,7 +11,7 @@
  * - Owns the graphics pipeline, descriptor set layout, descriptor pool,
  *   camera UBO, and camera descriptor set (set 0).
  * - Borrows RenderCache (non-owning reference) for MeshGPU lookups.
- * - Reads mesh list from RenderContext::snapshot.scene->mesh_list.
+ * - Reads mesh list from RenderContext::scene->mesh_list.
  * - For each Mesh: looks up MeshGPU via RenderCache::GetMeshGPU(),
  *   reads model matrix from Mesh::GetTransform().
  *
@@ -71,7 +71,7 @@ public:
 	 *   1. Uploads camera data to the UBO (host-visible memcpy).
 	 *   2. Begins the G_BUFFER dynamic rendering pass.
 	 *   3. Sets viewport and scissor.
-	 *   4. Iterates ctx.snapshot.scene->mesh_list, looks up MeshGPU via cache.GetMeshGPU(),
+	 *   4. Iterates ctx.scene->mesh_list, looks up MeshGPU via cache.GetMeshGPU(),
 	 *      reads model/normal matrices from mesh->GetTransform(), pushes constants,
 	 *      binds vertex/index buffers, and draws indexed.
 	 *   5. Ends the dynamic rendering pass.

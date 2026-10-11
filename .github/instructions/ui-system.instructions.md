@@ -10,7 +10,7 @@ The UI layer is a **Qt6 Widgets** application with **Qt-Advanced-Docking-System 
 |------|---------|
 | `src/ui/UIManager.h/cpp` | QMainWindow subclass with ADS dock manager + menus |
 | `src/ui/UIManager.h/cpp` | Per-frame `Refresh()` pipeline, panel registry (`GetPanel<T>`) |
-| `src/ui/UIContext.h/cpp` | Per-frame UI data snapshot (embeds the scene-layer `SceneContext`) |
+| `src/ui/UIContext.h/cpp` | The UI's frame view: `scene` + `config` injected by the Editor, plus profile/log/history from the Application. Qt-free by construction. |
 | `src/ui/panels/UIPanel.h` | Base class for all dock panels with `PanelType` enum |
 | `src/ui/panels/Viewport.h/cpp` | Native HWND Vulkan surface widget (Viewport dock) |
 | `src/ui/panels/Outliner.h/cpp` | Scene object hierarchy tree (Outliner dock) |
@@ -446,13 +446,13 @@ target_compile_definitions(Neurus PRIVATE ADS_STATIC)
 All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
 - `PanelType` enum identifies each panel (Viewport, Outliner, PropertyEditor, RenderConfig, Log)
 - `virtual void Refresh(const UIContext& ctx)` — called per-frame to sync panel UI with application state
-- `UIContext` embeds a `SceneContext snapshot` (from `Editor::GetContext()`) whose
-  every member is a typed pointer declared by forward declaration — `snapshot.scene`
-  (`const Scene*`), `snapshot.camera` (`const Camera*`), the two overlay draw lists,
-  and the render settings read through `snapshot.Settings()`, which never returns
-  null (it falls back to `RenderConfig`'s own in-class defaults, so no panel restates
-  a default literal). `scene` and `camera` must still be checked —
-  `snapshot.HasScene()` / `HasCamera()` — before dereferencing.
+- `UIContext` carries `scene` and `config` (injected by `Editor::UpdateUIContext()`),
+  each a typed pointer declared by forward declaration — `ctx.scene` (`const Scene*`)
+  and the render settings read through `ctx.Settings()`, which never returns null
+  (it falls back to `RenderConfig`'s own in-class defaults, so no panel restates a
+  default literal). `scene` must still be checked — `ctx.HasScene()` — before
+  dereferencing. There is no `camera` and neither overlay payload: those are
+  `RenderContext`'s, and no panel reads them.
 - `UIContext` also carries three typed pointers of its own, each forward-declared in
   `UIContext.h`: `const FrameProfile* profile` (the profile returned by
   `DeferredRenderer::DrawFrame()`), `const LogBuffer* log` and

@@ -106,7 +106,7 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 
 	// Settings() is never null and resolves to RenderConfig's own in-class
 	// defaults, so the three tuning values below carry no literal of their own.
-	const RenderConfig& cfg = ctx.snapshot.Settings();
+	const RenderConfig& cfg = ctx.Settings();
 
 	WriteDescriptors(fi, extent, cache);
 

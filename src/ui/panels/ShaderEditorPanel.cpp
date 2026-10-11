@@ -292,7 +292,7 @@ void ShaderEditorPanel::Retranslate()
 
 void ShaderEditorPanel::Refresh(const UIContext& ctx)
 {
-	const auto* scene = ctx.snapshot.scene;
+	const auto* scene = ctx.scene;
 	if (!scene)
 	{
 		setShowEmptyState(true);

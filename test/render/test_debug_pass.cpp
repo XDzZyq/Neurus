@@ -36,7 +36,7 @@
 #include "render/passes/DebugPass.h"
 #include "render/resources/MeshGPU.h"
 #include "scene/Camera.h"
-#include "scene/DebugDrawList.h"
+#include "render/overlay/DebugDrawList.h"
 #include "scene/Scene.h"
 
 #include <glm/glm.hpp>
@@ -134,9 +134,9 @@ protected:
 		ctx.width = kRes;
 		ctx.height = kRes;
 		ctx.frameIndex = 0;
-		ctx.snapshot.config = &m_config;
-		ctx.snapshot.scene = &m_scene;
-		ctx.snapshot.debugDraw = &list;
+		ctx.config = &m_config;
+		ctx.scene = &m_scene;
+		ctx.debugDraw = &list;
 
 		// The pass uploads nothing: the camera UBO and the two debug SSBOs belong to
 		// RenderCache, and DeferredRenderer::recordFrame() writes them once per frame

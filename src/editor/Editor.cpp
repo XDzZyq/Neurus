@@ -421,12 +421,11 @@ Scene& Editor::GetScene()
 }
 
 // =========================================================================
-// GetContext — the one producer of a SceneContext in production
+// UpdateRenderContext / UpdateUIContext — the one producer of both views
 // =========================================================================
 
-SceneContext Editor::GetContext() const
+void Editor::UpdateRenderContext(RenderContext& ctx) const
 {
-	SceneContext ctx;
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 
@@ -448,7 +447,24 @@ SceneContext Editor::GetContext() const
 	// than no list (GizmoDrawBuilder's "empty, never null" contract), and GizmoPass
 	// early-outs on an empty payload.
 	ctx.gizmoDraw = &m_viewport.GizmoList();
-	return ctx;
+
+	// The renderer half of the context — width, height, frameIndex, jitter and
+	// iteration — is deliberately NOT written here. Those come from the swapchain,
+	// the frame-slot ring and DeferredRenderer's own counters, and recordFrame
+	// stamps them into a local copy. The Editor publishes what is rendered; the
+	// renderer stamps which frame.
+}
+
+void Editor::UpdateUIContext(UIContext& ctx) const
+{
+	// Fields only — never a call into a UIContext method. UpdateUIContext is
+	// compiled into neurus_editor, which links Qt6::Core but not neurus_ui (that
+	// library links *this* one), so referencing a UIContext symbol defined in
+	// neurus_ui would leave an undefined reference here. UIContext is Qt-free and
+	// its two Editor-owned members are plain pointers, so assignment is the whole
+	// job; anything needing more belongs in the Application's half.
+	ctx.scene = m_scene.get();
+	ctx.config = &m_config;
 }
 
 // =========================================================================

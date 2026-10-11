@@ -36,14 +36,17 @@
  * are drawn before points so the pivot dot sits above the axis line rather than
  * under it.
  *
- * Layer placement: the Vulkan-free scene layer, like DebugDrawList.h, so the
- * editor may write it and the renderer may read it without either including the
- * other. SceneContext forward-declares it.
+ * Layer placement: `render/overlay/`, beside DebugDrawList.h and the shared
+ * records, and beside the GizmoPass/GizmoCache pair that consumes it. It is
+ * written from the editor (GizmoDrawBuilder) through RenderContext::gizmoDraw —
+ * the editor may include render, never the reverse. The gizmo being editor
+ * interaction state rather than scene data is exactly why it does *not* live in
+ * `scene/` alongside Camera and Light.
  */
 
 #pragma once
 
-#include "scene/OverlayGeometry.h"
+#include "render/overlay/OverlayGeometry.h"
 
 #include <vector>
 
@@ -54,8 +57,8 @@ namespace neurus
  * @brief Everything the transform gizmo pass draws this frame.
  *
  * Produced by the editor-side gizmo while a modal gesture is active and published
- * through SceneContext::gizmoDraw. Unlike debugDraw, the pointer is published
- * **unconditionally** (Editor::GetContext()): interaction feedback is not a debug
+ * through RenderContext::gizmoDraw. Unlike debugDraw, the pointer is published
+ * **unconditionally** (Editor::UpdateRenderContext()): interaction feedback is not a debug
  * visualization the user may hide, so with nothing armed the builder yields a
  * cleared list rather than no list, and GizmoPass early-outs on Empty().
  */

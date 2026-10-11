@@ -80,7 +80,7 @@ public:
 	 *   3. Transitions G-Buffer Position to ColorShaderRead.
 	 *   4. Transitions the shadow cubemap to DepthShaderRead.
 	 *   5. Transitions ShadowIntensity to ShaderWrite.
-	 *   6. Looks up the light world position from ctx.snapshot.scene->light_list.
+	 *   6. Looks up the light world position from ctx.scene->light_list.
 	 *   7. Binds cubemap pipeline, descriptor set, push constants (24 bytes).
 	 *   8. Dispatches ceil(width/16) x ceil(height/16) x 1 thread groups.
 	 *
@@ -92,9 +92,9 @@ public:
 	 *
 	 *   Finally transitions ShadowIntensity to ColorShaderRead for lighting pass.
 	 *
-	 * Early-returns when !ctx.snapshot.HasScene() — the same predicate, in the
+	 * Early-returns when !ctx.HasScene() — the same predicate, in the
 	 * same position, as the other four scene-reading passes. Shadow bias and the
-	 * accumulation alpha mode come from ctx.snapshot.Settings(), so this pass
+	 * accumulation alpha mode come from ctx.Settings(), so this pass
 	 * restates no RenderConfig default of its own.
 	 *
 	 * @param cmdBuf  Command buffer in recording state.

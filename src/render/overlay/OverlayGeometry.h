@@ -28,9 +28,13 @@
  * mat4 multiply into that pass costs almost nothing and removes a whole SSBO,
  * descriptor binding and indirection from the GPU side.
  *
- * Layer placement: the Vulkan-free scene layer, like SceneContext.h, so the
- * editor may write these records and the renderer may read them without either
- * including the other.
+ * Layer placement: the Vulkan-free render tier (`render/overlay/`), which is where
+ * this header's readers live — the two payload containers beside it, the two
+ * passes that draw them, and the two caches that upload them. It is nonetheless
+ * *authored* by the editor: DebugDrawBuilder and GizmoDrawBuilder write these
+ * records, and editor may include render (never the reverse). Records are
+ * framework-free by construction — glm and <cstdint> only, no Vulkan type — which
+ * is what lets the editor fill them without linking a GPU library.
  */
 
 #pragma once

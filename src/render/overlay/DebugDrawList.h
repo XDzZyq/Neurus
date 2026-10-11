@@ -13,7 +13,7 @@
  *   selection bounds — retained objects mutated on events)     ─┘
  *
  * The Editor flattens those objects into this list and publishes it through
- * SceneContext::debugDraw; DebugPass copies the vectors into shader-readable
+ * RenderContext::debugDraw; DebugPass copies the vectors into shader-readable
  * buffers and issues one draw per primitive kind.
  *
  * Because the producers are stateful, the list only changes when one of them
@@ -21,9 +21,11 @@
  * it against the value it last uploaded and skip the copy entirely on the frames
  * — the overwhelming majority — where nothing moved.
  *
- * Layer placement: this header lives in the Vulkan-free scene layer (like
- * SceneContext) so the editor may write it and the renderer may read it
- * without either including the other.
+ * Layer placement: `render/overlay/`, beside GizmoDrawList.h and the records they
+ * share, and beside the DebugPass/DebugCache pair that consumes it. It is written
+ * from the editor (DebugDrawBuilder) through RenderContext::debugDraw — the editor
+ * may include render, so the payload lives on the renderer's side of the seam
+ * rather than in `scene/`, which is now reserved for scene data alone.
  *
  * GPU layout contract: the vertex records themselves live in OverlayGeometry.h,
  * because the modal transform gizmo draws with the same records and the same
@@ -39,7 +41,7 @@
 
 #pragma once
 
-#include "scene/OverlayGeometry.h"
+#include "render/overlay/OverlayGeometry.h"
 
 #include <glm/glm.hpp>
 

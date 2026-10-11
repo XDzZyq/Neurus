@@ -206,8 +206,8 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 {
 	PassStats stats{};
 
-	// --- The frame's scene, or nothing to draw (SceneContext's null policy) ---
-	const Scene* scene = ctx.snapshot.scene;
+	// --- The frame's scene, or nothing to draw (RenderContext's null policy) ---
+	const Scene* scene = ctx.scene;
 
 	// --- Extract per-frame context ---
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
@@ -262,7 +262,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	cmdBuf.setScissor(0, scissor);
 
 	// --- 5. Draw each mesh with optional per-mesh shader pipeline ---
-	if (ctx.snapshot.HasScene())
+	if (ctx.HasScene())
 	{
 		for (const auto& [id, mesh] : scene->mesh_list)
 		{

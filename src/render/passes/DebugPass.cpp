@@ -12,7 +12,7 @@
 #include "core/Log.h"
 
 #include "../resources/MeshGPU.h"
-#include "scene/DebugDrawList.h"
+#include "render/overlay/DebugDrawList.h"
 
 #include <algorithm>
 #include <array>
@@ -224,7 +224,7 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 
 	// --- 1. Nothing to draw: touch no image, so every state the upstream pass left
 	//        behind stays valid, including the layout the blit expects ---
-	const DebugDrawList* list = ctx.snapshot.debugDraw;
+	const DebugDrawList* list = ctx.debugDraw;
 	if (!list || list->Empty())
 	{
 		return stats;

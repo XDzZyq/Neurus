@@ -169,8 +169,8 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
-	// --- Read gamma from config (Settings() is never null — see SceneContext.h) ---
-	const float gamma = ctx.snapshot.Settings().r_gamma;
+	// --- Read gamma from config (Settings() is never null — see RenderContext.h) ---
+	const float gamma = ctx.Settings().r_gamma;
 
 	// --- 1. Write descriptor set for this frame slot ---
 	WriteDescriptors(frameIndex, renderExtent, cache);

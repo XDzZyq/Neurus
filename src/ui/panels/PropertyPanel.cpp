@@ -123,7 +123,7 @@ void PropertyPanel::BuildHeader()
 
 void PropertyPanel::Refresh(const UIContext& ctx)
 {
-	const Scene* scene = ctx.snapshot.scene;
+	const Scene* scene = ctx.scene;
 	if (!scene)
 	{
 		SetEnabled(false);

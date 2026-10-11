@@ -9,7 +9,7 @@
  *
  *   Scene (dLine_list / dPoints_list / dMesh_list)
  *        -> DebugDrawBuilder::Rebuild()
- *        -> DebugDrawList  (published via SceneContext::debugDraw)
+ *        -> DebugDrawList  (published via RenderContext::debugDraw)
  *
  * Because the producers are stateful, rebuilding is driven by the existing
  * "something visible changed" broadcast (RenderResetEvent) rather than by a
@@ -17,15 +17,18 @@
  * from Edit(), where a clean builder returns immediately. Exactly one Touch()
  * per rebuild lets DebugPass skip the GPU copy on every unchanged frame.
  *
- * Layer placement: editor layer. It reads the Vulkan-free scene layer and
- * writes the Vulkan-free DebugDrawList; it knows nothing about the renderer.
+ * Layer placement: editor layer. It reads the Vulkan-free scene layer and writes
+ * DebugDrawList, which lives in `render/overlay/` because the renderer is its
+ * consumer — the editor may include render, never the reverse. It knows nothing
+ * about the renderer beyond that type, and takes no RenderCache, pipeline or
+ * device.
  */
 
 #pragma once
 
 #include <vector>
 
-#include "scene/DebugDrawList.h"
+#include "render/overlay/DebugDrawList.h"
 
 namespace neurus
 {
@@ -71,7 +74,7 @@ public:
 	 */
 	void Rebuild(const Scene& scene);
 
-	/** @brief Returns the flattened list for publication through SceneContext. */
+	/** @brief Returns the flattened list for publication through RenderContext. */
 	const DebugDrawList& List() const { return m_list; }
 
 	/** @brief Returns true if a rebuild is pending. */

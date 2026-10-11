@@ -25,7 +25,7 @@ Point Light (point source). Mapping the pipeline revealed these touchpoints:
 | Layer | Point Light | Sun Light |
 |-------|------------|-----------|
 | Scene | `PointLight` struct | `SunLight` struct |
-| LightingCache | `PointLightStruct` SSBO | `SunLightStruct` SSBO (passes walk `ctx.snapshot.scene->light_list`) |
+| LightingCache | `PointLightStruct` SSBO | `SunLightStruct` SSBO (passes walk `ctx.scene->light_list`) |
 | RenderCache | Cubemap shadow map (6-layer 2D_ARRAY, 1024x1024) | 2D orthographic shadow map (2048x2048) |
 | ShadowDepthPass | 6-face cubemap geometry pass | Single-view 2D orthographic pass |
 | ShadowIntensityPass | `samplerCubeShadow` + direction-based PCF | `sampler2DShadow` + ortho depth PCF |
@@ -59,8 +59,8 @@ and can be done in parallel:
   `shade_sun_light.glsl`.
 - **LightingCache**: Add the `SunLightStruct` SSBO and its `UpdateSunLights()`
   writer. Nothing goes into `RenderContext` — it carries only `width`, `height`,
-  `frameIndex`, the `SceneContext snapshot`, `jitter` and `iteration`, and passes
-  reach the lights through `ctx.snapshot.scene->light_list`.
+  `frameIndex`, the `RenderContext`, `jitter` and `iteration`, and passes
+  reach the lights through `ctx.scene->light_list`.
 - **RenderCache**: Add `GetShadowMap(lightUID, LightType::SUNLIGHT)` support for
   2D orthographic depth maps at 2048×2048 resolution. Extend
   `GetShadowIntensityLayer(lightUID, extent)` to assign layers to sun lights.

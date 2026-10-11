@@ -507,20 +507,20 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     if (app_renderer && app_editor)
 	                     {
 	                         app_editor->Edit();  // Process all enqueued events (camera, etc.)
-	                         // The Application assembles both contexts from the Editor's
-	                         // shared state; the Editor never builds a RenderContext or
-	                         // UIContext itself. DrawFrame returns the per-frame profile,
-	                         // which the UIContext carries to the panels.
-	                         const neurus::SceneContext snapshot = app_editor->GetContext();
 
+	                         // The Editor fills both frame views (Renderer <- Editor -> UI);
+	                         // the Application only supplies what the Editor does not own —
+	                         // the render profile and the service-backed log/history
+	                         // pointers. DrawFrame stamps the renderer's own half (extent,
+	                         // frame index, jitter, iteration) into a local copy of rctx.
 	                         neurus::RenderContext rctx;
-	                         rctx.snapshot = snapshot;
+	                         app_editor->UpdateRenderContext(rctx);
 	                         auto profile = app_renderer->DrawFrame(rctx);
 
 	                         const neurus::HistoryView history = app_editor->GetHistory();
 
 	                         neurus::UIContext ctx;
-	                         ctx.snapshot = snapshot;
+	                         app_editor->UpdateUIContext(ctx);
 	                         ctx.profile = &profile;
 	                         ctx.log = &neurus::LogBuffer::instance();
 	                         ctx.history = &history;

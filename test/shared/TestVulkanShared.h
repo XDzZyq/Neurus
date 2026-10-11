@@ -20,7 +20,7 @@
 #include "render/UploadManager.h"
 #include "render/passes/GeometryPass.h"
 #include "scene/Camera.h"
-#include "scene/SceneContext.h"
+#include "render/RenderContext.h"
 #include "scene/Scene.h"
 
 #include <array>
@@ -247,27 +247,27 @@ protected:
 	 *
 	 * Does both halves of what DeferredRenderer::recordFrame() does with the
 	 * camera: fills RenderCache's shared UBO *and* injects the camera into the
-	 * SceneContext, which is where every pass now reads the viewing camera from
+	 * RenderContext, which is where every pass now reads the viewing camera from
 	 * (LightingPass, SSAOPass, ShadowDepthPass, ShadowIntensityPass). Publishing
 	 * only the UBO would leave those four passes skipping their work.
 	 *
 	 * Takes the context by non-const reference for that reason — the real frame
-	 * driver writes `editor.camera` too, and a test standing in for it must.
+	 * driver writes the same field too, and a test standing in for it must.
 	 * No-op when no scene is attached.
 	 *
 	 * Call it **before the first pass records**, exactly where recordFrame() puts
 	 * it, and not merely before the pass that reads the camera. Ordering is now
 	 * load-bearing in a way it was not when passes reached into the Scene
 	 * themselves: ShadowDepthPass skips its whole sun cascade when
-	 * `snapshot.camera` is null, and a later publication cannot retroactively
+	 * `camera` is null, and a later publication cannot retroactively
 	 * fill a shadow map that was never rendered.
 	 */
 	static void PublishSceneCamera(neurus::RenderCache& cache,
-	                               neurus::SceneContext& snapshot)
+	                               neurus::RenderContext& ctx)
 	{
-		if (const neurus::Scene* scene = snapshot.scene)
+		if (const neurus::Scene* scene = ctx.scene)
 		{
-			snapshot.camera = scene->GetActiveCamera();
+			ctx.camera = scene->GetActiveCamera();
 			PublishSceneCamera(cache, *scene);
 		}
 	}
@@ -283,12 +283,12 @@ protected:
 	 * report a mismatch that is really a change of input.
 	 *
 	 * Publishing explicitly is the point: it puts the test on the same footing as
-	 * production, where `Editor::GetContext()` always publishes `m_config`, and it
+	 * production, where `Editor::UpdateRenderContext()` always publishes `m_config`, and it
 	 * stops a pass's null-config fallback from being load-bearing for a reference
 	 * image. A suite that wants different settings sets them on the returned value.
 	 *
 	 * Returned by value, so the caller must keep it alive for as long as the
-	 * snapshot borrows it — `SceneContext::config` is frame-scoped, not owning.
+	 * context borrows it — `RenderContext::config` is frame-scoped, not owning.
 	 */
 	static neurus::RenderConfig ShadowReferenceConfig()
 	{

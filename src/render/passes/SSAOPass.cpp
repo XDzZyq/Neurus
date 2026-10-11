@@ -340,10 +340,10 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 		// The viewing camera comes from the context, not from the Scene: the Editor
 		// injects whichever camera the frame is being rendered through. See the
 		// fuller note in LightingPass::Record().
-		const Camera* cam = ctx.snapshot.camera;
+		const Camera* cam = ctx.camera;
 		if (!cam)
 		{
-			NEURUS_LOG("[SSAOPass] No camera in SceneContext, skipping");
+			NEURUS_LOG("[SSAOPass] No camera in RenderContext, skipping");
 			return stats;
 		}
 		const glm::mat4 viewProj = cam->GetProjectionMatrix() * cam->GetViewMatrix();

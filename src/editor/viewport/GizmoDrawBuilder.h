@@ -47,12 +47,15 @@
  * on Empty() is what ends the frame. Nothing downstream has to distinguish null
  * from empty.
  *
- * Layer placement: editor, Vulkan-free and Qt-free.
+ * Layer placement: editor — Vulkan-free and Qt-free. It writes GizmoDrawList,
+ * which lives in `render/overlay/` beside its consumer (GizmoPass); the editor may
+ * include render, never the reverse. That the gizmo is editor interaction state
+ * rather than scene content is exactly why its payload is not in `scene/`.
  */
 
 #pragma once
 
-#include "scene/GizmoDrawList.h"
+#include "render/overlay/GizmoDrawList.h"
 
 namespace neurus
 {
@@ -92,7 +95,7 @@ public:
 	void Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp,
 	             const TransformSnapshot* live);
 
-	/// @brief This frame's guides. Published through SceneContext::gizmoDraw.
+	/// @brief This frame's guides. Published through RenderContext::gizmoDraw.
 	const GizmoDrawList& List() const { return m_list; }
 
 	bool IsDirty() const { return m_dirty; }
