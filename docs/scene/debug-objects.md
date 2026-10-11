@@ -7,7 +7,7 @@
 Viewport debug geometry is retained and stateful, matching the Qt widgets it sits next to. Something is drawn because an object exists and says so, never because a function was called this frame.
 
 - Each debug object is a first-class Scene object: it is pooled in the `ResourceManager`, serialized, selectable and undoable like any other object.
-- `DebugDrawBuilder` (owned by `EditorViewport`) is the single flattener: it walks the Scene's three debug pools into a `DebugDrawList` on a dirty flag, never per frame.
+- `DebugDrawBuilder` (owned by `EditorViewport`) is the single flattener: it walks the Scene's three debug pools into a `DebugDrawList` (the transport container in `render/overlay/DebugDrawList.h`) on a dirty flag, never per frame. The pools themselves stay scene data; only the flattened payload lives on the renderer's side of the seam.
 - Hiding a debug object means not flattening it. `DebugDrawList` has no per-primitive enable bit, so the builder drops objects whose `is_viewport && is_rendered` is false, before the x-ray partition is computed.
 - Smoothing is derived, never authored, and on by default: nothing stores a smooth bit. The builder decides it per primitive kind - a solid line and every cube edge get `DebugFlag::Smooth`; a stippled line does not (antialiasing would soften the hard ends a dash is made of); point sprites always do; a `DebugMesh` wireframe never does.
 
@@ -54,7 +54,7 @@ Upload of the flattened list is revision-gated: an unchanged list re-uses the bu
 
 `DebugPass` is the single consumer and runs last, after post-AA: it draws over the final shaded image with `LOAD_OP_LOAD` (the FXAA output when FXAA is on, the composed output when it is off), reads but never writes the G-Buffer depth, and flips `eDepthTestEnable` as dynamic state to serve x-ray. Segments and points are covered by four draws (two depth-tested, two x-ray) regardless of primitive count or authoring order, with the wireframe drawn separately; the overlay convention caps the pass at at most 6 draws per frame. Every debug primitive is already antialiased analytically, so handing FXAA the scene alone keeps both correct.
 
-The frame driver publishes; passes read. `DeferredRenderer::recordFrame()` writes the `RenderCache`'s camera and debug/gizmo caches once per frame before any pass records, and `DebugPass` only binds them. A test driving a pass directly stands in for that driver.
+The frame driver publishes; passes read. `DeferredRenderer::recordFrame()` writes the `RenderCache`'s camera and debug/gizmo caches once per frame before any pass records; `DebugPass` reads its payload from `RenderContext::debugDraw` and only binds the cache. A test driving a pass directly stands in for that driver.
 
 ## Serialization
 

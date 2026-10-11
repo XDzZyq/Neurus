@@ -82,7 +82,7 @@ code across test files:
 | `MakeTestCamera(w, h)` | `static CameraUBOData` | Creates a default 60 deg FOV camera at `(0,0,2)` looking at origin with given aspect ratio |
 | `TestTriangle()` | `static pair<vector<TestVertex>, vector<uint32_t>>` | Returns a 3-vertex triangle (XY plane, facing +Z) + 3 indices, suitable for quick geometry tests |
 | `ReadbackHdrOutput(device, pd, queue, qfi, am, w, h)` | `static vector<float>` | Reads back HDRColor RGBA16F attachment to CPU; handles layout transition, staging copy, and half->float conversion |
-| `PublishSceneCamera(cache, scene)` / `(cache, sceneContext)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, standing in for `DeferredRenderer::recordFrame()`. No-op when no scene camera is activated - which is the default, so activate one (see below) |
+| `PublishSceneCamera(cache, scene)` / `(cache, ctx)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`; the `RenderContext&` overload also injects `ctx.camera` from the scene's active camera, which is where every pass now reads the viewing camera. Both stand in for `DeferredRenderer::recordFrame()`. No-op when no scene camera is activated - which is the default, so activate one (see below) |
 
 All helpers are defined in `test/shared/TestVulkanShared.h`. Tests that need a
 helper not yet available should add it to the shared header rather than
@@ -99,14 +99,20 @@ A test that drives a pass directly *is* the frame driver, so it must publish
 first:
 
 ```cpp
-VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx.snapshot);
+VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx);
 m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 ```
 
 Forget it and the pass records nothing - no validation error, just an empty
-attachment and a reference-image diff that points nowhere near the cause.
-`LightingPass` and `SSAOPass` read the `Camera` out of the context directly and
-need no publish.
+attachment and a reference-image diff that points nowhere near the cause. The
+`RenderContext&` overload fills the shared `CameraGPU` **and** injects
+`ctx.camera` from the scene's active camera, because `LightingPass`, `SSAOPass`,
+`ShadowDepthPass` and `ShadowIntensityPass` read the viewing camera out of the
+context; a UBO-only publish would leave all four skipping their work. Call it
+exactly where `recordFrame()` does - before the first pass records - since
+ordering is load-bearing: `ShadowDepthPass` skips its whole sun cascade when
+`camera` is null and a later publish cannot fill a shadow map that was never
+rendered.
 
 **A scene camera has to be activated first.** `PublishSceneCamera` reads
 `Scene::GetActiveCamera()`, and **no camera is activated by default** - in the
@@ -114,7 +120,7 @@ app the viewport looks through the viewport's own camera, so "none" is the norma
 state rather than a failure. A test that builds a scene with `UseCamera()` and
 stops there publishes nothing, and
 `LightingPass`/`SSAOPass`/`ShadowDepthPass`/`ShadowIntensityPass` see a null
-`ctx.snapshot.camera` and skip their work: a blank or shadowless reference image,
+`ctx.camera` and skip their work: a blank or shadowless reference image,
 not a crash. So pair every `UseCamera()` in a render test with
 `scene.ActivateCamera(cam->GetObjectID())` (the shared shadow builders in
 `test/shared/TestSimpleShadow.h` and `TestMultiShadow.h` already do).
@@ -421,6 +427,15 @@ make check FILTER="-E DeferredShading|Lighting|Screenshot|ModelRender|Texture"
 build/Debug/neurus_test --gtest_filter="DeferredShadingTest.*"
 ```
 
+`make check` resolves the single-config `build/debug` tree whenever it exists and
+falls back to the multi-config `build/` tree otherwise, running `ctest` in
+whichever it selected. On a case-insensitive filesystem `build/Debug` and
+`build/debug` are the same directory while `build/CTestTestfile.cmake` is a
+separate, older list, so a bare `ctest -C Debug` from `build/` could report stale
+results; resolving `build/debug` first avoids that. CI is unaffected - it
+configures a fresh multi-config tree and still passes `-C` to select a
+configuration.
+
 **Filtering test output.** Coupled test output can be hard to parse. Use these
 patterns to pinpoint failures:
 
@@ -689,7 +704,7 @@ GPU tests:
   m_cache = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
   m_pass  = std::make_unique<DebugPass>(*m_device, PhysicalDevice(), 2);
   // Prime: clearColorImage(black) + clearDepthStencilImage(depth) via TransferDst
-  // Run:   RenderContext ctx; ctx.snapshot.{config,scene,debugDraw} = ...;
+  // Run:   RenderContext ctx; ctx.{config,scene,debugDraw} = ...;
   //        m_pass->Record(*BeginCmd(), *m_cache, ctx); EndSubmitWait(c);
   ```
 
@@ -742,7 +757,7 @@ GPU tests:
   and asserts the line is drawn. A regression that quietly attached the G-Buffer
   depth fails exactly this test and nothing else, and the missing flag is what
   stops it from being the x-ray path under another name. **Null and empty are
-  different code paths, so test both.** A *null* `ctx.snapshot.gizmoDraw` is the
+  different code paths, so test both.** A *null* `ctx.gizmoDraw` is the
   real "no gesture in progress" signal and must cost nothing: the test asserts
   `GizmoCache::GetFrameCount() == 0`, which is stronger than a pixel count
   because the cache allocates its first ring slot inside `Update()`. An *empty*

@@ -45,7 +45,7 @@ Main thread only for the current version. In future the renderer may run on a de
 - `src/render/Image.h/cpp` - GPU image with `ImageState` tracking (including `Invalid`) and mipmap generation.
 - `src/render/Barrier.h/cpp` - centralized image barrier management (`ImageState` to Vulkan layout/stage/access).
 - `src/core/RenderConfig.h` - user-settable render config: algorithms, quality params, shadow bias.
-- `src/render/RenderContext.h` - per-frame immutable scene snapshot; embeds the `SceneContext snapshot` (all typed pointers).
+- `src/render/RenderContext.h` - the renderer's per-frame view (Vulkan-free, all typed pointers), with two writers: the Editor publishes the semantic half (`scene`, `config`, `camera`, `debugDraw`, `gizmoDraw`) and `DeferredRenderer::recordFrame()` stamps the frame half (`width`, `height`, `frameIndex`, `jitter`, `iteration`). `Settings()` lives here and falls back to `DefaultRenderConfig()` (`src/core/RenderConfig.h`).
 - `src/render/ProfilingData.h` - Vulkan-free profiling POD (`PassProfile`, `FrameProfile`).
 - `src/render/GPUProfiler.h/cpp` - GPU timestamp query pool (per-frame, per-pass).
 - `src/render/shaders/` - see [Shaders](shaders.md).
@@ -89,7 +89,7 @@ For the current pass-by-pass structure, see [Passes](passes.md). For shader and 
 
 ## Renderer preconditions
 
-- `DeferredRenderer` assumes `ctx.snapshot.camera` is non-null. The Editor's viewport camera (`EnsureCamera` / `SyncCamera`) keeps it populated; the renderer only enforces the precondition, it does not synthesise a camera.
+- `DeferredRenderer` assumes `ctx.camera` is non-null. The Editor's viewport camera (`EnsureCamera` / `SyncCamera`) keeps it populated; the renderer only enforces the precondition, it does not synthesise a camera.
 
 ## Vulkan-HPP RAII conventions
 

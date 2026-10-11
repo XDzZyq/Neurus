@@ -38,7 +38,7 @@ overlay dirty flags) are the Editor's alone, which is why controllers receive a
 
 ## The view camera
 
-Every view-projection pass reads `ctx.snapshot.camera`
+Every view-projection pass reads `ctx.camera`
 (`ShadowDepthPass`, `ShadowIntensityPass`, `SSAOPass`, `LightingPass`, plus
 `GeometryPass` through the shared `CameraGPU`), and no pass reads the Scene.
 `EditorViewport` decides what that pointer is, in `SyncCamera(Scene&)`:
@@ -52,7 +52,7 @@ EditorViewport::GetCamera()  =  p_camera   // published, never recomputed
 
 The Editor owns no camera and exposes no camera API. It holds the viewport
 (`GetViewport()`) and contributes only the timing: `Editor::Edit()` calls
-`SyncCamera(GetScene())`, and `SceneContext::camera` is filled from
+`SyncCamera(GetScene())`, and `RenderContext::camera` is filled from
 `GetViewport().GetCamera()`. Everything about which camera the frame belongs to,
 how it is framed, and how long it lives is the viewport's business. That is also
 why `GetCamera()` is a published pointer rather than a fresh choice per call: the

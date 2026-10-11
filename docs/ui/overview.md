@@ -127,15 +127,15 @@ All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
 
 See [Panels](panels.md) for each panel, and [Items](items.md), [Models](models.md) and [i18n](i18n.md) for the shared building blocks.
 
-`UIContext` embeds a `SceneContext snapshot` (from `Editor::GetContext()`) whose every member is a typed pointer declared by forward declaration - `snapshot.scene` (`const Scene*`), `snapshot.camera` (`const Camera*`), the two overlay draw lists, and the render settings read through `snapshot.Settings()`, which never returns null (it falls back to `RenderConfig`'s own in-class defaults, so no panel restates a default literal). `scene` and `camera` must still be checked - `snapshot.HasScene()` / `HasCamera()` - before dereferencing.
+`UIContext` is the UI's view of the frame, two fields wide: `scene` (`const Scene*`) and `config` (`const RenderConfig*`), both filled by `Editor::UpdateUIContext()` and both plain forward-declared pointers. It deliberately carries no camera and no overlay draw list - a panel has no business naming either - so the UI's view is a property of the type rather than a convention. The render settings are read through `Settings()`, which never returns null: it falls back to `core/RenderConfig.h`'s `DefaultRenderConfig()`, the same single fallback `RenderContext::Settings()` applies, so a panel and a pass cannot disagree about an unset value. `scene` must still be checked - `HasScene()` - before dereferencing.
 
-`UIContext` also carries three typed pointers of its own, each forward-declared in `UIContext.h`: `const FrameProfile* profile` (the profile returned by `DeferredRenderer::DrawFrame()`), `const LogBuffer* log` and `const HistoryView* history`. The Application assembles the `UIContext` each frame (the Editor never produces it) and the `ProfilingPanel` reads `profile` directly to render a real-time per-pass tree. All three are null in a default-constructed `UIContext` - what a widget test builds - so a panel checks before dereferencing.
+`UIContext` also carries three typed pointers, each forward-declared in `UIContext.h`, as the Application's half: `const FrameProfile* profile` (the profile returned by `DeferredRenderer::DrawFrame()`), `const LogBuffer* log` and `const HistoryView* history`. The Editor fills `scene` and `config` through `Editor::UpdateUIContext()`; the Application adds these three each frame, and the `ProfilingPanel` reads `profile` directly to render a real-time per-pass tree. All three are null in a default-constructed `UIContext` - what a widget test builds - so a panel checks before dereferencing.
 
 ## Refresh pipeline
 
-1. The Application assembles a `UIContext` from `Editor::GetContext()` plus the profile returned by the renderer.
+1. The Editor fills the document half of a `UIContext` (`scene`, `config`) through `Editor::UpdateUIContext()`; the Application adds the frame-scoped half (profile, log, history).
 2. `UIManager::Refresh(ctx)` runs after the renderer draws, caching undo/redo labels and iterating the panel registry.
-3. Each `UIPanel::Refresh(ctx)` extracts the data it needs (RenderConfig, Scene snapshot, profile, log) and updates its widgets.
+3. Each `UIPanel::Refresh(ctx)` extracts the data it needs (RenderConfig, Scene, profile, log) and updates its widgets.
 
 Widgets must dirty-check before applying a value, so a per-frame push never fights the control the user is editing. See the [Items](items.md) and [Models](models.md) conventions.
 
