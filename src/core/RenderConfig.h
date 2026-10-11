@@ -6,12 +6,20 @@
  * and performance. These settings are read by the Renderer during pipeline
  * execution and can be toggled at runtime.
  *
- * Pure data class with query helpers - owned by the Editor (Editor::m_config).
- * Vulkan-free, so it lives in core/ and is read by multiple layers; it reaches
- * the render passes by value-embedded pointer in SceneContext, read through
- * SceneContext::Settings().
+ * Architecture:
+ * - Pure data class with query helpers — owned by the Editor (`Editor::m_config`).
+ * - Lives in `src/core/` rather than `src/render/` because it is Vulkan-free and
+ *   is read by four layers (asset, editor, render, UI). A type's directory names
+ *   its dependency layer, not its owner — as `Camera` and `Mesh` live in
+ *   `src/scene/` while the Editor owns them. `src/core/` is the only genuine leaf:
+ *   it has no dependency on `src/render/`, and this type's only project
+ *   dependency is `core/Serialize.h`.
+ * - Reaches the render passes by value-embedded pointer in `RenderContext`
+ *   (`src/render/RenderContext.h`), read through `RenderContext::Settings()`.
+ * - Changes take effect on the next RecordCommandBuffer / DrawFrame() call.
  *
- * @note This is NOT a per-frame struct - it persists across frames.
+ * @note This is NOT a per-frame struct — it persists across frames and is
+ *       read by the renderer at the start of each frame.
  */
 
 #pragma once
@@ -61,7 +69,7 @@ enum class ShadowAlg : char
 {
 	None,          ///< No shadows
 	ShadowMapping, ///< Standard shadow mapping (current implementation)
-	SDFSoftShadow, ///< SDF-based soft shadows
+	SDFSoftShadow, ///< SDF-based soft shadows (planned)
 	VSSM           ///< Variance soft shadow mapping
 };
 
@@ -79,8 +87,16 @@ enum class SSRAlg : char
 /**
  * @brief Rendering configuration container for pipeline and algorithm settings.
  *
- * Provides the algorithm-selection enums and the quality parameters the
- * renderer queries to configure the pipeline dynamically.
+ * RenderConfig provides enums for algorithm selection and parameters for
+ * quality tuning. The Renderer queries these settings to configure the
+ * rendering pipeline dynamically.
+ *
+ * Key Features:
+ * - Pipeline selection (Forward, Deferred)
+ * - Anti-aliasing (None, MSAA planned, FXAA planned)
+ * - Ambient occlusion (SSAO)
+ * - Shadow algorithms (shadow mapping)
+ * - Screen-space reflections (planned)
  */
 class RenderConfig
 {
@@ -106,9 +122,10 @@ public:
 	/**
 	 * @brief Master switch for the viewport debug/gizmo overlay.
 	 *
-	 * Gates publication, not pipeline topology: when false the Editor
-	 * publishes a null SceneContext::debugDraw and the pass returns before
-	 * touching any image, so toggling this costs no graph rebuild.
+	 * Gates publication, not pipeline topology: when false the Editor publishes a
+	 * null RenderContext::debugDraw and DebugPass returns before touching any
+	 * image, so the pass stays in the RenderGraph unconditionally and toggling
+	 * this costs no graph rebuild.
 	 */
 	bool    r_debug_draw  = true;
 
@@ -128,10 +145,17 @@ public:
 	/**
 	 * @brief Serializes every setting, each one independently optional.
 	 *
-	 * No render setting is load-bearing for identity, so none is worth failing
-	 * a load over: a key this build does not find keeps the member at its
-	 * in-class default and the settings around it still load. The defaults
-	 * live only in the member initializers above, so they cannot drift.
+	 * No render setting is load-bearing for identity, so none of them is worth
+	 * failing a load over: a key this build does not find keeps the member at its
+	 * in-class default and the settings around it still load. That is what stops
+	 * `ConfigComponent::Load` from discarding the user's gamma, AO and shadow
+	 * options because one unrelated field was renamed between two builds.
+	 *
+	 * The defaults live only in the member initializers above — nothing here
+	 * restates them, so they cannot drift. The contract that makes that work is
+	 * `archive::LoadFresh`, which `ConfigComponent::Load` reads through: the
+	 * object being filled is default-constructed, so "absent" means "default"
+	 * rather than "whatever the running session happened to have".
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
@@ -170,6 +194,30 @@ public:
 	/** @brief Returns true if the viewport debug/gizmo overlay should be drawn. */
 	bool RequiresDebugDraw() const { return r_debug_draw; }
 };
+
+/**
+ * @brief The immutable defaults a null RenderConfig resolves to.
+ *
+ * The one place a missing config is answered. Both carriers of a config pointer
+ * — `RenderContext` (renderer-facing) and `UIContext` (UI-facing) — return this
+ * from their own `Settings()`, so the fallback is written once here rather than
+ * as a `cfg ? cfg->x : <literal>` ternary at every reader.
+ *
+ * A function-local static, so it *is* these in-class member initializers rather
+ * than a second copy of them: adding or changing a default above changes this
+ * with no edit here. Const and immutable, so sharing one instance across frames
+ * and threads is safe.
+ *
+ * Why it matters: ShadowIntensityPass used to restate `r_shadow_bias` as
+ * 0.0005f against a declared 0.02f — a 40x divergence that lived in the tree.
+ * Anything that reads a setting must come through here or through a non-null
+ * pointer, so that class of drift has nowhere left to hide.
+ */
+inline const RenderConfig& DefaultRenderConfig()
+{
+	static const RenderConfig kDefaults{};
+	return kDefaults;
+}
 
 } // namespace neurus
 

@@ -41,7 +41,7 @@ Cross-layer traffic MUST go through exactly one of:
 
 - **UIEvents** (Qt Signals/Slots) for UI <-> Editor.
 - **EventQueue** (typed events) for Editor <-> Renderer.
-- **Context objects** (`SceneContext`, `RenderContext`, `UIContext`) for
+- **Context objects** (`RenderContext`, `UIContext`) for
   read-only data queries.
 
 Direct coupling across layers is forbidden. Controllers react to discrete typed
@@ -102,7 +102,7 @@ Stop and wait for user verification after each phase.
 | Encountered issues / pitfalls (symptom -> rule) | [lessons.instructions.md](.github/instructions/lessons.instructions.md) |
 | Git, branch, worktree and commit conventions | [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md) |
 | Agent roles, parallel lanes, racing prevention | [roles.instructions.md](.github/instructions/roles.instructions.md) |
-| Architecture, layers, data flow, ownership, coordinates | [docs/architecture/overview.md](docs/architecture/overview.md), [layers.md](docs/architecture/layers.md), [data-flow.md](docs/architecture/data-flow.md), [ownership.md](docs/architecture/ownership.md), [coordinate-system.md](docs/architecture/coordinate-system.md) |
+| Architecture, layers, data flow, ownership, coordinates | [docs/architecture/overview.md](docs/architecture/overview.md), [layers.md](docs/architecture/layers.md), [data-flow.md](docs/architecture/data-flow.md), [ownership.md](docs/architecture/ownership.md), [coordinate-system.md](docs/core/coordinate-system.md) |
 | Renderer: passes, graph, buffers, resources, shaders, temporal | [docs/render/overview.md](docs/render/overview.md) and its siblings |
 | Editor: viewport, controllers, events, operations, gizmo, overlays | [docs/editor/overview.md](docs/editor/overview.md) and its siblings |
 | UI: panels, items, models, i18n | [docs/ui/overview.md](docs/ui/overview.md) and its siblings |

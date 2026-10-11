@@ -2,8 +2,8 @@
  * @file test_null_scene_passes.cpp
  * @brief A frame recorded before a scene exists must record nothing, not crash.
  *
- * SceneContext's null policy says `scene` must be checked (see
- * scene/SceneContext.h). Two passes used to ignore that: LightingPass read
+ * RenderContext's null policy says `scene` must be checked (see
+ * render/RenderContext.h). Two passes used to ignore that: LightingPass read
  * `scene->light_list` / `env_list` and SelectionOutlinePass read
  * `scene->selections` with no guard at all, so any frame recorded before the
  * Editor published a scene dereferenced null. This file pins the fix.
@@ -40,7 +40,7 @@
 #include "render/passes/ShadowIntensityPass.h"
 
 #include "core/RenderConfig.h"
-#include "scene/SceneContext.h"
+
 
 #include <memory>
 
@@ -55,7 +55,7 @@ using namespace neurus;
  *
  * Deliberately publishes no scene, no camera and no config: a
  * default-constructed RenderContext is exactly the state the renderer is in on
- * the frames between construction and the Editor's first GetContext().
+ * the frames between construction and the Editor's first UpdateRenderContext().
  */
 class NullScenePassTest : public VulkanTestShared
 {
@@ -102,7 +102,7 @@ TEST_F(NullScenePassTest, LightingPassRecordsNothingWithoutAScene)
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	// Before the fix this dereferenced ctx.snapshot.scene for light_list.
+	// Before the fix this dereferenced ctx.scene for light_list.
 	stats = pass.Record(*cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
@@ -120,7 +120,7 @@ TEST_F(NullScenePassTest, SelectionOutlinePassRecordsNothingWithoutAScene)
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	// Before the fix this dereferenced ctx.snapshot.scene for selections.
+	// Before the fix this dereferenced ctx.scene for selections.
 	stats = pass.Record(*cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
@@ -185,28 +185,34 @@ TEST_F(NullScenePassTest, ShadowIntensityPassRecordsNothingWithoutAScene)
 // Settings(): the null-config half of the same policy
 // ---------------------------------------------------------------------------
 
-TEST(SceneContextSettings, FallsBackToRenderConfigsOwnDefaults)
+// The fallback now lives once, in core/RenderConfig.h's DefaultRenderConfig(),
+// and both contexts apply it — RenderContext for a pass, UIContext for a panel.
+// This is the pass-side half of the guard; test_ui_context.cpp pins the panel
+// side and the parity between them, which is the property the old
+// SceneContext::Settings() held before the two contexts replaced it.
+TEST(RenderContextSettings, FallsBackToRenderConfigsOwnDefaults)
 {
 	// Settings() is the one place a missing config is answered, and it answers
 	// with RenderConfig's in-class initializers rather than a second copy of
 	// them. ShadowIntensityPass used to restate r_shadow_bias as 0.0005f against
 	// a declared 0.02f — a 40x divergence that lived in the tree. This test is
 	// what makes that class of drift impossible to reintroduce silently.
-	const SceneContext empty{};
+	const RenderContext renderContext{};
 	const RenderConfig declared{};
 
-	EXPECT_EQ(&empty.Settings(), &empty.Settings())
+	EXPECT_EQ(&renderContext.Settings(), &renderContext.Settings())
 		<< "one shared instance, not a temporary per call";
 
-	EXPECT_FLOAT_EQ(empty.Settings().r_shadow_bias, declared.r_shadow_bias);
-	EXPECT_FLOAT_EQ(empty.Settings().r_gamma,       declared.r_gamma);
-	EXPECT_EQ(empty.Settings().r_sampling_mode,     declared.r_sampling_mode);
-	EXPECT_FLOAT_EQ(empty.Settings().r_fxaa_subpix, declared.r_fxaa_subpix);
+	EXPECT_FLOAT_EQ(renderContext.Settings().r_shadow_bias, declared.r_shadow_bias);
+	EXPECT_FLOAT_EQ(renderContext.Settings().r_gamma,       declared.r_gamma);
+	EXPECT_EQ(renderContext.Settings().r_sampling_mode,     declared.r_sampling_mode);
+	EXPECT_FLOAT_EQ(renderContext.Settings().r_fxaa_subpix, declared.r_fxaa_subpix);
 
 	// A published config wins, and is returned by reference, not copied.
 	RenderConfig mine{};
 	mine.r_shadow_bias = 0.1234f;
-	const SceneContext published{ .config = &mine };
+	RenderContext published{};
+	published.config = &mine;
 	EXPECT_EQ(&published.Settings(), &mine);
 	EXPECT_FLOAT_EQ(published.Settings().r_shadow_bias, 0.1234f);
 }

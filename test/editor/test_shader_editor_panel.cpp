@@ -118,7 +118,7 @@ protected:
 		m_scene.UseMesh(m_mesh);
 		m_scene.selections.Select(m_mesh.get(), /*increment=*/false);
 
-		m_uiContext.snapshot.scene = &m_scene;
+		m_uiContext.scene = &m_scene;
 
 		// Wire the panel exactly like Application::ConnectUIEvent: Qt signal
 		// -> EventQueue (deferred to the next Process()).

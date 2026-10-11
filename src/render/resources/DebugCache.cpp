@@ -5,7 +5,7 @@
 
 #include "DebugCache.h"
 
-#include "../../scene/DebugDrawList.h"
+#include "render/overlay/DebugDrawList.h"
 
 #include <algorithm>
 

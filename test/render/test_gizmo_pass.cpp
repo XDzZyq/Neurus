@@ -36,8 +36,8 @@
 #include "render/passes/GizmoPass.h"
 #include "render/resources/GizmoCache.h"
 #include "scene/Camera.h"
-#include "scene/GizmoDrawList.h"
-#include "scene/OverlayGeometry.h"
+#include "render/overlay/GizmoDrawList.h"
+#include "render/overlay/OverlayGeometry.h"
 #include "scene/Scene.h"
 
 #include <glm/glm.hpp>
@@ -156,9 +156,9 @@ protected:
 		ctx.width = kRes;
 		ctx.height = kRes;
 		ctx.frameIndex = 0;
-		ctx.snapshot.config = &m_config;
-		ctx.snapshot.scene = &m_scene;
-		ctx.snapshot.gizmoDraw = list;
+		ctx.config = &m_config;
+		ctx.scene = &m_scene;
+		ctx.gizmoDraw = list;
 
 		PublishSceneCamera(*m_cache, m_scene);
 		if (list) m_cache->UpdateGizmoDraw(ctx.frameIndex, *list);

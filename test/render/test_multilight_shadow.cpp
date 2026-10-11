@@ -160,9 +160,9 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	ctx.frameIndex   = 0;
 	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.snapshot.scene = shadowRes.scene.get();
+	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.snapshot.config = &config;
+	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Transition G-Buffer to renderable layouts
@@ -186,7 +186,7 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.snapshot);
+		PublishSceneCamera(*m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -260,9 +260,9 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.snapshot.scene = shadowRes.scene.get();
+	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.snapshot.config = &config;
+	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Transition + upload + record
@@ -277,7 +277,7 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.snapshot);
+		PublishSceneCamera(*m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -330,9 +330,9 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.snapshot.scene = shadowRes.scene.get();
+	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.snapshot.config = &config;
+	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Transition G-Buffer
@@ -346,7 +346,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.snapshot);
+		PublishSceneCamera(*m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -464,9 +464,9 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.snapshot.scene = shadowRes.scene.get();
+	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.snapshot.config = &config;
+	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Transition G-Buffer
@@ -487,7 +487,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.snapshot);
+		PublishSceneCamera(*m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -660,9 +660,9 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	ctx.frameIndex   = 0;
 	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.snapshot.scene = shadowRes.scene.get();
+	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.snapshot.config = &config;
+	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Transition G-Buffer to renderable layouts
@@ -695,7 +695,7 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.snapshot);
+		PublishSceneCamera(*m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);

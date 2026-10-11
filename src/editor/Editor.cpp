@@ -57,10 +57,15 @@ namespace {
 /**
  * @brief Uniform scale applied to the starter mesh (and its wireframe copy).
  *
- * The asset is exported at a ~7.44-unit radius while the starter scene is
- * authored in unit space, so left raw the camera sits INSIDE the mesh and every
- * debug object is buried in it. Normalising the mesh is the fix rather than
- * pushing the camera back, because the debug overlay is the point of this scene.
+ * res/obj/sphere.obj is a Blender icosphere exported at a ~7.44-unit radius,
+ * while the rest of the starter scene is authored in unit space: the camera
+ * stands 5.4 units out, the demo axes span +-4, the light box is 0.4 wide. Left
+ * raw, the camera sits INSIDE the mesh and every debug object is buried in it.
+ *
+ * Normalising the mesh (1 / 7.44 ~= 0.135, so radius ~= 1) is the fix rather
+ * than pushing the camera ~30 units back, because the debug overlay is the point
+ * of this scene and distance would shrink it to a few pixels. The GPU tests take
+ * the same approach (test_ibl_render.cpp scales the same asset by 0.25).
  */
 constexpr float kStarterMeshScale = 0.135f;
 
@@ -76,10 +81,13 @@ void UploadMeshGpu(UploadManager& uploader, DeferredRenderer& renderer, const Me
 }
 
 /**
- * @brief Single MeshGPU upload path for a DebugMesh.
+ * @brief Single MeshGPU upload path for a DebugMesh (issue #22).
  *
- * A DebugMesh is not a Mesh, so it cannot reuse UploadMeshGpu(); it carries the
- * same MeshData and lands in the same RenderCache slot keyed by object id.
+ * DebugMesh derives from ObjectID + Transform3D, not from Mesh, so it cannot
+ * reuse UploadMeshGpu() by upcast. It carries the same MeshData, though, so it
+ * goes through UploadManager::UploadMeshData() and lands in the same
+ * RenderCache MeshGPU slot keyed by object id — which is exactly what
+ * DebugWireMesh::meshObjectId resolves against in DebugPass.
  */
 void UploadDebugMeshGpu(UploadManager& uploader, DeferredRenderer& renderer, const DebugMesh& mesh)
 {
@@ -117,8 +125,10 @@ void GenerateIBL(UploadManager& uploader, DeferredRenderer& renderer,
 /**
  * @brief UID of the scene's active object, or 0 when nothing is selected.
  *
- * The intent events carry a uid rather than a pointer; 0 is legal to enqueue,
- * and the controller drops an intent it cannot resolve.
+ * The modal gizmo operates on the active object only (wave 1), and the intent
+ * events carry a uid rather than a pointer. 0 is a legal value to enqueue: the
+ * controller drops a GizmoModeRequested it cannot resolve, so the key handler stays
+ * free of selection logic.
  */
 int ActiveUid(const Scene& scene)
 {
@@ -138,13 +148,14 @@ Editor::Editor(DeferredRenderer* renderer, UploadManager* uploadManager)
 
 Editor::~Editor()
 {
-	// Nothing owned here needs a manual release.
+	// m_scene and m_config will be destroyed by unique_ptr automatically.
 }
 
 void Editor::Initialize()
 {
-	// Mesh/light GPU upload happens after the window is shown and the surface is
-	// ready: see UploadSceneResources(), called from the scene load lifecycle.
+	// Note: Mesh/light GPU upload happens AFTER window is shown and surface
+	// is ready 鈥?see UploadSceneResources() called from Application::Run()
+	// and from the scene load lifecycle (BeginLoad/FinishLoad, NewScene).
 
 	ed_eventBus.subscribe<MeshImportEvent>([this](const MeshImportEvent& e) {
 		ed_eventBus.enqueue(RenderResetEvent{});
@@ -168,16 +179,18 @@ void Editor::Initialize()
 	});
 
 	// Shader creation constructs a pooled RenderShader, so it is Editor-owned
-	// (like mesh/light/camera adds); ShaderController keeps only pool-free
-	// handlers.
+	// (like mesh/light/camera adds). ShaderController keeps only pool-free
+	// handlers (compile, code/struct edits, undo/redo replay).
 	ed_eventBus.subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
 		ed_eventBus.enqueue(RenderResetEvent{});
 		OnCreateShader(e);
 	});
 
-	// Undo/redo of Create Shader: redo relinks the pooled RenderShader by UID;
-	// undo drops the reference (the pool keeps the shader). No version bump: the
-	// per-mesh (objectId, version) pipeline cache handles the relink.
+	// Undo/redo of Create Shader (ShaderLinkOp replay): redo relinks the pooled
+	// RenderShader by UID; undo drops the reference (the pool keeps the shader).
+	// Editor-owned like the create path - pool access + RenderResetEvent. No
+	// version bump: the panel dirty-check (-1 sentinel) and the per-mesh
+	// (objectId, version) pipeline cache handle the relink.
 	ed_eventBus.subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
 		auto mesh = m_resources->Get<Mesh>(e.objectUid);
 		if (!mesh) return;
@@ -208,12 +221,12 @@ void Editor::Initialize()
 
 
 	// --- Register controllers ---
-	// All five take only the ControllerContext, which carries the event dispatch,
-	// the pooled-object lookup, the operation sink, the scene, the render config,
-	// the viewport and the gizmo state.
+	// All five take only the ControllerContext: no providers are needed because the
+	// context carries the event dispatch, the pooled-object lookup, the operation
+	// sink, the scene, the render config, the viewport and the gizmo state.
 	//
-	// TransformGizmoController comes AFTER CameraController on purpose: handlers
-	// dispatch in registration order, so the gizmo's MouseMoveEvent handler sees a
+	// TransformGizmoController comes AFTER CameraController on purpose: dispatch runs
+	// handlers in registration order, so the gizmo's MouseMoveEvent handler sees a
 	// camera the camera controller has already updated this frame.
 	RegisterController<CameraController>();
 	RegisterController<TransformGizmoController>();
@@ -222,11 +235,15 @@ void Editor::Initialize()
 	RegisterController<RenderConfigController>();
 
 	// --- Keep the viewport's camera pointer alive across a deletion ---
-	// Registered after the controllers so it runs after SceneController's own
-	// handler has actually removed the object. Edit() syncs the camera once per
-	// frame, but Process() drains re-entrantly enqueued events in the same call,
-	// so deleting the activated camera mid-Process would otherwise leave the
-	// viewport holding a dangling pointer for the rest of that Edit().
+	// Registered after the controllers, so it runs after SceneController's own
+	// handler has actually removed the object: dispatch is registration-ordered.
+	// Edit() syncs the camera once per frame, but Process() drains re-entrantly
+	// enqueued events in the same call, so deleting the activated camera mid-Process
+	// would otherwise leave m_viewport holding a dangling pointer for the rest of
+	// that Edit(). Re-syncing resolves to the viewport's own camera, which is why
+	// deleting every scene camera is a legal gesture rather than a black frame.
+	// SceneOperations dispatches this event synchronously during undo/redo replay
+	// too, which this handler covers for free.
 	ed_eventBus.subscribe<SceneObjectDeleteRequested>([this](const SceneObjectDeleteRequested&) {
 		m_viewport.SyncCamera(GetScene());
 	});
@@ -254,15 +271,19 @@ void Editor::Initialize()
 	ed_eventBus.subscribe<MouseMoveEvent>([this](const MouseMoveEvent& e) {
 		// Retained FIRST and unconditionally: the cursor is a property of the
 		// viewport, not of the scene, and the null-camera return below would
-		// otherwise swallow it. The viewport dirties its own gizmo guide from
-		// here - a live gesture follows the cursor through a pixel budget.
+		// otherwise swallow it. TransformGizmoController does not read it back (it
+		// uses e.position, so it cannot be bitten by registration order) but every
+		// query that does needs it fresh. The viewport dirties its own gizmo guide
+		// from here — a live gesture follows the cursor through a pixel budget.
 		m_viewport.SetCursor(e.position);
 
 		const Camera* cam = m_viewport.GetCamera();
 		if (!cam) return;
 
 		// Orbit is suppressed for the duration of a modal gesture, which also keeps
-		// the drag's anchor math camera-invariant.
+		// the drag's anchor math camera-invariant. Reading gizmo state is legitimate
+		// here — it is forbidden only in the KEY handler, where a gate would swallow
+		// an axis key arriving in the same Process() call as its mode key.
 		if (m_viewport.IsGizmoActive()) return;
 
 		if (e.middleHeld)
@@ -277,9 +298,11 @@ void Editor::Initialize()
 	});
 
 	// Middle-button press/release bound the orbit/pan/dolly drag gesture so it
-	// collapses to one undo entry. Left and right close a modal transform gesture
-	// instead - enqueued unconditionally and dropped by the controller when no
-	// gesture is live.
+	// collapses to one undo entry. The typed drag events flow through the same
+	// controller chain as the camera moves themselves (no direct handling here).
+	// Left and right close a modal transform gesture instead — enqueued
+	// unconditionally, like the keys, and dropped by the controller when no gesture
+	// is live.
 	ed_eventBus.subscribe<MousePressEvent>([this](const MousePressEvent& e) {
 		if (e.button == Input::Left)  { ed_eventBus.enqueue(GizmoConfirmed{}); return; }
 		if (e.button == Input::Right) { ed_eventBus.enqueue(GizmoCancelled{}); return; }
@@ -310,10 +333,11 @@ void Editor::Initialize()
 	});
 
 	// --- Viewport keystrokes -> modal transform intents ---
-	// Every branch enqueues UNCONDITIONALLY: Process() is FIFO and drains
-	// re-entrantly enqueued events within the same call, so an IsActive() gate
-	// would silently eat an axis key that arrived in the same frame as its mode
-	// key. The controller is the single place that decides an intent is meaningless.
+	// Every branch enqueues UNCONDITIONALLY. Nothing here reads gizmo state, and
+	// that is load-bearing rather than stylistic: Process() is FIFO and drains
+	// re-entrantly enqueued events within the same call, so an IsActive() gate would
+	// silently eat an axis key that arrived in the same frame as its mode key. The
+	// controller is the single place that decides an intent is meaningless.
 	ed_eventBus.subscribe<KeyPressEvent>([this](const KeyPressEvent& e) {
 		switch (e.key)
 		{
@@ -342,21 +366,26 @@ void Editor::Initialize()
 		if (ed_renderer)
 			ed_renderer->ResetShadowAccumulation();
 
-		// Second consumer on the same signal: this is the "something visible
-		// changed" broadcast, so it is exactly when the overlays may have gone
-		// stale. Marking is O(1); the rebuild happens once in Edit(). The gizmo
-		// guide rides the same broadcast, which is what makes it appear on arm,
-		// follow a drag and vanish on confirm or cancel.
+		// Same signal, second consumer: this is the codebase's existing "something
+		// visible changed" broadcast, so it is exactly when the overlays may have
+		// gone stale. Marking is O(1); the rebuild happens once in Edit().
+		//
+		// The gizmo guide rides the same broadcast, which is what makes it appear on
+		// arm, follow the cursor through a drag, and vanish on confirm or cancel:
+		// every TransformGizmoController handler enqueues a RenderResetEvent.
 		m_viewport.MarkOverlaysDirty();
 	});
 
 	// --- Selection moves the resting handle, and selection alone emits no
 	// RenderResetEvent ---
 	//
-	// Selecting an object is not a scene modification, so the broadcast above
-	// never fires for it; the handle still has to move to the newly active object.
-	// All three paths are covered: a live click, an explicit deselect, and the
-	// absolute set an undo/redo replay applies.
+	// Selecting an object is not a scene modification (SceneController deliberately
+	// skips Mutated() there, so a click never dirties the project or resets temporal
+	// accumulation), so the broadcast above never fires for it. The resting translate
+	// handle nevertheless has to move to the newly active object, which is why these
+	// three subscriptions exist instead of a Mutated() call in the controller. All
+	// three paths are covered: a live click, an explicit deselect, and the absolute
+	// set a SetSelectionOp replays on undo/redo.
 	ed_eventBus.subscribe<ObjectSelected>([this](const ObjectSelected&) {
 		m_viewport.MarkGizmoDirty();
 	});
@@ -392,30 +421,50 @@ Scene& Editor::GetScene()
 }
 
 // =========================================================================
-// GetContext - the one producer of a SceneContext in production
+// UpdateRenderContext / UpdateUIContext — the one producer of both views
 // =========================================================================
 
-SceneContext Editor::GetContext() const
+void Editor::UpdateRenderContext(RenderContext& ctx) const
 {
-	SceneContext ctx;
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 
 	// The single Editor-side definition of "the camera we are looking through",
-	// chosen by the viewport's SyncCamera() at the top of Edit(). Publishing it
-	// from here keeps every consumer ignorant of which camera it is.
+	// chosen by EditorViewport::SyncCamera() at the top of Edit() — the viewport's
+	// own camera unless a scene camera is activated. Publishing it from here rather
+	// than letting the renderer call Scene::GetActiveCamera() is what keeps every
+	// pass ignorant of which of the two it is rendering through.
 	ctx.camera = m_viewport.GetCamera();
 
 	// r_debug_draw gates publication rather than graph topology: with a null list
-	// the pass returns before touching any image, so toggling the overlay never
+	// DebugPass returns before touching any image, so toggling the overlay never
 	// rebuilds the RenderGraph.
 	ctx.debugDraw = m_config.RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr;
 
-	// Published unconditionally, behind no RenderConfig flag: interaction feedback
-	// is not a debug visualization the user may hide. With nothing selected and
-	// nothing armed the payload is a cleared list rather than no list.
+	// Published unconditionally, and deliberately behind no RenderConfig flag:
+	// interaction feedback is not a debug visualization the user may hide. With
+	// nothing selected and nothing armed the builder yields a cleared list rather
+	// than no list (GizmoDrawBuilder's "empty, never null" contract), and GizmoPass
+	// early-outs on an empty payload.
 	ctx.gizmoDraw = &m_viewport.GizmoList();
-	return ctx;
+
+	// The renderer half of the context — width, height, frameIndex, jitter and
+	// iteration — is deliberately NOT written here. Those come from the swapchain,
+	// the frame-slot ring and DeferredRenderer's own counters, and recordFrame
+	// stamps them into a local copy. The Editor publishes what is rendered; the
+	// renderer stamps which frame.
+}
+
+void Editor::UpdateUIContext(UIContext& ctx) const
+{
+	// Fields only — never a call into a UIContext method. UpdateUIContext is
+	// compiled into neurus_editor, which links Qt6::Core but not neurus_ui (that
+	// library links *this* one), so referencing a UIContext symbol defined in
+	// neurus_ui would leave an undefined reference here. UIContext is Qt-free and
+	// its two Editor-owned members are plain pointers, so assignment is the whole
+	// job; anything needing more belongs in the Application's half.
+	ctx.scene = m_scene.get();
+	ctx.config = &m_config;
 }
 
 // =========================================================================
@@ -427,7 +476,8 @@ void Editor::NewScene()
 	try
 	{
 		// The outgoing scene's GPU resources go with it (this drains the device
-		// first). Nothing is uploaded in return: the new scene is empty.
+		// first). Nothing is uploaded in return: the new scene is empty, and a
+		// caller that adds content uploads once it is done adding.
 		DropSceneGpuResources();
 
 		m_scene = std::make_unique<Scene>();
@@ -436,9 +486,10 @@ void Editor::NewScene()
 		ed_operations.Clear(); // History does not span scenes.
 
 		// The pool just lost the old viewport camera; a new document gets a new one
-		// at the default framing, already adopting the live viewport extent. This is
-		// what keeps an empty scene renderable: the viewport camera is the view, not
-		// scene content.
+		// at the default framing, already adopting the live viewport extent (File >
+		// New has no resize event of its own to piggyback on, and a brand-new Camera
+		// is born 1x1). This is what keeps an empty scene renderable: the viewport
+		// camera is the view, not scene content.
 		m_viewport.ForgetCamera();
 		m_viewport.EnsureCamera(*m_resources);
 		m_viewport.SyncCamera(*m_scene);
@@ -446,9 +497,11 @@ void Editor::NewScene()
 		// An empty document is its own saved baseline, not an unsaved edit.
 		m_dirty = false;
 
-		// New scene => the old flattened overlay is stale, and so is the handle: it
-		// is anchored on the outgoing document's selection, and the builder only
-		// clears its list inside a dirty Rebuild().
+		// New scene => the old flattened overlay is stale. Same for the handle: it is
+		// anchored on the outgoing document's selection, and the builder only ever
+		// clears its list inside a dirty Rebuild(), so without this the previous
+		// scene's handle stays on screen at the previous object's position even
+		// though nothing is selected here.
 		m_viewport.MarkOverlaysDirty();
 
 		NEURUS_LOG("[Editor] Created new scene.");
@@ -463,7 +516,10 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 {
 	// The starter scene ships a scene camera as demo content, deliberately left
 	// DEACTIVATED: the viewport looks through its own camera until the user
-	// activates one. A deactivated camera adopts the extent only when activated.
+	// activates one. Both start at the same pose, so this is invisible until the
+	// user navigates. It is left at its own 1x1 framing on purpose — a deactivated
+	// camera adopts the viewport extent when it becomes the view camera, not before
+	// (EditorViewport::SyncCamera()).
 	auto camera = m_resources->Load<Camera>();
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
@@ -479,16 +535,18 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 	light->SetRadius(0.01f);
 	m_scene->UseLight(light);
 
-	// Paths are relative ("res/...") so project files stay portable; the resource
-	// layer resolves them against the asset dir at load time.
+	// Paths are relative ("res/...") so project files stay portable; the
+	// resource layer resolves them against the asset dir at load time. The
+	// pooled ImageData owns the path; the Environment only wraps it.
 	auto imageData = m_resources->Load<ImageData>("res/tex/hdr/room.hdr");
 	auto env = m_resources->Load<Environment>(imageData);
 	m_scene->UseEnvironment(env);
 
 	AddDefaultDebugObjects(meshData);
 
-	// This mutated a scene, so it is dirty by the same rule as any other edit; a
-	// caller for which this content IS the baseline rebases with ClearDirty().
+	// This mutated a scene, so it is dirty by the same rule as any other edit. A
+	// caller for which this content IS the document's baseline (File > New, first
+	// launch) rebases with ClearDirty().
 	m_dirty = true;
 	m_viewport.MarkOverlaysDirty();  // the flattened overlay predates these objects
 }
@@ -496,14 +554,15 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 /**
  * @brief Populates the default scene with one debug object of each kind.
  *
- * Demo content, like the .obj and .hdr loaded above: it gives the overlay
- * something to draw out of the box, exercising depth occlusion, x-ray, stipple,
- * screen-space sprites and the CUBE decomposition on a fresh launch.
+ * Part of the demo content, exactly like the .obj and .hdr loaded above: it
+ * gives the overlay something to draw out of the box, so a fresh launch is
+ * enough to see (and screenshot) depth occlusion, x-ray, stipple, screen-space
+ * point sprites and the CUBE decomposition without any UI interaction.
  */
 void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 {
-	// The axis spans, reused by the depth-tested and x-ray lines below so the two
-	// overlap exactly and differ only in depth mode.
+	// The axis spans, reused by the depth-tested and x-ray lines below so the
+	// two overlap exactly and the difference between them is only the depth mode.
 	const std::vector<glm::vec3> axisSpans = {
 		{-4.0f, 0.0f, 0.0f}, {4.0f, 0.0f, 0.0f},
 		{0.0f, -4.0f, 0.0f}, {0.0f, 4.0f, 0.0f},
@@ -529,7 +588,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	m_scene->UseDebugLine(xrayAxes);
 
 	// Circular sprites at the axis tips, screen-space sized so they stay legible
-	// at any zoom - the default projection mode, exercised here on purpose.
+	// at any zoom — the default projection mode, exercised here on purpose.
 	auto tips = m_resources->Load<DebugPoints>();
 	tips->SetPointType(DebugPoints::PointType::CIR);
 	tips->SetScale(10.0f);
@@ -543,7 +602,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	// path that decomposes one point into 12 segments.
 	auto lightBox = m_resources->Load<DebugPoints>();
 	lightBox->SetPointType(DebugPoints::PointType::CUBE);
-	lightBox->SetProjectionMode(1);  // world units - a cube has real extent
+	lightBox->SetProjectionMode(1);  // world units — a cube has real extent
 	lightBox->SetScale(0.4f);
 	lightBox->SetColor(glm::vec4(1.0f, 1.0f, 0.6f, 1.0f));
 	lightBox->PushDebugPoint({3.0f, 3.0f, 3.0f});
@@ -578,20 +637,25 @@ void Editor::BeginLoad()
 	m_config = RenderConfig{};
 	ed_operations.Clear(); // History does not span scenes.
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
-	// project file may name its own, and creating one now would leak an orphan into
-	// the pool. FinishLoad() resolves or creates it once the file has been read.
+	// project file may name its own (EditorComponent restores the uid, the pool
+	// restores the object), and creating one now would leak an orphan into the
+	// pool. FinishLoad() resolves or creates it once the file has been read.
 	m_viewport.ForgetCamera();
-	// The caller deserializes into GetScene()/GetRenderConfig() before FinishLoad().
+	// Application deserializes into GetScene()/GetRenderConfig() before FinishLoad().
 }
 
 void Editor::FinishLoad()
 {
-	// Pool restore happens during the project load: pooled resources are
-	// deserialized and wired, and the scene then resolves its ID references.
+	// Pool restore happens during Project::Load: ResourceComponent deserializes
+	// the pool and wires pooled data refs (MeshData/Shader/ImageData), and each
+	// pooled RenderShader re-parses + recompiles to SPIR-V in its own
+	// serialize(load). SceneComponent then resolves the scene's ID references.
+	// Nothing mesh/shader-specific is needed here.
 	m_dirty = false;
 	// Resolve the viewport camera the project named, or create one for a project
-	// written before it existed. Both paths re-adopt the live extent rather than
-	// trusting the archived aspect.
+	// written before it existed. The archived aspect belongs to whatever window the
+	// project was saved from, so both calls re-adopt the live extent instead of
+	// trusting the file's.
 	m_viewport.EnsureCamera(*m_resources);
 	m_viewport.SyncCamera(*m_scene);
 	// Debug objects came back from the project file, and the restored selection
@@ -604,10 +668,15 @@ void Editor::FinishLoad()
 void Editor::OnMeshImport(const std::string& path)
 {
 	try {
-		// Import = load the resource into the pool; the Add operation and the
-		// MeshGPU upload happen on demand when the add is processed - no inline
-		// upload here. A portable relative "res/..." path is stored when the file
-		// lives under the res dir; paths outside it are stored as-is (warned).
+		// Import = load the resource into the pool. The SceneController
+		// registers it into the scene and records the undoable Add operation;
+		// the MeshGPU upload happens on demand when the add is processed
+		// (SceneObjectAddRequested -> SceneObjectGpuUploadRequested ->
+		// OnSceneObjectGpuUpload) - no inline upload here.
+		//
+		// Store a portable relative "res/..." path when the file lives under
+		// the res dir, so project files stay machine-independent. Paths
+		// outside it are stored as-is (best effort, warned).
 		const std::string storedPath = MakePortableAssetPath(path);
 		if (storedPath.rfind("res/", 0) != 0)
 		{
@@ -648,9 +717,10 @@ void Editor::OnLightAdd()
 			neurus::POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		light->SetPosition(glm::vec3(3.0f, 3.0f, 3.0f));
 		light->SetRadius(0.01f);
-		// The shadow-map upload happens on demand when the add is processed; the
-		// light SSBO rebuild happens via LightingRebuild after the controller
-		// registers the light in the scene.
+		// Shadow-map GPU upload happens on demand when the add is processed
+		// (SceneObjectAddRequested -> SceneObjectGpuUploadRequested ->
+		// OnSceneObjectGpuUpload); the light SSBO rebuild happens via
+		// LightingRebuild after the controller registers the light in the scene.
 		ed_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added point light at (3, 3, 3)");
 	}
@@ -667,8 +737,9 @@ void Editor::OnSunLightAdd()
 		light->SetPosition(glm::vec3(0.0f, 0.0f, 10.0f));
 		light->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 		light->use_shadow = true;
-		// The shadow-map upload happens on demand when the add is processed; the
-		// SSBO rebuild via LightingRebuild.
+		// Shadow-map GPU upload happens on demand when the add is processed
+		// (SceneObjectAddRequested -> SceneObjectGpuUploadRequested ->
+		// OnSceneObjectGpuUpload); SSBO rebuild via LightingRebuild.
 		ed_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added sun light at (0, 0, 10)");
 	}
@@ -685,11 +756,12 @@ void Editor::OnSpotLightAdd()
 		light->SetPosition(glm::vec3(0.0f, 0.0f, 6.0f));
 		light->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 		light->SetRadius(0.01f);
-		light->SetCutoff(0.95f);        // ~18 deg inner cone half-angle
-		light->SetOuterCutoff(0.85f);   // ~32 deg outer cone half-angle
+		light->SetCutoff(0.95f);        // ~18掳 inner cone half-angle
+		light->SetOuterCutoff(0.85f);   // ~32掳 outer cone half-angle
 		light->use_shadow = true;
-		// The shadow-map upload happens on demand when the add is processed; the
-		// SSBO rebuild via LightingRebuild.
+		// Shadow-map GPU upload happens on demand when the add is processed
+		// (SceneObjectAddRequested -> SceneObjectGpuUploadRequested ->
+		// OnSceneObjectGpuUpload); SSBO rebuild via LightingRebuild.
 		ed_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added spot light at (0, 0, 6) pointing down");
 	}
@@ -717,9 +789,10 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 
 	try
 	{
-		// Load<T> constructs + registers the pooled RenderShader; parse explicitly
-		// here. Paths use the "res/..." prefix, resolved from the working directory
-		// by the shader pipeline.
+		// Load<T> constructs + registers the RenderShader (pooled UID); the
+		// shader owns its own parsing, so parse explicitly here. Paths use the
+		// "res/..." prefix (resolved from the working directory by the shader
+		// pipeline), matching ShaderLibrary-created shaders.
 		auto shader = m_resources->Load<RenderShader>(
 			shaderName, "res/shaders/render/gbuffer.vert", "res/shaders/render/gbuffer.frag");
 		if (!shader->ParseAndGenerate())
@@ -731,8 +804,9 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 
 		mesh->SetObjShader(shader); // o_shader + o_shaderId (pooled reference)
 
-		// The link is the undoable fact: a pool-preserving membership toggle -
-		// undo drops the reference (the pool keeps the shader), redo relinks it.
+		// The link is the undoable fact (independent of compile outcome): record
+		// a pool-preserving membership toggle - undo drops the reference (pool
+		// keeps the shader), redo relinks it by UID.
 		ed_operations.Submit(std::make_unique<ShaderLinkOp>(
 			mesh->GetObjectID(), shader->GetObjectID(), true));
 
@@ -767,10 +841,12 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 /**
  * @brief Uploads the GPU resources for an object entering the scene.
  *
- * GPU caches are scene-scoped, so objects re-added live or replayed from undo -
- * or a light whose shadow was just enabled - may lack cached resources. Upload
- * on demand through the shared helpers (skip if already cached); light SSBO
- * updates stay with LightingRebuild.
+ * GPU caches are scene-scoped (UploadSceneResources uploads only objects
+ * present at load), so a mesh/light/environment re-added to the scene -
+ * live add or undo/redo replay of a deletion - or a light whose shadow was
+ * just enabled may lack cached GPU resources. Upload on demand via the
+ * shared helpers (skip if already cached). Light SSBO updates stay with
+ * LightingRebuild.
  */
 void Editor::OnSceneObjectGpuUpload(int objectUid)
 {
@@ -808,7 +884,7 @@ void Editor::UploadEnvironmentIBL()
 		return;
 	}
 
-	// IBL is only enabled when the project provides an environment.
+	// IBL is only enabled when the project provides an environment
 	if (scene->env_list.empty())
 	{
 		NEURUS_LOG("[Editor] No environment in scene 鈥?IBL disabled (black background)");
@@ -818,18 +894,22 @@ void Editor::UploadEnvironmentIBL()
 	auto env = scene->env_list.begin()->second;
 
 	// Skip what is already cached: this is part of the idempotent upload path,
-	// and regenerating cubemaps is by far its most expensive step. The cached
-	// entry cannot be stale here - the cache is emptied whenever the scene is
-	// replaced, which matters because UIDs are restored from the project file and
-	// a reused id would otherwise shadow the incoming environment.
+	// and regenerating cubemaps is by far its most expensive step (32 MB of
+	// staging plus a 2048^2 x 8-mip convolution chain). The cached entry cannot
+	// be stale here - DropSceneGpuResources() empties the cache whenever the
+	// scene is replaced, which matters because UIDs are restored from the project
+	// file and a reused id would otherwise shadow the incoming environment.
+	// Rebuilding on a live change is GenerateIBL()'s job (EnvironmentChanged, and
+	// an environment re-entering the scene).
 	const int envId = env->GetObjectID();
 	if (ed_renderer->GetRenderCache().GetEnvironmentGPU(envId))
 		return;
 
 	NEURUS_LOG("[Editor] Using environment (ID " << envId << ")");
 
-	// If the pooled pixels are unavailable (missing source file), the upload path
-	// falls back to the procedural gradient.
+	// The environment wraps a pooled ImageData (path owned by the data layer).
+	// If the pooled pixels are unavailable (missing source file), fall back to
+	// the procedural gradient inside UploadEnvironment - no path loading here.
 	if (!env->GetEquirectData() || !env->GetEquirectData()->IsValid())
 	{
 		NEURUS_LOG("[Editor] Environment has no valid equirect data, using procedural fallback");
@@ -842,9 +922,12 @@ void Editor::UploadSceneResources()
 {
 	if (!ed_uploadManager || !ed_renderer) return;
 
-	// Scene-scoped upload: GPU resources mirror the SCENE, not the pool, so memory
-	// stays proportional to the scene. Pooled objects not in the scene are skipped
-	// and uploaded on demand when re-added.
+	// Scene-scoped upload: GPU resources mirror the SCENE, not the pool, so
+	// memory stays proportional to the scene. Pooled objects not in the scene
+	// (deleted before save, held only by undo history) are skipped; they are
+	// uploaded on demand when re-added - see SceneObjectGpuUploadRequested
+	// (SceneController add handler + shadow toggle) handled by
+	// OnSceneObjectGpuUpload.
 	for (const auto& [id, mesh] : m_scene->mesh_list)
 	{
 		if (!mesh || !mesh->o_mesh) continue;
@@ -857,8 +940,8 @@ void Editor::UploadSceneResources()
 		UploadLightGpu(*ed_uploadManager, *ed_renderer, *light);
 	}
 
-	// DebugMesh wireframes need a MeshGPU too: the consumer skips any wire mesh
-	// whose id resolves to no cached geometry.
+	// DebugMesh wireframes need a MeshGPU too: DebugPass skips any DebugWireMesh
+	// whose meshObjectId resolves to no cached vertex/index buffer.
 	for (const auto& [uid, dMesh] : m_scene->dMesh_list)
 	{
 		if (!dMesh || !dMesh->HasGeometry()) continue;
@@ -866,10 +949,10 @@ void Editor::UploadSceneResources()
 	}
 
 	// The environment is scene content as well: without its cubemaps the scene
-	// renders unlit.
+	// renders unlit while the Property panel still shows the environment.
 	UploadEnvironmentIBL();
 
-	// The light SSBO remains a scene projection.
+	// The light SSBO remains a scene projection (built from scene->light_list).
 	UploadLighting();
 
 	NEURUS_LOG("[Editor] Uploaded scene resources to GPU");
@@ -878,10 +961,12 @@ void Editor::UploadSceneResources()
 /**
  * @brief Drops the outgoing scene's GPU resources, draining the device first.
  *
- * The eviction itself belongs to the render cache, which owns the caches and
- * knows which are scene-scoped. The Editor contributes the drain: cached entries
- * own RAII resources, so releasing them while a frame still reads them is a
- * validation error. Both scene-replacing paths call this before clearing the pool.
+ * The eviction itself belongs to RenderCache (RemoveSceneResources): it owns the
+ * caches, and it is the only place that knows which of them are scene-scoped.
+ * What the Editor contributes is the drain - the cached entries own vk::raii
+ * resources, so releasing them while a frame that reads them is still executing
+ * is a validation error. Both scene-replacing paths call this before clearing
+ * the pool.
  */
 void Editor::DropSceneGpuResources()
 {
@@ -902,31 +987,32 @@ void Editor::UploadLighting()
 }
 
 // =========================================================================
-// Edit() - process all enqueued events
+// Edit() 鈥?process all enqueued events (called from newFrame)
 // =========================================================================
 
 void Editor::Edit()
 {
-	// Chosen BEFORE the queue is drained, and every frame rather than on change:
-	// the gizmo's projection math and the renderer's camera data both read the
-	// viewport's one published pointer, so they cannot disagree about which camera
-	// the frame belongs to. The delete subscription re-syncs it mid-Process, since
-	// Process() can delete the activated camera within this very call.
+	// Chosen BEFORE the queue is drained, and every frame rather than on change: the
+	// gizmo's projection math and the renderer's CameraGPU both read the viewport's
+	// one published pointer, so they cannot disagree about which camera the frame
+	// belongs to. The SceneObjectDeleteRequested subscription re-syncs it mid-Process,
+	// since Process() can delete the activated camera within this very call.
 	m_viewport.SyncCamera(GetScene());
 
 	ed_eventBus.Process();
 
 	// Chosen AGAIN, because the drain above can have changed which camera the frame
-	// belongs to: activating, deactivating or deleting a scene camera all land
-	// inside Process(). The overlay rebuild below runs at most once per dirty flag,
-	// so rebuilding against the camera the frame STARTED with would leave geometry
-	// at the previous camera's scale and screen position until something else
+	// belongs to: activating or deactivating a scene camera, or deleting the
+	// activated one, all land inside Process(). The gizmo rebuild below projects and
+	// sizes its geometry through the viewport, and it runs at most once per dirty
+	// flag — so rebuilding against the camera the frame STARTED with would leave the
+	// handle at the previous camera's scale and screen position until something else
 	// happened to dirty it.
 	m_viewport.SyncCamera(GetScene());
 
-	// After the queue is drained, so a scene change and its overlay consequences
-	// land in the same frame. Which overlays are dirty and what they anchor on are
-	// viewport questions - the Editor's part is only the timing.
+	// After the queue is drained, so a scene change and its overlay consequences land
+	// in the same frame. Which overlays are dirty, what they anchor on and what they
+	// cost are all viewport questions — the Editor's part is only the timing.
 	if (m_scene)
 		m_viewport.RebuildOverlays(*m_scene);
 }

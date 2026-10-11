@@ -46,8 +46,22 @@ test:
 # Run tests. Pass FILTER for specific tests.
 #   make check                          → all tests
 #   make check FILTER="-R DeferredShading" → filtered
+#
+# There are two build trees and they are NOT interchangeable:
+#   build/       multi-config (cmake --preset win|macos)
+#   build/debug  single-config Ninja (the tree local work actually builds)
+# On macOS the filesystem is case-insensitive, so build/Debug and build/debug
+# are the same directory and only the single-config cache survives in it — but
+# build/CTestTestfile.cmake is a separate, older file. Running `ctest -C Debug`
+# from build/ therefore reports whatever that stale file last saw (841 tests)
+# instead of the live suite (959), which is a green that silently skipped 118.
+# Prefer build/debug whenever it exists; Windows has no such alias, so it falls
+# back to the multi-config tree.
+CHECK_DIR := $(if $(wildcard build/debug/CMakeCache.txt),build/debug,build)
+CHECK_CONFIG := $(if $(filter build/debug,$(CHECK_DIR)),,-C Debug)
+
 check:
-	cd build && ctest -C Debug --output-on-failure $(FILTER)
+	cd $(CHECK_DIR) && ctest $(CHECK_CONFIG) --output-on-failure $(FILTER)
 
 clean:
 	cmake --build build --target clean

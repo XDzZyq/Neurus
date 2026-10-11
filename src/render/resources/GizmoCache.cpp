@@ -8,7 +8,7 @@
 
 #include "GizmoCache.h"
 
-#include "scene/GizmoDrawList.h"
+#include "render/overlay/GizmoDrawList.h"
 
 namespace neurus {
 

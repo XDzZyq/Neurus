@@ -85,6 +85,7 @@ add_executable(neurus_test
 	ui/test_dock_identity.cpp
 	ui/test_floating_window.cpp
 	ui/test_layout_restore.cpp
+	ui/test_ui_context.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
 )

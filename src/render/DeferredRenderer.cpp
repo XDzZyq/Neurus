@@ -66,6 +66,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 
 	// --- 2. Create G-Buffer attachment cache (lazy creation on first access) ---
 	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice);
+	// LightingCache is set via Application after construction (from UploadManager).
 
 	// --- 3. Create geometry pass ---
 	{
@@ -145,7 +146,8 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] FXAAPass created");
 	}
 
-	// --- 8f. Create debug overlay pass (a no-op on frames with no debug geometry) ---
+	// --- 8f. Create debug overlay pass (lines / points / wireframes over the final
+	//         shaded image; a no-op on frames with no debug geometry) ---
 	{
 		auto debugPass = std::make_unique<DebugPass>(
 			device, physicalDevice,
@@ -155,7 +157,8 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] DebugPass created");
 	}
 
-	// --- 8g. Create transform-gizmo overlay pass (a no-op with no live gesture) ---
+	// --- 8g. Create transform-gizmo overlay pass (the modal G/R/S guides, drawn over
+	//         everything including the debug overlay; a no-op with no live gesture) ---
 	{
 		auto gizmoPass = std::make_unique<GizmoPass>(
 			device, physicalDevice,
@@ -165,7 +168,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] GizmoPass created");
 	}
 
-	// --- 8h. Build the RenderGraph ---
+	// --- 8h. Build the Wave 3 shading-tail RenderGraph ---
 	// Initial build uses a default signature (no FXAA); recordFrame rebuilds
 	// it whenever the pipeline signature derived from RenderConfig changes.
 	RebuildMainGraph(PipelineSignature{});
@@ -173,6 +176,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	// --- 9. Allocate command buffers (one per swapchain image, reused) ---
 	uint32_t imageCount = r_swapchain->imageCount();
 
+	// Verify the swapchain supports TRANSFER_DST for the blit composite path
 	const bool hasTransferDst = (r_swapchain->actualImageUsage() & vk::ImageUsageFlagBits::eTransferDst) != vk::ImageUsageFlags{};
 	if (!hasTransferDst)
 	{
@@ -222,8 +226,9 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 DeferredRenderer::~DeferredRenderer()
 {
 	WaitIdle();
-	// vk::raii destructors clean up automatically in reverse declaration order;
-	// r_passes destroys all passes before RenderCache.
+	// vk::raii destructors clean up automatically in reverse declaration order.
+	// r_passes vector destroys all passes in construction order (GeometryPass → LightingPass →
+	//   SSAOPass → IBLPass), before RenderCache.
 }
 
 // ---------------------------------------------------------------------------
@@ -244,12 +249,21 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
 	// --- Precondition: we must have a camera to look through ---
-	// ctx.snapshot.camera is the only camera checked: the caller decides which
-	// camera the frame is rendered through and injects it here, and every pass
-	// that needs a viewing camera reads this same pointer. The pointer is null
-	// only if a scene-mutation path broke that contract, so name it once and
+	// ctx.camera is the whole answer, and deliberately the only one checked.
+	// The Editor decides which camera the frame is rendered through - its own
+	// viewport camera or the Scene's active one - and injects it here before
+	// recording; every pass that needs a viewing camera now reads this same pointer,
+	// so there is no second definition left to disagree with it. The scene's own
+	// active camera is *not* checked: Scene::GetActiveCamera() remains meaningful as
+	// the scene's camera, but it is no longer an input to any pass, so a scene
+	// without one is not by itself a reason to skip a frame.
+	//
+	// The editor holds the invariant in its viewport, which owns a camera of its
+	// own: EditorViewport::EnsureCamera() runs after every pool Clear() and
+	// SyncCamera() falls back to it whenever no scene camera is activated, so this
+	// pointer is null only if a scene-mutation path broke that. Name it once and
 	// skip the frame.
-	if (!ctx.snapshot.camera)
+	if (!ctx.camera)
 	{
 		if (!m_reportedNoCamera)
 		{
@@ -271,9 +285,11 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	}
 
 	// --- Profiling: read back this slot's GPU timestamps (fence signaled) ---
-	// Resolve() reads the slot about to be reused; the resolved GPU ms are
-	// back-filled into m_frameProfile after recordFrame repopulates the pass
-	// list below (GPU data lags the CPU/counter data by 1-2 frames, by design).
+	// The profiler's slot cursor stays in lockstep with r_currentFrame because
+	// BeginFrame/EndFrame run exactly once per recorded frame. Resolve() reads
+	// the slot about to be reused; the resolved GPU ms are back-filled into
+	// m_frameProfile *after* recordFrame repopulates the pass list below (GPU
+	// data lags the CPU/counter data by 1-2 frames, by design).
 	m_gpuResolved = m_profiler.Resolve();
 
 	// --- Acquire next swapchain image ---
@@ -316,9 +332,9 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	recordFrame(r_commandBuffers[imageIndex], imageIndex, ctx);
 
 	// --- Profiling: back-fill resolved GPU ms now that passes are repopulated ---
-	// recordFrame just rewrote m_frameProfile.passes with gpuMs=0; match the
-	// resolved sections to passes by index (the size guard covers a rare
-	// rebuild-in-flight case).
+	// recordFrame just rewrote m_frameProfile.passes (CPU + counters, gpuMs=0).
+	// Match resolved sections to passes by index (topology is stable frame to
+	// frame; the size guard covers the rare rebuild-in-flight case).
 	if (m_gpuResolved)
 	{
 		const auto& sections = m_profiler.Sections();
@@ -388,10 +404,10 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	auto* outlineNode   = m_mainGraph.AddPass(r_selectionOutlinePass);
 	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
 
-	// Both overlays draw into whichever image the post chain ends with, so their
-	// target is chosen before registration. The two must name the *same*
-	// attachment - that shared name is the socket Connect() below matches on to
-	// order them.
+	// Both overlays draw into whichever image the post chain ends with, so their target
+	// is chosen before registration: AddPass() caches GetIO(), which names it. The two
+	// must name the *same* attachment — that shared name is the socket Connect() below
+	// matches on to order them.
 	const AttachmentName tail = sig.fxaa ? AttachmentName::FXAAOutput
 	                                     : AttachmentName::ComposedOutput;
 	r_debugPass->SetTarget(tail);
@@ -421,9 +437,11 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 
 	// Compose → [FXAA] → debug overlay → gizmo overlay. The overlays are deliberately
 	// last: their fragment shaders already antialias from real coverage, and a luma
-	// filter can only re-blur that and smear overlay color into the scene. So FXAA is
-	// fed the scene alone, and the overlays land on whatever came out of it. Both edit
-	// that image in place, and the gizmo is the last writer the final blit consumes.
+	// filter can only re-blur that and smear overlay color into the scene (see
+	// DebugPass.h). So FXAA is fed the scene alone, and the overlays land on whatever
+	// came out of it. Both edit that image in place — hence the G-Buffer depth edge for
+	// DebugPass's occlusion test — and the gizmo is the last writer the final blit
+	// consumes.
 	if (sig.fxaa)
 	{
 		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
@@ -436,12 +454,11 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	}
 	m_mainGraph.Connect(geometryNode, AttachmentName::Depth, debugNode);
 
-	// Debug -> gizmo, on the shared tail attachment. Not optional bookkeeping: an
-	// unwired input is treated as external rather than an error, so without this
-	// edge the gizmo's position in the topological order is unconstrained and the
-	// guides could land under the debug geometry nondeterministically. No Depth
-	// edge here - the gizmo declares no depth socket, so one would fail socket
-	// validation.
+	// Debug → gizmo, on the shared tail attachment. Not optional bookkeeping: Compile()
+	// treats an unwired input as *external* rather than an error, so without this edge
+	// the gizmo's position in the topological order is unconstrained and the guides
+	// could land under the debug geometry nondeterministically. No Depth edge here —
+	// GizmoPass declares no depth socket, so one would fail socket validation.
 	m_mainGraph.Connect(debugNode, tail, gizmoNode);
 
 	m_mainGraph.Compile();
@@ -461,6 +478,7 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 {
 	const vk::Extent2D extent = GetExtent();
 
+	// Clamp or reject out-of-bounds clicks
 	if (x >= extent.width || y >= extent.height)
 	{
 		return 0;
@@ -468,7 +486,8 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 
 	auto& idBuffer = r_renderCache->GetAttachment(AttachmentName::IDBuffer, extent);
 
-	// The image is left in its original state on return.
+	// PickPixel handles its own transient command buffer, readback, and state
+	// restoration — the image is left in its original state on return.
 	auto bytes = idBuffer.PickPixel(r_device, r_physicalDevice,
 	                                 r_graphicsQueue, r_queueFamilyIndex,
 	                                 x, y);
@@ -504,8 +523,10 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 	// Destroy old swapchain (which held a reference to the old surface)
 	r_swapchain.reset();
 
+	// Create new swapchain bound to the new surface
 	r_swapchain = std::make_unique<Swapchain>(r_physicalDevice, r_device, newSurface, width, height);
 
+	// Rebuild dependent resources for the new swapchain
 	recreateSwapchain();
 
 	NEURUS_LOG("[DeferredRenderer] Surface changed — swapchain rebuilt "
@@ -573,13 +594,13 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 {
 	const vk::Extent2D extent = r_swapchain->extent();
 
-	// --- Reset the command buffer, then begin recording ---
+	// --- Reset command buffer (ensures it's not in a bad state) then begin ---
 	cmdBuf.reset();
 	vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 	cmdBuf.begin(beginInfo);
 
 	// --- Build per-frame render context ---
-	// Fill the render-specific fields into a copy of the caller's context.
+	// Copy the editor-produced context (scene) and fill in render-specific fields.
 	RenderContext ctx = editorCtx;
 	ctx.width = extent.width;
 	ctx.height = extent.height;
@@ -594,71 +615,80 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		ctx.jitter = (len > 1e-6f) ? glm::vec3(x / len, y / len, z / len) : glm::vec3(0.0f, 0.0f, 1.0f);
 	}
 
+	// Set global iteration counter from DeferredRenderer's counter
 	ctx.iteration = m_iteration;
 	m_iteration++;
 
-	// Advance the Halton index for the next frame's jitter
+	// Advance Halton index (cycles through all Halton(2,3,5) triples)
 	m_haltonIndex++;
 
 	// --- Per-frame cache updates: one writer, before any pass records ---
-	// Both resources live in RenderCache because more than one pass reads them,
-	// and a pass that wrote them would make the result depend on pass order.
-	// This is the one place that defines what the GPU believes the camera is;
-	// DrawFrame's precondition has already proved the pointer non-null.
-	r_renderCache->UpdateCamera(ctx.snapshot.camera->GetProjectionMatrix(),
-	                            ctx.snapshot.camera->GetViewMatrix());
+	// Both resources live in RenderCache because more than one pass reads them
+	// (GeometryPass and DebugPass share the camera UBO) and because a pass that
+	// wrote them would make the result depend on pass order. Passes only read.
+	//
+	// This is the one place that defines what the GPU believes the camera is, and
+	// it reads ctx.camera rather than the Scene: that is what makes
+	// EditorViewport the single Editor-side answer to "the camera we are looking
+	// through". DrawFrame's precondition has already proved the pointer non-null.
+	r_renderCache->UpdateCamera(ctx.camera->GetProjectionMatrix(),
+	                            ctx.camera->GetViewMatrix());
 
-	if (ctx.snapshot.debugDraw)
+	if (ctx.debugDraw)
 	{
 		// Revision-gated: an unchanged list copies nothing.
-		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.snapshot.debugDraw);
+		r_renderCache->UpdateDebugDraw(ctx.frameIndex, *ctx.debugDraw);
 	}
 
-	if (ctx.snapshot.gizmoDraw)
+	if (ctx.gizmoDraw)
 	{
-		// Not revision-gated: a live gesture rebuilds every frame anyway, and
-		// the payload is a few dozen segments.
-		r_renderCache->UpdateGizmoDraw(ctx.frameIndex, *ctx.snapshot.gizmoDraw);
+		// Not revision-gated: a live gesture rebuilds every frame anyway, and the
+		// payload is a few dozen segments (see GizmoCache.h).
+		r_renderCache->UpdateGizmoDraw(ctx.frameIndex, *ctx.gizmoDraw);
 	}
 
-	// --- Pipeline: Geometry -> Shadows -> SSAO -> Lighting -> SelectionOutline -> Compose -> [FXAA] -> Debug -> Gizmo ---
-	// The whole deferred pipeline runs through one RenderGraph; FXAA presence is
-	// the only thing the topology varies on.
+	// --- Pipeline: Geometry → Shadows → SSAO → Lighting → SelectionOutline → Compose → [FXAA] → Debug → Gizmo ---
+	// The whole deferred pipeline runs through one RenderGraph. FXAA is optional, and
+	// it is the only thing the topology varies on.
 
 	// Rebuild the graph only when the config-derived signature changes (single
-	// source of truth is RenderConfig; the graph is its projection - currently
-	// just FXAA presence). Unconditional, because Settings() is never null: a
-	// null check would skip evaluating the topology rather than evaluate it
+	// source of truth is RenderConfig; the graph is its projection — currently
+	// just FXAA presence). Unconditional, because Settings() is never null: the
+	// `if (const auto* cfg = ...)` this replaced skipped the check entirely on a
+	// null config, so the topology was never evaluated rather than evaluated
 	// against the defaults.
 	{
-		const PipelineSignature sig = PipelineSignature::From(ctx.snapshot.Settings());
+		const PipelineSignature sig = PipelineSignature::From(ctx.Settings());
 		if (!(sig == m_builtSignature))
 			RebuildMainGraph(sig);
 	}
 
 	// --- Profiling: bracket the whole pipeline with GPU frame timestamps ---
-	// The RenderGraph drives per-pass GPU timestamps and folds each pass's
-	// PassStats into m_frameProfile (passes stay unaware of profiling). GPU
-	// per-pass ms are back-filled in DrawFrame after Resolve().
+	// The RenderGraph drives per-pass GPU timestamps + CPU timing and folds the
+	// PassStats each pass returns into m_frameProfile (passes stay unaware of
+	// profiling). GPU per-pass ms are back-filled in DrawFrame after Resolve().
 	m_profiler.BeginFrame(cmdBuf);
 	m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
-	// --- Blit the final image to the swapchain ---
-	// GizmoPass is last in the graph, so its target is the end of the chain:
+	// --- Phase 4: Blit output → swapchain image ---
+	// GizmoPass is last in the graph, so its target *is* the end of the chain:
 	// FXAAOutput when FXAA is on, ComposedOutput when it is off. Asking the pass
-	// keeps that choice with RebuildMainGraph, which owns config -> topology, and
-	// is correct even on frames where neither overlay drew anything.
+	// keeps that choice in RebuildMainGraph, which already owns config → topology,
+	// and is correct even on the frames where neither overlay drew anything — the
+	// image is then exactly as the compute pass that filled it left it.
 	auto& blitSource = r_renderCache->GetAttachment(r_gizmoPass->GetTarget(), extent);
 	const vk::Image composedImage = *blitSource.ImageHandle();
 	const vk::Image swapchainImage = r_swapchain->images()[imageIndex];
 
 	// Barrier 1: Blit source → TRANSFER_SRC_OPTIMAL.
 	//
-	// The transition is issued here, by the consumer, not left to whichever pass
-	// wrote the image last. A producer that pre-transitions its output to the
-	// state it guesses the next consumer wants makes the following consumer's
-	// own barrier a no-op: its src scope becomes the guessed access, which names
-	// no writes, so the real producer writes are never made visible.
+	// The transition is issued *here*, by the consumer, and not left to whichever
+	// pass wrote the image last. A producer that pre-transitions its output to the
+	// state it guesses the next consumer wants makes the following consumer's own
+	// barrier a no-op: its src scope becomes the guessed access (TransferRead),
+	// which names no writes, so the real producer writes are never made visible.
+	// That is exactly how DebugPass's overlay used to race ComposePass's compute
+	// writes into ComposedOutput — see the barrier note in DebugPass::Record.
 	//
 	// Barrier 2: Swapchain image UNDEFINED → TRANSFER_DST_OPTIMAL
 	Barrier::Transition(cmdBuf, blitSource, ImageState::TransferSrc);
@@ -668,7 +698,7 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 	}
 
-	// --- Blit the final image into the swapchain image ---
+	// --- Blit: ComposedOutput → swapchain image ---
 	{
 		vk::ImageBlit blitRegion;
 		blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
@@ -695,7 +725,7 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 
 	// --- Profiling: write the GPU frame-end timestamp (covers the final blit) ---
 	// EndFrame also advances the profiler's slot cursor, keeping it in lockstep
-	// with r_currentFrame.
+	// with r_currentFrame (both advance exactly once per recorded frame).
 	m_profiler.EndFrame(cmdBuf);
 
 	// --- End command buffer ---

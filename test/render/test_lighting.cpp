@@ -130,7 +130,7 @@ protected:
 			PublishSceneCamera(*m_renderCache, testScene);
 			m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
 				.width = kRenderWidth, .height = kRenderHeight,
-			.snapshot = { .scene = &testScene },
+			.scene = &testScene,
 			});
 			EndSubmitWait(cmd);
 		}
@@ -245,7 +245,7 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 		m_lightingPass->Record(*cmd, *m_renderCache, RenderContext{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-			.snapshot = { .scene = &scene, .camera = scene.GetActiveCamera() },
+			.scene = &scene, .camera = scene.GetActiveCamera(),
 		});
 
 		EndSubmitWait(cmd);
@@ -322,7 +322,7 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-			.snapshot = { .scene = &scene, .camera = scene.GetActiveCamera() },
+			.scene = &scene, .camera = scene.GetActiveCamera(),
 		};
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);

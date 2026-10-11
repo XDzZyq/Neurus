@@ -1,29 +1,61 @@
 /**
  * @file GizmoDrawBuilder.h
- * @brief Turns the transform gizmo - armed or resting - into the overlay payload
+ * @brief Turns the transform gizmo — armed or resting — into the overlay payload
  *        GizmoPass draws.
  *
- * Owned by value by the Editor; it subscribes to nothing and mutates nothing, so
- * only a Rebuild() the owner asks for can change the picture.
+ * The exact sibling of DebugDrawBuilder — a list, a dirty flag and a Rebuild() —
+ * and owned by value by the Editor in the same way, one builder per overlay payload.
+ * It is deliberately *not* a controller: it subscribes to nothing and mutates
+ * nothing, so the only thing that can change the picture is a Rebuild() the Editor
+ * asks for.
  *
- * A *resting* translate handle is drawn whenever something is selected and no
- * gesture is armed, and the *armed* gesture's guide while one is. Resting is
- * exactly "Move mode, no axis chosen yet", so it reuses the unconstrained branch
- * and differs only in brightness. Both anchor on the object's **live** position,
- * so a translate gesture carries its own handle along; the **rotation** comes
- * from the gesture's frozen Before() snapshot, because guides that spun with the
- * object would destroy the reference a rotation is measured against.
+ * ## Why this is a separate class from TransformGizmo
  *
- * Guide length, arc radius and arrowhead size are fixed pixel budgets converted
- * through the viewport's pixels-per-world-unit, so a camera change marks it
- * dirty even though nothing about the gesture moved. Nothing armed and nothing
- * selected produces a cleared list rather than no list; nothing downstream has
- * to distinguish null from empty.
+ * The two have unrelated reasons to change: the delta math changes when the
+ * interaction rules change, the geometry changes when the guide's *look* changes.
+ * Fused, one class would carry ~13 public methods, past the point CLAUDE.md asks
+ * whether a class is doing too much. Split, the state machine stays at ten and the
+ * builder needs nothing from it beyond Mode(), Axis() and Before() plus the free
+ * GizmoAxisDirection() — no accessor per axis.
+ *
+ * ## Two things it draws, one geometry path
+ *
+ * A *resting* translate handle whenever something is selected and no gesture is
+ * armed, and the *armed* gesture's guide while one is. They share every line of
+ * geometry code: resting is exactly "Move mode, no axis chosen yet", so it reuses
+ * the unconstrained branch and differs only in brightness (see Rebuild()).
+ *
+ * Both anchor on the object's **live** position, so a translate gesture carries its
+ * own handle along with the object. The **rotation** is the one part taken from the
+ * gesture's frozen Before() snapshot instead: guides that spun with the object would
+ * destroy the very reference a rotation is measured against. Move and Scale never
+ * change the rotation, so for them the two sources agree and only Rotate is affected.
+ *
+ * ## What marks it dirty
+ *
+ * Everything that changes the picture, which is more than the things that change
+ * the gesture: a cursor move during a gesture, a camera change, a resize, a
+ * selection change and any edit that moves the selected object. Guide length, arc
+ * radius and arrowhead size are fixed pixel budgets converted through
+ * PixelsPerWorldUnit(), so a pure camera dolly changes the world-space geometry
+ * even though nothing about the state machine moved.
+ *
+ * ## Empty, never null
+ *
+ * Nothing armed and nothing selected produces a cleared list rather than no list,
+ * so the Editor can publish `&List()` unconditionally and GizmoPass's own early-out
+ * on Empty() is what ends the frame. Nothing downstream has to distinguish null
+ * from empty.
+ *
+ * Layer placement: editor — Vulkan-free and Qt-free. It writes GizmoDrawList,
+ * which lives in `render/overlay/` beside its consumer (GizmoPass); the editor may
+ * include render, never the reverse. That the gizmo is editor interaction state
+ * rather than scene content is exactly why its payload is not in `scene/`.
  */
 
 #pragma once
 
-#include "scene/GizmoDrawList.h"
+#include "render/overlay/GizmoDrawList.h"
 
 namespace neurus
 {
@@ -50,10 +82,12 @@ public:
 	/**
 	 * @brief Regenerate the list from @p gizmo, sized against @p vp. No-op when clean.
 	 *
-	 * @param live The anchor object's current transform - the gesture's target while
-	 *             one is armed, the selection's active object otherwise - or nullptr
-	 *             when there is none. A gesture whose target was deleted mid-drag
-	 *             passes nullptr and falls back to the frozen Before() snapshot.
+	 * Called at the end of Editor::Edit(), right after DebugDrawBuilder::Rebuild().
+	 *
+	 * @param live The anchor object's current transform — the gesture's target while one
+	 *             is armed, the selection's active object otherwise — or nullptr when
+	 *             there is none. A gesture whose target was deleted mid-drag passes
+	 *             nullptr and falls back to the frozen Before() snapshot.
 	 *
 	 * An invalid viewport, a pivot behind the eye, or nothing armed *and* no @p live
 	 * all clear the list and return.
@@ -61,7 +95,7 @@ public:
 	void Rebuild(const TransformGizmo& gizmo, const EditorViewport& vp,
 	             const TransformSnapshot* live);
 
-	/// @brief This frame's guides.
+	/// @brief This frame's guides. Published through RenderContext::gizmoDraw.
 	const GizmoDrawList& List() const { return m_list; }
 
 	bool IsDirty() const { return m_dirty; }

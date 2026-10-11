@@ -63,6 +63,10 @@ add_library(neurus_render STATIC
 	RenderCache.h
 	RenderCache.cpp
 	RenderContext.h
+	RenderContext.cpp
+	overlay/OverlayGeometry.h
+	overlay/DebugDrawList.h
+	overlay/GizmoDrawList.h
 	ProfilingData.h
 	GPUProfiler.h
 	GPUProfiler.cpp

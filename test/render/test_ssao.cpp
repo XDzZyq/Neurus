@@ -117,13 +117,13 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 
 	RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
-		.snapshot = { .scene = cb.scene.get() },
+		.scene = cb.scene.get(),
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx.snapshot);
+		PublishSceneCamera(*m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

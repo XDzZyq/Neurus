@@ -1,6 +1,17 @@
 /**
  * @file Outliner.cpp
  * @brief Outliner implementation — pool-managed row list from UIContext scene data.
+ *
+ * Architecture:
+ * - Constructor sets up the QScrollArea + container layout (empty).
+ * - Refresh() reads scene objects from UIContext and reconfigures rows
+ *   via OutlinerRow::setObject() from a growing pool.
+ * - New rows are created when pool < scene objects, and connected to
+ *   Outliner signals once. Extra rows are hidden (not destroyed).
+ * - Signal lambdas on OutlinerRow read m_objectUid at emission time,
+ *   so recycling a row to a different object is transparent.
+ * - Type icons are resolved from GOType via the Outliner-owned Icons cache
+ *   and passed as icon names ("scene:camera", "scene:light", etc.).
  */
 
 #include "Outliner.h"
@@ -103,7 +114,8 @@ void Outliner::keyPressEvent(QKeyEvent* event)
 {
 	if (event->key() == Qt::Key_Delete)
 	{
-		// Delete is a pure intent: the request is forwarded, not applied here.
+		// Pure intent: the Editor wraps the active scene and forwards the
+		// batched ObjectDeleteRequested to the SceneController.
 		emit deleteRequested(DeleteRequested{});
 		event->accept();
 		return;
@@ -126,9 +138,9 @@ void Outliner::EnsureRowPool(std::size_t needed)
 		// English literals.
 		RetranslateRow(row);
 
-		// Connect row signals to Outliner signals once (permanent). Lambdas read
-		// m_objectUid at emission time, so recycling a row to a new object works
-		// without reconnecting.
+		// Connect row signals to Outliner signals once (permanent).
+		// Lambdas read m_objectUid at emission time, so recycling
+		// a row to a new object works without reconnecting.
 		QObject::connect(row, &OutlinerRow::objectClicked,
 			this, &Outliner::objectClicked);
 		QObject::connect(row, &OutlinerRow::visibilityChanged,
@@ -138,7 +150,9 @@ void Outliner::EnsureRowPool(std::size_t needed)
 		m_rowPool.push_back(row);
 	}
 
-	// Hide surplus rows.
+	// m_rowPool.size() >= needed
+
+	// Hide surplus rows (pool larger than current scene).
 	for (std::size_t i = needed; i < m_rowPool.size(); ++i)
 	{
 		m_rowPool[i]->setVisible(false);
@@ -153,28 +167,31 @@ void Outliner::Refresh(const UIContext& ctx)
 {
 	auto ids = ctx.GetObjectIDs();
 
-	// --- Selection state ---
-	const Scene* scene = ctx.snapshot.scene;
+	// --- Query selection state from the scene's Selections<const ObjectID*> ---
+	const Scene* scene = ctx.scene;
 
+	// Ensure pool is large enough for valid objects.
 	EnsureRowPool(ids.size());
 
-	// Rows hold plain int UIDs: re-binding a row or skipping an unchanged one is
-	// a cheap integer comparison, with no cached object pointers anywhere.
+	// Configure visible rows. Rows compare plain int UIDs for dirty checks, so
+	// recycling a row to a different object (or skipping an unchanged one) is a
+	// cheap integer comparison — no cached object pointers anywhere.
 	std::size_t poolIndex = 0;
 	for (int id : ids)
 	{
 		const ObjectID* obj = scene ? scene->GetObjectID(id) : nullptr;
 		if (!obj) continue; // stale id (should not happen: ids mirror obj_list)
 
-		// Bind object identity data (icon, name, UID).
+		// Phase 1 — bind object identity data (icon, name, UID).
 		m_rowPool[poolIndex]->setObject(
 			Icons::ObjectIcon(static_cast<int>(obj->o_type)),
 			QString::fromStdString(obj->o_name),
 			id);
 
+		// Sync visibility toggles to the object's actual flags.
 		m_rowPool[poolIndex]->setVisibilities(obj->is_viewport, obj->is_rendered);
 
-		// Selection highlight (QSS property) + row background.
+		// Phase 2 — apply selection highlight (QSS property) + row background.
 		neurus::SelectionMode mode = scene->selections.GetMode(obj);
 		m_rowPool[poolIndex]->setSelectionMode(mode);
 		m_rowPool[poolIndex]->setRowIndex(static_cast<int>(poolIndex));
@@ -183,7 +200,7 @@ void Outliner::Refresh(const UIContext& ctx)
 		++poolIndex;
 	}
 
-	// Hide the category group when the scene is empty.
+	// Show/hide the category group based on whether we have objects.
 	m_sceneGroup->setVisible(!ids.empty());
 }
 

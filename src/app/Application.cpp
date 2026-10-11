@@ -2,11 +2,24 @@
  * @file Application.cpp
  * @brief Application lifecycle implementation.
  *
- * Run() initializes Vulkan, the renderer, the upload manager, the editor and
- * the main window, loads or creates the project, then enters the Qt event
- * loop. Teardown is handled by C++ member destruction in reverse declaration
- * order.
+ * Initialization sequence:
+ *   1. QApplication - Qt event loop (Widgets)
+ *   2. EventBus - singleton cross-layer communication
+ *   3. VulkanContext (Phase 1) - VkInstance creation
+ *   4. UIManager + Viewport - Qt window with dockable Viewport
+ *   5. Show main window - apply layout so widget has final size
+ *   6. VkSurfaceKHR - created from Viewport's native window handle via PlatformSurface
+ *   7. VulkanContext (Phase 2) - logical device + queue selection
+ *   8. Project::Open/Project::CreateDefault - load or create project scene + load BAKED.png texture
+ *   9. DeferredRenderer - swapchain, G-Buffer, geometry pass, lighting pass, composite
+ *  10. QTimer-driven render loop - ~60 FPS
+ *
+ * Cleanup: C++ member destruction in reverse declaration order handles
+ *   renderer → editor → screenshot → surface → mainWindow → vkContext automatically.
  */
+
+// Must define platform before including any Vulkan headers
+// (Platform defines removed — PlatformSurface handles this)
 
 #include "app/Application.h"
 
@@ -55,13 +68,17 @@
 namespace {
 
 /// Starter mesh of the default scene, shared by the first-launch fallback and
-/// File > New so the two cannot drift. Relative, so project files stay portable.
+/// File > New so the two cannot drift. Relative: pooled resources store
+/// relative "res/..." paths so project files stay portable, and the asset layer
+/// resolves them against the res dir.
 constexpr const char* kDefaultSceneObj = "res/obj/sphere.obj";
 
 /**
  * @brief Resolves a resource path relative to the executable directory.
  *
- * The res/ folder is copied alongside the executable at build time.
+ * The res/ folder is copied alongside the executable by CMake at build time.
+ * Resources are resolved as: {exeDir}/res/{relativePath}
+ *
  * @param relativePath Path relative to res/ (e.g., "obj/sphere.obj").
  * @return Absolute path to the resource.
  */
@@ -70,8 +87,10 @@ static QString resolveResourcePath(const char* relativePath)
 	return QCoreApplication::applicationDirPath() + "/res/" + relativePath;
 }
 
-// Registers the live components on every call. Order matters: the resource
-// pool is registered first, before the scene resolves references against it.
+// Registers the cross-layer components against live data each call:
+// Scene + RenderConfig (Editor-owned), the ResourceManager pool (Editor-owned,
+// registered FIRST so it deserializes before the Scene resolves references),
+// and the UI-state blob (Application-owned).
 static void BuildProject(neurus::project::Project& proj,
                          neurus::Editor& editor,
                          std::string& uiLayout)
@@ -83,7 +102,9 @@ static void BuildProject(neurus::project::Project& proj,
 	proj.Register<neurus::project::ConfigComponent>(editor.GetRenderConfig());
 	proj.Register<neurus::project::UIComponent>(uiLayout);
 	// History, then editor view state: both are appended-last nodes, so legacy
-	// files that lack them load cleanly (each Load() falls back).
+	// files that lack them load cleanly (each Load() falls back instead of
+	// throwing). Registration order IS archive read order, so nothing already
+	// written moves when a node is appended here.
 	proj.Register<neurus::project::HistoryComponent>(editor.GetOperations());
 	proj.Register<neurus::project::EditorComponent>(editor.GetViewport());
 }
@@ -108,6 +129,11 @@ Application::Application(int argc, char* argv[])
 
 Application::~Application()
 {
+	// ShaderLibrary no longer caches shaders — no explicit cleanup needed.
+	// vk::raii::ShaderModule objects created during pipeline building are
+	// temporary and destroyed before BuildPipeline returns.
+	// The unique_ptr<Shader> members in each pass are cleaned up during
+	// normal member destruction.
 }
 
 // =========================================================================
@@ -116,14 +142,17 @@ Application::~Application()
 
 int Application::Run()
 {
-	// --- Preferences: the Application is their sole manager. Loaded BEFORE the
-	// window is built so the UI starts in the saved language; the file is
-	// created on first run. ---
+	// --- App-level preferences: the Application is their sole manager. Load
+	// BEFORE the window is built so the UI starts in the saved language, and
+	// generate ~/.neurus/preferences.json on first run. The UI only ever
+	// receives plain values (see the UIManager ctor below). ---
 	app_preferences = std::make_unique<neurus::Preferences>();
 	const std::string prefsPath = neurus::Preferences::DefaultPath();
 
-	// "auto" stays stored verbatim: nothing here rewrites the preference with
-	// a concrete code, which would erase the "follow the system" choice.
+	// "auto" is stored verbatim and stays stored verbatim: I18n::setLanguage()
+	// resolves the sentinel itself, so nothing here rewrites the preference with
+	// a concrete code — otherwise the very first save would erase the user's
+	// "follow the system language" choice.
 	switch (app_preferences->Load(prefsPath))
 	{
 	case neurus::Preferences::LoadResult::Ok:
@@ -180,9 +209,9 @@ int Application::Run()
 
 	try
 	{
-		// Open the existing project (scene, config and UI layout all live in
-		// it). Inlined rather than OnProjectOpen so a missing file throws
-		// through to the default-project fallback below.
+		// Open the existing project: restores scene, config, AND UI layout.
+		// Inlined (rather than OnProjectOpen) so a missing file throws through
+		// to the default-project fallback below.
 		app_editor->BeginLoad();
 		neurus::project::Project proj;
 		BuildProject(proj, *app_editor, app_uiLayout);
@@ -196,21 +225,31 @@ int Application::Run()
 	catch (const std::exception& e)
 	{
 		NEURUS_LOG("[Application] Project file not found, creating default: " << e.what());
-		// Same two steps as File > New: an empty document, then the default
-		// content. The upload waits until after show(), below.
+		// Same two steps as File > New (OnProjectNew): an empty document, then the
+		// default content. BeginLoad() above reset the scene but deliberately left
+		// the viewport camera uncreated for the file to name, so NewScene() is what
+		// mints it here. The upload waits until after show(), below.
 		app_editor->NewScene();
 		app_editor->CreateDefaultScene(objPath);
-		// Save for future runs (captures the current default UI layout too).
-		// This also rebases the dirty baseline.
+		// Save for future runs (captures the current default UI layout too);
+		// relative res/... paths are stored inside the pooled data resources.
+		// This also rebases the dirty baseline (OnProjectSave -> ClearDirty()).
 		OnProjectSave(projectPath);
 	}
 
 	app_mainWindow->show();
 	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight());
 
-	// Upload scene GPU resources AFTER the window is shown and the surface is
-	// ready: doing it earlier causes "Surface lost during recreation" on the
-	// first frame because the swapchain is not fully ready.
+	// Upload scene GPU resources AFTER window is shown and surface is ready.
+	// Doing this earlier (in Editor::Initialize) causes "Surface lost during recreation"
+	// on the first frame because the swapchain isn't fully ready.
+	//
+	// One call covers the whole scene - meshes, lights, debug meshes, IBL cubemaps
+	// and the light SSBO - and that is what makes the first-launch fallback
+	// correct: its scene comes from CreateDefaultScene() and never passes through
+	// FinishLoad(), so it used to end up with no IBL at all. For a loaded project
+	// it is nearly free: FinishLoad() already uploaded everything and each part
+	// skips work that is already cached.
 	app_editor->UploadSceneResources();
 
 	WireSignals();
@@ -231,22 +270,26 @@ bool Application::InitVulkan()
 
 	try
 	{
+		// Step 1: Create VkInstance with platform extensions
 		app_platform = CreatePlatformSurface();
 		auto vkInstance = neurus::VulkanContext::CreateInstance(*app_platform);
 		app_vkContext = std::make_unique<neurus::VulkanContext>(std::move(vkInstance));
 
-		// The window is seeded with plain preference values (language / FPS /
-		// file path); the UI layer never touches this type.
+		// Step 2: Create Qt window with Viewport. The Application seeds the UI
+		// with plain preference values (language / FPS / file path) — the UI
+		// layer never touches the app-layer Preferences type.
 		app_mainWindow = std::make_unique<neurus::UIManager>(
 			QString::fromStdString(app_preferences->language),
 			app_preferences->targetFps,
 			QString::fromStdString(neurus::Preferences::DefaultPath()));
 		app_mainWindow->show();  // Must show before surface creation on macOS
 
+		// Step 3: Create VkSurfaceKHR via platform abstraction
 		NativeWindowHandle hwnd = app_mainWindow->getViewportHwnd();
 		app_surface = std::make_unique<vk::raii::SurfaceKHR>(
 			app_platform->createSurface(app_vkContext->instance(), hwnd));
 
+		// Step 4: Create logical device
 		app_vkContext->InitDevice();
 
 		uiEvents.setGpuName(QString::fromStdString(app_vkContext->gpuName()));
@@ -259,6 +302,7 @@ bool Application::InitVulkan()
 
 	try
 	{
+		// Step 5: Validate queue family supports presentation, get queue handle
 		app_vkContext->InitQueue(*app_surface);
 	}
 	catch (const std::exception& e)
@@ -294,7 +338,7 @@ bool Application::InitRenderer()
 		return false;
 	}
 
-	// --- Create screenshot helper (needs Vulkan handles; RenderCache passed per call) ---
+	// --- Create screenshot helper (needs Vulkan handles; RenderCache passed per-call) ---
 	app_screenshot = std::make_unique<neurus::Screenshot>(
 		app_vkContext->device(),
 		app_vkContext->physicalDevice(),
@@ -311,9 +355,11 @@ void Application::ResizeViewport(int width, int height)
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 	app_renderer->HandleResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
-	// The viewport needs both extents: logical for every projection query,
-	// physical for the ID-buffer readback. The physical one is read back AFTER
-	// the resize above, so it is the extent the swapchain actually got.
+	// The viewport needs both extents: logical for every projection query (and for
+	// Camera::cam_w/cam_h), physical for the ID-buffer readback. The physical one is
+	// read back from the renderer AFTER its own resize, so it is the extent the
+	// swapchain actually got rather than the one we asked for. It goes straight to
+	// the EditorViewport — the Editor holds no extent and no camera of its own.
 	const auto extent = app_renderer->GetExtent();
 	app_editor->GetViewport().HandleResize(
 		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
@@ -343,7 +389,10 @@ void Application::WireSignals()
 	RecreateSignals(uiEvents);
 	ScreenShotSignals(uiEvents);
 
-	// --- Preferences changes: apply, persist, and retranslate via I18n. ---
+	// --- Preferences changes (Preferences dialog → Application) ---
+	// The dialog's live controls emit through UIEvents; the Application
+	// applies the new value, persists it, and (for language) retranslates
+	// the whole UI via I18n::languageChanged.
 	QObject::connect(&uiEvents, &neurus::UIEvents::languageChangeRequested,
 	                 [this](const QString& language) {
 	                     neurus::I18n::instance().setLanguage(language);
@@ -370,17 +419,19 @@ void Application::ApplyTargetFps(int fps)
 
 void Application::OnProjectNew()
 {
-	// File > New is two editor steps: reset the document to empty, then fill
-	// it with the same default content a first launch gets. Keeping them apart
-	// is what lets NewScene() mean "empty" while the menu still hands the user
-	// something to look at.
+	// File > New is a new *project*, not a new scene, so it is two editor steps:
+	// reset the document to empty, then fill it with the same default content a
+	// first launch gets. Keeping them apart is what lets NewScene() mean "empty"
+	// (no mesh, no light, no camera) while the menu still hands the user
+	// something to look at rather than a black viewport.
 	try
 	{
 		app_editor->NewScene();
 		app_editor->CreateDefaultScene(kDefaultSceneObj);
 		// That content IS the new document's baseline, not an unsaved edit.
 		app_editor->ClearDirty();
-		// Safe here: the window is already shown.
+		// The window is long since shown here, so uploading now is safe (unlike the
+		// first-launch path in Run(), which waits until after show()).
 		app_editor->UploadSceneResources();
 	}
 	catch (const std::exception& e)
@@ -398,11 +449,11 @@ void Application::OnProjectOpen(const std::string& path)
 {
 	try
 	{
-		app_editor->BeginLoad();
+		app_editor->BeginLoad();                       // WaitIdle + fresh Scene/RenderConfig
 		neurus::project::Project proj;
-		BuildProject(proj, *app_editor, app_uiLayout);
+		BuildProject(proj, *app_editor, app_uiLayout); // refs bind to the fresh scene
 		proj.Load(path);
-		app_editor->FinishLoad();
+		app_editor->FinishLoad();                      // reload mesh data, upload, IBL
 		app_mainWindow->ApplyLayout(app_uiLayout);
 		app_projectPath = path;
 		app_savedUiState = app_uiLayout;
@@ -449,26 +500,27 @@ bool Application::IsDirty() const
 
 void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 {
-	// --- Render request (manual frame trigger); the timer below drives it ---
+	// --- Render request (manual frame trigger) ---
+	// newFrame pattern: process enqueued camera events → draw → refresh UI
 	QObject::connect(&uiEvents, &neurus::UIEvents::newFrame,
 	                 [this]() {
 	                     if (app_renderer && app_editor)
 	                     {
-	                         // Process all enqueued events (camera, gizmo, ...).
-	                         app_editor->Edit();
-	                         // Both contexts are assembled here from the Editor's
-	                         // shared state; DrawFrame returns the per-frame
-	                         // profile, which the UIContext carries to the panels.
-	                         const neurus::SceneContext snapshot = app_editor->GetContext();
+	                         app_editor->Edit();  // Process all enqueued events (camera, etc.)
 
+	                         // The Editor fills both frame views (Renderer <- Editor -> UI);
+	                         // the Application only supplies what the Editor does not own —
+	                         // the render profile and the service-backed log/history
+	                         // pointers. DrawFrame stamps the renderer's own half (extent,
+	                         // frame index, jitter, iteration) into a local copy of rctx.
 	                         neurus::RenderContext rctx;
-	                         rctx.snapshot = snapshot;
+	                         app_editor->UpdateRenderContext(rctx);
 	                         auto profile = app_renderer->DrawFrame(rctx);
 
 	                         const neurus::HistoryView history = app_editor->GetHistory();
 
 	                         neurus::UIContext ctx;
-	                         ctx.snapshot = snapshot;
+	                         app_editor->UpdateUIContext(ctx);
 	                         ctx.profile = &profile;
 	                         ctx.log = &neurus::LogBuffer::instance();
 	                         ctx.history = &history;
@@ -519,6 +571,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	// --- Viewport signals: resize + camera control + pixel selection ---
 	if (auto* viewport = app_mainWindow->GetPanel<neurus::Viewport>())
 	{
+		// Handle Viewport resize
 		QObject::connect(viewport, &neurus::Viewport::resized,
 		                 [this](int width, int height) {
 		                     ResizeViewport(width, height);
@@ -530,31 +583,37 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// Forward mouse scroll to Editor for camera zoom
 		ConnectUIEvent(viewport, &neurus::Viewport::mouseScrolled);
 
-		// Forward mouse press/release so the Editor can bound the camera drag
-		// gesture (middle-button orbit/pan/dolly -> one undo entry). The
-		// selection lambda below also listens to mousePressed (Left button).
+		// Forward mouse press/release to Editor so it can bound the camera
+		// drag gesture (middle-button orbit/pan/dolly → one undo entry). The
+		// selection lambda below also listens to mousePressed (Left button);
+		// both connections coexist.
 		ConnectUIEvent(viewport, &neurus::Viewport::mousePressed);
 		ConnectUIEvent(viewport, &neurus::Viewport::mouseReleased);
 
 		// Forward the Delete key (remove all selected objects).
 		ConnectUIEvent(viewport, &neurus::Viewport::deleteRequested);
 
-		// Forward modal transform keystrokes (G/R/S, X/Y/Z, Return, Escape)
-		// and the focus-loss abort.
+		// Forward modal transform keystrokes (G/R/S, X/Y/Z, Return, Escape) and
+		// the focus-loss abort. Both are raw viewport facts: the Editor turns a
+		// key into a gizmo intent, and TransformGizmoController decides whether
+		// the intent means anything.
 		ConnectUIEvent(viewport, &neurus::Viewport::keyPressed);
 		ConnectUIEvent(viewport, &neurus::Viewport::focusLost);
 
-		// Left-click: pixel-perfect object selection via the ID buffer.
+		// Handle left-click for pixel-perfect object selection via IDBuffer
 		QObject::connect(viewport, &neurus::Viewport::mousePressed,
 		                 [this, viewport](const neurus::MousePressEvent& e) {
 		                     if (e.button != Input::MouseButton::Left)
 		                         return;
 
-		                     // A left click that confirms a modal transform
-		                     // gesture must not re-select what is under the
-		                     // cursor, nor pay this path's queue.waitIdle
-		                     // ID-buffer readback. Safe at frame granularity:
-		                     // gizmo state only ever changes inside Edit().
+		                     // A left click that confirms a modal transform gesture
+		                     // must not also re-select whatever happens to be under
+		                     // the cursor, and must not pay this path's
+		                     // queue.waitIdle ID-buffer readback. This is a separate
+		                     // connection from the ConnectUIEvent above, so the
+		                     // gesture's own GizmoConfirmed still reaches the Editor.
+		                     // Frame-granular and therefore safe: gizmo state only
+		                     // ever changes inside Editor::Edit().
 		                     if (app_editor->GetViewport().IsGizmoActive())
 		                         return;
 
@@ -568,11 +627,12 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		                     uint32_t py = static_cast<uint32_t>(
 		                         e.position.y * renderExtent.height / static_cast<float>(widgetH));
 
-		                     // Read the object ID at the click position
-		                     // (GPU-to-CPU readback).
+		                     // Read the object ID from the IDBuffer at the click
+		                     // position (GPU → CPU readback via PickPixel).
 		                     uint32_t objectID = app_renderer->ReadIDBufferPixel(px, py);
 
-		                     // objectID 0 means background (clears the selection).
+		                     // Forward to Editor; objectID=0 means background
+		                     // (handled by SelectObject → ClearSelection).
 		                     ObjectSelected selEvent {
 		                         static_cast<int>(objectID),
 		                         static_cast<int>(e.modifiers)
@@ -581,7 +641,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		                 });
 	}
 
-	// RenderConfig changes -> Editor (via ConnectUIEvent).
+	// Handle RenderConfig changes → Editor (via ConnectUIEvent → OnUIEvent → EventQueue)
 	if (auto* cfgPanel = app_mainWindow->GetPanel<neurus::RenderConfigPanel>())
 	{
 		ConnectUIEvent(cfgPanel, &neurus::RenderConfigPanel::configValueChanged);
@@ -601,7 +661,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		ConnectUIEvent(shaderPanel, &neurus::ShaderEditorPanel::editEnd);
 	}
 
-	// Transform / property changes -> Editor
+	// Handle Transform changes from Property Panel → Editor
 	if (auto* propPanel = app_mainWindow->GetPanel<neurus::PropertyPanel>())
 	{
 		ConnectUIEvent(propPanel, &neurus::PropertyPanel::positionChanged);
@@ -647,10 +707,10 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 
 void Application::RecreateSignals(neurus::UIEvents& uiEvents)
 {
-	// New native window handle -> new surface -> new swapchain; rebind signals.
+	// Handle UI recreation (new native window handle → new surface → new swapchain, rebind the signals)
 	QObject::connect(&uiEvents, &neurus::UIEvents::uiRecreated,
 	                 [this](quintptr newHwnd) {
-	                     // Reconnect panel signals to the new widget.
+	                     // Reconnect panel signals (Viewport resize) to the new widget
 	                     PanelSignals(neurus::UIEvents::instance());
 
 	                     if (!app_vkContext || !app_renderer)
@@ -678,7 +738,7 @@ void Application::RecreateSignals(neurus::UIEvents& uiEvents)
 
 void Application::ScreenShotSignals(neurus::UIEvents& uiEvents)
 {
-	// Screenshot requests (F12 / menu action)
+	// Handle screenshot requests (F12 / menu action) via UIEvents signal
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotRequested,
 	                 [this]() {
 	                     if (app_screenshot && app_renderer)
@@ -690,7 +750,7 @@ void Application::ScreenShotSignals(neurus::UIEvents& uiEvents)
 	                     }
 	                 });
 
-	// Attachment dump requests (Ctrl+F12)
+	// Handle attachment dump requests (Ctrl+F12) via UIEvents signal
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotAllRequested,
 	                 [this]() {
 	                     if (app_screenshot && app_renderer)
