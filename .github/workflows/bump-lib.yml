@@ -1,0 +1,31 @@
+name: bump-lib
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Advance lib to Neurus-Lib main
+        run: git submodule update --init --remote --checkout lib
+      # BUMP_LIB_TOKEN: optional PAT (repo + workflow scope). Without it the
+      # default GITHUB_TOKEN is used, and per GitHub's documented behavior its
+      # events do not start workflow runs — so no CI would run on the PR this
+      # step opens. Configure the secret to make the PR genuinely CI-gated.
+      - name: Open PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.BUMP_LIB_TOKEN || github.token }}
+          branch: chore/bump-lib
+          title: "chore: bump lib submodule"
+          commit-message: "chore: bump lib submodule to Neurus-Lib main"
+          body: "Bumps the `lib` submodule to the newest Neurus-Lib commit. CI gates the merge. If no `BUMP_LIB_TOKEN` secret is configured, the default token cannot trigger CI on this PR — push an empty commit once to run checks."
+          add-paths: lib
+          delete-branch: true

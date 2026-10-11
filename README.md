@@ -6,7 +6,7 @@ A real-time rendering framework with strict four-layer architecture
 (Renderer ↔ Editor ↔ UI ↔ Data & Resource). Built for experimentation
 with modern rendering algorithms.
 
-[![CI](https://github.com/XDzzzzzZyq/Neurus/actions/workflows/ci.yml/badge.svg)](https://github.com/XDzzzzzZyq/Neurus/actions/workflows/ci.yml)
+[![CI](https://github.com/XDzZyq/Neurus/actions/workflows/ci.yml/badge.svg)](https://github.com/XDzZyq/Neurus/actions/workflows/ci.yml)
 
 ## Architecture
 
@@ -46,7 +46,7 @@ with modern rendering algorithms.
 
 ```bash
 # Clone with submodules
-git clone --recurse-submodules https://github.com/XDzzzzzZyq/Neurus.git
+git clone --recurse-submodules https://github.com/XDzZyq/Neurus.git
 cd Neurus
 
 # Download pre-compiled third-party libraries + configure (recommended)
@@ -82,10 +82,9 @@ Neurus/
 │   ├── instructions/       # Architecture/component docs
 │   └── workflows/          # CI configuration
 ├── cmake/                  # CMake helper modules (Dependencies.cmake)
-├── dep/                    # Git submodule dependencies (source fallback)
-├── lib/                    # Pre-compiled third-party libraries (git-ignored)
+├── lib/                    # Neurus-Lib submodule (src/ sources + prebuilt/ binaries)
 ├── res/shaders/            # GLSL shader source files
-├── scripts/                # Utility scripts (setup_dependencies.py)
+├── scripts/                # Utility scripts (extract_i18n.py)
 ├── src/
 │   ├── render/             # Renderer layer (Vulkan-HPP)
 │   ├── editor/             # Editor layer (logic, controllers)
@@ -130,14 +129,15 @@ screen-space ambient occlusion, image-based lighting, and full G-Buffer pipeline
 
 Third-party libraries that benefit from ahead-of-time compilation (shaderc,
 Qt Advanced Docking) can be used as pre-compiled binaries via
-[Neurus-Lib](https://github.com/XDzzzzzZyq/Neurus-Lib).
-Run `make update` to download the latest binaries into `lib/<platform>/`.
-The CMake build system prefers pre-compiled binaries and falls back to
-source builds in `dep/` automatically. Qt Advanced Docking carries an extra
-condition: because it shares Qt's inline container template instantiations with
-our own translation units, its archive is only linked when the
-`build_info.txt` stamp beside it records the same Qt version and C++ standard
-this build uses — otherwise CMake says why and builds it from source. See
+[Neurus-Lib](https://github.com/XDzZyq/Neurus-Lib).
+Run `make update` to init the submodules and download the latest binaries
+into `lib/prebuilt/<platform>/`. The CMake build system prefers pre-compiled
+binaries and falls back to source builds in `lib/src/` automatically. Qt
+Advanced Docking carries an extra condition: because it shares Qt's inline
+container template instantiations with our own translation units, its archive
+is only linked when the `build_info.txt` stamp beside it records the same Qt
+version and C++ standard this build uses — otherwise CMake says why and builds
+it from source. See
 [build instructions](.github/instructions/build.instructions.md) for details.
 
 ## Code Style

@@ -422,7 +422,7 @@ Layer** concept (future settings: CUDA enablement, theme, shortcut schemes).
 set(ADS_VERSION "4.5.0")
 set(BUILD_EXAMPLES OFF)
 set(BUILD_STATIC ON)
-add_subdirectory(dep/qtadvanceddocking)
+add_subdirectory(lib/src/qtadvanceddocking)
 
 # Link targets
 target_link_libraries(Neurus PRIVATE ads::qtadvanceddocking-qt6 ...)

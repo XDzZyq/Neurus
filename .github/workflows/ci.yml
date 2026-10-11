@@ -23,20 +23,19 @@ jobs:
         with:
           submodules: recursive
 
-      # --- Platform-specific Qt setup ---
-      - name: Setup Qt (Windows)
-        if: runner.os == 'Windows'
+      # --- Qt: both legs pin the version the prebuilt ADS archive in
+      # lib/prebuilt is stamped with; any other Qt silently falls back to the
+      # source build (asserted after configure below). ---
+      - name: Setup Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: 6.11.1
           aqtsource: 'git+https://github.com/miurahr/aqtinstall.git'
           cache: true
 
-      - name: Setup Qt + Ninja (macOS)
+      - name: Setup Ninja (macOS)
         if: runner.os == 'macOS'
-        run: |
-          brew install qt ninja
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix qt)" >> $GITHUB_ENV
+        run: brew install ninja
 
       # --- Common ---
       - name: Setup Vulkan SDK
@@ -51,9 +50,18 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Update dependencies and configure
-        run: make update
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          make update 2>&1 | tee "${{ runner.temp }}/configure.log"
+
+      - name: Assert prebuilt ADS was used
+        shell: bash
+        run: |
+          grep -q "Using pre-compiled qtadvanceddocking" "${{ runner.temp }}/configure.log" \
+            || { echo "::error::prebuilt ADS not used — Qt drift between producer and consumer CI"; tail -50 "${{ runner.temp }}/configure.log"; exit 1; }
 
       # Blender-style i18n check: fail the build if any UI string in
       # res/i18n/*.po is untranslated (run before the build for a fast fail).

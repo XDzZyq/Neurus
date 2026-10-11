@@ -12,10 +12,10 @@
 
 ```
 # Clone with submodules
-git clone --recurse-submodules https://github.com/XDzzzzzZyq/Neurus.git
+git clone --recurse-submodules https://github.com/XDzZyq/Neurus.git
 cd Neurus
 
-# Init submodules, download pre-compiled deps, configure CMake
+# Init submodules, download pre-compiled deps via lib/, configure CMake
 make update
 
 # Build debug
@@ -38,9 +38,10 @@ Neurus supports two modes for third-party dependencies that can be compiled ahea
 
 ### Pre-compiled (recommended)
 
-Run `make update` to download pre-compiled binaries from the
-[Neurus-Lib](https://github.com/XDzzzzzZyq/Neurus-Lib) GitHub Release.
-Binaries are extracted into `lib/<platform>/` (git-ignored).
+Run `make update` to init the submodules and download pre-compiled binaries
+from the [Neurus-Lib](https://github.com/XDzZyq/Neurus-Lib) GitHub Release.
+Binaries are extracted into `lib/prebuilt/<platform>/`, inside the `lib`
+submodule (git-ignored there).
 
 The CMake build system automatically detects pre-compiled libraries and skips
 source builds for:
@@ -82,9 +83,10 @@ Consequences for maintainers:
 
 - **Rebuild the archives whenever Qt changes.** `brew upgrade qt` alone will
   silently move the build onto the source fallback.
-  `scripts/build_macos_libs.sh --ads-only` rebuilds just ADS and re-stamps it.
-- The archives are produced through `cmake/ads_standalone/CMakeLists.txt`, not
-  by configuring `dep/qtadvanceddocking` directly, because the submodule
+  `lib/scripts/build_prebuilt_macos.sh --ads-only` rebuilds just ADS and
+  re-stamps it.
+- The archives are produced through `lib/scripts/ads_standalone/CMakeLists.txt`,
+  not by configuring `lib/src/qtadvanceddocking` directly, because the submodule
   hardcodes `CXX_STANDARD 17` for Qt6 while Neurus is C++20 — another ODR axis,
   since Qt's containers branch on `#if __cplusplus >= 202002L`. The wrapper pins
   the standard and writes the stamp.
@@ -94,12 +96,12 @@ Consequences for maintainers:
 
 ### Source build (fallback)
 
-If `lib/<platform>/` does not contain pre-compiled binaries, CMake falls
-back to building from source in `dep/` (the existing behavior). This
+If `lib/prebuilt/<platform>/` does not contain pre-compiled binaries, CMake
+falls back to building from source in `lib/src/` (the existing behavior). This
 requires a one-time shaderc dependency sync:
 
 ```
-cd dep/shaderc
+cd lib/src/shaderc
 python utils/git-sync-deps
 ```
 
@@ -124,7 +126,7 @@ Operations is enough to trip it — which is exactly what happened when the debu
 object property ops landed.
 
 `/bigobj` only widens the section-count limit; it changes no codegen and no
-ABI. `cereal` builds itself with the same flag (`dep/cereal/CMakeLists.txt`).
+ABI. `cereal` builds itself with the same flag (`lib/src/cereal/CMakeLists.txt`).
 If a future TU hits C1128 again, the flag is already there — the answer is to
 split that TU, not to add the flag.
 

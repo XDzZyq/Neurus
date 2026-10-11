@@ -157,8 +157,7 @@ Neurus/
 │   ├── instructions/       # Architecture/component docs for AI agents
 │   └── workflows/          # GitHub Actions CI
 ├── cmake/                  # CMake helper modules
-├── dep/                    # Git submodule dependencies
-│   └── qtadvanceddocking/  # Qt-Advanced-Docking-System (ADS)
+├── lib/                    # Neurus-Lib submodule (src/ sources + prebuilt/ binaries)
 ├── res/i18n/              # gettext .po translation catalogs (zh_CN.po, ...)
 ├── src/
 │   ├── render/             # Renderer layer (Vulkan-HPP)
