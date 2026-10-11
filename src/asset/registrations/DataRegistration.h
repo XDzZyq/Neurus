@@ -2,10 +2,8 @@
  * @file DataRegistration.h
  * @brief Forces linking of the pooled data-resource polymorphic registrations.
  *
- * The registrations live in DataRegistration.cpp (MeshData, ImageData as
- * polymorphic leaves of the UID base). Include this header at any
- * serialization site that touches the ResourceManager pool (e.g.
- * ResourceComponent.cpp) so the static-library TU is not dead-stripped.
+ * Include this at any serialization site that touches the resource pool so
+ * the static-library registration TU is not dead-stripped.
  */
 
 #pragma once

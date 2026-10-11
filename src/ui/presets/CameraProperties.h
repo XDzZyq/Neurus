@@ -3,23 +3,12 @@
  * @brief Camera-specific property editor subpanel.
  *
  * Displays cam_tar (look-at target) as a Vec3Spin, cam_pers (FOV) as a
- * ScalarSlider, and the scene's *activation* state as a checkbox. All edits emit
- * signals carrying the object ID for routing through the Editor event system.
+ * ScalarSlider, and the scene's activation state as a checkbox. All edits emit
+ * signals carrying the object ID.
  *
  * Activation is scene state, not a camera property: it says which camera the
- * viewport looks through, and with none activated the Editor uses its own
- * camera. It lives here because a camera is what the checkbox is *about*, but it
- * is read from and written to the Scene, never to the Camera object. Selecting a
- * camera therefore does not change the view — only ticking this does.
- *
- * Architecture:
- * - QWidget subclass with internal QVBoxLayout
- * - Owns Vec3Spin and ScalarSlider child widgets in QGroupBox containers
- * - Lazy update via dirty-check: each setter caches the last value and
- *   no-ops if unchanged
- * - setObjectId() resets all caches when object changes (forces full refresh)
- * - No Vulkan or Renderer dependencies — pure Qt UI layer
- * - Lives in src/ui/items/ alongside Vec3Spin, ScalarSlider, and OutlinerRow
+ * viewport looks through. Selecting a camera does not change the view - only
+ * ticking this does.
  */
 
 #pragma once
@@ -58,16 +47,14 @@ public:
 	/**
 	 * @brief Updates the look-at target Vec3Spin.
 	 *
-	 * Dirty-checks against the cached target — no-op if unchanged.
-	 * Uses Vec3Spin::setValue() which internally blocks signals.
+	 * Dirty-checked against the cached target; writes with signals blocked.
 	 */
 	void setTarget(const glm::vec3& target);
 
 	/**
 	 * @brief Updates the FOV ScalarSlider.
 	 *
-	 * Dirty-checks against the cached FOV — no-op if unchanged.
-	 * Uses ScalarSlider::setValue() which internally blocks signals.
+	 * Dirty-checked against the cached FOV; writes with signals blocked.
 	 */
 	void setFov(float fov);
 
@@ -76,8 +63,8 @@ public:
 	 *
 	 * @param active True when this camera is the one the Scene has activated.
 	 *
-	 * Dirty-checked like the others and written with signals blocked, so pushing
-	 * the current state back never re-emits the edit that produced it.
+	 * Dirty-checked and written with signals blocked, so pushing the current
+	 * state back never re-emits the edit that produced it.
 	 */
 	void setActive(bool active);
 

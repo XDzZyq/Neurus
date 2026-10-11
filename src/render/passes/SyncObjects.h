@@ -20,11 +20,8 @@ constexpr uint64_t kDefaultFenceTimeoutNs = 100'000'000;
 /**
  * @brief RAII wrapper around a single vk::raii::Fence.
  *
- * Provides WaitAndReset() for the common CPU-GPU synchronization pattern:
- *   - wait for the GPU to signal the fence
- *   - reset the fence to the unsignaled state
- *
- * Non-copyable; move-only.
+ * WaitAndReset() waits for the GPU to signal the fence, then resets it to
+ * the unsignaled state. Non-copyable; move-only.
  */
 class Fence
 {

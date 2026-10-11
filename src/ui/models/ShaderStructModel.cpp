@@ -147,8 +147,8 @@ void ShaderStructModel::Retranslate()
 		return;
 
 	// Only the section rows carry translated text, and they are exactly the
-	// top-level rows — their children are shader identifiers, which are code,
-	// not UI text. Column 0 is the one that shows the title.
+	// top-level rows; their children are shader identifiers, which are code,
+	// not UI text.
 	const int last = static_cast<int>(m_root->children.size()) - 1;
 	emit dataChanged(index(0, 0), index(last, 0), { Qt::DisplayRole });
 }

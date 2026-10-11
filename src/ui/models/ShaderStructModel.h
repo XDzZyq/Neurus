@@ -12,9 +12,8 @@ namespace neurus {
 /**
  * @brief Tree model for ShaderStruct IR.
  *
- * 3-level tree: section headers -> field/struct nodes -> struct members.
- * The model is read-only; edits emit signals so the editor controller can
- * mutate the underlying ShaderStruct and refresh.
+ * 3-level tree: section headers -> field/struct nodes -> struct members. The
+ * model is read-only; edits are emitted as signals instead of applied here.
  */
 class ShaderStructModel : public QAbstractItemModel
 {
@@ -59,9 +58,8 @@ public:
 	/**
 	 * @brief Re-emits the model's text after a language switch.
 	 *
-	 * Section titles and column headers are produced on demand by
-	 * sectionTitle()/headerData(), so nothing needs rebuilding — the views just
-	 * have to be told to re-fetch. Called from ShaderEditorPanel::Retranslate().
+	 * Section titles and column headers are produced on demand, so nothing
+	 * needs rebuilding - the views just have to be told to re-fetch.
 	 */
 	void Retranslate();
 

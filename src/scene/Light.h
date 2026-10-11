@@ -2,14 +2,8 @@
  * @file Light.h
  * @brief Light source objects for PBR lighting.
  *
- * Provides the Light class (point, sun, spot, area lights).
- * All GPU buffer management, shadow map rendering, and shadow computation
- * are handled by ShadowSystem (future: src/render/ShadowSystem.h).
- *
- * Architecture:
- * - Light inherits ObjectID (scene identity) and Transform3D (spatial placement)
- * - ShadowSystem converts scene lights into GPU-friendly buffers
- * - ShadowSystem owns all shadow map rendering resources and projection matrices
+ * Provides the Light class (point, sun, spot, area lights): a scene-side
+ * description of type, colour, power and shadow parameters.
  */
 
 #pragma once
@@ -28,8 +22,7 @@
 namespace neurus
 {
 
-// Forward declaration for sprite icon type (used by editor viewport gizmos).
-// Full definition is in scene/Sprite.h.
+// Forward declaration of the sprite icon type; defined in scene/Sprite.h.
 enum SpriteType : int;
 
 /**
@@ -47,16 +40,11 @@ enum LightType : int
 /**
  * @brief Light source object supporting point, sun, spot, and area lights.
  *
- * Light provides PBR lighting with configurable type, color, power, and
- * shadow flags. Transform3D determines position/orientation, while
- * type-specific parameters control light shape (radius for point, cutoff
- * for spot, ratio for area).
+ * Type, colour, power and shadow flags are configurable. Transform3D
+ * determines position/orientation, while type-specific parameters control
+ * the light shape (radius for point, cutoff for spot, ratio for area).
  *
- * @note Shadow map rendering, projection matrices, and GPU resources are
- *       managed by ShadowSystem (future: src/render/ShadowSystem.h).
- * @note Inheritance: ObjectID for scene identity, Transform3D for spatial
- *       placement.
- * @note Thread-safety: Not thread-safe. Access from main thread only.
+ * @note Not thread-safe. Access from main thread only.
  */
 class Light : public ObjectID, public Transform3D
 {
@@ -116,8 +104,8 @@ public:
 	/** @brief Near plane for point light shadow map. */
 	static constexpr float point_shadow_near = 0.1f;
 
-	/** @brief Far plane for point light shadow map. */
-	static constexpr float point_shadow_far = 10.0f; ///< @note Hardcoded to 10.0 per ShadowDepthPass contract.
+	/** @brief Far plane for point light shadow map (hardcoded to 10.0). */
+	static constexpr float point_shadow_far = 10.0f;
 
 	/** @brief Blur kernel size for soft point shadows. */
 	static constexpr float point_blur_range = 0.02f;
@@ -167,16 +155,14 @@ public:
 	}
 
 public:
-	/**
-	 * @brief Constructs a light with default values (type NONELIGHT).
-	 */
+	/** @brief Constructs a light with default values (type NONELIGHT). */
 	Light();
 
 	/**
 	 * @brief Constructs a light with specified type, power, and color.
-	 * @param type Light type (POINTLIGHT, SUNLIGHT, SPOTLIGHT, AREALIGHT).
-	 * @param power Luminous intensity (default: 10).
-	 * @param color RGB color in linear space (default: white).
+	 * @param type Light type.
+	 * @param power Luminous intensity.
+	 * @param color RGB color in linear space.
 	 */
 	Light(LightType type, float power = 10.0f, glm::vec3 color = glm::vec3(1.0f));
 
@@ -184,7 +170,6 @@ public:
 	 * @brief Parses light type to sprite icon and display name.
 	 * @param _type Light type to parse.
 	 * @return Pair of (sprite icon type, display name string).
-	 * @note Used by editor to display light icons in viewport and outliner.
 	 */
 	static std::pair<SpriteType, std::string> ParseLightName(LightType _type);
 
@@ -195,58 +180,29 @@ public:
 	/** @brief Dirty flag indicating light parameters changed since last frame. */
 	bool is_light_changed{ false };
 
-	/**
-	 * @brief Sets light color.
-	 * @param _col New RGB color in linear space.
-	 */
+	/** @brief Sets the light color (RGB, linear space). */
 	void SetColor(const glm::vec3& _col);
 
-	/**
-	 * @brief Sets light power/intensity.
-	 * @param _power New luminous intensity.
-	 */
+	/** @brief Sets the light power (luminous intensity). */
 	void SetPower(float _power);
 
-	/**
-	 * @brief Enables or disables shadow casting.
-	 * @param _state True to enable shadows, false to disable.
-	 */
+	/** @brief Enables or disables shadow casting. */
 	void SetShadow(bool _state);
 
-	/**
-	 * @brief Sets point light radius.
-	 * @param _rad New radius for soft shadow computation.
-	 * @note Only applicable to POINTLIGHT type.
-	 */
+	/** @brief Sets the point-light radius used for soft shadows (POINTLIGHT only). */
 	void SetRadius(float _rad);
 
-	/**
-	 * @brief Sets spot light inner cutoff angle (cosine).
-	 * @param _ang Cosine of inner cone angle.
-	 * @note Only applicable to SPOTLIGHT type.
-	 */
+	/** @brief Sets the spot inner cutoff cosine (SPOTLIGHT only). */
 	void SetCutoff(float _ang);
 
-	/**
-	 * @brief Sets spot light outer cutoff angle (cosine).
-	 * @param _ang Cosine of outer cone angle (defines falloff region).
-	 * @note Only applicable to SPOTLIGHT type.
-	 */
+	/** @brief Sets the spot outer cutoff cosine (SPOTLIGHT only). */
 	void SetOuterCutoff(float _ang);
 
-	/**
-	 * @brief Sets area light aspect ratio.
-	 * @param _ratio Width/height ratio of rectangular area light.
-	 * @note Only applicable to AREALIGHT type.
-	 */
+	/** @brief Sets the area-light aspect ratio (AREALIGHT only). */
 	void SetRatio(float _ratio);
 
 public:
-	/**
-	 * @brief Returns typed pointer to this object's Transform component.
-	 * @return Void pointer to Transform (downcast from Transform3D).
-	 * @note Overrides ObjectID::GetTransform() for polymorphic transform access.
-	 */
+	/** @brief Returns this object's Transform component. */
 	void* GetTransform() override
 	{
 		return GetTransformPtr();

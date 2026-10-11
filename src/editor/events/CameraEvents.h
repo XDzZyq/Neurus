@@ -4,9 +4,8 @@ namespace neurus {
 
 /**
  * @brief Camera navigation events carry the camera's integer UID (not a raw
- * Camera* pointer — the camera could be deleted mid-drag; a UID stays a stable
- * identity). CameraController resolves the id against the current scene at
- * dispatch time.
+ * pointer - the camera could be deleted mid-drag; a UID stays stable). The
+ * controller resolves the id against the current scene at dispatch time.
  */
 
 struct CameraZoomEvent {
@@ -42,10 +41,9 @@ struct CameraResizeEvent {
 /**
  * @brief Emitted when a continuous camera drag gesture begins (mouse press).
  *
- * Marks the start of an orbit/pan/dolly manipulation. CameraController captures
- * the camera's "before" pose on this event and mutates the camera live during
- * the drag without recording, so the whole gesture collapses to one undo entry
- * committed on CameraDragEnd.
+ * The controller captures the camera's "before" pose and mutates live during the
+ * drag without recording, so the gesture collapses to one undo entry committed
+ * on CameraDragEnd.
  */
 struct CameraDragBegin {
 	int camId;
@@ -54,8 +52,8 @@ struct CameraDragBegin {
 /**
  * @brief Emitted when a continuous camera drag gesture ends (mouse release).
  *
- * CameraController records a single CameraTransformOp spanning the pose captured
- * at CameraDragBegin through the current pose, if the pose actually changed.
+ * The controller records a single transform op spanning the captured pose
+ * through the current pose, if the pose actually changed.
  */
 struct CameraDragEnd {
 	int camId;

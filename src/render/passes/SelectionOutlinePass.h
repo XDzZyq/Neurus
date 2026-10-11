@@ -2,19 +2,13 @@
  * @file SelectionOutlinePass.h
  * @brief Selected-object edge highlight compute pass.
  *
- * SelectionOutlinePass reads the IDBuffer (R32_UINT) and performs 3×3 edge detection
- * for the active selected object.  Pixels belonging to the active object
- * whose neighbours differ (different object ID or background) are flagged
- * as edges and written to the SelectionOutline attachment (R8_UNORM).
+ * Reads the IDBuffer (R32_UINT) and performs 3x3 edge detection for the active
+ * selected object. Pixels belonging to it whose neighbours differ (different
+ * object ID or background) are flagged as edges and written to the
+ * SelectionOutline attachment (R8_UNORM).
  *
- * Architecture:
- * - Inherits from ComputePass for shared infrastructure (sampler, descriptor
- *   pool/sets, barrier transitions, dispatch logic).
- * - Owns the compute pipeline (no UBOs — only image bindings + push constant).
- * - Borrows RenderCache for IDBuffer and SelectionOutline image views.
- *
- * @note Simple pass with no per-frame uploads.  The single push constant
- *       (activeObjectId) is read directly from RenderContext each frame.
+ * @note No per-frame uploads; the single push constant (activeObjectId) is
+ *       read directly from the context each frame.
  */
 
 #pragma once
@@ -35,19 +29,15 @@ class RenderCache;
 /**
  * @brief Selected-object edge highlight compute pass.
  *
- * Reads the IDBuffer (R32_UINT) as a usampler2D, compares each pixel
- * against its 8 neighbours, and writes the edge mask (R8) to the
- * SelectionOutline attachment.
- *
- * Inherits shared compute-pass infrastructure from ComputePass.
+ * Reads the IDBuffer (R32_UINT) as a usampler2D, compares each pixel against
+ * its 8 neighbours, and writes the edge mask (R8) to the SelectionOutline
+ * attachment.
  */
 class SelectionOutlinePass : public ComputePass
 {
 public:
 	/**
 	 * @brief Constructs the selection outline pass and creates all GPU resources.
-	 *
-	 * Shaders are self-loaded via ShaderLibrary from GLSL source files.
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (for sampler creation).
@@ -66,12 +56,10 @@ public:
 	/**
 	 * @brief Records the selection outline compute dispatch into a command buffer.
 	 *
-	 *   1. Updates per-frame data (push constant from ctx.activeObjectId).
-	 *   2. Writes descriptors for this frame slot.
-	 *   3. Transitions SelectionOutline attachment to ShaderWrite for compute write.
-	 *   4. Binds pipeline, descriptor set, push constants (uint32_t activeObjectId).
-	 *   5. Dispatches ceil(width/16) × ceil(height/16) × 1 thread groups.
-	 *   6. Transitions SelectionOutline to ColorShaderRead for downstream passes.
+	 * Writes this frame's descriptors, transitions IDBuffer to ColorShaderRead
+	 * and SelectionOutline to ShaderWrite, pushes the active object ID, then
+	 * dispatches ceil(w/16) x ceil(h/16) groups and returns SelectionOutline to
+	 * ColorShaderRead.
 	 *
 	 * @param cmdBuf  Command buffer in recording state.
 	 * @param cache   Render cache for attachment access.
@@ -82,22 +70,15 @@ public:
 	/**
 	 * @brief Declares the image attachments this pass reads and writes.
 	 *
-	 * Reads:  IDBuffer       @ slot 0 (combined image sampler, eShaderReadOnlyOptimal)
-	 * Writes: SelectionOutline @ slot 1 (storage image, eGeneral)
-	 *
-	 * Drives both the RenderGraph DAG wiring and the DescriptorBinder image
-	 * writes in WriteDescriptors().
+	 * Reads: IDBuffer at slot 0; writes: SelectionOutline at slot 1. These also
+	 * feed the image writes in WriteDescriptors().
 	 */
 	PassIO GetIO() const override;
 
 	/**
 	 * @brief Writes all descriptors (image bindings) into the specified set.
 	 *
-	 * Bindings:
-	 *   0: IDBuffer (combined image sampler, R32_UINT)
-	 *   1: SelectionOutline (storage image, R8_UNORM)
-	 *
-	 * @param setIndex  Index into p_descriptorSets (0 … numSets-1).
+	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 * @param extent    Render extent for attachment lookup.
 	 * @param cache     Render cache for IDBuffer / SelectionOutline access.
 	 */
@@ -109,15 +90,11 @@ private:
 	 *
 	 * Bindings:
 	 *   0: gIDBuffer        (combined image sampler, usampler2D)
-	 *   1: outputHighlight  (storage image, R8) — the GLSL name is unchanged; only
- *                        the attachment it is bound to was renamed.
+	 *   1: outputHighlight  (storage image, R8)
 	 */
 	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
 
-	/**
-	 * @brief Creates the compute pipeline.
-	 * ShaderModule from self-loaded ComputeShader.
-	 */
+	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
 

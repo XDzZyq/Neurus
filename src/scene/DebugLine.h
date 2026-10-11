@@ -2,21 +2,9 @@
  * @file DebugLine.h
  * @brief Debug line primitive for viewport visualization.
  *
- * DebugLine provides CPU-side storage for debug line segments used in
- * viewport rendering. Each DebugLine instance stores a collection of
- * vertex positions (interpreted as line segment endpoints), along with
- * rendering properties (color, width, opacity, stipple).
- *
- * Architecture:
- * - Inherits ObjectID for scene graph identity and type discrimination
- * - Inherits Transform3D; vertices are stored in its local space, so the whole
- *   line can be moved/rotated/scaled as a unit (DebugDrawBuilder bakes the model
- *   matrix into the world-space overlay payload)
- * - Vertex storage via std::vector<glm::vec3> - no GPU resources
- * - PushDebugLine/PushDebugLines for adding segment data
- *
- * @note No GPU resources or shaders - pure CPU data container.
- * @note Vertices are interpreted as pairs for line segments.
+ * Stores line segment endpoints together with their rendering properties
+ * (color, width, opacity, stipple). Vertices are interpreted in pairs
+ * (start, end).
  */
 
 #pragma once
@@ -36,40 +24,19 @@ namespace neurus
 /**
  * @brief Debug line primitive for viewport wireframe visualization.
  *
- * Stores line segment vertices with rendering attributes. The line style is
- * solid or stipple (dashed); antialiasing is not an authored property but
- * follows that style, applied by DebugDrawBuilder to solid lines only.
- * All data is CPU-side; GPU upload is handled by the renderer layer.
+ * Stores line segment vertices with their rendering attributes (color,
+ * width, opacity, stipple). The line style is either solid or stipple
+ * (dashed).
  *
  * Object type: GO_DL
- *
- * Usage:
- * @code
- *   DebugLine dl;
- *   dl.PushDebugLine({0,0,0}, {1,0,0});   // single segment
- *   dl.PushDebugLines({...});                // multiple segments
- *   dl.SetColor({1,0,0,1});                 // red lines
- *   dl.SetWidth(2.0f);
- * @endcode
  */
 class DebugLine : public ObjectID, public Transform3D
 {
 public:
-	/**
-	 * @brief Constructs a DebugLine with default properties.
-	 *
-	 * Defaults:
-	 * - Color: white (1,1,1,1)
-	 * - Width: 1.0
-	 * - Opacity: 1.0
-	 * - Stipple: false (solid)
-	 * - o_type: GO_DL
-	 */
+	/** @brief Constructs a DebugLine with default properties. */
 	DebugLine();
 
-	/**
-	 * @brief Destroys the DebugLine.
-	 */
+	/** @brief Destroys the DebugLine. */
 	~DebugLine() override = default;
 
 	/**
@@ -91,8 +58,7 @@ public:
 	}
 
 	// Non-copyable and non-movable (UID semantics): ObjectID's UID base deletes
-	// both, so defaulting the move ops would only implicitly delete them and warn.
-	// Scenes hold these through Resource<T> (shared_ptr), never by value.
+	// both, so defaulting them here would only implicitly delete and warn.
 	DebugLine(const DebugLine&) = delete;
 	DebugLine& operator=(const DebugLine&) = delete;
 	DebugLine(DebugLine&&) = delete;
@@ -126,23 +92,15 @@ public:
 	/**
 	 * @brief Replaces the whole vertex list.
 	 * @param vertices New vertex positions, interpreted in pairs like PushDebugLines.
-	 *
-	 * The property editor edits the list as a whole — a cell edit, an insertion and a
-	 * removal are all "the list is now this" — so the absolute setter is what the
-	 * undoable op carries, rather than a per-index one that could not express the
-	 * structural cases anyway.
 	 */
 	void SetVertices(std::vector<glm::vec3> vertices) { o_vertices = std::move(vertices); }
 
-	/**
-	 * @brief Returns the number of stored vertex positions.
-	 * @return Vertex count.
-	 */
+	/** @brief Returns the number of stored vertex positions. */
 	int GetVertexCount() const { return static_cast<int>(o_vertices.size()); }
 
 	/**
 	 * @brief Returns a const reference to the vertex storage.
-	 * @return Const reference to vector of vertex positions.
+	 * @return Const reference to the vector of local-space positions.
 	 */
 	const std::vector<glm::vec3>& GetVertices() const { return o_vertices; }
 
@@ -178,11 +136,8 @@ public:
 	/**
 	 * @brief Returns this object's Transform component.
 	 *
-	 * Vertices are stored in the transform's local space and DebugDrawBuilder
-	 * bakes `GetModelMatrix()` into the world-space overlay payload, so every
-	 * vertex moves with the transform. Overriding this is what makes the object
-	 * reachable by the gizmo, the property panel and Scene::UpdateObjTransforms;
-	 * Mesh/DebugMesh are the pattern.
+	 * Vertices are stored in the transform's local space, so the whole line
+	 * moves, rotates and scales as one.
 	 */
 	void* GetTransform() override { return static_cast<Transform*>(this); }
 

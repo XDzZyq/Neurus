@@ -2,21 +2,9 @@
  * @file IBLPass.h
  * @brief Image-Based Lighting generation pass - pure compute service.
  *
- * Converts an equirectangular HDR image into diffuse irradiance and
- * specular prefiltered cubemaps for PBR IBL evaluation.
- *
- * Does NOT own cubemap resources - caller provides output Image
- * references.  Owns only compute pipelines and descriptor management.
- * One-shot generation (not per-frame) - call Generate() once after
- * loading the HDR environment map.
- *
- * Architecture:
- * - Caller creates diffuse cubemap (64², 1 mip) and specular cubemap
- *   (2048², 8 mips) externally
- * - Generates compute pipelines for irradiance and specular convolution
- * - Writes compute results into caller-provided output Images
- * - Cubemap ownership (Images + Samplers) belongs to the caller
- *   (e.g. DeferredRenderer or test fixture)
+ * Converts an equirectangular HDR image into diffuse irradiance and specular
+ * prefiltered cubemaps for PBR IBL evaluation. Does not own cubemap resources:
+ * the caller provides the output Images. Generation is one-shot, not per-frame.
  */
 
 #pragma once
@@ -38,7 +26,7 @@ class Image;
 class RenderCache;
 
 /**
- * @brief IBL generation pass - equirect → diffuse + specular cubemaps.
+ * @brief IBL generation pass - equirect HDR to diffuse + specular cubemaps.
  *
  * Non-copyable, movable.
  */
@@ -49,7 +37,7 @@ public:
 	static constexpr uint32_t kDiffuseFaceRes = 64;
 	/** Specular prefiltered cubemap face resolution (mip 0). */
 	static constexpr uint32_t kSpecularFaceRes = 2048;
-	/** Specular cubemap mip level count (roughness 0..1 → mip 0..7). */
+	/** Specular cubemap mip level count (roughness 0..1 maps to mip 0..7). */
 	static constexpr uint32_t kSpecularMipLevels = 8;
 	/** Default max step count for irradiance convolution. */
 	static constexpr int32_t kDefaultIrradianceSteps = 64;
@@ -60,21 +48,17 @@ public:
 	 * @brief Constructs the IBL pass - creates samplers, descriptor sets,
 	 *        and compute pipelines.
 	 *
-	 * Shaders are self-loaded via ShaderLibrary from GLSL source files.
-	 * Does NOT create cubemap Images - the caller provides those to
-	 * Generate().
+	 * Does not create cubemap Images - the caller provides those to Generate().
 	 *
 	 * @param device          Logical device (retained reference).
 	 * @param physicalDevice  Physical device for memory/sampler queries.
-	 * @param graphicsQueue   Graphics queue for one-shot command submits.
-	 * @param queueFamilyIndex Queue family index for transient cmd pools.
 	 */
 	IBLPass(const vk::raii::Device& device,
 	        const vk::raii::PhysicalDevice& physicalDevice);
 
 	~IBLPass();
 
-	/** @brief No-op — IBL generation is one-shot via Generate(), not per-frame. */
+	/** @brief No-op: IBL generation is one-shot via Generate(), not per-frame. */
 	PassStats Record(vk::CommandBuffer cmd, RenderCache& cache, const RenderContext& ctx) override
 	{
 		(void)cmd;
@@ -83,7 +67,7 @@ public:
 		return {};
 	}
 
-	/** @brief No-op — IBLPass manages its own descriptor writes via Generate(). */
+	/** @brief No-op: descriptor writes happen inside Generate(). */
 	void WriteDescriptors(uint32_t, vk::Extent2D, RenderCache&) override {}
 
 	// -------------------------------------------------------------------
@@ -93,16 +77,16 @@ public:
 	/**
 	 * @brief Generates diffuse + specular cubemaps from an equirect Image.
 	 *
-	 * The equirect Image must be 2D, R32G32B32A32_SFLOAT, and in
+	 * The equirect Image must be 2D, R32G32B32A32_SFLOAT, in
 	 * SHADER_READ_ONLY_OPTIMAL layout (or will be transitioned).
 	 *
-	 * The caller MUST pre-create the output Images:
-	 * - diffuseOut: 64², 6-layer Cube, 1 mip, R32G32B32A32_SFLOAT
-	 * - specularOut: 2048², 6-layer Cube, 8 mips, R32G32B32A32_SFLOAT
-	 *   (Images must have eStorage | eSampled usage)
+	 * The caller must pre-create the output Images:
+	 * - diffuseOut:  64x64, 6-layer cube, 1 mip, R32G32B32A32_SFLOAT
+	 * - specularOut: 2048x2048, 6-layer cube, 8 mips, R32G32B32A32_SFLOAT
+	 *   (both must have eStorage | eSampled usage)
 	 *
-	 * Records one-shot command buffers for irradiance convolution (1 dispatch)
-	 * and specular prefilter (kSpecularMipLevels dispatches, one per mip).
+	 * Records one-shot command buffers: one irradiance dispatch, then one
+	 * specular prefilter dispatch per mip.
 	 *
 	 * @param graphicsQueue   Graphics queue for one-shot command submits.
 	 * @param queueFamilyIndex Queue family index for transient cmd pools.
@@ -142,7 +126,7 @@ private:
 	std::unique_ptr<ComputeShader> p_irradianceShader;
 	std::unique_ptr<ComputeShader> p_specularShader;
 
-	// (Pipelines inherited from Pass — p_pipelines[0]=irradiance, p_pipelines[1]=specular)
+	// (Pipelines inherited from Pass - p_pipelines[0]=irradiance, p_pipelines[1]=specular)
 };
 
 } // namespace neurus

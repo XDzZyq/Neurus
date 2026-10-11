@@ -4,14 +4,12 @@
  *
  * ResourceManager is the single factory and registry for UID-derived objects
  * (scene objects via ObjectID, data resources like MeshData/ImageData/Shader).
- * It is app-scoped (owned by the Editor), type-erased (holds shared_ptr<UID>),
- * and owns the polymorphic serialization of the whole pool.
+ * It is app-scoped, type-erased (holds shared_ptr<UID>), and owns the
+ * polymorphic serialization of the whole pool.
  *
- * Design (see docs/superpowers/plans/2026-08-07-resource-manager-design.md):
+ * Design:
  * - UID is the ONLY resource base - every pooled object derives from it and
- *   serializes itself (identity + own fields), bound by UID + cereal
- *   polymorphism. No reload hook interface: each object's serialize(load)
- *   restores its own state.
+ *   serializes itself (identity + own fields); no reload hook interface.
  * - Load<T>(args...) constructs + registers in one step.
  * - Scene neither owns nor references the pool; it holds plain typed pools and
  *   resolves references against the pool via Scene::ResolveReferences.
@@ -47,10 +45,7 @@ namespace neurus
 /**
  * @brief Single factory + registry for all UID objects (scene + data).
  *
- * Owned by the Editor (app-scoped). Cleared on project new/open so no stale
- * object leaks into a save. Serializes the whole pool polymorphically via
- * cereal; each pooled object's own serialize(load) restores its content.
- *
+ * Cleared on project new/open so no stale object leaks into a save.
  * Implements IResourceLookup (fetch/lookup only) so controllers can resolve
  * object references by integer id without depending on the concrete pool.
  */
@@ -132,10 +127,9 @@ public:
 	/**
 	 * @brief Invokes @p fn on every pooled object of type T.
 	 *
-	 * Iterates the whole pool and calls @p fn only on entries whose runtime
-	 * type is T (or a T-derived type). Used to mirror the pool into UID-keyed
-	 * GPU caches (RenderCache follows the pool, not the scene — pooled
-	 * objects stay referenced by undo history after deletion).
+	 * Used to mirror the pool into UID-keyed GPU caches, which follow the pool
+	 * rather than the scene (pooled objects stay referenced by undo history
+	 * after deletion).
 	 *
 	 * @tparam T Requested type (e.g. Mesh, Light).
 	 * @param fn Callback receiving each matching shared_ptr (any order).
@@ -170,11 +164,8 @@ public:
 	/**
 	 * @brief Cereal serialization of the whole pool.
 	 *
-	 * Save: writes every pooled UID object polymorphically (this is what makes
-	 * the type registrations load-bearing). Load: restores objects (UID
-	 * serialize bumps s_count past restored IDs); each object's own
-	 * serialize(load) restores its content (e.g. MeshData reloads from its
-	 * stored path).
+	 * Save writes every pooled UID object polymorphically; load restores them,
+	 * and each object's own serialize(load) restores its content.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.

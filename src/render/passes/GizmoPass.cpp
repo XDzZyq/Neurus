@@ -1,9 +1,6 @@
 /**
  * @file GizmoPass.cpp
  * @brief Transform-gizmo overlay raster pass implementation.
- *
- * DebugPass.cpp's body with everything depth-related and everything mesh-related
- * removed; see GizmoPass.h for why each omission is a decision rather than a gap.
  */
 
 #include "passes/GizmoPass.h"
@@ -41,10 +38,8 @@ GizmoPass::GizmoPass(const vk::raii::Device& device,
 	                   framesInFlight,
 	                   DescriptorPool::CalculatePoolSizes({&p_layout}, framesInFlight))
 	, p_descriptorSets(p_descriptorPool.Allocate(p_layout, framesInFlight))
-	// The same two shader pairs DebugPass loads. ShaderLibrary's first argument is a
-	// log tag, not a cache key, so "GizmoLine" and "DebugLine" name the same files
-	// without colliding — and the tag names the consumer, which is what makes a
-	// compile error point at the right pass.
+	// ShaderLibrary's first argument is a log tag, not a cache key, so distinct
+	// tags may name the same files and a compile error points at the consumer.
 	, p_lineShader(ShaderLibrary::LoadRenderShader("GizmoLine",
 	                                               NEURUS_SHADER_DIR "render/overlay_line.vert",
 	                                               NEURUS_SHADER_DIR "render/overlay_line.frag"))
@@ -59,9 +54,9 @@ GizmoPass::GizmoPass(const vk::raii::Device& device,
 	// limit travels to the shader instead of a hardcoded guess.
 	p_maxPointSizePx = physicalDevice.getProperties().limits.pointSizeRange[1];
 
-	// No buffers here: bindings 0-2 name RenderCache's camera UBO and the gizmo
-	// SSBOs, whose handles change when the geometry grows, so Record() writes the
-	// sets every frame instead.
+	// No buffers here: bindings 0-2 name the cache's camera UBO and gizmo
+	// SSBOs, whose handles change when the geometry grows, so Record() writes
+	// the sets every frame instead.
 #ifdef _DEBUG
 	for (auto& set : p_descriptorSets)
 	{
@@ -81,9 +76,7 @@ GizmoPass::GizmoPass(const vk::raii::Device& device,
 
 DescriptorSetLayout GizmoPass::CreateLayout(const vk::raii::Device& device)
 {
-	// Copied unchanged from DebugPass: the shaders are the same files, and
-	// overlay_line.vert / overlay_point.vert declare all three bindings in the
-	// vertex stage only.
+	// The overlay shaders declare all three bindings in the vertex stage only.
 	return BuildLayout()
 		.AddBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex)
 		.AddBinding(1, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eVertex)
@@ -97,14 +90,13 @@ DescriptorSetLayout GizmoPass::CreateLayout(const vk::raii::Device& device)
 
 void GizmoPass::ConfigureCommonState(PipelineBuilder& builder)
 {
-	// One color target: the post-AA image, already tonemapped by ComposePass.
+	// One color target: the post-AA image.
 	builder.SetColorFormats({vk::Format::eR16G16B16A16Sfloat});
 	builder.SetColorBlendAttachment();   // straight alpha-over
 
-	// No SetDepthFormat, no SetDepthStencil, no eDepthTestEnable. A modal guide the
-	// object occludes is a guide that cannot be read, so depth is off for the whole
-	// pass and beginRendering binds no depth attachment at all — which makes
-	// enabling the test invalid here rather than merely useless.
+	// No depth format, depth-stencil state or depth test: with no depth
+	// attachment bound, enabling the test would be invalid rather than merely
+	// useless.
 
 	builder.SetRasterization(vk::PolygonMode::eFill,
 	                         vk::CullModeFlagBits::eNone,
@@ -152,8 +144,8 @@ void GizmoPass::BuildPipeline(const vk::raii::Device& device, const std::string&
 			       {}, vk::ShaderStageFlagBits::eFragment, *m.frag, "main"));
 	};
 
-	// Both pipelines take the identical range, so their layouts are mutually
-	// compatible — unlike DebugPass, which also carries a 72 B wire range.
+	// Both pipelines take the identical push-constant range, so their layouts
+	// are mutually compatible.
 	const vk::PushConstantRange kOverlayRange(vk::ShaderStageFlagBits::eVertex,
 	                                          0, sizeof(GizmoPushConstants));
 
@@ -190,9 +182,9 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 {
 	PassStats stats{};
 
-	// --- 1. No gesture: touch no image, so every state the upstream pass left behind
-	//        stays valid, including the layout the swapchain blit expects. This is
-	//        also what lets the pass sit in the graph unconditionally ---
+	// No gesture: touch no image, so every state the upstream pass left behind
+	// stays valid, including the layout the swapchain blit expects. This is
+	// also what lets the pass sit in the graph unconditionally.
 	const GizmoDrawList* list = ctx.snapshot.gizmoDraw;
 	if (!list || list->Empty())
 	{
@@ -205,19 +197,18 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 		return stats;   // no frame has published a camera yet
 	}
 
-	// The descriptor index wraps over the allocated sets; the cache is queried with
-	// the raw frame index, because GizmoCache grows its own slot ring to match.
-	// Collapsing the two into one value looks tidier and is wrong.
+	// The descriptor index wraps over the allocated sets; the cache is queried
+	// with the raw frame index, because the gizmo cache grows its own slot ring
+	// to match. Collapsing the two into one value looks tidier and is wrong.
 	const size_t frameIdx = ctx.frameIndex % p_descriptorSets.size();
 	const GizmoCache::FrameView frame = cache.GetGizmoCache().GetFrame(ctx.frameIndex);
 	if (!frame.segments || !frame.points)
 	{
-		return stats;   // RenderCache::UpdateGizmoDraw() has not run for this frame
+		return stats;   // the gizmo buffers have not been uploaded for this frame
 	}
 
-	// --- 2. Point this frame's set at what the cache currently holds. Rewritten
-	//        every frame because GizmoCache replaces a buffer when the geometry
-	//        outgrows it, which changes the handle the descriptor names ---
+	// Point this frame's set at what the cache currently holds; the handles
+	// change whenever the gizmo geometry outgrows its buffers.
 	p_descriptorSets[frameIdx].WriteBuffer(0, camera.GetDescriptorInfo(),
 	                                       vk::DescriptorType::eUniformBuffer);
 	p_descriptorSets[frameIdx].WriteBuffer(1, frame.segments->GetDescriptorInfo(),
@@ -241,13 +232,10 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	//        survive underneath the guides ---
 	auto& targetAtt = cache.GetAttachment(p_target, extent);
 
-	// Needed even when DebugPass just left the target in ColorAttachment:
-	// Barrier::Transition has no before == after early-out, so this still emits the
-	// (ColorAttachmentOutput, Write|Read) → (ColorAttachmentOutput, Write|Read)
-	// write-after-write dependency two chained LOAD_OP_LOAD passes require. When
-	// DebugPass early-returned instead, the target is still in ShaderWrite from the
-	// compute pass that produced it and the same call covers that too — the
-	// before-state is read from the tracked Image, not assumed.
+	// Needed even when the target is already in ColorAttachment: Transition has
+	// no before == after early-out, so it still emits the write-after-write
+	// dependency two chained LOAD_OP_LOAD passes require. The before-state is
+	// read from the tracked Image, not assumed.
 	Barrier::Transition(cmdBuf, targetAtt, ImageState::ColorAttachment);
 
 	const vk::RenderingAttachmentInfo colorInfo(
@@ -259,8 +247,8 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	const std::array<vk::RenderingAttachmentInfo, 1> colorInfos{colorInfo};
 	const vk::Rect2D renderArea({0, 0}, extent);
 
-	// Null depth attachment: the pipelines declare no depth format, so binding one
-	// would be a format mismatch rather than a harmless extra.
+	// Null depth attachment: the pipelines declare no depth format, so binding
+	// one would be a format mismatch rather than a harmless extra.
 	cmdBuf.beginRendering(vk::RenderingInfo({}, renderArea, 1, 0, colorInfos, nullptr, nullptr));
 
 	cmdBuf.setViewport(0, vk::Viewport(0.0f, 0.0f,
@@ -269,7 +257,6 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	                                   0.0f, 1.0f));
 	cmdBuf.setScissor(0, renderArea);
 
-	// --- 4. Exactly two draws, no depth toggle anywhere ---
 	const auto bindFor = [&](size_t pipelineIndex) -> vk::PipelineLayout
 	{
 		const Pipeline& pipe = p_pipelines[pipelineIndex];
@@ -289,9 +276,9 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 		++stats.drawCalls;
 	}
 
-	// Points last on purpose: depth is off and blending is alpha-over, so submission
-	// order decides what lands on top and the pivot dot must sit above the axis line
-	// (GizmoDrawList.h records the same contract on the producing side).
+	// Points last on purpose: depth is off and blending is alpha-over, so
+	// submission order decides what lands on top and the pivot dot must sit
+	// above the axis line.
 	if (frame.pointCount > 0)
 	{
 		const vk::PipelineLayout layout = bindFor(kPointPipeline);
@@ -303,9 +290,8 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 
 	cmdBuf.endRendering();
 
-	// The target is left in ColorAttachment. Its consumer — the swapchain blit —
-	// transitions it and thereby picks up a src scope that actually covers the draws
-	// above; handing it over pre-transitioned would hide them.
+	// The target is left in ColorAttachment; the swapchain blit transitions it
+	// and thereby picks up a src scope that covers the draws above.
 
 	return stats;
 }
@@ -317,10 +303,8 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 PassIO GizmoPass::GetIO() const
 {
 	// The target is both read (LOAD_OP_LOAD) and written, which is how the graph
-	// learns this pass must follow whoever wrote it last. A node's own name never
-	// produces a self-edge, so listing it twice is safe. It must be p_target rather
-	// than a fixed alias: Connect() matches sockets by AttachmentName, and an unwired
-	// input is treated as external rather than as an error.
+	// learns this pass must follow whoever wrote it last; a node's own name
+	// never produces a self-edge.
 	PassIO io;
 	io.name = "GizmoPass";
 	io.reads = {

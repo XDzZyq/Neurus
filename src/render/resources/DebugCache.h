@@ -36,17 +36,11 @@ struct DebugDrawList;
 /**
  * @brief Owns the per-frame-in-flight debug geometry buffers and their counts.
  *
- * One slot per frame in flight: a slot is refilled while another may still be in
- * the GPU's hands, which is the whole reason the ring exists. Slots are created
- * on demand — `Update(frameIndex, list)` grows the ring to cover the frame
- * indices the renderer actually uses, so no frames-in-flight count has to be
- * threaded through RenderCache's constructor.
- *
- * Capacity grows with the geometry. A slot's buffer is replaced when the list
- * outgrows it, which swaps the VkBuffer handle, so consumers must re-write their
- * descriptors from the cache every frame (DebugPass does, exactly as LightingPass
- * does for the light SSBOs). That is legal precisely because a frame waits on its
- * own fence before recording: the slot being rewritten is not in flight.
+ * One slot per frame in flight, so a slot can be refilled while another may
+ * still be in the GPU's hands. Slots are created on demand by Update();
+ * capacity grows with the geometry and never shrinks. A replaced buffer swaps
+ * its VkBuffer handle, so consumers re-write descriptors from the cache every
+ * frame - legal because each frame waits on its own fence before recording.
  *
  * Non-copyable (owns GPU buffers), non-movable (CPUBuffer holds a mapping).
  */
@@ -68,11 +62,9 @@ public:
 	/**
 	 * @brief Copies @p list into @p frameIndex's buffers if its revision moved on.
 	 *
-	 * Called once per frame by RenderCache::UpdateDebugDraw() before any pass
-	 * records. An unchanged revision returns immediately, leaving the buffers and
-	 * the cached counts as they were — the common case, since debug objects are
-	 * stateful. An empty list still updates the counts to zero so a cleared
-	 * overlay disappears.
+	 * Called once per frame before any pass records. An unchanged revision
+	 * returns immediately, leaving the buffers and cached counts untouched; an
+	 * empty list still zeroes the counts so a cleared overlay disappears.
 	 *
 	 * @param frameIndex  Frame-in-flight index; the ring grows to include it.
 	 * @param list        This frame's flattened debug geometry.
@@ -80,10 +72,10 @@ public:
 	void Update(uint32_t frameIndex, const DebugDrawList& list);
 
 	/**
-	 * @brief What a frame's slot currently holds, as DebugPass needs to draw it.
+	 * @brief What a frame's slot currently holds.
 	 *
-	 * The buffers are null and the counts zero until the first Update() for that
-	 * frame index; a consumer that finds no buffer simply draws nothing.
+	 * The buffers are null and the counts zero until the first Update() for
+	 * that frame index; a consumer that finds no buffer draws nothing.
 	 */
 	struct FrameView
 	{
@@ -105,12 +97,7 @@ public:
 	size_t GetFrameCount() const { return m_slots.size(); }
 
 private:
-	/**
-	 * @brief One ring slot: the buffers a single in-flight frame reads from.
-	 *
-	 * The cached counts live here alongside the buffers: when the revision
-	 * matches, GetFrame() reports them without the list being consulted again.
-	 */
+	/** @brief One ring slot: the buffers and cached counts a single in-flight frame reads. */
 	struct Slot
 	{
 		std::unique_ptr<CPUBuffer> segments;
@@ -119,8 +106,8 @@ private:
 		/**
 		 * @brief DebugDrawList::revision this slot's buffers currently hold.
 		 *
-		 * UINT64_MAX means "never uploaded". Zero would be wrong: a list that
-		 * legitimately sits at revision 0 would be skipped forever.
+		 * UINT64_MAX means "never uploaded", since zero would wrongly skip a
+		 * list that legitimately sits at revision 0.
 		 */
 		uint64_t uploadedRevision = UINT64_MAX;
 
@@ -131,13 +118,11 @@ private:
 	};
 
 	/**
-	 * @brief Ensures @p slot's @p buffer holds at least @p bytes, reallocating if not.
+	 * @brief Ensures @p buffer holds at least @p bytes, reallocating if not.
 	 *
-	 * Grows to the next power of two at or above the request (and never shrinks)
-	 * so a list that creeps upwards does not reallocate every frame. A request of
-	 * 0 still allocates the minimum when the buffer does not exist yet: a frame
-	 * that has any debug geometry at all writes both descriptor bindings, and a
-	 * null buffer handle is not something a descriptor may name.
+	 * Grow-only, to the next power of two at or above the request. A request
+	 * of 0 still allocates the minimum, because a frame with any geometry at
+	 * all writes both descriptor bindings and a null buffer is not bindable.
 	 *
 	 * @param buffer     Slot member to grow in place.
 	 * @param bytes      Required capacity; the floor is the minimum allocation.

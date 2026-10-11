@@ -2,28 +2,14 @@
  * @file DebugMesh.h
  * @brief Debug wireframe-mesh primitive for viewport visualization.
  *
- * DebugMesh is a first-class scene object that draws pooled geometry as a
- * wireframe overlay instead of a shaded surface. It completes the debug-object
- * family alongside DebugLine (segments) and DebugPoints (sprites), so a
- * wireframe visualization can be authored, selected, transformed, serialized
- * and undone like any other scene object.
+ * Draws pooled mesh geometry as a wireframe overlay instead of a shaded
+ * surface. Reference geometry comes from pooled MeshData; appearance is
+ * fully described by color, opacity and x-ray.
  *
- * Architecture:
- * - Inherits ObjectID for scene graph identity and type discrimination (GO_DM)
- * - Inherits Transform3D for world-space placement
- * - References pooled MeshData exactly like Mesh does, so it reuses the
- *   existing MeshGPU upload path (SceneObjectGpuUploadRequested) and the
- *   ResourceComponent re-wiring on project load
- * - No GPU resources and no shader of its own: the renderer draws every
- *   DebugMesh through DebugPass's single wireframe pipeline
- *
- * @note Unlike Mesh, a DebugMesh has no Material and no per-object Shader —
- *       its appearance is fully described by color/opacity/xray.
- * @note Line width is deliberately absent. The wireframe is rasterized with
- *       polygonMode = eLine, whose width is fixed at 1 px wherever the
- *       wideLines feature is unavailable (notably MoltenVK/Metal, which clamps
- *       lineWidthRange to [1,1]). Use DebugLine when thickness is required —
- *       it expands segments to screen-space quads and honours o_width.
+ * @note Line width is deliberately absent: the wireframe is rasterized with
+ *       polygonMode = eLine, whose width is fixed at 1 px where the wideLines
+ *       feature is unavailable (notably MoltenVK/Metal, which clamps
+ *       lineWidthRange to [1,1]).
  */
 
 #pragma once
@@ -45,15 +31,10 @@ class MeshData;
 /**
  * @brief Debug wireframe overlay drawn from pooled mesh geometry.
  *
- * Object type: GO_DM
+ * Has no material and no shader of its own; the serialized geometry
+ * reference is o_meshDataId.
  *
- * Usage:
- * @code
- *   auto dm = resources.Load<DebugMesh>(meshData);
- *   dm->SetColor({0, 1, 0, 1});   // green wireframe
- *   dm->SetXRay(true);            // ignore depth, draw on top
- *   scene.UseDebugMesh(dm);
- * @endcode
+ * Object type: GO_DM
  */
 class DebugMesh : public ObjectID, public Transform3D
 {
@@ -61,26 +42,19 @@ public:
 	/**
 	 * @brief Pooled geometry drawn as wireframe (null = nothing to draw).
 	 *
-	 * Public, and paired with o_meshDataId below, to match Mesh: the loader
-	 * (ResourceComponent) re-wires the pointer from the ID after
-	 * deserialization, and the Editor reads it to request a MeshGPU upload.
+	 * Public so it can be re-wired from o_meshDataId after deserialization.
 	 */
 	std::shared_ptr<MeshData> o_mesh;
 
 	/// @brief Pooled MeshData UID (0 = none); the serialized form of o_mesh.
 	int o_meshDataId = 0;
 
-	/**
-	 * @brief Constructs an empty DebugMesh (no geometry).
-	 *
-	 * Defaults: color white, opacity 1.0, x-ray off, o_type GO_DM.
-	 */
+	/** @brief Constructs an empty DebugMesh (no geometry). */
 	DebugMesh();
 
 	/**
 	 * @brief Constructs a DebugMesh referencing pooled geometry.
 	 * @param meshData Shared MeshData (pooled resource) to draw as wireframe.
-	 * @note Sets both o_mesh and o_meshDataId, mirroring Mesh(std::shared_ptr<MeshData>).
 	 */
 	explicit DebugMesh(std::shared_ptr<MeshData> meshData);
 
@@ -90,7 +64,7 @@ public:
 	 * @brief Cereal serialization for debug meshes.
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
-	 * @note Stores o_meshDataId, not o_mesh — the pointer is re-wired on load.
+	 * @note Stores o_meshDataId, not o_mesh.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
@@ -103,12 +77,8 @@ public:
 		                  cereal::make_nvp("m_xray", o_xray));
 	}
 
-	// Neither copyable nor movable: UID deletes both copy operations, which
-	// implicitly deletes the moves too, so defaulting them here would only earn a
-	// -Wdefaulted-function-deleted warning for operations that cannot exist.
-	// Scene objects are always held by Resource<T>, so nothing needs them.
-	// (DebugLine and DebugPoints still default theirs and do warn; Mesh is the
-	// pattern followed here.)
+	// Non-copyable and non-movable (UID semantics): the UID base deletes both
+	// copy operations, which implicitly deletes the moves.
 	DebugMesh(const DebugMesh&) = delete;
 	DebugMesh& operator=(const DebugMesh&) = delete;
 	DebugMesh(DebugMesh&&) = delete;

@@ -40,10 +40,8 @@ DebugPass::DebugPass(const vk::raii::Device& device,
 	                   framesInFlight,
 	                   DescriptorPool::CalculatePoolSizes({&p_layout}, framesInFlight))
 	, p_descriptorSets(p_descriptorPool.Allocate(p_layout, framesInFlight))
-	// overlay_line / overlay_point are shared with the transform gizmo (they consume
-	// OverlayGeometry.h's records); debug_wire stays debug-only. The label is only a
-	// log tag — ShaderLibrary does not cache by it — so it names the consumer, not
-	// the file.
+	// The label is only a log tag - ShaderLibrary does not cache by it - so it
+	// names the consumer, not the file.
 	, p_lineShader(ShaderLibrary::LoadRenderShader("DebugLine",
 	                                               NEURUS_SHADER_DIR "render/overlay_line.vert",
 	                                               NEURUS_SHADER_DIR "render/overlay_line.frag"))
@@ -61,9 +59,9 @@ DebugPass::DebugPass(const vk::raii::Device& device,
 	// real limit travels to the shader instead of a hardcoded guess.
 	p_maxPointSizePx = physicalDevice.getProperties().limits.pointSizeRange[1];
 
-	// No buffers are created here: bindings 0-2 name RenderCache's camera UBO and
+	// No buffers are created here: bindings 0-2 name the cache's camera UBO and
 	// debug SSBOs, whose handles change when the geometry grows, so Record()
-	// writes the sets each frame instead (see LightingPass for the same pattern).
+	// writes the sets each frame instead.
 #ifdef _DEBUG
 	for (auto& set : p_descriptorSets)
 	{
@@ -71,7 +69,7 @@ DebugPass::DebugPass(const vk::raii::Device& device,
 	}
 #endif
 
-	// --- Wireframe vertex input: MeshData's layout, same as gbuffer.vert ---
+	// --- Wireframe vertex input layout ---
 	p_meshVertexLayout.AddAttribute(0, vk::Format::eR32G32B32Sfloat, 0);   // pos    @ 0
 	p_meshVertexLayout.AddAttribute(1, vk::Format::eR32G32B32Sfloat, 12);  // normal @ 12
 	p_meshVertexLayout.AddAttribute(2, vk::Format::eR32G32Sfloat, 24);      // uv     @ 24
@@ -103,7 +101,7 @@ DescriptorSetLayout DebugPass::CreateLayout(const vk::raii::Device& device)
 
 void DebugPass::ConfigureCommonState(PipelineBuilder& builder)
 {
-	// One color target: ComposedOutput, already tonemapped by ComposePass.
+	// One color target: the post-AA image.
 	builder.SetColorFormats({vk::Format::eR16G16B16A16Sfloat});
 	builder.SetColorBlendAttachment();   // straight alpha-over
 
@@ -204,8 +202,7 @@ void DebugPass::BuildPipeline(const vk::raii::Device& device, const std::string&
 		builder.SetVertexInput(p_meshVertexLayout);
 		builder.SetInputAssembly(vk::PrimitiveTopology::eTriangleList);
 		// Overrides the eFill from ConfigureCommonState. Line width stays 1 px:
-		// wideLines is unavailable on MoltenVK, which is exactly why DebugLine
-		// exists for cases that need thickness (see DebugMesh.h).
+		// wideLines is unavailable on MoltenVK.
 		builder.SetRasterization(vk::PolygonMode::eLine,
 		                         vk::CullModeFlagBits::eNone,
 		                         vk::FrontFace::eClockwise);
@@ -222,8 +219,8 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 {
 	PassStats stats{};
 
-	// --- 1. Nothing to draw: touch no image, so every state the upstream pass left
-	//        behind stays valid, including the layout the blit expects ---
+	// Nothing to draw: touch no image, so every state the upstream pass left
+	// behind stays valid, including the layout the blit expects.
 	const DebugDrawList* list = ctx.snapshot.debugDraw;
 	if (!list || list->Empty())
 	{
@@ -240,12 +237,11 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	const DebugCache::FrameView frame = cache.GetDebugCache().GetFrame(ctx.frameIndex);
 	if (!frame.segments || !frame.points)
 	{
-		return stats;   // RenderCache::UpdateDebugDraw() has not run for this frame
+		return stats;   // the debug buffers have not been uploaded for this frame
 	}
 
-	// --- 2. Point this frame's set at what the cache currently holds. Rewritten
-	//        every frame because DebugCache replaces a buffer when the geometry
-	//        outgrows it, which changes the handle the descriptor names ---
+	// Point this frame's set at what the cache currently holds; the handles
+	// change whenever the debug geometry outgrows its buffers.
 	p_descriptorSets[frameIdx].WriteBuffer(0, camera.GetDescriptorInfo(),
 	                                       vk::DescriptorType::eUniformBuffer);
 	p_descriptorSets[frameIdx].WriteBuffer(1, frame.segments->GetDescriptorInfo(),
@@ -270,21 +266,19 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	auto& targetAtt = cache.GetAttachment(p_target, extent);
 	auto& depthAtt  = cache.GetAttachment(AttachmentName::Depth, extent);
 
-	// The target arrives in ShaderWrite straight from a compute dispatch — FXAAPass's
-	// when FXAA is on, ComposePass's when it is off — and this transition is what
-	// makes those writes visible to the raster stage: src becomes (ComputeShader,
-	// ShaderWrite), dst (ColorAttachmentOutput, ColorAttachmentWrite|Read). The
-	// producer must not pre-transition it to TransferSrc for the blit — a src scope
-	// of TransferRead names no writes, and on MoltenVK the compute and render
-	// encoders then overlapped: every frame kept a different random subset of the
-	// overlay's tiles, with the compute pass's output in the rest. LOAD_OP_LOAD also
-	// needs the read bit, which ColorAttachment carries.
+	// The target arrives in ShaderWrite straight from a compute dispatch -
+	// FXAAPass's when FXAA is on, ComposePass's when it is off - and this
+	// transition is what makes those writes visible to the raster stage: src
+	// becomes (ComputeShader, ShaderWrite), dst (ColorAttachmentOutput,
+	// ColorAttachmentWrite|Read). The producer must not pre-transition it to
+	// TransferSrc for the blit: a src scope of TransferRead names no writes.
+	// LOAD_OP_LOAD also needs the read bit, which ColorAttachment carries.
 	Barrier::Transition(cmdBuf, targetAtt, ImageState::ColorAttachment);
 	Barrier::Transition(cmdBuf, depthAtt, ImageState::DepthAttachment);
 
-	// Built by hand rather than through Pass::PresetClearValues / *LoadOpFor: no
-	// PassType maps to load-and-store on both attachments, which is exactly what
-	// an in-place overlay needs.
+	// Built by hand rather than through Pass::PresetClearValues: no PassType
+	// maps to load-and-store on both attachments, which is what an in-place
+	// overlay needs.
 	const vk::RenderingAttachmentInfo colorInfo(
 		*targetAtt.ImageViewHandle(),
 		vk::ImageLayout::eColorAttachmentOptimal,
@@ -309,8 +303,6 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	                                   static_cast<float>(extent.height),
 	                                   0.0f, 1.0f));
 	cmdBuf.setScissor(0, renderArea);
-	// --- 4. Draws. Each primitive kind is at most two draws: the depth-tested
-	//        range followed by the x-ray range, split by the pre-partitioned list ---
 	const auto bindFor = [&](size_t pipelineIndex) -> vk::PipelineLayout
 	{
 		const Pipeline& pipe = p_pipelines[pipelineIndex];
@@ -319,7 +311,7 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 		// Re-bound per pipeline rather than once per frame: the line/point layouts
 		// declare a 16 B push range and the wire layout a 72 B one, and Vulkan
 		// layout compatibility requires identical push-constant ranges as well as
-		// identical set layouts — so binding across that boundary disturbs set 0.
+		// identical set layouts - so binding across that boundary disturbs set 0.
 		cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
 		                          *pipe.pipelineLayout, 0,
 		                          {p_descriptorSets[frameIdx].handle()}, {});
@@ -367,9 +359,9 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 		}
 	}
 
-	// Wireframes are not pre-partitioned — they are drawn from their own MeshGPU
-	// buffers, so a range cannot merge them anyway — and the depth toggle is only
-	// re-issued when it actually differs from the current state.
+	// Wireframes are not pre-partitioned - they draw from their own mesh
+	// buffers, so a range cannot merge them - and the depth toggle is only
+	// re-issued when it differs from the current state.
 	if (!list->wireMeshes.empty())
 	{
 		const vk::PipelineLayout layout = bindFor(kWirePipeline);
@@ -404,10 +396,8 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 
 	cmdBuf.endRendering();
 
-	// The target is left in ColorAttachment. Its consumer — the swapchain blit —
-	// transitions it and thereby picks up a src scope of (ColorAttachmentOutput,
-	// ColorAttachmentWrite) that actually covers the draws above. Handing it over
-	// pre-transitioned would hide them; see the barrier note before beginRendering.
+	// The target is left in ColorAttachment; the swapchain blit transitions it
+	// and thereby picks up a src scope that covers the draws above.
 
 	return stats;
 }
@@ -419,15 +409,10 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 PassIO DebugPass::GetIO() const
 {
 	// The target appears on both sides: the overlay loads the shaded image and
-	// stores it back in place. RenderGraph tolerates that (a node's own name never
-	// produces a self-edge), and it is what orders this pass after whichever pass
-	// last wrote that attachment — ComposePass, or FXAAPass when FXAA is on. The
-	// name is p_target rather than a fixed attachment because RenderGraph::Connect()
-	// matches producer and consumer sockets by AttachmentName: a single alias name
-	// covering both images could never form an edge to FXAAPass's FXAAOutput socket,
-	// and an unwired input is treated as external, which would silently leave this
-	// pass's position in the topological order unconstrained. Binding metadata is
-	// unused — like the other raster passes, this one manages its own attachments.
+	// stores it back in place, which orders this pass after whichever pass last
+	// wrote it. The name must be p_target, not a fixed alias: Connect() matches
+	// sockets by AttachmentName, and an unwired input is treated as external,
+	// which would leave this pass's order unconstrained.
 	PassIO io;
 	io.name = "DebugPass";
 	io.reads = {

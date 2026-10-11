@@ -2,18 +2,11 @@
  * @file PreferencesDialog.h
  * @brief Preferences dialog — app-level settings with instant, live apply.
  *
- * Opened from File → Preferences… (Ctrl+,). All changes apply immediately —
+ * Opened from File > Preferences... (Ctrl+,). All changes apply immediately -
  * picking a language retranslates the entire UI on the spot, picking a target
- * FPS updates the render loop — so there is no OK/Cancel flow, only Close.
- *
- * Architecture:
- * - Pure UI widget: it is seeded with plain values (language code, target
- *   FPS, preferences-file path) and never touches the app-layer Preferences
- *   type — the Application is its sole manager.
- * - Every mutation is emitted as a signal and routed through UIEvents so the
- *   Application applies the change, persists ~/.neurus/preferences.json, and
- *   (for language) triggers the global retranslation.
- * - Connects to I18n::languageChanged() to retranslate itself while open.
+ * FPS updates the render loop - so there is no OK/Cancel flow, only Close.
+ * Every mutation is emitted as a signal, so the consumer applies and persists
+ * the change.
  */
 
 #pragma once
@@ -36,8 +29,7 @@ public:
 	 * @brief Constructs the dialog with the current preference values.
 	 * @param language        Active language code ("en", "zh_CN").
 	 * @param targetFps       Render-loop target FPS (0 = unlimited).
-	 * @param preferencesPath Absolute path of ~/.neurus/preferences.json
-	 *                        (displayed read-only).
+	 * @param preferencesPath Path of the preferences file, shown read-only.
 	 * @param parent Parent widget.
 	 */
 	explicit PreferencesDialog(const QString& language, int targetFps,

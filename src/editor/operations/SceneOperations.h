@@ -2,13 +2,10 @@
  * @file SceneOperations.h
  * @brief Concrete undoable operations for scene property/transform edits.
  *
- * Each edit is a reversible before→after transition built on TransitionOp
- * (see Operation.h): it stores the target object's UID plus absolute
- * before/after values, and replays by dispatching the same scene event the UI
- * would emit. A concrete class supplies only two things — a MakeEvent() that
- * turns a stored value into its event, and a kLabel — while the CRTP base
- * provides Emit/Inverse/Label. Controllers record an edit by constructing the
- * matching operation directly (std::make_unique<SetScaleOp>(...)).
+ * Each edit is a reversible before/after transition built on TransitionOp:
+ * it stores the target UID plus absolute values, and replays by dispatching the
+ * same scene event the UI would emit. A concrete class supplies only MakeEvent()
+ * and kLabel; controllers construct the matching op directly.
  */
 
 #pragma once
@@ -239,12 +236,12 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// Debug object properties (issue #22)
+// Debug object properties
 // ---------------------------------------------------------------------------
 //
-// One op per knob, like every other property above. The three debug types share
-// these ops because they share the events: the controller resolves the UID
-// against whichever debug pool holds it, so an op never needs to know which.
+// One op per knob, like every property above. The three debug types share these
+// ops because they share the events; the controller resolves the UID against
+// whichever debug pool holds it, so an op never needs to know which.
 
 /** @brief Absolute debug tint edit (RGBA). */
 class SetDebugColorOp : public TransitionOp<SetDebugColorOp, DebugColorChanged, glm::vec4>
@@ -355,8 +352,7 @@ public:
  * @brief Absolute replacement of a debug object's position list.
  *
  * Stores both endpoints as whole lists, so one op undoes a coordinate edit, a
- * row insertion and a row removal identically. The event carries the flattened
- * form; the op keeps the glm form because that is what the scene object holds.
+ * row insertion and a row removal identically.
  */
 class SetDebugPositionsOp
 	: public TransitionOp<SetDebugPositionsOp, DebugPositionsChanged, std::vector<glm::vec3>>
@@ -383,15 +379,10 @@ public:
  * @brief Absolute camera pose edit (position + target), coarse-grained.
  *
  * Records the coupled camera transform for an orbit / pan / dolly drag and for
- * panel target edits. Non-mergeable (empty MergeKey): each recorded op is its
- * own undo entry. This is correct because a viewport drag is already bounded by
- * a controller gesture (CameraDragBegin/End) that commits exactly ONE op on
- * release — so consecutive separate drags must stay separate undo entries.
- *
- * Scroll zoom, which has no press/release boundary, uses the mergeable sibling
- * CameraZoomOp instead. Camera *position* edited via the property panel reuses
- * the generic SetPositionOp, so there is no separate camera-position op to
- * overlap with the object transform path.
+ * panel target edits. Non-mergeable: a viewport drag is already bounded by a
+ * controller gesture that commits exactly one op on release, so consecutive
+ * separate drags stay separate undo entries. Scroll zoom, which has no
+ * press/release boundary, uses the mergeable CameraZoomOp instead.
  */
 class CameraTransformOp : public TransitionOp<CameraTransformOp, CameraPoseChanged, CameraPose>
 {
@@ -408,19 +399,15 @@ public:
 };
 
 /**
- * @brief Absolute camera pose edit produced by scroll zoom — mergeable.
+ * @brief Absolute camera pose edit produced by scroll zoom - mergeable.
  *
- * Identical replay semantics to CameraTransformOp (same absolute CameraPose,
- * same CameraPoseChanged event), but exposes a per-camera MergeKey so a scroll
- * burst — which fires one op per notch with no gesture boundary — coalesces
- * into a single undo entry. Kept a separate type (rather than a flag on
- * CameraTransformOp) so the mergeable-vs-standalone intent is encoded in the
- * type, not decided at each call site.
+ * Same replay semantics as CameraTransformOp, but exposes a per-camera MergeKey
+ * so a scroll burst - one op per notch, no gesture boundary - coalesces into a
+ * single undo entry. Kept a separate type so the mergeable intent is encoded in
+ * the type rather than decided at each call site.
  *
- * The merge key includes the zoom direction (derived from the stored pose:
- * camera-to-target distance shrinking = in, growing = out), so changing scroll
- * direction breaks the merge — a zoom-in run and a zoom-out run each get their
- * own undo entry.
+ * The key includes the zoom direction, derived from the stored pose, so changing
+ * direction breaks the merge and each run gets its own undo entry.
  */
 class CameraZoomOp : public TransitionOp<CameraZoomOp, CameraPoseChanged, CameraPose>
 {
@@ -476,14 +463,10 @@ struct SelectionState
 /**
  * @brief Absolute selection-set edit (select / multi-select / deselect / clear).
  *
- * Selection is scene-level SET state (Scene::selections), not a per-object
- * flag, so it does not fit TransitionOp: the op stores the full before/after
- * UID lists and replays by dispatching a single SelectionChanged event.
- *
- * PreservesRedo() is true so navigating the selection does NOT discard a
- * pending redo chain. This is safe because every operation is an absolute
- * state-set: a preserved redo op restores its stored end state regardless of
- * selection changes recorded in between.
+ * Selection is scene-level set state, not a per-object flag, so it does not fit
+ * TransitionOp: the op stores the full before/after UID lists and replays by
+ * dispatching one SelectionChanged event. PreservesRedo() is true, which is safe
+ * because operations are absolute state-sets.
  */
 class SetSelectionOp : public Operation
 {
@@ -526,17 +509,13 @@ private:
  * @brief Absolute camera-activation edit (activate / switch / deactivate).
  *
  * The exact shape of SetSelectionOp and for the same reason: activation is
- * scene-level state (one UID on the Scene), not a per-object flag, so it does
- * not fit TransitionOp's object-UID dispatch. The op stores the before/after
- * UIDs and replays by dispatching one ActiveCameraChanged, so undo and redo run
- * the same controller handler a live toggle does.
+ * scene-level state, not a per-object flag. The op stores the before/after UIDs
+ * and replays by dispatching one ActiveCameraChanged, so undo and redo run the
+ * same controller handler a live toggle does. `0` is a first-class value on both
+ * ends: the viewport falls back to its own camera.
  *
- * `0` is a first-class value on both ends: the viewport falls back to its own
- * camera, which is a normal state and not an error.
- *
- * PreservesRedo() is deliberately NOT overridden. Unlike navigating the
- * selection, switching the view camera is a real document change, so it
- * truncates a pending redo chain exactly like every other scene mutation.
+ * PreservesRedo() is deliberately NOT overridden: switching the view camera is a
+ * real document change, so it truncates a pending redo chain.
  */
 class SetActiveCameraOp : public Operation
 {
@@ -576,24 +555,13 @@ private:
 /**
  * @brief Scene-membership toggle: add (or re-add) / delete a batch of objects.
  *
- * Stores the target object UIDs plus an `add` flag. Apply() re-dispatches the
- * ORIGINATING membership events (SceneObjectAddRequested per UID, or ONE
- * batched SceneObjectDeleteRequested), so replay runs the same controller
- * handler as a live edit; the handler's Submit is muted by OperationManager's
- * Phase::Replaying guard, so playback does not re-record. Inverse() flips the
- * flag — the inverse of Add is Delete and vice versa (the AddShaderFieldOp
- * convention). Batching the delete direction keeps the composite light:
- * delete-of-N records ONE op, not N.
+ * Stores the target UIDs plus an `add` flag. Apply() re-dispatches the
+ * originating membership events, so replay runs the same controller handler as a
+ * live edit (its Submit is muted by the replay guard). Inverse() flips the flag;
+ * the delete direction is batched, so delete-of-N records ONE op, not N.
  *
- * The pooled resources are NEVER removed — delete only drops the scene
- * references, so the inverse re-registers without any reload from disk and
- * survives project save/load (pool + history both persist).
- *
- * @note Replay re-enters the forward handler (harmless: Submit is muted). If
- *       a handler carries gesture side effects (selection, gesture state)
- *       that must NOT re-run on replay, give it a dedicated restore event
- *       (ShaderCodeRestored convention) instead of the forward event — but
- *       keep ops minimal by default.
+ * The pooled resources are NEVER removed: delete only drops the scene
+ * references, so the inverse re-registers without any reload from disk.
  */
 class SceneObjectAddOp : public Operation
 {

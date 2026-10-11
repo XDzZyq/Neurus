@@ -42,8 +42,8 @@ public:
 	/**
 	 * @brief Recreates the swapchain with new dimensions.
 	 *
-	 * Destroys the old swapchain and creates a new one. Rebuilds image views.
-	 * Call after window resize or when VK_ERROR_OUT_OF_DATE_KHR is received.
+	 * Destroys the old swapchain, creates a new one and rebuilds the image
+	 * views. Call after a window resize or a VK_ERROR_OUT_OF_DATE_KHR result.
 	 *
 	 * @param width New desired width.
 	 * @param height New desired height.

@@ -33,10 +33,9 @@ Swapchain::Swapchain(const vk::raii::PhysicalDevice& physicalDevice,
 		minImageCount = capabilities.maxImageCount;
 	}
 
-	// Determine actual image usage: intersect requested usage with surface-supported usage
-	// eTransferSrc is requested for the screenshot path (Screenshot::TakeScreenshot
-	// copies the presented image to a buffer); without it every capture raised
-	// VUID-vkCmdCopyImageToBuffer-srcImage-00186 and read undefined contents.
+	// Determine actual image usage: intersect requested usage with surface-supported usage.
+	// eTransferSrc is needed by the screenshot path (copying the presented image
+	// to a buffer); without it captures raise VUID-vkCmdCopyImageToBuffer-srcImage-00186.
 	constexpr vk::ImageUsageFlags kRequestedUsage =
 		vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst
 		| vk::ImageUsageFlagBits::eTransferSrc;
@@ -79,9 +78,8 @@ Swapchain::Swapchain(const vk::raii::PhysicalDevice& physicalDevice,
 
 Swapchain::~Swapchain()
 {
-	// vk::raii handles cleanup automatically.
-	// Image views destroyed first, then swapchain.
-	// Order is ensured by C++ destruction order (member reverse order).
+	// vk::raii handles cleanup automatically; image views are destroyed before
+	// the swapchain by member reverse order.
 }
 
 void Swapchain::Recreate(uint32_t width, uint32_t height)
@@ -106,8 +104,7 @@ void Swapchain::Recreate(uint32_t width, uint32_t height)
 	// Handle minimized window (zero-area surface)
 	if (capabilities.currentExtent.width == 0 || capabilities.currentExtent.height == 0)
 	{
-		// Wait until window is restored before recreating
-		// The next DrawFrame() call will retry recreation
+		// Wait until the window is restored; recreation is retried next frame.
 		return;
 	}
 
@@ -164,14 +161,12 @@ uint32_t Swapchain::AcquireNextImage(const vk::raii::Semaphore& signalSemaphore)
 	try
 	{
 		// UINT64_MAX disables the timeout - the call blocks until an image is
-		// available. This is safe because waitForFences (in DrawFrame) uses a
-		// finite timeout and processEvents() keeps the Qt event loop responsive.
+		// available.
 		auto [result, imageIndex] = r_swapchain->acquireNextImage(
 			UINT64_MAX, *signalSemaphore, nullptr);
 
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
 		{
-			// Swapchain needs recreation (window resized)
 			Recreate(r_recreateWidth, r_recreateHeight);
 			return 0;
 		}
@@ -298,7 +293,7 @@ std::vector<vk::raii::ImageView> Swapchain::createImageViews(const vk::raii::Dev
 			image,
 			vk::ImageViewType::e2D,
 			format,
-			vk::ComponentMapping(),  // Identity mapping (R→R, G→G, B→B, A→A)
+			vk::ComponentMapping(),  // Identity mapping
 			vk::ImageSubresourceRange(
 				vk::ImageAspectFlagBits::eColor,
 				0, 1,  // base mip level, level count

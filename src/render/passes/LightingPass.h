@@ -1,21 +1,14 @@
 /**
  * @file LightingPass.h
- * @brief PBR lighting pass - compute shader reading G-Buffer and evaluating
- *        Cook-Torrance GGX BRDF per point light with IBL support.
+ * @brief PBR lighting pass - compute shader reading the G-Buffer and
+ *        evaluating the Cook-Torrance GGX BRDF per light with IBL support.
  *
- * LightingPass consumes the G-Buffer attachments written by GeometryPass and
- * evaluates direct PBR lighting + IBL ambient into a single HDR colour attachment.
- * Uses a compute shader dispatched at 16×16 thread groups.
+ * Reads the G-Buffer attachments and evaluates direct PBR lighting plus IBL
+ * ambient into a single HDR colour attachment, dispatched at 16x16 thread
+ * groups.
  *
- * Architecture:
- * - Owns the compute pipeline, descriptor sets, sampler, descriptor pool,
- *   and light SSBO (GPUBuffer).
- * - Borrows RenderCache for G-Buffer and HDR colour image views.
- * - Reads IBL cubemap resources per-frame from the Scene's Environment list.
- * - Uses PipelineBuilder for pipeline construction.
- *
- * @note Direct lighting + IBL (diffuse + specular).
- * @note Descriptor set layout: 10 bindings (5 sampled images, 1 storage image, 1 SSBO, 2 cube samplers, 1 shadow).
+ * @note Descriptor set layout: 12 bindings (G-Buffer, storage output, light
+ *       SSBOs, SSAO, IBL cubemaps, shadow array).
  */
 
 #pragma once
@@ -46,10 +39,9 @@ class Texture;
 /**
  * @brief PBR lighting compute pass.
  *
- * Reads the G-Buffer (Position, Normal, Albedo, MetallicRoughness) as
- * combined image samplers, dispatches the PBR lighting compute shader,
- * and writes HDR colour to the output image.  Light SSBOs are now owned
- * by LightingCache (stored in RenderCache) rather than LightingPass itself.
+ * Reads the G-Buffer (Position, Normal, Albedo, MetallicRoughness) as combined
+ * image samplers, dispatches the PBR lighting compute shader, and writes HDR
+ * colour to the output image. Light SSBOs live in the cache, not here.
  *
  * Non-copyable, movable.
  */
@@ -58,8 +50,6 @@ class LightingPass : public ComputePass
 public:
 	/**
 	 * @brief Constructs the lighting pass and creates all GPU resources.
-	 *
-	 * Shaders are self-loaded via ShaderLibrary from GLSL source files.
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (for sampler creation).
@@ -88,12 +78,10 @@ public:
 	/**
 	 * @brief Records the PBR lighting compute dispatch into a command buffer.
 	 *
-	 *   1. Transitions G-Buffer images to SHADER_READ_ONLY_OPTIMAL.
-	 *   2. Transitions HDRColor output to GENERAL.
-	 *   3. Writes descriptors into the descriptor set for this frame slot.
-	 *   4. Binds the compute pipeline, descriptor set, and push constants.
-	 *   5. Dispatches ceil(width/16) × ceil(height/16) × 1 thread groups.
-	 *   6. Inserts a memory barrier to make the output visible.
+	 * Transitions the G-Buffer, SSAO and shadow-intensity inputs to
+	 * ColorShaderRead and HDRColor to ShaderWrite, writes this frame's
+	 * descriptors, pushes light counts and camera data, dispatches
+	 * ceil(w/16) x ceil(h/16) groups, then returns HDRColor to ColorShaderRead.
 	 *
 	 * @param cmdBuf          Command buffer in recording state.
 	 * @param ctx             Per-frame context (camera position, view matrix,
@@ -101,48 +89,29 @@ public:
 	 */
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
-	/// Declares G-Buffer + SSAO reads and the HDRColor write for RenderGraph
-	/// wiring. (Shadow-intensity array and IBL cubemaps are external/complex
-	/// bindings and are not modeled here.)
+	/// Declares the G-Buffer, SSAO and ShadowIntensity reads and the HDRColor
+	/// write. (IBL cubemaps are not modeled as bindings here.)
 	PassIO GetIO() const override;
 
-	/**
-	 * @brief Creates the descriptor set layout (10 bindings).
-	 *
-	 * Bindings:
-	 *   0: gPosition           (combined image sampler)
-	 *   1: gNormal              (combined image sampler)
-	 *   2: gAlbedo              (combined image sampler)
-	 *   3: gMetallicRoughness   (combined image sampler)
-	 *   4: outputImage          (storage image)
-	 *   5: LightBuffer          (storage buffer / SSBO, PARTIALLY_BOUND)
-	 *   6: U_AO                 (combined image sampler, SSAO occlusion)
-	 *   7: U_Irradiance         (combined image sampler, diffuse IBL cubemap)
-	 *   8: U_Prefiltered        (combined image sampler, specular IBL cubemap)
-	 *   9: U_ShadowArray        (combined image sampler, sampler2DArray)
-	 */
+	/** @brief Creates the descriptor set layout (12 bindings). */
 	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
 
 private:
 
-	/**
-	 * @brief Creates the compute pipeline.
-	 * ShaderModule from self-loaded ComputeShader.
-	 */
+	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
 
 	/**
 	 * @brief Writes all descriptors (image + buffer) into the specified set.
 	 *
-	 * Light SSBOs are read from RenderCache::GetLightingCache() at binding
-	 * time, not stored locally.
+	 * Light SSBOs are read from the cache at binding time, not stored locally.
 	 *
-	 * @param setIndex  Index into p_descriptorSets (0 … numSets-1).
+	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 */
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
-	// (Pipelines inherited from Pass — p_pipelines[0])
+	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
 	std::unique_ptr<ComputeShader> p_shader;

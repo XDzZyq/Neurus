@@ -31,14 +31,8 @@ namespace neurus {
 /**
  * @brief Point light data uploaded to the GPU SSBO.
  *
- * Layout matches the GLSL PointLight struct (std140, 48 bytes per element):
- *   vec3 color  (offset 0,  padded to 16)
- *   vec3 pos    (offset 16, padded to 16)
- *   float power (offset 32)
- *   float radius(offset 36)
- *   int32_t shadowMapIndex(offset 40)
- *   float _pad3[2] (offset 44)
- *   Total: 48 bytes (struct is alignas(16)).
+ * std140-compatible layout matching the GLSL PointLight struct (48 bytes,
+ * alignas(16)).
  */
 struct alignas(16) PointLightStruct
 {
@@ -54,13 +48,8 @@ static_assert(sizeof(PointLightStruct) == 48, "PointLightStruct must be 48 bytes
 /**
  * @brief Sun (directional) light data uploaded to the GPU SSBO.
  *
- * Layout matches the GLSL SunLight struct (std140, 48 bytes per element):
- *   vec3 direction (offset 0,  padded to 16)
- *   float power    (offset 12)
- *   vec3 color     (offset 16, padded to 16)
- *   int32_t shadowMapIndex (offset 28)
- *   float _pad[4]  (offset 32)
- *   Total: 48 bytes (struct is alignas(16)).
+ * std140-compatible layout matching the GLSL SunLight struct (48 bytes,
+ * alignas(16)).
  */
 struct alignas(16) SunLightStruct
 {
@@ -75,21 +64,9 @@ static_assert(sizeof(SunLightStruct) == 48, "SunLightStruct must be 48 bytes (st
 /**
  * @brief Spot light data uploaded to the GPU SSBO.
  *
- * Cone-shaped light with position, direction, and inner/outer cone-angle
- * cosines.  Shadows follow the point-light cubemap path and share the same
- * shadow-map atlas.
- *
- * Layout matches the GLSL SpotLight struct (std140, 64 bytes per element):
- *   vec3  pos          (offset 0,  padded to 16)
- *   float power        (offset 12)
- *   vec3  direction    (offset 16, padded to 16)
- *   float radius       (offset 28)
- *   vec3  color        (offset 32, padded to 16)
- *   float innerCutoff  (offset 44)   -- cosine of inner cone half-angle
- *   float outerCutoff  (offset 48)   -- cosine of outer cone half-angle
- *   int32_t shadowMapIndex (offset 52)
- *   float _pad[2]      (offset 56)
- *   Total: 64 bytes (struct is alignas(16)).
+ * Cone-shaped light with position, direction and inner/outer cone-angle
+ * cosines. std140-compatible layout matching the GLSL SpotLight struct
+ * (64 bytes, alignas(16)).
  */
 struct alignas(16) SpotLightStruct
 {
@@ -108,18 +85,8 @@ static_assert(sizeof(SpotLightStruct) == 64, "SpotLightStruct must be 64 bytes (
 /**
  * @brief Push constants for the PBR lighting compute shader.
  *
- * Layout (matches GLSL push_constant block with std430 alignment):
- *   int  lightCount     offset 0   (4 bytes)
- *   int  sunLightCount  offset 4   (4 bytes — reuses former padding slot)
- *   int  spotLightCount offset 8   (4 bytes — reuses former padding slot)
- *          padding      offset 12  (4 bytes)
- *   vec4 cameraPos      offset 16  (16 bytes)
- *   mat4 view           offset 32  (64 bytes)
- *   int  iblEnabled     offset 96  (4 bytes)
- *   int  transEnabled   offset 100 (4 bytes — transparent background)
- *          padding      offset 104 (8 bytes, aligns mat4 to 16)
- *   mat4 invProjView    offset 112 (64 bytes - inverse(proj * view) for skybox ray)
- *   Total: 176 bytes. Must NOT use alignas.
+ * std430 layout matching the GLSL push_constant block (176 bytes). Must NOT
+ * use alignas.
  */
 struct LightingPushConstants
 {
@@ -144,13 +111,9 @@ static_assert(sizeof(LightingPushConstants) == 176, "LightingPushConstants must 
 /**
  * @brief Manages light SSBO storage for the PBR lighting pipeline.
  *
- * Owns ArrayBuffer instances for point light and sun light arrays.
- * UpdatePointLights() / UpdateSunLights() accept pre-sorted vectors with
- * shadowMapIndex already stamped by the caller (RenderCache).
- *
- * UpdatePointLight(index) / UpdateSunLight(index) provide single-element
- * updates via ArrayBuffer::Update() — used by RenderCache for per-light
- * property changes without a full SSBO rebuild.
+ * Owns one ArrayBuffer per light kind. The full-rebuild updaters take
+ * pre-sorted vectors with shadowMapIndex already stamped by the caller; the
+ * single-element updaters overwrite one SSBO element without a full rebuild.
  *
  * Non-copyable.  All borrowed Vulkan handles must outlive this object.
  */
@@ -184,8 +147,8 @@ public:
 	/**
 	 * @brief Creates or updates the point light SSBO from a pre-built vector.
 	 *
-	 * The vector must already be sorted and have shadowMapIndex fields
-	 * populated by the caller.  An empty vector releases the buffer.
+	 * The vector must already be sorted, with shadowMapIndex populated by the
+	 * caller. An empty vector releases the buffer.
 	 *
 	 * @param lights  Point light GPU structs (sorted, shadow indices set).
 	 */
@@ -214,9 +177,8 @@ public:
 	/**
 	 * @brief Overwrites a single point light element at the given SSBO index.
 	 *
-	 * Uses ArrayBuffer::Update() — no full re-upload.  The caller
-	 * (RenderCache) is responsible for providing the correct index and
-	 * a struct with shadowMapIndex already stamped.
+	 * No full re-upload; the caller supplies the index and a struct with
+	 * shadowMapIndex already stamped.
 	 *
 	 * @param light  Updated point light struct.
 	 * @param index  Zero-based SSBO element index.

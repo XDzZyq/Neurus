@@ -5,7 +5,7 @@
 namespace neurus {
 
 /**
- * @brief Identifies the type of pipeline — graphics (Geometry) or Compute.
+ * @brief Identifies the type of pipeline: graphics (Geometry) or Compute.
  */
 enum class PipelineType
 {
@@ -16,22 +16,10 @@ enum class PipelineType
 /**
  * @brief Owned GPU pipeline and its associated pipeline layout.
  *
- * PipelineBuilder returns one of these instead of a raw vk::raii::Pipeline,
- * so the caller never needs to separately manage the pipeline layout or
- * keep a builder alive for layout access.
+ * Carries both handles so the caller never manages the pipeline layout
+ * separately from the pipeline.
  *
  * Non-copyable (vk::raii types are move-only), movable.
- *
- * Usage:
- * @code
- *   Pipeline myPipeline = PipelineBuilder()
- *       .AddShaderStage(...)
- *       .BuildComputePipeline(device);
- *
- *   cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *myPipeline.pipeline);
- *   cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
- *                             *myPipeline.pipelineLayout, ...);
- * @endcode
  */
 struct Pipeline
 {

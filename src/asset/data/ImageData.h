@@ -1,13 +1,9 @@
 /**
  * @file ImageData.h
- * @brief CPU-side image data class and low‑level pixel format helpers.
+ * @brief CPU-side image data and pixel format helpers.
  *
- * Owns raw pixel data (std::vector<uint8_t>) along with dimensions and format.
- * Provides static helpers for pixel‑byte queries, half‑float conversion,
- * BGR swizzle, and member functions for CPU‑side PNG/HDR output.
- *
- * Pure CPU data - zero Vulkan/GPU resources.  Analogous to MeshData.
- * Uses PixelFormat (not vk::Format) for format identification.
+ * Owns raw pixel bytes plus dimensions and format, with helpers for
+ * half-float conversion, BGR swizzle and PNG/HDR output. Pure CPU data.
  */
 #pragma once
 
@@ -28,9 +24,8 @@ namespace neurus {
 /**
  * @brief CPU-side image data (pooled resource).
  *
- * Inherits UID identity; held via shared_ptr (e.g. Environment::o_equirectData).
- * Serializes itself (UID + source path); content loads on construction and is
- * re-loaded in serialize(load). Non-copyable/non-movable (UID semantics).
+ * UID identity: serializes its source path and re-loads the content on load.
+ * Non-copyable/non-movable.
  */
 class ImageData : public UID
 {
@@ -41,19 +36,16 @@ public:
 	ImageData() = default;
 
 	/**
-	 * @brief Constructs ImageData by loading an image from a file path.
+	 * @brief Loads an image from a file path.
 	 *
-	 * Auto-detects HDR vs LDR format using stb_is_hdr().
-	 * HDR images (.hdr) are loaded as RGBA32F.
-	 * LDR images (.png, .bmp, .jpg, .tga) are loaded as RGBA8S.
-	 * Stores the path for later ReloadContent() use.
-	 *
+	 * HDR files (.hdr) load as RGBA32F; LDR files (.png, .bmp, .jpg, .tga)
+	 * load as RGBA8S.
 	 * @param path File path to the image.
 	 */
 	explicit ImageData(const std::string& path);
 
 	/**
-	 * @brief Constructs ImageData from raw pixel data, copying it into the owned vector.
+	 * @brief Copies raw pixel data into the owned vector.
 	 * @param data        Non-owning pointer to raw pixel bytes.
 	 * @param w           Image width in pixels.
 	 * @param h           Image height in pixels.
@@ -72,17 +64,13 @@ public:
 	/**
 	 * @brief (Re)loads the image content from disk.
 	 *
-	 * Called on construction (path ctor) and at the end of serialize(load).
-	 * No-op when m_path is empty (procedural data).
+	 * Called from the path constructor and at the end of serialize(load);
+	 * no-op when the path is empty.
 	 */
 	void ReloadContent();
 
 	/**
 	 * @brief Cereal serialization - UID + source path, then content reload.
-	 *
-	 * On load, restores identity + path and re-loads the image from disk
-	 * (self-contained; no pool hook needed).
-	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
@@ -104,7 +92,7 @@ public:
 	PixelFormat GetFormat() const { return im_format; }
 
 	// -------------------------------------------------------------------
-	// Format helpers (non‑static convenience wrappers)
+	// Format helpers (convenience wrappers over PixelFormat)
 	// -------------------------------------------------------------------
 
 	/** @brief Bytes per pixel for the owned format. */
@@ -114,10 +102,9 @@ public:
 	uint32_t ChannelCount() const { return neurus::ChannelCount(im_format); }
 
 	/**
-	 * @brief Converts RGBA16F half‑float data to RGBA8.
-	 * @param remapSigned If true, remap [-1,1]→[0,1] for RGB, handle
-	 *                    background transparency, force alpha to 255
-	 *                    on geometry pixels.
+	 * @brief Converts RGBA16F half-float data to RGBA8.
+	 * @param remapSigned If true, remap [-1,1] to [0,1] on RGB and keep the
+	 *                    background transparent.
 	 */
 	static std::vector<uint8_t> ConvertHalfToU8(const void* data,
 	                                             uint32_t width,
@@ -126,25 +113,24 @@ public:
 
 	/**
 	 * @brief Converts RGBA32F float data to RGBA8.
-	 * @param remapSigned If true, remap [-1,1]→[0,1] for RGB, handle
-	 *                    background transparency, force alpha to 255
-	 *                    on geometry pixels.
+	 * @param remapSigned If true, remap [-1,1] to [0,1] on RGB and keep the
+	 *                    background transparent.
 	 */
 	static std::vector<uint8_t> ConvertFloatToU8(const void* data,
 	                                              uint32_t width,
 	                                              uint32_t height,
 	                                              bool remapSigned = false);
 
-	/** @brief Swaps R↔B channel in place for BGRA data. */
+	/** @brief Swaps the R and B channels in place for BGRA data. */
 	static void SwizzleBGRtoRGB(void* data, uint32_t width,
 	                            uint32_t height, uint32_t channels);
 
 	// -------------------------------------------------------------------
-	// Save (member functions — use owned pixel data)
+	// Save (member functions - use the owned pixel data)
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Writes the owned pixel data to a PNG file (CPU‑side only).
+	 * @brief Writes the owned pixel data to a PNG file (CPU-side only).
 	 * @param path        Output file path.
 	 * @param remapSigned If true, remap signed values for normal maps.
 	 * @return true on success.
@@ -154,9 +140,7 @@ public:
 	/**
 	 * @brief Writes the owned pixel data to a Radiance .hdr file.
 	 *
-	 * Expects RGBA32F pixel data (16 bytes per pixel).
-	 * Output is RGBE-encoded in the Radiance HDR format.
-	 *
+	 * Expects RGBA32F pixel data; output is RGBE-encoded.
 	 * @param path Output file path (.hdr extension recommended).
 	 * @return true on success.
 	 */
@@ -165,8 +149,6 @@ public:
 	/**
 	 * @brief Returns the source image path (serialized, relative to asset dir).
 	 * @return Const reference to the stored path (empty for procedural data).
-	 * @note The path lives HERE (data layer) - scene objects wrap this
-	 *       ImageData and never hold the path themselves.
 	 */
 	const std::string& GetPath() const { return m_path; }
 

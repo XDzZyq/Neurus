@@ -2,14 +2,9 @@
  * @file ShaderController.cpp
  * @brief Event-driven shader lifecycle: create, compile, code edit, struct edit.
  *
- * Stateless — all handlers are free functions in an anonymous namespace.
- * Each handler receives a discrete shader event carrying an integer object UID,
- * resolves the target mesh against the current scene via the ControllerContext,
- * and applies the corresponding mutation to the Shader/ShaderUnit data.
- *
- * No Editor*, no DeferredRenderer*, no UploadManager* — pure shader logic.
- * The object UID is provided by each event (resolved once by the
- * ShaderEditorPanel from the active scene selection).
+ * All handlers are free functions; each resolves an integer UID against the
+ * current scene and mutates the shader data. Pure shader logic - no renderer or
+ * upload dependency.
  */
 
 #include "editor/controllers/ShaderController.h"
@@ -81,18 +76,16 @@ bool SnapshotCode(neurus::Mesh* mesh, int stage, std::string& out)
 }
 
 // ---------------------------------------------------------------------------
-// ShaderStruct element access — shared by the forward edit path and undo replay
+// ShaderStruct element access - shared by the forward edit path and undo replay
 // ---------------------------------------------------------------------------
 
 /**
  * @brief Applies a functor to the element addressed by (section, fieldIndex).
  *
- * Collapses the section -> container dispatch into one place: each section maps
- * to exactly one ShaderStruct vector, and @p fn is invoked with a reference to
- * the element at @p fieldIndex (its concrete type — S_IO / S_Uniform / S_Func /
- * S_PushConstant / S_StructDef — deduced per section). StructDefs addresses the
- * S_StructDef entry itself; member-field edits are handled inside ApplyFieldEdit
- * via the sub-index.
+ * Each section maps to exactly one ShaderStruct vector, and @p fn is invoked with
+ * a reference to the element at @p fieldIndex (its concrete type deduced per
+ * section). StructDefs addresses the struct entry itself; member-field edits go
+ * through the sub-index.
  *
  * @return true if the element exists (fn was called), false if out of range.
  */
@@ -121,12 +114,11 @@ bool VisitElement(neurus::ShaderStruct& parsed, neurus::ShaderSection section,
 }
 
 // ---------------------------------------------------------------------------
-// ApplyFieldEdit — write the UI's single {field, value} onto a live element.
+// ApplyFieldEdit: write the UI's single {field, value} onto a live element.
 //
-// The UI delivers one property at a time, so each element type has a small
-// overload translating a property name + string value onto its members. Unknown
-// field names are silently ignored (the caller's before==after diff then skips
-// the edit). Type fields update the paired ParaType enum alongside the string.
+// One small overload per element type translates a property name + string value
+// onto its members. Unknown field names are ignored (the caller's before==after
+// diff then skips the edit); type fields update the paired ParaType enum too.
 // ---------------------------------------------------------------------------
 
 /** @brief Edits an S_IO element (attribute / pass output / struct member). */
@@ -179,8 +171,7 @@ void ApplyFieldEdit(neurus::S_PushConstant& pc, int /*subFieldIndex*/,
  * @brief Edits an S_StructDef element (struct definition or one of its members).
  *
  * subFieldIndex < 0 edits the struct definition itself (name / varName);
- * subFieldIndex >= 0 edits member field [subFieldIndex], delegating to the
- * S_IO overload above.
+ * subFieldIndex >= 0 edits member field [subFieldIndex].
  */
 void ApplyFieldEdit(neurus::S_StructDef& sd, int subFieldIndex,
                     const std::string& field, const std::string& value)
@@ -201,14 +192,10 @@ void ApplyFieldEdit(neurus::S_StructDef& sd, int subFieldIndex,
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Handles ShaderCreateRequested — loads default gbuffer shaders for a mesh.
+ * @brief Handles ShaderCreateRequested: loads default gbuffer shaders for a mesh.
  *
- * Flow:
- *   1. LoadRenderShader (gbuffer.vert + gbuffer.frag)
- *   2. ParseAndGenerate (parse -> generate GLSL for both stages)
- *   3. Assign to mesh->o_shader
- *   4. Compile both stages to SPIR-V
- *   5. Bump Shader::m_version on success
+ * Loads, parses/generates, assigns to the mesh, compiles both stages to SPIR-V
+ * and bumps the version on success.
  */
 void OnCreateShader(const neurus::ShaderCreateRequested& e, const neurus::ControllerContext& ctx)
 {
@@ -272,10 +259,9 @@ void OnCreateShader(const neurus::ShaderCreateRequested& e, const neurus::Contro
 }
 
 /**
- * @brief Handles ShaderCodeEdited — updates ShaderUnit::code in-place.
+ * @brief Handles ShaderCodeEdited: updates the stage's code in-place.
  *
- * Does NOT bump version — the user must press Compile (ShaderCompileRequested)
- * to apply the code change to the GPU pipeline.
+ * Does NOT bump version: the user must press Compile to apply the change.
  */
 void OnCodeEdited(const neurus::ShaderCodeEdited& e, const neurus::ControllerContext& ctx)
 {
@@ -297,13 +283,10 @@ void OnCodeEdited(const neurus::ShaderCodeEdited& e, const neurus::ControllerCon
 }
 
 /**
- * @brief Handles ShaderCompileRequested — compiles GLSL -> SPIR-V for a stage.
+ * @brief Handles ShaderCompileRequested: compiles GLSL -> SPIR-V for a stage.
  *
- * Flow:
- *   unitType == 0 (Code path): re-parse code into IR, regenerate GLSL, compile
- *   unitType == 1 (Struct path): regenerate GLSL from IR, compile
- *
- * Bumps ShaderUnit::m_version and Shader::m_version on success.
+ * unitType 0 parses the code into IR and regenerates GLSL first; unitType 1
+ * regenerates from the existing IR. Bumps the unit and shader versions on success.
  */
 void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::ControllerContext& ctx)
 {
@@ -324,17 +307,17 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 	{
 		if (e.unitType == 0)
 		{
-			// Code path: parse the code into ShaderStruct IR, then generate GLSL
+			// Code path: parse the code into IR, then regenerate GLSL
 			unit.parsed = neurus::ShaderParser::ParseShaderCode(unit.code, type);
 			unit.code = neurus::ShaderGenerator::Generate(unit.parsed);
 		}
 		else
 		{
-			// Struct path: generate GLSL from ShaderStruct IR
+			// Struct path: regenerate GLSL from the existing IR
 			unit.code = neurus::ShaderGenerator::Generate(unit.parsed);
 		}
 
-		// Compile to SPIR-V and store in ShaderUnit
+		// Compile to SPIR-V and store in the unit
 		unit.spv = neurus::ShaderLibrary::Compile(unit, type, shader.GetName());
 		if (unit.spv.empty())
 		{
@@ -355,10 +338,6 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 
 /**
  * @brief Generates a unique name by appending a counter if the base name exists.
- *
- * Scans the provided list of existing names and appends "_2", "_3", etc.
- * until a unique name is found. Used by AppendDefault to avoid duplicate
- * field/struct names within the same container.
  */
 std::string UniqueName(const std::string& base, const std::vector<std::string>& existing)
 {
@@ -377,9 +356,8 @@ std::string UniqueName(const std::string& base, const std::vector<std::string>& 
  * @brief Appends a new default entry to a ShaderStruct container.
  *
  * Dispatches on ShaderSection to append a default-constructed entry to the
- * correct vector. For StructDefs with subFieldIndex >= 0, appends a member
- * field to the specified struct definition. The generated GLSL (Code mode) is
- * only refreshed on the next Compile (Struct path).
+ * correct vector; StructDefs with subFieldIndex >= 0 appends a member field.
+ * Generated GLSL is refreshed only on the next compile.
  *
  * @return true if an entry was actually appended, false otherwise.
  */
@@ -480,10 +458,8 @@ bool AppendDefault(neurus::ShaderStruct& parsed, neurus::ShaderSection section, 
 /**
  * @brief Removes the last entry from a ShaderStruct container (undo of an add).
  *
- * Because undo/redo is strictly LIFO, the entry appended by AppendDefault is
- * always the last element, so dropping the tail is a correct inverse. For
- * StructDefs with subFieldIndex >= 0, removes the last member field of the
- * specified struct definition.
+ * Undo/redo is strictly LIFO, so the entry appended by AppendDefault is always
+ * the last element and dropping the tail is a correct inverse.
  *
  * @return true if an entry was actually removed, false otherwise.
  */
@@ -529,8 +505,7 @@ bool RemoveLast(neurus::ShaderStruct& parsed, neurus::ShaderSection section, int
 /**
  * @brief Restores a stage's GLSL code text (undo/redo replay).
  *
- * Overwrites ShaderUnit::code and bumps the ShaderUnit version so the editor
- * panel refreshes. CPU-only: does NOT recompile to SPIR-V.
+ * Bumps the unit version so the editor refreshes. CPU-only: no recompile.
  */
 void OnCodeRestored(const neurus::ShaderCodeRestored& e, const neurus::ControllerContext& ctx)
 {
@@ -546,10 +521,9 @@ void OnCodeRestored(const neurus::ShaderCodeRestored& e, const neurus::Controlle
 /**
  * @brief Restores one ShaderStruct element (undo/redo replay).
  *
- * Assigns the stored element back into the section's vector at fieldIndex and
- * bumps the ShaderUnit version so the editor panel refreshes. The variant's
- * active alternative must match the section's element type (it always does,
- * since the op captured it from that same section).
+ * Assigns the stored element back into the section's vector and bumps the unit
+ * version so the editor refreshes. The variant's active alternative always
+ * matches the section's element type, since the op captured it there.
  */
 void OnFieldRestored(const neurus::ShaderFieldRestored& e, const neurus::ControllerContext& ctx)
 {
@@ -627,17 +601,15 @@ void OnFieldRemoved(const neurus::ShaderFieldRemoved& e, const neurus::Controlle
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// Init — subscribe to shader events
+// Init - subscribe to shader events
 // ---------------------------------------------------------------------------
 
 void ShaderController::Init(ControllerContext& ctx)
 {
-	// Shader CREATE is handled by the Editor (it constructs a pooled
-	// RenderShader via ResourceManager::Load<RenderShader>); ShaderController
-	// keeps only pool-free lifecycle handlers.
-	// Compile bumps the shader version -> pipeline rebuilds on the next frame,
-	// so temporal accumulation (shadow intensity) must reset. These stay
-	// non-undoable lifecycle actions.
+	// Shader CREATE is handled by the Editor (it constructs the pooled
+	// RenderShader); this controller keeps only pool-free lifecycle handlers.
+	// Compile bumps the shader version, so the pipeline rebuilds and temporal
+	// accumulation must reset. These stay non-undoable.
 	ctx.events.subscribe<ShaderCompileRequested>(
 		[ctx](const ShaderCompileRequested& e) {
 			OnCompileShader(e, ctx);
@@ -715,8 +687,8 @@ void ShaderController::Init(ControllerContext& ctx)
 				mesh->GetObjectID(), e.stage, e.section, e.subFieldIndex, /*add=*/true));
 		});
 
-	// Undo/redo replay: re-apply one edit dimension + bump version so the panel
-	// refreshes. CPU-only, no recompile.
+	// Replay: re-apply one edit dimension + bump version so the panel refreshes.
+	// CPU-only, no recompile.
 	ctx.events.subscribe<ShaderCodeRestored>(
 		[ctx](const ShaderCodeRestored& e) { OnCodeRestored(e, ctx); });
 	ctx.events.subscribe<ShaderFieldRestored>(

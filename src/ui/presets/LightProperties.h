@@ -15,11 +15,8 @@ class ScalarSlider;
  * @brief Light-specific property editor subpanel.
  *
  * Displays light_type (read-only label), light_power and light_radius
- * (ScalarSlider), and use_shadow (checkbox). All edits emit signals
- * carrying the object ID for routing through the Editor event system.
- *
- * Supports lazy update via dirty-check: each setter caches the last
- * value and no-ops if unchanged.
+ * (ScalarSlider), and use_shadow (checkbox). All edits emit signals carrying
+ * the object ID; each setter dirty-checks against the last value it wrote.
  */
 class LightProperties : public QWidget
 {

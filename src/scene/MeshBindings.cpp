@@ -3,13 +3,7 @@
  * @brief Render-layer implementation of Mesh material methods.
  *
  * These methods are declared in scene/Mesh.h but defined here so that the
- * scene layer does not depend on the render layer. The render layer is
- * permitted to include scene headers (render consumes scene data).
- *
- * Architecture:
- * - scene/Mesh.h declares SetMatColor / SetTex (layer-neutral interface)
- * - render/MeshBindings.cpp defines them (needs full Material type)
- * - Editor and Controllers call SetMatColor on Mesh objects directly
+ * scene layer does not depend on the render layer.
  */
 
 #include "scene/Mesh.h"
@@ -24,11 +18,8 @@ namespace neurus
 
 void Mesh::SetTex(int /*_type*/, const std::string& /*_name*/)
 {
-	// Stub for MVP.
-	// Full implementation requires Vulkan device/queue to load textures
-	// via TextureLib, which is not available in the scene layer.
-	// This will be implemented when the texture pipeline is integrated
-	// with the Editor/Controller layer.
+	// Stub for MVP. Full implementation requires a Vulkan device to load
+	// textures, which is not available in the scene layer.
 }
 
 void Mesh::SetMatColor(int _type, float _val)

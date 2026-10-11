@@ -3,11 +3,9 @@
  * @brief Lightweight runtime UI translation manager (gettext-style PO).
  *
  * Translation keys are the English display strings themselves (the built-in
- * fallback). Per-language catalogs are **GNU gettext .po files**
- * (res/i18n/<code>.po), embedded as Qt resources (:/i18n/<code>.po) and
- * parsed on demand — the same format Blender uses, so translators can work
- * with Poedit / Weblate and the extraction pipeline in
- * scripts/extract_i18n.py keeps the catalogs in sync with the code.
+ * fallback). Per-language catalogs are GNU gettext .po files
+ * (res/i18n/<code>.po), embedded as Qt resources (:/i18n/<code>.po) and parsed
+ * on demand.
  *
  * Contexts (msgctxt) disambiguate identical English strings:
  *   translate(key)              -> default context
@@ -15,19 +13,16 @@
  * A missing catalog, context or msgid falls back to the English key itself.
  *
  * setLanguage() swaps the active catalog and emits languageChanged() so every
- * widget can retranslate immediately — no application restart required.
- * UIManager connects to languageChanged() and re-applies menu texts, dock
- * titles and every panel's Retranslate() hook.
+ * widget can retranslate immediately, with no restart.
  */
 
 #pragma once
 
 /**
  * @brief No-op marker for strings that are translated at runtime through I18n
- *        but do not appear as literal translate() arguments at the call
- *        site (e.g. keys forwarded to menu-builder helpers). Exists so
- *        scripts/extract_i18n.py can discover the msgid — the gettext N_
- *        convention.
+ *        but do not appear as literal translate() arguments at the call site
+ *        (e.g. keys forwarded to menu-builder helpers). Exists so the
+ *        extraction script can discover the msgid - the gettext N_ convention.
  */
 #define N_(text) text
 
@@ -82,10 +77,8 @@ public:
 	/**
 	 * @brief All languages shipped with the app.
 	 *
-	 * English first (it has no catalog — the msgids are the English strings),
-	 * then one entry per embedded res/i18n/<code>.po, sorted by code. The
-	 * display name comes from the catalog's X-Language-Name header field,
-	 * falling back to QLocale's native language name.
+	 * English first (it has no catalog - the msgids are the English strings),
+	 * then one entry per embedded res/i18n/<code>.po, sorted by code.
 	 */
 	static QList<LanguageInfo> supportedLanguages();
 

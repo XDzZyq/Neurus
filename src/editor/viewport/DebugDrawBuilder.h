@@ -2,23 +2,11 @@
  * @file DebugDrawBuilder.h
  * @brief Flattens the scene's retained debug objects into a DebugDrawList.
  *
- * The debug overlay has no immediate-mode API: DebugLine, DebugPoints and
- * DebugMesh are ordinary scene objects that live as long as what they
- * visualize. This class is the one place that walks those pools and turns them
- * into the flat, GPU-shaped DebugDrawList the renderer consumes.
- *
- *   Scene (dLine_list / dPoints_list / dMesh_list)
- *        -> DebugDrawBuilder::Rebuild()
- *        -> DebugDrawList  (published via SceneContext::debugDraw)
- *
- * Because the producers are stateful, rebuilding is driven by the existing
- * "something visible changed" broadcast (RenderResetEvent) rather than by a
- * per-frame poll: Editor calls MarkDirty() from that subscription and Rebuild()
- * from Edit(), where a clean builder returns immediately. Exactly one Touch()
- * per rebuild lets DebugPass skip the GPU copy on every unchanged frame.
- *
- * Layer placement: editor layer. It reads the Vulkan-free scene layer and
- * writes the Vulkan-free DebugDrawList; it knows nothing about the renderer.
+ * Debug objects are ordinary scene objects that live as long as what they
+ * visualize, so there is no immediate-mode API; this class is the one place that
+ * walks the debug pools and turns them into the flat, GPU-shaped list. Rebuild is
+ * driven by a dirty flag rather than a per-frame poll, and touches the list once
+ * per rebuild so the renderer can skip its GPU copy on unchanged frames.
  */
 
 #pragma once
@@ -37,13 +25,6 @@ class DebugMesh;
 
 /**
  * @brief Owns the editor-side DebugDrawList and keeps it in sync with the scene.
- *
- * Usage (from Editor):
- * @code
- *   m_debugDraw.MarkDirty();          // on RenderResetEvent / scene swap
- *   m_debugDraw.Rebuild(*m_scene);    // in Edit(), no-op while clean
- *   ctx.debugDraw = &m_debugDraw.List();
- * @endcode
  */
 class DebugDrawBuilder
 {
@@ -57,7 +38,7 @@ public:
 	/**
 	 * @brief Requests a rebuild on the next Rebuild() call.
 	 *
-	 * Cheap and idempotent — call it from every path that can change debug
+	 * Cheap and idempotent: call it from every path that can change debug
 	 * geometry rather than trying to work out whether it really did.
 	 */
 	void MarkDirty() { m_dirty = true; }
@@ -67,11 +48,11 @@ public:
 	 * @param scene Scene to read (never mutated).
 	 *
 	 * No-op while clean. On a rebuild the list is cleared, refilled with all
-	 * depth-tested primitives followed by all x-ray ones, and Touch()ed once.
+	 * depth-tested primitives followed by all x-ray ones, and touched once.
 	 */
 	void Rebuild(const Scene& scene);
 
-	/** @brief Returns the flattened list for publication through SceneContext. */
+	/** @brief Returns the flattened list. */
 	const DebugDrawList& List() const { return m_list; }
 
 	/** @brief Returns true if a rebuild is pending. */

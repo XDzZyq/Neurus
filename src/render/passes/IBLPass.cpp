@@ -26,7 +26,7 @@ struct alignas(16) IBLPushConstants
 {
 	int32_t mipLevel;      ///< Target mip level (unused by irradiance)
 	int32_t maxStep;       ///< Diamond-pattern hemisphere step count
-	float   roughnessSq;   ///< Roughness² (unused by irradiance)
+	float   roughnessSq;   ///< Roughness squared (unused by irradiance)
 	float   _pad;          ///< Padding to 16 bytes
 };
 static_assert(sizeof(IBLPushConstants) == 16, "IBLPushConstants must be 16 bytes");
@@ -46,7 +46,6 @@ IBLPass::IBLPass(const vk::raii::Device& device,
 		ShaderLibrary::LoadComputeShader("importance_samp",
 		                                  "res/shaders/compute/importance_samp.comp"))
 {
-	// --- Create pipelines from self-loaded shaders ---
 	BuildPipeline(device, "IBLPass");
 
 	NEURUS_LOG("[IBLPass] irradiance=" << (p_irradianceShader ? "OK" : "FAIL")
@@ -91,7 +90,7 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 		specularMipViews.push_back(vk::raii::ImageView(*p_device, viewCI));
 	}
 
-	// --- Create 2D_ARRAY view for diffuse cubemap (shader expects image2DArray) ---
+	// The shader binds the cube as an image2DArray.
 	vk::ImageSubresourceRange diffSubresource(
 		vk::ImageAspectFlagBits::eColor,
 		0, 1,    // baseMipLevel=0, levelCount=1
@@ -121,20 +120,16 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 		vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 		cmdBufs[0].begin(beginInfo);
 
-		// Transition equirect to ShaderRead if needed
-		// Uses explicit subresource overload — does not update m_state on const input
+		// Explicit subresource overload: no m_state update on the const input.
 		Barrier::Transition(*cmdBufs[0],
 		                    const_cast<Image&>(equirectImage),
 		                    ImageState::ColorShaderRead,
 		                    equirectImage.AllSubresources());
 
-		// Transition diffuse cubemap to ShaderWrite for compute write
 		Barrier::Transition(*cmdBufs[0], diffuseOut, ImageState::ShaderWrite);
 
-		// Write descriptors with diffuse cubemap view as output
 		WriteDescriptors(equirectImage, equirectSampler, diffArrayView);
 
-		// Dispatch irradiance
 		const uint32_t groupsX = (kDiffuseFaceRes + 3) / 4;
 		const uint32_t groupsY = (kDiffuseFaceRes + 3) / 4;
 		const uint32_t groupsZ = 6;  // 6 faces
@@ -147,7 +142,7 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 		                kDefaultIrradianceSteps,
 		                /*roughnessSq=*/0.0f);
 
-		// Memory barrier: make diffuse cubemap visible (same-layout, kept raw)
+		// Make the compute writes visible to later reads.
 		Barrier::Transition(*cmdBufs[0], diffuseOut, ImageState::ColorShaderRead);
 		cmdBufs[0].end();
 
@@ -168,16 +163,13 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 
 		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
-		// Transition specular cubemap at this mip to ShaderWrite
-		// Uses explicit subresource range — does not update m_state
+		// Explicit subresource range: no m_state update.
 		Barrier::Transition(*cmdBufs[0], specularOut, ImageState::ShaderWrite,
 		                    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor,
 		                                              mip, 1, 0, 6));
 
-		// Write descriptors using per-mip specular view
 		WriteDescriptors(equirectImage, equirectSampler, specularMipViews[mip]);
 
-		// Compute dispatch dimensions for this mip
 		const uint32_t faceRes = kSpecularFaceRes >> mip;
 		const uint32_t groupsX = (faceRes + 3) / 4;
 		const uint32_t groupsY = (faceRes + 3) / 4;
@@ -191,7 +183,6 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 		                kDefaultSpecularSteps,
 		                roughnessSq);
 
-		// Memory barrier
 		{
 			const auto barrier = vk::ImageMemoryBarrier2(
 				vk::PipelineStageFlagBits2::eComputeShader,
@@ -220,10 +211,8 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 	{
 		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
-		// Diffuse cubemap: ShaderWrite → ShaderRead
 		Barrier::Transition(*cmdBufs[0], diffuseOut, ImageState::ColorShaderRead);
 
-		// Specular cubemap (all mips): ShaderWrite → ShaderRead
 		Barrier::Transition(*cmdBufs[0], specularOut, ImageState::ColorShaderRead);
 
 		cmdBufs[0].end();
@@ -332,7 +321,6 @@ void IBLPass::WriteDescriptors(const Image& equirectImage,
 {
 	auto& dstSet = p_descriptorSets[0];
 
-	// --- Binding 0: equirect input (combined image sampler) ---
 	{
 		vk::DescriptorImageInfo imageInfo(
 			equirectSampler,
@@ -343,7 +331,6 @@ void IBLPass::WriteDescriptors(const Image& equirectImage,
 		                   vk::DescriptorType::eCombinedImageSampler);
 	}
 
-	// --- Binding 1: cubemap output (storage image) ---
 	{
 		vk::DescriptorImageInfo imageInfo(
 			nullptr,

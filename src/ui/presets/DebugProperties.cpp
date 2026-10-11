@@ -228,9 +228,8 @@ void DebugProperties::BuildPositionTable(QVBoxLayout* layout)
 
 void DebugProperties::ConnectSignals()
 {
-	// Every emit is guarded by a bound object: the panel exists before anything
-	// is selected, and a stray edit with m_objectId < 0 would reach no handler
-	// but would still be recorded as a user gesture.
+	// Every emit is guarded by a bound object: a stray edit with m_objectId < 0
+	// would reach no handler but would still be recorded as a user gesture.
 	QObject::connect(m_colorBtn, &ColorButton::colorChanged, this,
 		[this](const QColor& c) {
 			if (m_objectId < 0) return;
@@ -308,7 +307,7 @@ void DebugProperties::setDebugType(int goType)
 	m_meshRow->setVisible(isMesh);
 
 	// A DebugMesh's geometry comes from a pooled MeshData, so it has no editable
-	// position list — the table belongs to the two hand-authored types only.
+	// position list; the table belongs to the two hand-authored types only.
 	m_positionsBlock->setVisible(isLine || isPoints);
 }
 
@@ -547,9 +546,9 @@ void DebugProperties::AddPosition()
 	std::vector<glm::vec3> next = m_cachedPositions;
 	next.push_back(next.empty() ? glm::vec3(0.0f) : next.back());
 
-	// The cache is deliberately left stale: the table is repopulated by the
-	// Refresh() that follows the scene mutation, and setPositions() only rebuilds
-	// when the pushed list differs from the cache.
+	// The cache is deliberately left stale: the Refresh() that follows the scene
+	// mutation repopulates the table, and setPositions() rebuilds only when the
+	// pushed list differs from the cache.
 	emit positionsChanged(m_objectId, next);
 }
 
@@ -581,7 +580,7 @@ void DebugProperties::RemovePosition()
 			next.push_back(m_cachedPositions[i]);
 	}
 
-	// Cache left stale on purpose — see AddPosition().
+	// Cache left stale on purpose - see AddPosition().
 	emit positionsChanged(m_objectId, next);
 }
 

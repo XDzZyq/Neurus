@@ -46,10 +46,8 @@ PreferencesDialog::PreferencesDialog(const QString& language, int targetFps,
 	form->setSpacing(8);
 
 	// Language: native display names, language code as item data. Row 0 is the
-	// "auto" sentinel — it is the shipped default, so it has to be reachable
-	// from the UI, and I18n::supportedLanguages() (catalogs only) never yields
-	// it. Its text is translated; the concrete languages stay in their own
-	// language, which is why only row 0 is touched by Retranslate().
+	// "auto" sentinel; its text is translated, while the concrete languages
+	// stay in their own language - hence only row 0 is touched by Retranslate().
 	m_languageCombo = new QComboBox(m_generalGroup);
 	m_languageCombo->addItem(QString(), QString(kAutoLanguage));
 	for (const auto& lang : I18n::supportedLanguages())
@@ -110,8 +108,8 @@ void PreferencesDialog::Retranslate()
 	m_languageLabel->setText(i18n.translate("Language"));
 	m_fpsLabel->setText(i18n.translate("Target FPS"));
 
-	// Language combo: only the "auto" row is translated — the rest name their
-	// own language and must read the same whatever the active one is.
+	// Language combo: only the "auto" row is translated; the rest name their
+	// own language and read the same whatever the active one is.
 	m_languageCombo->setItemText(kAutoLanguageIndex,
 	                             i18n.translate("System default"));
 
@@ -132,9 +130,9 @@ void PreferencesDialog::SyncFrom(const QString& language, int targetFps)
 	m_language = language;
 	m_targetFps = targetFps;
 
-	// "auto" is a real row, so findData() resolves it like any other code. An
-	// unrecognised code (a catalog that was removed) falls back to "System
-	// default" rather than to a specific language.
+	// "auto" is a real row, so findData() resolves it like any other code; an
+	// unrecognised code falls back to the system-default row rather than to a
+	// specific language.
 	const int langIndex = m_languageCombo->findData(language);
 	{
 		QSignalBlocker block(m_languageCombo);
@@ -161,10 +159,9 @@ void PreferencesDialog::OnTargetFpsChanged(int index)
 
 void PreferencesDialog::OnResetDefaults()
 {
-	// Reset to the shipped defaults — "auto" (follow the system language) and
-	// 60 FPS — applying + persisting immediately through the same signals as
-	// manual edits. Resetting to the *resolved* system code instead would
-	// silently pin the preference to today's system language.
+	// Reset to the shipped defaults - "auto" and 60 FPS - applying and
+	// persisting through the same signals as manual edits. Resetting to the
+	// resolved system code would silently pin today's system language.
 	if (m_languageCombo->currentIndex() != kAutoLanguageIndex)
 		m_languageCombo->setCurrentIndex(kAutoLanguageIndex);  // → OnLanguageChanged
 	else

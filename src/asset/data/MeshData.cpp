@@ -41,20 +41,20 @@ void MeshData::ReloadContent()
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Convert a 1-based or negative relative OBJ index to 0-based.
- * @param rawIndex Raw index from face token (can be negative for relative).
- * @param count Total number of elements in the corresponding array.
+ * @brief Converts a 1-based or negative relative OBJ index to 0-based.
+ * @param rawIndex Raw index from a face token.
+ * @param count Number of elements in the corresponding array.
  * @return 0-based index into the array.
  */
 static int32_t ResolveIndex(int32_t rawIndex, size_t count)
 {
 	if (rawIndex > 0)
 	{
-		return rawIndex - 1;  // 1-based → 0-based
+		return rawIndex - 1;
 	}
 	else if (rawIndex < 0)
 	{
-		return static_cast<int32_t>(count) + rawIndex;  // negative: -1 = last
+		return static_cast<int32_t>(count) + rawIndex;
 	}
 	else
 	{
@@ -67,15 +67,8 @@ static int32_t ResolveIndex(int32_t rawIndex, size_t count)
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Parse a single face vertex reference token.
- *
- * Detects format by counting '/' separators:
- * - v          → pos only
- * - v/vt       → pos + uv
- * - v//vn      → pos + norm (no uv)
- * - v/vt/vn    → pos + uv + norm
- *
- * @param token Face vertex token string.
+ * @brief Parses a single OBJ face vertex reference token.
+ * @param token Token string ("v", "v/vt", "v//vn" or "v/vt/vn").
  * @param outPos Output position index (0-based, -1 if absent).
  * @param outUV Output UV index (0-based, -1 if absent).
  * @param outNorm Output normal index (0-based, -1 if absent).
@@ -89,7 +82,6 @@ static void ParseFaceVertex(const std::string& token,
 	outUV = -1;
 	outNorm = -1;
 
-	// Count slashes to determine format
 	size_t slashCount = 0;
 	for (char c : token)
 	{
@@ -99,12 +91,10 @@ static void ParseFaceVertex(const std::string& token,
 
 	if (slashCount == 0)
 	{
-		// Format: "v"
 		outPos = std::stoi(token);
 	}
 	else if (slashCount == 1)
 	{
-		// Format: "v/vt"
 		auto slashPos = token.find('/');
 		std::string a = token.substr(0, slashPos);
 		std::string b = token.substr(slashPos + 1);
@@ -114,7 +104,6 @@ static void ParseFaceVertex(const std::string& token,
 	}
 	else if (slashCount == 2)
 	{
-		// Format: "v/vt/vn" or "v//vn"
 		auto firstSlash = token.find('/');
 		auto secondSlash = token.find('/', firstSlash + 1);
 		std::string a = token.substr(0, firstSlash);
@@ -170,10 +159,7 @@ void MeshData::AddFace(const std::vector<std::string>& faceTokens,
 	if (numVerts < 3)
 		return;
 
-	// --- Triangulate via fan ---
-	// Triangle: 0,1,2
-	// Quad: 0,1,2 + 0,2,3
-	// N-gon: 0,1,2 + 0,2,3 + 0,3,4 + ...
+	// Triangulate via fan: (0,1,2), (0,2,3), ... (0,k,k+1)
 
 	struct FaceVert
 	{
@@ -187,7 +173,6 @@ void MeshData::AddFace(const std::vector<std::string>& faceTokens,
 	{
 		ParseFaceVertex(faceTokens[i], parsed[i].posIdx, parsed[i].uvIdx, parsed[i].normIdx);
 
-		// Resolve 1-based / negative indices
 		parsed[i].posIdx = ResolveIndex(parsed[i].posIdx, positions.size());
 		if (hasUVs && parsed[i].uvIdx >= -1)
 			parsed[i].uvIdx = ResolveIndex(parsed[i].uvIdx, texCoords.size());
@@ -195,7 +180,6 @@ void MeshData::AddFace(const std::vector<std::string>& faceTokens,
 			parsed[i].normIdx = ResolveIndex(parsed[i].normIdx, normals.size());
 	}
 
-	// Generate triangles via fan
 	for (size_t t = 1; t < numVerts - 1; ++t)
 	{
 		size_t idx[3] = { 0, t, t + 1 };
@@ -204,7 +188,6 @@ void MeshData::AddFace(const std::vector<std::string>& faceTokens,
 		{
 			const auto& fv = parsed[idx[corner]];
 
-			// Clamp indices to valid range
 			int32_t pi = std::max(0, std::min(fv.posIdx, static_cast<int32_t>(positions.size() - 1)));
 			int32_t ui = hasUVs ? std::max(0, std::min(fv.uvIdx, static_cast<int32_t>(texCoords.size() - 1))) : -1;
 			int32_t ni = hasNormals ? std::max(0, std::min(fv.normIdx, static_cast<int32_t>(normals.size() - 1))) : -1;
@@ -214,12 +197,10 @@ void MeshData::AddFace(const std::vector<std::string>& faceTokens,
 			auto it = me_vertexMap.find(key);
 			if (it != me_vertexMap.end())
 			{
-				// Reuse existing vertex
 				me_meshData.indexArray.push_back(it->second);
 			}
 			else
 			{
-				// Create new vertex
 				uint32_t newIdx = me_nextIndex++;
 				me_vertexMap[key] = newIdx;
 
@@ -256,7 +237,6 @@ void MeshData::ComputeFaceNormals()
 		glm::vec3 edge2 = p2 - p0;
 		glm::vec3 faceNormal = glm::normalize(glm::cross(edge1, edge2));
 
-		// Assign to all three vertices of the triangle
 		for (size_t corner = 0; corner < 3; ++corner)
 		{
 			uint32_t vi = me_meshData.indexArray[i + corner];
@@ -278,12 +258,10 @@ void MeshData::ComputeTangents()
 		uint32_t i1 = me_meshData.indexArray[i + 1];
 		uint32_t i2 = me_meshData.indexArray[i + 2];
 
-		// Positions
 		glm::vec3 p0(data[i0 * 14 + 0], data[i0 * 14 + 1], data[i0 * 14 + 2]);
 		glm::vec3 p1(data[i1 * 14 + 0], data[i1 * 14 + 1], data[i1 * 14 + 2]);
 		glm::vec3 p2(data[i2 * 14 + 0], data[i2 * 14 + 1], data[i2 * 14 + 2]);
 
-		// UVs
 		glm::vec2 uv0(data[i0 * 14 + 6], data[i0 * 14 + 7]);
 		glm::vec2 uv1(data[i1 * 14 + 6], data[i1 * 14 + 7]);
 		glm::vec2 uv2(data[i2 * 14 + 6], data[i2 * 14 + 7]);
@@ -313,7 +291,6 @@ void MeshData::ComputeTangents()
 				tangent = glm::normalize(edge1);
 		}
 
-		// Compute bitangent from normal and tangent
 		for (size_t corner = 0; corner < 3; ++corner)
 		{
 			uint32_t vi = me_meshData.indexArray[i + corner];
@@ -392,16 +369,13 @@ bool MeshData::LoadObjFromString(const std::string& objContent)
 
 	while (std::getline(stream, line))
 	{
-		// Trim leading whitespace
 		size_t start = line.find_first_not_of(" \t\r");
 		if (start == std::string::npos)
-			continue;  // Empty line
+			continue;
 
-		// Comments
 		if (line[start] == '#')
 			continue;
 
-		// Extract remainder after start
 		std::string trimmed = line.substr(start);
 		std::istringstream lineStream(trimmed);
 		std::string prefix;
@@ -499,16 +473,13 @@ bool MeshData::LoadObjFromString(const std::string& objContent)
 
 	// --- Post-processing ---
 
-	// Compute face normals if the file provided none
 	if (!hasNormals)
 	{
 		ComputeFaceNormals();
 	}
 
-	// Compute tangents and bitangents
 	ComputeTangents();
 
-	// Compute bounding box center
 	ComputeCenter();
 
 	NEURUS_LOG("[MeshData] parsed '" << me_meshData.name

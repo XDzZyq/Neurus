@@ -19,7 +19,7 @@ Material::Material()
 
 void Material::InitParamData()
 {
-	// Initialise uniform-name table if empty
+	// One-time init of the shared uniform-name table.
 	if (mat_uniform_name.empty())
 	{
 		mat_uniform_name.resize(MAT_END);
@@ -120,13 +120,12 @@ void Material::SetMatParam(MatParaType _tar, std::shared_ptr<Texture> _tex)
 Material::MaterialRes Material::LoadMaterial(std::string /*_path*/)
 {
 	// Stub - returns a default-constructed material.
-	// Full JSON parsing will be added post-MVP.
 	return std::make_shared<Material>();
 }
 
 void Material::ParseConfig(const std::string& /*_config*/)
 {
-	// Stub - actual configuration parsing will be added post-MVP.
+	// Stub - no parsing is performed yet.
 }
 
 // ---------------------------------------------------------------------------
@@ -135,8 +134,7 @@ void Material::ParseConfig(const std::string& /*_config*/)
 
 void Material::BindMatTexture() const
 {
-	// Stub - actual Vulkan texture binding happens in the render pass.
-	// This will iterate mat_params and bind MPARA_TEX entries.
+	// Stub - texture binding is not implemented yet.
 }
 
 } // namespace neurus

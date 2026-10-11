@@ -1,19 +1,10 @@
 /**
  * @file HistoryComponent.h
- * @brief Serializable adapter that persists the undo/redo stacks in a project.
+ * @brief Serializes an OperationManager's undo/redo stacks into a project.
  *
- * Mirrors SceneComponent/ConfigComponent: it implements project::Serializable
- * and wraps a non-owning OperationManager pointer. Save writes both stacks as
- * arrays of polymorphic Operation pointers (cereal auto-emits each op's
- * concrete type); Load reconstructs them and hands them back to the manager
- * with RestoreHistory().
- *
- * Layering: the header stays Vulkan-free and only forward-declares
- * OperationManager, so it lives with the other components in the asset layer.
- * The .cpp includes editor/operations headers (OperationManager,
- * OperationRegistration) to drive the undo/redo stacks — a reverse dependency
- * from asset to editor, kept in the .cpp only, since every final binary links
- * editor alongside asset.
+ * Save writes both stacks as arrays of polymorphic Operation pointers
+ * (cereal auto-emits each op's concrete type); Load reconstructs them and
+ * hands them back through RestoreHistory().
  */
 
 #pragma once

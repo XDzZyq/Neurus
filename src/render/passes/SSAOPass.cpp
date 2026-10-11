@@ -91,7 +91,6 @@ SSAOPass::SSAOPass(const vk::raii::Device& device,
 		ShaderLibrary::LoadComputeShader("ssao",
 		                                  "res/shaders/compute/ssao.comp"))
 {
-	// --- Create pipeline from self-loaded shader ---
 	BuildPipeline(device, "SSAOPass");
 
 	NEURUS_LOG("[SSAOPass] numSets=" << numSets
@@ -148,10 +147,8 @@ std::array<KernelSampleGpu, SSAOPass::kMaxKernelSamples> SSAOPass::GenerateKerne
 	DeterministicRNG rng(0xDEADBEEF);
 	std::array<KernelSampleGpu, kMaxKernelSamples> kernel;
 
-	// Generate hemisphere samples with increasing radius:
-	//   scale = lerp(0.1, 1.0, (i / (N-1))²)
-	// This clusters samples near the centre for fine detail and spreads
-	// far samples for large-scale occlusion.
+	// Samples get an increasing radius: scale = lerp(0.1, 1.0, t*t), which
+	// clusters near samples for fine detail and spreads the far ones.
 	for (uint32_t i = 0; i < kMaxKernelSamples; ++i)
 	{
 		const float t = static_cast<float>(i) / static_cast<float>(kMaxKernelSamples - 1);
@@ -180,7 +177,7 @@ std::array<NoiseEntryGpu, SSAOPass::kNoiseEntryCount> SSAOPass::GenerateNoise()
 
 	for (uint32_t i = 0; i < kNoiseEntryCount; ++i)
 	{
-		// Random unit direction — used to rotate the tangent plane
+		// Random unit direction, used to rotate the tangent plane
 		const glm::vec3 dir = rng.rand3n();
 
 		noise[i].x   = dir.x;
@@ -232,26 +229,22 @@ DescriptorSetLayout SSAOPass::CreateDescriptorSetLayout(const vk::raii::Device& 
 void SSAOPass::BuildPipeline(const vk::raii::Device& device,
                               const std::string& debugName)
 {
-	// --- Guard: shader must be valid ---
 	if (!p_shader)
 	{
 		throw std::runtime_error("SSAOPass: Compute shader not loaded or invalid");
 	}
 
-	// --- Compile and create temporary shader module ---
 	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
 	                                  ShaderType::COMPUTE, debugName);
 	vk::ShaderModuleCreateInfo smCI({}, spv);
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
 
-	// --- Push constant range (4 ints = 16 bytes) ---
 	vk::PushConstantRange pushRange(
 		vk::ShaderStageFlagBits::eCompute,
 		0,
 		4 * sizeof(int32_t));  // kernelLength, radius (float), noiseSize, frameIndex
 
-	// --- Build compute pipeline ---
 	PipelineBuilder builder;
 	p_pipelines.push_back(
 		builder.AddShaderStage(stageCI)
@@ -269,12 +262,11 @@ void SSAOPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCa
 {
 	DescriptorSet& dstSet = p_descriptorSets[setIndex];
 
-	// --- Write G-Buffer input descriptors (combined image samplers) ---
 	{
 		const std::array<AttachmentName, 3> gBufferInputs = {
 			AttachmentName::Position,
 			AttachmentName::Normal,
-			AttachmentName::Albedo,   // alpha stored in albedo.a or separate?
+			AttachmentName::Albedo,
 		};
 
 		for (uint32_t i = 0; i < 3; ++i)
@@ -292,7 +284,6 @@ void SSAOPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCa
 		}
 	}
 
-	// --- Write SSAO output (storage image) ---
 	{
 		const auto& ssaoAtt = cache.GetAttachment(AttachmentName::SSAO, extent);
 
@@ -306,13 +297,11 @@ void SSAOPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCa
 		                  vk::DescriptorType::eStorageImage);
 	}
 
-	// --- Write SSAO params UBO ---
 	{
 		dstSet.WriteBuffer(4, p_paramsUBO->GetDescriptorInfo(),
 		                   vk::DescriptorType::eUniformBuffer);
 	}
 
-	// --- Write noise UBO ---
 	{
 		dstSet.WriteBuffer(5, p_noiseUBO->GetDescriptorInfo(),
 		                   vk::DescriptorType::eUniformBuffer);
@@ -330,16 +319,10 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
-	// --- Cast scene UID to Scene* for access to Scene-specific members ---
-	// (Nothing here needs the Scene any more: the camera arrives through the
-	// context. Kept out rather than kept unused.)
-
-	// --- 0. Update per-frame SSAO params UBO (camera matrices + kernel) ---
 	{
 		SSAOParamsGpu params{};
-		// The viewing camera comes from the context, not from the Scene: the Editor
-		// injects whichever camera the frame is being rendered through. See the
-		// fuller note in LightingPass::Record().
+		// The camera comes from the context, not the Scene: the editor injects
+		// whichever camera the frame is rendered through.
 		const Camera* cam = ctx.snapshot.camera;
 		if (!cam)
 		{
@@ -364,10 +347,8 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 		p_paramsUBO->Upload(params);
 	}
 
-	// --- 1. Write descriptor set for this frame slot ---
 	WriteDescriptors(frameIndex, renderExtent, cache);
 
-	// --- 2. Transition G-Buffer images to ShaderRead and SSAO attachment to ShaderWrite ---
 	{
 		const std::array<AttachmentName, 3> gBufferInputs = {
 			AttachmentName::Position,
@@ -381,22 +362,18 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 			Barrier::Transition(cmdBuf, attachment, ImageState::ColorShaderRead);
 		}
 
-		// SSAO attachment: current state → ShaderWrite (compute write)
 		auto& ssaoAtt = cache.GetAttachment(AttachmentName::SSAO, renderExtent);
 		Barrier::Transition(cmdBuf, ssaoAtt, ImageState::ShaderWrite);
 	}
 
-	// --- 3. Bind compute pipeline ---
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 
-	// --- 4. Bind descriptor set ---
 	cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
 	                          *p_pipelines[0].pipelineLayout,
 	                          0,                                    // firstSet
 	                          {p_descriptorSets[frameIndex].handle()},
 	                          {});
 
-	// --- 5. Push constants ---
 	{
 		struct SSAOPushConstants
 		{
@@ -419,13 +396,12 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 			pc);
 	}
 
-	// --- 6. Dispatch ---
 	const uint32_t groupCountX = (renderExtent.width  + 15) / 16;
 	const uint32_t groupCountY = (renderExtent.height + 15) / 16;
 	++stats.dispatches;
 	cmdBuf.dispatch(groupCountX, groupCountY, 1);
 
-	// --- 7. Transition SSAO output: General → ShaderRead for lighting pass ---
+	// Return SSAO to ColorShaderRead for the lighting pass.
 	{
 		auto& ssaoAtt = cache.GetAttachment(AttachmentName::SSAO, renderExtent);
 		Barrier::Transition(cmdBuf, ssaoAtt, ImageState::ColorShaderRead);
@@ -437,9 +413,7 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 PassIO SSAOPass::GetIO() const
 {
 	// Binding metadata is indicative only: SSAOPass still writes its own
-	// descriptors in WriteDescriptors(). Resource names drive RenderGraph
-	// edge wiring (Position/Normal/Albedo are external inputs from
-	// GeometryPass; SSAO feeds LightingPass).
+	// descriptors, and the resource names drive the RenderGraph edges.
 	PassIO io;
 	io.name  = "SSAOPass";
 	io.reads = {

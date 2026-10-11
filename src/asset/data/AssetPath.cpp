@@ -27,9 +27,8 @@ std::string ResolveAssetPath(const std::string& path)
 	if (path.empty() || IsAbsolutePath(path))
 		return path;
 
-	// Strip a leading "res/" prefix and resolve against the compile-time res
-	// dir (mirrors the shader resolver's NEURUS_SHADER_DIR convention), so
-	// "res/obj/sphere.obj" -> NEURUS_RES_DIR + "obj/sphere.obj".
+	// Strip a leading "res/" prefix: "res/obj/sphere.obj" resolves to
+	// NEURUS_RES_DIR + "obj/sphere.obj".
 	if (path.rfind("res/", 0) == 0)
 	{
 		std::string resolved = std::string(NEURUS_RES_DIR) + path.substr(4);
@@ -37,8 +36,8 @@ std::string ResolveAssetPath(const std::string& path)
 			return resolved;
 	}
 
-	// Fallback: working-directory-relative with up-walks (tests run from
-	// build/ or build/debug/test/, where res/ is copied).
+	// Fallback: working-directory-relative with a few up-walks (tests run
+	// from build or deeper, where res/ is copied).
 	for (const auto& prefix : {"", "../", "../../", "../../../"})
 	{
 		std::string resolved = std::string(prefix) + path;
@@ -46,7 +45,7 @@ std::string ResolveAssetPath(const std::string& path)
 			return resolved;
 	}
 
-	return path; // not found - caller logs and stays an identity shell
+	return path; // not found
 }
 
 std::string MakePortableAssetPath(const std::string& path)

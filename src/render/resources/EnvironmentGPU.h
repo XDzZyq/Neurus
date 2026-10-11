@@ -9,9 +9,8 @@ namespace neurus {
 /**
  * @brief GPU-side IBL environment resources owned by the Renderer layer.
  *
- * Holds diffuse irradiance and specular prefiltered cubemap Textures
- * (Image + Sampler).  Created lazily by RenderCache::CreateEnvironmentGPU()
- * and read per-frame by LightingPass via GetEnvironmentGPU().
+ * Holds the diffuse irradiance and specular prefiltered cubemap Textures
+ * (Image + Sampler).
  *
  * Non-copyable (GPU resource handles are move-only).
  */

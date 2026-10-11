@@ -27,24 +27,12 @@ enum class ShaderType
 /**
  * @brief Abstract base class for all shader types in the dynamic shader system.
  *
- * Shader defines the common CPU-only interface for parsing, generating source,
- * and accessing per-stage IR data. Subclasses (RenderShader, ComputeShader)
+ * Defines the common CPU-only interface for parsing, generating source and
+ * accessing per-stage IR data. Subclasses (RenderShader, ComputeShader)
  * implement stage-specific parsing and generation logic.
  *
- * Lifecycle:
- * 1. Construct shader with name
- * 2. Call ParseAndGenerate() to populate ShaderUnits from source files
- * 3. Access stage data via GetStage() / GetParsedStruct() / GetGeneratedCode()
- *
- * Resource identity: Shader is a pooled resource (UID base, core). The
- * concrete leaf (RenderShader) is registered in the pool; pass/test shaders
- * created via ShaderLibrary stay outside the pool. Each shader serializes
- * itself (name + source paths); RenderShader::serialize(load) re-parses its
- * stages from disk and recompiles them to SPIR-V (CompileToSpv) so the
- * per-mesh pipeline is ready immediately after a project load.
- *
  * @note Non-copyable, non-movable (UID semantics - held via shared_ptr).
- * @note Thread-safety: Not thread-safe. Must be used from the main thread.
+ * @note Not thread-safe; must be used from the main thread.
  */
 class Shader : public UID
 {
@@ -81,8 +69,6 @@ public:
 	 * @brief Parses shader source files and generates GLSL code.
 	 *
 	 * Derived classes implement stage-specific parsing and code generation.
-	 * Populates m_stages with ShaderUnit entries containing parsed IR and
-	 * generated GLSL source.
 	 *
 	 * @return true if all stages were parsed and generated successfully.
 	 */

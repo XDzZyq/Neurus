@@ -2,25 +2,11 @@
  * @file RenderContext.h
  * @brief Per-frame context data passed to all render passes.
  *
- * RenderContext aggregates the per-frame state that multiple passes (Geometry,
- * Lighting, SSAO, IBL) need to record their commands: render extent for
- * viewport/scissor, frame index for descriptor ring-buffer slots, camera
- * matrices for shading, and optional scene pointers for draw batches and
- * light data.
+ * Aggregates the per-frame state that passes need to record their commands:
+ * render extent for viewport/scissor, frame index for descriptor ring-buffer
+ * slots, camera matrices for shading, and the optional scene view.
  *
- * Architecture:
- * - Pure data struct with no methods — owned and populated by the caller
- *   (DeferredRenderer or test fixture) each frame.
- * - Passes iterate snapshot.scene->mesh_list for meshes and ->light_list for lights.
- * - The frame's scene view is embedded **by value** as `snapshot` and declared
- *   in exactly one place (scene/SceneContext.h), shared with UIContext. This
- *   struct never re-declares `scene`, `config`, `camera`, `debugDraw` or
- *   `gizmoDraw`, and nothing maps them field-by-field.
- * - `snapshot` answers for its own members' nullability — `HasScene()`,
- *   `HasCamera()`, `Settings()` — so a pass that needs nothing from the scene
- *   (a standalone test) still works with a default-constructed snapshot.
- *
- * @note This is NOT a GPU push-constant block — it's CPU-side metadata
+ * @note This is NOT a GPU push-constant block - it's CPU-side metadata
  *       carried through the pass execution chain.
  */
 
@@ -52,21 +38,18 @@ struct RenderContext
 	/// @brief Ring-buffer slot index for per-frame descriptor pools / UBOs.
 	uint32_t frameIndex = 0;
 
-	/// @brief The frame's scene view, shared by value with UIContext.
+	/// @brief The frame's scene view (see scene/SceneContext.h).
 	///
-	/// Every member is a typed pointer (see scene/SceneContext.h), so a pass
-	/// reads `snapshot.scene` / `snapshot.camera` with no cast, and reaches the
-	/// render settings through `snapshot.Settings()`, which is never null and
-	/// resolves to RenderConfig's own declared defaults. The null policy for the
-	/// other members lives at that header, stated once, so no pass re-decides it.
+	/// Every member is a typed pointer, so a pass reads `snapshot.scene` /
+	/// `snapshot.camera` with no cast and reaches the render settings through
+	/// `snapshot.Settings()`, which is never null.
 	SceneContext snapshot;
 
 	/// @brief Per-frame random 3D direction for shadow jitter (normalized unit-ball vector).
-	/// Point lights use: pos_jittered = pos + light.radius * jitter
-	/// Sun lights use: dir_jittered = normalize(lightDir + jitter * smallScale)
 	glm::vec3 jitter{0.0f, 0.0f, 0.0f};
 
-	/// @brief Per-frame iteration counter (incremented each frame, reset by Editor on scene changes).
+	/// @brief Per-frame iteration counter (incremented each frame; the caller
+	///        resets it when temporal history is invalidated).
 	uint32_t iteration{0};
 
 };

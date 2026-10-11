@@ -19,22 +19,13 @@ namespace neurus {
  * @brief A QWidget subclass that exposes a native window handle
  *        for Vulkan surface creation.
  *
- * Sets WA_NativeWindow and WA_OpaquePaintEvent attributes to ensure the widget
- * has a dedicated native window handle and Qt does not draw a background behind
- * the Vulkan content. Overrides paintEvent() to be a no-op - all rendering is
- * handled by Vulkan.
+ * Sets WA_NativeWindow and WA_OpaquePaintEvent so the widget has a dedicated
+ * native window handle and Qt draws no background over the rendered content.
+ * The widget is focusable (Qt::StrongFocus) and emits resized(int, int) when
+ * its dimensions change.
  *
- * The widget is focusable (Qt::StrongFocus) to receive keyboard input.
- * Emits resized(int, int) when the widget is resized, allowing the renderer
- * to recreate the swapchain with the new dimensions.
- *
- * Mouse events are translated to typed event structs and emitted as Qt signals
- * (mouseMoved, mousePressed, mouseReleased, mouseScrolled). The Viewport tracks
- * its own button state and mouse position internally; it no longer calls
- * Input::Record*().
- *
- * @note This class owns no Vulkan resources. It provides the native window
- *       handle only; surface creation is the Renderer's responsibility.
+ * Mouse and keyboard events are translated to typed event structs and emitted
+ * as Qt signals; the viewport tracks its own button state and mouse position.
  */
 class Viewport : public UIPanel
 {
@@ -52,9 +43,7 @@ public:
 	/**
 	 * @brief Refreshes the panel from a UIContext snapshot.
 	 *
-	 * The viewport is pure input forwarding + Vulkan rendering; it holds no
-	 * scene state. Mouse/Delete events are pure intents - the Editor wraps
-	 * the active scene and forwards dedicated events to controllers.
+	 * The viewport holds no scene state; mouse/Delete events are pure intents.
 	 *
 	 * @param ctx Read-only UI context (scene snapshot).
 	 */
@@ -70,9 +59,7 @@ public:
 	 * @brief Returns the native window handle.
 	 * @return NativeWindowHandle of the underlying native window.
 	 *
-	 * The handle is obtained via winId() and is valid once the widget is
-	 * shown or realize()d. Pass this to the PlatformSurface for surface
-	 * creation.
+	 * Valid once the widget is shown or realize()d.
 	 */
 	NativeWindowHandle hwnd() const { return reinterpret_cast<NativeWindowHandle>(winId()); }
 
@@ -81,9 +68,6 @@ signals:
 	 * @brief Emitted when the widget is resized.
 	 * @param width New width in pixels.
 	 * @param height New height in pixels.
-	 *
-	 * Connect this to the Renderer to trigger swapchain recreation with
-	 * the updated dimensions.
 	 */
 	void resized(int width, int height);
 
@@ -113,7 +97,7 @@ signals:
 
 	/**
 	 * @brief Emitted when the Delete key is pressed while the viewport has focus.
-	 * @note Pure intent - the Editor wraps the active scene and deletes ALL selected objects.
+	 * @note Pure intent, not a direct scene mutation.
 	 */
 	void deleteRequested(const neurus::DeleteRequested& event);
 
@@ -122,10 +106,9 @@ signals:
 	 * @param event KeyPressEvent carrying an Input::Key and the modifiers.
 	 *
 	 * Only keys Input::GetKey() recognises are forwarded, and auto-repeat is
-	 * filtered here at the Qt boundary so a held key arms a modal operator once.
-	 * Deliberately not a QShortcut: a Qt::WindowShortcut on G/R/S/X/Y/Z would
-	 * steal those letters from the shader editor and from every property
-	 * spinbox, and cannot filter auto-repeat.
+	 * filtered here so a held key arms a modal operator once. Deliberately not
+	 * QShortcuts: a Qt::WindowShortcut on G/R/S/X/Y/Z would steal those letters
+	 * from text fields and spinboxes, and cannot filter auto-repeat.
 	 */
 	void keyPressed(const neurus::KeyPressEvent& event);
 
@@ -133,10 +116,9 @@ signals:
 	 * @brief Emitted when the viewport loses keyboard focus.
 	 * @param event ViewportFocusLost (empty - the fact is the whole payload).
 	 *
-	 * A modal transform gesture is driven by viewport keys and the viewport
-	 * cursor, so clicking into another panel mid-gesture must abort it rather
-	 * than leave an invisible operator armed against a widget that no longer
-	 * receives its keys.
+	 * A live modal gesture is driven by viewport keys, so losing focus must
+	 * abort it rather than leave an invisible operator armed against a widget
+	 * that no longer receives its keys.
 	 */
 	void focusLost(const neurus::ViewportFocusLost& event);
 
@@ -144,9 +126,6 @@ protected:
 	/**
 	 * @brief Override to prevent Qt from drawing a background.
 	 * @param event The paint event (ignored).
-	 *
-	 * All rendering for this widget is done by Vulkan. Qt's paint system
-	 * should not draw anything in this widget's area.
 	 */
 	void paintEvent(QPaintEvent* event) override;
 
@@ -160,10 +139,9 @@ protected:
 	 * @brief Handles keyboard input.
 	 * @param event The key event.
 	 *
-	 * Delete emits deleteRequested; F12 triggers a screenshot via UIEvents and
-	 * Ctrl+F12 an attachment dump. Everything Input::GetKey() recognises is
-	 * translated and emitted as keyPressed, accepted so ADS and the QMainWindow
-	 * menus do not also see it. All remaining keys chain to the base class.
+	 * Delete emits deleteRequested; F12 triggers a screenshot and Ctrl+F12 an
+	 * attachment dump. Keys Input::GetKey() recognises are translated and
+	 * emitted as keyPressed, accepted so the menus do not also see them.
 	 */
 	void keyPressEvent(QKeyEvent* event) override;
 
@@ -171,9 +149,8 @@ protected:
 	 * @brief Handles key release events.
 	 * @param event The key event.
 	 *
-	 * Chains to the base class. There is deliberately no KeyReleaseEvent in the
-	 * editor's event set: a modal operator is closed by a confirm or a cancel,
-	 * never by letting go of the key that armed it.
+	 * A modal operator is closed by a confirm or a cancel, never by letting go
+	 * of the key that armed it, so no release event is emitted.
 	 */
 	void keyReleaseEvent(QKeyEvent* event) override;
 
@@ -187,10 +164,9 @@ protected:
 	 * @brief Handles mouse movement and emits the mouseMoved signal.
 	 * @param event The mouse event.
 	 *
-	 * Computes delta from the last recorded position, translates Qt types
-	 * via Input helpers, builds a MouseMoveEvent, and emits mouseMoved().
-	 * Mouse tracking is enabled so movement is captured even without a
-	 * button held.
+	 * Computes delta from the last recorded position, translates Qt types via
+	 * Input helpers and emits mouseMoved(). Mouse tracking is enabled so
+	 * movement is captured even without a button held.
 	 */
 	void mouseMoveEvent(QMouseEvent* event) override;
 
@@ -198,9 +174,8 @@ protected:
 	 * @brief Handles mouse button presses and emits the mousePressed signal.
 	 * @param event The mouse event.
 	 *
-	 * Resets m_lastPos to current position on press (zero delta for the
-	 * next move), updates internal button state, translates via Input
-	 * helpers, and emits mousePressed().
+	 * Resets m_lastPos so the first move after the press reports zero delta,
+	 * updates the internal button state, and emits mousePressed().
 	 */
 	void mousePressEvent(QMouseEvent* event) override;
 

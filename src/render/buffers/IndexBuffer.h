@@ -9,28 +9,18 @@ namespace neurus {
 /**
  * @brief Device-local index buffer with staging-backed upload.
  *
- * Inherits from GPUBuffer for GPU buffer lifecycle (device-local allocation,
- * staging-backed Map/Unmap/Upload). Specializes the buffer usage to INDEX_BUFFER.
- * GPUBuffer automatically adds TRANSFER_DST for staging support.
+ * Inherits the buffer lifecycle (device-local allocation, staging-backed
+ * Map/Unmap/Upload) from GPUBuffer and specializes the usage to
+ * INDEX_BUFFER.
  *
- * @note Indices are always uint32_t (VK_INDEX_TYPE_UINT32). This avoids
- *       template complexity while supporting large meshes (up to 4B indices).
- *
- * Usage:
- *   IndexBuffer ibo(device, physicalDevice, queue, qfi,
- *                   indexData, dataSize, numIndices);
- *   vk::Buffer handle = ibo.buffer();
- *   uint32_t count = ibo.GetIndexCount();
- *   vk::IndexType type = ibo.GetIndexType();
+ * @note Indices are always uint32_t (VK_INDEX_TYPE_UINT32), supporting up to
+ *       4B indices.
  */
 class IndexBuffer : public GPUBuffer
 {
 public:
 	/**
 	 * @brief Creates a device-local index buffer and uploads index data.
-	 *
-	 * Internally creates a GPUBuffer with INDEX_BUFFER | TRANSFER_DST usage
-	 * and DEVICE_LOCAL memory, then calls Upload() with the provided data.
 	 *
 	 * @param device           Borrowed logical device (outlives this buffer).
 	 * @param physicalDevice   Borrowed physical device for memory queries.

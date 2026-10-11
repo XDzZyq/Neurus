@@ -378,10 +378,8 @@ void RenderConfigPanel::ConnectAllSignals()
 
 void RenderConfigPanel::Refresh(const UIContext& ctx)
 {
-	// Settings() is never null (see scene/SceneContext.h): with no published
-	// config the panel shows RenderConfig's own declared defaults, which is what
-	// the renderer is drawing with on the same frame. The `if (!config) return;`
-	// this replaced left every widget at whatever the last frame put there.
+	// Settings() is never null: with no published config it returns
+	// RenderConfig's own declared defaults.
 	const RenderConfig& cfg = ctx.snapshot.Settings();
 
 	// --- Shadows ---

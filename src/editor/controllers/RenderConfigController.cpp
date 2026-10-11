@@ -2,10 +2,8 @@
  * @file RenderConfigController.cpp
  * @brief Applies RenderConfig edits and records them as undoable operations.
  *
- * The apply path is shared by live UI edits and operation replay: writing the
- * incoming config into the Editor-owned RenderConfig (reached through the
- * context's config provider) and requesting a render reset. Recording is
- * gesture-aware — see the header for the bounding rules.
+ * The apply path is shared by live edits and operation replay: write the incoming
+ * config and request a render reset. Recording is gesture-aware (see the header).
  */
 
 #include "editor/controllers/RenderConfigController.h"

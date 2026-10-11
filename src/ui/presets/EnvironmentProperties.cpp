@@ -105,9 +105,8 @@ void EnvironmentProperties::setObjectId(int id)
 	if (m_objectId != id)
 	{
 		m_objectId = id;
-		// Reset caches to sentinel values so the next setIntensity() /
-		// setRotation() / setEquirectPath() always applies — forces a
-		// full refresh for the new object.
+		// Reset caches to sentinel values so the next setter always applies for
+		// the new object.
 		m_cachedIntensity = -1.0f;
 		m_cachedRotation  = -999.0f;
 		m_cachedPath.clear();

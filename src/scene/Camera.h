@@ -2,14 +2,8 @@
  * @file Camera.h
  * @brief Camera scene object providing view and projection matrices.
  *
- * Camera is a scene object that defines viewpoint and projection for rendering.
- * It inherits from ObjectID (scene graph identity) and Transform3D (spatial placement).
- *
- * Architecture:
- * - Owned by scene graph containers
- * - Active camera selected via scene manager
- * - Renderer reads camera matrices as immutable data
- * - Editor manipulates camera via CameraController events
+ * Defines viewpoint and projection for rendering: perspective FOV, aspect
+ * ratio, near/far clip planes, position and look-at target.
  *
  * @note Multiple cameras can exist, but only one is active at a time.
  * @note Perspective projection only. Orthographic not yet supported.
@@ -32,15 +26,11 @@ namespace neurus {
 /**
  * @brief Camera object defining viewpoint and projection for rendering.
  *
- * Camera provides perspective projection with configurable FOV, aspect ratio,
- * and near/far clip planes. Transform3D provides position/rotation via standard
- * scene graph interface.
+ * Provides perspective projection with configurable FOV, aspect ratio,
+ * and near/far clip planes; Transform3D supplies position and rotation.
  *
  * View and projection matrices are recomputed eagerly whenever a camera
  * parameter changes (FOV, aspect, near/far, position, target).
- * Camera data can be serialized to float array for GPU upload.
- *
- * @note Inheritance: Inherits identity from ObjectID, transform from Transform3D.
  */
 class Camera : public ObjectID, public Transform3D
 {
@@ -66,7 +56,7 @@ public:
 	/** @brief Look-at target position. */
 	glm::vec3 cam_tar = glm::vec3(0.0f, 0.0f, 0.0f);
 
-	/** @brief Serialized camera data for GPU upload. */
+	/** @brief Serialized camera parameters (8 floats, see GenFloatData()). */
 	std::vector<float> cam_floatData;
 
 	/**
@@ -189,7 +179,7 @@ public:
 	void SetTarPos(const glm::vec3& pos);
 
 	/**
-	 * @brief Serializes camera parameters to float vector for GPU upload.
+	 * @brief Serializes camera parameters into cam_floatData.
 	 *
 	 * Populates cam_floatData with 8 floats:
 	 * - 0-2: position (x, y, z)

@@ -30,7 +30,7 @@
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// Push constant structs — compile-time verified
+// Push constant structs - compile-time verified
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -98,22 +98,19 @@ ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
                                          const vk::raii::PhysicalDevice& physicalDevice,
                                          uint32_t numSets)
 	: ComputePass(device, physicalDevice,
-	              // Allocate kSetsPerFrameSlot descriptor sets per in-flight
-	              // frame (one per shadow-casting light) so the per-light loop
-	              // never updates a set still bound from an earlier light — see
-	              // the static_assert below tying this to MAX_SHADOW_LAYERS.
+	              // One set per shadow-casting light per frame slot, so the
+	              // per-light loop never updates a set that is still bound.
 	              ShadowIntensityPass::CreateDescriptorSetLayout(device),
 	              numSets * kSetsPerFrameSlot)
 	, p_sunDescSetLayout(CreateSunDescriptorSetLayout(device))
 {
 	// Every shadow-casting light needs its own descriptor set per frame; the
 	// per-light loop selects (frameIndex * kSetsPerFrameSlot + lightIndex).
-	// Keep the pool sized to the shadow-layer cap so no two active lights ever
-	// share a set within a single command buffer (which would alias descriptors
-	// and drop a light's shadow).
+	// Two active lights sharing a set within one command buffer would alias
+	// descriptors and drop one light's shadow.
 	static_assert(kSetsPerFrameSlot == RenderCache::MAX_SHADOW_LAYERS,
 	              "kSetsPerFrameSlot must match RenderCache::MAX_SHADOW_LAYERS");
-	// --- Load point-light cubemap eval shader via ShaderLibrary ---
+	// --- Load point-light cubemap eval shader ---
 	p_pointLightShader = ShaderLibrary::LoadComputeShader(
 		"shadow_eval", "res/shaders/compute/shadow_eval.comp");
 
@@ -122,7 +119,7 @@ ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
 		throw std::runtime_error("[ShadowIntensityPass] Failed to load 'shadow_eval' compute shader");
 	}
 
-	// --- Load sun-light 2D eval shader via ShaderLibrary ---
+	// --- Load sun-light 2D eval shader ---
 	p_sunLightShader = ShaderLibrary::LoadComputeShader(
 		"sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp");
 
@@ -232,7 +229,7 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 		vk::PushConstantRange pushRange(
 			vk::ShaderStageFlagBits::eCompute,
 			0,
-			sizeof(ShadowEvalPushConstants));   // 40 bytes (was 24)
+			sizeof(ShadowEvalPushConstants));   // 40 bytes
 
 		PipelineBuilder builder;
 		p_pipelines.push_back(
@@ -259,7 +256,7 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 		vk::PushConstantRange pushRange(
 			vk::ShaderStageFlagBits::eCompute,
 			0,
-			sizeof(SunShadowEvalPushConstants));   // 96 bytes (was 80)
+			sizeof(SunShadowEvalPushConstants));   // 96 bytes
 
 		PipelineBuilder sunBuilder;
 		p_pipelines.push_back(
@@ -309,7 +306,6 @@ void ShadowIntensityPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D exten
 {
 	DescriptorSet& dstSet = p_descriptorSets[setIndex];
 
-	// --- Binding 0: G-Buffer world-space position (combined image sampler) ---
 	{
 		const auto& posAtt = cache.GetAttachment(AttachmentName::Position, extent);
 
@@ -323,7 +319,6 @@ void ShadowIntensityPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D exten
 		                  vk::DescriptorType::eCombinedImageSampler);
 	}
 
-	// --- Binding 1: Shadow depth cubemap (combined image sampler, samplerCube) ---
 	{
 		LightGPU* lgpu = cache.GetLightGPU(p_currentLightUID);
 		if (!lgpu || !lgpu->shadowDepthMap) return;
@@ -339,7 +334,6 @@ void ShadowIntensityPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D exten
 		                  vk::DescriptorType::eCombinedImageSampler);
 	}
 
-	// --- Binding 2: Shadow intensity output (storage image, R8, 2D_ARRAY) ---
 	{
 		auto& shadowIntensity = cache.GetShadowIntensityArray(extent);
 
@@ -362,7 +356,6 @@ void ShadowIntensityPass::WriteSunDescriptors(uint32_t setIndex, vk::Extent2D ex
 {
 	DescriptorSet& dstSet = p_sunDescSets[setIndex];
 
-	// --- Binding 0: G-Buffer world-space position (combined image sampler) ---
 	{
 		const auto& posAtt = cache.GetAttachment(AttachmentName::Position, extent);
 
@@ -376,7 +369,6 @@ void ShadowIntensityPass::WriteSunDescriptors(uint32_t setIndex, vk::Extent2D ex
 		                  vk::DescriptorType::eCombinedImageSampler);
 	}
 
-	// --- Binding 1: Sun shadow depth map (combined image sampler, sampler2D) ---
 	{
 		LightGPU* slgpu = cache.GetLightGPU(p_currentLightUID);
 		if (!slgpu || !slgpu->shadowDepthMap) return;
@@ -392,7 +384,6 @@ void ShadowIntensityPass::WriteSunDescriptors(uint32_t setIndex, vk::Extent2D ex
 		                  vk::DescriptorType::eCombinedImageSampler);
 	}
 
-	// --- Binding 2: Shadow intensity output (storage image, R8, 2D_ARRAY) ---
 	{
 		auto& shadowIntensity = cache.GetShadowIntensityArray(extent);
 
@@ -418,7 +409,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
-	// --- Early out: no scene (SceneContext's null policy) ---
+	// A frame recorded before a scene exists is legal.
 	if (!ctx.snapshot.HasScene())
 	{
 		NEURUS_LOG("[ShadowIntensityPass] No scene, skipping");
@@ -428,14 +419,11 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	const Scene* scene = ctx.snapshot.scene;
 
 	// Settings() is never null and falls back to RenderConfig's own in-class
-	// defaults, so there is no literal here to drift from the declaration. The
-	// ternary this replaced had drifted 40x (0.0005f against a declared 0.02f).
+	// defaults, so there is no literal here to drift from the declaration.
 	const RenderConfig& settings = ctx.snapshot.Settings();
 	const float shadowBias = settings.r_shadow_bias;
 
-	// One answer for both the point and the sun path below, which used to read the
-	// config separately and both defaulted to MovingAvg where RenderConfig declares
-	// FixedEMA (r_sampling_mode = 0).
+	// One alpha mode for both the point and the sun path below.
 	const ShadowAlphaMode alphaMode = static_cast<ShadowAlphaMode>(settings.r_sampling_mode);
 
 	{
@@ -450,30 +438,26 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		}
 	}
 
-	// --- 1. Transition G-Buffer Position to ColorShaderRead (once for all lights) ---
 	{
 		auto& posAtt = cache.GetAttachment(AttachmentName::Position, renderExtent);
 		Barrier::Transition(cmdBuf, posAtt, ImageState::ColorShaderRead);
 	}
 
-	// --- 2. Transition the shadow intensity array to ShaderWrite (once) ---
 	{
 		auto& shadowArray = cache.GetShadowIntensityArray(renderExtent);
 		Barrier::Transition(cmdBuf, shadowArray, ImageState::ShaderWrite);
 	}
 
-	// --- 3. Bind compute pipeline (once for all lights) ---
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 
-	// --- 4. Dispatch shadow evaluation for each shadow-casting light ---
-	//     Alternates between two descriptor sets per frame slot so that updating
-	//     the descriptor for light N never touches the set that is still bound
-	//     from light N-1.  Without this alternation, updating a bound descriptor
-	//     set invalidates the command buffer (VUID-00059 chain).
+	// Each light dispatches against its own descriptor set per frame slot, so
+	// updating the descriptor for light N never touches the set still bound
+	// from light N-1. Otherwise the update would invalidate the command buffer
+	// (VUID-00059 chain).
 	uint32_t lightIndex = 0;
 	for (const auto& [uid, light] : scene->light_list)
 	{
-		// Skip non-shadow-casting, invisible, and non-cubemap lights (sun lights handled separately)
+		// Skip lights that do not cast cubemap shadows (sun lights handled below).
 		if (!light || !light->use_shadow) continue;
 		if (!light->is_viewport || !light->is_rendered) continue;
 		if (light->light_type != LightType::POINTLIGHT &&
@@ -481,7 +465,6 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 		p_currentLightUID = uid;
 
-		// --- Transition shadow depth cubemap: post-ShadowDepthPass → DepthShaderRead ---
 		{
 			LightGPU* lgpu = cache.GetLightGPU(uid);
 			if (!lgpu || !lgpu->shadowDepthMap) continue;
@@ -489,20 +472,16 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			Barrier::Transition(cmdBuf, shadowCube, ImageState::DepthShaderRead);
 		}
 
-		// --- Select descriptor set: alternate between 2 sets per frame slot ---
 		const uint32_t setIdx = frameIndex * kSetsPerFrameSlot + (lightIndex % kSetsPerFrameSlot);
 
-		// --- Write descriptor set ---
 		WriteDescriptors(setIdx, renderExtent, cache);
 
-		// --- Bind descriptor set ---
 		cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
 		                          *p_pipelines[0].pipelineLayout,
 		                          0,
 		                          {p_descriptorSets[setIdx].handle()},
 		                          {});
 
-		// --- Push constants ---
 		{
 			const auto& pos = light->GetPosition();
 			const uint32_t layer = cache.GetShadowIntensityLayer(uid, renderExtent);
@@ -530,7 +509,6 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 				pc);
 		}
 
-		// --- Dispatch ---
 		const uint32_t groupCountX = (renderExtent.width  + 15) / 16;
 		const uint32_t groupCountY = (renderExtent.height + 15) / 16;
 		++stats.dispatches;
@@ -539,19 +517,16 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		++lightIndex;
 	}
 
-	// --- 4b. Dispatch sun (directional) shadow evaluation for each shadow-casting sun light ---
-	//        Uses a separate pipeline and descriptor sets for the 2D shadow path.
+	// Sun (directional) lights use the second pipeline and its own sets.
 	uint32_t sunLightIndex = 0;
 	for (const auto& [uid, light] : scene->light_list)
 	{
-		// Only process visible sun lights that cast shadows
 		if (!light || !light->use_shadow) continue;
 		if (!light->is_viewport || !light->is_rendered) continue;
 		if (light->light_type != LightType::SUNLIGHT) continue;
 
 		p_currentLightUID = uid;
 
-		// --- Transition sun shadow depth map: post-ShadowDepthPass → DepthShaderRead ---
 		{
 			LightGPU* slgpu = cache.GetLightGPU(uid);
 			if (!slgpu || !slgpu->shadowDepthMap) continue;
@@ -559,13 +534,10 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			Barrier::Transition(cmdBuf, sunShadowMap, ImageState::DepthShaderRead);
 		}
 
-		// --- Select sun descriptor set: alternate between 2 sets per frame slot ---
 		const uint32_t setIdx = frameIndex * kSetsPerFrameSlot + (sunLightIndex % kSetsPerFrameSlot);
 
-		// --- Write sun descriptor set ---
 		WriteSunDescriptors(setIdx, renderExtent, cache);
 
-		// --- Bind sun pipeline + descriptor set ---
 		cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[1].pipeline);
 		cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
 		                          *p_pipelines[1].pipelineLayout,
@@ -573,28 +545,23 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		                          {p_sunDescSets[setIdx].handle()},
 		                          {});
 
-		// --- Sun push constants (mat4 lightViewProj + bias + layerIndex + jitter + alpha + frameCount) ---
 		{
 			const glm::vec3 lightDir = glm::normalize(light->GetDirection());
 			const float field = Light::sun_shadow_field;
 			const float nearPlane = Light::sun_shadow_near;
 			const float farPlane = Light::sun_shadow_far;
 
-			// Orthographic projection covering ±field around the origin
+			// Orthographic projection covering +/-field around the origin.
 			const glm::mat4 lightProj = glm::ortho(-field, field, -field, field, nearPlane, farPlane);
 
-			// View matrix: match ShadowDepthPass sun-path convention.
+			// Degenerate up-vector guard.
 			constexpr glm::vec3 kWorldUp(0.0f, 0.0f, 1.0f);
 			constexpr glm::vec3 kAltUp(1.0f, 0.0f, 0.0f);
 			const glm::vec3 up = (glm::abs(glm::dot(lightDir, kWorldUp)) > 0.999f)
 				? kAltUp : kWorldUp;
 
-			// Use camera target as ortho centre (same as ShadowDepthPass).
-			// The camera comes from the context, not from the Scene: the Editor
-			// injects whichever camera the frame is rendered through, and the sun
-			// cascade must centre on *that* one or the shadow slides off the part of
-			// the world actually on screen. See the fuller note in
-			// LightingPass::Record().
+			// Centre the ortho projection on the camera target, using the camera
+			// the frame renders through (the editor injects it into the context).
 			const Camera* activeCam = ctx.snapshot.camera;
 			if (!activeCam)
 			{
@@ -626,7 +593,6 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 				pc);
 		}
 
-		// --- Dispatch ---
 		const uint32_t groupCountX = (renderExtent.width  + 15) / 16;
 		const uint32_t groupCountY = (renderExtent.height + 15) / 16;
 		++stats.dispatches;
@@ -635,7 +601,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		++sunLightIndex;
 	}
 
-	// --- 5. Transition shadow intensity array: General → ColorShaderRead for lighting pass ---
+	// ShadowIntensity is left in ColorShaderRead for the lighting pass.
 	{
 		auto& shadowArray = cache.GetShadowIntensityArray(renderExtent);
 		Barrier::Transition(cmdBuf, shadowArray, ImageState::ColorShaderRead);
@@ -646,10 +612,9 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 PassIO ShadowIntensityPass::GetIO() const
 {
-	// Reads the G-Buffer Position and the per-light shadow depth maps (the
-	// logical ShadowDepth bundle); writes the unified shadow-intensity 2D
-	// array. Per-light maps and intensity layers are addressed internally via
-	// LightGPU / GetShadowIntensityArray, so binding metadata is indicative.
+	// Reads the G-Buffer Position and the shadow depth bundle; writes the
+	// unified shadow-intensity array. Per-light maps and layers are addressed
+	// internally, so binding metadata is indicative.
 	PassIO io;
 	io.name  = "ShadowIntensityPass";
 	io.reads = {

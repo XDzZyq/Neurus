@@ -169,9 +169,9 @@ ShaderEditorPanel::ShaderEditorPanel(QWidget* parent)
 	m_treeView->setModel(m_model);
 	m_treeView->setItemDelegate(m_delegate);
 
-	// "+" clicks on section / struct-def rows flow through the delegate (the
-	// glyph is painted at the row's right edge — no per-row index widgets,
-	// which fought with the frequent model resets and macOS accessibility).
+	// "+" clicks on section / struct-def rows flow through the delegate (no
+	// per-row index widgets, which fought with frequent model resets and
+	// macOS accessibility).
 	QObject::connect(m_delegate, &ShaderFieldDelegate::addClicked,
 	                 this, &ShaderEditorPanel::handleAddClick);
 	m_treeView->setAlternatingRowColors(true);
@@ -347,7 +347,7 @@ void ShaderEditorPanel::Refresh(const UIContext& ctx)
 		return;
 	}
 
-	// Has shader — show content, hide create button and empty label
+	// Has shader: show the editors and hide the create button.
 	m_emptyLabel->setVisible(false);
 	m_showingEmptyState = false;
 	setShowCreateButton(false);
@@ -366,12 +366,11 @@ void ShaderEditorPanel::populateSections(const void* shaderUnitPtr, bool objectC
 	auto* unit = static_cast<const ShaderUnit*>(shaderUnitPtr);
 	const auto& parsed = unit->parsed;
 
-	// Populate code editor with generated source
+	// Populate code editor with generated source.
 	m_codeEditor->setCode(unit->code);
 
-	// Remember which sections/structs are expanded and the current selection
-	// before the model rebuild: beginResetModel()/endResetModel() clears the
-	// view's expansion state AND its selection, which would collapse every
+	// Remember expanded sections and the selection before the model rebuild:
+	// beginResetModel()/endResetModel() clears both, which would collapse every
 	// section and drop the selected row on every refresh.
 	std::vector<std::vector<int>> expandedPaths;
 	std::vector<int> currentPath;
@@ -384,7 +383,8 @@ void ShaderEditorPanel::populateSections(const void* shaderUnitPtr, bool objectC
 			currentPath = indexPathOf(current);
 	}
 
-	// Build tree model; only expand all when the object changes (preserve collapse state on refresh)
+	// Only expand all when the object changes; a plain refresh preserves the
+	// current collapse state.
 	m_model->setShaderStruct(&parsed);
 	if (objectChanged)
 	{
@@ -409,8 +409,7 @@ void ShaderEditorPanel::populateSections(const void* shaderUnitPtr, bool objectC
 	}
 
 	// Span the title across the full row for section headers and struct-def
-	// rows; the delegate paints the "+" at the row's right edge. Re-applied on
-	// every populate because the model reset clears spans.
+	// rows. Re-applied on every populate because the model reset clears spans.
 	for (int row = 0; row < m_model->rowCount(QModelIndex()); ++row)
 	{
 		QModelIndex sectionIdx = m_model->index(row, 0, QModelIndex());
@@ -427,9 +426,8 @@ void ShaderEditorPanel::populateSections(const void* shaderUnitPtr, bool objectC
 	}
 
 	// The model reset drops the view's keyboard focus. Restore it so window
-	// shortcuts (Ctrl+Z) keep working: with no focus widget, macOS accessibility
-	// chases the dangling focused table and swallows key input until the user
-	// clicks elsewhere ("undo not working after add" bug).
+	// shortcuts keep working: with no focus widget, key input can be swallowed
+	// until the user clicks elsewhere.
 	if (hadFocus)
 		m_treeView->setFocus();
 }

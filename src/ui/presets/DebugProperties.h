@@ -1,24 +1,14 @@
 /**
  * @file DebugProperties.h
- * @brief Property subpanel for the three debug object types (issue #22).
+ * @brief Property subpanel for the three debug object types.
  *
- * ONE preset serves DebugLine, DebugPoints and DebugMesh rather than three
- * near-duplicate ones: they share the color / opacity / x-ray knobs, and the
- * type-specific rows are shown or hidden by setDebugType() the same way
- * LightProperties hides the spot-cone rows for a point light.
+ * One preset serves DebugLine, DebugPoints and DebugMesh: they share the
+ * color / opacity / x-ray knobs, and the type-specific rows are shown or
+ * hidden by setDebugType().
  *
- * The position table is the part that has no precedent elsewhere in the panel:
- * a DebugLine's vertex list and a DebugPoints' point list are editable data,
- * not a scalar. It is edited absolutely — a cell edit, an Add and a Remove all
- * emit the whole list — because a structural change cannot be expressed as a
- * per-index update, and one event shape keeps the undo story to a single op.
- *
- * Architecture:
- * - QWidget + one QGroupBox, like every other preset in this directory.
- * - setObjectId() resets the dirty-check caches; every setter is dirty-checked
- *   so a per-frame Refresh() does not fight the widget the user is typing in.
- * - Signals carry (objectId, value); PropertyPanel wraps them into typed events.
- * - No Vulkan / Renderer dependency; reads nothing from the Scene itself.
+ * The position table is edited absolutely - a cell edit, an Add and a Remove
+ * all emit the whole list - because a structural change cannot be expressed as
+ * a per-index update, and one event shape keeps the undo story to a single op.
  */
 
 #pragma once
@@ -64,8 +54,8 @@ public:
 	 * @brief Shows the rows that apply to this debug type, hides the rest.
 	 * @param goType ObjectID::GOType value (GO_DL, GO_DP or GO_DM) as an int.
 	 *
-	 * Takes an int so the UI layer does not need the scene header just to switch
-	 * rows — the caller already has the enum and stringizes nothing.
+	 * Takes an int so the UI layer does not need the scene header just to
+	 * switch rows.
 	 */
 	void setDebugType(int goType);
 
@@ -89,11 +79,9 @@ public:
 	/**
 	 * @brief Fills the position table from the object's list.
 	 *
-	 * Rows past kMaxRows are not shown — a point cloud with thousands of entries
-	 * would make the table, and every Refresh() that repopulates it, the slowest
-	 * thing in the frame. The count label says how many exist either way, and the
-	 * table is read-only in that state so a truncated edit cannot silently delete
-	 * the hidden tail.
+	 * Rows past kMaxRows are not shown; the count label still says how many
+	 * exist either way, and the table turns read-only in that state so a
+	 * truncated edit cannot silently delete the hidden tail.
 	 */
 	void setPositions(const std::vector<glm::vec3>& positions);
 

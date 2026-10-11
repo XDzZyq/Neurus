@@ -22,7 +22,7 @@
 namespace neurus
 {
 
-// --- QSS loading (static one-shot, mirrors ShaderEditorPanel pattern) ---
+// --- QSS loading (static one-shot) ---
 namespace
 {
 
@@ -42,7 +42,7 @@ QString LoadLogPanelStyle()
 
 } // namespace
 
-// Status-bar counter format — one spelling shared by every update site.
+// Counter format - one spelling shared by every update site.
 // N_ registers it with the extractor without translating it here.
 static constexpr const char* kStatsFormat = N_("INFO %1 · ERROR %2");
 
@@ -108,9 +108,8 @@ void LogPanel::BuildToolbar()
 	m_filter->setObjectName(QStringLiteral("logToolBtn"));
 	m_toolbar->addWidget(m_filter);
 
-	// Search bar: a bordered container holding the search field (stretch)
-	// and the live INFO/ERROR counts as a right-side suffix, so the stats
-	// read as part of the search control rather than a separate header.
+	// Search bar: a bordered container holding the search field (stretch) and
+	// the live INFO/ERROR counts as a right-side suffix.
 	m_searchWrap = new QWidget(this);
 	m_searchWrap->setObjectName(QStringLiteral("logSearchWrap"));
 	m_searchWrap->setAttribute(Qt::WA_StyledBackground, true);
@@ -190,8 +189,8 @@ void LogPanel::Refresh(const UIContext& ctx)
 	const std::size_t info = buffer->InfoCount();
 	const std::size_t errors = buffer->ErrorCount();
 
-	// Error notifier: fire only when the count grew (throttled to one
-	// signal per Refresh window; repeated errors accumulate in delta).
+	// Error notifier: fire only when the count grew; repeated errors
+	// accumulate in delta across one Refresh window.
 	if (errors > m_lastErrorCount)
 	{
 		const std::size_t delta = errors - m_lastErrorCount;

@@ -14,11 +14,11 @@ class PlatformSurface;
 /**
  * @brief Manages the Vulkan instance, physical device, and logical device.
  *
- * Three-phase construction to avoid moving the instance while the surface
- * holds a reference to its dispatcher:
- *   1. VulkanContext(std::move(instance)) - stores the instance (no move during surface lifetime)
- *   2. InitDevice() - selects physical device, creates logical device with graphics queue
- *   3. InitQueue(surface) - validates queue supports presentation, gets queue handle
+ * Three-phase construction so the instance is never moved while a surface
+ * refers to its dispatcher:
+ *   1. VulkanContext(std::move(instance)) - stores the instance
+ *   2. InitDevice() - selects a physical device, creates the logical device
+ *   3. InitQueue(surface) - validates presentation support, gets the queue
  */
 class VulkanContext
 {
@@ -54,11 +54,10 @@ public:
 	/**
 	 * @brief Core device features actually enabled at device creation.
 	 *
-	 * Requesting an unsupported feature makes vkCreateDevice fail with
-	 * VK_ERROR_FEATURE_NOT_PRESENT, so InitDevice() enables each optional
-	 * feature only if the physical device reports it. Passes must consult
-	 * this before using a feature-gated pipeline state (e.g. DebugPass
-	 * checks fillModeNonSolid before building its wireframe pipeline).
+	 * InitDevice() enables each optional feature only if the physical device
+	 * reports it: requesting an unsupported feature makes vkCreateDevice fail
+	 * with VK_ERROR_FEATURE_NOT_PRESENT. Consult this before relying on a
+	 * feature-gated pipeline state.
 	 */
 	const vk::PhysicalDeviceFeatures& enabledFeatures() const { return ctx_enabledFeatures; }
 

@@ -16,18 +16,15 @@ ShaderFieldRow::ShaderFieldRow(QWidget* parent)
 	layout->setContentsMargins(0, 0, 0, 0);
 	layout->setSpacing(4);
 
-	// Type combo
 	m_typeCombo = new QComboBox(this);
 	m_typeCombo->setMinimumWidth(90);
 	populateTypeCombo();
 	layout->addWidget(m_typeCombo);
 
-	// Name field
 	m_nameField = new QLineEdit(this);
 	m_nameField->setPlaceholderText("name");
 	layout->addWidget(m_nameField, 1);
 
-	// Connect signals
 	QObject::connect(m_typeCombo, &QComboBox::currentTextChanged,
 	                 this, [this](const QString& text) {
 		emit fieldChanged(text, m_nameField->text());
@@ -62,7 +59,6 @@ void ShaderFieldRow::populateTypeCombo()
 
 void ShaderFieldRow::setField(const std::string& type, const std::string& name)
 {
-	// Dirty-check
 	if (m_cachedType == type && m_cachedName == name) return;
 	m_cachedType = type;
 	m_cachedName = name;

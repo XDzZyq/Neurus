@@ -38,9 +38,9 @@ QIcon Icons::ObjectIcon(int goType)
 {
 	switch (ObjectID::GOType(goType))
 	{
-	case ObjectID::GOType::GO_CAM:    return GetIcon("scene:camera");       // GO_CAM
-	case ObjectID::GOType::GO_LIGHT:  return GetIcon("scene:light");        // GO_LIGHT
-	case ObjectID::GOType::GO_MESH:   return GetIcon("scene:mesh");         // GO_MESH
+	case ObjectID::GOType::GO_CAM:    return GetIcon("scene:camera");
+	case ObjectID::GOType::GO_LIGHT:  return GetIcon("scene:light");
+	case ObjectID::GOType::GO_MESH:   return GetIcon("scene:mesh");
 	default: return GetIcon("scene:mesh");
 	}
 }
@@ -56,23 +56,20 @@ void Icons::RegisterIcon(const std::string& name, const QString& resourcePath)
 
 const QIcon& Icons::GetIcon(const std::string& name)
 {
-	// Return cached icon if already loaded
 	auto cacheIt = s_cache.find(name);
 	if (cacheIt != s_cache.end())
 	{
 		return cacheIt->second;
 	}
 
-	// Look up the resource path
 	auto pathIt = s_paths.find(name);
 	if (pathIt == s_paths.end())
 	{
-		// Unknown icon name — return empty icon, do not cache
+		// Unknown icon name: return a shared empty icon, do not cache.
 		static const QIcon s_emptyIcon;
 		return s_emptyIcon;
 	}
 
-	// Load SVG from Qt resource system and cache it
 	QIcon icon(pathIt->second);
 	auto [insertedIt, _] = s_cache.emplace(name, std::move(icon));
 	return insertedIt->second;
@@ -80,14 +77,12 @@ const QIcon& Icons::GetIcon(const std::string& name)
 
 const QIcon &Icons::GetIconPair(const std::string &name_on, const std::string &name_off)
 {
-    	// Return cached icon if already loaded
 	auto cacheIt = s_cache.find(name_on + name_off);
 	if (cacheIt != s_cache.end())
 	{
 		return cacheIt->second;
 	}
 
-	// Look up the resource path
 	auto path_on = s_paths.find(name_on);
 	auto path_off = s_paths.find(name_off);
 

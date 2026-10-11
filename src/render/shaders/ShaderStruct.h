@@ -44,11 +44,7 @@ enum class Interp : uint8_t
 // Named type aliases - replace OpenGL std::tuple patterns
 // --------------------------------------
 
-/**
- * @brief Input/Output binding descriptor for layout(location=X) declarations.
- *
- * Used by AB_list (vertex attributes) and pass_list (render-pass outputs).
- */
+/** @brief Input/Output binding descriptor for layout(location=X) declarations. */
 struct S_IO
 {
 	int location;             ///< GLSL layout location qualifier
@@ -64,12 +60,7 @@ struct S_IO
 /** @brief Ordered parameter list: (type, name, originalTypeName) triples. */
 using Args = std::vector<std::tuple<ParaType, std::string, std::string>>;
 
-/**
- * @brief Struct or buffer-block definition.
- *
- * Used by struct_def_list (bare structs), SB_list (storage buffers), and
- * ubuffer_list (uniform blocks). For struct_def_list, `binding` is unused (0).
- */
+/** @brief Struct or buffer-block definition (bare struct, storage buffer or uniform block). */
 struct S_StructDef
 {
 	int binding;              ///< Descriptor-set binding point (0 for bare structs)
@@ -81,11 +72,7 @@ struct S_StructDef
 	bool operator==(const S_StructDef&) const = default;
 };
 
-/**
- * @brief Uniform / input / output variable declaration.
- *
- * Used by uniform_list, input_list, and output_list.
- */
+/** @brief Variable declaration (uniform, shader-stage input or output). */
 struct S_Uniform
 {
 	std::string name;       ///< Variable name
@@ -100,12 +87,7 @@ struct S_Uniform
 	bool operator==(const S_Uniform&) const = default;
 };
 
-/**
- * @brief Function or const definition.
- *
- * Used by func_list (functions) and const_list (constants).
- * For const_list, `args` is empty and `body` holds the initialiser string.
- */
+/** @brief Function or const definition. */
 struct S_Func
 {
 	ParaType returnType;                                 ///< Return type (or const type)
@@ -120,11 +102,7 @@ struct S_Func
 /** @brief Alias: const values share the same structure as functions. */
 using S_Const = S_Func;
 
-/**
- * @brief Global variable with a default value.
- *
- * Used by glob_list.
- */
+/** @brief Global variable with a default scalar value. */
 struct S_Glob
 {
 	std::string name;  ///< Variable name
@@ -132,12 +110,7 @@ struct S_Glob
 	float defaultVal;  ///< Default scalar value
 };
 
-/**
- * @brief Variable declaration with a string type name (supports user-defined types).
- *
- * Used by vari_list.  The type is stored as a string so custom struct types
- * and aliases are preserved.
- */
+/** @brief Variable declaration with a string type name (supports user-defined types). */
 struct S_Var
 {
 	std::string typeName; ///< GLSL type name (supports custom types)
@@ -148,8 +121,7 @@ struct S_Var
 /**
  * @brief Push-constant range descriptor.
  *
- * Used by the Vulkan push_constants list.  Mirrors the layout in
- * `layout(push_constant) uniform PushConstants { ... }` GLSL blocks.
+ * Mirrors one member of a `layout(push_constant) uniform` GLSL block.
  */
 struct S_PushConstant
 {
@@ -165,8 +137,7 @@ struct S_PushConstant
 /**
  * @brief Specialisation-constant descriptor.
  *
- * Used by the Vulkan spec_constants list.  Maps to GLSL
- * `layout(constant_id = binding) const type name = defaultVal;`.
+ * Maps to GLSL `layout(constant_id = binding) const type name = defaultVal;`.
  */
 struct S_SpecConstant
 {
@@ -187,12 +158,9 @@ struct S_SpecConstant
 /**
  * @brief Intermediate Representation for a single GLSL shader stage.
  *
- * Populated by the parser (Task 7) and consumed by GenerateShader() (Task 8).
- * RenderShader (Task 11) and ComputeShader (Task 12) each own a ShaderStruct
- * instance describing their respective shader stage definitions.
- *
- * Every setter marks is_struct_changed = true.  GenerateShader() resets it
- * to false after successful code generation.
+ * Containers are populated by the parser and read by the generator; every
+ * setter marks is_struct_changed = true, and the generator resets it after
+ * successful code generation.
  */
 class ShaderStruct
 {
@@ -230,14 +198,14 @@ public:
 	uint32_t                    local_size_z = 0; ///< Compute workgroup Z dimension
 	std::vector<std::string>    extensions;     ///< Required GLSL extensions (e.g. "GL_GOOGLE_include_directive")
 	std::vector<std::string>    define_directives; ///< Raw #define directives (e.g. "#define NUM_SAMPLES 64")
-	int                         version = 0;    ///< GLSL #version (0 = unset; GenerateShader() defaults to 450)
+	int                         version = 0;    ///< GLSL #version (0 = unset; the generator defaults to 450)
 
 	// ----------------------------------
 	// State flag
 	// ----------------------------------
 
 	/**
-	 * @brief Set to true by every setter; cleared by GenerateShader() (Task 8).
+	 * @brief Set to true by every setter; cleared by the generator on success.
 	 *
 	 * Used to detect whether regeneration is needed after the last compile.
 	 */
@@ -252,17 +220,12 @@ public:
 	/** @brief Dynamic type table - maps ParaType values and custom types to GLSL strings. */
 	static std::vector<std::string> type_table;
 
-	/**
-	 * @brief Converts a ParaType to its GLSL type string.
-	 *
-	 * Delegates to neurus::ToString() for known types; uses type_table for custom entries.
-	 */
+	/** @brief Converts a ParaType to its GLSL type string (delegates to neurus::ToString()). */
 	static std::string ParseType(ParaType type);
 	/**
 	 * @brief Parses a GLSL type string into its ParaType value.
 	 *
-	 * Searches type_table first, then delegates to neurus::FromString().
-	 * Unknown types are appended to type_table as CUSTOM.
+	 * Unknown types are registered in type_table and reported as CUSTOM.
 	 */
 	static ParaType ParseType(const std::string& type);
 	/** @brief Returns an array suffix string ("[N]") or empty if count <= 1. */
@@ -334,37 +297,12 @@ public:
 	/**
 	 * @brief Resets ALL containers and Vulkan fields to default/empty state.
 	 *
-	 * Clears all 16+ containers, zeros local_size_*, resets version to 0
-	 * (unset; GenerateShader() defaults to 450 when version == 0),
-	 * and empties extensions / push_constants / spec_constants.
+	 * Version resets to 0 (unset; the generator defaults to 450).
 	 */
 	void Reset();
 
-	/**
-	 * @brief Returns true when every container is empty AND Main is empty.
-	 *
-	 * Used to detect an uninitialised / freshly-reset ShaderStruct.
-	 */
+	/** @brief Returns true when every container is empty and Main is empty. */
 	bool IsEmpty() const;
-
-	/**
-	 * @brief Generates a complete, valid Vulkan GLSL source string from the
-	 *        current IR state with deterministic section ordering.
-	 *
-	 * Sections are emitted in Vulkan-specific order:
-	 *   #version -> extensions -> AB_list -> pass_list -> struct_def_list ->
-	 *   SB_list -> ubuffer_list -> push_constants -> spec_constants ->
-	 *   uniform_list -> input_list -> output_list -> glob_list ->
-	 *   const_list -> vari_list -> func_list -> local_size -> main()
-	 *
-	 * Each section is gated by @c if (!list.empty()).
-	 * Sets @c is_struct_changed to false after successful generation.
-	 *
-	 * @return Valid Vulkan GLSL source code.  Returns a minimal stub
-	 *         (@c "#version 450 core\\nvoid main() {}") when IsEmpty().
-	 */
-	// GenerateShader removed - use ShaderGenerator::Generate(shaderStruct) directly.
-
 
 	/** @brief Reset the static type registration table. Call between independent parse sessions. */
 	static void ResetTypeTable();

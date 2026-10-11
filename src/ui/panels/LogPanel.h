@@ -2,11 +2,10 @@
  * @file LogPanel.h
  * @brief Dock panel that browses realtime log output.
  *
- * Reads the core LogBuffer via UIContext::log on each Refresh() (poll-on-
- * refresh, matching the ProfilingPanel pattern). Provides live per-type
- * counts, an all/info/errors filter + text search, auto-scroll/pause
- * toggles, clear, and *.log export. Emits errorNotified() when new
- * NEURUS_ERR entries appear; UIManager routes it to the status bar.
+ * Reads the core LogBuffer via UIContext::log on each Refresh(). Provides live
+ * per-type counts, an all/info/errors filter + text search, auto-scroll/pause
+ * toggles, clear, and *.log export. Emits errorNotified() when new NEURUS_ERR
+ * entries appear.
  */
 
 #pragma once
@@ -32,7 +31,8 @@ namespace neurus
 
 /**
  * @brief Realtime log viewer dock.
- * @note Reads core LogBuffer only - no renderer coupling.
+ *
+ * Read-only view over the core LogBuffer; it never writes to it.
  */
 class LogPanel : public UIPanel
 {

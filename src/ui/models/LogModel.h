@@ -2,7 +2,7 @@
  * @file LogModel.h
  * @brief QAbstractListModel wrapping the core LogBuffer for a virtualized
  *        QListView. Polls the buffer in Refresh(); Qt only calls data() for
- *        visible rows, so a 10k-entry buffer costs ~50 row reads per frame.
+ *        visible rows.
  */
 
 #pragma once

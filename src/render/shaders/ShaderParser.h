@@ -27,8 +27,7 @@ namespace neurus {
 /**
  * @brief Stateless GLSL parser that populates a ShaderStruct IR from source.
  *
- * All methods are static.  The class exists purely as a namespace-like
- * grouping; it has no instance state.
+ * All methods are static; the class has no instance state.
  */
 class ShaderParser
 {
@@ -39,32 +38,22 @@ public:
 	/**
 	 * @brief Reads a GLSL file from disk and parses it into a ShaderStruct.
 	 *
-	 * Opens `filepath`, reads the entire content into a string, and
-	 * delegates to ParseShaderCode().
-	 *
 	 * @param filepath Path to the GLSL source file (.vert, .frag, .comp, .geom).
 	 * @param type     Expected shader stage (VERTEX / FRAGMENT / COMPUTE / GEOMETRY).
-	 * @return Populated ShaderStruct.  Returns an empty ShaderStruct on error
-	 *         (use IsEmpty() to check).
+	 * @return Populated ShaderStruct; empty on error (check IsEmpty()).
 	 */
 	static ShaderStruct ParseShaderFile(const std::string& filepath, ShaderType type);
 
 	/**
 	 * @brief Parses a GLSL source string into a ShaderStruct IR.
 	 *
-	 * Reads the source line-by-line, classifying each line by keyword
-	 * (#version, #extension, layout, in/out, uniform, struct, const,
-	 * function definitions, bare variables) and calling the appropriate
-	 * setter on the result.
-	 *
-	 * @param source GLSL source text (null-terminated or newline-delimited).
-	 * @param type   Shader stage - used to disambiguate layout(input) vs layout(output) semantics.
-	 * @return Populated ShaderStruct.  Returns an empty ShaderStruct on error
-	 *         (use IsEmpty() to check).
+	 * @param source GLSL source text.
+	 * @param type   Shader stage - disambiguates layout(input) vs layout(output).
+	 * @return Populated ShaderStruct; empty on error (check IsEmpty()).
 	 */
 	static ShaderStruct ParseShaderCode(const std::string& source, ShaderType type);
 
-	// -- DEPRECATED compatibility overloads (remove in Task 2) --
+	// -- DEPRECATED compatibility overloads --
 
 	/** @deprecated Use ParseShaderFile(path, type) which returns ShaderStruct by value. */
 	inline static bool ParseShaderFile(const std::string& filepath, ShaderType type, ShaderStruct& out)

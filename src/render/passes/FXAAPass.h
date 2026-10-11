@@ -20,8 +20,7 @@ public:
 	         uint32_t numSets);
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
-	/// Declares the ComposedOutput read and FXAAOutput write for RenderGraph
-	/// wiring.
+	/// Declares the ComposedOutput read and FXAAOutput write.
 	PassIO GetIO() const override;
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 private:

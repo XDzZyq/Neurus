@@ -73,7 +73,7 @@ void ProfilingPanel::Refresh(const UIContext& ctx)
 	const auto* profile = ctx.profile;
 	if (!profile)
 	{
-		// No renderer profile yet: hide every pooled row and reset detection.
+		// No profile yet: hide every pooled row and reset detection.
 		m_frameHead->setHidden(true);
 		for (auto& row : m_rowPool)
 			row->setHidden(true);
@@ -138,12 +138,12 @@ void ProfilingPanel::Populate(const FrameProfile& profile)
 		return;
 	}
 
-	// GPU timestamps need device support AND a fence-signaled readback;
-	// until then only CPU data is available.
+	// GPU values need both device support and a signaled readback; until then
+	// only CPU data is available.
 	const bool gpuShown = profile.gpuTimingAvailable && profile.gpuReady;
 
-	// Reset EMA state when the pass set changes so stale per-pass values don't
-	// bleed across a pipeline change. -1.0 marks each slot as "not yet seeded".
+	// Reset EMA state when the pass set changes, so stale per-pass values do
+	// not bleed across a pipeline change. -1.0 marks a slot as not yet seeded.
 	if (m_passCpuMsEma.size() != profile.passes.size())
 	{
 		m_passCpuMsEma.assign(profile.passes.size(), -1.0);
@@ -161,8 +161,8 @@ void ProfilingPanel::Populate(const FrameProfile& profile)
 	if (gpuShown)
 		m_frameGpuMsEma = ema(m_frameGpuMsEma, profile.gpuTotalMs);
 
-	// Frame totals row - dirty-checked columns (skips setText when the
-	// displayed value is unchanged, including sub-0.005ms EMA drift).
+	// Frame totals row - dirty-checked columns; a sub-0.005ms EMA drift keeps
+	// the displayed string unchanged and skips the setText.
 	m_frameHead->setFrame(m_frameCpuMsEma, m_frameGpuMsEma, gpuShown,
 	                      profile.drawCalls, profile.dispatches);
 
@@ -175,12 +175,11 @@ void ProfilingPanel::Populate(const FrameProfile& profile)
 		if (gpuShown)
 			m_passGpuMsEma[i] = ema(m_passGpuMsEma[i], pass.gpuMs);
 
-		// Reveal the row (dirty-checked; free if already visible) - needed when
-		// the pass count grows back after a shrink hid surplus rows.
+		// Reveal the row; needed when the pass count grows back after a shrink
+		// hid surplus rows.
 		m_rowPool[i]->setHidden(false);
-		// Per-column dirty check inside setPass skips setText for stable
-		// columns (name/draws/dispatches) and for timing values whose EMA
-		// drift rounds to the same displayed string.
+		// Per-column dirty checks inside setPass skip setText for stable columns
+		// and for values whose EMA drift rounds to the same displayed string.
 		m_rowPool[i]->setPass(pass.name, m_passCpuMsEma[i], m_passGpuMsEma[i],
 		                      gpuShown, pass.drawCalls, pass.dispatches);
 	}

@@ -26,18 +26,17 @@ CPUBuffer::CPUBuffer(const vk::raii::Device& device,
 	             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
 	             debugName);
 
-	// Mapped once and kept mapped: repeated map/unmap around every write costs a
-	// driver round-trip for no benefit, and Vulkan places no limit on how long a
-	// host-visible allocation may stay mapped.
+	// Mapped once and kept mapped: repeated map/unmap around every write costs
+	// a driver round-trip for no benefit, and Vulkan allows long-lived mappings.
 	h_mapped = b_memory->mapMemory(0, b_size);
 	b_state = BufferState::HostWrite;
 }
 
 CPUBuffer::~CPUBuffer()
 {
-	// b_memory is a raii handle that unmaps nothing on its own, so the mapping
-	// this class opened has to be closed here — before the handle is destroyed by
-	// the base class.
+	// The raii memory handle does not unmap on its own, so the mapping this
+	// class opened has to be closed here - before the base class destroys the
+	// handle.
 	if (h_mapped && b_memory)
 	{
 		b_memory->unmapMemory();

@@ -5,32 +5,16 @@
  * These are the primitives the overlay shaders (res/shaders/render/overlay_line.*
  * and overlay_point.*) consume verbatim as std430 SSBO arrays. They are defined
  * here, apart from any particular payload container, because two unrelated
- * features draw with them:
+ * features draw with them; what those features share is only the record layout
+ * and therefore the shader program.
  *
- *   - DebugDrawList  — retained, deterministic data visualization (issue #22).
- *                      Lives as long as the scene objects it mirrors.
- *   - GizmoDrawList  — transient interaction feedback for a modal transform.
- *                      Lives for the duration of one gesture.
- *
- * The two have opposite lifetimes and opposite authoring rules, so they stay
- * separate containers. What they legitimately share is the *record layout* and
- * therefore the shader program: one vertex record, two payloads. Duplicating the
- * record would force a converting copy at the cache boundary and stop the two
- * caches sharing a memcpy shape, for no gain.
- *
- * GPU layout contract: field order and padding MUST stay in sync with
+ * GPU layout contract: field order and padding must stay in sync with
  * overlay_line.vert and overlay_point.vert. The static_asserts below guard the
  * sizes, not the field order.
  *
- * Positions are always world-space. Producers bake their object's transform in
+ * Positions are always world-space: producers bake their object's transform in
  * while flattening rather than passing a matrix index the shader would
- * dereference: the CPU already touches every primitive to copy it, so folding a
- * mat4 multiply into that pass costs almost nothing and removes a whole SSBO,
- * descriptor binding and indirection from the GPU side.
- *
- * Layer placement: the Vulkan-free scene layer, like SceneContext.h, so the
- * editor may write these records and the renderer may read them without either
- * including the other.
+ * dereference.
  */
 
 #pragma once
@@ -46,8 +30,7 @@ namespace neurus
  * @brief Per-primitive bit flags, shared verbatim with the overlay shaders.
  *
  * Plain uint32_t constants rather than an enum class: the value is written
- * straight into an SSBO field and tested with bitwise AND in GLSL, so the
- * enum-class conversion boilerplate would buy nothing.
+ * straight into an SSBO field and tested with bitwise AND in GLSL.
  */
 struct OverlayFlag
 {
@@ -65,10 +48,8 @@ struct OverlayFlag
 	/**
 	 * @brief Size is in pixels (constant on screen) rather than world units.
 	 *
-	 * Point sprites honour both settings. Segments do not: a screen-space quad
-	 * has one width for its whole length, so a world-space thickness would need
-	 * a per-fragment depth-dependent width it cannot represent. OverlaySegment
-	 * width is therefore always pixels, and this bit is ignored for segments.
+	 * Honoured by point sprites; OverlaySegment width is always pixels and
+	 * ignores this bit.
 	 */
 	static constexpr uint32_t ScreenSpaceSize = 1u << 3;
 };
@@ -76,9 +57,8 @@ struct OverlayFlag
 /**
  * @brief Packs a linear RGBA color into a single 8-bit-per-channel word.
  *
- * Overlay geometry is authored in display-referred color and drawn after
- * ComposePass has already tonemapped, so no gamma conversion happens here:
- * what is packed is what appears.
+ * Overlay geometry is drawn after tonemapping, so no gamma conversion happens
+ * here: what is packed is what appears.
  *
  * @param color RGBA in [0,1]; values outside the range are clamped.
  * @return Color packed as 0xAABBGGRR (matches GLSL unpackUnorm4x8).
@@ -96,9 +76,8 @@ inline uint32_t PackOverlayColor(const glm::vec4& color)
  * @brief One line segment. Expanded into a screen-space quad by the vertex shader.
  *
  * Thick lines are built as quads rather than rasterized as wide lines because
- * Metal (and therefore MoltenVK) caps lineWidth at 1.0 and exposes none of
- * VK_KHR_line_rasterization's rectangular/smooth/stippled modes. Quad expansion
- * costs six vertices per segment and in exchange gives arbitrary width plus
+ * Metal (and therefore MoltenVK) caps lineWidth at 1.0. Quad expansion costs
+ * six vertices per segment and in exchange gives arbitrary width plus
  * shader-side smoothing and stipple on every platform.
  */
 struct OverlaySegment
@@ -117,10 +96,9 @@ static_assert(alignof(OverlaySegment) == 4, "OverlaySegment is memcpy'd verbatim
 /**
  * @brief One point sprite, drawn as a native VK_PRIMITIVE_TOPOLOGY_POINT_LIST point.
  *
- * `size` becomes gl_PointSize (requires the largePoints feature, enabled in
- * VulkanContext::selectOptionalFeatures) and `shape` selects how the fragment
- * shader masks gl_PointCoord. A cube has no sprite form — the producer
- * decomposes it into 12 OverlaySegments instead.
+ * `size` becomes gl_PointSize (requires the largePoints feature) and `shape`
+ * selects how the fragment shader masks gl_PointCoord. A cube has no sprite
+ * form - the producer decomposes it into 12 OverlaySegments instead.
  */
 struct OverlayPointSprite
 {
@@ -135,7 +113,7 @@ struct OverlayPointSprite
 static_assert(sizeof(OverlayPointSprite) == 32, "OverlayPointSprite must stay 32 B to match its std430 SSBO layout");
 
 /**
- * @brief Sprite shape ids, kept numerically in sync with DebugPoints::PointType.
+ * @brief Sprite shape ids, numerically matching DebugPoints::PointType.
  */
 struct OverlayPointShape
 {

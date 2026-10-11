@@ -1,9 +1,6 @@
 /**
  * @file RenderGraph.cpp
- * @brief Implementation of the Wave 1 RenderGraph scaffolding.
- *
- * See RenderGraph.h for the scope of this wave. This file provides no
- * barrier injection and no descriptor management — those arrive in Wave 2+.
+ * @brief Implementation of RenderGraph.
  */
 
 #include "RenderGraph.h"
@@ -40,14 +37,12 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 	std::string nodeName = entry.io.name;
 	auto* node = m_graph.AddNode(std::move(nodeName), std::move(entry));
 
-	// Materialize one SocketIn per declared read.
 	for (const auto& b : node->data.io.reads)
 	{
 		auto* in = node->AddInput(ResourceKey(b.resource));
 		in->data = b.resource;
 	}
 
-	// Materialize one SocketOut per declared write.
 	for (const auto& b : node->data.io.writes)
 	{
 		auto* out = node->AddOutput(ResourceKey(b.resource));
@@ -65,13 +60,11 @@ bool RenderGraph::Connect(NodeT* producer, AttachmentName resource, NodeT* consu
 
 	const std::string key = ResourceKey(resource);
 
-	// Locate the producer's output socket for this resource.
 	GraphT::SocketOutT* out = nullptr;
 	for (const auto& o : producer->outputs)
 		if (o->name == key) { out = o.get(); break; }
 	if (!out) return false;
 
-	// Locate the consumer's input socket for this resource.
 	GraphT::SocketInT* in = nullptr;
 	for (const auto& i : consumer->inputs)
 		if (i->name == key) { in = i.get(); break; }
@@ -89,11 +82,8 @@ bool RenderGraph::Connect(NodeT* producer, AttachmentName resource, NodeT* consu
 void RenderGraph::Compile()
 {
 	// Inputs with no in-graph producer are "external": they are produced by
-	// a resource outside this graph (RenderCache attachments, or a pass still
-	// on the legacy path during incremental migration). They are valid and
-	// simply do not contribute an ordering edge. Only cycles are rejected.
-	//
-	// Kahn's algorithm — throws std::runtime_error on cycle.
+	// a resource outside this graph and simply do not contribute an ordering
+	// edge. Only cycles are rejected.
 	m_compiled   = m_graph.TopologicalSort();
 	m_isCompiled = true;
 }
@@ -107,10 +97,8 @@ void RenderGraph::Execute(vk::CommandBuffer cmd,
 	if (!m_isCompiled)
 		throw std::runtime_error("RenderGraph::Execute: graph not compiled");
 
-	// The graph drives profiling but stays a pure DAG executor: it brackets
-	// each pass with GPU timestamps (profiler.BeginPass/EndPass), times the
-	// CPU-side Record() call, and folds the PassStats the pass returns into the
-	// per-frame profile. Passes remain unaware of profiling entirely.
+	// Profiling is driven here so passes stay unaware of it: each pass is
+	// bracketed with GPU timestamps and its CPU-side Record() is timed.
 	frameProfile.passes.clear();
 	frameProfile.passes.reserve(m_compiled.size());
 	frameProfile.drawCalls  = 0;
@@ -136,7 +124,7 @@ void RenderGraph::Execute(vk::CommandBuffer cmd,
 		PassProfile profile;
 		profile.name       = name;
 		profile.cpuMs      = passCpuMs;
-		profile.gpuMs      = 0.0; // Back-filled by DeferredRenderer after Resolve().
+		profile.gpuMs      = 0.0;
 		profile.drawCalls  = stats.drawCalls;
 		profile.dispatches = stats.dispatches;
 		frameProfile.passes.push_back(std::move(profile));

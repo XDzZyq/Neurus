@@ -10,7 +10,7 @@ void BufferLayout::AddAttribute(uint32_t location, vk::Format format, uint32_t o
 {
 	vk::VertexInputAttributeDescription desc;
 	desc.location = location;
-	desc.binding = 0;  // Single binding (binding 0)
+	desc.binding = 0;
 	desc.format = format;
 	desc.offset = offset;
 
@@ -51,7 +51,6 @@ uint32_t BufferLayout::GetStride() const
 		return 0;
 	}
 
-	// Stride = offset of last attribute + size of its format
 	const auto& last = b_attributes.back();
 	return last.offset + GetFormatSize(last.format);
 }

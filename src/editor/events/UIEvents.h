@@ -11,17 +11,12 @@
 namespace neurus {
 
 /**
- * @brief Singleton Qt signal bus for UI Layer ↔ Editor Layer communication.
+ * @brief Singleton Qt signal bus for UI layer <-> Editor layer communication.
  *
- * Owns signals related to window lifecycle, rendering triggers, and Vulkan device
- * status. These signals are Qt-dependent by design - the UI layer (QWindow,
- * QTimer, Qt event loop) emits them, and Editor/Renderer slots consume them.
- *
- * For Editor ↔ Renderer typed events (no Qt dependency), see EventBus.h.
- *
- * Usage:
- *   auto& ui = UIEvents::instance();
- *   QObject::connect(&ui, &UIEvents::newFrame, &myRenderer, &Renderer::DrawFrame);
+ * Owns signals for window lifecycle, rendering triggers, device status and the
+ * UI-driven editor requests (project, import, undo/redo, preferences). These are
+ * Qt-dependent by design: the UI layer emits them and the Editor consumes them.
+ * For Qt-free typed events, see EventBus.h.
  */
 class UIEvents : public QObject
 {
@@ -45,7 +40,7 @@ public:
 	void setGpuName(const QString& name);
 
 signals:
-	/** @brief Emitted each frame to trigger rendering. Connected to Renderer::DrawFrame(). */
+	/** @brief Emitted each frame to trigger rendering. */
 	void newFrame();
 
 	/** @brief Emitted when the application window is resized.
@@ -53,7 +48,7 @@ signals:
 	 *  @param height New window height in pixels. */
 	void windowResized(int width, int height);
 
-	/** @brief Emitted when the Vulkan device is lost. Application should attempt cleanup. */
+	/** @brief Emitted when the Vulkan device is lost. */
 	void deviceLost();
 
 	/** @brief Emitted by Vulkan validation layers with diagnostic messages.
@@ -72,12 +67,10 @@ signals:
 
 	// --- Screenshot signals ---
 
-	/** @brief Emitted when a screenshot is requested (F12 or menu).
-	 *  Capture the current swapchain image to a PNG file. */
+	/** @brief Emitted when a screenshot of the current frame is requested (F12). */
 	void screenshotRequested();
 
-	/** @brief Emitted when a full attachment dump is requested (Ctrl+F12).
-	 *  Capture all G-Buffer attachments to individual PNG files. */
+	/** @brief Emitted when a full attachment dump is requested (Ctrl+F12). */
 	void screenshotAllRequested();
 
 	// --- Project file signals ---
@@ -96,27 +89,27 @@ signals:
 
 	// --- Mesh import signals ---
 
-	/** @brief Emitted when a mesh file is selected for import (Edit → Add → Mesh...). */
+	/** @brief Emitted when a mesh file is selected for import (Edit -> Add -> Mesh...). */
 	void meshImportRequested(const MeshImportEvent& e);
 
-	/** @brief Emitted when a new camera should be added to the scene (Edit → Add → Camera). */
+	/** @brief Emitted when a new camera should be added to the scene (Edit -> Add -> Camera). */
 	void cameraAddRequested(const CameraAddEvent& e);
 
-	/** @brief Emitted when a new light should be added to the scene (Edit → Add → Light). */
+	/** @brief Emitted when a new light should be added to the scene (Edit -> Add -> Light). */
 	void lightAddRequested(const LightAddEvent& e);
 
-	/** @brief Emitted when a new sun light should be added to the scene (Edit → Add → Sun Light). */
+	/** @brief Emitted when a new sun light should be added to the scene. */
 	void sunLightAddRequested(const SunLightAddEvent& e);
 
-	/** @brief Emitted when a new spot light should be added to the scene (Edit → Add → Spot Light). */
+	/** @brief Emitted when a new spot light should be added to the scene. */
 	void spotLightAddRequested(const SpotLightAddEvent& e);
 
 	// --- Undo/redo signals ---
 
-	/** @brief Emitted when the user requests undo (Edit → Undo / Ctrl+Z). */
+	/** @brief Emitted when the user requests undo (Edit -> Undo / Ctrl+Z). */
 	void undoRequested(const UndoRequested& e);
 
-	/** @brief Emitted when the user requests redo (Edit → Redo / Ctrl+Shift+Z). */
+	/** @brief Emitted when the user requests redo (Edit -> Redo / Ctrl+Shift+Z). */
 	void redoRequested(const RedoRequested& e);
 
 	// --- Preferences signals ---
@@ -130,15 +123,10 @@ signals:
 	void targetFpsChangeRequested(int fps);
 
 public:
-	/**
-	 * @brief Convenience method to emit screenshotRequested from any layer.
-	 * @note Prefer this over direct signal emission from outside the class.
-	 */
+	/** @brief Convenience emitter for screenshotRequested. */
 	void requestScreenshot() { emit screenshotRequested(); }
 
-	/**
-	 * @brief Convenience method to emit screenshotAllRequested from any layer.
-	 */
+	/** @brief Convenience emitter for screenshotAllRequested. */
 	void requestScreenshotAll() { emit screenshotAllRequested(); }
 
 	// --- Project file convenience methods ---

@@ -12,18 +12,10 @@ namespace neurus {
 /**
  * @brief Host-visible uniform buffer for a single struct T.
  *
- * Allocated with HOST_VISIBLE | HOST_COHERENT memory so the CPU can
- * update uniform data directly without staging. The buffer size is
- * determined by sizeof(T).
+ * Allocated with HOST_VISIBLE | HOST_COHERENT memory so the CPU can update
+ * uniform data directly without staging. The buffer size is sizeof(T).
  *
  * @tparam T Uniform data struct type (must be trivially copyable).
- *
- * Usage:
- *   struct MyUniform { glm::mat4 mvp; float time; };
- *   UniformBuffer<MyUniform> ubo(device, physicalDevice, "MVP UBO");
- *   MyUniform data = { ... };
- *   ubo.Upload(data);
- *   vk::DescriptorBufferInfo info = ubo.GetDescriptorInfo();
  */
 template<typename T>
 class UniformBuffer : public Buffer
@@ -51,8 +43,6 @@ public:
 
 	/**
 	 * @brief Uploads raw byte data into the uniform buffer.
-	 *
-	 * Equivalent to Map() + memcpy + Unmap().
 	 *
 	 * @param data Pointer to source data on the host.
 	 * @param size Byte count (must not exceed sizeof(T)).

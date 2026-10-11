@@ -2,19 +2,12 @@
  * @file SSAOPass.h
  * @brief Screen-Space Ambient Occlusion compute pass.
  *
- * SSAOPass reads the G-Buffer (world position, view-space normal, alpha
- * mask) and computes per-pixel ambient occlusion via hemisphere sampling.
- * The result is written to the SSAO attachment (R8_UNORM) for consumption
- * by the lighting pass.
- *
- * Architecture:
- * - Inherits from ComputePass for shared infrastructure (sampler, descriptor
- *   pool/sets, barrier transitions, dispatch logic).
- * - Owns the compute pipeline, camera/kernel UBO, and noise UBO.
- * - Borrows RenderCache for G-Buffer and SSAO image views.
+ * Reads the G-Buffer (world position, view-space normal, alpha mask) and
+ * computes per-pixel ambient occlusion via hemisphere sampling. The result is
+ * written to the SSAO attachment (R8_UNORM).
  *
  * @note Hemisphere sampling with 16 kernel samples, world-space depth
- *       comparison, and lightweight 2-pixel neighbour blur.
+ *       comparison, and a lightweight 2-pixel neighbour blur.
  */
 
 #pragma once
@@ -45,7 +38,7 @@ class RenderCache;
  * @brief Single kernel sample (tangent-space direction, std140 as vec4).
  *
  * The kernel is generated on CPU as hemisphere samples biased toward
- * the normal (z ∈ [0, 1]).  Each entry is padded to 16 bytes for UBO.
+ * the normal (z in [0, 1]).  Each entry is padded to 16 bytes for UBO.
  */
 struct alignas(16) KernelSampleGpu
 {
@@ -55,7 +48,7 @@ struct alignas(16) KernelSampleGpu
 static_assert(sizeof(KernelSampleGpu) == 16, "KernelSampleGpu must be 16 bytes (std140)");
 
 /**
- * @brief SSAO parameters UBO — camera matrices + kernel (updated per frame).
+ * @brief SSAO parameters UBO - camera matrices + kernel (updated per frame).
  *
  * Layout (std140):
  *   mat4  viewProj       offset 0   (64 bytes)
@@ -76,7 +69,7 @@ static_assert(sizeof(SSAOParamsGpu) == 400, "SSAOParamsGpu must be 400 bytes (st
 /**
  * @brief Noise rotation entry (16 bytes, std140).
  *
- * The noise buffer contains 16×16 = 256 random rotation vectors that
+ * The noise buffer contains 16x16 = 256 random rotation vectors that
  * randomise the tangent-plane orientation per pixel, hiding banding
  * artefacts from the regular hemisphere sampling pattern.
  */
@@ -97,8 +90,6 @@ static_assert(sizeof(NoiseEntryGpu) == 16, "NoiseEntryGpu must be 16 bytes (std1
  * Reads the G-Buffer (Position, Normal, Albedo) as combined image samplers,
  * performs hemisphere sampling in world-space, applies a lightweight
  * neighbour blur, and writes the occlusion factor (R8) to the SSAO attachment.
- *
- * Inherits shared compute-pass infrastructure from ComputePass.
  */
 class SSAOPass : public ComputePass
 {
@@ -111,8 +102,6 @@ public:
 
 	/**
 	 * @brief Constructs the SSAO pass and creates all GPU resources.
-	 *
-	 * Shaders are self-loaded via ShaderLibrary from GLSL source files.
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (for sampler creation).
@@ -135,25 +124,23 @@ public:
 	/**
 	 * @brief Records the SSAO compute dispatch into a command buffer.
 	 *
-	 *   1. Writes G-Buffer + SSAO descriptors for this frame slot.
-	 *   2. Transitions G-Buffer images to SHADER_READ_ONLY_OPTIMAL.
-	 *   3. Transitions SSAO attachment to GENERAL for compute write.
-	 *   4. Binds pipeline, descriptor set, push constants.
-	 *   5. Dispatches ceil(width/16) × ceil(height/16) × 1 thread groups.
-	 *   6. Inserts a memory barrier for SSAO output visibility.
+	 * Uploads the per-frame camera + kernel UBO, writes this frame's
+	 * descriptors, transitions the G-Buffer to ColorShaderRead and SSAO to
+	 * ShaderWrite, dispatches ceil(w/16) x ceil(h/16) groups, then returns SSAO
+	 * to ColorShaderRead.
 	 *
 	 * @param cmdBuf  Command buffer in recording state.
+	 * @param cache   Render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index).
 	 */
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
-	/// Declares G-Buffer reads (Position/Normal/Albedo) and the SSAO write
-	/// for RenderGraph wiring.
+	/// Declares the G-Buffer reads (Position/Normal/Albedo) and the SSAO write.
 	PassIO GetIO() const override;
 
 	/**
 	 * @brief Writes all descriptors (image + buffer) into the specified set.
-	 * @param setIndex  Index into p_descriptorSets (0 … numSets-1).
+	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 */
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
@@ -161,30 +148,20 @@ private:
 	/**
 	 * @brief Creates the descriptor set layout (6 bindings).
 	 *
-	 * Bindings:
-	 *   0: gPosition       (combined image sampler)
-	 *   1: gNormal          (combined image sampler)
-	 *   2: gAlbedo          (combined image sampler)
-	 *   3: outputSSAO       (storage image, R8)
-	 *   4: SSAOParams       (uniform buffer)
-	 *   5: NoiseBuffer      (uniform buffer)
+	 * 0-2: G-Buffer Position/Normal/Albedo (combined image samplers),
+	 * 3: outputSSAO (storage image, R8), 4: SSAOParams UBO, 5: NoiseBuffer UBO.
 	 */
 	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
 
-	/**
-	 * @brief Creates the compute pipeline.
-	 * ShaderModule from self-loaded ComputeShader.
-	 */
+	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
 
 	/**
 	 * @brief Generates the hemisphere kernel samples.
 	 *
-	 * Creates 16 tangent-space directions on the unit hemisphere,
-	 * biased toward the normal (z > 0).  Samples are distributed with
-	 * increasing radius (near samples cluster close to the centre,
-	 * far samples explore the periphery).
+	 * 16 tangent-space directions biased toward the normal (z > 0), distributed
+	 * with increasing radius so near samples cluster close to the centre.
 	 *
 	 * @return Array of 16 kernel samples in std140-compatible layout.
 	 */
@@ -193,14 +170,14 @@ private:
 	/**
 	 * @brief Generates 256 random rotation vectors for the noise buffer.
 	 *
-	 * Each entry is a random direction on the unit sphere used to
-	 * randomise the tangent-plane orientation per pixel.
+	 * Each entry is a random direction on the unit sphere, used to randomise
+	 * the tangent-plane orientation per pixel.
 	 *
 	 * @return Array of 256 noise entries in std140-compatible layout.
 	 */
 	static std::array<NoiseEntryGpu, kNoiseEntryCount> GenerateNoise();
 
-	// (Pipelines inherited from Pass — p_pipelines[0])
+	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
 	std::unique_ptr<ComputeShader> p_shader;

@@ -10,11 +10,7 @@ namespace neurus {
 /**
  * @brief Logical state of a GPU buffer for barrier tracking.
  *
- * Models the pipeline stage + access mask that the buffer's contents
- * are in, analogous to ImageState for images but without layout tracking
- * (buffers have no concept of image layout).
- *
- * Transition orderings are enforced by Barrier::Transition(Buffer&, ...).
+ * Models the pipeline stage + access mask the buffer's contents are in.
  */
 enum class BufferState
 {
@@ -37,18 +33,6 @@ enum class BufferState
  * memory domain.
  *
  * @note Non-copyable, movable. The owning device must outlive this buffer.
- *
- * Usage (by derived classes):
- *   class MyBuffer : public Buffer {
- *   public:
- *       MyBuffer(const vk::raii::Device& dev, ...)
- *       {
- *           createBuffer(dev, physicalDevice, size, usage, memProps, name);
- *       }
- *       void Upload(const void*, vk::DeviceSize) override { ... }
- *       void* Map() override { ... }
- *       void Unmap() override { ... }
- *   };
  */
 class Buffer
 {
@@ -69,11 +53,6 @@ public:
 
 	/**
 	 * @brief Uploads host data to the buffer.
-	 *
-	 * The concrete upload mechanism depends on the memory domain:
-	 *   - host-visible: Map + memcpy + Unmap (direct write)
-	 *   - device-local: staging buffer + vkCmdCopyBuffer + queue submit
-	 *
 	 * @param data Pointer to source data on the host.
 	 * @param size Number of bytes to upload (must not exceed buffer size).
 	 */
@@ -82,9 +61,7 @@ public:
 	/**
 	 * @brief Maps buffer memory for direct host access.
 	 *
-	 * Only valid for host-visible memory. For device-local buffers,
-	 * implementations may map a staging buffer and return a writable
-	 * proxy pointer.
+	 * Only valid for host-visible memory.
 	 *
 	 * @return Mapped pointer to buffer memory.
 	 */
@@ -93,8 +70,7 @@ public:
 	/**
 	 * @brief Unmaps previously mapped buffer memory.
 	 *
-	 * After unmap, the mapped pointer becomes invalid. For device-local
-	 * buffers, this may trigger a staging-to-GPU transfer.
+	 * After unmap, the mapped pointer becomes invalid.
 	 */
 	virtual void Unmap() = 0;
 
@@ -130,9 +106,7 @@ protected:
 	 * @brief Creates the underlying VkBuffer, allocates and binds device
 	 *        memory, and optionally sets debug names.
 	 *
-	 * Called by derived-class constructors. On failure, throws
-	 * std::runtime_error. On success, b_buffer, b_memory, and b_bufferRaw
-	 * are valid and ready for use.
+	 * Called by derived-class constructors; throws std::runtime_error on failure.
 	 *
 	 * @param device          Borrowed logical device (must outlive this buffer).
 	 * @param physicalDevice  Borrowed physical device for memory type queries.

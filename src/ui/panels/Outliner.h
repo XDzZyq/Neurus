@@ -4,16 +4,7 @@
  *
  * Displays scene objects as a scrollable vertical list. Each row shows the
  * object type icon, name, and two visibility toggles (viewport / render).
- *
- * Architecture:
- * - UIPanel subclass (matches RenderConfigPanel / PropertyEditor pattern)
- * - QVBoxLayout → QScrollArea → container widget with vertical row list
- * - Rows are OutlinerRow widgets managed via a pool
- * - Pool grows as needed; extra rows are hidden (not destroyed)
- * - Each recycled row calls setObject() — signal lambdas read the current
- *   m_objectUid at emission time, so no manual rewire needed
- * - Row signals forwarded via Outliner::objectClicked / visibilityChanged
- * - Reads scene data via UIContext — no Renderer or Vulkan headers
+ * Rows are pooled and recycled as the object list changes.
  */
 
 #pragma once
@@ -53,9 +44,9 @@ public:
 	 * @brief Per-frame refresh from UIContext.
 	 *
 	 * Uses a row pool: grows when scene objects exceed pool size, recycles
-	 * existing rows via SetObject() otherwise. Extra rows are hidden.
+	 * existing rows otherwise. Surplus rows are hidden.
 	 *
-	 * @param ctx Read-only UI context carrying Editor/Project state.
+	 * @param ctx Read-only UI context.
 	 */
 	void Refresh(const UIContext& ctx) override;
 
@@ -71,7 +62,7 @@ signals:
 
 	/**
 	 * @brief Emitted when the Delete key is pressed while the outliner has focus.
-	 * @note Pure intent - the Editor wraps the active scene and deletes ALL selected objects.
+	 * @note Pure intent, not a direct scene mutation.
 	 */
 	void deleteRequested(const DeleteRequested& e);
 

@@ -21,19 +21,12 @@ namespace neurus {
 class UIEvents;
 
 /**
- * @brief Application lifecycle manager – fully RAII.
+ * @brief Application lifecycle manager - fully RAII.
  *
- * Constructor creates the Qt application.  Run() initialises all GPU /
- * Editor subsystems, wires signals, and enters the event loop.  The
- * destructor relies on C++ reverse-order member destruction to tear
- * down GPU resources in the required order:
- *   renderer → editor → screenshot → surface → mainWindow → vkContext → platform
- *
- * Usage:
- * @code
- *   neurus::Application app(argc, argv);
- *   return app.Run();
- * @endcode
+ * The constructor creates the Qt application; Run() initializes the GPU and
+ * editor subsystems, wires signals and enters the event loop. Members are
+ * declared in teardown order, so reverse-order destruction releases GPU
+ * resources in the required sequence.
  */
 class Application
 {
@@ -69,9 +62,7 @@ private:
 	void RecreateSignals(UIEvents& uiEvents);
 	void ScreenShotSignals(UIEvents& uiEvents);
 
-	// --- Project lifecycle (app-level persistence coordination) ---
-	// Application owns the project path and orchestrates save/open across
-	// Editor (scene/config) and UIManager (UI-state blob).
+	// --- Project lifecycle (the Application owns the project path) ---
 	void OnProjectNew();
 	void OnProjectOpen(const std::string& path);
 	void OnProjectSave(const std::string& path = std::string());

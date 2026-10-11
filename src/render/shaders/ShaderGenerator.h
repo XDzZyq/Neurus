@@ -22,12 +22,7 @@ class ShaderStruct;
 enum class Interp : uint8_t;
 
 /**
- * @brief Pure function: ShaderStruct IR → Vulkan GLSL.
- *
- * Usage:
- *   ShaderStruct ir;
- *   ShaderParser::ParseShaderFile(path, type, ir);
- *   std::string glsl = ShaderGenerator::Generate(ir);
+ * @brief Pure function: ShaderStruct IR -> Vulkan GLSL.
  */
 class ShaderGenerator
 {

@@ -13,26 +13,12 @@ namespace neurus {
 /**
  * @brief Templated GPU-side array buffer, analogous to std::vector on the GPU.
  *
- * Owns a device-local GPUBuffer.  The buffer is created lazily — the
- * constructor stores borrowed Vulkan handles but does not allocate GPU
- * memory.  Call Resize(), Upload(), or Update() to create and populate
- * the underlying buffer.
- *
- * On Resize(), the old buffer content is preserved via vkCmdCopyBuffer
- * (if a buffer already exists).  Both eTransferSrc and eTransferDst are
- * added to the user-supplied usage flags so all GPUBuffers support the
- * copy operation.
+ * Owns a device-local GPUBuffer, created lazily on the first Resize(),
+ * Upload() or Update(). Resize() preserves existing content via
+ * vkCmdCopyBuffer and adds eTransferSrc and eTransferDst to the usage
+ * flags so every buffer can serve as a copy source and destination.
  *
  * @tparam T Element type (must be trivially copyable).
- *
- * Usage:
- * @code
- *   ArrayBuffer<PointLightStruct> lights(device, pd, queue, qfi,
- *                                        vk::BufferUsageFlagBits::eStorageBuffer,
- *                                        "PointLight SSBO");
- *   lights.Upload(myLightVector);
- *   vk::DescriptorBufferInfo info = lights.buffer()->GetDescriptorInfo();
- * @endcode
  */
 template<typename T>
 class ArrayBuffer
@@ -104,13 +90,11 @@ public:
 	/**
 	 * @brief Resizes the GPU buffer to hold exactly @a newSize elements.
 	 *
-	 * If a buffer already exists and @a newSize is different from the current
+	 * If a buffer already exists and @a newSize differs from the current
 	 * capacity, a new GPUBuffer is allocated and the old content is copied
-	 * via vkCmdCopyBuffer.  The copy preserves up to min(m_size, newSize)
-	 * elements; excess elements are truncated.
-	 *
-	 * If @a newSize equals the current capacity this is a no-op.  If @a newSize
-	 * is zero the buffer is released.
+	 * via vkCmdCopyBuffer, preserving up to min(m_size, newSize) elements.
+	 * If @a newSize equals the current capacity this is a no-op; if it is
+	 * zero the buffer is released.
 	 *
 	 * @param newSize Desired element count.
 	 */
@@ -132,8 +116,8 @@ public:
 		}
 
 		// --- Create new GPUBuffer ---
-		// GPUBuffer ctor adds eTransferDst; we add eTransferSrc so the buffer
-		// can serve as a copy-source during future Resize() calls.
+		// eTransferSrc lets the buffer serve as the copy source in a future
+		// Resize().
 		auto newBuffer = std::make_unique<GPUBuffer>(
 			m_device, m_physicalDevice, m_queue, m_queueFamilyIndex,
 			newSizeBytes,
@@ -232,8 +216,7 @@ public:
 	/**
 	 * @brief Updates a single element at the given index.
 	 *
-	 * Uses Map/Unmap so the staging buffer is transferred to device-local
-	 * memory.  The index must be in range [0, size()).
+	 * The index must be in range [0, size()).
 	 *
 	 * @param element New element value.
 	 * @param index   Zero-based element index.

@@ -6,8 +6,8 @@ namespace neurus {
 /**
  * @brief Quasi-random Halton(2,3) sequence generator for temporal jitter.
  *
- * Produces values in [0, 1) that are evenly distributed across the unit square.
- * Used for sub-pixel jitter in temporal accumulation (shadow, SSR, TAA).
+ * Produces values in [0, 1) that are evenly distributed across the unit
+ * square, for sub-pixel jitter.
  */
 struct HaltonSequence
 {

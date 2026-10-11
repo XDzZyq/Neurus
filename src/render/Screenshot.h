@@ -16,10 +16,6 @@ class RenderCache;
  * Provides both instance methods (for high-level screenshot orchestration)
  * and static utility methods (for low-level capture of individual images).
  *
- * Instance methods require Vulkan handles passed to the constructor; the
- * RenderCache is passed as an explicit parameter to the capture methods.
- * Static methods accept handles as explicit parameters.
- *
  * All capture operations are blocking (waits for queue idle).
  */
 class Screenshot
@@ -81,9 +77,8 @@ public:
 	/**
 	 * @brief Exports a shadow depth cubemap as an equirectangular grayscale PNG.
 	 *
-	 * Uses the c2e (cubemap-to-equirect) compute shader to project all
-	 * six faces of the point-light shadow cubemap onto a 2D equirectangular
-	 * image, then saves it as an R8 grayscale PNG.
+	 * Projects all six faces of the point-light shadow cubemap onto a 2D
+	 * equirectangular image and saves it as an R8 grayscale PNG.
 	 *
 	 * @param renderCache       Render cache for shadow map access.
 	 * @param lightUID          UID of the point light whose shadow map to export.
@@ -101,7 +96,7 @@ public:
 	 *
 	 * Reads back a D32_SFLOAT 2D shadow map, normalises depth values to
 	 * [0, 1], and saves as an R8 grayscale PNG.  Returns empty string for
-	 * cubemap shadow maps (handled by ExportShadowDepthEquirect).
+	 * cubemap shadow maps.
 	 *
 	 * @param renderCache     Render cache for shadow map access.
 	 * @param lightUID        UID of the sun light whose shadow map to export.
@@ -126,9 +121,9 @@ public:
 	/**
 	 * @brief Captures a swapchain image to a PNG file.
 	 *
-	 * Handles layout transitions (PRESENT_SRC ↔ TRANSFER_SRC) and delegates
-	 * readback to a manual staging‑buffer path.  BGR→RGB swizzle is applied
-	 * automatically for BGRA swapchain formats.
+	 * Handles layout transitions (PRESENT_SRC to TRANSFER_SRC) and reads back
+	 * through a staging buffer.  BGR to RGB swizzle is applied automatically
+	 * for BGRA swapchain formats.
 	 *
 	 * @return true on success.
 	 */
@@ -144,10 +139,8 @@ public:
 	/**
 	 * @brief Captures an Image attachment to a PNG file.
 	 *
-	 * 1. Transitions image to TRANSFER_SRC_OPTIMAL.
-	 * 2. Calls vulkanImage.ReadImageToBuffer() for GPU readback.
-	 * 3. Transitions back to the original layout.
-	 * 4. Delegates to Texture::SaveImage() for conversion + PNG write.
+	 * Transitions the image to TRANSFER_SRC, reads it back and converts it
+	 * to PNG, restoring the original layout afterwards.
 	 *
 	 * @return true on success.
 	 */
@@ -161,10 +154,6 @@ public:
 	/**
 	 * @brief Captures a single layer of an Image array to a PNG file.
 	 *
-	 * Uses Image::ReadImageData() with Image::Layer(layerIndex) subresource
-	 * range to read back a single array layer.  Handles layout transitions
-	 * and delegates to ImageData::SavePNG() for output.
-	 *
 	 * @param layerIndex 0-based layer index within the array image.
 	 * @return true on success.
 	 */
@@ -177,10 +166,7 @@ public:
 	                              const std::string& path);
 
 	/**
-	 * @brief Captures all G‑Buffer and post‑FX attachments to timestamped PNGs.
-	 *
-	 * Iterates Position, Normal, Albedo, MetallicRoughness, HDRColor,
-	 * SSAO, SSR and calls CaptureAttachment() for each.
+	 * @brief Captures all G-Buffer and post-FX attachments to timestamped PNGs.
 	 *
 	 * @return Number of attachments captured.
 	 */

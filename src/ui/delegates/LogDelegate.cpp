@@ -51,9 +51,7 @@ void LogDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
 	painter->setPen(textColor);
 
 	// Compose the row from the three roles so the source field can be
-	// right-justified to a fixed column; messages then align on every row.
-	// rightJustified(0) returns the source unchanged, so pad 0 renders
-	// exactly like the previous single-string behavior.
+	// right-justified to a fixed column; rightJustified(0) is a no-op.
 	const QString ts = index.data(LogModel::TimestampRole).toString();
 	const QString src = index.data(LogModel::SourceRole).toString();
 	const QString msg = index.data(LogModel::MessageRole).toString();

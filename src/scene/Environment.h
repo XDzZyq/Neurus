@@ -2,26 +2,14 @@
  * @file Environment.h
  * @brief IBL (Image-Based Lighting) environment map object for the scene.
  *
- * Environment represents a dome light / skybox that provides image-based
- * lighting via diffuse irradiance and specular prefiltered cubemaps.
- * It wraps the source equirectangular HDR as CPU-side ImageData and holds
- * serialisable parameters (intensity, rotation).
+ * A dome light / skybox providing image-based lighting via diffuse irradiance
+ * and specular prefiltered cubemaps. CPU-side only: it wraps a shared
+ * ImageData for the source equirectangular HDR and holds serializable
+ * parameters (intensity, rotation).
  *
- * CPU-only - GPU resources are owned by RenderCache (EnvironmentGPU).
- *
- * Architecture:
- * - Owned by scene graph (shared_ptr in Scene containers)
- * - GPU cubemaps are created lazily by RenderCache::CreateEnvironmentGPU()
- * - Renderer reads EnvironmentGPU from RenderCache per-frame
- * - Editor mutates environment properties via events and controllers
- *
- * Layer isolation: Environment holds NO file paths. The source image path is
- * a data-layer (ImageData) concern; Environment only wraps a shared
- * ImageData (typically a pooled ResourceManager entry), so the pool tracks
- * the ImageData's usage and lifetime.
- *
- * @note Serialization stores the pooled ImageData UID, not GPU textures.
- * @note Only one Environment is typically active per scene.
+ * @note Environment holds no file paths: the source path is an ImageData
+ *       concern, so only pooled ImageData instances are wrapped here.
+ * @note Serialization stores the pooled ImageData UID, not GPU resources.
  */
 
 #pragma once
@@ -40,20 +28,10 @@ class ImageData;
 /**
  * @brief IBL environment map providing image-based lighting for the scene.
  *
- * Environment stores CPU-side pixel data for an HDR equirectangular map and
- * serializable parameters. GPU resources (cubemaps, samplers) are owned by
- * RenderCache and created lazily via CreateEnvironmentGPU().
+ * Stores CPU-side pixel data for an HDR equirectangular map plus serializable
+ * intensity and rotation; Transform3D supplies the skybox orientation.
  *
- * Resource Ownership:
- * - o_equirectData:   Shared ImageData (CPU-side equirectangular pixels; must
- *                     be a pooled resource from the ResourceManager)
- * - Transform3D:      Owned directly (skybox orientation rotation)
- *
- * @note Environment has ZERO knowledge of file paths - the source path lives
- *       in the data layer (ImageData). Load an ImageData through the
- *       ResourceManager and wrap it here.
- * @note Inheritance: ObjectID for scene identity, Transform3D for rotation.
- * @note Thread-safety: Not thread-safe. Access from main thread only.
+ * @note Not thread-safe. Access from main thread only.
  */
 class Environment : public ObjectID, public Transform3D
 {
@@ -69,9 +47,7 @@ public:
 	/**
 	 * @brief Constructs an environment wrapping pooled equirect data.
 	 * @param data Shared ImageData (pooled resource) for the equirect map.
-	 * @note Sets o_equirectData + o_imageDataId; the environment is registered
-	 *       in the pool separately via ResourceManager::Load<Environment>.
-	 * @note No path is accepted - file paths belong to the data layer.
+	 * @note Records the pooled UID for persistence; no path is accepted.
 	 */
 	explicit Environment(std::shared_ptr<ImageData> data);
 
@@ -90,15 +66,13 @@ public:
 
 	/**
 	 * @brief Returns the CPU-side equirectangular pixel data (shared).
-	 * @note Set via SetEquirectData() (pooled ImageData) only - never loaded
-	 *       from a path inside the scene layer.
 	 */
 	std::shared_ptr<ImageData> GetEquirectData() const { return o_equirectData; }
 
 	/**
-	 * @brief Directly sets the CPU-side equirectangular pixel data.
+	 * @brief Sets the CPU-side equirectangular pixel data.
 	 * @param data Shared ImageData to reference (pooled resource).
-	 * @note No file loading; records the pooled ID for persistence.
+	 * @note Records the pooled ID for persistence.
 	 * @note Out-of-line: needs the complete ImageData type (GetObjectID).
 	 */
 	void SetEquirectData(std::shared_ptr<ImageData> data);
@@ -125,7 +99,7 @@ public:
 
 	/**
 	 * @brief Sets the environment map rotation (Y-axis).
-	 * @param r Rotation angle in degrees around the Y (up) axis.
+	 * @param r Rotation angle in degrees around the Y axis.
 	 */
 	void SetRotation(float r) { o_rotation = r; }
 
@@ -136,13 +110,12 @@ public:
 	float GetRotation() const { return o_rotation; }
 
 	// -----------------------------------------------------------------------
-	// Virtual overrides (ObjectID polymorphic accessors)
+	// Virtual overrides
 	// -----------------------------------------------------------------------
 
 	/**
-	 * @brief Returns typed pointer to this object's Transform component.
-	 * @return Void pointer to Transform3D (inherited from Transform3D).
-	 * @note Overrides ObjectID::GetTransform() for polymorphic transform access.
+	 * @brief Returns this object's Transform component.
+	 * @return Void pointer to the inherited Transform3D.
 	 */
 	void* GetTransform() override
 	{
@@ -167,7 +140,7 @@ public:
 		return nullptr;
 	}
 
-	/// Pooled ImageData UID (0 = none); Scene::ResolveDataReferences wires it.
+	/// Pooled ImageData UID (0 = none); the serialized form of o_equirectData.
 	int o_imageDataId = 0;
 
 	// -----------------------------------------------------------------------
@@ -177,12 +150,9 @@ public:
 	/**
 	 * @brief Cereal serialization for Environment.
 	 *
-	 * Serializes ObjectID identity and transform through base class
-	 * serialization, along with environment-specific properties.
-	 * GPU textures are NOT serialized (they live in RenderCache).
-	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
+	 * @note Stores the pooled ImageData UID, not texture data.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)

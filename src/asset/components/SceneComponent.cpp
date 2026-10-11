@@ -29,13 +29,11 @@ void SceneComponent::Load(cereal::JSONInputArchive& ar)
 		NEURUS_ERR("SceneComponent::Load: " << e.what() << " - using empty scene.");
 	}
 
-	// The pool was restored first (ResourceComponent is registered before
-	// SceneComponent); resolve the Scene's pending ID references against it.
+	// Resolve the Scene's pending ID references against the resource pool,
+	// which was restored before this component by registration order.
 	//
-	// A scene with zero cameras is loaded as-is. Nothing is injected: the viewport
-	// looks through its own camera unless the scene names an activated one
-	// (EditorViewport::SyncCamera()), so "no camera" is a legal, fully renderable
-	// document rather than a state to repair behind the user's back.
+	// Nothing is injected for a camera: "no camera" is a legal, fully
+	// renderable document rather than a state to repair.
 	m_scene->ResolveReferences(*m_resources);
 }
 

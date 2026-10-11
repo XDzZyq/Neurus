@@ -114,8 +114,8 @@ Image& RenderCache::GetShadowIntensityArray(const vk::Extent2D extent)
 
 uint32_t RenderCache::GetShadowIntensityLayer(const int lightUID, const vk::Extent2D /*extent*/)
 {
-	// Fast path: check the shadow index built by UpdateLighting (always in sync
-	// with the SSBO shadowMapIndex field and current visibility state).
+	// Fast path: the shadow index map is always in sync with the SSBO's
+	// shadowMapIndex field and the current visibility state.
 	auto it = rc_uidToShadowLayer.find(lightUID);
 	if (it != rc_uidToShadowLayer.end())
 	{
@@ -166,7 +166,6 @@ std::vector<int> RenderCache::GetShadowMapUIDs() const
 
 void RenderCache::RemoveLight(const int lightUID)
 {
-	// Clear shadow maps within LightGPU if present
 	auto it = rc_lightGPUs.find(lightUID);
 	if (it != rc_lightGPUs.end())
 	{
@@ -540,7 +539,7 @@ RenderCache::AttachmentConfig RenderCache::ConfigFor(const AttachmentName name)
 	// Common usage for color attachments:
 	//   COLOR_ATTACHMENT - written by fragment shader
 	//   SAMPLED          - read by subsequent passes (deferred shading, post-FX)
-	//   TRANSFER_SRC     - screenshot capture (T24a), debug readback
+	//   TRANSFER_SRC     - screenshot capture, debug readback
 	constexpr vk::ImageUsageFlags kColorAttachmentUsage =
 		vk::ImageUsageFlagBits::eColorAttachment |
 		vk::ImageUsageFlagBits::eSampled |

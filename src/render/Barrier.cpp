@@ -13,7 +13,7 @@ VulkanImageState Barrier::ToVulkanImageState(ImageState state)
 	// Undefined/Invalid only ever appear as the *source* of a transition, i.e. a
 	// discard: the old contents are not preserved, so no cache flush is needed and
 	// the access mask stays empty. The stage is eAllCommands rather than eTopOfPipe
-	// because eTopOfPipe in a srcStageMask creates no execution dependency at all —
+	// because eTopOfPipe in a srcStageMask creates no execution dependency at all -
 	// a discard transition of an image someone else is still reading (a freshly
 	// acquired swapchain image, read by the presentation engine) would be unordered
 	// against that read. An execution-only dependency is enough to order it.
@@ -46,12 +46,11 @@ VulkanImageState Barrier::ToVulkanImageState(ImageState state)
 		};
 
 	// The read bits are not optional: an attachment reached with
-	// VK_ATTACHMENT_LOAD_OP_LOAD (DebugPass draws over ComposedOutput) or read by
-	// the depth test without depth writes (DebugPass again) *reads* the image
-	// through the attachment stage, so a write-only dstAccessMask leaves the
-	// preceding writer's data unavailable to the load — on a tiler that surfaces
-	// as stale tiles blended into the frame. Passes that only clear-and-write are
-	// unaffected by the wider mask.
+	// VK_ATTACHMENT_LOAD_OP_LOAD or read by a depth test without depth writes
+	// *reads* the image through the attachment stage, so a write-only
+	// dstAccessMask leaves the preceding writer's data unavailable to the load -
+	// on a tiler that surfaces as stale tiles blended into the frame. Passes
+	// that only clear-and-write are unaffected by the wider mask.
 	case ImageState::ColorAttachment:
 		return {
 			vk::ImageLayout::eColorAttachmentOptimal,
@@ -190,11 +189,10 @@ void Barrier::ReleaseToRead(VkCommandBuffer cmd,
 {
 	const auto beforeState = ToVulkanImageState(before);
 
-	// Make transfer writes available to subsequent graphics usage WITHOUT a
+	// Make transfer writes available to subsequent graphics usage without a
 	// graphics-stage dstStageMask, which is invalid on transfer-only command
 	// pools (VUID-vkCmdPipelineBarrier2-dstStageMask-09676). The layout still
-	// becomes ShaderReadOnlyOptimal so the graphics side can sample the image;
-	// the consuming pass re-transitions it on first use.
+	// becomes ShaderReadOnlyOptimal so the graphics side can sample the image.
 	const vk::ImageMemoryBarrier2 barrier(
 		beforeState.stage,
 		beforeState.access,

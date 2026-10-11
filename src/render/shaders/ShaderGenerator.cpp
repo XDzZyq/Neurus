@@ -43,7 +43,7 @@ std::string ShaderGenerator::Generate(ShaderStruct& s)
 		result << "\n";
 	}
 
-	// 3. Define directives (emitted early — used by all following declarations)
+	// 3. Define directives (emitted early, used by all following declarations)
 	if (!s.define_directives.empty())
 	{
 		for (const auto& def : s.define_directives)

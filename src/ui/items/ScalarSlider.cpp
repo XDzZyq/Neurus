@@ -60,8 +60,7 @@ ScalarSlider::ScalarSlider(double min, double max, int sliderSteps,
 		m_spin->blockSignals(false);
 		// m_v mirrors what the controls show, user edits included: it guards
 		// setValue(), and a shadow copy that only tracked programmatic writes
-		// would make a later push of that same value a silent no-op while the
-		// widget still displayed the user's number.
+		// would make a later push of that same value a silent no-op.
 		m_v = m_spin->value();
 		emit valueChanged();
 	});
@@ -79,8 +78,7 @@ ScalarSlider::ScalarSlider(double min, double max, int sliderSteps,
 
 	// --- Gesture boundaries: bracket the whole mouse interaction ---
 	// Filter raw press/release on the slider rather than forwarding
-	// sliderPressed/sliderReleased, which skip groove clicks and would split a
-	// click+drag into two undo entries.
+	// sliderPressed/sliderReleased, which skip groove clicks.
 	m_slider->installEventFilter(this);
 }
 

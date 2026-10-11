@@ -3,15 +3,8 @@
  * @brief Color swatch button that opens a QColorDialog.
  *
  * A flat QPushButton painted with the current color; clicking it opens the
- * platform color dialog and, on accept, emits colorChanged() once. The only
- * color-editing primitive in the UI layer — before it, every colored property
- * (light color, debug tint) had no way to be edited from a panel.
- *
- * Architecture:
- * - QPushButton subclass; the swatch is a stylesheet background, not a painted
- *   pixmap, so it follows the widget's own enabled/disabled rendering.
- * - Optional alpha channel: debug objects tint with a vec4, lights with a vec3.
- * - No Vulkan, Renderer or Scene dependencies — pure Qt UI layer.
+ * platform color dialog and, on accept, emits colorChanged() once. The alpha
+ * channel is optional (vec4 tints vs vec3 colors).
  */
 
 #pragma once
@@ -47,9 +40,8 @@ public slots:
 	/**
 	 * @brief Sets the shown color without emitting colorChanged().
 	 *
-	 * Programmatic updates (a Refresh() push from the panel) must never look
-	 * like a user edit, so this is silent by construction rather than relying on
-	 * the caller to block signals.
+	 * Programmatic pushes must never look like a user edit, so this is silent
+	 * by construction.
 	 *
 	 * @param c New color.
 	 */

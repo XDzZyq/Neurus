@@ -31,13 +31,10 @@ public:
 	/**
 	 * @brief Constructs the main window.
 	 *
-	 * The Application seeds the UI with plain preference values — the UI
-	 * layer never touches the app-layer Preferences type.
-	 *
 	 * @param language        Active language code ("en", "zh_CN").
 	 * @param targetFps       Render-loop target FPS (0 = unlimited).
-	 * @param preferencesPath Absolute path of ~/.neurus/preferences.json
-	 *                        (displayed by the Preferences dialog).
+	 * @param preferencesPath Path of the preferences file, shown in the
+	 *                        Preferences dialog.
 	 * @param parent Parent widget.
 	 */
 	explicit UIManager(const QString& language, int targetFps,
@@ -56,21 +53,15 @@ public:
 	/**
 	 * @brief Refreshes all UIPanel subclasses with the current UIContext.
 	 *
-	 * Iterates over all registered panels and calls Refresh(ctx) on each.
-	 * Called from the newFrame loop after DrawFrame() to keep UI widgets
-	 * in sync with Editor/Project state.
-	 *
-	 * @param ctx Read-only UI context carrying Editor/Project state.
+	 * @param ctx Read-only UI context for this frame.
 	 */
 	void Refresh(const UIContext& ctx);
 
 	/**
 	 * @brief Returns typed pointer to a panel by its type.
 	 *
-	 * Each panel class must provide static constexpr PanelType kType
-	 * (e.g. Viewport::kType == PanelType::Viewport).
-	 *
-	 * @tparam PanelClass UIPanel subclass (Viewport, Outliner, etc.)
+	 * @tparam PanelClass UIPanel subclass; must define a static constexpr
+	 *         PanelType kType.
 	 * @return Non-owning pointer to the panel, or nullptr if not found.
 	 */
 	template<typename PanelClass>
@@ -96,8 +87,8 @@ public:
 	/**
 	 * @brief Serializes window geometry + ADS dock state into an opaque blob.
 	 *
-	 * The returned string bundles base64(window geometry) and base64(dock
-	 * state) separated by a newline. Application owns persistence.
+	 * The blob is base64(window geometry) and base64(dock state) separated by
+	 * a newline; persisting it is the caller's job.
 	 */
 	std::string ExportLayout() const;
 
@@ -124,11 +115,9 @@ private:
 	/**
 	 * @brief Creates a dock for @p panel with a translated title and a stable id.
 	 *
-	 * ads::CDockWidget's constructor copies the title into objectName, and ADS
-	 * serializes layouts by objectName — so constructing a dock from translated
-	 * text alone makes saved layouts language-dependent. Every dock MUST be
-	 * created through this helper (or set its objectName explicitly) so the
-	 * title stays translatable while the serialization key stays stable.
+	 * ADS serializes layouts by objectName, but CDockWidget's constructor
+	 * derives it from the translated title, making saved layouts
+	 * language-dependent. Every dock MUST be created through this helper.
 	 */
 	ads::CDockWidget* MakeDock(UIPanel* panel);
 
@@ -144,18 +133,11 @@ private:
 	/**
 	 * @brief Keeps panels docked while the window is full screen.
 	 *
-	 * A torn-off panel is a separate top-level window, and a separate window
-	 * cannot be used inside another window's full-screen Space: macOS gives ADS's
-	 * plain Qt::Window floating container FullScreenPrimary collection behaviour,
-	 * and the window server then refuses to let the user move it. Rather than
-	 * fight the platform for a window that has nowhere sensible to live, full
-	 * screen simply forbids tearing off.
-	 *
-	 * Only DockWidgetFloatable is locked, so dragging a panel to a *different
-	 * dock position* keeps working — it is only the "drop it outside any dock
-	 * area" gesture that now snaps back. ADS masks locked features out of
-	 * CDockWidget::features() without touching the per-widget flags, so leaving
-	 * full screen restores whatever each panel had.
+	 * A torn-off panel is a separate top-level window that the window server
+	 * refuses to let the user move over a full-screen Space, so full screen
+	 * simply forbids tearing off. Only DockWidgetFloatable is locked: dragging
+	 * a panel to a different dock position keeps working, and leaving full
+	 * screen restores whatever features each panel had.
 	 *
 	 * @param lock true on entering full screen, false on leaving.
 	 */
@@ -164,17 +146,13 @@ private:
 	/**
 	 * @brief Re-docks every panel that is currently in its own window.
 	 *
-	 * Called when entering full screen: an already-floating panel would other-
-	 * wise be stranded on the desktop Space, visible only by leaving full screen.
-	 * Panels return to their default areas — ADS has no "undo the tear-off"
-	 * that would restore the exact prior position.
+	 * Called when entering full screen; panels return to their default areas.
 	 */
 	void DockFloatingPanels();
 
 	/**
 	 * @brief Re-applies every user-visible string in the active language:
 	 *        menu bar, dock titles, panel texts, Preferences dialog.
-	 *        Connected to I18n::languageChanged() and called once at startup.
 	 */
 	void RetranslateAll();
 
@@ -215,8 +193,6 @@ private:
 	QStringList           m_redoLabels;         ///< Undone ops, in replay order.
 
 	// --- Preferences dialog (lazy, non-dock panel) ---
-	// The dialog is seeded with plain values (the Application is the sole
-	// owner of the app-layer Preferences type).
 	QString            m_currentLanguage;    ///< Cached active language code.
 	int                m_targetFps = 60;     ///< Cached render-loop target FPS.
 	QString            m_preferencesPath;    ///< ~/.neurus/preferences.json.

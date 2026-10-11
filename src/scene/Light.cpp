@@ -13,8 +13,7 @@ Light::Light()
 	, Transform3D()
 {
 	o_type = ObjectID::GOType::GO_LIGHT;
-	// Untyped default: ParseLightName() would say "None", which reads as an
-	// error in the outliner. A load overwrites o_name from the archive anyway.
+	// Default name instead of ParseLightName()'s "None"; a load overwrites it.
 	o_name = "Light";
 }
 

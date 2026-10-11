@@ -26,10 +26,8 @@ HistoryComponent::HistoryComponent(OperationManager& operations)
 
 void HistoryComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	// Both stacks are std::vector<std::unique_ptr<Operation>>; cereal's
-	// polymorphic machinery (see editor/operations/registrations/OperationRegistration.cpp)
-	// emits each op's concrete type name + payload, so loading reconstructs
-	// the right subclass.
+	// Both stacks hold polymorphic ops: cereal emits each op's concrete type
+	// name plus payload, so loading reconstructs the right subclass.
 	ar.setNextName("m_history");
 	ar.startNode();
 	ar(cereal::make_nvp("undo", m_operations->GetUndoStack()),
@@ -51,10 +49,9 @@ void HistoryComponent::Load(cereal::JSONInputArchive& ar)
 	}
 	catch (const cereal::Exception& e)
 	{
-		// Missing/legacy "m_history" node or malformed data: start with a clean
-		// history rather than aborting the whole project load. This is an
-		// expected path for projects saved before history persistence existed,
-		// so it is logged at info level, not as an error.
+		// Missing/legacy "m_history" node: start with a clean history rather
+		// than aborting the whole load. Expected for older files, so logged
+		// at info level rather than as an error.
 		NEURUS_LOG("HistoryComponent::Load: " << e.what() << " - starting with empty history.");
 		m_operations->Clear();
 	}

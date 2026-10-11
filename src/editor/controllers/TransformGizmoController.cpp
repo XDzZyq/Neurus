@@ -2,38 +2,14 @@
  * @file TransformGizmoController.cpp
  * @brief Event handlers for the modal G / R / S transform gesture.
  *
- * Stateless -- all handlers are free functions in an anonymous namespace, the
- * SceneController shape. Each one resolves the gesture's object uid against the
- * *current* Scene, calls exactly one TransformGizmo method, and enqueues the
- * notifications that mutation implies. No gesture bookkeeping lives here.
+ * All handlers are free functions. Each resolves the gesture's object uid
+ * against the *current* scene, calls one TransformGizmo method, and enqueues the
+ * notifications that mutation implies - through neurus::notify, shared with the
+ * scene mutation path so the two cannot drift. A live drag is a preview (no
+ * dirty mark); a confirm is committed.
  *
- * ## Two notification tiers, not one
- *
- * A drag and a confirm are different events for the GPU and for the project, and
- * which is which is **not decided here**: it is `neurus::notify` in
- * MutationNotify.h, shared with SceneController so the two paths to the same
- * mutation cannot drift.
- *
- *   - notify::ObjectPreviewed() -- the transient tier, for a live drag. Cheap GPU
- *     sync + repaint, and deliberately no SceneModified: the gesture may still be
- *     cancelled, and a cancelled gesture must leave no trace at all -- which is why
- *     the cancel path also goes through the preview tier and not the committed one.
- *   - notify::ObjectMutated() -- the committed tier, for a kept gesture. The same
- *     end state a PropertyPanel edit would leave, because SceneController's own
- *     transform handlers call exactly this.
- *
- * A light needs either tier because the drag writes Transform3D only, while the
- * light's GPU position lives in an SSBO struct nothing else refreshes. Which tier
- * buys which light work -- one struct while dragging, the whole dict on commit --
- * is MutationNotify.h's file comment to explain.
- *
- * ## RenderResetEvent is also the repaint
- *
- * Every handler enqueues it (as notify::Repaint, or folded into a tier), including
- * the cancel path -- Editor.cpp's RenderResetEvent subscription is what marks the
- * overlay builders dirty, so this is how the guide geometry appears, follows the
- * cursor and disappears again. A handler that mutates nothing still repaints when
- * the *guide* changed.
+ * Every handler enqueues a repaint, including the cancel path, because that is
+ * also what makes the guide geometry appear, follow the cursor and disappear.
  */
 
 #include "editor/controllers/TransformGizmoController.h"
@@ -68,11 +44,10 @@ struct Target
 };
 
 /**
- * @brief Resolves @p uid against the current Scene, the SceneController pattern.
+ * @brief Resolves @p uid against the current Scene.
  *
  * Re-resolved on every event rather than cached: an object can be deleted
- * mid-gesture, and EventQueue::Process() drains re-entrant enqueues in the same
- * call, so a pointer latched at Arm() could already dangle by the next handler.
+ * mid-gesture, so a pointer latched at Arm() could already dangle.
  */
 Target Resolve(const neurus::ControllerContext& ctx, int uid)
 {
@@ -97,9 +72,8 @@ Target Resolve(const neurus::ControllerContext& ctx, int uid)
 /**
  * @brief Submits the one op spanning the gesture, or none when nothing moved.
  *
- * The mode picks both the op type and which snapshot component to compare. A
- * gesture that ended where it started must record nothing -- otherwise a stray
- * G-then-Enter would litter the undo stack with no-ops.
+ * A gesture that ended where it started must record nothing, so a stray
+ * G-then-Enter cannot litter the undo stack with no-ops.
  */
 void SubmitGesture(const neurus::TransformGizmo& gizmo, neurus::ObjectID& obj,
                    const neurus::Transform3D& transform, const neurus::ControllerContext& ctx)
@@ -137,12 +111,8 @@ void SubmitGesture(const neurus::TransformGizmo& gizmo, neurus::ObjectID& obj,
  * @brief G / R / S: discard any live gesture, then arm the requested mode.
  *
  * Re-arming cancels first, as Blender does: pressing R during a G must not leave
- * the move half-applied. The live gesture's uid is re-resolved because it need not
- * be the object this request names.
- *
- * The retained cursor is handed in as the free gesture's anchor — bare G and bare S
- * are live from this moment, so the pixel the key was pressed at is what the very next
- * mouse move measures against. Same read, and same reason, as OnAxisRequested below.
+ * the move half-applied. The retained cursor becomes the free gesture's anchor,
+ * so the very next mouse move measures against the pixel the key was pressed at.
  */
 void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::ControllerContext& ctx)
 {
@@ -175,10 +145,9 @@ void OnModeRequested(const neurus::GizmoModeRequested& e, const neurus::Controll
  * @brief X / Y / Z / W: set the live gesture's constraint, then normalize back to
  *        the before-state.
  *
- * W arrives here as GizmoAxis::None, which Constrain() reads as "screen space": it
- * drops the latched axis and re-latches the free anchors. Same call, same
- * normalizing drag below, so the transition out of a constraint is as exact as the
- * transition into one.
+ * W arrives as GizmoAxis::None, which Constrain() reads as "screen space": it
+ * drops the latched axis and re-latches the free anchors, so leaving a constraint
+ * is as exact as entering one.
  */
 void OnAxisRequested(const neurus::GizmoAxisRequested& e, const neurus::ControllerContext& ctx)
 {
@@ -189,18 +158,16 @@ void OnAxisRequested(const neurus::GizmoAxisRequested& e, const neurus::Controll
 	const Target target = Resolve(ctx, gizmo->ObjectUid());
 	if (!target.Valid()) return;
 
-	// A key press carries no cursor, so the retained one is the only anchor there is.
-	// The Editor pushes it on every mouse move, unconditionally and ahead of the
-	// camera-orbit gate, precisely so this read is current.
+	// A key press carries no cursor, so the retained one is the only anchor there
+	// is; the Editor pushes it on every mouse move precisely so this read is current.
 	const glm::vec2 cursor = vp->Cursor();
 
 	if (!gizmo->Constrain(e.axis, *vp, cursor))
 		return;  // refused (axis within ~1.8 deg of the view ray): stay armed, axis-less
 
 	// Constrain re-latched every anchor at `cursor`, so this one drag reproduces the
-	// before-state exactly (t - grabAnchorT == 0, accumAngle == 0, factor == 1). That
-	// is what makes switching axis mid-gesture *undo* the previous axis's partial
-	// transform rather than compound with it.
+	// before-state exactly. That is what makes an axis switch mid-gesture *undo* the
+	// previous axis's partial transform rather than compound with it.
 	gizmo->Drag(*vp, cursor, *target.transform);
 	neurus::notify::ObjectPreviewed(*target.obj, ctx.events);
 }
@@ -215,10 +182,9 @@ void OnMouseMove(const neurus::MouseMoveEvent& e, const neurus::ControllerContex
 	const Target target = Resolve(ctx, gizmo->ObjectUid());
 	if (!target.Valid()) return;
 
-	// e.position, never vp->Cursor(): the Editor's own subscription is what pushes the
-	// cursor into the viewport, and dispatch is registration-ordered, so reading it
-	// back here would silently consume a one-frame-stale cursor if the two
-	// subscriptions were ever registered the other way round.
+	// e.position, never vp->Cursor(): the Editor's own subscription is what pushes
+	// the cursor into the viewport, and dispatch is registration-ordered, so reading
+	// it back here would silently consume a one-frame-stale cursor.
 	if (!gizmo->Drag(*vp, e.position, *target.transform))
 		return;  // nothing moved -- no GPU sync, no repaint
 
@@ -254,8 +220,8 @@ void OnAborted(const neurus::ControllerContext& ctx)
 	if (target.Valid())
 	{
 		gizmo->Cancel(*target.transform);
-		// The preview tier on purpose, never the committed one: the snapshot is back,
-		// so the net change is zero and the project must not end up dirty for it.
+		// The preview tier on purpose: the snapshot is back, so the net change is
+		// zero and the project must not end up dirty for it.
 		neurus::notify::ObjectPreviewed(*target.obj, ctx.events);
 	}
 

@@ -2,21 +2,11 @@
 
 /**
  * @file Project.h
- * @brief Pure registration-based serializer for project persistence.
+ * @brief Registration-based serializer for project persistence.
  *
- * Project is a simple component-based serializer. It owns NO data itself —
- * instead, callers register Serializable components (e.g. SceneComponent,
- * ConfigComponent) that wrap external objects. Save/Load iterates all
- * registered components and calls their virtual Save/Load methods.
- *
- * Architecture:
- * - Project knows NOTHING about Scene, RenderConfig, or any concrete type.
- * - Components are registered via Register<T>(args...) and stored as
- *   unique_ptr<Serializable>.
- * - Save(path) / Load(path) iterate m_components for serialization.
- * - Clear() destroys all components.
- *
- * Dependencies: cereal, Serializable.h only (no scene/render headers).
+ * Project owns no data itself: callers register components via
+ * Register<T>(args...) and Save/Load drives them through their virtual
+ * methods. No concrete scene or render type is known here.
  */
 
 #include <memory>
@@ -31,11 +21,9 @@ namespace neurus::project
 {
 
 /**
- * @brief Pure registration-based serializer.
+ * @brief Registration-based serializer.
  *
- * Project owns no data. Callers register Serializable components that
- * wrap external data (Scene, RenderConfig, etc.). Save/Load iterates
- * all components and calls their virtual methods.
+ * Owns no data; Save/Load drives the components registered on it.
  */
 class Project
 {
@@ -86,10 +74,9 @@ public:
 private:
 	friend class cereal::access;
 
-	// NOTE: save/load cast to JSONArchive because Serializable's virtual
-	// interface is typed to JSON archives. This is compatible with the
-	// .neurus.json format and is safe because cereal calls these methods
-	// with the actual archive type used in Save()/Load().
+	// save/load cast to JSONArchive because Serializable's virtual interface
+	// is typed to JSON archives; safe because cereal calls these methods with
+	// the actual archive type used in Save()/Load().
 
 	template<class Archive>
 	void save(Archive& ar) const

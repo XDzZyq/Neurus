@@ -2,16 +2,10 @@
  * @file OperationRegistration.cpp
  * @brief Cereal polymorphic type registration for undoable operations.
  *
- * Registers every concrete Operation subclass with cereal's polymorphic
- * serialization system so the undo/redo stacks — held as
- * std::vector<std::unique_ptr<Operation>> — round-trip through a project file:
- * serializing a base-class pointer emits the concrete type's stable name and
- * payload, and loading reconstructs the right subclass automatically.
- *
- * Mirrors src/scene/registrations/TypeRegistration.cpp (scene objects). These
- * macros generate template specializations at global scope, so they MUST
- * reside in a .cpp file (not a header) to avoid ODR violations. The abstract
- * Operation base is NOT registered — only concrete leaf types are.
+ * Registers every concrete Operation subclass so the undo/redo stacks round-trip
+ * through a project file. These macros generate template specializations at
+ * global scope, so they MUST reside in a .cpp file; the abstract Operation base
+ * is NOT registered, only concrete leaf types.
  */
 
 #include <cereal/archives/json.hpp>
@@ -59,7 +53,7 @@ CEREAL_REGISTER_TYPE(neurus::SetShaderFieldOp)
 CEREAL_REGISTER_TYPE(neurus::AddShaderFieldOp)
 CEREAL_REGISTER_TYPE(neurus::ShaderLinkOp)
 
-// --- Polymorphic relations (Operation base → concrete derived) ---
+// --- Polymorphic relations (Operation base -> concrete derived) ---
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetLightPowerOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetLightColorOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetLightShadowOp)

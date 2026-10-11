@@ -13,19 +13,12 @@ namespace neurus {
  * @brief Device-local GPU buffer with staging-backed Map/Unmap.
  *
  * The buffer is allocated in DEVICE_LOCAL memory for optimal GPU access.
- * Map() and Unmap() transparently use an internal StagingBuffer:
- *   - Map() creates/returns a writable pointer to the staging buffer.
- *   - Unmap() transfers the staging content to the device-local buffer
- *     via vkCmdCopyBuffer on the graphics queue.
+ * Map() and Unmap() transparently use an internal staging buffer: Map()
+ * returns a writable pointer to it, and Unmap() copies its content to the
+ * device-local buffer on the graphics queue.
  *
- * Usage flags are automatically extended with eTransferDst to support
- * the staging transfer.
- *
- * Usage:
- *   GPUBuffer ssbo(device, physicalDevice, queue, qfi,
- *                  256, vk::BufferUsageFlagBits::eStorageBuffer, "SSBO");
- *   ssbo.Upload(hostData, sizeof(hostData));
- *   vk::DescriptorBufferInfo info = ssbo.GetDescriptorInfo();
+ * Usage flags are automatically extended with eTransferDst to support the
+ * staging transfer.
  */
 class GPUBuffer : public Buffer
 {
@@ -54,11 +47,6 @@ public:
 	/**
 	 * @brief Uploads host data using the Map/Unmap staging pattern.
 	 *
-	 * Equivalent to:
-	 *   void* ptr = Map();
-	 *   std::memcpy(ptr, data, size);
-	 *   Unmap();
-	 *
 	 * @param data Pointer to source data on the host.
 	 * @param size Number of bytes to upload (must not exceed buffer size).
 	 */
@@ -67,9 +55,8 @@ public:
 	/**
 	 * @brief Maps the internal staging buffer for CPU write access.
 	 *
-	 * The staging buffer is created lazily on the first call. The caller
-	 * writes data through the returned pointer, then calls Unmap() to
-	 * trigger the GPU transfer.
+	 * The caller writes data through the returned pointer, then calls
+	 * Unmap() to trigger the GPU transfer.
 	 *
 	 * @return Writable pointer to the staging buffer memory.
 	 * @todo Read mapping
@@ -81,9 +68,8 @@ public:
 	/**
 	 * @brief Transfers the staging buffer content to the device-local buffer.
 	 *
-	 * Records a one-shot vkCmdCopyBuffer command, submits it to the graphics
-	 * queue, and waits for completion. After this call returns, the device-local
-	 * buffer contains the data written through the Map() pointer.
+	 * Records a one-shot vkCmdCopyBuffer, submits it to the graphics queue
+	 * and waits for completion.
 	 */
 	void Unmap() override;
 
@@ -91,7 +77,6 @@ private:
 	vk::Queue b_queue = nullptr;
 	uint32_t b_queueFamilyIndex = 0;
 
-	// Lazily-created staging buffer for Map/Unmap
 	std::unique_ptr<StagingBuffer> b_staging;
 };
 

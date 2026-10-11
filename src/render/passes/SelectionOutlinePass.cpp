@@ -37,7 +37,6 @@ SelectionOutlinePass::SelectionOutlinePass(const vk::raii::Device& device,
 		ShaderLibrary::LoadComputeShader("selection_outline",
 		                                  "res/shaders/compute/selection_outline.comp"))
 {
-	// --- Create pipeline from self-loaded shader ---
 	BuildPipeline(device, "SelectionOutlinePass");
 
 	NEURUS_LOG("[SelectionOutlinePass] numSets=" << numSets
@@ -77,26 +76,22 @@ DescriptorSetLayout SelectionOutlinePass::CreateDescriptorSetLayout(const vk::ra
 void SelectionOutlinePass::BuildPipeline(const vk::raii::Device& device,
                                          const std::string& debugName)
 {
-	// --- Guard: shader must be valid ---
 	if (!p_shader)
 	{
 		throw std::runtime_error("SelectionOutlinePass: Compute shader not loaded or invalid");
 	}
 
-	// --- Compile and create temporary shader module ---
 	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
 	                                  ShaderType::COMPUTE, debugName);
 	vk::ShaderModuleCreateInfo smCI({}, spv);
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
 
-	// --- Push constant range (1 uint = 4 bytes) ---
 	vk::PushConstantRange pushRange(
 		vk::ShaderStageFlagBits::eCompute,
 		0,
 		sizeof(uint32_t));  // activeObjectId
 
-	// --- Build compute pipeline ---
 	PipelineBuilder builder;
 	p_pipelines.push_back(
 		builder.AddShaderStage(stageCI)
@@ -115,13 +110,11 @@ PassIO SelectionOutlinePass::GetIO() const
 	PassIO io;
 	io.name = "SelectionOutlinePass";
 	io.reads = {
-		// IDBuffer sampled as usampler2D at binding 0.
 		{AttachmentName::IDBuffer, 0,
 		 vk::DescriptorType::eCombinedImageSampler,
 		 vk::ImageLayout::eShaderReadOnlyOptimal},
 	};
 	io.writes = {
-		// SelectionOutline written as a storage image at binding 1.
 		{AttachmentName::SelectionOutline, 1,
 		 vk::DescriptorType::eStorageImage,
 		 vk::ImageLayout::eGeneral},
@@ -135,8 +128,8 @@ PassIO SelectionOutlinePass::GetIO() const
 
 void SelectionOutlinePass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
 {
-	// Image bindings are derived from GetIO() and applied by DescriptorBinder,
-	// so the binding list lives in exactly one place (GetIO).
+	// Image bindings are derived from GetIO(), so the binding list lives in
+	// exactly one place.
 	const PassIO io = GetIO();
 	DescriptorBinder::BindImages(p_descriptorSets[setIndex],
 	                             io.reads, io.writes,
@@ -151,10 +144,8 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 {
 	PassStats stats{};
 
-	// SceneContext's null policy: `scene` must be checked. The push constant below
-	// reads the active selection off the Scene, so without one there is nothing to
-	// outline — and dereferencing would crash on a frame recorded before a scene
-	// exists, which is a legal frame.
+	// A frame recorded before a scene exists is legal, and the push constant
+	// below reads the active selection off the scene.
 	if (!ctx.snapshot.HasScene())
 	{
 		NEURUS_LOG("[SelectionOutlinePass] No scene, skipping");
@@ -164,12 +155,8 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
-	// --- 0. No per-frame uploads needed — activeObjectId read directly from ctx ---
-
-	// --- 1. Write descriptor set for this frame slot ---
 	WriteDescriptors(frameIndex, renderExtent, cache);
 
-	// --- 2. Transition IDBuffer to ShaderRead and SelectionOutline to ShaderWrite ---
 	{
 		auto& idAtt = cache.GetAttachment(AttachmentName::IDBuffer, renderExtent);
 		Barrier::Transition(cmdBuf, idAtt, ImageState::ColorShaderRead);
@@ -178,19 +165,17 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 		Barrier::Transition(cmdBuf, outlineAtt, ImageState::ShaderWrite);
 	}
 
-	// --- 3. Bind compute pipeline ---
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 
-	// --- 4. Bind descriptor set ---
 	cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
 	                          *p_pipelines[0].pipelineLayout,
 	                          0,                                    // firstSet
 	                          {p_descriptorSets[frameIndex].handle()},
 	                          {});
 
-	// --- 5. Push constants (uint32_t activeObjectId) ---
 	{
-		// Query the active selection from the scene (avoids redundant field in RenderContext)
+		// Read the selection from the scene rather than duplicating it in the
+		// context.
 		uint32_t activeObjectId = 0;
 		const auto* activeObj = ctx.snapshot.scene->selections.GetActiveObject();
 		if (activeObj)
@@ -203,13 +188,12 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 			activeObjectId);
 	}
 
-	// --- 6. Dispatch ---
 	const uint32_t groupCountX = (renderExtent.width  + 15) / 16;
 	const uint32_t groupCountY = (renderExtent.height + 15) / 16;
 	++stats.dispatches;
 	cmdBuf.dispatch(groupCountX, groupCountY, 1);
 
-	// --- 7. Transition SelectionOutline output: General → ShaderRead for downstream passes ---
+	// Return SelectionOutline to ColorShaderRead for the downstream passes.
 	{
 		auto& outlineAtt = cache.GetAttachment(AttachmentName::SelectionOutline, renderExtent);
 		Barrier::Transition(cmdBuf, outlineAtt, ImageState::ColorShaderRead);
