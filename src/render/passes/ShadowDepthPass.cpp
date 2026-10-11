@@ -2,22 +2,10 @@
  * @file ShadowDepthPass.cpp
  * @brief Point-light shadow depth cubemap pass and sun-light orthographic shadow pass.
  *
- * Changed from host-visible UBO to SSBO + push constants to fix the
- * GPU-synchronisation bug where UpdateUBO() was called for each light in
- * a single command buffer, but the GPU only saw the last write because
- * command execution is deferred.
- *
- * Now:
- *   - 6 static face view-projection matrices live in a device-local SSBO
- *     (computed once from origin with a fixed far plane).
- *   - Per-light data (lightWorldPos + farPlane) is pushed via push constants
- *     (offset 0, 16 bytes).
- *   - Per-draw model matrix is pushed via push constants (offset 16, 64 bytes).
- *
- * Sun Light Pipeline (non-multiview depth-only):
- *   - Push constant: mat4 lightViewProj (64 bytes).
- *   - No SSBO, no descriptor sets.
- *   - Orthographic projection centered on camera target, aligned with sun direction.
+ * Point lights render all 6 cubemap faces in one multiview pass: static face
+ * view-projection matrices come from an SSBO, per-light and per-draw data from
+ * push constants. Sun lights take a separate depth-only orthographic pass with
+ * a single lightViewProj push constant.
  */
 
 #include "passes/ShadowDepthPass.h"
@@ -50,13 +38,11 @@ namespace {
 namespace {
 
 /**
- * @brief Computes 6 view-projection matrices for a cubemap from 0,0,0
- *        with the given projection matrix.
+ * @brief Computes the 6 view-projection matrices for a cubemap centred on the
+ *        origin.
  *
- * These are equivalent to:
- *   proj * lookAt(origin, origin + faceDir, faceUp)
- * and are combined with a per-light position offset in the vertex shader
- * via `worldPos - lightWorldPos`.
+ * The vertex shader offsets each vertex by the light position, so one set of
+ * matrices serves every point light.
  */
 std::array<glm::mat4, 6> MakeFaceVPs(const glm::mat4& proj)
 {
@@ -274,7 +260,7 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 {
 	PassStats stats{};
 
-	// RenderContext's null policy: `scene` must be checked.
+	// A frame recorded before a scene exists is legal.
 	if (!ctx.HasScene()) { NEURUS_LOG("[ShadowDepthPass] No scene, skipping"); return stats; }
 
 	const Scene* scene = ctx.scene;
@@ -287,12 +273,10 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 
 	for (const auto& [uid, lightPtr] : scene->light_list)
 	{
-		// Skip lights that don't cast shadows
+		// Skip lights that do not cast shadows or are invisible.
 		if (!lightPtr || !lightPtr->use_shadow) continue;
-		// Skip invisible lights
 		if (!lightPtr->is_viewport || !lightPtr->is_rendered) continue;
 
-		// Only handle POINTLIGHT and SPOTLIGHT with shadow cubemaps; skip other types
 		if (lightPtr->light_type != LightType::POINTLIGHT &&
 		    lightPtr->light_type != LightType::SPOTLIGHT) continue;
 
@@ -301,7 +285,7 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 			? Light::spot_shadow_far
 			: Light::point_shadow_far;
 
-		// --- Push per-light data (lightWorldPos + farPlane, offset 0, 16 bytes) ---
+		// --- Per-light data: lightWorldPos + farPlane at offset 0 ---
 		{
 			LightPushData lp = {};
 			lp.lpx = lightPos.x;
@@ -332,7 +316,7 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 	                          *p_pipelines[0].pipelineLayout, 0,
 		                          vk::ArrayProxy<const vk::DescriptorSet>(p_ssboSet->handle()), {});
 
-		// --- Transition colour cubemap to ColorAttachment for rendering ---
+		// --- Transition colour cubemap to ColorAttachment ---
 		{
 			LightGPU* lgpu = cache.GetLightGPU(uid);
 			if (!lgpu || !lgpu->shadowColorMap) continue;
@@ -340,8 +324,6 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 			Barrier::Transition(cmdBuf, colorCube, ImageState::ColorAttachment);
 		}
 
-		// --- Depth attachment ---
-		// Re-obtain lgpu pointer for depth attachment (guaranteed valid from transition above)
 		{
 			LightGPU* lgpu = cache.GetLightGPU(uid);
 			vk::RenderingAttachmentInfo depthAtt(
@@ -353,7 +335,7 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 				vk::AttachmentStoreOp::eStore,
 				vk::ClearDepthStencilValue(1.0f, 0));
 
-		// --- Colour attachment: RenderCache colour cubemap ---
+		// Colour attachment: the cache's colour cubemap
 		vk::ImageView colorView = lgpu->shadowColorMap->ArrayView();
 
 		vk::RenderingAttachmentInfo colorAtt(
@@ -404,7 +386,7 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 
 		cmdBuf.endRendering();
 
-		// Transition colour cubemap to ColorShaderRead for sampling in subsequent passes
+		// Return colour cubemap to ColorShaderRead for later sampling.
 		{
 			LightGPU* lgpu = cache.GetLightGPU(uid);
 			if (lgpu && lgpu->shadowColorMap)
@@ -427,14 +409,11 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 		                               0.f, 1.f);
 		const vk::Rect2D sunScissor({0, 0}, {kSunResolution, kSunResolution});
 
-		// Get camera target for shadow ortho center.
-		// The camera comes from the context, not from the Scene: the Editor injects
-		// whichever camera the frame is rendered through, and the sun cascade must
-		// centre on *that* one or the shadow slides off the part of the world
-		// actually on screen. See the fuller note in LightingPass::Record().
-		//
-		// Nothing follows this block, so returning here is exactly "skip the sun
-		// path" - the point-light work above has already been recorded.
+		// The camera comes from the context, not the Scene: the editor injects
+		// the frame's camera, and the sun shadow must centre on that one or the
+		// shadow slides off the visible part of the world. Nothing follows this
+		// block, so returning here skips only the sun path - the point-light
+		// work above is already recorded.
 		const Camera* activeCam = ctx.camera;
 		if (!activeCam)
 		{
@@ -459,7 +438,6 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 			if (!lightPtr->use_shadow) continue;
 			if (!lightPtr->is_viewport || !lightPtr->is_rendered) continue;
 
-			// --- Compute sun direction (local forward vector) ---
 			const glm::vec3 sunDir = glm::normalize(lightPtr->GetDirection());
 			const glm::vec3 eye = center - sunDir * Light::sun_depth_range;
 
@@ -467,16 +445,13 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 			const glm::vec3 up = (glm::abs(glm::dot(sunDir, kWorldUp)) > 0.999f)
 				? kAltUp : kWorldUp;
 
-			// --- Orthographic light view-projection ---
 			const glm::mat4 lightView = glm::lookAt(eye, center, up);
 			const glm::mat4 lightViewProj = orthoProj * lightView;
 
-			// --- Push lightViewProj (64 bytes, offset 0) ---
 			cmdBuf.pushConstants<glm::mat4>(*p_pipelines[1].pipelineLayout,
 			                                vk::ShaderStageFlagBits::eVertex,
 			                                0, lightViewProj);
 
-			// --- Transition sun shadow map to DepthAttachment ---
 			LightGPU* slgpu = cache.GetLightGPU(uid);
 			if (!slgpu || !slgpu->shadowDepthMap) continue;
 			auto& sunImage = *slgpu->shadowDepthMap;
@@ -528,7 +503,6 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 
 			cmdBuf.endRendering();
 
-			// Transition sun shadow map to DepthShaderRead for sampling
 			Barrier::Transition(cmdBuf, sunImage, ImageState::DepthShaderRead);
 		}
 	}
@@ -538,9 +512,8 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 
 PassIO ShadowDepthPass::GetIO() const
 {
-	// Renders per-light depth maps (cubemap/2D) into LightGPU. The graph models
-	// the whole set as one ShadowDepthBundle write token; the per-light maps
-	// are addressed internally. No image reads (scene-driven).
+	// The per-light depth maps are addressed internally; the graph models the
+	// whole set as one ShadowDepth write token. No image reads.
 	PassIO io;
 	io.name   = "ShadowDepthPass";
 	io.writes = { { AttachmentName::ShadowDepth } };

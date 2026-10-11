@@ -2,26 +2,11 @@
  * @file DebugDrawBuilder.h
  * @brief Flattens the scene's retained debug objects into a DebugDrawList.
  *
- * The debug overlay has no immediate-mode API: DebugLine, DebugPoints and
- * DebugMesh are ordinary scene objects that live as long as what they
- * visualize. This class is the one place that walks those pools and turns them
- * into the flat, GPU-shaped DebugDrawList the renderer consumes.
- *
- *   Scene (dLine_list / dPoints_list / dMesh_list)
- *        -> DebugDrawBuilder::Rebuild()
- *        -> DebugDrawList  (published via RenderContext::debugDraw)
- *
- * Because the producers are stateful, rebuilding is driven by the existing
- * "something visible changed" broadcast (RenderResetEvent) rather than by a
- * per-frame poll: Editor calls MarkDirty() from that subscription and Rebuild()
- * from Edit(), where a clean builder returns immediately. Exactly one Touch()
- * per rebuild lets DebugPass skip the GPU copy on every unchanged frame.
- *
- * Layer placement: editor layer. It reads the Vulkan-free scene layer and writes
- * DebugDrawList, which lives in `render/overlay/` because the renderer is its
- * consumer — the editor may include render, never the reverse. It knows nothing
- * about the renderer beyond that type, and takes no RenderCache, pipeline or
- * device.
+ * Debug objects are ordinary scene objects that live as long as what they
+ * visualize, so there is no immediate-mode API; this class is the one place that
+ * walks the debug pools and turns them into the flat, GPU-shaped list. Rebuild is
+ * driven by a dirty flag rather than a per-frame poll, and touches the list once
+ * per rebuild so the GPU copy can be skipped on unchanged frames.
  */
 
 #pragma once
@@ -40,13 +25,6 @@ class DebugMesh;
 
 /**
  * @brief Owns the editor-side DebugDrawList and keeps it in sync with the scene.
- *
- * Usage (from Editor):
- * @code
- *   m_debugDraw.MarkDirty();          // on RenderResetEvent / scene swap
- *   m_debugDraw.Rebuild(*m_scene);    // in Edit(), no-op while clean
- *   ctx.debugDraw = &m_debugDraw.List();
- * @endcode
  */
 class DebugDrawBuilder
 {
@@ -60,7 +38,7 @@ public:
 	/**
 	 * @brief Requests a rebuild on the next Rebuild() call.
 	 *
-	 * Cheap and idempotent — call it from every path that can change debug
+	 * Cheap and idempotent: call it from every path that can change debug
 	 * geometry rather than trying to work out whether it really did.
 	 */
 	void MarkDirty() { m_dirty = true; }
@@ -74,7 +52,7 @@ public:
 	 */
 	void Rebuild(const Scene& scene);
 
-	/** @brief Returns the flattened list for publication through RenderContext. */
+	/** @brief Returns the flattened list. */
 	const DebugDrawList& List() const { return m_list; }
 
 	/** @brief Returns true if a rebuild is pending. */

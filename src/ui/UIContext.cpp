@@ -1,6 +1,6 @@
 /**
  * @file UIContext.cpp
- * @brief UIContext implementation — the settings fallback and scene object enumeration.
+ * @brief UIContext implementation - the settings fallback and scene object enumeration.
  */
 
 #include "UIContext.h"
@@ -12,19 +12,18 @@ namespace neurus
 {
 
 // =========================================================================
-// Settings — the one place a panel's missing RenderConfig is answered
+// Settings - the one place a panel's missing RenderConfig is answered
 // =========================================================================
 
 const RenderConfig& UIContext::Settings() const
 {
-	// core/RenderConfig.h's DefaultRenderConfig(), so the fallback *is* RenderConfig's
-	// in-class member initializers rather than a second copy of them, and so a panel
-	// and a render pass give the same answer for an unset value.
+	// DefaultRenderConfig() *is* RenderConfig's in-class member initializers,
+	// so a panel cannot privately disagree with a render pass on a default.
 	return config ? *config : DefaultRenderConfig();
 }
 
 // =========================================================================
-// GetObjectIDs — collect all scene object UIDs from the published scene
+// GetObjectIDs - collect all scene object UIDs from the published scene
 // =========================================================================
 
 std::vector<int> UIContext::GetObjectIDs() const
