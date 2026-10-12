@@ -90,6 +90,13 @@ add_executable(neurus_test
 	platform/test_platform_paths.cpp
 )
 
+# Scripting engine unit tests (only when the script layer is enabled).
+if(NEURUS_ENABLE_SCRIPTING)
+	target_sources(neurus_test PRIVATE
+		script/test_script_engine.cpp
+	)
+endif()
+
 target_link_libraries(neurus_test PRIVATE
 	neurus_scene
 	neurus_app
@@ -105,6 +112,12 @@ target_link_libraries(neurus_test PRIVATE
 	Qt6::Quick
 	Qt6::Qml
 )
+
+if(NEURUS_ENABLE_SCRIPTING)
+	target_link_libraries(neurus_test PRIVATE
+		neurus_script
+	)
+endif()
 
 target_include_directories(neurus_test PRIVATE
 	${CMAKE_SOURCE_DIR}/src
@@ -155,6 +168,16 @@ if(TARGET shaderc_shared)
 			$<TARGET_FILE:shaderc_shared>
 			$<TARGET_FILE_DIR:neurus_test>
 		COMMENT "Copying shaderc_shared.dll for runtime access"
+	)
+endif()
+
+# Deploy the CPython runtime DLL so the ScriptEngine tests can load Python.
+if(WIN32 AND NEURUS_ENABLE_SCRIPTING)
+	add_custom_command(TARGET neurus_test POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${NEURUS_PYTHON_DLL}"
+			"$<TARGET_FILE_DIR:neurus_test>"
+		COMMENT "Copying the CPython runtime DLL for runtime access"
 	)
 endif()
 
