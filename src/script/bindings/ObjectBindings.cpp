@@ -19,6 +19,7 @@
 #include "scene/Transform.h"
 #include "script/bindings/Bindings.h"
 #include "script/bindings/ProxyBase.h"
+#include "script/bindings/Proxies.h"
 #include "script/bindings/Runtime.h"
 
 namespace py = pybind11;
@@ -35,58 +36,6 @@ py::tuple ToTuple(const glm::vec3& value)
 {
 	return py::make_tuple(value.x, value.y, value.z);
 }
-
-/**
- * @brief Read-only proxy over a scene object's `Transform3D`.
- *
- * `Scene::GetObjectID(int) const` hands out a const object while the component
- * accessor predates const-correctness; the cast below only ever feeds read-only
- * getters and mirrors the cast `Scene::UpdateObjTransforms` already performs.
- */
-struct TransformProxy : ProxyBase
-{
-	/// @brief Resolves the live `Transform3D` or raises a clear error.
-	const Transform3D* Resolve() const
-	{
-		if (ctx == nullptr || ctx->scene == nullptr)
-		{
-			throw std::runtime_error("neurus: transform proxy has no scene context");
-		}
-
-		ObjectID* obj = const_cast<ObjectID*>(ctx->scene->GetObjectID(uid));
-		if (obj == nullptr)
-		{
-			throw std::runtime_error("neurus: transform proxy refers to a missing object");
-		}
-
-		auto* transform = static_cast<Transform3D*>(obj->GetTransform());
-		if (transform == nullptr)
-		{
-			throw std::runtime_error("neurus: object has no 3D transform");
-		}
-		return transform;
-	}
-};
-
-/// @brief Read-only proxy over one `ObjectID` in the master scene pool.
-struct ObjectProxy : ProxyBase
-{
-	/// @brief Resolves the live object or raises a clear error.
-	const ObjectID* Resolve() const
-	{
-		if (ctx == nullptr || ctx->scene == nullptr)
-		{
-			throw std::runtime_error("neurus: object proxy has no scene context");
-		}
-
-		const ObjectID* obj = ctx->scene->GetObjectID(uid);
-		if (obj == nullptr)
-		{
-			throw std::runtime_error("neurus: object proxy refers to a missing object");
-		}
-		return obj;
-	}
-};
 
 /**
  * @brief `neurus.data.objects`: all master-pool objects, iterable and keyed by
@@ -205,6 +154,8 @@ void RegisterNeurusModule(py::module_& m)
 
 	py::module_ data = m.def_submodule("data", "Read-only scene data collections.");
 	RegisterObjectBindings(data);
+	RegisterSceneBindings(m, data);
+	RegisterConfigBindings(data);
 }
 
 }  // namespace script

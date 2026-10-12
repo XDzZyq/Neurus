@@ -20,6 +20,8 @@
 #include "core/Log.h"
 #include "core/RenderConfig.h"
 #include "scene/Camera.h"
+#include "scene/Environment.h"
+#include "scene/Light.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 #include "script/ScriptContext.h"
@@ -121,6 +123,72 @@ TEST(ScriptBindings, EmptySceneYieldsNoObjects)
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n"));
+
+	engine.Shutdown();
+}
+
+TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+	// Exactly representable so the float-to-double equality below is sound.
+	cfg.r_gamma = 2.0f;
+
+	auto light = std::make_shared<neurus::Light>(neurus::LightType::POINTLIGHT, 3.0f,
+	                                             glm::vec3(1.0f, 0.0f, 0.0f));
+	auto camera = std::make_shared<neurus::Camera>();
+	camera->cam_pers = 45.0f;
+	camera->cam_near = 0.5f;
+	camera->cam_far  = 250.0f;
+	auto env = std::make_shared<neurus::Environment>();
+	env->SetIntensity(2.5f);
+	env->SetRotation(30.0f);
+
+	scene.UseLight(light);
+	scene.UseCamera(camera);
+	scene.UseEnvironment(env);
+	scene.ActivateCamera(camera->GetObjectID());
+
+	neurus::ScriptContext ctx;
+	neurus::BuildScriptContext(scene, cfg, ctx);
+
+	const std::string lightUid  = std::to_string(light->GetObjectID());
+	const std::string camUid    = std::to_string(camera->GetObjectID());
+	const std::string pointType = std::to_string(static_cast<int>(neurus::LightType::POINTLIGHT));
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.SetContext(ctx);
+
+	const std::string script =
+		"import neurus\n"
+		"light = neurus.data.lights[" + lightUid + "]\n"
+		"assert light is not None\n"
+		"assert light.power == 3.0\n"
+		"assert light.type == " + pointType + "\n"
+		"assert tuple(light.color) == (1.0, 0.0, 0.0)\n"
+		"cam = neurus.context.active_camera\n"
+		"assert cam is not None\n"
+		"assert cam.uid == " + camUid + "\n"
+		"assert cam.fov == 45.0\n"
+		"assert cam.is_active\n"
+		"env = list(neurus.data.environments)[0]\n"
+		"assert env.intensity == 2.5\n"
+		"assert env.rotation == 30.0\n"
+		"assert neurus.data.config.gamma == 2.0\n";
+
+	EXPECT_TRUE(RunCleanly(engine, script));
+	engine.Shutdown();
+}
+
+TEST(ScriptBindings, EmptyContextHasNoActiveCamera)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"assert list(neurus.data.objects) == []\n"
+		"assert neurus.context.active_camera is None\n"));
 
 	engine.Shutdown();
 }

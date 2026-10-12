@@ -15,9 +15,12 @@ add_library(neurus_script STATIC
 	ScriptEngineImpl.h
 	bindings/Bindings.h
 	bindings/ProxyBase.h
+	bindings/Proxies.h
 	bindings/Runtime.h
 	bindings/Runtime.cpp
 	bindings/ObjectBindings.cpp
+	bindings/SceneBindings.cpp
+	bindings/ConfigBindings.cpp
 	bindings/Module.cpp
 )
 

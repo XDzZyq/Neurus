@@ -26,6 +26,20 @@ namespace script
 void RegisterNeurusModule(pybind11::module_& m);
 
 /**
+ * @brief Registers the typed `neurus.data` collections, their proxies, and
+ *        `neurus.context` (active camera and selection).
+ * @param root The `neurus` module (owns `context`).
+ * @param data The `neurus.data` submodule (owns the typed collections).
+ */
+void RegisterSceneBindings(pybind11::module_& root, pybind11::module_& data);
+
+/**
+ * @brief Registers `neurus.data.config`, a read-only `RenderConfig` view.
+ * @param data The `neurus.data` submodule.
+ */
+void RegisterConfigBindings(pybind11::module_& data);
+
+/**
  * @brief Link anchor for the embedded-module translation unit.
  *
  * `Module.cpp` registers `neurus` through a static initializer that must run
