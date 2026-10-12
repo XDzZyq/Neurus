@@ -86,6 +86,7 @@ add_executable(neurus_test
 	ui/test_floating_window.cpp
 	ui/test_layout_restore.cpp
 	ui/test_ui_context.cpp
+	ui/test_shader_highlighter_python.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
 )
