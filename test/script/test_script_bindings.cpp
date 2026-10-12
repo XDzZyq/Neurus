@@ -188,7 +188,8 @@ TEST(ScriptBindings, EmptyContextHasNoActiveCamera)
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n"
-		"assert neurus.context.active_camera is None\n"));
+		"assert neurus.context.active_camera is None\n"
+		"assert neurus.data.config.gamma is None\n"));
 
 	engine.Shutdown();
 }

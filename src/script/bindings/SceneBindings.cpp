@@ -138,7 +138,7 @@ struct ContextView {};
 py::object ActiveCamera()
 {
 	const ScriptContext* ctx = CurrentContext();
-	if (ctx == nullptr || ctx->scene == nullptr || ctx->active_camera_id == 0)
+	if (ctx == nullptr || ctx->scene == nullptr || ctx->active_camera_id <= 0)
 	{
 		return py::none();
 	}
