@@ -137,6 +137,20 @@ TEST(ScriptConsoleBuffer, RingDropsOldestAndAssignsSeq)
 	EXPECT_EQ(buffer.At(neurus::kScriptConsoleCapacity - 1).text,
 	          std::to_string(neurus::kScriptConsoleCapacity + 9));
 
+	// Clear() empties the buffer and the ring restarts cleanly afterwards.
 	buffer.Clear();
 	EXPECT_EQ(buffer.Size(), 0u);
+
+	for (int i = 0; i < 3; ++i)
+	{
+		buffer.Append(neurus::ScriptLineKind::Input, std::to_string(i));
+	}
+	EXPECT_EQ(buffer.Size(), 3u);
+	buffer.Clear();
+	EXPECT_EQ(buffer.Size(), 0u);
+
+	// A post-Clear append is visible at logical index 0.
+	buffer.Append(neurus::ScriptLineKind::Output, "after clear");
+	EXPECT_EQ(buffer.Size(), 1u);
+	EXPECT_EQ(buffer.At(0).text, "after clear");
 }

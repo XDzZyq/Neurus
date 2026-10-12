@@ -328,6 +328,12 @@ void Application::InitEditor()
 {
 	app_editor = std::make_unique<neurus::Editor>(app_renderer.get(), app_uploadManager.get());
 	app_editor->Initialize();
+
+	// Created here with the other subsystems, but deliberately NOT initialized:
+	// Python startup and env wiring arrive with the Script Console integration.
+	// Constructing it now gives NewFrameSignals a stable Console() buffer.
+	app_script = std::make_unique<neurus::ScriptEngine>();
+
 	NEURUS_LOG("[Application] Editor initialized, IBL handled by Editor");
 }
 
@@ -473,6 +479,8 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                         ctx.profile = &profile;
 	                         ctx.log = &neurus::LogBuffer::instance();
 	                         ctx.history = &history;
+	                         if (app_script)
+	                             ctx.scriptConsole = &app_script->Console();
 	                         app_mainWindow->Refresh(ctx);
 	                     }
 	                 });
