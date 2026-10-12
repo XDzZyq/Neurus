@@ -82,6 +82,22 @@ cd lib/src/shaderc
 python utils/git-sync-deps
 ```
 
+## Python Environment (Scripting)
+
+The C++ scripting layer (`src/script/`) embeds CPython and uses pybind11 as a
+build-time dependency. `make update` provisions a `uv`-managed virtual
+environment at `lib/.venv` (inside the `lib` submodule, git-ignored there):
+
+- The interpreter is pinned in `lib/.python-version`.
+- Requirements live in `lib/environment.txt` (currently pybind11).
+- `lib/scripts/setup_python_env.ps1` (Windows) / `setup_python_env.sh`
+  (macOS/Linux) create the environment; the step is idempotent and prints
+  `Using uv Python env at lib/.venv` on success.
+
+`uv` must be installed and on `PATH`. CMake links the base CPython via
+`find_package(Python COMPONENTS Development.Embed)`; the environment supplies
+pybind11. Set `NEURUS_PYTHON_ENV` to override the environment path at runtime.
+
 ## qtadvanceddocking Must Match the Qt Version Exactly
 
 ADS is a Qt C++ library, so its objects carry coalesced (`linkonce_odr`)
