@@ -64,19 +64,29 @@ void ScriptConsolePanel::Refresh(const neurus::UIContext& ctx)
 
 	const ScriptConsoleBuffer& buffer = *ctx.scriptConsole;
 	const std::size_t size = buffer.Size();
+	const uint64_t newest = size == 0 ? 0 : buffer.At(size - 1).seq;
 
-	// The buffer is a ring: if it wrapped or was cleared, our cursor is stale.
-	if (size < m_lastLineCount)
+	// Nothing new since the last render (and not an empty-buffer reset).
+	if (m_hasCursor && size != 0 && newest == m_lastSeq)
 	{
-		m_output->clear();
-		m_lastLineCount = 0;
+		return;
 	}
 
-	for (std::size_t i = m_lastLineCount; i < size; ++i)
+	// Rebuild from the buffer's current window. The ring evicts old lines, so
+	// this is wrap-safe (a count-based cursor would freeze once the buffer is
+	// full) and clear-safe, at the cost of one bounded redraw per change.
+	m_output->clear();
+	for (std::size_t i = 0; i < size; ++i)
 	{
-		AppendOutputLine(QString::fromStdString(buffer.At(i).text));
+		const ScriptLine line = buffer.At(i);
+		if (line.seq > m_clearSeq)
+		{
+			AppendOutputLine(QString::fromStdString(line.text));
+		}
 	}
-	m_lastLineCount = size;
+
+	m_lastSeq = newest;
+	m_hasCursor = size != 0;
 }
 
 void ScriptConsolePanel::Retranslate()
@@ -127,9 +137,10 @@ void ScriptConsolePanel::OnRunFileClicked()
 
 void ScriptConsolePanel::OnClearClicked()
 {
-	// Clear only the view: the engine buffer keeps its history, and the cursor
-	// stays put so already-shown lines do not reappear on the next Refresh().
+	// Hide everything shown so far; later lines (higher seq) still appear. The
+	// engine buffer keeps its history.
 	m_output->clear();
+	m_clearSeq = m_lastSeq;
 }
 
 void ScriptConsolePanel::AppendOutputLine(const QString& text)

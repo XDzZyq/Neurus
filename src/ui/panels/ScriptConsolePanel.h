@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 #include <QString>
 
@@ -63,7 +64,9 @@ private:
 	QPlainTextEdit* m_output = nullptr;
 	CodeEditor*     m_input = nullptr;
 
-	std::size_t m_lastLineCount = 0;  ///< Console lines already shown.
+	uint64_t m_lastSeq = 0;       ///< seq of the newest console line already rendered.
+	uint64_t m_clearSeq = 0;      ///< Lines at or below this seq are hidden (Clear).
+	bool     m_hasCursor = false; ///< Whether a first render has happened.
 };
 
 }  // namespace neurus
