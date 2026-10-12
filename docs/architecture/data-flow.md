@@ -87,8 +87,8 @@ pivot, so neither consumer reaches around it for the other's data:
   through `recordFrame()`.
 - `UIContext` (`src/ui/UIContext.h`) - the UI's view, two fields wide: `scene`
   and `config` from `Editor::UpdateUIContext()`, plus the Application's typed
-  `profile`/`log`/`history` pointers. A panel never names the camera or either
-  overlay payload.
+  `profile`/`log`/`history`/`scriptConsole` pointers. A panel never names the
+  camera or either overlay payload.
 - Fields are carried directly on each view; neither context embeds a snapshot
   struct.
 - Read-only access to scene data for Renderer
@@ -97,7 +97,8 @@ pivot, so neither consumer reaches around it for the other's data:
   the context's own header** (`const Scene*`, `const RenderConfig*`,
   `const Camera*`, `const DebugDrawList*`, `const GizmoDrawList*` in
   `RenderContext`; `const Scene*`, `const RenderConfig*`, `const FrameProfile*`,
-  `const LogBuffer*`, `const HistoryView*` in `UIContext`), and **growth is by a
+  `const LogBuffer*`, `const HistoryView*`, `const ScriptConsoleBuffer*` in
+  `UIContext`), and **growth is by a
   new typed field on whichever view owns its source** - never by a `void*` slot.
   A forward declaration adds no include, so the typed pointer costs the layer
   isolation nothing; the type erasure it replaced cost 18 `static_cast` sites

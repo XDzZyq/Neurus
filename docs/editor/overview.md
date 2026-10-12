@@ -167,9 +167,10 @@ struct UIContext
     const RenderConfig*  config  = nullptr;  // read via Settings(), never directly
 
     // Application half - frame-scoped and service-backed
-    const FrameProfile*  profile = nullptr;
-    const LogBuffer*     log     = nullptr;
-    const HistoryView*   history = nullptr;
+    const FrameProfile*        profile       = nullptr;
+    const LogBuffer*           log           = nullptr;
+    const HistoryView*         history       = nullptr;
+    const ScriptConsoleBuffer* scriptConsole = nullptr;  // engine's console ring
 
     bool HasScene() const;
     const RenderConfig& Settings() const;      // defined in UIContext.cpp
@@ -191,7 +192,8 @@ Design:
 - `UpdateUIContext()` assigns fields only and must never call a `UIContext`
   method: it runs in `neurus_editor`, which does not link `neurus_ui` (that
   library links this one), so a symbol defined there would not resolve. The
-  Application adds the frame-scoped `profile`/`log`/`history` members.
+  Application adds the frame-scoped `profile`/`log`/`history`/`scriptConsole`
+  members.
 - Keeping the UI's view a separate two-field struct is what makes "the gizmo is
   not scene data" a property of the type rather than a convention.
 - **The fallback is hoisted, because there are now two callers.** `Settings()` is

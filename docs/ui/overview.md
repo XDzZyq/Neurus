@@ -129,11 +129,11 @@ See [Panels](panels.md) for each panel, and [Items](items.md), [Models](models.m
 
 `UIContext` is the UI's view of the frame, two fields wide: `scene` (`const Scene*`) and `config` (`const RenderConfig*`), both filled by `Editor::UpdateUIContext()` and both plain forward-declared pointers. It deliberately carries no camera and no overlay draw list - a panel has no business naming either - so the UI's view is a property of the type rather than a convention. The render settings are read through `Settings()`, which never returns null: it falls back to `core/RenderConfig.h`'s `DefaultRenderConfig()`, the same single fallback `RenderContext::Settings()` applies, so a panel and a pass cannot disagree about an unset value. `scene` must still be checked - `HasScene()` - before dereferencing.
 
-`UIContext` also carries three typed pointers, each forward-declared in `UIContext.h`, as the Application's half: `const FrameProfile* profile` (the profile returned by `DeferredRenderer::DrawFrame()`), `const LogBuffer* log` and `const HistoryView* history`. The Editor fills `scene` and `config` through `Editor::UpdateUIContext()`; the Application adds these three each frame, and the `ProfilingPanel` reads `profile` directly to render a real-time per-pass tree. All three are null in a default-constructed `UIContext` - what a widget test builds - so a panel checks before dereferencing.
+`UIContext` also carries four typed pointers, each forward-declared in `UIContext.h`, as the Application's half: `const FrameProfile* profile` (the profile returned by `DeferredRenderer::DrawFrame()`), `const LogBuffer* log`, `const HistoryView* history` and `const ScriptConsoleBuffer* scriptConsole` (the script engine's console buffer). The Editor fills `scene` and `config` through `Editor::UpdateUIContext()`; the Application adds these four each frame, and the `ProfilingPanel` reads `profile` directly to render a real-time per-pass tree. All four are null in a default-constructed `UIContext` - what a widget test builds - so a panel checks before dereferencing.
 
 ## Refresh pipeline
 
-1. The Editor fills the document half of a `UIContext` (`scene`, `config`) through `Editor::UpdateUIContext()`; the Application adds the frame-scoped half (profile, log, history).
+1. The Editor fills the document half of a `UIContext` (`scene`, `config`) through `Editor::UpdateUIContext()`; the Application adds the frame-scoped half (profile, log, history, script console).
 2. `UIManager::Refresh(ctx)` runs after the renderer draws, caching undo/redo labels and iterating the panel registry.
 3. Each `UIPanel::Refresh(ctx)` extracts the data it needs (RenderConfig, Scene, profile, log) and updates its widgets.
 

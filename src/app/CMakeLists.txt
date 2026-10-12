@@ -23,3 +23,10 @@ target_link_libraries(neurus_app PRIVATE
 	neurus_scene
 	cereal
 )
+
+# Application.cpp references ScriptEngine (owned script console buffer), so the
+# dependency is declared here rather than relying on the final executables to
+# list neurus_script after neurus_app.
+if(NEURUS_ENABLE_SCRIPTING)
+	target_link_libraries(neurus_app PRIVATE neurus_script)
+endif()
