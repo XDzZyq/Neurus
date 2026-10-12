@@ -50,6 +50,11 @@ void ScriptEngine::RunFile(const std::string& path)
 	m_impl->RunFile(path);
 }
 
+void ScriptEngine::SetContext(const ScriptContext& ctx)
+{
+	m_impl->SetContext(ctx);
+}
+
 ScriptConsoleBuffer& ScriptEngine::Console()
 {
 	return m_impl->Console();

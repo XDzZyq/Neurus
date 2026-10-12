@@ -19,6 +19,7 @@
 #include <string>
 
 #include "core/ScriptConsole.h"
+#include "script/ScriptContext.h"
 
 namespace neurus
 {
@@ -66,6 +67,14 @@ public:
 	 *       propagates to the host.
 	 */
 	void RunFile(const std::string& path);
+
+	/**
+	 * @brief Store the scene/config view the next run may read.
+	 * @param ctx Read-only context; a copy is taken, so @p ctx may be a
+	 *            temporary and the borrowed pointers must outlive the run.
+	 * @note Consumed by later tasks; storing a context does not execute code.
+	 */
+	void SetContext(const ScriptContext& ctx);
 
 	/**
 	 * @brief The engine's console buffer (captured output, errors, results).

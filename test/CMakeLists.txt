@@ -94,6 +94,7 @@ add_executable(neurus_test
 if(NEURUS_ENABLE_SCRIPTING)
 	target_sources(neurus_test PRIVATE
 		script/test_script_engine.cpp
+		script/test_script_context.cpp
 	)
 endif()
 

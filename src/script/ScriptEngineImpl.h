@@ -161,6 +161,12 @@ struct ScriptEngine::Impl
 		return m_console;
 	}
 
+	/// @brief Store a copy of the read-only scene/config view for later runs.
+	void SetContext(const ScriptContext& ctx)
+	{
+		m_context = ctx;
+	}
+
 private:
 	/// @brief Shared run path: GIL, stdout/stderr capture, error surfacing.
 	void RunSource(const std::string& source, const char* entryName)
@@ -344,6 +350,7 @@ private:
 
 	bool m_ready = false;
 	ScriptConsoleBuffer m_console;
+	ScriptContext m_context;  ///< Last context handed to `SetContext`.
 };
 
 }  // namespace neurus

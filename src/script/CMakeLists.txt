@@ -7,6 +7,8 @@
 # Explicit source list (no glob), matching the other layer libraries.
 
 add_library(neurus_script STATIC
+	ScriptContext.h
+	ScriptContext.cpp
 	ScriptEngine.h
 	ScriptEngine.cpp
 	ScriptEngineImpl.h
