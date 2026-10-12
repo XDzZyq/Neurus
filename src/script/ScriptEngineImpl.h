@@ -21,6 +21,7 @@
 
 #include "core/Log.h"
 #include "script/ScriptEngine.h"
+#include "script/bindings/Runtime.h"
 #include "script/neurus_python_config.h"
 
 namespace neurus
@@ -73,6 +74,13 @@ struct ScriptEngine::Impl
 			return false;
 		}
 
+		// The embedded `neurus` module registers itself from a static
+		// initializer in `bindings/Module.cpp`. Referencing its anchor pins the
+		// translation unit into the link so the registrar is present; it must
+		// run before the interpreter, because pybind11 refuses to append a
+		// module once Python is initialized.
+		script::ForceLinkBindings();
+
 		status = Py_InitializeFromConfig(&config);
 		PyConfig_Clear(&config);
 		if (PyStatus_Exception(status))
@@ -80,10 +88,6 @@ struct ScriptEngine::Impl
 			NEURUS_ERR("ScriptEngine: Py_InitializeFromConfig failed: " << statusText(status));
 			return false;
 		}
-
-		// Bindings (later task) are registered via PYBIND11_EMBEDDED_MODULE and
-		// must be present before the first import.
-		// script::ForceLinkBindings();
 
 		if (!envPath.empty())
 		{
@@ -172,6 +176,8 @@ private:
 	void RunSource(const std::string& source, const char* entryName)
 	{
 		pybind11::gil_scoped_acquire gil;
+		// Publish the run's context to the bindings for exactly this run.
+		ContextScope contextScope(&m_context);
 
 		try
 		{
@@ -229,6 +235,31 @@ private:
 			return {};
 		}
 	}
+
+	/**
+	 * @brief RAII bracket that publishes the run's context to the bindings.
+	 *
+	 * Proxies reach the scene through `script::CurrentContext()` at attribute
+	 * access time, so the context is published for the duration of one run and
+	 * cleared on every exit path - success, Python error, or host exception -
+	 * before the interpreter could observe a pointer into a finished run.
+	 */
+	class ContextScope
+	{
+	public:
+		explicit ContextScope(const ScriptContext* context)
+		{
+			script::SetCurrentContext(context);
+		}
+
+		~ContextScope()
+		{
+			script::SetCurrentContext(nullptr);
+		}
+
+		ContextScope(const ContextScope&) = delete;
+		ContextScope& operator=(const ContextScope&) = delete;
+	};
 
 	/**
 	 * @brief RAII redirection of Python `sys.stdout`/`sys.stderr`.

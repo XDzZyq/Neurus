@@ -1,8 +1,9 @@
 # src/script/CMakeLists.txt - Script layer (embedded CPython + pybind11 bindings)
 #
 # Layer rule: script -> editor is allowed; script must never include Renderer or
-# UI headers. Python/pybind11 headers are confined to ScriptEngineImpl.h, which
-# only ScriptEngine.cpp includes.
+# UI headers. Python/pybind11 headers are confined to implementation sources:
+# the public ScriptEngine.h / ScriptContext.h stay Python-free, and the binding
+# headers only forward-declare pybind11 types.
 #
 # Explicit source list (no glob), matching the other layer libraries.
 
@@ -12,6 +13,12 @@ add_library(neurus_script STATIC
 	ScriptEngine.h
 	ScriptEngine.cpp
 	ScriptEngineImpl.h
+	bindings/Bindings.h
+	bindings/ProxyBase.h
+	bindings/Runtime.h
+	bindings/Runtime.cpp
+	bindings/ObjectBindings.cpp
+	bindings/Module.cpp
 )
 
 target_link_libraries(neurus_script PUBLIC

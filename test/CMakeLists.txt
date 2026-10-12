@@ -96,6 +96,7 @@ if(NEURUS_ENABLE_SCRIPTING)
 	target_sources(neurus_test PRIVATE
 		script/test_script_engine.cpp
 		script/test_script_context.cpp
+		script/test_script_bindings.cpp
 	)
 endif()
 
