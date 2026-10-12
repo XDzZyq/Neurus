@@ -193,3 +193,47 @@ TEST(ScriptBindings, EmptyContextHasNoActiveCamera)
 
 	engine.Shutdown();
 }
+
+TEST(ScriptBindings, SetterRaisesReadOnlyErrorAndDoesNotMutate)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+	auto mesh = std::make_shared<neurus::Mesh>();
+	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+	scene.UseMesh(mesh);
+
+	neurus::ScriptContext ctx;
+	neurus::BuildScriptContext(scene, cfg, ctx);
+
+	const std::string meshUid = std::to_string(mesh->GetObjectID());
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.SetContext(ctx);
+
+	// The script catches ReadOnlyError, so the run logs no error (RunCleanly).
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"o = neurus.data.objects[" + meshUid + "]\n"
+		"raised = False\n"
+		"try:\n"
+		"    o.transform.position = (9.0, 9.0, 9.0)\n"
+		"except neurus.ReadOnlyError:\n"
+		"    raised = True\n"
+		"assert raised\n"
+		"try:\n"
+		"    neurus.data.config.gamma = 3.0\n"
+		"except neurus.ReadOnlyError:\n"
+		"    pass\n"
+		"else:\n"
+		"    assert False\n"));
+
+	// The gated setter never wrote the live property.
+	const glm::vec3 after = mesh->GetPosition();
+	EXPECT_FLOAT_EQ(after.x, 1.0f);
+	EXPECT_FLOAT_EQ(after.y, 2.0f);
+	EXPECT_FLOAT_EQ(after.z, 3.0f);
+	EXPECT_FLOAT_EQ(cfg.r_gamma, 1.0f);
+
+	engine.Shutdown();
+}

@@ -177,7 +177,7 @@ private:
 	{
 		pybind11::gil_scoped_acquire gil;
 		// Publish the run's context to the bindings for exactly this run.
-		ContextScope contextScope(&m_context);
+		ContextScope contextScope(&m_context, &m_dispatch);
 
 		try
 		{
@@ -247,14 +247,16 @@ private:
 	class ContextScope
 	{
 	public:
-		explicit ContextScope(const ScriptContext* context)
+		explicit ContextScope(const ScriptContext* context, const ScriptDispatch* dispatch)
 		{
 			script::SetCurrentContext(context);
+			script::SetCurrentDispatch(dispatch);
 		}
 
 		~ContextScope()
 		{
 			script::SetCurrentContext(nullptr);
+			script::SetCurrentDispatch(nullptr);
 		}
 
 		ContextScope(const ContextScope&) = delete;
@@ -381,7 +383,8 @@ private:
 
 	bool m_ready = false;
 	ScriptConsoleBuffer m_console;
-	ScriptContext m_context;  ///< Last context handed to `SetContext`.
+	ScriptContext m_context;      ///< Last context handed to `SetContext`.
+	ScriptDispatch m_dispatch;    ///< Read-only (no event queue) in this phase.
 };
 
 }  // namespace neurus

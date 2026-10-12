@@ -13,6 +13,9 @@ namespace
 {
 /// The context of the run in flight, or nullptr outside a run.
 const ScriptContext* g_currentContext = nullptr;
+
+/// The dispatch of the run in flight, or nullptr outside a run.
+const ScriptDispatch* g_currentDispatch = nullptr;
 }  // namespace
 
 void SetCurrentContext(const ScriptContext* context)
@@ -23,6 +26,16 @@ void SetCurrentContext(const ScriptContext* context)
 const ScriptContext* CurrentContext()
 {
 	return g_currentContext;
+}
+
+void SetCurrentDispatch(const ScriptDispatch* dispatch)
+{
+	g_currentDispatch = dispatch;
+}
+
+const ScriptDispatch* CurrentDispatch()
+{
+	return g_currentDispatch;
 }
 
 }  // namespace script

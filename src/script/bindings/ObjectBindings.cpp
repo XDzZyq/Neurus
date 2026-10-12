@@ -13,7 +13,9 @@
 
 #include <stdexcept>
 #include <string>
+#include <tuple>
 
+#include "editor/events/SceneEvents.h"
 #include "scene/ObjectID.h"
 #include "scene/Scene.h"
 #include "scene/Transform.h"
@@ -70,17 +72,32 @@ struct ObjectCollection
 void RegisterObjectBindings(py::module_& data)
 {
 	py::class_<TransformProxy>(data, "Transform", "Read-only 3D transform of a scene object.")
-		.def_property_readonly(
+		.def_property(
 			"position",
 			[](const TransformProxy& self) { return ToTuple(self.Resolve()->GetPosition()); },
+			[](const TransformProxy& self, std::tuple<float, float, float> value)
+			{
+				const auto [x, y, z] = value;
+				EmitEvent(PositionChanged{self.uid, x, y, z});
+			},
 			"World position as an (x, y, z) tuple.")
-		.def_property_readonly(
+		.def_property(
 			"rotation",
 			[](const TransformProxy& self) { return ToTuple(self.Resolve()->GetRotation()); },
+			[](const TransformProxy& self, std::tuple<float, float, float> value)
+			{
+				const auto [x, y, z] = value;
+				EmitEvent(RotationChanged{self.uid, x, y, z});
+			},
 			"Euler rotation in degrees as an (x, y, z) tuple.")
-		.def_property_readonly(
+		.def_property(
 			"scale",
 			[](const TransformProxy& self) { return ToTuple(self.Resolve()->GetScale()); },
+			[](const TransformProxy& self, std::tuple<float, float, float> value)
+			{
+				const auto [x, y, z] = value;
+				EmitEvent(ScaleChanged{self.uid, x, y, z});
+			},
 			"Per-axis scale as an (x, y, z) tuple.");
 
 	py::class_<ObjectProxy>(data, "Object", "Read-only proxy over a scene object.")
@@ -96,9 +113,13 @@ void RegisterObjectBindings(py::module_& data)
 			"type",
 			[](const ObjectProxy& self) { return static_cast<int>(self.Resolve()->o_type); },
 			"The object's `ObjectID::GOType` value.")
-		.def_property_readonly(
+		.def_property(
 			"visible",
 			[](const ObjectProxy& self) { return self.Resolve()->is_viewport; },
+			[](const ObjectProxy& self, bool value)
+			{
+				EmitEvent(VisibilityChanged{self.uid, value, value});
+			},
 			"Whether the object is visible in the viewport.")
 		.def_property_readonly(
 			"transform",
@@ -156,6 +177,9 @@ void RegisterNeurusModule(py::module_& m)
 	RegisterObjectBindings(data);
 	RegisterSceneBindings(m, data);
 	RegisterConfigBindings(data);
+
+	// Scripted mutations are refused in this phase (design section 4.4).
+	py::register_exception<ReadOnlyError>(m, "ReadOnlyError", PyExc_RuntimeError);
 }
 
 }  // namespace script
