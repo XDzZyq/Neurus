@@ -18,6 +18,8 @@
 #include <memory>
 #include <string>
 
+#include "core/ScriptConsole.h"
+
 namespace neurus
 {
 
@@ -51,9 +53,26 @@ public:
 	/**
 	 * @brief Execute a Python snippet on the main thread.
 	 * @param code UTF-8 Python source.
-	 * @note A Python error is logged but never propagates to the host.
+	 * @note `stdout`/`stderr` are captured into the console buffer; a Python
+	 *       error is buffered and logged but never propagates to the host.
 	 */
 	void RunString(const std::string& code);
+
+	/**
+	 * @brief Execute a Python file on the main thread.
+	 * @param path Filesystem path to a UTF-8 Python source file.
+	 * @note Reads the file, then runs it under the same capture/error path as
+	 *       `RunString`; a missing file or Python error is logged but never
+	 *       propagates to the host.
+	 */
+	void RunFile(const std::string& path);
+
+	/**
+	 * @brief The engine's console buffer (captured output, errors, results).
+	 * @return A reference to the buffer owned by the PIMPL body; its lifetime
+	 *         matches the engine.
+	 */
+	ScriptConsoleBuffer& Console();
 
 private:
 	struct Impl;  ///< Python/pybind11-owning body; defined in ScriptEngineImpl.h

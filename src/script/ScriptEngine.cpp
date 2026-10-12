@@ -45,4 +45,14 @@ void ScriptEngine::RunString(const std::string& code)
 	m_impl->RunString(code);
 }
 
+void ScriptEngine::RunFile(const std::string& path)
+{
+	m_impl->RunFile(path);
+}
+
+ScriptConsoleBuffer& ScriptEngine::Console()
+{
+	return m_impl->Console();
+}
+
 }  // namespace neurus

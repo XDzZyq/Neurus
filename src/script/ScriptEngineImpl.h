@@ -15,6 +15,8 @@
 
 #include <Python.h>
 
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "core/Log.h"
@@ -113,31 +115,178 @@ struct ScriptEngine::Impl
 	}
 
 	/**
-	 * @brief Execute a Python snippet, logging (never throwing) on failure.
+	 * @brief Execute a Python snippet, buffering output and logging failures.
 	 * @param code UTF-8 Python source.
 	 */
 	void RunString(const std::string& code)
 	{
 		if (!m_ready)
 		{
-			NEURUS_ERR("ScriptEngine::RunString: scripting is not initialized");
+			NEURUS_ERR("scripting not initialized");
 			return;
 		}
 
-		pybind11::gil_scoped_acquire gil;
-		try
+		RunSource(code, "ScriptEngine::RunString");
+	}
+
+	/**
+	 * @brief Read and execute a Python file, buffering output and logging.
+	 * @param path Filesystem path to a UTF-8 Python source file.
+	 */
+	void RunFile(const std::string& path)
+	{
+		if (!m_ready)
 		{
-			pybind11::exec(code);
+			NEURUS_ERR("scripting not initialized");
+			return;
 		}
-		catch (const pybind11::error_already_set& e)
+
+		std::ifstream file(path, std::ios::binary);
+		if (!file)
 		{
-			// Full traceback capture and console routing arrive in a later task;
-			// for now the error is surfaced and never escapes to the host.
-			NEURUS_ERR("ScriptEngine::RunString failed: " << e.what());
+			NEURUS_ERR("ScriptEngine::RunFile: cannot open '" << path << "'");
+			return;
 		}
+
+		// Slurp the whole file: `py::exec` needs a complete source string, and
+		// CPython decodes UTF-8 source itself.
+		const std::string source((std::istreambuf_iterator<char>(file)),
+		                         std::istreambuf_iterator<char>());
+		RunSource(source, "ScriptEngine::RunFile");
+	}
+
+	/// @brief The buffer captured Python output and errors are written to.
+	ScriptConsoleBuffer& Console()
+	{
+		return m_console;
 	}
 
 private:
+	/// @brief Shared run path: GIL, stdout/stderr capture, error surfacing.
+	void RunSource(const std::string& source, const char* entryName)
+	{
+		pybind11::gil_scoped_acquire gil;
+
+		try
+		{
+			// Redirect before running so `print` and tracebacks land in the
+			// buffer. The guard restores the original streams on both the
+			// normal and the error path; it is destroyed (while the GIL is
+			// still held) as this try scope unwinds.
+			StreamRedirect redirect(m_console);
+			pybind11::exec(source, pybind11::globals(), pybind11::globals());
+		}
+		catch (const pybind11::error_already_set& e)
+		{
+			ReportError(e, entryName);
+		}
+	}
+
+	/// @brief Formats and routes a Python error to the console buffer and log.
+	void ReportError(const pybind11::error_already_set& e, const char* entryName)
+	{
+		std::string trace = FormatTraceback(e);
+		if (trace.empty())
+		{
+			trace = e.what();
+		}
+
+		m_console.Append(ScriptLineKind::Error, trace);
+		NEURUS_ERR(entryName << " failed:\n" << trace);
+	}
+
+	/**
+	 * @brief Renders an exception with Python's `traceback.format_exception`.
+	 * @return The formatted traceback, or empty when formatting fails (the
+	 *         caller then falls back to `e.what()`).
+	 */
+	std::string FormatTraceback(const pybind11::error_already_set& e)
+	{
+		try
+		{
+			pybind11::object traceback = pybind11::module_::import("traceback");
+			pybind11::list lines =
+				traceback.attr("format_exception")(e.type(), e.value(), e.trace());
+
+			std::string text;
+			for (auto line : lines)
+			{
+				text += line.cast<std::string>();
+			}
+			return text;
+		}
+		catch (const std::exception& formatError)
+		{
+			// Formatting is best-effort; `e.what()` still carries the type,
+			// value and a condensed trace, so let the caller fall back to it.
+			NEURUS_ERR("ScriptEngine: traceback formatting failed: " << formatError.what());
+			return {};
+		}
+	}
+
+	/**
+	 * @brief RAII redirection of Python `sys.stdout`/`sys.stderr`.
+	 *
+	 * Constructed with the GIL held and before a run, it installs two writer
+	 * objects that append to the engine's console buffer; the destructor
+	 * restores the saved streams. It is destroyed before the
+	 * `gil_scoped_acquire` guard, so restoration always happens with the GIL
+	 * held and on every exit path (success, Python error, host exception).
+	 */
+	class StreamRedirect
+	{
+	public:
+		explicit StreamRedirect(ScriptConsoleBuffer& console)
+		{
+			pybind11::object sys = pybind11::module_::import("sys");
+			m_sys = sys;
+			m_savedOut = sys.attr("stdout");
+			m_savedErr = sys.attr("stderr");
+			m_sys.attr("stdout") = MakeWriter(console, ScriptLineKind::Output);
+			m_sys.attr("stderr") = MakeWriter(console, ScriptLineKind::Error);
+		}
+
+		~StreamRedirect()
+		{
+			try
+			{
+				m_sys.attr("stdout") = m_savedOut;
+				m_sys.attr("stderr") = m_savedErr;
+			}
+			catch (const std::exception& restoreError)
+			{
+				NEURUS_ERR("ScriptEngine: failed to restore Python streams: "
+				           << restoreError.what());
+			}
+		}
+
+		StreamRedirect(const StreamRedirect&) = delete;
+		StreamRedirect& operator=(const StreamRedirect&) = delete;
+
+	private:
+		/// @brief Builds a minimal file-like object appending to `console`.
+		static pybind11::object MakeWriter(ScriptConsoleBuffer& console,
+		                                   ScriptLineKind kind)
+		{
+			// SimpleNamespace permits the attribute assignment that a bare
+			// `object` and `io.StringIO` (read-only `write`) do not.
+			pybind11::object writer =
+				pybind11::module_::import("types").attr("SimpleNamespace")();
+			writer.attr("write") = pybind11::cpp_function(
+				[&console, kind](const std::string& text) -> int
+				{
+					console.Append(kind, text);
+					return static_cast<int>(text.size());
+				});
+			writer.attr("flush") = pybind11::cpp_function([]() {});
+			return writer;
+		}
+
+		pybind11::object m_sys;
+		pybind11::object m_savedOut;
+		pybind11::object m_savedErr;
+	};
+
 	/**
 	 * @brief Attach a managed virtual environment to the base interpreter.
 	 * @param envPath Environment root (the directory that owns `pyvenv.cfg`).
@@ -169,6 +318,7 @@ private:
 	}
 
 	bool m_ready = false;
+	ScriptConsoleBuffer m_console;
 };
 
 }  // namespace neurus

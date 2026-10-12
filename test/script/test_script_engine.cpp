@@ -1,5 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <string>
+
+#include "core/Log.h"
+#include "core/ScriptConsole.h"
 #include "script/ScriptEngine.h"
 
 TEST(ScriptEngine, InitializesAndShutsDown)
@@ -17,4 +24,92 @@ TEST(ScriptEngine, RunStringExecutesWithoutThrowing)
 	ASSERT_TRUE(engine.Initialize());
 	EXPECT_NO_THROW(engine.RunString("x = 1 + 1\nassert x == 2"));
 	engine.Shutdown();
+}
+
+TEST(ScriptEngine, RaisingScriptLogsErrorAndSurvives)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
+	EXPECT_NO_THROW(engine.RunString("raise RuntimeError('boom')"));
+	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), before);
+	EXPECT_NO_THROW(engine.RunString("y = 5"));  // engine still usable
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, RunFileExecutesATempScript)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	const auto path = std::filesystem::temp_directory_path() / "neurus_runfile_test.py";
+	std::ofstream(path) << "import builtins\nbuiltins.__neurus_ran = True\n";
+	EXPECT_NO_THROW(engine.RunFile(path.string()));
+	engine.Shutdown();
+	std::filesystem::remove(path);
+}
+
+TEST(ScriptEngine, CapturesStdoutInConsole)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	EXPECT_NO_THROW(engine.RunString("print('neurus console capture')"));
+
+	bool found = false;
+	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
+	{
+		const neurus::ScriptLine line = engine.Console().At(i);
+		if (line.kind == neurus::ScriptLineKind::Output
+		    && line.text.find("neurus console capture") != std::string::npos)
+		{
+			found = true;
+		}
+	}
+	EXPECT_TRUE(found);
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, CapturesErrorTracebackInConsole)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.Console().Clear();
+	EXPECT_NO_THROW(engine.RunString("raise ValueError('neurus boom')"));
+
+	bool found = false;
+	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
+	{
+		const neurus::ScriptLine line = engine.Console().At(i);
+		if (line.kind == neurus::ScriptLineKind::Error
+		    && line.text.find("neurus boom") != std::string::npos)
+		{
+			found = true;
+		}
+	}
+	EXPECT_TRUE(found);
+	engine.Shutdown();
+}
+
+TEST(ScriptConsoleBuffer, RingDropsOldestAndAssignsSeq)
+{
+	neurus::ScriptConsoleBuffer buffer;
+	for (int i = 0; i < 5; ++i)
+	{
+		buffer.Append(neurus::ScriptLineKind::Input, std::to_string(i));
+	}
+	EXPECT_EQ(buffer.Size(), 5u);
+	EXPECT_EQ(buffer.At(0).text, "0");
+	EXPECT_LT(buffer.At(0).seq, buffer.At(4).seq);
+
+	// Overflow: push past capacity and confirm the oldest lines are dropped.
+	for (std::size_t i = 5; i < neurus::kScriptConsoleCapacity + 10; ++i)
+	{
+		buffer.Append(neurus::ScriptLineKind::Output, std::to_string(i));
+	}
+	EXPECT_EQ(buffer.Size(), neurus::kScriptConsoleCapacity);
+	EXPECT_EQ(buffer.At(0).text, "10");  // 0..9 evicted
+	EXPECT_EQ(buffer.At(neurus::kScriptConsoleCapacity - 1).text,
+	          std::to_string(neurus::kScriptConsoleCapacity + 9));
+
+	buffer.Clear();
+	EXPECT_EQ(buffer.Size(), 0u);
 }
