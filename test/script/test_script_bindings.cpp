@@ -4,11 +4,14 @@
  *
  * A script run against a filled `ScriptContext` must see every master-pool
  * object through `neurus.data.objects` (iterable and keyed by UID) and read
- * live transform values. A run with no context - or with a scene that holds no
- * objects - must yield an empty collection without dereferencing anything.
+ * live transform values. A run whose context has no scene - or whose scene
+ * holds no objects - must yield an empty collection without dereferencing
+ * anything.
  */
 
 #include <gtest/gtest.h>
+
+#include <glm/glm.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -47,37 +50,54 @@ TEST(ScriptBindings, ReadsSceneObjects)
 
 	auto mesh = std::make_shared<neurus::Mesh>();
 	auto camera = std::make_shared<neurus::Camera>();
+
+	// Distinctive, non-symmetric TRS values: an axis swap, a transposed scale
+	// or a wrong rotation component changes the exact tuples asserted below.
+	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+	mesh->SetRotation(glm::vec3(10.0f, 20.0f, 30.0f));
+	mesh->SetScale(glm::vec3(4.0f, 5.0f, 6.0f));
+
 	scene.UseMesh(mesh);
 	scene.UseCamera(camera);
 
 	neurus::ScriptContext ctx;
 	neurus::BuildScriptContext(scene, cfg, ctx);
 
+	// Look the mesh up by UID: iteration order of the unordered master pool is
+	// unspecified, so `objs[0]` could be either object.
+	const std::string meshUid = std::to_string(mesh->GetObjectID());
+	const std::string meshType = std::to_string(static_cast<int>(neurus::ObjectID::GOType::GO_MESH));
+
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
 	engine.SetContext(ctx);
 
-	EXPECT_TRUE(RunCleanly(engine,
+	const std::string script =
 		"import neurus\n"
 		"objs = list(neurus.data.objects)\n"
-		"assert len(objs) >= 2\n"
-		"p = objs[0].transform.position\n"
-		"assert len(p) == 3\n"
-		// Indexing by UID returns the same object and reading the remaining
-		// properties does not raise.
-		"assert neurus.data.objects[objs[0].uid].uid == objs[0].uid\n"
-		"assert objs[0].name is not None\n"
-		"assert isinstance(objs[0].type, int)\n"
-		"assert isinstance(objs[0].visible, bool)\n"));
+		"assert len(objs) == 2\n"
+		"mesh = neurus.data.objects[" + meshUid + "]\n"
+		"assert mesh is not None\n"
+		// The integer-valued floats below are exactly representable, so exact
+		// tuple equality is sound and catches an axis swap.
+		"assert tuple(mesh.transform.position) == (1.0, 2.0, 3.0)\n"
+		"assert tuple(mesh.transform.rotation) == (10.0, 20.0, 30.0)\n"
+		"assert tuple(mesh.transform.scale) == (4.0, 5.0, 6.0)\n"
+		"assert mesh.type == " + meshType + "\n"
+		"assert isinstance(mesh.name, str)\n"
+		"assert isinstance(mesh.visible, bool)\n";
+
+	EXPECT_TRUE(RunCleanly(engine, script));
 
 	engine.Shutdown();
 }
 
-TEST(ScriptBindings, EmptyContextYieldsNoObjects)
+TEST(ScriptBindings, NoSceneYieldsNoObjects)
 {
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	// No SetContext call: the bindings must see a null context and stay safe.
+	// No SetContext call: the run still publishes a context, but its borrowed
+	// scene is null, which is the branch the bindings must survive.
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n"
