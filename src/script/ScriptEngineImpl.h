@@ -242,8 +242,33 @@ private:
 			m_sys = sys;
 			m_savedOut = sys.attr("stdout");
 			m_savedErr = sys.attr("stderr");
-			m_sys.attr("stdout") = MakeWriter(console, ScriptLineKind::Output);
-			m_sys.attr("stderr") = MakeWriter(console, ScriptLineKind::Error);
+
+			// Build both writers before touching `sys`, so a failure in either
+			// MakeWriter leaves the interpreter's streams untouched.
+			pybind11::object outWriter = MakeWriter(console, ScriptLineKind::Output);
+			pybind11::object errWriter = MakeWriter(console, ScriptLineKind::Error);
+
+			try
+			{
+				m_sys.attr("stdout") = outWriter;
+				m_sys.attr("stderr") = errWriter;
+			}
+			catch (...)
+			{
+				// A half-installed redirect must not outlive the constructor,
+				// since a throwing constructor never runs the destructor.
+				try
+				{
+					m_sys.attr("stdout") = m_savedOut;
+					m_sys.attr("stderr") = m_savedErr;
+				}
+				catch (const std::exception& restoreError)
+				{
+					NEURUS_ERR("ScriptEngine: failed to restore Python streams after a "
+					           "redirect failure: " << restoreError.what());
+				}
+				throw;
+			}
 		}
 
 		~StreamRedirect()

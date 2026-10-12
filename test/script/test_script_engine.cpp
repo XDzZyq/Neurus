@@ -42,8 +42,35 @@ TEST(ScriptEngine, RunFileExecutesATempScript)
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
 	const auto path = std::filesystem::temp_directory_path() / "neurus_runfile_test.py";
-	std::ofstream(path) << "import builtins\nbuiltins.__neurus_ran = True\n";
+	std::ofstream(path) << "import builtins\n"
+	                       "builtins.__neurus_ran = True\n"
+	                       "print('neurus runfile output')\n";
+
+	engine.Console().Clear();
+	const std::size_t errorsBefore = neurus::LogBuffer::instance().ErrorCount();
 	EXPECT_NO_THROW(engine.RunFile(path.string()));
+	// A raising run would have logged an error instead of executing cleanly.
+	EXPECT_EQ(neurus::LogBuffer::instance().ErrorCount(), errorsBefore);
+
+	// Prove the file ran: the flag it set is visible to a later snippet
+	// (a failed `assert` raises, which RunString logs rather than throws).
+	const std::size_t beforeFlagCheck = neurus::LogBuffer::instance().ErrorCount();
+	EXPECT_NO_THROW(engine.RunString("import builtins; assert builtins.__neurus_ran"));
+	EXPECT_EQ(neurus::LogBuffer::instance().ErrorCount(), beforeFlagCheck);
+
+	// Prove its stdout was captured into the console buffer.
+	bool captured = false;
+	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
+	{
+		const neurus::ScriptLine line = engine.Console().At(i);
+		if (line.kind == neurus::ScriptLineKind::Output
+		    && line.text.find("neurus runfile output") != std::string::npos)
+		{
+			captured = true;
+		}
+	}
+	EXPECT_TRUE(captured);
+
 	engine.Shutdown();
 	std::filesystem::remove(path);
 }
