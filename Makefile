@@ -19,7 +19,8 @@ else
   PYTHON        := python
 endif
 
-.PHONY: configure build test clean nobuild release help app check update
+.PHONY: configure build test clean nobuild release help app check update \
+        doc doc-deps doc-graph doc-serve
 
 # --- Debug (default) ---
 
@@ -80,6 +81,63 @@ nobuild:
 	@echo "  Open it in VS 2022, right-click Neurus -> Set as Startup Project, then F5."
 	@echo ""
 
+# --- Documentation ---
+
+# The web documentation has two generated inputs besides the hand-written pages
+# under docs/: the Doxygen API reference, which mkdoxy produces as a MkDocs
+# plugin during the build, and the graphify structure graph, which is a separate
+# tool and so is run here. Both land in docs/ and are gitignored.
+#
+# Prose-only edits need none of this: install .github/requirements-docs.txt and
+# run `mkdocs serve`. The structure-graph link degrades to a 404 without it,
+# which is why that link is raw HTML rather than a validated markdown link.
+
+doc-deps:
+	$(PYTHON) -m pip install -r .github/requirements-docs.txt \
+	                         -r .github/requirements-graph.txt
+
+# AST-only and keyless: .graphifyignore confines the scan to src/, so nothing
+# reaches the semantic pass.
+#
+# post_rebuild_cleanup.py is not optional. The raw extraction is ~5x larger and
+# dominated by noise (C++ keywords, STL, Vulkan-HPP, GLM and Qt type nodes), with
+# hundreds of trivial communities named after whatever symbol happens to be their
+# hub. The script strips that noise, merges duplicate and file-vs-class nodes,
+# prunes communities of three nodes or fewer, applies the curated naming rules,
+# then regenerates graph.json, GRAPH_REPORT.md and graph.html. Skipping it also
+# pushes the graph past graphify's 5000-node visualisation ceiling, which
+# silently degrades the page to a community-only aggregate.
+doc-graph:
+	@command -v graphify >/dev/null 2>&1 \
+	  || { echo "graphify not on PATH - run: make doc-deps"; exit 1; }
+	graphify extract . --out .
+	$(PYTHON) graphify-out/post_rebuild_cleanup.py
+	cp graphify-out/graph.html docs/graphify.html
+
+# Structure graph + full site. Mirrors what .github/workflows/docs_build.yml
+# does, minus the Pages upload, so a green `make doc` predicts a green deploy.
+#
+# The build is retried once because mkdoxy 1.2.8 ignores doxygen's exit code and
+# stderr, so an intermittent doxygen failure surfaces only later as a missing
+# index.xml - roughly one clean run in four. See
+# .github/instructions/lessons.instructions.md.
+doc: doc-graph
+	@command -v mkdocs >/dev/null 2>&1 \
+	  || { echo "mkdocs not on PATH - run: make doc-deps"; exit 1; }
+	@if mkdocs build --strict; then :; else \
+	  echo ""; \
+	  echo "  mkdocs build failed (likely the mkdoxy/doxygen flake) - retrying once"; \
+	  echo ""; \
+	  rm -rf site; \
+	  mkdocs build --strict; \
+	fi
+	@echo ""
+	@echo "  Site built at site/index.html"
+	@echo ""
+
+doc-serve: doc-graph
+	mkdocs serve
+
 # --- Help ---
 
 help:
@@ -98,6 +156,10 @@ help:
 	@echo "  make clean          - Clean Debug build"
 	@echo "  make release        - Configure + Build Release"
 	@echo "  make nobuild        - Generate VS 2022 solution at ../Neurus_VS2022"
+	@echo ""
+	@echo "  make doc-deps       - Install pinned MkDocs + graphify dependencies"
+	@echo "  make doc            - Build structure graph + web documentation into site/"
+	@echo "  make doc-serve      - Build structure graph, then serve docs with live reload"
 
 # --- Dependency Setup ---
 
