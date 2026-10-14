@@ -335,6 +335,24 @@ void UIManager::CreateMenus()
 		neurus::UIEvents::instance().requestScreenshotAll();
 	});
 
+	// Reuses the "Run Script" key already translated for the console + dialog.
+	auto* runScriptAction = trAction(toolsMenu, N_("Run Script"));
+	runScriptAction->setObjectName(QStringLiteral("runScriptAction"));
+	connect(runScriptAction, &QAction::triggered, this, [this]() {
+		const QString path = QFileDialog::getOpenFileName(
+			this, I18n::instance().translate("Run Script"), QString(),
+			QStringLiteral("Python scripts (*.py);;All files (*)"));
+		if (path.isEmpty())
+		{
+			return;
+		}
+		if (auto* dock = GetDock(PanelType::ScriptConsole))
+		{
+			dock->toggleView(true);
+		}
+		neurus::UIEvents::instance().requestRunScriptFile(path);
+	});
+
 	auto* helpMenu = addMenu(menuBar(), N_("&Help"));
 	auto* aboutAction = trAction(helpMenu, N_("&About Neurus"));
 	connect(aboutAction, &QAction::triggered, this, [this]() {

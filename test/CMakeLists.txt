@@ -89,6 +89,7 @@ add_executable(neurus_test
 	ui/test_ui_context.cpp
 	ui/test_shader_highlighter_python.cpp
 	ui/test_script_console_panel.cpp
+	ui/test_run_script_menu.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
 )
