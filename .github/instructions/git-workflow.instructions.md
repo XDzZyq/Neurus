@@ -13,6 +13,13 @@ under [`docs/`](../../docs/README.md).
 ## General Rules
 
 - Prefer Git submodule.
+- **Push Neurus-Lib before Neurus.** Check `git -C lib status` (and whether the
+  `lib` pointer moved) before every push. When Neurus-Lib has changes: (1) commit
+  and push them to Neurus-Lib, (2) wait until its build/release GitHub Action
+  succeeds and publishes the release, (3) only then push Neurus. Neurus CI
+  downloads the prebuilt libraries from that release, so pushing Neurus first -
+  or against a Neurus-Lib commit whose release is not out yet - breaks Neurus CI.
+  See [lessons.instructions.md](lessons.instructions.md).
 - For renaming and moving, use `git mv` to track the history.
 - Any files should not include absolute path.
 - Complete and double check all aspects (tests, coding style, document) of the

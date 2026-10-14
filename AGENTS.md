@@ -122,6 +122,11 @@ Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
   they never invoke the build system, run `ctest` or launch `Neurus.exe`.
 - Only **one** agent runs `ctest`/`Neurus.exe` at a time - the binary is locked.
 - Never `git stash` while others are editing.
+- **Push Neurus-Lib before Neurus.** If the `lib` submodule is modified (or its
+  pointer moved), push Neurus-Lib and wait for its build/release workflow to
+  succeed before pushing Neurus - Neurus CI downloads the prebuilt libs from that
+  release, so pushing Neurus first breaks CI. See
+  [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md).
 - Keep changes minimal and localized; respect layer isolation. See
   [roles.instructions.md](.github/instructions/roles.instructions.md) for the
   full set.
