@@ -99,6 +99,7 @@ Stop and wait for user verification after each phase.
 | Coding rules (format, naming, RAII, errors, comments, shaders) | [conventions.instructions.md](.github/instructions/conventions.instructions.md), [docs/style/style.md](docs/style/style.md), [docs/style/conventions.md](docs/style/conventions.md) |
 | Feature-development workflow | [development.instructions.md](.github/instructions/development.instructions.md) |
 | Build/test commands, build trees, worktrees, graphify | [tips.instructions.md](.github/instructions/tips.instructions.md), [docs/build/build.md](docs/build/build.md), [docs/build/test.md](docs/build/test.md) |
+| Web documentation (`make doc`, MkDocs, API reference, structure graph) | [docs/build/build.md](docs/build/build.md#web-documentation), [tips.instructions.md](.github/instructions/tips.instructions.md) |
 | Encountered issues / pitfalls (symptom -> rule) | [lessons.instructions.md](.github/instructions/lessons.instructions.md) |
 | Git, branch, worktree and commit conventions | [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md) |
 | Agent roles, parallel lanes, racing prevention | [roles.instructions.md](.github/instructions/roles.instructions.md) |
