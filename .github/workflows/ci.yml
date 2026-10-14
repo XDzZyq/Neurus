@@ -1,13 +1,73 @@
 name: CI
 
+# Documentation-only changes never reach the compiler, and the matrix is four
+# legs of Qt + Vulkan SDK. Two different mechanisms keep them cheap, and they
+# are deliberately NOT symmetric:
+#
+#   * `push` filters at the trigger, so a documentation-only commit on master
+#     creates no CI run at all. `docs_build.yml` publishes it instead.
+#   * `pull_request` is intentionally UNFILTERED. A workflow skipped by a
+#     trigger filter never reports a status, so once `ci-gate` is a required
+#     check a docs-only PR would sit on "Expected — waiting for status"
+#     forever. The skip therefore happens in a job condition instead, where
+#     GitHub reports a skipped job as success.
+#
+# Branch protection must require `ci-gate` and nothing else. The matrix leg
+# names (`build (windows-2022, Debug, x64)`) are not a format GitHub documents,
+# and requiring them would mean editing the ruleset on every matrix change.
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.graphifyignore'
+      - 'scripts/post_rebuild_cleanup.py'
+      - '.github/requirements-docs.txt'
+      - '.github/requirements-graph.txt'
+      - '.github/workflows/docs_build.yml'
+      - '**/*.md'
   pull_request:
     branches: [main, master]
 
 jobs:
+  # Decides whether this change touches anything the compiler cares about.
+  # Mirrors the `paths-ignore` list above as negations; keep the two in sync.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `some-with-excludes` is required, not cosmetic: under the default `some`
+      # quantifier a documentation file still matches the leading `**` and the
+      # negations below are ignored, so `code` would always be true.
+      - name: Detect non-documentation changes
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          predicate-quantifier: 'some-with-excludes'
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!mkdocs.yml'
+              - '!.graphifyignore'
+              - '!scripts/post_rebuild_cleanup.py'
+              - '!.github/requirements-docs.txt'
+              - '!.github/requirements-graph.txt'
+              - '!.github/workflows/docs_build.yml'
+              - '!**/*.md'
+
   build:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
     strategy:
       fail-fast: false
       matrix:
@@ -86,3 +146,49 @@ jobs:
       - name: Run Non-GPU Tests
         working-directory: build
         run: ctest -C ${{ matrix.configuration }} --output-on-failure
+
+  # The single stable status check for branch protection. Reports success when
+  # the matrix was skipped for a documentation-only pull request, and fails when
+  # a leg actually broke. `always()` is load-bearing: without it a skipped
+  # `build` would skip this job too, and the required check would never report.
+  ci-gate:
+    name: ci-gate
+    needs: [changes, build]
+    if: always()
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # Results arrive through `env` rather than inline `${{ }}` so nothing from
+      # the event payload is ever interpolated into the shell.
+      - name: Report matrix result
+        env:
+          CODE_CHANGED: ${{ needs.changes.outputs.code }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          echo "non-documentation changes: ${CODE_CHANGED:-<unset>}"
+          echo "changes job:               $CHANGES_RESULT"
+          echo "build matrix:              $BUILD_RESULT"
+
+          # A broken gate must not read as a green build: `build` would be
+          # `skipped` and this job would otherwise wave it through.
+          case "$CHANGES_RESULT" in
+            failure | cancelled)
+              echo "::error::change detection reported $CHANGES_RESULT"
+              exit 1
+              ;;
+          esac
+
+          # `skipped` is the documentation-only path and is a pass. Only a real
+          # failure or a cancellation fails the gate.
+          case "$BUILD_RESULT" in
+            failure | cancelled)
+              echo "::error::C++ build matrix reported $BUILD_RESULT"
+              exit 1
+              ;;
+          esac
+
+          if [ "$BUILD_RESULT" = "skipped" ]; then
+            echo "Documentation-only change — C++ matrix intentionally skipped."
+          fi

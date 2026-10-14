@@ -1,0 +1,5 @@
+# Python dependencies for the Neurus web documentation (see mkdocs.yml).
+# Pinned so a CI run and a local `mkdocs serve` build the same site.
+mkdocs==1.6.1
+mkdocs-material==9.6.21
+mkdoxy==1.2.8

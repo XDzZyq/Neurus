@@ -82,5 +82,27 @@ split that TU rather than adding the flag.
 The repository keeps a knowledge graph at `graphify-out/`, refreshed
 automatically by a git post-commit/post-checkout hook. Do **not** run
 `graphify update`/`rebuild` proactively; invoke it only through the `/graphify`
-skill or when the user asks. If `graphify-out/wiki/index.md` exists, prefer it
-for broad navigation. Dirty graphify-out files after a hook are expected.
+skill or when the user asks. Dirty graphify-out files after a hook are expected.
+
+Nothing in `graphify-out/` is tracked - it is entirely generated. The one
+hand-maintained piece is `scripts/post_rebuild_cleanup.py`, which is not
+optional and not cosmetic: it carries the noise filters and the community-naming
+rules, and pins `PYTHONHASHSEED` so clustering is reproducible. The raw
+extraction is roughly 5,300 nodes across 300 communities named after arbitrary
+hub symbols; after cleanup it is around 3,000 nodes across ~130 named
+communities.
+Skipping it also pushes the graph past graphify's 5,000-node visualisation
+ceiling, which silently degrades the HTML to a community-only aggregate. The
+full pipeline is therefore two steps, not one:
+
+```bash
+graphify extract . --out .
+python scripts/post_rebuild_cleanup.py   # also writes graph.html
+```
+
+The web documentation publishes that graph as `docs/graphify.html`. `make doc`
+runs the pipeline above and then builds the site; the docs workflow does the same
+with both graphify steps marked `continue-on-error`, so a graphify regression
+degrades to a stub page instead of blocking the deploy. The scan is confined to
+`src/` by `.graphifyignore`, which is what keeps it local and free of API calls -
+widening it to `docs/` would activate the semantic pass and require a key.

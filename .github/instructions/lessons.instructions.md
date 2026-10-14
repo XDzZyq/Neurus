@@ -101,3 +101,29 @@ the **rule** that prevents it. Design detail behind these lives in
 - **Replacement characters appear where non-ASCII used to be in source.** Rule:
   never use PowerShell `Set-Content -Force`; use the native `write`/`edit` tools,
   which preserve UTF-8.
+
+## Documentation build
+
+- **`mkdocs build` dies on `FileNotFoundError: site/assets/.doxy/<project>/xml/index.xml`.**
+  Not a doxygen fault - doxygen run standalone over `src/` succeeds every time.
+  mkdoxy 1.2.8 does not check its own subprocess: `doxyrun.py` `run()` discards
+  stderr and ignores the return code, so an intermittent doxygen failure passes
+  silently and the build dies later reading the missing index. Measured near one
+  clean run in four. `mkdocs` cleans `site/` at the start of every build, so the
+  bad state does not persist and a plain re-run usually succeeds. Rule: keep the
+  single retry in `make doc` and `docs_build.yml`; do not mistake it for a
+  config error in `mkdocs.yml`. If it does wedge, `rm -rf site .mkdoxy docs/Neurus`.
+- **`mkdocs build --strict` fails on a link to generated output.**
+  `validation.links.not_found` defaults to a warning, which `--strict` promotes
+  to an error, so a markdown link to a gitignored artifact such as
+  `docs/graphify.html` breaks every build where that artifact is absent. Rule:
+  link generated files with a raw `<a href>`, which MkDocs leaves unvalidated.
+  Remember it is also left unrewritten, so the path must be URL-relative to the
+  rendered page, not source-relative.
+- **The structure graph publishes as a few hundred community blobs instead of
+  symbols, with names like `string` or `SceneController.cpp`.**
+  `graphify extract` alone was run. Rule: always follow it with
+  `python scripts/post_rebuild_cleanup.py`, which strips noise nodes, merges
+  duplicates, prunes tiny communities and applies the curated names. Without it
+  the graph also exceeds graphify's 5000-node viz ceiling and silently degrades
+  to a community-only aggregate.
