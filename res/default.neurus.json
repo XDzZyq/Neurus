@@ -3,7 +3,7 @@
         "m_resources": {
             "resources_": [
                 {
-                    "key": 13,
+                    "key": 113,
                     "value": {
                         "polymorphic_id": 2147483649,
                         "polymorphic_name": "neurus::Camera",
@@ -12,9 +12,57 @@
                             "data": {
                                 "value0": {
                                     "value0": {
-                                        "o_id": 13
+                                        "o_id": 113
                                     },
-                                    "o_name": "",
+                                    "o_name": "Camera",
+                                    "o_type": 0,
+                                    "is_viewport": true,
+                                    "is_rendered": true
+                                },
+                                "transform": {
+                                    "m_position": {
+                                        "x": 0.0,
+                                        "y": -5.0,
+                                        "z": 2.0
+                                    },
+                                    "m_rotation": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_scale": {
+                                        "x": 1.0,
+                                        "y": 1.0,
+                                        "z": 1.0
+                                    }
+                                },
+                                "cam_w": 1012.0,
+                                "cam_h": 746.0,
+                                "cam_pers": 60.0,
+                                "cam_near": 0.10000000149011612,
+                                "cam_far": 100.0,
+                                "cam_tar": {
+                                    "x": 0.0,
+                                    "y": 0.0,
+                                    "z": 0.0
+                                },
+                                "cam_floatData": []
+                            }
+                        }
+                    }
+                },
+                {
+                    "key": 114,
+                    "value": {
+                        "polymorphic_id": 1,
+                        "ptr_wrapper": {
+                            "id": 2147483650,
+                            "data": {
+                                "value0": {
+                                    "value0": {
+                                        "o_id": 114
+                                    },
+                                    "o_name": "Camera",
                                     "o_type": 0,
                                     "is_viewport": true,
                                     "is_rendered": true
@@ -52,15 +100,15 @@
                     }
                 },
                 {
-                    "key": 14,
+                    "key": 115,
                     "value": {
                         "polymorphic_id": 2147483650,
                         "polymorphic_name": "neurus::MeshData",
                         "ptr_wrapper": {
-                            "id": 2147483650,
+                            "id": 2147483651,
                             "data": {
                                 "value0": {
-                                    "o_id": 14
+                                    "o_id": 115
                                 },
                                 "m_path": "res/obj/sphere.obj"
                             }
@@ -68,16 +116,16 @@
                     }
                 },
                 {
-                    "key": 15,
+                    "key": 116,
                     "value": {
                         "polymorphic_id": 2147483651,
                         "polymorphic_name": "neurus::Mesh",
                         "ptr_wrapper": {
-                            "id": 2147483651,
+                            "id": 2147483652,
                             "data": {
                                 "value0": {
                                     "value0": {
-                                        "o_id": 15
+                                        "o_id": 116
                                     },
                                     "o_name": "Mesh",
                                     "o_type": 1,
@@ -96,12 +144,12 @@
                                         "z": 0.0
                                     },
                                     "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
+                                        "x": 0.13500000536441804,
+                                        "y": 0.13500000536441804,
+                                        "z": 0.13500000536441804
                                     }
                                 },
-                                "o_meshDataId": 14,
+                                "o_meshDataId": 115,
                                 "o_shaderId": 0,
                                 "using_shadow": true,
                                 "using_material": true,
@@ -112,18 +160,18 @@
                     }
                 },
                 {
-                    "key": 16,
+                    "key": 117,
                     "value": {
                         "polymorphic_id": 2147483652,
                         "polymorphic_name": "neurus::Light",
                         "ptr_wrapper": {
-                            "id": 2147483652,
+                            "id": 2147483653,
                             "data": {
                                 "value0": {
                                     "value0": {
-                                        "o_id": 16
+                                        "o_id": 117
                                     },
-                                    "o_name": "",
+                                    "o_name": "Point Light",
                                     "o_type": 2,
                                     "is_viewport": true,
                                     "is_rendered": true
@@ -162,15 +210,15 @@
                     }
                 },
                 {
-                    "key": 17,
+                    "key": 118,
                     "value": {
                         "polymorphic_id": 2147483653,
                         "polymorphic_name": "neurus::ImageData",
                         "ptr_wrapper": {
-                            "id": 2147483653,
+                            "id": 2147483654,
                             "data": {
                                 "value0": {
-                                    "o_id": 17
+                                    "o_id": 118
                                 },
                                 "m_path": "res/tex/hdr/room.hdr"
                             }
@@ -178,16 +226,16 @@
                     }
                 },
                 {
-                    "key": 18,
+                    "key": 119,
                     "value": {
                         "polymorphic_id": 2147483654,
                         "polymorphic_name": "neurus::Environment",
                         "ptr_wrapper": {
-                            "id": 2147483654,
+                            "id": 2147483655,
                             "data": {
                                 "value0": {
                                     "value0": {
-                                        "o_id": 18
+                                        "o_id": 119
                                     },
                                     "o_name": "Environment",
                                     "o_type": 4,
@@ -211,9 +259,336 @@
                                         "z": 1.0
                                     }
                                 },
-                                "o_imageDataId": 17,
+                                "o_imageDataId": 118,
                                 "m_intensity": 1.0,
                                 "m_rotation": 0.0
+                            }
+                        }
+                    }
+                },
+                {
+                    "key": 120,
+                    "value": {
+                        "polymorphic_id": 2147483655,
+                        "polymorphic_name": "neurus::DebugLine",
+                        "ptr_wrapper": {
+                            "id": 2147483656,
+                            "data": {
+                                "value0": {
+                                    "value0": {
+                                        "o_id": 120
+                                    },
+                                    "o_name": "DebugLine",
+                                    "o_type": 6,
+                                    "is_viewport": true,
+                                    "is_rendered": true
+                                },
+                                "transform": {
+                                    "m_position": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_rotation": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_scale": {
+                                        "x": 1.0,
+                                        "y": 1.0,
+                                        "z": 1.0
+                                    }
+                                },
+                                "m_color": {
+                                    "x": 0.949999988079071,
+                                    "y": 0.75,
+                                    "z": 0.15000000596046449,
+                                    "w": 1.0
+                                },
+                                "m_width": 3.0,
+                                "m_opacity": 1.0,
+                                "m_stipple": false,
+                                "m_vertices": [
+                                    {
+                                        "x": -4.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 4.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": -4.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 4.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": -4.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 4.0
+                                    }
+                                ],
+                                "m_xray": false
+                            }
+                        }
+                    }
+                },
+                {
+                    "key": 121,
+                    "value": {
+                        "polymorphic_id": 7,
+                        "ptr_wrapper": {
+                            "id": 2147483657,
+                            "data": {
+                                "value0": {
+                                    "value0": {
+                                        "o_id": 121
+                                    },
+                                    "o_name": "DebugLine",
+                                    "o_type": 6,
+                                    "is_viewport": true,
+                                    "is_rendered": true
+                                },
+                                "transform": {
+                                    "m_position": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_rotation": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_scale": {
+                                        "x": 1.0,
+                                        "y": 1.0,
+                                        "z": 1.0
+                                    }
+                                },
+                                "m_color": {
+                                    "x": 0.20000000298023225,
+                                    "y": 0.8999999761581421,
+                                    "z": 1.0,
+                                    "w": 0.800000011920929
+                                },
+                                "m_width": 1.0,
+                                "m_opacity": 1.0,
+                                "m_stipple": true,
+                                "m_vertices": [
+                                    {
+                                        "x": -4.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 4.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": -4.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 4.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": -4.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 4.0
+                                    }
+                                ],
+                                "m_xray": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "key": 122,
+                    "value": {
+                        "polymorphic_id": 2147483656,
+                        "polymorphic_name": "neurus::DebugPoints",
+                        "ptr_wrapper": {
+                            "id": 2147483658,
+                            "data": {
+                                "value0": {
+                                    "value0": {
+                                        "o_id": 122
+                                    },
+                                    "o_name": "DebugPoints",
+                                    "o_type": 7,
+                                    "is_viewport": true,
+                                    "is_rendered": true
+                                },
+                                "transform": {
+                                    "m_position": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_rotation": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_scale": {
+                                        "x": 1.0,
+                                        "y": 1.0,
+                                        "z": 1.0
+                                    }
+                                },
+                                "m_pointType": 2,
+                                "m_color": {
+                                    "x": 1.0,
+                                    "y": 0.3499999940395355,
+                                    "z": 0.3499999940395355,
+                                    "w": 1.0
+                                },
+                                "m_scale": 10.0,
+                                "m_opacity": 1.0,
+                                "m_projectionMode": 0,
+                                "m_points": [
+                                    {
+                                        "x": 4.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 4.0,
+                                        "z": 0.0
+                                    },
+                                    {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 4.0
+                                    }
+                                ],
+                                "m_xray": false
+                            }
+                        }
+                    }
+                },
+                {
+                    "key": 123,
+                    "value": {
+                        "polymorphic_id": 8,
+                        "ptr_wrapper": {
+                            "id": 2147483659,
+                            "data": {
+                                "value0": {
+                                    "value0": {
+                                        "o_id": 123
+                                    },
+                                    "o_name": "DebugPoints",
+                                    "o_type": 7,
+                                    "is_viewport": true,
+                                    "is_rendered": true
+                                },
+                                "transform": {
+                                    "m_position": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_rotation": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_scale": {
+                                        "x": 1.0,
+                                        "y": 1.0,
+                                        "z": 1.0
+                                    }
+                                },
+                                "m_pointType": 3,
+                                "m_color": {
+                                    "x": 1.0,
+                                    "y": 1.0,
+                                    "z": 0.6000000238418579,
+                                    "w": 1.0
+                                },
+                                "m_scale": 0.4000000059604645,
+                                "m_opacity": 1.0,
+                                "m_projectionMode": 1,
+                                "m_points": [
+                                    {
+                                        "x": 3.0,
+                                        "y": 3.0,
+                                        "z": 3.0
+                                    }
+                                ],
+                                "m_xray": false
+                            }
+                        }
+                    }
+                },
+                {
+                    "key": 124,
+                    "value": {
+                        "polymorphic_id": 2147483657,
+                        "polymorphic_name": "neurus::DebugMesh",
+                        "ptr_wrapper": {
+                            "id": 2147483660,
+                            "data": {
+                                "value0": {
+                                    "value0": {
+                                        "o_id": 124
+                                    },
+                                    "o_name": "DebugMesh",
+                                    "o_type": 8,
+                                    "is_viewport": true,
+                                    "is_rendered": true
+                                },
+                                "transform": {
+                                    "m_position": {
+                                        "x": 2.5,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_rotation": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_scale": {
+                                        "x": 0.13770000636577607,
+                                        "y": 0.13770000636577607,
+                                        "z": 0.13770000636577607
+                                    }
+                                },
+                                "m_meshDataId": 115,
+                                "m_color": {
+                                    "x": 0.4000000059604645,
+                                    "y": 1.0,
+                                    "z": 0.5,
+                                    "w": 1.0
+                                },
+                                "m_opacity": 0.8999999761581421,
+                                "m_xray": false
                             }
                         }
                     }
@@ -222,22 +597,32 @@
         },
         "m_scene": {
             "camIds": [
-                13
+                114
             ],
             "meshIds": [
-                15
+                116
             ],
             "lightIds": [
-                16
+                117
             ],
             "spriteIds": [],
-            "dLineIds": [],
-            "dPointsIds": [],
+            "dLineIds": [
+                120,
+                121
+            ],
+            "dPointsIds": [
+                122,
+                123
+            ],
             "envIds": [
-                18
+                119
             ],
             "selectedUids": [],
-            "activeUid": 0
+            "activeUid": 0,
+            "dMeshIds": [
+                124
+            ],
+            "activeCamUid": 0
         },
         "proj_config": {
             "r_pipeline": 1,
@@ -254,12 +639,16 @@
             "r_fxaa_subpix": 0.75,
             "r_fxaa_edge_threshold": 0.16599999368190766,
             "r_fxaa_edge_threshold_min": 0.08330000191926956,
-            "r_sampling_mode": 0
+            "r_sampling_mode": 0,
+            "r_debug_draw": true
         },
-        "ui": "AdnQywADAAAAAAAHAAAAAAAABkYAAAOhAAAABwAAAB4AAAZGAAADoQAAAAAAAAAABqsAAAAHAAAAHgAABkYAAAOh\nAAAD1XjalZPfT8IwEMff/Ssue8dtbERMxghBeTKCDvC5smM2jpZ0NwTjH+8VySLjR7KHZu33e/vc9dpG/e0qhw2aQmrVc/xbzwFUC51KlfWc2XTU6jr9OHqhQboRaoHpg158spfsCsIVzKsfHZgVaKo1Y4ZakZCKFWvHUbWGUa4F7RN4rCfrXBKxPDYSOYT2gJYFlIp6Tngx5qeK6XDMwKCAqXjfp4NhaQxaa1xSbrNyxJtMMyR4Fiv8p8Mw1wWmthg3jlyLuQh7RZVyFbyVpczqxGOzCXZi9BoN7WAiFOZ1bs1tAk4+hC3pMZWkTzpwbDbBziV+rbWhOrHSz8IS+Y1F3PbuIOh0ocMj8APwwxAi98/j7+Ggr7VqKfngsjNdOhhNdjLFLZUGwVZ+ekdqbhPwkz6p0EpXGhP4IfhdHmEAbe/+bFPc6hHx/MKjjG9+AXYVPdk=",
+        "ui": "AdnQywADAAAAAAAA////+QAABqoAAAP6AAAAAQAAADsAAAWeAAADKAAAAAACAAAABqsAAAAAAAAAFwAABqoAAAP6\nAAAD+HjajVNNb8IwDL3vV0S9Q2mLBpNKEWLjuA/xsXPWmC5aSKrEZTDtx89lU6VCaXdq7Pf6/Ow48fSwU2wP1kmjJ17QH3gMdGqE1NnEW68WvbE3TeIXnIk91ymIe5N+ELY8OoQd21Q/emztwFYxycyNRi41ZUo4iauYLZTheCowoPwyVxKR0k9WAlHwJNArBQqNEy+8yvmuONE/dWYWOFvxt5MlNi+shRIS1FTfFKhKe0R7lSIDZI98B+cgmyvjQJTW/ST2S8F22dyaHCwen7kG1ahdZzQWWMovcEk0HrJoHLHY/43p+9dzu4W9hM/cWGysXoFdnYXnsnQUYOlatzJrlK4R6vKXZPfOifwgJBrbOoTRLQsGQciiwV3XJIbnll1qZY7kyBkFjZ7rjC7TynQ3hnDAwsKG5nyxP43LsJW0alnbDEajkAW0DE3t+9U7o/OVd5vc/ADKoFIW",
         "m_history": {
             "undo": [],
             "redo": []
+        },
+        "m_editor": {
+            "viewportCamUid": 113
         }
     }
 }
