@@ -97,12 +97,10 @@ screenshots/
 plans/
 specs/
 # Graphify knowledge graph
-# Everything under graphify-out/ is generated from src/ by `make doc`, except
-# post_rebuild_cleanup.py, which is hand-maintained source: it holds the noise
-# filters and the community-labelling rules that turn the raw extraction into
-# the curated graph, and it pins PYTHONHASHSEED so clustering is reproducible.
-graphify-out/*
-!graphify-out/post_rebuild_cleanup.py
+# Entirely generated from src/ by `make doc`. The only hand-maintained piece is
+# scripts/post_rebuild_cleanup.py, which holds the noise filters and the
+# community-naming rules and pins PYTHONHASHSEED so clustering is reproducible.
+graphify-out/
 
 # BEGIN oh-my-opencode-slim worktrees
 .slim/worktrees/

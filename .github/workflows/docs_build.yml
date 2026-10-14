@@ -16,6 +16,7 @@ on:
       - 'src/**'
       - 'mkdocs.yml'
       - '.graphifyignore'
+      - 'scripts/post_rebuild_cleanup.py'
       - '.github/requirements-docs.txt'
       - '.github/requirements-graph.txt'
       - '.github/workflows/docs_build.yml'
@@ -103,7 +104,8 @@ jobs:
       # AST-only and keyless: .graphifyignore confines the scan to src/, so no
       # markdown reaches the semantic pass and no API key is required.
       #
-      # post_rebuild_cleanup.py is the load-bearing second step, not a polish
+      # scripts/post_rebuild_cleanup.py is the load-bearing second step, not a
+      # polish
       # pass. The raw extraction is ~5x larger and mostly noise (C++ keywords,
       # STL, Vulkan-HPP, GLM, Qt type nodes) split across hundreds of trivial
       # communities. The script strips that, merges duplicates, prunes tiny
@@ -122,7 +124,7 @@ jobs:
         continue-on-error: true
         run: |
           graphify extract . --out .
-          python graphify-out/post_rebuild_cleanup.py
+          python scripts/post_rebuild_cleanup.py
           test -s graphify-out/graph.html
           cp graphify-out/graph.html docs/graphify.html
           echo "Structure graph: $(wc -c < docs/graphify.html) bytes."

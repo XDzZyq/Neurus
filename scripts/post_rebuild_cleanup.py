@@ -6,7 +6,7 @@ Called by git hooks after _rebuild_code() completes. Transforms the raw
 (noisy) graph.json into a clean, clustered, community-labelled artifact.
 
 Usage:
-    python graphify-out/post_rebuild_cleanup.py
+    python scripts/post_rebuild_cleanup.py
 
 Must be run from the project root.
 """
@@ -25,12 +25,17 @@ from pathlib import Path
 os.environ['PYTHONHASHSEED'] = '0'
 
 # ── Paths ──────────────────────────────────────────────────────────────────
+# This script lives in scripts/ but operates on graphify's output directory,
+# which is a sibling. GRAPHIFY_OUT honours the same env override graphify itself
+# uses, so worktree and shared-output setups stay consistent; an absolute value
+# replaces the project-relative default.
 _SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = _SCRIPT_DIR.parent  # graphify-out/ is a child of project root
-GRAPH_JSON = _SCRIPT_DIR / 'graph.json'
-REPORT_PATH = _SCRIPT_DIR / 'GRAPH_REPORT.md'
-LABELS_PATH = _SCRIPT_DIR / '.graphify_labels.json'
-HTML_PATH = _SCRIPT_DIR / 'graph.html'
+PROJECT_ROOT = _SCRIPT_DIR.parent  # scripts/ is a child of the project root
+GRAPHIFY_OUT = PROJECT_ROOT / os.environ.get('GRAPHIFY_OUT', 'graphify-out')
+GRAPH_JSON = GRAPHIFY_OUT / 'graph.json'
+REPORT_PATH = GRAPHIFY_OUT / 'GRAPH_REPORT.md'
+LABELS_PATH = GRAPHIFY_OUT / '.graphify_labels.json'
+HTML_PATH = GRAPHIFY_OUT / 'graph.html'
 
 # ── Noise label sets ───────────────────────────────────────────────────────
 

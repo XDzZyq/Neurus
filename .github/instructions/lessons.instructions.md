@@ -123,7 +123,7 @@ the **rule** that prevents it. Design detail behind these lives in
 - **The structure graph publishes as a few hundred community blobs instead of
   symbols, with names like `string` or `SceneController.cpp`.**
   `graphify extract` alone was run. Rule: always follow it with
-  `python graphify-out/post_rebuild_cleanup.py`, which strips noise nodes, merges
+  `python scripts/post_rebuild_cleanup.py`, which strips noise nodes, merges
   duplicates, prunes tiny communities and applies the curated names. Without it
   the graph also exceeds graphify's 5000-node viz ceiling and silently degrades
   to a community-only aggregate.

@@ -99,7 +99,8 @@ doc-deps:
 # AST-only and keyless: .graphifyignore confines the scan to src/, so nothing
 # reaches the semantic pass.
 #
-# post_rebuild_cleanup.py is not optional. The raw extraction is ~5x larger and
+# scripts/post_rebuild_cleanup.py is not optional. The raw extraction is ~5x
+# larger and
 # dominated by noise (C++ keywords, STL, Vulkan-HPP, GLM and Qt type nodes), with
 # hundreds of trivial communities named after whatever symbol happens to be their
 # hub. The script strips that noise, merges duplicate and file-vs-class nodes,
@@ -111,7 +112,7 @@ doc-graph:
 	@command -v graphify >/dev/null 2>&1 \
 	  || { echo "graphify not on PATH - run: make doc-deps"; exit 1; }
 	graphify extract . --out .
-	$(PYTHON) graphify-out/post_rebuild_cleanup.py
+	$(PYTHON) scripts/post_rebuild_cleanup.py
 	cp graphify-out/graph.html docs/graphify.html
 
 # Structure graph + full site. Mirrors what .github/workflows/docs_build.yml

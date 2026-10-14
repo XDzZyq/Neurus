@@ -76,7 +76,7 @@ Third-party and language-level nodes are filtered out, so STL containers,
 Vulkan-HPP handles, GLM vector types and Qt widgets do not appear as symbols -
 only the Neurus code that uses them. Duplicate and file-versus-class nodes are
 merged, and communities of three nodes or fewer are pruned, which takes the raw
-extraction from roughly 5,300 nodes to 3,000 across 125 communities.
+extraction from roughly 5,300 nodes to around 3,000 across ~130 communities.
 
 Use it to trace a call path across layers, or to check whether a dependency
 crosses a boundary it should not. It complements the
