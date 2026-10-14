@@ -37,6 +37,19 @@ REPORT_PATH = GRAPHIFY_OUT / 'GRAPH_REPORT.md'
 LABELS_PATH = GRAPHIFY_OUT / '.graphify_labels.json'
 HTML_PATH = GRAPHIFY_OUT / 'graph.html'
 
+# ── Granularity ────────────────────────────────────────────────────────────
+# The graph is kept at type and function level. graphify's own `_callable` flag
+# is true for classes, structs, enums and functions and false for their members,
+# which separates the API surface from its fields almost exactly. Dropping the
+# falsy side removes member variables, enumerators and the external-include
+# "concept" nodes - together about 44% of nodes - and roughly halves the page
+# weight of graph.html. No call, inheritance or containment relation between
+# symbols is lost; the only relation that disappears entirely is `defines`,
+# which only ever linked a type to its own members.
+#
+# Set GRAPHIFY_KEEP_MEMBERS=1 to keep the detailed graph instead.
+KEEP_MEMBER_NODES = os.environ.get('GRAPHIFY_KEEP_MEMBERS', '').lower() in ('1', 'true', 'yes')
+
 # ── Noise label sets ───────────────────────────────────────────────────────
 
 # Step 1: Generic AST noise — labels that represent C++ keywords, STL types,
@@ -434,6 +447,62 @@ def merge_duplicate_labels(data):
     return data
 
 
+# ── Step 5: Drop member-level nodes ────────────────────────────────────────
+
+def remove_member_nodes(data):
+    """
+    Reduce the graph to types and functions, dropping their members.
+
+    Runs last so the file-node and duplicate-label merges above have already
+    redirected edges onto the surviving symbols; dropping members earlier would
+    throw those edges away instead of rehoming them.
+    """
+    if KEEP_MEMBER_NODES:
+        print('[cleanup] GRAPHIFY_KEEP_MEMBERS set - keeping member-level nodes')
+        return data
+
+    nodes = data.get('nodes', [])
+    links = data.get('links', [])
+
+    # A handful of enumerators carry _callable, so match them by edge role too:
+    # the target of a `case_of` edge is by definition an enum member.
+    enumerators = {
+        link.get('target') for link in links
+        if link.get('relation') == 'case_of'
+    }
+
+    keep, counts = [], Counter()
+    remove_ids = set()
+    for node in nodes:
+        if node.get('file_type') == 'concept':
+            counts['external include'] += 1
+        elif node['id'] in enumerators:
+            counts['enumerator'] += 1
+        elif not node.get('_callable'):
+            counts['member'] += 1
+        else:
+            keep.append(node)
+            continue
+        remove_ids.add(node['id'])
+
+    if not remove_ids:
+        return data
+
+    links_before = len(links)
+    data['nodes'] = keep
+    data['links'] = [
+        link for link in links
+        if link.get('source') not in remove_ids
+        and link.get('target') not in remove_ids
+    ]
+
+    detail = ', '.join(f'{v} {k}' for k, v in counts.most_common())
+    print(f'[cleanup] Dropped {len(remove_ids)} member-level nodes ({detail}) '
+          f'({len(nodes)} -> {len(keep)} nodes, '
+          f'{links_before} -> {len(data["links"])} edges)')
+    return data
+
+
 # ── Cleanup pipeline ───────────────────────────────────────────────────────
 
 def apply_cleanups(data):
@@ -441,6 +510,7 @@ def apply_cleanups(data):
     data = remove_noise_nodes(data)
     data = merge_file_nodes(data)
     data = merge_duplicate_labels(data)
+    data = remove_member_nodes(data)
     return data
 
 
