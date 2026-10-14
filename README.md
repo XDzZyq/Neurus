@@ -1,155 +1,79 @@
 # Neurus
 
-**C++20 Vulkan-HPP 1.4 Real-time Renderer**
-
-A real-time rendering framework with strict four-layer architecture
-(Renderer ↔ Editor ↔ UI ↔ Data & Resource). Built for experimentation
-with modern rendering algorithms.
+A real-time renderer built on C++20 and Vulkan-HPP 1.4, for experimenting with
+modern rendering techniques inside a strictly layered codebase.
 
 [![CI](https://github.com/XDzZyq/Neurus/actions/workflows/ci.yml/badge.svg)](https://github.com/XDzZyq/Neurus/actions/workflows/ci.yml)
+[![Docs](https://github.com/XDzZyq/Neurus/actions/workflows/docs_build.yml/badge.svg)](https://xdzzyq.github.io/Neurus/)
 
-## Architecture
+Neurus is as much an editor as a renderer: a Qt6 desktop application with a
+dockable viewport, scene outliner, transform gizmos and a live GLSL editor,
+sitting on a deferred PBR pipeline. The layers are kept deliberately isolated -
+the renderer never mutates application state, the UI never sees Vulkan - so
+passes and panels can be replaced without disturbing anything else.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│ UI Layer (Qt6 Widgets + ADS)                                 │
-│  owns: QWindow, UIEvents (QObject singleton)                 │
-└─────────────────────┬────────────────────────────────────────┘
-                      │ Qt Signals/Slots
-                      ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Editor Layer                                                 │
-│  owns: Project, UploadManager, Controllers                   │
-└─────────────────────┬────────────────────────────────────────┘
-                      │
-            ┌─────────┴──────────┐
-            ▼                    ▼
-┌───────────────────┐  ┌────────────────────────────────────────┐
-│ Data & Resource   │  │ Renderer Layer (Vulkan-HPP vk::raii)   │
-│  owns: allocators │  │  owns: VkInstance, VkDevice, VkQueue,  │
-│  descriptor pools │  │   VkSwapchainKHR, VkPipeline,          │
-│  pipeline cache   │  │   VkCommandBuffer, all GPU resources   │
-└───────────────────┘  └────────────────────────────────────────┘
-```
+## Documentation
 
-## Prerequisites
+**<https://xdzzyq.github.io/Neurus/>**
 
-- **Visual Studio 2022** (MSVC C++20 toolchain)
-- **CMake** >= 3.27
-- **Vulkan SDK** 1.4.x ([LunarG Vulkan SDK](https://vulkan.lunarg.com/))
-  - Set `VULKAN_SDK` environment variable
-- **Qt 6.8+** ([Qt for Windows](https://www.qt.io/download))
-  - Set `CMAKE_PREFIX_PATH` to Qt install (e.g., `C:\Qt\6.8.0\msvc2022_64`)
-- **GNU Make** (via [MSYS2](https://www.msys2.org/), [Chocolatey](https://chocolatey.org/), or Git Bash)
+Architecture and data flow, renderer internals, editor and UI guides, the build
+and test manuals, a Doxygen API reference generated from `src/`, and an
+interactive map of the source tree.
 
-## Quick Start
+## What's inside
+
+- **Deferred PBR pipeline** - shadow mapping, SSAO, image-based lighting, FXAA,
+  and temporal accumulation via Halton jitter
+- **Qt6 editor** - dockable viewport (Qt Advanced Docking), outliner, property
+  panels, transform gizmo, debug overlays, and translated UI
+- **Live shader editing** - per-mesh GLSL with pipeline rebuild on save
+- **Project workflow** - undo/redo operations and project serialization
+- **Tested** - GPU and non-GPU suites, including reference-image regression
+
+## Getting started
+
+Requires CMake 3.27+, the Vulkan SDK 1.4.x, Qt 6, and a C++20 toolchain
+(Visual Studio 2022 or AppleClang). GNU Make is used as a thin wrapper.
 
 ```bash
-# Clone with submodules
 git clone --recurse-submodules https://github.com/XDzZyq/Neurus.git
 cd Neurus
 
-# Download pre-compiled third-party libraries + configure (recommended)
-make update
-
-# Build Debug
-make build
-
-# Or only build the app or the test
-make app
-make test
-
-# Run the application
-./build/debug/Neurus.exe
-
-# Build Release
-cmake --preset release
-cmake --build build/release
-
-# Generate Visual Studio 2022 solution
-make nobuild
-# Opens: ../Neurus_VS2022/Neurus.sln
-
-# Run tests
-make check
+make update    # init submodules, fetch pre-compiled deps, configure CMake
+make build     # Debug build
+make check     # run the test suite
 ```
 
-## Project Structure
+`make help` lists every target. Platform specifics, the two build trees, and the
+pre-compiled dependency system are covered in the
+[build guide](docs/build/build.md).
+
+## Project structure
 
 ```
-Neurus/
-├── .github/
-│   ├── instructions/       # Architecture/component docs
-│   └── workflows/          # CI configuration
-├── cmake/                  # CMake helper modules (Dependencies.cmake)
-├── lib/                    # Neurus-Lib submodule (src/ sources + prebuilt/ binaries)
-├── res/shaders/            # GLSL shader source files
-├── scripts/                # Utility scripts (extract_i18n.py)
-├── src/
-│   ├── render/             # Renderer layer (Vulkan-HPP)
-│   ├── editor/             # Editor layer (logic, controllers)
-│   │   └── controllers/    # Controller implementations (CameraController)
-│   ├── ui/                 # UI layer (Qt6 Widgets + ADS)
-│   │   └── qml/            # QML source files
-│   ├── data/               # Data & Resource layer
-│   └── main.cpp            # Application entry point
-├── test/
-│   ├── render/             # Renderer unit tests
-│   └── editor/             # Editor unit tests
-├── AGENTS.md               # AI agent instructions
-├── CMakeLists.txt          # Root CMake build
-├── CMakePresets.json       # CMake presets
-├── Makefile                # Convenience build wrapper
-└── README.md               # This file
+src/
+  app/        application lifetime and wiring
+  render/     renderer: passes, pipelines, GPU resources (Vulkan-HPP)
+  editor/     application logic: scene mutation, controllers, operations
+  ui/         Qt6 Widgets presentation
+  scene/      Vulkan-free scene objects (camera, light, mesh, transform)
+  asset/      Vulkan-free CPU-side asset loading
+  core/       UIDs, serialization, logging, render config
+  platform/   native window and surface glue
+test/         mirrors src/, plus shared GPU test fixtures
+res/          shaders, meshes, textures, UI assets, translations
+docs/         product documentation (published as the site above)
+cmake/        CMake helper modules
+lib/          Neurus-Lib submodule: vendored sources and prebuilt binaries
+scripts/      tooling: translation extraction, knowledge-graph cleanup
 ```
 
-## Current Scope (Deferred PBR MVP)
+## Contributing
 
-The current deliverable is a deferred PBR renderer with shadow mapping,
-screen-space ambient occlusion, image-based lighting, and full G-Buffer pipeline:
-
-- Vulkan-HPP RAII instance, device, swapchain, pipeline
-- `VK_KHR_dynamic_rendering` for render passes
-- Qt6 Widgets window with Qt-Advanced-Docking-System (ADS)
-- Viewport as dockable central widget via ADS `CenterDockWidgetArea`
-- Qt Signals/Slots UIEvents singleton (UI↔Editor)
-- Typed EventQueue for Editor↔Renderer event dispatch
-- Swapchain recreation on window resize
-- Validation layers in Debug builds
-- Embedded SPIR-V shaders (compiled at CMake time)
-- Non-GPU Google Test samples (UIEvents, EventQueue)
-- Event-driven CameraController (orbit/zoom/dolly/pan via EventQueue)
-- OBJ mesh loading with MeshData (icosphere, cube, etc.)
-- Deferred PBR pipeline: ShadowDepthPass → GeometryPass → SSAOPass → LightingPass → IBLPass
-- Temporal shadow accumulation via Halton jitter (fixed EMA / moving average)
-- Shader Editor panel: per-mesh GLSL editing (Code + Structure modes) with live pipeline rebuild
-- Reference-image regression tests (capture → compare PNG)
-
-## Dependency Management
-
-Third-party libraries that benefit from ahead-of-time compilation (shaderc,
-Qt Advanced Docking) can be used as pre-compiled binaries via
-[Neurus-Lib](https://github.com/XDzZyq/Neurus-Lib).
-Run `make update` to init the submodules and download the latest binaries
-into `lib/prebuilt/<platform>/`. The CMake build system prefers pre-compiled
-binaries and falls back to source builds in `lib/src/` automatically. Qt
-Advanced Docking carries an extra condition: because it shares Qt's inline
-container template instantiations with our own translation units, its archive
-is only linked when the `build_info.txt` stamp beside it records the same Qt
-version and C++ standard this build uses — otherwise CMake says why and builds
-it from source. See
-[the build guide](docs/build/build.md) for details.
-
-## Code Style
-
-Follows [Blender C/C++ guidelines](https://developer.blender.org/docs/handbook/guidelines/c_cpp/):
-
-- **Indentation**: Tabs
-- **Braces**: Allman style
-- **Naming**: PascalCase for types and methods
-- **Comments**: Doxygen-style `/** @brief ... */` on public APIs
-- **RAII**: All resources initialized in constructor, released in destructor
-- **Includes**: Local first, then third-party, then STL; use `#pragma once`
+[`AGENTS.md`](AGENTS.md) is the entry point for the hard rules - layer
+isolation, Vulkan ownership, the coordinate system - and routes to the coding
+conventions and development workflow under
+[`.github/instructions/`](.github/instructions/README.md).
 
 ## License
 
