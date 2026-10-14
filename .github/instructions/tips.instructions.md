@@ -89,8 +89,11 @@ hand-maintained piece is `scripts/post_rebuild_cleanup.py`, which is not
 optional and not cosmetic: it carries the noise filters and the community-naming
 rules, and pins `PYTHONHASHSEED` so clustering is reproducible. The raw
 extraction is roughly 5,300 nodes across 300 communities named after arbitrary
-hub symbols; after cleanup it is around 3,000 nodes across ~130 named
-communities.
+hub symbols; after cleanup it is around 1,500 nodes across ~70 named
+communities. The script also holds the graph at type and function granularity -
+member variables, enumerators and external includes are dropped, keyed off
+graphify's `_callable` flag - which halves `graph.html`. Export the detailed
+graph with `GRAPHIFY_KEEP_MEMBERS=1`.
 Skipping it also pushes the graph past graphify's 5,000-node visualisation
 ceiling, which silently degrades the HTML to a community-only aggregate. The
 full pipeline is therefore two steps, not one:

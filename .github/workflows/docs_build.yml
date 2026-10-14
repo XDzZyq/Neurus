@@ -123,7 +123,7 @@ jobs:
         if: steps.graphify_install.outcome == 'success'
         continue-on-error: true
         run: |
-          graphify extract . --out .
+          graphify extract . --out . --force
           python scripts/post_rebuild_cleanup.py
           test -s graphify-out/graph.html
           cp graphify-out/graph.html docs/graphify.html

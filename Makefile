@@ -99,6 +99,13 @@ doc-deps:
 # AST-only and keyless: .graphifyignore confines the scan to src/, so nothing
 # reaches the semantic pass.
 #
+# `--force` is required for idempotency, not speed. The cleanup script below
+# overwrites graph.json with its cleaned output, and a normal incremental
+# extract would then treat that reduced graph as its baseline and whittle it
+# down further on every run - locally the graph shrank from 5,300 nodes to 1,769
+# over three invocations. `--force` skips the manifest gate so each run starts
+# from source. CI never saw this because a fresh checkout has no manifest.
+#
 # scripts/post_rebuild_cleanup.py is not optional. The raw extraction is ~5x
 # larger and
 # dominated by noise (C++ keywords, STL, Vulkan-HPP, GLM and Qt type nodes), with
@@ -111,7 +118,7 @@ doc-deps:
 doc-graph:
 	@command -v graphify >/dev/null 2>&1 \
 	  || { echo "graphify not on PATH - run: make doc-deps"; exit 1; }
-	graphify extract . --out .
+	graphify extract . --out . --force
 	$(PYTHON) scripts/post_rebuild_cleanup.py
 	cp graphify-out/graph.html docs/graphify.html
 
