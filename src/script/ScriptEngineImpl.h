@@ -89,10 +89,9 @@ struct ScriptEngine::Impl
 			return false;
 		}
 
-		if (!envPath.empty())
-		{
-			AttachEnvironment(envPath);
-		}
+		// An explicit path wins; otherwise the build-time default environment
+		// (the uv-managed lib/.venv) is attached, or skipped when it is absent.
+		AttachEnvironment(envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath);
 
 		m_ready = true;
 		return true;

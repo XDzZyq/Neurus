@@ -40,6 +40,7 @@
 #include "ui/panels/PropertyPanel.h"
 #include "ui/panels/RenderConfigPanel.h"
 #include "ui/panels/ShaderEditorPanel.h"
+#include "ui/panels/ScriptConsolePanel.h"
 #include "ui/panels/Viewport.h"
 
 #include <QApplication>
@@ -174,6 +175,7 @@ int Application::Run()
 
 	// Now renderer + uploadManager exist - safe to create Editor
 	InitEditor();
+	InitScripting();
 
 	const auto projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
 	const std::string objPath = kDefaultSceneObj;
@@ -329,12 +331,49 @@ void Application::InitEditor()
 	app_editor = std::make_unique<neurus::Editor>(app_renderer.get(), app_uploadManager.get());
 	app_editor->Initialize();
 
-	// Created here with the other subsystems, but deliberately NOT initialized:
-	// Python startup and env wiring arrive with the Script Console integration.
-	// Constructing it now gives NewFrameSignals a stable Console() buffer.
+	// Created here with the other subsystems so NewFrameSignals has a stable
+	// Console() buffer; python startup happens in InitScripting().
 	app_script = std::make_unique<neurus::ScriptEngine>();
 
 	NEURUS_LOG("[Application] Editor initialized, IBL handled by Editor");
+}
+
+void Application::InitScripting()
+{
+	if (!app_script)
+	{
+		return;
+	}
+
+	// The engine resolves its own environment (NEURUS_PYTHON_ENV override, else
+	// the build-time lib/.venv default). A failure degrades to a no-op engine.
+	app_script->Initialize();
+}
+
+void Application::OnRunScript(const std::string& code)
+{
+	if (!app_script || !app_editor)
+	{
+		return;
+	}
+
+	neurus::ScriptContext ctx;
+	neurus::BuildScriptContext(app_editor->GetScene(), app_editor->GetRenderConfig(), ctx);
+	app_script->SetContext(ctx);
+	app_script->RunString(code);
+}
+
+void Application::OnRunFile(const std::string& path)
+{
+	if (!app_script || !app_editor)
+	{
+		return;
+	}
+
+	neurus::ScriptContext ctx;
+	neurus::BuildScriptContext(app_editor->GetScene(), app_editor->GetRenderConfig(), ctx);
+	app_script->SetContext(ctx);
+	app_script->RunFile(path);
 }
 
 // =========================================================================
@@ -516,6 +555,21 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	// --- Undo/redo (Edit menu + shortcuts) → Editor ---
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::undoRequested);
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::redoRequested);
+
+	// --- Script Console → Application (runs Python through the engine) ---
+	// The console panel emits its own signals; the UIEvents requests let other
+	// UI (e.g. the Tools menu) trigger a run without holding the panel.
+	if (auto* console = app_mainWindow->GetPanel<neurus::ScriptConsolePanel>())
+	{
+		QObject::connect(console, &neurus::ScriptConsolePanel::runSnippetRequested,
+		                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+		QObject::connect(console, &neurus::ScriptConsolePanel::runFileRequested,
+		                 [this](const QString& path) { OnRunFile(path.toStdString()); });
+	}
+	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptRequested,
+	                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptFileRequested,
+	                 [this](const QString& path) { OnRunFile(path.toStdString()); });
 
 	// --- Outliner selection → Editor (via ConnectUIEvent → EventQueue) ---
 	if (auto* outliner = app_mainWindow->GetPanel<neurus::Outliner>())

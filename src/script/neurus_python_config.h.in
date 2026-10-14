@@ -16,3 +16,11 @@
 #pragma once
 
 #define NEURUS_PYTHON_HOME "@NEURUS_PYTHON_HOME@"
+
+/**
+ * @brief Build-time default managed-environment path (the uv env under `lib/`).
+ *
+ * `ScriptEngine::Initialize` attaches this environment's site-packages when the
+ * caller passes no explicit path. It may not exist (isolated base only).
+ */
+#define NEURUS_PYTHON_ENV "@NEURUS_PYTHON_ENV_STR@"

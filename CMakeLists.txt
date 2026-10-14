@@ -138,6 +138,8 @@ if(NEURUS_ENABLE_SCRIPTING)
 
 	# Generated home for the embedded interpreter (see ScriptEngineImpl.h).
 	file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated/script")
+	# Normalize the environment path so it is a valid C string literal.
+	file(TO_CMAKE_PATH "${NEURUS_PYTHON_ENV}" NEURUS_PYTHON_ENV_STR)
 	configure_file(
 		"${CMAKE_SOURCE_DIR}/src/script/neurus_python_config.h.in"
 		"${CMAKE_BINARY_DIR}/generated/script/neurus_python_config.h"

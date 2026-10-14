@@ -56,6 +56,7 @@ private:
 	bool InitVulkan();
 	bool InitRenderer();
 	void InitEditor();
+	void InitScripting();
 	void ResizeViewport(int width, int height);
 	void WireSignals();
 	void NewFrameSignals(UIEvents& uiEvents);
@@ -67,6 +68,10 @@ private:
 	void OnProjectNew();
 	void OnProjectOpen(const std::string& path);
 	void OnProjectSave(const std::string& path = std::string());
+
+	// --- Scripting (Script Console → ScriptEngine) ---
+	void OnRunScript(const std::string& code);
+	void OnRunFile(const std::string& path);
 
 	/** @brief Aggregated document dirtiness: editor scene/config OR UI-state drift. */
 	bool IsDirty() const;
