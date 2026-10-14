@@ -1,0 +1,140 @@
+# MkDocs Material configuration for the Neurus web documentation.
+#
+# The site is built from the in-tree product docs under `docs/` plus a Doxygen
+# API reference generated from `src/` by mkdoxy. It is published to GitHub Pages
+# by `.github/workflows/docs_build.yml` on every push to master that touches
+# `docs/`, `src/` or this file.
+#
+# Local preview:  make doc-deps && make doc-serve
+# (requires doxygen and graphviz on PATH for the API reference)
+
+site_name: Neurus
+site_description: C++20 Vulkan-HPP 1.4 real-time renderer built around strict layer isolation
+site_url: https://xdzzyq.github.io/Neurus/
+site_author: XDzZyq
+
+repo_url: https://github.com/XDzZyq/Neurus
+repo_name: XDzZyq/Neurus
+# The docs live on master; point "edit this page" at the source, not the build.
+edit_uri: edit/master/docs/
+
+copyright: Copyright &copy; XDzZyq
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  # The architecture docs lean on fenced box-drawing diagrams; superfences keeps
+  # them intact and enables nested fences inside lists.
+  - pymdownx.superfences
+  # content.code.copy only attaches a copy button to blocks the highlighter
+  # wraps, so highlight has to be enabled even though most Neurus fences are
+  # language-less diagrams.
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.details
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: README.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Layers: architecture/layers.md
+      - Data Flow: architecture/data-flow.md
+      - Ownership: architecture/ownership.md
+      - Coordinate System: core/coordinate-system.md
+  - Rendering:
+      - Overview: render/overview.md
+      - Passes: render/passes.md
+      - Render Graph: render/render-graph.md
+      - Buffers: render/buffers.md
+      - Resources: render/resources.md
+      - Shaders: render/shaders.md
+      - Temporal Accumulation: render/temporal.md
+  - Editor:
+      - Overview: editor/overview.md
+      - Viewport: editor/viewport.md
+      - Controllers: editor/controllers.md
+      - Events: editor/events.md
+      - Operations: editor/operations.md
+      - Transform Gizmo: editor/gizmo.md
+      - Debug Overlays: editor/debug-overlays.md
+  - UI:
+      - Overview: ui/overview.md
+      - Panels: ui/panels.md
+      - Items: ui/items.md
+      - Models: ui/models.md
+      - Internationalization: ui/i18n.md
+  - Core & Data:
+      - UID and Resources: core/uid-and-resources.md
+      - Serialization: core/serialization.md
+      - Render Config: core/render-config.md
+      - Logging: core/logging.md
+      - Scene Objects: scene/objects.md
+      - Transform: scene/transform.md
+      - Overlays: scene/overlays.md
+      - Debug Objects: scene/debug-objects.md
+      - Project Serialization: asset/project-serialization.md
+      - Data Resources: asset/data-resources.md
+  - Contributing:
+      - Style: style/style.md
+      - Conventions: style/conventions.md
+      - Build: build/build.md
+      - Test: build/test.md
+  - API Reference:
+      - Class Index: Neurus/classes.md
+      - Class List: Neurus/annotated.md
+      - Class Hierarchy: Neurus/hierarchy.md
+      - Namespaces: Neurus/namespaces.md
+      - Files: Neurus/files.md
+
+plugins:
+  - search
+  - mkdoxy:
+      projects:
+        Neurus:
+          src-dirs: src/
+          full-doc: True
+          doxy-cfg:
+            FILE_PATTERNS: "*.cpp *.h*"
+            RECURSIVE: True
+            GENERATE_XML: True
+            EXTRACT_ALL: True
+            EXTRACT_PRIVATE: True
+            EXTRACT_STATIC: True

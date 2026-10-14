@@ -56,6 +56,39 @@ Makefile convenience targets:
 - `make release` - configure + build Release
 - `make nobuild` - generate the VS 2022 solution at `../Neurus_VS2022`
 - `make clean` - clean the Debug build
+- `make doc-deps` - install the pinned MkDocs and graphify Python dependencies
+- `make doc` - build the structure graph and the web documentation into `site/`
+- `make doc-serve` - same, then serve the docs with live reload
+
+## Web Documentation
+
+The published site at <https://xdzzyq.github.io/Neurus/> is built by
+`.github/workflows/docs_build.yml` on every push to master touching `docs/` or
+`src/`, and deployed to GitHub Pages from the build artifact. `mkdocs.yml` at the
+repository root holds the configuration.
+
+It combines three sources:
+
+- the hand-written pages under `docs/`, which are the only tracked content
+- a Doxygen API reference generated from `src/` by the mkdoxy plugin into
+  `docs/Neurus/`
+- the project structure graph, generated from `src/` by graphify into
+  `docs/graphify.html`
+
+The last two are build output and gitignored. Reproduce the whole site locally
+with `make doc` - it runs the same steps as CI minus the Pages upload, including
+`mkdocs build --strict`, so a green `make doc` predicts a green deploy. Doxygen
+and Graphviz must be on `PATH` for the API reference.
+
+Dependencies are pinned in two files rather than one: `.github/requirements-docs.txt`
+for MkDocs and `.github/requirements-graph.txt` for graphify, which pulls roughly
+thirty extra packages. Prose-only edits need only the former plus `mkdocs serve`;
+the structure-graph link simply 404s without the graph present.
+
+Documentation-only commits do not run the C++ matrix. `ci.yml` filters them out
+on push and skips the build jobs by condition on pull requests, reporting through
+a single `ci-gate` status check. See `.github/instructions/tips.instructions.md`
+for the graphify pipeline details.
 
 ## Dependency System
 

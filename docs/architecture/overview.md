@@ -53,6 +53,25 @@ The architecture prioritizes:
 Scene objects (`src/scene/`) and Core utilities (`src/core/`) are shared across
 layers.
 
+### Generated Structure Graph
+
+<!-- The link below is raw HTML on purpose. graphify.html is generated build
+     output and gitignored, so a markdown link would be reported by MkDocs link
+     validation and fail `mkdocs build --strict` on any build where the graph
+     has not been generated (a plain `mkdocs serve`, or a CI run where the
+     non-fatal graphify step failed). Raw hrefs are passed through unvalidated
+     AND unrewritten, so this path is URL-relative to /architecture/overview/,
+     not source-relative like a markdown link would be. -->
+
+The diagram above is hand-maintained. For a generated counterpart, the
+<a href="../../graphify.html" target="_blank">structure graph</a> maps the
+classes and functions in `src/` and the calls, inheritance and containment
+between them, grouped into communities that track the layer boundaries above. It
+is built from tree-sitter ASTs by
+[graphify](https://github.com/Graphify-Labs/graphify) during the documentation
+build; regenerate it with `make doc`. Shaders do not appear, and the page needs
+network access to load its layout engine.
+
 ## Current Scope
 
 The project delivers a deferred PBR renderer with a geometry pass, lighting

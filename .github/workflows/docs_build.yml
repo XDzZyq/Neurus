@@ -1,0 +1,193 @@
+# Builds the MkDocs Material site (see mkdocs.yml) and publishes it to GitHub
+# Pages. Runs only when the documentation inputs change: the product docs under
+# `docs/`, the sources mkdoxy turns into the API reference, or the site config
+# itself. `ci.yml` carries the mirror image of this filter so a docs-only commit
+# never spins up the C++ build matrix.
+#
+# Requires the repository's Pages source to be set to "GitHub Actions"
+# (Settings -> Pages -> Build and deployment -> Source).
+name: Deploy Web Doc
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - 'mkdocs.yml'
+      - '.graphifyignore'
+      - 'scripts/post_rebuild_cleanup.py'
+      - '.github/requirements-docs.txt'
+      - '.github/requirements-graph.txt'
+      - '.github/workflows/docs_build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race for the single Pages target, but let an in-flight
+# deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # `workflow_dispatch` lets any ref be selected in the UI, and this job
+    # publishes straight to the live site — there is no staging environment.
+    # Refuse to deploy anything but the release branches so a manual run from a
+    # feature branch cannot overwrite production docs with unmerged content.
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # No submodules: mkdoxy only reads src/, which lives in this repository.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Before the build, not after: this is what resolves the Pages base path,
+      # so anything it injects has to be in place while mkdocs renders.
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: .github/requirements-docs.txt
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz
+
+      - name: Install Python deps
+        run: pip install -r .github/requirements-docs.txt
+
+      # setup-python above caches the pip downloads; this caches what Material
+      # plugins write at build time. Keyed by ISO week so it refreshes
+      # regularly, per the upstream recommendation. Inert until a cache-using
+      # plugin (social, optimize) is enabled, and harmless until then.
+      - name: Resolve weekly cache key
+        run: echo "cache_id=$(date --utc '+%V')" >> "$GITHUB_ENV"
+
+      - name: Cache MkDocs build artifacts
+        uses: actions/cache@v4
+        with:
+          key: mkdocs-material-${{ env.cache_id }}
+          path: ~/.cache
+          restore-keys: |
+            mkdocs-material-
+
+      # --- Project-structure graph (linked from docs/architecture/overview.md) ---
+      # Every step below is non-fatal. The graph is a derived extra; a graphify
+      # regression must not stop the hand-written pages and the Doxygen API
+      # reference from publishing. When generation fails, the committed
+      # placeholder at docs/graphify.html is published instead, which also keeps
+      # the markdown link to it resolvable under `mkdocs build --strict`.
+      #
+      # Pinned separately from the MkDocs requirements: graphify adds ~30
+      # packages, and a resolution failure here has to stay survivable.
+      - name: Install graphify
+        id: graphify_install
+        continue-on-error: true
+        run: pip install -r .github/requirements-graph.txt
+
+      # AST-only and keyless: .graphifyignore confines the scan to src/, so no
+      # markdown reaches the semantic pass and no API key is required.
+      #
+      # scripts/post_rebuild_cleanup.py is the load-bearing second step, not a
+      # polish
+      # pass. The raw extraction is ~5x larger and mostly noise (C++ keywords,
+      # STL, Vulkan-HPP, GLM, Qt type nodes) split across hundreds of trivial
+      # communities. The script strips that, merges duplicates, prunes tiny
+      # communities, applies the curated naming rules and regenerates graph.json,
+      # GRAPH_REPORT.md and graph.html. Without it the graph also exceeds
+      # graphify's 5000-node viz ceiling and silently degrades to a
+      # community-only aggregate. It keeps clustering reproducible by pinning
+      # PYTHONHASHSEED itself.
+      #
+      # `export html` writes beside graph.json with no output flag, hence the
+      # copy into docs/, where MkDocs picks it up as a static passthrough. All of
+      # this must run before `mkdocs build`.
+      - name: Build project structure graph
+        id: graphify_build
+        if: steps.graphify_install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          graphify extract . --out . --force
+          python scripts/post_rebuild_cleanup.py
+          test -s graphify-out/graph.html
+          cp graphify-out/graph.html docs/graphify.html
+          echo "Structure graph: $(wc -c < docs/graphify.html) bytes."
+
+      # docs/graphify.html is gitignored build output, so on the failure path it
+      # simply does not exist. The overview page links to it with a raw href
+      # (unvalidated by MkDocs, so `--strict` still passes), but a 404 on a
+      # published site is worse than an explanation -- write a stub instead.
+      - name: Stub a missing structure graph
+        if: steps.graphify_build.outcome != 'success'
+        env:
+          INSTALL_OUTCOME: ${{ steps.graphify_install.outcome }}
+          BUILD_OUTCOME: ${{ steps.graphify_build.outcome }}
+        run: |
+          echo "::warning::No structure graph generated (install: $INSTALL_OUTCOME,"\
+               "build: $BUILD_OUTCOME). Publishing a stub page in its place."
+          printf '%s\n' \
+            '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' \
+            '<meta name="viewport" content="width=device-width, initial-scale=1">' \
+            '<title>Neurus - Structure Graph unavailable</title>' \
+            '<style>body{font:1rem/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' \
+            'max-width:34rem;margin:5rem auto;padding:0 1.5rem;color-scheme:light dark}</style>' \
+            '</head><body><h1>Structure graph unavailable</h1>' \
+            '<p>This graph is generated from <code>src/</code> during the documentation' \
+            'build. Generation did not succeed for this deploy, so the rest of the site' \
+            'was published without it.</p>' \
+            '<p>Check the <em>Deploy Web Doc</em> workflow run for the warning' \
+            'annotation, or build it locally with <code>make doc</code>.</p>' \
+            '</body></html>' > docs/graphify.html
+
+      # Retried once on purpose. mkdoxy 1.2.8 does not check its own subprocess:
+      # doxyrun.py `run()` discards stderr and ignores doxygen's return code, so
+      # when doxygen intermittently produces no XML the failure passes silently
+      # and the build dies later reading a missing index.xml. Measured at roughly
+      # one failure in four clean local runs; doxygen invoked directly over src/
+      # succeeds every time, so the fault is in the wrapper, not doxygen.
+      # mkdocs cleans site/ at the start of every build, so the bad state never
+      # persists and a plain retry clears it. Drop this once mkdoxy validates its
+      # subprocess.
+      - name: Build site
+        run: |
+          if mkdocs build --strict; then
+            exit 0
+          fi
+          echo "::warning::mkdocs build failed (likely the mkdoxy/doxygen flake); retrying once."
+          rm -rf site
+          mkdocs build --strict
+
+      # Fail loudly rather than publishing an empty site: mkdoxy silently
+      # produces nothing if doxygen cannot parse src/.
+      - name: Assert the site and API reference were generated
+        run: |
+          test -f site/index.html \
+            || { echo "::error::mkdocs produced no index.html"; exit 1; }
+          test -f site/Neurus/classes/index.html \
+            || { echo "::error::mkdoxy produced no API reference — check doxygen over src/"; exit 1; }
+          echo "Generated $(find site -name '*.html' | wc -l) HTML pages."
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
