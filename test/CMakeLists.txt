@@ -100,6 +100,7 @@ if(NEURUS_ENABLE_SCRIPTING)
 		script/test_script_engine.cpp
 		script/test_script_context.cpp
 		script/test_script_bindings.cpp
+	script/test_script_isolation.cpp
 	)
 endif()
 

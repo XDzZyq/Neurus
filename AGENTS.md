@@ -107,6 +107,7 @@ Stop and wait for user verification after each phase.
 | Editor: viewport, controllers, events, operations, gizmo, overlays | [docs/editor/overview.md](docs/editor/overview.md) and its siblings |
 | UI: panels, items, models, i18n | [docs/ui/overview.md](docs/ui/overview.md) and its siblings |
 | Core (UID, serialization, render config, logging), scene and assets | [docs/core/uid-and-resources.md](docs/core/uid-and-resources.md), [docs/scene/objects.md](docs/scene/objects.md), [docs/asset/data-resources.md](docs/asset/data-resources.md) |
+| Scripting: embedded CPython, the `neurus` module, Script Console | [docs/script/overview.md](docs/script/overview.md) |
 | Full indexes | [.github/instructions/README.md](.github/instructions/README.md), [docs/README.md](docs/README.md) |
 
 Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
