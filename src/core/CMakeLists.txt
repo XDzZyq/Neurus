@@ -1,5 +1,8 @@
 # src/core/CMakeLists.txt - Core Type Definitions
 
+# Threading primitives for ThreadPool (std::jthread) — portable pthread link.
+find_package(Threads REQUIRED)
+
 # STATIC (not INTERFACE) since UID and ResourceManager have .cpp files
 # (s_count definition, non-template members). Consumers get the include dirs
 # and glm/cereal transitively via PUBLIC.
@@ -10,6 +13,8 @@ add_library(neurus_core STATIC
 	ResourceManager.cpp
 	Serialize.h
 	RenderConfig.h
+	ThreadPool.h
+	ThreadPool.cpp
 )
 
 # src/ (${CMAKE_CURRENT_SOURCE_DIR}/..) exposes headers as "core/X.h".
@@ -21,4 +26,5 @@ target_include_directories(neurus_core PUBLIC
 target_link_libraries(neurus_core PUBLIC
 	glm
 	cereal
+	Threads::Threads
 )
