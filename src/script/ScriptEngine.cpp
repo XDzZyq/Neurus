@@ -50,6 +50,21 @@ void ScriptEngine::RunFile(const std::string& path, const ScriptContext* ctx)
 	m_impl->RunFile(path, ctx);
 }
 
+void ScriptEngine::Submit(const std::string& code)
+{
+	m_impl->Submit(code);
+}
+
+void ScriptEngine::SubmitFile(const std::string& path)
+{
+	m_impl->SubmitFile(path);
+}
+
+void ScriptEngine::ExecutePending(const ScriptContext& ctx)
+{
+	m_impl->ExecutePending(ctx);
+}
+
 ScriptConsoleBuffer& ScriptEngine::Console()
 {
 	return m_impl->Console();

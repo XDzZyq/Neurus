@@ -6,7 +6,6 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include <memory>
-#include <vector>
 
 #include "app/VulkanContext.h"
 #include "editor/Editor.h"
@@ -71,19 +70,8 @@ private:
 	void OnProjectSave(const std::string& path = std::string());
 
 	// --- Scripting (Script Console → ScriptEngine) ---
-
-	/// @brief A script queued by a Run request, executed at the frame boundary.
-	struct PendingScript
-	{
-		bool        fromFile = false;  ///< true = @ref text is a path; else source.
-		std::string text;
-	};
-
 	void OnRunScript(const std::string& code);
 	void OnRunFile(const std::string& path);
-
-	/// @brief Runs every queued script (once per frame, before the event drain).
-	void DrainPendingScripts();
 
 	/** @brief Aggregated document dirtiness: editor scene/config OR UI-state drift. */
 	bool IsDirty() const;
@@ -121,7 +109,6 @@ private:
 	std::string app_uiLayout;       ///< Transient UI-state blob for (de)serialization.
 	std::string app_savedUiState;   ///< UI blob as last saved/loaded (dirty baseline).
 	std::unique_ptr<Preferences> app_preferences;  ///< ~/.neurus/preferences.json (loaded before the window).
-	std::vector<PendingScript>   app_pendingScripts;  ///< Scripts queued for this frame (main thread).
 
 	// --- GPU / UI stack (destroyed in REVERSE order: renderer first, vkContext last) ---
 	// Screenshot holds refs to RenderCache (owned by DeferredRenderer) — must be destroyed BEFORE renderer.

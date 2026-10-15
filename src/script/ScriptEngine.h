@@ -72,6 +72,30 @@ public:
 	void RunFile(const std::string& path, const ScriptContext* ctx = nullptr);
 
 	/**
+	 * @brief Queue a snippet to run at the next `ExecutePending()`.
+	 * @param code UTF-8 Python source.
+	 */
+	void Submit(const std::string& code);
+
+	/**
+	 * @brief Queue a Python file to run at the next `ExecutePending()`.
+	 * @param path Filesystem path to a UTF-8 Python source file.
+	 */
+	void SubmitFile(const std::string& path);
+
+	/**
+	 * @brief Run every queued script in submission order, then clear the queue.
+	 *
+	 * The caller generates @p ctx fresh for the batch (borrowed only for the
+	 * call). Each queued script runs through the same capture/error path as
+	 * `RunString`; a script that submits another run is executed on the next
+	 * `ExecutePending()`.
+	 *
+	 * @param ctx Read-only view for these runs.
+	 */
+	void ExecutePending(const ScriptContext& ctx);
+
+	/**
 	 * @brief The engine's console buffer (captured output, errors, results).
 	 * @return A reference to the buffer owned by the PIMPL body; its lifetime
 	 *         matches the engine.

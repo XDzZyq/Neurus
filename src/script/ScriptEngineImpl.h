@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 #include "core/Log.h"
 #include "script/ScriptEngine.h"
@@ -162,6 +163,43 @@ struct ScriptEngine::Impl
 	ScriptConsoleBuffer& Console()
 	{
 		return m_console;
+	}
+
+	/// @brief Queue a snippet for the next ExecutePending().
+	void Submit(const std::string& code)
+	{
+		m_pending.push_back(PendingRun{false, code});
+	}
+
+	/// @brief Queue a file for the next ExecutePending().
+	void SubmitFile(const std::string& path)
+	{
+		m_pending.push_back(PendingRun{true, path});
+	}
+
+	/// @brief Run every queued script in order, then clear the queue.
+	void ExecutePending(const ScriptContext& ctx)
+	{
+		if (m_pending.empty())
+		{
+			return;
+		}
+
+		// Swap out so a script that submits another run cannot mutate this batch.
+		std::vector<PendingRun> batch;
+		batch.swap(m_pending);
+
+		for (const PendingRun& run : batch)
+		{
+			if (run.fromFile)
+			{
+				RunFile(run.text, &ctx);
+			}
+			else
+			{
+				RunString(run.text, &ctx);
+			}
+		}
 	}
 
 private:
@@ -374,9 +412,17 @@ private:
 		}
 	}
 
+	/// @brief A run queued by Submit()/SubmitFile(), executed by ExecutePending().
+	struct PendingRun
+	{
+		bool        fromFile = false;  ///< true = @ref text is a path; else source.
+		std::string text;
+	};
+
 	bool m_ready = false;
 	ScriptConsoleBuffer m_console;
-	ScriptDispatch m_dispatch;    ///< Read-only (no event queue) in this phase.
+	ScriptDispatch m_dispatch;          ///< Read-only (no event queue) in this phase.
+	std::vector<PendingRun> m_pending;  ///< Runs queued for the next ExecutePending().
 };
 
 }  // namespace neurus

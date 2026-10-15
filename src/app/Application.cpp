@@ -347,42 +347,14 @@ void Application::InitScripting()
 
 void Application::OnRunScript(const std::string& code)
 {
-	// Deferred: the frame loop runs queued scripts just before the event drain,
-	// so the events they emit are processed by that same drain, this frame.
-	app_pendingScripts.push_back(PendingScript{false, code});
+	// Deferred: the engine queues it and the frame loop runs it just before the
+	// event drain, so the events it emits are processed by that same drain.
+	app_script->Submit(code);
 }
 
 void Application::OnRunFile(const std::string& path)
 {
-	app_pendingScripts.push_back(PendingScript{true, path});
-}
-
-void Application::DrainPendingScripts()
-{
-	if (app_pendingScripts.empty())
-	{
-		return;
-	}
-
-	// Swap out so a script that queues another run cannot mutate what we iterate.
-	std::vector<PendingScript> pending;
-	pending.swap(app_pendingScripts);
-
-	for (const PendingScript& script : pending)
-	{
-		// A fresh view per run, discarded when the run returns.
-		neurus::ScriptContext ctx;
-		app_editor->UpdateScriptContext(ctx);
-
-		if (script.fromFile)
-		{
-			app_script->RunFile(script.text, &ctx);
-		}
-		else
-		{
-			app_script->RunString(script.text, &ctx);
-		}
-	}
+	app_script->SubmitFile(path);
 }
 
 // =========================================================================
@@ -509,8 +481,11 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     if (app_renderer && app_editor)
 	                     {
 	                         // Run any queued scripts first, so the events they
-	                         // emit ride the drain below, this same frame.
-	                         DrainPendingScripts();
+	                         // emit ride the drain below, this same frame. The
+	                         // context is generated fresh for this batch.
+	                         neurus::ScriptContext scriptCtx;
+	                         app_editor->UpdateScriptContext(scriptCtx);
+	                         app_script->ExecutePending(scriptCtx);
 
 	                         // Process all enqueued events (camera, gizmo, ...).
 	                         app_editor->Edit();

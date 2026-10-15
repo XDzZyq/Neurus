@@ -116,6 +116,26 @@ TEST(ScriptEngine, CapturesErrorTracebackInConsole)
 	engine.Shutdown();
 }
 
+TEST(ScriptEngine, RunsQueuedScriptsOnExecutePending)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+
+	// Two snippets queued in order; the second builds on the first, so a run
+	// out of order or a skipped entry fails the assertion after the drain.
+	engine.Submit("import builtins\nbuiltins.__neurus_q = 1");
+	engine.Submit("import builtins\nbuiltins.__neurus_q = builtins.__neurus_q + 41");
+
+	engine.ExecutePending(neurus::ScriptContext{});
+
+	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
+	engine.RunString("import builtins\nassert builtins.__neurus_q == 42");
+	EXPECT_EQ(neurus::LogBuffer::instance().ErrorCount(), before)
+		<< "queued scripts did not run in order";
+
+	engine.Shutdown();
+}
+
 TEST(ScriptConsoleBuffer, RingDropsOldestAndAssignsSeq)
 {
 	neurus::ScriptConsoleBuffer buffer;
