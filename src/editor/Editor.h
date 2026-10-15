@@ -13,6 +13,12 @@
 #include "core/ResourceManager.h"
 #include "core/RenderConfig.h"
 
+// The one render header Editor.h needs: BuildSnapshot() returns a
+// RenderFrameSnapshot by value, so the complete type is required here. It is
+// Vulkan-free and header-only for this use, so including it adds no GPU
+// dependency to the Editor library.
+#include "render/RenderFrameSnapshot.h"
+
 // Forward declarations (no render headers!)
 namespace neurus {
 class DeferredRenderer;
@@ -105,6 +111,22 @@ public:
 	 * iteration) is stamped by recordFrame() from the swapchain and its counters.
 	 */
 	void UpdateRenderContext(RenderContext& ctx) const;
+
+	/**
+	 * @brief Copies this frame out of the Scene: the same view, owned outright.
+	 *
+	 * Reads exactly what UpdateRenderContext() publishes - the Scene, the config,
+	 * the viewport's camera and both overlay payloads - but by value, resolving
+	 * every scene object to the stable UID the renderer's caches are keyed by. A
+	 * reader may therefore keep the result while the Editor edits on, which a
+	 * borrowed RenderContext pointer does not allow.
+	 *
+	 * Call it from the same place in the frame as UpdateRenderContext(): it is a
+	 * snapshot, and a snapshot of a half-updated scene is a wrong frame.
+	 *
+	 * @return The frame, with no reference into the Scene left in it.
+	 */
+	RenderFrameSnapshot BuildSnapshot() const;
 
 	/**
 	 * @brief Fills the UI-facing view of this frame: the document, and nothing else.

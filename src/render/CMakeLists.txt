@@ -64,6 +64,8 @@ add_library(neurus_render STATIC
 	RenderCache.cpp
 	RenderContext.h
 	RenderContext.cpp
+	RenderFrameSnapshot.h
+	RenderFrameSnapshot.cpp
 	overlay/OverlayGeometry.h
 	overlay/DebugDrawList.h
 	overlay/GizmoDrawList.h

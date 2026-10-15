@@ -15,6 +15,10 @@
  * Vulkan-free, by construction: one-way state from the Editor to the render
  * layer, carrying no Vulkan type.
  *
+ * The Editor half is in transition: `snapshot` carries the same frame as an
+ * owned deep copy (RenderFrameSnapshot), which is what a render thread can read
+ * safely. Both halves are published while the passes still read the pointers.
+ *
  * @note This is NOT a GPU push-constant block - it's CPU-side metadata
  *       carried through the pass execution chain.
  */
@@ -34,6 +38,7 @@ namespace neurus
 class Camera;
 class RenderConfig;
 class Scene;
+struct RenderFrameSnapshot;
 
 /**
  * @brief Per-frame context for all render passes.
@@ -86,6 +91,21 @@ struct RenderContext
 	 */
 	const GizmoDrawList* gizmoDraw = nullptr;
 
+	/**
+	 * @brief This frame as an owned deep copy, or nullptr.
+	 *
+	 * The borrowed half above is only safe while the Editor and the renderer
+	 * share a thread; this is the same frame with the borrowing taken out (see
+	 * RenderFrameSnapshot.h). It is published alongside the pointers rather than
+	 * instead of them: the passes still read `scene` / `camera` / `debugDraw`,
+	 * and moving them over - which is what retires the borrowed half - is a
+	 * separate step from making the copy exist.
+	 *
+	 * Null is a legal frame, and is what every frame carries until a producer
+	 * owns storage that outlives the frame. Check HasSnapshot() first.
+	 */
+	const RenderFrameSnapshot* snapshot = nullptr;
+
 	// -----------------------------------------------------------------------
 	// Renderer half — which frame. Stamped by DeferredRenderer::recordFrame().
 	// -----------------------------------------------------------------------
@@ -112,6 +132,9 @@ struct RenderContext
 
 	/** @brief True when a viewing camera was published. */
 	bool HasCamera() const { return camera != nullptr; }
+
+	/** @brief True when an owned frame snapshot was published. */
+	bool HasSnapshot() const { return snapshot != nullptr; }
 
 	/**
 	 * @brief This frame's render settings, or the built-in defaults.
