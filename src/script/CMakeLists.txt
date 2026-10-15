@@ -9,7 +9,6 @@
 
 add_library(neurus_script STATIC
 	ScriptContext.h
-	ScriptContext.cpp
 	ScriptDispatch.h
 	ScriptEngine.h
 	ScriptEngine.cpp

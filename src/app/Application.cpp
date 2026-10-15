@@ -340,11 +340,6 @@ void Application::InitEditor()
 
 void Application::InitScripting()
 {
-	if (!app_script)
-	{
-		return;
-	}
-
 	// The engine resolves its own environment (NEURUS_PYTHON_ENV override, else
 	// the build-time lib/.venv default). A failure degrades to a no-op engine.
 	app_script->Initialize();
@@ -352,28 +347,42 @@ void Application::InitScripting()
 
 void Application::OnRunScript(const std::string& code)
 {
-	if (!app_script || !app_editor)
-	{
-		return;
-	}
-
-	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(app_editor->GetScene(), app_editor->GetRenderConfig(), ctx);
-	app_script->SetContext(ctx);
-	app_script->RunString(code);
+	// Deferred: the frame loop runs queued scripts just before the event drain,
+	// so the events they emit are processed by that same drain, this frame.
+	app_pendingScripts.push_back(PendingScript{false, code});
 }
 
 void Application::OnRunFile(const std::string& path)
 {
-	if (!app_script || !app_editor)
+	app_pendingScripts.push_back(PendingScript{true, path});
+}
+
+void Application::DrainPendingScripts()
+{
+	if (app_pendingScripts.empty())
 	{
 		return;
 	}
 
-	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(app_editor->GetScene(), app_editor->GetRenderConfig(), ctx);
-	app_script->SetContext(ctx);
-	app_script->RunFile(path);
+	// Swap out so a script that queues another run cannot mutate what we iterate.
+	std::vector<PendingScript> pending;
+	pending.swap(app_pendingScripts);
+
+	for (const PendingScript& script : pending)
+	{
+		// A fresh view per run, discarded when the run returns.
+		neurus::ScriptContext ctx;
+		app_editor->UpdateScriptContext(ctx);
+
+		if (script.fromFile)
+		{
+			app_script->RunFile(script.text, &ctx);
+		}
+		else
+		{
+			app_script->RunString(script.text, &ctx);
+		}
+	}
 }
 
 // =========================================================================
@@ -499,6 +508,10 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                 [this]() {
 	                     if (app_renderer && app_editor)
 	                     {
+	                         // Run any queued scripts first, so the events they
+	                         // emit ride the drain below, this same frame.
+	                         DrainPendingScripts();
+
 	                         // Process all enqueued events (camera, gizmo, ...).
 	                         app_editor->Edit();
 
@@ -518,8 +531,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                         ctx.profile = &profile;
 	                         ctx.log = &neurus::LogBuffer::instance();
 	                         ctx.history = &history;
-	                         if (app_script)
-	                             ctx.scriptConsole = &app_script->Console();
+	                         ctx.scriptConsole = &app_script->Console();
 	                         app_mainWindow->Refresh(ctx);
 	                     }
 	                 });

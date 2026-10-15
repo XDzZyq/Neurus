@@ -54,27 +54,22 @@ public:
 	/**
 	 * @brief Execute a Python snippet on the main thread.
 	 * @param code UTF-8 Python source.
+	 * @param ctx Read-only view for this run (borrowed, may be null). The caller
+	 *            builds it fresh per run; the engine stores nothing.
 	 * @note `stdout`/`stderr` are captured into the console buffer; a Python
 	 *       error is buffered and logged but never propagates to the host.
 	 */
-	void RunString(const std::string& code);
+	void RunString(const std::string& code, const ScriptContext* ctx = nullptr);
 
 	/**
 	 * @brief Execute a Python file on the main thread.
 	 * @param path Filesystem path to a UTF-8 Python source file.
+	 * @param ctx Read-only view for this run (borrowed, may be null).
 	 * @note Reads the file, then runs it under the same capture/error path as
 	 *       `RunString`; a missing file or Python error is logged but never
 	 *       propagates to the host.
 	 */
-	void RunFile(const std::string& path);
-
-	/**
-	 * @brief Store the scene/config view the next run may read.
-	 * @param ctx Read-only context; a copy is taken, so @p ctx may be a
-	 *            temporary and the borrowed pointers must outlive the run.
-	 * @note Consumed by later tasks; storing a context does not execute code.
-	 */
-	void SetContext(const ScriptContext& ctx);
+	void RunFile(const std::string& path, const ScriptContext* ctx = nullptr);
 
 	/**
 	 * @brief The engine's console buffer (captured output, errors, results).

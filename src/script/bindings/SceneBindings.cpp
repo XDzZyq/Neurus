@@ -16,6 +16,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <vector>
 
 #include "editor/events/SceneEvents.h"
 #include "scene/Camera.h"
@@ -140,16 +141,22 @@ struct ContextView {};
 py::object ActiveCamera()
 {
 	const ScriptContext* ctx = CurrentContext();
-	if (ctx == nullptr || ctx->scene == nullptr || ctx->active_camera_id <= 0)
+	if (ctx == nullptr || ctx->scene == nullptr)
 	{
 		return py::none();
 	}
-	const ObjectID* obj = ctx->scene->GetObjectID(ctx->active_camera_id);
+	// The scene owns the active camera; read it live (0 = none).
+	const int activeId = ctx->scene->ActiveCameraID();
+	if (activeId <= 0)
+	{
+		return py::none();
+	}
+	const ObjectID* obj = ctx->scene->GetObjectID(activeId);
 	if (dynamic_cast<const Camera*>(obj) == nullptr)
 	{
 		return py::none();
 	}
-	return py::cast(CameraProxy{ctx, ctx->active_camera_id});
+	return py::cast(CameraProxy{ctx, activeId});
 }
 
 py::list Selection()
@@ -160,7 +167,11 @@ py::list Selection()
 	{
 		return result;
 	}
-	for (const int uid : ctx->selection)
+	// The scene owns the selection; snapshot its UIDs here (one source of truth).
+	std::vector<int> selected;
+	int activeUid = 0;
+	SnapshotSelectionUids(ctx->scene->selections, selected, activeUid);
+	for (const int uid : selected)
 	{
 		if (ctx->scene->GetObjectID(uid) != nullptr)
 		{
@@ -196,7 +207,11 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 		     [](const CameraProxy& s) { return ToTuple(Require<Camera>(s)->GetRotation()); })
 		.def_property(
 			"is_active",
-			[](const CameraProxy& s) { return s.ctx != nullptr && s.ctx->active_camera_id == s.uid; },
+			[](const CameraProxy& s)
+			{
+				return s.ctx != nullptr && s.ctx->scene != nullptr
+				       && s.ctx->scene->ActiveCameraID() == s.uid;
+			},
 			[](const CameraProxy& s, bool value) { EmitEvent(ActiveCameraChanged{value ? s.uid : 0}); });
 
 	py::class_<LightProxy>(data, "Light", "Read-only proxy over a scene light.")

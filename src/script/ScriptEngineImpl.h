@@ -121,7 +121,7 @@ struct ScriptEngine::Impl
 	 * @brief Execute a Python snippet, buffering output and logging failures.
 	 * @param code UTF-8 Python source.
 	 */
-	void RunString(const std::string& code)
+	void RunString(const std::string& code, const ScriptContext* ctx)
 	{
 		if (!m_ready)
 		{
@@ -129,14 +129,14 @@ struct ScriptEngine::Impl
 			return;
 		}
 
-		RunSource(code, "ScriptEngine::RunString");
+		RunSource(code, "ScriptEngine::RunString", ctx);
 	}
 
 	/**
 	 * @brief Read and execute a Python file, buffering output and logging.
 	 * @param path Filesystem path to a UTF-8 Python source file.
 	 */
-	void RunFile(const std::string& path)
+	void RunFile(const std::string& path, const ScriptContext* ctx)
 	{
 		if (!m_ready)
 		{
@@ -155,7 +155,7 @@ struct ScriptEngine::Impl
 		// CPython decodes UTF-8 source itself.
 		const std::string source((std::istreambuf_iterator<char>(file)),
 		                         std::istreambuf_iterator<char>());
-		RunSource(source, "ScriptEngine::RunFile");
+		RunSource(source, "ScriptEngine::RunFile", ctx);
 	}
 
 	/// @brief The buffer captured Python output and errors are written to.
@@ -164,19 +164,13 @@ struct ScriptEngine::Impl
 		return m_console;
 	}
 
-	/// @brief Store a copy of the read-only scene/config view for later runs.
-	void SetContext(const ScriptContext& ctx)
-	{
-		m_context = ctx;
-	}
-
 private:
 	/// @brief Shared run path: GIL, stdout/stderr capture, error surfacing.
-	void RunSource(const std::string& source, const char* entryName)
+	void RunSource(const std::string& source, const char* entryName, const ScriptContext* ctx)
 	{
 		pybind11::gil_scoped_acquire gil;
-		// Publish the run's context to the bindings for exactly this run.
-		ContextScope contextScope(&m_context, &m_dispatch);
+		// Publish this run's context to the bindings for exactly its duration.
+		ContextScope contextScope(ctx, &m_dispatch);
 
 		try
 		{
@@ -382,7 +376,6 @@ private:
 
 	bool m_ready = false;
 	ScriptConsoleBuffer m_console;
-	ScriptContext m_context;      ///< Last context handed to `SetContext`.
 	ScriptDispatch m_dispatch;    ///< Read-only (no event queue) in this phase.
 };
 

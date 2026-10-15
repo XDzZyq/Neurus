@@ -35,8 +35,10 @@ ScriptConsolePanel::ScriptConsolePanel(QWidget* parent)
 	toolbar->addWidget(m_clearBtn);
 	root->addLayout(toolbar);
 
-	m_output = new QPlainTextEdit(this);
+	m_output = new CodeEditor(this);
 	m_output->setReadOnly(true);
+	m_output->setLanguage(CodeEditor::Language::Python);
+	m_output->setLineNumbersVisible(false);
 	m_output->setObjectName(QStringLiteral("scriptConsoleOutput"));
 	root->addWidget(m_output, 1);
 

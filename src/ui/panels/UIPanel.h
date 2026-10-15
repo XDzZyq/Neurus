@@ -80,7 +80,7 @@ public:
 		case PanelType::RenderConfig:  return "dock.renderConfig";
 		case PanelType::ShaderEditor:  return "dock.shaderEditor";
 		case PanelType::Profiling:     return "dock.profiling";
-		case PanelType::Log:            return "dock.log";
+		case PanelType::Log:           return "dock.log";
 		case PanelType::ScriptConsole: return "dock.scriptConsole";
 		case PanelType::Count:         break;
 		}

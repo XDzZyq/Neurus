@@ -2,11 +2,10 @@
  * @file test_script_bindings.cpp
  * @brief The embedded `neurus` module exposes the scene for reading.
  *
- * A script run against a filled `ScriptContext` must see every master-pool
- * object through `neurus.data.objects` (iterable and keyed by UID) and read
- * live transform values. A run whose context has no scene - or whose scene
- * holds no objects - must yield an empty collection without dereferencing
- * anything.
+ * A script run against a context whose scene is filled must see every
+ * master-pool object through `neurus.data.objects` (iterable and keyed by UID)
+ * and read live transform values. A run with no scene - or with no context at
+ * all - must yield an empty collection without dereferencing anything.
  */
 
 #include <gtest/gtest.h>
@@ -31,15 +30,17 @@ namespace
 {
 
 /**
- * @brief Runs @p code and reports whether it produced no Python error.
+ * @brief Runs @p code against @p ctx and reports whether it produced no error.
  *
  * `RunString` logs a raised (including failed `assert`) rather than throwing,
- * so an unchanged error count is how a test proves the snippet succeeded.
+ * so an unchanged error count is how a test proves the snippet succeeded. The
+ * context is generated per run and borrowed only for the call.
  */
-bool RunCleanly(neurus::ScriptEngine& engine, const std::string& code)
+bool RunCleanly(neurus::ScriptEngine& engine, const std::string& code,
+                const neurus::ScriptContext& ctx = {})
 {
 	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
-	engine.RunString(code);
+	engine.RunString(code, &ctx);
 	return neurus::LogBuffer::instance().ErrorCount() == before;
 }
 
@@ -63,7 +64,8 @@ TEST(ScriptBindings, ReadsSceneObjects)
 	scene.UseCamera(camera);
 
 	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(scene, cfg, ctx);
+	ctx.scene  = &scene;
+	ctx.config = &cfg;
 
 	// Look the mesh up by UID: iteration order of the unordered master pool is
 	// unspecified, so `objs[0]` could be either object.
@@ -72,7 +74,6 @@ TEST(ScriptBindings, ReadsSceneObjects)
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	engine.SetContext(ctx);
 
 	const std::string script =
 		"import neurus\n"
@@ -89,7 +90,7 @@ TEST(ScriptBindings, ReadsSceneObjects)
 		"assert isinstance(mesh.name, str)\n"
 		"assert isinstance(mesh.visible, bool)\n";
 
-	EXPECT_TRUE(RunCleanly(engine, script));
+	EXPECT_TRUE(RunCleanly(engine, script, ctx));
 
 	engine.Shutdown();
 }
@@ -98,8 +99,7 @@ TEST(ScriptBindings, NoSceneYieldsNoObjects)
 {
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	// No SetContext call: the run still publishes a context, but its borrowed
-	// scene is null, which is the branch the bindings must survive.
+	// No context at all: the bindings must see an empty collection, not crash.
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n"
@@ -114,15 +114,15 @@ TEST(ScriptBindings, EmptySceneYieldsNoObjects)
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
 	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(scene, cfg, ctx);
+	ctx.scene  = &scene;
+	ctx.config = &cfg;
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	engine.SetContext(ctx);
 
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
-		"assert list(neurus.data.objects) == []\n"));
+		"assert list(neurus.data.objects) == []\n", ctx));
 
 	engine.Shutdown();
 }
@@ -150,7 +150,8 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 	scene.ActivateCamera(camera->GetObjectID());
 
 	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(scene, cfg, ctx);
+	ctx.scene  = &scene;
+	ctx.config = &cfg;
 
 	const std::string lightUid  = std::to_string(light->GetObjectID());
 	const std::string camUid    = std::to_string(camera->GetObjectID());
@@ -158,7 +159,6 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	engine.SetContext(ctx);
 
 	const std::string script =
 		"import neurus\n"
@@ -177,7 +177,7 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 		"assert env.rotation == 30.0\n"
 		"assert neurus.data.config.gamma == 2.0\n";
 
-	EXPECT_TRUE(RunCleanly(engine, script));
+	EXPECT_TRUE(RunCleanly(engine, script, ctx));
 	engine.Shutdown();
 }
 
@@ -203,13 +203,13 @@ TEST(ScriptBindings, SetterRaisesReadOnlyErrorAndDoesNotMutate)
 	scene.UseMesh(mesh);
 
 	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(scene, cfg, ctx);
+	ctx.scene  = &scene;
+	ctx.config = &cfg;
 
 	const std::string meshUid = std::to_string(mesh->GetObjectID());
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	engine.SetContext(ctx);
 
 	// The script catches ReadOnlyError, so the run logs no error (RunCleanly).
 	EXPECT_TRUE(RunCleanly(engine,
@@ -226,7 +226,7 @@ TEST(ScriptBindings, SetterRaisesReadOnlyErrorAndDoesNotMutate)
 		"except neurus.ReadOnlyError:\n"
 		"    pass\n"
 		"else:\n"
-		"    assert False\n"));
+		"    assert False\n", ctx));
 
 	// The gated setter never wrote the live property.
 	const glm::vec3 after = mesh->GetPosition();

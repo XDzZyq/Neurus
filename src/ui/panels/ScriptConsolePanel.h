@@ -18,7 +18,6 @@
 #include "ui/panels/UIPanel.h"
 
 class QEvent;
-class QPlainTextEdit;
 class QToolButton;
 
 namespace neurus
@@ -61,7 +60,7 @@ private:
 	QToolButton*    m_runBtn = nullptr;
 	QToolButton*    m_runFileBtn = nullptr;
 	QToolButton*    m_clearBtn = nullptr;
-	QPlainTextEdit* m_output = nullptr;
+	CodeEditor*     m_output = nullptr;
 	CodeEditor*     m_input = nullptr;
 
 	uint64_t m_lastSeq = 0;       ///< seq of the newest console line already rendered.

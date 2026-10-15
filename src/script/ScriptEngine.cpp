@@ -40,19 +40,14 @@ bool ScriptEngine::IsReady() const
 	return m_impl->IsReady();
 }
 
-void ScriptEngine::RunString(const std::string& code)
+void ScriptEngine::RunString(const std::string& code, const ScriptContext* ctx)
 {
-	m_impl->RunString(code);
+	m_impl->RunString(code, ctx);
 }
 
-void ScriptEngine::RunFile(const std::string& path)
+void ScriptEngine::RunFile(const std::string& path, const ScriptContext* ctx)
 {
-	m_impl->RunFile(path);
-}
-
-void ScriptEngine::SetContext(const ScriptContext& ctx)
-{
-	m_impl->SetContext(ctx);
+	m_impl->RunFile(path, ctx);
 }
 
 ScriptConsoleBuffer& ScriptEngine::Console()

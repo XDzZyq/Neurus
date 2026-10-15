@@ -1,12 +1,15 @@
 /**
  * @file test_script_context.cpp
- * @brief `ScriptContext` reflects the live scene/config read view.
+ * @brief `ScriptContext` is a two-pointer read view; the scene is the source of
+ *        truth for the active camera and the selection.
  *
- * `BuildScriptContext` is a Script-layer free function (not an `Editor` member,
- * see ruling R7): a member would force `editor -> script` and break the
- * unidirectional layer rule. These tests pin the two things the read path
- * promises a later run: the borrowed scene/config addresses and the snapshot of
- * the active camera plus selected UIDs.
+ * The type carries only the borrowed scene/config pointers. It is generated
+ * fresh per run (`Editor::UpdateScriptContext`) and discarded afterwards - there
+ * is no persistent, process-wide context. The active camera and the selection
+ * are read from the scene live, so nothing here can drift from the scene; the
+ * shape test below is what pins that. The header is Qt-/Vulkan-free and
+ * forward-declares both types, which is itself part of what is asserted (this
+ * file needs no QApplication).
  */
 
 #include <gtest/gtest.h>
@@ -18,56 +21,49 @@
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 #include "script/ScriptContext.h"
-#include "script/ScriptEngine.h"
 
-TEST(ScriptContextTest, ReflectsSceneSelectionAndActiveCamera)
+using namespace neurus;
+
+// The Editor's half is assignable - what Editor::UpdateScriptContext() relies on.
+TEST(ScriptContextShape, IsTwoPlainPointers)
 {
-	// Build a minimal pure-CPU scene: two cameras, so the activated one and the
-	// selected one are distinguishable (activation and selection are separate).
-	neurus::Scene scene;
-	neurus::ResourceManager resources;
-	neurus::RenderConfig cfg;
+	Scene        scene{};
+	RenderConfig config{};
 
-	auto viewed = resources.Load<neurus::Camera>();
-	auto inspected = resources.Load<neurus::Camera>();
+	ScriptContext ctx{};
+	ctx.scene  = &scene;
+	ctx.config = &config;
+
+	EXPECT_EQ(ctx.scene, &scene);
+	EXPECT_EQ(ctx.config, &config);
+}
+
+TEST(ScriptContextShape, DefaultsToNoSceneOrConfig)
+{
+	const ScriptContext ctx{};
+	EXPECT_EQ(ctx.scene, nullptr);
+	EXPECT_EQ(ctx.config, nullptr);
+}
+
+// The scene, not the context, owns activation and selection.
+TEST(ScriptContextShape, SceneOwnsActiveCameraAndSelection)
+{
+	Scene scene;
+	ResourceManager resources;
+
+	auto viewed    = resources.Load<Camera>();
+	auto inspected = resources.Load<Camera>();
 	scene.UseCamera(viewed);
 	scene.UseCamera(inspected);
 	ASSERT_TRUE(scene.ActivateCamera(viewed->GetObjectID()));
 	scene.selections.Select(inspected.get(), /*increment=*/false);
 
-	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(scene, cfg, ctx);
+	// The two facts the bindings read directly off the scene.
+	EXPECT_EQ(scene.ActiveCameraID(), viewed->GetObjectID());
 
-	EXPECT_EQ(ctx.scene, &scene);
-	EXPECT_EQ(ctx.config, &cfg);
-	EXPECT_EQ(ctx.active_camera_id, scene.ActiveCameraID());
-	EXPECT_EQ(ctx.active_camera_id, viewed->GetObjectID());
-	ASSERT_EQ(ctx.selection.size(), 1u);
-	EXPECT_EQ(ctx.selection.front(), inspected->GetObjectID());
-}
-
-TEST(ScriptContextTest, EmptySceneYieldsNoSelectionAndDefaultCamera)
-{
-	neurus::Scene scene;
-	neurus::RenderConfig cfg;
-
-	neurus::ScriptContext ctx;
-	neurus::BuildScriptContext(scene, cfg, ctx);
-
-	EXPECT_EQ(ctx.active_camera_id, scene.ActiveCameraID());
-	EXPECT_EQ(ctx.active_camera_id, 0);
-	EXPECT_TRUE(ctx.selection.empty());
-}
-
-TEST(ScriptContextTest, SetContextStoresACopyWithoutThrowing)
-{
-	// SetContext must be callable before Initialize (no Python required) and
-	// must take a copy, so a temporary context is safe to pass.
-	neurus::ScriptEngine engine;
-
-	neurus::ScriptContext ctx;
-	ctx.active_camera_id = 42;
-	ctx.selection = {1, 2, 3};
-
-	EXPECT_NO_THROW(engine.SetContext(ctx));
+	std::vector<int> selected;
+	int activeUid = 0;
+	SnapshotSelectionUids(scene.selections, selected, activeUid);
+	ASSERT_EQ(selected.size(), 1u);
+	EXPECT_EQ(selected.front(), inspected->GetObjectID());
 }
