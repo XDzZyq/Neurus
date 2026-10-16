@@ -155,7 +155,7 @@ void GeometryPass::ConfigureGBufferPipeline(PipelineBuilder& builder)
 // Per-mesh custom pipeline creation
 // ---------------------------------------------------------------------------
 
-Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader, ShaderType /*stageType*/)
+Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader)
 {
 	struct StageEntry
 	{
@@ -189,6 +189,35 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader, ShaderType /*
 		builder.AddShaderStage(s.ci);
 	ConfigureGBufferPipeline(builder);
 	return builder.BuildGraphicsPipeline(*p_device);
+}
+
+// ---------------------------------------------------------------------------
+// Per-mesh pipeline pre-warm (Editor thread, off the frame path)
+// ---------------------------------------------------------------------------
+
+bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const Shader& shader)
+{
+	// Id and version must come from the same Shader: keying on the mesh's id
+	// with the shader's version cannot discriminate a mesh relinked between two
+	// shaders that share a version.
+	const int      shaderId  = shader.GetObjectID();
+	const int      version   = shader.GetVersion();
+	PipelineCache& pipelines = cache.GetPipelineCache();
+
+	if (pipelines.GetPipeline(shaderId, version)) return true;
+
+	Pipeline pipeline = CreatePerMeshPipeline(shader);
+
+	// No SPIR-V for any supported stage is an ordinary state while a shader is
+	// being edited, so it is neither cached nor reported here - Record() logs
+	// the resulting miss, latched.
+	if (!*pipeline.pipeline) return false;
+
+	pipelines.UsePipeline(shaderId, std::move(pipeline), version);
+	p_reportedMissingPipelines.erase(shaderId);
+	NEURUS_LOG("[GeometryPass] Pre-warmed per-mesh pipeline for shaderId="
+	           << shaderId << " version=" << version);
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -266,26 +295,29 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 			vk::PipelineLayout activeLayout = *p_pipelines[0].pipelineLayout;
 			if (mesh->o_shader)
 			{
-				int version = mesh->o_shader->GetVersion();
+				const Shader& shader = *mesh->o_shader;
+				const int shaderId = shader.GetObjectID();
+				const int version  = shader.GetVersion();
 
-				Pipeline* customPipeline = cache.GetPipeline(mesh->GetObjectID(), version);
+				// Lookup only: compiling reads the live Shader's SPIR-V, which
+				// is the pre-warm's job on the Editor thread. Not yet
+				// render-thread-safe either - the two ints above come off the
+				// live Shader and m_version is unsynchronised; taking them from
+				// the frame snapshot would close that. A miss means the shader
+				// has not compiled, and the mesh draws with the pass default.
+				Pipeline* customPipeline =
+				    cache.GetPipelineCache().GetPipeline(shaderId, version);
 				if (!customPipeline)
 				{
-					Pipeline newPipeline = CreatePerMeshPipeline(*mesh->o_shader, ShaderType::VERTEX);
-					// Do not cache/bind a failed (empty) pipeline - fall back to the default one.
-					if (*newPipeline.pipeline)
+					if (p_reportedMissingPipelines.insert(shaderId).second)
 					{
-						cache.UsePipeline(mesh->GetObjectID(), std::move(newPipeline), version);
-						customPipeline = cache.GetPipeline(mesh->GetObjectID(), version);
-					}
-					else
-					{
-						NEURUS_ERR("[GeometryPass] Per-mesh pipeline creation failed for objectId="
-						           << mesh->GetObjectID() << " — falling back to default pipeline");
+						NEURUS_LOG("[GeometryPass] No per-mesh pipeline for shaderId="
+						           << shaderId << " version=" << version
+						           << " (objectId=" << mesh->GetObjectID()
+						           << ") - falling back to default pipeline");
 					}
 				}
-
-				if (customPipeline)
+				else
 				{
 					cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics,
 					                    *customPipeline->pipeline);

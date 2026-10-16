@@ -194,6 +194,19 @@ private:
 	 */
 	void UploadEnvironmentIBL();
 
+	/**
+	 * @brief Compiles every per-mesh graphics pipeline this frame may need.
+	 *
+	 * Runs at the end of Edit(), on the Editor thread, while every `Shader` is
+	 * still owned here: GeometryPass::Record() only looks pipelines up, because
+	 * building one reads the live Shader's SPIR-V, which a frame carrying ids
+	 * cannot hand to a render thread.
+	 *
+	 * @note Driven off the scene's mesh list rather than invalidation hooks, so
+	 *       it cannot miss a shader. No-op without a renderer or a scene.
+	 */
+	void PrewarmMeshPipelines();
+
 	// --- Handlers called by EventQueue subscribers in Initialize() ---
 	void OnMeshImport(const std::string& path);
 	void OnCameraAdd();

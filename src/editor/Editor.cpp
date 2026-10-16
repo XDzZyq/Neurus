@@ -481,7 +481,7 @@ RenderFrameSnapshot Editor::BuildSnapshot() const
 		inst.hasGeometry       = (mesh->o_mesh != nullptr);
 		inst.visibleInViewport = mesh->is_viewport;
 		inst.rendered          = mesh->is_rendered;
-		// The per-mesh pipeline is cached under the mesh id plus the shader
+		// The per-mesh pipeline is cached under the shader id plus the shader
 		// version, so those two numbers are the whole reference - the Shader
 		// object itself never travels.
 		if (mesh->o_shader)
@@ -1039,6 +1039,26 @@ void Editor::UploadLighting()
 }
 
 // =========================================================================
+// PrewarmMeshPipelines() - per-mesh pipeline compilation, off the frame path
+// =========================================================================
+
+void Editor::PrewarmMeshPipelines()
+{
+	if (!ed_renderer || !m_scene) return;
+
+	// Deliberately unfiltered by visibility: is_viewport / is_rendered flip
+	// between frames, and a mesh that becomes visible after the pre-warm ran
+	// would draw with the pass default for that frame. Meshes sharing a pooled
+	// Shader collapse onto one cache entry, so the repetition costs lookups,
+	// not compiles.
+	for (const auto& [id, mesh] : m_scene->mesh_list)
+	{
+		if (!mesh || !mesh->o_shader) continue;
+		ed_renderer->EnsureMeshPipeline(*mesh->o_shader);
+	}
+}
+
+// =========================================================================
 // Edit() - process all enqueued events
 // =========================================================================
 
@@ -1066,6 +1086,12 @@ void Editor::Edit()
 	// viewport questions - the Editor's part is only the timing.
 	if (m_scene)
 		m_viewport.RebuildOverlays(*m_scene);
+
+	// MUST follow ed_eventBus.Process(): shader create/recompile events drained
+	// in this frame mutate the Shaders the pre-warm compiles, so pre-warming
+	// first would miss them by one frame and that frame would draw the pass
+	// default.
+	PrewarmMeshPipelines();
 }
 
 } // namespace neurus

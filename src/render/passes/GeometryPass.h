@@ -24,6 +24,7 @@
 #include <span>
 #include <vulkan/vulkan_raii.hpp>
 
+#include <unordered_set>
 #include <vector>
 
 namespace neurus {
@@ -57,11 +58,29 @@ public:
 	 * draws each visible mesh with its per-mesh or default pipeline, then ends
 	 * the pass.
 	 *
+	 * Looks per-mesh pipelines up and never builds one: a cache miss draws with
+	 * the pass default. EnsureMeshPipeline() owns the building, off this path.
+	 *
 	 * @param cmdBuf          Command buffer in recording state.
 	 * @param cache           Render cache for MeshGPU and attachment lookups.
 	 * @param ctx             Per-frame context (scene, camera, extent).
 	 */
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+
+	/**
+	 * @brief Compiles the per-mesh G-Buffer pipeline for @p shader if it is missing.
+	 *
+	 * The pre-warm entry point, and the only place a per-mesh pipeline is built:
+	 * compilation reads the live Shader's SPIR-V, so it must run on the Editor
+	 * thread that owns it, before the frame is handed off. Idempotent.
+	 *
+	 * @param cache  Render cache owning the cross-frame pipeline cache.
+	 * @param shader CPU-side Shader to compile (borrowed for the call only).
+	 * @return true if a pipeline for @p shader is cached when this returns;
+	 *         false if the shader carries no usable SPIR-V yet - not an error,
+	 *         Record() draws such a mesh with the pass default.
+	 */
+	bool EnsureMeshPipeline(RenderCache& cache, const Shader& shader);
 
 	/// Declares the G-Buffer + IDBuffer + Depth writes; this pass has no image
 	/// reads (camera data comes via a UBO).
@@ -89,13 +108,14 @@ private:
 	 * @brief Creates a per-mesh graphics pipeline from a custom Shader.
 	 *
 	 * Builds a graphics pipeline matching the default G-Buffer attachment
-	 * formats and vertex layout.
+	 * formats and vertex layout. Called only from EnsureMeshPipeline(), i.e.
+	 * only off the frame path.
 	 *
-	 * @param shader    The CPU-side Shader containing stage source code.
-	 * @param stageType Which shader stage to compile (VERTEX for graphics).
-	 * @return Fully constructed Pipeline, or an empty Pipeline on failure.
+	 * @param shader    The CPU-side Shader containing stage SPIR-V.
+	 * @return Fully constructed Pipeline, or an empty Pipeline when the shader
+	 *         carries no SPIR-V for any supported stage.
 	 */
-	Pipeline CreatePerMeshPipeline(const Shader& shader, ShaderType stageType);
+	Pipeline CreatePerMeshPipeline(const Shader& shader);
 	void ConfigureGBufferPipeline(PipelineBuilder& builder);
 
 	// --- Descriptor resources ---
@@ -113,6 +133,12 @@ private:
 
 	// --- Vertex input layout ---
 	BufferLayout p_vertexLayout;
+
+	/// Shader ids whose missing per-mesh pipeline has already been reported, so
+	/// an uncompiled shader costs one log line instead of one per mesh per
+	/// frame. Version-agnostic: only a successful EnsureMeshPipeline() clears an
+	/// entry, so a shader that keeps failing to compile does not re-report.
+	std::unordered_set<int> p_reportedMissingPipelines;
 
 	// --- Dynamic rendering (G_BUFFER-specific) ---
 	void BeginPass(vk::CommandBuffer cmdBuf,

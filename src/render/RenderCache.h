@@ -535,7 +535,7 @@ private:
 	// --- Per-light GPU resources (key = light UID as int) ---
 	std::unordered_map<int, LightGPU> rc_lightGPUs;
 
-	// --- Pipeline cache (keyed by shader UID string) ---
+	// --- Pipeline cache (keyed by shader UID int) ---
 	PipelineCache rc_pipelineCache;
 
 	// --- Lighting SSBO storage (owned) ---

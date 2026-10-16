@@ -12,6 +12,9 @@
 #include "Swapchain.h"
 
 #include "resources/LightingCache.h"
+#include "resources/PipelineCache.h"
+
+#include "shaders/Shader.h"
 
 #include "passes/GeometryPass.h"
 #include "passes/LightingPass.h"
@@ -370,6 +373,34 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 void DeferredRenderer::ResetShadowAccumulation()
 {
 	m_iteration = 0;
+}
+
+void DeferredRenderer::EnsureMeshPipeline(const Shader& shader)
+{
+	// Guarded rather than asserted: the renderer is constructed before any
+	// scene exists, and a pre-warm for a scene the renderer cannot serve is a
+	// no-op, not an error.
+	if (!r_geometryPass || !r_renderCache) return;
+
+	// A store that REPLACES an entry destroys the displaced Pipeline at once, so
+	// drain first. The pre-warm runs on the Editor thread before the frame fence,
+	// and with kMaxFramesInFlight == 1 the previous frame may still be executing
+	// against that pipeline - VUID-vkDestroyPipeline-pipeline-00765. A first
+	// insert destroys nothing, so the cost is bounded to shader recompiles.
+	//
+	// Single-threaded only: vkDeviceWaitIdle is externally synchronised against
+	// queue submits, so it cannot come from the Editor thread once a render
+	// thread submits.
+	PipelineCache& pipelines = r_renderCache->GetPipelineCache();
+	const int      shaderId  = shader.GetObjectID();
+	// Get ignores the version, GetPipeline does not: an entry that exists under
+	// the id but fails the version check is one a store would replace.
+	const bool replaces = pipelines.Get(shaderId) != nullptr
+	                   && pipelines.GetPipeline(shaderId, shader.GetVersion()) == nullptr;
+	if (replaces)
+		WaitIdle();
+
+	r_geometryPass->EnsureMeshPipeline(*r_renderCache, shader);
 }
 
 void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
