@@ -351,6 +351,19 @@ void Editor::Initialize()
 		m_viewport.MarkOverlaysDirty();
 	});
 
+	// --- Warm the per-mesh pipeline when a shader actually compiled ---
+	//
+	// A controller cannot reach the renderer by design, so the Editor subscribes
+	// and warms. The event is enqueued from the compile handlers and drained in
+	// this same Edit(), before the frame is handed off, so no frame draws with
+	// the pass default. Keyed on the shader's object id.
+	ed_eventBus.subscribe<ShaderCompiled>([this](const ShaderCompiled& e) {
+		if (!ed_renderer) return;
+		auto shader = m_resources->Get<Shader>(e.shaderObjectId);
+		if (!shader) return;
+		ed_renderer->EnsureMeshPipeline(*shader);
+	});
+
 	// --- Selection moves the resting handle, and selection alone emits no
 	// RenderResetEvent ---
 	//
@@ -891,7 +904,10 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 			else { unit.BumpVersion(); }
 		}
 		if (allOk)
+		{
 			s.BumpVersion();
+			ed_eventBus.enqueue(ShaderCompiled{ s.GetObjectID() });
+		}
 
 		NEURUS_LOG("[Editor] Created shader for mesh " << objectId << ": " << shaderName);
 	}
@@ -986,6 +1002,12 @@ void Editor::UploadSceneResources()
 	{
 		if (!mesh || !mesh->o_mesh) continue;
 		UploadMeshGpu(*ed_uploadManager, *ed_renderer, *mesh);
+
+		// Scene load compiles shaders inside cereal's hook, which cannot reach
+		// the event bus, so no ShaderCompiled fires. Warm each mesh's pipeline
+		// once here instead.
+		if (mesh->o_shader)
+			ed_renderer->EnsureMeshPipeline(*mesh->o_shader);
 	}
 
 	for (const auto& [uid, light] : m_scene->light_list)
@@ -1039,26 +1061,6 @@ void Editor::UploadLighting()
 }
 
 // =========================================================================
-// PrewarmMeshPipelines() - per-mesh pipeline compilation, off the frame path
-// =========================================================================
-
-void Editor::PrewarmMeshPipelines()
-{
-	if (!ed_renderer || !m_scene) return;
-
-	// Deliberately unfiltered by visibility: is_viewport / is_rendered flip
-	// between frames, and a mesh that becomes visible after the pre-warm ran
-	// would draw with the pass default for that frame. Meshes sharing a pooled
-	// Shader collapse onto one cache entry, so the repetition costs lookups,
-	// not compiles.
-	for (const auto& [id, mesh] : m_scene->mesh_list)
-	{
-		if (!mesh || !mesh->o_shader) continue;
-		ed_renderer->EnsureMeshPipeline(*mesh->o_shader);
-	}
-}
-
-// =========================================================================
 // Edit() - process all enqueued events
 // =========================================================================
 
@@ -1086,12 +1088,6 @@ void Editor::Edit()
 	// viewport questions - the Editor's part is only the timing.
 	if (m_scene)
 		m_viewport.RebuildOverlays(*m_scene);
-
-	// MUST follow ed_eventBus.Process(): shader create/recompile events drained
-	// in this frame mutate the Shaders the pre-warm compiles, so pre-warming
-	// first would miss them by one frame and that frame would draw the pass
-	// default.
-	PrewarmMeshPipelines();
 }
 
 } // namespace neurus

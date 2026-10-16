@@ -185,10 +185,10 @@ public:
 	/**
 	 * @brief Ensures the per-mesh G-Buffer pipeline for @p shader exists.
 	 *
-	 * The renderer-side half of the pre-warm. Call it from the Editor thread -
-	 * the thread that owns the Shader - before handing the frame off, because
-	 * building a pipeline reads the live Shader while a frame carries only ids.
-	 * Idempotent and cheap once warm.
+	 * The renderer-side half of the warm. The Editor calls it from its thread -
+	 * the thread that owns the Shader - on a ShaderCompiled event, before handing
+	 * the frame off, because building a pipeline reads the live Shader while a
+	 * frame carries only ids. Idempotent and cheap once warm.
 	 *
 	 * @param shader CPU-side Shader, borrowed for the duration of the call only.
 	 */

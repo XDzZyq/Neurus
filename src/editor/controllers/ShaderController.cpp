@@ -248,7 +248,10 @@ void OnCreateShader(const neurus::ShaderCreateRequested& e, const neurus::Contro
 		}
 
 		if (allOk)
+		{
 			s.BumpVersion();
+			ctx.events.enqueue(neurus::ShaderCompiled{ s.GetObjectID() });
+		}
 
 		NEURUS_LOG("[ShaderController] Created shader for mesh " << objectId << ": " << shaderName);
 	}
@@ -326,6 +329,9 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 		}
 		unit.BumpVersion();
 		shader.BumpVersion();
+
+		// The pipeline cache is keyed on the shader, so hand the Editor its id to warm.
+		ctx.events.enqueue(neurus::ShaderCompiled{ shader.GetObjectID() });
 
 		NEURUS_LOG("[ShaderController] Compiled shader for mesh " << mesh->GetObjectID()
 		           << " (unitType=" << e.unitType << ")");

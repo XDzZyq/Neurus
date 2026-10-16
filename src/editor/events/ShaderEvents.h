@@ -115,6 +115,18 @@ struct ShaderCompileRequested
 };
 
 /**
+ * @brief Emitted when a shader compiled successfully (the compile RESULT).
+ *
+ * Carries the SHADER's object id, not a mesh UID, because the per-mesh pipeline
+ * cache is keyed on the shader. The Editor warms that pipeline in response.
+ * Non-undoable, like the compile that produces it.
+ */
+struct ShaderCompiled
+{
+	int shaderObjectId = 0;
+};
+
+/**
  * @brief Emitted when a bounded shader code-edit gesture begins (editor focus-in).
  *
  * The controller captures the "before" source for the (object, stage) and

@@ -70,7 +70,7 @@ public:
 	/**
 	 * @brief Compiles the per-mesh G-Buffer pipeline for @p shader if it is missing.
 	 *
-	 * The pre-warm entry point, and the only place a per-mesh pipeline is built:
+	 * The warm entry point, and the only place a per-mesh pipeline is built:
 	 * compilation reads the live Shader's SPIR-V, so it must run on the Editor
 	 * thread that owns it, before the frame is handed off. Idempotent.
 	 *

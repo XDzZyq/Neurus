@@ -378,12 +378,12 @@ void DeferredRenderer::ResetShadowAccumulation()
 void DeferredRenderer::EnsureMeshPipeline(const Shader& shader)
 {
 	// Guarded rather than asserted: the renderer is constructed before any
-	// scene exists, and a pre-warm for a scene the renderer cannot serve is a
+	// scene exists, and a warm for a scene the renderer cannot serve is a
 	// no-op, not an error.
 	if (!r_geometryPass || !r_renderCache) return;
 
 	// A store that REPLACES an entry destroys the displaced Pipeline at once, so
-	// drain first. The pre-warm runs on the Editor thread before the frame fence,
+	// drain first. The warm runs on the Editor thread before the frame fence,
 	// and with kMaxFramesInFlight == 1 the previous frame may still be executing
 	// against that pipeline - VUID-vkDestroyPipeline-pipeline-00765. A first
 	// insert destroys nothing, so the cost is bounded to shader recompiles.

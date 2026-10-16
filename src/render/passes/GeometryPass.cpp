@@ -192,7 +192,7 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader)
 }
 
 // ---------------------------------------------------------------------------
-// Per-mesh pipeline pre-warm (Editor thread, off the frame path)
+// Per-mesh pipeline warm (Editor thread, off the frame path)
 // ---------------------------------------------------------------------------
 
 bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const Shader& shader)
@@ -215,7 +215,7 @@ bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const Shader& shader)
 
 	pipelines.UsePipeline(shaderId, std::move(pipeline), version);
 	p_reportedMissingPipelines.erase(shaderId);
-	NEURUS_LOG("[GeometryPass] Pre-warmed per-mesh pipeline for shaderId="
+	NEURUS_LOG("[GeometryPass] Warmed per-mesh pipeline for shaderId="
 	           << shaderId << " version=" << version);
 	return true;
 }
@@ -300,7 +300,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 				const int version  = shader.GetVersion();
 
 				// Lookup only: compiling reads the live Shader's SPIR-V, which
-				// is the pre-warm's job on the Editor thread. Not yet
+				// is the warm's job on the Editor thread. Not yet
 				// render-thread-safe either - the two ints above come off the
 				// live Shader and m_version is unsynchronised; taking them from
 				// the frame snapshot would close that. A miss means the shader
