@@ -173,11 +173,13 @@ TEST_F(GeometryPassTest, Record_SingleTriangle_NoValidationError)
 	{
 		auto& cmd = BeginCmd();
 
-		PublishSceneCamera(*m_renderCache, testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
-			.scene = &testScene,
+		// `frame` must outlive `ctx`: declared first so it is destroyed last.
+		RenderFrameSnapshot frame;
+		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
-		});
+		};
+		PublishFrame(*m_renderCache, ctx, frame, &testScene);
+		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);
 	}
@@ -223,11 +225,13 @@ TEST_F(GeometryPassTest, Record_MultipleItems_NoValidationError)
 
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
-			.scene = &testScene,
+		// `frame` must outlive `ctx`: declared first so it is destroyed last.
+		RenderFrameSnapshot frame;
+		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
-		});
+		};
+		PublishFrame(*m_renderCache, ctx, frame, &testScene);
+		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -254,11 +258,14 @@ TEST_F(GeometryPassTest, Record_EmptyRenderItems_NoCrash)
 
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
-			.scene = &testScene,  // Scene has camera but no meshes → no geometry drawn (should not crash)
+		// `frame` must outlive `ctx`: declared first so it is destroyed last.
+		// Scene has a camera but no meshes - no geometry drawn (should not crash).
+		RenderFrameSnapshot frame;
+		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
-		});
+		};
+		PublishFrame(*m_renderCache, ctx, frame, &testScene);
+		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

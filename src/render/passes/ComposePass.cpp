@@ -11,6 +11,7 @@
 #include "Image.h"
 #include "render/Barrier.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "shaders/ShaderLibrary.h"
 #include "shaders/ComputeShader.h"
 #include "core/Log.h"
@@ -164,7 +165,7 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 
 	// Settings() is never null; with no published config it resolves to
 	// RenderConfig's own declared default.
-	const float gamma = ctx.Settings().r_gamma;
+	const float gamma = ctx.Frame().Settings().r_gamma;
 
 	WriteDescriptors(frameIndex, renderExtent, cache);
 

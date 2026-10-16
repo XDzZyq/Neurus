@@ -150,16 +150,18 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	resources.scene->UseCamera(resources.camera);
 	resources.scene->ActivateCamera(resources.camera->GetObjectID());
 
+	// Snapshot storage must outlive ctx - the renderer half only; PublishFrame
+	// fills the Editor half and publishes the owned snapshot below.
+	RenderFrameSnapshot snapshot{};
 	RenderContext ctx{
-		.scene = resources.scene.get(),
-			.width = kRenderWidth, .height = kRenderHeight,
+		.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snapshot, resources.scene.get());
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

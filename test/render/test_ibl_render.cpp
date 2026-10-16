@@ -290,7 +290,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 
-	// (camUBO removed; passes get camera from ctx.scene->GetActiveCamera())
+	// (camUBO removed; passes read the camera from the frame snapshot)
 
 	// -------------------------------------------------------------------
 	// Step 3: Create point light (for mixed direct + IBL lighting)
@@ -330,8 +330,8 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	auto lightDict = m_uploadManager->UploadLighting(scene.light_list);
 	m_renderCache->UpdateLighting(lightDict);
 
+	RenderFrameSnapshot frameSnapshot;
 	RenderContext ctx{
-		.scene = &scene,
 		.width = kRenderWidth,
 		.height = kRenderHeight,
 		.frameIndex = 0,
@@ -340,7 +340,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
@@ -441,14 +441,14 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				auto lightDict = m_uploadManager->UploadLighting(scene.light_list);
 				m_renderCache->UpdateLighting(lightDict);
 
+			RenderFrameSnapshot frameSnapshot;
 			RenderContext ctx{
-				.scene = &scene,
 				.width = kRenderWidth, .height = kRenderHeight,
 				.frameIndex = 0,
 			};
 
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 
@@ -589,14 +589,14 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				auto lightDict = m_uploadManager->UploadLighting(scene.light_list);
 				m_renderCache->UpdateLighting(lightDict);
 
+			RenderFrameSnapshot frameSnapshot;
 			RenderContext ctx{
-				.scene = &scene,
 				.width = kRenderWidth, .height = kRenderHeight,
 				.frameIndex = 0,
 			};
 
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 

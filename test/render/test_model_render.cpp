@@ -255,15 +255,17 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	// Step 11: Build RenderContext & record geometry pass (G-Buffer write)
 	// -----------------------------------------------------------------------
+	// Snapshot storage must outlive ctx - the renderer half only; PublishFrame
+	// fills the Editor half and publishes the owned snapshot below.
+	RenderFrameSnapshot snapshot{};
 	RenderContext ctx{
-		.scene = &scene,
-			.width = kRenderWidth, .height = kRenderHeight,
+		.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
 	};
 
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snapshot, &scene);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

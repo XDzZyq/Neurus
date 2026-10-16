@@ -72,7 +72,13 @@ protected:
 			*m_device, pd, m_queue, m_graphicsQueueFamily));
 	}
 
-	/** @brief The context a pass sees before any scene is published. */
+	/**
+	 * @brief The context a pass sees before any scene is published.
+	 *
+	 * Publishes no snapshot on purpose: Frame() then reads as the empty frame,
+	 * so this is now the regression net for the empty-frame policy - a pass must
+	 * record zero work (no draws, no dispatches) on an unpublished frame.
+	 */
 	static RenderContext EmptyContext()
 	{
 		return RenderContext{

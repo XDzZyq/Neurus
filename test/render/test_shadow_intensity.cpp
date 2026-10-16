@@ -160,18 +160,17 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// -------------------------------------------------------------------
 	// Step 2: One shared RenderContext for all three passes
 	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Record all passes in a single command buffer
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);

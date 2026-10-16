@@ -292,7 +292,12 @@ TEST_F(SceneWiringTest, DrawFrame_EmptyScene_NoCrash)
 	scene.UseCamera(cam);
 	scene.ActivateCamera(cam->GetObjectID());
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
+	// A snapshot pointer cannot live in a temporary that dies at the semicolon,
+	// so publish into named storage that outlives the DrawFrame call.
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
 	m_renderer->WaitIdle();
 }
 
@@ -316,7 +321,11 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithOnlyCamera_NoCrash)
 
 	ASSERT_NE(scene.GetActiveCamera(), nullptr);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
+	// Named storage so the published snapshot outlives DrawFrame (see test 1).
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
 	m_renderer->WaitIdle();
 }
 
@@ -347,8 +356,13 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
+	// Build the frame once after the whole scene exists; the snapshot is a copy
+	// taken at this instant, so every mesh and light must be registered first.
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
 
 	m_renderer->WaitIdle();
 }
@@ -378,12 +392,18 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
+	// Build the frame once after the whole scene exists, then reuse ctx across
+	// the three frames below; the snapshot must outlive every DrawFrame call.
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+
 	// Profiling is always on; every frame produces per-pass CPU timers + counters.
 
 	// Frame 1: per-pass CPU timers + counters are recorded; GPU timestamp
 	// readback for this slot happens at the start of frame 2 (fence-based).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()});
+		const FrameProfile& profile = m_renderer->DrawFrame(ctx);
 		EXPECT_GT(profile.passCount, 0u);
 		EXPECT_FALSE(profile.passes.empty());
 		for (const auto& pass : profile.passes)
@@ -399,7 +419,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 
 	// Frame 2: exercises the GPU timestamp readback path for frame 1's slot.
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()});
+		const FrameProfile& profile = m_renderer->DrawFrame(ctx);
 		EXPECT_GT(profile.passCount, 0u);
 	}
 
@@ -407,7 +427,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	// guarded so pre-signaled, never-written slots are skipped on startup
 	// (VUID-vkGetQueryPoolResults-None-09401).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()});
+		const FrameProfile& profile = m_renderer->DrawFrame(ctx);
 		EXPECT_GT(profile.passCount, 0u);
 		if (profile.gpuTimingAvailable)
 		{

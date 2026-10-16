@@ -11,6 +11,7 @@
 #include "Image.h"
 #include "render/Barrier.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "core/Log.h"
 
 #include "scene/Light.h"
@@ -409,34 +410,22 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t    frameIndex   = ctx.frameIndex;
 
+	const RenderFrameSnapshot& frame = ctx.Frame();
+
 	// A frame recorded before a scene exists is legal.
-	if (!ctx.HasScene())
+	if (!frame.HasScene())
 	{
 		NEURUS_LOG("[ShadowIntensityPass] No scene, skipping");
 		return stats;
 	}
 
-	const Scene* scene = ctx.scene;
-
 	// Settings() is never null and falls back to RenderConfig's own in-class
 	// defaults, so there is no literal here to drift from the declaration.
-	const RenderConfig& settings = ctx.Settings();
+	const RenderConfig& settings = frame.Settings();
 	const float shadowBias = settings.r_shadow_bias;
 
 	// One alpha mode for both the point and the sun path below.
 	const ShadowAlphaMode alphaMode = static_cast<ShadowAlphaMode>(settings.r_sampling_mode);
-
-	{
-		int shadowCount = 0;
-		for (const auto& [uid, light] : scene->light_list)
-		{
-			if (light && light->use_shadow && light->is_viewport && light->is_rendered)
-			{
-				auto pos = light->GetPosition();
-				shadowCount++;
-			}
-		}
-	}
 
 	{
 		auto& posAtt = cache.GetAttachment(AttachmentName::Position, renderExtent);
@@ -455,13 +444,15 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	// from light N-1. Otherwise the update would invalidate the command buffer
 	// (VUID-00059 chain).
 	uint32_t lightIndex = 0;
-	for (const auto& [uid, light] : scene->light_list)
+	for (const LightSnapshot& ls : frame.lights)
 	{
+		const int uid = ls.objectId;
+
 		// Skip lights that do not cast cubemap shadows (sun lights handled below).
-		if (!light || !light->use_shadow) continue;
-		if (!light->is_viewport || !light->is_rendered) continue;
-		if (light->light_type != LightType::POINTLIGHT &&
-		    light->light_type != LightType::SPOTLIGHT) continue;
+		if (!ls.useShadow) continue;
+		if (!ls.visibleInViewport || !ls.rendered) continue;
+		if (ls.type != LightType::POINTLIGHT &&
+		    ls.type != LightType::SPOTLIGHT) continue;
 
 		p_currentLightUID = uid;
 
@@ -483,14 +474,14 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		                          {});
 
 		{
-			const auto& pos = light->GetPosition();
+			const glm::vec3 pos = ls.position;
 			const uint32_t layer = cache.GetShadowIntensityLayer(uid, renderExtent);
 
 			ShadowEvalPushConstants pc = {};
 			pc.lightPosX   = pos.x;
 			pc.lightPosY   = pos.y;
 			pc.lightPosZ   = pos.z;
-			pc.farPlane    = (light->light_type == LightType::SPOTLIGHT)
+			pc.farPlane    = (ls.type == LightType::SPOTLIGHT)
 				? Light::spot_shadow_far
 				: Light::point_shadow_far;
 			pc.bias        = shadowBias;
@@ -498,7 +489,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			pc.jitterX     = ctx.jitter.x;
 			pc.jitterY     = ctx.jitter.y;
 			pc.jitterZ     = ctx.jitter.z;
-			pc.lightRadius = light->light_radius;
+			pc.lightRadius = ls.radius;
 			pc.alpha       = ComputeShadowAlpha(alphaMode, ctx.iteration);
 			pc.frameCount  = static_cast<int32_t>(ctx.iteration);
 
@@ -519,11 +510,12 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 	// Sun (directional) lights use the second pipeline and its own sets.
 	uint32_t sunLightIndex = 0;
-	for (const auto& [uid, light] : scene->light_list)
+	for (const LightSnapshot& ls : frame.lights)
 	{
-		if (!light || !light->use_shadow) continue;
-		if (!light->is_viewport || !light->is_rendered) continue;
-		if (light->light_type != LightType::SUNLIGHT) continue;
+		const int uid = ls.objectId;
+		if (!ls.useShadow) continue;
+		if (!ls.visibleInViewport || !ls.rendered) continue;
+		if (ls.type != LightType::SUNLIGHT) continue;
 
 		p_currentLightUID = uid;
 
@@ -546,7 +538,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		                          {});
 
 		{
-			const glm::vec3 lightDir = glm::normalize(light->GetDirection());
+			const glm::vec3 lightDir = glm::normalize(ls.direction);
 			const float field = Light::sun_shadow_field;
 			const float nearPlane = Light::sun_shadow_near;
 			const float farPlane = Light::sun_shadow_far;
@@ -561,14 +553,13 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 				? kAltUp : kWorldUp;
 
 			// Centre the ortho projection on the camera target, using the camera
-			// the frame renders through (the editor injects it into the context).
-			const Camera* activeCam = ctx.camera;
-			if (!activeCam)
+			// the frame renders through (the editor injects it into the frame).
+			if (!frame.HasCamera())
 			{
 				NEURUS_LOG("[ShadowIntensityPass] No camera in RenderContext, skipping sun light");
 				continue;
 			}
-			const glm::vec3 center = activeCam->cam_tar;
+			const glm::vec3 center = frame.camera.target;
 			const glm::vec3 lightEye = center - lightDir * Light::sun_depth_range;
 			const glm::mat4 lightView = glm::lookAt(lightEye, center, up);
 			const glm::mat4 lightViewProj = lightProj * lightView;
@@ -582,7 +573,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			pc.jitterX       = ctx.jitter.x;
 			pc.jitterY       = ctx.jitter.y;
 			pc.jitterZ       = ctx.jitter.z;
-			pc.lightRadius   = light->light_radius / (2.0f * Light::sun_shadow_field);
+			pc.lightRadius   = ls.radius / (2.0f * Light::sun_shadow_field);
 			pc.alpha         = ComputeShadowAlpha(alphaMode, ctx.iteration);
 			pc.frameCount    = static_cast<int32_t>(ctx.iteration);
 

@@ -440,6 +440,24 @@ void Editor::UpdateRenderContext(RenderContext& ctx) const
 
 void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 {
+	// Supply the five sources and gate the debug list here, so production
+	// behaviour is unchanged: r_debug_draw decides whether the overlay is
+	// published, exactly as UpdateRenderContext() does above.
+	BuildSnapshot(m_scene.get(),
+	              m_config,
+	              m_viewport.GetCamera(),
+	              m_config.RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr,
+	              &m_viewport.GizmoList(),
+	              out);
+}
+
+void Editor::BuildSnapshot(const Scene* scene,
+                           const RenderConfig& config,
+                           const Camera* camera,
+                           const DebugDrawList* debugDraw,
+                           const GizmoDrawList* gizmoDraw,
+                           RenderFrameSnapshot& out)
+{
 	// Cleared rather than default-constructed: the draw lists keep their
 	// capacity, which is the whole point of refilling one snapshot per frame.
 	out.Clear();
@@ -448,43 +466,44 @@ void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 	// published by pointer. Keep the two in step: a field added to one view and
 	// not the other is a frame the render layer sees differently depending on
 	// which half it reads.
-	out.config = m_config;
+	out.config = config;
 
-	if (const Camera* cam = m_viewport.GetCamera())
+	if (camera)
 	{
 		out.hasCamera = true;
 		// Matrices are copied, not re-derived from the scalars below: the Camera
 		// caches them, and recomputing is how a reader ends up disagreeing with
 		// the CameraGPU the vertex stage used.
-		out.camera.view       = cam->GetViewMatrix();
-		out.camera.projection = cam->GetProjectionMatrix();
-		out.camera.position   = cam->GetPosition();
-		out.camera.target     = cam->cam_tar;
-		out.camera.width      = cam->cam_w;
-		out.camera.height     = cam->cam_h;
-		out.camera.fovDegrees = cam->cam_pers;
-		out.camera.nearPlane  = cam->cam_near;
-		out.camera.farPlane   = cam->cam_far;
+		out.camera.view       = camera->GetViewMatrix();
+		out.camera.projection = camera->GetProjectionMatrix();
+		out.camera.position   = camera->GetPosition();
+		out.camera.target     = camera->cam_tar;
+		out.camera.width      = camera->cam_w;
+		out.camera.height     = camera->cam_h;
+		out.camera.fovDegrees = camera->cam_pers;
+		out.camera.nearPlane  = camera->cam_near;
+		out.camera.farPlane   = camera->cam_far;
 	}
 
-	// r_debug_draw gates the copy exactly as it gates publication above, so a
-	// disabled overlay costs the snapshot nothing.
-	if (m_config.RequiresDebugDraw())
+	// The caller gates the debug overlay: a non-null list is published, a null
+	// one (debug draw off, or no scene yet) costs the snapshot nothing.
+	if (debugDraw)
 	{
 		out.hasDebugDraw = true;
-		out.debugDraw = m_viewport.DebugList();
+		out.debugDraw = *debugDraw;
 	}
 
-	// Copied unconditionally, matching the unconditional publication above.
-	out.gizmoDraw = m_viewport.GizmoList();
+	// Copied when published; a null gizmo list leaves the cleared payload above.
+	if (gizmoDraw)
+		out.gizmoDraw = *gizmoDraw;
 
-	if (!m_scene)
+	if (!scene)
 		return;   // a frame with no scene is legal, and is now complete
 
 	out.hasScene = true;
 
-	out.meshes.reserve(m_scene->mesh_list.size());
-	for (const auto& [id, mesh] : m_scene->mesh_list)
+	out.meshes.reserve(scene->mesh_list.size());
+	for (const auto& [id, mesh] : scene->mesh_list)
 	{
 		if (!mesh) continue;
 
@@ -506,8 +525,8 @@ void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 		out.meshes.push_back(inst);
 	}
 
-	out.lights.reserve(m_scene->light_list.size());
-	for (const auto& [uid, light] : m_scene->light_list)
+	out.lights.reserve(scene->light_list.size());
+	for (const auto& [uid, light] : scene->light_list)
 	{
 		if (!light) continue;
 
@@ -541,7 +560,7 @@ void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 	// One environment lights the frame. The scene pool is unordered and the
 	// renderer reads whichever it finds first, so the lowest UID is chosen here
 	// to make "first" mean the same thing on every frame.
-	for (const auto& [id, env] : m_scene->env_list)
+	for (const auto& [id, env] : scene->env_list)
 	{
 		if (!env) continue;
 		const int envId = env->GetObjectID();
@@ -554,7 +573,7 @@ void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 
 	// The selection travels as an id, and 0 means none - the same value the
 	// outline pass pushes when nothing is selected.
-	if (const ObjectID* active = m_scene->selections.GetActiveObject())
+	if (const ObjectID* active = scene->selections.GetActiveObject())
 		out.activeObjectId = active->GetObjectID();
 }
 

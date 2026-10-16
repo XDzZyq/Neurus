@@ -115,15 +115,15 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	cb.scene->UseCamera(cb.camera);
 	cb.scene->ActivateCamera(cb.camera->GetObjectID());
 
+	RenderFrameSnapshot frameSnapshot;
 	RenderContext ctx{
-		.scene = cb.scene.get(),
-			.width = kRenderWidth, .height = kRenderHeight,
+		.width = kRenderWidth, .height = kRenderHeight,
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, cb.scene.get());
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

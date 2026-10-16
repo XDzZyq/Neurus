@@ -117,14 +117,18 @@ protected:
 		VulkanTestShared::TransitionGbufferToColorAttachment(
 			*m_renderCache, {kWidth, kHeight}, *this);
 
+		// `frame` must outlive `ctx`: declared first so it is destroyed last.
+		// The mesh already carries its Shader (BuildScene attached it before we
+		// got here), so the snapshot captures shaderObjectId/shaderVersion and
+		// the custom-pipeline path still runs once Record() reads the snapshot.
+		RenderFrameSnapshot frame;
 		RenderContext ctx{
-			.scene = &scene,
 			.width = kWidth, .height = kHeight,
 			.frameIndex = 0,
 		};
 
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, frame, &scene);
 		PassStats stats = m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 		return stats;

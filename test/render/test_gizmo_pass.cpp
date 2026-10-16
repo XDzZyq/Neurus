@@ -152,15 +152,13 @@ protected:
 	 */
 	PassStats RunPass(const GizmoDrawList* list)
 	{
+		RenderFrameSnapshot snapStorage;
 		RenderContext ctx;
 		ctx.width = kRes;
 		ctx.height = kRes;
 		ctx.frameIndex = 0;
-		ctx.config = &m_config;
-		ctx.scene = &m_scene;
-		ctx.gizmoDraw = list;
 
-		PublishSceneCamera(*m_cache, m_scene);
+		PublishFrame(*m_cache, ctx, snapStorage, &m_scene, &m_config, nullptr, list);
 		if (list) m_cache->UpdateGizmoDraw(ctx.frameIndex, *list);
 
 		auto& c = BeginCmd();

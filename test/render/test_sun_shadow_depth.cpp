@@ -123,12 +123,13 @@ TEST_F(SunShadowDepthTest, OrthoDepthMap)
 	VulkanTestShared::EnsureLightShadowsUploaded(*m_cache, *ts.s, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
 
 	{ auto& cmd=BeginCmd();
+		// Snapshot storage must outlive the context that borrows it.
+		RenderFrameSnapshot snap;
 		RenderContext ctx{};
 		ctx.width=kRes; ctx.height=kRes;
-		ctx.scene=ts.s.get();
-		// The sun path reads the viewing camera from the context, standing in for
-		// what DeferredRenderer::recordFrame() injects.
-		VulkanTestShared::PublishSceneCamera(*m_cache, ctx);
+		// Publish the whole frame before recording - the sun path skips its
+		// cascade with no camera, standing in for DeferredRenderer::recordFrame().
+		VulkanTestShared::PublishFrame(*m_cache, ctx, snap, ts.s.get());
 		m_pass->Record(*cmd,*m_cache,ctx);
 		EndSubmitWait(cmd); }
 

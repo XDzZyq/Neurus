@@ -21,6 +21,7 @@
 
 // Forward declarations (no render headers!)
 namespace neurus {
+class Camera;
 class DeferredRenderer;
 class MeshData;
 class Scene;
@@ -139,6 +140,34 @@ public:
 	 * @param out Snapshot to overwrite; its list capacity is retained.
 	 */
 	void BuildSnapshot(RenderFrameSnapshot& out) const;
+
+	/**
+	 * @brief Builds this frame from loose sources, with no Editor to read from.
+	 *
+	 * The one producer of the frame, factored out so it can run without an
+	 * Editor instance: both instance overloads above delegate here, and a test
+	 * harness calls it with sources it assembles itself, so the snapshot a test
+	 * validates a pass against is the very one production builds - not a second,
+	 * divergent producer that could drift from this one.
+	 *
+	 * @p out is cleared first. A null @p scene is a complete, legal frame. The
+	 * debug-draw gate lives in the caller: @p debugDraw is copied (and
+	 * hasDebugDraw set) iff it is non-null, and a null @p gizmoDraw leaves
+	 * out.gizmoDraw cleared.
+	 *
+	 * @param scene     The frame's scene, or null for a scene-less frame.
+	 * @param config    The render settings to copy into the frame.
+	 * @param camera    The viewing camera, or null.
+	 * @param debugDraw The debug overlay to copy, or null when debug draw is off.
+	 * @param gizmoDraw The gizmo overlay to copy, or null.
+	 * @param out       Snapshot to overwrite; its list capacity is retained.
+	 */
+	static void BuildSnapshot(const Scene* scene,
+	                          const RenderConfig& config,
+	                          const Camera* camera,
+	                          const DebugDrawList* debugDraw,
+	                          const GizmoDrawList* gizmoDraw,
+	                          RenderFrameSnapshot& out);
 
 	/**
 	 * @brief Fills the UI-facing view of this frame: the document, and nothing else.

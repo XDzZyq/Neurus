@@ -137,6 +137,21 @@ struct RenderContext
 	bool HasSnapshot() const { return snapshot != nullptr; }
 
 	/**
+	 * @brief This frame as owned data - never null, so no reader checks.
+	 *
+	 * The same null policy Settings() follows: an unpublished frame reads as an
+	 * empty one (no scene, no camera, no draws, default settings) rather than as
+	 * a pointer every pass has to test. A pass that skipped on a null Scene now
+	 * skips on `Frame().HasScene()` and needs no second branch.
+	 *
+	 * This is the field passes read; the borrowed pointers above are what it
+	 * replaces.
+	 *
+	 * Defined in the .cpp, where the complete RenderFrameSnapshot is available.
+	 */
+	const RenderFrameSnapshot& Frame() const;
+
+	/**
 	 * @brief This frame's render settings, or the built-in defaults.
 	 *
 	 * Never null, so a reader needs no fallback literal of its own: the fallback

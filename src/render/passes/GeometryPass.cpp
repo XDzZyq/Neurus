@@ -15,8 +15,7 @@
 #include "core/Log.h"
 
 #include "../resources/MeshGPU.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "RenderFrameSnapshot.h"
 
 #include <array>
 #include <cstring>
@@ -228,7 +227,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 {
 	PassStats stats{};
 
-	const Scene* scene = ctx.scene;
+	const RenderFrameSnapshot& frame = ctx.Frame();
 
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 
@@ -277,34 +276,32 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	const vk::Rect2D scissor({0, 0}, renderExtent);
 	cmdBuf.setScissor(0, scissor);
 
-	if (ctx.HasScene())
+	if (frame.HasScene())
 	{
-		for (const auto& [id, mesh] : scene->mesh_list)
+		for (const auto& inst : frame.meshes)
 		{
-			if (!mesh || !mesh->o_mesh) continue;
-			if (!mesh->is_viewport || !mesh->is_rendered) continue;
+			if (!inst.hasGeometry) continue;
+			if (!inst.visibleInViewport || !inst.rendered) continue;
 
-			MeshGPU* gpuPtr = cache.GetMeshGPU(mesh->GetObjectID());
+			MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
 			if (!gpuPtr)
 			{
-				NEURUS_ERR("[GeometryPass] GetMeshGPU returned nullptr for objectId=" << mesh->GetObjectID());
+				NEURUS_ERR("[GeometryPass] GetMeshGPU returned nullptr for objectId=" << inst.objectId);
 				continue;
 			}
 
 			bool usingCustomPipeline = false;
 			vk::PipelineLayout activeLayout = *p_pipelines[0].pipelineLayout;
-			if (mesh->o_shader)
+			if (inst.shaderObjectId != 0)
 			{
-				const Shader& shader = *mesh->o_shader;
-				const int shaderId = shader.GetObjectID();
-				const int version  = shader.GetVersion();
+				const int shaderId = inst.shaderObjectId;
+				const int version  = inst.shaderVersion;
 
-				// Lookup only: compiling reads the live Shader's SPIR-V, which
-				// is the warm's job on the Editor thread. Not yet
-				// render-thread-safe either - the two ints above come off the
-				// live Shader and m_version is unsynchronised; taking them from
-				// the frame snapshot would close that. A miss means the shader
-				// has not compiled, and the mesh draws with the pass default.
+				// Lookup only: compiling reads the live Shader's SPIR-V, which is
+				// the warm's job on the Editor thread. The id and version come
+				// from the owned frame snapshot, so this read touches nothing the
+				// Editor may be mutating. A miss means the shader has not
+				// compiled, and the mesh draws with the pass default.
 				Pipeline* customPipeline =
 				    cache.GetPipelineCache().GetPipeline(shaderId, version);
 				if (!customPipeline)
@@ -313,7 +310,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 					{
 						NEURUS_LOG("[GeometryPass] No per-mesh pipeline for shaderId="
 						           << shaderId << " version=" << version
-						           << " (objectId=" << mesh->GetObjectID()
+						           << " (objectId=" << inst.objectId
 						           << ") - falling back to default pipeline");
 					}
 				}
@@ -342,11 +339,11 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 				                          {});
 			}
 
-			const glm::mat4 model = mesh->GetModelMatrix();
-			const glm::mat4 normalMat = glm::mat4(mesh->GetNormalMatrix());
+			const glm::mat4 model = inst.model;
+			const glm::mat4 normalMat = glm::mat4(inst.normalMatrix);
 
 			MeshPushConstants pushConstants{model, normalMat,
-			                               static_cast<uint32_t>(mesh->GetObjectID())};
+			                               static_cast<uint32_t>(inst.objectId)};
 
 			// Push constants must use the layout of the currently bound pipeline
 			// (default layout, or the per-mesh custom pipeline's layout when set).

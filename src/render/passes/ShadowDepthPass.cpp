@@ -10,6 +10,7 @@
 
 #include "passes/ShadowDepthPass.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "RenderCache.h"
 #include "../resources/MeshGPU.h"
 #include "../PipelineBuilder.h"
@@ -260,10 +261,10 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 {
 	PassStats stats{};
 
-	// A frame recorded before a scene exists is legal.
-	if (!ctx.HasScene()) { NEURUS_LOG("[ShadowDepthPass] No scene, skipping"); return stats; }
+	const RenderFrameSnapshot& frame = ctx.Frame();
 
-	const Scene* scene = ctx.scene;
+	// A frame recorded before a scene exists is legal.
+	if (!frame.HasScene()) { NEURUS_LOG("[ShadowDepthPass] No scene, skipping"); return stats; }
 
 	const vk::Viewport viewport(0.f, 0.f,
 	                            static_cast<float>(p_resolution),
@@ -271,17 +272,19 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 	                            0.f, 1.f);
 	const vk::Rect2D scissor({0, 0}, {p_resolution, p_resolution});
 
-	for (const auto& [uid, lightPtr] : scene->light_list)
+	for (const LightSnapshot& ls : frame.lights)
 	{
+		const int uid = ls.objectId;
+
 		// Skip lights that do not cast shadows or are invisible.
-		if (!lightPtr || !lightPtr->use_shadow) continue;
-		if (!lightPtr->is_viewport || !lightPtr->is_rendered) continue;
+		if (!ls.useShadow) continue;
+		if (!ls.visibleInViewport || !ls.rendered) continue;
 
-		if (lightPtr->light_type != LightType::POINTLIGHT &&
-		    lightPtr->light_type != LightType::SPOTLIGHT) continue;
+		if (ls.type != LightType::POINTLIGHT &&
+		    ls.type != LightType::SPOTLIGHT) continue;
 
-		const glm::vec3 lightPos = lightPtr->GetPosition();
-		const float farPlane = (lightPtr->light_type == LightType::SPOTLIGHT)
+		const glm::vec3 lightPos = ls.position;
+		const float farPlane = (ls.type == LightType::SPOTLIGHT)
 			? Light::spot_shadow_far
 			: Light::point_shadow_far;
 
@@ -354,34 +357,30 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 		cmdBuf.beginRendering(renderInfo);
 		}
 
-		if (scene)
+		for (const MeshInstanceSnapshot& inst : frame.meshes)
 		{
-			for (const auto& [id, mesh] : scene->mesh_list)
+			if (!inst.hasGeometry) continue;
+			if (!inst.visibleInViewport || !inst.rendered) continue;
+
+			MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
+			if (!gpuPtr)
 			{
-				if (!mesh || !mesh->o_mesh) continue;
-				if (!mesh->is_viewport || !mesh->is_rendered) continue;
-
-
-				MeshGPU* gpuPtr = cache.GetMeshGPU(mesh->GetObjectID());
-				if (!gpuPtr)
-				{
-					NEURUS_ERR("[ShadowDepthPass] GetMeshGPU returned nullptr for objectId=" << mesh->GetObjectID());
-					continue;
-				}
-
-				const glm::mat4 model = mesh->GetModelMatrix();
-
-				// Push model matrix at offset 16 (light data at offset 0
-				// persists from the per-light push above).
-				cmdBuf.pushConstants<glm::mat4>(*p_pipelines[0].pipelineLayout,
-				    vk::ShaderStageFlagBits::eVertex |
-				    vk::ShaderStageFlagBits::eFragment,
-				    kModelPushOffset, model);
-				cmdBuf.bindVertexBuffers(0, gpuPtr->vertexBuffer->buffer(), {vk::DeviceSize{0}});
-				cmdBuf.bindIndexBuffer(gpuPtr->indexBuffer->buffer(), 0, vk::IndexType::eUint32);
-				++stats.drawCalls;
-				cmdBuf.drawIndexed(gpuPtr->indexCount, 1, 0, 0, 0);
+				NEURUS_ERR("[ShadowDepthPass] GetMeshGPU returned nullptr for objectId=" << inst.objectId);
+				continue;
 			}
+
+			const glm::mat4 model = inst.model;
+
+			// Push model matrix at offset 16 (light data at offset 0
+			// persists from the per-light push above).
+			cmdBuf.pushConstants<glm::mat4>(*p_pipelines[0].pipelineLayout,
+			    vk::ShaderStageFlagBits::eVertex |
+			    vk::ShaderStageFlagBits::eFragment,
+			    kModelPushOffset, model);
+			cmdBuf.bindVertexBuffers(0, gpuPtr->vertexBuffer->buffer(), {vk::DeviceSize{0}});
+			cmdBuf.bindIndexBuffer(gpuPtr->indexBuffer->buffer(), 0, vk::IndexType::eUint32);
+			++stats.drawCalls;
+			cmdBuf.drawIndexed(gpuPtr->indexCount, 1, 0, 0, 0);
 		}
 
 		cmdBuf.endRendering();
@@ -414,13 +413,12 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 		// shadow slides off the visible part of the world. Nothing follows this
 		// block, so returning here skips only the sun path - the point-light
 		// work above is already recorded.
-		const Camera* activeCam = ctx.camera;
-		if (!activeCam)
+		if (!frame.HasCamera())
 		{
 			NEURUS_LOG("[ShadowDepthPass] No camera in RenderContext, skipping sun path");
 			return stats;
 		}
-		const glm::vec3 center = activeCam->cam_tar;
+		const glm::vec3 center = frame.camera.target;
 
 		const float field = Light::sun_shadow_field;
 		const float nearPlane = Light::sun_shadow_near;
@@ -431,14 +429,14 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 		constexpr glm::vec3 kWorldUp(0.0f, 0.0f, 1.0f);
 		constexpr glm::vec3 kAltUp(1.0f, 0.0f, 0.0f);
 
-		for (const auto& [uid, lightPtr] : scene->light_list)
+		for (const LightSnapshot& ls : frame.lights)
 		{
-			if (!lightPtr) continue;
-			if (lightPtr->light_type != LightType::SUNLIGHT) continue;
-			if (!lightPtr->use_shadow) continue;
-			if (!lightPtr->is_viewport || !lightPtr->is_rendered) continue;
+			const int uid = ls.objectId;
+			if (ls.type != LightType::SUNLIGHT) continue;
+			if (!ls.useShadow) continue;
+			if (!ls.visibleInViewport || !ls.rendered) continue;
 
-			const glm::vec3 sunDir = glm::normalize(lightPtr->GetDirection());
+			const glm::vec3 sunDir = glm::normalize(ls.direction);
 			const glm::vec3 eye = center - sunDir * Light::sun_depth_range;
 
 			// --- Degenerate up-vector check ---
@@ -478,27 +476,26 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 
 			cmdBuf.beginRendering(renderInfo);
 
-			if (scene)
+			// The sun mesh walk filters on geometry only, unlike the point path
+			// above - the sun cascade covers meshes the viewport hides.
+			for (const MeshInstanceSnapshot& inst : frame.meshes)
 			{
-				for (const auto& [id, mesh] : scene->mesh_list)
-				{
-					if (!mesh || !mesh->o_mesh) continue;
+				if (!inst.hasGeometry) continue;
 
-					MeshGPU* gpuPtr = cache.GetMeshGPU(mesh->GetObjectID());
-					if (!gpuPtr || !gpuPtr->vertexBuffer || !gpuPtr->indexBuffer) continue;
+				MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
+				if (!gpuPtr || !gpuPtr->vertexBuffer || !gpuPtr->indexBuffer) continue;
 
-					const glm::mat4 model = mesh->GetModelMatrix();
-					const glm::mat4 mvp = lightViewProj * model;
+				const glm::mat4 model = inst.model;
+				const glm::mat4 mvp = lightViewProj * model;
 
-					cmdBuf.pushConstants<glm::mat4>(*p_pipelines[1].pipelineLayout,
-					    vk::ShaderStageFlagBits::eVertex,
-					    0, mvp);
+				cmdBuf.pushConstants<glm::mat4>(*p_pipelines[1].pipelineLayout,
+				    vk::ShaderStageFlagBits::eVertex,
+				    0, mvp);
 
-					cmdBuf.bindVertexBuffers(0, gpuPtr->vertexBuffer->buffer(), {vk::DeviceSize{0}});
-					cmdBuf.bindIndexBuffer(gpuPtr->indexBuffer->buffer(), 0, vk::IndexType::eUint32);
-					++stats.drawCalls;
-					cmdBuf.drawIndexed(gpuPtr->indexCount, 1, 0, 0, 0);
-				}
+				cmdBuf.bindVertexBuffers(0, gpuPtr->vertexBuffer->buffer(), {vk::DeviceSize{0}});
+				cmdBuf.bindIndexBuffer(gpuPtr->indexBuffer->buffer(), 0, vk::IndexType::eUint32);
+				++stats.drawCalls;
+				cmdBuf.drawIndexed(gpuPtr->indexCount, 1, 0, 0, 0);
 			}
 
 			cmdBuf.endRendering();

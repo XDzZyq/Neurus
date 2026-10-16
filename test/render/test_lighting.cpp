@@ -127,11 +127,12 @@ protected:
 
 		{
 			auto& cmd = BeginCmd();
-			PublishSceneCamera(*m_renderCache, testScene);
-			m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
-			.scene = &testScene,
+			RenderFrameSnapshot frameSnapshot;
+			RenderContext ctx{
 				.width = kRenderWidth, .height = kRenderHeight,
-			});
+			};
+			PublishFrame(*m_renderCache, ctx, frameSnapshot, &testScene);
+			m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 			EndSubmitWait(cmd);
 		}
 	}
@@ -242,11 +243,13 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 		scene.UseCamera(testCam);
 		scene.ActivateCamera(testCam->GetObjectID());
 
-		m_lightingPass->Record(*cmd, *m_renderCache, RenderContext{
-			.scene = &scene, .camera = scene.GetActiveCamera(),
+		RenderFrameSnapshot frameSnapshot;
+		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-		});
+		};
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
+		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);
 	}
@@ -319,11 +322,12 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 		scene.UseCamera(testCam);
 		scene.ActivateCamera(testCam->GetObjectID());
 
+		RenderFrameSnapshot frameSnapshot;
 		RenderContext ctx{
-			.scene = &scene, .camera = scene.GetActiveCamera(),
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
 		};
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}

@@ -130,19 +130,17 @@ protected:
 	/** @brief Records the pass over the primed attachments and waits for it. */
 	PassStats RunPass(const DebugDrawList& list)
 	{
+		RenderFrameSnapshot snapStorage;
 		RenderContext ctx;
 		ctx.width = kRes;
 		ctx.height = kRes;
 		ctx.frameIndex = 0;
-		ctx.config = &m_config;
-		ctx.scene = &m_scene;
-		ctx.debugDraw = &list;
 
 		// The pass uploads nothing: the camera UBO and the two debug SSBOs belong to
 		// RenderCache, and DeferredRenderer::recordFrame() writes them once per frame
 		// before any pass records. This fixture stands in for that frame driver, so it
 		// must do the same or DebugPass finds an invalid CameraGPU and empty buffers.
-		PublishSceneCamera(*m_cache, m_scene);
+		PublishFrame(*m_cache, ctx, snapStorage, &m_scene, &m_config, &list);
 		m_cache->UpdateDebugDraw(ctx.frameIndex, list);
 
 		auto& c = BeginCmd();

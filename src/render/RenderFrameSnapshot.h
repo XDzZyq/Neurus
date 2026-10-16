@@ -19,9 +19,12 @@
  *    matrix, a light direction, a camera matrix - is already computed here.
  *    Nothing in this struct dereferences anything.
  *
- * Draw order is UID order rather than the Scene's `unordered_map` order: the
- * shadow-intensity layer and descriptor-slot assignments downstream are
- * index-based, so an identical scene must produce an identically ordered frame.
+ * Draw order is UID order rather than the Scene's `unordered_map` order, so an
+ * identical scene produces an identically ordered frame. The steady-state
+ * shadow-intensity layer is UID-keyed and does not depend on it, but its lazy
+ * fallback assigns a layer in walk order, and the G-buffer resolves an
+ * exact-depth tie by whoever drew last - both of which a rehash would otherwise
+ * be free to change between two runs of the same scene.
  *
  * Vulkan-free, by construction, and Editor-free: one-way state from the Editor
  * to the render layer, carrying no Vulkan type and no Editor header.
@@ -67,7 +70,9 @@ struct MeshInstanceSnapshot
 	 * @brief UID of the mesh's own shader, or 0 when it has none.
 	 *
 	 * Zero is what selects the pass's default pipeline; a non-zero id means the
-	 * mesh asked for a per-mesh pipeline, cached under `objectId` + `shaderVersion`.
+	 * mesh asked for a per-mesh pipeline, cached under this shader id plus
+	 * `shaderVersion` - not under the mesh's own id, since one shader serves many
+	 * meshes.
 	 */
 	int shaderObjectId = 0;
 

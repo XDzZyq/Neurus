@@ -14,9 +14,11 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include "core/RenderConfig.h"
+#include "editor/Editor.h"
 #include "platform/PlatformSurface.h"
 #include "render/Barrier.h"
 #include "render/RenderCache.h"
+#include "render/RenderFrameSnapshot.h"
 #include "render/UploadManager.h"
 #include "render/passes/GeometryPass.h"
 #include "scene/Camera.h"
@@ -270,6 +272,69 @@ protected:
 			ctx.camera = scene->GetActiveCamera();
 			PublishSceneCamera(cache, *scene);
 		}
+	}
+
+	/**
+	 * @brief Publishes a whole frame - both RenderContext halves and the camera UBO.
+	 *
+	 * One call that does everything DeferredRenderer::recordFrame() and
+	 * Editor::UpdateRenderContext() do before a pass records: it fills the
+	 * borrowed half of @p ctx, pushes the camera into the RenderCache UBO (what
+	 * PublishSceneCamera did), builds the owned snapshot with the SAME producer
+	 * production uses - neurus::Editor::BuildSnapshot() - and publishes it. A
+	 * fixture driving a pass directly stands in for the frame driver, and this is
+	 * the single seam that keeps it honest.
+	 *
+	 * The debug list is published as given; the gate (r_debug_draw) belongs to
+	 * the caller, exactly as it does in production.
+	 *
+	 * @warning @p out is caller-owned storage that must outlive @p ctx -
+	 *          `RenderContext::snapshot` borrows it, it does not own it.
+	 *
+	 * @warning Call it **before the first pass records**, where recordFrame()
+	 *          puts the camera publication, not merely before the pass that reads
+	 *          the camera. ShadowDepthPass skips its whole sun cascade when the
+	 *          camera is null, and a later publication cannot retroactively fill a
+	 *          shadow map that was never rendered.
+	 *
+	 * @param cache     Receives the camera UBO update.
+	 * @param ctx       Receives the borrowed half and the snapshot pointer.
+	 * @param out       Caller-owned snapshot storage; must outlive @p ctx.
+	 * @param scene     The frame's scene, or null.
+	 * @param config    The render settings, or null to use the built-in defaults.
+	 * @param debugDraw The debug overlay to publish, or null.
+	 * @param gizmoDraw The gizmo overlay to publish, or null.
+	 */
+	static void PublishFrame(neurus::RenderCache& cache,
+	                         neurus::RenderContext& ctx,
+	                         neurus::RenderFrameSnapshot& out,
+	                         const neurus::Scene* scene,
+	                         const neurus::RenderConfig* config = nullptr,
+	                         const neurus::DebugDrawList* debugDraw = nullptr,
+	                         const neurus::GizmoDrawList* gizmoDraw = nullptr)
+	{
+		const neurus::Camera* camera = scene ? scene->GetActiveCamera() : nullptr;
+
+		// Borrowed half, stored as given - the debug list is not re-gated here.
+		ctx.scene     = scene;
+		ctx.config    = config;
+		ctx.camera    = camera;
+		ctx.debugDraw = debugDraw;
+		ctx.gizmoDraw = gizmoDraw;
+
+		if (camera)
+			cache.UpdateCamera(camera->GetProjectionMatrix(), camera->GetViewMatrix());
+
+		// Same default a null config resolves to via RenderContext::Settings():
+		// DefaultRenderConfig(), not a second literal.
+		neurus::Editor::BuildSnapshot(scene,
+		                              config ? *config : neurus::DefaultRenderConfig(),
+		                              camera,
+		                              debugDraw,
+		                              gizmoDraw,
+		                              out);
+
+		ctx.snapshot = &out;
 	}
 
 	/**
