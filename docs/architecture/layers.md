@@ -62,7 +62,7 @@ responsibility, and Core supplies utilities shared across all of them.
 - `src/ui/models/`: Qt item models (ShaderStructModel, LogModel,
   LogFilterProxy)
 - `src/ui/delegates/`: Qt item delegates (ShaderFieldDelegate, LogDelegate)
-- `src/ui/utils/`: Non-widget UI helpers (ShaderHighlighter)
+- `src/ui/utils/`: Non-widget UI helpers (CodeHighlighter)
 - Displays data and captures user input
 - Emits Qt signals via UIEvents for state changes
 - Must NOT directly access Renderer internals

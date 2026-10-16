@@ -8,7 +8,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include "core/ScriptConsole.h"
+#include "script/ScriptConsole.h"
 #include "ui/items/CodeEditor.h"
 #include "ui/utils/I18n.h"
 

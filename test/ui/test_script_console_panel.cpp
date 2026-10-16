@@ -13,7 +13,7 @@
 
 #include <QString>
 
-#include "core/ScriptConsole.h"
+#include "script/ScriptConsole.h"
 #include "ui/UIContext.h"
 #include "ui/items/CodeEditor.h"
 #include "ui/panels/ScriptConsolePanel.h"

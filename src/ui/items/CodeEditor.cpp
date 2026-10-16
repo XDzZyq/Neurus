@@ -1,5 +1,5 @@
 #include "items/CodeEditor.h"
-#include "utils/ShaderHighlighter.h"
+#include "utils/CodeHighlighter.h"
 
 #include <QFocusEvent>
 #include <QPainter>
@@ -10,7 +10,7 @@ namespace neurus {
 
 CodeEditor::CodeEditor(QWidget* parent)
     : QPlainTextEdit(parent)
-    , m_highlighter(std::make_unique<ShaderHighlighter>(document()))
+    , m_highlighter(std::make_unique<CodeHighlighter>(document()))
 {
     m_lineNumberArea = new LineNumberArea(this);
 

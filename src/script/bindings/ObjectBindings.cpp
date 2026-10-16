@@ -2,11 +2,11 @@
  * @file ObjectBindings.cpp
  * @brief Read-only `Object` / `Transform` proxies and `neurus.data.objects`.
  *
- * Phase 1 exposes the master scene pool for reading only: every property is
- * resolved live through the run's `ScriptContext` on attribute access. No
- * setter is defined here (write support, gated through `ScriptDispatch`, is a
- * later task), and no value is cached, so a proxy can never observe a stale
- * scene (design sections 4.3 and 5).
+ * The collection and every proxy are bound to the run's `ScriptExecutor`; every
+ * property is resolved live through it on attribute access. No setter writes a
+ * C++ property - each constructs the exact typed event and routes it through
+ * the run dispatch, which refuses in this phase. Nothing is cached, so a proxy
+ * never observes a stale scene.
  */
 
 #include <pybind11/pybind11.h>
@@ -20,9 +20,8 @@
 #include "scene/Scene.h"
 #include "scene/Transform.h"
 #include "script/bindings/Bindings.h"
-#include "script/bindings/ProxyBase.h"
 #include "script/bindings/Proxies.h"
-#include "script/bindings/Runtime.h"
+#include "script/bindings/ProxyBase.h"
 
 namespace py = pybind11;
 
@@ -33,7 +32,7 @@ namespace script
 namespace
 {
 
-/// Converts a scene vector to a Python 3-tuple (design section 5 mapping).
+/// Converts a scene vector to a Python 3-tuple.
 py::tuple ToTuple(const glm::vec3& value)
 {
 	return py::make_tuple(value.x, value.y, value.z);
@@ -43,32 +42,35 @@ py::tuple ToTuple(const glm::vec3& value)
  * @brief `neurus.data.objects`: all master-pool objects, iterable and keyed by
  *        UID.
  *
- * The collection itself is stateless; it reads `CurrentContext()` on every
- * access, so it is empty (never a null dereference) outside a run or when the
- * run has no scene.
+ * An instance is bound to one run's executor and replaced at the start of the
+ * next run, so it can never read a finished run. It is empty (never a null
+ * dereference) when the run has no scene.
  */
 struct ObjectCollection
 {
+	const ScriptExecutor* exec = nullptr;
+
 	/// @brief Snapshot of every master-pool object as an `Object` proxy list.
 	py::list Snapshot() const
 	{
 		py::list result;
-		const ScriptContext* ctx = CurrentContext();
-		if (ctx == nullptr || ctx->scene == nullptr)
+		if (exec == nullptr || exec->context().scene == nullptr)
 		{
 			return result;
 		}
 
-		for (const auto& [id, obj] : ctx->scene->obj_list)
+		for (const auto& [id, obj] : exec->context().scene->obj_list)
 		{
 			(void)obj;
-			result.append(py::cast(ObjectProxy{ctx, id}));
+			result.append(py::cast(ObjectProxy{exec, id}));
 		}
 		return result;
 	}
 };
 
-/// @brief Registers the proxies and the `objects` collection on `data`.
+}  // namespace
+
+/// @brief Registers the proxy classes (once) on the `data` submodule.
 void RegisterObjectBindings(py::module_& data)
 {
 	py::class_<TransformProxy>(data, "Transform", "Read-only 3D transform of a scene object.")
@@ -78,7 +80,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const TransformProxy& self, std::tuple<float, float, float> value)
 			{
 				const auto [x, y, z] = value;
-				EmitEvent(PositionChanged{self.uid, x, y, z});
+				EmitEvent(self, PositionChanged{self.uid, x, y, z});
 			},
 			"World position as an (x, y, z) tuple.")
 		.def_property(
@@ -87,7 +89,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const TransformProxy& self, std::tuple<float, float, float> value)
 			{
 				const auto [x, y, z] = value;
-				EmitEvent(RotationChanged{self.uid, x, y, z});
+				EmitEvent(self, RotationChanged{self.uid, x, y, z});
 			},
 			"Euler rotation in degrees as an (x, y, z) tuple.")
 		.def_property(
@@ -96,7 +98,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const TransformProxy& self, std::tuple<float, float, float> value)
 			{
 				const auto [x, y, z] = value;
-				EmitEvent(ScaleChanged{self.uid, x, y, z});
+				EmitEvent(self, ScaleChanged{self.uid, x, y, z});
 			},
 			"Per-axis scale as an (x, y, z) tuple.");
 
@@ -118,7 +120,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const ObjectProxy& self) { return self.Resolve()->is_viewport; },
 			[](const ObjectProxy& self, bool value)
 			{
-				EmitEvent(VisibilityChanged{self.uid, value, value});
+				EmitEvent(self, VisibilityChanged{self.uid, value, value});
 			},
 			"Whether the object is visible in the viewport.")
 		.def_property_readonly(
@@ -130,7 +132,7 @@ void RegisterObjectBindings(py::module_& data)
 				{
 					return py::none();
 				}
-				return py::cast(TransformProxy{self.ctx, self.uid});
+				return py::cast(TransformProxy{self.exec, self.uid});
 			},
 			"The object's transform, or None when it has none.")
 		.def("__repr__",
@@ -142,44 +144,30 @@ void RegisterObjectBindings(py::module_& data)
 		     "Iterates the objects, newest registration order unspecified.")
 		.def("__len__", [](const ObjectCollection& self) { return py::len(self.Snapshot()); })
 		.def("__getitem__",
-		     [](const ObjectCollection&, int uid) -> py::object
+		     [](const ObjectCollection& self, int uid) -> py::object
 		     {
-			     const ScriptContext* ctx = CurrentContext();
-			     if (ctx == nullptr || ctx->scene == nullptr || ctx->scene->GetObjectID(uid) == nullptr)
+			     if (self.exec == nullptr || self.exec->context().scene == nullptr
+			         || self.exec->context().scene->GetObjectID(uid) == nullptr)
 			     {
 				     return py::none();
 			     }
-			     return py::cast(ObjectProxy{ctx, uid});
+			     return py::cast(ObjectProxy{self.exec, uid});
 		     },
 		     "Looks an object up by UID, or returns None when it is absent.")
 		.def("__contains__",
-		     [](const ObjectCollection&, int uid)
+		     [](const ObjectCollection& self, int uid)
 		     {
-			     const ScriptContext* ctx = CurrentContext();
-			     return ctx != nullptr && ctx->scene != nullptr
-			            && ctx->scene->GetObjectID(uid) != nullptr;
+			     return self.exec != nullptr && self.exec->context().scene != nullptr
+			            && self.exec->context().scene->GetObjectID(uid) != nullptr;
 		     },
 		     "True when an object with the given UID exists.")
 		.def("__repr__",
 		     [](const ObjectCollection& self) { return "<neurus.data.objects len=" + std::to_string(py::len(self.Snapshot())) + ">"; });
-
-	// The collection is a stateless view; one instance serves the whole module.
-	data.attr("objects") = py::cast(ObjectCollection{});
 }
 
-}  // namespace
-
-void RegisterNeurusModule(py::module_& m)
+void InstallObjectViews(py::module_& data, const ScriptExecutor* exec)
 {
-	m.doc() = "Neurus scripting API (read-only phase 1).";
-
-	py::module_ data = m.def_submodule("data", "Read-only scene data collections.");
-	RegisterObjectBindings(data);
-	RegisterSceneBindings(m, data);
-	RegisterConfigBindings(data);
-
-	// Scripted mutations are refused in this phase (design section 4.4).
-	py::register_exception<ReadOnlyError>(m, "ReadOnlyError", PyExc_RuntimeError);
+	data.attr("objects") = py::cast(ObjectCollection{exec});
 }
 
 }  // namespace script

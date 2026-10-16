@@ -31,7 +31,7 @@ namespace neurus
 class RenderConfig;      // src/core/RenderConfig.h - Vulkan-free
 class Scene;             // src/scene/Scene.h
 class LogBuffer;         // src/core/Log.h
-class ScriptConsoleBuffer;  // src/core/ScriptConsole.h - Vulkan-free
+class ScriptConsoleBuffer;  // src/script/ScriptConsole.h - Vulkan-free
 struct FrameProfile;     // src/render/ProfilingData.h - Vulkan-free
 struct HistoryView;      // src/editor/operations/HistoryView.h
 

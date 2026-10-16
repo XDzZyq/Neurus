@@ -18,7 +18,7 @@
 #include <memory>
 #include <string>
 
-#include "core/ScriptConsole.h"
+#include "script/ScriptConsole.h"
 #include "script/ScriptContext.h"
 
 namespace neurus

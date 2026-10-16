@@ -22,7 +22,8 @@
 
 #include "core/Log.h"
 #include "script/ScriptEngine.h"
-#include "script/bindings/Runtime.h"
+#include "script/ScriptExecutor.h"
+#include "script/bindings/Bindings.h"
 #include "script/neurus_python_config.h"
 
 namespace neurus
@@ -94,6 +95,17 @@ struct ScriptEngine::Impl
 		// (the uv-managed lib/.venv) is attached, or skipped when it is absent.
 		AttachEnvironment(envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath);
 
+		// Keep the module handle so each run can re-bind its per-run views.
+		try
+		{
+			m_neuru = pybind11::module_::import("neurus");
+		}
+		catch (const pybind11::error_already_set& e)
+		{
+			NEURUS_ERR("ScriptEngine: embedded 'neurus' module is unavailable: " << e.what());
+			return false;
+		}
+
 		m_ready = true;
 		return true;
 	}
@@ -107,6 +119,9 @@ struct ScriptEngine::Impl
 		}
 
 		m_ready = false;
+		// Drop the module handle before finalizing: its destructor decrefs, which
+		// must not happen after the interpreter is gone.
+		m_neuru = pybind11::module_();
 		// Never invoked from a finalizer/atexit path, and guarded above so a
 		// second call is a no-op (design section 8).
 		Py_FinalizeEx();
@@ -207,8 +222,13 @@ private:
 	void RunSource(const std::string& source, const char* entryName, const ScriptContext* ctx)
 	{
 		pybind11::gil_scoped_acquire gil;
-		// Publish this run's context to the bindings for exactly its duration.
-		ContextScope contextScope(ctx, &m_dispatch);
+
+		// A fresh per-run executor; no process-wide state. The bindings' views
+		// are re-bound to it for exactly this run. A null context is an empty
+		// view (no scene, no config).
+		const ScriptContext emptyContext{};
+		ScriptExecutor executor(ctx != nullptr ? *ctx : emptyContext, m_dispatch);
+		script::InstallNeurusViews(m_neuru, &executor);
 
 		try
 		{
@@ -266,33 +286,6 @@ private:
 			return {};
 		}
 	}
-
-	/**
-	 * @brief RAII bracket that publishes the run's context to the bindings.
-	 *
-	 * Proxies reach the scene through `script::CurrentContext()` at attribute
-	 * access time, so the context is published for the duration of one run and
-	 * cleared on every exit path - success, Python error, or host exception -
-	 * before the interpreter could observe a pointer into a finished run.
-	 */
-	class ContextScope
-	{
-	public:
-		explicit ContextScope(const ScriptContext* context, const ScriptDispatch* dispatch)
-		{
-			script::SetCurrentContext(context);
-			script::SetCurrentDispatch(dispatch);
-		}
-
-		~ContextScope()
-		{
-			script::SetCurrentContext(nullptr);
-			script::SetCurrentDispatch(nullptr);
-		}
-
-		ContextScope(const ContextScope&) = delete;
-		ContextScope& operator=(const ContextScope&) = delete;
-	};
 
 	/**
 	 * @brief RAII redirection of Python `sys.stdout`/`sys.stderr`.
@@ -420,6 +413,7 @@ private:
 	};
 
 	bool m_ready = false;
+	pybind11::module_ m_neuru;           ///< Embedded module; views re-bound each run.
 	ScriptConsoleBuffer m_console;
 	ScriptDispatch m_dispatch;          ///< Read-only (no event queue) in this phase.
 	std::vector<PendingRun> m_pending;  ///< Runs queued for the next ExecutePending().

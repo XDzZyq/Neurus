@@ -7,18 +7,18 @@
 
 namespace neurus {
 
-class ShaderHighlighter : public QSyntaxHighlighter
+class CodeHighlighter : public QSyntaxHighlighter
 {
     Q_OBJECT
 
 public:
     enum class Language { GLSL, Cpp, Json, Python };
 
-    explicit ShaderHighlighter(QTextDocument* parent = nullptr);
-    ~ShaderHighlighter() override = default;
+    explicit CodeHighlighter(QTextDocument* parent = nullptr);
+    ~CodeHighlighter() override = default;
 
-    ShaderHighlighter(const ShaderHighlighter&) = delete;
-    ShaderHighlighter& operator=(const ShaderHighlighter&) = delete;
+    CodeHighlighter(const CodeHighlighter&) = delete;
+    CodeHighlighter& operator=(const CodeHighlighter&) = delete;
 
     void setLanguage(Language lang);
 

@@ -1,9 +1,9 @@
 /**
  * @file test_shader_highlighter_python.cpp
- * @brief Syntax highlighting for the Python language added to ShaderHighlighter.
+ * @brief Syntax highlighting for the Python language added to CodeHighlighter.
  *
  * The Script Console feeds shell code to a CodeEditor backed by
- * ShaderHighlighter, so the Python language must actually produce more than one
+ * CodeHighlighter, so the Python language must actually produce more than one
  * format per line and must not leak into the languages that already existed
  * (GLSL is exercised here). The checks read the rendered QTextLayout formats
  * directly, which is what the editor paints.
@@ -17,7 +17,7 @@
 #include <QTextLayout>
 #include <QVector>
 
-#include "ui/utils/ShaderHighlighter.h"
+#include "ui/utils/CodeHighlighter.h"
 
 namespace neurus
 {
@@ -45,11 +45,11 @@ int DistinctFormats(const QTextBlock& block)
 
 } // namespace
 
-TEST(ShaderHighlighterPython, HighlightsPythonSource)
+TEST(CodeHighlighterPython, HighlightsPythonSource)
 {
 	QTextDocument document;
-	ShaderHighlighter highlighter(&document);
-	highlighter.setLanguage(ShaderHighlighter::Language::Python);
+	CodeHighlighter highlighter(&document);
+	highlighter.setLanguage(CodeHighlighter::Language::Python);
 
 	document.setPlainText(QStringLiteral("def f():\n    return 1  # c\n"));
 	highlighter.rehighlight();
@@ -60,11 +60,11 @@ TEST(ShaderHighlighterPython, HighlightsPythonSource)
 	EXPECT_GE(DistinctFormats(document.firstBlock().next()), 2);
 }
 
-TEST(ShaderHighlighterPython, DoesNotDisturbOtherLanguages)
+TEST(CodeHighlighterPython, DoesNotDisturbOtherLanguages)
 {
 	QTextDocument document;
-	ShaderHighlighter highlighter(&document);
-	highlighter.setLanguage(ShaderHighlighter::Language::GLSL);
+	CodeHighlighter highlighter(&document);
+	highlighter.setLanguage(CodeHighlighter::Language::GLSL);
 
 	document.setPlainText(QStringLiteral("void main() {\n    gl_Position = vec4(0.0);\n}\n"));
 	highlighter.rehighlight();
@@ -72,11 +72,11 @@ TEST(ShaderHighlighterPython, DoesNotDisturbOtherLanguages)
 	EXPECT_GE(DistinctFormats(document.firstBlock()), 2);
 
 	// Switching to Python must neither throw nor leave the document blank.
-	EXPECT_NO_THROW(highlighter.setLanguage(ShaderHighlighter::Language::Python));
+	EXPECT_NO_THROW(highlighter.setLanguage(CodeHighlighter::Language::Python));
 	EXPECT_GE(DistinctFormats(document.firstBlock()), 1);
 
 	// A GLSL document still highlights after Python was used.
-	EXPECT_NO_THROW(highlighter.setLanguage(ShaderHighlighter::Language::GLSL));
+	EXPECT_NO_THROW(highlighter.setLanguage(CodeHighlighter::Language::GLSL));
 	document.setPlainText(QStringLiteral("void main() {}\n"));
 	highlighter.rehighlight();
 	EXPECT_GE(DistinctFormats(document.firstBlock()), 2);

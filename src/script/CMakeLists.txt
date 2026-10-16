@@ -8,16 +8,16 @@
 # Explicit source list (no glob), matching the other layer libraries.
 
 add_library(neurus_script STATIC
+	ScriptConsole.h
 	ScriptContext.h
 	ScriptDispatch.h
 	ScriptEngine.h
 	ScriptEngine.cpp
 	ScriptEngineImpl.h
+	ScriptExecutor.h
 	bindings/Bindings.h
 	bindings/ProxyBase.h
 	bindings/Proxies.h
-	bindings/Runtime.h
-	bindings/Runtime.cpp
 	bindings/ObjectBindings.cpp
 	bindings/SceneBindings.cpp
 	bindings/ConfigBindings.cpp

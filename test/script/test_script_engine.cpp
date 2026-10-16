@@ -6,7 +6,7 @@
 #include <string>
 
 #include "core/Log.h"
-#include "core/ScriptConsole.h"
+#include "script/ScriptConsole.h"
 #include "script/ScriptEngine.h"
 
 TEST(ScriptEngine, InitializesAndShutsDown)

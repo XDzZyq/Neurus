@@ -2,9 +2,11 @@
  * @file Bindings.h
  * @brief Entry points of the embedded `neurus` pybind11 module.
  *
- * This header intentionally exposes nothing of pybind11 beyond a forward
- * declaration, so it can be included without pulling Python into a translation
- * unit that does not already own a `pybind11::module_`.
+ * This header exposes nothing of pybind11 beyond a forward declaration, so it
+ * can be included without pulling Python into a translation unit that does not
+ * already own a `pybind11::module_`. The per-run views are re-bound at the start
+ * of each run through `InstallNeurusViews`, which is why a proxy never stores a
+ * context of its own.
  */
 
 #pragma once
@@ -16,28 +18,30 @@ class module_;
 
 namespace neurus
 {
+class ScriptExecutor;
+}
+
+namespace neurus
+{
 namespace script
 {
 
 /**
- * @brief Populates the embedded `neurus` module with proxies and submodules.
+ * @brief Registers the `neurus` module's classes and submodules. Called once.
  * @param m The module object created by `PYBIND11_EMBEDDED_MODULE(neurus, m)`.
  */
 void RegisterNeurusModule(pybind11::module_& m);
 
 /**
- * @brief Registers the typed `neurus.data` collections, their proxies, and
- *        `neurus.context` (active camera and selection).
- * @param root The `neurus` module (owns `context`).
- * @param data The `neurus.data` submodule (owns the typed collections).
+ * @brief Binds the per-run views (collections, context, config) to @p exec.
+ *
+ * Called at the start of every run; the previous run's views are replaced, so
+ * nothing reads a finished run's executor.
+ *
+ * @param m The `neurus` module.
+ * @param exec Executor of the run about to execute; must outlive the run.
  */
-void RegisterSceneBindings(pybind11::module_& root, pybind11::module_& data);
-
-/**
- * @brief Registers `neurus.data.config`, a read-only `RenderConfig` view.
- * @param data The `neurus.data` submodule.
- */
-void RegisterConfigBindings(pybind11::module_& data);
+void InstallNeurusViews(pybind11::module_& m, const ScriptExecutor* exec);
 
 /**
  * @brief Link anchor for the embedded-module translation unit.
@@ -49,6 +53,17 @@ void RegisterConfigBindings(pybind11::module_& data);
  * `ScriptEngine::Impl::Init` before interpreter initialization pins it in.
  */
 void ForceLinkBindings();
+
+// --- Per-file registration / view installation -----------------------------
+
+void RegisterObjectBindings(pybind11::module_& data);
+void InstallObjectViews(pybind11::module_& data, const ScriptExecutor* exec);
+
+void RegisterSceneBindings(pybind11::module_& root, pybind11::module_& data);
+void InstallSceneViews(pybind11::module_& root, pybind11::module_& data, const ScriptExecutor* exec);
+
+void RegisterConfigBindings(pybind11::module_& data);
+void InstallConfigViews(pybind11::module_& data, const ScriptExecutor* exec);
 
 }  // namespace script
 }  // namespace neurus

@@ -2,10 +2,10 @@
  * @file Proxies.h
  * @brief Shared read-only proxy handle types.
  *
- * Every proxy is an empty handle over a `ProxyBase` (a borrowed context plus a
- * UID); values are resolved live on attribute access, never cached. Proxies that
- * several binding translation units must materialise (an `Object`, a
- * `Transform`) live here so `neurus.data.objects` and `neurus.context.selection`
+ * Every proxy is an empty handle over a `ProxyBase` (a per-run `ScriptExecutor`
+ * plus a UID); values are resolved live on attribute access, never cached.
+ * Proxies that several binding translation units must materialise (an `Object`,
+ * a `Transform`) live here so `neurus.data.objects` and `neurus.context.selection`
  * hand out the same Python classes.
  */
 
@@ -29,12 +29,12 @@ struct ObjectProxy : ProxyBase
 	/// @brief Resolves the live object or raises a clear error.
 	const ObjectID* Resolve() const
 	{
-		if (ctx == nullptr || ctx->scene == nullptr)
+		if (exec == nullptr || exec->context().scene == nullptr)
 		{
-			throw std::runtime_error("neurus: object proxy has no scene context");
+			throw std::runtime_error("neurus: object proxy has no run context");
 		}
 
-		const ObjectID* obj = ctx->scene->GetObjectID(uid);
+		const ObjectID* obj = exec->context().scene->GetObjectID(uid);
 		if (obj == nullptr)
 		{
 			throw std::runtime_error("neurus: object proxy refers to a missing object");
@@ -55,12 +55,12 @@ struct TransformProxy : ProxyBase
 	/// @brief Resolves the live `Transform3D` or raises a clear error.
 	const Transform3D* Resolve() const
 	{
-		if (ctx == nullptr || ctx->scene == nullptr)
+		if (exec == nullptr || exec->context().scene == nullptr)
 		{
-			throw std::runtime_error("neurus: transform proxy has no scene context");
+			throw std::runtime_error("neurus: transform proxy has no run context");
 		}
 
-		ObjectID* obj = const_cast<ObjectID*>(ctx->scene->GetObjectID(uid));
+		ObjectID* obj = const_cast<ObjectID*>(exec->context().scene->GetObjectID(uid));
 		if (obj == nullptr)
 		{
 			throw std::runtime_error("neurus: transform proxy refers to a missing object");

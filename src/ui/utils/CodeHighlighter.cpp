@@ -1,8 +1,8 @@
-#include "utils/ShaderHighlighter.h"
+#include "utils/CodeHighlighter.h"
 
 namespace neurus {
 
-ShaderHighlighter::ShaderHighlighter(QTextDocument* parent)
+CodeHighlighter::CodeHighlighter(QTextDocument* parent)
     : QSyntaxHighlighter(parent)
 {
     // Keyword format
@@ -37,7 +37,7 @@ ShaderHighlighter::ShaderHighlighter(QTextDocument* parent)
     setLanguage(Language::GLSL);
 }
 
-void ShaderHighlighter::setLanguage(Language lang)
+void CodeHighlighter::setLanguage(Language lang)
 {
     m_rules.clear();
     switch (lang) {
@@ -51,7 +51,7 @@ void ShaderHighlighter::setLanguage(Language lang)
     rehighlight();
 }
 
-void ShaderHighlighter::highlightBlock(const QString& text)
+void CodeHighlighter::highlightBlock(const QString& text)
 {
     // Apply single-line rules
     for (const auto& rule : m_rules) {
@@ -103,7 +103,7 @@ void ShaderHighlighter::highlightBlock(const QString& text)
     }
 }
 
-void ShaderHighlighter::applyGlsl()
+void CodeHighlighter::applyGlsl()
 {
     // Keywords
     QStringList keywords = {
@@ -149,7 +149,7 @@ void ShaderHighlighter::applyGlsl()
     m_rules.append({QRegularExpression("//[^\n]*"), m_commentFmt});
 }
 
-void ShaderHighlighter::applyCpp()
+void CodeHighlighter::applyCpp()
 {
     QStringList keywords = {"if","else","for","while","do","return","break","continue",
         "switch","case","default","class","struct","enum","namespace","template","typename",
@@ -169,14 +169,14 @@ void ShaderHighlighter::applyCpp()
     m_rules.append({QRegularExpression("//[^\n]*"), m_commentFmt});
 }
 
-void ShaderHighlighter::applyJson()
+void CodeHighlighter::applyJson()
 {
     m_rules.append({QRegularExpression("\"[^\"]*\""), m_stringFmt});
     m_rules.append({QRegularExpression("\\b(true|false|null)\\b"), m_keywordFmt});
     m_rules.append({QRegularExpression("\\b-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b"), m_numberFmt});
 }
 
-void ShaderHighlighter::applyPython()
+void CodeHighlighter::applyPython()
 {
     // Function names / calls first, so keywords and builtins can override a
     // call-shaped keyword like "if (" further down the rule list.
