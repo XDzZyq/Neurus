@@ -77,4 +77,4 @@ conventions and development workflow under
 
 ## License
 
-[MIT](LICENSE)
+[GNU GPL-3.0](LICENSE)
