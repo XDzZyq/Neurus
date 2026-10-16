@@ -17,6 +17,12 @@ under [`docs/`](../../docs/README.md).
 - Any files should not include absolute path.
 - Complete and double check all aspects (tests, coding style, document) of the
   current task before commit.
+- **Build before every commit, test before every push.** A commit must build
+  (0 errors) - no exceptions. `make check` is the *push* gate, not the commit
+  gate: run it before pushing, and mid-stream after a large modification
+  (cross-system refactor, new feature, anything crossing layers) rather than
+  letting a wave of commits reach the gate untested. See
+  [development.instructions.md](development.instructions.md) for the full table.
 - Only the master agent can commit and merge. If subagent tasks may overlap in
   files, use Branches and Git Worktree for parallelism and isolation - and see
   [roles.instructions.md](roles.instructions.md) for lane patterns. Do not

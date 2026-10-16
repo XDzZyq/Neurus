@@ -294,7 +294,7 @@ for name in ["Position", "Normal", "Albedo", "MetallicRoughness", "HDRColor"]:
         raise ValueError(f"{name}: ALL BLACK - geometry not rendered")
 ```
 
-**VUID check (REQUIRED before committing any GPU test or renderer change).** Run
+**VUID check (REQUIRED before pushing a GPU test or renderer change).** Run
 the test executable and verify zero `VUID-` violations in output:
 
 ```bash

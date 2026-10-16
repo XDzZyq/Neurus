@@ -74,19 +74,27 @@ events - never poll per frame. Renderer never calls back into Editor.
 2. **Implement.** Break the work into waves (foundation -> core -> integration ->
    tests/docs) and fan out where files are disjoint. Wire every feature into the
    renderer and application immediately; expose errors directly.
-3. **Test and verify** - every wave, non-negotiable:
-   - Build the live tree: 0 errors.
-   - `make check`: all tests pass, including reference-image regression.
-   - Launch `Neurus.exe`: zero `VUID-` validation errors, no crashes/unexpected
-     logs, viewport looks correct, resize/interaction stays responsive.
-   - Verify every reference image with Python PIL (not empty, not uniform, not
-     all-black/white) - never cheat yourself.
-   - `python scripts/extract_i18n.py --check`: catalogs complete and fresh.
+3. **Test and verify** - gated by what you are about to do, non-negotiable:
+   - **Before every commit:** build the live tree, 0 errors. A commit that does
+     not build is never acceptable.
+   - **Before every push:** `make check` all green, including reference-image
+     regression, and launch `Neurus.exe` - zero `VUID-` validation errors, no
+     crashes/unexpected logs, viewport looks correct, resize/interaction stays
+     responsive.
+   - **Mid-stream:** the suite is not required per commit, but run it after a
+     large modification - a cross-system refactor, a new feature, anything
+     crossing layers - rather than meeting the breakage at the push gate.
+   - **When the change touches them:** verify every reference image with Python
+     PIL (not empty, not uniform, not all-black/white) - never cheat yourself -
+     and run `python scripts/extract_i18n.py --check` for any new user-visible
+     string.
 4. **Update docs.** Keep `docs/` and `.github/instructions/` current before
    committing.
 5. **Commit** only after the user approves (unless told in advance). Message
    `feat(scope): what was built`, and add "No validation error, no unreasonable
-   reference image, all tests passed."
+   reference image, all tests passed." only when those checks actually ran - the
+   trailer is evidence, not decoration. A commit resting on the build gate alone
+   says what was verified instead.
 
 Stop and wait for user verification after each phase.
 
