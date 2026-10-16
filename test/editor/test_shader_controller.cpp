@@ -690,9 +690,12 @@ TEST_F(ShaderControllerTest, Compile_Failure_DoesNotEmitShaderCompiled)
 {
 	// Seed an attribute with a bogus GLSL type so the regenerated source is
 	// rejected by shaderc: Compile returns empty SPIR-V and nothing is emitted.
+	// The type must be CUSTOM for the generator to emit `typeName` verbatim -
+	// ShaderGenerator.cpp:64 falls back to ParseType(type) for every builtin,
+	// so a bogus name on a VEC3 would be discarded and the source would compile.
 	auto shader = std::make_shared<RenderShader>("BadCompileShader", "v.vert", "f.frag");
 	shader->GetStage(ShaderType::VERTEX).parsed.AB_list.push_back(
-		S_IO{ 0, "bad", ParaType::VEC3, "not_a_glsl_type", Interp::Smooth });
+		S_IO{ 0, "bad", ParaType::CUSTOM, "not_a_glsl_type", Interp::Smooth });
 	m_mesh->o_shader = shader;
 
 	bool fired = false;
