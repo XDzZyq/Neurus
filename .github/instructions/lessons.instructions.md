@@ -101,6 +101,13 @@ the **rule** that prevents it. Design detail behind these lives in
 - **Replacement characters appear where non-ASCII used to be in source.** Rule:
   never use PowerShell `Set-Content -Force`; use the native `write`/`edit` tools,
   which preserve UTF-8.
+- **Neurus CI fails at the dependency step right after a `lib` submodule bump.**
+  CI downloads the prebuilt libraries from the matching Neurus-Lib release, so a
+  push that references a Neurus-Lib commit whose release does not exist yet makes
+  that download fail. Rule: when `lib` is modified or its pointer moved, push
+  Neurus-Lib first, wait for its build/release workflow to succeed, and only then
+  push Neurus (see
+  [git-workflow.instructions.md](git-workflow.instructions.md)).
 
 ## Documentation build
 

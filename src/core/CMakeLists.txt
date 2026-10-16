@@ -10,6 +10,7 @@ add_library(neurus_core STATIC
 	ResourceManager.cpp
 	Serialize.h
 	RenderConfig.h
+	ScriptConsole.h
 )
 
 # src/ (${CMAKE_CURRENT_SOURCE_DIR}/..) exposes headers as "core/X.h".

@@ -21,6 +21,7 @@ class Scene;
 class UploadManager;
 struct RenderContext;   // render/RenderContext.h - Vulkan-free frame view (renderer-facing)
 struct ShaderCreateRequested;
+struct ScriptContext;   // script/ScriptContext.h - Vulkan/Qt-free script view
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
 }
 
@@ -117,6 +118,14 @@ public:
 	 *          (neurus_ui links this one), so such a call would not resolve.
 	 */
 	void UpdateUIContext(UIContext& ctx) const;
+
+	/**
+	 * @brief Fills the script-facing view: the borrowed scene and render config.
+	 *
+	 * Mirrors UpdateUIContext - two field assignments, nothing else. The caller
+	 * builds a ScriptContext for one script run and discards it afterwards.
+	 */
+	void UpdateScriptContext(ScriptContext& ctx) const;
 
 	/**
 	 * @brief Returns a read-only snapshot of the undo/redo history.

@@ -12,7 +12,7 @@ class ShaderHighlighter : public QSyntaxHighlighter
     Q_OBJECT
 
 public:
-    enum class Language { GLSL, Cpp, Json };
+    enum class Language { GLSL, Cpp, Json, Python };
 
     explicit ShaderHighlighter(QTextDocument* parent = nullptr);
     ~ShaderHighlighter() override = default;
@@ -31,6 +31,7 @@ private:
     void applyGlsl();
     void applyCpp();
     void applyJson();
+    void applyPython();
 
     QVector<Rule> m_rules;
     QRegularExpression m_multiLineStart;

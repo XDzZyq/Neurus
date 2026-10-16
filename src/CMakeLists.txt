@@ -28,6 +28,11 @@ add_subdirectory(scene)
 # Application Layer (depends on: render, editor, ui, asset, scene)
 add_subdirectory(app)
 
+# Script Layer (embedded CPython + pybind11; depends on: editor, core, scene)
+if(NEURUS_ENABLE_SCRIPTING)
+	add_subdirectory(script)
+endif()
+
 # ---------------------------------------------------------------------------
 # Main Executable
 # ---------------------------------------------------------------------------
@@ -49,6 +54,10 @@ target_link_libraries(Neurus PRIVATE
 	Qt6::Qml
 	Qt6::Widgets
 )
+
+if(NEURUS_ENABLE_SCRIPTING)
+	target_link_libraries(Neurus PRIVATE neurus_script)
+endif()
 
 target_include_directories(Neurus PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}
@@ -81,6 +90,17 @@ if(WIN32)
 			$<TARGET_FILE_DIR:Neurus>
 		COMMENT "Deploying Qt DLLs via windeployqt"
 	)
+
+	# Deploy the CPython runtime DLL next to the executable. Windows never
+	# searches the managed environment directory (script-system design, 9).
+	if(NEURUS_ENABLE_SCRIPTING)
+		add_custom_command(TARGET Neurus POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${NEURUS_PYTHON_DLL}"
+				"$<TARGET_FILE_DIR:Neurus>"
+			COMMENT "Copying the CPython runtime DLL"
+		)
+	endif()
 endif()
 
 # Copy res/ folder to the output directory so resources resolve at runtime

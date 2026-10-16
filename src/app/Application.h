@@ -12,6 +12,7 @@
 #include "render/DeferredRenderer.h"
 #include "render/Screenshot.h"
 #include "render/UploadManager.h"
+#include "script/ScriptEngine.h"
 #include "app/Preferences.h"
 #include "ui/UIManager.h"
 #include "platform/PlatformSurface.h"
@@ -55,6 +56,7 @@ private:
 	bool InitVulkan();
 	bool InitRenderer();
 	void InitEditor();
+	void InitScripting();
 	void ResizeViewport(int width, int height);
 	void WireSignals();
 	void NewFrameSignals(UIEvents& uiEvents);
@@ -66,6 +68,10 @@ private:
 	void OnProjectNew();
 	void OnProjectOpen(const std::string& path);
 	void OnProjectSave(const std::string& path = std::string());
+
+	// --- Scripting (Script Console → ScriptEngine) ---
+	void OnRunScript(const std::string& code);
+	void OnRunFile(const std::string& path);
 
 	/** @brief Aggregated document dirtiness: editor scene/config OR UI-state drift. */
 	bool IsDirty() const;
@@ -106,13 +112,18 @@ private:
 
 	// --- GPU / UI stack (destroyed in REVERSE order: renderer first, vkContext last) ---
 	// Screenshot holds refs to RenderCache (owned by DeferredRenderer) — must be destroyed BEFORE renderer.
-	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared → destroyed 6th (LAST)
-	std::unique_ptr<UIManager>            app_mainWindow;      // 2nd declared → destroyed 5th
-	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 3rd declared → destroyed 4th
-	std::unique_ptr<Screenshot>           app_screenshot;      // 4th declared → destroyed 3rd
-	std::unique_ptr<Editor>               app_editor;          // 5th declared → destroyed 2nd
-	std::unique_ptr<UploadManager>        app_uploadManager;   // 6th declared → destroyed 1.5th
-	std::unique_ptr<DeferredRenderer>     app_renderer;        // 7th declared → destroyed 1st (FIRST)
+	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared → destroyed 8th (LAST)
+	std::unique_ptr<UIManager>            app_mainWindow;      // 2nd declared → destroyed 7th
+	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 3rd declared → destroyed 6th
+	std::unique_ptr<Screenshot>           app_screenshot;      // 4th declared → destroyed 5th
+	std::unique_ptr<Editor>               app_editor;          // 5th declared → destroyed 4th
+	// Declared AFTER app_editor so reverse-order destruction tears the engine
+	// down BEFORE the Editor: the engine may hold a ScriptContext that borrows
+	// the Editor's scene/config, so releasing the engine first avoids dangling
+	// borrows during Python finalization. It still outlives the frame loop.
+	std::unique_ptr<ScriptEngine>         app_script;          // 6th declared → destroyed 3rd
+	std::unique_ptr<UploadManager>        app_uploadManager;   // 7th declared → destroyed 2nd
+	std::unique_ptr<DeferredRenderer>     app_renderer;        // 8th declared → destroyed 1st (FIRST)
 };
 
 } // namespace neurus

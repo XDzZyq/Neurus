@@ -29,6 +29,7 @@
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "ui/UIContext.h"
+#include "script/ScriptContext.h"
 
 #include "core/Log.h"
 #include "asset/data/AssetPath.h"
@@ -424,6 +425,13 @@ void Editor::UpdateUIContext(UIContext& ctx) const
 	// Fields only - never a call into a UIContext method. UpdateUIContext is
 	// compiled into neurus_editor, which does not link neurus_ui (that library
 	// links *this* one), so referencing a UIContext symbol here would not resolve.
+	ctx.scene = m_scene.get();
+	ctx.config = &m_config;
+}
+
+void Editor::UpdateScriptContext(ScriptContext& ctx) const
+{
+	// Same shape as UpdateUIContext: two borrowed pointers, no symbol calls.
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 }

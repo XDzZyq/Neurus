@@ -44,6 +44,7 @@ void ShaderHighlighter::setLanguage(Language lang)
         case Language::GLSL: applyGlsl(); break;
         case Language::Cpp:  applyCpp();  break;
         case Language::Json: applyJson(); break;
+        case Language::Python: applyPython(); break;
     }
     m_multiLineStart = QRegularExpression("/\\*");
     m_multiLineEnd   = QRegularExpression("\\*/");
@@ -173,6 +174,49 @@ void ShaderHighlighter::applyJson()
     m_rules.append({QRegularExpression("\"[^\"]*\""), m_stringFmt});
     m_rules.append({QRegularExpression("\\b(true|false|null)\\b"), m_keywordFmt});
     m_rules.append({QRegularExpression("\\b-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b"), m_numberFmt});
+}
+
+void ShaderHighlighter::applyPython()
+{
+    // Function names / calls first, so keywords and builtins can override a
+    // call-shaped keyword like "if (" further down the rule list.
+    m_rules.append({QRegularExpression("\\b([a-zA-Z_]\\w*)\\s*\\("), m_functionFmt});
+
+    // Keywords
+    QStringList keywords = {
+        "def", "class", "if", "elif", "else", "for", "while", "import", "from",
+        "return", "yield", "with", "as", "try", "except", "finally", "lambda",
+        "async", "await", "in", "is", "not", "and", "or", "pass", "break",
+        "continue", "global", "nonlocal", "assert", "del", "raise"
+    };
+    for (const auto& kw : keywords)
+        m_rules.append({QRegularExpression("\\b" + kw + "\\b"), m_keywordFmt});
+
+    // Built-in functions and types
+    QStringList builtins = {
+        "print", "len", "range", "list", "dict", "set", "tuple", "str", "int",
+        "float", "bool", "type", "isinstance", "enumerate", "zip", "open", "repr",
+        "abs", "min", "max", "sum", "sorted", "reversed", "any", "all", "map",
+        "filter", "iter", "next", "super", "hasattr", "getattr", "setattr",
+        "round", "pow", "divmod", "callable", "format", "input", "id", "hash"
+    };
+    for (const auto& b : builtins)
+        m_rules.append({QRegularExpression("\\b" + b + "\\b"), m_builtinFmt});
+
+    // Literals
+    m_rules.append({QRegularExpression("\\b(True|False|None)\\b"), m_keywordFmt});
+
+    // Numbers
+    m_rules.append({QRegularExpression("\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b"), m_numberFmt});
+
+    // Strings: single-quoted first, then triple-quoted so the latter wins.
+    m_rules.append({QRegularExpression("'[^'\\n]*'"), m_stringFmt});
+    m_rules.append({QRegularExpression("\"[^\"\\n]*\""), m_stringFmt});
+    m_rules.append({QRegularExpression("'''[\\s\\S]*?'''"), m_stringFmt});
+    m_rules.append({QRegularExpression("\"\"\"[\\s\\S]*?\"\"\""), m_stringFmt});
+
+    // Comments: '#' to end of line
+    m_rules.append({QRegularExpression("#[^\\n]*"), m_commentFmt});
 }
 
 } // namespace neurus
