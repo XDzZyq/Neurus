@@ -464,6 +464,15 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                         // copy of rctx.
 	                         neurus::RenderContext rctx;
 	                         app_editor->UpdateRenderContext(rctx);
+
+	                         // The owned half of the same frame. Published here
+	                         // rather than inside UpdateRenderContext, which is
+	                         // const: the snapshot needs storage that outlives
+	                         // DrawFrame, and app_frameSnapshot is refilled
+	                         // rather than rebuilt.
+	                         app_editor->BuildSnapshot(app_frameSnapshot);
+	                         rctx.snapshot = &app_frameSnapshot;
+
 	                         auto profile = app_renderer->DrawFrame(rctx);
 
 	                         const neurus::HistoryView history = app_editor->GetHistory();

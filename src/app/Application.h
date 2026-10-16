@@ -11,6 +11,7 @@
 #include "editor/Editor.h"
 #include "render/DeferredRenderer.h"
 #include "render/Screenshot.h"
+#include "render/RenderFrameSnapshot.h"
 #include "render/UploadManager.h"
 #include "app/Preferences.h"
 #include "ui/UIManager.h"
@@ -103,6 +104,17 @@ private:
 	std::string app_uiLayout;       ///< Transient UI-state blob for (de)serialization.
 	std::string app_savedUiState;   ///< UI blob as last saved/loaded (dirty baseline).
 	std::unique_ptr<Preferences> app_preferences;  ///< ~/.neurus/preferences.json (loaded before the window).
+
+	/**
+	 * @brief This frame, owned here so RenderContext::snapshot has something to
+	 *        point at that outlives DrawFrame.
+	 *
+	 * Refilled rather than rebuilt each frame (Editor::BuildSnapshot clears it
+	 * and reuses the list capacity). It lives here, not in the Editor, because
+	 * both Editor frame-view methods are const and the Application already owns
+	 * the frame-local RenderContext this pairs with.
+	 */
+	RenderFrameSnapshot app_frameSnapshot;
 
 	// --- GPU / UI stack (destroyed in REVERSE order: renderer first, vkContext last) ---
 	// Screenshot holds refs to RenderCache (owned by DeferredRenderer) — must be destroyed BEFORE renderer.

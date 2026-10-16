@@ -129,6 +129,18 @@ public:
 	RenderFrameSnapshot BuildSnapshot() const;
 
 	/**
+	 * @brief Builds this frame into caller-owned storage, reusing its capacity.
+	 *
+	 * Same frame as the returning overload, which delegates here. Refilling one
+	 * snapshot is what `RenderFrameSnapshot::Clear()` exists for: the draw lists
+	 * keep their capacity instead of reallocating per frame. @p out is cleared
+	 * first, so a stale field cannot survive into the new frame.
+	 *
+	 * @param out Snapshot to overwrite; its list capacity is retained.
+	 */
+	void BuildSnapshot(RenderFrameSnapshot& out) const;
+
+	/**
 	 * @brief Fills the UI-facing view of this frame: the document, and nothing else.
 	 *
 	 * Only the two members the UI layer is entitled to (scene, config). The

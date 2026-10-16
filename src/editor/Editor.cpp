@@ -433,56 +433,57 @@ void Editor::UpdateRenderContext(RenderContext& ctx) const
 	// The frame half (extent, frame index, jitter, iteration) is deliberately NOT
 	// written here: recordFrame() stamps it from the swapchain and its counters.
 	//
-	// ctx.snapshot is likewise left null: BuildSnapshot() returns the frame by
-	// value, and publishing a pointer to a temporary would dangle the moment this
-	// function returns. Wiring it up belongs with whoever owns storage that
-	// outlives the frame (the render-thread handoff), not here.
+	// ctx.snapshot is likewise left null: BuildSnapshot() needs storage that
+	// outlives the frame, and this method is const. The caller owns that storage
+	// and publishes the pointer (Application's frame loop).
 }
 
-RenderFrameSnapshot Editor::BuildSnapshot() const
+void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 {
-	RenderFrameSnapshot snap;
+	// Cleared rather than default-constructed: the draw lists keep their
+	// capacity, which is the whole point of refilling one snapshot per frame.
+	out.Clear();
 
 	// Same sources as UpdateRenderContext() above, read by value instead of
 	// published by pointer. Keep the two in step: a field added to one view and
 	// not the other is a frame the render layer sees differently depending on
 	// which half it reads.
-	snap.config = m_config;
+	out.config = m_config;
 
 	if (const Camera* cam = m_viewport.GetCamera())
 	{
-		snap.hasCamera = true;
+		out.hasCamera = true;
 		// Matrices are copied, not re-derived from the scalars below: the Camera
 		// caches them, and recomputing is how a reader ends up disagreeing with
 		// the CameraGPU the vertex stage used.
-		snap.camera.view       = cam->GetViewMatrix();
-		snap.camera.projection = cam->GetProjectionMatrix();
-		snap.camera.position   = cam->GetPosition();
-		snap.camera.target     = cam->cam_tar;
-		snap.camera.width      = cam->cam_w;
-		snap.camera.height     = cam->cam_h;
-		snap.camera.fovDegrees = cam->cam_pers;
-		snap.camera.nearPlane  = cam->cam_near;
-		snap.camera.farPlane   = cam->cam_far;
+		out.camera.view       = cam->GetViewMatrix();
+		out.camera.projection = cam->GetProjectionMatrix();
+		out.camera.position   = cam->GetPosition();
+		out.camera.target     = cam->cam_tar;
+		out.camera.width      = cam->cam_w;
+		out.camera.height     = cam->cam_h;
+		out.camera.fovDegrees = cam->cam_pers;
+		out.camera.nearPlane  = cam->cam_near;
+		out.camera.farPlane   = cam->cam_far;
 	}
 
 	// r_debug_draw gates the copy exactly as it gates publication above, so a
 	// disabled overlay costs the snapshot nothing.
 	if (m_config.RequiresDebugDraw())
 	{
-		snap.hasDebugDraw = true;
-		snap.debugDraw = m_viewport.DebugList();
+		out.hasDebugDraw = true;
+		out.debugDraw = m_viewport.DebugList();
 	}
 
 	// Copied unconditionally, matching the unconditional publication above.
-	snap.gizmoDraw = m_viewport.GizmoList();
+	out.gizmoDraw = m_viewport.GizmoList();
 
 	if (!m_scene)
-		return snap;   // a frame with no scene is legal, and is now complete
+		return;   // a frame with no scene is legal, and is now complete
 
-	snap.hasScene = true;
+	out.hasScene = true;
 
-	snap.meshes.reserve(m_scene->mesh_list.size());
+	out.meshes.reserve(m_scene->mesh_list.size());
 	for (const auto& [id, mesh] : m_scene->mesh_list)
 	{
 		if (!mesh) continue;
@@ -502,10 +503,10 @@ RenderFrameSnapshot Editor::BuildSnapshot() const
 			inst.shaderObjectId = mesh->o_shader->GetObjectID();
 			inst.shaderVersion  = mesh->o_shader->GetVersion();
 		}
-		snap.meshes.push_back(inst);
+		out.meshes.push_back(inst);
 	}
 
-	snap.lights.reserve(m_scene->light_list.size());
+	out.lights.reserve(m_scene->light_list.size());
 	for (const auto& [uid, light] : m_scene->light_list)
 	{
 		if (!light) continue;
@@ -524,16 +525,16 @@ RenderFrameSnapshot Editor::BuildSnapshot() const
 		ls.useShadow         = light->use_shadow;
 		ls.visibleInViewport = light->is_viewport;
 		ls.rendered          = light->is_rendered;
-		snap.lights.push_back(ls);
+		out.lights.push_back(ls);
 	}
 
 	// Sorted by UID, because the pools are unordered_maps: downstream the light
 	// index picks a descriptor slot and the mesh order is the draw order, so two
 	// snapshots of one unchanged scene must not differ in order.
-	std::sort(snap.meshes.begin(), snap.meshes.end(),
+	std::sort(out.meshes.begin(), out.meshes.end(),
 	          [](const MeshInstanceSnapshot& l, const MeshInstanceSnapshot& r)
 	          { return l.objectId < r.objectId; });
-	std::sort(snap.lights.begin(), snap.lights.end(),
+	std::sort(out.lights.begin(), out.lights.end(),
 	          [](const LightSnapshot& l, const LightSnapshot& r)
 	          { return l.objectId < r.objectId; });
 
@@ -544,18 +545,23 @@ RenderFrameSnapshot Editor::BuildSnapshot() const
 	{
 		if (!env) continue;
 		const int envId = env->GetObjectID();
-		if (!snap.hasEnvironment || envId < snap.environmentId)
+		if (!out.hasEnvironment || envId < out.environmentId)
 		{
-			snap.hasEnvironment = true;
-			snap.environmentId  = envId;
+			out.hasEnvironment = true;
+			out.environmentId  = envId;
 		}
 	}
 
 	// The selection travels as an id, and 0 means none - the same value the
 	// outline pass pushes when nothing is selected.
 	if (const ObjectID* active = m_scene->selections.GetActiveObject())
-		snap.activeObjectId = active->GetObjectID();
+		out.activeObjectId = active->GetObjectID();
+}
 
+RenderFrameSnapshot Editor::BuildSnapshot() const
+{
+	RenderFrameSnapshot snap;
+	BuildSnapshot(snap);
 	return snap;
 }
 
