@@ -11,8 +11,8 @@ responsibility, and Core supplies utilities shared across all of them.
 - Owns VkDevice, VkSwapchainKHR, VkPipeline, VkCommandPool
 - Consumes read-only VkSurfaceKHR from UI layer
 - Consumes the per-frame RenderContext (the renderer's view of the frame: the
-  Editor's semantic half plus the frame half `recordFrame()` stamps) for pass
-  dispatch
+  Editor's owned frame snapshot plus the frame half `recordFrame()` stamps) for
+  pass dispatch
 - Centralized image barrier management via `Barrier::Transition` (ImageState ->
   Vulkan layout/stage/access)
 - Owns `MeshGPU` (GPU-side mesh resources: VertexBuffer + IndexBuffer) via
@@ -30,14 +30,14 @@ responsibility, and Core supplies utilities shared across all of them.
 - Owns Controllers (CameraController, TransformGizmoController,
   ShaderController, SceneController, RenderConfigController) via
   `src/editor/controllers/`
-- Publishes the two frame views as one pivot: `RenderContext` (the renderer's
-  view) via `UpdateRenderContext()` and `UIContext` (the UI's view) via
-  `UpdateUIContext()`
+- Produces the two frame views: the renderer's view as an owned
+  `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
+  via `UpdateUIContext()`
 - Owns `EditorViewport`, the viewport composition root: the **viewport camera**
   (a pooled `Camera` that is not scene content), the debug/gizmo builders and
   the resize. `EditorViewport::GetCamera()` publishes the activated scene
-  camera when the Scene names one and the viewport camera otherwise, and
-  `RenderContext::camera` carries that choice to the renderer, so no pass reads
+  camera when the Scene names one and the viewport camera otherwise, and the
+  frame snapshot's camera carries that choice to the renderer, so no pass reads
   the Scene. The Editor itself holds no camera and exposes no camera API, only
   `GetViewport()` and the timing (`SyncCamera` in `Edit()`). A scene with zero
   cameras is a legal document. See [Editor Overview](../editor/overview.md).

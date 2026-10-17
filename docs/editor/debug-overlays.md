@@ -30,7 +30,7 @@ already holds and skips the memcpy entirely.
 
 `DebugDrawBuilder` is the only place that walks `Scene::dLine_list`,
 `dPoints_list` and `dMesh_list` and flattens them into the `DebugDrawList` that
-`RenderContext::debugDraw` publishes to `DebugPass`. It is a plain member of
+the frame snapshot carries to `DebugPass`. It is a plain member of
 `EditorViewport` (`m_debugDraw`), not a controller: it has no events of its own.
 The Editor reaches it only through `MarkOverlaysDirty()` /
 `RebuildOverlays(scene)`, and never sees the builder itself.

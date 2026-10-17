@@ -81,36 +81,40 @@ Two frame views over the same document state, with the Editor as the single
 pivot, so neither consumer reaches around it for the other's data:
 
 - `RenderContext` (`src/render/RenderContext.h`) - the renderer's view. The
-  Editor publishes the semantic half (`scene`, `config`, `camera`, `debugDraw`,
-  `gizmoDraw`) through `Editor::UpdateRenderContext()`; `DeferredRenderer` then
-  stamps the frame half (`width`, `height`, `frameIndex`, `jitter`, `iteration`)
-  through `recordFrame()`.
+  Editor half is a single owned frame snapshot: the Application publishes one
+  `RenderFrameSnapshot` per frame (built by `Editor::BuildSnapshot()`) and points
+  `ctx.snapshot` at it; `DeferredRenderer` then stamps the frame half (`width`,
+  `height`, `frameIndex`, `jitter`, `iteration`) through `recordFrame()`. There
+  is no second publication path - a pass reads what is being rendered through
+  `ctx.Frame()`.
 - `UIContext` (`src/ui/UIContext.h`) - the UI's view, two fields wide: `scene`
   and `config` from `Editor::UpdateUIContext()`, plus the Application's typed
   `profile`/`log`/`history` pointers. A panel never names the camera or either
   overlay payload.
-- Fields are carried directly on each view; neither context embeds a snapshot
-  struct.
 - Read-only access to scene data for Renderer
 - Data flows: Editor mutates, Renderer consumes
-- **Every context member is a typed pointer declared by forward declaration in
-  the context's own header** (`const Scene*`, `const RenderConfig*`,
-  `const Camera*`, `const DebugDrawList*`, `const GizmoDrawList*` in
-  `RenderContext`; `const Scene*`, `const RenderConfig*`, `const FrameProfile*`,
-  `const LogBuffer*`, `const HistoryView*` in `UIContext`), and **growth is by a
-  new typed field on whichever view owns its source** - never by a `void*` slot.
-  A forward declaration adds no include, so the typed pointer costs the layer
-  isolation nothing; the type erasure it replaced cost 18 `static_cast` sites
-  and two wrong null policies.
+- **`RenderContext` carries the Editor half as one forward-declared
+  `const RenderFrameSnapshot*`** (`src/render/RenderFrameSnapshot.h`) - an owned
+  deep copy with no Scene pointers and no lazy reads, so the renderer reads values
+  the Editor is free to keep mutating. `UIContext`'s members stay typed pointers
+  declared by forward declaration (`const Scene*`, `const RenderConfig*`,
+  `const FrameProfile*`, `const LogBuffer*`, `const HistoryView*`), and **growth
+  is by a new typed field on whichever view owns its source** - never by a
+  `void*` slot. A forward declaration adds no include, so the typed pointer costs
+  the layer isolation nothing; the type erasure it replaced cost 18 `static_cast`
+  sites and two wrong null policies.
 - `RenderConfig` (`src/core/RenderConfig.h`) is owned by the Editor directly
-  (no longer via Project); passes and panels read it through
-  `RenderContext::Settings()` / `UIContext::Settings()`, which never return null
-  and both fall back to `DefaultRenderConfig()` - the single source of truth for
-  render-setting defaults, so a pass and a panel cannot disagree about an unset
-  value
-- Null policy: `config` is always safe through `Settings()`; `scene` (both
-  views), `camera` (`RenderContext`), `debugDraw` and `gizmoDraw` MUST be checked
-  (`HasScene()`, `HasCamera()`, or a plain null test)
+  (no longer via Project); `BuildSnapshot()` copies it into the snapshot, where a
+  pass reads it through `ctx.Frame().Settings()`, and a panel reads the Editor's
+  copy through `UIContext::Settings()`. Neither returns null - both fall back to
+  `DefaultRenderConfig()`, the single source of truth for render-setting defaults,
+  so a pass and a panel cannot disagree about an unset value
+- Null policy: `ctx.Frame()` itself is never null - an unpublished context reads
+  as an empty frame (no scene, no camera, no draws, default settings), so what a
+  pass used to null-check on the context it now checks on the frame
+  (`ctx.Frame().HasScene()`, `HasCamera()`, `HasDebugDraw()`). On `UIContext`,
+  `config` is always safe through `Settings()` while `scene` MUST be checked
+  (`HasScene()`)
 - `Editor::SetRenderConfig()` writes UI config changes directly to the
-  Editor-owned RenderConfig, which the Editor then publishes through
-  `UpdateRenderContext()` / `UpdateUIContext()`
+  Editor-owned RenderConfig, which then reaches the renderer in the next frame's
+  snapshot and the UI through `UpdateUIContext()`

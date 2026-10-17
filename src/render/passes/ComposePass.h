@@ -61,7 +61,7 @@ public:
 	 *
 	 * Writes the descriptors, transitions the inputs to ColorShaderRead and
 	 * ComposedOutput to ShaderWrite, then dispatches ceil(w/16) x ceil(h/16)
-	 * thread groups. Gamma comes from ctx.Settings().r_gamma.
+	 * thread groups. Gamma comes from ctx.Frame().Settings().r_gamma.
 	 *
 	 * @param cmdBuf  Command buffer in recording state.
 	 * @param cache   Mutable render cache for attachment access.

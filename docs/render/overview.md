@@ -89,7 +89,7 @@ For the current pass-by-pass structure, see [Passes](passes.md). For shader and 
 
 ## Renderer preconditions
 
-- `DeferredRenderer` assumes `ctx.camera` is non-null. The Editor's viewport camera (`EnsureCamera` / `SyncCamera`) keeps it populated; the renderer only enforces the precondition, it does not synthesise a camera.
+- `DeferredRenderer` requires the published frame to carry a camera - it checks `ctx.Frame().HasCamera()` and skips the frame otherwise. The Editor's viewport camera (`EnsureCamera` / `SyncCamera`) keeps the frame populated; the renderer only enforces the precondition, it does not synthesise a camera.
 
 ## Vulkan-HPP RAII conventions
 

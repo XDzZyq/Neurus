@@ -221,69 +221,16 @@ protected:
 	}
 
 	/**
-	 * @brief Publishes the scene's active camera into the RenderCache's shared UBO.
+	 * @brief Publishes a whole frame - the RenderContext snapshot and the camera UBO.
 	 *
-	 * DeferredRenderer::recordFrame() does this once per frame, before any pass
-	 * records; a test that drives a pass directly is standing in for that frame
-	 * driver and must do the same. GeometryPass and DebugPass only *bind*
-	 * RenderCache::GetCameraGPU() — without this call it is still invalid and
-	 * both passes record nothing.
-	 *
-	 * No-op when no scene camera is activated — and nothing is activated by
-	 * default, so `UseCamera()` alone is not enough: a render test must also call
-	 * `Scene::ActivateCamera(uid)`. In the app the viewport looks through the
-	 * viewport's own camera, so "no activated scene camera" is the normal state, not
-	 * a failure the Scene will repair.
-	 */
-	static void PublishSceneCamera(neurus::RenderCache& cache,
-	                               const neurus::Scene& scene)
-	{
-		if (const neurus::Camera* cam = scene.GetActiveCamera())
-		{
-			cache.UpdateCamera(cam->GetProjectionMatrix(), cam->GetViewMatrix());
-		}
-	}
-
-	/**
-	 * @brief PublishSceneCamera overload taking the context a pass will receive.
-	 *
-	 * Does both halves of what DeferredRenderer::recordFrame() does with the
-	 * camera: fills RenderCache's shared UBO *and* injects the camera into the
-	 * RenderContext, which is where every pass now reads the viewing camera from
-	 * (LightingPass, SSAOPass, ShadowDepthPass, ShadowIntensityPass). Publishing
-	 * only the UBO would leave those four passes skipping their work.
-	 *
-	 * Takes the context by non-const reference for that reason — the real frame
-	 * driver writes the same field too, and a test standing in for it must.
-	 * No-op when no scene is attached.
-	 *
-	 * Call it **before the first pass records**, exactly where recordFrame() puts
-	 * it, and not merely before the pass that reads the camera. Ordering is now
-	 * load-bearing in a way it was not when passes reached into the Scene
-	 * themselves: ShadowDepthPass skips its whole sun cascade when
-	 * `camera` is null, and a later publication cannot retroactively
-	 * fill a shadow map that was never rendered.
-	 */
-	static void PublishSceneCamera(neurus::RenderCache& cache,
-	                               neurus::RenderContext& ctx)
-	{
-		if (const neurus::Scene* scene = ctx.scene)
-		{
-			ctx.camera = scene->GetActiveCamera();
-			PublishSceneCamera(cache, *scene);
-		}
-	}
-
-	/**
-	 * @brief Publishes a whole frame - both RenderContext halves and the camera UBO.
-	 *
-	 * One call that does everything DeferredRenderer::recordFrame() and
-	 * Editor::UpdateRenderContext() do before a pass records: it fills the
-	 * borrowed half of @p ctx, pushes the camera into the RenderCache UBO (what
-	 * PublishSceneCamera did), builds the owned snapshot with the SAME producer
-	 * production uses - neurus::Editor::BuildSnapshot() - and publishes it. A
-	 * fixture driving a pass directly stands in for the frame driver, and this is
-	 * the single seam that keeps it honest.
+	 * One call that does everything DeferredRenderer::recordFrame() and the
+	 * Editor's frame producer do before a pass records: it pushes the camera into
+	 * the RenderCache UBO, builds the owned snapshot with the SAME producer
+	 * production uses - neurus::Editor::BuildSnapshot() - and publishes it on @p
+	 * ctx. A fixture driving a pass directly stands in for the frame driver, and
+	 * this is the single seam that keeps it honest: the snapshot a test validates
+	 * a pass against is the very one production builds, read through
+	 * RenderContext::Frame() exactly as a pass reads it.
 	 *
 	 * The debug list is published as given; the gate (r_debug_draw) belongs to
 	 * the caller, exactly as it does in production.
@@ -298,7 +245,7 @@ protected:
 	 *          shadow map that was never rendered.
 	 *
 	 * @param cache     Receives the camera UBO update.
-	 * @param ctx       Receives the borrowed half and the snapshot pointer.
+	 * @param ctx       Receives the snapshot pointer.
 	 * @param out       Caller-owned snapshot storage; must outlive @p ctx.
 	 * @param scene     The frame's scene, or null.
 	 * @param config    The render settings, or null to use the built-in defaults.
@@ -315,17 +262,10 @@ protected:
 	{
 		const neurus::Camera* camera = scene ? scene->GetActiveCamera() : nullptr;
 
-		// Borrowed half, stored as given - the debug list is not re-gated here.
-		ctx.scene     = scene;
-		ctx.config    = config;
-		ctx.camera    = camera;
-		ctx.debugDraw = debugDraw;
-		ctx.gizmoDraw = gizmoDraw;
-
 		if (camera)
 			cache.UpdateCamera(camera->GetProjectionMatrix(), camera->GetViewMatrix());
 
-		// Same default a null config resolves to via RenderContext::Settings():
+		// Same default a null config resolves to via RenderFrameSnapshot::Settings():
 		// DefaultRenderConfig(), not a second literal.
 		neurus::Editor::BuildSnapshot(scene,
 		                              config ? *config : neurus::DefaultRenderConfig(),
@@ -348,12 +288,13 @@ protected:
 	 * report a mismatch that is really a change of input.
 	 *
 	 * Publishing explicitly is the point: it puts the test on the same footing as
-	 * production, where `Editor::UpdateRenderContext()` always publishes `m_config`, and it
-	 * stops a pass's null-config fallback from being load-bearing for a reference
-	 * image. A suite that wants different settings sets them on the returned value.
+	 * production, where the Editor's frame producer always copies `m_config` into
+	 * the snapshot, and it stops a pass's null-config fallback from being
+	 * load-bearing for a reference image. A suite that wants different settings
+	 * sets them on the returned value.
 	 *
-	 * Returned by value, so the caller must keep it alive for as long as the
-	 * context borrows it — `RenderContext::config` is frame-scoped, not owning.
+	 * Returned by value: pass it to PublishFrame(), which copies it into the
+	 * snapshot the pass reads.
 	 */
 	static neurus::RenderConfig ShadowReferenceConfig()
 	{

@@ -457,19 +457,17 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                         // Process all enqueued events (camera, gizmo, ...).
 	                         app_editor->Edit();
 
-	                         // The Editor fills both frame views; the Application
-	                         // only supplies what the Editor does not own: the
-	                         // profile and the service-backed log/history pointers.
-	                         // DrawFrame stamps the renderer's own half into a local
-	                         // copy of rctx.
+	                         // The Editor builds the frame the renderer reads;
+	                         // the Application only supplies what the Editor does
+	                         // not own: the profile and the service-backed
+	                         // log/history pointers. DrawFrame stamps the
+	                         // renderer's own half into a local copy of rctx.
 	                         neurus::RenderContext rctx;
-	                         app_editor->UpdateRenderContext(rctx);
 
-	                         // The owned half of the same frame. Published here
-	                         // rather than inside UpdateRenderContext, which is
-	                         // const: the snapshot needs storage that outlives
-	                         // DrawFrame, and app_frameSnapshot is refilled
-	                         // rather than rebuilt.
+	                         // The owned frame. Built here rather than inside the
+	                         // Editor's const query path: the snapshot needs
+	                         // storage that outlives DrawFrame, and
+	                         // app_frameSnapshot is refilled rather than rebuilt.
 	                         app_editor->BuildSnapshot(app_frameSnapshot);
 	                         rctx.snapshot = &app_frameSnapshot;
 

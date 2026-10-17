@@ -117,30 +117,30 @@ The viewport is owned by the Editor but is its own composition root. See
 
 ## RenderContext and UIContext
 
-The frame's context is two views over the same document state, produced by one
-Editor pivot. The two producer methods are declared in `Editor.h` with both
-types forward-declared, so that header needs no render or UI include:
+The frame's context is two views over the same document state, each produced by
+the Editor. The renderer's view is an owned copy of the frame; the UI's view is a
+pair of borrowed pointers.
 
 ```cpp
 // src/editor/Editor.h
-void UpdateRenderContext(RenderContext& ctx) const;  // scene, config, camera, both overlays
-void UpdateUIContext(UIContext& ctx) const;          // scene, config
+RenderFrameSnapshot BuildSnapshot() const;  // the whole renderer-facing frame, by value
+void UpdateUIContext(UIContext& ctx) const; // scene, config
 ```
 
+`UIContext` is forward-declared, so that half of the header pulls in nothing; but
+`BuildSnapshot()` returns a `RenderFrameSnapshot` by value, so `Editor.h` does
+include `render/RenderFrameSnapshot.h` for the complete type.
+
 `RenderContext` is the renderer's view, and it has two writers. The Editor
-publishes the semantic half; `DeferredRenderer::recordFrame()` stamps the frame
-half. Every field carries a banner naming the half that fills it.
+publishes one owned frame snapshot; `DeferredRenderer::recordFrame()` stamps the
+frame half. Every field carries a banner naming the half that fills it.
 
 ```cpp
 // src/render/RenderContext.h - Vulkan-free
 struct RenderContext
 {
-    // Editor half - filled by Editor::UpdateRenderContext()
-    const Scene*         scene     = nullptr;  // check HasScene()
-    const RenderConfig*  config    = nullptr;  // read via Settings(), never directly
-    const Camera*        camera    = nullptr;  // check HasCamera()
-    const DebugDrawList* debugDraw = nullptr;  // null when r_debug_draw is off
-    const GizmoDrawList* gizmoDraw = nullptr;  // empty, never null, in production
+    // Editor half - the owned frame published by Editor::BuildSnapshot()
+    const RenderFrameSnapshot* snapshot = nullptr;  // read through Frame(), never directly
 
     // Renderer half - stamped by DeferredRenderer::recordFrame()
     uint32_t  width      = 0;   // acquired image extent, not the surface size
@@ -149,11 +149,22 @@ struct RenderContext
     glm::vec3 jitter{0.0f, 0.0f, 0.0f};  // per-frame shadow jitter
     uint32_t  iteration  = 0;   // temporal accumulation counter
 
-    bool HasScene() const;
-    bool HasCamera() const;
-    const RenderConfig& Settings() const;      // defined in RenderContext.cpp
+    bool HasSnapshot() const;
+    const RenderFrameSnapshot& Frame() const;  // never null; empty frame when unpublished
 };
 ```
+
+`RenderFrameSnapshot` (`src/render/RenderFrameSnapshot.h`) is an owned deep copy
+of the frame - values only, no Scene pointers and no lazy reads. It carries
+`config`, a `CameraSnapshot camera` (`view`/`projection`/`position`/`target`),
+`meshes` and `lights` ordered by UID, `environmentId`, `activeObjectId`, and the
+`debugDraw`/`gizmoDraw` lists, all by value, plus the predicates `HasScene()`,
+`HasCamera()`, `HasEnvironment()`, `HasDebugDraw()` and `Settings()`. A pass reads
+`ctx.Frame().Settings()`, `ctx.Frame().HasScene()`, `ctx.Frame().camera.view`,
+`ctx.Frame().activeObjectId`, and so on. `Frame()` is never null: an unpublished
+context reads as an empty frame - no scene, no camera, no draws, and a
+default-constructed `RenderConfig` - which is the same null policy the old config
+pointer's `Settings()` used to provide, so no pass tests a pointer.
 
 `UIContext` is the UI's view, two Editor-owned fields wide, plus the
 Application's frame-scoped half:
@@ -178,35 +189,55 @@ struct UIContext
 
 Design:
 
-- **The Editor is the pivot.** It fills both views and neither consumer reaches
-  around it for the other's data. `UpdateRenderContext()` publishes the semantic
-  half: `scene`, `config`, the viewport's published `camera` (see
-  [Viewport](viewport.md)), the debug list when `RequiresDebugDraw()`, and the
-  gizmo list unconditionally. `DeferredRenderer::recordFrame()` then stamps the
-  frame half (`width`, `height`, `frameIndex`, `jitter`, `iteration`) into a
-  **local copy**, which is what keeps temporal state renderer-owned - the Editor
-  can neither read nor reset it. Width/height look like they could go either way
-  and cannot: the extent a pass must use is the acquired image's, not the surface
-  size the viewport knows, and the two disagree during a resize.
+- **The Editor is the pivot.** It produces both views and neither consumer
+  reaches around it for the other's data. `BuildSnapshot()` copies the frame out
+  of the Scene: `config`, the viewport's published camera (see
+  [Viewport](viewport.md)), every mesh and light in UID order, the environment,
+  the active object, the debug list when `RequiresDebugDraw()`, and the gizmo
+  list unconditionally. The Application owns the storage (`app_frameSnapshot`,
+  refilled rather than rebuilt each frame) and points `RenderContext::snapshot`
+  at it; `DeferredRenderer::recordFrame()` then stamps the frame half (`width`,
+  `height`, `frameIndex`, `jitter`, `iteration`) into a **local copy**, which is
+  what keeps temporal state renderer-owned - the Editor can neither read nor
+  reset it. Width/height look like they could go either way and cannot: the
+  extent a pass must use is the acquired image's, not the surface size the
+  viewport knows, and the two disagree during a resize.
+- **The frame is owned, not borrowed.** The renderer must be able to read the
+  frame while the Editor edits on, and a borrowed pointer into the Scene cannot
+  survive that - the Editor may re-key or free the pool entry it points at - but
+  an owned copy can. `BuildSnapshot()` resolves every scene object to the stable
+  UID the renderer's caches are keyed by and copies every matrix and parameter by
+  value, so nothing in the frame dereferences the Scene after it is built (see
+  `render/RenderFrameSnapshot.h`).
 - `UpdateUIContext()` assigns fields only and must never call a `UIContext`
   method: it runs in `neurus_editor`, which does not link `neurus_ui` (that
   library links this one), so a symbol defined there would not resolve. The
   Application adds the frame-scoped `profile`/`log`/`history` members.
 - Keeping the UI's view a separate two-field struct is what makes "the gizmo is
   not scene data" a property of the type rather than a convention.
-- **The fallback is hoisted, because there are now two callers.** `Settings()` is
+- **The fallback is one value, reached two ways.** `UIContext::Settings()` is
   never null: with no published config it returns `DefaultRenderConfig()`
   (`src/core/RenderConfig.h`), which *is* `RenderConfig`'s in-class member
-  initializers rather than a second copy of them. Both `RenderContext::Settings()`
-  and `UIContext::Settings()` return it, so a pass and a panel cannot disagree
-  about an unset value - and no reader needs a fallback literal of its own.
-- Every member is a typed pointer named by forward declaration, so the headers
-  pull in nothing beyond `<vector>` yet no consumer casts. Growth is by a new
-  typed field on whichever view owns its source, never by a `void*` slot.
-- Every pointer is borrowed and frame-scoped: valid only for the frame its
-  producer filled it in, never stored across frames.
-- Null policy: `config` is always safe through `Settings()`; `scene` (both
-  views), `camera` (`RenderContext`), `debugDraw` and `gizmoDraw` MUST be checked.
+  initializers rather than a second copy of them. On the render side the frame's
+  `config` is a value, default-constructed when nothing was published - and a
+  default-constructed `RenderConfig` *is* that same `DefaultRenderConfig()` value
+  - so `ctx.Frame().Settings()` needs no fallback at all. Either way a pass and a
+  panel resolve an unset value identically, and no reader needs a fallback
+  literal of its own.
+- `UIContext`'s members are typed pointers named by forward declaration, so that
+  header pulls in nothing yet no consumer casts; `RenderContext` carries the
+  frame as one forward-declared `RenderFrameSnapshot` pointer. Growth is by a new
+  typed field on the snapshot or on whichever view owns its source, never by a
+  `void*` slot.
+- `UIContext`'s pointers are borrowed and frame-scoped: valid only for the frame
+  its producer filled them in, never stored across frames. `RenderContext`'s
+  snapshot is the opposite by design - an owned copy a reader may keep while the
+  Editor edits on - though `RenderContext` itself points at Application-owned
+  storage for the current frame.
+- Null policy: on `RenderContext`, `Frame()` is never null and `Settings()` is
+  always safe; the frame's `HasScene()`, `HasCamera()` and `HasDebugDraw()` gate
+  the lists before a reader walks them. On `UIContext`, `config` is always safe
+  through `Settings()` and `scene` MUST be checked with `HasScene()`.
 
 ## Scene lifecycle
 
@@ -330,8 +361,8 @@ in [Events](events.md).
 - `UIEvents` singleton with UI-to-Editor signals (`newFrame`, `windowResized`,
   and so on)
 - `EventQueue` typed event dispatcher for Editor-to-Renderer events
-- `RenderContext`: the renderer's view (scene, config, camera, debug and gizmo
-  draw lists) plus the frame half, produced by `Editor::UpdateRenderContext()`
+- `RenderContext`: the renderer's view - one owned `RenderFrameSnapshot` (built
+  by `Editor::BuildSnapshot()`) plus the frame half stamped by the renderer
 - `UIContext`: the UI's view (scene and config), produced by
   `Editor::UpdateUIContext()`
 - Editor orchestrator with `RegisterController<T>()` and `Edit()` for event

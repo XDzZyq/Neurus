@@ -81,7 +81,7 @@ The shadow depth pass renders per-light depth into `RenderCache` via `GetShadowM
 - **Shadow map resolution**: 2048x2048, `VK_FORMAT_D32_SFLOAT`.
 - **PCF**: percentage-closer filtering via `sampler2DShadow` with a UV offset kernel, ortho depth comparison.
 - **Shadow intensity**: written to the per-light layer in the `ShadowIntensity` 2D array via the `SunShadowIntensityEval` compute shader.
-- **Shadow bias**: depth bias read from `RenderConfig::r_shadow_bias` (default 0.02) via `ctx.Settings()`. The pass states no fallback of its own - it used to hardcode `0.0005f` when no config was published, 40x off the declared default.
+- **Shadow bias**: depth bias read from `RenderConfig::r_shadow_bias` (default 0.02) via `ctx.Frame().Settings()`. The pass states no fallback of its own - it used to hardcode `0.0005f` when no config was published, 40x off the declared default.
 - **Shadow mode**: supports `HARD`, `SOFT_PCF_16`, `SOFT_PCF_64` modes matching the point-light shadow pipeline.
 
 ## SSAO pass
@@ -97,7 +97,7 @@ The shadow depth pass renders per-light depth into `RenderCache` via `GetShadowM
 - **IDBuffer**: reads the `VK_FORMAT_R32_UINT` attachment at binding 0, written by `GeometryPass` (stores `objectId` as a 32-bit unsigned integer per pixel).
 - **Edge detection**: 3x3 Laplacian-style kernel over neighbouring IDBuffer pixels. A pixel is highlighted when at least one neighbour has a different `objectId` AND the center pixel's `objectId` matches `activeObjectId` (push constant).
 - **Output**: `VK_FORMAT_R8_UNORM` attachment (`AttachmentName::SelectionOutline`) at binding 1. Highlighted pixels = 255 (edge of selected object); all others = 0.
-- **Push constant**: `uint32_t activeObjectId` - read inside `Record()` from `ctx.scene`'s `selections.GetActiveObject()`, not from a separate `RenderContext` field. When `activeObjectId == 0`, the shader early-outs (no highlight is written).
+- **Push constant**: `uint32_t activeObjectId` - read inside `Record()` from `ctx.Frame().activeObjectId`, the value the producer resolved from the scene's `selections.GetActiveObject()`. This was the renderer's last live dereference of a scene `ObjectID` pointer; the snapshot carries the id as a value instead. When `activeObjectId == 0` (nothing selected), the shader early-outs (no highlight is written).
 
 ## Compose pass
 
@@ -110,7 +110,7 @@ The shadow depth pass renders per-light depth into `RenderCache` via `GetShadowM
 
 `DebugPass` is a raster pass that draws the scene's `DebugLine` / `DebugPoints` / `DebugMesh` objects (issue #22). It is not to be confused with the selection outline pass above, which is a compute pass that outlines the *selected* object from the IDBuffer.
 
-- **Gate**: `RenderConfig::r_debug_draw`. The pass stays in the RenderGraph unconditionally; the Editor publishes a null `RenderContext::debugDraw` when the toggle is off and `Record()` returns before touching any image. Toggling the overlay therefore costs **no graph rebuild** (unlike FXAA, which changes the `PipelineSignature`).
+- **Gate**: `RenderConfig::r_debug_draw`. The pass stays in the RenderGraph unconditionally; the producer leaves the frame's `debugDraw` empty with `HasDebugDraw()` false when the toggle is off and `Record()` returns before touching any image. Toggling the overlay therefore costs **no graph rebuild** (unlike FXAA, which changes the `PipelineSignature`).
 - **Target**: `p_target`, set by `SetTarget()` and read back by `GetTarget()` - `FXAAOutput` when FXAA is on, `ComposedOutput` when it is off. Drawn with `LOAD_OP_LOAD` so the shaded image survives underneath. The pass transitions it from the `ShaderWrite` state the upstream compute dispatch (`FXAAPass`, or `ComposePass` when FXAA is off) leaves it in - that barrier is the only thing ordering the overlay against that dispatch - and leaves it in `ColorAttachment` for the blit to transition. Getting this wrong tears the overlay per-tile on MoltenVK with zero validation errors. `SetTarget()` must be called **before** `RenderGraph::AddPass()`, which caches `GetIO()`; `RebuildMainGraph()` is the only caller, so the pass never learns what FXAA is and the config-to-topology mapping stays in `PipelineSignature`. Both attachments share `ComposedOutput`'s format and usage, so one set of pipelines serves either and no second pipeline variant exists. The default is `ComposedOutput`, which is what a test constructing the pass directly gets.
 - **Depth**: reads the G-Buffer `Depth` with `LOAD_OP_LOAD`, `depthTestEnable` on and **`depthWriteEnable` off**. Debug geometry is occluded by solid objects but never occludes anything, including other debug geometry.
 - **Three pipelines, one layout** (`p_pipelines[0..2]`): lines, points, wireframe.
@@ -160,11 +160,11 @@ Hiding a debug object means not flattening it. `DebugDrawList` has no per-primit
 
 ## Configuration
 
-`RenderConfig` (`src/core/RenderConfig.h`) is user-facing config owned by the Editor, reached by passes through `RenderContext::Settings()`:
+`RenderConfig` (`src/core/RenderConfig.h`) is user-facing config owned by the Editor, reached by passes through `ctx.Frame().Settings()`:
 
 - **Algorithm selection**: `r_pipeline` (Forward/Deferred), `r_aa`, `r_ao`, `r_shadow`, `r_ssr`.
 - **Quality parameters**: `r_gamma`, `r_ao_ksize`, `r_ao_radius`, `r_shadow_bias` (0.02), `r_sample_pf`.
 - **Overlay toggle**: `r_debug_draw` / `RequiresDebugDraw()` - gates *publication*, not graph topology (see the Debug overlay pass above). It is written **last** in `serialize()`, and like every other `RenderConfig` field it is read through `archive::Optional`, because a project file saved before the field existed would otherwise make `ConfigComponent::Load` discard the whole config and reset the user's gamma, AO and shadow settings. Absence leaves the member at its in-class `= true`; nothing in the load path restates that value. **Any field added to `RenderConfig` from now on goes in the same `Optional` call, with its default only in the member initializer.**
 - **Serialized** via cereal for project save/load.
-- **Live-update**: passes read `ctx.Settings()` each frame - no cast, and never null: with no published config it resolves to `DefaultRenderConfig()` (`src/core/RenderConfig.h`), so the in-class member initializers are the only place a default is written. **A pass must not spell a fallback literal of its own** (`cfg ? cfg->x : 0.0005f` is how the shadow bias came to differ 40x from the declaration). Scalar param changes take effect on the next `DrawFrame()`.
-- **Shadow bias flow**: `RenderConfigPanel` slider -> `configValueChanged` -> `Editor::SetRenderConfig` -> `RenderContext::config` -> `ShadowIntensityPass` reads `Settings().r_shadow_bias`.
+- **Live-update**: passes read `ctx.Frame().Settings()` each frame - no cast, and never null: with no published config it resolves to `DefaultRenderConfig()` (`src/core/RenderConfig.h`), so the in-class member initializers are the only place a default is written. **A pass must not spell a fallback literal of its own** (`cfg ? cfg->x : 0.0005f` is how the shadow bias came to differ 40x from the declaration). Scalar param changes take effect on the next `DrawFrame()`.
+- **Shadow bias flow**: `RenderConfigPanel` slider -> `configValueChanged` -> `Editor::SetRenderConfig` -> copied into the frame by `BuildSnapshot()` -> `ShadowIntensityPass` reads `ctx.Frame().Settings().r_shadow_bias`.

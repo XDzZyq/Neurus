@@ -25,7 +25,6 @@
 #include "render/resources/LightingCache.h"
 #include "render/resources/MeshGPU.h"
 
-#include "render/RenderContext.h"
 #include "render/RenderFrameSnapshot.h"
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/ShaderLibrary.h"
@@ -406,43 +405,15 @@ Scene& Editor::GetScene()
 }
 
 // =========================================================================
-// UpdateRenderContext / UpdateUIContext / BuildSnapshot - the one producer
-// of every outward view of the frame
+// UpdateUIContext / BuildSnapshot - the one producer of every outward view
+// of the frame
 // =========================================================================
-
-void Editor::UpdateRenderContext(RenderContext& ctx) const
-{
-	ctx.scene = m_scene.get();
-	ctx.config = &m_config;
-
-	// The single Editor-side definition of "the camera we are looking through",
-	// chosen by the viewport's SyncCamera() at the top of Edit(). Publishing it
-	// from here keeps every consumer ignorant of which camera it is.
-	ctx.camera = m_viewport.GetCamera();
-
-	// r_debug_draw gates publication rather than graph topology: with a null list
-	// the pass returns before touching any image, so toggling the overlay never
-	// rebuilds the RenderGraph.
-	ctx.debugDraw = m_config.RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr;
-
-	// Published unconditionally, behind no RenderConfig flag: interaction feedback
-	// is not a debug visualization the user may hide. With nothing selected and
-	// nothing armed the payload is a cleared list rather than no list.
-	ctx.gizmoDraw = &m_viewport.GizmoList();
-
-	// The frame half (extent, frame index, jitter, iteration) is deliberately NOT
-	// written here: recordFrame() stamps it from the swapchain and its counters.
-	//
-	// ctx.snapshot is likewise left null: BuildSnapshot() needs storage that
-	// outlives the frame, and this method is const. The caller owns that storage
-	// and publishes the pointer (Application's frame loop).
-}
 
 void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 {
 	// Supply the five sources and gate the debug list here, so production
 	// behaviour is unchanged: r_debug_draw decides whether the overlay is
-	// published, exactly as UpdateRenderContext() does above.
+	// published.
 	BuildSnapshot(m_scene.get(),
 	              m_config,
 	              m_viewport.GetCamera(),
@@ -462,10 +433,9 @@ void Editor::BuildSnapshot(const Scene* scene,
 	// capacity, which is the whole point of refilling one snapshot per frame.
 	out.Clear();
 
-	// Same sources as UpdateRenderContext() above, read by value instead of
-	// published by pointer. Keep the two in step: a field added to one view and
-	// not the other is a frame the render layer sees differently depending on
-	// which half it reads.
+	// The frame the render layer reads, resolved to stable UIDs and read by
+	// value rather than borrowed by pointer. This is the one producer of that
+	// view: a reader may keep the result while the Editor edits on.
 	out.config = config;
 
 	if (camera)

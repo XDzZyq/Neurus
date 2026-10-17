@@ -77,7 +77,7 @@ Per-member std140/std430 offset tables for the light structs were dropped; only 
 - Constructed **eagerly** in `RenderCache`'s constructor - it needs no queue - so `GetCameraGPU()` returns a reference and is never null.
 - Written once per frame by `DeferredRenderer::recordFrame()` via `RenderCache::UpdateCamera(proj, view)`, *before* any pass records. Passes only bind it; a pass that wrote it would make the result depend on pass order.
 - Keeps `proj` on the CPU behind `GetProjection()` without uploading it (see the Debug overlay pass in [Passes](passes.md) for why `viewProj[1][1]` is not a substitute).
-- `IsValid()` is false until the first `UpdateCamera()`. `GeometryPass` and `DebugPass` both bail out of `Record()` on a false, which is also why a **test** that drives either pass directly must publish a camera first - use `VulkanTestShared::PublishSceneCamera(cache, scene)`.
+- `IsValid()` is false until the first `UpdateCamera()`. `GeometryPass` and `DebugPass` both bail out of `Record()` on a false, which is also why a **test** that drives either pass directly must publish a frame first - use `VulkanTestShared::PublishFrame(cache, ctx, out, scene)`, which writes the camera UBO as part of publishing the frame.
 - `CameraUBOData` must be declared identically in `gbuffer.vert`, `overlay_line.vert`, `overlay_point.vert` and `debug_wire.vert` - they share the one UBO.
 - `Update` keeps `proj` separate from `view` because a consumer needs `proj[1][1]` to convert a world-space size to pixels; that value is unrecoverable from `viewProj`.
 
@@ -93,10 +93,10 @@ Per-member std140/std430 offset tables for the light structs were dropped; only 
 
 `GizmoCache` (`src/render/resources/GizmoCache.h`) is a structural sibling of `DebugCache`: the same per-frame-slot `CPUBuffer` pair (segments + point sprites) and the same `EnsureCapacity` with its 4096-byte floor, holding the flattened `GizmoDrawList` that `GizmoPass` draws from. The floor is load-bearing, not incidental - it is what guarantees both buffers are non-null once `Update()` has run, and a null `VkBuffer` is not something a descriptor may name.
 
-- Written once per frame by `recordFrame()` via `RenderCache::UpdateGizmoDraw(frameIndex, list)`, guarded by `if (ctx.gizmoDraw)`.
+- Written once per frame by `recordFrame()` via `RenderCache::UpdateGizmoDraw(frameIndex, frame.gizmoDraw)`, unconditionally: the snapshot always carries a gizmo list (empty when nothing is armed), so there is no pointer to guard on.
 - **No revision gate** (unlike `DebugCache`): a live gesture rebuilds its guide on every cursor *or camera* move, and when no gesture is live nothing is drawn at all, so `GizmoDrawList` carries no revision counter and `Update()` copies unconditionally - a few dozen arc chords is less than the compare is worth reasoning about.
 - **No x-ray partition**, for the reason in the Gizmo pass section of [Passes](passes.md): with depth off for the whole pass there is no `xraySegmentStart`/`xrayPointStart` to record or clamp.
-- The `if (ctx.gizmoDraw)` guard and the unconditional copy are both load-bearing, and both are tested: a **null** payload must leave the ring with zero slots allocated (the cheap state the pass sits in for almost every frame), while an **empty** one - the frame a gesture ends on - must still update and retire the counts to zero, or the finished guide stays resident and keeps drawing.
+- The unconditional copy is load-bearing and tested two ways: an **empty** list - the frame a gesture ends on - must still update and retire the counts to zero, or the finished guide stays resident and keeps drawing; the pass test also drives a **null** payload through its fixture (which skips the update, standing in for a slot never uploaded) to prove the ring allocates nothing until `Update()` runs.
 
 ## Image state and barriers
 

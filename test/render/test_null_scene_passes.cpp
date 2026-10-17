@@ -32,6 +32,7 @@
 
 #include "render/RenderCache.h"
 #include "render/RenderContext.h"
+#include "render/RenderFrameSnapshot.h"
 #include "render/resources/LightingCache.h"
 #include "render/passes/GeometryPass.h"
 #include "render/passes/LightingPass.h"
@@ -55,7 +56,7 @@ using namespace neurus;
  *
  * Deliberately publishes no scene, no camera and no config: a
  * default-constructed RenderContext is exactly the state the renderer is in on
- * the frames between construction and the Editor's first UpdateRenderContext().
+ * the frames between construction and the Editor's first BuildSnapshot().
  */
 class NullScenePassTest : public VulkanTestShared
 {
@@ -188,37 +189,44 @@ TEST_F(NullScenePassTest, ShadowIntensityPassRecordsNothingWithoutAScene)
 }
 
 // ---------------------------------------------------------------------------
-// Settings(): the null-config half of the same policy
+// Frame().Settings(): the null-config half of the same policy
 // ---------------------------------------------------------------------------
 
 // The fallback now lives once, in core/RenderConfig.h's DefaultRenderConfig(),
-// and both contexts apply it — RenderContext for a pass, UIContext for a panel.
-// This is the pass-side half of the guard; test_ui_context.cpp pins the panel
-// side and the parity between them, which is the property the old
-// SceneContext::Settings() held before the two contexts replaced it.
+// reached through RenderContext::Frame(): an unpublished context reads the empty
+// frame, whose Settings() is a default-constructed RenderConfig. This is the
+// pass-side half of the guard; test_ui_context.cpp pins the panel side and the
+// parity between them, which is the property the old SceneContext::Settings()
+// held before the two contexts replaced it.
 TEST(RenderContextSettings, FallsBackToRenderConfigsOwnDefaults)
 {
-	// Settings() is the one place a missing config is answered, and it answers
-	// with RenderConfig's in-class initializers rather than a second copy of
-	// them. ShadowIntensityPass used to restate r_shadow_bias as 0.0005f against
-	// a declared 0.02f — a 40x divergence that lived in the tree. This test is
-	// what makes that class of drift impossible to reintroduce silently.
+	// Frame().Settings() is the one place a missing config is answered, and it
+	// answers with RenderConfig's in-class initializers rather than a second copy
+	// of them. ShadowIntensityPass used to restate r_shadow_bias as 0.0005f
+	// against a declared 0.02f — a 40x divergence that lived in the tree. This
+	// test is what makes that class of drift impossible to reintroduce silently.
 	const RenderContext renderContext{};
 	const RenderConfig declared{};
 
-	EXPECT_EQ(&renderContext.Settings(), &renderContext.Settings())
-		<< "one shared instance, not a temporary per call";
+	// Whole-value equality against the declaration: RenderConfig has a defaulted
+	// operator==, so a new member is covered automatically - unless the compare
+	// silently stops covering it, which is exactly the failure the named-field
+	// checks below still catch.
+	EXPECT_EQ(renderContext.Frame().Settings(), declared)
+		<< "the empty frame reads RenderConfig's own declared defaults";
 
-	EXPECT_FLOAT_EQ(renderContext.Settings().r_shadow_bias, declared.r_shadow_bias);
-	EXPECT_FLOAT_EQ(renderContext.Settings().r_gamma,       declared.r_gamma);
-	EXPECT_EQ(renderContext.Settings().r_sampling_mode,     declared.r_sampling_mode);
-	EXPECT_FLOAT_EQ(renderContext.Settings().r_fxaa_subpix, declared.r_fxaa_subpix);
+	EXPECT_FLOAT_EQ(renderContext.Frame().Settings().r_shadow_bias, declared.r_shadow_bias);
+	EXPECT_FLOAT_EQ(renderContext.Frame().Settings().r_gamma,       declared.r_gamma);
+	EXPECT_EQ(renderContext.Frame().Settings().r_sampling_mode,     declared.r_sampling_mode);
+	EXPECT_FLOAT_EQ(renderContext.Frame().Settings().r_fxaa_subpix, declared.r_fxaa_subpix);
 
-	// A published config wins, and is returned by reference, not copied.
-	RenderConfig mine{};
-	mine.r_shadow_bias = 0.1234f;
+	// A published snapshot wins, and its config is returned by reference, not
+	// copied: the reader reads the snapshot's own member, so a change to it is a
+	// change to what the pass sees.
+	RenderFrameSnapshot snapshot{};
+	snapshot.config.r_shadow_bias = 0.1234f;
 	RenderContext published{};
-	published.config = &mine;
-	EXPECT_EQ(&published.Settings(), &mine);
-	EXPECT_FLOAT_EQ(published.Settings().r_shadow_bias, 0.1234f);
+	published.snapshot = &snapshot;
+	EXPECT_EQ(&published.Frame().Settings(), &snapshot.config);
+	EXPECT_FLOAT_EQ(published.Frame().Settings().r_shadow_bias, 0.1234f);
 }

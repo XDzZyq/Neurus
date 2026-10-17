@@ -338,7 +338,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_SurvivesLaterSceneMutation)
  * @test The overlay payloads are copied by value, and debug draw follows
  *       r_debug_draw.
  *
- * Mirrors UpdateRenderContext's publication rule: the gizmo list is published
+ * Mirrors BuildSnapshot's publication rule: the gizmo list is published
  * unconditionally (interaction feedback is not hideable), the debug list is
  * gated on the config flag.
  *
@@ -435,7 +435,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_GatesDebugDrawAndCopiesOverlays)
 	// --- The gate
 	editor.GetRenderConfig().r_debug_draw = false;
 	const RenderFrameSnapshot off = editor.BuildSnapshot();
-	EXPECT_FALSE(off.HasDebugDraw()) << "r_debug_draw gates publication, as in UpdateRenderContext";
+	EXPECT_FALSE(off.HasDebugDraw()) << "r_debug_draw gates publication, as in BuildSnapshot";
 	EXPECT_TRUE(off.debugDraw.Empty()) << "and nothing is copied when the gate is shut";
 	EXPECT_FALSE(off.gizmoDraw.Empty()) << "while the gizmo list is published regardless";
 }

@@ -1,27 +1,21 @@
 /**
  * @file RenderContext.cpp
- * @brief The one place a missing half of the frame is turned into defaults.
+ * @brief The one place an unpublished context is turned into an empty frame.
  *
- * Exists so RenderContext.h can forward-declare RenderConfig while Settings()
- * still needs the complete type: the fallback is written once, in
- * DefaultRenderConfig(), instead of as a `cfg ? cfg->x : <literal>` ternary at
- * every reader. Frame() does the same for an unpublished snapshot.
+ * Exists so RenderContext.h can forward-declare RenderFrameSnapshot while
+ * Frame() still needs the complete type: a context that published no snapshot
+ * reads as a single shared empty frame, written once here, rather than as a
+ * pointer every pass tests.
  *
  * Vulkan-free, and must stay so: RenderContext describes the frame, not the GPU.
  */
 
 #include "RenderContext.h"
 
-#include "core/RenderConfig.h"
 #include "render/RenderFrameSnapshot.h"
 
 namespace neurus
 {
-
-const RenderConfig& RenderContext::Settings() const
-{
-	return config ? *config : DefaultRenderConfig();
-}
 
 const RenderFrameSnapshot& RenderContext::Frame() const
 {

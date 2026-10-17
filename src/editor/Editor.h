@@ -26,7 +26,6 @@ class DeferredRenderer;
 class MeshData;
 class Scene;
 class UploadManager;
-struct RenderContext;   // render/RenderContext.h - Vulkan-free frame view (renderer-facing)
 struct ShaderCreateRequested;
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
 }
@@ -105,24 +104,15 @@ public:
 	const EditorViewport& GetViewport() const { return m_viewport; }
 
 	/**
-	 * @brief Fills the renderer-facing view of this frame: what is being rendered.
+	 * @brief Copies this frame out of the Scene: the view the renderer reads.
 	 *
-	 * Writes the semantic half - scene, config, camera and both overlay payloads -
-	 * and deliberately nothing else: the frame half (extent, frame index, jitter,
-	 * iteration) is stamped by recordFrame() from the swapchain and its counters.
-	 */
-	void UpdateRenderContext(RenderContext& ctx) const;
-
-	/**
-	 * @brief Copies this frame out of the Scene: the same view, owned outright.
+	 * Reads the Scene, the config, the viewport's camera and both overlay
+	 * payloads by value, resolving every scene object to the stable UID the
+	 * renderer's caches are keyed by. A reader may therefore keep the result
+	 * while the Editor edits on, which a borrowed pointer into the Scene does
+	 * not allow. This is the one producer of the renderer-facing frame.
 	 *
-	 * Reads exactly what UpdateRenderContext() publishes - the Scene, the config,
-	 * the viewport's camera and both overlay payloads - but by value, resolving
-	 * every scene object to the stable UID the renderer's caches are keyed by. A
-	 * reader may therefore keep the result while the Editor edits on, which a
-	 * borrowed RenderContext pointer does not allow.
-	 *
-	 * Call it from the same place in the frame as UpdateRenderContext(): it is a
+	 * Call it once per frame, after Edit() has settled the scene: it is a
 	 * snapshot, and a snapshot of a half-updated scene is a wrong frame.
 	 *
 	 * @return The frame, with no reference into the Scene left in it.

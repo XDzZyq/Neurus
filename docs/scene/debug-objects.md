@@ -54,7 +54,7 @@ Upload of the flattened list is revision-gated: an unchanged list re-uses the bu
 
 `DebugPass` is the single consumer and runs last, after post-AA: it draws over the final shaded image with `LOAD_OP_LOAD` (the FXAA output when FXAA is on, the composed output when it is off), reads but never writes the G-Buffer depth, and flips `eDepthTestEnable` as dynamic state to serve x-ray. Segments and points are covered by four draws (two depth-tested, two x-ray) regardless of primitive count or authoring order, with the wireframe drawn separately; the overlay convention caps the pass at at most 6 draws per frame. Every debug primitive is already antialiased analytically, so handing FXAA the scene alone keeps both correct.
 
-The frame driver publishes; passes read. `DeferredRenderer::recordFrame()` writes the `RenderCache`'s camera and debug/gizmo caches once per frame before any pass records; `DebugPass` reads its payload from `RenderContext::debugDraw` and only binds the cache. A test driving a pass directly stands in for that driver.
+The frame driver publishes; passes read. `DeferredRenderer::recordFrame()` writes the `RenderCache`'s camera and debug/gizmo caches once per frame before any pass records; `DebugPass` reads its payload from `ctx.Frame().debugDraw` and only binds the cache. A test driving a pass directly stands in for that driver, so it must publish a frame as well as the caches.
 
 ## Serialization
 

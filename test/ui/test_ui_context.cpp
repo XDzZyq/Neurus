@@ -29,6 +29,7 @@
 
 #include "core/RenderConfig.h"
 #include "render/RenderContext.h"
+#include "render/RenderFrameSnapshot.h"
 #include "scene/Scene.h"
 #include "ui/UIContext.h"
 
@@ -55,27 +56,36 @@ TEST(UIContextSettings, FallsBackToRenderConfigsOwnDefaults)
 TEST(UIContextSettings, AgreesWithRenderContextOnAnUnsetConfig)
 {
 	// The panel the user drags and the pass that shades the image must not
-	// disagree about a value neither was given.
+	// disagree about a value neither was given. The renderer reads its settings
+	// out of the published frame now, so the comparison is against an
+	// unpublished frame - the renderer's own answer to "nothing was given".
 	const UIContext     ui{};
 	const RenderContext render{};
 
-	EXPECT_FLOAT_EQ(ui.Settings().r_shadow_bias, render.Settings().r_shadow_bias);
-	EXPECT_FLOAT_EQ(ui.Settings().r_gamma,       render.Settings().r_gamma);
-	EXPECT_EQ(ui.Settings().r_sampling_mode,     render.Settings().r_sampling_mode);
+	EXPECT_FLOAT_EQ(ui.Settings().r_shadow_bias, render.Frame().Settings().r_shadow_bias);
+	EXPECT_FLOAT_EQ(ui.Settings().r_gamma,       render.Frame().Settings().r_gamma);
+	EXPECT_EQ(ui.Settings().r_sampling_mode,     render.Frame().Settings().r_sampling_mode);
 }
 
-TEST(UIContextSettings, PublishedConfigWinsAndIsSharedWithTheRenderer)
+TEST(UIContextSettings, PublishedConfigWinsAndBothCarriersAgree)
 {
 	RenderConfig mine{};
 	mine.r_shadow_bias = 0.1234f;
 
-	UIContext     ui{};
-	RenderContext render{};
-	ui.config     = &mine;
-	render.config = &mine;
+	UIContext ui{};
+	ui.config = &mine;
 
-	EXPECT_EQ(&ui.Settings(), &mine) << "returned by reference, not copied";
-	EXPECT_FLOAT_EQ(ui.Settings().r_shadow_bias, render.Settings().r_shadow_bias);
+	// The two carriers differ in kind, deliberately: the UI borrows the Editor's
+	// config by pointer, while the renderer is handed a value copy inside the
+	// frame - that copy is what a render thread can read without the Editor
+	// holding still. What must not differ is the value they report.
+	RenderFrameSnapshot  snapshot{};
+	snapshot.config = mine;
+	RenderContext render{};
+	render.snapshot = &snapshot;
+
+	EXPECT_EQ(&ui.Settings(), &mine) << "the UI side is still by reference, not copied";
+	EXPECT_FLOAT_EQ(ui.Settings().r_shadow_bias, render.Frame().Settings().r_shadow_bias);
 }
 
 // ---------------------------------------------------------------------------
