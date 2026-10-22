@@ -21,19 +21,40 @@ void FrameMailbox::Publish(RenderFrameSnapshot&& snapshot)
 	m_cv.notify_one();
 }
 
-std::optional<RenderFrameSnapshot> FrameMailbox::Acquire()
+AcquireStatus FrameMailbox::Acquire(RenderFrameSnapshot& out)
 {
 	std::unique_lock<std::mutex> lock(m_mutex);
-	m_cv.wait(lock, [this] { return m_stop || m_slot.has_value(); });
+	m_cv.wait(lock, [this] { return m_stop || m_wake || m_slot.has_value(); });
 
-	// Stop is checked before the slot, so a stop that arrives alongside a frame
-	// ends the render loop instead of drawing one more frame on the way out.
+	// Priority order: stop, then wake, then frame. Stop ends the loop even with
+	// a frame or wake pending. A pending wake outranks a frame so a control
+	// message posted just before the frame is serviced before it is drawn - the
+	// frame stays in the slot for the next Acquire().
 	if (m_stop)
-		return std::nullopt;
+		return AcquireStatus::Stopped;
 
-	std::optional<RenderFrameSnapshot> frame = std::move(m_slot);
+	if (m_wake)
+	{
+		// Consume the wake: coalesced Wake() calls become a single Interrupted,
+		// since the consumer drains its whole control queue on each return.
+		m_wake = false;
+		return AcquireStatus::Interrupted;
+	}
+
+	out = std::move(*m_slot);
 	m_slot.reset();  // Moved-from optional still holds a value; empty the slot.
-	return frame;
+	return AcquireStatus::Frame;
+}
+
+void FrameMailbox::Wake()
+{
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		// Raised under the mutex the consumer waits on, so a Wake() racing a
+		// consumer about to park cannot slip past the wait predicate.
+		m_wake = true;
+	}
+	m_cv.notify_one();
 }
 
 void FrameMailbox::RequestStop()

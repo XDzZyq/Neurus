@@ -1,6 +1,6 @@
 /**
  * @file FrameMailbox.h
- * @brief Latest-wins handoff of one RenderFrameSnapshot between two threads.
+ * @brief Latest-wins handoff of one RenderFrameSnapshot, plus a wake signal.
  *
  * A dedicated render thread and the Qt main thread do not run at the same rate,
  * and only one of the two is allowed to care. The main thread owns the Scene and
@@ -9,7 +9,14 @@
  * returns immediately, and a frame that the renderer never got to is dropped
  * rather than queued.
  *
- * That is the whole design in one slot:
+ * The render thread blocks here and nowhere else, so this is also where it must
+ * learn about control messages (resize, surface change, upload requests) posted
+ * while no frame is coming - a static viewport publishes nothing, yet a resize
+ * still has to be serviced promptly. Two condition variables cannot be waited on
+ * atomically and timed polling wastes an idle core, so the single wait gains a
+ * wake signal, and Acquire() reports which of three reasons returned it.
+ *
+ * That is the whole design in one slot and one flag:
  *
  * - **Publish never blocks and never grows.** One snapshot is pending at a time;
  *   a second Publish overwrites the first. A queue would turn a slow GPU into
@@ -17,15 +24,40 @@
  * - **A dropped frame is the correct outcome.** Snapshots are absolute state,
  *   not deltas, so the newest one makes every older one redundant - there is
  *   nothing to replay and nothing to reconcile.
- * - **Acquire blocks instead of spinning.** With no frame pending the consumer
- *   waits on a condition variable, so an idle renderer costs no CPU.
- * - **Stop outranks a pending frame.** Once RequestStop() is called, Acquire()
- *   returns std::nullopt even if a snapshot is waiting: shutdown should end the
- *   render loop promptly, and drawing one last frame on the way out serves
- *   nobody. Stop is sticky - every later Acquire() returns nullopt too, which
- *   lets the consumer loop stay simple while the only wakeups are frames and
- *   stop. A later task that must also wake on a control message posted mid-idle
- *   will need an interruptible wait, which retires that one-condition shape.
+ * - **Acquire blocks instead of spinning.** With no stop, no wake and no frame
+ *   pending the consumer waits on a condition variable, so an idle renderer
+ *   costs no CPU.
+ * - **Acquire reports a reason: Stopped > Interrupted > Frame.** Stop outranks
+ *   everything and is sticky - once RequestStop() is called, every later
+ *   Acquire() returns Stopped even with a frame or a wake pending, because
+ *   drawing one last frame on the way out serves nobody. A pending wake outranks
+ *   a pending frame on purpose: a resize posted just before a frame was
+ *   published must be handled before that frame is drawn, so Acquire() returns
+ *   Interrupted and leaves the frame in the slot for the next call. The consumer
+ *   drains its control queue on Interrupted and loops; the frame is still there.
+ * - **Interrupted consumes the wake flag.** Many Wake() calls before the
+ *   consumer runs coalesce into one Interrupted: the consumer drains the whole
+ *   control queue each time, so one wakeup covers all of them.
+ *
+ * The canonical consumer loop:
+ *
+ * @code
+ * for (;;)
+ * {
+ *     DrainControl();                         // the owner's control queue
+ *     RenderFrameSnapshot frame;
+ *     const auto s = mailbox.Acquire(frame);
+ *     if (s == AcquireStatus::Stopped) break;
+ *     if (s == AcquireStatus::Interrupted) continue;
+ *     Draw(frame);
+ * }
+ * @endcode
+ *
+ * The control queue itself lives with the owner, not in the mailbox. The
+ * producer-side rule is strict: enqueue the message first, THEN call Wake().
+ * Done in that order, a Wake() racing a consumer that is about to wait can never
+ * be lost - the flag is set under the same mutex the consumer waits on - and the
+ * message is always visible by the time the consumer drains on Interrupted.
  *
  * Single producer, single consumer by contract. Nothing here enforces that, but
  * the semantics only make sense for one of each: two consumers would race for
@@ -50,6 +82,16 @@
 
 namespace neurus
 {
+
+/**
+ * @brief Why Acquire() returned. Priority Stopped > Interrupted > Frame.
+ */
+enum class AcquireStatus
+{
+	Frame,        ///< A frame was moved into the out parameter.
+	Interrupted,  ///< A wake was pending; drain the control queue and loop.
+	Stopped,      ///< Shutdown requested; end the render loop.
+};
 
 /**
  * @brief One-slot, latest-wins channel carrying frames to the render thread.
@@ -84,13 +126,34 @@ public:
 	void Publish(RenderFrameSnapshot&& snapshot);
 
 	/**
-	 * @brief Take the pending frame, waiting for one if the slot is empty.
-	 * @return The newest published frame, or std::nullopt once stop is requested.
+	 * @brief Take the pending frame, or report why one is not being handed over.
+	 * @param out  Move-assigned the newest frame ONLY when the return is Frame;
+	 *             left untouched on Interrupted and Stopped.
+	 * @return Stopped if shutdown was requested (sticky, outranks all else),
+	 *         Interrupted if a wake is pending (outranks a pending frame and
+	 *         consumes the wake flag), otherwise Frame.
 	 *
-	 * Called by the consumer (render) thread. Moves the frame out, leaving the
-	 * slot empty, so the same frame is never delivered twice.
+	 * Called by the consumer (render) thread. On Frame the slot is emptied, so
+	 * the same frame is never delivered twice. Blocks only when there is no
+	 * stop, no wake and no frame; a wake already pending returns Interrupted at
+	 * once without blocking.
 	 */
-	std::optional<RenderFrameSnapshot> Acquire();
+	AcquireStatus Acquire(RenderFrameSnapshot& out);
+
+	/**
+	 * @brief Raise the wake signal so a blocked Acquire() returns Interrupted.
+	 *
+	 * Callable from any thread. Idempotent until consumed: repeated calls before
+	 * the consumer runs collapse into a single Interrupted, since the consumer
+	 * drains its whole control queue on each one.
+	 *
+	 * @note Ordering contract for the owner: enqueue the control message FIRST,
+	 *       then call Wake(). The flag is raised under the mailbox mutex, so a
+	 *       Wake() racing a consumer about to wait cannot be lost; enqueuing
+	 *       before the call guarantees the message is visible when the consumer
+	 *       drains on Interrupted.
+	 */
+	void Wake();
 
 	/**
 	 * @brief Request shutdown and wake a consumer blocked in Acquire().
@@ -109,7 +172,10 @@ private:
 	/// @brief The single pending frame, if any. Guarded by m_mutex.
 	std::optional<RenderFrameSnapshot> m_slot;
 
-	/// @brief Shutdown flag; outranks m_slot in Acquire(). Guarded by m_mutex.
+	/// @brief Wake signal; outranks m_slot but not m_stop. Guarded by m_mutex.
+	bool m_wake = false;
+
+	/// @brief Shutdown flag; outranks m_wake and m_slot. Guarded by m_mutex.
 	bool m_stop = false;
 };
 
