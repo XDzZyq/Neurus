@@ -44,7 +44,7 @@ renderer's own thread. The Editor drives GPU state only by posting a
 `RenderRequest` (see [Data Flow](data-flow.md#render-request-path-editor-to-renderer-gpu-work));
 `DeferredRenderer` drains the queue per frame and its `RenderRequestExecutor`
 performs the work. Single ownership is the point, not tidiness: on MoltenVK the
-"transfer queue" resolves to the graphics queue, so an upload submitted from one
+"upload queue" resolves to the graphics queue, so an upload submitted from one
 thread while a frame is submitted from another is a race on the queue itself that
 no cache lock repairs.
 

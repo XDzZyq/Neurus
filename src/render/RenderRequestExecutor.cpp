@@ -25,15 +25,11 @@ namespace neurus {
 RenderRequestExecutor::RenderRequestExecutor(const vk::raii::Device& device,
                                              RenderCache& cache,
                                              UploadManager* uploader,
-                                             GeometryPass* geometryPass,
-                                             vk::Queue graphicsQueue,
-                                             uint32_t graphicsQueueFamily)
+                                             GeometryPass* geometryPass)
 	: m_device(device)
 	, m_cache(cache)
 	, m_uploader(uploader)
 	, m_geometryPass(geometryPass)
-	, m_graphicsQueue(graphicsQueue)
-	, m_graphicsQueueFamily(graphicsQueueFamily)
 {
 }
 
@@ -130,7 +126,7 @@ void RenderRequestExecutor::handle(const UploadEnvironmentRequest& request)
 	if (resident)
 		m_device.waitIdle();
 
-	auto envGPU = m_uploader->UploadEnvironment(request.equirect, m_graphicsQueue, m_graphicsQueueFamily);
+	auto envGPU = m_uploader->UploadEnvironment(request.equirect);
 	m_cache.UseEnvironmentGPU(request.objectId, std::move(envGPU));
 	NEURUS_LOG("[RenderRequestExecutor] Uploaded EnvironmentGPU for objectId=" << request.objectId
 	           << " (regenerate=" << (request.regenerate ? "yes" : "no") << ")");

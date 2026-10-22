@@ -159,7 +159,7 @@ int Application::Run()
 		return -1;
 	}
 
-	// --- Create UploadManager (transfer queue only; graphics queue passed per-call for IBL) ---
+	// --- Create UploadManager on the upload queue (compute + transfer: it also runs IBL) ---
 	app_uploadManager = std::make_unique<neurus::UploadManager>(
 		app_vkContext->device(),
 		app_vkContext->physicalDevice(),

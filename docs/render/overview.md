@@ -72,6 +72,7 @@ Main thread only for the current version. In future the renderer may run on a de
 - Create `VkDevice` from Qt's `QVulkanInstance`
 - Select the physical device (prefer a discrete GPU, fall back to the first available)
 - Choose the graphics queue family
+- Choose the upload queue family for `UploadManager` (staging copies and IBL convolution dispatches, so it must support compute + transfer): prefer an async-compute family without graphics, else the graphics family. A transfer-only family is never picked - it cannot run the IBL dispatches. Known gap: on a separate family the uploaded images are `eExclusive` with no queue-family ownership transfer, and the upload barriers name fragment-shader stages that queue does not support, so only the single-family fallback (e.g. MoltenVK) is validation-clean today.
 - Enable validation layers in Debug mode
 - Report device capabilities and extensions
 

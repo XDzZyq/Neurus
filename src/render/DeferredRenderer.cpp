@@ -231,8 +231,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	// renderer), so the executor starts without one; SetUploadManager() wires it
 	// in before the first scene upload.
 	m_executor = std::make_unique<RenderRequestExecutor>(
-		r_device, *r_renderCache, /*uploader=*/nullptr, r_geometryPass,
-		r_graphicsQueue, r_queueFamilyIndex);
+		r_device, *r_renderCache, /*uploader=*/nullptr, r_geometryPass);
 }
 
 DeferredRenderer::~DeferredRenderer()

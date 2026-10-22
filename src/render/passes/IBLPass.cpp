@@ -58,7 +58,7 @@ IBLPass::~IBLPass() = default;
 // Generation
 // ---------------------------------------------------------------------------
 
-void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
+void IBLPass::Generate(vk::Queue queue, uint32_t queueFamilyIndex,
                        const Image& equirectImage, Image& diffuseOut, Image& specularOut)
 {
 	NEURUS_LOG("[IBLPass] Generating IBL cubemaps from equirect "
@@ -147,8 +147,8 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		graphicsQueue.submit(submitInfo);
-		graphicsQueue.waitIdle();
+		queue.submit(submitInfo);
+		queue.waitIdle();
 
 		NEURUS_LOG("[IBLPass] Diffuse irradiance convolution complete");
 	}
@@ -203,8 +203,8 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		graphicsQueue.submit(submitInfo);
-		graphicsQueue.waitIdle();
+		queue.submit(submitInfo);
+		queue.waitIdle();
 	}
 
 	// --- Final: transition cubemaps to SHADER_READ_ONLY_OPTIMAL ---
@@ -218,8 +218,8 @@ void IBLPass::Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		graphicsQueue.submit(submitInfo);
-		graphicsQueue.waitIdle();
+		queue.submit(submitInfo);
+		queue.waitIdle();
 	}
 
 	NEURUS_LOG("[IBLPass] IBL generation complete - diffuse "

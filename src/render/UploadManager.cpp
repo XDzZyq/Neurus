@@ -128,17 +128,13 @@ MeshGPU UploadManager::UploadMeshData(const MeshData& meshData)
 	               static_cast<uint32_t>(vertexCount), static_cast<uint32_t>(indexCount)};
 }
 
-EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env,
-                                                 vk::Queue graphicsQueue,
-                                                 uint32_t graphicsQueueFamily)
+EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env)
 {
 	// Only the wrapped equirect is read; delegate so there is one upload path.
-	return UploadEnvironment(env.GetEquirectData(), graphicsQueue, graphicsQueueFamily);
+	return UploadEnvironment(env.GetEquirectData());
 }
 
-EnvironmentGPU UploadManager::UploadEnvironment(std::shared_ptr<const ImageData> equirect,
-                                                 vk::Queue graphicsQueue,
-                                                 uint32_t graphicsQueueFamily)
+EnvironmentGPU UploadManager::UploadEnvironment(std::shared_ptr<const ImageData> equirect)
 {
 	// --- 0. Lazy-init IBLPass ---
 	if (!um_iblPass)
@@ -233,8 +229,8 @@ EnvironmentGPU UploadManager::UploadEnvironment(std::shared_ptr<const ImageData>
 	samplerCI.setMaxLod(static_cast<float>(kSpecularMips));
 	auto specularSampler = vk::raii::Sampler(*um_device, samplerCI);
 
-	// --- 5. Run IBL convolution (needs graphics queue for compute dispatches) ---
-	um_iblPass->Generate(graphicsQueue, graphicsQueueFamily, equirectImage, *diffuseImage, *specularImage);
+	// --- 5. Run IBL convolution on the upload queue (its family supports compute) ---
+	um_iblPass->Generate(um_transferQueue, um_transferQueueFamily, equirectImage, *diffuseImage, *specularImage);
 
 	// --- 6. Wrap in Textures and return ---
 	EnvironmentGPU gpu;

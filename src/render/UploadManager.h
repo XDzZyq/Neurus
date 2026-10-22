@@ -38,8 +38,9 @@ enum LightType : int;    // scene/Light.h
 	 *
 	 * @param device               Logical device.
 	 * @param physicalDevice       Physical device (for buffer memory queries).
-	 * @param transferQueue        Transfer queue for staging uploads.
-	 * @param transferQueueFamily  Transfer queue family index.
+	 * @param transferQueue        Upload queue for staging copies and IBL dispatches;
+	 *                             its family must support transfer and compute.
+	 * @param transferQueueFamily  Family index of @p transferQueue.
 	 */
 	class UploadManager
 	{
@@ -73,9 +74,7 @@ enum LightType : int;    // scene/Light.h
 	MeshGPU UploadMeshData(const MeshData& meshData);
 
 	/** @brief Upload environment map to GPU. Generates diffuse + specular cubemaps. */
-	EnvironmentGPU UploadEnvironment(const Environment& env,
-	                                 vk::Queue graphicsQueue,
-	                                 uint32_t graphicsQueueFamily);
+	EnvironmentGPU UploadEnvironment(const Environment& env);
 
 	/**
 	 * @brief Upload an equirect to GPU and generate its IBL cubemaps.
@@ -83,15 +82,14 @@ enum LightType : int;    // scene/Light.h
 	 * The Scene-free half of UploadEnvironment(), for the request executor,
 	 * which holds no Environment. A null or invalid @p equirect selects the
 	 * pink-purple procedural fallback, exactly as a missing source file does.
+	 * The convolution dispatches on this manager's own upload queue, which is
+	 * why that queue's family must support compute (see
+	 * VulkanContext::findTransferQueueFamily).
 	 *
-	 * @param equirect            Equirectangular source, or null for the fallback.
-	 * @param graphicsQueue       Queue the IBL convolution dispatches on.
-	 * @param graphicsQueueFamily Queue family the IBL convolution dispatches on.
+	 * @param equirect Equirectangular source, or null for the fallback.
 	 * @return Diffuse + specular cubemap EnvironmentGPU.
 	 */
-	EnvironmentGPU UploadEnvironment(std::shared_ptr<const ImageData> equirect,
-	                                 vk::Queue graphicsQueue,
-	                                 uint32_t graphicsQueueFamily);
+	EnvironmentGPU UploadEnvironment(std::shared_ptr<const ImageData> equirect);
 
 	/** @brief Upload light shadow resources to GPU. Creates shadow depth map. */
 	LightGPU UploadLight(const Light& light);

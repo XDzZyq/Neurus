@@ -52,15 +52,11 @@ public:
 	 * @param uploader            Upload service, or null until the Application
 	 *                            wires one in via SetUploadManager().
 	 * @param geometryPass        Pass owning the per-mesh pipeline build, or null.
-	 * @param graphicsQueue       Queue the IBL convolution dispatches on.
-	 * @param graphicsQueueFamily Queue family the IBL convolution dispatches on.
 	 */
 	RenderRequestExecutor(const vk::raii::Device& device,
 	                      RenderCache& cache,
 	                      UploadManager* uploader,
-	                      GeometryPass* geometryPass,
-	                      vk::Queue graphicsQueue,
-	                      uint32_t graphicsQueueFamily);
+	                      GeometryPass* geometryPass);
 
 	~RenderRequestExecutor() = default;
 
@@ -92,8 +88,6 @@ private:
 	RenderCache&            m_cache;
 	UploadManager*          m_uploader      = nullptr;
 	GeometryPass*           m_geometryPass  = nullptr;
-	vk::Queue               m_graphicsQueue = nullptr;
-	uint32_t                m_graphicsQueueFamily = 0;
 
 	// --- Latched "collaborator missing" reports (log once, not once per drain) ---
 	bool m_reportedNullUploaderMesh = false;

@@ -79,8 +79,7 @@ protected:
 				*m_device, pd, m_queue, m_graphicsQueueFamily);
 			m_geometryPass = std::make_unique<GeometryPass>(*m_device, pd);
 			m_executor = std::make_unique<RenderRequestExecutor>(
-				*m_device, *m_cache, m_upload.get(), m_geometryPass.get(),
-				m_queue, m_graphicsQueueFamily);
+				*m_device, *m_cache, m_upload.get(), m_geometryPass.get());
 		}
 		catch (const std::exception& e)
 		{
