@@ -75,6 +75,32 @@ events: scene-scoped handlers obtain it from the context.
 - Header-only template-based event dispatcher (no Qt dependency)
 - Editor<->Renderer event dispatch with deferred `Process()`
 
+## Render Request Path (Editor to Renderer GPU work)
+
+The Editor never touches a `VkQueue`, the device-wide wait or the renderer's
+resource maps. All GPU work it used to do directly - upload a mesh, allocate a
+light's shadow maps, (re)generate IBL, rewrite the light SSBOs, warm a per-mesh
+pipeline, drop the outgoing scene's resources, reset accumulation - is posted as
+a typed `RenderRequest` value and executed by the renderer on the thread that
+submits:
+
+```
+Editor::Edit() -> DeferredRenderer::Post(RenderRequest&&)
+   -> RenderRequestQueue (mutex-guarded FIFO)
+   -> DeferredRenderer::DrawFrame() drains the batch after the frame fence wait,
+      before swapchain acquire
+   -> RenderRequestExecutor runs each request against the device, RenderCache,
+      UploadManager and GeometryPass
+```
+
+Requests posted inside one `Edit()` are drained in the same tick's `DrawFrame()`,
+so there is no one-frame delay. Execution is strict FIFO, which is a contract:
+an upload posted after `DropSceneResourcesRequest` lands in the new scene, and
+one posted before it is discarded with the old one. A payload is a value or a
+`shared_ptr<const T>` to immutable data - never a `Scene`, `Mesh` or `Shader`
+pointer, and never a callable, so the request stays correct however the Editor
+edits or deletes afterward. See [Render request path](../render/resources.md#render-request-path).
+
 ## Context System (Data)
 
 Two frame views over the same document state, with the Editor as the single

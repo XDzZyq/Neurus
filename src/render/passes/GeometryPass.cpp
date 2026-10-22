@@ -16,10 +16,13 @@
 
 #include "../resources/MeshGPU.h"
 #include "RenderFrameSnapshot.h"
+#include "RenderRequests.h"
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace neurus {
 
@@ -154,7 +157,8 @@ void GeometryPass::ConfigureGBufferPipeline(PipelineBuilder& builder)
 // Per-mesh custom pipeline creation
 // ---------------------------------------------------------------------------
 
-Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader)
+Pipeline GeometryPass::CreatePerMeshPipeline(const std::vector<uint32_t>& vertexSpv,
+                                             const std::vector<uint32_t>& fragmentSpv)
 {
 	struct StageEntry
 	{
@@ -163,17 +167,16 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader)
 	};
 	std::vector<StageEntry> stages;
 
-	for (auto t : {ShaderType::VERTEX, ShaderType::FRAGMENT})
+	const std::array<std::pair<vk::ShaderStageFlagBits, const std::vector<uint32_t>*>, 2> inputs = {{
+		{vk::ShaderStageFlagBits::eVertex,   &vertexSpv},
+		{vk::ShaderStageFlagBits::eFragment, &fragmentSpv},
+	}};
+
+	for (const auto& [flag, spv] : inputs)
 	{
-		if (!shader.HasStage(t)) continue;
-		const auto& unit = shader.GetStage(t);
-		if (unit.spv.empty()) continue;
+		if (spv->empty()) continue;
 
-		vk::ShaderStageFlagBits flag = vk::ShaderStageFlagBits::eVertex;
-		if (t == ShaderType::FRAGMENT) flag = vk::ShaderStageFlagBits::eFragment;
-		else if (t == ShaderType::COMPUTE) flag = vk::ShaderStageFlagBits::eCompute;
-
-		vk::ShaderModuleCreateInfo smCI({}, unit.spv);
+		vk::ShaderModuleCreateInfo smCI({}, *spv);
 		vk::raii::ShaderModule module(*p_device, smCI);
 		vk::PipelineShaderStageCreateInfo stageCI({}, flag, *module, "main");
 
@@ -196,16 +199,23 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader)
 
 bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const Shader& shader)
 {
-	// Id and version must come from the same Shader: keying on the mesh's id
-	// with the shader's version cannot discriminate a mesh relinked between two
-	// shaders that share a version.
-	const int      shaderId  = shader.GetObjectID();
-	const int      version   = shader.GetVersion();
+	// One build path: snapshot the live Shader into a request and warm from it,
+	// the same code the renderer's request drain runs.
+	return EnsureMeshPipeline(cache, MakeEnsurePipelineRequest(shader));
+}
+
+bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRequest& request)
+{
+	// Id and version come from the same Shader snapshot (MakeEnsurePipelineRequest):
+	// keying a mesh's id with a shader's version cannot discriminate a mesh
+	// relinked between two shaders that share a version.
+	const int      shaderId  = request.shaderId;
+	const int      version   = request.version;
 	PipelineCache& pipelines = cache.GetPipelineCache();
 
 	if (pipelines.GetPipeline(shaderId, version)) return true;
 
-	Pipeline pipeline = CreatePerMeshPipeline(shader);
+	Pipeline pipeline = CreatePerMeshPipeline(request.vertexSpv, request.fragmentSpv);
 
 	// No SPIR-V for any supported stage is an ordinary state while a shader is
 	// being edited, so it is neither cached nor reported here - Record() logs

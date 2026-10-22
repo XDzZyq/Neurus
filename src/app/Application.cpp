@@ -172,6 +172,12 @@ int Application::Run()
 			app_vkContext->device(),
 			app_vkContext->physicalDevice()));
 
+	// The renderer executes every Editor-posted GPU request itself and needs the
+	// upload service to do it. Non-owning: the renderer is destroyed before the
+	// UploadManager (see Application.h teardown order), so the pointer stays
+	// valid for the renderer's whole lifetime.
+	app_renderer->SetUploadManager(app_uploadManager.get());
+
 	// Now renderer + uploadManager exist - safe to create Editor
 	InitEditor();
 
@@ -326,7 +332,7 @@ void Application::ResizeViewport(int width, int height)
 
 void Application::InitEditor()
 {
-	app_editor = std::make_unique<neurus::Editor>(app_renderer.get(), app_uploadManager.get());
+	app_editor = std::make_unique<neurus::Editor>(app_renderer.get());
 	app_editor->Initialize();
 	NEURUS_LOG("[Application] Editor initialized, IBL handled by Editor");
 }

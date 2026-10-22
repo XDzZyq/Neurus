@@ -509,8 +509,8 @@ ctx.events.subscribe<VisibilityChanged>([ctx](const VisibilityChanged& e) {
 ed_eventBus.subscribe<LightGpuChanged>([this](const LightGpuChanged& e) {
     auto light = m_resources->Get<Light>(e.objectUid);
     if (!light) return;
-    auto gpuStruct = ed_uploadManager->UploadLighting(*light);
-    ed_renderer->GetRenderCache().UpdateLight(e.objectUid, gpuStruct);
+    // Pure CPU conversion here; the renderer rewrites the one SSBO entry.
+    ed_renderer->Post(UpdateLightRequest{e.objectUid, UploadManager::UploadLighting(*light)});
 });
 ed_eventBus.subscribe<LightingRebuild>([this](const LightingRebuild&) {
     UploadLighting();
@@ -573,8 +573,8 @@ Scene mutations are handled by `SceneController`, which enqueues
 
 Subscribers listen for this event to reset per-frame history:
 
-- `DeferredRenderer::ResetShadowAccumulation()` zeros the shadow accumulation
-  iteration counter.
+- The Editor posts a `ResetAccumulationRequest`; the renderer zeros the shadow
+  accumulation iteration counter (`m_iteration`) at its per-frame drain.
 - Future: SSAO temporal accumulation, SSR temporal accumulation, TAA jitter reset.
 
 ## SceneController GPU-sync flow
@@ -592,22 +592,25 @@ SceneController mutation handler
         |- Scene object enters scene (add / undo-redo re-add) or light
         |   shadow toggled ON -> SceneObjectGpuUploadRequested{objectUid}
         |     |- Editor::OnSceneObjectGpuUpload handler:
-        |         resolves the pooled object by UID and uploads on demand
-        |         (MeshGPU / LightGPU shadow maps / IBL), skip-if-cached
+        |         resolves the pooled object by UID and posts the upload
+        |         (UploadMeshRequest / CreateLightGpuRequest / UploadEnvironmentRequest),
+        |         which the renderer runs skip-if-cached at its drain
         |
         |- Light property change -> LightGpuChanged{objectUid}
         |     |- Editor::LightGpuChanged handler:
-        |         resolves the pooled Light*, calls UploadLighting(*light),
-        |         calls RenderCache::UpdateLight(id, gpuStruct)
-        |         -> single SSBO struct updated
+        |         resolves the pooled Light*, converts it with
+        |         UploadManager::UploadLighting(*light) (pure CPU),
+        |         posts UpdateLightRequest{uid, struct}
+        |         -> renderer rewrites the single SSBO entry
         |
         |- Light transform/visibility/shadow toggle -> LightingRebuild{}
               |- Editor::LightingRebuild handler:
-                  calls UploadLighting() -> full light SSBO dict rebuilt
-                  -> all light SSBOs re-uploaded
+                  posts UpdateLightingRequest{full light dict} (pure CPU convert)
+                  -> renderer rebuilds all light SSBOs
 ```
 
 The key invariant: `SceneController` never touches GPU resources. It mutates
-scene objects and emits `EditorEvents`. The Editor handles all GPU uploads in its
-event handlers. This keeps the controller stateless and preserves the
-Editor-to-Renderer GPU upload boundary.
+scene objects and emits `EditorEvents`. The Editor turns them into
+`RenderRequest` values and posts them; the renderer performs every GPU operation
+at its per-frame drain. This keeps the controller stateless and keeps the
+renderer the sole GPU submitter.

@@ -29,6 +29,8 @@
 
 namespace neurus {
 
+struct EnsurePipelineRequest;  // render/RenderRequests.h
+
 /**
  * @brief G-Buffer geometry pass using dynamic rendering.
  *
@@ -82,6 +84,22 @@ public:
 	 */
 	bool EnsureMeshPipeline(RenderCache& cache, const Shader& shader);
 
+	/**
+	 * @brief Compiles the per-mesh G-Buffer pipeline from a request's SPIR-V.
+	 *
+	 * The one build path: the Shader overload snapshots the live Shader into a
+	 * request and calls this, and the renderer's request drain calls it with a
+	 * request the Editor posted. Building from the request's owned SPIR-V rather
+	 * than a live Shader is the point - a recompile landing before the drain
+	 * cannot change the code under the version it no longer belongs to.
+	 *
+	 * @param cache    Render cache owning the cross-frame pipeline cache.
+	 * @param request  Carries the shader id, version and per-stage SPIR-V.
+	 * @return true if a pipeline for (id, version) is cached when this returns;
+	 *         false if the request carries no usable SPIR-V - not an error.
+	 */
+	bool EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRequest& request);
+
 	/// Declares the G-Buffer + IDBuffer + Depth writes; this pass has no image
 	/// reads (camera data comes via a UBO).
 	PassIO GetIO() const override;
@@ -105,17 +123,19 @@ private:
 	                   const std::string& debugName) override;
 
 	/**
-	 * @brief Creates a per-mesh graphics pipeline from a custom Shader.
+	 * @brief Creates a per-mesh graphics pipeline from stage SPIR-V.
 	 *
 	 * Builds a graphics pipeline matching the default G-Buffer attachment
 	 * formats and vertex layout. Called only from EnsureMeshPipeline(), i.e.
 	 * only off the frame path.
 	 *
-	 * @param shader    The CPU-side Shader containing stage SPIR-V.
-	 * @return Fully constructed Pipeline, or an empty Pipeline when the shader
-	 *         carries no SPIR-V for any supported stage.
+	 * @param vertexSpv   Vertex-stage SPIR-V, or empty to skip the stage.
+	 * @param fragmentSpv Fragment-stage SPIR-V, or empty to skip the stage.
+	 * @return Fully constructed Pipeline, or an empty Pipeline when neither
+	 *         stage carries SPIR-V.
 	 */
-	Pipeline CreatePerMeshPipeline(const Shader& shader);
+	Pipeline CreatePerMeshPipeline(const std::vector<uint32_t>& vertexSpv,
+	                               const std::vector<uint32_t>& fragmentSpv);
 	void ConfigureGBufferPipeline(PipelineBuilder& builder);
 
 	// --- Descriptor resources ---

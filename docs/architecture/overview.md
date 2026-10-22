@@ -29,7 +29,7 @@ The architecture prioritizes:
                              v
 +--------------------------------------------------------------+
 | Editor Layer                                                 |
-|  owns: Scene, RenderConfig, UploadManager, Controllers       |
+|  owns: Scene, RenderConfig, ResourceManager, Controllers     |
 |  Application logic, scene mutation, event orchestration      |
 +----------------------------+---------------------------------+
                              |

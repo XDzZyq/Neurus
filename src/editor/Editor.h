@@ -25,7 +25,6 @@ class Camera;
 class DeferredRenderer;
 class MeshData;
 class Scene;
-class UploadManager;
 struct ShaderCreateRequested;
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
 }
@@ -38,12 +37,12 @@ namespace neurus {
  *
  * Owns Scene, RenderConfig, the resource pool, the viewport and the controllers.
  * Scene persistence is driven from outside through BeginLoad()/FinishLoad() and
- * NewScene(); GPU uploads go through non-owning renderer/upload pointers.
+ * NewScene(); GPU work is posted through a non-owning renderer pointer.
  */
 class Editor
 {
 public:
-	Editor(DeferredRenderer* renderer, UploadManager* uploadManager);
+	Editor(DeferredRenderer* renderer);
 	~Editor();
 
 	Editor(const Editor&) = delete;
@@ -211,12 +210,15 @@ public:
 
 private:
 	/**
-	 * @brief Drops the outgoing scene's GPU resources, draining the device first.
+	 * @brief Posts the request that releases the outgoing scene's GPU resources.
 	 *
-	 * The render cache is keyed by object UID, and UIDs are restored from the
-	 * project file, so entries left behind by the previous scene shadow whatever
-	 * comes back under the same id. Called by the two paths that replace the
-	 * scene, before the pool is cleared.
+	 * The drain and the eviction happen renderer-side; what the Editor still
+	 * guarantees is ORDER. This post precedes the new scene's upload posts, so
+	 * FIFO execution evicts the old scene before the new one uploads. That
+	 * matters because the cache is keyed by object UID and UIDs are restored from
+	 * the project file, so a reused id would otherwise shadow whatever comes back
+	 * under it. Called by the two paths that replace the scene, before the pool
+	 * is cleared.
 	 */
 	void DropSceneGpuResources();
 
@@ -276,7 +278,6 @@ private:
 
 	// --- Non-owning references ---
 	DeferredRenderer* ed_renderer = nullptr;
-	UploadManager* ed_uploadManager = nullptr;
 };
 
 } // namespace neurus

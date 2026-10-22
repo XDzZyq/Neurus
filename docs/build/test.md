@@ -819,6 +819,30 @@ GPU tests:
   calls, and drop `m_list.Touch()` => 8 targeted failures. Then restore and
   **verify with `diff` that the source is byte-identical** before rebuilding.
 
+- **Render request queue tests** (`test/render/test_render_request_queue.cpp`):
+  headless (no GPU) tests of the Editor-to-renderer handoff contract. Cover strict
+  FIFO within a batch (checked index-by-index so a reorder or a stack reversal
+  fails rather than passing on "all requests came back"), whole-batch swap-out
+  (`TakeAll()` leaves with the storage, so a `Post()` arriving mid-execution lands
+  in the next batch, asserted structurally), and move-through (capture a request's
+  SPIR-V `data()` pointer before posting and assert the drained request reports
+  the same address - true only if the payload was stolen end to end rather than
+  copied). Run in CI.
+
+- **Render request executor tests** (`test/render/test_render_request_executor.cpp`):
+  offscreen GPU coverage for `RenderRequestExecutor` - the handlers that used to
+  live in the Editor, now proven against a real device. The fixture builds exactly
+  what `DeferredRenderer` hands the executor (`RenderCache` with a `LightingCache`,
+  `UploadManager`, `GeometryPass`), which `DeferredRenderer` itself cannot do
+  headless. Each test drives a request the way the per-frame drain does and asserts
+  the GPU-side effect: residency flipping absent -> present, FIFO surviving a scene
+  drop mid-batch, a sun light getting a depth map and no colour cubemap where a
+  point light gets both, a `regenerate` replacing the found cubemap vs an
+  idempotent upload leaving it, a pipeline request carrying its own SPIR-V so a
+  recompile cannot retroactively change which version it builds, and a single-light
+  SSBO rewrite landing on the uid an earlier full rebuild indexed. Requires a
+  Vulkan 1.4 GPU; skipped in CI without one.
+
 ## Common Pitfalls
 
 | Pitfall | Symptom | Fix |

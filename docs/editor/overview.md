@@ -37,13 +37,17 @@ frame; `Editor::Edit()` dispatches all enqueued events through
 
 ### GPU upload and asset import
 
-The Editor handles asset import events (mesh, camera, and light adds) and performs
-GPU uploads directly: mesh upload, light SSBO dictionary updates, and IBL
-generation. It subscribes to the cross-component `EditorEvents`
-(`LightGpuChanged`, `LightingRebuild`, `SceneModified`) emitted by
-`SceneController`, and executes the uploads against its
-`DeferredRenderer`/`UploadManager`. The Editor must not mutate GPU resources
-directly outside of event handlers; scene mutations go through `SceneController`.
+The Editor handles asset import events (mesh, camera, and light adds) and drives
+GPU work - mesh upload, light SSBO updates, IBL (re)generation, per-mesh pipeline
+warming, scene-resource eviction - without ever touching the GPU itself. It
+subscribes to the cross-component `EditorEvents` (`LightGpuChanged`,
+`LightingRebuild`, `SceneModified`) emitted by `SceneController`, converts the
+work into typed `RenderRequest` values, and posts them through
+`DeferredRenderer::Post()`. The renderer drains the queue per frame and executes
+each request on the thread that submits (see
+[Data Flow](../architecture/data-flow.md#render-request-path-editor-to-renderer-gpu-work)).
+The Editor holds no `UploadManager` and never calls Vulkan; scene mutations go
+through `SceneController`.
 
 ## Layer boundaries
 
@@ -298,17 +302,20 @@ upload loses the surface, so `Run()` uploads once after `show()`, while
 `OnProjectNew()` uploads immediately.
 
 Replacing a scene drops the outgoing scene's GPU resources first.
-`DropSceneGpuResources()` (drains the device, then calls
-`RenderCache::RemoveSceneResources()`) is invoked by `BeginLoad()` and
-`NewScene()`. The eviction lives in the cache because only it knows which of its
-maps are scene-scoped; the Editor contributes the drain, since the entries own
-`vk::raii` resources. This is not housekeeping: the caches are keyed by object UID
-and `UID::serialize()` restores `o_id` from the file, so an entry left behind
-shadows whatever returns under the same id. Load project A, then project B, and B
-draws A's geometry, shadow maps and cubemaps while its own properties are
-displayed correctly beside them. The same reasoning is why the environment upload
-is skip-if-cached while `GenerateIBL()` stays the forced variant for live changes
-(`EnvironmentChanged`, an environment re-entering the scene).
+`DropSceneGpuResources()` posts a `DropSceneResourcesRequest` and is called by
+`BeginLoad()` and `NewScene()`. The drain and the eviction happen renderer-side:
+the executor calls `device.waitIdle()` (the entries own `vk::raii` resources the
+last frame may still read) and then `RenderCache::RemoveSceneResources()`. What
+the Editor still guarantees is ORDER - this post precedes the new scene's upload
+posts, and FIFO execution evicts the old scene before the new one uploads. This
+is not housekeeping: the caches are keyed by object UID and `UID::serialize()`
+restores `o_id` from the file, so an entry left behind shadows whatever returns
+under the same id. Load project A, then project B, and B draws A's geometry,
+shadow maps and cubemaps while its own properties are displayed correctly beside
+them. The same reasoning is why the scene-upload environment post is
+skip-if-cached (`regenerate = false`) while a live environment change
+(`EnvironmentChanged`, an environment re-entering the scene) posts with
+`regenerate = true` to force the cubemaps to rebuild.
 
 `DeferredRenderer::DrawFrame()` still carries a null-camera precondition check as
 defense in depth: it skips the frame and logs once (`m_reportedNoCamera`) instead

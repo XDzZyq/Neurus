@@ -17,6 +17,9 @@
 
 #include "shaders/Shader.h"
 
+#include "RenderRequestExecutor.h"
+#include "UploadManager.h"
+
 #include "passes/GeometryPass.h"
 #include "passes/LightingPass.h"
 #include "passes/SSAOPass.h"
@@ -221,6 +224,15 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	NEURUS_LOG("[DeferredRenderer] " << extent.width << "x" << extent.height
 	          << " swapchainImages=" << imageCount
 	          << " transferDst=" << (hasTransferDst ? "yes" : "no"));
+
+	// --- Request executor ---
+	// Built last: it borrows the geometry pass and the cache, both live by now.
+	// The UploadManager does not exist yet (the Application creates it after the
+	// renderer), so the executor starts without one; SetUploadManager() wires it
+	// in before the first scene upload.
+	m_executor = std::make_unique<RenderRequestExecutor>(
+		r_device, *r_renderCache, /*uploader=*/nullptr, r_geometryPass,
+		r_graphicsQueue, r_queueFamilyIndex);
 }
 
 DeferredRenderer::~DeferredRenderer()
@@ -247,6 +259,31 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
+	auto& fence = r_inFlightFences[r_currentFrame];
+	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
+
+	// --- Wait for this frame slot's fence ---
+	// On TIMEOUT return WITHOUT draining: requests stay queued for the next
+	// frame, when the GPU is idle again. The fence is reset only on the submit
+	// path below, never here, so a return after a successful wait leaves it
+	// signaled and the next wait does not deadlock.
+	if (r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) != vk::Result::eSuccess)
+	{
+		return m_frameProfile;  // Timeout - requests stay queued for the next frame
+	}
+
+	// --- Drain Editor-posted GPU requests ---
+	// Placed after the fence wait and before swapchain acquire: with
+	// kMaxFramesInFlight == 1 a signaled fence means the GPU has finished every
+	// frame we submitted, so a handler that replaces or frees a resource cannot
+	// pull it from under an executing frame. That argument holds ONLY for
+	// kMaxFramesInFlight == 1, which is exactly why the destroying handlers
+	// (pipeline replace, environment regenerate, scene drop) still WaitIdle.
+	//
+	// The drain runs before the no-camera early-out below, so a camera-less
+	// session still executes its queued requests instead of queueing forever.
+	ProcessRequests();
+
 	// --- Precondition: we must have a camera to look through ---
 	// The frame carries the camera the Editor chose, and every pass that needs a
 	// viewing camera reads it from the same snapshot, so they cannot disagree. A
@@ -264,15 +301,6 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		return m_frameProfile;
 	}
 	m_reportedNoCamera = false;
-
-	auto& fence = r_inFlightFences[r_currentFrame];
-	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
-
-	// --- Wait for this frame slot's fence ---
-	if (r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) != vk::Result::eSuccess)
-	{
-		return m_frameProfile;  // Timeout - skip this frame
-	}
 
 	// --- Profiling: read back this slot's GPU timestamps (fence signaled) ---
 	// Resolve() reads the slot about to be reused; the resolved GPU ms are
@@ -377,32 +405,37 @@ void DeferredRenderer::ResetShadowAccumulation()
 	m_iteration = 0;
 }
 
-void DeferredRenderer::EnsureMeshPipeline(const Shader& shader)
+void DeferredRenderer::Post(RenderRequest&& request)
 {
-	// Guarded rather than asserted: the renderer is constructed before any
-	// scene exists, and a warm for a scene the renderer cannot serve is a
-	// no-op, not an error.
-	if (!r_geometryPass || !r_renderCache) return;
+	m_requestQueue.Post(std::move(request));
+	// Future render thread: it parks in a FrameMailbox, so a control message
+	// posted while no frame is coming must be followed by FrameMailbox::Wake()
+	// here (enqueue-then-Wake, see FrameMailbox.h) or a static viewport would
+	// never service the request. Single-threaded today, DrawFrame drains it
+	// directly, so there is nothing to wake yet.
+}
 
-	// A store that REPLACES an entry destroys the displaced Pipeline at once, so
-	// drain first. The warm runs on the Editor thread before the frame fence,
-	// and with kMaxFramesInFlight == 1 the previous frame may still be executing
-	// against that pipeline - VUID-vkDestroyPipeline-pipeline-00765. A first
-	// insert destroys nothing, so the cost is bounded to shader recompiles.
-	//
-	// Single-threaded only: vkDeviceWaitIdle is externally synchronised against
-	// queue submits, so it cannot come from the Editor thread once a render
-	// thread submits.
-	PipelineCache& pipelines = r_renderCache->GetPipelineCache();
-	const int      shaderId  = shader.GetObjectID();
-	// Get ignores the version, GetPipeline does not: an entry that exists under
-	// the id but fails the version check is one a store would replace.
-	const bool replaces = pipelines.Get(shaderId) != nullptr
-	                   && pipelines.GetPipeline(shaderId, shader.GetVersion()) == nullptr;
-	if (replaces)
-		WaitIdle();
+void DeferredRenderer::ProcessRequests()
+{
+	// Whole batch at once: a request a handler posts lands in the next TakeAll(),
+	// never mid-iteration over this one.
+	std::vector<RenderRequest> batch = m_requestQueue.TakeAll();
+	for (const RenderRequest& request : batch)
+	{
+		// ResetAccumulationRequest writes renderer state (m_iteration), which the
+		// executor does not own, so it is executed here. Routing it through the
+		// queue rather than a direct call keeps the rule simple once the renderer
+		// runs on its own thread: the Editor never calls in except to Post.
+		if (std::holds_alternative<ResetAccumulationRequest>(request))
+			m_iteration = 0;
+		else
+			m_executor->Execute(request);
+	}
+}
 
-	r_geometryPass->EnsureMeshPipeline(*r_renderCache, shader);
+void DeferredRenderer::SetUploadManager(UploadManager* uploader)
+{
+	m_executor->SetUploadManager(uploader);
 }
 
 void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)

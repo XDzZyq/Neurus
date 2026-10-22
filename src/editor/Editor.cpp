@@ -19,11 +19,8 @@
 #include "editor/events/EventBus.h"
 
 #include "render/DeferredRenderer.h"
-#include "render/RenderCache.h"
+#include "render/RenderRequests.h"
 #include "render/UploadManager.h"
-#include "render/resources/LightGPU.h"
-#include "render/resources/LightingCache.h"
-#include "render/resources/MeshGPU.h"
 
 #include "render/RenderFrameSnapshot.h"
 #include "render/shaders/RenderShader.h"
@@ -64,54 +61,39 @@ namespace {
  */
 constexpr float kStarterMeshScale = 0.135f;
 
-/** @brief Single MeshGPU upload path: uploads the mesh geometry if not cached. */
-void UploadMeshGpu(UploadManager& uploader, DeferredRenderer& renderer, const Mesh& mesh)
+/**
+ * @brief Posts a mesh geometry upload into the slot keyed by @p objectId.
+ *
+ * Shared by Mesh and DebugMesh, which carry the same MeshData and land in the
+ * same slot. The renderer skips an already-resident slot, so the Editor no
+ * longer checks residency - it cannot see it. Callers skip a null geometry.
+ */
+void PostMeshUpload(DeferredRenderer& renderer, int objectId, std::shared_ptr<const MeshData> data)
 {
-	const int objId = mesh.GetObjectID();
-	auto& cache = renderer.GetRenderCache();
-	if (cache.GetMeshGPU(objId)) return;
-	auto meshGPU = uploader.UploadMesh(mesh);
-	cache.UseMeshGPU(objId, std::move(meshGPU));
-	NEURUS_LOG("[Editor] Uploaded MeshGPU for objectId=" << objId);
+	renderer.Post(UploadMeshRequest{objectId, std::move(data)});
 }
 
 /**
- * @brief Single MeshGPU upload path for a DebugMesh.
+ * @brief Posts a shadow-map allocation when the light casts shadows.
  *
- * A DebugMesh is not a Mesh, so it cannot reuse UploadMeshGpu(); it carries the
- * same MeshData and lands in the same RenderCache slot keyed by object id.
+ * The use_shadow test reads the Scene, so it stays here; the renderer only
+ * allocates the GPU-only maps for the light type.
  */
-void UploadDebugMeshGpu(UploadManager& uploader, DeferredRenderer& renderer, const DebugMesh& mesh)
-{
-	const int objId = mesh.GetObjectID();
-	auto& cache = renderer.GetRenderCache();
-	if (cache.GetMeshGPU(objId)) return;
-	auto meshGPU = uploader.UploadMeshData(*mesh.o_mesh);
-	cache.UseMeshGPU(objId, std::move(meshGPU));
-	NEURUS_LOG("[Editor] Uploaded MeshGPU for DebugMesh objectId=" << objId);
-}
-
-/** @brief Single LightGPU upload path: uploads shadow maps if the light casts shadows. */
-void UploadLightGpu(UploadManager& uploader, DeferredRenderer& renderer, const Light& light)
+void PostLightUpload(DeferredRenderer& renderer, const Light& light)
 {
 	if (!light.use_shadow) return;
-	const int uid = light.GetObjectID();
-	auto& cache = renderer.GetRenderCache();
-	if (cache.GetLightGPU(uid)) return;
-	auto lightGPU = uploader.UploadLight(light);
-	cache.UseLightGPU(uid, std::move(lightGPU));
-	NEURUS_LOG("[Editor] Uploaded LightGPU for lightUID=" << uid);
+	renderer.Post(CreateLightGpuRequest{light.GetObjectID(), light.light_type});
 }
 
-/** @brief IBL regeneration: uploads the environment's diffuse/specular cubemaps. */
-void GenerateIBL(UploadManager& uploader, DeferredRenderer& renderer,
-                 const std::shared_ptr<Environment>& env)
+/**
+ * @brief Posts an environment's equirect upload and IBL (re)generation.
+ *
+ * @p regenerate is false on the idempotent scene-upload path (skip if resident)
+ * and true when the environment itself changed and its cubemaps are stale.
+ */
+void PostEnvironmentUpload(DeferredRenderer& renderer, const Environment& env, bool regenerate)
 {
-	auto envGPU = uploader.UploadEnvironment(*env,
-	    renderer.GetGraphicsQueue(),
-	    renderer.GetGraphicsQueueFamily());
-	renderer.GetRenderCache().UseEnvironmentGPU(env->GetObjectID(), std::move(envGPU));
-	NEURUS_LOG("[Editor] IBL generated for environment (ID " << env->GetObjectID() << ")");
+	renderer.Post(UploadEnvironmentRequest{env.GetObjectID(), env.GetEquirectData(), regenerate});
 }
 
 /**
@@ -128,12 +110,11 @@ int ActiveUid(const Scene& scene)
 
 } // anonymous namespace
 
-Editor::Editor(DeferredRenderer* renderer, UploadManager* uploadManager)
+Editor::Editor(DeferredRenderer* renderer)
 	: m_scene(std::make_unique<Scene>())
 	, m_resources(std::make_unique<ResourceManager>())
 	, ed_operations(ed_eventBus)
 	, ed_renderer(renderer)
-	, ed_uploadManager(uploadManager)
 {}
 
 Editor::~Editor()
@@ -234,10 +215,13 @@ void Editor::Initialize()
 	// --- Subscribe to EnvironmentChanged to regenerate IBL cubemaps on demand ---
 	ed_eventBus.subscribe<EnvironmentChanged>([this](const EnvironmentChanged& e) {
 		ed_eventBus.enqueue(RenderResetEvent{});
+		if (!ed_renderer) return;
 		auto it = GetScene().env_list.find(e.envId);
 		if (it != GetScene().env_list.end())
 		{
-			GenerateIBL(*ed_uploadManager, *ed_renderer, it->second);
+			// regenerate=true: the environment itself changed, so its cached
+			// cubemaps are exactly what has gone stale.
+			PostEnvironmentUpload(*ed_renderer, *it->second, true);
 		}
 		else
 		{
@@ -340,7 +324,7 @@ void Editor::Initialize()
 	// --- Subscribe to RenderResetEvent to reset temporal accumulation ---
 	ed_eventBus.subscribe<RenderResetEvent>([this](const RenderResetEvent&) {
 		if (ed_renderer)
-			ed_renderer->ResetShadowAccumulation();
+			ed_renderer->Post(ResetAccumulationRequest{});
 
 		// Second consumer on the same signal: this is the "something visible
 		// changed" broadcast, so it is exactly when the overlays may have gone
@@ -360,7 +344,7 @@ void Editor::Initialize()
 		if (!ed_renderer) return;
 		auto shader = m_resources->Get<Shader>(e.shaderObjectId);
 		if (!shader) return;
-		ed_renderer->EnsureMeshPipeline(*shader);
+		ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
 	});
 
 	// --- Selection moves the resting handle, and selection alone emits no
@@ -386,10 +370,11 @@ void Editor::Initialize()
 	});
 
 	ed_eventBus.subscribe<LightGpuChanged>([this](const LightGpuChanged& e) {
+		if (!ed_renderer) return;
 		auto light = m_resources->Get<Light>(e.objectUid);
 		if (!light) return;
-		auto gpuStruct = ed_uploadManager->UploadLighting(*light);
-		ed_renderer->GetRenderCache().UpdateLight(e.objectUid, gpuStruct);
+		// Pure CPU conversion here, then the renderer rewrites the one SSBO entry.
+		ed_renderer->Post(UpdateLightRequest{e.objectUid, UploadManager::UploadLighting(*light)});
 	});
 
 	ed_eventBus.subscribe<LightingRebuild>([this](const LightingRebuild&) {
@@ -922,23 +907,25 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
  */
 void Editor::OnSceneObjectGpuUpload(int objectUid)
 {
-	if (!ed_uploadManager || !ed_renderer || objectUid == 0) return;
+	if (!ed_renderer || objectUid == 0) return;
 
 	if (auto mesh = m_resources->Get<Mesh>(objectUid))
 	{
-		if (mesh->o_mesh) UploadMeshGpu(*ed_uploadManager, *ed_renderer, *mesh);
+		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
 	}
 	else if (auto light = m_resources->Get<Light>(objectUid))
 	{
-		if (light->use_shadow) UploadLightGpu(*ed_uploadManager, *ed_renderer, *light);
+		PostLightUpload(*ed_renderer, *light);
 	}
 	else if (auto env = m_resources->Get<Environment>(objectUid))
 	{
-		GenerateIBL(*ed_uploadManager, *ed_renderer, env);
+		// regenerate=true: an environment entering the scene is a change, and its
+		// cubemaps (if any cached under a reused id) are stale.
+		PostEnvironmentUpload(*ed_renderer, *env, true);
 	}
 	else if (auto dMesh = m_resources->Get<DebugMesh>(objectUid))
 	{
-		if (dMesh->HasGeometry()) UploadDebugMeshGpu(*ed_uploadManager, *ed_renderer, *dMesh);
+		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
 	}
 }
 
@@ -950,30 +937,29 @@ void Editor::UploadEnvironmentIBL()
 		NEURUS_ERR("[Editor] UploadEnvironmentIBL: no scene available");
 		return;
 	}
-	if (!ed_uploadManager || !ed_renderer)
+	if (!ed_renderer)
 	{
-		NEURUS_ERR("[Editor] UploadEnvironmentIBL: UploadManager or Renderer not available");
+		NEURUS_ERR("[Editor] UploadEnvironmentIBL: Renderer not available");
 		return;
 	}
 
 	// IBL is only enabled when the project provides an environment.
 	if (scene->env_list.empty())
 	{
-		NEURUS_LOG("[Editor] No environment in scene 鈥?IBL disabled (black background)");
+		NEURUS_LOG("[Editor] No environment in scene - IBL disabled (black background)");
 		return;
 	}
 
 	auto env = scene->env_list.begin()->second;
-
-	// Skip what is already cached: this is part of the idempotent upload path,
-	// and regenerating cubemaps is by far its most expensive step. The cached
-	// entry cannot be stale here - the cache is emptied whenever the scene is
-	// replaced, which matters because UIDs are restored from the project file and
-	// a reused id would otherwise shadow the incoming environment.
 	const int envId = env->GetObjectID();
-	if (ed_renderer->GetRenderCache().GetEnvironmentGPU(envId))
-		return;
 
+	// Posted with regenerate=false: the renderer skips an environment already
+	// resident, because regenerating cubemaps is by far the most expensive step
+	// of a scene upload, and residency is a fact only the renderer can see now.
+	// The skip stays sound across a scene replacement: this scene's load posted
+	// DropSceneResourcesRequest first, and FIFO execution evicts the old cache
+	// before this upload runs - so a UID restored from the project file never
+	// finds the previous scene's entry stale under it.
 	NEURUS_LOG("[Editor] Using environment (ID " << envId << ")");
 
 	// If the pooled pixels are unavailable (missing source file), the upload path
@@ -983,12 +969,12 @@ void Editor::UploadEnvironmentIBL()
 		NEURUS_LOG("[Editor] Environment has no valid equirect data, using procedural fallback");
 	}
 
-	GenerateIBL(*ed_uploadManager, *ed_renderer, env);
+	PostEnvironmentUpload(*ed_renderer, *env, false);
 }
 
 void Editor::UploadSceneResources()
 {
-	if (!ed_uploadManager || !ed_renderer) return;
+	if (!ed_renderer) return;
 
 	// Scene-scoped upload: GPU resources mirror the SCENE, not the pool, so memory
 	// stays proportional to the scene. Pooled objects not in the scene are skipped
@@ -996,19 +982,19 @@ void Editor::UploadSceneResources()
 	for (const auto& [id, mesh] : m_scene->mesh_list)
 	{
 		if (!mesh || !mesh->o_mesh) continue;
-		UploadMeshGpu(*ed_uploadManager, *ed_renderer, *mesh);
+		PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
 
 		// Scene load compiles shaders inside cereal's hook, which cannot reach
 		// the event bus, so no ShaderCompiled fires. Warm each mesh's pipeline
 		// once here instead.
 		if (mesh->o_shader)
-			ed_renderer->EnsureMeshPipeline(*mesh->o_shader);
+			ed_renderer->Post(MakeEnsurePipelineRequest(*mesh->o_shader));
 	}
 
 	for (const auto& [uid, light] : m_scene->light_list)
 	{
 		if (!light) continue;
-		UploadLightGpu(*ed_uploadManager, *ed_renderer, *light);
+		PostLightUpload(*ed_renderer, *light);
 	}
 
 	// DebugMesh wireframes need a MeshGPU too: the consumer skips any wire mesh
@@ -1016,7 +1002,7 @@ void Editor::UploadSceneResources()
 	for (const auto& [uid, dMesh] : m_scene->dMesh_list)
 	{
 		if (!dMesh || !dMesh->HasGeometry()) continue;
-		UploadDebugMeshGpu(*ed_uploadManager, *ed_renderer, *dMesh);
+		PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
 	}
 
 	// The environment is scene content as well: without its cubemaps the scene
@@ -1030,29 +1016,27 @@ void Editor::UploadSceneResources()
 }
 
 /**
- * @brief Drops the outgoing scene's GPU resources, draining the device first.
+ * @brief Posts the request that releases the outgoing scene's GPU resources.
  *
- * The eviction itself belongs to the render cache, which owns the caches and
- * knows which are scene-scoped. The Editor contributes the drain: cached entries
- * own RAII resources, so releasing them while a frame still reads them is a
- * validation error. Both scene-replacing paths call this before clearing the pool.
+ * The drain and the eviction happen renderer-side now. What the Editor still
+ * guarantees is ORDER: this post precedes the new scene's upload posts, so FIFO
+ * execution evicts the old scene before the new one uploads. That matters
+ * because the cache is keyed by object UID and UIDs are restored from the
+ * project file, so a reused id would otherwise shadow whatever comes back under
+ * it. Both scene-replacing paths call this before clearing the pool.
  */
 void Editor::DropSceneGpuResources()
 {
 	if (!ed_renderer) return;
-
-	ed_renderer->WaitIdle();
-	ed_renderer->GetRenderCache().RemoveSceneResources();
+	ed_renderer->Post(DropSceneResourcesRequest{});
 }
 
 void Editor::UploadLighting()
 {
-	if (ed_uploadManager && ed_renderer)
-	{
-		auto& scene = *m_scene;
-		auto lightDict = ed_uploadManager->UploadLighting(scene.light_list);
-		ed_renderer->GetRenderCache().UpdateLighting(lightDict);
-	}
+	if (!ed_renderer) return;
+	// Pure CPU conversion of the whole light map here; the renderer rebuilds the
+	// SSBOs from the value it receives.
+	ed_renderer->Post(UpdateLightingRequest{UploadManager::UploadLighting(m_scene->light_list)});
 }
 
 // =========================================================================

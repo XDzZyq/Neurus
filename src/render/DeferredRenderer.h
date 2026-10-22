@@ -23,6 +23,7 @@
 #include "passes/Pass.h"
 #include "core/RenderConfig.h"
 #include "RenderContext.h"
+#include "RenderRequestQueue.h"
 #include "Swapchain.h"
 #include "render_graph/RenderGraph.h"
 
@@ -58,6 +59,8 @@ class DebugPass;
 class GizmoPass;
 struct CameraUBOData;
 class Shader;
+class UploadManager;
+class RenderRequestExecutor;
 
 /**
  * @brief Deferred renderer orchestrating GeometryPass → LightingPass → composite.
@@ -183,16 +186,39 @@ public:
 	void ResetShadowAccumulation();
 
 	/**
-	 * @brief Ensures the per-mesh G-Buffer pipeline for @p shader exists.
+	 * @brief Post one GPU request for the renderer to execute at the next drain.
 	 *
-	 * The renderer-side half of the warm. The Editor calls it from its thread -
-	 * the thread that owns the Shader - on a ShaderCompiled event, before handing
-	 * the frame off, because building a pipeline reads the live Shader while a
-	 * frame carries only ids. Idempotent and cheap once warm.
+	 * The only entry point the Editor uses to drive the renderer's GPU state:
+	 * upload a mesh, allocate a light's shadow maps, regenerate IBL, rewrite the
+	 * lighting SSBOs, warm a pipeline, drop the outgoing scene, reset
+	 * accumulation. Requests are executed FIFO at the top of DrawFrame (see
+	 * RenderRequests.h). Returns at once; nothing blocks the caller.
 	 *
-	 * @param shader CPU-side Shader, borrowed for the duration of the call only.
+	 * @param request  The request; moved into the queue, never copied.
 	 */
-	void EnsureMeshPipeline(const Shader& shader);
+	void Post(RenderRequest&& request);
+
+	/**
+	 * @brief Drain the request queue and execute every pending request, FIFO.
+	 *
+	 * Called by DrawFrame after the frame-slot fence wait, but public so a test
+	 * or a non-drawing caller can flush the queue without a frame. Every request
+	 * except ResetAccumulationRequest is delegated to the executor;
+	 * ResetAccumulationRequest is handled here (it writes renderer state).
+	 */
+	void ProcessRequests();
+
+	/**
+	 * @brief Sets the upload service the request executor uses (non-owning).
+	 *
+	 * Called by the Application once the UploadManager exists. The executor is
+	 * built in this object's constructor, before the UploadManager, so it starts
+	 * without one and a mesh/light/environment request posted before this call
+	 * is logged once and skipped.
+	 *
+	 * @param uploader  Upload service, borrowed; must outlive this renderer.
+	 */
+	void SetUploadManager(UploadManager* uploader);
 
 private:
 	/**
@@ -323,6 +349,13 @@ private:
 	/// @brief Latches the "no active camera" report so it is logged once, not
 	///        once per frame, while the unrenderable scene is on screen.
 	bool m_reportedNoCamera = false;
+
+	// --- Editor-posted GPU requests (drained at the top of DrawFrame) ---
+	// The queue is the handoff from the Editor; the executor runs each request
+	// against the device, the cache and the passes. Both single-threaded today;
+	// the queue carries the mutex a future render thread needs.
+	RenderRequestQueue                     m_requestQueue;
+	std::unique_ptr<RenderRequestExecutor> m_executor;
 
 };
 

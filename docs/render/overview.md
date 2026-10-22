@@ -51,7 +51,10 @@ Main thread only for the current version. In future the renderer may run on a de
 - `src/render/shaders/` - see [Shaders](shaders.md).
 - `src/render/DeferredRenderer.h/cpp` - the public renderer entry point and frame drawing.
 - `src/render/RenderCache.h/cpp` - cross-frame resource pool; owns `MeshGPU`, `EnvironmentGPU`, `LightingCache`, `CameraGPU`, `DebugCache`, `GizmoCache`, attachments and shadow maps.
-- `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL).
+- `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL). Owned by the Application and borrowed by the renderer's request executor; the Editor no longer holds it.
+- `src/render/RenderRequests.h` - typed GPU-work requests the Editor posts as owned values (`UploadMeshRequest`, `CreateLightGpuRequest`, `UploadEnvironmentRequest`, `UpdateLightingRequest`, `UpdateLightRequest`, `EnsurePipelineRequest`, `DropSceneResourcesRequest`, `ResetAccumulationRequest`).
+- `src/render/RenderRequestQueue.h/cpp` - mutex-guarded FIFO inbox (`Post` / `TakeAll` / `Empty`) between the Editor and the renderer.
+- `src/render/RenderRequestExecutor.h/cpp` - executes each request against the device, `RenderCache`, `UploadManager` and `GeometryPass`; the testable seam `DeferredRenderer` delegates to.
 - `src/render/Texture.h/cpp` - texture resource (`Image` + sampler + descriptor).
 - `src/render/resources/` - GPU resource structs owned by `RenderCache`; see [Resources](resources.md).
 - `src/render/buffers/` - buffer class hierarchy; see [Buffers](buffers.md).
@@ -83,7 +86,9 @@ Main thread only for the current version. In future the renderer may run on a de
 
 ## Drawing a frame
 
-`DeferredRenderer` owns the command pool and command buffers, an `imageAvailable` + `renderFinished` semaphore pair, and an in-flight fence for CPU-GPU synchronization. The frame is drawn as: acquire, begin dynamic rendering, bind pipeline, draw, end dynamic rendering, present. `WaitIdle()` calls `DeviceWaitIdle` for clean shutdown.
+`DeferredRenderer` owns the command pool and command buffers, an `imageAvailable` + `renderFinished` semaphore pair, and an in-flight fence for CPU-GPU synchronization. The frame is drawn as: wait the frame-slot fence, drain the Editor-posted render-request queue, acquire, begin dynamic rendering, bind pipeline, draw, end dynamic rendering, present. `WaitIdle()` calls `DeviceWaitIdle` for clean shutdown.
+
+The request drain sits deliberately after the fence wait and before swapchain acquire (and before the no-camera early-out, so a camera-less session still services its queue). With `kMaxFramesInFlight == 1` a signaled fence means the GPU has finished every submitted frame, so a handler that frees or replaces a resource cannot pull it from under an executing frame; that argument holds only for one frame in flight, which is why the destroying handlers (pipeline replace, environment regenerate, scene drop) still `waitIdle()`. See [Render request path](resources.md#render-request-path).
 
 For the current pass-by-pass structure, see [Passes](passes.md). For shader and pipeline management, see [Shaders](shaders.md).
 

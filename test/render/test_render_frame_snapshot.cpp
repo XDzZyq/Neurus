@@ -28,8 +28,8 @@
  * would hold for any implementation that compiles, which is to say it would
  * assert nothing at all.
  *
- * No GPU and no Vulkan: `Editor(nullptr, nullptr)` skips every upload path (each
- * is guarded on ed_renderer / ed_uploadManager), and the Scene is populated by
+ * No GPU and no Vulkan: `Editor(nullptr)` skips every upload path (each
+ * is guarded on ed_renderer), and the Scene is populated by
  * hand, so the only thing under test is the copy.
  */
 
@@ -156,7 +156,7 @@ struct Populated
  */
 TEST(RenderFrameSnapshotTest, BuildSnapshot_MatchesTheScene)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	const Populated ids(editor);
 	const Scene& scene = editor.GetScene();
 
@@ -229,7 +229,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_MatchesTheScene)
  */
 TEST(RenderFrameSnapshotTest, BuildSnapshot_SurvivesLaterSceneMutation)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	const Populated ids(editor);
 	Scene& scene = editor.GetScene();
 
@@ -349,7 +349,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_SurvivesLaterSceneMutation)
  */
 TEST(RenderFrameSnapshotTest, BuildSnapshot_GatesDebugDrawAndCopiesOverlays)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	const Populated ids(editor);
 	Scene& scene = editor.GetScene();
 	EditorViewport& vp = editor.GetViewport();
@@ -445,7 +445,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_GatesDebugDrawAndCopiesOverlays)
  */
 TEST(RenderFrameSnapshotTest, BuildSnapshot_CarriesTheActiveObjectAsAnId)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	const Populated ids(editor);
 	Scene& scene = editor.GetScene();
 
@@ -466,7 +466,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_CarriesTheActiveObjectAsAnId)
  */
 TEST(RenderFrameSnapshotTest, Clear_EmptiesTheFrameForReuse)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	[[maybe_unused]] const Populated ids(editor);
 
 	RenderFrameSnapshot snap = editor.BuildSnapshot();

@@ -6,7 +6,52 @@
 
 `RenderCache` owns cross-frame mutable GPU resources beyond framebuffer attachments. These resources separate GPU ownership from the Vulkan-free scene and asset layers.
 
-**Scene-scoped eviction.** Mesh, environment and light entries - plus the shadow-layer / SSBO-index maps and the shadow intensity array derived from them - are dropped together by `RenderCache::RemoveSceneResources()`. The Editor calls it (after draining the device first) whenever it replaces the scene, i.e. from `BeginLoad()` and `NewScene()`. Keying by object UID makes this necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project file, so an entry left behind by the previous scene shadows whatever returns under the same id. Screen-space attachments, the pipeline cache and the `LightingCache` survive it - they are recreated lazily, versioned, or owned by `UploadManager` rather than by the scene.
+**Scene-scoped eviction.** Mesh, environment and light entries - plus the shadow-layer / SSBO-index maps and the shadow intensity array derived from them - are dropped together by `RenderCache::RemoveSceneResources()`. The renderer calls it when it executes a `DropSceneResourcesRequest`, which the Editor posts whenever it replaces the scene (from `BeginLoad()` and `NewScene()`); the executor drains the device first, since the entries own `vk::raii` resources the last frame may still read. Keying by object UID makes this necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project file, so an entry left behind by the previous scene shadows whatever returns under the same id. FIFO ordering is what makes the drop safe across a replacement - the Editor posts the drop before the new scene's upload requests, so the old cache is evicted before the new scene uploads. Screen-space attachments, the pipeline cache and the `LightingCache` survive it - they are recreated lazily, versioned, or owned by `UploadManager` rather than by the scene.
+
+## Render request path
+
+The renderer is the sole GPU submitter: the Editor touches no `VkQueue`, no
+device-wide wait and none of the `RenderCache` resource maps. Everything it used
+to do to them directly - upload a mesh, allocate a light's shadow maps,
+(re)generate IBL, rewrite the light SSBOs, warm a per-mesh pipeline, drop the
+outgoing scene, reset accumulation - is posted instead as a typed
+`RenderRequest` value and executed by the renderer on the thread that submits.
+
+- **Queue and drain.** `DeferredRenderer::Post(RenderRequest&&)` appends to a
+  mutex-guarded FIFO (`RenderRequestQueue`). `DrawFrame()` drains the whole batch
+  with `TakeAll()` *after* the frame-slot fence wait and *before* swapchain
+  acquire (and before the no-camera early-out). `RenderRequestExecutor` runs each
+  request against the device, cache, `UploadManager` and `GeometryPass`;
+  `ResetAccumulationRequest` is the one request `DeferredRenderer` keeps for
+  itself, because it writes renderer state (`m_iteration`) the executor does not
+  own. Requests posted inside one `Editor::Edit()` execute in that same tick's
+  `DrawFrame()`, so there is no one-frame delay.
+
+- **Why that drain placement.** With `kMaxFramesInFlight == 1` a signaled fence
+  means the GPU has finished every submitted frame, so a handler that frees or
+  replaces a resource cannot pull it from under an executing frame. That argument
+  holds only for one frame in flight, which is why the destroying handlers
+  (pipeline replace, environment regenerate, scene drop) still call
+  `device.waitIdle()`.
+
+- **FIFO ordering is a contract.** Within a batch, append order is execution
+  order. An upload posted after `DropSceneResourcesRequest` lands in the new
+  scene; one posted before it is discarded with the old one. This is exactly what
+  makes a scene replacement safe (see scene-scoped eviction above).
+
+- **The payload rule.** A payload is a value, or a `shared_ptr<const T>` to data
+  nobody mutates after creation. It is never a `Scene`, `Mesh` or `Shader`
+  pointer - the Editor may edit or delete those before the request is drained -
+  and never a callable, because a closure capturing the Editor would run Editor
+  code wherever the renderer runs. `EnsurePipelineRequest` carries its own copy
+  of the SPIR-V (via `MakeEnsurePipelineRequest(const Shader&)`) rather than the
+  `Shader`, so a recompile landing before the drain cannot change the code under
+  a version it no longer belongs to.
+
+> The `UploadManager` is owned by the Application and borrowed by the executor
+> via `DeferredRenderer::SetUploadManager()`. Because the executor is built in the
+> renderer's constructor, before the `UploadManager` exists, a mesh/light/environment
+> request posted before that call is logged once and skipped.
 
 ## Attachments
 

@@ -44,6 +44,8 @@ add_executable(neurus_test
 	render/test_null_scene_passes.cpp
 	render/test_render_frame_snapshot.cpp
 	render/test_frame_mailbox.cpp
+	render/test_render_request_queue.cpp
+	render/test_render_request_executor.cpp
 	editor/test_camera_controller.cpp
 	editor/test_debug_draw_builder.cpp
 	editor/test_editor_scene_lifecycle.cpp

@@ -68,6 +68,12 @@ add_library(neurus_render STATIC
 	RenderFrameSnapshot.cpp
 	FrameMailbox.h
 	FrameMailbox.cpp
+	RenderRequests.h
+	RenderRequests.cpp
+	RenderRequestQueue.h
+	RenderRequestQueue.cpp
+	RenderRequestExecutor.h
+	RenderRequestExecutor.cpp
 	overlay/OverlayGeometry.h
 	overlay/DebugDrawList.h
 	overlay/GizmoDrawList.h

@@ -31,7 +31,22 @@ Renderer Layer owns:
   EnvironmentGPU (GPU-side IBL resources: diffuse + specular cubemap Textures,
     owned by RenderCache)
   LightingCache (GPU-side light SSBOs: point + sun light, owned by RenderCache)
+
+  Also borrows (owned by the Application, destroyed after the renderer):
+  UploadManager (the CPU-to-GPU upload service; the Application creates it and
+    passes it to the renderer via DeferredRenderer::SetUploadManager(), and the
+    renderer's RenderRequestExecutor drives it)
 ```
+
+The renderer is the **sole GPU submitter**: every `VkQueue` submit, the
+device-wide wait and all writes to the RenderCache's resource maps happen on the
+renderer's own thread. The Editor drives GPU state only by posting a
+`RenderRequest` (see [Data Flow](data-flow.md#render-request-path-editor-to-renderer-gpu-work));
+`DeferredRenderer` drains the queue per frame and its `RenderRequestExecutor`
+performs the work. Single ownership is the point, not tidiness: on MoltenVK the
+"transfer queue" resolves to the graphics queue, so an upload submitted from one
+thread while a frame is submitted from another is a race on the queue itself that
+no cache lock repairs.
 
 Scene and Asset layers own NO GPU resources. `Mesh::UploadToGPU()` delegates to
 `RenderCache::GetMeshGPU()` which creates and owns the `MeshGPU`. `ImageData`
@@ -52,7 +67,10 @@ been removed.
 
 1. **No cross-layer direct coupling** - Use UIEvents/EventQueue/Context only
 2. **Renderer is stateless** - Application state lives in Editor
-3. **Full RAII** - No two-phase initialization; no `Init()`/`Terminate()` methods
-4. **Explicit GPU ownership** - Each Vulkan handle has one owning layer
-5. **Non-copyable GPU resources** - `= delete` copy/assign
-6. **Vulkan validation** - Debug builds enable `VK_LAYER_KHRONOS_validation`
+3. **Renderer is the sole GPU submitter** - the Editor drives GPU state only by
+   posting a `RenderRequest`; it never submits, waits the device, or writes the
+   renderer's resource maps
+4. **Full RAII** - No two-phase initialization; no `Init()`/`Terminate()` methods
+5. **Explicit GPU ownership** - Each Vulkan handle has one owning layer
+6. **Non-copyable GPU resources** - `= delete` copy/assign
+7. **Vulkan validation** - Debug builds enable `VK_LAYER_KHRONOS_validation`

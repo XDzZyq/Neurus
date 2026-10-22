@@ -14,7 +14,7 @@ UI Layer (Qt6 Widgets + ADS)
         | Qt signals / slots
         v
 Editor Layer
-  owns: Scene, RenderConfig, UploadManager, Controllers
+  owns: Scene, RenderConfig, ResourceManager, Controllers
         |
         v
 Renderer Layer (Vulkan-HPP vk::raii)

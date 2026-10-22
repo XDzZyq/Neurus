@@ -133,15 +133,16 @@ the boundary itself.
 
 A wireframe needs vertex/index buffers in the `RenderCache`, keyed by the object
 id `DebugWireMesh::meshObjectId` carries. Without them `DebugPass` silently skips
-the mesh, so this is the difference between a wired feature and an inert one.
-`DebugMesh` derives from `ObjectID + Transform3D`, not from `Mesh`, so
-`UploadManager::UploadMesh(const Mesh&)` cannot serve it by upcast; the geometry
-half is split out as `UploadManager::UploadMeshData(const MeshData&)` and both
-paths share it. Three places must stay in step:
+the mesh, so this is the difference between a wired feature and an inert one. The
+Editor posts an `UploadMeshRequest{objectId, shared_ptr<const MeshData>}` rather
+than uploading itself; `DebugMesh` and `Mesh` carry the same `MeshData` and land
+in the same cache slot, so one request type serves both and the renderer's
+executor runs it skip-if-cached (`UploadManager::UploadMeshData(const MeshData&)`
+behind the scenes). Three places must stay in step:
 
 | Site | Role |
 |------|------|
-| `UploadDebugMeshGpu()` (Editor.cpp anon namespace) | the single upload path, skip-if-cached, mirroring `UploadMeshGpu()` |
+| `PostMeshUpload()` (Editor.cpp anon namespace) | the single post path, shared by `Mesh` and `DebugMesh`; residency is the renderer's fact, so it posts unconditionally |
 | `Editor::UploadSceneResources()` | `dMesh_list` loop, for objects present at project load |
 | `Editor::OnSceneObjectGpuUpload()` | `Get<DebugMesh>` branch, for on-demand upload of an object entering the scene |
 

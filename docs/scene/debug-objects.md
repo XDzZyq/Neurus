@@ -46,7 +46,7 @@ See [Overlays](overlays.md) and [Viewport](../editor/viewport.md).
 
 ## Upload
 
-A `DebugMesh` wireframe still needs a `MeshGPU` in the `RenderCache`, uploaded by the Editor through `UploadManager::UploadMeshData()`. `DebugMesh` is not a `Mesh`, so it cannot reuse `UploadMesh()`; without the upload the pass skips the mesh silently.
+A `DebugMesh` wireframe still needs a `MeshGPU` in the `RenderCache`. The Editor posts an `UploadMeshRequest` (keyed by object id and carrying the shared `MeshData`); the renderer's executor serves it via `UploadManager::UploadMeshData()`. `DebugMesh` is not a `Mesh`, but it carries the same `MeshData` and lands in the same slot, so one request type covers both; without the upload the pass skips the mesh silently.
 
 Upload of the flattened list is revision-gated: an unchanged list re-uses the buffer a frame slot already holds and skips the memcpy entirely. `CPUBuffer` is the permanent host-visible buffer type for this data; `StagingBuffer` is for uploads and downloads only and must never be retained as a permanent buffer. See [Buffers](../render/buffers.md).
 

@@ -185,8 +185,8 @@ Design:
   `LightingRebuild`, `RenderResetEvent`) cannot drift from the gizmo's.
 - GPU uploads are delegated to the Editor via `EditorEvents`
   (`LightGpuChanged`, `LightingRebuild`, `SceneModified`, `RenderResetEvent`),
-  which the Editor subscribes to and executes against its
-  `DeferredRenderer`/`UploadManager`.
+  which the Editor subscribes to and turns into `RenderRequest` values posted to
+  the `DeferredRenderer`; the renderer executes them at its per-frame drain.
 - Debug property handlers go through one `ForDebugObject(scene, uid, fn)` helper
   that probes `dLine_list`, `dPoints_list`, `dMesh_list` in turn and invokes a
   generic lambda on the first hit. The three debug classes share no base, so the

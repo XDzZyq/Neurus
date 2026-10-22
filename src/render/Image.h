@@ -116,7 +116,7 @@ public:
 	                           const vk::raii::PhysicalDevice& physicalDevice,
 	                           vk::Queue queue,
 	                           uint32_t queueFamilyIndex,
-	                           ImageData& imageData,
+	                           const ImageData& imageData,
 	                           const char* debugName = "Image",
 	                           vk::ImageUsageFlags extraUsage = {},
 	                           uint32_t mipLevels = 1);
