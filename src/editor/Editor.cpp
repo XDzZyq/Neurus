@@ -1066,8 +1066,17 @@ void Editor::Edit()
 	// After the queue is drained, so a scene change and its overlay consequences
 	// land in the same frame. Which overlays are dirty and what they anchor on are
 	// viewport questions - the Editor's part is only the timing.
-	if (m_scene)
-		m_viewport.RebuildOverlays(*m_scene);
+	if (m_scene && m_viewport.RebuildOverlays(*m_scene))
+	{
+		// The rebuilt payload only reaches the screen if the renderer draws again,
+		// and once accumulation has converged it draws nothing on its own. Posted
+		// here rather than in the handlers that dirty the overlays: the rebuild is
+		// what proves the overlay content actually changed, so an idle tick posts
+		// nothing. It is still inside Edit(), i.e. before this tick's snapshot is
+		// published (RenderRequestSink.h) - posting after would cost one tick.
+		if (ed_renderer)
+			ed_renderer->Post(RedrawOverlaysRequest{});
+	}
 }
 
 } // namespace neurus

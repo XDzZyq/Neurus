@@ -13,8 +13,10 @@
  * executor needs only a device, a RenderCache, an UploadManager and a
  * GeometryPass, all of which a GPU test fixture already builds offscreen. The
  * one request DeferredRenderer keeps for itself is ResetAccumulationRequest,
- * which writes renderer state the executor does not own; the executor treats it
- * as a no-op so std::visit stays total and a stray reset is harmless.
+ * which writes renderer state the executor does not own; RedrawOverlaysRequest is
+ * the other, since it only sets the flag deciding the next frame's work. The
+ * executor treats both as no-ops so std::visit stays total and a stray one is
+ * harmless.
  */
 
 #pragma once
@@ -82,6 +84,7 @@ private:
 	void handle(const EnsurePipelineRequest& request);
 	void handle(const DropSceneResourcesRequest& request);
 	void handle(const ResetAccumulationRequest& request);
+	void handle(const RedrawOverlaysRequest& request);
 
 	// --- Borrowed objects ---
 	const vk::raii::Device& m_device;

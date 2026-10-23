@@ -91,9 +91,12 @@ compute pass and full G-Buffer pipeline through the isolated layers.
 - Embedded SPIR-V shaders (compiled at CMake time)
 - OBJ mesh loading into `MeshData`
 - Deferred pipeline: ShadowDepthPass -> GeometryPass (G-Buffer) -> SSAOPass ->
-  Light + ShadowIntensity -> LightingPass -> IBLPass -> SelectionOutlinePass ->
-  ComposePass (gamma) -> FXAAPass (conditional) -> DebugPass -> GizmoPass ->
-  blit to swapchain
+  Light + ShadowIntensity -> LightingPass -> IBLPass -> ComposePass (tone map,
+  gamma) -> FXAAPass (conditional), then the overlay graph: SelectionOutlinePass
+  -> OverlayCopyPass -> DebugPass -> GizmoPass -> blit to swapchain
+- Progressive accumulation with a sampling budget (`r_sampling_count`): after a
+  restart the renderer draws that many scene frames and then stops, redrawing
+  overlays only when they change and idling otherwise
 - Centralized image barriers (`Barrier::Transition`, `ImageState`)
 - Screenshot capture and PNG readback
 - Undo/redo operation system and project serialization

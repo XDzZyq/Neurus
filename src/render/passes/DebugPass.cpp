@@ -271,12 +271,12 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	auto& depthAtt  = cache.GetAttachment(AttachmentName::Depth, extent);
 
 	// The target arrives in ShaderWrite straight from a compute dispatch -
-	// FXAAPass's when FXAA is on, ComposePass's when it is off - and this
-	// transition is what makes those writes visible to the raster stage: src
-	// becomes (ComputeShader, ShaderWrite), dst (ColorAttachmentOutput,
-	// ColorAttachmentWrite|Read). The producer must not pre-transition it to
-	// TransferSrc for the blit: a src scope of TransferRead names no writes.
-	// LOAD_OP_LOAD also needs the read bit, which ColorAttachment carries.
+	// OverlayCopyPass's in production - and this transition is what makes those
+	// writes visible to the raster stage: src becomes (ComputeShader, ShaderWrite),
+	// dst (ColorAttachmentOutput, ColorAttachmentWrite|Read). The producer must not
+	// pre-transition it to TransferSrc for the blit: a src scope of TransferRead
+	// names no writes. LOAD_OP_LOAD also needs the read bit, which ColorAttachment
+	// carries.
 	Barrier::Transition(cmdBuf, targetAtt, ImageState::ColorAttachment);
 	Barrier::Transition(cmdBuf, depthAtt, ImageState::DepthAttachment);
 

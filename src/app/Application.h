@@ -5,7 +5,10 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <cstdint>
+#include <future>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "app/VulkanContext.h"
@@ -69,6 +72,25 @@ private:
 
 	/// Last swapchain extent ReconcileRenderExtent() acted on (main thread only).
 	vk::Extent2D app_lastReportedExtent{};
+
+	/**
+	 * @brief Applies a finished pick readback as a selection, if one is ready.
+	 *
+	 * Called once per UI tick, before Edit(). Never blocks: an unfinished pick
+	 * stays pending for the next tick, so a click is never lost to a busy render
+	 * thread and the main thread never waits on one.
+	 */
+	void ResolvePendingPick();
+
+	/// A click's readback still in flight on the render thread (main thread only).
+	struct PendingPick
+	{
+		std::future<uint32_t> objectId;   ///< Answered by the render thread.
+		int                   modifiers;  ///< Input modifiers held at the click.
+	};
+
+	/// At most one: a newer click supersedes an unanswered older one.
+	std::optional<PendingPick> app_pendingPick;
 
 	void WireSignals();
 	void NewFrameSignals(UIEvents& uiEvents);

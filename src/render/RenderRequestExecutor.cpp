@@ -200,4 +200,17 @@ void RenderRequestExecutor::handle(const ResetAccumulationRequest&)
 	// executor can be handed any request kind without a crash.
 }
 
+// ---------------------------------------------------------------------------
+// Overlay-only redraw (owned by DeferredRenderer; no-op here)
+// ---------------------------------------------------------------------------
+
+void RenderRequestExecutor::handle(const RedrawOverlaysRequest&)
+{
+	// DeferredRenderer intercepts this one too: it only sets the renderer's
+	// "overlays stale" flag, which decides the next frame's work (see NextWork).
+	// There is no GPU resource for the executor to touch - the overlay graph
+	// re-runs the passes it already owns against the image already on the GPU.
+	// The no-op keeps Execute's std::visit total.
+}
+
 } // namespace neurus

@@ -81,6 +81,8 @@ add_library(neurus_render STATIC
 	overlay/OverlayGeometry.h
 	overlay/DebugDrawList.h
 	overlay/GizmoDrawList.h
+	overlay/OverlayEngine.h
+	overlay/OverlayEngine.cpp
 	ProfilingData.h
 	GPUProfiler.h
 	GPUProfiler.cpp

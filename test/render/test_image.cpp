@@ -205,6 +205,71 @@ TEST_F(ImageTest, TransitionLayout_SingleMipLevel)
 }
 
 // ---------------------------------------------------------------------------
+// Readback restores the image to the state it entered in
+// ---------------------------------------------------------------------------
+
+TEST_F(ImageTest, ReadImageData_RestoresStateAndContent)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	auto& pd = PhysicalDevice();
+	const vk::Extent2D extent(4, 4);
+
+	// Distinct per-pixel values so a second read can be compared byte for byte.
+	std::vector<uint8_t> pixels(static_cast<size_t>(extent.width) * extent.height * 4);
+	for (size_t i = 0; i < pixels.size(); i += 4)
+	{
+		pixels[i + 0] = static_cast<uint8_t>(i * 3);
+		pixels[i + 1] = static_cast<uint8_t>(255 - i);
+		pixels[i + 2] = static_cast<uint8_t>(i);
+		pixels[i + 3] = 255;
+	}
+	ImageData src(pixels.data(), extent.width, extent.height, PixelFormat::RGBA8U);
+	Image image = Image::FromImageData(*m_device, pd, m_queue, m_graphicsQueueFamily, src);
+	ASSERT_EQ(image.State(), ImageState::ColorShaderRead);
+
+	auto first = image.ReadImageData(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	ASSERT_NE(first, nullptr);
+	ASSERT_TRUE(first->IsValid());
+	EXPECT_EQ(image.State(), ImageState::ColorShaderRead)
+		<< "ReadImageData returns the image to the state it entered in";
+
+	// Second read: the tracked state still matches the real layout, so this is a
+	// real transition (not a no-op against a stale layout) and the contents are
+	// unchanged. A readback that stranded the image in TRANSFER_SRC would make
+	// the next transition a silent no-op.
+	auto second = image.ReadImageData(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	ASSERT_NE(second, nullptr);
+	EXPECT_EQ(first->GetPixelData(), second->GetPixelData());
+	EXPECT_EQ(image.State(), ImageState::ColorShaderRead);
+}
+
+TEST_F(ImageTest, ReadImageData_RefusesUnwrittenImage)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	auto& pd = PhysicalDevice();
+	Image image(*m_device, pd, vk::Extent2D(4, 4), vk::Format::eR8G8B8A8Unorm,
+	            vk::ImageUsageFlagBits::eSampled |
+	                vk::ImageUsageFlagBits::eTransferSrc,
+	            1);
+	ASSERT_EQ(image.State(), ImageState::Undefined);
+
+	auto data = image.ReadImageData(*m_device, pd, m_queue, m_graphicsQueueFamily);
+
+	// Nothing to read, and no barrier: returning to UNDEFINED as a newLayout is
+	// invalid, so the transition is never recorded.
+	EXPECT_EQ(data, nullptr);
+	EXPECT_EQ(image.State(), ImageState::Undefined);
+}
+
+// ---------------------------------------------------------------------------
 // Mipmap generation
 // ---------------------------------------------------------------------------
 

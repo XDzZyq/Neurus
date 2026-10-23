@@ -4,11 +4,18 @@
  *
  * DeferredRenderer owns the full deferred pipeline and all scene GPU resources:
  *   - Swapchain management (reuses neurus::Swapchain)
- *   - RenderCache (G-Buffer, HDRColor)
+ *   - RenderCache (G-Buffer, HDRColor, overlay output)
  *   - GeometryPass (writes mesh geometry to G-Buffer MRT)
  *   - LightingPass (compute PBR lighting from G-Buffer into HDRColor)
  *   - Camera UBO data, mesh vertex/index buffers, light SSBO
- *   - Blit HDRColor to swapchain image for presentation
+ *   - OverlayEngine (selection outline, debug overlay, gizmo) - a separate graph
+ *     over the scene graph's tail image
+ *   - Blit of the overlay output to the swapchain image for presentation
+ *
+ * Progressive accumulation: DrawFrame() draws at most r_sampling_count scene
+ * frames after every restart, then stops. What is left to do is published by
+ * NextWork() so the render thread can wait for the right thing: another sample,
+ * a redraw of the overlays only, or nothing at all.
  *
  * Construction creates all Vulkan resources. DrawFrame() is the per-frame entry
  * point, driven either by a QTimer in single-threaded mode or by RenderThread
@@ -57,11 +64,9 @@ class LightingPass;
 class SSAOPass;
 class ShadowDepthPass;
 class ShadowIntensityPass;
-class SelectionOutlinePass;
 class ComposePass;
 class FXAAPass;
-class DebugPass;
-class GizmoPass;
+class OverlayEngine;
 struct CameraUBOData;
 class Shader;
 class UploadManager;
@@ -102,18 +107,37 @@ public:
 	DeferredRenderer& operator=(DeferredRenderer&&) = delete;
 
 	/**
-	 * @brief Draws a single frame: acquire, record, submit, present.
+	 * @brief Draws one frame: acquire, record, submit, present.
 	 *
-	 * Fills in the render-specific fields of @p ctx from the swapchain and
-	 * dispatches to all render passes. Handles swapchain recreation on
-	 * VK_ERROR_OUT_OF_DATE_KHR. Safe to call repeatedly (fence-guarded,
-	 * kMaxFramesInFlight frames in flight).
+	 * Performs exactly NextWork(): a Sample frame runs the scene graph and then
+	 * the overlay graph, an Overlay frame runs the overlay graph only, an Idle
+	 * frame returns without acquiring a swapchain image at all. Fills in the
+	 * render-specific fields of @p ctx from the swapchain and handles swapchain
+	 * recreation on VK_ERROR_OUT_OF_DATE_KHR. Safe to call repeatedly
+	 * (fence-guarded, kMaxFramesInFlight frames in flight).
 	 *
 	 * @param ctx RenderContext with the scene set.
 	 * @return The latest frame profile (owned by the renderer; valid until the
 	 *         next DrawFrame call).
 	 */
 	const FrameProfile& DrawFrame(const RenderContext& ctx) override;
+
+	/**
+	 * @brief What the next DrawFrame() will do.
+	 *
+	 * Order, and why:
+	 * - Retry when the last DrawFrame drew nothing (no camera, a failed acquire,
+	 *   a swapchain that went out of date). The caller must wait for a new frame
+	 *   rather than spin, and must not treat the frame it holds as drawn.
+	 * - Sample while fewer than N scene frames have been accumulated since the
+	 *   last restart, where N = max(1, RenderConfig::r_sampling_count) as read on
+	 *   the last sample frame. A change to it always arrives with a restart, so
+	 *   the cached value is never stale by the time it is compared.
+	 * - Overlay when accumulation has converged but an overlay-only change is
+	 *   pending: redraw the overlays over the converged scene image.
+	 * - Idle otherwise: nothing to draw until a request or control arrives.
+	 */
+	FrameWork NextWork() const override;
 
 	/**
 	 * @brief Blocks until the frame slot about to be reused is free on the GPU.
@@ -164,12 +188,14 @@ public:
 	 * @brief Reads a single pixel from the IDBuffer attachment and returns the object ID.
 	 *
 	 * Drains the GPU (queue.waitIdle) before the readback to ensure the
-	 * IDBuffer from the most recent frame is available. The image state is
-	 * restored to ColorAttachment afterward.
+	 * IDBuffer from the most recent frame is available. The readback restores
+	 * the image to the state it entered in, within the same submission.
 	 *
 	 * @param x Pixel x-coordinate (0 = left edge).
 	 * @param y Pixel y-coordinate (0 = top edge, Vulkan convention).
 	 * @return Object ID at the pixel (0 = background / no object), or 0 on OOB/failure.
+	 *         Also 0 when no ID buffer exists at the current extent or it has
+	 *         never been drawn into - a pick is a query, it never creates one.
 	 */
 	uint32_t ReadIDBufferPixel(uint32_t x, uint32_t y) override;
 
@@ -220,9 +246,12 @@ public:
 	 * @brief Drain the request queue and execute every pending request, FIFO.
 	 *
 	 * Called by DrawFrame after the frame-slot fence wait, but public so a test
-	 * or a non-drawing caller can flush the queue without a frame. Every request
-	 * except ResetAccumulationRequest is delegated to the executor;
-	 * ResetAccumulationRequest is handled here (it writes renderer state).
+	 * or a non-drawing caller can flush the queue without a frame. Two kinds are
+	 * handled here because they write renderer state the executor does not own:
+	 * ResetAccumulationRequest and RedrawOverlaysRequest. Every other request
+	 * restarts accumulation (m_iteration = 0) before it is delegated to the
+	 * executor, so the next frame samples from scratch; that is the convergence
+	 * contract IFrameRenderer::NextWork() documents.
 	 */
 	void ProcessRequests() override;
 
@@ -251,17 +280,20 @@ public:
 
 private:
 	/**
-	 * @brief Records the full deferred pipeline into a command buffer.
+	 * @brief Records one frame's work into a command buffer.
 	 *
-	 * Dispatches the main RenderGraph, rebuilding it when the pipeline
-	 * signature changes.
+	 * Rebuilds the scene graph when the pipeline signature changes, then records
+	 * exactly @p work: Sample runs the scene graph followed by the overlay graph,
+	 * Overlay runs the overlay graph only. Both end with the OverlayOutput ->
+	 * swapchain blit, because the scene image is never presented directly.
 	 *
 	 * @param cmdBuf     Command buffer to record into.
 	 * @param imageIndex Swapchain image index being rendered into.
 	 * @param editorCtx  Render context (scene set; width/height/frameIndex blank).
+	 * @param work       Sample or Overlay - never Idle/Retry, which draw nothing.
 	 */
 	void recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32_t imageIndex,
-	                 const RenderContext& editorCtx);
+	                 const RenderContext& editorCtx, FrameWork work);
 
 	/** @brief Destroys and re-creates sync objects after swapchain resize. */
 	void recreateSwapchain();
@@ -293,15 +325,15 @@ private:
 	SSAOPass*   r_ssaoPass     = nullptr;
 	ShadowDepthPass* r_shadowDepthPass = nullptr;
 	ShadowIntensityPass* r_shadowIntensityPass = nullptr;
-	SelectionOutlinePass* r_selectionOutlinePass = nullptr;
 	ComposePass*  r_composePass  = nullptr;
 	FXAAPass*     r_fxaaPass     = nullptr;
-	/// Debug overlay pass; always in the graph and a no-op when the list is empty.
-	DebugPass*    r_debugPass    = nullptr;
-	/// Transform-gizmo overlay; always in the graph, runs after DebugPass onto
-	/// the same image, and a no-op when no modal gesture is live. As the graph's
-	/// last writer its target doubles as the swapchain blit source.
-	GizmoPass*    r_gizmoPass    = nullptr;
+
+	// --- Overlay graph (owned) ---
+	// Selection outline, debug overlay and gizmo, in their own RenderGraph over
+	// the scene graph's tail image. Separate so an overlay-only change redraws
+	// over the converged image without re-running a single scene pass; see
+	// OverlayEngine.h for the graph shape.
+	std::unique_ptr<OverlayEngine> m_overlayEngine;
 
 	// --- RenderGraph (the active pipeline) ---
 	// Compile-once-per-topology DAG holding the whole deferred pipeline; recordFrame
@@ -364,9 +396,25 @@ private:
 	// --- Last acquired swapchain image index ---
 	uint32_t r_lastImageIndex = 0;
 
-	// --- Temporal shadow accumulation state ---
+	// --- Temporal accumulation state ---
 	uint32_t m_haltonIndex = 0;
 	uint32_t m_iteration = 0;
+
+	/// @brief Scene frames to accumulate after a restart; max(1, r_sampling_count).
+	///
+	/// Refreshed on every sample frame, which is the only place it is compared
+	/// against m_iteration and the only place a change can matter: a new
+	/// r_sampling_count always arrives with an accumulation restart, so the next
+	/// comparison uses the fresh value.
+	uint32_t m_samplingCount = 64;
+
+	/// @brief An overlay-only redraw is pending (a RedrawOverlaysRequest arrived).
+	bool m_overlaysDirty = false;
+
+	/// @brief The last DrawFrame drew nothing (no camera, failed acquire).
+	///        NextWork() reports Retry while set, so the caller waits for a new
+	///        frame instead of redrawing a stale one.
+	bool m_drewNothing = false;
 
 	// --- Per-frame profiling (always on; RenderGraph drives GPU sections) ---
 	// m_profiler owns the GPU timestamp query pool and per-pass sections;

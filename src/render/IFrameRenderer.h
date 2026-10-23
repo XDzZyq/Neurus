@@ -30,6 +30,18 @@ namespace neurus {
 struct RenderContext;
 
 /**
+ * @brief What the next DrawFrame() would do, so the render thread knows how to
+ *        wait for its frame.
+ */
+enum class FrameWork
+{
+	Sample,   ///< Accumulation not converged: scene + overlays. Reuse the last frame if none is new.
+	Overlay,  ///< Converged, overlays stale: overlays only, over the converged scene image.
+	Idle,     ///< Converged, nothing stale: draw nothing until a request or control arrives.
+	Retry,    ///< The last DrawFrame drew nothing (no camera, acquire failed): wait for a new frame.
+};
+
+/**
  * @brief Renderer operations the render thread sequences.
  *
  * Post() (inherited) is the one method that may be called from another thread
@@ -55,6 +67,16 @@ public:
 	 * @return The latest profile, valid until the next call.
 	 */
 	virtual const FrameProfile& DrawFrame(const RenderContext& ctx) = 0;
+
+	/**
+	 * @brief The work the next DrawFrame() performs, given the requests and
+	 *        controls handled so far.
+	 *
+	 * Accumulation runs r_sampling_count scene frames after every restart
+	 * (any request other than RedrawOverlaysRequest, a resize, a surface change),
+	 * then stops. DrawFrame() performs exactly this work.
+	 */
+	virtual FrameWork NextWork() const = 0;
 
 	/** @brief Recreate the swapchain for a new window size (physical pixels). */
 	virtual void HandleResize(uint32_t width, uint32_t height) = 0;

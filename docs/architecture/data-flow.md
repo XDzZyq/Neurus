@@ -81,13 +81,14 @@ events: scene-scoped handlers obtain it from the context.
 The Editor never touches a `VkQueue`, the device-wide wait or the renderer's
 resource maps. All GPU work it used to do directly - upload a mesh, allocate a
 light's shadow maps, (re)generate IBL, rewrite the light SSBOs, warm a per-mesh
-pipeline, drop the outgoing scene's resources, reset accumulation - is posted as
-a typed `RenderRequest` value and executed by the renderer on the thread that
-submits:
+pipeline, drop the outgoing scene's resources, reset accumulation, redraw the
+overlays - is posted as a typed `RenderRequest` value and executed by the
+renderer on the thread that submits:
 
 ```
 Editor::Edit() -> RenderRequestSink::Post(RenderRequest&&)
-                  (RenderThread: enqueue into the renderer, then wake)
+                  (RenderThread: enqueue into the renderer, then invalidate
+                  the held frame and wake)
    -> RenderRequestQueue (BatchQueue<RenderRequest>, mutex-guarded FIFO)
    -> the render thread drains the batch after the frame fence wait, before
       it acquires the next frame (DrawFrame drains once more, usually empty)
@@ -99,10 +100,13 @@ Requests posted inside one `Edit()` are drained before the frame that tick
 publishes is drawn (every Post precedes the Publish, and a pending wake outranks
 a pending frame), so there is no one-frame delay. Execution is strict FIFO, which is a contract:
 an upload posted after `DropSceneResourcesRequest` lands in the new scene, and
-one posted before it is discarded with the old one. A payload is a value or a
-`shared_ptr<const T>` to immutable data - never a `Scene`, `Mesh` or `Shader`
-pointer, and never a callable, so the request stays correct however the Editor
-edits or deletes afterward. See [Render request path](../render/resources.md#render-request-path).
+one posted before it is discarded with the old one. `RedrawOverlaysRequest` is
+the one request that does not restart accumulation: it only marks the overlays
+stale, so a converged renderer redraws them over the image it already has. A
+payload is a value or a `shared_ptr<const T>` to immutable data - never a
+`Scene`, `Mesh` or `Shader` pointer, and never a callable, so the request stays
+correct however the Editor edits or deletes afterward. See
+[Render request path](../render/resources.md#render-request-path).
 
 ## Render Thread (Application to Renderer plumbing)
 
@@ -117,13 +121,29 @@ the frame fence:
   from `Status().extent` when the swapchain reports a different one.
 - **Pick** - `PostPick(u, v)` with coordinates normalised to the viewport; the
   thread maps them onto its own extent and reads the ID buffer. The click
-  handler waits on the future for at most 250 ms and keeps the current
-  selection on timeout or failure.
+  handler never waits: it keeps the future, and each UI tick polls it before
+  `Edit()` and applies the answer as an `ObjectSelected` event once ready. A
+  newer click replaces an unanswered one; a failure, or a transform gesture
+  started in the meantime, keeps the current selection.
 - **Surface change** - the new surface is created on the main thread (it needs
   the native window); `PostSurfaceChange` rebuilds the swapchain and the main
   thread waits up to 2 s before destroying the old surface. On timeout or
   failure neither surface is destroyed until shutdown.
 - **Screenshot** - `PostScreenshot(allAttachments)`, fire and forget.
+
+Resize and surface change also invalidate the mailbox: both restart accumulation,
+so a snapshot published before them would seed frame 0 with a stale camera or
+extent. Pick and screenshot only wake the loop - they read whatever was drawn
+last and must neither discard nor force a frame.
+
+**Waiting is driven by the work left, not by the tick.** `DeferredRenderer` draws
+`r_sampling_count` scene frames after every restart and then stops, so a
+publisher that keeps publishing must not keep the GPU busy for nothing. Before
+each wait the thread asks `IFrameRenderer::NextWork()`: `Sample` reuses the
+snapshot it already holds (`AcquireMode::Reuse`), `Overlay` and `Retry` wait for
+a fresh one, and `Idle` parks on the mailbox without acquiring a swapchain image
+(`AcquireMode::Idle`), ignoring published frames until a control message arrives.
+A converged viewport therefore costs one parked thread and no presents.
 
 Shutdown: after the Qt event loop returns, `RenderThread::Stop()` joins the
 thread (which breaks any pending promise and leaves the device idle) before any

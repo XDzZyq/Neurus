@@ -60,12 +60,6 @@ namespace {
 /// File > New so the two cannot drift. Relative, so project files stay portable.
 constexpr const char* kDefaultSceneObj = "res/obj/sphere.obj";
 
-/// How long a pick readback may take before the click is abandoned and the
-/// current selection kept. One frame plus the readback is a few milliseconds;
-/// 250 ms still covers a debug build with validation enabled, without letting a
-/// hung GPU freeze the UI thread indefinitely.
-constexpr auto kPickTimeout = std::chrono::milliseconds(250);
-
 /// How long a surface change may take before the new surface is parked. The
 /// answer is only "my swapchain released it", so on timeout both surfaces must
 /// stay alive: guessing which one the live swapchain uses would destroy a
@@ -400,6 +394,45 @@ void Application::ReconcileRenderExtent(const vk::Extent2D& actual)
 	viewport.HandleResize(logical, glm::uvec2{actual.width, actual.height});
 }
 
+void Application::ResolvePendingPick()
+{
+	if (!app_pendingPick || !app_editor)
+	{
+		return;
+	}
+
+	if (app_pendingPick->objectId.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+	{
+		return;
+	}
+
+	PendingPick pick = std::move(*app_pendingPick);
+	app_pendingPick.reset();
+
+	// A modal transform gesture that began after the click owns the selection
+	// now; a late answer must not re-select under it.
+	if (app_editor->GetViewport().IsGizmoActive())
+	{
+		return;
+	}
+
+	uint32_t objectID = 0;
+	try
+	{
+		objectID = pick.objectId.get();
+	}
+	catch (const std::exception& ex)
+	{
+		// Broken promise (thread stopped) or a readback error inside the
+		// renderer.
+		NEURUS_ERR("[Application] Pick readback failed: " << ex.what());
+		return;
+	}
+
+	// objectID 0 means background (clears the selection).
+	app_editor->OnUIEvent(ObjectSelected{static_cast<int>(objectID), pick.modifiers});
+}
+
 // =========================================================================
 // InitEditor – editor with project ownership transfer
 // =========================================================================
@@ -539,6 +572,10 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                         return;
 	                     }
 
+	                     // A finished pick enters as a selection event, so this
+	                     // tick's Edit() handles it like any other UI event.
+	                     ResolvePendingPick();
+
 	                     // Process all enqueued events (camera, gizmo, ...). Every
 	                     // Post of this tick happens inside Edit(), before the
 	                     // Publish below: the ordering contract in
@@ -645,10 +682,8 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 
 		                     // A left click that confirms a modal transform
 		                     // gesture must not re-select what is under the
-		                     // cursor, nor wait for this path's readback: the main
-		                     // thread no longer idles the queue, it waits on a
-		                     // render-thread readback. Safe at frame granularity:
-		                     // gizmo state only ever changes inside Edit().
+		                     // cursor. Safe at frame granularity: gizmo state only
+		                     // ever changes inside Edit().
 		                     if (app_editor->GetViewport().IsGizmoActive())
 		                     {
 		                         return;
@@ -671,33 +706,13 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		                     const float u = e.position.x / static_cast<float>(widgetW);
 		                     const float v = e.position.y / static_cast<float>(widgetH);
 
-		                     auto objectId = app_renderThread->PostPick(u, v);
-		                     if (objectId.wait_for(kPickTimeout) != std::future_status::ready)
-		                     {
-		                         NEURUS_ERR("[Application] Pick readback timed out; "
-		                                    "keeping the current selection.");
-		                         return;
-		                     }
-
-		                     uint32_t objectID = 0;
-		                     try
-		                     {
-		                         objectID = objectId.get();
-		                     }
-		                     catch (const std::exception& ex)
-		                     {
-		                         // Broken promise (thread stopped) or a readback
-		                         // error inside the renderer.
-		                         NEURUS_ERR("[Application] Pick readback failed: " << ex.what());
-		                         return;
-		                     }
-
-		                     // objectID 0 means background (clears the selection).
-		                     ObjectSelected selEvent {
-		                         static_cast<int>(objectID),
-		                         static_cast<int>(e.modifiers)
-		                     };
-		                     app_editor->OnUIEvent(selEvent);
+		                     // Asynchronous: the render thread answers after its
+		                     // current frame's fence, which during accumulation can
+		                     // be a whole frame away (hundreds of ms in a debug
+		                     // build). ResolvePendingPick() applies the answer on a
+		                     // later tick; a newer click replaces this one.
+		                     app_pendingPick = PendingPick{app_renderThread->PostPick(u, v),
+		                                                   static_cast<int>(e.modifiers)};
 		                 });
 	}
 

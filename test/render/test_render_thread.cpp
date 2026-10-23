@@ -24,6 +24,11 @@
  *      requests run; once it returns true a wake lets them through.
  *   6. **Fail-loud**: an exception escaping DrawFrame ends the loop, after which
  *      the thread stops accepting and every pending promise breaks.
+ *   7. **Stop rendering after convergence**: the loop asks the renderer what the
+ *      next draw is worth and waits accordingly - reusing the frame it holds
+ *      while accumulating, waiting for a fresh one for an overlay redraw or a
+ *      retry, and parking once converged - while a frame published before a
+ *      request is never drawn after it.
  *
  * Every cross-thread wait is bounded (5 s) and resolved on a condition variable
  * or a future, never a fixed sleep: a regression fails the test instead of
@@ -51,6 +56,7 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace neurus;
@@ -61,7 +67,22 @@ namespace
 /// @brief Upper bound on every cross-thread wait - generous, never a timing guess.
 constexpr auto WAIT_LIMIT = std::chrono::seconds(5);
 
-/** @brief A frame tagged through environmentId, which the fake reads as its tag. */
+/**
+ * @brief Bound on "nothing more happened", the negative assertions below.
+ *
+ * A state with no event to wait on can only be observed by waiting a little and
+ * checking it did not occur; the direction of the resulting flake is safe - a
+ * scheduling hiccup can make the probe pass when it should have failed, never
+ * the reverse - and it is short so the suite stays fast.
+ */
+constexpr auto STABLE_PROBE = std::chrono::milliseconds(100);
+
+/**
+ * @brief A frame tagged through environmentId, which the fake reads as its tag.
+ *
+ * The ordering invariant in the fake is `processed >= tag`, so a test that has
+ * posted requests must tag its frames with at least the number posted so far.
+ */
 RenderFrameSnapshot MakeTaggedFrame(int tag)
 {
 	RenderFrameSnapshot frame;
@@ -81,16 +102,50 @@ RenderFrameSnapshot MakeTaggedFrame(int tag)
  *
  * DrawFrame deliberately does NOT drain requests: the ordering test only proves
  * something because draining is the loop's job, not the renderer's.
+ *
+ * It also models accumulation closely enough to script the loop: `iteration`
+ * counts scene samples, `samplingCount` is how many it takes to converge, a
+ * RedrawOverlaysRequest marks overlays stale without restarting the count, and
+ * every other request (plus a resize or surface change) restarts it. That makes
+ * NextWork() behave like the real renderer's - Sample, Overlay, Idle, Retry - so
+ * the tests below can check what the loop does with each answer.
  */
 class FakeRenderer final : public IFrameRenderer
 {
 public:
+	/**
+	 * @brief One DrawFrame call, kept so a test can inspect what was drawn when.
+	 *
+	 * `processed` is the number of requests the loop had executed before this
+	 * draw, which is how a test tells a post-request draw from a stale one.
+	 */
+	struct DrawRecord
+	{
+		int  tag         = 0;      ///< environmentId of the frame handed over.
+		int  processed   = 0;      ///< Requests executed before this call.
+		bool drewNothing = false;  ///< DrawFrame reported Retry: nothing drawn.
+	};
+
 	// --- Configuration (safe to set before Start; some also during the run) ---
 
 	void SetExtent(uint32_t width, uint32_t height)
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		m_extent = vk::Extent2D{width, height};
+	}
+
+	/** @brief Scene samples needed to converge; 0 converges without any. */
+	void SetSamplingCount(int count)
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_samplingCount = count;
+	}
+
+	/** @brief Make DrawFrame draw nothing, the way a missing camera does. */
+	void SetDrawNothing(bool drawNothing)
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_drawNothing = drawNothing;
 	}
 
 	void SetSlotReady(bool ready)
@@ -134,8 +189,39 @@ public:
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
 			m_processed += static_cast<int>(batch.size());
+			for (const RenderRequest& request : batch)
+			{
+				if (std::holds_alternative<RedrawOverlaysRequest>(request))
+				{
+					// Overlays only: the converged scene image stays, so the
+					// accumulation count is deliberately left alone.
+					m_overlayDirty = true;
+				}
+				else
+				{
+					// Every other request restarts accumulation, as
+					// IFrameRenderer::NextWork documents. A scene draw redraws
+					// the overlays too, so the stale flag goes with it.
+					m_iteration    = 0;
+					m_overlayDirty = false;
+				}
+			}
 		}
 		m_cv.notify_all();
+	}
+
+	FrameWork NextWork() const override
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		// A draw that produced nothing has to be retried, but only once a frame
+		// gives the renderer something to draw - otherwise the loop spins.
+		if (m_lastDrewNothing)
+			return FrameWork::Retry;
+		if (m_iteration < m_samplingCount)
+			return FrameWork::Sample;
+		if (m_overlayDirty)
+			return FrameWork::Overlay;
+		return FrameWork::Idle;
 	}
 
 	const FrameProfile& DrawFrame(const RenderContext& ctx) override
@@ -154,10 +240,23 @@ public:
 			if (m_processed < tag)
 				m_orderingViolations += 1;
 
-			m_drawn   += 1;
-			m_lastTag  = tag;
-			m_inDraw   = false;
-			shouldThrow = m_throwOnDraw;
+			m_drawCalls += 1;
+			m_draws.push_back(DrawRecord{tag, m_processed, m_drawNothing});
+
+			if (!m_drawNothing)
+			{
+				m_drawn += 1;
+				if (m_iteration < m_samplingCount)
+					m_iteration += 1;  // one scene sample of the accumulation
+				else
+					m_overlayDirty = false;  // an overlay-only redraw
+			}
+			// A draw that produced nothing must not count as a sample: NextWork
+			// has to keep saying Retry until a new frame arrives.
+			m_lastDrewNothing = m_drawNothing;
+			m_lastTag         = tag;
+			m_inDraw          = false;
+			shouldThrow       = m_throwOnDraw;
 		}
 		m_cv.notify_all();
 
@@ -179,6 +278,9 @@ public:
 			m_resizeCalls += 1;
 			m_lastResizeW  = width;
 			m_lastResizeH  = height;
+			// A new swapchain restarts accumulation from scratch.
+			m_iteration    = 0;
+			m_overlayDirty = false;
 		}
 		m_cv.notify_all();
 	}
@@ -190,6 +292,9 @@ public:
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
 			m_surfaceChanges += 1;
+			// Same reason as a resize: the old accumulation is meaningless.
+			m_iteration    = 0;
+			m_overlayDirty = false;
 		}
 		m_cv.notify_all();
 	}
@@ -238,6 +343,30 @@ public:
 		return m_cv.wait_for(lock, WAIT_LIMIT, [&] { return m_drawn >= atLeast; });
 	}
 
+	/**
+	 * @brief Bounded wait for a draw count, for use as a "stays put" probe.
+	 *
+	 * A short limit deliberately: the caller asserts the NEGATIVE, so the return
+	 * value is a failure report rather than a synchronisation point.
+	 */
+	bool WaitForDrawnWithin(int atLeast, std::chrono::milliseconds limit)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_cv.wait_for(lock, limit, [&] { return m_drawn >= atLeast; });
+	}
+
+	bool WaitForDrawCalls(int atLeast)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_cv.wait_for(lock, WAIT_LIMIT, [&] { return m_drawCalls >= atLeast; });
+	}
+
+	bool WaitForDrawCallsWithin(int atLeast, std::chrono::milliseconds limit)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_cv.wait_for(lock, limit, [&] { return m_drawCalls >= atLeast; });
+	}
+
 	bool WaitForResizeCalls(int atLeast)
 	{
 		std::unique_lock<std::mutex> lock(m_mutex);
@@ -259,12 +388,21 @@ public:
 	// --- Accessors (each takes a snapshot under the mutex) ---
 
 	int  Drawn()              const { std::lock_guard<std::mutex> l(m_mutex); return m_drawn; }
+	int  DrawCalls()          const { std::lock_guard<std::mutex> l(m_mutex); return m_drawCalls; }
+	int  SampledIteration()   const { std::lock_guard<std::mutex> l(m_mutex); return m_iteration; }
 	int  OrderingViolations() const { std::lock_guard<std::mutex> l(m_mutex); return m_orderingViolations; }
 	int  DrawViolations()     const { std::lock_guard<std::mutex> l(m_mutex); return m_drawViolations; }
 	int  ResizeCalls()        const { std::lock_guard<std::mutex> l(m_mutex); return m_resizeCalls; }
 	int  WaitIdleCalls()      const { std::lock_guard<std::mutex> l(m_mutex); return m_waitIdleCalls; }
 	int  SurfaceChanges()     const { std::lock_guard<std::mutex> l(m_mutex); return m_surfaceChanges; }
 	int  WaitSlotCalls()      const { std::lock_guard<std::mutex> l(m_mutex); return m_waitSlotCalls; }
+
+	/** @brief Every DrawFrame call, in order. */
+	std::vector<DrawRecord> Draws() const
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		return m_draws;
+	}
 
 	std::pair<uint32_t, uint32_t> LastResize() const
 	{
@@ -284,8 +422,24 @@ private:
 	bool m_throwOnDraw = false;
 	bool m_inDraw      = false;
 
+	/// @brief Draw nothing on every call, as a missing camera or a failed acquire does.
+	bool m_drawNothing = false;
+
+	/// @brief True when the last DrawFrame call drew nothing; drives NextWork's Retry.
+	bool m_lastDrewNothing = false;
+
+	/// @brief Scene samples taken since the last accumulation restart.
+	int m_iteration = 0;
+
+	/// @brief Scene samples it takes to converge. One keeps a publish worth one draw.
+	int m_samplingCount = 1;
+
+	/// @brief Overlays are stale and want one redraw over the converged image.
+	bool m_overlayDirty = false;
+
 	int m_processed          = 0;
 	int m_drawn              = 0;
+	int m_drawCalls          = 0;
 	int m_lastTag            = 0;
 	int m_orderingViolations = 0;
 	int m_drawViolations     = 0;
@@ -294,6 +448,8 @@ private:
 	int m_surfaceChanges     = 0;
 	int m_waitIdleCalls      = 0;
 	int m_screenshots        = 0;
+
+	std::vector<DrawRecord> m_draws;
 
 	uint32_t m_lastResizeW     = 0;
 	uint32_t m_lastResizeH     = 0;
@@ -633,4 +789,177 @@ TEST(RenderThreadTest, AnExceptionInDrawFrameEndsTheLoopAndBreaksPendingPromises
 	EXPECT_THROW(pick.get(), std::future_error) << "a pick posted after the loop ended must break its promise";
 
 	thread.Stop();  // idempotent; the loop has already ended
+}
+
+// ============================================================================
+// Stop rendering after convergence: the loop follows IFrameRenderer::NextWork
+// ============================================================================
+
+TEST(RenderThreadTest, ConvergedAccumulationDrawsExactlyTheSamplingCount)
+{
+	// One publish, then the renderer keeps sampling the frame it already holds
+	// (NextWork says Sample, so the loop asks the mailbox for Reuse) until the
+	// accumulation converges. After that there is nothing left to do, so the
+	// thread must park instead of asking the main thread for frames forever.
+	// Frame 1 (a tag of 0) is published before any request, so it gets tag 0.
+	FakeRenderer fake;
+	fake.SetSamplingCount(3);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Publish(MakeTaggedFrame(0));
+	ASSERT_TRUE(fake.WaitForDrawn(3)) << "accumulation must keep sampling the held frame";
+	EXPECT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE))
+		<< "a converged renderer kept drawing without a new frame";
+
+	EXPECT_EQ(fake.Drawn(), 3) << "exactly sampling-count frames, no more";
+	EXPECT_EQ(fake.SampledIteration(), 3) << "the accumulation must have converged, not overflowed";
+	EXPECT_EQ(fake.OrderingViolations(), 0);
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, APostedRequestRestartsAccumulation)
+{
+	// Convergence is not final: a request that is not an overlay redraw restarts
+	// the accumulation, and the next published frame must be sampled from scratch
+	// - the full sampling count again, not one frame.
+	FakeRenderer fake;
+	fake.SetSamplingCount(3);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Publish(MakeTaggedFrame(0));
+	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the first accumulation never converged";
+	ASSERT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "the thread was not idle before the request";
+
+	thread.Post(ResetAccumulationRequest{});
+	thread.Publish(MakeTaggedFrame(1));  // one request posted, so tag 1
+
+	ASSERT_TRUE(fake.WaitForDrawn(6)) << "a posted request must restart accumulation";
+	EXPECT_FALSE(fake.WaitForDrawnWithin(7, STABLE_PROBE)) << "the restarted accumulation never converged";
+
+	EXPECT_EQ(fake.Drawn(), 6) << "two full accumulations, nothing in between";
+	EXPECT_EQ(fake.SampledIteration(), 3);
+	EXPECT_EQ(fake.OrderingViolations(), 0)
+		<< "a frame was drawn before the request that restarted accumulation";
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, AnOverlayRedrawDrawsOnceMoreWithoutRestartingAccumulation)
+{
+	// A RedrawOverlaysRequest is the one request that must NOT restart
+	// accumulation: it redraws the overlays over the converged image, once.
+	// NextWork then answers Overlay - which waits for a fresh frame, because the
+	// request always arrives with an invalidate - and after that one draw it goes
+	// back to Idle.
+	FakeRenderer fake;
+	fake.SetSamplingCount(3);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Publish(MakeTaggedFrame(0));
+	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the accumulation never converged";
+	ASSERT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "the thread was not idle before the request";
+
+	thread.Post(RedrawOverlaysRequest{});
+	thread.Publish(MakeTaggedFrame(1));  // one request posted, so tag 1
+
+	ASSERT_TRUE(fake.WaitForDrawn(4)) << "the overlay redraw never happened";
+	EXPECT_FALSE(fake.WaitForDrawnWithin(5, STABLE_PROBE))
+		<< "an overlay redraw restarted accumulation or repeated itself";
+
+	EXPECT_EQ(fake.Drawn(), 4) << "exactly one extra draw";
+	EXPECT_EQ(fake.SampledIteration(), 3)
+		<< "the overlay draw was counted as a scene sample - accumulation restarted";
+	EXPECT_EQ(fake.OrderingViolations(), 0);
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, AFramePublishedBeforeAPostIsNeverDrawnAfterIt)
+{
+	// Why Post() invalidates instead of merely waking. Converge first, so the
+	// thread sits in Idle holding frame A in its own storage; then post a request
+	// and publish B. A snapshot taken before the request describes the camera the
+	// request replaced, so drawing it - even once - would bake that camera into
+	// every sample of the restarted accumulation, permanently.
+	FakeRenderer fake;
+	fake.SetSamplingCount(3);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Publish(MakeTaggedFrame(0));  // A: published before any request
+	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the accumulation never converged";
+	ASSERT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "the thread was not idle before the request";
+
+	thread.Post(ResetAccumulationRequest{});
+	thread.Publish(MakeTaggedFrame(1));  // B: published after the request
+
+	ASSERT_TRUE(fake.WaitForDrawn(6)) << "the restarted accumulation never drew from the new frame";
+	EXPECT_FALSE(fake.WaitForDrawnWithin(7, STABLE_PROBE));
+
+	const std::vector<FakeRenderer::DrawRecord> draws = fake.Draws();
+	ASSERT_EQ(draws.size(), 6u);
+	for (size_t i = 3; i < draws.size(); ++i)
+	{
+		EXPECT_EQ(draws[i].tag, 1)
+			<< "draw " << i << " sampled the frame published before the request";
+		EXPECT_EQ(draws[i].processed, 1) << "draw " << i << " ran before the request executed";
+	}
+	EXPECT_EQ(fake.OrderingViolations(), 0);
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, ADrawThatProducedNothingWaitsInsteadOfSpinning)
+{
+	// No camera: DrawFrame draws nothing and the renderer reports Retry. The loop
+	// must wait for a new frame rather than retry in a tight loop - a retry with
+	// nothing new to draw cannot succeed, and spinning here would peg the core.
+	// Attempts (not drawn frames) are what must stay flat.
+	FakeRenderer fake;
+	fake.SetSamplingCount(3);
+	fake.SetDrawNothing(true);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Publish(MakeTaggedFrame(0));
+	ASSERT_TRUE(fake.WaitForDrawCalls(1)) << "the thread never attempted a draw";
+	EXPECT_FALSE(fake.WaitForDrawCallsWithin(2, STABLE_PROBE))
+		<< "Retry spun instead of waiting for a new frame";
+
+	thread.Publish(MakeTaggedFrame(0));
+	ASSERT_TRUE(fake.WaitForDrawCalls(2)) << "a new frame must let the renderer retry";
+	EXPECT_FALSE(fake.WaitForDrawCallsWithin(3, STABLE_PROBE)) << "one retry per frame, not a loop";
+
+	EXPECT_EQ(fake.Drawn(), 0) << "nothing was ever actually drawn";
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, PickIsAnsweredWhileTheRendererIsIdle)
+{
+	// An idle renderer is parked in the mailbox, not gone: a control message
+	// still has to reach it and satisfy its promise. The pick must not force a
+	// frame either - the thread returns to Idle with the draw count unchanged.
+	FakeRenderer fake;
+	fake.SetSamplingCount(3);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Publish(MakeTaggedFrame(0));
+	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the accumulation never converged";
+	ASSERT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "the thread was not idle before the pick";
+
+	std::future<uint32_t> pick = thread.PostPick(0.5f, 0.5f);
+	ASSERT_EQ(pick.wait_for(WAIT_LIMIT), std::future_status::ready)
+		<< "an idle render thread did not service a pick";
+	EXPECT_EQ(pick.get(), 50u * 1000 + 25) << "the pick must still map onto the extent";
+
+	EXPECT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "a pick forced a frame";
+	EXPECT_EQ(fake.Drawn(), 3);
+
+	thread.Stop();
 }

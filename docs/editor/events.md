@@ -573,8 +573,10 @@ Scene mutations are handled by `SceneController`, which enqueues
 
 Subscribers listen for this event to reset per-frame history:
 
-- The Editor posts a `ResetAccumulationRequest`; the renderer zeros the shadow
-  accumulation iteration counter (`m_iteration`) at its per-frame drain.
+- The Editor posts a `ResetAccumulationRequest`; the renderer restarts its
+  accumulation at the per-frame drain. Every other request restarts it too - only
+  `RedrawOverlaysRequest` keeps the accumulated image - so the reset request is
+  the explicit way to ask for a restart, not the only one.
 - Future: SSAO temporal accumulation, SSR temporal accumulation, TAA jitter reset.
 
 ## SceneController GPU-sync flow

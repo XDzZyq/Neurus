@@ -218,7 +218,8 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 	                        "r_gamma", "r_shadow_bias", "r_ao_ksize", "r_ao_radius",
 	                        "r_sample_pf", "r_transparent", "r_fxaa_subpix",
 	                        "r_fxaa_edge_threshold", "r_fxaa_edge_threshold_min",
-	                        "r_sampling_mode", "r_debug_draw"})
+	                        "r_sampling_mode", "r_debug_draw",
+	                        "r_sampling_count"})
 		ExpectKey(configJson, key);
 }
 

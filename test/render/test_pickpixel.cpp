@@ -287,6 +287,70 @@ TEST_F(PickPixelTest, RepeatedReadbackSamePixel)
 }
 
 // ---------------------------------------------------------------------------
+// Never-written image: no readback, no barrier
+// ---------------------------------------------------------------------------
+
+TEST_F(PickPixelTest, NeverWrittenImageReturnsEmpty)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	// A freshly created image is ImageState::Undefined - no pass has written it.
+	const vk::Extent2D extent(4, 4);
+	Image image(*m_device, PhysicalDevice(), extent,
+	            vk::Format::eR8G8B8A8Unorm,
+	            vk::ImageUsageFlagBits::eSampled |
+	                vk::ImageUsageFlagBits::eTransferSrc,
+	            1, Image::ImageType::e2D, "PickPixelNeverWritten");
+
+	ASSERT_EQ(image.State(), ImageState::Undefined);
+
+	auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
+	                             m_queue, m_graphicsQueueFamily, 0, 0);
+
+	// There is no pixel of an image that was never written. The pick must record
+	// no GPU work at all: restoring the image to its "original" state would name
+	// UNDEFINED as a barrier's newLayout, which is invalid
+	// (VUID-VkImageMemoryBarrier2-newLayout-01198).
+	EXPECT_TRUE(bytes.empty()) << "an unwritten image has nothing to read";
+	EXPECT_EQ(image.State(), ImageState::Undefined)
+		<< "a pick must not touch an image it did not read";
+}
+
+// ---------------------------------------------------------------------------
+// A successful pick leaves the tracked state (and the layout) alone
+// ---------------------------------------------------------------------------
+
+TEST_F(PickPixelTest, ReadbackPreservesTrackedState)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	auto image = CreateCheckerboard4x4();
+	ASSERT_EQ(image.State(), ImageState::ColorShaderRead);
+
+	auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
+	                             m_queue, m_graphicsQueueFamily, 1, 2);
+	ASSERT_EQ(bytes.size(), 4u);
+
+	EXPECT_EQ(image.State(), ImageState::ColorShaderRead)
+		<< "PickPixel restores the image in the same submission";
+
+	// The restore has to put the layout back where the state says it is, or the
+	// next transition is recorded against a layout the image is not in. Read
+	// again: same pixel, and still no state change.
+	auto again = image.PickPixel(*m_device, PhysicalDevice(),
+	                             m_queue, m_graphicsQueueFamily, 1, 2);
+	ASSERT_EQ(again.size(), 4u);
+	EXPECT_EQ(again, bytes) << "a restored image still holds its contents";
+	EXPECT_EQ(image.State(), ImageState::ColorShaderRead);
+}
+
+// ---------------------------------------------------------------------------
 // RGBA32F pixel readback
 // ---------------------------------------------------------------------------
 

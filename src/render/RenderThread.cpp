@@ -4,7 +4,7 @@
  *
  * The design and the loop itself live in RenderThread.h; this file only spells
  * out the ordering the header promises - fence-first, resize coalescing, the
- * unconditional wake after Post(), and the broken-promise shutdown path.
+ * invalidate-after-Post(), and the broken-promise shutdown path.
  */
 
 #include "RenderThread.h"
@@ -83,16 +83,20 @@ void RenderThread::Post(RenderRequest&& request)
 {
 	m_renderer.Post(std::move(request));
 
-	// Always wake, even when a frame is about to be published: a frame posted
-	// after this request must be drawn only once the request has run, and the
-	// wake outranks the pending frame so the loop drains before it draws (the
-	// ordering guarantee in the header).
-	m_mailbox.Wake();
+	// Invalidate rather than just wake: a request restarts accumulation or
+	// marks overlays stale, so a frame snapshotted before it describes state the
+	// request replaced. Invalidate raises the wake (the request still has to run
+	// before any later frame is drawn, the ordering guarantee in the header) and
+	// drops the held frame, so the loop waits for a fresh Publish instead of
+	// redrawing the one whose camera predates the request.
+	m_mailbox.Invalidate();
 }
 
 void RenderThread::PostResize(uint32_t width, uint32_t height)
 {
-	PostControl(ResizeControl{width, height});
+	// A resize restarts accumulation: the old frame's extent and camera are both
+	// stale, so the held frame must not be redrawn after it.
+	PostControl(ResizeControl{width, height}, true);
 }
 
 std::future<void> RenderThread::PostSurfaceChange(const vk::raii::SurfaceKHR& surface)
@@ -103,7 +107,7 @@ std::future<void> RenderThread::PostSurfaceChange(const vk::raii::SurfaceKHR& su
 	// Take the future before the message is moved away: once posted, the
 	// message belongs to the control queue (or is already destroyed).
 	std::future<void> future = control.done.get_future();
-	PostControl(std::move(control));
+	PostControl(std::move(control), true);  // a new swapchain restarts accumulation
 	return future;
 }
 
@@ -113,14 +117,17 @@ std::future<uint32_t> RenderThread::PostPick(float u, float v)
 	control.u = u;
 	control.v = v;
 
+	// Plain wake: a pick reads the ID buffer, so it must neither discard a
+	// pending frame nor force a fresh one.
 	std::future<uint32_t> future = control.objectId.get_future();
-	PostControl(std::move(control));
+	PostControl(std::move(control), false);
 	return future;
 }
 
 void RenderThread::PostScreenshot(bool allAttachments)
 {
-	PostControl(ScreenshotControl{allAttachments});
+	// Plain wake: the screenshot reads whatever was drawn last.
+	PostControl(ScreenshotControl{allAttachments}, false);
 }
 
 RendererStatus RenderThread::Status() const
@@ -129,7 +136,7 @@ RendererStatus RenderThread::Status() const
 	return m_status;
 }
 
-void RenderThread::PostControl(RenderControl&& message)
+void RenderThread::PostControl(RenderControl&& message, bool restartAccumulation)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_acceptMutex);
@@ -143,9 +150,13 @@ void RenderThread::PostControl(RenderControl&& message)
 		m_control.Push(std::move(message));
 	}
 
-	// Enqueue first, THEN wake: the mailbox's ordering contract makes the
-	// message visible to the consumer draining on Interrupted.
-	m_mailbox.Wake();
+	// Enqueue first, THEN signal: the mailbox's ordering contract makes the
+	// message visible to the consumer draining on Interrupted. Resizes and
+	// surface changes also drop the held frame, since they restart accumulation.
+	if (restartAccumulation)
+		m_mailbox.Invalidate();
+	else
+		m_mailbox.Wake();
 }
 
 void RenderThread::Run()
@@ -170,12 +181,29 @@ void RenderThread::Run()
 				m_renderer.ProcessRequests();
 			}
 
-			const AcquireStatus status = m_mailbox.Acquire(m_frame);
+			// Ask the renderer how much work the next draw is worth before
+			// deciding how long to wait. Sample can redraw the frame already
+			// held; Overlay waits for the fresh frame a RedrawOverlaysRequest
+			// always arrives with; Idle parks until a control message and never
+			// consumes a published frame; Retry waits because the last draw
+			// produced nothing (no camera, acquire failure) and must not spin.
+			AcquireMode mode = AcquireMode::Wait;
+			switch (m_renderer.NextWork())
+			{
+			case FrameWork::Sample:  mode = AcquireMode::Reuse; break;
+			case FrameWork::Overlay: mode = AcquireMode::Wait;  break;
+			case FrameWork::Idle:    mode = AcquireMode::Idle;  break;
+			case FrameWork::Retry:   mode = AcquireMode::Wait;  break;
+			}
+
+			const AcquireStatus status = m_mailbox.Acquire(m_frame, mode);
 			if (status == AcquireStatus::Stopped)
 				break;
 			if (status == AcquireStatus::Interrupted)
 				continue;
 
+			// Frame or Repeat. On Repeat nothing was moved into m_frame, so it
+			// still holds the last snapshot - exactly what a Sample draw wants.
 			RenderContext ctx;
 			ctx.snapshot = &m_frame;
 			const FrameProfile& profile = m_renderer.DrawFrame(ctx);

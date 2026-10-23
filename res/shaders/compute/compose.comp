@@ -1,34 +1,30 @@
 #version 450
 // ---------------------------------------------------------------------------
-// Compose Compute Shader — final compositing + gamma correction
+// Compose Compute Shader - tone map the HDR scene image
 //
-// Reads HDRColor (RGBA16F) and SelectionOutline (R8), blends the highlight
-// onto the HDR output, applies gamma correction, and writes the final
-// composed image to the output attachment.
-//
-// The composed output is then blitted to the swapchain by the renderer.
+// Reads HDRColor (RGBA16F), applies gamma correction, and writes the final
+// composed image to the output attachment. This is the last scene pass: the
+// selection highlight, the debug overlay and the gizmo are blended over the
+// result afterwards by the overlay engine, which is why nothing here knows
+// about them (and why FXAA, which sits between compose and the overlays, never
+// sees an overlay pixel).
 //
 // Dispatch: ceil(width/16), ceil(height/16), 1
 // ---------------------------------------------------------------------------
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-// --- Inputs ---
+// --- Input ---
 layout(binding = 0) uniform sampler2D gHDRColor;
-layout(binding = 1) uniform sampler2D gHighlight;
 
 // --- Output ---
-layout(rgba16f, binding = 2) uniform writeonly image2D outputComposed;
+layout(rgba16f, binding = 1) uniform writeonly image2D outputComposed;
 
 // --- Push constants ---
 layout(push_constant) uniform PushConstants
 {
 	float gamma;     // gamma correction factor (default 2.2)
 };
-
-// Highlight colour: orange outline, 50 % intensity
-const vec3 kHighlightColour = vec3(1.0, 0.55, 0.0);
-const float kHighlightAlpha = 0.5;
 
 // Checkerboard background for transparent/empty regions
 const int kCheckerSize   = 8;
@@ -43,9 +39,8 @@ void main()
 	if (pixelCoord.x >= imgSize.x || pixelCoord.y >= imgSize.y)
 		return;
 
-	// Read inputs (RGBA for background detection)
-	vec4 hdrSample   = texelFetch(gHDRColor, pixelCoord, 0);
-	float highlight  = texelFetch(gHighlight, pixelCoord, 0).r;
+	// Read input (RGBA for background detection)
+	vec4 hdrSample = texelFetch(gHDRColor, pixelCoord, 0);
 
 	// --- Background detection (alpha = 0 means no geometry rendered) ---
 	bool isBackground = (hdrSample.a < 0.01);
@@ -64,12 +59,9 @@ void main()
 		return;
 	}
 
-	// --- Foreground: blend highlight on top of HDR colour ---
-	vec3 composed = mix(hdrSample.rgb, kHighlightColour, highlight * kHighlightAlpha);
-
 	// Gamma correction
 	float invGamma = 1.0 / max(gamma, 0.01);
-	composed = pow(max(composed, vec3(0.0)), vec3(invGamma));
+	vec3 composed = pow(max(hdrSample.rgb, vec3(0.0)), vec3(invGamma));
 
 	imageStore(outputComposed, pixelCoord, vec4(composed, 1.0));
 }

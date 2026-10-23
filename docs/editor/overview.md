@@ -200,8 +200,10 @@ Design:
   [Viewport](viewport.md)), every mesh and light in UID order, the environment,
   the active object, the debug list when `RequiresDebugDraw()`, and the gizmo
   list unconditionally. The Application builds a fresh snapshot each tick and
-  moves it into `RenderThread::Publish` (a latest-wins `FrameMailbox`); the
-  render thread points `RenderContext::snapshot` at the frame it acquired, and
+  moves it into `RenderThread::Publish` (a latest-wins `FrameMailbox`); posting a
+  request, a resize or a surface change invalidates the slot, so a frame
+  snapshotted before one of them is never drawn after it. The render thread
+  points `RenderContext::snapshot` at the frame it acquired, and
   `DeferredRenderer::recordFrame()` then stamps the frame half (`width`,
   `height`, `frameIndex`, `jitter`, `iteration`) into a **local copy**, which is
   what keeps temporal state renderer-owned - the Editor can neither read nor
@@ -354,8 +356,15 @@ The frame loop, main thread then render thread:
 ```
 UIEvents::newFrame() -> Editor::Edit(input) -> Editor::BuildSnapshot()
                      -> RenderThread::Publish(snapshot)        (never blocks)
-render thread:          fence -> controls -> requests -> Acquire -> DrawFrame
+render thread:          fence -> controls -> requests -> NextWork -> Acquire -> DrawFrame
 ```
+
+`NextWork()` decides how much the next draw is worth, and therefore how long the
+thread waits: a remaining sample reuses the snapshot it holds, an overlay-only
+change waits for the fresh frame that carries it, and a converged renderer with
+nothing stale parks without acquiring an image. Publishing keeps costing the main
+thread nothing either way; the renderer stops sampling after
+`r_sampling_count` frames and redraws only when a request or control arrives.
 
 Example: window resize
 

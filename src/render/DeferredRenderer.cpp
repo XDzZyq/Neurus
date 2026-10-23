@@ -21,15 +21,14 @@
 #include "Screenshot.h"
 #include "UploadManager.h"
 
+#include "overlay/OverlayEngine.h"
+
 #include "passes/GeometryPass.h"
 #include "passes/LightingPass.h"
 #include "passes/SSAOPass.h"
 #include "passes/ShadowDepthPass.h"
 #include "passes/ShadowIntensityPass.h"
-#include "passes/SelectionOutlinePass.h"
 #include "passes/ComposePass.h"
-#include "passes/DebugPass.h"
-#include "passes/GizmoPass.h"
 #include "passes/FXAAPass.h"
 
 #include "render/HaltonSequence.h"
@@ -130,17 +129,16 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] ShadowIntensityPass created");
 	}
 
-	// --- 8c. Create selection outline pass (3×3 IDBuffer edge detection) ---
-	{
-		auto outlinePass = std::make_unique<SelectionOutlinePass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_selectionOutlinePass = outlinePass.get();
-		r_passes.push_back(std::move(outlinePass));
-		NEURUS_LOG("[DeferredRenderer] SelectionOutlinePass created");
-	}
+	// --- 8c. Build the overlay graph (selection outline, debug overlay, gizmo) ---
+	// Separate from the scene graph so overlays can be redrawn over a converged
+	// scene image without re-running a single scene pass. RebuildMainGraph below
+	// tells it which scene image to draw over.
+	m_overlayEngine = std::make_unique<OverlayEngine>(
+		device, physicalDevice, kMaxFramesInFlight);
+	NEURUS_LOG("[DeferredRenderer] OverlayEngine created ("
+	           << m_overlayEngine->PassCount() << " overlay passes)");
 
-	// --- 8d. Create compose pass (highlight blend + gamma correction) ---
+	// --- 8d. Create compose pass (tone map + gamma correction) ---
 	{
 		auto composePass = std::make_unique<ComposePass>(
 			device, physicalDevice,
@@ -160,27 +158,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 		NEURUS_LOG("[DeferredRenderer] FXAAPass created");
 	}
 
-	// --- 8f. Create debug overlay pass (a no-op on frames with no debug geometry) ---
-	{
-		auto debugPass = std::make_unique<DebugPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_debugPass = debugPass.get();
-		r_passes.push_back(std::move(debugPass));
-		NEURUS_LOG("[DeferredRenderer] DebugPass created");
-	}
-
-	// --- 8g. Create transform-gizmo overlay pass (a no-op with no live gesture) ---
-	{
-		auto gizmoPass = std::make_unique<GizmoPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_gizmoPass = gizmoPass.get();
-		r_passes.push_back(std::move(gizmoPass));
-		NEURUS_LOG("[DeferredRenderer] GizmoPass created");
-	}
-
-	// --- 8h. Build the RenderGraph ---
+	// --- 8f. Build the scene RenderGraph ---
 	// Initial build uses a default signature (no FXAA); recordFrame rebuilds
 	// it whenever the pipeline signature derived from RenderConfig changes.
 	RebuildMainGraph(PipelineSignature{});
@@ -261,7 +239,7 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 }
 
 // ---------------------------------------------------------------------------
-// DrawFrame - main render loop entry point
+// NextWork / DrawFrame - main render loop entry point
 // ---------------------------------------------------------------------------
 
 bool DeferredRenderer::WaitForFrameSlot()
@@ -274,6 +252,26 @@ bool DeferredRenderer::WaitForFrameSlot()
 	return r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) == vk::Result::eSuccess;
 }
 
+FrameWork DeferredRenderer::NextWork() const
+{
+	// A frame that drew nothing must not be treated as drawn: the caller has to
+	// wait for a new one (another sample would either draw the same nothing or
+	// reuse a snapshot the failed pass never consumed).
+	if (m_drewNothing)
+		return FrameWork::Retry;
+
+	// Accumulation not converged: sample. This also covers iteration 0, which is
+	// what guarantees an Overlay frame never precedes a sample after a restart -
+	// the image it would draw over only exists because a sample produced it.
+	if (m_iteration < m_samplingCount)
+		return FrameWork::Sample;
+
+	if (m_overlaysDirty)
+		return FrameWork::Overlay;
+
+	return FrameWork::Idle;
+}
+
 const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 {
 	// --- Wait for this frame slot's fence ---
@@ -282,6 +280,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// queued for the next frame, when the GPU is idle again.
 	if (!WaitForFrameSlot())
 	{
+		m_drewNothing = true;
 		return m_frameProfile;  // Timeout - requests stay queued for the next frame
 	}
 
@@ -305,6 +304,31 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// session still executes its queued requests instead of queueing forever.
 	ProcessRequests();
 
+	// What this call performs, decided after the drain: a request handled above
+	// may have restarted accumulation or marked the overlays stale.
+	FrameWork work = NextWork();
+
+	// Retry means the previous DrawFrame drew nothing; it says nothing about
+	// which work to perform. What it was going to do never advanced - iteration
+	// and the overlay flag are only written by a frame that drew - so dropping
+	// the latch and asking again yields exactly the interrupted work.
+	if (work == FrameWork::Retry)
+	{
+		m_drewNothing = false;
+		work = NextWork();
+	}
+
+	// --- Idle: nothing to draw, so nothing to acquire ---
+	// Acquiring an image would burn a present slot (and, with a real swapchain,
+	// block) to draw exactly what is already on screen. Deliberately before the
+	// camera check: an idle frame draws nothing, so it cannot have failed to
+	// draw, and flagging it would make NextWork() report Retry on every idle
+	// frame of a camera-less session.
+	if (work == FrameWork::Idle)
+	{
+		return m_frameProfile;
+	}
+
 	// --- Precondition: we must have a camera to look through ---
 	// The frame carries the camera the Editor chose, and every pass that needs a
 	// viewing camera reads it from the same snapshot, so they cannot disagree. A
@@ -319,6 +343,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 			NEURUS_ERR("[DeferredRenderer] No camera to render through - skipping frames "
 			           "until one exists");
 		}
+		m_drewNothing = true;
 		return m_frameProfile;
 	}
 	m_reportedNoCamera = false;
@@ -357,6 +382,9 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 
 	if (skipFrame)
 	{
+		// Nothing was acquired, so nothing was drawn: NextWork() must report Retry
+		// rather than let the caller believe this frame consumed its work.
+		m_drewNothing = true;
 		return m_frameProfile;
 	}
 
@@ -366,7 +394,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// --- Record and submit (reuse pre-allocated command buffer) ---
 	vk::CommandBuffer cmdBufRaw = *r_commandBuffers[imageIndex];
 
-	recordFrame(r_commandBuffers[imageIndex], imageIndex, ctx);
+	recordFrame(r_commandBuffers[imageIndex], imageIndex, ctx, work);
 
 	// --- Profiling: back-fill resolved GPU ms now that passes are repopulated ---
 	// recordFrame just rewrote m_frameProfile.passes with gpuMs=0; match the
@@ -414,9 +442,17 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 
 	if (presentFailed)
 	{
+		// Drawn but not put on screen. Treat it like any other failed frame: the
+		// work is reported as Retry, and because the pending-work flags are only
+		// cleared below, the retry redraws the same thing (an Overlay frame
+		// redraws the overlays; a Sample frame samples the next iteration).
+		m_drewNothing = true;
 		return m_frameProfile;
 	}
 
+	// --- Drawn and presented: this frame consumed its work ---
+	m_drewNothing = false;
+	m_overlaysDirty = false;
 	r_currentFrame = (r_currentFrame + 1) % kMaxFramesInFlight;
 	return m_frameProfile;
 }
@@ -442,14 +478,30 @@ void DeferredRenderer::ProcessRequests()
 	std::vector<RenderRequest> batch = m_requestQueue.TakeAll();
 	for (const RenderRequest& request : batch)
 	{
-		// ResetAccumulationRequest writes renderer state (m_iteration), which the
-		// executor does not own, so it is executed here. Routing it through the
-		// queue rather than a direct call keeps the rule simple once the renderer
-		// runs on its own thread: the Editor never calls in except to Post.
+		// Two requests write renderer state the executor does not own, so they are
+		// handled here. Routing them through the queue rather than a direct call
+		// keeps the rule simple once the renderer runs on its own thread: the
+		// Editor never calls in except to Post.
+
+		// Overlays only: keep the converged scene image and redraw on top of it.
+		// This is the one request that must NOT restart accumulation - doing so
+		// would throw away the converged image the overlay redraw exists for.
+		if (std::holds_alternative<RedrawOverlaysRequest>(request))
+		{
+			m_overlaysDirty = true;
+			continue;
+		}
+
+		// Everything else changes scene content, GPU resources or the view, which
+		// invalidates the accumulated average: restart from frame 0. That includes
+		// ResetAccumulationRequest, which needs no further handling (it exists to
+		// ask for exactly this), so it stops here instead of reaching the executor.
+		m_iteration = 0;
+
 		if (std::holds_alternative<ResetAccumulationRequest>(request))
-			m_iteration = 0;
-		else
-			m_executor->Execute(request);
+			continue;
+
+		m_executor->Execute(request);
 	}
 }
 
@@ -478,6 +530,11 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	// Rebuild the whole-pipeline DAG so it contains exactly the passes that
 	// will run. Edges follow image data-flow; camera/light SSBOs and the
 	// per-light shadow maps are addressed by the passes internally.
+	//
+	// Overlays are NOT in this graph. They live in OverlayEngine, which draws over
+	// whatever this graph ends with, so the graph stops at the scene image (the
+	// tone mapped/gamma corrected one, optionally FXAA'd). That split is what lets
+	// an overlay-only change redraw without re-running a single pass below.
 	m_mainGraph.Clear();
 
 	auto* geometryNode  = m_mainGraph.AddPass(r_geometryPass);
@@ -485,19 +542,7 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	auto* shadowInt     = m_mainGraph.AddPass(r_shadowIntensityPass);
 	auto* ssaoNode      = m_mainGraph.AddPass(r_ssaoPass);
 	auto* lightingNode  = m_mainGraph.AddPass(r_lightingPass);
-	auto* outlineNode   = m_mainGraph.AddPass(r_selectionOutlinePass);
 	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
-
-	// Both overlays draw into whichever image the post chain ends with, so their
-	// target is chosen before registration. The two must name the *same*
-	// attachment - that shared name is the socket Connect() below matches on to
-	// order them.
-	const AttachmentName tail = sig.fxaa ? AttachmentName::FXAAOutput
-	                                     : AttachmentName::ComposedOutput;
-	r_debugPass->SetTarget(tail);
-	auto* debugNode     = m_mainGraph.AddPass(r_debugPass);
-	r_gizmoPass->SetTarget(tail);
-	auto* gizmoNode     = m_mainGraph.AddPass(r_gizmoPass);
 
 	// Geometry (G-Buffer) → consumers
 	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          ssaoNode);
@@ -508,48 +553,38 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 	m_mainGraph.Connect(geometryNode, AttachmentName::Normal,            lightingNode);
 	m_mainGraph.Connect(geometryNode, AttachmentName::Albedo,            lightingNode);
 	m_mainGraph.Connect(geometryNode, AttachmentName::MetallicRoughness, lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::IDBuffer,          outlineNode);
 
 	// Shadow depth bundle → shadow intensity → lighting
 	m_mainGraph.Connect(shadowDepth, AttachmentName::ShadowDepth,     shadowInt);
 	m_mainGraph.Connect(shadowInt,   AttachmentName::ShadowIntensity, lightingNode);
 
-	// SSAO → lighting; lighting + selection outline → compose
+	// SSAO → lighting → compose (tone map + gamma only; the selection highlight is
+	// an overlay and is blended in the overlay graph, after this pass).
 	m_mainGraph.Connect(ssaoNode,     AttachmentName::SSAO,             lightingNode);
 	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,         composeNode);
-	m_mainGraph.Connect(outlineNode,  AttachmentName::SelectionOutline, composeNode);
 
-	// Compose -> [FXAA] -> debug overlay -> gizmo overlay. The overlays are deliberately
-	// last: their fragment shaders already antialias from real coverage, and a luma
-	// filter can only re-blur that and smear overlay color into the scene. So FXAA is
-	// fed the scene alone, and the overlays land on whatever came out of it. Both edit
-	// that image in place, and the gizmo is the last writer the final blit consumes.
+	// Compose -> [FXAA]. The scene tail is the last image this graph writes, and
+	// the overlay graph copies it - FXAA is the only topology variation, so the
+	// tail choice belongs here, with the config projection that produced it.
+	const AttachmentName tail = sig.fxaa ? AttachmentName::FXAAOutput
+	                                     : AttachmentName::ComposedOutput;
 	if (sig.fxaa)
 	{
 		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
 		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, fxaaNode);
-		m_mainGraph.Connect(fxaaNode,    AttachmentName::FXAAOutput,     debugNode);
 	}
-	else
-	{
-		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, debugNode);
-	}
-	m_mainGraph.Connect(geometryNode, AttachmentName::Depth, debugNode);
 
-	// Debug -> gizmo, on the shared tail attachment. Not optional bookkeeping: an
-	// unwired input is treated as external rather than an error, so without this
-	// edge the gizmo's position in the topological order is unconstrained and the
-	// guides could land under the debug geometry nondeterministically. No Depth
-	// edge here - the gizmo declares no depth socket, so one would fail socket
-	// validation.
-	m_mainGraph.Connect(debugNode, tail, gizmoNode);
+	// Tell the overlay graph which image to copy. Its copy source is part of its
+	// socket names, so it re-wires itself when the tail changes.
+	m_overlayEngine->SetSceneTail(tail);
 
 	m_mainGraph.Compile();
 	m_builtSignature = sig;
 
 	NEURUS_LOG("[DeferredRenderer] RenderGraph rebuilt ("
 	           << m_mainGraph.PassCount() << " passes, FXAA="
-	           << (sig.fxaa ? "on" : "off") << ")");
+	           << (sig.fxaa ? "on" : "off") << ", tail="
+	           << AttachmentNameToString(tail) << ")");
 }
 
 void DeferredRenderer::WaitIdle()
@@ -566,7 +601,34 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 		return 0;
 	}
 
-	auto& idBuffer = r_renderCache->GetAttachment(AttachmentName::IDBuffer, extent);
+	// A pick is a query, never a producer: it must not create the ID buffer, nor
+	// stand in for the geometry pass that writes it. Creating it here (the cache
+	// creates lazily on GetAttachment) handed the pick an image no pass had drawn
+	// into, and reading that recorded a transition back to UNDEFINED on restore
+	// (VUID-VkImageMemoryBarrier2-newLayout-01198) - once per pick, for as
+	// long as the renderer stayed idle. This happens for real: a pick that lands
+	// right after a resize, before a frame has drawn at the new extent, has no
+	// ID buffer to read because the resize dropped the screen-space attachments.
+	// The honest answer is "background", i.e. object 0.
+	if (!r_renderCache->HasAttachment(AttachmentName::IDBuffer))
+	{
+		NEURUS_LOG("[DeferredRenderer] ReadIDBufferPixel: no IDBuffer at "
+		           << extent.width << "x" << extent.height
+		           << " (no frame drawn yet) - returning background");
+		return 0;
+	}
+
+	const Image& idBuffer = r_renderCache->GetAttachment(AttachmentName::IDBuffer);
+
+	// Stale extent or never written: same answer, for the same reason.
+	if (idBuffer.Extent() != extent || idBuffer.State() == ImageState::Undefined)
+	{
+		NEURUS_LOG("[DeferredRenderer] ReadIDBufferPixel: IDBuffer holds no "
+		           << "content (extent " << idBuffer.Extent().width << "x"
+		           << idBuffer.Extent().height << ", state "
+		           << static_cast<int>(idBuffer.State()) << ") - returning background");
+		return 0;
+	}
 
 	// The image is left in its original state on return.
 	auto bytes = idBuffer.PickPixel(r_device, r_physicalDevice,
@@ -677,8 +739,24 @@ void DeferredRenderer::recreateSwapchain()
 // ---------------------------------------------------------------------------
 
 void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32_t imageIndex,
-                                   const RenderContext& editorCtx)
+                                   const RenderContext& editorCtx, const FrameWork work)
 {
+	if (work != FrameWork::Sample && work != FrameWork::Overlay)
+	{
+		throw std::logic_error(
+			"DeferredRenderer::recordFrame called with work that draws nothing");
+	}
+
+	// An Overlay frame draws over the image a Sample frame produced. At iteration
+	// 0 no sample has run since the last restart, so there is nothing to draw
+	// over: NextWork() never asks for it, but recordFrame is also reachable
+	// directly, so the invariant is checked here rather than assumed.
+	if (work == FrameWork::Overlay && m_iteration == 0)
+	{
+		throw std::logic_error(
+			"DeferredRenderer::recordFrame: Overlay frame before any Sample frame");
+	}
+
 	const vk::Extent2D extent = r_swapchain->extent();
 
 	// --- Reset the command buffer, then begin recording ---
@@ -693,20 +771,38 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	ctx.height = extent.height;
 	ctx.frameIndex = r_currentFrame;
 
-	// --- Temporal shadow accumulation: compute 3D random jitter direction ---
+	if (work == FrameWork::Sample)
 	{
-		float x = 2.0f * HaltonSequence::Halton2(m_haltonIndex) - 1.0f;
-		float y = 2.0f * HaltonSequence::Halton3(m_haltonIndex) - 1.0f;
-		float z = 2.0f * HaltonSequence::Halton5(m_haltonIndex) - 1.0f;
-		float len = std::sqrt(x * x + y * y + z * z);
-		ctx.jitter = (len > 1e-6f) ? glm::vec3(x / len, y / len, z / len) : glm::vec3(0.0f, 0.0f, 1.0f);
+		// --- Refresh the sampling budget ---
+		// Read on every sample frame, the only place it is compared against
+		// m_iteration. A new value always arrives with an accumulation restart, so
+		// this read is what makes the cached copy authoritative for the run.
+		m_samplingCount = static_cast<uint32_t>(
+			std::max(1, ctx.Frame().Settings().r_sampling_count));
+
+		// --- Temporal shadow accumulation: compute 3D random jitter direction ---
+		{
+			float x = 2.0f * HaltonSequence::Halton2(m_haltonIndex) - 1.0f;
+			float y = 2.0f * HaltonSequence::Halton3(m_haltonIndex) - 1.0f;
+			float z = 2.0f * HaltonSequence::Halton5(m_haltonIndex) - 1.0f;
+			float len = std::sqrt(x * x + y * y + z * z);
+			ctx.jitter = (len > 1e-6f) ? glm::vec3(x / len, y / len, z / len) : glm::vec3(0.0f, 0.0f, 1.0f);
+		}
+
+		ctx.iteration = m_iteration;
+
+		// Advance the temporal counters for the next sample. An Overlay frame
+		// draws no accumulation sample, so it must not touch either counter.
+		m_iteration++;
+		m_haltonIndex++;
 	}
-
-	ctx.iteration = m_iteration;
-	m_iteration++;
-
-	// Advance the Halton index for the next frame's jitter
-	m_haltonIndex++;
+	else
+	{
+		// Overlay: no jitter, no accumulation sample. iteration is reported so the
+		// passes that read it (and the profile) see how converged the image is;
+		// jitter stays zero, which is what the unused field means.
+		ctx.iteration = m_iteration;
+	}
 
 	// --- Per-frame cache updates: one writer, before any pass records ---
 	// Both resources live in RenderCache because more than one pass reads them,
@@ -727,15 +823,16 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// counts, which is what makes a finished gesture's guide vanish.
 	r_renderCache->UpdateGizmoDraw(ctx.frameIndex, frame.gizmoDraw);
 
-	// --- Pipeline: Geometry -> Shadows -> SSAO -> Lighting -> SelectionOutline -> Compose -> [FXAA] -> Debug -> Gizmo ---
-	// The whole deferred pipeline runs through one RenderGraph; FXAA presence is
-	// the only thing the topology varies on.
-
-	// Rebuild the graph only when the config-derived signature changes (single
-	// source of truth is RenderConfig; the graph is its projection - currently
-	// just FXAA presence). Unconditional, because Settings() is never null: a
-	// null check would skip evaluating the topology rather than evaluate it
-	// against the defaults.
+	// --- Pipeline ---
+	// Sample: Geometry -> Shadows -> SSAO -> Lighting -> Compose -> [FXAA], then
+	//         the overlay graph over that image.
+	// Overlay: the overlay graph alone, over the image the last sample produced.
+	// The graph is only rebuilt here (Sample only) when the config-derived
+	// signature changes: an Overlay frame runs the same scene topology the
+	// converged image came from, so re-evaluating it would be pointless - and
+	// rebuilding it mid-convergence is exactly what a signature change implies
+	// was already handled by the restart that came with it.
+	if (work == FrameWork::Sample)
 	{
 		const PipelineSignature sig = PipelineSignature::From(frame.Settings());
 		if (!(sig == m_builtSignature))
@@ -743,19 +840,25 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	}
 
 	// --- Profiling: bracket the whole pipeline with GPU frame timestamps ---
-	// The RenderGraph drives per-pass GPU timestamps and folds each pass's
-	// PassStats into m_frameProfile (passes stay unaware of profiling). GPU
-	// per-pass ms are back-filled in DrawFrame after Resolve().
+	// One BeginFrame/EndFrame pair covers both graphs, so the overlay passes are
+	// timed by the same query pool and land after the scene passes in query and
+	// profile order (OverlayEngine appends them to m_frameProfile). GPU per-pass
+	// ms are back-filled in DrawFrame after Resolve().
 	m_profiler.BeginFrame(cmdBuf);
-	m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
+	if (work == FrameWork::Sample)
+		m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
+	else
+		m_frameProfile = FrameProfile{};  // An overlay frame records only overlay passes.
+	m_overlayEngine->Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
 	// --- Blit the final image to the swapchain ---
-	// GizmoPass is last in the graph, so its target is the end of the chain:
-	// FXAAOutput when FXAA is on, ComposedOutput when it is off. Asking the pass
-	// keeps that choice with RebuildMainGraph, which owns config -> topology, and
-	// is correct even on frames where neither overlay drew anything.
-	auto& blitSource = r_renderCache->GetAttachment(r_gizmoPass->GetTarget(), extent);
-	const vk::Image composedImage = *blitSource.ImageHandle();
+	// The overlay graph's output is always the end of the chain: the scene tail is
+	// copied into OverlayOutput, the overlays draw into it, and nothing presents
+	// the scene image directly. That is also why the copy is mandatory - on an
+	// overlay frame the scene tail must survive so the next overlay redraw can
+	// start from it again.
+	auto& blitSource = r_renderCache->GetAttachment(OverlayEngine::OutputAttachment(), extent);
+	const vk::Image overlayImage = *blitSource.ImageHandle();
 	const vk::Image swapchainImage = r_swapchain->images()[imageIndex];
 
 	// Barrier 1: Blit source -> TRANSFER_SRC_OPTIMAL.
@@ -786,7 +889,7 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
 		                                         static_cast<int32_t>(extent.height), 1);
 
-		cmdBuf.blitImage(composedImage,
+		cmdBuf.blitImage(overlayImage,
 		                 vk::ImageLayout::eTransferSrcOptimal,
 		                 swapchainImage,
 		                 vk::ImageLayout::eTransferDstOptimal,
@@ -808,8 +911,9 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	cmdBuf.end();
 
 	// --- Profiling: finalize CPU-side aggregate fields ---
-	// RenderGraph::Execute already populated passes[], cpuRecordMs, drawCalls,
-	// dispatches, and passCount; only gpuTimingAvailable is renderer-owned.
+	// The graphs populated passes[], cpuRecordMs, drawCalls, dispatches and
+	// passCount (the scene graph's from m_mainGraph, the overlay passes appended by
+	// OverlayEngine); only gpuTimingAvailable is renderer-owned.
 	m_frameProfile.gpuTimingAvailable = m_profiler.Available();
 }
 

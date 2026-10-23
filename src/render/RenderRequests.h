@@ -152,6 +152,19 @@ struct ResetAccumulationRequest
 {
 };
 
+/**
+ * @brief Redraw the overlays (selection outline, debug objects, gizmo) on the
+ *        next published frame, without restarting accumulation.
+ *
+ * Posted when only overlay content changed. Once accumulation has converged the
+ * renderer draws no scene frames, so this is what makes a selection or a gizmo
+ * guide change reach the screen: the overlay engine redraws over the converged
+ * scene image. Every other request restarts accumulation.
+ */
+struct RedrawOverlaysRequest
+{
+};
+
 /// @brief Any request the renderer executes on the Editor's behalf.
 using RenderRequest = std::variant<UploadMeshRequest,
                                    CreateLightGpuRequest,
@@ -160,7 +173,8 @@ using RenderRequest = std::variant<UploadMeshRequest,
                                    UpdateLightRequest,
                                    EnsurePipelineRequest,
                                    DropSceneResourcesRequest,
-                                   ResetAccumulationRequest>;
+                                   ResetAccumulationRequest,
+                                   RedrawOverlaysRequest>;
 
 /**
  * @brief Snapshot what a per-mesh pipeline build needs out of a live Shader.

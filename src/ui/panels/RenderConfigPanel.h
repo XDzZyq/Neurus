@@ -113,6 +113,7 @@ private:
 	QComboBox*  m_pipelineCombo     = nullptr;
 	QComboBox*  m_ssrCombo          = nullptr;
 	QSpinBox*   m_samplesPerFrameSpin = nullptr;
+	QSpinBox*   m_samplingCountSpin   = nullptr;  ///< Scene frames accumulated before rendering stops
 };
 
 } // namespace neurus

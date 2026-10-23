@@ -12,17 +12,19 @@
  * The loop, one iteration per wake:
  *
  * @code
+ * RenderFrameSnapshot frame;               // kept across iterations
  * for (;;)
  * {
- *     if (renderer.WaitForFrameSlot())   // GPU done with the previous frame
+ *     if (renderer.WaitForFrameSlot())     // GPU done with the previous frame
  *     {
- *         DrainControl();                // resize, surface, pick, screenshot
- *         renderer.ProcessRequests();    // Editor requests: uploads, reset, ...
+ *         DrainControl();                  // resize, surface, pick, screenshot
+ *         renderer.ProcessRequests();      // Editor requests: uploads, reset, ...
  *     }
- *     const auto s = mailbox.Acquire(frame);
+ *     const auto mode = ModeFor(renderer.NextWork());  // see NextWork
+ *     const auto s = mailbox.Acquire(frame, mode);
  *     if (s == AcquireStatus::Stopped)     break;
  *     if (s == AcquireStatus::Interrupted) continue;
- *     renderer.DrawFrame(frame);
+ *     renderer.DrawFrame(frame);           // on Repeat, the frame already held
  * }
  * renderer.WaitIdle();
  * @endcode
@@ -32,12 +34,23 @@
  * existed this held because requests ran inside DrawFrame after its own fence
  * wait; an Interrupted iteration does not draw, so the loop waits itself.
  *
- * Ordering guarantee (the reason Post() always wakes): a frame published after
+ * Why the loop asks the renderer how much work is left before it waits: once
+ * progressive accumulation has converged there is nothing to sample any more,
+ * and a publisher that keeps publishing would otherwise keep the GPU busy for
+ * nothing. NextWork() answers what the next DrawFrame would do, and the answer
+ * decides how long the thread blocks: Sample reuses the frame it holds (no new
+ * snapshot needed for the remaining samples), Overlay and Retry wait for a new
+ * one, Idle parks until a control message arrives and ignores publishes.
+ *
+ * Ordering guarantee (the reason Post() invalidates): a frame published after
  * a Post() is drawn only after that request executed. Post enqueues, then
- * Wake()s; Publish fills the slot afterwards; Acquire ranks a pending wake above
- * a pending frame, so the consumer drains once more before taking the frame.
- * Skipping the wake "because a frame is about to be published anyway" would
- * let the frame be drawn first.
+ * Invalidate()s; Publish fills the slot afterwards; Acquire ranks a pending
+ * wake above a pending frame, so the consumer drains once more before taking
+ * the frame. Invalidate additionally drops any frame published before the
+ * request - a snapshot of the pre-request camera must never be drawn once the
+ * request restarted accumulation - so the thread waits for a fresh Publish
+ * instead of redrawing its held frame. Skipping both "because a frame is about
+ * to be published anyway" would let the stale frame be drawn first.
  *
  * Lifetime: Start() once. Stop() is idempotent and the destructor calls it.
  * When the loop ends - stop or an escaped exception - the thread stops
@@ -121,10 +134,13 @@ public:
 	void Publish(RenderFrameSnapshot&& snapshot);
 
 	/**
-	 * @brief Enqueue an Editor request into the renderer, then wake the thread.
+	 * @brief Enqueue an Editor request into the renderer, then invalidate the
+	 *        held frame and wake the thread.
 	 *
-	 * Always wakes, even when a frame is about to be published: see the
-	 * ordering guarantee in the file header.
+	 * Always invalidates, even when a frame is about to be published: a request
+	 * restarts accumulation or marks overlays stale, so a frame snapshotted
+	 * before it must not be drawn after it. See the ordering guarantee in the
+	 * file header.
 	 */
 	void Post(RenderRequest&& request) override;
 
@@ -162,8 +178,12 @@ private:
 	/**
 	 * @brief Enqueue a control message and wake, or destroy it if the loop has
 	 *        ended (breaking any promise it carries).
+	 * @param restartAccumulation  True when the message invalidates the held
+	 *        frame (a resize or a surface change restarts accumulation), false
+	 *        for messages that must neither discard nor force a frame (pick,
+	 *        screenshot).
 	 */
-	void PostControl(RenderControl&& message);
+	void PostControl(RenderControl&& message, bool restartAccumulation);
 
 	/** @brief Store the renderer's current extent into the status slot. */
 	void PublishExtent();
@@ -183,7 +203,9 @@ private:
 	mutable std::mutex m_statusMutex;
 	RendererStatus     m_status;   ///< Guarded by m_statusMutex.
 
-	/// Render-thread-only: the frame being drawn; DrawFrame's context points at it.
+	/// Render-thread-only: the frame being drawn; DrawFrame's context points at
+	/// it. On Repeat it keeps the last snapshot, which is what makes a Sample
+	/// redraw possible without a new publish.
 	RenderFrameSnapshot m_frame;
 
 	std::thread m_thread;

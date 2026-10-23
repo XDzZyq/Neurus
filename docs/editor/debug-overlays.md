@@ -13,15 +13,22 @@ the Scene's three debug pools into a `DebugDrawList` on a dirty flag
 (`MarkOverlaysDirty()` from `RenderResetEvent`, `RebuildOverlays()` at the end of
 `Editor::Edit()`), never per frame.
 
-`DebugPass` (renderer) is the single consumer and runs last, after post-AA: it
-draws over the final shaded image with `LOAD_OP_LOAD` (`FXAAOutput` when FXAA is
-on, `ComposedOutput` when it is off, chosen by `SetTarget()` from
-`PipelineSignature`), reads but never writes the G-Buffer depth, and flips
-`eDepthTestEnable` as dynamic state to serve x-ray, at most 6 draws per frame
-regardless of primitive count. Every debug primitive is already antialiased
-analytically, so handing FXAA the scene alone keeps both correct. The transform
-gizmo's `GizmoPass` then runs after `DebugPass`; see
-[Transform gizmo](gizmo.md).
+`DebugPass` (renderer) is the single consumer and runs in the overlay graph, over
+the converged scene image: it draws into `OverlayOutput` with `LOAD_OP_LOAD`
+(seeded by `OverlayCopyPass` from `ComposedOutput`, or `FXAAOutput` when FXAA is
+on), reads but never writes the G-Buffer depth, and flips `eDepthTestEnable` as
+dynamic state to serve x-ray, at most 6 draws per frame regardless of primitive
+count. Every debug primitive is already antialiased analytically, so handing FXAA
+the scene alone keeps both correct. The transform gizmo's `GizmoPass` then runs
+after `DebugPass`; see [Transform gizmo](gizmo.md).
+
+Because the renderer stops drawing once its sampling budget is spent, a rebuilt
+overlay payload does not reach the screen by itself. `RebuildOverlays()` reports
+whether it rebuilt anything, and `Editor::Edit()` posts a
+`RedrawOverlaysRequest` when it did - the one request that redraws the overlay
+graph over the converged image instead of restarting accumulation. An idle tick
+posts nothing. See [Temporal](../render/temporal.md) and
+[Render Request Path](../architecture/data-flow.md#render-request-path-editor-to-renderer-gpu-work).
 
 Upload is revision-gated: an unchanged list re-uses the buffer a frame slot
 already holds and skips the memcpy entirely.
@@ -42,10 +49,17 @@ RenderResetEvent  --> viewport.MarkOverlaysDirty()  // O(1), the existing
                                                     // "something visible changed" broadcast
 Editor::Edit()
   |- EventQueue::Process()
-  |- m_viewport.RebuildOverlays(*m_scene)          // after the queue drains, so a
-                                                    // scene change and its overlay
-                                                    // consequences land in one frame
+  |- m_viewport.RebuildOverlays(*m_scene)  // after the queue drains, so a scene
+  |                                        // change and its overlay consequences
+  |                                        // land in one frame
+  `- if it rebuilt anything: Post(RedrawOverlaysRequest{})
 ```
+
+`RebuildOverlays()` answers `true` when at least one payload was actually
+rebuilt, which is the only answer the Editor cannot work out itself - the dirty
+flags belong to the builders. Posting inside `Edit()` matters: the request
+lands before this tick's snapshot is published, so the redraw happens on that
+tick's frame rather than costing one.
 
 `Rebuild()` returns immediately when clean, which is the common case: debug
 objects are stateful and rarely move. `m_dirty` starts `true` so the first

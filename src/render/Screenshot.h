@@ -58,12 +58,13 @@ public:
 	                    vk::Extent2D swapchainExtent);
 
 	/**
-	 * @brief Captures all G-Buffer, shadow, and intensity attachments.
+	 * @brief Captures all G-Buffer, post-chain and overlay attachments.
 	 *
-	 * Iterates G-Buffer attachments (Position, Normal, Albedo,
-	 * MetallicRoughness, HDRColor, SSAO, SSR), exports shadow cubemaps
-	 * as equirectangular projections, and dumps shadow intensity array
-	 * layers.
+	 * Iterates the screen-space attachments (Position, Normal, Albedo,
+	 * MetallicRoughness, IDBuffer, HDRColor, SSAO, SSR, OverlayOutput - the last
+	 * being what the swapchain blit reads, i.e. the presented image plus overlays),
+	 * exports shadow cubemaps as equirectangular projections, and dumps shadow
+	 * intensity array layers.
 	 *
 	 * @param renderCache       Render cache for attachment & shadow map access.
 	 * @param extent            Viewport extent for G-Buffer attachments.
@@ -96,7 +97,12 @@ public:
 	 *
 	 * Reads back a D32_SFLOAT 2D shadow map, normalises depth values to
 	 * [0, 1], and saves as an R8 grayscale PNG.  Returns empty string for
-	 * cubemap shadow maps.
+	 * cubemap shadow maps, for a map that was never rendered, or when the
+	 * readback/save fails.
+	 *
+	 * The depth map is left in the state it entered in - the readback restores
+	 * it inside its own submission - so the shadow pass can keep rendering into
+	 * it regardless of whether the PNG was written.
 	 *
 	 * @param renderCache     Render cache for shadow map access.
 	 * @param lightUID        UID of the sun light whose shadow map to export.
@@ -153,6 +159,9 @@ public:
 
 	/**
 	 * @brief Captures a single layer of an Image array to a PNG file.
+	 *
+	 * The array is left in the state it entered in: the readback restores the
+	 * captured layer's subresource range within its own submission.
 	 *
 	 * @param layerIndex 0-based layer index within the array image.
 	 * @return true on success.

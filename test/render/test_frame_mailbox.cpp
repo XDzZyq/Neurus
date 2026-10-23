@@ -28,6 +28,14 @@
  * including the coalescing of repeated Wake() into a single Interrupted and the
  * enqueue-then-Wake ordering the owner relies on.
  *
+ * Two more behaviours follow from the renderer being allowed to stop drawing:
+ * AcquireMode lets a consumer that is still accumulating redraw the frame it
+ * already holds (Reuse, which never blocks) or park on control messages alone
+ * (Idle, which ignores publishes), and Invalidate() guarantees that a frame
+ * published before a request is never drawn after it. Both are pinned below,
+ * including the rule that they fall back to Wait until a frame has actually been
+ * delivered.
+ *
  * `Publish` must also MOVE: a snapshot owns two vectors and two draw lists, so
  * a copy per frame is a per-frame allocation on the UI thread. That is pinned
  * by capturing `meshes.data()` before publishing and asserting the acquired
@@ -102,6 +110,28 @@ struct Handoff
 	AcquireStatus               status       = AcquireStatus::Frame;  ///< What that Acquire() returned.
 	int                         acquiredId   = 0;        ///< activeObjectId it saw, on Frame.
 	const MeshInstanceSnapshot* acquiredData = nullptr;  ///< Its meshes buffer address, on Frame.
+
+	/// Set before the consumer starts: which mode that single Acquire() asks for.
+	AcquireMode mode = AcquireMode::Wait;
+
+	/**
+	 * @brief Clear the per-Acquire record so one handoff can serve several phases.
+	 *
+	 * The mailbox is deliberately KEPT: a later phase must run against the very
+	 * mailbox the earlier phase seeded and invalidated - a fresh one would have
+	 * its own needFresh state and no slot, which is how a test can pass without
+	 * observing the behaviour it claims to pin. Call only with no consumer
+	 * running: the fields are otherwise only written under `mutex`.
+	 */
+	void Reset()
+	{
+		std::lock_guard<std::mutex> lock(mutex);
+		parked       = false;
+		finished     = false;
+		status       = AcquireStatus::Frame;
+		acquiredId   = 0;
+		acquiredData = nullptr;
+	}
 };
 
 /** @brief Wait for a predicate on the handoff, bounded. @return False on timeout. */
@@ -115,7 +145,8 @@ bool WaitUntil(Handoff& handoff, Pred pred)
 /**
  * @brief Consumer body: announce, block in Acquire() once, record what came back.
  *
- * Takes the handoff by value so the thread keeps it alive on its own.
+ * Takes the handoff by value so the thread keeps it alive on its own. The mode
+ * is read from the handoff, so one body serves Wait, Reuse and Idle.
  */
 void ConsumeOneFrame(std::shared_ptr<Handoff> handoff)
 {
@@ -126,7 +157,7 @@ void ConsumeOneFrame(std::shared_ptr<Handoff> handoff)
 	handoff->cv.notify_all();
 
 	RenderFrameSnapshot frame;
-	const AcquireStatus status = handoff->mailbox.Acquire(frame);
+	const AcquireStatus status = handoff->mailbox.Acquire(frame, handoff->mode);
 
 	{
 		std::lock_guard<std::mutex> lock(handoff->mutex);
@@ -149,6 +180,46 @@ void LetConsumerReachTheWait()
 {
 	for (int spin = 0; spin < 128; ++spin)
 		std::this_thread::yield();
+}
+
+/// @brief How long a "still blocked" probe waits before it concludes nothing happened.
+constexpr auto BLOCKED_PROBE_LIMIT = std::chrono::milliseconds(100);
+
+/**
+ * @brief Bounded check that the consumer has NOT returned yet.
+ *
+ * A state with no event to wait on is only observable by waiting a little; the
+ * flake direction is safe, since a scheduling hiccup can only make this return
+ * true when the consumer really did finish. True means "it finished", i.e. a
+ * failure for every caller below.
+ */
+bool FinishedWithin(Handoff& handoff, std::chrono::milliseconds limit)
+{
+	std::unique_lock<std::mutex> lock(handoff.mutex);
+	return handoff.cv.wait_for(lock, limit, [&] { return handoff.finished; });
+}
+
+/**
+ * @brief Start a consumer on @p handoff and wait (bounded) until it is parked.
+ * @param consumer  Receives the new thread; joined by the caller on success.
+ * @return False when the consumer never announced itself. The thread may then
+ *         still be about to enter Acquire(), so it is detached after a
+ *         RequestStop() - a detached thread parked forever on a destroyed
+ *         mailbox is far worse than a failure. The handoff is a shared_ptr the
+ *         consumer co-owns, so a detached consumer never dangles.
+ */
+bool StartAndPark(std::thread& consumer, const std::shared_ptr<Handoff>& handoff)
+{
+	consumer = std::thread(ConsumeOneFrame, handoff);
+	if (WaitUntil(*handoff, [&] { return handoff->parked; }))
+	{
+		LetConsumerReachTheWait();
+		return true;
+	}
+
+	handoff->mailbox.RequestStop();
+	consumer.detach();
+	return false;
 }
 
 } // namespace
@@ -214,8 +285,8 @@ TEST(FrameMailboxTest, Acquire_EmptiesTheSlotSoAReplacedFrameIsGoneNotShadowed)
 	// scheduling hiccup can only ever let `finished` flip true when it should
 	// not - a false PASS of the still-blocked probe - never a false failure. The
 	// RequestStop + join at the end is unconditional, so no thread is left
-	// parked. This is the one place in the file where a fixed duration is
-	// justified: it bounds "still blocked", a property with no event to wait on.
+	// parked. A fixed duration is justified here because it bounds "still
+	// blocked", a property with no event to wait on.
 	auto handoff = std::make_shared<Handoff>();
 	handoff->mailbox.Publish(MakeSnapshot(1));
 	handoff->mailbox.Publish(MakeSnapshot(2));
@@ -748,4 +819,265 @@ TEST(FrameMailboxTest, Acquire_NeverYieldsAFrameOlderThanOneAlreadyConsumed)
 			<< "frame " << received[i] << " arrived after " << received[i - 1];
 	for (int id : received)
 		EXPECT_TRUE(id >= 1 && id <= PUBLISH_COUNT) << "unknown frame id " << id;
+}
+
+// ============================================================================
+// Reuse: redraw the frame already held instead of waiting for a new one
+// ============================================================================
+
+TEST(FrameMailboxTest, Acquire_ReuseReturnsRepeatWithoutBlockingWhenNoFrameIsPending)
+{
+	// The point of Reuse: a consumer that is still accumulating redraws what it
+	// holds. Reaching the second call is the assertion - a Reuse that blocked
+	// would never get here, since the slot is empty and nobody will publish.
+	FrameMailbox mailbox;
+
+	mailbox.Publish(MakeSnapshot(1));
+	RenderFrameSnapshot held;
+	ASSERT_EQ(mailbox.Acquire(held, AcquireMode::Reuse), AcquireStatus::Frame)
+		<< "the first Reuse has no frame to repeat, so it must wait for one";
+	EXPECT_EQ(held.activeObjectId, 1);
+
+	RenderFrameSnapshot         probe  = MakeSnapshot(-1, 3);
+	const MeshInstanceSnapshot* before = probe.meshes.data();
+	EXPECT_EQ(mailbox.Acquire(probe, AcquireMode::Reuse), AcquireStatus::Repeat)
+		<< "an empty slot must yield Repeat, not a block and not a stale frame";
+	EXPECT_EQ(probe.activeObjectId, -1) << "out must be untouched on Repeat";
+	EXPECT_EQ(probe.meshes.data(), before) << "out storage must be untouched on Repeat";
+}
+
+TEST(FrameMailboxTest, Acquire_ReuseTakesAPendingFrameInsteadOfRepeating)
+{
+	// Reuse is not "ignore the producer": a frame that is actually there is
+	// taken, which is what lets accumulation follow a camera that moved.
+	FrameMailbox mailbox;
+	mailbox.Publish(MakeSnapshot(2));
+	RenderFrameSnapshot first;
+	ASSERT_EQ(mailbox.Acquire(first), AcquireStatus::Frame);
+
+	mailbox.Publish(MakeSnapshot(3));
+	RenderFrameSnapshot second;
+	ASSERT_EQ(mailbox.Acquire(second, AcquireMode::Reuse), AcquireStatus::Frame)
+		<< "Reuse must take a pending frame rather than repeat the held one";
+	EXPECT_EQ(second.activeObjectId, 3);
+
+	EXPECT_EQ(mailbox.Acquire(second, AcquireMode::Reuse), AcquireStatus::Repeat)
+		<< "the delivery emptied the slot, so the next Reuse repeats";
+}
+
+TEST(FrameMailboxTest, Acquire_ReuseAndIdleWaitForTheVeryFirstFrame)
+{
+	// needFresh starts true because the consumer holds no frame yet: Reuse would
+	// have nothing to redraw and Idle nothing to keep showing. Both must behave
+	// exactly like Wait until the first Publish arrives.
+	for (AcquireMode mode : {AcquireMode::Reuse, AcquireMode::Idle})
+	{
+		auto handoff = std::make_shared<Handoff>();
+		handoff->mode = mode;
+
+		std::thread consumer;
+		ASSERT_TRUE(StartAndPark(consumer, handoff))
+			<< "consumer never announced itself (mode " << static_cast<int>(mode) << ")";
+		EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
+			<< "mode " << static_cast<int>(mode) << " returned before any frame existed";
+
+		handoff->mailbox.Publish(MakeSnapshot(4));
+		ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
+			<< "the first Publish did not release mode " << static_cast<int>(mode);
+		consumer.join();
+
+		EXPECT_EQ(handoff->status, AcquireStatus::Frame)
+			<< "the first frame must be delivered, not repeated";
+		EXPECT_EQ(handoff->acquiredId, 4);
+	}
+}
+
+// ============================================================================
+// Idle: park until a control message, and leave published frames alone
+// ============================================================================
+
+TEST(FrameMailboxTest, Acquire_IdleIgnoresAPublishAndYieldsToAWake)
+{
+	// A renderer that has converged has nothing to do with a new frame, so an
+	// Idle consumer must not be woken out of its wait by one - and must leave
+	// the frame in the slot for whoever asks next. The blocked probe is the only
+	// way to observe "still waiting"; a scheduling hiccup can only make it pass,
+	// never fail.
+	auto handoff  = std::make_shared<Handoff>();
+	handoff->mode = AcquireMode::Idle;
+
+	// Seed the mailbox the consumer actually uses: until it has delivered a
+	// frame, needFresh makes Idle behave like Wait.
+	handoff->mailbox.Publish(MakeSnapshot(1));
+	RenderFrameSnapshot first;
+	ASSERT_EQ(handoff->mailbox.Acquire(first), AcquireStatus::Frame) << "seed the held-frame state";
+
+	std::thread consumer;
+	ASSERT_TRUE(StartAndPark(consumer, handoff)) << "consumer never announced itself";
+
+	handoff->mailbox.Publish(MakeSnapshot(2));
+	EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
+		<< "a Publish must not end an Idle wait";
+
+	handoff->mailbox.Wake();
+	ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
+		<< "Wake must return an Idle consumer";
+	consumer.join();
+
+	EXPECT_EQ(handoff->status, AcquireStatus::Interrupted) << "an Idle wait ends on Wake, not on a frame";
+	EXPECT_EQ(handoff->acquiredId, 0) << "Idle must never take a frame";
+
+	RenderFrameSnapshot kept;
+	ASSERT_EQ(handoff->mailbox.Acquire(kept), AcquireStatus::Frame)
+		<< "the published frame must still be in the slot for the next Wait";
+	EXPECT_EQ(kept.activeObjectId, 2) << "Idle consumed the frame it was not going to draw";
+}
+
+TEST(FrameMailboxTest, Acquire_IdleReturnsStoppedWhenStopIsRequested)
+{
+	// An Idle consumer is the most deeply parked one there is - it ignores
+	// publishes - so shutdown must still reach it. A frame is delivered first so
+	// the wait really is an Idle one (needFresh cleared) and not the fallback to
+	// Wait that a mailbox with no frame yet gets.
+	auto handoff = std::make_shared<Handoff>();
+
+	handoff->mailbox.Publish(MakeSnapshot(1));
+	RenderFrameSnapshot first;
+	ASSERT_EQ(handoff->mailbox.Acquire(first), AcquireStatus::Frame) << "seed the held-frame state";
+
+	handoff->mode = AcquireMode::Idle;
+
+	std::thread consumer;
+	ASSERT_TRUE(StartAndPark(consumer, handoff)) << "consumer never announced itself";
+
+	handoff->mailbox.RequestStop();
+	ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
+		<< "RequestStop must release an Idle consumer";
+	consumer.join();
+
+	EXPECT_EQ(handoff->status, AcquireStatus::Stopped);
+	EXPECT_EQ(handoff->acquiredId, 0) << "a stopped Acquire must not take the pending slot";
+}
+
+// ============================================================================
+// Invalidate: a frame published before a request must never be drawn after it
+// ============================================================================
+
+TEST(FrameMailboxTest, Invalidate_DropsThePendingFrameSoOnlyALaterPublishIsDrawn)
+{
+	// The reason Invalidate exists. A snapshot published before the request
+	// describes the state the request replaced, so it must not reach the
+	// renderer at all - not even once, and not even if the consumer had not got
+	// to it yet.
+	//
+	// Every step runs against ONE mailbox, the one the consumer waits on. A
+	// fresh mailbox would have needFresh set and no slot, so a consumer parked
+	// there would block for its own reason and the probe below would prove
+	// nothing about the drop.
+	auto handoff = std::make_shared<Handoff>();
+
+	handoff->mailbox.Publish(MakeSnapshot(1));
+	handoff->mailbox.Invalidate();
+
+	RenderFrameSnapshot out = MakeSnapshot(-1);
+	EXPECT_EQ(handoff->mailbox.Acquire(out), AcquireStatus::Interrupted)
+		<< "Invalidate must raise the wake so the request runs before any draw";
+	EXPECT_EQ(out.activeObjectId, -1) << "out must be untouched on Interrupted";
+
+	// The dropped frame must be gone: a waiter on the same mailbox now has
+	// nothing to take. Had the stale slot survived, this Acquire would return
+	// frame 1 at once and the probe would fail.
+	std::thread consumer;
+	ASSERT_TRUE(StartAndPark(consumer, handoff)) << "consumer never announced itself";
+	EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
+		<< "the pre-Invalidate frame was still deliverable";
+
+	handoff->mailbox.Publish(MakeSnapshot(2));
+	ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
+		<< "the frame published after Invalidate was never delivered";
+	consumer.join();
+
+	EXPECT_EQ(handoff->status, AcquireStatus::Frame);
+	EXPECT_EQ(handoff->acquiredId, 2) << "only a frame published after Invalidate may be drawn";
+}
+
+TEST(FrameMailboxTest, Invalidate_ForcesReuseAndIdleToWaitForAFreshFrame)
+{
+	// Reuse would happily redraw the held frame forever, which is exactly wrong
+	// right after a request: the held frame predates it. Invalidate must demote
+	// both Reuse and Idle to Wait until a fresh frame has been delivered.
+	//
+	// Both phases run against the one mailbox that was seeded and invalidated,
+	// because that state is the whole subject: a consumer on a fresh mailbox
+	// would block merely because it has never seen a frame.
+	auto handoff = std::make_shared<Handoff>();
+
+	handoff->mailbox.Publish(MakeSnapshot(1));
+	RenderFrameSnapshot held;
+	ASSERT_EQ(handoff->mailbox.Acquire(held, AcquireMode::Reuse), AcquireStatus::Frame);
+	ASSERT_EQ(handoff->mailbox.Acquire(held, AcquireMode::Reuse), AcquireStatus::Repeat)
+		<< "baseline: Reuse repeats rather than blocking";
+
+	handoff->mailbox.Invalidate();
+	EXPECT_EQ(handoff->mailbox.Acquire(held, AcquireMode::Reuse), AcquireStatus::Interrupted)
+		<< "Invalidate raises the wake";
+
+	// Reuse now waits instead of repeating.
+	{
+		handoff->mode = AcquireMode::Reuse;
+
+		std::thread consumer;
+		ASSERT_TRUE(StartAndPark(consumer, handoff)) << "consumer never announced itself (Reuse)";
+		EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
+			<< "Reuse repeated a frame that predates Invalidate";
+
+		handoff->mailbox.Publish(MakeSnapshot(2));
+		ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
+			<< "the fresh frame never reached the Reuse consumer";
+		consumer.join();
+
+		EXPECT_EQ(handoff->status, AcquireStatus::Frame) << "with needFresh set, Reuse waits like Wait";
+		EXPECT_EQ(handoff->acquiredId, 2);
+	}
+
+	// Idle likewise behaves like Wait - it must take the fresh frame. Clear only
+	// the per-Acquire record: the mailbox keeps the state phase 1 left behind.
+	handoff->Reset();
+	handoff->mailbox.Invalidate();
+	EXPECT_EQ(handoff->mailbox.Acquire(held, AcquireMode::Idle), AcquireStatus::Interrupted);
+	{
+		handoff->mode = AcquireMode::Idle;
+
+		std::thread consumer;
+		ASSERT_TRUE(StartAndPark(consumer, handoff)) << "consumer never announced itself (Idle)";
+		EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
+			<< "Idle returned before the fresh frame existed";
+
+		handoff->mailbox.Publish(MakeSnapshot(3));
+		ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
+			<< "the fresh frame never reached the Idle consumer";
+		consumer.join();
+
+		EXPECT_EQ(handoff->status, AcquireStatus::Frame) << "with needFresh set, Idle waits like Wait";
+		EXPECT_EQ(handoff->acquiredId, 3);
+	}
+}
+
+TEST(FrameMailboxTest, Invalidate_StopStillOutranksEverything)
+{
+	// Invalidate sets two flags at once; neither may shield a stopped mailbox.
+	// Every mode must still answer Stopped, and out must stay untouched.
+	FrameMailbox mailbox;
+	mailbox.Publish(MakeSnapshot(1));
+	mailbox.Invalidate();
+	mailbox.Publish(MakeSnapshot(2));  // a fresh frame is pending
+	mailbox.RequestStop();
+
+	for (AcquireMode mode : {AcquireMode::Wait, AcquireMode::Reuse, AcquireMode::Idle})
+	{
+		RenderFrameSnapshot out = MakeSnapshot(-1);
+		EXPECT_EQ(mailbox.Acquire(out, mode), AcquireStatus::Stopped)
+			<< "stop must outrank the fresh-frame requirement (mode " << static_cast<int>(mode) << ")";
+		EXPECT_EQ(out.activeObjectId, -1) << "out must be untouched when Acquire returns Stopped";
+	}
 }

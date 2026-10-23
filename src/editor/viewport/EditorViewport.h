@@ -256,10 +256,15 @@ public:
 	/**
 	 * @brief Rebuilds both overlay payloads if they are dirty.
 	 * @param scene Walked for debug objects and for the gizmo's anchor; never retained.
+	 * @return True when at least one payload was actually rebuilt, i.e. this
+	 *         frame's overlays differ from the ones the renderer last saw.
 	 *
-	 * Returns almost immediately when clean, which is the common case.
+	 * The return value is the only question the Editor cannot answer itself: the
+	 * dirty flags belong to the builders, and a renderer that has stopped after
+	 * accumulating its samples has to be told to redraw the overlays. False is
+	 * the common case and costs almost nothing.
 	 */
-	void RebuildOverlays(const Scene& scene);
+	bool RebuildOverlays(const Scene& scene);
 
 	/**
 	 * @brief Marks both overlays stale: something visible changed.

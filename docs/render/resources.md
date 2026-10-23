@@ -22,11 +22,15 @@ outgoing scene, reset accumulation - is posted instead as a typed
   (`RenderRequestQueue`, a `BatchQueue<RenderRequest>`). `DrawFrame()` drains the whole batch
   with `TakeAll()` *after* the frame-slot fence wait and *before* swapchain
   acquire (and before the no-camera early-out). `RenderRequestExecutor` runs each
-  request against the device, cache, `UploadManager` and `GeometryPass`;
-  `ResetAccumulationRequest` is the one request `DeferredRenderer` keeps for
-  itself, because it writes renderer state (`m_iteration`) the executor does not
-  own. Requests posted inside one `Editor::Edit()` execute in that same tick's
-  `DrawFrame()`, so there is no one-frame delay.
+  request against the device, cache, `UploadManager` and `GeometryPass`.
+  `DeferredRenderer` keeps two requests for itself, because they write renderer
+  state the executor does not own: `ResetAccumulationRequest` and
+  `RedrawOverlaysRequest`. Every other request restarts accumulation
+  (`m_iteration = 0`) before it reaches the executor, so the next frame samples
+  from scratch. `RedrawOverlaysRequest` is the one exception - it marks the
+  overlays stale and keeps the converged scene image, which is the whole reason
+  it exists. Requests posted inside one `Editor::Edit()` execute in that same
+  tick's `DrawFrame()`, so there is no one-frame delay.
 
 - **Why that drain placement.** With `kMaxFramesInFlight == 1` a signaled fence
   means the GPU has finished every submitted frame, so a handler that frees or
@@ -52,13 +56,23 @@ outgoing scene, reset accumulation - is posted instead as a typed
 - **Ordering against frames on the render thread.** With `RenderThread` driving
   the renderer, two rules keep "Edit -> Upload -> Reset -> Render" intact
   without the main thread ever waiting: `RenderThread::Post` always enqueues and
-  *then* wakes (a pending wake outranks a pending frame in `FrameMailbox`, so the
-  loop drains once more before it draws), and every `Post` of a tick happens
-  before that tick's frame is published. A request posted after the publish is
-  only guaranteed to run before the next frame. The loop waits the frame fence
-  itself before draining, because an interrupted iteration does not draw.
-  Requests are never bundled into the frame message: the mailbox is
+  *then* invalidates the mailbox (a pending wake outranks a pending frame, so the
+  loop drains once more before it draws, and the held snapshot - published before
+  the request - is dropped so it cannot be drawn after it), and every `Post` of a
+  tick happens before that tick's frame is published. A request posted after the
+  publish is only guaranteed to run before the next frame. The loop waits the
+  frame fence itself before draining, because an interrupted iteration does not
+  draw. Requests are never bundled into the frame message: the mailbox is
   latest-wins, so a dropped frame would drop its requests.
+
+- **Waiting is decided by the work, not the tick.** Once accumulation has
+  converged there may be nothing to draw for many published frames, so
+  `RenderThread` asks `IFrameRenderer::NextWork()` before it waits: `Sample`
+  reuses the snapshot already held (`AcquireMode::Reuse`), `Overlay` and `Retry`
+  wait for a new one, and `Idle` parks on the mailbox ignoring publishes until a
+  control message arrives. Resize and surface change invalidate the held frame
+  (they restart accumulation); pick and screenshot only wake the loop, since they
+  read what was drawn last.
 
 > The `UploadManager` is owned by the Application and borrowed by the executor
 > via `DeferredRenderer::SetUploadManager()`. Because the executor is built in the
@@ -67,7 +81,7 @@ outgoing scene, reset accumulation - is posted instead as a typed
 
 ## Attachments
 
-All screen-space attachments (Position, Normal, Albedo, MetallicRoughness, Depth, HDRColor, SSAO, SelectionOutline, ComposedOutput, FXAAOutput) are created lazily via `RenderCache::GetAttachment(name, extent)` on first use.
+All screen-space attachments (Position, Normal, Albedo, MetallicRoughness, Depth, HDRColor, SSAO, SelectionOutline, ComposedOutput, FXAAOutput, OverlayOutput) are created lazily via `RenderCache::GetAttachment(name, extent)` on first use.
 
 Per-light shadow maps are managed via `RenderCache::GetShadowMap(lightUID, lightType)`:
 
@@ -89,9 +103,10 @@ The shadow intensity array (R8_UNORM, layered 2D_ARRAY) is created via `RenderCa
 | SSAO | R8_UNORM | 0 (no occlusion) | Screen-space ambient occlusion |
 | SSR | R16G16B16A16_SFLOAT | (0,0,0,0) | Screen-space reflections (planned) |
 | SelectionOutline | R8_UNORM | 0 | Selected-object edge highlight (SelectionOutlinePass output) |
-| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Tonemapped scene (ComposePass output); FXAA's input, or the overlay target (DebugPass then GizmoPass) when FXAA is off |
-| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased scene (FXAAPass output); the overlay target (DebugPass then GizmoPass) when FXAA is on |
+| ComposedOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Tonemapped scene (ComposePass output); FXAA's input, or the overlay copy's source when FXAA is off |
+| FXAAOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | FXAA anti-aliased scene (FXAAPass output); the overlay copy's source when FXAA is on |
 | FXAAOffsets | R16G16_SFLOAT | (0,0) | FXAA edge subpixel offsets (RG16F, 2-channel, sampled+storage) |
+| OverlayOutput | R16G16B16A16_SFLOAT | (0,0,0,0) | Scene tail copy + selection highlight + overlays (OverlayCopyPass output, then DebugPass/GizmoPass in place); the swapchain blit source |
 | ShadowMap | D32_SFLOAT | 1.0 | Per-light shadow depth (RenderCache-owned). Cubemap (6-layer 2D_ARRAY, 1024x1024) for point lights; 2D (2048x2048) for sun lights |
 | ShadowIntensity | R8_UNORM | 0 (no shadow) | Layered 2D_ARRAY, one layer per shadow-casting light (RenderCache-owned) |
 
@@ -178,7 +193,7 @@ Barrier::Transition(cmdBuf, myImage, ImageState::ColorShaderRead);
 
 **Access masks carry the read bits, not just the write bits.** `ColorAttachment` and `DepthAttachment` map to `...AttachmentWrite | ...AttachmentRead`, because an attachment reached with `VK_ATTACHMENT_LOAD_OP_LOAD` (DebugPass draws over its target) or consumed by the depth test without depth writes (DebugPass again) *reads* the image through the attachment stage - a write-only `dstAccessMask` leaves the previous writer's data unavailable to the load, which on a tiler shows up as stale tiles blended into the frame. Passes that only clear-and-write are unaffected by the wider mask.
 
-**A pass transitions the images it is about to *use*, and leaves its own outputs in its own write state.** A producer must never pre-transition an output into the state it guesses the next consumer wants. `Barrier::Transition` derives the `srcAccessMask` from the state the image is *currently* in, so a producer that hands over e.g. `TransferSrc` gives the consumer's own barrier a src scope of `eTransferRead` - which names no writes, makes none available, and so creates a memory dependency covering nothing. `ComposePass` used to end with `Transition(ComposedOutput, TransferSrc)` "ready for the blit"; `DebugPass`'s `TransferSrc -> ColorAttachment` barrier then failed to order its overlay against `ComposePass`'s compute writes, and on MoltenVK the compute and render encoders overlapped: every frame kept a different random subset of the overlay's tiles with `ComposePass`'s output in the rest - a per-frame-random tear that no amount of extra serialization *after* `DebugPass` could fix. The rule now: `ComposePass`/`FXAAPass` leave their output in `ShaderWrite`, `DebugPass` and `GizmoPass` leave their (shared) target in `ColorAttachment`, and the swapchain blit in `DeferredRenderer::recordFrame` transitions its own source to `TransferSrc`. The same hazard shape applies unchanged now that `DebugPass` runs after `FXAAPass` - the upstream compute dispatch whose writes its barrier must cover is FXAA's rather than `ComposePass`'s, but it is still `ShaderWrite -> ColorAttachment` out of a compute pass, so nothing about the pattern moves. `GizmoPass` then transitions the same image `ColorAttachment -> ColorAttachment`, which is *not* a no-op: `Barrier::Transition` does not early-out when before == after, so the write-after-write dependency between the two overlay passes is still emitted. Note that validation does not catch this - the layouts are all consistent - so synchronization validation plus a coloured `LOAD_OP_CLEAR` probe is the way to find it.
+**A pass transitions the images it is about to *use*, and leaves its own outputs in its own write state.** A producer must never pre-transition an output into the state it guesses the next consumer wants. `Barrier::Transition` derives the `srcAccessMask` from the state the image is *currently* in, so a producer that hands over e.g. `TransferSrc` gives the consumer's own barrier a src scope of `eTransferRead` - which names no writes, makes none available, and so creates a memory dependency covering nothing. `ComposePass` used to end with `Transition(ComposedOutput, TransferSrc)` "ready for the blit"; `DebugPass`'s `TransferSrc -> ColorAttachment` barrier then failed to order its overlay against `ComposePass`'s compute writes, and on MoltenVK the compute and render encoders overlapped: every frame kept a different random subset of the overlay's tiles with `ComposePass`'s output in the rest - a per-frame-random tear that no amount of extra serialization *after* `DebugPass` could fix. The rule now: `ComposePass`/`FXAAPass` leave their output in `ShaderWrite`, `OverlayCopyPass` reads that scene tail (`ColorShaderRead`) and leaves `OverlayOutput` in `ShaderWrite`, `DebugPass` and `GizmoPass` leave `OverlayOutput` in `ColorAttachment`, and the swapchain blit in `DeferredRenderer::recordFrame` transitions its own source to `TransferSrc`. The same hazard shape applies unchanged now that `DebugPass` runs after `OverlayCopyPass` - the upstream compute dispatch whose writes its barrier must cover is the copy's rather than `FXAA`'s, but it is still `ShaderWrite -> ColorAttachment` out of a compute pass, so nothing about the pattern moves. `GizmoPass` then transitions the same image `ColorAttachment -> ColorAttachment`, which is *not* a no-op: `Barrier::Transition` does not early-out when before == after, so the write-after-write dependency between the two overlay passes is still emitted. Note that validation does not catch this - the layouts are all consistent - so synchronization validation plus a coloured `LOAD_OP_CLEAR` probe is the way to find it.
 
 **`Undefined`/`Invalid` use `eAllCommands`, never `eTopOfPipe`, as a source stage.** They only ever appear as the "before" state of a discard transition, so the access mask stays empty - but `eTopOfPipe` in a `srcStageMask` creates no execution dependency at all, which leaves a discard transition unordered against whoever last read the image. The concrete case is the swapchain image: it is transitioned `Undefined -> TransferDst` for the final blit while the presentation engine may still be reading it. For the same reason the submit waits the acquire semaphore at `eColorAttachmentOutput | eTransfer` - the first use of a swapchain image on this path is a transfer, not a color-attachment write. Both were caught by synchronization validation (`SYNC-HAZARD-WRITE-AFTER-READ` at `vkQueueSubmit`); re-run it with `VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT` after touching barriers or submit scopes.
 

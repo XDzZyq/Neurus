@@ -38,6 +38,7 @@ Defaults are written only in the member initializers:
 | `r_ao_ksize` | `16` | AO kernel size (number of samples) |
 | `r_ao_radius` | `0.5` | AO sample radius in world space |
 | `r_sample_pf` | `128` | Samples per frame for progressive rendering |
+| `r_sampling_count` | `64` | Scene frames accumulated after a restart before the renderer stops sampling (clamped to at least 1) |
 | `r_transparent` | `false` | Transparent background (checkerboard instead of skybox) |
 | `r_debug_draw` | `true` | Master switch for the viewport debug/gizmo overlay |
 | `r_fxaa_subpix` | `0.75` | Sub-pixel aliasing removal amount (0.0-1.0) |
@@ -45,6 +46,8 @@ Defaults are written only in the member initializers:
 | `r_fxaa_edge_threshold_min` | `0.0833` | Minimum edge threshold (0.0312-0.0833) |
 
 `r_debug_draw` gates publication, not pipeline topology: when false `Editor::BuildSnapshot()` leaves the frame's `debugDraw` empty with `HasDebugDraw()` false, and `DebugPass` returns before touching any image, so the pass stays in the render graph unconditionally and toggling this costs no graph rebuild.
+
+`r_sampling_count` is the depth of the progressive image: `DeferredRenderer::NextWork()` reports `Sample` while fewer than `max(1, r_sampling_count)` scene frames have been accumulated since the last restart, then `Overlay` while overlay content is stale and `Idle` otherwise. It is read on each sample frame, and a new value always arrives with the restart a config change posts, so the cached budget is never compared against a run it does not describe. See [Temporal Accumulation](../render/temporal.md).
 
 ## Defaults as the single source of truth
 

@@ -2,9 +2,10 @@
  * @file GizmoPass.h
  * @brief Overlay raster pass that draws the modal transform gizmo's guides.
  *
- * Draws the gizmo overlay over the final shaded image with LOAD_OP_LOAD and no
- * depth attachment, so guides stay visible through geometry. The pass always
- * sits in the graph and returns early when its payload is null or empty.
+ * Draws the gizmo overlay into the overlay image (OverlayOutput under
+ * OverlayEngine) with LOAD_OP_LOAD and no depth attachment, so guides stay
+ * visible through geometry. The pass always sits in the graph and returns early
+ * when its payload is null or empty.
  */
 
 #pragma once
@@ -77,9 +78,9 @@ public:
 	/**
 	 * @brief Chooses the color attachment the guides draw into.
 	 *
-	 * ComposedOutput by default, or FXAAOutput when FXAA runs. Must be called
-	 * before the pass is registered with the render graph, which caches
-	 * GetIO() at registration time.
+	 * OverlayOutput under OverlayEngine (what production does), ComposedOutput by
+	 * default. Must be called before the pass is registered with the render graph,
+	 * which caches GetIO() at registration time.
 	 */
 	void SetTarget(AttachmentName target) { p_target = target; }
 
@@ -143,7 +144,7 @@ private:
 	/// @brief Device pointSizeRange[1], queried once and pushed to the point shader.
 	float p_maxPointSizePx = 1.0f;
 
-	/// @brief Color target: ComposedOutput, or FXAAOutput when FXAA runs (SetTarget).
+	/// @brief Color target: OverlayOutput under OverlayEngine, ComposedOutput by default (SetTarget).
 	AttachmentName p_target = AttachmentName::ComposedOutput;
 };
 
