@@ -2,8 +2,8 @@
  * @file DebugPass.h
  * @brief Overlay raster pass that draws every viewport debug primitive.
  *
- * Draws the debug overlay last in the shading chain, into whichever post-chain
- * image ends it, with LOAD_OP_LOAD so the picture underneath survives. Reads
+ * Draws the debug overlay into the overlay image (OverlayOutput under
+ * OverlayEngine), with LOAD_OP_LOAD so the picture underneath survives. Reads
  * the G-Buffer depth so debug geometry is occluded unless it asks not to be.
  * Three pipelines: lines, points and wireframe; x-ray is a dynamic depth-test
  * toggle, not a fourth pipeline.
@@ -95,12 +95,11 @@ public:
 	/**
 	 * @brief Chooses the color attachment the overlay draws into.
 	 *
-	 * ComposedOutput (the default) when the overlay is the last thing to touch
-	 * the frame, FXAAOutput when FXAA runs in between. Must be called before
-	 * the pass is registered with the render graph, which caches GetIO() at
-	 * registration. Only the two post-chain color attachments are valid: they
-	 * share ComposedOutput's format and usage, which the pipelines are built
-	 * against.
+	 * OverlayOutput when the pass is driven by OverlayEngine (what production
+	 * does), ComposedOutput by default. Any color attachment sharing
+	 * ComposedOutput's format and usage works, which is what the pipelines are
+	 * built against. Must be called before the pass is registered with the render
+	 * graph, which caches GetIO() at registration.
 	 */
 	void SetTarget(AttachmentName target) { p_target = target; }
 
@@ -170,7 +169,7 @@ private:
 	/// @brief Device pointSizeRange[1], queried once and pushed to the point shader.
 	float p_maxPointSizePx = 1.0f;
 
-	/// @brief Color target: ComposedOutput, or FXAAOutput when FXAA runs (SetTarget).
+	/// @brief Color target: OverlayOutput under OverlayEngine, ComposedOutput by default (SetTarget).
 	AttachmentName p_target = AttachmentName::ComposedOutput;
 };
 

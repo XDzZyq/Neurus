@@ -195,6 +195,17 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 		return {};
 	}
 
+	// A cubemap that was never rendered has nothing to project, and there is no
+	// legal "original" state to return it to afterwards (UNDEFINED may only be a
+	// source layout).
+	const ImageState originalState = cubemap.State();
+	if (originalState == ImageState::Undefined || originalState == ImageState::Invalid)
+	{
+		NEURUS_ERR("[ExportShadowDepthEquirect] Cubemap for lightUID=" << lightUID
+		           << " was never rendered - skipping");
+		return {};
+	}
+
 	const uint32_t cubeRes = cubemapResolution;
 	const uint32_t equiWidth = cubeRes * 2;
 	const uint32_t equiHeight = cubeRes;
@@ -300,6 +311,15 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 			Barrier::Transition(*cmd, equirectImage, ImageState::TransferSrc);
 		}
 
+		// Return the shadow cubemap to the state it entered in. The compute
+		// shader only samples it, but leaving it in ColorShaderRead would make
+		// the tracked state disagree with the layout the shadow pass expects
+		// (DepthShaderRead / DEPTH_STENCIL_READ_ONLY_OPTIMAL) and every later
+		// barrier would be recorded against a state the image is not in.
+		{
+			Barrier::Transition(*cmd, cubemap, originalState);
+		}
+
 		cmd.end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmd));
@@ -362,8 +382,15 @@ std::string Screenshot::ExportShadowDepth(RenderCache& renderCache,
 	}
 
 	const vk::Extent2D extent = depthMap.Extent();
-	const auto originalState = depthMap.State();
 
+	// ReadImageData transitions the depth map to TRANSFER_SRC and returns it to
+	// its own state within the same submission, so the shadow pass still finds
+	// the layout its tracked state promises. Do not restore it here: a second,
+	// caller-side restore used to be gated on the PNG save, and the gate never
+	// opened because the tracked state is not changed by the readback.
+	//
+	// A map that was never rendered (UNDEFINED) has nothing to export and is
+	// refused inside ReadImageData.
 	auto depthData = depthMap.ReadImageData(
 		m_device, m_physicalDevice, m_queue, m_queueFamilyIndex);
 
@@ -392,24 +419,6 @@ std::string Screenshot::ExportShadowDepth(RenderCache& renderCache,
 	ImageData grayImg(grayPixels.data(), extent.width, extent.height,
 	                   PixelFormat::R8U);
 	const bool saved = grayImg.SavePNG(path);
-
-	// Restore the original layout - ReadImageData transitions to TransferSrc.
-	if (saved && depthMap.State() != originalState)
-	{
-		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
-		                                  m_queueFamilyIndex);
-		vk::raii::CommandPool cmdPool(m_device, poolCI);
-		vk::CommandBufferAllocateInfo allocInfo(*cmdPool, vk::CommandBufferLevel::ePrimary, 1);
-		vk::raii::CommandBuffers cmdBufs(m_device, allocInfo);
-
-		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-		Barrier::Transition(*cmdBufs[0], depthMap, originalState);
-		cmdBufs[0].end();
-
-		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		m_queue.submit(submitInfo);
-		m_queue.waitIdle();
-	}
 
 	if (saved)
 	{
@@ -652,11 +661,10 @@ bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
 		return false;
 	}
 
-	// Save the original layout - ReadImageData transitions the image to
-	// TRANSFER_SRC_OPTIMAL for readback and does not restore it.
-	const auto originalState = vulkanImage.State();
-
 	// Read back the specified layer via the Layer() subresource range.
+	// ReadImageData restores that range to its entry state inside the same
+	// submission, so the array keeps the layout its tracked state promises and
+	// no restore is needed here.
 	const auto layerRange = vulkanImage.Layer(layerIndex);
 	auto imageData = vulkanImage.ReadImageData(
 		device, physicalDevice, queue, queueFamilyIndex, &layerRange);
@@ -667,29 +675,7 @@ bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
 		return false;
 	}
 
-	const bool saved = imageData->SavePNG(path);
-
-	// Restore original layout so rendering can continue without validation errors.
-	// ReadImageData transitions to TransferSrc but the image must be returned
-	// to its original state (e.g., ShaderRead for ShadowIntensityArray).
-	if (saved && vulkanImage.State() != originalState)
-	{
-		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
-		                                  queueFamilyIndex);
-		vk::raii::CommandPool cmdPool(device, poolCI);
-		vk::CommandBufferAllocateInfo allocInfo(*cmdPool, vk::CommandBufferLevel::ePrimary, 1);
-		vk::raii::CommandBuffers cmdBufs(device, allocInfo);
-
-		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-		Barrier::Transition(*cmdBufs[0], vulkanImage, originalState);
-		cmdBufs[0].end();
-
-		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
-	}
-
-	return saved;
+	return imageData->SavePNG(path);
 }
 
 // ===========================================================================
@@ -713,6 +699,7 @@ int Screenshot::CaptureAllAttachments(const vk::raii::Device& device,
 		AttachmentName::HDRColor,
 		AttachmentName::SSAO,
 		AttachmentName::SSR,
+		AttachmentName::OverlayOutput,
 	};
 
 	int capturedCount = 0;

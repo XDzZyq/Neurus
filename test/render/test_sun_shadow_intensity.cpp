@@ -140,19 +140,18 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_VerifyNonZero)
 	const auto& camera = shadowRes.scene->cam_list.begin()->second;
 	camera->ChangeCamRatio(static_cast<float>(kRes), static_cast<float>(kRes));
 
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	ctx.frameIndex   = 0;
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Run ShadowDepth -> Geometry -> ShadowIntensity (no LightingPass)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -262,19 +261,18 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_ReferenceImage)
 	const auto& camera = shadowRes.scene->cam_list.begin()->second;
 	camera->ChangeCamRatio(static_cast<float>(kRes), static_cast<float>(kRes));
 
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	ctx.frameIndex   = 0;
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Record passes
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);

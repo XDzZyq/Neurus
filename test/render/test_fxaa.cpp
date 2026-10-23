@@ -128,9 +128,10 @@ TEST_F(FXAATest, StairPattern_MatchesAnalyticalGradient)
 	cfg.r_fxaa_edge_threshold    = 0.166f;
 	cfg.r_fxaa_edge_threshold_min = 0.0833f;
 
+	RenderFrameSnapshot snapStorage;
 	RenderContext ctx;
 	ctx.width = kW; ctx.height = kH; ctx.frameIndex = 0;
-	ctx.config = &cfg; ctx.scene = nullptr;
+	PublishFrame(*m_cache, ctx, snapStorage, nullptr, &cfg);
 
 	auto& c = BeginCmd();
 	m_fxaaPass->Record(*c, *m_cache, ctx);

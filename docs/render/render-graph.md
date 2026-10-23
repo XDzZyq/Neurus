@@ -10,21 +10,23 @@ The graph is built on the generic `neurus::Graph<SData, NData>` DAG template (`s
 - Each pass declares its image I/O via `Pass::GetIO()` returning a `PassIO` (name + read/write `AttachmentBinding`s: resource, binding slot, descriptor type, image layout). This is the single declaration the graph consumes.
 - Edges are keyed by `AttachmentName`: `Connect(producer, resource, consumer)` links the producer's output socket for that resource to the consumer's input socket. Fan-out (one write to many reads) is supported.
 - A node may declare the same `AttachmentName` as both read and write (e.g. the `DebugPass`/`GizmoPass` target), and a node's own name can never produce a self-edge. `Connect()` matches sockets by `AttachmentName`, so an overlay names the concrete attachment (`p_target`) rather than an alias that shares both images.
+- There are two graphs over one frame. `DeferredRenderer::m_mainGraph` is the scene graph; `OverlayEngine` owns a second `RenderGraph` for the overlay passes. They share only `RenderCache` attachments and are executed in sequence by `recordFrame()`: an overlay-only frame runs the second one alone, over the image the first one last produced (see [Temporal Accumulation](temporal.md)).
 
 ## Lifecycle
 
 - `AddPass(pass)` - materializes one socket per declared read/write from `GetIO()`.
 - `Connect(...)` - wires producer to consumer; self-loops and duplicate edges are rejected (returns `false`).
 - `Compile()` - Kahn topological sort. Inputs with no in-graph producer are **external** (produced by a RenderCache attachment) and are allowed. A cycle throws `std::runtime_error` naming the involved passes.
-- `Execute(cmd, cache, ctx)` - invokes each pass's `Record()` in compiled order. Pure dispatch: the graph owns no profiling state. Per-pass CPU/GPU timing and draw/dispatch counters are collected by `DeferredRenderer::recordFrame`, which iterates `CompiledOrder()` itself while profiling is enabled - so `RenderContext` stays an immutable snapshot.
+- `Execute(cmd, cache, ctx, profiler, profile)` - invokes each pass's `Record()` in compiled order, bracketing each with GPU timestamps and folding its `PassStats` into the given `FrameProfile`. It clears that profile first, because it owns the pass list it writes - which is why two graphs cannot simply take turns writing one profile: `OverlayEngine::Execute()` records into a scratch `FrameProfile` and appends it, so the scene passes keep their order and the overlay passes follow them.
 - `Clear()` - drops all nodes so the graph can be rebuilt.
 
 ## Config-driven topology
 
 The single source of truth for topology is `RenderConfig`.
 
-- `DeferredRenderer::m_mainGraph` holds the whole pipeline. It is rebuilt (`RebuildMainGraph`) only when the `PipelineSignature` derived from `RenderConfig` changes (currently FXAA on/off), so the DAG always contains exactly the passes that will run - no per-node "enabled" state to drift.
-- **Maintenance rule:** a new conditional pass must add a field to `PipelineSignature`. It is the single `RenderConfig` to topology mapping point, and the rebuild check is derived from it.
+- `DeferredRenderer::m_mainGraph` holds the scene pipeline. It is rebuilt (`RebuildMainGraph`) only when the `PipelineSignature` derived from `RenderConfig` changes (currently FXAA on/off), so the DAG always contains exactly the passes that will run - no per-node "enabled" state to drift.
+- The overlay graph has a fixed pass list (selection outline, copy, debug, gizmo). Its only config dependency is which image it copies: `PipelineSignature::fxaa` picks `ComposedOutput` or `FXAAOutput` as the scene tail, and `OverlayEngine::SetSceneTail()` re-registers and re-compiles the graph when that changes.
+- **Maintenance rule:** a new conditional pass must add a field to `PipelineSignature`. It is the single `RenderConfig` to topology mapping point, and the rebuild check is derived from it. A pass that is unconditional in the overlay graph needs no such field.
 
 For the pass-by-pass chain this graph orders, see [Passes](passes.md).
 
@@ -49,14 +51,14 @@ Per-frame profiling answers whether the renderer is **CPU-bound** (command recor
 
 **What is measured** (`FrameProfile` in `ProfilingData.h`):
 
-- `cpuRecordMs` - total `RenderGraph::Execute()` command-recording wall time.
+- `cpuRecordMs` - total command-recording wall time across both graphs (scene, then overlay).
 - Per pass: `cpuMs` (around each `Record()` in `RenderGraph::Execute`), `gpuMs` (timestamp queries), `drawCalls`, `dispatches`.
 - Frame totals: `drawCalls`, `dispatches`, `passCount`, `gpuTotalMs`.
 
 **GPU timestamps** (`GPUProfiler`, section-based):
 
 - One `vk::QueryPool` of `kMaxFramesInFlight * (2 + 2 * kMaxPasses)` timestamps; per frame slot: frame begin@0, frame end@1, pass i begin@2+2*i, end@3+2*i.
-- The RenderGraph drives the profiler around each pass: `BeginFrame` then (`BeginPass`/`EndPass`)* then `EndFrame`. Passes stay unaware of GPU profiling. `Resolve()` reads back the slot about to be reused (after its fence signals) non-blockingly, so results lag CPU data by 1-2 frames by design.
+- The RenderGraph drives the profiler around each pass: `BeginFrame` then (`BeginPass`/`EndPass`)* then `EndFrame`. Passes stay unaware of GPU profiling. One `BeginFrame`/`EndFrame` pair covers both graphs, so overlay sections follow scene sections in query order and in the profile's pass list; `Resolve()` reads back the slot about to be reused (after its fence signals) non-blockingly, so results lag CPU data by 1-2 frames by design.
 - The pool is created only when `timestampComputeAndGraphics` and the graphics queue family's `timestampValidBits` allow it; otherwise `Available()==false` and the Profiling panel/log show CPU data only.
 
 **Counters**: each pass reports its own draw/dispatch counts by returning a `PassStats { drawCalls, dispatches }` from `Record()` - passes are stateless with respect to profiling (no members, no reset). `RenderContext` carries no profiling data - it stays an immutable per-frame snapshot. `RenderGraph::Execute` aggregates the returned `PassStats` into each `PassProfile` and sums them into the frame totals.

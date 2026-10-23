@@ -108,7 +108,12 @@ void Swapchain::Recreate(uint32_t width, uint32_t height)
 		return;
 	}
 
-	// Destroy old resources **after** confirming the surface is still valid
+	// Destroy old resources **after** confirming the surface is still valid.
+	// Recreate() also runs straight out of Present() and AcquireNextImage(),
+	// while the frame just presented is still in flight: the old swapchain may
+	// only go once every queue operation on its images has completed, and
+	// MoltenVK's present-completion handler still dereferences it until then.
+	r_device.waitIdle();
 	r_imageViews.clear();
 	r_swapchain.reset();
 

@@ -51,6 +51,9 @@ enum class AttachmentName
 	FXAAOutput,         ///< FXAA anti-aliased output (RGBA16F)
 	FXAAOffsets,        ///< FXAA edge subpixel offsets (RG16F, 2-channel)
 
+	// --- Overlay ---
+	OverlayOutput,      ///< Scene tail copy + overlays, the swapchain blit source (RGBA16F)
+
 	// --- Shadow ---
 	// Logical shadow resources. Unlike the single-image attachments above,
 	// these are resolved specially by their owning pass and are NOT fetched
@@ -535,7 +538,7 @@ private:
 	// --- Per-light GPU resources (key = light UID as int) ---
 	std::unordered_map<int, LightGPU> rc_lightGPUs;
 
-	// --- Pipeline cache (keyed by shader UID string) ---
+	// --- Pipeline cache (keyed by shader UID int) ---
 	PipelineCache rc_pipelineCache;
 
 	// --- Lighting SSBO storage (owned) ---

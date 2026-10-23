@@ -249,9 +249,10 @@ protected:
 
 		auto& cmd = BeginCmd();
 
-		// Transition cubemap: UNDEFINED → ShaderWrite (all 6 faces)
-		vk::ImageSubresourceRange cubeRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
-		Barrier::Transition(*cmd, cubeDst, ImageState::ShaderWrite, cubeRange);
+		// Transition cubemap: UNDEFINED → ShaderWrite (all 6 faces). The
+		// full-image overload, so the tracked state follows the real layout and
+		// a later ReadImageData sees a written image.
+		Barrier::Transition(*cmd, cubeDst, ImageState::ShaderWrite);
 
 		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *m_e2cPipeline.pipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
@@ -412,6 +413,7 @@ TEST_F(IBLConversionTest, SaveCubemapFacesAsHDR_ProducesValidFiles)
 	vk::ImageSubresourceRange cubeAll(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
 	auto cubeData = m_cubemapImage->ReadImageData(
 		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily, &cubeAll);
+	ASSERT_TRUE(cubeData && cubeData->IsValid());
 	const float* cubeFloats = reinterpret_cast<const float*>(cubeData->GetPixelData().data());
 	const size_t faceFloats = static_cast<size_t>(kCubeFaceRes) * kCubeFaceRes * 4;
 
@@ -519,6 +521,7 @@ TEST_F(IBLConversionTest, SaveCubemapFacesAsPNG_ProducesValidFiles)
 	vk::ImageSubresourceRange cubeAll(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
 	auto cubeData = m_cubemapImage->ReadImageData(
 		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily, &cubeAll);
+	ASSERT_TRUE(cubeData && cubeData->IsValid());
 	const auto* cubeFloats = reinterpret_cast<const float*>(cubeData->GetPixelData().data());
 	const size_t facePixelCount = static_cast<size_t>(kCubeFaceRes) * kCubeFaceRes;
 

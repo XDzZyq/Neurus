@@ -16,6 +16,7 @@ namespace neurus {
 class IBLPass;
 class Mesh;              // scene/Mesh.h
 class MeshData;          // asset/data/MeshData.h
+class ImageData;         // asset/data/ImageData.h
 class Environment;       // scene/Environment.h
 class Light;             // scene/Light.h
 class Scene;             // scene/Scene.h
@@ -26,6 +27,7 @@ struct MeshGPU;          // render/resources/MeshGPU.h
 struct EnvironmentGPU;   // render/resources/EnvironmentGPU.h
 struct LightGPU;         // render/resources/LightGPU.h
 struct Pipeline;         // render/Pipeline.h
+enum LightType : int;    // scene/Light.h
 
 	/**
 	 * @brief CPU-to-GPU upload service.
@@ -36,8 +38,9 @@ struct Pipeline;         // render/Pipeline.h
 	 *
 	 * @param device               Logical device.
 	 * @param physicalDevice       Physical device (for buffer memory queries).
-	 * @param transferQueue        Transfer queue for staging uploads.
-	 * @param transferQueueFamily  Transfer queue family index.
+	 * @param transferQueue        Upload queue for staging copies and IBL dispatches;
+	 *                             its family must support transfer and compute.
+	 * @param transferQueueFamily  Family index of @p transferQueue.
 	 */
 	class UploadManager
 	{
@@ -71,35 +74,64 @@ struct Pipeline;         // render/Pipeline.h
 	MeshGPU UploadMeshData(const MeshData& meshData);
 
 	/** @brief Upload environment map to GPU. Generates diffuse + specular cubemaps. */
-	EnvironmentGPU UploadEnvironment(const Environment& env,
-	                                 vk::Queue graphicsQueue,
-	                                 uint32_t graphicsQueueFamily);
+	EnvironmentGPU UploadEnvironment(const Environment& env);
+
+	/**
+	 * @brief Upload an equirect to GPU and generate its IBL cubemaps.
+	 *
+	 * The Scene-free half of UploadEnvironment(), for the request executor,
+	 * which holds no Environment. A null or invalid @p equirect selects the
+	 * pink-purple procedural fallback, exactly as a missing source file does.
+	 * The convolution dispatches on this manager's own upload queue, which is
+	 * why that queue's family must support compute (see
+	 * VulkanContext::findTransferQueueFamily).
+	 *
+	 * @param equirect Equirectangular source, or null for the fallback.
+	 * @return Diffuse + specular cubemap EnvironmentGPU.
+	 */
+	EnvironmentGPU UploadEnvironment(std::shared_ptr<const ImageData> equirect);
 
 	/** @brief Upload light shadow resources to GPU. Creates shadow depth map. */
 	LightGPU UploadLight(const Light& light);
 
 	/**
+	 * @brief Allocate a light's shadow maps from its uid and type alone.
+	 *
+	 * The data UploadLight(const Light&) actually reads: the uid names the
+	 * images and the type sizes them. For the request executor, which holds no
+	 * Light. A SUNLIGHT gets a 2D depth map and no colour map; point/spot lights
+	 * get a depth cubemap plus a colour cubemap.
+	 *
+	 * @param uid   Light UID (names the GPU images).
+	 * @param type  Light type (sizes and shapes the shadow maps).
+	 * @return Constructed LightGPU, or an empty LightGPU for NONELIGHT.
+	 */
+	LightGPU UploadLight(int uid, LightType type);
+
+	/**
 	 * @brief Convert a map of lights to GPU structs (variant-based).
 	 *
-	 * Pure CPU conversion - no GPU operations. Each struct gets
+	 * Pure CPU conversion - no GPU operations, and no member state, so static:
+	 * the Editor calls it without holding an UploadManager. Each struct gets
 	 * shadowMapIndex = -1; the caller assigns real shadow indices.
 	 *
 	 * @param lights  Map of light UID to shared pointers to Light objects.
 	 * @return Map: light UID -> variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
 	 */
-	std::unordered_map<int, std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>
+	static std::unordered_map<int, std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>
 	UploadLighting(const std::unordered_map<int, std::shared_ptr<Light>>& lights);
 
 	/**
 	 * @brief Convert a single light to its GPU struct (variant-based).
 	 *
-	 * Pure CPU conversion - no GPU operations. Returns the appropriate GPU
-	 * struct with shadowMapIndex = -1, or a default struct for NONELIGHT.
+	 * Pure CPU conversion - no GPU operations and no member state, so static.
+	 * Returns the appropriate GPU struct with shadowMapIndex = -1, or a default
+	 * struct for NONELIGHT.
 	 *
 	 * @param light  The light to convert.
 	 * @return variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
 	 */
-	std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>
+	static std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>
 	UploadLighting(const Light& light);
 
 	/** @brief Wait for all pending upload operations to complete. */

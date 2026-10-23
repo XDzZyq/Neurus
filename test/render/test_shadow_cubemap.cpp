@@ -275,7 +275,7 @@ TEST_F(ShadowCubemapTest, AllFacesDepth)
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected 2 meshes (cube + plane)";
 
 	// -------------------------------------------------------------------
-	// Step 2: Light position is read from ctx.scene->light_list at Record() time.
+	// Step 2: Light position is read from the frame snapshot at Record() time.
 	// -------------------------------------------------------------------
 	const int lightUID = shadowRes.scene->light_list.begin()->first;
 	const glm::vec3 lightPos = shadowRes.scene->light_list.begin()->second->GetPosition();
@@ -293,12 +293,13 @@ TEST_F(ShadowCubemapTest, AllFacesDepth)
 	{
 		auto& cmd = BeginCmd();
 
+		// Snapshot storage must outlive the context that borrows it.
+		RenderFrameSnapshot snap;
 		RenderContext ctx{};
 		ctx.width = kRes; ctx.height = kRes;
-		ctx.scene = shadowRes.scene.get();
 		// Point-light-only scene, but ShadowDepthPass still walks its sun path and
-		// reads the viewing camera from the context; publish it as the frame driver would.
-		VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx);
+		// reads the viewing camera from the frame; publish it as the frame driver would.
+		VulkanTestShared::PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get());
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);

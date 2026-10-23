@@ -116,7 +116,7 @@ public:
 	                           const vk::raii::PhysicalDevice& physicalDevice,
 	                           vk::Queue queue,
 	                           uint32_t queueFamilyIndex,
-	                           ImageData& imageData,
+	                           const ImageData& imageData,
 	                           const char* debugName = "Image",
 	                           vk::ImageUsageFlags extraUsage = {},
 	                           uint32_t mipLevels = 1);
@@ -154,10 +154,15 @@ public:
 	/**
 	 * @brief Reads image data from the GPU back into an ImageData.
 	 *
-	 * Transitions the specified subresource range to ImageState::TransferSrc
-	 * and reads the pixel data back through a staging buffer. The image is
-	 * left in ImageState::TransferSrc - the caller transitions it back if
-	 * needed.
+	 * Transitions the specified subresource range to ImageState::TransferSrc,
+	 * reads the pixel data back through a staging buffer, and returns the range
+	 * to the state it entered in - all in one submission. The image's layout and
+	 * its tracked ImageState are therefore unchanged on return; no caller-side
+	 * restore step is needed or wanted.
+	 *
+	 * An image that has never been written (ImageState::Undefined, or Invalid)
+	 * is not read at all: it holds no content, and transitioning it back would
+	 * have to name UNDEFINED as a new layout, which Vulkan forbids.
 	 *
 	 * @param device            Logical device.
 	 * @param physicalDevice    Physical device for memory allocation.
@@ -168,7 +173,8 @@ public:
 	 * @param readExtent        Extent to read (default {0,0} = full image extent).
 	 *                          Useful for reading a subregion of a larger image
 	 *                          (e.g. 256x256 from a 1024x1024 shadow cubemap).
-	 * @return shared_ptr to ImageData with the pixel content, or nullptr on failure.
+	 * @return shared_ptr to ImageData with the pixel content, or nullptr on
+	 *         failure - including a never-written image.
 	 * @note Returns shared_ptr because ImageData is a non-movable UID-derived
 	 *       data resource; readbacks are transient (not pooled) heap objects.
 	 */
@@ -185,7 +191,12 @@ public:
 	 * Reads a 1x1 pixel region at (@p x, @p y) through a minimal staging
 	 * buffer, submitting and waiting synchronously. The image must have
 	 * VK_IMAGE_USAGE_TRANSFER_SRC_BIT and is restored to its original state
-	 * after the readback.
+	 * after the readback - the restore happens inside the same submission.
+	 *
+	 * An image that has never been written (ImageState::Undefined, or Invalid)
+	 * has no pixel to report: an empty vector is returned without recording any
+	 * GPU work, because the restore would otherwise name UNDEFINED as a new
+	 * layout, which Vulkan forbids.
 	 *
 	 * @param device            Logical device.
 	 * @param physicalDevice    Physical device for memory allocation.
@@ -196,7 +207,8 @@ public:
 	 * @param subresourceRange  Subresource range to read.  nullptr means
 	 *                          mip level 0, layer 0 only.
 	 * @return Raw pixel bytes (size = PixelByteSize(format)), or empty vector
-	 *         on failure (OOB coordinates or unsupported format).
+	 *         on failure (OOB coordinates, unsupported format, or no rendered
+	 *         content yet).
 	 */
 	std::vector<uint8_t> PickPixel(const vk::raii::Device& device,
 	                               const vk::raii::PhysicalDevice& physicalDevice,

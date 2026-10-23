@@ -28,8 +28,7 @@
 #include "scene/Scene.h"
 #include "render/DeferredRenderer.h"
 #include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/Screenshot.h"
+#include "render/RenderFrameSnapshot.h"
 #include "render/Texture.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "ui/UIManager.h"
@@ -47,16 +46,25 @@
 #include <QGuiApplication>
 #include <QTimer>
 
+#include <chrono>
 #include <cmath>
+#include <future>
 
 #include <iostream>
 #include <memory>
+#include <utility>
 
 namespace {
 
 /// Starter mesh of the default scene, shared by the first-launch fallback and
 /// File > New so the two cannot drift. Relative, so project files stay portable.
 constexpr const char* kDefaultSceneObj = "res/obj/sphere.obj";
+
+/// How long a surface change may take before the new surface is parked. The
+/// answer is only "my swapchain released it", so on timeout both surfaces must
+/// stay alive: guessing which one the live swapchain uses would destroy a
+/// surface out from under it.
+constexpr auto kSurfaceChangeTimeout = std::chrono::seconds(2);
 
 /**
  * @brief Resolves a resource path relative to the executable directory.
@@ -159,7 +167,12 @@ int Application::Run()
 		return -1;
 	}
 
-	// --- Create UploadManager (transfer queue only; graphics queue passed per-call for IBL) ---
+	// Everything from here on reaches the renderer through the thread. It is not
+	// started yet, and the two setup calls below stay direct: at this point no
+	// other thread touches the renderer.
+	app_renderThread = std::make_unique<neurus::RenderThread>(*app_renderer);
+
+	// --- Create UploadManager on the upload queue (compute + transfer: it also runs IBL) ---
 	app_uploadManager = std::make_unique<neurus::UploadManager>(
 		app_vkContext->device(),
 		app_vkContext->physicalDevice(),
@@ -167,10 +180,18 @@ int Application::Run()
 		app_vkContext->transferQueueFamily());
 
 	// --- Wire LightingCache to RenderCache via transfer queue ---
+	// Pre-Start, main thread only: the render thread is not running yet, so
+	// these setup calls need no control message.
 	app_renderer->GetRenderCache().SetLightingCache(
 		app_uploadManager->CreateLightingCache(
 			app_vkContext->device(),
 			app_vkContext->physicalDevice()));
+
+	// The renderer executes every Editor-posted GPU request itself and needs the
+	// upload service to do it. Non-owning: the renderer is destroyed before the
+	// UploadManager (see Application.h teardown order), so the pointer stays
+	// valid for the renderer's whole lifetime.
+	app_renderer->SetUploadManager(app_uploadManager.get());
 
 	// Now renderer + uploadManager exist - safe to create Editor
 	InitEditor();
@@ -213,11 +234,19 @@ int Application::Run()
 	// first frame because the swapchain is not fully ready.
 	app_editor->UploadSceneResources();
 
+	// Requests and resizes posted before this point are queued and serviced by
+	// the thread's first iteration, so nothing posted above is lost.
+	app_renderThread->Start();
+
 	WireSignals();
 
 	NEURUS_LOG("[Application] Entering event loop");
 	app_renderTimer->start();
 	int result = app_qtApp->exec();
+
+	// Explicit: join here, while every member the thread touches still exists.
+	// The destructor's Stop() then has nothing left to do.
+	app_renderThread->Stop();
 	return result;
 }
 
@@ -294,30 +323,114 @@ bool Application::InitRenderer()
 		return false;
 	}
 
-	// --- Create screenshot helper (needs Vulkan handles; RenderCache passed per call) ---
-	app_screenshot = std::make_unique<neurus::Screenshot>(
-		app_vkContext->device(),
-		app_vkContext->physicalDevice(),
-		app_vkContext->graphicsQueue(),
-		app_vkContext->graphicsQueueFamily());
-
 	return true;
 }
 
 void Application::ResizeViewport(int width, int height)
 {
+	// AppKit must see the resize on the main thread; the swapchain itself is
+	// rebuilt on the render thread.
 	app_platform->onResize(
 		app_mainWindow->getViewportHwnd(),
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-	app_renderer->HandleResize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+	app_renderThread->PostResize(
+		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 
-	// The viewport needs both extents: logical for every projection query,
-	// physical for the ID-buffer readback. The physical one is read back AFTER
-	// the resize above, so it is the extent the swapchain actually got.
-	const auto extent = app_renderer->GetExtent();
+	// The swapchain extent is no longer known synchronously, so the physical
+	// extent is estimated the way the platform layer sizes the Metal drawable:
+	// logical size times the widget's device pixel ratio. ReconcileRenderExtent()
+	// replaces the estimate once the swapchain reports its own extent.
+	float ratio = 1.0f;
+	if (auto* viewport = app_mainWindow->GetPanel<neurus::Viewport>())
+	{
+		ratio = static_cast<float>(viewport->devicePixelRatioF());
+	}
+
+	const auto toPhysical = [ratio](int logical) {
+		const int physical = static_cast<int>(std::lround(static_cast<double>(logical) * ratio));
+		return static_cast<uint32_t>(physical > 0 ? physical : 1);
+	};
+
 	app_editor->GetViewport().HandleResize(
 		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
-		glm::uvec2{extent.width, extent.height});
+		glm::uvec2{toPhysical(width), toPhysical(height)});
+}
+
+void Application::ReconcileRenderExtent(const vk::Extent2D& actual)
+{
+	if (!app_editor || actual.width == 0 || actual.height == 0)
+	{
+		return;
+	}
+
+	// Act only when the thread reports a NEW extent. During a drag the reported
+	// one lags the latest estimate by a resize or two; re-applying that stale
+	// value every tick would overwrite each fresh estimate and make the DPI ratio
+	// flicker. A new report means the thread just applied a resize, and the last
+	// one after the drag settles is the truth.
+	if (actual == app_lastReportedExtent)
+	{
+		return;
+	}
+	app_lastReportedExtent = actual;
+
+	neurus::EditorViewport& viewport = app_editor->GetViewport();
+
+	// A zero logical size means the panel is not laid out yet: nothing to match.
+	const glm::uvec2 logical = viewport.Size();
+	if (logical.x == 0 || logical.y == 0)
+	{
+		return;
+	}
+
+	// The swapchain can clamp or round what the estimate assumed; its own
+	// extent is the truth, and the viewport derives its DPI ratio from it.
+	const glm::uvec2 render = viewport.RenderExtent();
+	if (render.x == actual.width && render.y == actual.height)
+	{
+		return;
+	}
+
+	viewport.HandleResize(logical, glm::uvec2{actual.width, actual.height});
+}
+
+void Application::ResolvePendingPick()
+{
+	if (!app_pendingPick || !app_editor)
+	{
+		return;
+	}
+
+	if (app_pendingPick->objectId.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+	{
+		return;
+	}
+
+	PendingPick pick = std::move(*app_pendingPick);
+	app_pendingPick.reset();
+
+	// A modal transform gesture that began after the click owns the selection
+	// now; a late answer must not re-select under it.
+	if (app_editor->GetViewport().IsGizmoActive())
+	{
+		return;
+	}
+
+	uint32_t objectID = 0;
+	try
+	{
+		objectID = pick.objectId.get();
+	}
+	catch (const std::exception& ex)
+	{
+		// Broken promise (thread stopped) or a readback error inside the
+		// renderer.
+		NEURUS_ERR("[Application] Pick readback failed: " << ex.what());
+		return;
+	}
+
+	// objectID 0 means background (clears the selection).
+	app_editor->OnUIEvent(ObjectSelected{static_cast<int>(objectID), pick.modifiers});
 }
 
 // =========================================================================
@@ -326,7 +439,9 @@ void Application::ResizeViewport(int width, int height)
 
 void Application::InitEditor()
 {
-	app_editor = std::make_unique<neurus::Editor>(app_renderer.get(), app_uploadManager.get());
+	// Every Editor request now goes through the thread's Post, which also wakes
+	// the thread: a request posted while no frame is coming is still serviced.
+	app_editor = std::make_unique<neurus::Editor>(app_renderThread.get());
 	app_editor->Initialize();
 	NEURUS_LOG("[Application] Editor initialized, IBL handled by Editor");
 }
@@ -452,29 +567,41 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	// --- Render request (manual frame trigger); the timer below drives it ---
 	QObject::connect(&uiEvents, &neurus::UIEvents::newFrame,
 	                 [this]() {
-	                     if (app_renderer && app_editor)
+	                     if (!app_renderThread || !app_editor)
 	                     {
-	                         // Process all enqueued events (camera, gizmo, ...).
-	                         app_editor->Edit();
-
-	                         // The Editor fills both frame views; the Application
-	                         // only supplies what the Editor does not own: the
-	                         // profile and the service-backed log/history pointers.
-	                         // DrawFrame stamps the renderer's own half into a local
-	                         // copy of rctx.
-	                         neurus::RenderContext rctx;
-	                         app_editor->UpdateRenderContext(rctx);
-	                         auto profile = app_renderer->DrawFrame(rctx);
-
-	                         const neurus::HistoryView history = app_editor->GetHistory();
-
-	                         neurus::UIContext ctx;
-	                         app_editor->UpdateUIContext(ctx);
-	                         ctx.profile = &profile;
-	                         ctx.log = &neurus::LogBuffer::instance();
-	                         ctx.history = &history;
-	                         app_mainWindow->Refresh(ctx);
+	                         return;
 	                     }
+
+	                     // A finished pick enters as a selection event, so this
+	                     // tick's Edit() handles it like any other UI event.
+	                     ResolvePendingPick();
+
+	                     // Process all enqueued events (camera, gizmo, ...). Every
+	                     // Post of this tick happens inside Edit(), before the
+	                     // Publish below: the ordering contract in
+	                     // RenderRequestSink.h.
+	                     app_editor->Edit();
+
+	                     // The frame is built per tick and moved into the
+	                     // mailbox, so the render thread reads it while the main
+	                     // thread refills a fresh one.
+	                     neurus::RenderFrameSnapshot snapshot;
+	                     app_editor->BuildSnapshot(snapshot);
+	                     app_renderThread->Publish(std::move(snapshot));
+
+	                     const neurus::RendererStatus status = app_renderThread->Status();
+	                     ReconcileRenderExtent(status.extent);
+
+	                     const neurus::HistoryView history = app_editor->GetHistory();
+
+	                     neurus::UIContext ctx;
+	                     app_editor->UpdateUIContext(ctx);
+	                     // The profile belongs to the last frame the thread drew,
+	                     // typically one tick behind: fine for a stats panel.
+	                     ctx.profile = &status.profile;
+	                     ctx.log = &neurus::LogBuffer::instance();
+	                     ctx.history = &history;
+	                     app_mainWindow->Refresh(ctx);
 	                 });
 
 	// StartRenderLoop - timer-driven ~60 FPS render loop
@@ -549,36 +676,43 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		QObject::connect(viewport, &neurus::Viewport::mousePressed,
 		                 [this, viewport](const neurus::MousePressEvent& e) {
 		                     if (e.button != Input::MouseButton::Left)
+		                     {
 		                         return;
+		                     }
 
 		                     // A left click that confirms a modal transform
 		                     // gesture must not re-select what is under the
-		                     // cursor, nor pay this path's queue.waitIdle
-		                     // ID-buffer readback. Safe at frame granularity:
-		                     // gizmo state only ever changes inside Edit().
+		                     // cursor. Safe at frame granularity: gizmo state only
+		                     // ever changes inside Edit().
 		                     if (app_editor->GetViewport().IsGizmoActive())
+		                     {
 		                         return;
+		                     }
 
-		                     const auto renderExtent = app_renderer->GetExtent();
-		                     const int   widgetW     = viewport->width();
-		                     const int   widgetH     = viewport->height();
+		                     if (!app_renderThread)
+		                     {
+		                         return;
+		                     }
 
-		                     // Map from logical (Qt widget) to physical (Vulkan) pixels
-		                     uint32_t px = static_cast<uint32_t>(
-		                         e.position.x * renderExtent.width  / static_cast<float>(widgetW));
-		                     uint32_t py = static_cast<uint32_t>(
-		                         e.position.y * renderExtent.height / static_cast<float>(widgetH));
+		                     const int widgetW = viewport->width();
+		                     const int widgetH = viewport->height();
+		                     if (widgetW <= 0 || widgetH <= 0)
+		                     {
+		                         return;
+		                     }
 
-		                     // Read the object ID at the click position
-		                     // (GPU-to-CPU readback).
-		                     uint32_t objectID = app_renderer->ReadIDBufferPixel(px, py);
+		                     // Normalised so the render thread maps the click onto
+		                     // whatever extent its swapchain has.
+		                     const float u = e.position.x / static_cast<float>(widgetW);
+		                     const float v = e.position.y / static_cast<float>(widgetH);
 
-		                     // objectID 0 means background (clears the selection).
-		                     ObjectSelected selEvent {
-		                         static_cast<int>(objectID),
-		                         static_cast<int>(e.modifiers)
-		                     };
-		                     app_editor->OnUIEvent(selEvent);
+		                     // Asynchronous: the render thread answers after its
+		                     // current frame's fence, which during accumulation can
+		                     // be a whole frame away (hundreds of ms in a debug
+		                     // build). ResolvePendingPick() applies the answer on a
+		                     // later tick; a newer click replaces this one.
+		                     app_pendingPick = PendingPick{app_renderThread->PostPick(u, v),
+		                                                   static_cast<int>(e.modifiers)};
 		                 });
 	}
 
@@ -654,22 +788,58 @@ void Application::RecreateSignals(neurus::UIEvents& uiEvents)
 	                     // Reconnect panel signals to the new widget.
 	                     PanelSignals(neurus::UIEvents::instance());
 
-	                     if (!app_vkContext || !app_renderer)
+	                     if (!app_vkContext || !app_renderThread)
+	                     {
 	                         return;
+	                     }
+
+	                     // The surface is created on the main thread (it needs the
+	                     // native window); the swapchain that uses it is rebuilt on
+	                     // the render thread.
+	                     std::unique_ptr<vk::raii::SurfaceKHR> new_surface;
 	                     try
 	                     {
-	                         auto new_surface = std::make_unique<vk::raii::SurfaceKHR>(
+	                         new_surface = std::make_unique<vk::raii::SurfaceKHR>(
 	                             app_platform->createSurface(
 	                                 app_vkContext->instance(),
 	                                 reinterpret_cast<NativeWindowHandle>(newHwnd)));
-	                         app_renderer->HandleSurfaceChange(*new_surface);
-	                         app_surface = std::move(new_surface);  // Old surface destroyed AFTER swapchain drops its ref
-	                         NEURUS_LOG("[Application] Viewport recreated — new surface + swapchain");
 	                     }
 	                     catch (const std::exception& e)
 	                     {
 	                         NEURUS_ERR("Viewport recreation failed: " << e.what());
+	                         return;
 	                     }
+
+	                     auto done = app_renderThread->PostSurfaceChange(*new_surface);
+	                     if (done.wait_for(kSurfaceChangeTimeout) != std::future_status::ready)
+	                     {
+	                         // Neither surface can be proven retired: the thread may
+	                         // still be drawing with one of them. Park the new one
+	                         // and leave app_surface alone; both live until shutdown,
+	                         // after the thread has been joined.
+	                         NEURUS_ERR("[Application] Surface change timed out; parking "
+	                                    "the new surface until shutdown.");
+	                         app_retiredSurfaces.push_back(std::move(new_surface));
+	                         return;
+	                     }
+
+	                     try
+	                     {
+	                         done.get();
+	                     }
+	                     catch (const std::exception& e)
+	                     {
+	                         // The swapchain state is unknown after a failure, so the
+	                         // surface it might reference is never destroyed early.
+	                         NEURUS_ERR("[Application] Surface change failed: " << e.what());
+	                         app_retiredSurfaces.push_back(std::move(new_surface));
+	                         return;
+	                     }
+
+	                     // The swapchain dropped its reference before done was
+	                     // satisfied: only now is the old surface safe to destroy.
+	                     app_surface = std::move(new_surface);
+	                     NEURUS_LOG("[Application] Viewport recreated - new surface + swapchain");
 	                 });
 }
 
@@ -682,23 +852,18 @@ void Application::ScreenShotSignals(neurus::UIEvents& uiEvents)
 	// Screenshot requests (F12 / menu action)
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotRequested,
 	                 [this]() {
-	                     if (app_screenshot && app_renderer)
+	                     if (app_renderThread)
 	                     {
-	                         app_screenshot->TakeScreenshot(
-	                             app_renderer->GetLastSwapchainImage(),
-	                             app_renderer->GetSwapchainFormat(),
-	                             app_renderer->GetExtent());
+	                         app_renderThread->PostScreenshot(false);
 	                     }
 	                 });
 
 	// Attachment dump requests (Ctrl+F12)
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotAllRequested,
 	                 [this]() {
-	                     if (app_screenshot && app_renderer)
+	                     if (app_renderThread)
 	                     {
-	                         app_screenshot->TakeScreenshotAllAttachments(
-	                             app_renderer->GetRenderCache(),
-	                             app_renderer->GetExtent(), 1024);
+	                         app_renderThread->PostScreenshot(true);
 	                     }
 	                 });
 }

@@ -1,12 +1,15 @@
 /**
  * @file ComposePass.h
- * @brief Final compositing compute pass - blends the selection highlight onto
- *        HDRColor and applies gamma correction.
+ * @brief Final scene compositing compute pass - tone maps HDRColor.
  *
- * Reads the HDRColor and SelectionOutline attachments as combined image
- * samplers, blends the selected-object edge highlight onto the HDRColor,
- * applies gamma correction via push constant, and writes the final composed
- * output to the ComposedOutput attachment (RGBA16F storage image).
+ * Reads the HDRColor attachment as a combined image sampler, applies gamma
+ * correction via push constant, and writes the final composed output to the
+ * ComposedOutput attachment (RGBA16F storage image).
+ *
+ * The selection highlight is not part of this pass: it is blended by the
+ * overlay engine, after tone mapping and gamma, so the outline is never touched
+ * by FXAA and can be redrawn without re-running the scene graph. Compose is the
+ * last scene pass and knows nothing about overlays.
  *
  * @note No UBOs or per-frame uploads - all data is read from attachments.
  *       The only push constant is a single float (gamma).
@@ -32,10 +35,9 @@ class RenderCache;
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Final compositing compute pass.
+ * @brief Final scene compositing compute pass.
  *
- * Reads HDRColor (RGBA16F) and SelectionOutline (R8_UNORM) as combined image
- * samplers, blends the highlight onto the HDR output, applies gamma
+ * Reads HDRColor (RGBA16F) as a combined image sampler, applies gamma
  * correction, and writes to ComposedOutput (RGBA16F storage image).
  */
 class ComposePass : public ComputePass
@@ -59,9 +61,9 @@ public:
 	/**
 	 * @brief Records the compose compute dispatch into a command buffer.
 	 *
-	 * Writes the descriptors, transitions the inputs to ColorShaderRead and
+	 * Writes the descriptors, transitions the input to ColorShaderRead and
 	 * ComposedOutput to ShaderWrite, then dispatches ceil(w/16) x ceil(h/16)
-	 * thread groups. Gamma comes from ctx.Settings().r_gamma.
+	 * thread groups. Gamma comes from ctx.Frame().Settings().r_gamma.
 	 *
 	 * @param cmdBuf  Command buffer in recording state.
 	 * @param cache   Mutable render cache for attachment access.
@@ -69,13 +71,12 @@ public:
 	 */
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
-	/// Declares the HDRColor + SelectionOutline reads and the ComposedOutput
-	/// write.
+	/// Declares the HDRColor read and the ComposedOutput write.
 	PassIO GetIO() const override;
 
 	/**
-	 * @brief Writes all descriptors (HDRColor, SelectionOutline, ComposedOutput)
-	 *        into the specified set.
+	 * @brief Writes both descriptors (HDRColor, ComposedOutput) into the
+	 *        specified set.
 	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 * @param extent    Render area dimensions.
 	 * @param cache     Mutable render cache for attachment access.
@@ -83,7 +84,7 @@ public:
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
 private:
-	/** @brief Creates the descriptor set layout (3 bindings). */
+	/** @brief Creates the descriptor set layout (2 bindings). */
 	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */

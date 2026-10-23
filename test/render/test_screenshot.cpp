@@ -3,6 +3,8 @@
 #include "shared/TestVulkanShared.h"
 #include "render/Screenshot.h"
 #include "render/Image.h"
+#include "render/Barrier.h"
+#include "render/RenderCache.h"
 #include "asset/data/ImageData.h"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -42,7 +44,53 @@ protected:
 		VulkanTestShared::TearDown();
 	}
 
+	/** @brief Whether D32_SFLOAT can be a transfer source (readback) on this GPU. */
+	static bool DepthReadbackSupported(const vk::raii::PhysicalDevice& pd)
+	{
+		return static_cast<bool>(pd.getFormatProperties(vk::Format::eD32Sfloat)
+		                             .optimalTilingFeatures &
+		                         vk::FormatFeatureFlagBits::eTransferSrc);
+	}
 
+	/**
+	 * @brief Registers a sun-light shadow depth map shaped exactly like
+	 *        UploadManager's, and returns it.
+	 *
+	 * @param lightUID UID to register the light under.
+	 * @param extent   Shadow map resolution.
+	 * @param rendered true  - leave it where ShadowDepthPass leaves it
+	 *                         (rendered, DepthShaderRead);
+	 *                 false - leave it never-written (Undefined).
+	 */
+	neurus::Image* RegisterSunShadowMap(neurus::RenderCache& cache,
+	                                    int lightUID,
+	                                    vk::Extent2D extent,
+	                                    bool rendered)
+	{
+		auto depthMap = std::make_unique<neurus::Image>(
+			*m_device, PhysicalDevice(), extent,
+			vk::Format::eD32Sfloat,
+			vk::ImageUsageFlagBits::eDepthStencilAttachment |
+				vk::ImageUsageFlagBits::eSampled |
+				vk::ImageUsageFlagBits::eTransferSrc,
+			1,
+			neurus::Image::ImageType::e2D,
+			("SunShadowDepth_Light_" + std::to_string(lightUID)).c_str());
+
+		if (rendered)
+		{
+			// The states ShadowDepthPass walks through for a sun cascade.
+			auto& cmd = BeginCmd();
+			neurus::Barrier::Transition(*cmd, *depthMap, neurus::ImageState::DepthAttachment);
+			neurus::Barrier::Transition(*cmd, *depthMap, neurus::ImageState::DepthShaderRead);
+			EndSubmitWait(cmd);
+		}
+
+		neurus::LightGPU lgpu;
+		lgpu.shadowDepthMap = std::move(depthMap);
+		cache.UseLightGPU(lightUID, std::move(lgpu));
+		return cache.GetLightGPU(lightUID)->shadowDepthMap.get();
+	}
 
 	std::string m_testOutputPath;
 };
@@ -189,9 +237,77 @@ TEST_F(ScreenshotTest, CaptureAttachment_AutoCreatesDirectory)
 }
 
 // ---------------------------------------------------------------------------
-// CaptureAttachment - non-copyable class check
+// ExportShadowDepth - leaves the depth map where the shadow pass left it
 // ---------------------------------------------------------------------------
 
+TEST_F(ScreenshotTest, ExportShadowDepth_RestoresDepthMapState)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	auto& pd = PhysicalDevice();
+	if (!DepthReadbackSupported(pd))
+	{
+		GTEST_SKIP() << "D32_SFLOAT is not a transfer source on this GPU.";
+	}
+
+	RenderCache cache(*m_device, pd);
+	constexpr int kLightUID = 7;
+	const vk::Extent2D extent(32, 32);
+
+	Image* depthMap = RegisterSunShadowMap(cache, kLightUID, extent, /*rendered=*/true);
+	ASSERT_NE(depthMap, nullptr);
+	ASSERT_EQ(depthMap->State(), ImageState::DepthShaderRead);
+
+	Screenshot screenshot(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	m_testOutputPath = screenshot.ExportShadowDepth(cache, kLightUID,
+	                                                "screenshots/test_sun_shadow");
+
+	EXPECT_FALSE(m_testOutputPath.empty()) << "the export should write a PNG";
+	if (!m_testOutputPath.empty())
+	{
+		EXPECT_TRUE(std::filesystem::exists(m_testOutputPath));
+	}
+
+	// The readback must hand the map back in the state it entered in. Stranded in
+	// TRANSFER_SRC (the old code skipped its restore because the tracked state was
+	// never updated), the next shadow pass records its barrier from a state the
+	// image is not in, and the sampling pass then draws from a transfer layout
+	// (VUID-vkCmdDraw-None-09600).
+	EXPECT_EQ(depthMap->State(), ImageState::DepthShaderRead)
+		<< "ExportShadowDepth must not change the depth map's state";
+}
+
+TEST_F(ScreenshotTest, ExportShadowDepth_UnwrittenMapReturnsEmpty)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	auto& pd = PhysicalDevice();
+	RenderCache cache(*m_device, pd);
+	constexpr int kLightUID = 8;
+
+	Image* depthMap = RegisterSunShadowMap(cache, kLightUID, vk::Extent2D(32, 32),
+	                                       /*rendered=*/false);
+	ASSERT_NE(depthMap, nullptr);
+	ASSERT_EQ(depthMap->State(), ImageState::Undefined);
+
+	Screenshot screenshot(*m_device, pd, m_queue, m_graphicsQueueFamily);
+
+	// A map that was never rendered has nothing to export, and reading it would
+	// have to restore it to UNDEFINED - an invalid newLayout.
+	EXPECT_TRUE(screenshot.ExportShadowDepth(cache, kLightUID,
+	                                         "screenshots/test_sun_shadow").empty());
+	EXPECT_EQ(depthMap->State(), ImageState::Undefined);
+}
+
+// ---------------------------------------------------------------------------
+// CaptureAttachment - non-copyable class check
+// ---------------------------------------------------------------------------
 TEST_F(ScreenshotTest, NonCopyable)
 {
 	static_assert(!std::is_copy_constructible_v<Screenshot>,

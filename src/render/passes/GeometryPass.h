@@ -24,9 +24,12 @@
 #include <span>
 #include <vulkan/vulkan_raii.hpp>
 
+#include <unordered_set>
 #include <vector>
 
 namespace neurus {
+
+struct EnsurePipelineRequest;  // render/RenderRequests.h
 
 /**
  * @brief G-Buffer geometry pass using dynamic rendering.
@@ -57,11 +60,45 @@ public:
 	 * draws each visible mesh with its per-mesh or default pipeline, then ends
 	 * the pass.
 	 *
+	 * Looks per-mesh pipelines up and never builds one: a cache miss draws with
+	 * the pass default. EnsureMeshPipeline() owns the building, off this path.
+	 *
 	 * @param cmdBuf          Command buffer in recording state.
 	 * @param cache           Render cache for MeshGPU and attachment lookups.
 	 * @param ctx             Per-frame context (scene, camera, extent).
 	 */
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+
+	/**
+	 * @brief Compiles the per-mesh G-Buffer pipeline for @p shader if it is missing.
+	 *
+	 * The warm entry point, and the only place a per-mesh pipeline is built:
+	 * compilation reads the live Shader's SPIR-V, so it must run on the Editor
+	 * thread that owns it, before the frame is handed off. Idempotent.
+	 *
+	 * @param cache  Render cache owning the cross-frame pipeline cache.
+	 * @param shader CPU-side Shader to compile (borrowed for the call only).
+	 * @return true if a pipeline for @p shader is cached when this returns;
+	 *         false if the shader carries no usable SPIR-V yet - not an error,
+	 *         Record() draws such a mesh with the pass default.
+	 */
+	bool EnsureMeshPipeline(RenderCache& cache, const Shader& shader);
+
+	/**
+	 * @brief Compiles the per-mesh G-Buffer pipeline from a request's SPIR-V.
+	 *
+	 * The one build path: the Shader overload snapshots the live Shader into a
+	 * request and calls this, and the renderer's request drain calls it with a
+	 * request the Editor posted. Building from the request's owned SPIR-V rather
+	 * than a live Shader is the point - a recompile landing before the drain
+	 * cannot change the code under the version it no longer belongs to.
+	 *
+	 * @param cache    Render cache owning the cross-frame pipeline cache.
+	 * @param request  Carries the shader id, version and per-stage SPIR-V.
+	 * @return true if a pipeline for (id, version) is cached when this returns;
+	 *         false if the request carries no usable SPIR-V - not an error.
+	 */
+	bool EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRequest& request);
 
 	/// Declares the G-Buffer + IDBuffer + Depth writes; this pass has no image
 	/// reads (camera data comes via a UBO).
@@ -86,16 +123,19 @@ private:
 	                   const std::string& debugName) override;
 
 	/**
-	 * @brief Creates a per-mesh graphics pipeline from a custom Shader.
+	 * @brief Creates a per-mesh graphics pipeline from stage SPIR-V.
 	 *
 	 * Builds a graphics pipeline matching the default G-Buffer attachment
-	 * formats and vertex layout.
+	 * formats and vertex layout. Called only from EnsureMeshPipeline(), i.e.
+	 * only off the frame path.
 	 *
-	 * @param shader    The CPU-side Shader containing stage source code.
-	 * @param stageType Which shader stage to compile (VERTEX for graphics).
-	 * @return Fully constructed Pipeline, or an empty Pipeline on failure.
+	 * @param vertexSpv   Vertex-stage SPIR-V, or empty to skip the stage.
+	 * @param fragmentSpv Fragment-stage SPIR-V, or empty to skip the stage.
+	 * @return Fully constructed Pipeline, or an empty Pipeline when neither
+	 *         stage carries SPIR-V.
 	 */
-	Pipeline CreatePerMeshPipeline(const Shader& shader, ShaderType stageType);
+	Pipeline CreatePerMeshPipeline(const std::vector<uint32_t>& vertexSpv,
+	                               const std::vector<uint32_t>& fragmentSpv);
 	void ConfigureGBufferPipeline(PipelineBuilder& builder);
 
 	// --- Descriptor resources ---
@@ -113,6 +153,12 @@ private:
 
 	// --- Vertex input layout ---
 	BufferLayout p_vertexLayout;
+
+	/// Shader ids whose missing per-mesh pipeline has already been reported, so
+	/// an uncompiled shader costs one log line instead of one per mesh per
+	/// frame. Version-agnostic: only a successful EnsureMeshPipeline() clears an
+	/// entry, so a shader that keeps failing to compile does not re-report.
+	std::unordered_set<int> p_reportedMissingPipelines;
 
 	// --- Dynamic rendering (G_BUFFER-specific) ---
 	void BeginPass(vk::CommandBuffer cmdBuf,

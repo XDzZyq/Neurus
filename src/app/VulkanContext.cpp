@@ -217,17 +217,28 @@ uint32_t VulkanContext::findTransferQueueFamily()
 	auto& pd = ctx_physicalDevices[ctx_selectedDeviceIndex];
 	auto qf = pd.getQueueFamilyProperties();
 
-	// Prefer a dedicated transfer-only queue (eTransfer but not eGraphics).
+	// This queue carries UploadManager's staging copies AND the IBL convolution
+	// dispatches, so it must support compute: a transfer-only family would fail
+	// vkCmdDispatch. Prefer an async-compute family (compute + transfer, no
+	// graphics) so uploads stay off the graphics queue.
+	//
+	// Known gap: with a separate family, the images it writes are eExclusive
+	// and no queue-family ownership transfer is recorded, and the upload
+	// barriers name fragment-shader stages this queue does not support. Until
+	// both are fixed, only a device whose fallback below is taken (e.g.
+	// MoltenVK, a single family) is validation-clean.
+	const auto computeTransfer = vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer;
 	for (uint32_t i = 0; i < (uint32_t)qf.size(); ++i)
 	{
-		if (qf[i].queueFlags & vk::QueueFlagBits::eTransfer &&
+		if ((qf[i].queueFlags & computeTransfer) == computeTransfer &&
 		    !(qf[i].queueFlags & vk::QueueFlagBits::eGraphics))
 		{
 			return i;
 		}
 	}
 
-	// Fall back to the graphics queue family (graphics queues always support transfer).
+	// Fall back to the graphics family: a graphics family always supports
+	// compute and transfer.
 	return ctx_graphicsQueueFamily;
 }
 

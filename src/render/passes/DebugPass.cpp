@@ -12,6 +12,7 @@
 #include "core/Log.h"
 
 #include "../resources/MeshGPU.h"
+#include "RenderFrameSnapshot.h"
 #include "render/overlay/DebugDrawList.h"
 
 #include <algorithm>
@@ -220,9 +221,12 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	PassStats stats{};
 
 	// Nothing to draw: touch no image, so every state the upstream pass left
-	// behind stays valid, including the layout the blit expects.
-	const DebugDrawList* list = ctx.debugDraw;
-	if (!list || list->Empty())
+	// behind stays valid, including the layout the blit expects. The gate lives
+	// in the producer - r_debug_draw decides whether the overlay is published at
+	// all - so hasDebugDraw is false for a disabled overlay and the pass still
+	// does no work without the graph topology ever changing.
+	const RenderFrameSnapshot& snapshot = ctx.Frame();
+	if (!snapshot.HasDebugDraw() || snapshot.debugDraw.Empty())
 	{
 		return stats;
 	}
@@ -267,12 +271,12 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	auto& depthAtt  = cache.GetAttachment(AttachmentName::Depth, extent);
 
 	// The target arrives in ShaderWrite straight from a compute dispatch -
-	// FXAAPass's when FXAA is on, ComposePass's when it is off - and this
-	// transition is what makes those writes visible to the raster stage: src
-	// becomes (ComputeShader, ShaderWrite), dst (ColorAttachmentOutput,
-	// ColorAttachmentWrite|Read). The producer must not pre-transition it to
-	// TransferSrc for the blit: a src scope of TransferRead names no writes.
-	// LOAD_OP_LOAD also needs the read bit, which ColorAttachment carries.
+	// OverlayCopyPass's in production - and this transition is what makes those
+	// writes visible to the raster stage: src becomes (ComputeShader, ShaderWrite),
+	// dst (ColorAttachmentOutput, ColorAttachmentWrite|Read). The producer must not
+	// pre-transition it to TransferSrc for the blit: a src scope of TransferRead
+	// names no writes. LOAD_OP_LOAD also needs the read bit, which ColorAttachment
+	// carries.
 	Barrier::Transition(cmdBuf, targetAtt, ImageState::ColorAttachment);
 	Barrier::Transition(cmdBuf, depthAtt, ImageState::DepthAttachment);
 
@@ -362,13 +366,13 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	// Wireframes are not pre-partitioned - they draw from their own mesh
 	// buffers, so a range cannot merge them - and the depth toggle is only
 	// re-issued when it differs from the current state.
-	if (!list->wireMeshes.empty())
+	if (!snapshot.debugDraw.wireMeshes.empty())
 	{
 		const vk::PipelineLayout layout = bindFor(kWirePipeline);
 		bool depthTest = true;
 		cmdBuf.setDepthTestEnable(VK_TRUE);
 
-		for (const auto& wire : list->wireMeshes)
+		for (const auto& wire : snapshot.debugDraw.wireMeshes)
 		{
 			MeshGPU* gpu = cache.GetMeshGPU(wire.meshObjectId);
 			if (!gpu || !gpu->vertexBuffer || !gpu->indexBuffer)

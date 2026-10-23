@@ -60,9 +60,16 @@ the **rule** that prevents it. Design detail behind these lives in
 - **G-Buffer attachments are uniform everywhere.** The object is too large or the
   camera too far - scale vertices (`pos * 0.25f`) or move the camera back.
 - **A pass draws nothing and reports no error.** A test that drives a pass
-  directly must publish the camera first
-  (`VulkanTestShared::PublishSceneCamera`), and a scene camera must be activated
-  (`scene.ActivateCamera(...)`) - no camera is active by default.
+  directly must publish a frame first
+  (`VulkanTestShared::PublishFrame(cache, ctx, out, scene, ...)`) from
+  caller-owned `out` that outlives `ctx`, and a scene camera must be activated
+  (`scene.ActivateCamera(...)`) - no camera is active by default. Two ways to get
+  silence instead of a compile error: publish no frame and every pass reads the
+  empty `ctx.Frame()` - zero draws, black image; or publish a frame with no
+  active camera and the lighting and shadow passes skip on
+  `ctx.Frame().HasCamera()`. Build the snapshot through the production
+  `Editor::BuildSnapshot()`, never a hand-rolled one, or the suite validates
+  passes against a frame production never builds.
 - **Shadow depth is off by 2x / clip-space Z is wrong.** Define
   `GLM_FORCE_DEPTH_ZERO_TO_ONE` before any GLM include.
 - **Shadow intensity is zero everywhere.** Enable comparison mode on the shadow

@@ -10,6 +10,7 @@
 #include "Image.h"
 #include "render/Barrier.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "shaders/ShaderLibrary.h"
 #include "shaders/ComputeShader.h"
 #include "core/Log.h"
@@ -321,17 +322,17 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 
 	{
 		SSAOParamsGpu params{};
-		// The camera comes from the context, not the Scene: the editor injects
-		// whichever camera the frame is rendered through.
-		const Camera* cam = ctx.camera;
-		if (!cam)
+		// The camera comes from the frame snapshot, not the Scene: the editor
+		// publishes whichever camera the frame is rendered through.
+		const RenderFrameSnapshot& frame = ctx.Frame();
+		if (!frame.HasCamera())
 		{
 			NEURUS_LOG("[SSAOPass] No camera in RenderContext, skipping");
 			return stats;
 		}
-		const glm::mat4 viewProj = cam->GetProjectionMatrix() * cam->GetViewMatrix();
-		const glm::mat4 view = cam->GetViewMatrix();
-		const glm::vec3 cameraPos = cam->GetPosition();
+		const glm::mat4 viewProj = frame.camera.projection * frame.camera.view;
+		const glm::mat4 view = frame.camera.view;
+		const glm::vec3 cameraPos = frame.camera.position;
 
 		const float* vp = &viewProj[0][0];
 		for (int i = 0; i < 16; ++i) params.viewProj[i] = vp[i];

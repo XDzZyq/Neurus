@@ -24,7 +24,7 @@ The renderer must not:
 - Directly call UI or Editor functions
 - Include headers from `src/editor/` or `src/ui/`
 
-Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor, the EventQueue for Editor to renderer events, and Context objects for data queries. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
+Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor, the EventQueue for typed events inside the Editor, typed `RenderRequest` values the Editor posts through `RenderRequestSink` for Editor to renderer GPU work, and Context objects for data queries. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
 
 ### Vulkan ownership
 
@@ -35,7 +35,9 @@ Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Edi
 
 ### Threading
 
-Main thread only for the current version. In future the renderer may run on a dedicated thread with proper synchronization.
+The renderer runs on a dedicated `RenderThread` once it is started: the main thread publishes one frame snapshot per tick (latest-wins, never blocking), posts `RenderRequest`s and control messages, and never draws or waits the GPU. Only the render thread calls into `DeferredRenderer`. `DeferredRenderer` is still usable directly - it is what the thread drives, and what tests fake.
+
+Once progressive accumulation converges the thread stops drawing on its own: it asks `IFrameRenderer::NextWork()` how much work the next frame is worth before waiting on the mailbox, so a remaining sample reuses the snapshot it already holds, an overlay-only change waits for a fresh frame, and nothing left to do parks without acquiring a swapchain image. See [Temporal Accumulation](temporal.md).
 
 ## Where the code lives
 
@@ -49,14 +51,24 @@ Main thread only for the current version. In future the renderer may run on a de
 - `src/render/ProfilingData.h` - Vulkan-free profiling POD (`PassProfile`, `FrameProfile`).
 - `src/render/GPUProfiler.h/cpp` - GPU timestamp query pool (per-frame, per-pass).
 - `src/render/shaders/` - see [Shaders](shaders.md).
-- `src/render/DeferredRenderer.h/cpp` - the public renderer entry point and frame drawing.
+- `src/render/DeferredRenderer.h/cpp` - the public renderer entry point, `NextWork()` and frame drawing.
+- `src/render/overlay/OverlayEngine.h/cpp` - the overlay graph: selection outline, overlay copy, debug and gizmo passes over the scene graph's tail image, plus the `OverlayCopyPass` that seeds `OverlayOutput`.
 - `src/render/RenderCache.h/cpp` - cross-frame resource pool; owns `MeshGPU`, `EnvironmentGPU`, `LightingCache`, `CameraGPU`, `DebugCache`, `GizmoCache`, attachments and shadow maps.
-- `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL).
+- `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL). Owned by the Application and borrowed by the renderer's request executor; the Editor no longer holds it.
+- `src/render/RenderRequests.h` - typed GPU-work requests the Editor posts as owned values (`UploadMeshRequest`, `CreateLightGpuRequest`, `UploadEnvironmentRequest`, `UpdateLightingRequest`, `UpdateLightRequest`, `EnsurePipelineRequest`, `DropSceneResourcesRequest`, `ResetAccumulationRequest`, `RedrawOverlaysRequest`).
+- `src/render/RenderRequestQueue.h` - `BatchQueue<RenderRequest>` (`src/core/BatchQueue.h`: mutex-guarded FIFO, `Push` / `TakeAll` / `Empty`) between the Editor and the renderer.
+- `src/render/RenderRequestSink.h` - the Post-only interface the Editor holds instead of the renderer; implemented by `DeferredRenderer` (single-threaded) and `RenderThread` (enqueue, then invalidate/wake).
+- `src/render/IFrameRenderer.h` - the operations `RenderThread` sequences (fence wait, requests, `NextWork`, draw, resize, surface change, ID-buffer read, screenshot, idle); `DeferredRenderer` implements it, tests use a fake.
+- `src/render/FrameMailbox.h/cpp` - one-slot latest-wins channel from publish to render thread. `Acquire(out, mode)` takes `Wait`, `Reuse` or `Idle` and reports `Frame`, `Repeat`, `Interrupted` or `Stopped`, so a converged renderer can redraw the snapshot it holds or park without acquiring an image; `Invalidate()` drops a pending frame and forces the next acquire to wait for a fresh publish.
+- `src/render/RenderControl.h` - main-thread control messages (`ResizeControl`, `SurfaceChangeControl`, `PickControl`, `ScreenshotControl`); the surface change and the pick carry a `std::promise`.
+- `src/render/RenderThread.h/cpp` - the dedicated render thread: owns the `FrameMailbox` and the control queue, and is the only caller into the renderer once started. Loop: wait the frame fence, drain controls (last resize of a batch wins) and requests, ask `NextWork()` for the acquisition mode, `Acquire`, draw. `Post` enqueues then invalidates, so a frame published after a request is drawn only after it ran and never with a snapshot that predates it; resize and surface change invalidate too, pick and screenshot only wake. On exit it rejects new controls and breaks pending promises, then `WaitIdle`s.
+- `src/render/RenderRequestExecutor.h/cpp` - executes each request against the device, `RenderCache`, `UploadManager` and `GeometryPass`; the testable seam `DeferredRenderer` delegates to.
 - `src/render/Texture.h/cpp` - texture resource (`Image` + sampler + descriptor).
 - `src/render/resources/` - GPU resource structs owned by `RenderCache`; see [Resources](resources.md).
 - `src/render/buffers/` - buffer class hierarchy; see [Buffers](buffers.md).
 - `src/render/render_graph/` - pass DAG orchestration; see [Render Graph](render-graph.md).
 - `src/render/passes/` - render passes; see [Passes](passes.md).
+- `src/render/overlay/` - overlay graph and its copy pass (`OverlayEngine`), plus the Vulkan-free overlay payloads; see [Passes](passes.md) and [Overlays](../scene/overlays.md).
 
 > Note: the renderer's `VulkanContext` lives under `src/app/`, not `src/render/`.
 
@@ -69,6 +81,7 @@ Main thread only for the current version. In future the renderer may run on a de
 - Create `VkDevice` from Qt's `QVulkanInstance`
 - Select the physical device (prefer a discrete GPU, fall back to the first available)
 - Choose the graphics queue family
+- Choose the upload queue family for `UploadManager` (staging copies and IBL convolution dispatches, so it must support compute + transfer): prefer an async-compute family without graphics, else the graphics family. A transfer-only family is never picked - it cannot run the IBL dispatches. Known gap: on a separate family the uploaded images are `eExclusive` with no queue-family ownership transfer, and the upload barriers name fragment-shader stages that queue does not support, so only the single-family fallback (e.g. MoltenVK) is validation-clean today.
 - Enable validation layers in Debug mode
 - Report device capabilities and extensions
 
@@ -83,13 +96,17 @@ Main thread only for the current version. In future the renderer may run on a de
 
 ## Drawing a frame
 
-`DeferredRenderer` owns the command pool and command buffers, an `imageAvailable` + `renderFinished` semaphore pair, and an in-flight fence for CPU-GPU synchronization. The frame is drawn as: acquire, begin dynamic rendering, bind pipeline, draw, end dynamic rendering, present. `WaitIdle()` calls `DeviceWaitIdle` for clean shutdown.
+`DeferredRenderer` owns the command pool and command buffers, an `imageAvailable` + `renderFinished` semaphore pair, and an in-flight fence for CPU-GPU synchronization. The frame is drawn as: wait the frame-slot fence, drain the Editor-posted render-request queue, decide the work (`NextWork()`), acquire, record the graphs that work needs, present. A Sample frame records the scene graph and then the overlay graph; an Overlay frame records the overlay graph alone; an Idle frame returns before acquiring an image at all. `WaitIdle()` calls `DeviceWaitIdle` for clean shutdown.
+
+`NextWork()` is the contract between the two: `Sample` while `r_sampling_count` scene frames have not been accumulated since the last restart, `Overlay` when only overlay content is stale, `Idle` when there is nothing left to draw, and `Retry` when the last `DrawFrame()` drew nothing (no camera, failed acquire or present). `RenderThread` turns that into the mailbox acquisition mode, so the right amount of waiting happens before the draw instead of being discovered after it.
+
+The request drain sits deliberately after the fence wait and before swapchain acquire (and before the no-camera early-out, so a camera-less session still services its queue). With `kMaxFramesInFlight == 1` a signaled fence means the GPU has finished every submitted frame, so a handler that frees or replaces a resource cannot pull it from under an executing frame; that argument holds only for one frame in flight, which is why the destroying handlers (pipeline replace, environment regenerate, scene drop) still `waitIdle()`. See [Render request path](resources.md#render-request-path).
 
 For the current pass-by-pass structure, see [Passes](passes.md). For shader and pipeline management, see [Shaders](shaders.md).
 
 ## Renderer preconditions
 
-- `DeferredRenderer` assumes `ctx.camera` is non-null. The Editor's viewport camera (`EnsureCamera` / `SyncCamera`) keeps it populated; the renderer only enforces the precondition, it does not synthesise a camera.
+- `DeferredRenderer` requires the published frame to carry a camera - it checks `ctx.Frame().HasCamera()` and skips the frame otherwise. The Editor's viewport camera (`EnsureCamera` / `SyncCamera`) keeps the frame populated; the renderer only enforces the precondition, it does not synthesise a camera.
 
 ## Vulkan-HPP RAII conventions
 
@@ -135,6 +152,7 @@ Release mode:
 
 - Normal lifecycle event (window resize, minimize)
 - Recreate the swapchain with the new surface dimensions
+- `Swapchain::Recreate()` idles the device before destroying the old swapchain: it also runs directly from `Present()`/`AcquireNextImage()`, while the frame just presented is still in flight, and on MoltenVK the present-completion handler dereferences the old swapchain until that frame completes. With the render thread presenting back-to-back during a window drag, skipping the wait is a use-after-free.
 - Continue rendering with the new swapchain
 
 ### Surface lost (`VK_ERROR_SURFACE_LOST_KHR`)
@@ -145,7 +163,7 @@ Release mode:
 ## Swapchain and frame pacing
 
 - **Usage flags**: `Swapchain` requests `eColorAttachment | eTransferDst | eTransferSrc`, masked by `capabilities.supportedUsageFlags`. `eTransferDst` is the final blit's target; `eTransferSrc` exists solely so `Screenshot` can copy the presented image back - without it the capture path raises copy-source validation errors. The constructor and `Recreate()` must request the same set.
-- **`kMaxFramesInFlight` is 1.** `RenderCache::GetAttachment()` returns a *single* shared `Image` per `AttachmentName` (the extent argument is honoured only on the first, lazy creation), so a second in-flight frame would write `ComposedOutput`/`Depth` while the previous frame's blit still reads them, across two submits with no dependency between them. Raising it requires per-frame-slot attachments first.
+- **`kMaxFramesInFlight` is 1.** `RenderCache::GetAttachment()` returns a *single* shared `Image` per `AttachmentName` (the extent argument is honoured only on the first, lazy creation), so a second in-flight frame would write `ComposedOutput`/`OverlayOutput`/`Depth` while the previous frame's blit still reads them, across two submits with no dependency between them. Raising it requires per-frame-slot attachments first.
 - **`kFenceTimeoutNs` is a deadlock guard, not a frame budget** (5 s). On timeout `DrawFrame` abandons a frame it has already acquired an image for, so a value near the real frame time silently drops frames - a Debug build with validation layers on measures about 600 ms per frame, which the old 100 ms tripped every frame.
 
 ## Legacy triangle path

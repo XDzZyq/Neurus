@@ -13,13 +13,18 @@
 #include "core/ResourceManager.h"
 #include "core/RenderConfig.h"
 
+// The one render header Editor.h needs: BuildSnapshot() returns a
+// RenderFrameSnapshot by value, so the complete type is required here. It is
+// Vulkan-free and header-only for this use, so including it adds no GPU
+// dependency to the Editor library.
+#include "render/RenderFrameSnapshot.h"
+
 // Forward declarations (no render headers!)
 namespace neurus {
-class DeferredRenderer;
+class Camera;
 class MeshData;
+class RenderRequestSink;
 class Scene;
-class UploadManager;
-struct RenderContext;   // render/RenderContext.h - Vulkan-free frame view (renderer-facing)
 struct ShaderCreateRequested;
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
 }
@@ -32,12 +37,22 @@ namespace neurus {
  *
  * Owns Scene, RenderConfig, the resource pool, the viewport and the controllers.
  * Scene persistence is driven from outside through BeginLoad()/FinishLoad() and
- * NewScene(); GPU uploads go through non-owning renderer/upload pointers.
+ * NewScene(); GPU work is posted through a non-owning RenderRequestSink pointer.
  */
 class Editor
 {
 public:
-	Editor(DeferredRenderer* renderer, UploadManager* uploadManager);
+	/**
+	 * @brief Builds the editor around the renderer's request sink.
+	 *
+	 * @param renderer  The sink every GPU request is posted to (DeferredRenderer
+	 *                  or RenderThread), or null for a headless editor. Borrowed.
+	 *                  The Editor can only Post: every Post of a tick must happen
+	 *                  before that tick's BuildSnapshot/publish, so FIFO order on
+	 *                  the sink matches the frame the snapshot describes (see
+	 *                  RenderRequestSink.h).
+	 */
+	Editor(RenderRequestSink* renderer);
 	~Editor();
 
 	Editor(const Editor&) = delete;
@@ -98,13 +113,60 @@ public:
 	const EditorViewport& GetViewport() const { return m_viewport; }
 
 	/**
-	 * @brief Fills the renderer-facing view of this frame: what is being rendered.
+	 * @brief Copies this frame out of the Scene: the view the renderer reads.
 	 *
-	 * Writes the semantic half - scene, config, camera and both overlay payloads -
-	 * and deliberately nothing else: the frame half (extent, frame index, jitter,
-	 * iteration) is stamped by recordFrame() from the swapchain and its counters.
+	 * Reads the Scene, the config, the viewport's camera and both overlay
+	 * payloads by value, resolving every scene object to the stable UID the
+	 * renderer's caches are keyed by. A reader may therefore keep the result
+	 * while the Editor edits on, which a borrowed pointer into the Scene does
+	 * not allow. This is the one producer of the renderer-facing frame.
+	 *
+	 * Call it once per frame, after Edit() has settled the scene: it is a
+	 * snapshot, and a snapshot of a half-updated scene is a wrong frame.
+	 *
+	 * @return The frame, with no reference into the Scene left in it.
 	 */
-	void UpdateRenderContext(RenderContext& ctx) const;
+	RenderFrameSnapshot BuildSnapshot() const;
+
+	/**
+	 * @brief Builds this frame into caller-owned storage, reusing its capacity.
+	 *
+	 * Same frame as the returning overload, which delegates here. Refilling one
+	 * snapshot is what `RenderFrameSnapshot::Clear()` exists for: the draw lists
+	 * keep their capacity instead of reallocating per frame. @p out is cleared
+	 * first, so a stale field cannot survive into the new frame.
+	 *
+	 * @param out Snapshot to overwrite; its list capacity is retained.
+	 */
+	void BuildSnapshot(RenderFrameSnapshot& out) const;
+
+	/**
+	 * @brief Builds this frame from loose sources, with no Editor to read from.
+	 *
+	 * The one producer of the frame, factored out so it can run without an
+	 * Editor instance: both instance overloads above delegate here, and a test
+	 * harness calls it with sources it assembles itself, so the snapshot a test
+	 * validates a pass against is the very one production builds - not a second,
+	 * divergent producer that could drift from this one.
+	 *
+	 * @p out is cleared first. A null @p scene is a complete, legal frame. The
+	 * debug-draw gate lives in the caller: @p debugDraw is copied (and
+	 * hasDebugDraw set) iff it is non-null, and a null @p gizmoDraw leaves
+	 * out.gizmoDraw cleared.
+	 *
+	 * @param scene     The frame's scene, or null for a scene-less frame.
+	 * @param config    The render settings to copy into the frame.
+	 * @param camera    The viewing camera, or null.
+	 * @param debugDraw The debug overlay to copy, or null when debug draw is off.
+	 * @param gizmoDraw The gizmo overlay to copy, or null.
+	 * @param out       Snapshot to overwrite; its list capacity is retained.
+	 */
+	static void BuildSnapshot(const Scene* scene,
+	                          const RenderConfig& config,
+	                          const Camera* camera,
+	                          const DebugDrawList* debugDraw,
+	                          const GizmoDrawList* gizmoDraw,
+	                          RenderFrameSnapshot& out);
 
 	/**
 	 * @brief Fills the UI-facing view of this frame: the document, and nothing else.
@@ -158,12 +220,15 @@ public:
 
 private:
 	/**
-	 * @brief Drops the outgoing scene's GPU resources, draining the device first.
+	 * @brief Posts the request that releases the outgoing scene's GPU resources.
 	 *
-	 * The render cache is keyed by object UID, and UIDs are restored from the
-	 * project file, so entries left behind by the previous scene shadow whatever
-	 * comes back under the same id. Called by the two paths that replace the
-	 * scene, before the pool is cleared.
+	 * The drain and the eviction happen renderer-side; what the Editor still
+	 * guarantees is ORDER. This post precedes the new scene's upload posts, so
+	 * FIFO execution evicts the old scene before the new one uploads. That
+	 * matters because the cache is keyed by object UID and UIDs are restored from
+	 * the project file, so a reused id would otherwise shadow whatever comes back
+	 * under it. Called by the two paths that replace the scene, before the pool
+	 * is cleared.
 	 */
 	void DropSceneGpuResources();
 
@@ -222,8 +287,7 @@ private:
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;
 
 	// --- Non-owning references ---
-	DeferredRenderer* ed_renderer = nullptr;
-	UploadManager* ed_uploadManager = nullptr;
+	RenderRequestSink* ed_renderer = nullptr;
 };
 
 } // namespace neurus

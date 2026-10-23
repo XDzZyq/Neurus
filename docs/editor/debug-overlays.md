@@ -13,15 +13,22 @@ the Scene's three debug pools into a `DebugDrawList` on a dirty flag
 (`MarkOverlaysDirty()` from `RenderResetEvent`, `RebuildOverlays()` at the end of
 `Editor::Edit()`), never per frame.
 
-`DebugPass` (renderer) is the single consumer and runs last, after post-AA: it
-draws over the final shaded image with `LOAD_OP_LOAD` (`FXAAOutput` when FXAA is
-on, `ComposedOutput` when it is off, chosen by `SetTarget()` from
-`PipelineSignature`), reads but never writes the G-Buffer depth, and flips
-`eDepthTestEnable` as dynamic state to serve x-ray, at most 6 draws per frame
-regardless of primitive count. Every debug primitive is already antialiased
-analytically, so handing FXAA the scene alone keeps both correct. The transform
-gizmo's `GizmoPass` then runs after `DebugPass`; see
-[Transform gizmo](gizmo.md).
+`DebugPass` (renderer) is the single consumer and runs in the overlay graph, over
+the converged scene image: it draws into `OverlayOutput` with `LOAD_OP_LOAD`
+(seeded by `OverlayCopyPass` from `ComposedOutput`, or `FXAAOutput` when FXAA is
+on), reads but never writes the G-Buffer depth, and flips `eDepthTestEnable` as
+dynamic state to serve x-ray, at most 6 draws per frame regardless of primitive
+count. Every debug primitive is already antialiased analytically, so handing FXAA
+the scene alone keeps both correct. The transform gizmo's `GizmoPass` then runs
+after `DebugPass`; see [Transform gizmo](gizmo.md).
+
+Because the renderer stops drawing once its sampling budget is spent, a rebuilt
+overlay payload does not reach the screen by itself. `RebuildOverlays()` reports
+whether it rebuilt anything, and `Editor::Edit()` posts a
+`RedrawOverlaysRequest` when it did - the one request that redraws the overlay
+graph over the converged image instead of restarting accumulation. An idle tick
+posts nothing. See [Temporal](../render/temporal.md) and
+[Render Request Path](../architecture/data-flow.md#render-request-path-editor-to-renderer-gpu-work).
 
 Upload is revision-gated: an unchanged list re-uses the buffer a frame slot
 already holds and skips the memcpy entirely.
@@ -30,7 +37,7 @@ already holds and skips the memcpy entirely.
 
 `DebugDrawBuilder` is the only place that walks `Scene::dLine_list`,
 `dPoints_list` and `dMesh_list` and flattens them into the `DebugDrawList` that
-`RenderContext::debugDraw` publishes to `DebugPass`. It is a plain member of
+the frame snapshot carries to `DebugPass`. It is a plain member of
 `EditorViewport` (`m_debugDraw`), not a controller: it has no events of its own.
 The Editor reaches it only through `MarkOverlaysDirty()` /
 `RebuildOverlays(scene)`, and never sees the builder itself.
@@ -42,10 +49,17 @@ RenderResetEvent  --> viewport.MarkOverlaysDirty()  // O(1), the existing
                                                     // "something visible changed" broadcast
 Editor::Edit()
   |- EventQueue::Process()
-  |- m_viewport.RebuildOverlays(*m_scene)          // after the queue drains, so a
-                                                    // scene change and its overlay
-                                                    // consequences land in one frame
+  |- m_viewport.RebuildOverlays(*m_scene)  // after the queue drains, so a scene
+  |                                        // change and its overlay consequences
+  |                                        // land in one frame
+  `- if it rebuilt anything: Post(RedrawOverlaysRequest{})
 ```
+
+`RebuildOverlays()` answers `true` when at least one payload was actually
+rebuilt, which is the only answer the Editor cannot work out itself - the dirty
+flags belong to the builders. Posting inside `Edit()` matters: the request
+lands before this tick's snapshot is published, so the redraw happens on that
+tick's frame rather than costing one.
 
 `Rebuild()` returns immediately when clean, which is the common case: debug
 objects are stateful and rarely move. `m_dirty` starts `true` so the first
@@ -133,15 +147,16 @@ the boundary itself.
 
 A wireframe needs vertex/index buffers in the `RenderCache`, keyed by the object
 id `DebugWireMesh::meshObjectId` carries. Without them `DebugPass` silently skips
-the mesh, so this is the difference between a wired feature and an inert one.
-`DebugMesh` derives from `ObjectID + Transform3D`, not from `Mesh`, so
-`UploadManager::UploadMesh(const Mesh&)` cannot serve it by upcast; the geometry
-half is split out as `UploadManager::UploadMeshData(const MeshData&)` and both
-paths share it. Three places must stay in step:
+the mesh, so this is the difference between a wired feature and an inert one. The
+Editor posts an `UploadMeshRequest{objectId, shared_ptr<const MeshData>}` rather
+than uploading itself; `DebugMesh` and `Mesh` carry the same `MeshData` and land
+in the same cache slot, so one request type serves both and the renderer's
+executor runs it skip-if-cached (`UploadManager::UploadMeshData(const MeshData&)`
+behind the scenes). Three places must stay in step:
 
 | Site | Role |
 |------|------|
-| `UploadDebugMeshGpu()` (Editor.cpp anon namespace) | the single upload path, skip-if-cached, mirroring `UploadMeshGpu()` |
+| `PostMeshUpload()` (Editor.cpp anon namespace) | the single post path, shared by `Mesh` and `DebugMesh`; residency is the renderer's fact, so it posts unconditionally |
 | `Editor::UploadSceneResources()` | `dMesh_list` loop, for objects present at project load |
 | `Editor::OnSceneObjectGpuUpload()` | `Get<DebugMesh>` branch, for on-demand upload of an object entering the scene |
 

@@ -358,6 +358,9 @@ msgstr "SSR"
 msgid "Samples / Frame"
 msgstr "每帧采样数"
 
+msgid "Sampling Count"
+msgstr "采样次数"
+
 msgid "Sampling Mode"
 msgstr "采样模式"
 
@@ -572,6 +575,10 @@ msgstr "搜索…"
 msgctxt "StatusBar"
 msgid "%1 new error(s): %2"
 msgstr "新增 %1 个错误：%2"
+
+msgctxt "Tooltip"
+msgid "Frames accumulated before rendering stops."
+msgstr "累积多少帧后停止渲染。"
 
 msgctxt "Tooltip"
 msgid "Remove entry"

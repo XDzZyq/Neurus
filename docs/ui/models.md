@@ -15,11 +15,13 @@ Used by the `ShaderEditorPanel` structure mode. See [Panels](panels.md#shaderedi
 
 ## LogModel
 
-`LogModel` (`src/ui/models/LogModel.h`) is a read-only `QAbstractListModel` over the core `LogBuffer`, feeding the virtualized `QListView` in the `LogPanel`. `Refresh(buffer)` polls the buffer and resyncs the model:
+`LogModel` (`src/ui/models/LogModel.h`) is a read-only `QAbstractListModel` over the core `LogBuffer`, feeding the virtualized `QListView` in the `LogPanel`. Row `r` is the entry with seq `firstSeq + r`, read through `LogBuffer::BySeq`. `Refresh(buffer)` takes one `Snapshot()` and resyncs the model:
 
-- Grow -> `beginInsertRows` for the delta.
-- Sequence drop (Clear) -> `beginResetModel`.
-- Ring wrap with unchanged size -> remove oldest plus append newest, preserving scroll position.
+- Entries the ring evicted -> `beginRemoveRows` from the front, preserving scroll position.
+- New entries -> `beginInsertRows` at the end.
+- Sequence drop (Clear) or first attach -> `beginResetModel`.
+
+`rowCount()` returns the model's own count, never the live buffer size: the render thread appends at any time, and a count that moves outside the begin/end notifications desynchronises `QSortFilterProxyModel`'s mapping (it crashed on the next removal).
 
 Qt only calls `data()` for visible rows, so a 10k-entry buffer costs roughly 50 row reads per frame. Custom roles (`LevelRole`, `TimestampRole`, `SourceRole`, `MessageRole`, `SeqRole`) let the delegate paint severity color and the proxy filter by level/message without parsing a combined display string. `MaxSourceChars()` reports the character width of the longest `func:line` source field, which the delegate uses to align message text; `FormatLogTimestamp()` formats a `system_clock` time point as `HH:MM:SS.mmm` local time.
 

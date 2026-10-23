@@ -32,8 +32,8 @@ See [Conventions](../style/conventions.md) for the error-handling rules these ma
 - Fixed-capacity ring buffer: `kLogCapacity` is 10000 entries; when full, the oldest entry is evicted and the head advances, keeping the count constant.
 - `Append(LogEntry)` assigns the entry's `seq` under the lock, so concurrent producers never race on a counter.
 - `Clear()` empties the buffer and resets counts and the seq counter.
-- Accessors: `Size()`, `InfoCount()`, `ErrorCount()` (with `InfoCount() + ErrorCount() == Size()`), `At(logicalIdx)` (returns a copy, since a concurrent `Append` could invalidate a reference), and `HeadSeq()` (the monotonic seq of the newest entry, or 0 when empty/cleared).
+- Accessors: `Size()`, `InfoCount()`, `ErrorCount()` (with `InfoCount() + ErrorCount() == Size()`), `At(logicalIdx)` (returns a copy, since a concurrent `Append` could invalidate a reference), `HeadSeq()` (the monotonic seq of the newest entry, or 0 when empty/cleared), `Snapshot()` (seq and size under one lock) and `BySeq(seq, out)` (the entry with that seq, if still buffered; seqs in the buffer are contiguous).
 
 ## Consumers
 
-A consumer polls `HeadSeq()` each frame to detect growth (insert rows) or a `Clear` (seq drops, so the model resets). In the UI layer, `LogModel` is a `QAbstractListModel` over the `LogBuffer`, `LogFilterProxy` adds level filtering and search, and `LogDelegate` draws severity-colored rows. See [Layers](../architecture/layers.md).
+A consumer polls `Snapshot()` each frame to detect growth (insert rows), eviction, or a `Clear` (seq drops, so the model resets). Any thread may log - the render thread does - so a consumer must not treat the live `Size()` as its own row count. In the UI layer, `LogModel` is a `QAbstractListModel` over the `LogBuffer`, `LogFilterProxy` adds level filtering and search, and `LogDelegate` draws severity-colored rows. See [Layers](../architecture/layers.md).

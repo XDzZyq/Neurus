@@ -15,12 +15,14 @@
 #include "core/Log.h"
 
 #include "../resources/MeshGPU.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "RenderFrameSnapshot.h"
+#include "RenderRequests.h"
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace neurus {
 
@@ -155,7 +157,8 @@ void GeometryPass::ConfigureGBufferPipeline(PipelineBuilder& builder)
 // Per-mesh custom pipeline creation
 // ---------------------------------------------------------------------------
 
-Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader, ShaderType /*stageType*/)
+Pipeline GeometryPass::CreatePerMeshPipeline(const std::vector<uint32_t>& vertexSpv,
+                                             const std::vector<uint32_t>& fragmentSpv)
 {
 	struct StageEntry
 	{
@@ -164,17 +167,16 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader, ShaderType /*
 	};
 	std::vector<StageEntry> stages;
 
-	for (auto t : {ShaderType::VERTEX, ShaderType::FRAGMENT})
+	const std::array<std::pair<vk::ShaderStageFlagBits, const std::vector<uint32_t>*>, 2> inputs = {{
+		{vk::ShaderStageFlagBits::eVertex,   &vertexSpv},
+		{vk::ShaderStageFlagBits::eFragment, &fragmentSpv},
+	}};
+
+	for (const auto& [flag, spv] : inputs)
 	{
-		if (!shader.HasStage(t)) continue;
-		const auto& unit = shader.GetStage(t);
-		if (unit.spv.empty()) continue;
+		if (spv->empty()) continue;
 
-		vk::ShaderStageFlagBits flag = vk::ShaderStageFlagBits::eVertex;
-		if (t == ShaderType::FRAGMENT) flag = vk::ShaderStageFlagBits::eFragment;
-		else if (t == ShaderType::COMPUTE) flag = vk::ShaderStageFlagBits::eCompute;
-
-		vk::ShaderModuleCreateInfo smCI({}, unit.spv);
+		vk::ShaderModuleCreateInfo smCI({}, *spv);
 		vk::raii::ShaderModule module(*p_device, smCI);
 		vk::PipelineShaderStageCreateInfo stageCI({}, flag, *module, "main");
 
@@ -192,6 +194,42 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const Shader& shader, ShaderType /*
 }
 
 // ---------------------------------------------------------------------------
+// Per-mesh pipeline warm (Editor thread, off the frame path)
+// ---------------------------------------------------------------------------
+
+bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const Shader& shader)
+{
+	// One build path: snapshot the live Shader into a request and warm from it,
+	// the same code the renderer's request drain runs.
+	return EnsureMeshPipeline(cache, MakeEnsurePipelineRequest(shader));
+}
+
+bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRequest& request)
+{
+	// Id and version come from the same Shader snapshot (MakeEnsurePipelineRequest):
+	// keying a mesh's id with a shader's version cannot discriminate a mesh
+	// relinked between two shaders that share a version.
+	const int      shaderId  = request.shaderId;
+	const int      version   = request.version;
+	PipelineCache& pipelines = cache.GetPipelineCache();
+
+	if (pipelines.GetPipeline(shaderId, version)) return true;
+
+	Pipeline pipeline = CreatePerMeshPipeline(request.vertexSpv, request.fragmentSpv);
+
+	// No SPIR-V for any supported stage is an ordinary state while a shader is
+	// being edited, so it is neither cached nor reported here - Record() logs
+	// the resulting miss, latched.
+	if (!*pipeline.pipeline) return false;
+
+	pipelines.UsePipeline(shaderId, std::move(pipeline), version);
+	p_reportedMissingPipelines.erase(shaderId);
+	NEURUS_LOG("[GeometryPass] Warmed per-mesh pipeline for shaderId="
+	           << shaderId << " version=" << version);
+	return true;
+}
+
+// ---------------------------------------------------------------------------
 // Record
 // ---------------------------------------------------------------------------
 
@@ -199,7 +237,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 {
 	PassStats stats{};
 
-	const Scene* scene = ctx.scene;
+	const RenderFrameSnapshot& frame = ctx.Frame();
 
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 
@@ -248,44 +286,45 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	const vk::Rect2D scissor({0, 0}, renderExtent);
 	cmdBuf.setScissor(0, scissor);
 
-	if (ctx.HasScene())
+	if (frame.HasScene())
 	{
-		for (const auto& [id, mesh] : scene->mesh_list)
+		for (const auto& inst : frame.meshes)
 		{
-			if (!mesh || !mesh->o_mesh) continue;
-			if (!mesh->is_viewport || !mesh->is_rendered) continue;
+			if (!inst.hasGeometry) continue;
+			if (!inst.visibleInViewport || !inst.rendered) continue;
 
-			MeshGPU* gpuPtr = cache.GetMeshGPU(mesh->GetObjectID());
+			MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
 			if (!gpuPtr)
 			{
-				NEURUS_ERR("[GeometryPass] GetMeshGPU returned nullptr for objectId=" << mesh->GetObjectID());
+				NEURUS_ERR("[GeometryPass] GetMeshGPU returned nullptr for objectId=" << inst.objectId);
 				continue;
 			}
 
 			bool usingCustomPipeline = false;
 			vk::PipelineLayout activeLayout = *p_pipelines[0].pipelineLayout;
-			if (mesh->o_shader)
+			if (inst.shaderObjectId != 0)
 			{
-				int version = mesh->o_shader->GetVersion();
+				const int shaderId = inst.shaderObjectId;
+				const int version  = inst.shaderVersion;
 
-				Pipeline* customPipeline = cache.GetPipeline(mesh->GetObjectID(), version);
+				// Lookup only: compiling reads the live Shader's SPIR-V, which is
+				// the warm's job on the Editor thread. The id and version come
+				// from the owned frame snapshot, so this read touches nothing the
+				// Editor may be mutating. A miss means the shader has not
+				// compiled, and the mesh draws with the pass default.
+				Pipeline* customPipeline =
+				    cache.GetPipelineCache().GetPipeline(shaderId, version);
 				if (!customPipeline)
 				{
-					Pipeline newPipeline = CreatePerMeshPipeline(*mesh->o_shader, ShaderType::VERTEX);
-					// Do not cache/bind a failed (empty) pipeline - fall back to the default one.
-					if (*newPipeline.pipeline)
+					if (p_reportedMissingPipelines.insert(shaderId).second)
 					{
-						cache.UsePipeline(mesh->GetObjectID(), std::move(newPipeline), version);
-						customPipeline = cache.GetPipeline(mesh->GetObjectID(), version);
-					}
-					else
-					{
-						NEURUS_ERR("[GeometryPass] Per-mesh pipeline creation failed for objectId="
-						           << mesh->GetObjectID() << " — falling back to default pipeline");
+						NEURUS_LOG("[GeometryPass] No per-mesh pipeline for shaderId="
+						           << shaderId << " version=" << version
+						           << " (objectId=" << inst.objectId
+						           << ") - falling back to default pipeline");
 					}
 				}
-
-				if (customPipeline)
+				else
 				{
 					cmdBuf.bindPipeline(vk::PipelineBindPoint::eGraphics,
 					                    *customPipeline->pipeline);
@@ -310,11 +349,11 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 				                          {});
 			}
 
-			const glm::mat4 model = mesh->GetModelMatrix();
-			const glm::mat4 normalMat = glm::mat4(mesh->GetNormalMatrix());
+			const glm::mat4 model = inst.model;
+			const glm::mat4 normalMat = glm::mat4(inst.normalMatrix);
 
 			MeshPushConstants pushConstants{model, normalMat,
-			                               static_cast<uint32_t>(mesh->GetObjectID())};
+			                               static_cast<uint32_t>(inst.objectId)};
 
 			// Push constants must use the layout of the currently bound pipeline
 			// (default layout, or the per-mesh custom pipeline's layout when set).

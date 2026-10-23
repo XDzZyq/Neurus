@@ -82,7 +82,11 @@ the camera dollies, and is why a camera change must `MarkGizmoDirty()` even thou
 the state machine has not moved (`HandleResize` does exactly that). `Rebuild()`
 early-returns when clean and the builder starts dirty. It runs inside
 `RebuildOverlays()`, which `Edit()` calls after the queue drains and after the
-second `SyncCamera()`, for exactly that reason. See [Viewport](viewport.md).
+second `SyncCamera()`, for exactly that reason. `RebuildOverlays()` reports
+whether either payload was rebuilt, and that is what makes `Edit()` post a
+`RedrawOverlaysRequest` - a camera move already restarts accumulation through
+`RenderResetEvent`, but a selection change does not, and the converged renderer
+would otherwise keep presenting the old guide. See [Viewport](viewport.md).
 
 ## The anchor
 
@@ -136,6 +140,7 @@ existing confirm.
 
 ## Rendering
 
-`GizmoPass` runs last, after `DebugPass`, into the same post-AA image with
-`LOAD_OP_LOAD` and no depth attachment at all: every guide is unconditionally
-x-ray, so there is no partition and exactly two draws.
+`GizmoPass` runs last, after `DebugPass`, into the same overlay image
+(`OverlayOutput`) with `LOAD_OP_LOAD` and no depth attachment at all: every guide
+is unconditionally x-ray, so there is no partition and exactly two draws. The
+overlay image, not the pass's target, is what the swapchain blit reads.

@@ -82,46 +82,53 @@ code across test files:
 | `MakeTestCamera(w, h)` | `static CameraUBOData` | Creates a default 60 deg FOV camera at `(0,0,2)` looking at origin with given aspect ratio |
 | `TestTriangle()` | `static pair<vector<TestVertex>, vector<uint32_t>>` | Returns a 3-vertex triangle (XY plane, facing +Z) + 3 indices, suitable for quick geometry tests |
 | `ReadbackHdrOutput(device, pd, queue, qfi, am, w, h)` | `static vector<float>` | Reads back HDRColor RGBA16F attachment to CPU; handles layout transition, staging copy, and half->float conversion |
-| `PublishSceneCamera(cache, scene)` / `(cache, ctx)` | `static void` | Writes the scene's active camera into `RenderCache`'s shared `CameraGPU`; the `RenderContext&` overload also injects `ctx.camera` from the scene's active camera, which is where every pass now reads the viewing camera. Both stand in for `DeferredRenderer::recordFrame()`. No-op when no scene camera is activated - which is the default, so activate one (see below) |
+| `PublishFrame(cache, ctx, out, scene, config?, debugDraw?, gizmoDraw?)` | `static void` | Stands in for both the Editor's per-frame publication and `DeferredRenderer::recordFrame()`: writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, builds the frame through `Editor::BuildSnapshot()` - the same producer production uses - into caller-owned `out`, and points `ctx.snapshot` at it. `out` must outlive `ctx`. The camera is a no-op when no scene camera is activated - which is the default, so activate one (see below) |
 
 All helpers are defined in `test/shared/TestVulkanShared.h`. Tests that need a
 helper not yet available should add it to the shared header rather than
 duplicating it in the local test file.
 
-## Publishing the Camera Before Recording a Pass
+## Publishing the Frame Before Recording a Pass
 
 `CameraGPU` and `DebugCache` belong to `RenderCache`, and the **frame driver**
 (`DeferredRenderer::recordFrame()`) writes them once per frame *before* any pass
 records. `GeometryPass` and `DebugPass` only bind them, and both return early
-from `Record()` while `RenderCache::GetCameraGPU().IsValid()` is false.
+from `Record()` while `RenderCache::GetCameraGPU().IsValid()` is false. The
+other passes read what is being rendered from `ctx.Frame()` - the owned
+`RenderFrameSnapshot` the Editor published - so a pass sees a camera only when
+the frame carries one (`ctx.Frame().HasCamera()`).
 
-A test that drives a pass directly *is* the frame driver, so it must publish
-first:
+A test that drives a pass directly *is* both the Editor and the frame driver, so
+it must publish a frame first, from storage it owns:
 
 ```cpp
-VulkanTestShared::PublishSceneCamera(*m_renderCache, ctx);
+RenderFrameSnapshot frame;   // caller-owned; must outlive ctx
+VulkanTestShared::PublishFrame(*m_renderCache, ctx, frame, &scene);
 m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 ```
 
 Forget it and the pass records nothing - no validation error, just an empty
-attachment and a reference-image diff that points nowhere near the cause. The
-`RenderContext&` overload fills the shared `CameraGPU` **and** injects
-`ctx.camera` from the scene's active camera, because `LightingPass`, `SSAOPass`,
-`ShadowDepthPass` and `ShadowIntensityPass` read the viewing camera out of the
-context; a UBO-only publish would leave all four skipping their work. Call it
-exactly where `recordFrame()` does - before the first pass records - since
-ordering is load-bearing: `ShadowDepthPass` skips its whole sun cascade when
-`camera` is null and a later publish cannot fill a shadow map that was never
-rendered.
+attachment and a reference-image diff that points nowhere near the cause.
+`PublishFrame` fills the shared `CameraGPU` **and** builds the snapshot through
+`Editor::BuildSnapshot()` - the same producer production uses, not a second
+builder that could drift from it - so `ctx.Frame()` carries the viewing camera
+that `LightingPass`, `SSAOPass`, `ShadowDepthPass` and `ShadowIntensityPass`
+read; a UBO-only publish would leave all four skipping their work. Two things
+are load-bearing. `frame` is caller-owned storage that must outlive `ctx`,
+because `ctx.snapshot` only borrows it - let it fall out of scope and every pass
+reads freed memory. And the call goes exactly where `recordFrame()` does -
+before the first pass records - since ordering is load-bearing: `ShadowDepthPass`
+skips its whole sun cascade when the frame has no camera, and a later publish
+cannot fill a shadow map that was never rendered.
 
-**A scene camera has to be activated first.** `PublishSceneCamera` reads
-`Scene::GetActiveCamera()`, and **no camera is activated by default** - in the
-app the viewport looks through the viewport's own camera, so "none" is the normal
-state rather than a failure. A test that builds a scene with `UseCamera()` and
-stops there publishes nothing, and
-`LightingPass`/`SSAOPass`/`ShadowDepthPass`/`ShadowIntensityPass` see a null
-`ctx.camera` and skip their work: a blank or shadowless reference image,
-not a crash. So pair every `UseCamera()` in a render test with
+**A scene camera has to be activated first.** `PublishFrame` builds the snapshot
+from `Scene::GetActiveCamera()`, and **no camera is activated by default** - in
+the app the viewport looks through the viewport's own camera, so "none" is the
+normal state rather than a failure. A test that builds a scene with `UseCamera()`
+and stops there publishes a frame with no camera, and
+`LightingPass`/`SSAOPass`/`ShadowDepthPass`/`ShadowIntensityPass` see
+`ctx.Frame().HasCamera()` false and skip their work: a blank or shadowless
+reference image, not a crash. So pair every `UseCamera()` in a render test with
 `scene.ActivateCamera(cam->GetObjectID())` (the shared shadow builders in
 `test/shared/TestSimpleShadow.h` and `TestMultiShadow.h` already do).
 
@@ -294,7 +301,7 @@ for name in ["Position", "Normal", "Albedo", "MetallicRoughness", "HDRColor"]:
         raise ValueError(f"{name}: ALL BLACK - geometry not rendered")
 ```
 
-**VUID check (REQUIRED before committing any GPU test or renderer change).** Run
+**VUID check (REQUIRED before pushing a GPU test or renderer change).** Run
 the test executable and verify zero `VUID-` violations in output:
 
 ```bash
@@ -340,6 +347,7 @@ differently:
 | HDRColor   | `R16G16B16A16_SFLOAT` | `false` | half->float->clamp[0,1]->U8 |
 | SelectionOutline | `R8_UNORM` | `false` | raw U8 (0=no highlight, 255=edge highlight) |
 | ComposedOutput | `R16G16B16A16_SFLOAT` | `false` | half->float->clamp[0,1]->U8 (gamma-corrected composed output) |
+| OverlayOutput | `R16G16B16A16_SFLOAT` | `false` | half->float->clamp[0,1]->U8 (composed scene with the selection highlight and overlays - what the swapchain blit reads) |
 
 **Background pixels** (no geometry rendered) have:
 
@@ -351,6 +359,7 @@ differently:
 - MetallicRoughness: `(0,0,0,0)` -> PNG black
 - SelectionOutline: `0` -> PNG black (no highlight on clear pixels)
 - ComposedOutput: `(0,0,0,0)` -> PNG black
+- OverlayOutput: `(0,0,0,0)` -> PNG black
 
 **Generating and verifying reference images:**
 
@@ -704,7 +713,8 @@ GPU tests:
   m_cache = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
   m_pass  = std::make_unique<DebugPass>(*m_device, PhysicalDevice(), 2);
   // Prime: clearColorImage(black) + clearDepthStencilImage(depth) via TransferDst
-  // Run:   RenderContext ctx; ctx.{config,scene,debugDraw} = ...;
+  // Run:   RenderContext ctx; RenderFrameSnapshot frame;  // frame outlives ctx
+  //        PublishFrame(*m_cache, ctx, frame, &scene, &config, &debugDraw);
   //        m_pass->Record(*BeginCmd(), *m_cache, ctx); EndSubmitWait(c);
   ```
 
@@ -732,19 +742,20 @@ GPU tests:
   where a filled quad would light nearly all of it. A regression from
   `PolygonMode::eLine` to `eFill` therefore has to fail, which a "something was
   drawn" assertion would not catch. **Assert the target, and assert the image it
-  must NOT touch.** Since the overlay runs after post-AA, `DebugPass` draws into
-  `FXAAOutput` when FXAA is on and `ComposedOutput` when it is off (`SetTarget()`
-  from `PipelineSignature`). `SetTarget_RedirectsTheOverlayToFXAAOutput` primes
-  *both* post-chain images black, retargets the pass, then measures each: lit
-  pixels on `FXAAOutput`, **exactly zero** on `ComposedOutput`. The negative half
-  is the half that matters - a regression to a hardcoded target would still light
-  the attachment the positive half checks. The geometry and band bounds are
-  shared verbatim with `DepthTestedLine_VisibleAgainstFarDepth` so the two tests
-  differ in one variable only; equal lit counts then prove one set of pipelines
-  serves either attachment, which is what their identical format and usage buy.
-  This is the only test that covers the FXAA-on topology, so the fixture's
-  `PrimeAttachments` / `Measure` take an optional `AttachmentName` rather than
-  hardcoding `ComposedOutput`.
+  must NOT touch.** The overlay target is `OverlayOutput` in production, so the
+  test does not rely on the production choice: `SetTarget()` is retargeted to
+  `FXAAOutput`, the other post-chain image.
+  `SetTarget_RedirectsTheOverlayToFXAAOutput` primes *both* images black,
+  retargets the pass, then measures each: lit pixels on `FXAAOutput`, **exactly
+  zero** on `ComposedOutput`. The negative half is the half that matters - a
+  regression to a hardcoded target would still light the attachment the positive
+  half checks. The geometry and band bounds are shared verbatim with
+  `DepthTestedLine_VisibleAgainstFarDepth` so the two tests differ in one variable
+  only; equal lit counts then prove one set of pipelines serves either
+  attachment, which is what their identical format and usage buy. This is the
+  only test that covers `SetTarget()`, so the fixture's `PrimeAttachments` /
+  `Measure` take an optional `AttachmentName` rather than hardcoding
+  `ComposedOutput`.
 
 - **GizmoPass tests** (`test/render/test_gizmo_pass.cpp`): the same headless
   fixture, aimed at the three ways `GizmoPass` is deliberately *simpler* than
@@ -757,8 +768,11 @@ GPU tests:
   and asserts the line is drawn. A regression that quietly attached the G-Buffer
   depth fails exactly this test and nothing else, and the missing flag is what
   stops it from being the x-ray path under another name. **Null and empty are
-  different code paths, so test both.** A *null* `ctx.gizmoDraw` is the
-  real "no gesture in progress" signal and must cost nothing: the test asserts
+  different code paths, so test both.** The snapshot always carries a `gizmoDraw`
+  value, so the pass itself has only the empty early-out; the *null* case lives
+  in the fixture, which takes the guide by `GizmoDrawList*` and skips the cache
+  update when it is null - the "no gesture in progress" state that must cost
+  nothing. The test asserts
   `GizmoCache::GetFrameCount() == 0`, which is stronger than a pixel count
   because the cache allocates its first ring slot inside `Update()`. An *empty*
   list is the frame a gesture *ends* on; it must still upload, so the test runs a
@@ -778,6 +792,16 @@ GPU tests:
   and loaded black are the same pixels. `LoadOpLoad_PreservesTheShadedImage`
   primes the target to 0.25 grey and checks two corners survive, which is why
   `PrimeAttachments` takes a clear color as well as an `AttachmentName`.
+
+- **Overlay blend tests** (`test/render/test_overlay_blend.cpp`): headless GPU
+  test of the copy that makes an overlay-only frame possible. It primes the scene
+  tail and the R8 mask, runs one `OverlayCopyPass`, and asserts the blended
+  texels, the *exactly* copied texels where the mask is 0, and that the scene tail
+  itself is untouched. **A pass that wrote the tail in place would pass once**, so
+  `RedrawingTwiceIsIdempotent` is the test that catches it: the highlight would
+  accumulate into a solid block on the second run. `SetSourceMovesTheCopyInput`
+  pins the FXAA-on/off source choice, and `GetIO()` is asserted to name the tail
+  and the mask as reads and `OverlayOutput` as its only write.
 
 - **DebugDrawBuilder tests** (`test/editor/test_debug_draw_builder.cpp`, issue
   #22): non-GPU tests that pin the three CPU-side contracts `DebugPass` trusts
@@ -807,6 +831,55 @@ GPU tests:
   `m_xraySegments.clear()`, move the boundary assignments *after* the `insert`
   calls, and drop `m_list.Touch()` => 8 targeted failures. Then restore and
   **verify with `diff` that the source is byte-identical** before rebuilding.
+
+- **Editor overlay redraw tests** (`test/editor/test_editor_overlay_redraw.cpp`):
+  non-GPU, run in CI. Pins the Editor's half of the overlay contract against a
+  recording `RenderRequestSink`, because both failure directions are silent on
+  screen: a selection change and a deselection each post exactly one
+  `RedrawOverlaysRequest` and **no** `ResetAccumulationRequest` (not posting
+  leaves the outline stuck after convergence; posting a reset would discard the
+  converged image for a click), an idle tick posts nothing (a redraw every tick
+  would re-present forever), and arming the gizmo posts a reset *and* a redraw.
+
+- **Frame mailbox and render-thread tests** (`test/render/test_frame_mailbox.cpp`,
+  `test/render/test_render_thread.cpp`): headless, no GPU, every wait bounded and
+  resolved on a condition variable or future rather than a sleep. The mailbox
+  tests cover the acquisition contract - `Wait`/`Reuse`/`Idle`, `Repeat` carrying
+  no new frame, `Invalidate` dropping the pending frame and forcing `Reuse` and
+  `Idle` to wait for a fresh publish - plus the status priority
+  (Stopped > Interrupted > Frame, with `Repeat` as the no-frame fallback) and the
+  enqueue-then-signal ordering. The
+  render-thread tests drive the loop with a fake renderer and pin the new
+  behaviour directly: `ConvergedAccumulationDrawsExactlyTheSamplingCount`,
+  `APostedRequestRestartsAccumulation`,
+  `AnOverlayRedrawDrawsOnceMoreWithoutRestartingAccumulation`,
+  `AFramePublishedBeforeAPostIsNeverDrawnAfterIt`, and
+  `ADrawThatProducedNothingWaitsInsteadOfSpinning` (a Retry must not busy-spin),
+  plus `PickIsAnsweredWhileTheRendererIsIdle`.
+
+- **Render request queue tests** (`test/render/test_render_request_queue.cpp`):
+  headless (no GPU) tests of the Editor-to-renderer handoff contract. Cover strict
+  FIFO within a batch (checked index-by-index so a reorder or a stack reversal
+  fails rather than passing on "all requests came back"), whole-batch swap-out
+  (`TakeAll()` leaves with the storage, so a `Post()` arriving mid-execution lands
+  in the next batch, asserted structurally), and move-through (capture a request's
+  SPIR-V `data()` pointer before posting and assert the drained request reports
+  the same address - true only if the payload was stolen end to end rather than
+  copied). Run in CI.
+
+- **Render request executor tests** (`test/render/test_render_request_executor.cpp`):
+  offscreen GPU coverage for `RenderRequestExecutor` - the handlers that used to
+  live in the Editor, now proven against a real device. The fixture builds exactly
+  what `DeferredRenderer` hands the executor (`RenderCache` with a `LightingCache`,
+  `UploadManager`, `GeometryPass`), which `DeferredRenderer` itself cannot do
+  headless. Each test drives a request the way the per-frame drain does and asserts
+  the GPU-side effect: residency flipping absent -> present, FIFO surviving a scene
+  drop mid-batch, a sun light getting a depth map and no colour cubemap where a
+  point light gets both, a `regenerate` replacing the found cubemap vs an
+  idempotent upload leaving it, a pipeline request carrying its own SPIR-V so a
+  recompile cannot retroactively change which version it builds, and a single-light
+  SSBO rewrite landing on the uid an earlier full rebuild indexed. Requires a
+  Vulkan 1.4 GPU; skipped in CI without one.
 
 ## Common Pitfalls
 

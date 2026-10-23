@@ -88,13 +88,13 @@ public:
 	 * Records one-shot command buffers: one irradiance dispatch, then one
 	 * specular prefilter dispatch per mip.
 	 *
-	 * @param graphicsQueue   Graphics queue for one-shot command submits.
-	 * @param queueFamilyIndex Queue family index for transient cmd pools.
+	 * @param queue            Compute-capable queue for one-shot command submits.
+	 * @param queueFamilyIndex Family of @p queue, for the transient command pool.
 	 * @param equirectImage  Equirectangular HDR panorama (2D image).
 	 * @param diffuseOut     Pre-created diffuse irradiance cubemap Image.
 	 * @param specularOut    Pre-created specular prefiltered cubemap Image.
 	 */
-	void Generate(vk::Queue graphicsQueue, uint32_t queueFamilyIndex,
+	void Generate(vk::Queue queue, uint32_t queueFamilyIndex,
 	              const Image& equirectImage, Image& diffuseOut, Image& specularOut);
 
 	/** @brief Static factory: creates a linear-clamp equirect sampler. */

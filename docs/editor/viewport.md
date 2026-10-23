@@ -38,7 +38,7 @@ overlay dirty flags) are the Editor's alone, which is why controllers receive a
 
 ## The view camera
 
-Every view-projection pass reads `ctx.camera`
+Every view-projection pass reads the frame's camera (`ctx.Frame().camera`)
 (`ShadowDepthPass`, `ShadowIntensityPass`, `SSAOPass`, `LightingPass`, plus
 `GeometryPass` through the shared `CameraGPU`), and no pass reads the Scene.
 `EditorViewport` decides what that pointer is, in `SyncCamera(Scene&)`:
@@ -52,7 +52,7 @@ EditorViewport::GetCamera()  =  p_camera   // published, never recomputed
 
 The Editor owns no camera and exposes no camera API. It holds the viewport
 (`GetViewport()`) and contributes only the timing: `Editor::Edit()` calls
-`SyncCamera(GetScene())`, and `RenderContext::camera` is filled from
+`SyncCamera(GetScene())`, and the frame snapshot's camera is built from
 `GetViewport().GetCamera()`. Everything about which camera the frame belongs to,
 how it is framed, and how long it lives is the viewport's business. That is also
 why `GetCamera()` is a published pointer rather than a fresh choice per call: the
@@ -236,3 +236,9 @@ The viewport owns two overlay systems, each documented on its own page:
   scene objects, flattened by `DebugDrawBuilder` into `DebugDrawList`.
 - [Transform gizmo](gizmo.md): the transient modal G/R/S handle driven by
   `TransformGizmo` and flattened by `GizmoDrawBuilder`.
+
+Both are rebuilt on a dirty flag, not per frame, by `RebuildOverlays()`. It
+returns `true` when at least one payload was actually rebuilt - the only way the
+Editor can tell that this tick's overlays differ from the ones the renderer last
+saw, and therefore whether it has to post a `RedrawOverlaysRequest` for a
+converged renderer to draw them.

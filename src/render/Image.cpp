@@ -88,7 +88,7 @@ Image Image::FromImageData(const vk::raii::Device& device,
                           const vk::raii::PhysicalDevice& physicalDevice,
                           vk::Queue queue,
                           uint32_t queueFamilyIndex,
-                          ImageData& imageData,
+                          const ImageData& imageData,
                           const char* debugName,
                           vk::ImageUsageFlags extraUsage,
                           uint32_t mipLevels)
@@ -443,6 +443,21 @@ std::shared_ptr<ImageData> Image::ReadImageData(const vk::raii::Device& device,
 		return nullptr;
 	}
 
+	// An image that was never written holds nothing to read. Refusing here also
+	// keeps the restore below legal: going back to Undefined as a *new* layout is
+	// forbidden (VUID-VkImageMemoryBarrier2-newLayout-01198).
+	if (im_state == ImageState::Undefined || im_state == ImageState::Invalid)
+	{
+		NEURUS_ERR("[Image] ReadImageData: image is "
+		           << (im_state == ImageState::Undefined ? "UNDEFINED" : "INVALID")
+		           << " (never written) - no readback");
+		return nullptr;
+	}
+
+	// The range is restored to this state before the submission ends, so the
+	// image's layout and its tracked state are unchanged when this returns.
+	const ImageState originalState = im_state;
+
 	// Extent to read: explicit override or full image
 	const vk::Extent2D copyExtent = (readExtent.width == 0 && readExtent.height == 0)
 		? im_extent
@@ -466,7 +481,9 @@ std::shared_ptr<ImageData> Image::ReadImageData(const vk::raii::Device& device,
 	auto& cmd = staging.BeginStaging(queueFamilyIndex);
 
 	// --- Transition the requested subresource range to TransferSrc ---
-	Barrier::Transition(cmd, *this, ImageState::TransferSrc, range);
+	// Raw-handle overload with an explicit "before": im_state tracks the whole
+	// image, so a partial-range transition must not write it.
+	Barrier::Transition(cmd, *im_image, originalState, ImageState::TransferSrc, range);
 
 	// --- Copy image to buffer ---
 	vk::BufferImageCopy copyRegion;
@@ -483,6 +500,13 @@ std::shared_ptr<ImageData> Image::ReadImageData(const vk::raii::Device& device,
 
 	// --- Buffer barrier: transfer write → host read ---
 	Barrier::Transition(cmd, staging, BufferState::HostRead);
+
+	// --- Return the range to the state it entered in ---
+	// Same submission (one submit + one waitIdle), so no rendering code can
+	// observe the intermediate TransferSrc layout. Nothing is left for the
+	// caller to restore, which is what keeps a readback from stranding an image
+	// in TRANSFER_SRC while im_state still claims it is readable.
+	Barrier::Transition(cmd, *im_image, ImageState::TransferSrc, originalState, range);
 
 	staging.EndStaging(queue);
 
@@ -511,6 +535,19 @@ std::vector<uint8_t> Image::PickPixel(const vk::raii::Device& device,
 	if (bytesPerPixel == 0)
 	{
 		NEURUS_ERR("[Image] PickPixel: unsupported format " << vk::to_string(im_format));
+		return {};
+	}
+
+	// --- A never-written image holds no pixel to pick ---
+	// Undefined means no pass has drawn into this image yet: the read would take
+	// undefined contents, and the restore at the end would record a transition
+	// *to* VK_IMAGE_LAYOUT_UNDEFINED as a newLayout, which is invalid
+	// (VUID-VkImageMemoryBarrier2-newLayout-01198). Never touch the GPU for it.
+	if (im_state == ImageState::Undefined || im_state == ImageState::Invalid)
+	{
+		NEURUS_LOG("[Image] PickPixel: image is "
+		           << (im_state == ImageState::Undefined ? "UNDEFINED" : "INVALID")
+		           << " (never written) - returning empty");
 		return {};
 	}
 

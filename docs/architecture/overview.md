@@ -11,7 +11,8 @@ The architecture prioritizes:
   must not be violated
 - **Minimal global state** - State is explicit and localized
 - **Explicit data flow** - Communication via UIEvents (Qt Signals/Slots),
-  EventQueue (typed event dispatcher), and Context objects
+  typed `RenderRequest` values (Editor to Renderer), and Context objects; the
+  `EventQueue` typed dispatcher stays inside the Editor
 - **Stateless rendering** - Renderer does not own application-level state
 - **Deterministic GPU resource management** - Vulkan resources have explicit
   RAII ownership via the `vk::raii` namespace
@@ -29,7 +30,7 @@ The architecture prioritizes:
                              v
 +--------------------------------------------------------------+
 | Editor Layer                                                 |
-|  owns: Scene, RenderConfig, UploadManager, Controllers       |
+|  owns: Scene, RenderConfig, ResourceManager, Controllers     |
 |  Application logic, scene mutation, event orchestration      |
 +----------------------------+---------------------------------+
                              |
@@ -84,15 +85,18 @@ compute pass and full G-Buffer pipeline through the isolated layers.
 - Qt6 Widgets window with Qt-Advanced-Docking-System (ADS)
 - Viewport as a dockable central widget
 - `UIEvents` singleton over Qt signals (UI <-> Editor)
-- Typed `EventQueue` for Editor <-> Renderer dispatch
+- Typed `RenderRequest` queue for Editor -> Renderer GPU work (`RenderRequestSink`, `RenderThread`)
 - Swapchain recreation on window resize
 - Validation layers in Debug builds
 - Embedded SPIR-V shaders (compiled at CMake time)
 - OBJ mesh loading into `MeshData`
 - Deferred pipeline: ShadowDepthPass -> GeometryPass (G-Buffer) -> SSAOPass ->
-  Light + ShadowIntensity -> LightingPass -> IBLPass -> SelectionOutlinePass ->
-  ComposePass (gamma) -> FXAAPass (conditional) -> DebugPass -> GizmoPass ->
-  blit to swapchain
+  Light + ShadowIntensity -> LightingPass -> IBLPass -> ComposePass (tone map,
+  gamma) -> FXAAPass (conditional), then the overlay graph: SelectionOutlinePass
+  -> OverlayCopyPass -> DebugPass -> GizmoPass -> blit to swapchain
+- Progressive accumulation with a sampling budget (`r_sampling_count`): after a
+  restart the renderer draws that many scene frames and then stops, redrawing
+  overlays only when they change and idling otherwise
 - Centralized image barriers (`Barrier::Transition`, `ImageState`)
 - Screenshot capture and PNG readback
 - Undo/redo operation system and project serialization

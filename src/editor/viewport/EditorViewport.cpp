@@ -181,8 +181,12 @@ void EditorViewport::SetCursor(glm::vec2 logicalPixel)
 // Overlays
 // ---------------------------------------------------------------------------
 
-void EditorViewport::RebuildOverlays(const Scene& scene)
+bool EditorViewport::RebuildOverlays(const Scene& scene)
 {
+	// Read before the rebuilds, which clear the flags: this is the one answer to
+	// "did anything the overlay draws change in this tick".
+	const bool rebuilt = v_debugDraw.IsDirty() || v_gizmoDraw.IsDirty();
+
 	// Returns immediately when clean, which is the common case: debug objects are
 	// stateful and rarely move.
 	v_debugDraw.Rebuild(scene);
@@ -193,6 +197,8 @@ void EditorViewport::RebuildOverlays(const Scene& scene)
 	TransformSnapshot anchor{};
 	const bool hasAnchor = GizmoAnchor(scene, anchor);
 	v_gizmoDraw.Rebuild(v_gizmo, *this, hasAnchor ? &anchor : nullptr);
+
+	return rebuilt;
 }
 
 void EditorViewport::MarkOverlaysDirty()

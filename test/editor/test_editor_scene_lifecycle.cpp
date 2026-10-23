@@ -28,8 +28,8 @@
  * Application::OnProjectNew(). Both halves are pinned below, separately, because
  * the whole point of the split is that an empty scene is renderable on its own.
  *
- * No GPU and no Vulkan: `Editor(nullptr, nullptr)` skips every upload path
- * (each one is guarded on ed_renderer / ed_uploadManager), so this runs in CI.
+ * No GPU and no Vulkan: `Editor(nullptr)` skips every upload path
+ * (each one is guarded on ed_renderer), so this runs in CI.
  * The starter assets are CPU-side loads resolved against the CWD, which CTest
  * pins to the build dir (res/ is copied there by a POST_BUILD step).
  */
@@ -67,7 +67,7 @@ void NewProject(Editor& editor)
 
 TEST(EditorSceneLifecycleTest, NewScene_LeavesARenderableViewCamera)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.NewScene();
 
 	const Camera* cam = editor.GetViewport().GetCamera();
@@ -90,7 +90,7 @@ TEST(EditorSceneLifecycleTest, NewScene_LeavesARenderableViewCamera)
 
 TEST(EditorSceneLifecycleTest, NewScene_LeavesTheSceneEmpty)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);           // a populated document first,
 	editor.NewScene();            // ... which this must wipe entirely.
 
@@ -114,7 +114,7 @@ TEST(EditorSceneLifecycleTest, NewScene_LeavesTheSceneEmpty)
 
 TEST(EditorSceneLifecycleTest, RepeatedNewScene_KeepsExactlyOneViewCamera)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 
 	for (int i = 0; i < 3; ++i)
 	{
@@ -142,7 +142,7 @@ TEST(EditorSceneLifecycleTest, RepeatedNewScene_KeepsExactlyOneViewCamera)
 
 TEST(EditorSceneLifecycleTest, NewProject_SeededCameraIsRegisteredAndUsable)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	Scene& scene = editor.GetScene();
@@ -185,7 +185,7 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededCameraIsRegisteredAndUsable)
 
 TEST(EditorSceneLifecycleTest, NewProject_SeedsVisibleStarterContent)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	Scene& scene = editor.GetScene();
@@ -210,7 +210,7 @@ TEST(EditorSceneLifecycleTest, NewProject_SeedsVisibleStarterContent)
 
 TEST(EditorSceneLifecycleTest, CreateDefaultScene_AddsToTheCurrentSceneWithoutResetting)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	const Scene& scene = editor.GetScene();
@@ -238,7 +238,7 @@ TEST(EditorSceneLifecycleTest, CreateDefaultScene_AddsToTheCurrentSceneWithoutRe
 
 TEST(EditorSceneLifecycleTest, NewProject_SeededObjectsAreNamed)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	// A blank o_name renders as an empty Outliner row, indistinguishable from a
@@ -267,7 +267,7 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededCameraAdoptsTheViewportExtent)
 	constexpr uint32_t kW = 1280;
 	constexpr uint32_t kH = 720;
 
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.GetViewport().HandleResize({kW, kH}, {kW, kH});  // window shown / resized
 	NewProject(editor);                       // ... then File > New
 
@@ -299,7 +299,7 @@ TEST(EditorSceneLifecycleTest, NewScene_WithoutAViewportKeepsANonDegenerateCamer
 	// At startup the extent is still 0x0. Replaying that onto the camera would
 	// divide by zero in the projection; EditorViewport::FrameCamera bails out
 	// instead and leaves the camera's own defaults in place.
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.NewScene();
 
 	const Camera* cam = editor.GetViewport().GetCamera();

@@ -612,6 +612,17 @@ RenderCache::AttachmentConfig RenderCache::ConfigFor(const AttachmentName name)
 	case AttachmentName::FXAAOffsets:
 		return { vk::Format::eR16G16Sfloat,
 		         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc, e2D };
+
+	// --- Overlay ---
+	// The overlay engine's output: the scene tail copied in (STORAGE write by
+	// the copy pass, then LOAD_OP_LOAD color writes by the overlay rasters),
+	// sampled by nothing but read back by the screenshot path, and transferred
+	// out to the swapchain - hence storage + color attachment + transfer src,
+	// with transfer dst so a copy into it never needs a new image.
+	case AttachmentName::OverlayOutput:
+		return { vk::Format::eR16G16B16A16Sfloat,
+		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage |
+		             vk::ImageUsageFlagBits::eTransferDst, e2D };
 	}
 
 	throw std::invalid_argument("RenderCache::ConfigFor: unknown attachment name");
@@ -640,6 +651,7 @@ const char* AttachmentNameToString(const AttachmentName name)
 	case AttachmentName::ComposedOutput:    return "ComposedOutput";
 	case AttachmentName::FXAAOutput:        return "FXAAOutput";
 	case AttachmentName::FXAAOffsets:       return "FXAAOffsets";
+	case AttachmentName::OverlayOutput:     return "OverlayOutput";
 	}
 	return "Unknown";
 }
