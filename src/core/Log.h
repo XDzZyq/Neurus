@@ -157,6 +157,23 @@ public:
 	}
 
 	/**
+	 * @brief Returns a copy of the entry with a given seq, if still buffered.
+	 * @return False when the entry was evicted, cleared or not yet appended.
+	 * @note Seqs in the buffer are contiguous, so the newest Size() seqs end at
+	 *       HeadSeq(). A reader that indexes by seq keeps pointing at the same
+	 *       entry while other threads append and the ring wraps.
+	 */
+	bool BySeq(uint64_t seq, LogEntry& out) const
+	{
+		std::lock_guard<std::mutex> lock(m_mtx);
+		if (seq == 0 || seq > m_headSeq || m_headSeq - seq >= m_count)
+			return false;
+		const std::size_t logicalIdx = m_count - 1 - static_cast<std::size_t>(m_headSeq - seq);
+		out = m_ring[(m_head + logicalIdx) % kLogCapacity];
+		return true;
+	}
+
+	/**
 	 * @brief Monotonic seq of the newest entry (0 when empty/cleared).
 	 * @note A consumer polls this each frame to detect growth (insert rows)
 	 *       or a Clear (seq drops -> reset).
@@ -165,6 +182,24 @@ public:
 	{
 		std::lock_guard<std::mutex> lock(m_mtx);
 		return m_headSeq;
+	}
+
+	/** @brief Newest seq and live size, read together. */
+	struct State
+	{
+		uint64_t    headSeq = 0;
+		std::size_t size    = 0;
+	};
+
+	/**
+	 * @brief Returns HeadSeq() and Size() under one lock.
+	 * @note Any thread may Append; two separate reads could straddle an Append
+	 *       and report a seq that does not match the size.
+	 */
+	State Snapshot() const
+	{
+		std::lock_guard<std::mutex> lock(m_mtx);
+		return State{m_headSeq, m_count};
 	}
 
 private:

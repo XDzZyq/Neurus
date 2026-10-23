@@ -12,13 +12,14 @@ The shadow intensity pass accumulates per-light shadow samples over time, and th
   - Fixed EMA (0): `alpha = 1/8` - fast convergence
   - Moving Average (1): `alpha = 1/(iteration + 1)` - true averaging, resets on scene change
 - **Iteration**: the global frame counter `m_iteration` in `DeferredRenderer`, exposed via `RenderContext::iteration`. The Editor resets it through the event system when the scene changes - see `RenderResetEvent`.
-- **Reset**: any scene-changing event (camera move, light change, object transform, visibility toggle, config change, project load, asset import) enqueues a `RenderResetEvent`. The Editor subscribes and posts a `ResetAccumulationRequest`; the renderer zeros `m_iteration` when it drains that request at the top of `DrawFrame()`.
+- **Reset**: any scene-changing event (camera move, light change, object transform, visibility toggle, config change, project load, asset import) enqueues a `RenderResetEvent`. The Editor subscribes and posts a `ResetAccumulationRequest`; the renderer zeros `m_iteration` when it drains that request before drawing the next frame.
+- **Swapchain rebuild**: the renderer also zeros `m_iteration` itself whenever it rebuilds the swapchain (a resize, a surface change or an out-of-date acquire). The rebuild drops the `ShadowIntensity` history together with the other screen-space attachments, and the Editor never sees an out-of-date acquire. Continuing the count over a cleared history would make shadows fade in slowly with Fixed EMA and stay wrong with Moving Average.
 
 ## Accumulation convention
 
 The renderer's temporal accumulation follows one convention across the pipeline:
 
-- **Iteration** (`DrawFrame()` counter): `DeferredRenderer::m_iteration`, reset by the renderer when it drains the Editor's `ResetAccumulationRequest` (posted on scene changes via `RenderResetEvent`).
+- **Iteration** (`DrawFrame()` counter): `DeferredRenderer::m_iteration`, reset by the renderer when it drains the Editor's `ResetAccumulationRequest` (posted on scene changes via `RenderResetEvent`) and whenever it rebuilds the swapchain.
 - **Jitter**: 3D jitter (`RenderContext::jitter`). Point: `pos + radius*jitter`. Sun: UV-space `shadowUV + (jitter.x, jitter.y) * uvRadius`.
 - **Accumulation**: in-place read-modify-write on `ShadowIntensity` with EMA blend: `mix(prev, sample, alpha)`.
 - **Alpha**: 0 = FixedAlpha (1/8), 1 = MovingAvg (1/(n+1)). Both the mode (`r_sampling_mode`) and the shadow bias are read through `ctx.Frame().Settings()`, so the only place either default is written is `RenderConfig`'s member initializers - no pass restates one.

@@ -87,21 +87,47 @@ submits:
 
 ```
 Editor::Edit() -> RenderRequestSink::Post(RenderRequest&&)
-                  (DeferredRenderer today; RenderThread: enqueue, then wake)
+                  (RenderThread: enqueue into the renderer, then wake)
    -> RenderRequestQueue (BatchQueue<RenderRequest>, mutex-guarded FIFO)
-   -> DeferredRenderer::DrawFrame() drains the batch after the frame fence wait,
-      before swapchain acquire
+   -> the render thread drains the batch after the frame fence wait, before
+      it acquires the next frame (DrawFrame drains once more, usually empty)
    -> RenderRequestExecutor runs each request against the device, RenderCache,
       UploadManager and GeometryPass
 ```
 
-Requests posted inside one `Edit()` are drained in the same tick's `DrawFrame()`,
-so there is no one-frame delay. Execution is strict FIFO, which is a contract:
+Requests posted inside one `Edit()` are drained before the frame that tick
+publishes is drawn (every Post precedes the Publish, and a pending wake outranks
+a pending frame), so there is no one-frame delay. Execution is strict FIFO, which is a contract:
 an upload posted after `DropSceneResourcesRequest` lands in the new scene, and
 one posted before it is discarded with the old one. A payload is a value or a
 `shared_ptr<const T>` to immutable data - never a `Scene`, `Mesh` or `Shader`
 pointer, and never a callable, so the request stays correct however the Editor
 edits or deletes afterward. See [Render request path](../render/resources.md#render-request-path).
+
+## Render Thread (Application to Renderer plumbing)
+
+Once `RenderThread::Start()` runs, the render thread is the only thread that
+calls into `DeferredRenderer`. The Application never draws or waits the GPU; it
+publishes one snapshot per tick and sends control messages
+(`src/render/RenderControl.h`) that the thread executes between frames, after
+the frame fence:
+
+- **Resize** - `PostResize(w, h)`, fire and forget; the last resize of a batch
+  wins. The viewport gets an estimated physical extent at once and is corrected
+  from `Status().extent` when the swapchain reports a different one.
+- **Pick** - `PostPick(u, v)` with coordinates normalised to the viewport; the
+  thread maps them onto its own extent and reads the ID buffer. The click
+  handler waits on the future for at most 250 ms and keeps the current
+  selection on timeout or failure.
+- **Surface change** - the new surface is created on the main thread (it needs
+  the native window); `PostSurfaceChange` rebuilds the swapchain and the main
+  thread waits up to 2 s before destroying the old surface. On timeout or
+  failure neither surface is destroyed until shutdown.
+- **Screenshot** - `PostScreenshot(allAttachments)`, fire and forget.
+
+Shutdown: after the Qt event loop returns, `RenderThread::Stop()` joins the
+thread (which breaks any pending promise and leaves the device idle) before any
+GPU member is destroyed.
 
 ## Context System (Data)
 

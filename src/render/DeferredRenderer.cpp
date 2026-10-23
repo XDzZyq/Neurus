@@ -627,6 +627,14 @@ void DeferredRenderer::recreateSwapchain()
 	// on first GetAttachment() call in the next frame.
 	r_renderCache->CleanScreenSpace();
 
+	// The shadow intensity history just went with the screen-space attachments,
+	// so accumulation must restart from frame 0 with it. Nothing else resets it
+	// on a resize (the Editor posts ResetAccumulationRequest only when scene
+	// content changes), and a rebuild can also come from an out-of-date acquire
+	// the Editor never sees. A running average continued over a cleared history
+	// fades in slowly with EMA and never recovers in moving-average mode.
+	m_iteration = 0;
+
 	// Rebuild render-finished semaphores (one per swapchain image)
 	r_renderFinishedSemaphores.clear();
 	for (uint32_t i = 0; i < newImageCount; ++i)

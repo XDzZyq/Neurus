@@ -49,9 +49,11 @@ public:
 	/**
 	 * @brief Resyncs the model with the buffer.
 	 * @param buffer Current log buffer; null detaches (empties the model).
-	 * @note Grow -> beginInsertRows for the delta. Seq drop (Clear) ->
-	 *       beginResetModel. Ring wrap with size unchanged -> remove oldest
-	 *       + append newest (scroll position preserved).
+	 * @note Rows map to seqs: row r is entry m_firstSeq + r. Entries the ring
+	 *       evicted leave from the front, new entries append at the end
+	 *       (scroll position preserved); a seq drop (Clear) resets the model.
+	 *       The buffer may grow on any thread while this runs; the model
+	 *       only moves its own count, between the matching notifications.
 	 */
 	void Refresh(const LogBuffer* buffer);
 
@@ -69,7 +71,12 @@ public:
 private:
 	const LogBuffer* m_buffer = nullptr;
 	uint64_t         m_lastSeq = 0;
+	uint64_t         m_firstSeq = 0;      // seq of row 0
+	int              m_rows = 0;          // count announced to views
 	int              m_maxSourceChars = 0;
+
+	/** @brief Widens m_maxSourceChars over rows [begin, end). */
+	void MeasureRows(int begin, int end);
 
 	/**
 	 * @brief Character width of an entry's "func:line" source field.

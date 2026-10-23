@@ -199,9 +199,10 @@ Design:
   of the Scene: `config`, the viewport's published camera (see
   [Viewport](viewport.md)), every mesh and light in UID order, the environment,
   the active object, the debug list when `RequiresDebugDraw()`, and the gizmo
-  list unconditionally. The Application owns the storage (`app_frameSnapshot`,
-  refilled rather than rebuilt each frame) and points `RenderContext::snapshot`
-  at it; `DeferredRenderer::recordFrame()` then stamps the frame half (`width`,
+  list unconditionally. The Application builds a fresh snapshot each tick and
+  moves it into `RenderThread::Publish` (a latest-wins `FrameMailbox`); the
+  render thread points `RenderContext::snapshot` at the frame it acquired, and
+  `DeferredRenderer::recordFrame()` then stamps the frame half (`width`,
   `height`, `frameIndex`, `jitter`, `iteration`) into a **local copy**, which is
   what keeps temporal state renderer-owned - the Editor can neither read nor
   reset it. Width/height look like they could go either way and cannot: the
@@ -348,18 +349,23 @@ User Input (QML) -> UIEvents Signal -> Editor Subscriber -> State Update
                                                        UI Refresh
 ```
 
-The frame loop is three lines:
+The frame loop, main thread then render thread:
 
 ```
-UIEvents::newFrame() -> Editor::Edit(input) -> Renderer::DrawFrame(scene)
+UIEvents::newFrame() -> Editor::Edit(input) -> Editor::BuildSnapshot()
+                     -> RenderThread::Publish(snapshot)        (never blocks)
+render thread:          fence -> controls -> requests -> Acquire -> DrawFrame
 ```
 
 Example: window resize
 
-1. QWindow detects the resize in MainWindow
-2. MainWindow emits `UIEvents::windowResized(w, h)`
-3. The Renderer slot is connected and calls `Swapchain::Recreate(w, h)`
-4. The next `newFrame()` renders at the new resolution
+1. The Viewport panel emits `resized(w, h)` (logical pixels)
+2. `Application::ResizeViewport` resizes the Metal layer (AppKit, main thread),
+   posts `RenderThread::PostResize(w, h)` and hands `EditorViewport` the
+   logical size plus an estimated physical extent (logical x device pixel ratio)
+3. The render thread rebuilds the swapchain between frames (only the last
+   resize of a batch runs) and reports its extent through `Status()`; the next
+   tick corrects the viewport's physical extent if the swapchain chose another
 
 The event-by-event breakdown of how a panel signal becomes a controller call is
 in [Events](events.md).

@@ -145,6 +145,7 @@ Release mode:
 
 - Normal lifecycle event (window resize, minimize)
 - Recreate the swapchain with the new surface dimensions
+- `Swapchain::Recreate()` idles the device before destroying the old swapchain: it also runs directly from `Present()`/`AcquireNextImage()`, while the frame just presented is still in flight, and on MoltenVK the present-completion handler dereferences the old swapchain until that frame completes. With the render thread presenting back-to-back during a window drag, skipping the wait is a use-after-free.
 - Continue rendering with the new swapchain
 
 ### Surface lost (`VK_ERROR_SURFACE_LOST_KHR`)
