@@ -24,7 +24,7 @@ The renderer must not:
 - Directly call UI or Editor functions
 - Include headers from `src/editor/` or `src/ui/`
 
-Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor, the EventQueue for Editor to renderer events, and Context objects for data queries. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
+Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor, the EventQueue for typed events inside the Editor, typed `RenderRequest` values the Editor posts through `RenderRequestSink` for Editor to renderer GPU work, and Context objects for data queries. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
 
 ### Vulkan ownership
 
@@ -53,7 +53,11 @@ Main thread only for the current version. In future the renderer may run on a de
 - `src/render/RenderCache.h/cpp` - cross-frame resource pool; owns `MeshGPU`, `EnvironmentGPU`, `LightingCache`, `CameraGPU`, `DebugCache`, `GizmoCache`, attachments and shadow maps.
 - `src/render/UploadManager.h/cpp` - CPU-to-GPU upload service (meshes, lights, environments, IBL). Owned by the Application and borrowed by the renderer's request executor; the Editor no longer holds it.
 - `src/render/RenderRequests.h` - typed GPU-work requests the Editor posts as owned values (`UploadMeshRequest`, `CreateLightGpuRequest`, `UploadEnvironmentRequest`, `UpdateLightingRequest`, `UpdateLightRequest`, `EnsurePipelineRequest`, `DropSceneResourcesRequest`, `ResetAccumulationRequest`).
-- `src/render/RenderRequestQueue.h/cpp` - mutex-guarded FIFO inbox (`Post` / `TakeAll` / `Empty`) between the Editor and the renderer.
+- `src/render/RenderRequestQueue.h` - `BatchQueue<RenderRequest>` (`src/core/BatchQueue.h`: mutex-guarded FIFO, `Push` / `TakeAll` / `Empty`) between the Editor and the renderer.
+- `src/render/RenderRequestSink.h` - the Post-only interface the Editor holds instead of the renderer; implemented by `DeferredRenderer` (single-threaded) and `RenderThread` (enqueue, then wake).
+- `src/render/IFrameRenderer.h` - the operations `RenderThread` sequences (fence wait, requests, draw, resize, surface change, ID-buffer read, screenshot, idle); `DeferredRenderer` implements it, tests use a fake.
+- `src/render/RenderControl.h` - main-thread control messages (`ResizeControl`, `SurfaceChangeControl`, `PickControl`, `ScreenshotControl`); the surface change and the pick carry a `std::promise`.
+- `src/render/RenderThread.h/cpp` - the dedicated render thread: owns the `FrameMailbox` and the control queue, and is the only caller into the renderer once started. Loop: wait the frame fence, drain controls (last resize of a batch wins) and requests, `Acquire`, draw. `Post` always wakes, so a frame published after a request is drawn only after it ran. On exit it rejects new controls and breaks pending promises, then `WaitIdle`s.
 - `src/render/RenderRequestExecutor.h/cpp` - executes each request against the device, `RenderCache`, `UploadManager` and `GeometryPass`; the testable seam `DeferredRenderer` delegates to.
 - `src/render/Texture.h/cpp` - texture resource (`Image` + sampler + descriptor).
 - `src/render/resources/` - GPU resource structs owned by `RenderCache`; see [Resources](resources.md).

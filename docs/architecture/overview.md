@@ -11,7 +11,8 @@ The architecture prioritizes:
   must not be violated
 - **Minimal global state** - State is explicit and localized
 - **Explicit data flow** - Communication via UIEvents (Qt Signals/Slots),
-  EventQueue (typed event dispatcher), and Context objects
+  typed `RenderRequest` values (Editor to Renderer), and Context objects; the
+  `EventQueue` typed dispatcher stays inside the Editor
 - **Stateless rendering** - Renderer does not own application-level state
 - **Deterministic GPU resource management** - Vulkan resources have explicit
   RAII ownership via the `vk::raii` namespace
@@ -84,7 +85,7 @@ compute pass and full G-Buffer pipeline through the isolated layers.
 - Qt6 Widgets window with Qt-Advanced-Docking-System (ADS)
 - Viewport as a dockable central widget
 - `UIEvents` singleton over Qt signals (UI <-> Editor)
-- Typed `EventQueue` for Editor <-> Renderer dispatch
+- Typed `RenderRequest` queue for Editor -> Renderer GPU work (`RenderRequestSink`, `RenderThread`)
 - Swapchain recreation on window resize
 - Validation layers in Debug builds
 - Embedded SPIR-V shaders (compiled at CMake time)

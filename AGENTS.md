@@ -27,7 +27,7 @@ No layer knows the internals of the next.
   include Editor or UI headers.
 - **Editor** (`src/editor/`): application logic and scene mutation; owns the
   Scene, `RenderConfig`, Controllers and the `ResourceManager`; communicates via
-  Context, UIEvents and the typed EventQueue.
+  Context, UIEvents, its internal typed EventQueue and posted `RenderRequest`s.
 - **UI** (`src/ui/`): Qt6 Widgets presentation only; owns the native window and
   the surface; emits signals; must never include Renderer headers.
 - **Asset** (`src/asset/`): Vulkan-free CPU-side asset loading (`MeshData`,
@@ -40,7 +40,9 @@ No layer knows the internals of the next.
 Cross-layer traffic MUST go through exactly one of:
 
 - **UIEvents** (Qt Signals/Slots) for UI <-> Editor.
-- **EventQueue** (typed events) for Editor <-> Renderer.
+- **RenderRequest** (typed values posted through `RenderRequestSink`) for
+  Editor -> Renderer GPU work. The Editor's `EventQueue` is Editor-internal
+  (input -> Controllers) and never crosses into the Renderer.
 - **Context objects** (`RenderContext`, `UIContext`) for
   read-only data queries.
 

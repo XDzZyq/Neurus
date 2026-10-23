@@ -15,6 +15,7 @@ add_library(neurus_core STATIC
 	RenderConfig.h
 	ThreadPool.h
 	ThreadPool.cpp
+	BatchQueue.h
 )
 
 # src/ (${CMAKE_CURRENT_SOURCE_DIR}/..) exposes headers as "core/X.h".

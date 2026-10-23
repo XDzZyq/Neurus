@@ -18,7 +18,7 @@
 #include "editor/operations/ShaderOperations.h"
 #include "editor/events/EventBus.h"
 
-#include "render/DeferredRenderer.h"
+#include "render/RenderRequestSink.h"
 #include "render/RenderRequests.h"
 #include "render/UploadManager.h"
 
@@ -28,6 +28,7 @@
 #include "ui/UIContext.h"
 
 #include "core/Log.h"
+#include "asset/data/ImageData.h"
 #include "asset/data/AssetPath.h"
 #include "asset/data/MeshData.h"
 #include "scene/Camera.h"
@@ -68,7 +69,7 @@ constexpr float kStarterMeshScale = 0.135f;
  * same slot. The renderer skips an already-resident slot, so the Editor no
  * longer checks residency - it cannot see it. Callers skip a null geometry.
  */
-void PostMeshUpload(DeferredRenderer& renderer, int objectId, std::shared_ptr<const MeshData> data)
+void PostMeshUpload(RenderRequestSink& renderer, int objectId, std::shared_ptr<const MeshData> data)
 {
 	renderer.Post(UploadMeshRequest{objectId, std::move(data)});
 }
@@ -79,7 +80,7 @@ void PostMeshUpload(DeferredRenderer& renderer, int objectId, std::shared_ptr<co
  * The use_shadow test reads the Scene, so it stays here; the renderer only
  * allocates the GPU-only maps for the light type.
  */
-void PostLightUpload(DeferredRenderer& renderer, const Light& light)
+void PostLightUpload(RenderRequestSink& renderer, const Light& light)
 {
 	if (!light.use_shadow) return;
 	renderer.Post(CreateLightGpuRequest{light.GetObjectID(), light.light_type});
@@ -91,7 +92,7 @@ void PostLightUpload(DeferredRenderer& renderer, const Light& light)
  * @p regenerate is false on the idempotent scene-upload path (skip if resident)
  * and true when the environment itself changed and its cubemaps are stale.
  */
-void PostEnvironmentUpload(DeferredRenderer& renderer, const Environment& env, bool regenerate)
+void PostEnvironmentUpload(RenderRequestSink& renderer, const Environment& env, bool regenerate)
 {
 	renderer.Post(UploadEnvironmentRequest{env.GetObjectID(), env.GetEquirectData(), regenerate});
 }
@@ -110,7 +111,7 @@ int ActiveUid(const Scene& scene)
 
 } // anonymous namespace
 
-Editor::Editor(DeferredRenderer* renderer)
+Editor::Editor(RenderRequestSink* renderer)
 	: m_scene(std::make_unique<Scene>())
 	, m_resources(std::make_unique<ResourceManager>())
 	, ed_operations(ed_eventBus)

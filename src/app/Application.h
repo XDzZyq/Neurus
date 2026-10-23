@@ -10,7 +10,6 @@
 #include "app/VulkanContext.h"
 #include "editor/Editor.h"
 #include "render/DeferredRenderer.h"
-#include "render/Screenshot.h"
 #include "render/RenderFrameSnapshot.h"
 #include "render/UploadManager.h"
 #include "app/Preferences.h"
@@ -117,14 +116,12 @@ private:
 	RenderFrameSnapshot app_frameSnapshot;
 
 	// --- GPU / UI stack (destroyed in REVERSE order: renderer first, vkContext last) ---
-	// Screenshot holds refs to RenderCache (owned by DeferredRenderer) — must be destroyed BEFORE renderer.
-	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared → destroyed 6th (LAST)
-	std::unique_ptr<UIManager>            app_mainWindow;      // 2nd declared → destroyed 5th
-	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 3rd declared → destroyed 4th
-	std::unique_ptr<Screenshot>           app_screenshot;      // 4th declared → destroyed 3rd
-	std::unique_ptr<Editor>               app_editor;          // 5th declared → destroyed 2nd
-	std::unique_ptr<UploadManager>        app_uploadManager;   // 6th declared → destroyed 1.5th
-	std::unique_ptr<DeferredRenderer>     app_renderer;        // 7th declared → destroyed 1st (FIRST)
+	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared → destroyed 5th (LAST)
+	std::unique_ptr<UIManager>            app_mainWindow;      // 2nd declared → destroyed 4th
+	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 3rd declared → destroyed 3rd
+	std::unique_ptr<Editor>               app_editor;          // 4th declared → destroyed 2nd
+	std::unique_ptr<UploadManager>        app_uploadManager;   // 5th declared → destroyed 1.5th
+	std::unique_ptr<DeferredRenderer>     app_renderer;        // 6th declared → destroyed 1st (FIRST)
 };
 
 } // namespace neurus

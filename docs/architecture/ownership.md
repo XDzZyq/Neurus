@@ -65,7 +65,7 @@ been removed.
 
 ## Architectural Invariants
 
-1. **No cross-layer direct coupling** - Use UIEvents/EventQueue/Context only
+1. **No cross-layer direct coupling** - Use UIEvents/EventQueue/RenderRequest/Context only
 2. **Renderer is stateless** - Application state lives in Editor
 3. **Renderer is the sole GPU submitter** - the Editor drives GPU state only by
    posting a `RenderRequest`; it never submits, waits the device, or writes the

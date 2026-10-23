@@ -17,8 +17,9 @@ to do to them directly - upload a mesh, allocate a light's shadow maps,
 outgoing scene, reset accumulation - is posted instead as a typed
 `RenderRequest` value and executed by the renderer on the thread that submits.
 
-- **Queue and drain.** `DeferredRenderer::Post(RenderRequest&&)` appends to a
-  mutex-guarded FIFO (`RenderRequestQueue`). `DrawFrame()` drains the whole batch
+- **Queue and drain.** The Editor holds a `RenderRequestSink*` (Post only).
+  `DeferredRenderer::Post(RenderRequest&&)` pushes into a mutex-guarded FIFO
+  (`RenderRequestQueue`, a `BatchQueue<RenderRequest>`). `DrawFrame()` drains the whole batch
   with `TakeAll()` *after* the frame-slot fence wait and *before* swapchain
   acquire (and before the no-camera early-out). `RenderRequestExecutor` runs each
   request against the device, cache, `UploadManager` and `GeometryPass`;
@@ -47,6 +48,17 @@ outgoing scene, reset accumulation - is posted instead as a typed
   of the SPIR-V (via `MakeEnsurePipelineRequest(const Shader&)`) rather than the
   `Shader`, so a recompile landing before the drain cannot change the code under
   a version it no longer belongs to.
+
+- **Ordering against frames on the render thread.** With `RenderThread` driving
+  the renderer, two rules keep "Edit -> Upload -> Reset -> Render" intact
+  without the main thread ever waiting: `RenderThread::Post` always enqueues and
+  *then* wakes (a pending wake outranks a pending frame in `FrameMailbox`, so the
+  loop drains once more before it draws), and every `Post` of a tick happens
+  before that tick's frame is published. A request posted after the publish is
+  only guaranteed to run before the next frame. The loop waits the frame fence
+  itself before draining, because an interrupted iteration does not draw.
+  Requests are never bundled into the frame message: the mailbox is
+  latest-wins, so a dropped frame would drop its requests.
 
 > The `UploadManager` is owned by the Application and borrowed by the executor
 > via `DeferredRenderer::SetUploadManager()`. Because the executor is built in the

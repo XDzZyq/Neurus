@@ -42,7 +42,8 @@ responsibility, and Core supplies utilities shared across all of them.
   `GetViewport()` and the timing (`SyncCamera` in `Edit()`). A scene with zero
   cameras is a legal document. See [Editor Overview](../editor/overview.md).
 - Owns UIEvents (Qt signals) and EventQueue (typed EventPool)
-- Communicates with Renderer via Context and typed EventQueue
+- Communicates with Renderer via Context (read-only frame snapshot) and typed
+  `RenderRequest`s posted through a `RenderRequestSink*`
 - Must NOT directly manipulate GPU resources
 - Controller registry pattern: `Editor::RegisterController<T>(bus)` creates
   controller, calls `Init(bus)`, stores in `m_controllers`

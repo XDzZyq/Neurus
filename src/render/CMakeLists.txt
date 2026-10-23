@@ -71,7 +71,11 @@ add_library(neurus_render STATIC
 	RenderRequests.h
 	RenderRequests.cpp
 	RenderRequestQueue.h
-	RenderRequestQueue.cpp
+	RenderRequestSink.h
+	RenderControl.h
+	IFrameRenderer.h
+	RenderThread.h
+	RenderThread.cpp
 	RenderRequestExecutor.h
 	RenderRequestExecutor.cpp
 	overlay/OverlayGeometry.h

@@ -29,7 +29,6 @@
 #include "render/DeferredRenderer.h"
 #include "render/RenderCache.h"
 #include "render/RenderContext.h"
-#include "render/Screenshot.h"
 #include "render/Texture.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "ui/UIManager.h"
@@ -299,13 +298,6 @@ bool Application::InitRenderer()
 		NEURUS_ERR("DeferredRenderer initialization failed: " << e.what());
 		return false;
 	}
-
-	// --- Create screenshot helper (needs Vulkan handles; RenderCache passed per call) ---
-	app_screenshot = std::make_unique<neurus::Screenshot>(
-		app_vkContext->device(),
-		app_vkContext->physicalDevice(),
-		app_vkContext->graphicsQueue(),
-		app_vkContext->graphicsQueueFamily());
 
 	return true;
 }
@@ -695,23 +687,18 @@ void Application::ScreenShotSignals(neurus::UIEvents& uiEvents)
 	// Screenshot requests (F12 / menu action)
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotRequested,
 	                 [this]() {
-	                     if (app_screenshot && app_renderer)
+	                     if (app_renderer)
 	                     {
-	                         app_screenshot->TakeScreenshot(
-	                             app_renderer->GetLastSwapchainImage(),
-	                             app_renderer->GetSwapchainFormat(),
-	                             app_renderer->GetExtent());
+	                         app_renderer->CaptureScreenshot(false);
 	                     }
 	                 });
 
 	// Attachment dump requests (Ctrl+F12)
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotAllRequested,
 	                 [this]() {
-	                     if (app_screenshot && app_renderer)
+	                     if (app_renderer)
 	                     {
-	                         app_screenshot->TakeScreenshotAllAttachments(
-	                             app_renderer->GetRenderCache(),
-	                             app_renderer->GetExtent(), 1024);
+	                         app_renderer->CaptureScreenshot(true);
 	                     }
 	                 });
 }

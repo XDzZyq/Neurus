@@ -73,7 +73,8 @@ events: scene-scoped handlers obtain it from the context.
 ## EventQueue System (Typed Event Dispatcher)
 
 - Header-only template-based event dispatcher (no Qt dependency)
-- Editor<->Renderer event dispatch with deferred `Process()`
+- Editor-internal event dispatch (input -> Controllers) with deferred
+  `Process()`; it never reaches the Renderer (see the render request path below)
 
 ## Render Request Path (Editor to Renderer GPU work)
 
@@ -85,8 +86,9 @@ a typed `RenderRequest` value and executed by the renderer on the thread that
 submits:
 
 ```
-Editor::Edit() -> DeferredRenderer::Post(RenderRequest&&)
-   -> RenderRequestQueue (mutex-guarded FIFO)
+Editor::Edit() -> RenderRequestSink::Post(RenderRequest&&)
+                  (DeferredRenderer today; RenderThread: enqueue, then wake)
+   -> RenderRequestQueue (BatchQueue<RenderRequest>, mutex-guarded FIFO)
    -> DeferredRenderer::DrawFrame() drains the batch after the frame fence wait,
       before swapchain acquire
    -> RenderRequestExecutor runs each request against the device, RenderCache,

@@ -29,12 +29,14 @@
 
 #include <gtest/gtest.h>
 
+#include "core/BatchQueue.h"
 #include "render/RenderRequestQueue.h"
 #include "render/RenderRequests.h"
 #include "render/resources/LightingCache.h"
 #include "scene/Light.h"
 
 #include <cstdint>
+#include <memory>
 #include <variant>
 #include <vector>
 
@@ -64,12 +66,12 @@ TEST(RenderRequestQueueTest, EmptyTracksPostAndTake)
 	RenderRequestQueue queue;
 	EXPECT_TRUE(queue.Empty());
 
-	queue.Post(UploadMeshRequest{.objectId = 1});
+	queue.Push(UploadMeshRequest{.objectId = 1});
 	EXPECT_FALSE(queue.Empty());
 
-	// A second Post keeps it non-empty: Empty() reflects the whole batch, not
-	// the last Post.
-	queue.Post(UploadMeshRequest{.objectId = 2});
+	// A second Push keeps it non-empty: Empty() reflects the whole batch, not
+	// the last Push.
+	queue.Push(UploadMeshRequest{.objectId = 2});
 	EXPECT_FALSE(queue.Empty());
 
 	auto batch = queue.TakeAll();
@@ -89,11 +91,11 @@ TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 	// A deliberately interleaved sequence across request kinds: order is the
 	// contract, independent of alternative. DropScene between two uploads is the
 	// exact ordering RenderRequests.h calls out.
-	queue.Post(UploadMeshRequest{.objectId = 10});
-	queue.Post(CreateLightGpuRequest{.uid = 20, .type = LightType::SUNLIGHT});
-	queue.Post(DropSceneResourcesRequest{});
-	queue.Post(UploadMeshRequest{.objectId = 30});
-	queue.Post(UpdateLightRequest{.uid = 40, .light = SunLightStruct{}});
+	queue.Push(UploadMeshRequest{.objectId = 10});
+	queue.Push(CreateLightGpuRequest{.uid = 20, .type = LightType::SUNLIGHT});
+	queue.Push(DropSceneResourcesRequest{});
+	queue.Push(UploadMeshRequest{.objectId = 30});
+	queue.Push(UpdateLightRequest{.uid = 40, .light = SunLightStruct{}});
 
 	auto batch = queue.TakeAll();
 	ASSERT_EQ(batch.size(), 5u);
@@ -124,8 +126,8 @@ TEST(RenderRequestQueueTest, PostDuringProcessingLandsInNextBatch)
 {
 	RenderRequestQueue queue;
 
-	queue.Post(UploadMeshRequest{.objectId = 100});
-	queue.Post(UploadMeshRequest{.objectId = 101});
+	queue.Push(UploadMeshRequest{.objectId = 100});
+	queue.Push(UploadMeshRequest{.objectId = 101});
 
 	// First drain takes the storage; the returned vector is now independent of
 	// the queue's internal (freshly empty) vector.
@@ -134,9 +136,9 @@ TEST(RenderRequestQueueTest, PostDuringProcessingLandsInNextBatch)
 	EXPECT_EQ(RequestObjectId(first[0]), 100);
 	EXPECT_EQ(RequestObjectId(first[1]), 101);
 
-	// A Post now - standing in for a handler enqueuing a follow-up while the
+	// A Push now - standing in for a handler enqueuing a follow-up while the
 	// first batch is still being executed.
-	queue.Post(UploadMeshRequest{.objectId = 200});
+	queue.Push(UploadMeshRequest{.objectId = 200});
 
 	// The new request did not appear in the already-taken batch ...
 	EXPECT_EQ(first.size(), 2u);
@@ -153,7 +155,7 @@ TEST(RenderRequestQueueTest, PostDuringProcessingLandsInNextBatch)
 TEST(RenderRequestQueueTest, TakeAllAfterDrainReturnsEmpty)
 {
 	RenderRequestQueue queue;
-	queue.Post(UploadMeshRequest{.objectId = 7});
+	queue.Push(UploadMeshRequest{.objectId = 7});
 
 	auto first = queue.TakeAll();
 	EXPECT_EQ(first.size(), 1u);
@@ -181,7 +183,7 @@ TEST(RenderRequestQueueTest, LightingMapPayloadSurvives)
 	req.lights.emplace(5, sun);
 	req.lights.emplace(6, point);
 
-	queue.Post(std::move(req));
+	queue.Push(std::move(req));
 
 	auto batch = queue.TakeAll();
 	ASSERT_EQ(batch.size(), 1u);
@@ -221,7 +223,7 @@ TEST(RenderRequestQueueTest, SpirvPayloadMovedNotCopied)
 	ASSERT_NE(vertexData, nullptr);
 	ASSERT_NE(fragmentData, nullptr);
 
-	queue.Post(std::move(req));
+	queue.Push(std::move(req));
 
 	auto batch = queue.TakeAll();
 	ASSERT_EQ(batch.size(), 1u);
@@ -242,4 +244,37 @@ TEST(RenderRequestQueueTest, SpirvPayloadMovedNotCopied)
 	// Contents are what we put in.
 	EXPECT_EQ(drained->vertexSpv.front(), 0xABu);
 	EXPECT_EQ(drained->fragmentSpv.front(), 0xCDu);
+}
+
+// ---------------------------------------------------------------------------
+// 7. Move-only payload: RenderRequestQueue is now BatchQueue<RenderRequest>, so
+//    the same template must carry a strictly move-only item (no copy ctor at
+//    all) through Push + TakeAll, FIFO, leaving the queue empty. std::unique_ptr
+//    is the canonical move-only type; a queue that copied anywhere would fail to
+//    compile, and one that reordered would fail the value checks.
+// ---------------------------------------------------------------------------
+
+TEST(RenderRequestQueueTest, MoveOnlyItemTypeRoundTripsFifo)
+{
+	BatchQueue<std::unique_ptr<int>> queue;
+	EXPECT_TRUE(queue.Empty());
+
+	queue.Push(std::make_unique<int>(1));
+	queue.Push(std::make_unique<int>(2));
+	queue.Push(std::make_unique<int>(3));
+	EXPECT_FALSE(queue.Empty());
+
+	auto batch = queue.TakeAll();
+	ASSERT_EQ(batch.size(), 3u);
+
+	// FIFO: push order is drain order, and each pointer still owns its value.
+	ASSERT_NE(batch[0], nullptr);
+	ASSERT_NE(batch[1], nullptr);
+	ASSERT_NE(batch[2], nullptr);
+	EXPECT_EQ(*batch[0], 1);
+	EXPECT_EQ(*batch[1], 2);
+	EXPECT_EQ(*batch[2], 3);
+
+	// The storage left with the batch: the queue is empty again.
+	EXPECT_TRUE(queue.Empty());
 }

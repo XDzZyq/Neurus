@@ -88,9 +88,10 @@ With the Renderer:
 
 - Provides scene data via `RenderContext` (and `UIContext` to the UI)
 - Receives rendering events via `UIEvents` (Qt signals)
-- Sends Editor events via `EventQueue` (typed dispatcher)
+- Posts GPU work as typed `RenderRequest` values through a `RenderRequestSink*`
+  (Post only); its `EventQueue` stays internal to the Editor
 - The Renderer never calls back into the Editor directly; the dependency is
-  one-way, Editor to Renderer, through the `EventQueue`
+  one-way, Editor to Renderer, through `RenderRequest`s and the frame snapshot
 
 With the UI:
 
@@ -367,7 +368,8 @@ in [Events](events.md).
 
 - `UIEvents` singleton with UI-to-Editor signals (`newFrame`, `windowResized`,
   and so on)
-- `EventQueue` typed event dispatcher for Editor-to-Renderer events
+- `EventQueue` typed event dispatcher for Editor-internal events (input to Controllers)
+- `RenderRequest` posting through `RenderRequestSink` for Editor-to-Renderer GPU work
 - `RenderContext`: the renderer's view - one owned `RenderFrameSnapshot` (built
   by `Editor::BuildSnapshot()`) plus the frame half stamped by the renderer
 - `UIContext`: the UI's view (scene and config), produced by

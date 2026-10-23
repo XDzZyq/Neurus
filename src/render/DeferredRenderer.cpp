@@ -18,6 +18,7 @@
 #include "shaders/Shader.h"
 
 #include "RenderRequestExecutor.h"
+#include "Screenshot.h"
 #include "UploadManager.h"
 
 #include "passes/GeometryPass.h"
@@ -73,6 +74,13 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 
 	// --- 2. Create G-Buffer attachment cache (lazy creation on first access) ---
 	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice);
+
+	// --- 2b. Create the screenshot capture service ---
+	// Same Vulkan handles the renderer draws with; its capture methods sync the
+	// GPU themselves. Built after r_renderCache (an all-attachments capture reads
+	// it) and destroyed before it, per the member declaration order.
+	m_screenshot = std::make_unique<Screenshot>(
+		r_device, r_physicalDevice, r_graphicsQueue, r_queueFamilyIndex);
 
 	// --- 3. Create geometry pass ---
 	{
@@ -256,20 +264,29 @@ vk::raii::CommandPool DeferredRenderer::createCommandPool(const vk::raii::Device
 // DrawFrame - main render loop entry point
 // ---------------------------------------------------------------------------
 
-const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
+bool DeferredRenderer::WaitForFrameSlot()
 {
 	auto& fence = r_inFlightFences[r_currentFrame];
-	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
+	// The fence is reset only on DrawFrame's submit path, never here, so a
+	// return after a successful wait leaves it signaled and the next wait does
+	// not deadlock. A timeout means a hung GPU: the caller must not touch GPU
+	// resources, so it skips the frame and the requests stay queued.
+	return r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) == vk::Result::eSuccess;
+}
 
+const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
+{
 	// --- Wait for this frame slot's fence ---
-	// On TIMEOUT return WITHOUT draining: requests stay queued for the next
-	// frame, when the GPU is idle again. The fence is reset only on the submit
-	// path below, never here, so a return after a successful wait leaves it
-	// signaled and the next wait does not deadlock.
-	if (r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) != vk::Result::eSuccess)
+	// Extracted into WaitForFrameSlot() so the render thread can gate its own
+	// drains on the same wait. On TIMEOUT return WITHOUT draining: requests stay
+	// queued for the next frame, when the GPU is idle again.
+	if (!WaitForFrameSlot())
 	{
 		return m_frameProfile;  // Timeout - requests stay queued for the next frame
 	}
+
+	auto& fence = r_inFlightFences[r_currentFrame];
+	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
 
 	// --- Drain Editor-posted GPU requests ---
 	// Placed after the fence wait and before swapchain acquire: with
@@ -278,6 +295,11 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// pull it from under an executing frame. That argument holds ONLY for
 	// kMaxFramesInFlight == 1, which is exactly why the destroying handlers
 	// (pipeline replace, environment regenerate, scene drop) still WaitIdle.
+	//
+	// The single-threaded path relies on this drain. On the render thread the
+	// loop already drained after its own WaitForFrameSlot(), so this second
+	// drain is usually empty - but kept, because it is the only drain the
+	// single-threaded (QTimer) path has.
 	//
 	// The drain runs before the no-camera early-out below, so a camera-less
 	// session still executes its queued requests instead of queueing forever.
@@ -406,12 +428,11 @@ void DeferredRenderer::ResetShadowAccumulation()
 
 void DeferredRenderer::Post(RenderRequest&& request)
 {
-	m_requestQueue.Post(std::move(request));
-	// Future render thread: it parks in a FrameMailbox, so a control message
-	// posted while no frame is coming must be followed by FrameMailbox::Wake()
-	// here (enqueue-then-Wake, see FrameMailbox.h) or a static viewport would
-	// never service the request. Single-threaded today, DrawFrame drains it
-	// directly, so there is nothing to wake yet.
+	m_requestQueue.Push(std::move(request));
+	// Single-threaded: DrawFrame drains the queue directly, so there is nothing
+	// to wake here. The threaded caller (RenderThread::Post) wakes the render
+	// thread after enqueuing, so a request posted while no frame is coming is
+	// still serviced.
 }
 
 void DeferredRenderer::ProcessRequests()
@@ -429,6 +450,21 @@ void DeferredRenderer::ProcessRequests()
 			m_iteration = 0;
 		else
 			m_executor->Execute(request);
+	}
+}
+
+void DeferredRenderer::CaptureScreenshot(bool allAttachments)
+{
+	// Mirrors the capture the Application used to drive: an all-attachments dump
+	// reads the whole render cache, a plain screenshot reads back the last
+	// presented swapchain image. The Screenshot methods sync the GPU themselves.
+	if (allAttachments)
+	{
+		m_screenshot->TakeScreenshotAllAttachments(*r_renderCache, GetExtent(), 1024);
+	}
+	else
+	{
+		m_screenshot->TakeScreenshot(GetLastSwapchainImage(), GetSwapchainFormat(), GetExtent());
 	}
 }
 

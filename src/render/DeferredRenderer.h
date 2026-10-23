@@ -11,7 +11,11 @@
  *   - Blit HDRColor to swapchain image for presentation
  *
  * Construction creates all Vulkan resources. DrawFrame() is the per-frame entry
- * point called from a QTimer in main.cpp.
+ * point, driven either by a QTimer in single-threaded mode or by RenderThread
+ * once the renderer runs on its own thread.
+ *
+ * Implements IFrameRenderer, the interface RenderThread sequences; it is also
+ * the single-threaded RenderRequestSink the Editor posts to directly.
  *
  * Non-copyable, non-movable (holds references to borrowed Vulkan objects).
  */
@@ -19,6 +23,7 @@
 #pragma once
 
 #include "GPUProfiler.h"
+#include "IFrameRenderer.h"
 #include "ProfilingData.h"
 #include "passes/Pass.h"
 #include "core/RenderConfig.h"
@@ -61,11 +66,12 @@ struct CameraUBOData;
 class Shader;
 class UploadManager;
 class RenderRequestExecutor;
+class Screenshot;
 
 /**
  * @brief Deferred renderer orchestrating GeometryPass → LightingPass → composite.
  */
-class DeferredRenderer
+class DeferredRenderer : public IFrameRenderer
 {
 public:
 	/**
@@ -107,10 +113,22 @@ public:
 	 * @return The latest frame profile (owned by the renderer; valid until the
 	 *         next DrawFrame call).
 	 */
-	const FrameProfile& DrawFrame(const RenderContext& ctx);
+	const FrameProfile& DrawFrame(const RenderContext& ctx) override;
+
+	/**
+	 * @brief Blocks until the frame slot about to be reused is free on the GPU.
+	 *
+	 * Extracted from the top of DrawFrame so RenderThread can gate control
+	 * messages and request drains on the same fence wait a draw would do. The
+	 * fence is reset only on the submit path in DrawFrame, never here, so a
+	 * caller may wait, skip the frame, and wait again without deadlocking.
+	 *
+	 * @return False on timeout (a hung GPU); nothing may touch GPU resources then.
+	 */
+	bool WaitForFrameSlot() override;
 
 	/** @brief Blocks until all GPU work completes. */
-	void WaitIdle();
+	void WaitIdle() override;
 
 	/** @brief Returns the graphics queue. */
 	vk::Queue GetGraphicsQueue() const { return r_graphicsQueue; }
@@ -119,7 +137,7 @@ public:
 	uint32_t GetGraphicsQueueFamily() const { return r_queueFamilyIndex; }
 
 	/** @brief Returns the current swapchain extent. */
-	vk::Extent2D GetExtent() const { return r_swapchain ? r_swapchain->extent() : vk::Extent2D{800, 600}; }
+	vk::Extent2D GetExtent() const override { return r_swapchain ? r_swapchain->extent() : vk::Extent2D{800, 600}; }
 
 	/**
 	 * @brief Returns the last acquired swapchain image for screenshot capture.
@@ -153,7 +171,7 @@ public:
 	 * @param y Pixel y-coordinate (0 = top edge, Vulkan convention).
 	 * @return Object ID at the pixel (0 = background / no object), or 0 on OOB/failure.
 	 */
-	uint32_t ReadIDBufferPixel(uint32_t x, uint32_t y);
+	uint32_t ReadIDBufferPixel(uint32_t x, uint32_t y) override;
 
 	/**
 	 * @brief Handles viewport resize by proactively recreating swapchain and
@@ -169,7 +187,7 @@ public:
 	 * @param width  New window width in pixels.
 	 * @param height New window height in pixels.
 	 */
-	void HandleResize(uint32_t width, uint32_t height);
+	void HandleResize(uint32_t width, uint32_t height) override;
 
 	/**
 	 * @brief Handles viewport recreation by rebuilding the swapchain with a new surface.
@@ -178,7 +196,7 @@ public:
 	 *
 	 * @param newSurface New presentation surface.
 	 */
-	void HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurface);
+	void HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurface) override;
 
 	/**
 	 * @brief Resets shadow accumulation, so the next frame overwrites (alpha = 1).
@@ -196,7 +214,7 @@ public:
 	 *
 	 * @param request  The request; moved into the queue, never copied.
 	 */
-	void Post(RenderRequest&& request);
+	void Post(RenderRequest&& request) override;
 
 	/**
 	 * @brief Drain the request queue and execute every pending request, FIFO.
@@ -206,7 +224,18 @@ public:
 	 * except ResetAccumulationRequest is delegated to the executor;
 	 * ResetAccumulationRequest is handled here (it writes renderer state).
 	 */
-	void ProcessRequests();
+	void ProcessRequests() override;
+
+	/**
+	 * @brief Write the last presented image, or every attachment, to disk.
+	 *
+	 * Owns a Screenshot built in the constructor from the same device, physical
+	 * device, queue and family the renderer draws with; the Screenshot's own
+	 * capture methods do the GPU sync (queue waitIdle) internally.
+	 *
+	 * @param allAttachments  False: the swapchain image. True: every attachment.
+	 */
+	void CaptureScreenshot(bool allAttachments) override;
 
 	/**
 	 * @brief Sets the upload service the request executor uses (non-owning).
@@ -252,6 +281,9 @@ private:
 
 	// --- Deferred pipeline ---
 	std::unique_ptr<RenderCache> r_renderCache;
+	// Screenshot capture service; declared right after r_renderCache so it is
+	// destroyed BEFORE the cache it reads during an all-attachments capture.
+	std::unique_ptr<Screenshot> m_screenshot;
 	// --- Polymorphic pass container (owning) ---
 	std::vector<std::unique_ptr<Pass>> r_passes;
 

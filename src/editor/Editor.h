@@ -22,8 +22,8 @@
 // Forward declarations (no render headers!)
 namespace neurus {
 class Camera;
-class DeferredRenderer;
 class MeshData;
+class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
@@ -37,12 +37,22 @@ namespace neurus {
  *
  * Owns Scene, RenderConfig, the resource pool, the viewport and the controllers.
  * Scene persistence is driven from outside through BeginLoad()/FinishLoad() and
- * NewScene(); GPU work is posted through a non-owning renderer pointer.
+ * NewScene(); GPU work is posted through a non-owning RenderRequestSink pointer.
  */
 class Editor
 {
 public:
-	Editor(DeferredRenderer* renderer);
+	/**
+	 * @brief Builds the editor around the renderer's request sink.
+	 *
+	 * @param renderer  The sink every GPU request is posted to (DeferredRenderer
+	 *                  or RenderThread), or null for a headless editor. Borrowed.
+	 *                  The Editor can only Post: every Post of a tick must happen
+	 *                  before that tick's BuildSnapshot/publish, so FIFO order on
+	 *                  the sink matches the frame the snapshot describes (see
+	 *                  RenderRequestSink.h).
+	 */
+	Editor(RenderRequestSink* renderer);
 	~Editor();
 
 	Editor(const Editor&) = delete;
@@ -277,7 +287,7 @@ private:
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;
 
 	// --- Non-owning references ---
-	DeferredRenderer* ed_renderer = nullptr;
+	RenderRequestSink* ed_renderer = nullptr;
 };
 
 } // namespace neurus
