@@ -21,9 +21,10 @@
 #include <vector>
 
 #include "core/Log.h"
+#include "script/ScriptDispatch.h"
 #include "script/ScriptEngine.h"
-#include "script/ScriptExecutor.h"
 #include "script/bindings/Bindings.h"
+#include "script/ScriptView.h"
 #include "script/neurus_python_config.h"
 
 namespace neurus
@@ -95,7 +96,8 @@ struct ScriptEngine::Impl
 		// (the uv-managed lib/.venv) is attached, or skipped when it is absent.
 		AttachEnvironment(envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath);
 
-		// Keep the module handle so each run can re-bind its per-run views.
+		// Keep the module handle: the views were registered once and resolve
+		// through the engine's ScriptView.
 		try
 		{
 			m_neuru = pybind11::module_::import("neurus");
@@ -105,6 +107,11 @@ struct ScriptEngine::Impl
 			NEURUS_ERR("ScriptEngine: embedded 'neurus' module is unavailable: " << e.what());
 			return false;
 		}
+
+		// Create the interpreter's view instances once. They hold a pointer to
+		// the engine-owned view, whose address is stable for the interpreter's
+		// lifetime; only the document it exposes changes per run.
+		script::InstallNeurusViews(m_neuru, &m_view);
 
 		m_ready = true;
 		return true;
@@ -223,12 +230,10 @@ private:
 	{
 		pybind11::gil_scoped_acquire gil;
 
-		// A fresh per-run executor; no process-wide state. The bindings' views
-		// are re-bound to it for exactly this run. A null context is an empty
-		// view (no scene, no config).
-		const ScriptContext emptyContext{};
-		ScriptExecutor executor(ctx != nullptr ? *ctx : emptyContext, m_dispatch);
-		script::InstallNeurusViews(m_neuru, &executor);
+		// Publish this run's document view. The scope republishes `m_current`
+		// for the run and clears it on every exit path, so no Python object can
+		// read a finished run's state.
+		ContextScope scope(m_current, ctx);
 
 		try
 		{
@@ -286,6 +291,35 @@ private:
 			return {};
 		}
 	}
+
+	/**
+	 * @brief Publishes one run's document context and clears it on exit.
+	 *
+	 * The engine owns the slot and the bindings resolve through it; nothing
+	 * run-scoped is ever handed to Python, so a finished run cannot be read.
+	 */
+	class ContextScope
+	{
+	public:
+		ContextScope(ScriptContext& slot, const ScriptContext* ctx)
+			: m_slot(slot)
+			, m_saved(slot)
+		{
+			m_slot = ctx != nullptr ? *ctx : ScriptContext{};
+		}
+
+		~ContextScope()
+		{
+			m_slot = m_saved;
+		}
+
+		ContextScope(const ContextScope&) = delete;
+		ContextScope& operator=(const ContextScope&) = delete;
+
+	private:
+		ScriptContext& m_slot;
+		ScriptContext  m_saved;  ///< Outer run's document, restored on exit (nested runs).
+	};
 
 	/**
 	 * @brief RAII redirection of Python `sys.stdout`/`sys.stderr`.
@@ -413,9 +447,11 @@ private:
 	};
 
 	bool m_ready = false;
-	pybind11::module_ m_neuru;           ///< Embedded module; views re-bound each run.
+	pybind11::module_ m_neuru;           ///< Embedded module; views registered once.
 	ScriptConsoleBuffer m_console;
 	ScriptDispatch m_dispatch;          ///< Read-only (no event queue) in this phase.
+	ScriptContext m_current;            ///< Document published for the run in progress.
+	script::ScriptView m_view{&m_current, &m_dispatch};  ///< Injected into the module once.
 	std::vector<PendingRun> m_pending;  ///< Runs queued for the next ExecutePending().
 };
 

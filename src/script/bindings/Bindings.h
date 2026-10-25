@@ -4,9 +4,9 @@
  *
  * This header exposes nothing of pybind11 beyond a forward declaration, so it
  * can be included without pulling Python into a translation unit that does not
- * already own a `pybind11::module_`. The per-run views are re-bound at the start
- * of each run through `InstallNeurusViews`, which is why a proxy never stores a
- * context of its own.
+ * already own a `pybind11::module_`. Classes are registered once; the per-run
+ * views are installed afterwards with the run's `ScriptView`, which each proxy
+ * copies and resolves through itself.
  */
 
 #pragma once
@@ -18,13 +18,10 @@ class module_;
 
 namespace neurus
 {
-class ScriptExecutor;
-}
-
-namespace neurus
-{
 namespace script
 {
+
+struct ScriptView;
 
 /**
  * @brief Registers the `neurus` module's classes and submodules. Called once.
@@ -33,15 +30,16 @@ namespace script
 void RegisterNeurusModule(pybind11::module_& m);
 
 /**
- * @brief Binds the per-run views (collections, context, config) to @p exec.
+ * @brief Creates the module's view instances for the interpreter's lifetime.
  *
- * Called at the start of every run; the previous run's views are replaced, so
- * nothing reads a finished run's executor.
+ * Called once from `ScriptEngine::Impl::Init` after the classes are registered.
+ * The proxies these views hand out copy @p view, so the engine owns the only
+ * stable reference and can publish/clear the document per run.
  *
  * @param m The `neurus` module.
- * @param exec Executor of the run about to execute; must outlive the run.
+ * @param view Engine-owned view; must outlive the interpreter.
  */
-void InstallNeurusViews(pybind11::module_& m, const ScriptExecutor* exec);
+void InstallNeurusViews(pybind11::module_& m, const ScriptView* view);
 
 /**
  * @brief Link anchor for the embedded-module translation unit.
@@ -54,16 +52,16 @@ void InstallNeurusViews(pybind11::module_& m, const ScriptExecutor* exec);
  */
 void ForceLinkBindings();
 
-// --- Per-file registration / view installation -----------------------------
+// --- Per-file registration and view installation ----------------------------
 
 void RegisterObjectBindings(pybind11::module_& data);
-void InstallObjectViews(pybind11::module_& data, const ScriptExecutor* exec);
+void InstallObjectViews(pybind11::module_& data, const ScriptView* view);
 
 void RegisterSceneBindings(pybind11::module_& root, pybind11::module_& data);
-void InstallSceneViews(pybind11::module_& root, pybind11::module_& data, const ScriptExecutor* exec);
+void InstallSceneViews(pybind11::module_& root, pybind11::module_& data, const ScriptView* view);
 
 void RegisterConfigBindings(pybind11::module_& data);
-void InstallConfigViews(pybind11::module_& data, const ScriptExecutor* exec);
+void InstallConfigViews(pybind11::module_& data, const ScriptView* view);
 
 }  // namespace script
 }  // namespace neurus

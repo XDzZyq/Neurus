@@ -3,10 +3,11 @@
  * @brief Read-only camera/light/mesh/environment proxies, the typed `neurus.data`
  *        collections, and `neurus.context`.
  *
- * Every value is resolved live through the run's `ScriptExecutor`; nothing is
- * cached and no setter writes a C++ property (each routes the exact typed event
- * through the run dispatch, which refuses). Collections are empty - never a null
- * dereference - when the run has no scene.
+ * Every proxy is constructed with the run's `ScriptView` and resolves its own
+ * object from that view on each access; nothing is cached and no view or proxy
+ * holds a run-scoped pointer. Collections are empty - never a null dereference -
+ * when the run has no scene. No setter writes a C++ property (each routes the
+ * exact typed event through the run dispatch, which refuses in this phase).
  */
 
 #include <pybind11/pybind11.h>
@@ -27,9 +28,10 @@
 #include "scene/ObjectID.h"
 #include "scene/Scene.h"
 #include "scene/Transform.h"
+#include "script/ScriptContext.h"
 #include "script/bindings/Bindings.h"
-#include "script/bindings/Proxies.h"
-#include "script/bindings/ProxyBase.h"
+#include "script/Proxies.h"
+#include "script/ProxyBase.h"
 
 namespace py = pybind11;
 
@@ -46,27 +48,81 @@ py::tuple ToTuple(const glm::vec3& value)
 	return py::make_tuple(value.x, value.y, value.z);
 }
 
-/// @brief Resolves @p self to the live typed object, or raises a clear error.
-template <typename T>
-const T* Require(const ProxyBase& self)
+struct CameraProxy : ProxyBase
 {
-	if (self.exec == nullptr || self.exec->context().scene == nullptr)
+	/// @brief Resolves the live camera or raises a clear error.
+	const Camera* Resolve() const
 	{
-		throw std::runtime_error("neurus: proxy has no run context");
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
+		{
+			throw std::runtime_error("neurus: camera proxy has no run context");
+		}
+		const Camera* cam = dynamic_cast<const Camera*>(scene->GetObjectID(uid));
+		if (cam == nullptr)
+		{
+			throw std::runtime_error("neurus: camera proxy refers to a missing or mistyped object");
+		}
+		return cam;
 	}
-	const ObjectID* obj = self.exec->context().scene->GetObjectID(self.uid);
-	const T* typed = dynamic_cast<const T*>(obj);
-	if (typed == nullptr)
-	{
-		throw std::runtime_error("neurus: proxy refers to a missing or mistyped object");
-	}
-	return typed;
-}
+};
 
-struct CameraProxy : ProxyBase {};
-struct LightProxy : ProxyBase {};
-struct MeshProxy : ProxyBase {};
-struct EnvironmentProxy : ProxyBase {};
+struct LightProxy : ProxyBase
+{
+	/// @brief Resolves the live light or raises a clear error.
+	const Light* Resolve() const
+	{
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
+		{
+			throw std::runtime_error("neurus: light proxy has no run context");
+		}
+		const Light* light = dynamic_cast<const Light*>(scene->GetObjectID(uid));
+		if (light == nullptr)
+		{
+			throw std::runtime_error("neurus: light proxy refers to a missing or mistyped object");
+		}
+		return light;
+	}
+};
+
+struct MeshProxy : ProxyBase
+{
+	/// @brief Resolves the live mesh or raises a clear error.
+	const Mesh* Resolve() const
+	{
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
+		{
+			throw std::runtime_error("neurus: mesh proxy has no run context");
+		}
+		const Mesh* mesh = dynamic_cast<const Mesh*>(scene->GetObjectID(uid));
+		if (mesh == nullptr)
+		{
+			throw std::runtime_error("neurus: mesh proxy refers to a missing or mistyped object");
+		}
+		return mesh;
+	}
+};
+
+struct EnvironmentProxy : ProxyBase
+{
+	/// @brief Resolves the live environment or raises a clear error.
+	const Environment* Resolve() const
+	{
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
+		{
+			throw std::runtime_error("neurus: environment proxy has no run context");
+		}
+		const Environment* env = dynamic_cast<const Environment*>(scene->GetObjectID(uid));
+		if (env == nullptr)
+		{
+			throw std::runtime_error("neurus: environment proxy refers to a missing or mistyped object");
+		}
+		return env;
+	}
+};
 
 /// @brief Stateless typed collection over one scene pool, keyed by UID.
 template <typename Proxy, typename T>
@@ -74,37 +130,39 @@ struct TypedCollection
 {
 	using Pool = std::unordered_map<int, std::shared_ptr<T>>;
 
-	const ScriptExecutor* exec = nullptr;
-	Pool Scene::* pool = nullptr;
+	const ScriptView* view = nullptr;
+	Pool Scene::*     pool = nullptr;
 
 	py::list Snapshot() const
 	{
 		py::list result;
-		if (exec == nullptr || exec->context().scene == nullptr)
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
 		{
 			return result;
 		}
-		const Pool& objects = exec->context().scene->*(pool);
+		const Pool& objects = scene->*(pool);
 		for (const auto& [id, obj] : objects)
 		{
 			(void)obj;
-			result.append(py::cast(Proxy{exec, id}));
+			result.append(py::cast(Proxy{{id, view}}));
 		}
 		return result;
 	}
 
-	static py::object Lookup(Pool Scene::* pool, const ScriptExecutor* exec, int uid)
+	static py::object Lookup(Pool Scene::* pool, const ScriptView* view, int uid)
 	{
-		if (exec == nullptr || exec->context().scene == nullptr)
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
 		{
 			return py::none();
 		}
-		const Pool& objects = exec->context().scene->*(pool);
+		const Pool& objects = scene->*(pool);
 		if (objects.find(uid) == objects.end())
 		{
 			return py::none();
 		}
-		return py::cast(Proxy{exec, uid});
+		return py::cast(Proxy{{uid, view}});
 	}
 };
 
@@ -117,51 +175,53 @@ void RegisterCollection(py::module_& data, const char* name)
 		.def("__len__", [](const Collection& s) { return py::len(s.Snapshot()); })
 		.def("__getitem__",
 		     [](const Collection& s, int uid) -> py::object
-		     { return Collection::Lookup(s.pool, s.exec, uid); });
+		     { return Collection::Lookup(s.pool, s.view, uid); });
 }
 
 /// @brief `neurus.context`: the run's active camera and selection.
 struct ContextView
 {
-	const ScriptExecutor* exec = nullptr;
+	const ScriptView* view = nullptr;
 };
 
-py::object ActiveCamera(const ScriptExecutor* exec)
+py::object ActiveCamera(const ContextView& self)
 {
-	if (exec == nullptr || exec->context().scene == nullptr)
+	const Scene* scene = (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
+	if (scene == nullptr)
 	{
 		return py::none();
 	}
 	// The scene owns the active camera; read it live (0 = none).
-	const int activeId = exec->context().scene->ActiveCameraID();
+	const int activeId = scene->ActiveCameraID();
 	if (activeId <= 0)
 	{
 		return py::none();
 	}
-	const ObjectID* obj = exec->context().scene->GetObjectID(activeId);
+	const ObjectID* obj = scene->GetObjectID(activeId);
 	if (dynamic_cast<const Camera*>(obj) == nullptr)
 	{
 		return py::none();
 	}
-	return py::cast(CameraProxy{exec, activeId});
+	return py::cast(CameraProxy{{activeId, self.view}});
 }
 
-py::list Selection(const ScriptExecutor* exec)
+py::list Selection(const ContextView& self)
 {
 	py::list result;
-	if (exec == nullptr || exec->context().scene == nullptr)
+	const Scene* scene = (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
+	if (scene == nullptr)
 	{
 		return result;
 	}
 	// The scene owns the selection; snapshot its UIDs here (one source of truth).
 	std::vector<int> selected;
 	int activeUid = 0;
-	SnapshotSelectionUids(exec->context().scene->selections, selected, activeUid);
+	SnapshotSelectionUids(scene->selections, selected, activeUid);
 	for (const int uid : selected)
 	{
-		if (exec->context().scene->GetObjectID(uid) != nullptr)
+		if (scene->GetObjectID(uid) != nullptr)
 		{
-			result.append(py::cast(ObjectProxy{exec, uid}));
+			result.append(py::cast(ObjectProxy{{uid, self.view}}));
 		}
 	}
 	return result;
@@ -176,42 +236,42 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 		.def_property_readonly("uid", [](const CameraProxy& s) { return s.uid; })
 		.def_property(
 			"fov",
-			[](const CameraProxy& s) { return Require<Camera>(s)->cam_pers; },
+			[](const CameraProxy& s) { return s.Resolve()->cam_pers; },
 			[](const CameraProxy& s, float value) { EmitEvent(s, CameraFovChanged{s.uid, value}); })
-		.def_property_readonly("near", [](const CameraProxy& s) { return Require<Camera>(s)->cam_near; })
-		.def_property_readonly("far", [](const CameraProxy& s) { return Require<Camera>(s)->cam_far; })
+		.def_property_readonly("near", [](const CameraProxy& s) { return s.Resolve()->cam_near; })
+		.def_property_readonly("far", [](const CameraProxy& s) { return s.Resolve()->cam_far; })
 		.def_property(
 			"position",
-			[](const CameraProxy& s) { return ToTuple(Require<Camera>(s)->GetPosition()); },
+			[](const CameraProxy& s) { return ToTuple(s.Resolve()->GetPosition()); },
 			[](const CameraProxy& s, std::tuple<float, float, float> value)
 			{
-				const Camera* cam = Require<Camera>(s);
+				const Camera* cam = s.Resolve();
 				const auto [x, y, z] = value;
 				EmitEvent(s, CameraPoseChanged{s.uid, x, y, z,
-				                               cam->cam_tar.x, cam->cam_tar.y, cam->cam_tar.z});
+				                              cam->cam_tar.x, cam->cam_tar.y, cam->cam_tar.z});
 			})
 		.def_property_readonly("rotation",
-		     [](const CameraProxy& s) { return ToTuple(Require<Camera>(s)->GetRotation()); })
+		     [](const CameraProxy& s) { return ToTuple(s.Resolve()->GetRotation()); })
 		.def_property(
 			"is_active",
 			[](const CameraProxy& s)
 			{
-				return s.exec != nullptr && s.exec->context().scene != nullptr
-				       && s.exec->context().scene->ActiveCameraID() == s.uid;
+				const Scene* scene = (s.view != nullptr && s.view->ctx != nullptr) ? s.view->ctx->scene : nullptr;
+				return scene != nullptr && scene->ActiveCameraID() == s.uid;
 			},
 			[](const CameraProxy& s, bool value) { EmitEvent(s, ActiveCameraChanged{value ? s.uid : 0}); });
 
 	py::class_<LightProxy>(data, "Light", "Read-only proxy over a scene light.")
 		.def_property_readonly("uid", [](const LightProxy& s) { return s.uid; })
 		.def_property_readonly("type",
-		     [](const LightProxy& s) { return static_cast<int>(Require<Light>(s)->light_type); })
+		     [](const LightProxy& s) { return static_cast<int>(s.Resolve()->light_type); })
 		.def_property(
 			"power",
-			[](const LightProxy& s) { return Require<Light>(s)->light_power; },
+			[](const LightProxy& s) { return s.Resolve()->light_power; },
 			[](const LightProxy& s, float value) { EmitEvent(s, LightPowerChanged{s.uid, value}); })
 		.def_property(
 			"color",
-			[](const LightProxy& s) { return ToTuple(Require<Light>(s)->light_color); },
+			[](const LightProxy& s) { return ToTuple(s.Resolve()->light_color); },
 			[](const LightProxy& s, std::tuple<float, float, float> value)
 			{
 				const auto [r, g, b] = value;
@@ -219,35 +279,35 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 			})
 		.def_property(
 			"radius",
-			[](const LightProxy& s) { return Require<Light>(s)->light_radius; },
+			[](const LightProxy& s) { return s.Resolve()->light_radius; },
 			[](const LightProxy& s, float value) { EmitEvent(s, LightRadiusChanged{s.uid, value}); })
 		.def_property(
 			"shadow",
-			[](const LightProxy& s) { return Require<Light>(s)->use_shadow; },
+			[](const LightProxy& s) { return s.Resolve()->use_shadow; },
 			[](const LightProxy& s, bool value) { EmitEvent(s, LightShadowChanged{s.uid, value}); })
 		.def_property(
 			"cutoff",
-			[](const LightProxy& s) { return Require<Light>(s)->spot_cutoff; },
+			[](const LightProxy& s) { return s.Resolve()->spot_cutoff; },
 			[](const LightProxy& s, float value) { EmitEvent(s, LightCutoffChanged{s.uid, value}); })
 		.def_property(
 			"outer_cutoff",
-			[](const LightProxy& s) { return Require<Light>(s)->spot_outer_cutoff; },
+			[](const LightProxy& s) { return s.Resolve()->spot_outer_cutoff; },
 			[](const LightProxy& s, float value) { EmitEvent(s, LightOuterCutoffChanged{s.uid, value}); });
 
 	py::class_<MeshProxy>(data, "Mesh", "Read-only proxy over a scene mesh.")
 		.def_property_readonly("uid", [](const MeshProxy& s) { return s.uid; })
 		.def_property(
 			"shadow",
-			[](const MeshProxy& s) { return Require<Mesh>(s)->using_shadow; },
+			[](const MeshProxy& s) { return s.Resolve()->using_shadow; },
 			[](const MeshProxy& s, bool value) { EmitEvent(s, MeshShadowChanged{s.uid, value}); })
 		.def_property(
 			"using_material",
-			[](const MeshProxy& s) { return Require<Mesh>(s)->using_material; },
+			[](const MeshProxy& s) { return s.Resolve()->using_material; },
 			[](const MeshProxy& s, bool value) { EmitEvent(s, MeshMaterialChanged{s.uid, value}); })
 		.def_property_readonly("material",
 		     [](const MeshProxy& s) -> py::object
 		     {
-			     const std::shared_ptr<Material>& mat = Require<Mesh>(s)->o_material;
+			     const std::shared_ptr<Material>& mat = s.Resolve()->o_material;
 			     if (!mat)
 			     {
 				     return py::none();
@@ -259,11 +319,11 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 		.def_property_readonly("uid", [](const EnvironmentProxy& s) { return s.uid; })
 		.def_property(
 			"intensity",
-			[](const EnvironmentProxy& s) { return Require<Environment>(s)->GetIntensity(); },
+			[](const EnvironmentProxy& s) { return s.Resolve()->GetIntensity(); },
 			[](const EnvironmentProxy& s, float value) { EmitEvent(s, EnvironmentIntensityChanged{s.uid, value}); })
 		.def_property(
 			"rotation",
-			[](const EnvironmentProxy& s) { return Require<Environment>(s)->GetRotation(); },
+			[](const EnvironmentProxy& s) { return s.Resolve()->GetRotation(); },
 			[](const EnvironmentProxy& s, float value) { EmitEvent(s, EnvironmentRotationChanged{s.uid, value}); });
 
 	RegisterCollection<CameraProxy, Camera>(data, "cameras");
@@ -272,17 +332,17 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 	RegisterCollection<EnvironmentProxy, Environment>(data, "environments");
 
 	py::class_<ContextView>(root, "_Context", "The run's active camera and selection.")
-		.def_property_readonly("active_camera", [](const ContextView& s) { return ActiveCamera(s.exec); })
-		.def_property_readonly("selection", [](const ContextView& s) { return Selection(s.exec); });
+		.def_property_readonly("active_camera", [](const ContextView& s) { return ActiveCamera(s); })
+		.def_property_readonly("selection", [](const ContextView& s) { return Selection(s); });
 }
 
-void InstallSceneViews(py::module_& root, py::module_& data, const ScriptExecutor* exec)
+void InstallSceneViews(py::module_& root, py::module_& data, const ScriptView* view)
 {
-	data.attr("cameras") = py::cast(TypedCollection<CameraProxy, Camera>{exec, &Scene::cam_list});
-	data.attr("lights") = py::cast(TypedCollection<LightProxy, Light>{exec, &Scene::light_list});
-	data.attr("meshes") = py::cast(TypedCollection<MeshProxy, Mesh>{exec, &Scene::mesh_list});
-	data.attr("environments") = py::cast(TypedCollection<EnvironmentProxy, Environment>{exec, &Scene::env_list});
-	root.attr("context") = py::cast(ContextView{exec});
+	data.attr("cameras") = py::cast(TypedCollection<CameraProxy, Camera>{view, &Scene::cam_list});
+	data.attr("lights") = py::cast(TypedCollection<LightProxy, Light>{view, &Scene::light_list});
+	data.attr("meshes") = py::cast(TypedCollection<MeshProxy, Mesh>{view, &Scene::mesh_list});
+	data.attr("environments") = py::cast(TypedCollection<EnvironmentProxy, Environment>{view, &Scene::env_list});
+	root.attr("context") = py::cast(ContextView{view});
 }
 
 }  // namespace script

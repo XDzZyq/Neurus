@@ -2,11 +2,11 @@
  * @file ObjectBindings.cpp
  * @brief Read-only `Object` / `Transform` proxies and `neurus.data.objects`.
  *
- * The collection and every proxy are bound to the run's `ScriptExecutor`; every
- * property is resolved live through it on attribute access. No setter writes a
- * C++ property - each constructs the exact typed event and routes it through
- * the run dispatch, which refuses in this phase. Nothing is cached, so a proxy
- * never observes a stale scene.
+ * The collection is constructed once per run with the run's `ScriptView`; the
+ * proxies it hands out copy that view, so each one resolves its own object and
+ * nothing is cached. No setter writes a C++ property - each constructs the
+ * exact typed event and routes it through the run dispatch, which refuses in
+ * this phase.
  */
 
 #include <pybind11/pybind11.h>
@@ -20,8 +20,8 @@
 #include "scene/Scene.h"
 #include "scene/Transform.h"
 #include "script/bindings/Bindings.h"
-#include "script/bindings/Proxies.h"
-#include "script/bindings/ProxyBase.h"
+#include "script/Proxies.h"
+#include "script/ProxyBase.h"
 
 namespace py = pybind11;
 
@@ -42,27 +42,28 @@ py::tuple ToTuple(const glm::vec3& value)
  * @brief `neurus.data.objects`: all master-pool objects, iterable and keyed by
  *        UID.
  *
- * An instance is bound to one run's executor and replaced at the start of the
- * next run, so it can never read a finished run. It is empty (never a null
- * dereference) when the run has no scene.
+ * Constructed once per run with that run's view. It is empty (never a null
+ * dereference) when the run has no scene, and it cannot observe a finished run
+ * because the view it holds is only populated for the run that built it.
  */
 struct ObjectCollection
 {
-	const ScriptExecutor* exec = nullptr;
+	const ScriptView* view = nullptr;
 
 	/// @brief Snapshot of every master-pool object as an `Object` proxy list.
 	py::list Snapshot() const
 	{
 		py::list result;
-		if (exec == nullptr || exec->context().scene == nullptr)
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
 		{
 			return result;
 		}
 
-		for (const auto& [id, obj] : exec->context().scene->obj_list)
+		for (const auto& [id, obj] : scene->obj_list)
 		{
 			(void)obj;
-			result.append(py::cast(ObjectProxy{exec, id}));
+			result.append(py::cast(ObjectProxy{{id, view}}));
 		}
 		return result;
 	}
@@ -132,7 +133,7 @@ void RegisterObjectBindings(py::module_& data)
 				{
 					return py::none();
 				}
-				return py::cast(TransformProxy{self.exec, self.uid});
+				return py::cast(TransformProxy{{self.uid, self.view}});
 			},
 			"The object's transform, or None when it has none.")
 		.def("__repr__",
@@ -146,28 +147,30 @@ void RegisterObjectBindings(py::module_& data)
 		.def("__getitem__",
 		     [](const ObjectCollection& self, int uid) -> py::object
 		     {
-			     if (self.exec == nullptr || self.exec->context().scene == nullptr
-			         || self.exec->context().scene->GetObjectID(uid) == nullptr)
+			     const Scene* scene =
+			         (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
+			     if (scene == nullptr || scene->GetObjectID(uid) == nullptr)
 			     {
 				     return py::none();
 			     }
-			     return py::cast(ObjectProxy{self.exec, uid});
+			     return py::cast(ObjectProxy{{uid, self.view}});
 		     },
 		     "Looks an object up by UID, or returns None when it is absent.")
 		.def("__contains__",
 		     [](const ObjectCollection& self, int uid)
 		     {
-			     return self.exec != nullptr && self.exec->context().scene != nullptr
-			            && self.exec->context().scene->GetObjectID(uid) != nullptr;
+			     const Scene* scene =
+			         (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
+			     return scene != nullptr && scene->GetObjectID(uid) != nullptr;
 		     },
 		     "True when an object with the given UID exists.")
 		.def("__repr__",
 		     [](const ObjectCollection& self) { return "<neurus.data.objects len=" + std::to_string(py::len(self.Snapshot())) + ">"; });
 }
 
-void InstallObjectViews(py::module_& data, const ScriptExecutor* exec)
+void InstallObjectViews(py::module_& data, const ScriptView* view)
 {
-	data.attr("objects") = py::cast(ObjectCollection{exec});
+	data.attr("objects") = py::cast(ObjectCollection{view});
 }
 
 }  // namespace script

@@ -15,11 +15,18 @@ state directly. The isolation boundary is enforced by a test
 - **`ScriptEngine`** (`src/script/ScriptEngine.h`) owns the interpreter. Its
   public header is Python-free (PIMPL), so the rest of the codebase never sees a
   pybind11 or CPython type.
-- **`ScriptContext`** (`src/script/ScriptContext.h`) is the read-only view the
-  bindings read: a borrowed `const Scene*`, a borrowed `const RenderConfig*`,
-  the active camera id, and the selected UIDs. `BuildScriptContext(...)` fills it
-  from a `Scene` and a `RenderConfig`.
-- **Bindings** (`src/script/bindings/`) register the embedded `neurus` module.
+- **`ScriptContext`** (`src/script/ScriptContext.h`) is the read-only document
+  view: a borrowed `const Scene*` and a borrowed `const RenderConfig*`. The
+  active camera and the selection are read live from the scene, so neither is
+  snapshotted here. `Editor::UpdateScriptContext()` fills it per run; the engine
+  publishes it for that run and clears it afterwards.
+- **`ScriptView`** (`src/script/ScriptView.h`) is the engine-owned view
+  injected into every collection and proxy when it is constructed. It is a plain
+  pair of pointers with no accessors; each proxy resolves its own object through
+  `view->ctx` on every access. The view's address is stable for the interpreter's
+  lifetime, so a proxy can outlive its run without dangling.
+- **Bindings** (`src/script/bindings/`) register the embedded `neurus` module
+  once.
 
 `Application` owns the engine and is the only place Python is started, wired
 through the Script Console panel and the Tools menu.
@@ -41,7 +48,8 @@ print("gamma", neurus.data.config.gamma)
 ```
 
 Every property is resolved live on access; nothing is cached. A collection is
-empty, and a lookup returns `None`, outside a run or when the run has no scene.
+empty, and a lookup returns `None`, when the run has no scene - the engine
+publishes a document only for the duration of a run.
 
 ## Writes are gated
 

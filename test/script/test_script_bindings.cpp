@@ -95,6 +95,43 @@ TEST(ScriptBindings, ReadsSceneObjects)
 	engine.Shutdown();
 }
 
+TEST(ScriptBindings, ProxyAndViewSurviveAcrossRuns)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+
+	auto mesh = std::make_shared<neurus::Mesh>();
+	mesh->o_name = "Probe";
+	scene.UseMesh(mesh);
+
+	neurus::ScriptContext ctx;
+	ctx.scene  = &scene;
+	ctx.config = &cfg;
+
+	const std::string meshUid = std::to_string(mesh->GetObjectID());
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+
+	// `o` and `objects` land in `__main__`, which persists across runs. The
+	// proxy stores only its UID and the view stores no run state, so both must
+	// resolve against the document published by the second run.
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"objects = neurus.data.objects\n"
+		"o = objects[" + meshUid + "]\n"
+		"assert o.name == 'Probe'\n", ctx));
+
+	EXPECT_TRUE(RunCleanly(engine,
+		"assert o.name == 'Probe'\n"
+		"assert o.uid == " + meshUid + "\n"
+		"assert objects is neurus.data.objects\n"
+		"assert len(objects) == 1\n"
+		"assert objects[" + meshUid + "].name == 'Probe'\n", ctx));
+
+	engine.Shutdown();
+}
+
 TEST(ScriptBindings, NoSceneYieldsNoObjects)
 {
 	neurus::ScriptEngine engine;

@@ -9,14 +9,16 @@
  * translation unit, so `ScriptEngine::Impl::Init` references
  * `ForceLinkBindings()` to keep this unit in the link.
  *
- * Class registration happens once here; the per-run views (collections,
- * context, config) are re-bound every run by `InstallNeurusViews`.
+ * Classes are registered once. The view instances are created once per
+ * interpreter by `InstallNeurusViews()`, which receives the engine's
+ * `ScriptView` - there is no process-wide current-view pointer.
  */
 
 #include <pybind11/embed.h>
 
-#include "script/ScriptExecutor.h"
+#include "script/ScriptDispatch.h"
 #include "script/bindings/Bindings.h"
+#include "script/ScriptView.h"
 
 namespace py = pybind11;
 
@@ -45,12 +47,12 @@ void RegisterNeurusModule(py::module_& m)
 	py::register_exception<ReadOnlyError>(m, "ReadOnlyError", PyExc_RuntimeError);
 }
 
-void InstallNeurusViews(py::module_& m, const ScriptExecutor* exec)
+void InstallNeurusViews(py::module_& m, const ScriptView* view)
 {
 	py::module_ data = m.attr("data");
-	InstallObjectViews(data, exec);
-	InstallSceneViews(m, data, exec);
-	InstallConfigViews(data, exec);
+	InstallObjectViews(data, view);
+	InstallSceneViews(m, data, view);
+	InstallConfigViews(data, view);
 }
 
 }  // namespace script
