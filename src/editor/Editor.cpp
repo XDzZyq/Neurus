@@ -431,9 +431,12 @@ void Editor::UpdateUIContext(UIContext& ctx) const
 
 void Editor::UpdateScriptContext(ScriptContext& ctx) const
 {
-	// Same shape as UpdateUIContext: two borrowed pointers, no symbol calls.
+	// Same shape as UpdateUIContext: borrowed pointers, no symbol calls. The pool
+	// is handed over as its read-only interface so a script can resolve names
+	// and ids without reaching the Editor's mutable ResourceManager.
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
+	ctx.resources = m_resources.get();
 }
 
 // =========================================================================

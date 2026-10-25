@@ -1,15 +1,15 @@
 /**
  * @file test_script_context.cpp
- * @brief `ScriptContext` is a two-pointer read view; the scene is the source of
+ * @brief `ScriptContext` is a three-pointer read view; the scene is the source of
  *        truth for the active camera and the selection.
  *
- * The type carries only the borrowed scene/config pointers. It is generated
- * fresh per run (`Editor::UpdateScriptContext`) and discarded afterwards - there
- * is no persistent, process-wide context. The active camera and the selection
- * are read from the scene live, so nothing here can drift from the scene; the
- * shape test below is what pins that. The header is Qt-/Vulkan-free and
- * forward-declares both types, which is itself part of what is asserted (this
- * file needs no QApplication).
+ * The type carries only the borrowed scene/config/resource pointers. It is
+ * generated fresh per run (`Editor::UpdateScriptContext`) and discarded
+ * afterwards - there is no persistent, process-wide context. The active camera
+ * and the selection are read from the scene live, so nothing here can drift from
+ * the scene; the shape test below is what pins that. The header is
+ * Qt-/Vulkan-free and forward-declares those types, which is itself part of what
+ * is asserted (this file needs no QApplication).
  */
 
 #include <gtest/gtest.h>
@@ -25,17 +25,21 @@
 using namespace neurus;
 
 // The Editor's half is assignable - what Editor::UpdateScriptContext() relies on.
-TEST(ScriptContextShape, IsTwoPlainPointers)
+TEST(ScriptContextShape, CarriesSceneConfigAndResources)
 {
-	Scene        scene{};
-	RenderConfig config{};
+	Scene           scene{};
+	RenderConfig    config{};
+	ResourceManager resources;
 
 	ScriptContext ctx{};
-	ctx.scene  = &scene;
-	ctx.config = &config;
+	ctx.scene     = &scene;
+	ctx.config    = &config;
+	ctx.resources = &resources;
 
 	EXPECT_EQ(ctx.scene, &scene);
 	EXPECT_EQ(ctx.config, &config);
+	EXPECT_EQ(ctx.resources, &resources);
+	EXPECT_EQ(ScriptContext{}.resources, nullptr);
 }
 
 TEST(ScriptContextShape, DefaultsToNoSceneOrConfig)
