@@ -17,6 +17,7 @@
 
 #include <cstdio>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -430,9 +431,22 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	ASSERT_NE(first, nullptr);
 	ASSERT_NE(second, nullptr);
 
-	// Lower UID keeps the bare name; the other is suffixed.
+	// Lower UID keeps the bare name; the other is suffixed. The registry is the
+	// authority for name lookups, and the load path mirrors the unique name back
+	// into o_name so a re-save preserves it.
 	EXPECT_EQ(first->o_name, "Clash");
 	EXPECT_EQ(second->o_name, "Clash.001");
-	EXPECT_EQ(loadedScene.FindObjectByName("Clash"), first);
-	EXPECT_EQ(loadedScene.FindObjectByName("Clash.001"), second);
+
+	auto clash = loadedResources.GetByName<Mesh>("Clash");
+	auto clash001 = loadedResources.GetByName<Mesh>("Clash.001");
+	ASSERT_NE(clash, nullptr);
+	ASSERT_NE(clash001, nullptr);
+	EXPECT_EQ(clash->GetObjectID(), firstUid);
+	EXPECT_EQ(clash001->GetObjectID(), secondUid);
+
+	// The per-type index is rebuilt with the pool, so typed enumeration is exact
+	// without scanning every resource.
+	int meshCount = 0;
+	loadedResources.ForEach<Mesh>([&](const std::shared_ptr<Mesh>&) { ++meshCount; });
+	EXPECT_EQ(meshCount, 2);
 }

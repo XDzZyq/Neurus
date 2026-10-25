@@ -4,6 +4,12 @@
  */
 
 #include "asset/components/ResourceComponent.h"
+
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "core/Log.h"
 #include "core/ResourceManager.h"
 
@@ -13,6 +19,7 @@
 #include "scene/Environment.h"
 #include "scene/DebugMesh.h"
 #include "scene/Mesh.h"
+#include "scene/ObjectID.h"
 #include "render/shaders/Shader.h"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
@@ -94,6 +101,24 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		}
 		env->SetEquirectData(imageData);
 	});
+
+	// Seed the name registry from the restored object names. Sorting by UID keeps
+	// duplicate-name suffixing deterministic; writing the returned unique name back
+	// keeps o_name and the registry in sync across saves.
+	std::vector<std::pair<int, std::string>> named;
+	m_resources->ForEach<ObjectID>([&](const std::shared_ptr<ObjectID>& obj)
+	{
+		if (obj && !obj->o_name.empty())
+			named.emplace_back(obj->GetObjectID(), obj->o_name);
+	});
+	std::sort(named.begin(), named.end(),
+	          [](const auto& l, const auto& r) { return l.first < r.first; });
+	for (const auto& [id, name] : named)
+	{
+		const std::string unique = m_resources->SetName(id, name);
+		if (auto obj = m_resources->Get<ObjectID>(id))
+			obj->o_name = unique.empty() ? name : unique;
+	}
 }
 
 } // namespace neurus::project
