@@ -2,22 +2,25 @@
  * @file ObjectBindings.cpp
  * @brief Read-only `Object` / `Transform3D` proxies and `neurus.data.objects`.
  *
- * The collection is constructed once per run with the run's `ScriptView`; the
- * proxies it hands out copy that view, so each one resolves its own object and
- * nothing is cached. No setter writes a C++ property - each constructs the
- * exact typed event and routes it through the run dispatch, which refuses in
- * this phase.
+ * The collection is constructed once with the engine's `ScriptView`; the proxies
+ * it hands out copy that view, so each one resolves its own object through the
+ * run's resource pool on every access and nothing is cached. Iteration and UID
+ * lookup go through the pool too, so a pooled object detached from the scene is
+ * still reachable. No setter writes a C++ property - each constructs the exact
+ * typed event and routes it through the run dispatch, which refuses in this
+ * phase.
  */
 
 #include <pybind11/pybind11.h>
 
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 
+#include "core/IResourceLookup.h"
 #include "editor/events/SceneEvents.h"
 #include "scene/ObjectID.h"
-#include "scene/Scene.h"
 #include "scene/Transform.h"
 #include "script/bindings/Bindings.h"
 #include "script/proxies/ObjectProxy.h"
@@ -40,33 +43,55 @@ py::tuple ToTuple(const glm::vec3& value)
 }
 
 /**
- * @brief `neurus.data.objects`: all master-pool objects, iterable and keyed by
- *        UID.
+ * @brief `neurus.data.objects`: every pooled object, iterable and keyed by UID.
  *
- * Constructed once per run with that run's view. It is empty (never a null
- * dereference) when the run has no scene, and it cannot observe a finished run
- * because the view it holds is only populated for the run that built it.
+ * Constructed once with the engine's view. Iteration and UID lookup go through
+ * the resource pool, not the scene, so a pooled object detached from the scene
+ * (undo history) is still reachable. It is empty (never a null dereference) when
+ * the run has no resource lookup, and it cannot observe a finished run because
+ * the view it holds is only populated for the run that built it.
+ *
+ * Deliberately UID-only (D2): one name can span several object types, so a
+ * string key would be ambiguous and returns None; the typed collections resolve
+ * names through the registry.
  */
 struct ObjectCollection
 {
 	const ScriptView* view = nullptr;
 
-	/// @brief Snapshot of every master-pool object as an `Object` proxy list.
+	/// @brief The run's resource pool, or nullptr when the run has no document.
+	const IResourceLookup* Pool() const
+	{
+		return (view != nullptr && view->ctx != nullptr) ? view->ctx->resources : nullptr;
+	}
+
+	/// @brief Snapshot of every pooled object as an `Object` proxy list.
 	py::list Snapshot() const
 	{
 		py::list result;
-		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
-		if (scene == nullptr)
+		const IResourceLookup* pool = Pool();
+		if (pool == nullptr)
 		{
 			return result;
 		}
 
-		for (const auto& [id, obj] : scene->obj_list)
+		pool->ForEach<ObjectID>([this, &result](const std::shared_ptr<ObjectID>& obj)
 		{
-			(void)obj;
-			result.append(py::cast(ObjectProxy{id, view}));
-		}
+			result.append(py::cast(ObjectProxy{obj->GetObjectID(), view}));
+		});
 		return result;
+	}
+
+	/// @brief Number of pooled objects.
+	py::ssize_t Count() const
+	{
+		py::ssize_t count = 0;
+		const IResourceLookup* pool = Pool();
+		if (pool != nullptr)
+		{
+			pool->ForEach<ObjectID>([&count](const std::shared_ptr<ObjectID>&) { ++count; });
+		}
+		return count;
 	}
 };
 
@@ -141,17 +166,16 @@ void RegisterObjectBindings(py::module_& data)
 		.def("__repr__",
 		     [](const ObjectProxy& self) { return "<neurus.Object uid=" + std::to_string(self.uid) + ">"; });
 
-	py::class_<ObjectCollection>(data, "_Objects", "The master scene object pool.")
+	py::class_<ObjectCollection>(data, "_Objects", "The pooled objects a script run may read.")
 		.def("__iter__",
 		     [](const ObjectCollection& self) { return py::iter(self.Snapshot()); },
-		     "Iterates the objects, newest registration order unspecified.")
-		.def("__len__", [](const ObjectCollection& self) { return py::len(self.Snapshot()); })
+		     "Iterates every pooled object, in unspecified order.")
+		.def("__len__", [](const ObjectCollection& self) { return self.Count(); })
 		.def("__getitem__",
 		     [](const ObjectCollection& self, int uid) -> py::object
 		     {
-			     const Scene* scene =
-			         (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
-			     if (scene == nullptr || scene->GetObjectID(uid) == nullptr)
+			     const IResourceLookup* pool = self.Pool();
+			     if (pool == nullptr || pool->Get<ObjectID>(uid) == nullptr)
 			     {
 				     return py::none();
 			     }
@@ -159,32 +183,23 @@ void RegisterObjectBindings(py::module_& data)
 		     },
 		     "Looks an object up by UID, or returns None when it is absent.")
 		.def("__getitem__",
-		     [](const ObjectCollection& self, const std::string& name) -> py::object
+		     [](const ObjectCollection&, const std::string&) -> py::object
 		     {
-			     const Scene* scene =
-			         (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
-			     if (scene == nullptr)
-			     {
-				     return py::none();
-			     }
-			     const ObjectID* obj = scene->FindObjectByName(name);
-			     if (obj == nullptr)
-			     {
-				     return py::none();
-			     }
-			     return py::cast(ObjectProxy{obj->GetObjectID(), self.view});
+			     // D2: a name spans several object types and is ambiguous, so a
+			     // string key never resolves here; typed collections do names.
+			     return py::none();
 		     },
-		     "Looks an object up by display name, or returns None when it is absent.")
+		     "Always None: use a UID, or a typed collection for a name.")
 		.def("__contains__",
 		     [](const ObjectCollection& self, int uid)
 		     {
-			     const Scene* scene =
-			         (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
-			     return scene != nullptr && scene->GetObjectID(uid) != nullptr;
+			     const IResourceLookup* pool = self.Pool();
+			     return pool != nullptr && pool->Get<ObjectID>(uid) != nullptr;
 		     },
-		     "True when an object with the given UID exists.")
+		     "True when a pooled object with the given UID exists.")
 		.def("__repr__",
-		     [](const ObjectCollection& self) { return "<neurus.data.objects len=" + std::to_string(py::len(self.Snapshot())) + ">"; });
+		     [](const ObjectCollection& self)
+		     { return "<neurus.data.objects len=" + std::to_string(self.Count()) + ">"; });
 }
 
 void InstallObjectViews(py::module_& data, const ScriptView* view)

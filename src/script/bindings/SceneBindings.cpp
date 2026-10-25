@@ -1,15 +1,17 @@
 /**
  * @file SceneBindings.cpp
- * @brief Read-only camera/light/mesh/environment proxies, the typed `neurus.data`
- *        collections, and `neurus.context`.
+ * @brief Read-only camera/light/mesh/environment proxies, the pool-wide
+ *        `neurus.data` collections, and `neurus.context`.
  *
  * Every proxy is constructed with the run's `ScriptView` and resolves its own
  * object through the run's resource pool on each access; nothing is cached and
- * no view or proxy holds a run-scoped pointer. The scene is read only for state
- * it alone owns - camera activation and selection. Collections are empty - never
- * a null dereference - when the run has no scene. No setter writes a C++ property
- * (each routes the exact typed event through the run dispatch, which refuses in
- * this phase).
+ * no view or proxy holds a run-scoped pointer. The typed `neurus.data`
+ * collections enumerate that pool, so a pooled object detached from the scene
+ * (undo history) stays reachable, and names resolve through the pool's per-type
+ * registry. The scene is read only for state it alone owns - camera activation
+ * and selection. Collections are empty - never a null dereference - when the run
+ * has no resource lookup. No setter writes a C++ property (each routes the exact
+ * typed event through the run dispatch, which refuses in this phase).
  */
 
 #include <pybind11/pybind11.h>
@@ -148,6 +150,7 @@ struct EnvironmentProxy : ObjectProxy, Transform3DProxy
 };
 
 /// @brief Stateless typed collection over one scene pool, keyed by UID.
+///        Retained for the scene-scoped view (`neurus.data.scene`).
 template <typename Proxy, typename T>
 struct TypedCollection
 {
@@ -223,6 +226,97 @@ void RegisterCollection(py::module_& data, const char* name)
 		.def("__getitem__",
 		     [](const Collection& s, const std::string& name) -> py::object
 		     { return Collection::LookupName(s.pool, s.view, name); });
+}
+
+/**
+ * @brief Stateless typed collection over the run's whole resource pool.
+ *
+ * Iteration and lookups go through `ScriptContext::resources`, not the scene, so
+ * a pooled object detached from the scene (undo history) is still reachable. A
+ * name resolves through the pool's per-type registry, which is authoritative for
+ * lookup; a proxy's display `name` still reads `ObjectID::o_name`. Empty - never
+ * a null dereference - when the run has no resource lookup.
+ *
+ * @tparam Proxy Typed proxy handed out for each pooled object.
+ * @tparam T Pooled type to enumerate and look up (Mesh, Camera, ...).
+ */
+template <typename Proxy, typename T>
+struct ResourceCollection
+{
+	const ScriptView* view = nullptr;
+
+	/// @brief The run's resource pool, or nullptr when the run has no document.
+	const IResourceLookup* Pool() const
+	{
+		return PoolOf(view);
+	}
+
+	/// @brief Snapshot of every pooled object of type @p T as a proxy list.
+	py::list Snapshot() const
+	{
+		py::list result;
+		const IResourceLookup* pool = Pool();
+		if (pool == nullptr)
+		{
+			return result;
+		}
+		pool->ForEach<T>([this, &result](const std::shared_ptr<T>& obj)
+		{
+			result.append(py::cast(Proxy{obj->GetObjectID(), view}));
+		});
+		return result;
+	}
+
+	/// @brief Number of pooled objects of type @p T.
+	py::ssize_t Count() const
+	{
+		py::ssize_t count = 0;
+		const IResourceLookup* pool = Pool();
+		if (pool != nullptr)
+		{
+			pool->ForEach<T>([&count](const std::shared_ptr<T>&) { ++count; });
+		}
+		return count;
+	}
+
+	/// @brief Proxy for a pooled UID, or None when absent or of another type.
+	py::object Lookup(int uid) const
+	{
+		const IResourceLookup* pool = Pool();
+		if (pool == nullptr || pool->Get<T>(uid) == nullptr)
+		{
+			return py::none();
+		}
+		return py::cast(Proxy{uid, view});
+	}
+
+	/// @brief Proxy for a registered name, or None when the name is absent.
+	py::object LookupName(const std::string& name) const
+	{
+		const IResourceLookup* pool = Pool();
+		if (pool == nullptr)
+		{
+			return py::none();
+		}
+		const std::shared_ptr<T> obj = pool->GetByName<T>(name);
+		if (!obj)
+		{
+			return py::none();
+		}
+		return py::cast(Proxy{obj->GetObjectID(), view});
+	}
+};
+
+template <typename Proxy, typename T>
+void RegisterResourceCollection(py::module_& data, const char* name)
+{
+	using Collection = ResourceCollection<Proxy, T>;
+	py::class_<Collection>(data, (std::string("_") + name).c_str())
+		.def("__iter__", [](const Collection& s) { return py::iter(s.Snapshot()); })
+		.def("__len__", [](const Collection& s) { return s.Count(); })
+		.def("__getitem__", [](const Collection& s, int uid) -> py::object { return s.Lookup(uid); })
+		.def("__getitem__",
+		     [](const Collection& s, const std::string& key) -> py::object { return s.LookupName(key); });
 }
 
 /// @brief `neurus.context`: the run's active camera and selection.
@@ -377,10 +471,10 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 			[](const EnvironmentProxy& s) { return s.Resolve()->GetRotation(); },
 			[](const EnvironmentProxy& s, float value) { EmitEvent(s, EnvironmentRotationChanged{s.uid, value}); });
 
-	RegisterCollection<CameraProxy, Camera>(data, "cameras");
-	RegisterCollection<LightProxy, Light>(data, "lights");
-	RegisterCollection<MeshProxy, Mesh>(data, "meshes");
-	RegisterCollection<EnvironmentProxy, Environment>(data, "environments");
+	RegisterResourceCollection<CameraProxy, Camera>(data, "cameras");
+	RegisterResourceCollection<LightProxy, Light>(data, "lights");
+	RegisterResourceCollection<MeshProxy, Mesh>(data, "meshes");
+	RegisterResourceCollection<EnvironmentProxy, Environment>(data, "environments");
 
 	py::class_<ContextView>(root, "_Context", "The run's active camera and selection.")
 		.def_property_readonly("active_camera", [](const ContextView& s) { return ActiveCamera(s); })
@@ -389,10 +483,10 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 
 void InstallSceneViews(py::module_& root, py::module_& data, const ScriptView* view)
 {
-	data.attr("cameras") = py::cast(TypedCollection<CameraProxy, Camera>{view, &Scene::cam_list});
-	data.attr("lights") = py::cast(TypedCollection<LightProxy, Light>{view, &Scene::light_list});
-	data.attr("meshes") = py::cast(TypedCollection<MeshProxy, Mesh>{view, &Scene::mesh_list});
-	data.attr("environments") = py::cast(TypedCollection<EnvironmentProxy, Environment>{view, &Scene::env_list});
+	data.attr("cameras") = py::cast(ResourceCollection<CameraProxy, Camera>{view});
+	data.attr("lights") = py::cast(ResourceCollection<LightProxy, Light>{view});
+	data.attr("meshes") = py::cast(ResourceCollection<MeshProxy, Mesh>{view});
+	data.attr("environments") = py::cast(ResourceCollection<EnvironmentProxy, Environment>{view});
 	root.attr("context") = py::cast(ContextView{view});
 }
 
