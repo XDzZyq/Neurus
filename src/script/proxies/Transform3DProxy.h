@@ -4,15 +4,17 @@
  *
  * Virtually inherits `ProxyBase`, so a proxy composed of this facet and another
  * facet still owns exactly one `{uid, view}` pair. The facet resolves only the
- * transform; object identity lives in `ObjectProxy`.
+ * transform; object identity lives in `ObjectProxy`. Resolution goes through
+ * the run's resource pool, not scene membership.
  */
 
 #pragma once
 
+#include <memory>
 #include <stdexcept>
 
+#include "core/IResourceLookup.h"
 #include "scene/ObjectID.h"
-#include "scene/Scene.h"
 #include "scene/Transform.h"
 #include "script/proxies/ProxyBase.h"
 #include "script/ScriptContext.h"
@@ -32,17 +34,22 @@ struct Transform3DProxy : virtual ProxyBase
 		: ProxyBase{id, scriptView}
 	{}
 
-	/// @brief Resolves the live `Transform3D` or raises a clear error.
+	/**
+	 * @brief Resolves the live `Transform3D` or raises a clear error.
+	 *
+	 * The pool owns the object, so the returned pointer stays valid after the
+	 * temporary shared_ptr below is destroyed.
+	 */
 	const Transform3D* Resolve() const
 	{
-		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
-		if (scene == nullptr)
+		const IResourceLookup* pool = (view != nullptr && view->ctx != nullptr) ? view->ctx->resources : nullptr;
+		if (pool == nullptr)
 		{
-			throw std::runtime_error("neurus: transform proxy has no run context");
+			throw std::runtime_error("neurus: transform proxy has no resource lookup");
 		}
 
-		ObjectID* obj = const_cast<ObjectID*>(scene->GetObjectID(uid));
-		if (obj == nullptr)
+		const std::shared_ptr<ObjectID> obj = pool->Get<ObjectID>(uid);
+		if (!obj)
 		{
 			throw std::runtime_error("neurus: transform proxy refers to a missing object");
 		}

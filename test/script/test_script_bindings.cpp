@@ -2,10 +2,12 @@
  * @file test_script_bindings.cpp
  * @brief The embedded `neurus` module exposes the scene for reading.
  *
- * A script run against a context whose scene is filled must see every
- * master-pool object through `neurus.data.objects` (iterable and keyed by UID)
- * and read live transform values. A run with no scene - or with no context at
- * all - must yield an empty collection without dereferencing anything.
+ * A script run against a context whose scene is filled must see every object
+ * through `neurus.data.objects` (iterable and keyed by UID) and read live
+ * transform values. Every object is created through `ResourceManager` and
+ * resolved by the proxies through the run's `resources` lookup. A run with no
+ * scene - or with no context at all - must yield an empty collection without
+ * dereferencing anything.
  */
 
 #include <gtest/gtest.h>
@@ -13,11 +15,11 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
-#include <memory>
 #include <string>
 
 #include "core/Log.h"
 #include "core/RenderConfig.h"
+#include "core/ResourceManager.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"
@@ -50,9 +52,10 @@ TEST(ScriptBindings, ReadsSceneObjects)
 {
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
 
-	auto mesh = std::make_shared<neurus::Mesh>();
-	auto camera = std::make_shared<neurus::Camera>();
+	auto mesh = resources.Load<neurus::Mesh>();
+	auto camera = resources.Load<neurus::Camera>();
 
 	// Distinctive, non-symmetric TRS values: an axis swap, a transposed scale
 	// or a wrong rotation component changes the exact tuples asserted below.
@@ -64,8 +67,9 @@ TEST(ScriptBindings, ReadsSceneObjects)
 	scene.UseCamera(camera);
 
 	neurus::ScriptContext ctx;
-	ctx.scene  = &scene;
-	ctx.config = &cfg;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
 
 	// Look the mesh up by UID: iteration order of the unordered master pool is
 	// unspecified, so `objs[0]` could be either object.
@@ -99,14 +103,18 @@ TEST(ScriptBindings, ProxyAndViewSurviveAcrossRuns)
 {
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
 
-	auto mesh = std::make_shared<neurus::Mesh>();
-	mesh->o_name = "Probe";
+	auto mesh = resources.Load<neurus::Mesh>();
+	// The registry name is authoritative; mirror the unique result into the
+	// display name so the scene index and Python agree.
+	mesh->o_name = resources.SetName(mesh->GetObjectID(), "Probe");
 	scene.UseMesh(mesh);
 
 	neurus::ScriptContext ctx;
-	ctx.scene  = &scene;
-	ctx.config = &cfg;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
 
 	const std::string meshUid = std::to_string(mesh->GetObjectID());
 
@@ -136,15 +144,19 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 {
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
 
-	auto mesh = std::make_shared<neurus::Mesh>();
-	mesh->o_name = "Ground";
+	auto mesh = resources.Load<neurus::Mesh>();
+	mesh->o_name = resources.SetName(mesh->GetObjectID(), "Ground");
 	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
 
-	auto second = std::make_shared<neurus::Mesh>(); // default name "Mesh"
-	auto third  = std::make_shared<neurus::Mesh>(); // default name "Mesh", suffixed to "Mesh.001"
-	auto camera = std::make_shared<neurus::Camera>();
-	camera->o_name = "Cam";
+	// Two meshes keep their default name: the registry suffixes the second one.
+	auto second = resources.Load<neurus::Mesh>();
+	second->o_name = resources.SetName(second->GetObjectID(), "Mesh");
+	auto third = resources.Load<neurus::Mesh>();
+	third->o_name = resources.SetName(third->GetObjectID(), "Mesh");
+	auto camera = resources.Load<neurus::Camera>();
+	camera->o_name = resources.SetName(camera->GetObjectID(), "Cam");
 
 	scene.UseMesh(mesh);
 	scene.UseMesh(second);
@@ -152,8 +164,9 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 	scene.UseCamera(camera);
 
 	neurus::ScriptContext ctx;
-	ctx.scene  = &scene;
-	ctx.config = &cfg;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
@@ -174,7 +187,7 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 		// Absent name, and a name owned by another object type.
 		"assert neurus.data.meshes['Nope'] is None\n"
 		"assert neurus.data.meshes['Cam'] is None\n"
-		"assert neurus.data.objects['Ground'].uid == ground.uid\n"
+		"assert neurus.data.meshes['Ground'].uid == ground.uid\n"
 		// The typed setter stays gated in the read-only phase.
 		"try:\n"
 		"    ground.position = (9.0, 9.0, 9.0)\n"
@@ -194,7 +207,8 @@ TEST(ScriptBindings, NoSceneYieldsNoObjects)
 {
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	// No context at all: the bindings must see an empty collection, not crash.
+	// No context at all (so no scene and no resource lookup): the bindings must
+	// see an empty collection, not crash.
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n"
@@ -208,9 +222,11 @@ TEST(ScriptBindings, EmptySceneYieldsNoObjects)
 {
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
 	neurus::ScriptContext ctx;
-	ctx.scene  = &scene;
-	ctx.config = &cfg;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
@@ -226,16 +242,17 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 {
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
 	// Exactly representable so the float-to-double equality below is sound.
 	cfg.r_gamma = 2.0f;
 
-	auto light = std::make_shared<neurus::Light>(neurus::LightType::POINTLIGHT, 3.0f,
-	                                             glm::vec3(1.0f, 0.0f, 0.0f));
-	auto camera = std::make_shared<neurus::Camera>();
+	auto light = resources.Load<neurus::Light>(
+		neurus::LightType::POINTLIGHT, 3.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+	auto camera = resources.Load<neurus::Camera>();
 	camera->cam_pers = 45.0f;
 	camera->cam_near = 0.5f;
 	camera->cam_far  = 250.0f;
-	auto env = std::make_shared<neurus::Environment>();
+	auto env = resources.Load<neurus::Environment>();
 	env->SetIntensity(2.5f);
 	env->SetRotation(30.0f);
 
@@ -245,8 +262,9 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 	scene.ActivateCamera(camera->GetObjectID());
 
 	neurus::ScriptContext ctx;
-	ctx.scene  = &scene;
-	ctx.config = &cfg;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
 
 	const std::string lightUid  = std::to_string(light->GetObjectID());
 	const std::string camUid    = std::to_string(camera->GetObjectID());
@@ -298,13 +316,15 @@ TEST(ScriptBindings, SetterRaisesReadOnlyErrorAndDoesNotMutate)
 {
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
-	auto mesh = std::make_shared<neurus::Mesh>();
+	neurus::ResourceManager resources;
+	auto mesh = resources.Load<neurus::Mesh>();
 	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
 	scene.UseMesh(mesh);
 
 	neurus::ScriptContext ctx;
-	ctx.scene  = &scene;
-	ctx.config = &cfg;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
 
 	const std::string meshUid = std::to_string(mesh->GetObjectID());
 

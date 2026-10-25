@@ -4,10 +4,12 @@
  *        collections, and `neurus.context`.
  *
  * Every proxy is constructed with the run's `ScriptView` and resolves its own
- * object from that view on each access; nothing is cached and no view or proxy
- * holds a run-scoped pointer. Collections are empty - never a null dereference -
- * when the run has no scene. No setter writes a C++ property (each routes the
- * exact typed event through the run dispatch, which refuses in this phase).
+ * object through the run's resource pool on each access; nothing is cached and
+ * no view or proxy holds a run-scoped pointer. The scene is read only for state
+ * it alone owns - camera activation and selection. Collections are empty - never
+ * a null dereference - when the run has no scene. No setter writes a C++ property
+ * (each routes the exact typed event through the run dispatch, which refuses in
+ * this phase).
  */
 
 #include <pybind11/pybind11.h>
@@ -19,6 +21,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/IResourceLookup.h"
 #include "editor/events/SceneEvents.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
@@ -49,6 +52,41 @@ py::tuple ToTuple(const glm::vec3& value)
 	return py::make_tuple(value.x, value.y, value.z);
 }
 
+/// @brief The run's resource pool, or nullptr when the run has no document.
+const IResourceLookup* PoolOf(const ScriptView* view)
+{
+	return (view != nullptr && view->ctx != nullptr) ? view->ctx->resources : nullptr;
+}
+
+/**
+ * @brief Resolves a pooled object of dynamic type @p T for a typed proxy.
+ *
+ * The pool owns the object, so the returned raw pointer stays valid after the
+ * temporary shared_ptr is destroyed. Throws a per-proxy error when the run has
+ * no pool, or the UID is absent from it or of another type.
+ *
+ * @tparam T Concrete pooled type (Camera, Light, Mesh, Environment).
+ * @param view The proxy's run view.
+ * @param uid Pooled object UID.
+ * @param what Lower-case proxy type name used in the error message.
+ */
+template <typename T>
+const T* ResolvePooled(const ScriptView* view, int uid, const char* what)
+{
+	const IResourceLookup* pool = PoolOf(view);
+	if (pool == nullptr)
+	{
+		throw std::runtime_error(std::string("neurus: ") + what + " proxy has no resource lookup");
+	}
+
+	const std::shared_ptr<T> obj = pool->Get<T>(uid);
+	if (!obj)
+	{
+		throw std::runtime_error(std::string("neurus: ") + what + " proxy refers to a missing or mistyped object");
+	}
+	return obj.get();
+}
+
 struct CameraProxy : ObjectProxy, Transform3DProxy
 {
 	CameraProxy() = default;
@@ -60,17 +98,7 @@ struct CameraProxy : ObjectProxy, Transform3DProxy
 	/// @brief Resolves the live camera or raises a clear error.
 	const Camera* Resolve() const
 	{
-		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
-		if (scene == nullptr)
-		{
-			throw std::runtime_error("neurus: camera proxy has no run context");
-		}
-		const Camera* cam = dynamic_cast<const Camera*>(scene->GetObjectID(uid));
-		if (cam == nullptr)
-		{
-			throw std::runtime_error("neurus: camera proxy refers to a missing or mistyped object");
-		}
-		return cam;
+		return ResolvePooled<Camera>(view, uid, "camera");
 	}
 };
 
@@ -85,17 +113,7 @@ struct LightProxy : ObjectProxy, Transform3DProxy
 	/// @brief Resolves the live light or raises a clear error.
 	const Light* Resolve() const
 	{
-		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
-		if (scene == nullptr)
-		{
-			throw std::runtime_error("neurus: light proxy has no run context");
-		}
-		const Light* light = dynamic_cast<const Light*>(scene->GetObjectID(uid));
-		if (light == nullptr)
-		{
-			throw std::runtime_error("neurus: light proxy refers to a missing or mistyped object");
-		}
-		return light;
+		return ResolvePooled<Light>(view, uid, "light");
 	}
 };
 
@@ -110,17 +128,7 @@ struct MeshProxy : ObjectProxy, Transform3DProxy
 	/// @brief Resolves the live mesh or raises a clear error.
 	const Mesh* Resolve() const
 	{
-		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
-		if (scene == nullptr)
-		{
-			throw std::runtime_error("neurus: mesh proxy has no run context");
-		}
-		const Mesh* mesh = dynamic_cast<const Mesh*>(scene->GetObjectID(uid));
-		if (mesh == nullptr)
-		{
-			throw std::runtime_error("neurus: mesh proxy refers to a missing or mistyped object");
-		}
-		return mesh;
+		return ResolvePooled<Mesh>(view, uid, "mesh");
 	}
 };
 
@@ -135,17 +143,7 @@ struct EnvironmentProxy : ObjectProxy, Transform3DProxy
 	/// @brief Resolves the live environment or raises a clear error.
 	const Environment* Resolve() const
 	{
-		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
-		if (scene == nullptr)
-		{
-			throw std::runtime_error("neurus: environment proxy has no run context");
-		}
-		const Environment* env = dynamic_cast<const Environment*>(scene->GetObjectID(uid));
-		if (env == nullptr)
-		{
-			throw std::runtime_error("neurus: environment proxy refers to a missing or mistyped object");
-		}
-		return env;
+		return ResolvePooled<Environment>(view, uid, "environment");
 	}
 };
 
@@ -240,14 +238,17 @@ py::object ActiveCamera(const ContextView& self)
 	{
 		return py::none();
 	}
-	// The scene owns the active camera; read it live (0 = none).
-	const int activeId = scene->ActiveCameraID();
-	if (activeId <= 0)
+	// The scene owns activation and validates the UID against its camera pool, so
+	// a stale activation left by a removed camera reads as "none".
+	const Camera* active = scene->GetActiveCamera();
+	if (active == nullptr)
 	{
 		return py::none();
 	}
-	const ObjectID* obj = scene->GetObjectID(activeId);
-	if (dynamic_cast<const Camera*>(obj) == nullptr)
+	// The object itself resolves through the run's pool.
+	const int activeId = active->GetObjectID();
+	const IResourceLookup* pool = PoolOf(self.view);
+	if (pool == nullptr || !pool->Get<Camera>(activeId))
 	{
 		return py::none();
 	}
@@ -262,13 +263,18 @@ py::list Selection(const ContextView& self)
 	{
 		return result;
 	}
+	const IResourceLookup* pool = PoolOf(self.view);
+	if (pool == nullptr)
+	{
+		return result;
+	}
 	// The scene owns the selection; snapshot its UIDs here (one source of truth).
 	std::vector<int> selected;
 	int activeUid = 0;
 	SnapshotSelectionUids(scene->selections, selected, activeUid);
 	for (const int uid : selected)
 	{
-		if (scene->GetObjectID(uid) != nullptr)
+		if (pool->Get<ObjectID>(uid) != nullptr)
 		{
 			result.append(py::cast(ObjectProxy{uid, self.view}));
 		}
