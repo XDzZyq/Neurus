@@ -132,6 +132,64 @@ TEST(ScriptBindings, ProxyAndViewSurviveAcrossRuns)
 	engine.Shutdown();
 }
 
+TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+
+	auto mesh = std::make_shared<neurus::Mesh>();
+	mesh->o_name = "Ground";
+	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+
+	auto second = std::make_shared<neurus::Mesh>(); // default name "Mesh"
+	auto third  = std::make_shared<neurus::Mesh>(); // default name "Mesh", suffixed to "Mesh.001"
+	auto camera = std::make_shared<neurus::Camera>();
+	camera->o_name = "Cam";
+
+	scene.UseMesh(mesh);
+	scene.UseMesh(second);
+	scene.UseMesh(third);
+	scene.UseCamera(camera);
+
+	neurus::ScriptContext ctx;
+	ctx.scene  = &scene;
+	ctx.config = &cfg;
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"ground = neurus.data.meshes['Ground']\n"
+		"assert ground is not None\n"
+		"assert isinstance(ground, neurus.data.Transform3D)\n"
+		"assert isinstance(ground, neurus.data.Object)\n"
+		"assert ground.name == 'Ground'\n"
+		"assert tuple(ground.position) == (1.0, 2.0, 3.0)\n"
+		"assert tuple(ground.rotation) == (0.0, 0.0, 0.0)\n"
+		"assert tuple(ground.scale) == (1.0, 1.0, 1.0)\n"
+		// Registration made the duplicate default name unique.
+		"assert neurus.data.meshes['Mesh'] is not None\n"
+		"assert neurus.data.meshes['Mesh.001'] is not None\n"
+		// Absent name, and a name owned by another object type.
+		"assert neurus.data.meshes['Nope'] is None\n"
+		"assert neurus.data.meshes['Cam'] is None\n"
+		"assert neurus.data.objects['Ground'].uid == ground.uid\n"
+		// The typed setter stays gated in the read-only phase.
+		"try:\n"
+		"    ground.position = (9.0, 9.0, 9.0)\n"
+		"except neurus.ReadOnlyError:\n"
+		"    pass\n"
+		"else:\n"
+		"    assert False\n", ctx));
+
+	EXPECT_FLOAT_EQ(mesh->GetPosition().x, 1.0f);
+	EXPECT_FLOAT_EQ(mesh->GetPosition().y, 2.0f);
+	EXPECT_FLOAT_EQ(mesh->GetPosition().z, 3.0f);
+
+	engine.Shutdown();
+}
+
 TEST(ScriptBindings, NoSceneYieldsNoObjects)
 {
 	neurus::ScriptEngine engine;
@@ -209,9 +267,14 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 		"assert cam.uid == " + camUid + "\n"
 		"assert cam.fov == 45.0\n"
 		"assert cam.is_active\n"
+		"assert isinstance(cam, neurus.data.Transform3D)\n"
 		"env = list(neurus.data.environments)[0]\n"
 		"assert env.intensity == 2.5\n"
 		"assert env.rotation == 30.0\n"
+		"assert isinstance(env, neurus.data.Transform3D)\n"
+		"assert isinstance(light, neurus.data.Transform3D)\n"
+		"assert isinstance(light, neurus.data.Object)\n"
+		"assert tuple(light.position) == (0.0, 0.0, 0.0)\n"
 		"assert neurus.data.config.gamma == 2.0\n";
 
 	EXPECT_TRUE(RunCleanly(engine, script, ctx));

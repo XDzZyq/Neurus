@@ -492,3 +492,78 @@ TEST(SceneConstAccessTest, ConstScene_GetObjectID_Nonexistent_ReturnsNull)
 	const ObjectID* negative = constScene.GetObjectID(-1);
 	EXPECT_EQ(negative, nullptr);
 }
+
+// ---------------------------------------------------------------------------
+// Display names
+// ---------------------------------------------------------------------------
+
+TEST(SceneNamingTest, RegistrationUniquifiesNames)
+{
+	Scene scene;
+	auto a = std::make_shared<Mesh>();
+	auto b = std::make_shared<Mesh>();
+	auto c = std::make_shared<Mesh>();
+
+	scene.UseMesh(a);
+	scene.UseMesh(b);
+	scene.UseMesh(c);
+
+	EXPECT_EQ(a->o_name, "Mesh");
+	EXPECT_EQ(b->o_name, "Mesh.001");
+	EXPECT_EQ(c->o_name, "Mesh.002");
+
+	EXPECT_EQ(scene.FindObjectByName("Mesh"), a.get());
+	EXPECT_EQ(scene.FindObjectByName("Mesh.001"), b.get());
+	EXPECT_EQ(scene.FindObjectByName("Mesh.002"), c.get());
+	EXPECT_EQ(scene.FindObjectByName("Missing"), nullptr);
+}
+
+TEST(SceneNamingTest, RemovingAnObjectFreesItsName)
+{
+	Scene scene;
+	auto a = std::make_shared<Mesh>();
+	auto b = std::make_shared<Mesh>();
+	scene.UseMesh(a);
+	scene.UseMesh(b);
+	ASSERT_EQ(b->o_name, "Mesh.001");
+
+	ASSERT_TRUE(scene.RemoveMesh(a->GetObjectID()));
+
+	auto c = std::make_shared<Mesh>();
+	scene.UseMesh(c);
+	EXPECT_EQ(c->o_name, "Mesh");
+	EXPECT_EQ(scene.FindObjectByName("Mesh"), c.get());
+}
+
+TEST(SceneNamingTest, ReRegisteringKeepsTheOwnedName)
+{
+	Scene scene;
+	auto a = std::make_shared<Mesh>();
+	scene.UseMesh(a);
+	scene.UseMesh(a); // idempotent re-registration
+
+	EXPECT_EQ(a->o_name, "Mesh");
+}
+
+TEST(SceneNamingTest, SetObjectNameUniquifies)
+{
+	Scene scene;
+	auto a = std::make_shared<Mesh>();
+	auto b = std::make_shared<Mesh>();
+	scene.UseMesh(a);
+	scene.UseMesh(b);
+	ASSERT_EQ(a->o_name, "Mesh");
+
+	// Renaming to a taken name suffixes; renaming to the object's own name is a no-op.
+	EXPECT_TRUE(scene.SetObjectName(b->GetObjectID(), "Mesh"));
+	EXPECT_EQ(b->o_name, "Mesh.001");
+	EXPECT_TRUE(scene.SetObjectName(b->GetObjectID(), "Mesh.001"));
+	EXPECT_EQ(b->o_name, "Mesh.001");
+
+	// Renaming the owner frees the old name.
+	EXPECT_TRUE(scene.SetObjectName(a->GetObjectID(), "Ground"));
+	EXPECT_EQ(a->o_name, "Ground");
+	EXPECT_EQ(scene.FindObjectByName("Ground"), a.get());
+	EXPECT_EQ(scene.FindObjectByName("Mesh"), nullptr);
+	EXPECT_FALSE(scene.SetObjectName(999999, "Nope"));
+}

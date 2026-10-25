@@ -30,8 +30,9 @@
 #include "scene/Transform.h"
 #include "script/ScriptContext.h"
 #include "script/bindings/Bindings.h"
-#include "script/Proxies.h"
-#include "script/ProxyBase.h"
+#include "script/proxies/ObjectProxy.h"
+#include "script/proxies/ProxyBase.h"
+#include "script/proxies/Transform3DProxy.h"
 
 namespace py = pybind11;
 
@@ -48,8 +49,14 @@ py::tuple ToTuple(const glm::vec3& value)
 	return py::make_tuple(value.x, value.y, value.z);
 }
 
-struct CameraProxy : ProxyBase
+struct CameraProxy : ObjectProxy, Transform3DProxy
 {
+	CameraProxy() = default;
+
+	CameraProxy(int id, const ScriptView* scriptView)
+		: ProxyBase{id, scriptView}
+	{}
+
 	/// @brief Resolves the live camera or raises a clear error.
 	const Camera* Resolve() const
 	{
@@ -67,8 +74,14 @@ struct CameraProxy : ProxyBase
 	}
 };
 
-struct LightProxy : ProxyBase
+struct LightProxy : ObjectProxy, Transform3DProxy
 {
+	LightProxy() = default;
+
+	LightProxy(int id, const ScriptView* scriptView)
+		: ProxyBase{id, scriptView}
+	{}
+
 	/// @brief Resolves the live light or raises a clear error.
 	const Light* Resolve() const
 	{
@@ -86,8 +99,14 @@ struct LightProxy : ProxyBase
 	}
 };
 
-struct MeshProxy : ProxyBase
+struct MeshProxy : ObjectProxy, Transform3DProxy
 {
+	MeshProxy() = default;
+
+	MeshProxy(int id, const ScriptView* scriptView)
+		: ProxyBase{id, scriptView}
+	{}
+
 	/// @brief Resolves the live mesh or raises a clear error.
 	const Mesh* Resolve() const
 	{
@@ -105,8 +124,14 @@ struct MeshProxy : ProxyBase
 	}
 };
 
-struct EnvironmentProxy : ProxyBase
+struct EnvironmentProxy : ObjectProxy, Transform3DProxy
 {
+	EnvironmentProxy() = default;
+
+	EnvironmentProxy(int id, const ScriptView* scriptView)
+		: ProxyBase{id, scriptView}
+	{}
+
 	/// @brief Resolves the live environment or raises a clear error.
 	const Environment* Resolve() const
 	{
@@ -145,7 +170,7 @@ struct TypedCollection
 		for (const auto& [id, obj] : objects)
 		{
 			(void)obj;
-			result.append(py::cast(Proxy{{id, view}}));
+			result.append(py::cast(Proxy{id, view}));
 		}
 		return result;
 	}
@@ -162,7 +187,28 @@ struct TypedCollection
 		{
 			return py::none();
 		}
-		return py::cast(Proxy{{uid, view}});
+		return py::cast(Proxy{uid, view});
+	}
+
+	/// @brief Name lookup that returns None unless the name is in this typed pool.
+	static py::object LookupName(Pool Scene::* pool, const ScriptView* view, const std::string& name)
+	{
+		const Scene* scene = (view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+		if (scene == nullptr)
+		{
+			return py::none();
+		}
+		const ObjectID* obj = scene->FindObjectByName(name);
+		if (obj == nullptr)
+		{
+			return py::none();
+		}
+		const Pool& objects = scene->*(pool);
+		if (objects.find(obj->GetObjectID()) == objects.end())
+		{
+			return py::none(); // the name belongs to another object type
+		}
+		return py::cast(Proxy{obj->GetObjectID(), view});
 	}
 };
 
@@ -175,7 +221,10 @@ void RegisterCollection(py::module_& data, const char* name)
 		.def("__len__", [](const Collection& s) { return py::len(s.Snapshot()); })
 		.def("__getitem__",
 		     [](const Collection& s, int uid) -> py::object
-		     { return Collection::Lookup(s.pool, s.view, uid); });
+		     { return Collection::Lookup(s.pool, s.view, uid); })
+		.def("__getitem__",
+		     [](const Collection& s, const std::string& name) -> py::object
+		     { return Collection::LookupName(s.pool, s.view, name); });
 }
 
 /// @brief `neurus.context`: the run's active camera and selection.
@@ -202,7 +251,7 @@ py::object ActiveCamera(const ContextView& self)
 	{
 		return py::none();
 	}
-	return py::cast(CameraProxy{{activeId, self.view}});
+	return py::cast(CameraProxy{activeId, self.view});
 }
 
 py::list Selection(const ContextView& self)
@@ -221,7 +270,7 @@ py::list Selection(const ContextView& self)
 	{
 		if (scene->GetObjectID(uid) != nullptr)
 		{
-			result.append(py::cast(ObjectProxy{{uid, self.view}}));
+			result.append(py::cast(ObjectProxy{uid, self.view}));
 		}
 	}
 	return result;
@@ -232,8 +281,7 @@ py::list Selection(const ContextView& self)
 /// @brief Registers the scene proxy classes (once).
 void RegisterSceneBindings(py::module_& root, py::module_& data)
 {
-	py::class_<CameraProxy>(data, "Camera", "Read-only proxy over a scene camera.")
-		.def_property_readonly("uid", [](const CameraProxy& s) { return s.uid; })
+	py::class_<CameraProxy, ObjectProxy, Transform3DProxy>(data, "Camera", "Read-only proxy over a scene camera.")
 		.def_property(
 			"fov",
 			[](const CameraProxy& s) { return s.Resolve()->cam_pers; },
@@ -261,8 +309,7 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 			},
 			[](const CameraProxy& s, bool value) { EmitEvent(s, ActiveCameraChanged{value ? s.uid : 0}); });
 
-	py::class_<LightProxy>(data, "Light", "Read-only proxy over a scene light.")
-		.def_property_readonly("uid", [](const LightProxy& s) { return s.uid; })
+	py::class_<LightProxy, ObjectProxy, Transform3DProxy>(data, "Light", "Read-only proxy over a scene light.")
 		.def_property_readonly("type",
 		     [](const LightProxy& s) { return static_cast<int>(s.Resolve()->light_type); })
 		.def_property(
@@ -294,8 +341,7 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 			[](const LightProxy& s) { return s.Resolve()->spot_outer_cutoff; },
 			[](const LightProxy& s, float value) { EmitEvent(s, LightOuterCutoffChanged{s.uid, value}); });
 
-	py::class_<MeshProxy>(data, "Mesh", "Read-only proxy over a scene mesh.")
-		.def_property_readonly("uid", [](const MeshProxy& s) { return s.uid; })
+	py::class_<MeshProxy, ObjectProxy, Transform3DProxy>(data, "Mesh", "Read-only proxy over a scene mesh.")
 		.def_property(
 			"shadow",
 			[](const MeshProxy& s) { return s.Resolve()->using_shadow; },
@@ -315,8 +361,7 @@ void RegisterSceneBindings(py::module_& root, py::module_& data)
 			     return py::str(mat->mat_name);
 		     });
 
-	py::class_<EnvironmentProxy>(data, "Environment", "Read-only proxy over the scene environment.")
-		.def_property_readonly("uid", [](const EnvironmentProxy& s) { return s.uid; })
+	py::class_<EnvironmentProxy, ObjectProxy, Transform3DProxy>(data, "Environment", "Read-only proxy over the scene environment.")
 		.def_property(
 			"intensity",
 			[](const EnvironmentProxy& s) { return s.Resolve()->GetIntensity(); },

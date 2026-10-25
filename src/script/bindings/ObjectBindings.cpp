@@ -1,6 +1,6 @@
 /**
  * @file ObjectBindings.cpp
- * @brief Read-only `Object` / `Transform` proxies and `neurus.data.objects`.
+ * @brief Read-only `Object` / `Transform3D` proxies and `neurus.data.objects`.
  *
  * The collection is constructed once per run with the run's `ScriptView`; the
  * proxies it hands out copy that view, so each one resolves its own object and
@@ -20,8 +20,9 @@
 #include "scene/Scene.h"
 #include "scene/Transform.h"
 #include "script/bindings/Bindings.h"
-#include "script/Proxies.h"
-#include "script/ProxyBase.h"
+#include "script/proxies/ObjectProxy.h"
+#include "script/proxies/ProxyBase.h"
+#include "script/proxies/Transform3DProxy.h"
 
 namespace py = pybind11;
 
@@ -63,7 +64,7 @@ struct ObjectCollection
 		for (const auto& [id, obj] : scene->obj_list)
 		{
 			(void)obj;
-			result.append(py::cast(ObjectProxy{{id, view}}));
+			result.append(py::cast(ObjectProxy{id, view}));
 		}
 		return result;
 	}
@@ -74,11 +75,12 @@ struct ObjectCollection
 /// @brief Registers the proxy classes (once) on the `data` submodule.
 void RegisterObjectBindings(py::module_& data)
 {
-	py::class_<TransformProxy>(data, "Transform", "Read-only 3D transform of a scene object.")
+	py::class_<Transform3DProxy>(data, "Transform3D",
+	                             "Read-only 3D transform shared by every spatial scene object.")
 		.def_property(
 			"position",
-			[](const TransformProxy& self) { return ToTuple(self.Resolve()->GetPosition()); },
-			[](const TransformProxy& self, std::tuple<float, float, float> value)
+			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetPosition()); },
+			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
 				const auto [x, y, z] = value;
 				EmitEvent(self, PositionChanged{self.uid, x, y, z});
@@ -86,8 +88,8 @@ void RegisterObjectBindings(py::module_& data)
 			"World position as an (x, y, z) tuple.")
 		.def_property(
 			"rotation",
-			[](const TransformProxy& self) { return ToTuple(self.Resolve()->GetRotation()); },
-			[](const TransformProxy& self, std::tuple<float, float, float> value)
+			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetRotation()); },
+			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
 				const auto [x, y, z] = value;
 				EmitEvent(self, RotationChanged{self.uid, x, y, z});
@@ -95,8 +97,8 @@ void RegisterObjectBindings(py::module_& data)
 			"Euler rotation in degrees as an (x, y, z) tuple.")
 		.def_property(
 			"scale",
-			[](const TransformProxy& self) { return ToTuple(self.Resolve()->GetScale()); },
-			[](const TransformProxy& self, std::tuple<float, float, float> value)
+			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetScale()); },
+			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
 				const auto [x, y, z] = value;
 				EmitEvent(self, ScaleChanged{self.uid, x, y, z});
@@ -133,7 +135,7 @@ void RegisterObjectBindings(py::module_& data)
 				{
 					return py::none();
 				}
-				return py::cast(TransformProxy{{self.uid, self.view}});
+				return py::cast(Transform3DProxy{self.uid, self.view});
 			},
 			"The object's transform, or None when it has none.")
 		.def("__repr__",
@@ -153,9 +155,26 @@ void RegisterObjectBindings(py::module_& data)
 			     {
 				     return py::none();
 			     }
-			     return py::cast(ObjectProxy{{uid, self.view}});
+			     return py::cast(ObjectProxy{uid, self.view});
 		     },
 		     "Looks an object up by UID, or returns None when it is absent.")
+		.def("__getitem__",
+		     [](const ObjectCollection& self, const std::string& name) -> py::object
+		     {
+			     const Scene* scene =
+			         (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->scene : nullptr;
+			     if (scene == nullptr)
+			     {
+				     return py::none();
+			     }
+			     const ObjectID* obj = scene->FindObjectByName(name);
+			     if (obj == nullptr)
+			     {
+				     return py::none();
+			     }
+			     return py::cast(ObjectProxy{obj->GetObjectID(), self.view});
+		     },
+		     "Looks an object up by display name, or returns None when it is absent.")
 		.def("__contains__",
 		     [](const ObjectCollection& self, int uid)
 		     {

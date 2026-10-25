@@ -3,8 +3,8 @@
 # Layer rule: script -> editor is allowed; script must never include Renderer or
 # UI headers. Python/pybind11 headers are confined to implementation sources:
 # the layer headers (ScriptEngine.h, ScriptContext.h, ScriptDispatch.h,
-# ScriptView.h, ProxyBase.h, Proxies.h) stay Python-free, and bindings/ holds
-# only the pybind11 registration units plus the forward-declaring Bindings.h.
+# ScriptView.h, proxies/) stay Python-free, and bindings/ holds only the
+# pybind11 registration units plus the forward-declaring Bindings.h.
 #
 # Explicit source list (no glob), matching the other layer libraries.
 
@@ -16,8 +16,9 @@ add_library(neurus_script STATIC
 	ScriptEngine.cpp
 	ScriptEngineImpl.h
 	ScriptView.h
-	ProxyBase.h
-	Proxies.h
+	proxies/ProxyBase.h
+	proxies/ObjectProxy.h
+	proxies/Transform3DProxy.h
 	bindings/Bindings.h
 	bindings/ObjectBindings.cpp
 	bindings/SceneBindings.cpp

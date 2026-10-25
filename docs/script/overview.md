@@ -35,8 +35,10 @@ through the Script Console panel and the Tools menu.
 
 Read-only in this phase:
 
-- `neurus.data.objects` - every scene object, iterable and keyed by UID.
-- `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - typed pools.
+- `neurus.data.objects` - every scene object, iterable and keyed by UID or
+  display name.
+- `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - typed pools,
+  keyed by UID or display name; a name lookup returns the typed proxy.
 - `neurus.data.config` - the render settings (`gamma`, `pipeline`, ...).
 - `neurus.context.active_camera`, `neurus.context.selection`.
 
@@ -44,12 +46,27 @@ Read-only in this phase:
 import neurus
 for o in neurus.data.objects:
     print(o.name, o.transform.position)
+
+ground = neurus.data.meshes["Ground"]
+print(ground.name, ground.position, ground.rotation, ground.scale)
 print("gamma", neurus.data.config.gamma)
 ```
 
+`Mesh`, `Light`, `Camera` and `Environment` proxies derive from both
+`neurus.data.Object` (`uid`, `name`, `type`, `visible`, `transform`) and
+`neurus.data.Transform3D` (`position`, `rotation`, `scale`), so a typed lookup
+exposes both facets. A camera overrides `position`/`rotation` because its
+transform is a look-at pose, and the environment's `rotation` is its
+environment-map angle.
+
 Every property is resolved live on access; nothing is cached. A collection is
 empty, and a lookup returns `None`, when the run has no scene - the engine
-publishes a document only for the duration of a run.
+publishes a document only for the duration of a run. A name lookup also returns
+`None` when the name is absent or belongs to another object type.
+
+Names are unique within a scene: registration keeps the requested name when it
+is free and otherwise suffixes it (`.001`, `.002`, ...), so the name keys are
+stable. See [Scene Objects](../scene/objects.md#display-names).
 
 ## Writes are gated
 

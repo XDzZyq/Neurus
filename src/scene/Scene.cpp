@@ -5,6 +5,9 @@
 
 #include "Scene.h"
 
+#include <algorithm>
+#include <cstdio>
+
 #include "core/Log.h"
 #include "core/ResourceManager.h"
 
@@ -182,6 +185,83 @@ const Camera* Scene::GetActiveCamera() const
 }
 
 // ---------------------------------------------------------------------------
+// Name index
+// ---------------------------------------------------------------------------
+
+const ObjectID* Scene::FindObjectByName(const std::string& name) const
+{
+	auto it = m_nameToId.find(name);
+	if (it == m_nameToId.end())
+	{
+		return nullptr;
+	}
+	return GetObjectID(it->second);
+}
+
+bool Scene::SetObjectName(int id, const std::string& name)
+{
+	ObjectID* obj = GetObjectID(id);
+	if (obj == nullptr)
+	{
+		return false;
+	}
+
+	// Free the current name first, so renaming an object to its own name is a
+	// no-op instead of suffixing it.
+	auto old = m_nameToId.find(obj->o_name);
+	if (old != m_nameToId.end() && old->second == id)
+	{
+		m_nameToId.erase(old);
+	}
+
+	const std::string unique = MakeUniqueName(name);
+	obj->o_name = unique;
+	m_nameToId[unique] = id;
+	return true;
+}
+
+std::string Scene::MakeUniqueName(const std::string& requested) const
+{
+	const std::string base = requested.empty() ? std::string("Object") : requested;
+	if (m_nameToId.find(base) == m_nameToId.end())
+	{
+		return base;
+	}
+
+	for (int suffix = 1;; ++suffix)
+	{
+		char buffer[16];
+		std::snprintf(buffer, sizeof(buffer), ".%03d", suffix);
+		std::string candidate = base + buffer;
+		if (m_nameToId.find(candidate) == m_nameToId.end())
+		{
+			return candidate;
+		}
+	}
+}
+
+void Scene::IndexObjectName(int id, const std::string& requested)
+{
+	ObjectID* obj = GetObjectID(id);
+	if (obj == nullptr)
+	{
+		return;
+	}
+
+	// Re-registering an object must keep the name it already owns.
+	auto existing = m_nameToId.find(requested);
+	if (!requested.empty() && existing != m_nameToId.end() && existing->second == id)
+	{
+		obj->o_name = requested;
+		return;
+	}
+
+	const std::string unique = MakeUniqueName(requested);
+	obj->o_name = unique;
+	m_nameToId[unique] = id;
+}
+
+// ---------------------------------------------------------------------------
 // Scene-wide operations
 // ---------------------------------------------------------------------------
 
@@ -193,13 +273,19 @@ void Scene::RebuildObjList()
 {
 	obj_list.clear();
 
-	auto rebuild = [this](auto& pool)
+	// Names are collected alongside the master list so they can be re-indexed
+	// deterministically: a file may hold duplicates, and unordered pool order
+	// would otherwise decide which object keeps the bare name.
+	std::vector<std::pair<int, std::string>> named;
+
+	auto rebuild = [this, &named](auto& pool)
 	{
 		for (auto& [id, obj] : pool)
 		{
 			auto* basePtr = static_cast<ObjectID*>(obj.get());
 			int id_obj = basePtr->GetObjectID();
 			obj_list[id_obj] = Resource<ObjectID>(obj, basePtr);
+			named.emplace_back(id_obj, basePtr->o_name);
 		}
 	};
 
@@ -211,6 +297,15 @@ void Scene::RebuildObjList()
 	rebuild(dPoints_list);
 	rebuild(dMesh_list);
 	rebuild(env_list);
+
+	std::sort(named.begin(), named.end(),
+	          [](const auto& a, const auto& b) { return a.first < b.first; });
+
+	m_nameToId.clear();
+	for (const auto& [id, name] : named)
+	{
+		IndexObjectName(id, name);
+	}
 }
 
 // ---------------------------------------------------------------------------

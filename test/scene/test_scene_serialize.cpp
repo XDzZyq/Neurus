@@ -371,3 +371,68 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 	EXPECT_FALSE(line->GetXRay());
 	EXPECT_EQ(loadedScene.dLine_list.size(), 1u);
 }
+
+// -----------------------------------------------------------------------
+// Display names restored from a project file
+// -----------------------------------------------------------------------
+
+/**
+ * @test Duplicate names stored in a project file are suffixed on load in
+ *       ascending UID order, so the scene name index is deterministic.
+ */
+TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
+{
+	TempFile tmp("test_scene_duplicate_names.neurus.json");
+
+	int firstUid = 0;
+	int secondUid = 0;
+
+	{
+		Scene scene;
+		RenderConfig config;
+		ResourceManager resources;
+
+		auto first = resources.Load<Mesh>();
+		first->o_name = "Clash";
+		scene.UseMesh(first);
+		firstUid = first->GetObjectID();
+
+		auto second = resources.Load<Mesh>();
+		second->o_name = "Clash";
+		scene.UseMesh(second);
+		secondUid = second->GetObjectID();
+
+		// Registration already made them unique; force the duplicate that an
+		// older file may contain so the load path is what is exercised.
+		first->o_name = "Clash";
+		second->o_name = "Clash";
+
+		project::Project p;
+		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::SceneComponent>(scene, resources);
+		p.Register<project::ConfigComponent>(config);
+		p.Save(tmp.path);
+	}
+
+	ASSERT_LT(firstUid, secondUid);
+
+	Scene loadedScene;
+	RenderConfig loadedConfig;
+	ResourceManager loadedResources;
+	project::Project p;
+	p.Register<project::ResourceComponent>(loadedResources);
+	p.Register<project::SceneComponent>(loadedScene, loadedResources);
+	p.Register<project::ConfigComponent>(loadedConfig);
+	ASSERT_NO_THROW(p.Load(tmp.path));
+
+	const ObjectID* first = loadedScene.GetObjectID(firstUid);
+	const ObjectID* second = loadedScene.GetObjectID(secondUid);
+	ASSERT_NE(first, nullptr);
+	ASSERT_NE(second, nullptr);
+
+	// Lower UID keeps the bare name; the other is suffixed.
+	EXPECT_EQ(first->o_name, "Clash");
+	EXPECT_EQ(second->o_name, "Clash.001");
+	EXPECT_EQ(loadedScene.FindObjectByName("Clash"), first);
+	EXPECT_EQ(loadedScene.FindObjectByName("Clash.001"), second);
+}

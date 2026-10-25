@@ -15,7 +15,7 @@
 #include "editor/events/ConfigEvents.h"
 #include "script/ScriptContext.h"
 #include "script/bindings/Bindings.h"
-#include "script/ProxyBase.h"
+#include "script/proxies/ProxyBase.h"
 
 namespace py = pybind11;
 

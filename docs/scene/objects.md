@@ -69,6 +69,16 @@ Conventionally only one `Environment` is active per scene.
 
 A scene containing zero cameras is a legal document, and deleting the last camera is a legal gesture. See [Viewport](../editor/viewport.md).
 
+## Display names
+
+Names are unique within a scene. `Scene` keeps a name-to-UID index beside the typed pools:
+
+- `RegisterObject` (reached through every `Use*` method) keeps the requested `o_name` when it is free and otherwise appends the lowest free `.001`, `.002`, ... suffix, writing the unique name back to the object.
+- `RemoveObject` frees the name, so a later object can reuse it.
+- `ResolveReferences` / `RebuildObjList` rebuild the index in ascending UID order, so duplicate names restored from an older project file are suffixed deterministically (lower UID keeps the bare name).
+- `FindObjectByName(name)` returns the object or `nullptr`; `SetObjectName(uid, name)` is the supported rename path - it uniquifies and updates the index. Writing `o_name` directly bypasses the index.
+- Names are scene-wide, not per type: a camera and a mesh cannot both own `Ground`.
+
 ## Pooled data references
 
 Scene objects never hold file paths. They reference pooled data resources through integer IDs, which the loader re-wires after deserialization:
