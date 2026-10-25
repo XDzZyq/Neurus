@@ -15,6 +15,7 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 
 #include "core/Log.h"
@@ -27,6 +28,9 @@
 #include "scene/Scene.h"
 #include "script/ScriptContext.h"
 #include "script/ScriptEngine.h"
+#include "script/ScriptView.h"
+#include "script/proxies/ObjectProxy.h"
+#include "script/proxies/Transform3DProxy.h"
 
 namespace
 {
@@ -356,4 +360,27 @@ TEST(ScriptBindings, SetterRaisesReadOnlyErrorAndDoesNotMutate)
 	EXPECT_FLOAT_EQ(cfg.r_gamma, 1.0f);
 
 	engine.Shutdown();
+}
+
+TEST(ScriptBindings, ProxiesResolveFromThePoolWithoutAScene)
+{
+	neurus::ResourceManager resources;
+	auto mesh = resources.Load<neurus::Mesh>();
+
+	// No scene at all: only the pool can answer a resolve.
+	neurus::ScriptContext ctx;
+	ctx.resources = &resources;
+	neurus::script::ScriptView view{&ctx, nullptr};
+
+	neurus::script::ObjectProxy object{mesh->GetObjectID(), &view};
+	EXPECT_EQ(object.Resolve(), mesh.get());
+
+	neurus::script::Transform3DProxy transform{mesh->GetObjectID(), &view};
+	EXPECT_EQ(transform.Resolve(), static_cast<const neurus::Transform3D*>(mesh.get()));
+
+	// A null lookup is a clean error, not a null dereference.
+	neurus::ScriptContext empty;
+	neurus::script::ScriptView emptyView{&empty, nullptr};
+	neurus::script::ObjectProxy orphan{mesh->GetObjectID(), &emptyView};
+	EXPECT_THROW(orphan.Resolve(), std::runtime_error);
 }
