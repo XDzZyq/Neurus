@@ -17,6 +17,7 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -177,6 +178,10 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
 
+	// The Python UID has to be the C++ identity, not merely self-consistent
+	// with another proxy taken from the same source.
+	const std::string meshUid = std::to_string(mesh->GetObjectID());
+
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"ground = neurus.data.meshes['Ground']\n"
@@ -193,7 +198,9 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 		// Absent name, and a name owned by another object type.
 		"assert neurus.data.meshes['Nope'] is None\n"
 		"assert neurus.data.meshes['Cam'] is None\n"
-		"assert neurus.data.meshes['Ground'].uid == ground.uid\n"
+		"assert neurus.data.meshes['Ground'].uid == " + meshUid + "\n"
+		"assert 'Ground' in neurus.data.meshes\n"
+		"assert 'Nope' not in neurus.data.meshes\n"
 		// The typed setter stays gated in the read-only phase.
 		"try:\n"
 		"    ground.position = (9.0, 9.0, 9.0)\n"
@@ -243,10 +250,15 @@ TEST(ScriptBindings, ResourceCollectionsIncludeDetachedObjects)
 		"assert detached is not None\n"
 		"assert detached.name == 'Detached'\n"
 		"assert neurus.data.meshes[" + uidB + "].uid == " + uidB + "\n"
+		"assert " + uidB + " in neurus.data.meshes\n"
+		"assert 12345 not in neurus.data.meshes\n"
 		"assert len(neurus.data.objects) == 2\n"
 		"assert neurus.data.objects[" + uidB + "].name == 'Detached'\n"
-		// D2: `objects` is UID-only, so a generic name resolves to None.
-		"assert neurus.data.objects['Detached'] is None\n", ctx));
+		"assert " + uidB + " in neurus.data.objects\n"
+		// D2: `objects` is UID-only, so a generic name resolves to None and
+		// `in` agrees with that lookup.
+		"assert neurus.data.objects['Detached'] is None\n"
+		"assert 'Detached' not in neurus.data.objects\n", ctx));
 
 	engine.Shutdown();
 }
@@ -287,6 +299,10 @@ TEST(ScriptBindings, SceneCollectionExcludesDetachedObjects)
 		"assert neurus.data.scene.meshes['Ground'] is not None\n"
 		"assert neurus.data.scene.meshes[" + uidA + "].name == 'Ground'\n"
 		"assert neurus.data.scene.meshes[" + uidB + "] is None\n"
+		"assert " + uidA + " in neurus.data.scene.meshes\n"
+		"assert " + uidB + " not in neurus.data.scene.meshes\n"
+		"assert 'Ground' in neurus.data.scene.meshes\n"
+		"assert 'Detached' not in neurus.data.scene.meshes\n"
 		// The other scene pools exist and are empty in this scene.
 		"assert len(neurus.data.scene.cameras) == 0\n"
 		"assert len(neurus.data.scene.lights) == 0\n"
@@ -294,8 +310,109 @@ TEST(ScriptBindings, SceneCollectionExcludesDetachedObjects)
 		"assert len(neurus.data.scene.objects) == 1\n"
 		"assert neurus.data.scene.objects[" + uidA + "].name == 'Ground'\n"
 		"assert neurus.data.scene.objects[" + uidB + "] is None\n"
-		// D2: `objects` is UID-only, so a generic name resolves to None.
-		"assert neurus.data.scene.objects['Ground'] is None\n", ctx));
+		"assert " + uidA + " in neurus.data.scene.objects\n"
+		// D2: `objects` is UID-only, so a generic name resolves to None and
+		// `in` agrees with that lookup.
+		"assert neurus.data.scene.objects['Ground'] is None\n"
+		"assert 'Ground' not in neurus.data.scene.objects\n", ctx));
+
+	engine.Shutdown();
+}
+
+TEST(ScriptBindings, SceneCollectionsMapEachScenePool)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
+
+	// One named object per typed scene pool: a collection wired to the wrong
+	// pool member would report another pool's length or resolve its name to None.
+	auto camera = resources.Load<neurus::Camera>();
+	camera->o_name = resources.SetName(camera->GetObjectID(), "SceneCam");
+	auto light = resources.Load<neurus::Light>(
+		neurus::LightType::POINTLIGHT, 3.0f, glm::vec3(1.0f));
+	light->o_name = resources.SetName(light->GetObjectID(), "SceneLight");
+	auto env = resources.Load<neurus::Environment>();
+	env->o_name = resources.SetName(env->GetObjectID(), "SceneEnv");
+
+	scene.UseCamera(camera);
+	scene.UseLight(light);
+	scene.UseEnvironment(env);
+
+	neurus::ScriptContext ctx;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
+
+	const std::string camUid   = std::to_string(camera->GetObjectID());
+	const std::string lightUid = std::to_string(light->GetObjectID());
+	const std::string envUid   = std::to_string(env->GetObjectID());
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"cam = neurus.data.scene.cameras['SceneCam']\n"
+		"assert cam is not None and cam.uid == " + camUid + "\n"
+		"assert neurus.data.scene.cameras[" + camUid + "].name == 'SceneCam'\n"
+		"assert len(neurus.data.scene.cameras) == 1\n"
+		"assert neurus.data.scene.cameras[" + lightUid + "] is None\n"
+		"light = neurus.data.scene.lights['SceneLight']\n"
+		"assert light is not None and light.uid == " + lightUid + "\n"
+		"assert neurus.data.scene.lights[" + lightUid + "].name == 'SceneLight'\n"
+		"assert len(neurus.data.scene.lights) == 1\n"
+		"assert neurus.data.scene.lights[" + camUid + "] is None\n"
+		"env = neurus.data.scene.environments['SceneEnv']\n"
+		"assert env is not None and env.uid == " + envUid + "\n"
+		"assert neurus.data.scene.environments[" + envUid + "].name == 'SceneEnv'\n"
+		"assert len(neurus.data.scene.environments) == 1\n"
+		"assert neurus.data.scene.environments[" + camUid + "] is None\n"
+		"assert len(neurus.data.scene.objects) == 3\n", ctx));
+
+	engine.Shutdown();
+}
+
+TEST(ScriptBindings, ObjectsCollectionEnumeratesEveryPooledObjectId)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
+
+	// A bare ObjectID is the trap for ForEach<ObjectID>: it owns the exact-type
+	// index entry, so that walk would see this one object and drop the camera
+	// and light. The collection must enumerate through ForEachUID instead.
+	auto base = resources.Load<neurus::ObjectID>();
+	auto camera = resources.Load<neurus::Camera>();
+	auto light = resources.Load<neurus::Light>(
+		neurus::LightType::POINTLIGHT, 3.0f, glm::vec3(1.0f));
+
+	int pooled = 0;
+	resources.ForEachUID([&](const std::shared_ptr<neurus::UID>& obj)
+	{
+		if (std::dynamic_pointer_cast<neurus::ObjectID>(obj))
+			++pooled;
+	});
+	ASSERT_EQ(pooled, 3) << "precondition: three ObjectIDs are pooled";
+
+	neurus::ScriptContext ctx;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
+
+	const std::string baseUid = std::to_string(base->GetObjectID());
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"assert len(neurus.data.objects) == " + std::to_string(pooled) + "\n"
+		"assert " + baseUid + " in neurus.data.objects\n"
+		"objs = neurus.data.objects\n"
+		"assert objs[" + baseUid + "].transform is None\n"
+		"assert {o.uid for o in objs} == {" + std::to_string(camera->GetObjectID())
+		    + ", " + std::to_string(light->GetObjectID()) + ", " + baseUid + "}\n", ctx));
 
 	engine.Shutdown();
 }

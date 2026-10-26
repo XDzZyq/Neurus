@@ -9,12 +9,14 @@
  * the typed `neurus.data` collections enumerate the whole pool, so a pooled
  * object detached from the scene (undo history) stays reachable, while
  * `neurus.data.scene.*` enumerate the scene's own pools and exclude detached
- * objects. Both resolve names through the pool's per-type registry. The scene is
- * read only for state it alone owns - camera activation, selection and scene
- * membership. Collections are empty - never a null dereference - when the run
- * has no scene or no resource lookup. No setter writes a C++ property (each
- * routes the exact typed event through the run dispatch, which refuses in this
- * phase).
+ * objects. The typed collections resolve names through the pool's per-type
+ * registry; the generic `objects` pools are UID-only. The scene is read only for
+ * state it alone owns - camera activation, selection and scene membership. The
+ * pool-wide collections need only the resource lookup; the scene-scoped ones
+ * need only the scene (a name lookup additionally needs the pool). Collections
+ * are empty - never a null dereference - when the state they read is absent. No
+ * setter writes a C++ property (each routes the exact typed event through the
+ * run dispatch, which refuses in this phase).
  */
 
 #include <pybind11/pybind11.h>
@@ -153,14 +155,18 @@ struct EnvironmentProxy : ObjectProxy, Transform3DProxy
 };
 
 /**
- * @brief Stateless typed collection over one scene pool, keyed by UID or name.
+ * @brief Stateless typed collection over one scene pool, keyed by UID (and, for
+ *        the typed pools, by registered name).
  *
  * Iteration and UID lookup read the scene's own typed pool, so a pooled object
- * detached from the scene is not visible. A name resolves through the pool's
- * per-type registry (authoritative for names) and is then checked against the
- * scene pool: a name that is pooled but not part of the scene, absent, or owned
- * by another type yields None. Empty - never a null dereference - when the run
- * has no scene or no resource lookup.
+ * detached from the scene is not visible. A typed pool also accepts a registered
+ * name: it resolves through the pool's per-type registry (authoritative for
+ * names) and is then checked against the scene pool, so a name that is pooled but
+ * not part of the scene, absent, or owned by another type yields None. The
+ * generic `objects` pool is UID-only because one name spans several types.
+ * Iteration and UID lookup need only the scene; a name lookup also needs the
+ * pool, so it yields None without one. Empty - never a null dereference - when
+ * the run has no scene.
  *
  * @tparam Proxy Typed proxy handed out for each scene object.
  * @tparam T Scene object type (Mesh, Camera, ... or ObjectID for `objects`).
@@ -220,6 +226,13 @@ struct SceneCollection
 		return py::cast(Proxy{uid, view});
 	}
 
+	/// @brief True when this scene pool holds the given UID.
+	bool Contains(int uid) const
+	{
+		const Scene* scene = SceneOf();
+		return scene != nullptr && (scene->*(pool)).count(uid) != 0;
+	}
+
 	/**
 	 * @brief Proxy for a registered name that is also in this scene pool.
 	 *
@@ -254,21 +267,31 @@ void RegisterSceneCollection(py::module_& data, const char* name, bool resolvesN
 {
 	using Collection = SceneCollection<Proxy, T>;
 	py::class_<Collection> cls(data, (std::string("_Scene") + name).c_str(),
-	                           "A scene pool of a script run, keyed by UID or name.");
+	                           resolvesNames
+	                               ? "A scene pool of a script run, keyed by UID or registered name."
+	                               : "A scene pool of a script run, keyed by UID only.");
 	cls.def("__iter__", [](const Collection& s) { return py::iter(s.Snapshot()); })
 		.def("__len__", [](const Collection& s) { return s.Count(); })
-		.def("__getitem__", [](const Collection& s, int uid) -> py::object { return s.Lookup(uid); });
+		.def("__getitem__", [](const Collection& s, int uid) -> py::object { return s.Lookup(uid); })
+		.def("__contains__", [](const Collection& s, int uid) { return s.Contains(uid); },
+		     "True when this scene pool holds the given UID.");
 	if (resolvesNames)
 	{
 		cls.def("__getitem__",
-		        [](const Collection& s, const std::string& name) -> py::object { return s.LookupName(name); });
+		        [](const Collection& s, const std::string& name) -> py::object { return s.LookupName(name); })
+			.def("__contains__",
+			     [](const Collection& s, const std::string& name) { return !s.LookupName(name).is_none(); },
+			     "True when a registered name resolves to a scene object.");
 	}
 	else
 	{
 		// D2: `objects` is UID-only - a name spans several object types and is
 		// ambiguous, so the typed scene collections resolve names instead.
 		cls.def("__getitem__",
-		        [](const Collection&, const std::string&) -> py::object { return py::none(); });
+		        [](const Collection&, const std::string&) -> py::object { return py::none(); })
+			.def("__contains__",
+			     [](const Collection&, const std::string&) { return false; },
+			     "Always False: this collection is UID-only.");
 	}
 }
 
@@ -356,6 +379,13 @@ struct ResourceCollection
 		return py::cast(Proxy{uid, view});
 	}
 
+	/// @brief True when a pooled object of type @p T has this UID.
+	bool Contains(int uid) const
+	{
+		const IResourceLookup* pool = Pool();
+		return pool != nullptr && pool->Get<T>(uid) != nullptr;
+	}
+
 	/// @brief Proxy for a registered name, or None when the name is absent.
 	py::object LookupName(const std::string& name) const
 	{
@@ -381,8 +411,13 @@ void RegisterResourceCollection(py::module_& data, const char* name)
 		.def("__iter__", [](const Collection& s) { return py::iter(s.Snapshot()); })
 		.def("__len__", [](const Collection& s) { return s.Count(); })
 		.def("__getitem__", [](const Collection& s, int uid) -> py::object { return s.Lookup(uid); })
+		.def("__contains__", [](const Collection& s, int uid) { return s.Contains(uid); },
+		     "True when a pooled object of this type has the given UID.")
 		.def("__getitem__",
-		     [](const Collection& s, const std::string& key) -> py::object { return s.LookupName(key); });
+		     [](const Collection& s, const std::string& key) -> py::object { return s.LookupName(key); })
+		.def("__contains__",
+		     [](const Collection& s, const std::string& name) { return !s.LookupName(name).is_none(); },
+		     "True when a registered name resolves to a pooled object of this type.");
 }
 
 /// @brief `neurus.context`: the run's active camera and selection.

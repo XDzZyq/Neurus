@@ -43,13 +43,17 @@ py::tuple ToTuple(const glm::vec3& value)
 }
 
 /**
- * @brief `neurus.data.objects`: every pooled object, iterable and keyed by UID.
+ * @brief `neurus.data.objects`: every pooled `ObjectID`, iterable and keyed by UID.
  *
  * Constructed once with the engine's view. Iteration and UID lookup go through
  * the resource pool, not the scene, so a pooled object detached from the scene
  * (undo history) is still reachable. It is empty (never a null dereference) when
  * the run has no resource lookup, and it cannot observe a finished run because
  * the view it holds is only populated for the run that built it.
+ *
+ * Enumeration goes through ForEachUID and casts, never ForEach<ObjectID>: the
+ * latter keys the exact dynamic type, so a pooled base ObjectID would hide every
+ * camera, mesh and light from the collection.
  *
  * Deliberately UID-only (D2): one name can span several object types, so a
  * string key would be ambiguous and returns None; the typed collections resolve
@@ -75,21 +79,26 @@ struct ObjectCollection
 			return result;
 		}
 
-		pool->ForEach<ObjectID>([this, &result](const std::shared_ptr<ObjectID>& obj)
+		pool->ForEachUID([this, &result](const std::shared_ptr<UID>& resource)
 		{
-			result.append(py::cast(ObjectProxy{obj->GetObjectID(), view}));
+			if (const auto obj = std::dynamic_pointer_cast<ObjectID>(resource))
+				result.append(py::cast(ObjectProxy{obj->GetObjectID(), view}));
 		});
 		return result;
 	}
 
-	/// @brief Number of pooled objects.
+	/// @brief Number of pooled `ObjectID`s.
 	py::ssize_t Count() const
 	{
 		py::ssize_t count = 0;
 		const IResourceLookup* pool = Pool();
 		if (pool != nullptr)
 		{
-			pool->ForEach<ObjectID>([&count](const std::shared_ptr<ObjectID>&) { ++count; });
+			pool->ForEachUID([&count](const std::shared_ptr<UID>& resource)
+			{
+				if (std::dynamic_pointer_cast<ObjectID>(resource))
+					++count;
+			});
 		}
 		return count;
 	}
@@ -197,6 +206,9 @@ void RegisterObjectBindings(py::module_& data)
 			     return pool != nullptr && pool->Get<ObjectID>(uid) != nullptr;
 		     },
 		     "True when a pooled object with the given UID exists.")
+		.def("__contains__",
+		     [](const ObjectCollection&, const std::string&) { return false; },
+		     "Always False: a name is ambiguous here, matching a name key returning None.")
 		.def("__repr__",
 		     [](const ObjectCollection& self)
 		     { return "<neurus.data.objects len=" + std::to_string(self.Count()) + ">"; });
