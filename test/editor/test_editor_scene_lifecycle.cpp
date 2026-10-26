@@ -41,7 +41,11 @@
 #include "scene/Camera.h"
 #include "scene/DebugLine.h"
 #include "scene/DebugPoints.h"
+#include "scene/Environment.h"
+#include "scene/Light.h"
+#include "scene/Mesh.h"
 #include "scene/Scene.h"
+#include "script/ScriptContext.h"
 
 using namespace neurus;
 
@@ -230,6 +234,68 @@ TEST(EditorSceneLifecycleTest, NewProject_RegistersUniqueDebugNames)
 	ASSERT_NE(points, nullptr) << "the axis-tip points were not registered";
 	ASSERT_NE(points001, nullptr) << "the light-cube points reused the bare name";
 	EXPECT_NE(points->GetObjectID(), points001->GetObjectID());
+
+	// The Outliner reads o_name, so the unique registry result has to be
+	// mirrored back into it - otherwise both rows still say "DebugLine".
+	EXPECT_EQ(line->o_name, "DebugLine");
+	EXPECT_EQ(line001->o_name, "DebugLine.001");
+	EXPECT_EQ(points->o_name, "DebugPoints");
+	EXPECT_EQ(points001->o_name, "DebugPoints.001");
+
+	// The Outliner walks the scene pools, so the same strings must be there.
+	const Scene& scene = editor.GetScene();
+	ASSERT_EQ(scene.dLine_list.size(), 2u);
+	ASSERT_EQ(scene.dPoints_list.size(), 2u);
+	EXPECT_EQ(scene.dLine_list.at(line->GetObjectID())->o_name, "DebugLine");
+	EXPECT_EQ(scene.dLine_list.at(line001->GetObjectID())->o_name, "DebugLine.001");
+	EXPECT_EQ(scene.dPoints_list.at(points->GetObjectID())->o_name, "DebugPoints");
+	EXPECT_EQ(scene.dPoints_list.at(points001->GetObjectID())->o_name, "DebugPoints.001");
+}
+
+// ---------------------------------------------------------------------------
+// 5c. CreateDefaultScene registers one name per seeded kind
+// ---------------------------------------------------------------------------
+
+TEST(EditorSceneLifecycleTest, NewProject_SeededContentIsRegisteredByName)
+{
+	Editor editor(nullptr, nullptr);
+	NewProject(editor);
+
+	const ResourceManager& resources = editor.GetResourceManager();
+	const Scene& scene = editor.GetScene();
+
+	ASSERT_EQ(scene.cam_list.size(), 1u);
+	EXPECT_EQ(resources.GetByName<Camera>("Camera").get(), scene.cam_list.begin()->second.get())
+		<< "the seeded scene camera must answer to \"Camera\"";
+	EXPECT_NE(resources.GetByName<Mesh>("Mesh"), nullptr);
+	EXPECT_NE(resources.GetByName<Light>("Light"), nullptr);
+	EXPECT_NE(resources.GetByName<Environment>("Environment"), nullptr);
+
+	// The viewport camera owns a different, reserved name - it must not shadow
+	// the document camera's "Camera" on a later save/reopen.
+	ASSERT_NE(editor.GetViewport().ViewportCamera(), nullptr);
+	EXPECT_EQ(resources.GetByName<Camera>("ViewportCamera").get(),
+	          editor.GetViewport().ViewportCamera());
+	EXPECT_NE(editor.GetViewport().ViewportCamera()->GetObjectID(),
+	          scene.cam_list.begin()->first);
+}
+
+// ---------------------------------------------------------------------------
+// 5d. The script context carries the live resource lookup
+// ---------------------------------------------------------------------------
+
+TEST(EditorSceneLifecycleTest, UpdateScriptContextPublishesTheResourceLookup)
+{
+	Editor editor(nullptr, nullptr);
+	NewProject(editor);
+
+	ScriptContext ctx;
+	editor.UpdateScriptContext(ctx);
+
+	// Without this pointer every name/UID lookup in a script run resolves
+	// against nothing, so the pools read as empty.
+	EXPECT_EQ(ctx.resources, &editor.GetResourceManager());
+	EXPECT_EQ(ctx.scene, &editor.GetScene());
 }
 
 // ---------------------------------------------------------------------------

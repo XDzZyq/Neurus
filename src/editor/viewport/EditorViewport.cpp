@@ -83,6 +83,11 @@ void EditorViewport::EnsureCamera(ResourceManager& pool)
 	// No id, or an id this pool does not know. Mint one at the default framing.
 	v_camera = pool.Load<Camera>();
 	v_camUid = v_camera->GetObjectID();
+	// Registered under its own reserved name, never the bare "Camera": the
+	// viewport camera is pooled and serialized, so on load it would otherwise
+	// claim "Camera" from the document's own camera (which then reopened as
+	// "Camera.001"). A project written before this fix keeps the old label.
+	v_camera->o_name = pool.SetName(v_camera->GetObjectID(), "ViewportCamera");
 	v_camera->SetPosition(kDefaultEye);
 	v_camera->SetTarPos(kDefaultTarget);
 
