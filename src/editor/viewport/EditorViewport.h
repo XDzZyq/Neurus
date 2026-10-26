@@ -153,7 +153,9 @@ public:
 	 *
 	 * Must run after every ResourceManager::Clear() - the pool owns the camera, so
 	 * a clear drops it. A stored UID that resolves to a pooled Camera keeps the
-	 * saved pose; otherwise a new pooled camera is created at the default views.
+	 * saved pose; otherwise a new pooled camera is created at the default views
+	 * and registered under the reserved name "ViewportCamera", so it can never
+	 * take the document camera's "Camera" name on a reopen.
 	 *
 	 * The pool is a parameter rather than a stored reference, so nothing has to be
 	 * wired up before anything could project a point.
