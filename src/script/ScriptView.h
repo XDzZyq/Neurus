@@ -27,7 +27,7 @@ namespace script
  */
 struct ScriptView
 {
-	const ScriptContext*  ctx = nullptr;       ///< Document view: scene and config.
+	const ScriptContext*  ctx = nullptr;       ///< Document view: scene, config and resource lookup.
 	const ScriptDispatch* dispatch = nullptr;  ///< Mutation funnel.
 };
 

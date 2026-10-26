@@ -379,7 +379,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 
 /**
  * @test Duplicate names stored in a project file are suffixed on load in
- *       ascending UID order, so the scene name index is deterministic.
+ *       ascending UID order, so the resource name registry is deterministic.
  */
 TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 {
@@ -403,11 +403,9 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 		scene.UseMesh(second);
 		secondUid = second->GetObjectID();
 
-		// Registration already made them unique; force the duplicate that an
-		// older file may contain so the load path is what is exercised.
-		first->o_name = "Clash";
-		second->o_name = "Clash";
-
+		// Both objects carry the same name on purpose (scene registration no
+		// longer touches names); the load path's registry seeding must
+		// disambiguate them.
 		project::Project p;
 		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);

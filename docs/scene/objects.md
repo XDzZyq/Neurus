@@ -71,13 +71,7 @@ A scene containing zero cameras is a legal document, and deleting the last camer
 
 ## Display names
 
-Names are unique within a scene. `Scene` keeps a name-to-UID index beside the typed pools:
-
-- `RegisterObject` (reached through every `Use*` method) keeps the requested `o_name` when it is free and otherwise appends the lowest free `.001`, `.002`, ... suffix, writing the unique name back to the object.
-- `RemoveObject` frees the name, so a later object can reuse it.
-- `ResolveReferences` / `RebuildObjList` rebuild the index in ascending UID order, so duplicate names restored from an older project file are suffixed deterministically (lower UID keeps the bare name).
-- `FindObjectByName(name)` returns the object or `nullptr`; `SetObjectName(uid, name)` is the supported rename path - it uniquifies and updates the index. Writing `o_name` directly bypasses the index.
-- Names are scene-wide, not per type: a camera and a mesh cannot both own `Ground`.
+`o_name` is the display name shown by the editor UI. Name uniqueness, suffixing and lookup are owned by the `ResourceManager` name registry, not by the scene: see [Resource names](../core/uid-and-resources.md#resource-names). Registering or removing a scene object only updates the typed pools and `obj_list`.
 
 ## Pooled data references
 

@@ -119,8 +119,9 @@ private:
 	std::unique_ptr<Editor>               app_editor;          // 5th declared → destroyed 4th
 	// Declared AFTER app_editor so reverse-order destruction tears the engine
 	// down BEFORE the Editor: the engine may hold a ScriptContext that borrows
-	// the Editor's scene/config, so releasing the engine first avoids dangling
-	// borrows during Python finalization. It still outlives the frame loop.
+	// the Editor's scene/config/resources, so releasing the engine first avoids
+	// dangling borrows during Python finalization. It still outlives the frame
+	// loop.
 	std::unique_ptr<ScriptEngine>         app_script;          // 6th declared → destroyed 3rd
 	std::unique_ptr<UploadManager>        app_uploadManager;   // 7th declared → destroyed 2nd
 	std::unique_ptr<DeferredRenderer>     app_renderer;        // 8th declared → destroyed 1st (FIRST)

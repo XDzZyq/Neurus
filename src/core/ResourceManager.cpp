@@ -46,7 +46,7 @@ std::string ResourceManager::SetName(int id, const std::string& name)
 	EraseName(id);
 
 	const std::type_index type(typeid(*resource->second));
-	const std::string unique = MakeUniqueName(type, name);
+	const std::string unique = UniqueName(type, name);
 	m_names[type][unique] = id;
 	m_nameOf.insert_or_assign(id, NameEntry{type, unique});
 	return unique;
@@ -110,7 +110,7 @@ void ResourceManager::Clear()
 	m_typeOf.clear();
 }
 
-std::string ResourceManager::MakeUniqueName(std::type_index type, const std::string& base) const
+std::string ResourceManager::UniqueName(std::type_index type, const std::string& base) const
 {
 	const std::string stem = base.empty() ? std::string("Object") : base;
 

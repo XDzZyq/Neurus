@@ -120,9 +120,10 @@ public:
 	void UpdateUIContext(UIContext& ctx) const;
 
 	/**
-	 * @brief Fills the script-facing view: the borrowed scene and render config.
+	 * @brief Fills the script-facing view: the borrowed scene, render config and
+	 *        resource pool.
 	 *
-	 * Mirrors UpdateUIContext - two field assignments, nothing else. The caller
+	 * Mirrors UpdateUIContext - three field assignments, nothing else. The caller
 	 * builds a ScriptContext for one script run and discards it afterwards.
 	 */
 	void UpdateScriptContext(ScriptContext& ctx) const;

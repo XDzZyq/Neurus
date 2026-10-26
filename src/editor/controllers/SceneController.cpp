@@ -636,9 +636,9 @@ void UsePooledObject(neurus::Scene& scene, neurus::IResourceLookup& resources, i
 		break; // sprites / debug primitives: no add flow
 	}
 
-	// The scene run above may have uniquified the display name. Register that
-	// name and mirror the authoritative unique result back, so a freshly added
-	// object is addressable by name without a save/load round-trip.
+	// Register the name the object was constructed with and mirror the
+	// authoritative unique result back, so a freshly added object is addressable
+	// by name without a save/load round-trip.
 	obj->o_name = resources.SetName(uid, obj->o_name);
 }
 

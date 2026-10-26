@@ -230,7 +230,7 @@ private:
 	 * @param type Concrete dynamic type whose namespace is checked.
 	 * @param base Requested name; empty is treated as "Object".
 	 */
-	std::string MakeUniqueName(std::type_index type, const std::string& base) const;
+	std::string UniqueName(std::type_index type, const std::string& base) const;
 
 	/**
 	 * @brief Records @p obj's dynamic type in the per-type index.

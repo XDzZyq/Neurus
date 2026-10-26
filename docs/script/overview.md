@@ -16,9 +16,10 @@ state directly. The isolation boundary is enforced by a test
   public header is Python-free (PIMPL), so the rest of the codebase never sees a
   pybind11 or CPython type.
 - **`ScriptContext`** (`src/script/ScriptContext.h`) is the read-only document
-  view: a borrowed `const Scene*` and a borrowed `const RenderConfig*`. The
-  active camera and the selection are read live from the scene, so neither is
-  snapshotted here. `Editor::UpdateScriptContext()` fills it per run; the engine
+  view: borrowed `const Scene*`, `const RenderConfig*` and
+  `const IResourceLookup*` pointers. The active camera and the selection are read
+  live from the scene, so neither is snapshotted here; names resolve through the
+  resource pool. `Editor::UpdateScriptContext()` fills it per run; the engine
   publishes it for that run and clears it afterwards.
 - **`ScriptView`** (`src/script/ScriptView.h`) is the engine-owned view
   injected into every collection and proxy when it is constructed. It is a plain
@@ -35,10 +36,15 @@ through the Script Console panel and the Tools menu.
 
 Read-only in this phase:
 
-- `neurus.data.objects` - every scene object, iterable and keyed by UID or
-  display name.
-- `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - typed pools,
-  keyed by UID or display name; a name lookup returns the typed proxy.
+- `neurus.data.objects` - every pooled object, iterable and keyed by UID only
+  (a name spans several object types, so a string key is ambiguous).
+- `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - the whole
+  resource pool filtered to one type, keyed by UID or display name; a name
+  lookup returns the typed proxy.
+- `neurus.data.scene.meshes`, `.cameras`, `.lights`, `.environments` - the same
+  typed proxies restricted to objects the current scene uses; a pooled object
+  detached from the scene (undo history) is not listed.
+- `neurus.data.scene.objects` - every object the scene uses, keyed by UID only.
 - `neurus.data.config` - the render settings (`gamma`, `pipeline`, ...).
 - `neurus.context.active_camera`, `neurus.context.selection`.
 
@@ -49,6 +55,7 @@ for o in neurus.data.objects:
 
 ground = neurus.data.meshes["Ground"]
 print(ground.name, ground.position, ground.rotation, ground.scale)
+print("in scene:", len(neurus.data.scene.meshes))
 print("gamma", neurus.data.config.gamma)
 ```
 
@@ -60,13 +67,15 @@ transform is a look-at pose, and the environment's `rotation` is its
 environment-map angle.
 
 Every property is resolved live on access; nothing is cached. A collection is
-empty, and a lookup returns `None`, when the run has no scene - the engine
-publishes a document only for the duration of a run. A name lookup also returns
-`None` when the name is absent or belongs to another object type.
+empty, and a lookup returns `None`, when the run has no scene or no resource
+lookup - the engine publishes a document only for the duration of a run. A pool
+name lookup also returns `None` when the name is absent or belongs to another
+object type; a scene name lookup additionally returns `None` when the object is
+pooled but not part of the scene.
 
-Names are unique within a scene: registration keeps the requested name when it
-is free and otherwise suffixes it (`.001`, `.002`, ...), so the name keys are
-stable. See [Scene Objects](../scene/objects.md#display-names).
+Names come from the resource registry, not the scene: uniqueness is per concrete
+object type, and a collision is suffixed (`.001`, `.002`, ...), so the name keys
+are stable. See [Resource names](../core/uid-and-resources.md#resource-names).
 
 ## Writes are gated
 

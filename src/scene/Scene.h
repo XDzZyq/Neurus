@@ -13,7 +13,6 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -403,9 +402,6 @@ public:
 		auto it = typePool.find(id);
 		if (it == typePool.end())
 			return false; // not registered as this type — stale UID is a safe no-op
-		auto nameIt = m_nameToId.find(it->second->o_name);
-		if (nameIt != m_nameToId.end() && nameIt->second == id)
-			m_nameToId.erase(nameIt);
 		auto oit = obj_list.find(id);
 		if (oit != obj_list.end())
 			selections.Deselect(oit->second.get(), false);
@@ -493,26 +489,6 @@ public:
 	const ObjectID* GetObjectID(int id) const;
 
 	/**
-	 * @brief Looks up a scene object by its display name.
-	 *
-	 * Names are unique within a scene: registration keeps the requested name
-	 * when it is free and otherwise appends `.001`, `.002`, ... (lowest free).
-	 * @param name Display name as stored in `ObjectID::o_name`.
-	 * @return Const pointer to the object, or nullptr when the name is absent.
-	 */
-	const ObjectID* FindObjectByName(const std::string& name) const;
-
-	/**
-	 * @brief Renames an object, keeping scene names unique.
-	 * @param id Object UID.
-	 * @param name Requested display name; uniquified when already taken.
-	 * @return false when no object with @p id exists.
-	 * @note The single supported rename path: writing `o_name` directly would
-	 *       desynchronise the name index.
-	 */
-	bool SetObjectName(int id, const std::string& name);
-
-	/**
 	 * @brief Returns the activated camera, or nullptr when none is activated (const).
 	 * @see GetActiveCamera()
 	 */
@@ -534,10 +510,6 @@ private:
 	/// camera is removed — see ActiveCameraID().
 	int m_activeCamUid = 0;
 
-	/// Display name -> object UID. Unique across every typed pool; maintained
-	/// by RegisterObject / RemoveObject / RebuildObjList.
-	std::unordered_map<std::string, int> m_nameToId;
-
 	// -------------------------------------------------------------------
 	// Pending ID references (populated by serialize(load), consumed by
 	// ResolveReferences).
@@ -557,12 +529,6 @@ private:
 
 	/** @brief Clears all pending reference lists (legacy-file fallback). */
 	void ClearPendingReferences();
-
-	/// @brief Returns @p requested, or its lowest-free `.NNN` suffix variant.
-	std::string MakeUniqueName(const std::string& requested) const;
-
-	/// @brief Assigns the unique name to the object and records it in the index.
-	void IndexObjectName(int uid, const std::string& requested);
 
 	/**
 	 * @brief Rebuilds obj_list from all typed pools after deserialization.
@@ -584,7 +550,6 @@ private:
 		int id = basePtr->GetObjectID();
 		typePool[id] = obj;
 		obj_list[id] = Resource<ObjectID>(obj, basePtr);
-		IndexObjectName(id, basePtr->o_name);
 	}
 };
 
