@@ -456,7 +456,8 @@ TEST(ResourceTypeIndex, BaseInstanceDoesNotHideDerivedObjectsFromForEachUID)
 	ASSERT_EQ(seen.size(), 4u) << "ForEachUID must be the complete walk";
 	for (const int id : {plain->GetObjectID(), cam->GetObjectID(), mesh->GetObjectID()})
 	{
-		EXPECT_NE(std::find(seen.begin(), seen.end(), id), seen.end());
+		EXPECT_TRUE(std::find(seen.begin(), seen.end(), id) != seen.end())
+			<< "ForEachUID missed uid " << id;
 	}
 
 	// The trap this guards: the plain ObjectID owns the typeid(ObjectID) index
