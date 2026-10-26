@@ -613,7 +613,7 @@ void OnDebugPositionsChanged(const neurus::DebugPositionsChanged& e, const neuru
 // ---------------------------------------------------------------------------
 
 /** @brief Registers a pooled object into the scene by type (camera/mesh/light/env). */
-void UsePooledObject(neurus::Scene& scene, const neurus::IResourceLookup& resources, int uid)
+void UsePooledObject(neurus::Scene& scene, neurus::IResourceLookup& resources, int uid)
 {
 	auto obj = resources.Get<neurus::ObjectID>(uid);
 	if (!obj) return;
@@ -635,6 +635,11 @@ void UsePooledObject(neurus::Scene& scene, const neurus::IResourceLookup& resour
 	default:
 		break; // sprites / debug primitives: no add flow
 	}
+
+	// The scene run above may have uniquified the display name. Register that
+	// name and mirror the authoritative unique result back, so a freshly added
+	// object is addressable by name without a save/load round-trip.
+	obj->o_name = resources.SetName(uid, obj->o_name);
 }
 
 /** @brief Drops one object's scene reference by UID (typed erase; stale = no-op). */

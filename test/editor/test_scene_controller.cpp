@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <string>
 
 #include "editor/controllers/SceneController.h"
 #include "editor/events/EventBus.h"
@@ -283,6 +284,29 @@ TEST_F(SceneControllerTest, SceneObjectAdd_RegistersSelectsAndRecordsOp)
 	m_operations.Redo();
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 1u);
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_scene.GetObjectID(uid)));
+}
+
+/**
+ * @test Adding a pooled object registers its display name in the resource
+ *       registry, so a runtime-created object is addressable by name without a
+ *       save/load round-trip. Re-adding on undo/redo keeps the same name.
+ */
+TEST_F(SceneControllerTest, SceneObjectAdd_RegistersNameInResourceRegistry)
+{
+	auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
+	m_eventBus.enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
+	Process();
+
+	ASSERT_FALSE(mesh->o_name.empty());
+	EXPECT_EQ(m_resources.GetByName<Mesh>(mesh->o_name), mesh);
+
+	// Undo removes the scene reference but not the pooled object; redo replays
+	// the add, and the idempotent SetName must not suffix the owned name.
+	const std::string name = mesh->o_name;
+	m_operations.Undo();
+	m_operations.Redo();
+	EXPECT_EQ(mesh->o_name, name);
+	EXPECT_EQ(m_resources.GetByName<Mesh>(name), mesh);
 }
 
 TEST_F(SceneControllerTest, SceneObjectAdd_AlreadyInScene_NoOp)

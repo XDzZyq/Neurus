@@ -489,22 +489,26 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 	m_scene->UseCamera(camera);
+	camera->o_name = m_resources->SetName(camera->GetObjectID(), camera->o_name);
 
 	auto meshData = m_resources->Load<MeshData>(objPath);
 	auto mesh = m_resources->Load<Mesh>(meshData);
 	mesh->SetScale(glm::vec3(kStarterMeshScale)); // see kStarterMeshScale
 	m_scene->UseMesh(mesh);
+	mesh->o_name = m_resources->SetName(mesh->GetObjectID(), mesh->o_name);
 
 	auto light = m_resources->Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(3.0f, 3.0f, 3.0f));
 	light->SetRadius(0.01f);
 	m_scene->UseLight(light);
+	light->o_name = m_resources->SetName(light->GetObjectID(), light->o_name);
 
 	// Paths are relative ("res/...") so project files stay portable; the resource
 	// layer resolves them against the asset dir at load time.
 	auto imageData = m_resources->Load<ImageData>("res/tex/hdr/room.hdr");
 	auto env = m_resources->Load<Environment>(imageData);
 	m_scene->UseEnvironment(env);
+	env->o_name = m_resources->SetName(env->GetObjectID(), env->o_name);
 
 	AddDefaultDebugObjects(meshData);
 
