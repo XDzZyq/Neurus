@@ -268,7 +268,8 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededContentIsRegisteredByName)
 	EXPECT_EQ(resources.GetByName<Camera>("Camera").get(), scene.cam_list.begin()->second.get())
 		<< "the seeded scene camera must answer to \"Camera\"";
 	EXPECT_NE(resources.GetByName<Mesh>("Mesh"), nullptr);
-	EXPECT_NE(resources.GetByName<Light>("Light"), nullptr);
+	EXPECT_NE(resources.GetByName<Light>("Point Light"), nullptr)
+		<< "the starter point light is named by its light type";
 	EXPECT_NE(resources.GetByName<Environment>("Environment"), nullptr);
 
 	// The viewport camera owns a different, reserved name - it must not shadow
