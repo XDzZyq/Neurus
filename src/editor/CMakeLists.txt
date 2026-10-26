@@ -3,6 +3,7 @@
 add_library(neurus_editor STATIC
 	Editor.h
 	Editor.cpp
+	ResourceNaming.h
 	Input.h
 	Input.cpp
 	viewport/DebugDrawBuilder.h

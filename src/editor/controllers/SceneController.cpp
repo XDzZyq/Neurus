@@ -11,6 +11,7 @@
 
 #include <vector>
 
+#include "editor/ResourceNaming.h"
 #include "editor/controllers/MutationNotify.h"
 #include "editor/events/CameraEvents.h"
 #include "editor/events/SceneEvents.h"
@@ -639,7 +640,7 @@ void UsePooledObject(neurus::Scene& scene, neurus::IResourceLookup& resources, i
 	// Register the name the object was constructed with and mirror the
 	// authoritative unique result back, so a freshly added object is addressable
 	// by name without a save/load round-trip.
-	obj->o_name = resources.SetName(uid, obj->o_name);
+	neurus::MirrorResourceName(resources, *obj);
 }
 
 /** @brief Drops one object's scene reference by UID (typed erase; stale = no-op). */

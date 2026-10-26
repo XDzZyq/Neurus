@@ -36,8 +36,10 @@ through the Script Console panel and the Tools menu.
 
 Read-only in this phase:
 
-- `neurus.data.objects` - every pooled object, iterable and keyed by UID only
-  (a name spans several object types, so a string key is ambiguous).
+- `neurus.data.objects` - every pooled `ObjectID`, iterable and keyed by UID
+  only (a name spans several object types, so a string key is ambiguous). Data
+  resources (`MeshData`, `ImageData`, `Shader`) are not objects and are not
+  listed.
 - `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - the whole
   resource pool filtered to one type, keyed by UID or display name; a name
   lookup returns the typed proxy.
@@ -66,16 +68,24 @@ exposes both facets. A camera overrides `position`/`rotation` because its
 transform is a look-at pose, and the environment's `rotation` is its
 environment-map angle.
 
-Every property is resolved live on access; nothing is cached. A collection is
-empty, and a lookup returns `None`, when the run has no scene or no resource
-lookup - the engine publishes a document only for the duration of a run. A pool
-name lookup also returns `None` when the name is absent or belongs to another
-object type; a scene name lookup additionally returns `None` when the object is
-pooled but not part of the scene.
+Every property is resolved live on access; nothing is cached. The engine
+publishes a document only for the duration of a run. The pool-wide collections
+need only the resource pool (no scene): they are empty, and a lookup returns
+`None`, when the run has no resource lookup. The scene collections need only the
+scene: they are non-empty when the scene has objects even if the run has no
+resource lookup, and their proxies raise rather than resolving. A pool name
+lookup returns `None` when the name is absent or belongs to another object type;
+a scene name lookup additionally returns `None` when the name is unknown to the
+pool or the object is pooled but not part of the scene.
 
 Names come from the resource registry, not the scene: uniqueness is per concrete
 object type, and a collision is suffixed (`.001`, `.002`, ...), so the name keys
 are stable. See [Resource names](../core/uid-and-resources.md#resource-names).
+The editor's pooled viewport camera is registered as `ViewportCamera`, so it
+appears in `neurus.data.cameras` but not in `neurus.data.scene.cameras`.
+
+`__getitem__` and `__contains__` agree on every collection: a UID or name that a
+lookup resolves is also what `in` reports, and `objects` is UID-only in both.
 
 ## Writes are gated
 

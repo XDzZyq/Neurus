@@ -41,10 +41,10 @@ Design:
 - `Load<T>(args...)` constructs and registers in one step, returning a typed `shared_ptr<T>`. It `static_assert`s that `T` derives from `UID`.
 - `Register(shared_ptr<UID>)` registers an already-constructed object (tests, legacy paths).
 - `Get(int)` returns the untyped base, `Get<T>(int)` casts it, and `Contains(int)` tests membership.
-- `ForEach<T>(fn)` visits every pooled object whose runtime type is `T`; this is how UID-keyed GPU caches follow the pool rather than the scene (pooled objects stay referenced by undo history after deletion).
+- `ForEach<T>(fn)` visits every pooled object whose **exact dynamic type** is `T`; this is how UID-keyed GPU caches follow the pool rather than the scene (pooled objects stay referenced by undo history after deletion). It is not a base-class walk: once a base instance (`ObjectID`, `UID`) is itself pooled, the per-type index holds only that instance and derived types are skipped. Base-class enumeration uses `ForEachUID(fn)` plus a cast. Neither callback may `Load` / `Register` / `Remove` / `Clear`, because mutating the pool during iteration invalidates the walk.
 - `Remove(int)` and `Clear()` mutate the pool; `Size()` reports its size.
 - `SetName(id, name)` / `GetByName(...)` own the display-name registry; names are unique per concrete dynamic type and are derived state, never serialized (see [Resource names](#resource-names)).
-- `serialize(ar)` writes every pooled object polymorphically (which is what makes the type registrations load-bearing); on load, each object's own `serialize(load)` restores its content.
+- `serialize(ar)` writes every pooled object polymorphically (which is what makes the type registrations load-bearing); on load, each object's own `serialize(load)` restores its content. A load replaces the pool, so it also drops the previous name registry and rebuilds the type index from the restored objects; names are then re-seeded by the caller.
 - Not thread-safe: main thread only.
 
 Two rules keep the pool decoupled:
@@ -65,7 +65,8 @@ string that the editor mirrors from it.
 - Renaming a resource to the name it already owns is a no-op. `SetName` returns an empty string when the id is not pooled, and `GetByName<T>` requires the name to belong to a `T`.
 - Removing a resource frees its name, so a later resource can reuse it.
 - Names are derived state and are never serialized. After the pool loads, `ResourceComponent::Load` re-seeds the registry from every non-empty restored `ObjectID::o_name` in ascending UID order and writes the returned unique name back, so duplicates in an older project file are disambiguated deterministically and a re-save preserves them. Creation paths seed too: `Editor::CreateDefaultScene` and `SceneController`'s pooled-object add (`UsePooledObject`) register a new object's name.
-- The registry name is authoritative for lookup; `o_name` is what the UI shows and what a project file stores. Any editor rename path must mirror the returned unique name back into `o_name`; the current seeding paths (load and creation) already do. Writing `o_name` directly changes the display string but not the lookup key.
+- The registry name is authoritative for lookup; `o_name` is what the UI shows and what a project file stores. Any editor rename path must mirror the returned unique name back into `o_name`; `MirrorResourceName` (`editor/ResourceNaming.h`) is the shared helper for the editor creation paths, and `ResourceComponent::Load` writes the returned name back itself. Writing `o_name` directly changes the display string but not the lookup key.
+- `"ViewportCamera"` is reserved by the editor for its pooled viewport camera: `EditorViewport::EnsureCamera` registers it there, so the viewport camera can never claim the document camera's `"Camera"` name on a reopen. The viewport camera is not scene content, so it never appears in `Scene::cam_list`.
 
 `Scene` keeps no name index: registration, removal and `RebuildObjList` only maintain the typed pools and `obj_list`. See [Scene Objects](../scene/objects.md).
 
@@ -80,11 +81,12 @@ Each object category has a dedicated `ResPool` (`cam_list`, `mesh_list`, and so 
 
 ## IResourceLookup (`core/IResourceLookup.h`)
 
-`IResourceLookup` is the read-only fetch/lookup and name-registry surface over a UID-keyed pool:
+`IResourceLookup` is the fetch/lookup plus name-registry surface over a UID-keyed pool:
 
 - `Get(int)` returns the untyped base (or `nullptr`), `Contains(int)` tests membership, and `Get<T>(int)` is the typed lookup.
 - `GetByName(...)` resolves a registered name within one concrete type, and `SetName(...)` registers or renames a resource; these are the registry operations described in [Resource names](#resource-names).
-- Controllers depend on this narrow interface instead of the concrete `ResourceManager`: they can fetch pooled objects by integer id and register names but cannot mutate the pool (no `Load` / `Register` / `Remove` / `Clear`) or drive its serialization. This mirrors `IOperationSink`, keeping the dependency inverted.
+- `ForEachUID(fn)` enumerates the whole pool; `ForEach<T>(fn)` enumerates one exact dynamic type. Base-class enumeration therefore goes through `ForEachUID` plus a cast.
+- Controllers depend on this narrow interface instead of the concrete `ResourceManager`: they can fetch pooled objects by integer id, enumerate them and register names, but cannot mutate the pool (no `Load` / `Register` / `Remove` / `Clear`) or drive its serialization. This mirrors `IOperationSink`, keeping the dependency inverted.
 - Objects are fetched as `shared_ptr` because the pool owns them; a handler typically derives a raw pointer from the temporary `shared_ptr` and uses it within the handler scope. The pool keeps pooled objects alive, so id-based lookup never dangles.
 
 `ResourceManager` implements `IResourceLookup`.

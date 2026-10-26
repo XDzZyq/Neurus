@@ -10,6 +10,7 @@
 #include "editor/events/ShaderEvents.h"
 #include "editor/events/SceneEvents.h"
 
+#include "editor/ResourceNaming.h"
 #include "editor/controllers/CameraController.h"
 #include "editor/controllers/RenderConfigController.h"
 #include "editor/controllers/ShaderController.h"
