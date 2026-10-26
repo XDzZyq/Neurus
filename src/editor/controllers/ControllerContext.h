@@ -41,7 +41,7 @@ struct ControllerContext
 	/** @brief Typed event dispatch: subscribe / enqueue / emitNow. */
 	IEventQueue& events;
 
-	/** @brief Read-only fetch/lookup of pooled UID objects by integer id. */
+	/** @brief Fetch/lookup plus the name registry for pooled UID objects by integer id. */
 	IResourceLookup& resources;
 
 	/** @brief Sink for recording undoable operations at mutation time. */

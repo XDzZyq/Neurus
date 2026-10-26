@@ -95,7 +95,7 @@ Vulkan-free utilities shared across the other layers:
 - `UID` - generic unique identifier primitive (resource base)
 - `ResourceManager` - single factory + UID pool (`Load<T>`, polymorphic
   serialize)
-- `IResourceLookup` - read-only pool lookup interface
+- `IResourceLookup` - pool fetch/lookup and name-registry interface
 - `Log` - `NEURUS_LOG` / `NEURUS_ERR` macros
 - `RenderConfig` - user-settable pipeline options (Vulkan-free; read by four
   layers)
