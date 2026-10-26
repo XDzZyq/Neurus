@@ -5,10 +5,11 @@
  *
  * A script run sees every pooled object through `neurus.data.objects`
  * (iterable and keyed by UID) and the typed collections, and reads live values
- * through proxies that resolve from the run's `resources` lookup. The
+ * through proxies that resolve from the run's `resources` lookup. Those
  * collections are pool-wide, so a pooled object detached from the scene stays
- * visible; a run with no pool - or with no context at all - yields an empty
- * collection without dereferencing anything.
+ * visible; `neurus.data.scene.*` is scene-scoped and excludes it. A run with no
+ * pool - or with no context at all - yields an empty collection without
+ * dereferencing anything.
  */
 
 #include <gtest/gtest.h>
@@ -250,6 +251,55 @@ TEST(ScriptBindings, ResourceCollectionsIncludeDetachedObjects)
 	engine.Shutdown();
 }
 
+TEST(ScriptBindings, SceneCollectionExcludesDetachedObjects)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
+
+	// meshA is used by the scene; meshB exists only in the pool, as a mesh held
+	// by undo history would. Both are named through the registry, mirrored into
+	// the display name so the proxy's `.name` agrees.
+	auto meshA = resources.Load<neurus::Mesh>();
+	meshA->o_name = resources.SetName(meshA->GetObjectID(), "Ground");
+	auto meshB = resources.Load<neurus::Mesh>();
+	meshB->o_name = resources.SetName(meshB->GetObjectID(), "Detached");
+	scene.UseMesh(meshA);
+
+	neurus::ScriptContext ctx;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
+
+	const std::string uidA = std::to_string(meshA->GetObjectID());
+	const std::string uidB = std::to_string(meshB->GetObjectID());
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+
+	// The scene, not the pool, is this collection's source: the detached mesh is
+	// invisible to iteration, to a name lookup and to a UID lookup, while the
+	// attached one stays reachable through both keys.
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"assert len(neurus.data.scene.meshes) == 1\n"
+		"assert neurus.data.scene.meshes['Detached'] is None\n"
+		"assert neurus.data.scene.meshes['Ground'] is not None\n"
+		"assert neurus.data.scene.meshes[" + uidA + "].name == 'Ground'\n"
+		"assert neurus.data.scene.meshes[" + uidB + "] is None\n"
+		// The other scene pools exist and are empty in this scene.
+		"assert len(neurus.data.scene.cameras) == 0\n"
+		"assert len(neurus.data.scene.lights) == 0\n"
+		"assert len(neurus.data.scene.environments) == 0\n"
+		"assert len(neurus.data.scene.objects) == 1\n"
+		"assert neurus.data.scene.objects[" + uidA + "].name == 'Ground'\n"
+		"assert neurus.data.scene.objects[" + uidB + "] is None\n"
+		// D2: `objects` is UID-only, so a generic name resolves to None.
+		"assert neurus.data.scene.objects['Ground'] is None\n", ctx));
+
+	engine.Shutdown();
+}
+
 TEST(ScriptBindings, NoSceneYieldsNoObjects)
 {
 	neurus::ScriptEngine engine;
@@ -260,7 +310,10 @@ TEST(ScriptBindings, NoSceneYieldsNoObjects)
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n"
 		"assert len(neurus.data.objects) == 0\n"
-		"assert neurus.data.objects[12345] is None\n"));
+		"assert neurus.data.objects[12345] is None\n"
+		"assert len(neurus.data.scene.meshes) == 0\n"
+		"assert neurus.data.scene.meshes['Ground'] is None\n"
+		"assert neurus.data.scene.objects[12345] is None\n"));
 
 	engine.Shutdown();
 }
