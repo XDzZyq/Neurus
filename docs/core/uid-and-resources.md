@@ -65,7 +65,7 @@ string that the editor mirrors from it.
 - Renaming a resource to the name it already owns is a no-op. `SetName` returns an empty string when the id is not pooled, and `GetByName<T>` requires the name to belong to a `T`.
 - Removing a resource frees its name, so a later resource can reuse it.
 - Names are derived state and are never serialized. After the pool loads, `ResourceComponent::Load` re-seeds the registry from every non-empty restored `ObjectID::o_name` in ascending UID order and writes the returned unique name back, so duplicates in an older project file are disambiguated deterministically and a re-save preserves them. Creation paths seed too: `Editor::CreateDefaultScene` and `SceneController`'s pooled-object add (`UsePooledObject`) register a new object's name.
-- The registry name is authoritative for lookup; `o_name` is what the UI shows and what a project file stores. The seeding paths above and the editor's rename path mirror the returned unique name back into `o_name`, so the two coincide for named objects; writing `o_name` directly changes the display string but not the lookup key.
+- The registry name is authoritative for lookup; `o_name` is what the UI shows and what a project file stores. Any editor rename path must mirror the returned unique name back into `o_name`; the current seeding paths (load and creation) already do. Writing `o_name` directly changes the display string but not the lookup key.
 
 `Scene` keeps no name index: registration, removal and `RebuildObjList` only maintain the typed pools and `obj_list`. See [Scene Objects](../scene/objects.md).
 

@@ -535,6 +535,9 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 		{0.0f, 0.0f, -4.0f}, {0.0f, 0.0f, 4.0f},
 	};
 
+	// Debug primitives are pooled objects like the starter content above, so
+	// register their names too: the Outliner and Python see unique labels.
+	//
 	// World axes, thick and solid: the depth-tested reference. They pass through
 	// the demo mesh, so the hidden halves are the depth-occlusion proof.
 	auto axes = m_resources->Load<DebugLine>();
@@ -542,6 +545,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	axes->SetColor(glm::vec4(0.95f, 0.75f, 0.15f, 1.0f));
 	axes->PushDebugLines(axisSpans);
 	m_scene->UseDebugLine(axes);
+	axes->o_name = m_resources->SetName(axes->GetObjectID(), axes->o_name);
 
 	// The same spans as a thin dashed x-ray line: visible on top of the mesh
 	// exactly where the solid one is occluded, showing both modes at once.
@@ -552,6 +556,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	xrayAxes->SetColor(glm::vec4(0.2f, 0.9f, 1.0f, 0.8f));
 	xrayAxes->PushDebugLines(axisSpans);
 	m_scene->UseDebugLine(xrayAxes);
+	xrayAxes->o_name = m_resources->SetName(xrayAxes->GetObjectID(), xrayAxes->o_name);
 
 	// Circular sprites at the axis tips, screen-space sized so they stay legible
 	// at any zoom - the default projection mode, exercised here on purpose.
@@ -563,6 +568,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 		{4.0f, 0.0f, 0.0f}, {0.0f, 4.0f, 0.0f}, {0.0f, 0.0f, 4.0f},
 	});
 	m_scene->UseDebugPoints(tips);
+	tips->o_name = m_resources->SetName(tips->GetObjectID(), tips->o_name);
 
 	// A wireframe cube around the light, via the CUBE point type: this is the
 	// path that decomposes one point into 12 segments.
@@ -573,6 +579,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	lightBox->SetColor(glm::vec4(1.0f, 1.0f, 0.6f, 1.0f));
 	lightBox->PushDebugPoint({3.0f, 3.0f, 3.0f});
 	m_scene->UseDebugPoints(lightBox);
+	lightBox->o_name = m_resources->SetName(lightBox->GetObjectID(), lightBox->o_name);
 
 	// A wireframe copy of the demo mesh, scaled slightly up and offset so it
 	// reads as a shell rather than z-fighting with the shaded original. This is
@@ -589,6 +596,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 		wire->SetColor(glm::vec4(0.4f, 1.0f, 0.5f, 1.0f));
 		wire->SetOpacity(0.9f);
 		m_scene->UseDebugMesh(wire);
+		wire->o_name = m_resources->SetName(wire->GetObjectID(), wire->o_name);
 	}
 }
 
