@@ -53,6 +53,10 @@ namespace neurus
  * Implements IResourceLookup (fetch/lookup, name registry, per-type
  * enumeration) so controllers can resolve object references without depending
  * on the concrete pool.
+ *
+ * Per-type enumeration keys the EXACT dynamic type: ForEach<T> is not a
+ * base-class walk. Base enumeration (ObjectID, UID) must use ForEachUID and
+ * cast, or a pooled base instance silently hides every derived object.
  */
 class ResourceManager : public IResourceLookup
 {
@@ -145,19 +149,27 @@ public:
 
 	/**
 	 * @brief Invokes @p fn on every pooled resource, untyped.
+	 *
+	 * Always complete; this plus a cast is the base-class enumeration.
+	 *
 	 * @param fn Callback receiving each pooled object (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
 	 */
 	void ForEachUID(const std::function<void(const std::shared_ptr<UID>&)>& fn) const override;
 
 	/**
 	 * @brief Invokes @p fn on every pooled resource tracked under @p type.
 	 *
-	 * A tracked concrete type is served from the per-type index. A base type
-	 * (UID, ObjectID) has no index and falls back to the whole pool; the typed
-	 * template filters with a dynamic cast.
+	 * The index keys exact dynamic types, so a base class is not a base-class
+	 * walk: a pooled base instance owns the index entry and its derived types
+	 * are skipped. A type with no instance at all falls back to the whole pool.
+	 * Use ForEachUID for base enumeration.
 	 *
 	 * @param type Concrete dynamic type to enumerate (e.g. typeid(Mesh)).
 	 * @param fn Callback receiving each matching object (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
 	 */
 	void ForEachOfType(
 		std::type_index type,
@@ -188,8 +200,9 @@ public:
 	 *
 	 * Save writes every pooled UID object polymorphically; load restores them,
 	 * and each object's own serialize(load) restores its content. Names and the
-	 * per-type index are derived state, never serialized: the type index is
-	 * rebuilt from the restored objects, and names are re-seeded by the caller.
+	 * per-type index are derived state, never serialized: a load replaces the
+	 * pool, so it drops the old registry, rebuilds the type index from the
+	 * restored objects, and leaves names for the caller to re-seed.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -200,6 +213,11 @@ public:
 		ar(CEREAL_NVP(resources_));
 		if constexpr (Archive::is_loading::value)
 		{
+			// Not derived state a rebuild can recover: names are only in the
+			// registry, so an old entry would survive its object and keep
+			// stealing the bare name from a later resource.
+			m_names.clear();
+			m_nameOf.clear();
 			RebuildTypeIndex();
 		}
 	}

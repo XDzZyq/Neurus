@@ -8,9 +8,10 @@
  * - Get<T> type-checked lookup (wrong type -> nullptr)
  * - Contains / Remove / Clear / Size
  * - Name registry: per-type uniqueness and suffixing, typed SetName/GetByName,
- *   rename-to-own-name no-op, name release on Remove/Clear
- * - Per-type index: ForEach<T> visits only its type, base types fall back to
- *   the whole pool
+ *   rename-to-own-name no-op, rename releasing the old forward entry, name
+ *   release on Remove/Clear, and a load into a non-empty pool dropping old names
+ * - Per-type index: ForEach<T> visits only its exact dynamic type, while
+ *   ForEachUID stays complete even with a base-typed instance pooled
  * - Polymorphic save/load round-trip (Camera + Mesh + Light + MeshData via
  *   cereal JSON archives), including UID preservation and post-load counter
  *   bump (new objects never collide with restored IDs).
@@ -21,7 +22,9 @@
 #include <gtest/gtest.h>
 
 #include <cereal/archives/json.hpp>
+#include <algorithm>
 #include <sstream>
+#include <vector>
 
 #include "core/ResourceManager.h"
 #include "scene/Camera.h"
@@ -357,6 +360,21 @@ TEST(ResourceNameRegistry, SetToOwnNameIsANoop)
 }
 
 /**
+ * @test A rename releases the old forward entry: the previous spelling must not
+ *       keep resolving to the object (or to nullptr through a stale id).
+ */
+TEST(ResourceNameRegistry, RenameLeavesNoStaleForwardEntry)
+{
+	neurus::ResourceManager rm;
+	auto a = rm.Load<TestResource>();
+	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Rock"), "Rock");
+
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
+	EXPECT_EQ(rm.GetByName<TestResource>("Rock"), a);
+}
+
+/**
  * @test An absent id yields an empty string and registers nothing.
  */
 TEST(ResourceNameRegistry, SetNameOnMissingIdReturnsEmpty)
@@ -388,7 +406,7 @@ TEST(ResourceNameRegistry, ForEachUIDSeesEveryPooledResource)
 	rm.Load<OtherTestResource>();
 	const neurus::IResourceLookup& lookup = rm;
 	int count = 0;
-	lookup.ForEach<neurus::UID>([&](const std::shared_ptr<neurus::UID>&) { ++count; });
+	lookup.ForEachUID([&](const std::shared_ptr<neurus::UID>&) { ++count; });
 	EXPECT_EQ(count, 2);
 }
 
@@ -414,9 +432,47 @@ TEST(ResourceTypeIndex, ForEachTypedVisitsOnlyThatType)
 }
 
 /**
- * @test A base type (UID) has no index entry and falls back to the whole pool.
+ * @test A pooled base instance must not hide derived objects from base
+ *       enumeration. The type index keys exact dynamic types, so ForEachUID is
+ *       the complete walk; ForEach<ObjectID> is pinned as exact-type only.
+ *
+ *       This is the invariant the load seeder and the script collections rely
+ *       on: once a bare ObjectID is pooled, ForEach<ObjectID> would see only it.
  */
-TEST(ResourceTypeIndex, BaseTypeForEachFallsBackToEverything)
+TEST(ResourceTypeIndex, BaseInstanceDoesNotHideDerivedObjectsFromForEachUID)
+{
+	neurus::ResourceManager rm;
+	auto plain = rm.Load<neurus::ObjectID>();
+	auto cam = rm.Load<neurus::Camera>();
+	auto meshData = rm.Load<neurus::MeshData>("");
+	auto mesh = rm.Load<neurus::Mesh>(meshData);
+
+	const neurus::IResourceLookup& lookup = rm;
+	std::vector<int> seen;
+	lookup.ForEachUID([&](const std::shared_ptr<neurus::UID>& obj)
+	{
+		seen.push_back(obj->GetObjectID());
+	});
+	ASSERT_EQ(seen.size(), 4u) << "ForEachUID must be the complete walk";
+	for (const int id : {plain->GetObjectID(), cam->GetObjectID(), mesh->GetObjectID()})
+	{
+		EXPECT_NE(std::find(seen.begin(), seen.end(), id), seen.end());
+	}
+
+	// The trap this guards: the plain ObjectID owns the typeid(ObjectID) index
+	// entry, so an exact-type walk sees only it - cameras and meshes vanish.
+	int objects = 0;
+	rm.ForEach<neurus::ObjectID>([&](const std::shared_ptr<neurus::ObjectID>&) { ++objects; });
+	EXPECT_EQ(objects, 1) << "ForEach<T> is exact-dynamic-type, not a base walk";
+}
+
+/**
+ * @test A type with no pooled instance (here the UID base) has no index entry,
+ *       so ForEachOfType falls back to scanning the whole pool. This is the
+ *       mechanism, NOT an enumeration idiom: pooling a UID instance would create
+ *       the entry and stop the fallback.
+ */
+TEST(ResourceTypeIndex, UntrackedTypeForEachFallsBackToEverything)
 {
 	neurus::ResourceManager rm;
 	rm.Load<TestResource>();
@@ -460,4 +516,38 @@ TEST(ResourceTypeIndex, LoadRebuildsTypeIndexAndKeepsNamesUnseeded)
 	// Names live in the registry only, so a load leaves them for the caller to
 	// re-seed (ResourceComponent does that from o_name).
 	EXPECT_EQ(loaded.GetByName<Camera>("Cam"), nullptr);
+}
+
+/**
+ * @test A load into a NON-EMPTY pool drops the old name registry. Names are not
+ *       derived state a rebuild can reproduce, so without the clear a name whose
+ *       object the load replaced would keep reserving the bare spelling and force
+ *       the next resource to "Stale.001".
+ */
+TEST(ResourceNameRegistry, LoadIntoNonEmptyPoolDropsTheOldRegistry)
+{
+	ResourceManager source;
+	source.Load<Camera>();
+
+	std::stringstream ss;
+	{
+		cereal::JSONOutputArchive ar(ss);
+		ar(source);
+	}
+
+	ResourceManager target;
+	auto stale = target.Load<Camera>();
+	ASSERT_EQ(target.SetName(stale->GetObjectID(), "Stale"), "Stale");
+
+	{
+		std::stringstream is(ss.str());
+		cereal::JSONInputArchive ar(is);
+		ar(target);
+	}
+
+	// The old object is gone with the replaced pool, and its name must be free.
+	EXPECT_EQ(target.GetByName<Camera>("Stale"), nullptr);
+	auto fresh = target.Load<Camera>();
+	EXPECT_EQ(target.SetName(fresh->GetObjectID(), "Stale"), "Stale")
+		<< "the previous document's name must not survive the load";
 }

@@ -5,11 +5,6 @@
 
 #include "asset/components/ResourceComponent.h"
 
-#include <algorithm>
-#include <string>
-#include <utility>
-#include <vector>
-
 #include "core/Log.h"
 #include "core/ResourceManager.h"
 
@@ -27,6 +22,11 @@
 #include "scene/registrations/TypeRegistration.h"
 #include "asset/registrations/DataRegistration.h"
 #include "render/registrations/ShaderRegistration.h"
+
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace neurus::project
 {
@@ -105,9 +105,13 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 	// Seed the name registry from the restored object names. Sorting by UID keeps
 	// duplicate-name suffixing deterministic; writing the returned unique name back
 	// keeps o_name and the registry in sync across saves.
+	//
+	// ForEachUID, not ForEach<ObjectID>: the latter keys the EXACT dynamic type,
+	// so a pooled base ObjectID would hide every camera/mesh/light from the seed.
 	std::vector<std::pair<int, std::string>> named;
-	m_resources->ForEach<ObjectID>([&](const std::shared_ptr<ObjectID>& obj)
+	m_resources->ForEachUID([&](const std::shared_ptr<UID>& resource)
 	{
+		auto obj = std::dynamic_pointer_cast<ObjectID>(resource);
 		if (obj && !obj->o_name.empty())
 			named.emplace_back(obj->GetObjectID(), obj->o_name);
 	});

@@ -1,10 +1,11 @@
 /**
  * @file IResourceLookup.h
- * @brief Read-only fetch/lookup interface for the UID object pool.
+ * @brief Fetch/lookup plus the name registry over the UID object pool.
  *
  * Controllers depend on this narrow interface instead of the concrete
- * ResourceManager: they can fetch pooled objects by integer id (and query
- * membership) but cannot mutate the pool or drive its serialization.
+ * ResourceManager: they can fetch pooled objects by integer id, query
+ * membership, enumerate them and register names, but cannot mutate the pool
+ * (no Load/Register/Remove/Clear) or drive its serialization.
  *
  * The interface also exposes the pool's name registry. Names live outside UID
  * and are unique per concrete dynamic type, so a Mesh and a Camera may both be
@@ -30,7 +31,7 @@ namespace neurus
 {
 
 /**
- * @brief Read-only fetch/lookup over a UID-keyed object pool.
+ * @brief Fetch/lookup plus the name registry over a UID-keyed object pool.
  */
 class IResourceLookup
 {
@@ -73,19 +74,29 @@ public:
 
 	/**
 	 * @brief Invokes @p fn on every pooled resource, untyped.
+	 *
+	 * Always complete, so this (plus a cast) is the base-class enumeration:
+	 * `ForEach<ObjectID>` is NOT, because it keys the exact dynamic type.
+	 *
 	 * @param fn Callback receiving each pooled object (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
 	 */
 	virtual void ForEachUID(const std::function<void(const std::shared_ptr<UID>&)>& fn) const = 0;
 
 	/**
 	 * @brief Invokes @p fn on every pooled resource tracked under @p type.
 	 *
-	 * A concrete type with tracked resources is served from the per-type index;
-	 * a base type (UID, ObjectID) is not tracked and falls back to the whole
-	 * pool, leaving the cast to the caller.
+	 * The index keys exact dynamic types. A type with no pooled instance falls
+	 * back to scanning the whole pool, so a base class is not a reliable way to
+	 * enumerate derived objects: once a base instance itself is pooled, that
+	 * instance owns the index entry and its derived types are skipped. Use
+	 * ForEachUID for base-class enumeration and cast.
 	 *
 	 * @param type Concrete dynamic type to enumerate (e.g. typeid(Mesh)).
 	 * @param fn Callback receiving each matching object (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
 	 */
 	virtual void ForEachOfType(
 		std::type_index type,
@@ -130,9 +141,17 @@ public:
 	}
 
 	/**
-	 * @brief Invokes @p fn on every pooled object of type T.
-	 * @tparam T Requested type (e.g. Mesh, or a base like UID/ObjectID).
+	 * @brief Invokes @p fn on every pooled object whose exact dynamic type is T.
+	 *
+	 * This is not a base-class walk: once a base instance (ObjectID, UID) is
+	 * itself pooled, the per-type index holds only that instance, so a derived
+	 * camera/mesh/light is not visited. Enumerate a base class with ForEachUID
+	 * and cast instead.
+	 *
+	 * @tparam T Exact dynamic type to visit (e.g. Mesh).
 	 * @param fn Callback receiving each matching shared_ptr (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
 	 */
 	template<class T>
 	void ForEach(const std::function<void(const std::shared_ptr<T>&)>& fn) const
