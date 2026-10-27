@@ -4,11 +4,13 @@
  *        reading.
  *
  * A script run sees every pooled object through `neurus.data.objects`
- * (iterable and keyed by UID) and the typed collections, and reads live values
- * through proxies that resolve from the run's `resources` lookup. Those
- * collections are pool-wide, so a pooled object detached from the scene stays
- * visible; `neurus.data.scene.*` is scene-scoped and excludes it. A run with no
- * pool - or with no context at all - yields an empty collection without
+ * (iterable and keyed by UID) and the typed `neurus.data` collections, and reads
+ * live values through proxies that resolve from the run's `resources` lookup.
+ * Those collections are pool-wide, so a pooled object detached from the scene
+ * stays visible; `neurus.scene.*` is scene-scoped and excludes it.
+ * `neurus.scene.active_camera()` and `.selection()` are functions that read the
+ * live scene, and `neurus.data.scene` is that same scene module object. A run
+ * with no pool - or with no context at all - yields an empty collection without
  * dereferencing anything.
  */
 
@@ -294,27 +296,29 @@ TEST(ScriptBindings, SceneCollectionExcludesDetachedObjects)
 	// attached one stays reachable through both keys.
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
-		"assert len(neurus.data.scene.meshes) == 1\n"
-		"assert neurus.data.scene.meshes['Detached'] is None\n"
-		"assert neurus.data.scene.meshes['Ground'] is not None\n"
-		"assert neurus.data.scene.meshes[" + uidA + "].name == 'Ground'\n"
-		"assert neurus.data.scene.meshes[" + uidB + "] is None\n"
-		"assert " + uidA + " in neurus.data.scene.meshes\n"
-		"assert " + uidB + " not in neurus.data.scene.meshes\n"
-		"assert 'Ground' in neurus.data.scene.meshes\n"
-		"assert 'Detached' not in neurus.data.scene.meshes\n"
+		"assert len(neurus.scene.meshes) == 1\n"
+		"assert neurus.scene.meshes['Detached'] is None\n"
+		"assert neurus.scene.meshes['Ground'] is not None\n"
+		"assert neurus.scene.meshes[" + uidA + "].name == 'Ground'\n"
+		"assert neurus.scene.meshes[" + uidB + "] is None\n"
+		"assert " + uidA + " in neurus.scene.meshes\n"
+		"assert " + uidB + " not in neurus.scene.meshes\n"
+		"assert 'Ground' in neurus.scene.meshes\n"
+		"assert 'Detached' not in neurus.scene.meshes\n"
+		// `neurus.data.scene` is the scene module itself, not a second proxy.
+		"assert neurus.data.scene is neurus.scene\n"
 		// The other scene pools exist and are empty in this scene.
-		"assert len(neurus.data.scene.cameras) == 0\n"
-		"assert len(neurus.data.scene.lights) == 0\n"
-		"assert len(neurus.data.scene.environments) == 0\n"
-		"assert len(neurus.data.scene.objects) == 1\n"
-		"assert neurus.data.scene.objects[" + uidA + "].name == 'Ground'\n"
-		"assert neurus.data.scene.objects[" + uidB + "] is None\n"
-		"assert " + uidA + " in neurus.data.scene.objects\n"
+		"assert len(neurus.scene.cameras) == 0\n"
+		"assert len(neurus.scene.lights) == 0\n"
+		"assert len(neurus.scene.environments) == 0\n"
+		"assert len(neurus.scene.objects) == 1\n"
+		"assert neurus.scene.objects[" + uidA + "].name == 'Ground'\n"
+		"assert neurus.scene.objects[" + uidB + "] is None\n"
+		"assert " + uidA + " in neurus.scene.objects\n"
 		// D2: `objects` is UID-only, so a generic name resolves to None and
 		// `in` agrees with that lookup.
-		"assert neurus.data.scene.objects['Ground'] is None\n"
-		"assert 'Ground' not in neurus.data.scene.objects\n", ctx));
+		"assert neurus.scene.objects['Ground'] is None\n"
+		"assert 'Ground' not in neurus.scene.objects\n", ctx));
 
 	engine.Shutdown();
 }
@@ -353,22 +357,63 @@ TEST(ScriptBindings, SceneCollectionsMapEachScenePool)
 
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
-		"cam = neurus.data.scene.cameras['SceneCam']\n"
+		"cam = neurus.scene.cameras['SceneCam']\n"
 		"assert cam is not None and cam.uid == " + camUid + "\n"
-		"assert neurus.data.scene.cameras[" + camUid + "].name == 'SceneCam'\n"
-		"assert len(neurus.data.scene.cameras) == 1\n"
-		"assert neurus.data.scene.cameras[" + lightUid + "] is None\n"
-		"light = neurus.data.scene.lights['SceneLight']\n"
+		"assert neurus.scene.cameras[" + camUid + "].name == 'SceneCam'\n"
+		"assert len(neurus.scene.cameras) == 1\n"
+		"assert neurus.scene.cameras[" + lightUid + "] is None\n"
+		"light = neurus.scene.lights['SceneLight']\n"
 		"assert light is not None and light.uid == " + lightUid + "\n"
-		"assert neurus.data.scene.lights[" + lightUid + "].name == 'SceneLight'\n"
-		"assert len(neurus.data.scene.lights) == 1\n"
-		"assert neurus.data.scene.lights[" + camUid + "] is None\n"
-		"env = neurus.data.scene.environments['SceneEnv']\n"
+		"assert neurus.scene.lights[" + lightUid + "].name == 'SceneLight'\n"
+		"assert len(neurus.scene.lights) == 1\n"
+		"assert neurus.scene.lights[" + camUid + "] is None\n"
+		"env = neurus.scene.environments['SceneEnv']\n"
 		"assert env is not None and env.uid == " + envUid + "\n"
-		"assert neurus.data.scene.environments[" + envUid + "].name == 'SceneEnv'\n"
-		"assert len(neurus.data.scene.environments) == 1\n"
-		"assert neurus.data.scene.environments[" + camUid + "] is None\n"
-		"assert len(neurus.data.scene.objects) == 3\n", ctx));
+		"assert neurus.scene.environments[" + envUid + "].name == 'SceneEnv'\n"
+		"assert len(neurus.scene.environments) == 1\n"
+		"assert neurus.scene.environments[" + camUid + "] is None\n"
+		"assert len(neurus.scene.objects) == 3\n", ctx));
+
+	engine.Shutdown();
+}
+
+TEST(ScriptBindings, SceneFunctionsReadLiveState)
+{
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+	neurus::ResourceManager resources;
+
+	auto mesh = resources.Load<neurus::Mesh>();
+	auto camera = resources.Load<neurus::Camera>();
+	scene.UseMesh(mesh);
+	scene.UseCamera(camera);
+	scene.selections.Select(mesh.get(), /*increment=*/false);
+
+	neurus::ScriptContext ctx;
+	ctx.scene     = &scene;
+	ctx.config    = &cfg;
+	ctx.resources = &resources;
+
+	const std::string meshUid = std::to_string(mesh->GetObjectID());
+	const std::string camUid  = std::to_string(camera->GetObjectID());
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+
+	// Functions, not properties: each call reads the live scene, so no value can
+	// be captured and go stale.
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"assert neurus.scene.active_camera() is None\n"
+		"selection = neurus.scene.selection()\n"
+		"assert [o.uid for o in selection] == [" + meshUid + "]\n"
+		"assert isinstance(selection[0], neurus.data.Object)\n", ctx));
+
+	// An activation made between runs is visible to the next call.
+	scene.ActivateCamera(camera->GetObjectID());
+	EXPECT_TRUE(RunCleanly(engine,
+		"assert neurus.scene.active_camera().uid == " + camUid + "\n"
+		"assert neurus.scene.active_camera().is_active\n", ctx));
 
 	engine.Shutdown();
 }
@@ -428,9 +473,9 @@ TEST(ScriptBindings, NoSceneYieldsNoObjects)
 		"assert list(neurus.data.objects) == []\n"
 		"assert len(neurus.data.objects) == 0\n"
 		"assert neurus.data.objects[12345] is None\n"
-		"assert len(neurus.data.scene.meshes) == 0\n"
-		"assert neurus.data.scene.meshes['Ground'] is None\n"
-		"assert neurus.data.scene.objects[12345] is None\n"));
+		"assert len(neurus.scene.meshes) == 0\n"
+		"assert neurus.scene.meshes['Ground'] is None\n"
+		"assert neurus.scene.objects[12345] is None\n"));
 
 	engine.Shutdown();
 }
@@ -497,7 +542,7 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 		"assert light.power == 3.0\n"
 		"assert light.type == " + pointType + "\n"
 		"assert tuple(light.color) == (1.0, 0.0, 0.0)\n"
-		"cam = neurus.context.active_camera\n"
+		"cam = neurus.scene.active_camera()\n"
 		"assert cam is not None\n"
 		"assert cam.uid == " + camUid + "\n"
 		"assert cam.fov == 45.0\n"
@@ -510,7 +555,7 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 		"assert isinstance(light, neurus.data.Transform3D)\n"
 		"assert isinstance(light, neurus.data.Object)\n"
 		"assert tuple(light.position) == (0.0, 0.0, 0.0)\n"
-		"assert neurus.data.config.gamma == 2.0\n";
+		"assert neurus.render.config.gamma == 2.0\n";
 
 	EXPECT_TRUE(RunCleanly(engine, script, ctx));
 	engine.Shutdown();
@@ -523,8 +568,8 @@ TEST(ScriptBindings, EmptyContextHasNoActiveCamera)
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n"
-		"assert neurus.context.active_camera is None\n"
-		"assert neurus.data.config.gamma is None\n"));
+		"assert neurus.scene.active_camera() is None\n"
+		"assert neurus.render.config.gamma is None\n"));
 
 	engine.Shutdown();
 }
@@ -559,7 +604,7 @@ TEST(ScriptBindings, SetterRaisesReadOnlyErrorAndDoesNotMutate)
 		"    raised = True\n"
 		"assert raised\n"
 		"try:\n"
-		"    neurus.data.config.gamma = 3.0\n"
+		"    neurus.render.config.gamma = 3.0\n"
 		"except neurus.ReadOnlyError:\n"
 		"    pass\n"
 		"else:\n"

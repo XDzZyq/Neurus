@@ -9,9 +9,13 @@
  * translation unit, so `ScriptEngine::Impl::Init` references
  * `ForceLinkBindings()` to keep this unit in the link.
  *
- * Classes are registered once. The view instances are created once per
- * interpreter by `InstallNeurusViews()`, which receives the engine's
- * `ScriptView` - there is no process-wide current-view pointer.
+ * The module is split by subject, not by layer: `neurus.data` is the resource
+ * pool (and `neurus.data.scene` is the same module object as
+ * `neurus.scene`), `neurus.scene` is the scene being edited, and
+ * `neurus.render` holds the render settings. Classes are registered once. The
+ * view instances are created once per interpreter by `InstallNeurusViews()`,
+ * which receives the engine's `ScriptView` - there is no process-wide
+ * current-view pointer.
  */
 
 #include <pybind11/embed.h>
@@ -38,10 +42,17 @@ void RegisterNeurusModule(py::module_& m)
 {
 	m.doc() = "Neurus scripting API (read-only phase 1).";
 
-	py::module_ data = m.def_submodule("data", "Read-only scene data collections.");
+	py::module_ data = m.def_submodule("data", "Resource pool access.");
+	py::module_ scene = m.def_submodule("scene", "Current scene access.");
+	py::module_ render = m.def_submodule("render", "Render settings.");
+
 	RegisterObjectBindings(data);
-	RegisterSceneBindings(m, data);
-	RegisterConfigBindings(data);
+	RegisterDataBindings(data);
+	RegisterSceneBindings(scene);
+	RegisterConfigBindings(render);
+
+	// `neurus.data.scene` is the scene module itself, not a second proxy object.
+	data.attr("scene") = scene;
 
 	// Scripted mutations are refused in this phase.
 	py::register_exception<ReadOnlyError>(m, "ReadOnlyError", PyExc_RuntimeError);
@@ -50,9 +61,12 @@ void RegisterNeurusModule(py::module_& m)
 void InstallNeurusViews(py::module_& m, const ScriptView* view)
 {
 	py::module_ data = m.attr("data");
+	py::module_ scene = m.attr("scene");
+	py::module_ render = m.attr("render");
 	InstallObjectViews(data, view);
-	InstallSceneViews(m, data, view);
-	InstallConfigViews(data, view);
+	InstallDataViews(data, view);
+	InstallSceneViews(scene, view);
+	InstallConfigProxies(render, view);
 }
 
 }  // namespace script

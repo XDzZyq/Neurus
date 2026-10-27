@@ -4,9 +4,10 @@
  *
  * This header exposes nothing of pybind11 beyond a forward declaration, so it
  * can be included without pulling Python into a translation unit that does not
- * already own a `pybind11::module_`. Classes are registered once; the per-run
- * views are installed afterwards with the run's `ScriptView`, which each proxy
- * copies and resolves through itself.
+ * already own a `pybind11::module_`. Classes are registered once on their own
+ * submodule (`data`, `scene`, `render`); the per-run views are installed
+ * afterwards with the run's `ScriptView`, which each proxy copies and resolves
+ * through itself.
  */
 
 #pragma once
@@ -57,11 +58,14 @@ void ForceLinkBindings();
 void RegisterObjectBindings(pybind11::module_& data);
 void InstallObjectViews(pybind11::module_& data, const ScriptView* view);
 
-void RegisterSceneBindings(pybind11::module_& root, pybind11::module_& data);
-void InstallSceneViews(pybind11::module_& root, pybind11::module_& data, const ScriptView* view);
+void RegisterDataBindings(pybind11::module_& data);
+void InstallDataViews(pybind11::module_& data, const ScriptView* view);
 
-void RegisterConfigBindings(pybind11::module_& data);
-void InstallConfigViews(pybind11::module_& data, const ScriptView* view);
+void RegisterSceneBindings(pybind11::module_& scene);
+void InstallSceneViews(pybind11::module_& scene, const ScriptView* view);
+
+void RegisterConfigBindings(pybind11::module_& render);
+void InstallConfigProxies(pybind11::module_& render, const ScriptView* view);
 
 }  // namespace script
 }  // namespace neurus

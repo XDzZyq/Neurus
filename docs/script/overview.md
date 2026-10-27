@@ -34,21 +34,26 @@ through the Script Console panel and the Tools menu.
 
 ## The `neurus` module
 
-Read-only in this phase:
+The module is split by subject, not by layer. Read-only in this phase:
 
-- `neurus.data.objects` - every pooled `ObjectID`, iterable and keyed by UID
-  only (a name spans several object types, so a string key is ambiguous). Data
-  resources (`MeshData`, `ImageData`, `Shader`) are not objects and are not
-  listed.
-- `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - the whole
-  resource pool filtered to one type, keyed by UID or display name; a name
-  lookup returns the typed proxy.
-- `neurus.data.scene.meshes`, `.cameras`, `.lights`, `.environments` - the same
-  typed proxies restricted to objects the current scene uses; a pooled object
-  detached from the scene (undo history) is not listed.
-- `neurus.data.scene.objects` - every object the scene uses, keyed by UID only.
-- `neurus.data.config` - the render settings (`gamma`, `pipeline`, ...).
-- `neurus.context.active_camera`, `neurus.context.selection`.
+- `neurus.data` - the resource pool, independent of scene membership:
+  - `neurus.data.objects` - every pooled `ObjectID`, iterable and keyed by UID
+    only (a name spans several object types, so a string key is ambiguous). Data
+    resources (`MeshData`, `ImageData`, `Shader`) are not objects and are not
+    listed.
+  - `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - the whole
+    resource pool filtered to one type, keyed by UID or registered name; a name
+    lookup returns the typed proxy.
+  - `neurus.data.scene` - the **same module object** as `neurus.scene`, not a
+    second proxy, so `neurus.data.scene.meshes` reads naturally.
+- `neurus.scene` - the scene currently being edited:
+  - `.meshes`, `.cameras`, `.lights`, `.environments` - the same typed proxies
+    restricted to objects the scene uses; a pooled object detached from the
+    scene (undo history) is not listed.
+  - `.objects` - every object the scene uses, keyed by UID only.
+  - `.active_camera()` - the active camera proxy, or `None` when none is active.
+  - `.selection()` - the selected objects as a list of `Object` proxies.
+- `neurus.render.config` - the render settings (`gamma`, `pipeline`, ...).
 
 ```python
 import neurus
@@ -57,9 +62,14 @@ for o in neurus.data.objects:
 
 ground = neurus.data.meshes["Ground"]
 print(ground.name, ground.position, ground.rotation, ground.scale)
-print("in scene:", len(neurus.data.scene.meshes))
-print("gamma", neurus.data.config.gamma)
+print("in scene:", len(neurus.scene.meshes))
+print("active:", neurus.scene.active_camera())
+print("selected:", [o.name for o in neurus.scene.selection()])
+print("gamma", neurus.render.config.gamma)
 ```
+
+`active_camera` and `selection` are **functions**, not properties: each call
+reads the live scene, so a value can never be captured and go stale.
 
 `Mesh`, `Light`, `Camera` and `Environment` proxies derive from both
 `neurus.data.Object` (`uid`, `name`, `type`, `visible`, `transform`) and
@@ -82,7 +92,7 @@ Names come from the resource registry, not the scene: uniqueness is per concrete
 object type, and a collision is suffixed (`.001`, `.002`, ...), so the name keys
 are stable. See [Resource names](../core/uid-and-resources.md#resource-names).
 The editor's pooled viewport camera is registered as `ViewportCamera`, so it
-appears in `neurus.data.cameras` but not in `neurus.data.scene.cameras`.
+appears in `neurus.data.cameras` but not in `neurus.scene.cameras`.
 
 `__getitem__` and `__contains__` agree on every collection: a UID or name that a
 lookup resolves is also what `in` reports, and `objects` is UID-only in both.

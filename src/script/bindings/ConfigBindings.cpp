@@ -1,8 +1,8 @@
 /**
  * @file ConfigBindings.cpp
- * @brief `neurus.data.config`: a read-only view over the run's `RenderConfig`.
+ * @brief `neurus.render.config`: a read-only proxy over the run's `RenderConfig`.
  *
- * The view is constructed with the run's `ScriptView` and reads the config from
+ * The proxy is constructed with the run's `ScriptView` and reads the config from
  * it on every access; each getter is `None` when the run has none. Setters never
  * write the live config; each emits a `RenderConfigChangedEvent` carrying a copy
  * with the one field changed, which the run dispatch refuses in this phase
@@ -50,17 +50,17 @@ void EmitConfig(const ProxyBase& self, Mutator&& mutate)
 	EmitEvent(self, RenderConfigChangedEvent{config});
 }
 
-/// @brief `neurus.data.config`: a live render settings view for one run.
+/// @brief `neurus.render.config`: a live render settings proxy for one run.
 struct ConfigView : ProxyBase
 {
 };
 
 }  // namespace
 
-/// @brief Registers the `RenderConfig` view class (once).
-void RegisterConfigBindings(py::module_& data)
+/// @brief Registers the `RenderConfig` proxy class (once) on the `render` module.
+void RegisterConfigBindings(py::module_& render)
 {
-	py::class_<ConfigView>(data, "RenderConfig", "Render settings; getters are None outside a run.")
+	py::class_<ConfigView>(render, "RenderConfig", "Render settings; getters are None outside a run.")
 		.def_property("pipeline",
 			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_pipeline); }); },
 			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_pipeline = static_cast<RenderPipeLine>(v); }); })
@@ -111,9 +111,10 @@ void RegisterConfigBindings(py::module_& data)
 			[](const ConfigView& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_fxaa_edge_threshold_min = v; }); });
 }
 
-void InstallConfigViews(py::module_& data, const ScriptView* view)
+/// @brief Installs the live config proxy as `neurus.render.config`.
+void InstallConfigProxies(py::module_& render, const ScriptView* view)
 {
-	data.attr("config") = py::cast(ConfigView{{0, view}});
+	render.attr("config") = py::cast(ConfigView{{0, view}});
 }
 
 }  // namespace script
