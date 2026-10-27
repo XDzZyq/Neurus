@@ -258,7 +258,7 @@ void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::C
 			const glm::uvec2 size = vp->Size();
 			if (size.x != 0 && size.y != 0)
 			{
-				ctx.events.emitNow(neurus::CameraResizeEvent{
+				ctx.events.Emit(neurus::CameraResizeEvent{
 					after, static_cast<int>(size.x), static_cast<int>(size.y)});
 			}
 		}
@@ -362,7 +362,7 @@ void OnLightShadowChanged(const neurus::LightShadowChanged& e, const neurus::Con
 	// Enabling shadow requires the LightGPU (shadow depth maps) to exist; it
 	// was never uploaded if the light was shadowless at load/add time.
 	if (e.enabled)
-		ctx.events.emitNow(neurus::SceneObjectGpuUploadRequested{e.objectUid});
+		ctx.events.Emit(neurus::SceneObjectGpuUploadRequested{e.objectUid});
 }
 
 void OnLightCutoffChanged(const neurus::LightCutoffChanged& e, const neurus::ControllerContext& ctx)
@@ -668,7 +668,7 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
 	    || objType == neurus::ObjectID::GOType::GO_POLYLIGHT
 	    || objType == neurus::ObjectID::GOType::GO_ENVIR)
 	{
-		ctx.events.emitNow(neurus::SceneObjectGpuUploadRequested{e.objectUid});
+		ctx.events.Emit(neurus::SceneObjectGpuUploadRequested{e.objectUid});
 	}
 
 	// Select the added object (set, non-incremental).
@@ -712,7 +712,7 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
 	// synchronously inside this emit, while SceneObjectAddOp below stores only a
 	// UID list and a direction, so the later Submit reads no scene state the
 	// removal could have invalidated.
-	ctx.events.emitNow(neurus::SceneObjectDeleteRequested{before.selectedUids});
+	ctx.events.Emit(neurus::SceneObjectDeleteRequested{before.selectedUids});
 
 	std::vector<std::unique_ptr<neurus::Operation>> seq;
 	seq.push_back(std::make_unique<neurus::SetSelectionOp>(before, neurus::SelectionState{}));
@@ -762,45 +762,54 @@ void SceneController::Init(ControllerContext& ctx)
 {
 	// The context is captured BY VALUE so the stored handler lambdas are fully
 	// self-contained.
-	ctx.events.subscribe<ObjectSelected>([ctx](const ObjectSelected& e) { OnObjectSelected(e, ctx); });
-	ctx.events.subscribe<ObjectDeselected>([ctx](const ObjectDeselected& e) { OnObjectDeselected(e, ctx); });
-	ctx.events.subscribe<SelectionChanged>([ctx](const SelectionChanged& e) { OnSelectionChanged(e, ctx); });
-	ctx.events.subscribe<VisibilityChanged>([ctx](const VisibilityChanged& e) { OnVisibilityChanged(e, ctx); });
-	ctx.events.subscribe<PositionChanged>([ctx](const PositionChanged& e) { OnPositionChanged(e, ctx); });
-	ctx.events.subscribe<RotationChanged>([ctx](const RotationChanged& e) { OnRotationChanged(e, ctx); });
-	ctx.events.subscribe<ScaleChanged>([ctx](const ScaleChanged& e) { OnScaleChanged(e, ctx); });
-	ctx.events.subscribe<CameraTargetChanged>([ctx](const CameraTargetChanged& e) { OnCameraTargetChanged(e, ctx); });
-	ctx.events.subscribe<CameraFovChanged>([ctx](const CameraFovChanged& e) { OnCameraFovChanged(e, ctx); });
-	ctx.events.subscribe<CameraPoseChanged>([ctx](const CameraPoseChanged& e) { OnCameraPoseChanged(e, ctx); });
-	ctx.events.subscribe<ActiveCameraChanged>([ctx](const ActiveCameraChanged& e) { OnActiveCameraChanged(e, ctx); });
-	ctx.events.subscribe<MeshShadowChanged>([ctx](const MeshShadowChanged& e) { OnMeshShadowChanged(e, ctx); });
-	ctx.events.subscribe<MeshMaterialChanged>([ctx](const MeshMaterialChanged& e) { OnMeshMaterialChanged(e, ctx); });
-	ctx.events.subscribe<LightPowerChanged>([ctx](const LightPowerChanged& e) { OnLightPowerChanged(e, ctx); });
-	ctx.events.subscribe<LightColorChanged>([ctx](const LightColorChanged& e) { OnLightColorChanged(e, ctx); });
-	ctx.events.subscribe<LightRadiusChanged>([ctx](const LightRadiusChanged& e) { OnLightRadiusChanged(e, ctx); });
-	ctx.events.subscribe<LightShadowChanged>([ctx](const LightShadowChanged& e) { OnLightShadowChanged(e, ctx); });
-	ctx.events.subscribe<LightCutoffChanged>([ctx](const LightCutoffChanged& e) { OnLightCutoffChanged(e, ctx); });
-	ctx.events.subscribe<LightOuterCutoffChanged>([ctx](const LightOuterCutoffChanged& e) { OnLightOuterCutoffChanged(e, ctx); });
-	ctx.events.subscribe<EnvironmentIntensityChanged>([ctx](const EnvironmentIntensityChanged& e) { OnEnvironmentIntensityChanged(e, ctx); });
-	ctx.events.subscribe<EnvironmentRotationChanged>([ctx](const EnvironmentRotationChanged& e) { OnEnvironmentRotationChanged(e, ctx); });
-	ctx.events.subscribe<DebugColorChanged>([ctx](const DebugColorChanged& e) { OnDebugColorChanged(e, ctx); });
-	ctx.events.subscribe<DebugOpacityChanged>([ctx](const DebugOpacityChanged& e) { OnDebugOpacityChanged(e, ctx); });
-	ctx.events.subscribe<DebugXRayChanged>([ctx](const DebugXRayChanged& e) { OnDebugXRayChanged(e, ctx); });
-	ctx.events.subscribe<DebugLineWidthChanged>([ctx](const DebugLineWidthChanged& e) { OnDebugLineWidthChanged(e, ctx); });
-	ctx.events.subscribe<DebugLineStippleChanged>([ctx](const DebugLineStippleChanged& e) { OnDebugLineStippleChanged(e, ctx); });
-	ctx.events.subscribe<DebugPointTypeChanged>([ctx](const DebugPointTypeChanged& e) { OnDebugPointTypeChanged(e, ctx); });
-	ctx.events.subscribe<DebugPointScaleChanged>([ctx](const DebugPointScaleChanged& e) { OnDebugPointScaleChanged(e, ctx); });
-	ctx.events.subscribe<DebugProjectionModeChanged>([ctx](const DebugProjectionModeChanged& e) { OnDebugProjectionModeChanged(e, ctx); });
-	ctx.events.subscribe<DebugPositionsChanged>([ctx](const DebugPositionsChanged& e) { OnDebugPositionsChanged(e, ctx); });
+	ctx.events.Subscribe<ObjectSelected>([ctx](const ObjectSelected& e) { OnObjectSelected(e, ctx); });
+	ctx.events.Subscribe<ObjectDeselected>([ctx](const ObjectDeselected& e) { OnObjectDeselected(e, ctx); });
+	ctx.events.Subscribe<SelectionChanged>([ctx](const SelectionChanged& e) { OnSelectionChanged(e, ctx); });
+	ctx.events.Subscribe<VisibilityChanged>([ctx](const VisibilityChanged& e) { OnVisibilityChanged(e, ctx); });
+	ctx.events.Subscribe<PositionChanged>([ctx](const PositionChanged& e) { OnPositionChanged(e, ctx); });
+	ctx.events.Subscribe<RotationChanged>([ctx](const RotationChanged& e) { OnRotationChanged(e, ctx); });
+	ctx.events.Subscribe<ScaleChanged>([ctx](const ScaleChanged& e) { OnScaleChanged(e, ctx); });
+	ctx.events.Subscribe<CameraTargetChanged>([ctx](const CameraTargetChanged& e) { OnCameraTargetChanged(e, ctx); });
+	ctx.events.Subscribe<CameraFovChanged>([ctx](const CameraFovChanged& e) { OnCameraFovChanged(e, ctx); });
+	ctx.events.Subscribe<CameraPoseChanged>([ctx](const CameraPoseChanged& e) { OnCameraPoseChanged(e, ctx); });
+	ctx.events.Subscribe<ActiveCameraChanged>([ctx](const ActiveCameraChanged& e) { OnActiveCameraChanged(e, ctx); });
+	ctx.events.Subscribe<MeshShadowChanged>([ctx](const MeshShadowChanged& e) { OnMeshShadowChanged(e, ctx); });
+	ctx.events.Subscribe<MeshMaterialChanged>([ctx](const MeshMaterialChanged& e) { OnMeshMaterialChanged(e, ctx); });
+	ctx.events.Subscribe<LightPowerChanged>([ctx](const LightPowerChanged& e) { OnLightPowerChanged(e, ctx); });
+	ctx.events.Subscribe<LightColorChanged>([ctx](const LightColorChanged& e) { OnLightColorChanged(e, ctx); });
+	ctx.events.Subscribe<LightRadiusChanged>([ctx](const LightRadiusChanged& e) { OnLightRadiusChanged(e, ctx); });
+	ctx.events.Subscribe<LightShadowChanged>([ctx](const LightShadowChanged& e) { OnLightShadowChanged(e, ctx); });
+	ctx.events.Subscribe<LightCutoffChanged>([ctx](const LightCutoffChanged& e) { OnLightCutoffChanged(e, ctx); });
+	ctx.events.Subscribe<LightOuterCutoffChanged>(
+		[ctx](const LightOuterCutoffChanged& e) { OnLightOuterCutoffChanged(e, ctx); });
+	ctx.events.Subscribe<EnvironmentIntensityChanged>(
+		[ctx](const EnvironmentIntensityChanged& e) { OnEnvironmentIntensityChanged(e, ctx); });
+	ctx.events.Subscribe<EnvironmentRotationChanged>(
+		[ctx](const EnvironmentRotationChanged& e) { OnEnvironmentRotationChanged(e, ctx); });
+	ctx.events.Subscribe<DebugColorChanged>([ctx](const DebugColorChanged& e) { OnDebugColorChanged(e, ctx); });
+	ctx.events.Subscribe<DebugOpacityChanged>([ctx](const DebugOpacityChanged& e) { OnDebugOpacityChanged(e, ctx); });
+	ctx.events.Subscribe<DebugXRayChanged>([ctx](const DebugXRayChanged& e) { OnDebugXRayChanged(e, ctx); });
+	ctx.events.Subscribe<DebugLineWidthChanged>(
+		[ctx](const DebugLineWidthChanged& e) { OnDebugLineWidthChanged(e, ctx); });
+	ctx.events.Subscribe<DebugLineStippleChanged>(
+		[ctx](const DebugLineStippleChanged& e) { OnDebugLineStippleChanged(e, ctx); });
+	ctx.events.Subscribe<DebugPointTypeChanged>(
+		[ctx](const DebugPointTypeChanged& e) { OnDebugPointTypeChanged(e, ctx); });
+	ctx.events.Subscribe<DebugPointScaleChanged>(
+		[ctx](const DebugPointScaleChanged& e) { OnDebugPointScaleChanged(e, ctx); });
+	ctx.events.Subscribe<DebugProjectionModeChanged>(
+		[ctx](const DebugProjectionModeChanged& e) { OnDebugProjectionModeChanged(e, ctx); });
+	ctx.events.Subscribe<DebugPositionsChanged>(
+		[ctx](const DebugPositionsChanged& e) { OnDebugPositionsChanged(e, ctx); });
 
 	// --- Scene membership (add / delete) ---
-	ctx.events.subscribe<SceneObjectAddRequested>([ctx](const SceneObjectAddRequested& e) {
+	ctx.events.Subscribe<SceneObjectAddRequested>([ctx](const SceneObjectAddRequested& e) {
 		OnSceneObjectAddRequested(e, ctx);
 	});
-	ctx.events.subscribe<SceneObjectDeleteRequested>([ctx](const SceneObjectDeleteRequested& e) {
+	ctx.events.Subscribe<SceneObjectDeleteRequested>([ctx](const SceneObjectDeleteRequested& e) {
 		OnSceneObjectDeleteRequested(e, ctx);
 	});
-	ctx.events.subscribe<ObjectDeleteRequested>([ctx](const ObjectDeleteRequested& e) {
+	ctx.events.Subscribe<ObjectDeleteRequested>([ctx](const ObjectDeleteRequested& e) {
 		OnObjectDeleteRequested(e, ctx);
 	});
 }

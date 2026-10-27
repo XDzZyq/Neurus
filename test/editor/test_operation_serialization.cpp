@@ -234,12 +234,12 @@ TEST_F(OperationSerializationTest, SceneObjectAddOp_RoundTrip)
 TEST_F(OperationSerializationTest, ShaderLinkOp_RoundTrip)
 {
 	// Editor-style restore handlers (mirror Editor::Initialize).
-	m_eventBus.subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
+	m_eventBus.Subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
 		auto mesh = m_resources.Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(m_resources.Get<RenderShader>(e.shaderId));
 	});
-	m_eventBus.subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
+	m_eventBus.Subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
 		auto mesh = m_resources.Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(nullptr);
@@ -296,11 +296,11 @@ TEST_F(OperationSerializationTest, CompositeOp_RoundTrip)
 TEST_F(OperationSerializationTest, HistoryComponent_SaveLoad_BothStacks)
 {
 	// Record three edits, then undo one so BOTH stacks are populated.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
 	Process();
-	m_eventBus.enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	Process();
-	m_eventBus.enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
 	Process();
 	m_operations.Undo(); // camera fov edit → redo stack
 
@@ -339,7 +339,7 @@ TEST_F(OperationSerializationTest, HistoryComponent_Load_MissingNode_ClearsHisto
 {
 	// A project file without an "m_history" node (older format) must not throw
 	// and must leave the manager with empty stacks.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
 	Process();
 	ASSERT_TRUE(m_operations.CanUndo());
 

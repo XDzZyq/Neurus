@@ -116,7 +116,7 @@ public:
 	{
 		// The replayed event carries the target UID; the controller handler
 		// resolves it and no-ops stale ids.
-		ctx.events.emitNow(static_cast<const Derived*>(this)->MakeEvent(m_uid, m_after));
+		ctx.events.Emit(static_cast<const Derived*>(this)->MakeEvent(m_uid, m_after));
 	}
 
 	std::unique_ptr<Operation> Inverse() const override

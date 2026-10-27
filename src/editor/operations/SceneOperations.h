@@ -480,7 +480,7 @@ public:
 
 	void Apply(OperationContext& ctx) override
 	{
-		ctx.events.emitNow(SelectionChanged{ m_after.selectedUids, m_after.activeUid });
+		ctx.events.Emit(SelectionChanged{ m_after.selectedUids, m_after.activeUid });
 	}
 
 	std::unique_ptr<Operation> Inverse() const override
@@ -529,7 +529,7 @@ public:
 
 	void Apply(OperationContext& ctx) override
 	{
-		ctx.events.emitNow(ActiveCameraChanged{ m_after });
+		ctx.events.Emit(ActiveCameraChanged{ m_after });
 	}
 
 	std::unique_ptr<Operation> Inverse() const override
@@ -583,11 +583,11 @@ public:
 		if (m_add)
 		{
 			for (int uid : m_uids)
-				ctx.events.emitNow(SceneObjectAddRequested{ uid });
+				ctx.events.Emit(SceneObjectAddRequested{ uid });
 		}
 		else
 		{
-			ctx.events.emitNow(SceneObjectDeleteRequested{ m_uids });
+			ctx.events.Emit(SceneObjectDeleteRequested{ m_uids });
 		}
 	}
 

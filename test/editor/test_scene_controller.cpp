@@ -67,7 +67,7 @@ protected:
 
 TEST_F(SceneControllerTest, ObjectSelected_SelectsObject)
 {
-	m_eventBus.enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
+	m_eventBus.Enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
 	Process();
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
 	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
@@ -76,15 +76,15 @@ TEST_F(SceneControllerTest, ObjectSelected_SelectsObject)
 TEST_F(SceneControllerTest, ObjectSelected_NullObject_ClearsSelection)
 {
 	m_scene.selections.Select(m_mesh.get(), false);
-	m_eventBus.enqueue(ObjectSelected{0, 0});
+	m_eventBus.Enqueue(ObjectSelected{0, 0});
 	Process();
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0);
 }
 
 TEST_F(SceneControllerTest, ObjectSelected_Shift_AddsToSelection)
 {
-	m_eventBus.enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
-	m_eventBus.enqueue(ObjectSelected{m_light->GetObjectID(),
+	m_eventBus.Enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
+	m_eventBus.Enqueue(ObjectSelected{m_light->GetObjectID(),
 	                                  static_cast<int>(Input::Mod_Shift)});
 	Process();
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 2);
@@ -93,7 +93,7 @@ TEST_F(SceneControllerTest, ObjectSelected_Shift_AddsToSelection)
 TEST_F(SceneControllerTest, ObjectDeselected_RemovesFromSelection)
 {
 	m_scene.selections.Select(m_mesh.get(), false);
-	m_eventBus.enqueue(ObjectDeselected{m_mesh->GetObjectID()});
+	m_eventBus.Enqueue(ObjectDeselected{m_mesh->GetObjectID()});
 	Process();
 	EXPECT_FALSE(m_scene.selections.IsSelected(m_mesh.get()));
 }
@@ -102,7 +102,7 @@ TEST_F(SceneControllerTest, ObjectDeselected_RemovesFromSelection)
 
 TEST_F(SceneControllerTest, VisibilityChanged_SetsFlags)
 {
-	m_eventBus.enqueue(VisibilityChanged{m_mesh->GetObjectID(), false, true});
+	m_eventBus.Enqueue(VisibilityChanged{m_mesh->GetObjectID(), false, true});
 	Process();
 	EXPECT_FALSE(m_mesh->is_viewport);
 	EXPECT_TRUE(m_mesh->is_rendered);
@@ -111,8 +111,8 @@ TEST_F(SceneControllerTest, VisibilityChanged_SetsFlags)
 TEST_F(SceneControllerTest, VisibilityChanged_OnLight_EnqueuesLightingRebuild)
 {
 	bool rebuilt = false;
-	m_eventBus.subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
-	m_eventBus.enqueue(VisibilityChanged{m_light->GetObjectID(), false, true});
+	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
+	m_eventBus.Enqueue(VisibilityChanged{m_light->GetObjectID(), false, true});
 	Process();
 	EXPECT_TRUE(rebuilt);
 }
@@ -121,7 +121,7 @@ TEST_F(SceneControllerTest, VisibilityChanged_OnLight_EnqueuesLightingRebuild)
 
 TEST_F(SceneControllerTest, PositionChanged_UpdatesTransform)
 {
-	m_eventBus.enqueue(PositionChanged{m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f});
+	m_eventBus.Enqueue(PositionChanged{m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f});
 	Process();
 	const glm::vec3& pos = m_mesh->GetPosition();
 	EXPECT_FLOAT_EQ(pos.x, 1.0f);
@@ -132,15 +132,15 @@ TEST_F(SceneControllerTest, PositionChanged_UpdatesTransform)
 TEST_F(SceneControllerTest, PositionChanged_OnLight_EnqueuesLightingRebuild)
 {
 	bool rebuilt = false;
-	m_eventBus.subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
-	m_eventBus.enqueue(PositionChanged{m_light->GetObjectID(), 1.0f, 0.0f, 0.0f});
+	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
+	m_eventBus.Enqueue(PositionChanged{m_light->GetObjectID(), 1.0f, 0.0f, 0.0f});
 	Process();
 	EXPECT_TRUE(rebuilt);
 }
 
 TEST_F(SceneControllerTest, ScaleChanged_UpdatesScale)
 {
-	m_eventBus.enqueue(ScaleChanged{m_mesh->GetObjectID(), 2.0f, 2.0f, 2.0f});
+	m_eventBus.Enqueue(ScaleChanged{m_mesh->GetObjectID(), 2.0f, 2.0f, 2.0f});
 	Process();
 	const glm::vec3& scl = m_mesh->GetScale();
 	EXPECT_FLOAT_EQ(scl.x, 2.0f);
@@ -152,14 +152,14 @@ TEST_F(SceneControllerTest, ScaleChanged_UpdatesScale)
 
 TEST_F(SceneControllerTest, CameraTargetChanged_Applies)
 {
-	m_eventBus.enqueue(CameraTargetChanged{m_camera->GetObjectID(), 1.0f, 2.0f, 3.0f});
+	m_eventBus.Enqueue(CameraTargetChanged{m_camera->GetObjectID(), 1.0f, 2.0f, 3.0f});
 	Process();
 	EXPECT_EQ(m_camera->cam_tar, glm::vec3(1.0f, 2.0f, 3.0f));
 }
 
 TEST_F(SceneControllerTest, CameraFovChanged_Applies)
 {
-	m_eventBus.enqueue(CameraFovChanged{m_camera->GetObjectID(), 45.0f});
+	m_eventBus.Enqueue(CameraFovChanged{m_camera->GetObjectID(), 45.0f});
 	Process();
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, 45.0f);
 }
@@ -168,14 +168,14 @@ TEST_F(SceneControllerTest, CameraFovChanged_Applies)
 
 TEST_F(SceneControllerTest, MeshShadowChanged_Applies)
 {
-	m_eventBus.enqueue(MeshShadowChanged{m_mesh->GetObjectID(), false});
+	m_eventBus.Enqueue(MeshShadowChanged{m_mesh->GetObjectID(), false});
 	Process();
 	EXPECT_FALSE(m_mesh->using_shadow);
 }
 
 TEST_F(SceneControllerTest, MeshMaterialChanged_Applies)
 {
-	m_eventBus.enqueue(MeshMaterialChanged{m_mesh->GetObjectID(), false});
+	m_eventBus.Enqueue(MeshMaterialChanged{m_mesh->GetObjectID(), false});
 	Process();
 	EXPECT_FALSE(m_mesh->using_material);
 }
@@ -185,8 +185,8 @@ TEST_F(SceneControllerTest, MeshMaterialChanged_Applies)
 TEST_F(SceneControllerTest, LightPowerChanged_AppliesAndEnqueuesGpuEvent)
 {
 	int gpuObjectUid = 0;
-	m_eventBus.subscribe<LightGpuChanged>([&](const LightGpuChanged& e) { gpuObjectUid = e.objectUid; });
-	m_eventBus.enqueue(LightPowerChanged{m_light->GetObjectID(), 42.0f});
+	m_eventBus.Subscribe<LightGpuChanged>([&](const LightGpuChanged& e) { gpuObjectUid = e.objectUid; });
+	m_eventBus.Enqueue(LightPowerChanged{m_light->GetObjectID(), 42.0f});
 	Process();
 	EXPECT_FLOAT_EQ(m_light->light_power, 42.0f);
 	EXPECT_EQ(gpuObjectUid, m_light->GetObjectID());
@@ -194,7 +194,7 @@ TEST_F(SceneControllerTest, LightPowerChanged_AppliesAndEnqueuesGpuEvent)
 
 TEST_F(SceneControllerTest, LightRadiusChanged_Applies)
 {
-	m_eventBus.enqueue(LightRadiusChanged{m_light->GetObjectID(), 0.5f});
+	m_eventBus.Enqueue(LightRadiusChanged{m_light->GetObjectID(), 0.5f});
 	Process();
 	EXPECT_FLOAT_EQ(m_light->light_radius, 0.5f);
 }
@@ -202,8 +202,8 @@ TEST_F(SceneControllerTest, LightRadiusChanged_Applies)
 TEST_F(SceneControllerTest, LightShadowChanged_EnqueuesLightingRebuild)
 {
 	bool rebuilt = false;
-	m_eventBus.subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
-	m_eventBus.enqueue(LightShadowChanged{m_light->GetObjectID(), false});
+	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
+	m_eventBus.Enqueue(LightShadowChanged{m_light->GetObjectID(), false});
 	Process();
 	EXPECT_FALSE(m_light->use_shadow);
 	EXPECT_TRUE(rebuilt);
@@ -211,7 +211,7 @@ TEST_F(SceneControllerTest, LightShadowChanged_EnqueuesLightingRebuild)
 
 TEST_F(SceneControllerTest, LightCutoffChanged_Applies)
 {
-	m_eventBus.enqueue(LightCutoffChanged{m_light->GetObjectID(), 0.7f});
+	m_eventBus.Enqueue(LightCutoffChanged{m_light->GetObjectID(), 0.7f});
 	Process();
 	EXPECT_FLOAT_EQ(m_light->spot_cutoff, 0.7f);
 }
@@ -220,14 +220,14 @@ TEST_F(SceneControllerTest, LightCutoffChanged_Applies)
 
 TEST_F(SceneControllerTest, EnvironmentIntensityChanged_Applies)
 {
-	m_eventBus.enqueue(EnvironmentIntensityChanged{m_env->GetObjectID(), 2.5f});
+	m_eventBus.Enqueue(EnvironmentIntensityChanged{m_env->GetObjectID(), 2.5f});
 	Process();
 	EXPECT_FLOAT_EQ(m_env->GetIntensity(), 2.5f);
 }
 
 TEST_F(SceneControllerTest, EnvironmentRotationChanged_Applies)
 {
-	m_eventBus.enqueue(EnvironmentRotationChanged{m_env->GetObjectID(), 90.0f});
+	m_eventBus.Enqueue(EnvironmentRotationChanged{m_env->GetObjectID(), 90.0f});
 	Process();
 	EXPECT_FLOAT_EQ(m_env->GetRotation(), 90.0f);
 }
@@ -237,8 +237,8 @@ TEST_F(SceneControllerTest, EnvironmentRotationChanged_Applies)
 TEST_F(SceneControllerTest, PropertyChange_EnqueuesSceneModified)
 {
 	int modified = 0;
-	m_eventBus.subscribe<SceneModified>([&](const SceneModified&) { modified++; });
-	m_eventBus.enqueue(CameraFovChanged{m_camera->GetObjectID(), 45.0f});
+	m_eventBus.Subscribe<SceneModified>([&](const SceneModified&) { modified++; });
+	m_eventBus.Enqueue(CameraFovChanged{m_camera->GetObjectID(), 45.0f});
 	Process();
 	EXPECT_EQ(modified, 1);
 }
@@ -246,8 +246,8 @@ TEST_F(SceneControllerTest, PropertyChange_EnqueuesSceneModified)
 TEST_F(SceneControllerTest, Selection_DoesNotEnqueueSceneModified)
 {
 	int modified = 0;
-	m_eventBus.subscribe<SceneModified>([&](const SceneModified&) { modified++; });
-	m_eventBus.enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
+	m_eventBus.Subscribe<SceneModified>([&](const SceneModified&) { modified++; });
+	m_eventBus.Enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
 	Process();
 	EXPECT_EQ(modified, 0);
 }
@@ -266,7 +266,7 @@ TEST_F(SceneControllerTest, SceneObjectAdd_RegistersSelectsAndRecordsOp)
 {
 	const int uid = LoadPooledMesh(m_resources);
 
-	m_eventBus.enqueue(SceneObjectAddRequested{uid});
+	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 	Process();
 
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 1u);
@@ -294,7 +294,7 @@ TEST_F(SceneControllerTest, SceneObjectAdd_RegistersSelectsAndRecordsOp)
 TEST_F(SceneControllerTest, SceneObjectAdd_RegistersNameInResourceRegistry)
 {
 	auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
-	m_eventBus.enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
 	Process();
 
 	ASSERT_FALSE(mesh->o_name.empty());
@@ -312,10 +312,10 @@ TEST_F(SceneControllerTest, SceneObjectAdd_RegistersNameInResourceRegistry)
 TEST_F(SceneControllerTest, SceneObjectAdd_AlreadyInScene_NoOp)
 {
 	const int uid = LoadPooledMesh(m_resources);
-	m_eventBus.enqueue(SceneObjectAddRequested{uid});
+	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 	Process();
 
-	m_eventBus.enqueue(SceneObjectAddRequested{uid});
+	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 	Process();
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 1u);
 }
@@ -325,7 +325,7 @@ TEST_F(SceneControllerTest, SceneObjectAdd_StaleUid_NoOp)
 	const int uid = LoadPooledMesh(m_resources);
 	m_resources.Remove(uid); // resource no longer pooled
 
-	m_eventBus.enqueue(SceneObjectAddRequested{uid});
+	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 	Process();
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
 	EXPECT_FALSE(m_operations.CanUndo());
@@ -334,10 +334,10 @@ TEST_F(SceneControllerTest, SceneObjectAdd_StaleUid_NoOp)
 TEST_F(SceneControllerTest, DeleteRequested_RemovesSelectionAndRecordsComposite)
 {
 	const int uid = LoadPooledMesh(m_resources);
-	m_eventBus.enqueue(SceneObjectAddRequested{uid});
+	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 	Process(); // mesh added + selected
 
-	m_eventBus.enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(ObjectDeleteRequested{});
 	Process();
 
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
@@ -359,14 +359,14 @@ TEST_F(SceneControllerTest, DeleteRequested_MultiSelection_RemovesAllAndRestores
 {
 	const int uidA = LoadPooledMesh(m_resources);
 	const int uidB = LoadPooledMesh(m_resources);
-	m_eventBus.enqueue(SceneObjectAddRequested{uidA});
-	m_eventBus.enqueue(SceneObjectAddRequested{uidB});
+	m_eventBus.Enqueue(SceneObjectAddRequested{uidA});
+	m_eventBus.Enqueue(SceneObjectAddRequested{uidB});
 	Process(); // both added; B selected last
 
 	// Multi-select both (shift-add semantics).
 	m_scene.selections.Select(m_scene.GetObjectID(uidA), true);
 
-	m_eventBus.enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(ObjectDeleteRequested{});
 	Process();
 
 	EXPECT_EQ(m_scene.mesh_list.count(uidA), 0u);
@@ -396,7 +396,7 @@ TEST_F(SceneControllerTest, DeleteRequested_MultiSelection_RemovesAllAndRestores
 TEST_F(SceneControllerTest, DeleteRequested_LastCamera_Allowed)
 {
 	m_scene.selections.Select(m_camera.get(), false);
-	m_eventBus.enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(ObjectDeleteRequested{});
 	Process();
 
 	EXPECT_EQ(m_scene.cam_list.count(m_camera->GetObjectID()), 0u);
@@ -413,7 +413,7 @@ TEST_F(SceneControllerTest, DeleteRequested_LastCamera_Allowed)
 
 TEST_F(SceneControllerTest, DeleteRequested_EmptySelection_NoOp)
 {
-	m_eventBus.enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(ObjectDeleteRequested{});
 	Process();
 	EXPECT_FALSE(m_operations.CanUndo());
 }
@@ -421,10 +421,10 @@ TEST_F(SceneControllerTest, DeleteRequested_EmptySelection_NoOp)
 TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesLightingRebuild)
 {
 	bool rebuilt = false;
-	m_eventBus.subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
+	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
 
 	auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-	m_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{light->GetObjectID()});
 	Process();
 	EXPECT_TRUE(rebuilt);
 	EXPECT_EQ(m_scene.light_list.count(light->GetObjectID()), 1u);
@@ -433,12 +433,12 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesLightingRebuild)
 TEST_F(SceneControllerTest, DeleteRequested_Light_EnqueuesLightingRebuild)
 {
 	auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-	m_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{light->GetObjectID()});
 	Process();
 
 	bool rebuilt = false;
-	m_eventBus.subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
-	m_eventBus.enqueue(ObjectDeleteRequested{});
+	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
+	m_eventBus.Enqueue(ObjectDeleteRequested{});
 	Process();
 
 	EXPECT_TRUE(rebuilt);
@@ -450,12 +450,12 @@ TEST_F(SceneControllerTest, DeleteRequested_Light_EnqueuesLightingRebuild)
 TEST_F(SceneControllerTest, SceneObjectAdd_Mesh_EnqueuesGpuUpload)
 {
 	int uploadedUid = 0;
-	m_eventBus.subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
+	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
 		uploadedUid = e.objectUid;
 	});
 
 	auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
-	m_eventBus.enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
 	Process();
 
 	EXPECT_EQ(uploadedUid, mesh->GetObjectID()); // the re-added mesh
@@ -465,12 +465,12 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Mesh_EnqueuesGpuUpload)
 TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesGpuUpload)
 {
 	int uploadedUid = 0;
-	m_eventBus.subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
+	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
 		uploadedUid = e.objectUid;
 	});
 
 	auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-	m_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{light->GetObjectID()});
 	Process();
 
 	EXPECT_EQ(uploadedUid, light->GetObjectID());
@@ -480,12 +480,12 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesGpuUpload)
 TEST_F(SceneControllerTest, SceneObjectAdd_Environment_EnqueuesGpuUpload)
 {
 	int uploadedUid = 0;
-	m_eventBus.subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
+	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
 		uploadedUid = e.objectUid;
 	});
 
 	auto env = m_resources.Load<Environment>(m_resources.Load<ImageData>(""));
-	m_eventBus.enqueue(SceneObjectAddRequested{env->GetObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{env->GetObjectID()});
 	Process();
 
 	EXPECT_EQ(uploadedUid, env->GetObjectID());
@@ -495,12 +495,12 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Environment_EnqueuesGpuUpload)
 TEST_F(SceneControllerTest, SceneObjectAdd_Camera_DoesNotEnqueueGpuUpload)
 {
 	bool uploaded = false;
-	m_eventBus.subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested&) {
+	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested&) {
 		uploaded = true;
 	});
 
 	auto camera = m_resources.Load<Camera>();
-	m_eventBus.enqueue(SceneObjectAddRequested{camera->GetObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{camera->GetObjectID()});
 	Process();
 
 	EXPECT_FALSE(uploaded); // cameras own no GPU resources
@@ -510,11 +510,11 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Camera_DoesNotEnqueueGpuUpload)
 TEST_F(SceneControllerTest, LightShadowChanged_Enabled_EnqueuesGpuUpload)
 {
 	int uploadedUid = 0;
-	m_eventBus.subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
+	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
 		uploadedUid = e.objectUid;
 	});
 
-	m_eventBus.enqueue(LightShadowChanged{m_light->GetObjectID(), true});
+	m_eventBus.Enqueue(LightShadowChanged{m_light->GetObjectID(), true});
 	Process();
 
 	EXPECT_EQ(uploadedUid, m_light->GetObjectID());
@@ -523,11 +523,11 @@ TEST_F(SceneControllerTest, LightShadowChanged_Enabled_EnqueuesGpuUpload)
 TEST_F(SceneControllerTest, LightShadowChanged_Disabled_DoesNotEnqueueGpuUpload)
 {
 	bool uploaded = false;
-	m_eventBus.subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested&) {
+	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested&) {
 		uploaded = true;
 	});
 
-	m_eventBus.enqueue(LightShadowChanged{m_light->GetObjectID(), false});
+	m_eventBus.Enqueue(LightShadowChanged{m_light->GetObjectID(), false});
 	Process();
 
 	EXPECT_FALSE(uploaded);
@@ -564,9 +564,9 @@ protected:
 
 TEST_F(DebugPropertyTest, ColorChanged_AppliesToEveryDebugType)
 {
-	m_eventBus.enqueue(DebugColorChanged{m_dline->GetObjectID(), 1.0f, 0.0f, 0.0f, 1.0f});
-	m_eventBus.enqueue(DebugColorChanged{m_dpoints->GetObjectID(), 0.0f, 1.0f, 0.0f, 0.5f});
-	m_eventBus.enqueue(DebugColorChanged{m_dmesh->GetObjectID(), 0.0f, 0.0f, 1.0f, 0.25f});
+	m_eventBus.Enqueue(DebugColorChanged{m_dline->GetObjectID(), 1.0f, 0.0f, 0.0f, 1.0f});
+	m_eventBus.Enqueue(DebugColorChanged{m_dpoints->GetObjectID(), 0.0f, 1.0f, 0.0f, 0.5f});
+	m_eventBus.Enqueue(DebugColorChanged{m_dmesh->GetObjectID(), 0.0f, 0.0f, 1.0f, 0.25f});
 	Process();
 
 	EXPECT_EQ(m_dline->GetColor(), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
@@ -577,12 +577,12 @@ TEST_F(DebugPropertyTest, ColorChanged_AppliesToEveryDebugType)
 
 TEST_F(DebugPropertyTest, OpacityAndXRayChanged_AppliesToEveryDebugType)
 {
-	m_eventBus.enqueue(DebugOpacityChanged{m_dline->GetObjectID(), 0.25f});
-	m_eventBus.enqueue(DebugOpacityChanged{m_dpoints->GetObjectID(), 0.5f});
-	m_eventBus.enqueue(DebugOpacityChanged{m_dmesh->GetObjectID(), 0.75f});
-	m_eventBus.enqueue(DebugXRayChanged{m_dline->GetObjectID(), true});
-	m_eventBus.enqueue(DebugXRayChanged{m_dpoints->GetObjectID(), true});
-	m_eventBus.enqueue(DebugXRayChanged{m_dmesh->GetObjectID(), true});
+	m_eventBus.Enqueue(DebugOpacityChanged{m_dline->GetObjectID(), 0.25f});
+	m_eventBus.Enqueue(DebugOpacityChanged{m_dpoints->GetObjectID(), 0.5f});
+	m_eventBus.Enqueue(DebugOpacityChanged{m_dmesh->GetObjectID(), 0.75f});
+	m_eventBus.Enqueue(DebugXRayChanged{m_dline->GetObjectID(), true});
+	m_eventBus.Enqueue(DebugXRayChanged{m_dpoints->GetObjectID(), true});
+	m_eventBus.Enqueue(DebugXRayChanged{m_dmesh->GetObjectID(), true});
 	Process();
 
 	EXPECT_FLOAT_EQ(m_dline->GetOpacity(), 0.25f);
@@ -595,10 +595,10 @@ TEST_F(DebugPropertyTest, OpacityAndXRayChanged_AppliesToEveryDebugType)
 
 TEST_F(DebugPropertyTest, LineKnobsChanged_OnlyReachDebugLine)
 {
-	m_eventBus.enqueue(DebugLineWidthChanged{m_dline->GetObjectID(), 4.0f});
-	m_eventBus.enqueue(DebugLineStippleChanged{m_dline->GetObjectID(), true});
+	m_eventBus.Enqueue(DebugLineWidthChanged{m_dline->GetObjectID(), 4.0f});
+	m_eventBus.Enqueue(DebugLineStippleChanged{m_dline->GetObjectID(), true});
 	// Same events aimed at a DebugPoints must be ignored, not mis-applied.
-	m_eventBus.enqueue(DebugLineWidthChanged{m_dpoints->GetObjectID(), 9.0f});
+	m_eventBus.Enqueue(DebugLineWidthChanged{m_dpoints->GetObjectID(), 9.0f});
 	Process();
 
 	EXPECT_FLOAT_EQ(m_dline->GetWidth(), 4.0f);
@@ -607,11 +607,11 @@ TEST_F(DebugPropertyTest, LineKnobsChanged_OnlyReachDebugLine)
 
 TEST_F(DebugPropertyTest, PointKnobsChanged_OnlyReachDebugPoints)
 {
-	m_eventBus.enqueue(DebugPointTypeChanged{m_dpoints->GetObjectID(),
+	m_eventBus.Enqueue(DebugPointTypeChanged{m_dpoints->GetObjectID(),
 	                                         static_cast<int>(DebugPoints::PointType::CIR)});
-	m_eventBus.enqueue(DebugPointScaleChanged{m_dpoints->GetObjectID(), 12.0f});
-	m_eventBus.enqueue(DebugProjectionModeChanged{m_dpoints->GetObjectID(), 1});
-	m_eventBus.enqueue(DebugPointScaleChanged{m_dline->GetObjectID(), 99.0f});
+	m_eventBus.Enqueue(DebugPointScaleChanged{m_dpoints->GetObjectID(), 12.0f});
+	m_eventBus.Enqueue(DebugProjectionModeChanged{m_dpoints->GetObjectID(), 1});
+	m_eventBus.Enqueue(DebugPointScaleChanged{m_dline->GetObjectID(), 99.0f});
 	Process();
 
 	EXPECT_EQ(m_dpoints->GetPointType(), DebugPoints::PointType::CIR);
@@ -625,7 +625,7 @@ TEST_F(DebugPropertyTest, PositionsChanged_ReplacesTheWholeLineVertexList)
 	m_dline->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f));
 
 	// Three triples: the absolute setter must shrink and grow alike.
-	m_eventBus.enqueue(DebugPositionsChanged{m_dline->GetObjectID(),
+	m_eventBus.Enqueue(DebugPositionsChanged{m_dline->GetObjectID(),
 	                                        { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f }});
 	Process();
 
@@ -636,7 +636,7 @@ TEST_F(DebugPropertyTest, PositionsChanged_ReplacesTheWholeLineVertexList)
 
 TEST_F(DebugPropertyTest, PositionsChanged_ReplacesTheWholePointList)
 {
-	m_eventBus.enqueue(DebugPositionsChanged{m_dpoints->GetObjectID(),
+	m_eventBus.Enqueue(DebugPositionsChanged{m_dpoints->GetObjectID(),
 	                                        { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f }});
 	Process();
 
@@ -648,7 +648,7 @@ TEST_F(DebugPropertyTest, PositionsChanged_DropsATrailingPartialTriple)
 {
 	// A flattened list is only ever built from whole positions, so a partial tail
 	// is malformed input; it is dropped rather than padded with zeros.
-	m_eventBus.enqueue(DebugPositionsChanged{m_dpoints->GetObjectID(),
+	m_eventBus.Enqueue(DebugPositionsChanged{m_dpoints->GetObjectID(),
 	                                        { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f }});
 	Process();
 
@@ -658,8 +658,8 @@ TEST_F(DebugPropertyTest, PositionsChanged_DropsATrailingPartialTriple)
 
 TEST_F(DebugPropertyTest, UnknownUid_IsIgnoredAndRecordsNothing)
 {
-	m_eventBus.enqueue(DebugColorChanged{999999, 1.0f, 0.0f, 0.0f, 1.0f});
-	m_eventBus.enqueue(DebugPositionsChanged{999999, { 0.0f, 0.0f, 0.0f }});
+	m_eventBus.Enqueue(DebugColorChanged{999999, 1.0f, 0.0f, 0.0f, 1.0f});
+	m_eventBus.Enqueue(DebugPositionsChanged{999999, { 0.0f, 0.0f, 0.0f }});
 	Process();
 
 	EXPECT_FALSE(m_operations.CanUndo());
@@ -670,7 +670,7 @@ TEST_F(DebugPropertyTest, ColorChanged_IsUndoableAndRedoable)
 {
 	const glm::vec4 before = m_dline->GetColor();
 
-	m_eventBus.enqueue(DebugColorChanged{m_dline->GetObjectID(), 0.1f, 0.2f, 0.3f, 0.4f});
+	m_eventBus.Enqueue(DebugColorChanged{m_dline->GetObjectID(), 0.1f, 0.2f, 0.3f, 0.4f});
 	Process();
 	ASSERT_TRUE(m_operations.CanUndo());
 
@@ -685,7 +685,7 @@ TEST_F(DebugPropertyTest, PositionsChanged_IsUndoableAndRedoable)
 {
 	m_dpoints->PushDebugPoint(glm::vec3(5.0f, 5.0f, 5.0f));
 
-	m_eventBus.enqueue(DebugPositionsChanged{m_dpoints->GetObjectID(),
+	m_eventBus.Enqueue(DebugPositionsChanged{m_dpoints->GetObjectID(),
 	                                        { 1.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f }});
 	Process();
 	ASSERT_EQ(m_dpoints->GetPoints().size(), 2u);
@@ -701,7 +701,7 @@ TEST_F(DebugPropertyTest, PositionsChanged_IsUndoableAndRedoable)
 
 TEST_F(DebugPropertyTest, XRayChanged_UndoRestoresThePreviousFlag)
 {
-	m_eventBus.enqueue(DebugXRayChanged{m_dmesh->GetObjectID(), true});
+	m_eventBus.Enqueue(DebugXRayChanged{m_dmesh->GetObjectID(), true});
 	Process();
 	ASSERT_TRUE(m_dmesh->GetXRay());
 

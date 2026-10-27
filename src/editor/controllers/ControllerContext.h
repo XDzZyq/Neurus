@@ -38,7 +38,7 @@ class EditorViewport;
  */
 struct ControllerContext
 {
-	/** @brief Typed event dispatch: subscribe / emitNow. */
+	/** @brief Typed event dispatch: Subscribe / Emit. */
 	IEventQueue& events;
 
 	/** @brief Fetch/lookup plus the name registry for pooled UID objects by integer id. */

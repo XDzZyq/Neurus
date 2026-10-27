@@ -27,27 +27,27 @@ namespace neurus::notify {
 /** @brief Something visible changed: restart temporal accumulation and redraw. */
 inline void Repaint(IEventQueue& events)
 {
-	events.emitNow(RenderResetEvent{});
+	events.Emit(RenderResetEvent{});
 }
 
 /** @brief A committed scene change with no GPU side effects: dirty + repaint. */
 inline void Mutated(IEventQueue& events)
 {
-	events.emitNow(SceneModified{});
+	events.Emit(SceneModified{});
 	Repaint(events);
 }
 
 /** @brief A committed change to one light's SSBO struct (power, radius, cone). */
 inline void LightStructChanged(int lightUid, IEventQueue& events)
 {
-	events.emitNow(LightGpuChanged{lightUid});
+	events.Emit(LightGpuChanged{lightUid});
 	Mutated(events);
 }
 
 /** @brief A committed change that invalidates the whole light dict. */
 inline void LightingRebuilt(IEventQueue& events)
 {
-	events.emitNow(LightingRebuild{});
+	events.Emit(LightingRebuild{});
 	Mutated(events);
 }
 
@@ -75,7 +75,7 @@ inline void ObjectMutated(const ObjectID& obj, IEventQueue& events)
 inline void ObjectPreviewed(const ObjectID& obj, IEventQueue& events)
 {
 	if (obj.IsLight())
-		events.emitNow(LightGpuChanged{obj.GetObjectID()});
+		events.Emit(LightGpuChanged{obj.GetObjectID()});
 	Repaint(events);
 }
 

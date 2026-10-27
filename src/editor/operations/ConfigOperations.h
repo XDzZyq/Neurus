@@ -38,7 +38,7 @@ public:
 
 	void Apply(OperationContext& ctx) override
 	{
-		ctx.events.emitNow(RenderConfigChangedEvent{ m_after });
+		ctx.events.Emit(RenderConfigChangedEvent{ m_after });
 	}
 
 	std::unique_ptr<Operation> Inverse() const override

@@ -63,24 +63,25 @@ public:
 	 * @brief Queues an event for deferred dispatch at the next Process().
 	 *
 	 * Only the UI boundary uses this: Editor::OnUIEvent. Everything inside the
-	 * editor emits synchronously, so a mutation is visible to its caller.
+	 * editor emits synchronously through Emit, so a mutation is visible to its
+	 * caller.
 	 */
 	template<typename TEvent>
-	void enqueue(const TEvent& event)
+	void Enqueue(const TEvent& event)
 	{
 		std::type_index ti(typeid(TEvent));
-		enqueueImpl([this, ti, ev = event]() {
-			dispatch(ti, &ev);
+		EnqueueImpl([this, ti, ev = event]() {
+			Dispatch(ti, &ev);
 		});
 	}
 
 protected:
-	void subscribeImpl(std::type_index type, std::function<void(const void*)> handler) override
+	void SubscribeImpl(std::type_index type, std::function<void(const void*)> handler) override
 	{
 		evt_handlers[type].push_back(std::move(handler));
 	}
 
-	void dispatch(std::type_index type, const void* event) override
+	void Dispatch(std::type_index type, const void* event) override
 	{
 		if (m_depth >= kMaxDispatchDepth)
 		{
@@ -112,7 +113,7 @@ private:
 	 * Not virtual: deferral is a property of this concrete queue, not of the
 	 * controller-facing interface.
 	 */
-	void enqueueImpl(std::function<void()> thunk)
+	void EnqueueImpl(std::function<void()> thunk)
 	{
 		evt_eventQueue.push(std::move(thunk));
 	}

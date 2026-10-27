@@ -49,7 +49,7 @@ public:
 		{
 			throw ReadOnlyError("Neurus scripting is read-only in this phase");
 		}
-		m_events->emitNow(event);
+		m_events->Emit(event);
 	}
 
 private:

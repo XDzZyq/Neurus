@@ -50,7 +50,7 @@ public:
 	{
 		// Replayed event carries the mesh UID; ShaderController resolves it
 		// against the current scene and no-ops stale ids.
-		ctx.events.emitNow(ShaderCodeRestored{ m_uid, m_stage, m_afterCode });
+		ctx.events.Emit(ShaderCodeRestored{ m_uid, m_stage, m_afterCode });
 	}
 
 	std::unique_ptr<Operation> Inverse() const override
@@ -102,7 +102,7 @@ public:
 
 	void Apply(OperationContext& ctx) override
 	{
-		ctx.events.emitNow(ShaderFieldRestored{
+		ctx.events.Emit(ShaderFieldRestored{
 			m_uid, m_stage, m_section, m_fieldIndex, m_after });
 	}
 
@@ -159,9 +159,9 @@ public:
 	void Apply(OperationContext& ctx) override
 	{
 		if (m_add)
-			ctx.events.emitNow(ShaderFieldAddRestored{ m_uid, m_stage, m_section, m_subFieldIndex });
+			ctx.events.Emit(ShaderFieldAddRestored{ m_uid, m_stage, m_section, m_subFieldIndex });
 		else
-			ctx.events.emitNow(ShaderFieldRemoved{ m_uid, m_stage, m_section, m_subFieldIndex });
+			ctx.events.Emit(ShaderFieldRemoved{ m_uid, m_stage, m_section, m_subFieldIndex });
 	}
 
 	std::unique_ptr<Operation> Inverse() const override
@@ -221,9 +221,9 @@ public:
 		// Replayed events carry the mesh UID + pooled shader UID; the Editor
 		// resolves them and no-ops stale ids.
 		if (m_add)
-			ctx.events.emitNow(ShaderLinkRestored{ m_uid, m_shaderId });
+			ctx.events.Emit(ShaderLinkRestored{ m_uid, m_shaderId });
 		else
-			ctx.events.emitNow(ShaderUnlinkRestored{ m_uid });
+			ctx.events.Emit(ShaderUnlinkRestored{ m_uid });
 	}
 
 	std::unique_ptr<Operation> Inverse() const override

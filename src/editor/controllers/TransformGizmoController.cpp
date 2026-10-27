@@ -237,17 +237,17 @@ void TransformGizmoController::Init(ControllerContext& ctx)
 {
 	// The context is captured BY VALUE so the stored handler lambdas are fully
 	// self-contained (the context's references + providers copy cheaply).
-	ctx.events.subscribe<GizmoModeRequested>(
+	ctx.events.Subscribe<GizmoModeRequested>(
 	    [ctx](const GizmoModeRequested& e) { OnModeRequested(e, ctx); });
-	ctx.events.subscribe<GizmoAxisRequested>(
+	ctx.events.Subscribe<GizmoAxisRequested>(
 	    [ctx](const GizmoAxisRequested& e) { OnAxisRequested(e, ctx); });
-	ctx.events.subscribe<MouseMoveEvent>(
+	ctx.events.Subscribe<MouseMoveEvent>(
 	    [ctx](const MouseMoveEvent& e) { OnMouseMove(e, ctx); });
-	ctx.events.subscribe<GizmoConfirmed>(
+	ctx.events.Subscribe<GizmoConfirmed>(
 	    [ctx](const GizmoConfirmed&) { OnConfirmed(ctx); });
-	ctx.events.subscribe<GizmoCancelled>(
+	ctx.events.Subscribe<GizmoCancelled>(
 	    [ctx](const GizmoCancelled&) { OnAborted(ctx); });
-	ctx.events.subscribe<ViewportFocusLost>(
+	ctx.events.Subscribe<ViewportFocusLost>(
 	    [ctx](const ViewportFocusLost&) { OnAborted(ctx); });
 }
 

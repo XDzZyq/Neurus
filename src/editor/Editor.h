@@ -158,7 +158,7 @@ public:
 	template<typename Event>
 	void OnUIEvent(const Event& e)
 	{
-		ed_eventBus.enqueue<Event>(e);
+		ed_eventBus.Enqueue<Event>(e);
 	}
 
 	/**

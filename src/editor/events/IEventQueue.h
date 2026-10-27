@@ -3,10 +3,10 @@
  * @brief Controller-facing interface for the typed event dispatcher.
  *
  * Controllers depend only on this narrow interface, never on the concrete queue:
- * subscribe handlers and emitNow for synchronous dispatch. Deferral is
- * deliberately absent here - it exists only on the concrete EventQueue and only
- * for the UI boundary - so anything a controller or a script emits has been
- * applied before the emitting call returns.
+ * Subscribe handlers and Emit for synchronous dispatch. Deferral is deliberately
+ * absent here - it exists only on the concrete EventQueue and only for the UI
+ * boundary - so anything a controller or a script emits has been applied before
+ * the emitting call returns.
  */
 
 #pragma once
@@ -29,9 +29,9 @@ public:
 	 * @brief Subscribes a handler to events of type TEvent.
 	 */
 	template<typename TEvent>
-	void subscribe(std::function<void(const TEvent&)> handler)
+	void Subscribe(std::function<void(const TEvent&)> handler)
 	{
-		subscribeImpl(std::type_index(typeid(TEvent)),
+		SubscribeImpl(std::type_index(typeid(TEvent)),
 			[h = std::move(handler)](const void* e) {
 				h(*static_cast<const TEvent*>(e));
 			}
@@ -46,20 +46,20 @@ public:
 	 * script observe its own write and a composite path observe the event it just
 	 * emitted. Deferral is not offered here; only the UI boundary queues.
 	 *
-	 * @note Named emitNow because Qt reserves `emit` as a keyword macro.
+	 * @note Named Emit because Qt reserves `emit` as a keyword macro.
 	 */
 	template<typename TEvent>
-	void emitNow(const TEvent& event)
+	void Emit(const TEvent& event)
 	{
-		dispatch(std::type_index(typeid(TEvent)), &event);
+		Dispatch(std::type_index(typeid(TEvent)), &event);
 	}
 
 protected:
 	/** @brief Registers a type-erased handler for a TEvent type. */
-	virtual void subscribeImpl(std::type_index type, std::function<void(const void*)> handler) = 0;
+	virtual void SubscribeImpl(std::type_index type, std::function<void(const void*)> handler) = 0;
 
 	/** @brief Synchronously invokes every handler registered for @p type. */
-	virtual void dispatch(std::type_index type, const void* event) = 0;
+	virtual void Dispatch(std::type_index type, const void* event) = 0;
 };
 
 } // namespace neurus

@@ -19,7 +19,7 @@ namespace neurus {
  */
 struct OperationContext
 {
-	/// @brief Queue the operation replays its event on (via emitNow).
+	/// @brief Queue the operation replays its event on (via Emit).
 	IEventQueue& events;
 };
 

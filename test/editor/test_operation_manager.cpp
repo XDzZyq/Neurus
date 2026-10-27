@@ -71,7 +71,7 @@ protected:
 
 TEST_F(OperationManagerTest, LightPower_RoundTrip)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
 	Process();
 	EXPECT_FLOAT_EQ(m_light->light_power, 42.0f);
 	ASSERT_TRUE(m_operations.CanUndo());
@@ -90,7 +90,7 @@ TEST_F(OperationManagerTest, LightPower_RoundTrip)
 
 TEST_F(OperationManagerTest, Position_RoundTrip)
 {
-	m_eventBus.enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	Process();
 	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
 
@@ -105,7 +105,7 @@ TEST_F(OperationManagerTest, Position_RoundTrip)
 
 TEST_F(OperationManagerTest, Replay_DoesNotRecordNewOperations)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
 	Process();
 
 	// Undo/Redo replay events synchronously through the same handler that
@@ -129,13 +129,13 @@ TEST_F(OperationManagerTest, Replay_DoesNotRecordNewOperations)
 
 TEST_F(OperationManagerTest, NewForwardOperation_ClearsRedo)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 30.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 30.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
 
 	// A fresh edit after an undo invalidates the redo branch.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 55.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 55.0f });
 	Process();
 	EXPECT_FALSE(m_operations.CanRedo());
 	EXPECT_TRUE(m_operations.CanUndo());
@@ -152,7 +152,7 @@ TEST_F(OperationManagerTest, Inverse_IsInvolution)
 	EXPECT_EQ(twice->Label(), op->Label());
 
 	OperationContext ctx{ m_eventBus };
-	twice->Apply(ctx); // emitNow() dispatches synchronously.
+	twice->Apply(ctx); // Emit() dispatches synchronously.
 	EXPECT_FLOAT_EQ(m_light->light_power, 77.0f);
 }
 
@@ -193,7 +193,7 @@ TEST_F(OperationManagerTest, UndoRedo_EmptyStacks_AreNoOps)
 
 TEST_F(OperationManagerTest, Clear_EmptiesBothStacks)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 15.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 15.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
@@ -211,7 +211,7 @@ TEST_F(OperationManagerTest, Visibility_RoundTrip)
 	ASSERT_TRUE(m_mesh->is_viewport);
 	ASSERT_TRUE(m_mesh->is_rendered);
 
-	m_eventBus.enqueue(VisibilityChanged{ m_mesh->GetObjectID(), false, false });
+	m_eventBus.Enqueue(VisibilityChanged{ m_mesh->GetObjectID(), false, false });
 	Process();
 	EXPECT_FALSE(m_mesh->is_viewport);
 	EXPECT_FALSE(m_mesh->is_rendered);
@@ -231,7 +231,7 @@ TEST_F(OperationManagerTest, CameraFov_RoundTrip)
 {
 	const float original = m_camera->cam_pers;
 
-	m_eventBus.enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
 	Process();
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, 35.0f);
 
@@ -348,9 +348,9 @@ TEST_F(OperationManagerTest, CameraTransform_DoesNotMerge_SeparateEntries)
 
 TEST_F(OperationManagerTest, DifferentKeys_DoNotMerge)
 {
-	m_eventBus.enqueue(CameraFovChanged{ m_camera->GetObjectID(), 40.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 40.0f });
 	Process();
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 25.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 25.0f });
 	Process();
 
 	// Two different-key edits are two entries: two undos to clear.
@@ -384,7 +384,7 @@ TEST_F(OperationManagerTest, CameraTransform_Inverse_IsInvolution)
 TEST_F(OperationManagerTest, Selection_RoundTrip)
 {
 	// Select the mesh.
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
 	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
@@ -404,9 +404,9 @@ TEST_F(OperationManagerTest, Selection_RoundTrip)
 TEST_F(OperationManagerTest, Selection_MultiSelect_RoundTrip)
 {
 	// Select mesh, then shift-add the light.
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
-	m_eventBus.enqueue(ObjectSelected{ m_light->GetObjectID(), Input::Mod_Shift });
+	m_eventBus.Enqueue(ObjectSelected{ m_light->GetObjectID(), Input::Mod_Shift });
 	Process();
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 2u);
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
@@ -427,7 +427,7 @@ TEST_F(OperationManagerTest, Selection_MultiSelect_RoundTrip)
 TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 {
 	// Record a real edit, then undo it so a redo is pending.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
 	Process();
 	m_operations.Undo();
 	EXPECT_FLOAT_EQ(m_light->light_power, 10.0f);
@@ -435,7 +435,7 @@ TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 
 	// A selection change is transparent: it appends to undo but MUST keep the
 	// pending redo intact (the key property of PreservesRedo()).
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
 	ASSERT_TRUE(m_operations.CanRedo());
@@ -448,17 +448,17 @@ TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 TEST_F(OperationManagerTest, RealEdit_ClearsRedo_AfterSelection)
 {
 	// Undo a real edit (redo pending), interleave a selection, then a real edit.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
 
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
 	ASSERT_TRUE(m_operations.CanRedo()); // selection preserved redo
 
 	// A branching edit still discards the redo timeline.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 88.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 88.0f });
 	Process();
 	EXPECT_FALSE(m_operations.CanRedo());
 }
@@ -535,7 +535,7 @@ TEST_F(OperationManagerTest, ExceptionDuringUndo_DoesNotKillRecording)
 	EXPECT_FALSE(m_operations.CanRedo()); // failed op dropped, not moved to redo
 
 	// A fresh edit must still record after the failed undo.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 7.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 7.0f });
 	Process();
 	EXPECT_TRUE(m_operations.CanUndo());
 
