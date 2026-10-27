@@ -12,6 +12,7 @@
 
 #include "editor/controllers/CameraController.h"
 #include "editor/controllers/MutationNotify.h"
+#include "editor/controllers/ObjectController.h"
 #include "editor/controllers/RenderConfigController.h"
 #include "editor/controllers/ShaderController.h"
 #include "editor/controllers/SceneController.h"
@@ -210,7 +211,7 @@ void Editor::Initialize()
 
 
 	// --- Register controllers ---
-	// All five take only the ControllerContext, which carries the event dispatch,
+	// All six take only the ControllerContext, which carries the event dispatch,
 	// the pooled-object lookup, the operation sink, the scene, the render config,
 	// the viewport and the gizmo state.
 	//
@@ -221,6 +222,7 @@ void Editor::Initialize()
 	RegisterController<TransformGizmoController>();
 	RegisterController<ShaderController>();
 	RegisterController<SceneController>();
+	RegisterController<ObjectController>();
 	RegisterController<RenderConfigController>();
 
 	// --- Keep the viewport's camera pointer alive across a deletion ---
@@ -369,7 +371,8 @@ void Editor::Initialize()
 		m_viewport.MarkGizmoDirty();
 	});
 
-	// --- SceneController GPU-sync + dirty subscriptions ---
+	// --- Scene mutation GPU-sync + dirty subscriptions (SceneController /
+	// ObjectController) ---
 	ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
 		m_dirty = true;
 	});

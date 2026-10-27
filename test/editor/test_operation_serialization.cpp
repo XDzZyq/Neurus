@@ -25,6 +25,7 @@
 
 #include "glm/glm.hpp"
 
+#include "editor/controllers/ObjectController.h"
 #include "editor/controllers/SceneController.h"
 #include "editor/events/EventBus.h"
 #include "editor/events/SceneEvents.h"
@@ -71,6 +72,7 @@ protected:
 	void SetUp() override
 	{
 		m_controller.Init(m_ctx);
+		m_objectController.Init(m_ctx);
 
 		m_mesh   = std::make_shared<Mesh>();
 		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
@@ -83,8 +85,11 @@ protected:
 		// The ShaderLinkOp restore handlers resolve the mesh via the POOL (the
 		// Editor pattern), so the fixture mesh must also be pooled. The camera is
 		// pooled the same way, for the same reason: camera-property ops replay
-		// through ctx.resources.
+		// through ctx.resources. The light joins them because ObjectController
+		// resolves every property write - and therefore every op replay - through
+		// the pool.
 		m_resources.Register(m_mesh);
+		m_resources.Register(m_light);
 	}
 
 	void Process() { m_eventBus.Process(); }
@@ -98,6 +103,7 @@ protected:
 	                         [this]() { return &m_scene; },
 	                         [this]() { return &m_config; } };
 	SceneController m_controller;
+	ObjectController m_objectController;
 	std::shared_ptr<Mesh> m_mesh;
 	std::shared_ptr<Light> m_light;
 	std::shared_ptr<Camera> m_camera;

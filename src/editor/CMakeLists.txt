@@ -15,6 +15,8 @@ add_library(neurus_editor STATIC
 	viewport/GizmoDrawBuilder.cpp
 	controllers/SceneController.h
 	controllers/SceneController.cpp
+	controllers/ObjectController.h
+	controllers/ObjectController.cpp
 	controllers/Controllers.h
 	controllers/ControllerContext.h
 	controllers/MutationNotify.h
