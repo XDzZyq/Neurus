@@ -10,7 +10,6 @@
 #include "editor/events/ShaderEvents.h"
 #include "editor/events/SceneEvents.h"
 
-#include "editor/ResourceNaming.h"
 #include "editor/controllers/CameraController.h"
 #include "editor/controllers/RenderConfigController.h"
 #include "editor/controllers/ShaderController.h"
@@ -490,26 +489,22 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 	m_scene->UseCamera(camera);
-	MirrorResourceName(*m_resources, *camera);
 
 	auto meshData = m_resources->Load<MeshData>(objPath);
 	auto mesh = m_resources->Load<Mesh>(meshData);
 	mesh->SetScale(glm::vec3(kStarterMeshScale)); // see kStarterMeshScale
 	m_scene->UseMesh(mesh);
-	MirrorResourceName(*m_resources, *mesh);
 
 	auto light = m_resources->Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(3.0f, 3.0f, 3.0f));
 	light->SetRadius(0.01f);
 	m_scene->UseLight(light);
-	MirrorResourceName(*m_resources, *light);
 
 	// Paths are relative ("res/...") so project files stay portable; the resource
 	// layer resolves them against the asset dir at load time.
 	auto imageData = m_resources->Load<ImageData>("res/tex/hdr/room.hdr");
 	auto env = m_resources->Load<Environment>(imageData);
 	m_scene->UseEnvironment(env);
-	MirrorResourceName(*m_resources, *env);
 
 	AddDefaultDebugObjects(meshData);
 
@@ -537,7 +532,8 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	};
 
 	// Debug primitives are pooled objects like the starter content above, so
-	// register their names too: the Outliner and Python see unique labels.
+	// Load already registered their names: the Outliner and Python see unique
+	// labels.
 	//
 	// World axes, thick and solid: the depth-tested reference. They pass through
 	// the demo mesh, so the hidden halves are the depth-occlusion proof.
@@ -546,7 +542,6 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	axes->SetColor(glm::vec4(0.95f, 0.75f, 0.15f, 1.0f));
 	axes->PushDebugLines(axisSpans);
 	m_scene->UseDebugLine(axes);
-	MirrorResourceName(*m_resources, *axes);
 
 	// The same spans as a thin dashed x-ray line: visible on top of the mesh
 	// exactly where the solid one is occluded, showing both modes at once.
@@ -557,7 +552,6 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	xrayAxes->SetColor(glm::vec4(0.2f, 0.9f, 1.0f, 0.8f));
 	xrayAxes->PushDebugLines(axisSpans);
 	m_scene->UseDebugLine(xrayAxes);
-	MirrorResourceName(*m_resources, *xrayAxes);
 
 	// Circular sprites at the axis tips, screen-space sized so they stay legible
 	// at any zoom - the default projection mode, exercised here on purpose.
@@ -569,7 +563,6 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 		{4.0f, 0.0f, 0.0f}, {0.0f, 4.0f, 0.0f}, {0.0f, 0.0f, 4.0f},
 	});
 	m_scene->UseDebugPoints(tips);
-	MirrorResourceName(*m_resources, *tips);
 
 	// A wireframe cube around the light, via the CUBE point type: this is the
 	// path that decomposes one point into 12 segments.
@@ -580,7 +573,6 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	lightBox->SetColor(glm::vec4(1.0f, 1.0f, 0.6f, 1.0f));
 	lightBox->PushDebugPoint({3.0f, 3.0f, 3.0f});
 	m_scene->UseDebugPoints(lightBox);
-	MirrorResourceName(*m_resources, *lightBox);
 
 	// A wireframe copy of the demo mesh, scaled slightly up and offset so it
 	// reads as a shell rather than z-fighting with the shaded original. This is
@@ -597,7 +589,6 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 		wire->SetColor(glm::vec4(0.4f, 1.0f, 0.5f, 1.0f));
 		wire->SetOpacity(0.9f);
 		m_scene->UseDebugMesh(wire);
-		MirrorResourceName(*m_resources, *wire);
 	}
 }
 

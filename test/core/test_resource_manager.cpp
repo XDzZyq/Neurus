@@ -4,6 +4,8 @@
  *
  * Covers:
  * - Load<T> constructs + registers + returns a typed shared_ptr
+ * - Load<T> auto-registers a public o_name (suffix on collision, renameable)
+ *   and registers nothing for a type without one
  * - Duplicate registration throws (safety net)
  * - Get<T> type-checked lookup (wrong type -> nullptr)
  * - Contains / Remove / Clear / Size
@@ -64,11 +66,79 @@ struct OtherTestResource : neurus::UID
 {
 };
 
+/**
+ * @brief UID resource carrying a display name, like a scene object does.
+ *
+ * Named differently from the real scene types so the assertions cannot lean on
+ * their constructor defaults.
+ */
+struct NamedResource : neurus::UID
+{
+	std::string o_name = "Named";
+};
+
 } // namespace
 
 // -----------------------------------------------------------------------
 // Load / Register semantics
 // -----------------------------------------------------------------------
+
+/**
+ * @test Load<T> auto-registers a type's o_name and mirrors the unique result,
+ *       so no creation path can forget the name.
+ */
+TEST(ResourceManagerTest, LoadAutoRegistersOname)
+{
+	ResourceManager pool;
+
+	auto first = pool.Load<NamedResource>();
+	EXPECT_EQ(first->o_name, "Named") << "the constructor name is mirrored back";
+	EXPECT_EQ(pool.GetByName<NamedResource>("Named"), first);
+
+	// The registry owns uniqueness: the second load is suffixed.
+	auto second = pool.Load<NamedResource>();
+	EXPECT_EQ(second->o_name, "Named.001");
+	EXPECT_EQ(pool.GetByName<NamedResource>("Named.001"), second);
+}
+
+/**
+ * @test A type without o_name is not registered by Load, so data resources stay
+ *       unnamed and cannot reserve a scene object's name.
+ */
+TEST(ResourceManagerTest, LoadWithoutOnameRegistersNothing)
+{
+	ResourceManager pool;
+	pool.Load<TestResource>();
+
+	EXPECT_EQ(pool.GetByName<TestResource>("Object"), nullptr);
+	EXPECT_EQ(pool.GetByName<TestResource>("Named"), nullptr);
+
+	// A named type still owns its bare spelling, proving nothing was reserved.
+	auto named = pool.Load<NamedResource>();
+	EXPECT_EQ(named->o_name, "Named");
+	EXPECT_EQ(pool.GetByName<NamedResource>("Named"), named);
+}
+
+/**
+ * @test A load-time registration is an ordinary one: renaming it frees the
+ *       constructor name for the next resource. EditorViewport::EnsureCamera
+ *       relies on exactly this when it renames the viewport camera.
+ */
+TEST(ResourceManagerTest, LoadRegistrationIsRenameable)
+{
+	ResourceManager pool;
+	auto cam = pool.Load<Camera>();
+	EXPECT_EQ(cam->o_name, "Camera");
+	EXPECT_EQ(pool.GetByName<Camera>("Camera"), cam);
+
+	cam->o_name = pool.SetName(cam->GetObjectID(), "ViewportCamera");
+	EXPECT_EQ(cam->o_name, "ViewportCamera");
+	EXPECT_EQ(pool.GetByName<Camera>("Camera"), nullptr);
+	EXPECT_EQ(pool.GetByName<Camera>("ViewportCamera"), cam);
+
+	auto docCam = pool.Load<Camera>();
+	EXPECT_EQ(docCam->o_name, "Camera") << "the freed name must be reusable";
+}
 
 /**
  * @test Load<T> constructs, registers, and returns a typed shared_ptr.

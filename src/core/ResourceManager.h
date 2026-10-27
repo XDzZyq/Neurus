@@ -17,8 +17,9 @@
  *   another UID object internally - construction happens through Load<T>.
  * - The pool serializes the real objects (polymorphically); Scene serializes
  *   only ID references. Pool is loaded before the Scene.
- * - Names are registry-owned, not object state: unique per concrete dynamic
- *   type, with a per-type id index so typed enumeration does not scan the pool.
+ * - Names are registry-owned: unique per concrete dynamic type, with a per-type
+ *   id index so typed enumeration does not scan the pool. Load<T> registers a
+ *   scene object's constructor name and mirrors the unique result into o_name.
  *
  * @note Thread-safety: Not thread-safe. Main thread only.
  */
@@ -70,6 +71,13 @@ public:
 	/**
 	 * @brief Constructs a resource and registers it by its UID.
 	 *
+	 * When @p T exposes a public `o_name` (every scene object does, through
+	 * ObjectID), the constructor's default name is registered as the object's
+	 * display name and the unique result is mirrored back into `o_name`. This is
+	 * the single registration point, so no creation path can forget it; a
+	 * collision gains the usual ".001" suffix. Types without `o_name` (data
+	 * resources) stay unnamed.
+	 *
 	 * @tparam T Resource type (must inherit UID, directly or transitively).
 	 * @tparam Args Constructor argument types.
 	 * @param args Forwarded to T's constructor.
@@ -84,14 +92,23 @@ public:
 
 		auto resource = std::make_shared<T>(std::forward<Args>(args)...);
 		const int id = resource->GetObjectID();
-		auto [it, inserted] = resources_.emplace(id, std::move(resource));
+		// The copy stays alive for the naming step below; the map is the owner.
+		auto [it, inserted] = resources_.emplace(id, resource);
 		if (!inserted)
 		{
 			throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
 		}
 		IndexType(it->second.get());
 
-		return std::dynamic_pointer_cast<T>(it->second);
+		// Registry-owned uniqueness, mirrored back so the Outliner, the project
+		// file and name lookups agree. Duck-typed on o_name to keep core free of
+		// scene headers.
+		if constexpr (requires(T& t) { t.o_name; })
+		{
+			resource->o_name = SetName(id, resource->o_name);
+		}
+
+		return resource;
 	}
 
 	/**
