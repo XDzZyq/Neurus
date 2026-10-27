@@ -1,18 +1,28 @@
 #pragma once
 
+#include "core/Log.h"
+#include "editor/events/IEventQueue.h"
+
 #include <functional>
 #include <queue>
 #include <typeindex>
 #include <unordered_map>
 #include <vector>
 
-#include "editor/events/IEventQueue.h"
-
 namespace neurus {
 
 class EventQueue : public IEventQueue
 {
 public:
+	/**
+	 * @brief Hard limit on nested synchronous dispatch depth.
+	 *
+	 * A handler that synchronously re-emits an event type recurses instead of
+	 * reaching the deferred queue, so dispatch stops at this depth, logs once
+	 * and returns.
+	 */
+	static constexpr int kMaxDispatchDepth = 64;
+
 	EventQueue() = default;
 
 	// Non-copyable - moved via Application ownership
@@ -21,9 +31,19 @@ public:
 
 	/**
 	 * @brief Dispatches all enqueued events in FIFO order.
+	 * @note The drain starts from a clean depth so one runaway chain cannot
+	 *       poison later frames; a nested caller's depth is restored after.
 	 */
 	void Process(int maxEvents = 1000)
 	{
+		struct DepthReset
+		{
+			int& depth;
+			int saved;
+			explicit DepthReset(int& d) : depth(d), saved(d) { depth = 0; }
+			~DepthReset() { depth = saved; }
+		} reset(m_depth);
+
 		int count = 0;
 		while (!evt_eventQueue.empty() && count < maxEvents)
 		{
@@ -52,6 +72,20 @@ protected:
 
 	void dispatch(std::type_index type, const void* event) override
 	{
+		if (m_depth >= kMaxDispatchDepth)
+		{
+			NEURUS_ERR("[EventQueue] dispatch depth limit reached at " << type.name());
+			return;
+		}
+
+		// RAII so a throwing handler cannot leave the counter elevated.
+		struct DepthGuard
+		{
+			int& depth;
+			explicit DepthGuard(int& d) : depth(d) { ++depth; }
+			~DepthGuard() { --depth; }
+		} guard(m_depth);
+
 		auto it = evt_handlers.find(type);
 		if (it == evt_handlers.end()) return;
 
@@ -68,6 +102,9 @@ private:
 	> evt_handlers;
 
 	std::queue<std::function<void()> > evt_eventQueue;
+
+	// Current nested dispatch depth; guards against self-re-emitting handlers.
+	int m_depth = 0;
 };
 
 } // namespace neurus

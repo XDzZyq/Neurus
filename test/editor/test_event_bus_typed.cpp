@@ -10,6 +10,20 @@
 
 using namespace neurus;
 
+namespace {
+
+/** @brief Event whose handler re-emits itself, to exercise the depth guard. */
+struct LocalRunaway
+{
+};
+
+/** @brief Plain local event, used to check the depth counter is restored. */
+struct LocalPing
+{
+};
+
+} // namespace
+
 /**
  * @brief Tests for the typed EventQueue - no Qt, no GPU required.
  *
@@ -236,6 +250,32 @@ TEST_F(TypedEventQueueTest, Process_MaxEventsCapPreventsInfiniteLoop)
 	m_queue->enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
 
 	EXPECT_NO_THROW({ m_queue->Process(10); });
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch depth guard
+// ---------------------------------------------------------------------------
+
+TEST(EventBusTyped, RunawayEmitNowChainIsStoppedAndRecovers)
+{
+	EventQueue bus;
+	int calls = 0;
+	bus.subscribe<LocalRunaway>([&bus, &calls](const LocalRunaway& e) {
+		++calls;
+		bus.emitNow(e);
+	});
+
+	bus.emitNow(LocalRunaway{});
+
+	EXPECT_GT(calls, 0);
+	EXPECT_LT(calls, 200);
+
+	// The counter must be restored: a normal dispatch after the runaway chain
+	// still reaches its handler.
+	int seen = 0;
+	bus.subscribe<LocalPing>([&seen](const LocalPing&) { ++seen; });
+	bus.emitNow(LocalPing{});
+	EXPECT_EQ(seen, 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -445,6 +445,11 @@ Properties:
 - Deferred FIFO queue: `enqueue()` stores, `Process()` dispatches
 - Re-entrant safe: events emitted from handlers are appended to the queue
 - Max events cap (default 1000) prevents infinite loops
+- Synchronous dispatch depth is capped at `EventQueue::kMaxDispatchDepth` (64).
+  A handler that re-emits its own event type recurses instead of queueing, so
+  `dispatch()` logs once at the limit and returns without invoking handlers.
+  `Process()` drains from depth 0 and restores the previous depth afterwards,
+  so one runaway chain cannot poison later frames
 - Not thread-safe; all calls on the main thread
 
 ## Template-based event forwarding
