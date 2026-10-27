@@ -24,6 +24,8 @@ add_library(neurus_editor STATIC
 	controllers/CameraController.cpp
 	controllers/RenderConfigController.h
 	controllers/RenderConfigController.cpp
+	controllers/ScriptController.h
+	controllers/ScriptController.cpp
 	controllers/ShaderController.h
 	controllers/ShaderController.cpp
 	controllers/TransformGizmoController.h
@@ -41,6 +43,7 @@ add_library(neurus_editor STATIC
 	events/UIEvents.h
 	events/UIEvents.cpp
 	events/GizmoEvents.h
+	events/ScriptEvents.h
 )
 
 target_link_libraries(neurus_editor PUBLIC

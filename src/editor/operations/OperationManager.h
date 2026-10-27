@@ -7,6 +7,12 @@
  * the inverse. Replay is guarded by Phase::Replaying, so the Submit() the
  * re-run handler performs is suppressed rather than corrupting the stacks.
  *
+ * A third phase, Phase::Script, exists for script runs: opening the script scope
+ * makes Submit() buffer into m_scriptOps instead of the undo stack, so the whole
+ * run can be committed as one CompositeOp - one history entry - when the scope
+ * closes. Without it a single run would fragment into one step per property
+ * write, which is not what "run script" means to a user.
+ *
  * Needs no scene or resource access: operations are pure value descriptors that
  * dispatch events carrying integer UIDs, resolved by the handlers at replay
  * time. Implements IOperationSink so controllers record without knowing the
@@ -46,6 +52,8 @@ public:
 
 	// --- IOperationSink ---
 	void Submit(std::unique_ptr<Operation> op) override;
+	void BeginScriptScope() override;
+	void EndScriptScope() override;
 
 	// --- History control ---
 	/** @brief Undoes the most recent operation (no-op if none). */
@@ -62,7 +70,7 @@ public:
 	 */
 	HistoryView GetHistoryView() const;
 
-	/** @brief Clears both stacks (e.g. on New/Load scene). */
+	/** @brief Clears both stacks and any half-open script buffer. */
 	void Clear();
 
 	// --- Persistence hooks ---
@@ -82,8 +90,14 @@ public:
 	                    std::vector<std::unique_ptr<Operation>> redo);
 
 private:
-	/** @brief Replay phase - Submit() is suppressed while Replaying. */
-	enum class Phase { Idle, Replaying };
+	/**
+	 * @brief Recording phase.
+	 *
+	 * Idle records normally; Replaying suppresses Submit() because undo/redo
+	 * re-runs the originating handler; Script buffers Submit() into m_scriptOps
+	 * so one script run lands as a single history entry.
+	 */
+	enum class Phase { Idle, Replaying, Script };
 
 	/**
 	 * @brief Emits an operation synchronously under the replay guard.
@@ -101,6 +115,9 @@ private:
 
 	std::vector<std::unique_ptr<Operation>> m_undo;
 	std::vector<std::unique_ptr<Operation>> m_redo;
+
+	/// Ops recorded while a script scope is open; committed as one CompositeOp.
+	std::vector<std::unique_ptr<Operation>> m_scriptOps;
 
 	/// Maximum undo-stack depth; oldest entries evicted past this.
 	size_t m_maxUndoDepth = kDefaultMaxUndoDepth;

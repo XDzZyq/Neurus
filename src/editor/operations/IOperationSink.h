@@ -5,6 +5,9 @@
  * Controllers depend only on this narrow interface, never on the concrete
  * manager. Submit() is a no-op while replaying (undo/redo re-runs the same
  * handlers synchronously), so handlers stay ignorant of replay state.
+ *
+ * The script-scope pair lets one script run collapse its writes into a single
+ * history entry without any handler knowing a script is running.
  */
 
 #pragma once
@@ -29,6 +32,12 @@ public:
 	 * @note No-op during replay; recording clears the redo stack.
 	 */
 	virtual void Submit(std::unique_ptr<Operation> op) = 0;
+
+	/// @brief Opens the script scope: subsequent Submit() calls buffer into one step.
+	virtual void BeginScriptScope() = 0;
+
+	/// @brief Closes the script scope, committing the buffered operations as one step.
+	virtual void EndScriptScope() = 0;
 };
 
 } // namespace neurus

@@ -29,6 +29,16 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 	}
 	if (!op) return;
 
+	// A script run is one history entry: while the scope is open every op is
+	// buffered instead of pushed, so the run cannot fragment into N steps. Before
+	// the merge logic on purpose - coalescing is a per-entry concern and the
+	// buffer is committed as a single composite by EndScriptScope().
+	if (m_phase == Phase::Script)
+	{
+		m_scriptOps.push_back(std::move(op));
+		return;
+	}
+
 	// Coalesce a stream of same-key edits into the undo-stack top; the live state
 	// is already up to date, so merging only extends the recorded range.
 	const std::string key = op->MergeKey();
@@ -113,10 +123,57 @@ void OperationManager::Redo()
 void OperationManager::Clear()
 {
 	NEURUS_LOG("[OperationManager] Clear: dropping " << m_undo.size()
-	           << " undo + " << m_redo.size() << " redo entries");
+	           << " undo + " << m_redo.size() << " redo entries and "
+	           << m_scriptOps.size() << " buffered script op(s)");
 	m_undo.clear();
 	m_redo.clear();
+	m_scriptOps.clear();
 	++m_revision;
+}
+
+void OperationManager::BeginScriptScope()
+{
+	// Nesting has no meaning: only the outermost run boundary could own the
+	// commit, and a second Begin would silently discard the first run's buffer.
+	if (m_phase != Phase::Idle)
+	{
+		NEURUS_ERR("[OperationManager] BeginScriptScope ignored: a scope is already open (phase="
+		           << (m_phase == Phase::Script ? "Script" : "Replaying") << ")");
+		return;
+	}
+
+	m_scriptOps.clear();
+	m_phase = Phase::Script;
+	NEURUS_LOG("[OperationManager] BeginScriptScope: buffering edits into one undo step");
+}
+
+void OperationManager::EndScriptScope()
+{
+	if (m_phase != Phase::Script)
+	{
+		NEURUS_ERR("[OperationManager] EndScriptScope ignored: no script scope is open (phase="
+		           << (m_phase == Phase::Replaying ? "Replaying" : "Idle") << ")");
+		return;
+	}
+
+	// Restore Idle FIRST: the composite's Submit() below must take the normal
+	// recording path, not re-enter the buffering branch.
+	m_phase = Phase::Idle;
+
+	std::vector<std::unique_ptr<Operation>> buffered = std::move(m_scriptOps);
+	m_scriptOps.clear();
+
+	// A run that changed nothing (or only read) must not leave an empty entry on
+	// the undo stack - it would make Ctrl+Z appear to do nothing.
+	if (buffered.empty())
+	{
+		NEURUS_LOG("[OperationManager] EndScriptScope: the run recorded no edits");
+		return;
+	}
+
+	NEURUS_LOG("[OperationManager] EndScriptScope: committing " << buffered.size()
+	           << " buffered op(s) as one step");
+	Submit(std::make_unique<CompositeOp>(std::move(buffered)));
 }
 
 void OperationManager::RestoreHistory(std::vector<std::unique_ptr<Operation>> undo,

@@ -14,6 +14,7 @@
 #include "editor/controllers/MutationNotify.h"
 #include "editor/controllers/ObjectController.h"
 #include "editor/controllers/RenderConfigController.h"
+#include "editor/controllers/ScriptController.h"
 #include "editor/controllers/ShaderController.h"
 #include "editor/controllers/SceneController.h"
 #include "editor/controllers/TransformGizmoController.h"
@@ -211,7 +212,7 @@ void Editor::Initialize()
 
 
 	// --- Register controllers ---
-	// All six take only the ControllerContext, which carries the event dispatch,
+	// All seven take only the ControllerContext, which carries the event dispatch,
 	// the pooled-object lookup, the operation sink, the scene, the render config,
 	// the viewport and the gizmo state.
 	//
@@ -224,6 +225,9 @@ void Editor::Initialize()
 	RegisterController<SceneController>();
 	RegisterController<ObjectController>();
 	RegisterController<RenderConfigController>();
+	// Bounds a script run: the run-boundary events open and close the operation
+	// sink's script scope, so every write the run makes lands as one undo step.
+	RegisterController<ScriptController>();
 
 	// --- Keep the viewport's camera pointer alive across a deletion ---
 	// Registered after the controllers, because both subscribers to this event run

@@ -35,6 +35,13 @@
 
 using namespace neurus;
 
+namespace {
+
+/** @brief UID used by the script-scope tests; deliberately no pooled object. */
+constexpr int kScriptUid = 9001;
+
+} // anonymous namespace
+
 class OperationManagerTest : public ::testing::Test
 {
 protected:
@@ -562,6 +569,57 @@ TEST_F(OperationManagerTest, ExceptionDuringRedo_DoesNotPushToUndo)
 	// Redo must not throw, and the failed forward op must not be pushed to undo.
 	m_operations.Redo();
 	EXPECT_FALSE(m_operations.CanRedo());
+	EXPECT_FALSE(m_operations.CanUndo());
+}
+
+// --- Script scope: one run, one undo step -----------------------------------
+
+TEST_F(OperationManagerTest, ScriptScopeCompactsIntoOneEntry)
+{
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.Submit(
+		std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(2.0f, 0.0f, 0.0f)));
+	m_operations.Submit(
+		std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(3.0f, 0.0f, 0.0f)));
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetUndoStack().size(), 1u);
+	EXPECT_TRUE(m_operations.CanUndo());
+	EXPECT_FALSE(m_operations.CanRedo());
+
+	m_operations.Undo();
+	EXPECT_TRUE(m_operations.GetUndoStack().empty());
+}
+
+TEST_F(OperationManagerTest, EmptyScriptScopeCreatesNoEntry)
+{
+	m_operations.BeginScriptScope();
+	m_operations.EndScriptScope();
+	EXPECT_TRUE(m_operations.GetUndoStack().empty());
+}
+
+TEST_F(OperationManagerTest, ScriptScopeRecoversFromAFailedRun)
+{
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.EndScriptScope(); // a raising run still calls this
+
+	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
+	EXPECT_TRUE(m_operations.GetUndoStack().back() != nullptr);
+}
+
+TEST_F(OperationManagerTest, Clear_DropsAnOpenScriptBuffer)
+{
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+
+	// New/Load wipes the history mid-scope: the buffered op must go with it
+	// instead of surfacing as a step in the next document.
+	m_operations.Clear();
+	m_operations.EndScriptScope();
+
+	EXPECT_TRUE(m_operations.GetUndoStack().empty());
 	EXPECT_FALSE(m_operations.CanUndo());
 }
 
