@@ -487,7 +487,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                         app_editor->UpdateScriptContext(scriptCtx);
 	                         app_script->ExecutePending(scriptCtx);
 
-	                         // Process all enqueued events (camera, gizmo, ...).
+	                         // Drain the UI boundary's queued events (camera, gizmo, ...).
 	                         app_editor->Edit();
 
 	                         // The Editor fills both frame views; the Application

@@ -11,6 +11,7 @@
 #include "editor/events/SceneEvents.h"
 
 #include "editor/controllers/CameraController.h"
+#include "editor/controllers/MutationNotify.h"
 #include "editor/controllers/RenderConfigController.h"
 #include "editor/controllers/ShaderController.h"
 #include "editor/controllers/SceneController.h"
@@ -118,7 +119,7 @@ void GenerateIBL(UploadManager& uploader, DeferredRenderer& renderer,
 /**
  * @brief UID of the scene's active object, or 0 when nothing is selected.
  *
- * The intent events carry a uid rather than a pointer; 0 is legal to enqueue,
+ * The intent events carry a uid rather than a pointer; 0 is legal to emit,
  * and the controller drops an intent it cannot resolve.
  */
 int ActiveUid(const Scene& scene)
@@ -148,32 +149,32 @@ void Editor::Initialize()
 	// ready: see UploadSceneResources(), called from the scene load lifecycle.
 
 	ed_eventBus.subscribe<MeshImportEvent>([this](const MeshImportEvent& e) {
-		ed_eventBus.enqueue(RenderResetEvent{});
 		OnMeshImport(e.path);
+		neurus::notify::Repaint(ed_eventBus);
 	});
 	ed_eventBus.subscribe<CameraAddEvent>([this](const CameraAddEvent&) {
-		ed_eventBus.enqueue(RenderResetEvent{});
 		OnCameraAdd();
+		neurus::notify::Repaint(ed_eventBus);
 	});
 	ed_eventBus.subscribe<LightAddEvent>([this](const LightAddEvent&) {
-		ed_eventBus.enqueue(RenderResetEvent{});
 		OnLightAdd();
+		neurus::notify::Repaint(ed_eventBus);
 	});
 	ed_eventBus.subscribe<SunLightAddEvent>([this](const SunLightAddEvent&) {
-		ed_eventBus.enqueue(RenderResetEvent{});
 		OnSunLightAdd();
+		neurus::notify::Repaint(ed_eventBus);
 	});
 	ed_eventBus.subscribe<SpotLightAddEvent>([this](const SpotLightAddEvent&) {
-		ed_eventBus.enqueue(RenderResetEvent{});
 		OnSpotLightAdd();
+		neurus::notify::Repaint(ed_eventBus);
 	});
 
 	// Shader creation constructs a pooled RenderShader, so it is Editor-owned
 	// (like mesh/light/camera adds); ShaderController keeps only pool-free
 	// handlers.
 	ed_eventBus.subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
-		ed_eventBus.enqueue(RenderResetEvent{});
 		OnCreateShader(e);
+		neurus::notify::Repaint(ed_eventBus);
 	});
 
 	// Undo/redo of Create Shader: redo relinks the pooled RenderShader by UID;
@@ -189,13 +190,13 @@ void Editor::Initialize()
 			return;
 		}
 		mesh->SetObjShader(shader);
-		ed_eventBus.enqueue(RenderResetEvent{});
+		neurus::notify::Repaint(ed_eventBus);
 	});
 	ed_eventBus.subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
 		auto mesh = m_resources->Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(nullptr);
-		ed_eventBus.enqueue(RenderResetEvent{});
+		neurus::notify::Repaint(ed_eventBus);
 	});
 
 	// Undo/redo replay their inverse events synchronously (never queued), so
@@ -223,22 +224,22 @@ void Editor::Initialize()
 	RegisterController<RenderConfigController>();
 
 	// --- Keep the viewport's camera pointer alive across a deletion ---
-	// Registered after the controllers so it runs after SceneController's own
-	// handler has actually removed the object. Edit() syncs the camera once per
-	// frame, but Process() drains re-entrantly enqueued events in the same call,
-	// so deleting the activated camera mid-Process would otherwise leave the
-	// viewport holding a dangling pointer for the rest of that Edit().
+	// Registered after the controllers, because both subscribers to this event run
+	// inside ONE synchronous dispatch, in registration order: SceneController's
+	// handler removes the objects, then this one re-syncs the viewport. Without it,
+	// deleting the activated camera would leave the viewport holding a dangling
+	// pointer until the next Edit().
 	ed_eventBus.subscribe<SceneObjectDeleteRequested>([this](const SceneObjectDeleteRequested&) {
 		m_viewport.SyncCamera(GetScene());
 	});
 
 	// --- Subscribe to EnvironmentChanged to regenerate IBL cubemaps on demand ---
 	ed_eventBus.subscribe<EnvironmentChanged>([this](const EnvironmentChanged& e) {
-		ed_eventBus.enqueue(RenderResetEvent{});
 		auto it = GetScene().env_list.find(e.envId);
 		if (it != GetScene().env_list.end())
 		{
 			GenerateIBL(*ed_uploadManager, *ed_renderer, it->second);
+			neurus::notify::Repaint(ed_eventBus);
 		}
 		else
 		{
@@ -269,29 +270,29 @@ void Editor::Initialize()
 		if (e.middleHeld)
 		{
 			if (e.modifiers & Input::Mod_Ctrl)
-				ed_eventBus.enqueue(CameraPushEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
+				ed_eventBus.emitNow(CameraPushEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
 			else if (e.modifiers & Input::Mod_Shift)
-				ed_eventBus.enqueue(CameraSlideEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
+				ed_eventBus.emitNow(CameraSlideEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
 			else
-				ed_eventBus.enqueue(CameraRotateEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
+				ed_eventBus.emitNow(CameraRotateEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
 		}
 	});
 
 	// Middle-button press/release bound the orbit/pan/dolly drag gesture so it
 	// collapses to one undo entry. Left and right close a modal transform gesture
-	// instead - enqueued unconditionally and dropped by the controller when no
+	// instead - emitted unconditionally and dropped by the controller when no
 	// gesture is live.
 	ed_eventBus.subscribe<MousePressEvent>([this](const MousePressEvent& e) {
-		if (e.button == Input::Left)  { ed_eventBus.enqueue(GizmoConfirmed{}); return; }
-		if (e.button == Input::Right) { ed_eventBus.enqueue(GizmoCancelled{}); return; }
+		if (e.button == Input::Left)  { ed_eventBus.emitNow(GizmoConfirmed{}); return; }
+		if (e.button == Input::Right) { ed_eventBus.emitNow(GizmoCancelled{}); return; }
 		if (e.button != Input::Middle) return;
 		if (const Camera* cam = m_viewport.GetCamera())
-			ed_eventBus.enqueue(CameraDragBegin{cam->GetObjectID()});
+			ed_eventBus.emitNow(CameraDragBegin{cam->GetObjectID()});
 	});
 	ed_eventBus.subscribe<MouseReleaseEvent>([this](const MouseReleaseEvent& e) {
 		if (e.button != Input::Middle) return;
 		if (const Camera* cam = m_viewport.GetCamera())
-			ed_eventBus.enqueue(CameraDragEnd{cam->GetObjectID()});
+			ed_eventBus.emitNow(CameraDragEnd{cam->GetObjectID()});
 	});
 
 	ed_eventBus.subscribe<MouseScrollEvent>([this](const MouseScrollEvent& e) {
@@ -299,40 +300,40 @@ void Editor::Initialize()
 		if (!cam) return;
 
 		if (std::abs(e.delta) > 0.001f)
-			ed_eventBus.enqueue(CameraZoomEvent{cam->GetObjectID(), e.delta});
+			ed_eventBus.emitNow(CameraZoomEvent{cam->GetObjectID(), e.delta});
 	});
 
 	// --- Pure UI->Editor intents: wrap the active scene, forward dedicated events ---
 	ed_eventBus.subscribe<ObjectClicked>([this](const ObjectClicked& e) {
-		ed_eventBus.enqueue(ObjectSelected{ e.objectUid, e.modifiers });
+		ed_eventBus.emitNow(ObjectSelected{ e.objectUid, e.modifiers });
 	});
 	ed_eventBus.subscribe<DeleteRequested>([this](const DeleteRequested&) {
-		ed_eventBus.enqueue(ObjectDeleteRequested{});
+		ed_eventBus.emitNow(ObjectDeleteRequested{});
 	});
 
 	// --- Viewport keystrokes -> modal transform intents ---
-	// Every branch enqueues UNCONDITIONALLY: Process() is FIFO and drains
-	// re-entrantly enqueued events within the same call, so an IsActive() gate
-	// would silently eat an axis key that arrived in the same frame as its mode
-	// key. The controller is the single place that decides an intent is meaningless.
+	// Every branch emits UNCONDITIONALLY: an intent is a request, and the
+	// controller is the single place that decides it is meaningless. Dispatch is
+	// synchronous, so a mode key that arrived in the same frame has already been
+	// applied to the gesture before the axis key behind it is emitted.
 	ed_eventBus.subscribe<KeyPressEvent>([this](const KeyPressEvent& e) {
 		switch (e.key)
 		{
-		case Input::Key_G: ed_eventBus.enqueue(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Move});   break;
-		case Input::Key_R: ed_eventBus.enqueue(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Rotate}); break;
-		case Input::Key_S: ed_eventBus.enqueue(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Scale});  break;
+		case Input::Key_G: ed_eventBus.emitNow(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Move});   break;
+		case Input::Key_R: ed_eventBus.emitNow(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Rotate}); break;
+		case Input::Key_S: ed_eventBus.emitNow(GizmoModeRequested{ActiveUid(GetScene()), GizmoMode::Scale});  break;
 
-		case Input::Key_X: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::X}); break;
-		case Input::Key_Y: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::Y}); break;
-		case Input::Key_Z: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::Z}); break;
+		case Input::Key_X: ed_eventBus.emitNow(GizmoAxisRequested{GizmoAxis::X}); break;
+		case Input::Key_Y: ed_eventBus.emitNow(GizmoAxisRequested{GizmoAxis::Y}); break;
+		case Input::Key_Z: ed_eventBus.emitNow(GizmoAxisRequested{GizmoAxis::Z}); break;
 
 		// W is the fourth member of that set, not a separate feature: it names the
 		// screen as the constraint, which is exactly GizmoAxis::None - the view plane
 		// for Move, uniform for Scale, the view axis for Rotate.
-		case Input::Key_W: ed_eventBus.enqueue(GizmoAxisRequested{GizmoAxis::None}); break;
+		case Input::Key_W: ed_eventBus.emitNow(GizmoAxisRequested{GizmoAxis::None}); break;
 
-		case Input::Key_Return: ed_eventBus.enqueue(GizmoConfirmed{}); break;
-		case Input::Key_Escape: ed_eventBus.enqueue(GizmoCancelled{}); break;
+		case Input::Key_Return: ed_eventBus.emitNow(GizmoConfirmed{}); break;
+		case Input::Key_Escape: ed_eventBus.emitNow(GizmoCancelled{}); break;
 
 		default: break;
 		}
@@ -642,7 +643,7 @@ void Editor::OnMeshImport(const std::string& path)
 		auto meshData = m_resources->Load<MeshData>(storedPath);
 		auto mesh = m_resources->Load<Mesh>(meshData);
 
-		ed_eventBus.enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
+		ed_eventBus.emitNow(SceneObjectAddRequested{mesh->GetObjectID()});
 		NEURUS_LOG("[Editor] Imported mesh: " << storedPath);
 	}
 	catch (const std::exception& e) {
@@ -658,7 +659,7 @@ void Editor::OnCameraAdd()
 		// SetTarPos, not a raw cam_tar write: the view matrix is cached eagerly, so
 		// assigning the field would leave the cache looking at the old target.
 		camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-		ed_eventBus.enqueue(SceneObjectAddRequested{camera->GetObjectID()});
+		ed_eventBus.emitNow(SceneObjectAddRequested{camera->GetObjectID()});
 		NEURUS_LOG("[Editor] Added camera at (0, -5, 2)");
 	}
 	catch (const std::exception& e) {
@@ -676,7 +677,7 @@ void Editor::OnLightAdd()
 		// The shadow-map upload happens on demand when the add is processed; the
 		// light SSBO rebuild happens via LightingRebuild after the controller
 		// registers the light in the scene.
-		ed_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
+		ed_eventBus.emitNow(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added point light at (3, 3, 3)");
 	}
 	catch (const std::exception& e) {
@@ -694,7 +695,7 @@ void Editor::OnSunLightAdd()
 		light->use_shadow = true;
 		// The shadow-map upload happens on demand when the add is processed; the
 		// SSBO rebuild via LightingRebuild.
-		ed_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
+		ed_eventBus.emitNow(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added sun light at (0, 0, 10)");
 	}
 	catch (const std::exception& e) {
@@ -715,7 +716,7 @@ void Editor::OnSpotLightAdd()
 		light->use_shadow = true;
 		// The shadow-map upload happens on demand when the add is processed; the
 		// SSBO rebuild via LightingRebuild.
-		ed_eventBus.enqueue(SceneObjectAddRequested{light->GetObjectID()});
+		ed_eventBus.emitNow(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added spot light at (0, 0, 6) pointing down");
 	}
 	catch (const std::exception& e) {
@@ -927,7 +928,7 @@ void Editor::UploadLighting()
 }
 
 // =========================================================================
-// Edit() - process all enqueued events
+// Edit() - drain the UI boundary's deferred events
 // =========================================================================
 
 void Editor::Edit()

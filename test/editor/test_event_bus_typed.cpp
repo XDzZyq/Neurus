@@ -22,6 +22,11 @@ struct LocalPing
 {
 };
 
+/** @brief Reply event, used to observe synchronous vs. deferred dispatch order. */
+struct LocalPong
+{
+};
+
 } // namespace
 
 /**
@@ -276,6 +281,51 @@ TEST(EventBusTyped, RunawayEmitNowChainIsStoppedAndRecovers)
 	bus.subscribe<LocalPing>([&seen](const LocalPing&) { ++seen; });
 	bus.emitNow(LocalPing{});
 	EXPECT_EQ(seen, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Synchronous dispatch contract
+// ---------------------------------------------------------------------------
+
+TEST(EventBusTyped, ControllerFacingInterfaceCannotDefer)
+{
+	static_assert(!requires(IEventQueue& q, const LocalPing& e) { q.enqueue(e); },
+	              "IEventQueue must not expose enqueue: controllers emit synchronously");
+	SUCCEED();
+}
+
+TEST(EventBusTyped, HandlerEmittedEventsCompleteBeforeTheHandlerReturns)
+{
+	EventQueue bus;
+	std::vector<int> order;
+
+	bus.subscribe<LocalPing>([&](const LocalPing&) {
+		order.push_back(1);
+		bus.emitNow(LocalPong{});
+		order.push_back(2);
+	});
+	bus.subscribe<LocalPong>([&](const LocalPong&) { order.push_back(3); });
+
+	bus.emitNow(LocalPing{});
+	EXPECT_EQ(order, (std::vector<int>{ 1, 3, 2 }));
+}
+
+TEST(EventBusTyped, UiBoundaryEnqueueStaysDeferred)
+{
+	EventQueue bus;
+	std::vector<int> order;
+
+	bus.subscribe<LocalPing>([&](const LocalPing&) {
+		order.push_back(1);
+		bus.enqueue(LocalPong{});
+		order.push_back(2);
+	});
+	bus.subscribe<LocalPong>([&](const LocalPong&) { order.push_back(3); });
+
+	bus.enqueue(LocalPing{});
+	EXPECT_TRUE(order.empty());
+	bus.Process();
+	EXPECT_EQ(order, (std::vector<int>{ 1, 2, 3 }));
 }
 
 // ---------------------------------------------------------------------------

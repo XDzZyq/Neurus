@@ -148,8 +148,16 @@ public:
 
 	void Edit();
 
+	/**
+	 * @brief The single deferred entry point: the UI boundary.
+	 *
+	 * Everything inside the editor dispatches synchronously, so a script or a
+	 * controller observes its own mutation before the call returns. Only the
+	 * Qt-facing UI hands events over here, and Edit() drains them once per frame.
+	 */
 	template<typename Event>
-	void OnUIEvent(const Event& e){
+	void OnUIEvent(const Event& e)
+	{
 		ed_eventBus.enqueue<Event>(e);
 	}
 

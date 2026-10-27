@@ -613,7 +613,7 @@ void ShaderController::Init(ControllerContext& ctx)
 	ctx.events.subscribe<ShaderCompileRequested>(
 		[ctx](const ShaderCompileRequested& e) {
 			OnCompileShader(e, ctx);
-			ctx.events.enqueue(RenderResetEvent{});
+			ctx.events.emitNow(RenderResetEvent{});
 		});
 
 	// Code edits apply live; recording is bracketed by the ShaderEditBegin/End

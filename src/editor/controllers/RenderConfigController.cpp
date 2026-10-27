@@ -32,7 +32,7 @@ void RenderConfigController::Init(ControllerContext& ctx)
 
 		const RenderConfig before = *cfg;
 		*cfg = e.config;
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.emitNow(RenderResetEvent{});
 
 		// During a slider gesture the drag is recorded once on ConfigEditEnd;
 		// discrete edits (no gesture) record immediately. Skip no-op writes.

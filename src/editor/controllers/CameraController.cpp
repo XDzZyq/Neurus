@@ -3,7 +3,7 @@
  * @brief Event-driven camera navigation: orbit, dolly, pan and zoom handlers.
  *
  * All handlers are free functions over a resolved Camera; delta scaling is
- * external (the enqueuer normalizes before enqueuing events).
+ * external (the emitting handler normalizes each delta before emitting it).
  */
 
 #include "editor/controllers/CameraController.h"
@@ -280,15 +280,15 @@ void CameraController::Init(ControllerContext& ctx)
 	// --- Continuous drag moves: mutate live, DO NOT record (bounded above) ---
 	ctx.events.subscribe<CameraRotateEvent>([ctx](const CameraRotateEvent& e) {
 		OnCameraRotate(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.emitNow(RenderResetEvent{});
 	});
 	ctx.events.subscribe<CameraPushEvent>([ctx](const CameraPushEvent& e) {
 		OnCameraPush(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.emitNow(RenderResetEvent{});
 	});
 	ctx.events.subscribe<CameraSlideEvent>([ctx](const CameraSlideEvent& e) {
 		OnCameraSlide(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.emitNow(RenderResetEvent{});
 	});
 
 	// --- Scroll zoom: no press/release, record per-event and merge via MergeKey ---
@@ -299,13 +299,13 @@ void CameraController::Init(ControllerContext& ctx)
 		const glm::vec3 bt = cam->cam_tar;
 		OnCameraZoom(e, ctx);
 		RecordCameraPose<CameraZoomOp>(ctx.ops, *cam, bp, bt);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.emitNow(RenderResetEvent{});
 	});
 
 	// Resize is viewport-driven, not a user edit - not recorded.
 	ctx.events.subscribe<CameraResizeEvent>([ctx](const CameraResizeEvent& e) {
 		OnCameraResize(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.emitNow(RenderResetEvent{});
 	});
 }
 

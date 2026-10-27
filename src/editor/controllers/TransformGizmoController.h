@@ -4,7 +4,7 @@
  *
  * Stateless beyond what the state machine already holds: every handler resolves
  * the object uid against the current scene, calls exactly one TransformGizmo
- * method, and enqueues the notifications that mutation implies.
+ * method, and emits the notifications that mutation implies.
  *
  * The drag mutates the transform directly and submits nothing; confirm submits
  * one op for the whole gesture. Because the drag bypasses the scene-mutation

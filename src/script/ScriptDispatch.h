@@ -3,10 +3,11 @@
  * @brief The single gated funnel a script setter uses to request a mutation.
  *
  * A Python setter never writes a C++ property. It constructs the exact typed
- * editor event and hands it to `ScriptDispatch::Emit`, which either enqueues it
- * (write phase) or refuses (this read-only phase). Every writable property is
- * declared together with the event it will emit, so enabling writes later means
- * supplying an `IEventQueue` and nothing else changes (design section 4.4).
+ * editor event and hands it to `ScriptDispatch::Emit`, which either emits it
+ * synchronously (write phase) or refuses (this read-only phase). Every writable
+ * property is declared together with the event it will emit, so enabling writes
+ * later means supplying an `IEventQueue` and nothing else changes (design
+ * section 4.4).
  */
 
 #pragma once
@@ -28,7 +29,7 @@ struct ReadOnlyError : std::runtime_error
 class ScriptDispatch
 {
 public:
-	/// @brief Supplies the queue events are enqueued to (write phase only).
+	/// @brief Supplies the queue events are emitted to (write phase only).
 	/// @param queue Borrowed event queue, or nullptr for the read-only phase.
 	void SetEventQueue(IEventQueue* queue) { m_events = queue; }
 
@@ -48,7 +49,7 @@ public:
 		{
 			throw ReadOnlyError("Neurus scripting is read-only in this phase");
 		}
-		m_events->enqueue(event);
+		m_events->emitNow(event);
 	}
 
 private:

@@ -3,9 +3,10 @@
  * @brief Controller-facing interface for the typed event dispatcher.
  *
  * Controllers depend only on this narrow interface, never on the concrete queue:
- * subscribe handlers, enqueue for deferred dispatch (the frame-synchronization
- * boundary), and emitNow for synchronous replay. The queue-management surface
- * stays out of the interface so controllers cannot drive dispatch.
+ * subscribe handlers and emitNow for synchronous dispatch. Deferral is
+ * deliberately absent here - it exists only on the concrete EventQueue and only
+ * for the UI boundary - so anything a controller or a script emits has been
+ * applied before the emitting call returns.
  */
 
 #pragma once
@@ -38,26 +39,12 @@ public:
 	}
 
 	/**
-	 * @brief Enqueues an event for DEFERRED dispatch (frame-synchronization
-	 *        boundary). Enqueued events are drained by Process() at one point
-	 *        per frame, so all scene mutation happens at a predictable point.
-	 *        Use this for everything EXCEPT operation replay.
-	 */
-	template<typename TEvent>
-	void enqueue(const TEvent& event)
-	{
-		std::type_index ti(typeid(TEvent));
-		enqueueImpl([this, ti, ev = event]() {
-			dispatch(ti, &ev);
-		});
-	}
-
-	/**
-	 * @brief Dispatches an event SYNCHRONOUSLY, bypassing the deferred queue.
+	 * @brief Dispatches an event SYNCHRONOUSLY: every handler has run by return.
 	 *
-	 * Reserved for operation replay: the synthesized inverse event must apply
-	 * in-place so it cannot be reordered against the user's still-queued events.
-	 * Do NOT use this for real-time input.
+	 * The one way to emit through this interface. A handler's mutation is
+	 * therefore complete when the emitting call returns, which is what lets a
+	 * script observe its own write and a composite path observe the event it just
+	 * emitted. Deferral is not offered here; only the UI boundary queues.
 	 *
 	 * @note Named emitNow because Qt reserves `emit` as a keyword macro.
 	 */
@@ -70,9 +57,6 @@ public:
 protected:
 	/** @brief Registers a type-erased handler for a TEvent type. */
 	virtual void subscribeImpl(std::type_index type, std::function<void(const void*)> handler) = 0;
-
-	/** @brief Queues a deferred dispatch thunk. */
-	virtual void enqueueImpl(std::function<void()> thunk) = 0;
 
 	/** @brief Synchronously invokes every handler registered for @p type. */
 	virtual void dispatch(std::type_index type, const void* event) = 0;

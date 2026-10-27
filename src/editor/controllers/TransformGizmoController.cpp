@@ -3,12 +3,12 @@
  * @brief Event handlers for the modal G / R / S transform gesture.
  *
  * All handlers are free functions. Each resolves the gesture's object uid
- * against the *current* scene, calls one TransformGizmo method, and enqueues the
+ * against the *current* scene, calls one TransformGizmo method, and emits the
  * notifications that mutation implies - through neurus::notify, shared with the
  * scene mutation path so the two cannot drift. A live drag is a preview (no
  * dirty mark); a confirm is committed.
  *
- * Every handler enqueues a repaint, including the cancel path, because that is
+ * Every handler emits a repaint, including the cancel path, because that is
  * also what makes the guide geometry appear, follow the cursor and disappear.
  */
 

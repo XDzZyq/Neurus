@@ -233,7 +233,7 @@ void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::Contr
  * Gesture and replay path both. The op is recorded only when the value actually
  * changes. Activating a UID that is not scene content is refused, which keeps the
  * viewport camera unactivatable. The newly activated camera needs the viewport's
- * extent, so a resize event is enqueued for it.
+ * extent, so a resize event is emitted for it.
  */
 void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::ControllerContext& ctx)
 {
@@ -258,7 +258,7 @@ void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::C
 			const glm::uvec2 size = vp->Size();
 			if (size.x != 0 && size.y != 0)
 			{
-				ctx.events.enqueue(neurus::CameraResizeEvent{
+				ctx.events.emitNow(neurus::CameraResizeEvent{
 					after, static_cast<int>(size.x), static_cast<int>(size.y)});
 			}
 		}
@@ -362,7 +362,7 @@ void OnLightShadowChanged(const neurus::LightShadowChanged& e, const neurus::Con
 	// Enabling shadow requires the LightGPU (shadow depth maps) to exist; it
 	// was never uploaded if the light was shadowless at load/add time.
 	if (e.enabled)
-		ctx.events.enqueue(neurus::SceneObjectGpuUploadRequested{e.objectUid});
+		ctx.events.emitNow(neurus::SceneObjectGpuUploadRequested{e.objectUid});
 }
 
 void OnLightCutoffChanged(const neurus::LightCutoffChanged& e, const neurus::ControllerContext& ctx)
@@ -668,7 +668,7 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
 	    || objType == neurus::ObjectID::GOType::GO_POLYLIGHT
 	    || objType == neurus::ObjectID::GOType::GO_ENVIR)
 	{
-		ctx.events.enqueue(neurus::SceneObjectGpuUploadRequested{e.objectUid});
+		ctx.events.emitNow(neurus::SceneObjectGpuUploadRequested{e.objectUid});
 	}
 
 	// Select the added object (set, non-incremental).
@@ -690,8 +690,8 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
  * @brief FORWARD-ONLY entry: deselect all, delete every selected object, record ONE composite op.
  *
  * This is the user-intent entry point and is never replayed; the recorded
- * composite replays through the batched removal handler. The actual removals are
- * deferred as ONE batched request, so the removal logic lives in exactly one
+ * composite replays through the batched removal handler. The actual removals go
+ * through ONE batched request, so the removal logic lives in exactly one
  * handler, shared by the gesture and by undo/redo replay.
  */
 void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
@@ -708,7 +708,11 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
 	// its own camera, which is not scene content and cannot be deleted here.
 	scene->selections.ClearSelection();
 
-	ctx.events.enqueue(neurus::SceneObjectDeleteRequested{before.selectedUids});
+	// Emitted before the composite submit, and safe there: the removal runs
+	// synchronously inside this emit, while SceneObjectAddOp below stores only a
+	// UID list and a direction, so the later Submit reads no scene state the
+	// removal could have invalidated.
+	ctx.events.emitNow(neurus::SceneObjectDeleteRequested{before.selectedUids});
 
 	std::vector<std::unique_ptr<neurus::Operation>> seq;
 	seq.push_back(std::make_unique<neurus::SetSelectionOp>(before, neurus::SelectionState{}));

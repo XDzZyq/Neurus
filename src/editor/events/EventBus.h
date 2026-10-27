@@ -59,15 +59,25 @@ public:
 	 */
 	size_t PendingCount() const { return evt_eventQueue.size(); }
 
+	/**
+	 * @brief Queues an event for deferred dispatch at the next Process().
+	 *
+	 * Only the UI boundary uses this: Editor::OnUIEvent. Everything inside the
+	 * editor emits synchronously, so a mutation is visible to its caller.
+	 */
+	template<typename TEvent>
+	void enqueue(const TEvent& event)
+	{
+		std::type_index ti(typeid(TEvent));
+		enqueueImpl([this, ti, ev = event]() {
+			dispatch(ti, &ev);
+		});
+	}
+
 protected:
 	void subscribeImpl(std::type_index type, std::function<void(const void*)> handler) override
 	{
 		evt_handlers[type].push_back(std::move(handler));
-	}
-
-	void enqueueImpl(std::function<void()> thunk) override
-	{
-		evt_eventQueue.push(std::move(thunk));
 	}
 
 	void dispatch(std::type_index type, const void* event) override
@@ -96,6 +106,17 @@ protected:
 	}
 
 private:
+	/**
+	 * @brief Pushes a deferred dispatch thunk; the only writer of the queue.
+	 *
+	 * Not virtual: deferral is a property of this concrete queue, not of the
+	 * controller-facing interface.
+	 */
+	void enqueueImpl(std::function<void()> thunk)
+	{
+		evt_eventQueue.push(std::move(thunk));
+	}
+
 	std::unordered_map<
 		std::type_index,
 		std::vector<std::function<void(const void*)> >
