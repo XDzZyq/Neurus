@@ -195,7 +195,7 @@ void RegisterSceneCollection(py::module_& scene, const char* name, bool resolves
  * functions to lambdas that construct one with the run's view, so neither value
  * can be captured and stale.
  */
-struct ContextView
+struct ContextProxy
 {
 	const ScriptView* view = nullptr;  ///< Constructing run's view.
 
@@ -280,9 +280,9 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 	scene.attr("meshes") = py::cast(SceneCollection<MeshProxy, Mesh>{view, &Scene::mesh_list});
 	scene.attr("environments") = py::cast(SceneCollection<EnvironmentProxy, Environment>{view, &Scene::env_list});
 
-	scene.def("active_camera", [view]() -> py::object { return ContextView{view}.ActiveCamera(); },
+	scene.def("active_camera", [view]() -> py::object { return ContextProxy{view}.ActiveCamera(); },
 	          "The scene's active camera as a Camera proxy, or None when none is active.");
-	scene.def("selection", [view]() { return ContextView{view}.Selection(); },
+	scene.def("selection", [view]() { return ContextProxy{view}.Selection(); },
 	          "The scene's selected objects as a list of Object proxies.");
 }
 

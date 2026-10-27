@@ -51,7 +51,7 @@ void EmitConfig(const ProxyBase& self, Mutator&& mutate)
 }
 
 /// @brief `neurus.render.config`: a live render settings proxy for one run.
-struct ConfigView : ProxyBase
+struct ConfigProxy : ProxyBase
 {
 };
 
@@ -60,61 +60,61 @@ struct ConfigView : ProxyBase
 /// @brief Registers the `RenderConfig` proxy class (once) on the `render` module.
 void RegisterConfigBindings(py::module_& render)
 {
-	py::class_<ConfigView>(render, "RenderConfig", "Render settings; getters are None outside a run.")
+	py::class_<ConfigProxy>(render, "RenderConfig", "Render settings; getters are None outside a run.")
 		.def_property("pipeline",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_pipeline); }); },
-			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_pipeline = static_cast<RenderPipeLine>(v); }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_pipeline); }); },
+			[](const ConfigProxy& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_pipeline = static_cast<RenderPipeLine>(v); }); })
 		.def_property("aa",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_aa); }); },
-			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_aa = static_cast<AAAlg>(v); }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_aa); }); },
+			[](const ConfigProxy& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_aa = static_cast<AAAlg>(v); }); })
 		.def_property("ao",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_ao); }); },
-			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ao = static_cast<AOAlg>(v); }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_ao); }); },
+			[](const ConfigProxy& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ao = static_cast<AOAlg>(v); }); })
 		.def_property("shadow",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_shadow); }); },
-			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_shadow = static_cast<ShadowAlg>(v); }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_shadow); }); },
+			[](const ConfigProxy& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_shadow = static_cast<ShadowAlg>(v); }); })
 		.def_property("ssr",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_ssr); }); },
-			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ssr = static_cast<SSRAlg>(v); }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return static_cast<int>(c.r_ssr); }); },
+			[](const ConfigProxy& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ssr = static_cast<SSRAlg>(v); }); })
 		.def_property("gamma",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_gamma; }); },
-			[](const ConfigView& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_gamma = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_gamma; }); },
+			[](const ConfigProxy& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_gamma = v; }); })
 		.def_property("shadow_bias",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_shadow_bias; }); },
-			[](const ConfigView& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_shadow_bias = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_shadow_bias; }); },
+			[](const ConfigProxy& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_shadow_bias = v; }); })
 		.def_property("ao_ksize",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_ao_ksize; }); },
-			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ao_ksize = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_ao_ksize; }); },
+			[](const ConfigProxy& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ao_ksize = v; }); })
 		.def_property("ao_radius",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_ao_radius; }); },
-			[](const ConfigView& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ao_radius = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_ao_radius; }); },
+			[](const ConfigProxy& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_ao_radius = v; }); })
 		.def_property("sampling_mode",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_sampling_mode; }); },
-			[](const ConfigView& s, unsigned v) { EmitConfig(s, [v](RenderConfig& c) { c.r_sampling_mode = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_sampling_mode; }); },
+			[](const ConfigProxy& s, unsigned v) { EmitConfig(s, [v](RenderConfig& c) { c.r_sampling_mode = v; }); })
 		.def_property("sample_pf",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_sample_pf; }); },
-			[](const ConfigView& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_sample_pf = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_sample_pf; }); },
+			[](const ConfigProxy& s, int v) { EmitConfig(s, [v](RenderConfig& c) { c.r_sample_pf = v; }); })
 		.def_property("transparent",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_transparent; }); },
-			[](const ConfigView& s, bool v) { EmitConfig(s, [v](RenderConfig& c) { c.r_transparent = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_transparent; }); },
+			[](const ConfigProxy& s, bool v) { EmitConfig(s, [v](RenderConfig& c) { c.r_transparent = v; }); })
 		.def_property("debug_draw",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_debug_draw; }); },
-			[](const ConfigView& s, bool v) { EmitConfig(s, [v](RenderConfig& c) { c.r_debug_draw = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_debug_draw; }); },
+			[](const ConfigProxy& s, bool v) { EmitConfig(s, [v](RenderConfig& c) { c.r_debug_draw = v; }); })
 		.def_property("fxaa_subpix",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_fxaa_subpix; }); },
-			[](const ConfigView& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_fxaa_subpix = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_fxaa_subpix; }); },
+			[](const ConfigProxy& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_fxaa_subpix = v; }); })
 		.def_property("fxaa_edge_threshold",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_fxaa_edge_threshold; }); },
-			[](const ConfigView& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_fxaa_edge_threshold = v; }); })
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_fxaa_edge_threshold; }); },
+			[](const ConfigProxy& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_fxaa_edge_threshold = v; }); })
 		.def_property("fxaa_edge_threshold_min",
-			[](const ConfigView& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_fxaa_edge_threshold_min; }); },
-			[](const ConfigView& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_fxaa_edge_threshold_min = v; }); });
+			[](const ConfigProxy& s) { return WithConfig(s, [](const RenderConfig& c) { return c.r_fxaa_edge_threshold_min; }); },
+			[](const ConfigProxy& s, float v) { EmitConfig(s, [v](RenderConfig& c) { c.r_fxaa_edge_threshold_min = v; }); });
 }
 
 /// @brief Installs the live config proxy as `neurus.render.config`.
 void InstallConfigProxies(py::module_& render, const ScriptView* view)
 {
-	render.attr("config") = py::cast(ConfigView{{0, view}});
+	render.attr("config") = py::cast(ConfigProxy{{0, view}});
 }
 
 }  // namespace script
