@@ -183,9 +183,11 @@ void OperationManager::EndScriptScope()
 		return;
 	}
 
+	// The run records as one labelled step: ScriptRunOp is a CompositeOp that
+	// reports "Script Run" instead of the first edit's label.
 	NEURUS_LOG("[OperationManager] EndScriptScope: committing " << buffered.size()
 	           << " buffered op(s) as one step");
-	Submit(std::make_unique<CompositeOp>(std::move(buffered)));
+	Submit(std::make_unique<ScriptRunOp>(std::move(buffered)));
 }
 
 void OperationManager::RestoreHistory(std::vector<std::unique_ptr<Operation>> undo,

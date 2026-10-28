@@ -341,6 +341,48 @@ TEST_F(OperationSerializationTest, HistoryComponent_SaveLoad_BothStacks)
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, 35.0f);
 }
 
+/**
+ * @test A script run is saved and reloaded as a ScriptRunOp: the restored entry
+ *       still reports "Script Run" rather than its first edit's label, and its
+ *       inverse keeps the label on the redo stack.
+ */
+TEST_F(OperationSerializationTest, ScriptRunOp_SurvivesHistorySaveLoad)
+{
+	m_operations.BeginScriptScope();
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
+	Process();
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Script Run");
+
+	// Save through the Serializable adapter.
+	std::stringstream ss;
+	{
+		cereal::JSONOutputArchive out(ss);
+		project::HistoryComponent saveComp(m_operations);
+		saveComp.Save(out);
+	}
+
+	// Load into a completely fresh manager bound to the SAME event queue.
+	OperationManager fresh{ m_eventBus };
+	{
+		cereal::JSONInputArchive in(ss);
+		project::HistoryComponent loadComp(fresh);
+		loadComp.Load(in);
+	}
+
+	const HistoryView after = fresh.GetHistoryView();
+	ASSERT_EQ(after.undo.size(), 1u);
+	EXPECT_EQ(after.undo.back(), "Script Run");
+
+	// The concrete type survived, so Undo() puts another labelled run on redo.
+	ASSERT_NE(dynamic_cast<ScriptRunOp*>(fresh.GetUndoStack().back().get()), nullptr);
+	fresh.Undo();
+	ASSERT_EQ(fresh.GetHistoryView().redo.size(), 1u);
+	EXPECT_EQ(fresh.GetHistoryView().redo.front(), "Script Run");
+}
+
 TEST_F(OperationSerializationTest, HistoryComponent_Load_MissingNode_ClearsHistory)
 {
 	// A project file without an "m_history" node (older format) must not throw

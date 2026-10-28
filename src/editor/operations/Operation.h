@@ -183,11 +183,7 @@ public:
 
 	std::unique_ptr<Operation> Inverse() const override
 	{
-		std::vector<std::unique_ptr<Operation>> inv;
-		inv.reserve(m_ops.size());
-		for (auto it = m_ops.rbegin(); it != m_ops.rend(); ++it)
-			inv.push_back((*it)->Inverse());
-		return std::make_unique<CompositeOp>(std::move(inv));
+		return std::make_unique<CompositeOp>(InvertedSequence());
 	}
 
 	std::string Label() const override
@@ -206,8 +202,63 @@ public:
 		ar(CEREAL_NVP(m_ops));
 	}
 
+protected:
+	/**
+	 * @brief Reversed, individually-inverted copy of the sequence.
+	 *
+	 * The shared inversion step for every composite: a plain CompositeOp hands it
+	 * back as another CompositeOp, while a ScriptRunOp hands it to another
+	 * ScriptRunOp, so each type keeps its own label across undo and redo.
+	 */
+	std::vector<std::unique_ptr<Operation>> InvertedSequence() const
+	{
+		std::vector<std::unique_ptr<Operation>> inv;
+		inv.reserve(m_ops.size());
+		for (auto it = m_ops.rbegin(); it != m_ops.rend(); ++it)
+			inv.push_back((*it)->Inverse());
+		return inv;
+	}
+
 private:
 	std::vector<std::unique_ptr<Operation>> m_ops; ///< Forward-order primitive sequence.
 };
+
+/**
+ * @brief One script run's edits, labelled as a single "Script Run" entry.
+ *
+ * Same replay semantics as CompositeOp: Apply() runs the edits in forward order
+ * and Inverse() returns the reversed, individually-inverted sequence. The distinct
+ * type carries the distinct label, so the History panel names the run instead of
+ * its first child (for example "Move"). Registered with cereal, so the label
+ * survives a project save and reload.
+ */
+class ScriptRunOp : public CompositeOp
+{
+public:
+	ScriptRunOp() = default;
+	explicit ScriptRunOp(std::vector<std::unique_ptr<Operation>> ops);
+
+	std::unique_ptr<Operation> Inverse() const override;
+	std::string Label() const override { return "Script Run"; }
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		CompositeOp::serialize(ar);
+	}
+};
+
+/// @brief Constructs a script run from its forward-order edits.
+inline ScriptRunOp::ScriptRunOp(std::vector<std::unique_ptr<Operation>> ops)
+	: CompositeOp(std::move(ops))
+{}
+
+/**
+ * @brief Inverts as another ScriptRunOp, so the redo entry keeps the label.
+ */
+inline std::unique_ptr<Operation> ScriptRunOp::Inverse() const
+{
+	return std::make_unique<ScriptRunOp>(InvertedSequence());
+}
 
 } // namespace neurus

@@ -53,7 +53,7 @@ exit path; `ScriptController` forwards both to `BeginScriptScope()` and
   `EndScriptScope` commits two runs as a single undo step.
 - `EndScriptScope` restores `Idle` first, so the composite's own `Submit` takes the
   normal recording path instead of re-entering the buffer. It then wraps the
-  buffered operations in one `CompositeOp` and submits it, which clears the redo
+  buffered operations in one `ScriptRunOp` and submits it, which clears the redo
   stack and honours the undo-depth cap like any other entry.
 - An empty run records nothing, so a run that only reads cannot leave an entry
   that makes `Ctrl+Z` appear to do nothing.
@@ -66,7 +66,10 @@ The buffered operations are not replayed from the buffer: the committed
 `CompositeOp` is an ordinary history entry, so undo and redo replay it like any
 other composite. One pre-existing `CompositeOp` property becomes more visible as
 script composites grow: if replaying a child throws, `Replay` drops the whole
-entry while the document is already partially rewound. See also the write path in
+entry while the document is already partially rewound. A run is recorded as a
+`ScriptRunOp` - a `CompositeOp` subclass labelled "Script Run" and registered with
+cereal, so the label is the same in the undo list, the redo list and after a
+save/reload. See also the write path in
 [Scripting](../script/overview.md#one-undo-step-per-run).
 
 ## Operation model

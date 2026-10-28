@@ -632,6 +632,43 @@ TEST_F(OperationManagerTest, ScriptScopeDoesNotMergeWithThePreviousEntry)
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, original);
 }
 
+/**
+ * @test A script run names itself in the History panel: "Script Run" on the undo
+ *       list, and again on the redo list after Undo - never the first child's
+ *       label.
+ */
+TEST_F(OperationManagerTest, ScriptRun_IsLabelledInUndoAndRedo)
+{
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Script Run");
+
+	m_operations.Undo();
+	ASSERT_EQ(m_operations.GetHistoryView().redo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().redo.front(), "Script Run");
+}
+
+/**
+ * @test A composite that is not a script run still reports its first child's
+ *       label, so existing History text (an add or delete step) does not change.
+ */
+TEST_F(OperationManagerTest, Composite_KeepsTheFirstChildLabel)
+{
+	std::vector<std::unique_ptr<Operation>> edits;
+	edits.push_back(std::make_unique<SetPositionOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	edits.push_back(std::make_unique<SetRotationOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 45.0f)));
+	m_operations.Submit(std::make_unique<CompositeOp>(std::move(edits)));
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Move");
+}
+
 TEST_F(OperationManagerTest, EmptyScriptScopeCreatesNoEntry)
 {
 	m_operations.BeginScriptScope();
