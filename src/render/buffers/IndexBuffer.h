@@ -6,6 +6,8 @@
 
 namespace neurus {
 
+class SharedQueue;
+
 /**
  * @brief Device-local index buffer with staging-backed upload.
  *
@@ -24,7 +26,8 @@ public:
 	 *
 	 * @param device           Borrowed logical device (outlives this buffer).
 	 * @param physicalDevice   Borrowed physical device for memory queries.
-	 * @param queue            Borrowed graphics queue for staging submits.
+	 * @param queue            Borrowed graphics queue for staging submits;
+	 *                         the upload waits its own submit.
 	 * @param queueFamilyIndex Queue family index for temp command pool creation.
 	 * @param data             Pointer to host index data (uint32_t array).
 	 * @param size             Total byte size of index data (indexCount * sizeof(uint32_t)).
@@ -33,7 +36,7 @@ public:
 	 */
 	IndexBuffer(const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice,
-	            vk::Queue queue,
+	            SharedQueue& queue,
 	            uint32_t queueFamilyIndex,
 	            const uint32_t* data,
 	            vk::DeviceSize size,

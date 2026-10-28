@@ -71,7 +71,7 @@ protected:
 		// --- Attachment manager (G-Buffer + HDR color + depth) - attachments created lazily ---
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 		// --- Upload manager for CPU→GPU struct conversion ---
 
@@ -119,7 +119,7 @@ protected:
 		Scene testScene;
 		testScene.UseMesh(mesh);
 
-		VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, testScene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, testScene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		testScene.UseCamera(testCam);
@@ -256,7 +256,7 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 
 	// --- Step 4: Read back HDR output ---
 	std::vector<float> hdrPixels = VulkanTestShared::ReadbackHdrOutput(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily,
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily,
 		*m_renderCache, kRenderWidth, kRenderHeight);
 
 	// --- Step 5: Verify at least one pixel has non-zero colour ---
@@ -334,7 +334,7 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 
 	// --- Read back ---
 	std::vector<float> hdrPixels = VulkanTestShared::ReadbackHdrOutput(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily,
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily,
 		*m_renderCache, kRenderWidth, kRenderHeight);
 
 	// --- Verify: the GPU didn't crash, no VUID errors, HDR data is valid ---

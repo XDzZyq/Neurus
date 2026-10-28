@@ -17,6 +17,7 @@
 
 #include "asset/data/MeshData.h"
 #include "render/DeferredRenderer.h"
+#include "render/SharedQueue.h"
 #include "scene/Camera.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"
@@ -172,7 +173,8 @@ protected:
 
 			vk::DeviceCreateInfo devCI({}, qCI, {}, devExts, &features, &descriptorIndexing);
 			m_device = std::make_unique<vk::raii::Device>(pd, devCI);
-			m_queue = m_device->getQueue(m_graphicsQueueFamily, 0);
+			m_queue = std::make_unique<neurus::SharedQueue>(
+				*m_device, m_device->getQueue(m_graphicsQueueFamily, 0), m_graphicsQueueFamily);
 
 			// --- Native window + surface ---
 #ifdef _WIN32
@@ -236,7 +238,7 @@ protected:
 		m_renderer = std::make_unique<DeferredRenderer>(
 			*m_device,
 			m_physicalDevices[m_selectedPdIndex],
-			m_queue,
+			*m_queue,
 			m_graphicsQueueFamily,
 			*m_surface,
 			width, height);

@@ -21,6 +21,7 @@ class Environment;       // scene/Environment.h
 class Light;             // scene/Light.h
 class Scene;             // scene/Scene.h
 class Shader;             // render/shaders/Shader.h
+class SharedQueue;        // render/SharedQueue.h
 class BufferLayout;      // render/buffers/BufferLayout.h
 class RenderCache;       // render/RenderCache.h
 struct MeshGPU;          // render/resources/MeshGPU.h
@@ -38,8 +39,9 @@ enum LightType : int;    // scene/Light.h
 	 *
 	 * @param device               Logical device.
 	 * @param physicalDevice       Physical device (for buffer memory queries).
-	 * @param transferQueue        Upload queue for staging copies and IBL dispatches;
-	 *                             its family must support transfer and compute.
+	 * @param transferQueue        Upload queue for staging copies and IBL dispatches,
+	 *                             shared with every other submitter; its family must
+	 *                             support transfer and compute.
 	 * @param transferQueueFamily  Family index of @p transferQueue.
 	 */
 	class UploadManager
@@ -47,7 +49,7 @@ enum LightType : int;    // scene/Light.h
 	public:
 		UploadManager(const vk::raii::Device& device,
 		              const vk::raii::PhysicalDevice& physicalDevice,
-		              vk::Queue transferQueue,
+		              SharedQueue& transferQueue,
 		              uint32_t transferQueueFamily);
 	~UploadManager();
 
@@ -134,9 +136,6 @@ enum LightType : int;    // scene/Light.h
 	static std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>
 	UploadLighting(const Light& light);
 
-	/** @brief Wait for all pending upload operations to complete. */
-	void WaitIdle();
-
 	/**
 	 * @brief Creates a LightingCache (light SSBO storage) using the transfer queue.
 	 *
@@ -152,7 +151,7 @@ private:
 	const vk::raii::Device* um_device = nullptr;
 	const vk::raii::PhysicalDevice* um_physicalDevice = nullptr;
 	vk::raii::CommandPool um_commandPool{ nullptr };
-	vk::Queue um_transferQueue = nullptr;
+	SharedQueue* um_transferQueue = nullptr;
 	uint32_t um_transferQueueFamily = 0;
 
 	/** @brief Internal IBL pass for environment map generation on upload. */

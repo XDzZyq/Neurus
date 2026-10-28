@@ -12,7 +12,7 @@ namespace neurus {
 
 IndexBuffer::IndexBuffer(const vk::raii::Device& device,
                          const vk::raii::PhysicalDevice& physicalDevice,
-                         vk::Queue queue,
+                         SharedQueue& queue,
                          uint32_t queueFamilyIndex,
                          const uint32_t* data,
                          vk::DeviceSize size,

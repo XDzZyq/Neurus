@@ -162,13 +162,32 @@ void VulkanContext::InitDevice()
 	ctx_device = std::make_unique<vk::raii::Device>(pd, devCI);
 
 	// Get transfer queue handle immediately (does not need present check)
-	ctx_transferQueue = ctx_device->getQueue(ctx_transferQueueFamily, 0);
+	ctx_transferQueueOwned = std::make_unique<SharedQueue>(
+		*ctx_device, ctx_device->getQueue(ctx_transferQueueFamily, 0),
+		ctx_transferQueueFamily);
+	ctx_transferQueue = ctx_transferQueueOwned.get();
 }
 
 void VulkanContext::InitQueue(const vk::raii::SurfaceKHR& surface)
 {
 	ctx_graphicsQueueFamily = findGraphicsQueueFamilyWithPresent(surface);
-	ctx_graphicsQueue = ctx_device->getQueue(ctx_graphicsQueueFamily, 0);
+	const vk::Queue graphicsHandle = ctx_device->getQueue(ctx_graphicsQueueFamily, 0);
+
+	// One wrapper per distinct handle: a single-family device (MoltenVK, a
+	// desktop-baseline profile) returns the same VkQueue for both families, and
+	// a second wrapper would guard that queue with a second mutex - which is the
+	// same as no mutex at all. Aliasing keeps one lock for both roles.
+	if (graphicsHandle == ctx_transferQueue->Handle())
+	{
+		ctx_graphicsQueue = ctx_transferQueue;
+		NEURUS_LOG("[VulkanContext] graphics and transfer share one VkQueue (one lock)");
+		return;
+	}
+
+	ctx_graphicsQueueOwned = std::make_unique<SharedQueue>(
+		*ctx_device, graphicsHandle, ctx_graphicsQueueFamily);
+	ctx_graphicsQueue = ctx_graphicsQueueOwned.get();
+	NEURUS_LOG("[VulkanContext] graphics and transfer use separate VkQueues (two locks)");
 }
 
 VulkanContext::~VulkanContext() {}

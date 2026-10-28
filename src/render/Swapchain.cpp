@@ -1,5 +1,6 @@
 #include "Swapchain.h"
 
+#include "SharedQueue.h"
 #include "core/Log.h"
 
 #include <algorithm>
@@ -9,11 +10,13 @@ namespace neurus {
 
 Swapchain::Swapchain(const vk::raii::PhysicalDevice& physicalDevice,
                      const vk::raii::Device& device,
+                     SharedQueue& presentQueue,
                      const vk::raii::SurfaceKHR& surface,
                      uint32_t width, uint32_t height)
 	: r_physicalDevice(physicalDevice)
 	, r_device(device)
 	, r_surface(surface)
+	, r_presentQueue(&presentQueue)
 {
 	r_recreateWidth = width;
 	r_recreateHeight = height;
@@ -113,7 +116,7 @@ void Swapchain::Recreate(uint32_t width, uint32_t height)
 	// while the frame just presented is still in flight: the old swapchain may
 	// only go once every queue operation on its images has completed, and
 	// MoltenVK's present-completion handler still dereferences it until then.
-	r_device.waitIdle();
+	r_presentQueue->WaitIdle();
 	r_imageViews.clear();
 	r_swapchain.reset();
 
@@ -196,7 +199,7 @@ uint32_t Swapchain::AcquireNextImage(const vk::raii::Semaphore& signalSemaphore)
 	}
 }
 
-void Swapchain::Present(const vk::raii::Semaphore& waitSemaphore, uint32_t imageIndex, vk::Queue presentQueue)
+void Swapchain::Present(const vk::raii::Semaphore& waitSemaphore, uint32_t imageIndex)
 {
 	try
 	{
@@ -206,7 +209,7 @@ void Swapchain::Present(const vk::raii::Semaphore& waitSemaphore, uint32_t image
 			imageIndex
 		);
 
-		auto result = presentQueue.presentKHR(presentInfo);
+		auto result = r_presentQueue->Present(presentInfo);
 
 		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
 		{

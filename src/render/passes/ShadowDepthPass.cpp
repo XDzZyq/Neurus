@@ -79,12 +79,12 @@ DescriptorSetLayout ShadowDepthPass::CreateSSBOLayout(const vk::raii::Device& de
 
 ShadowDepthPass::ShadowDepthPass(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
-                                    vk::Queue graphicsQueue,
+                                    SharedQueue& graphicsQueue,
                                     uint32_t queueFamilyIndex,
                                     uint32_t resolution)
 	: Pass()
 	, p_resolution(resolution)
-	, p_queue(graphicsQueue)
+	, p_queue(&graphicsQueue)
 	, p_queueFamilyIndex(queueFamilyIndex)
 	// --- Self-load shaders via ShaderLibrary ---
 	, p_multiviewShader(
@@ -119,7 +119,7 @@ ShadowDepthPass::ShadowDepthPass(const vk::raii::Device& device,
 
 void ShadowDepthPass::createSSBOResources(const vk::raii::Device& device,
                                            const vk::raii::PhysicalDevice& physicalDevice,
-                                           vk::Queue queue, uint32_t qfi)
+                                           SharedQueue& queue, uint32_t qfi)
 {
 	// --- Compute static face VP matrices once ---
 	const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f,

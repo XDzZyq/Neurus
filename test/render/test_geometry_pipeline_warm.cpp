@@ -58,7 +58,7 @@ protected:
 			auto& pd = PhysicalDevice();
 			m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 			m_renderCache->SetLightingCache(std::make_unique<LightingCache>(
-				*m_device, pd, m_queue, m_graphicsQueueFamily));
+				*m_device, pd, *m_queue, m_graphicsQueueFamily));
 			m_geometryPass = std::make_unique<GeometryPass>(*m_device, pd);
 		}
 		catch (const std::exception& e)
@@ -113,7 +113,7 @@ protected:
 	PassStats RecordFrame(Scene& scene)
 	{
 		VulkanTestShared::EnsureMeshesUploaded(
-			*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+			*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 		VulkanTestShared::TransitionGbufferToColorAttachment(
 			*m_renderCache, {kWidth, kHeight}, *this);
 

@@ -138,7 +138,7 @@ TEST_F(FXAATest, StairPattern_MatchesAnalyticalGradient)
 	EndSubmitWait(c);
 
 	auto& out = m_cache->GetAttachment(AttachmentName::FXAAOutput, e);
-	auto id = out.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	auto id = out.ReadImageData(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 	const auto* hd = reinterpret_cast<const uint16_t*>(id->GetPixelData().data());
 
 	float sumSqErr = 0.0f, maxErr = 0.0f;

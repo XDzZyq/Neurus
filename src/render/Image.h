@@ -14,6 +14,9 @@ namespace neurus {
 // Forward declaration for friend access
 class Barrier;
 
+// Forward declaration for queue parameters
+class SharedQueue;
+
 /**
  * @brief High-level image state used by Barrier for layout transitions.
  *
@@ -104,7 +107,7 @@ public:
 	 *
 	 * @param device          Logical device.
 	 * @param physicalDevice  Physical device for memory allocation.
-	 * @param queue           Queue for staging upload.
+	 * @param queue           Queue for staging upload; the call waits its own submit.
 	 * @param queueFamilyIndex Queue family index for transient command pools.
 	 * @param imageData       CPU-side image data (must be valid).
 	 * @param debugName       Optional debug name for the image.
@@ -114,7 +117,7 @@ public:
 	 */
 	static Image FromImageData(const vk::raii::Device& device,
 	                           const vk::raii::PhysicalDevice& physicalDevice,
-	                           vk::Queue queue,
+	                           SharedQueue& queue,
 	                           uint32_t queueFamilyIndex,
 	                           const ImageData& imageData,
 	                           const char* debugName = "Image",
@@ -166,7 +169,7 @@ public:
 	 *
 	 * @param device            Logical device.
 	 * @param physicalDevice    Physical device for memory allocation.
-	 * @param queue             Queue for staging upload.
+	 * @param queue             Queue for the readback; the call waits its own submit.
 	 * @param queueFamilyIndex  Queue family index for transient command pools.
 	 * @param subresourceRange  Subresource range to read.  nullptr means
 	 *                          mip level 0, layer 0 only (single layer).
@@ -180,7 +183,7 @@ public:
 	 */
 	std::shared_ptr<ImageData> ReadImageData(const vk::raii::Device& device,
 	                                         const vk::raii::PhysicalDevice& physicalDevice,
-	                                         vk::Queue queue,
+	                                         SharedQueue& queue,
 	                                         uint32_t queueFamilyIndex,
 	                                         const vk::ImageSubresourceRange* subresourceRange = nullptr,
 	                                         vk::Extent2D readExtent = {});
@@ -200,7 +203,7 @@ public:
 	 *
 	 * @param device            Logical device.
 	 * @param physicalDevice    Physical device for memory allocation.
-	 * @param queue             Queue for staging upload.
+	 * @param queue             Queue for the readback; the call waits its own submit.
 	 * @param queueFamilyIndex  Queue family index for transient command pools.
 	 * @param x                 Pixel x-coordinate (0 = left edge).
 	 * @param y                 Pixel y-coordinate (0 = top edge, Vulkan convention).
@@ -212,7 +215,7 @@ public:
 	 */
 	std::vector<uint8_t> PickPixel(const vk::raii::Device& device,
 	                               const vk::raii::PhysicalDevice& physicalDevice,
-	                               vk::Queue queue,
+	                               SharedQueue& queue,
 	                               uint32_t queueFamilyIndex,
 	                               uint32_t x,
 	                               uint32_t y,
@@ -320,7 +323,7 @@ private:
 	 */
 	void UploadImageData(const vk::raii::Device& device,
 	                     const vk::raii::PhysicalDevice& physicalDevice,
-	                     vk::Queue queue,
+	                     SharedQueue& queue,
 	                     uint32_t queueFamilyIndex,
 	                     const ImageData& imageData);
 

@@ -165,7 +165,7 @@ protected:
 	                 AttachmentName color = AttachmentName::ComposedOutput)
 	{
 		auto& colorAtt = m_cache->GetAttachment(color, Extent());
-		auto data = colorAtt.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		auto data = colorAtt.ReadImageData(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 		const auto* h = reinterpret_cast<const uint16_t*>(data->GetPixelData().data());
 
 		if (u8Out) u8Out->resize(static_cast<size_t>(kRes) * kRes * 4);
@@ -213,7 +213,7 @@ protected:
 	std::vector<float> ReadLuma()
 	{
 		auto& color = m_cache->GetAttachment(AttachmentName::ComposedOutput, Extent());
-		auto data = color.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		auto data = color.ReadImageData(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 		const auto* h = reinterpret_cast<const uint16_t*>(data->GetPixelData().data());
 
 		std::vector<float> luma(static_cast<size_t>(kRes) * kRes);
@@ -641,7 +641,7 @@ TEST_F(DebugPassTest, WireMesh_DrawsEdgesDepthTestedAndXRay)
 	ASSERT_TRUE(meshData->LoadObjFromString(kQuadObj)) << "Quad OBJ failed to parse";
 
 	{
-		UploadManager upload(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		UploadManager upload(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 		MeshGPU gpu = upload.UploadMeshData(*meshData);
 		ASSERT_TRUE(gpu.vertexBuffer && gpu.indexBuffer) << "UploadMeshData produced no buffers";
 		m_cache->UseMeshGPU(kWireObjectId, std::move(gpu));

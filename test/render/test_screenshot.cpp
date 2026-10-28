@@ -120,13 +120,13 @@ TEST_F(ScreenshotTest, CaptureAttachment_RGBA8_WritesPngFile)
 		redPixels[i * 4 + 3] = 255;  // A
 	}
 	ImageData imgData(redPixels.data(), extent.width, extent.height, PixelFormat::RGBA8U);
-	Image image = Image::FromImageData(*m_device, pd, m_queue, m_graphicsQueueFamily, imgData);
+	Image image = Image::FromImageData(*m_device, pd, *m_queue, m_graphicsQueueFamily, imgData);
 	ASSERT_NE(image.State(), ImageState::Invalid);
 
 	// --- Capture to PNG ---
 	m_testOutputPath = "screenshots/test_rgba8.png";
 	bool result = Screenshot::CaptureAttachment(*m_device, pd,
-	                                             m_queue, m_graphicsQueueFamily,
+	                                             *m_queue, m_graphicsQueueFamily,
 	                                             image, m_testOutputPath);
 	EXPECT_TRUE(result);
 
@@ -174,13 +174,13 @@ TEST_F(ScreenshotTest, CaptureAttachment_RGBA16F_WritesPngFile)
 		halfData[i * 4 + 3] = h1_0;
 	}
 	ImageData imgData(halfData.data(), extent.width, extent.height, PixelFormat::RGBA16F);
-	Image image = Image::FromImageData(*m_device, pd, m_queue, m_graphicsQueueFamily, imgData);
+	Image image = Image::FromImageData(*m_device, pd, *m_queue, m_graphicsQueueFamily, imgData);
 	ASSERT_NE(image.State(), ImageState::Invalid);
 
 	// --- Capture to PNG ---
 	m_testOutputPath = "screenshots/test_rgba16f.png";
 	bool result = Screenshot::CaptureAttachment(*m_device, pd,
-	                                             m_queue, m_graphicsQueueFamily,
+	                                             *m_queue, m_graphicsQueueFamily,
 	                                             image, m_testOutputPath);
 	EXPECT_TRUE(result);
 
@@ -207,7 +207,7 @@ TEST_F(ScreenshotTest, CaptureAttachment_AutoCreatesDirectory)
 	const size_t pixelCount = static_cast<size_t>(extent.width) * extent.height;
 	std::vector<uint8_t> pixels(pixelCount * 4, 128);
 	ImageData imgData(pixels.data(), extent.width, extent.height, PixelFormat::RGBA8U);
-	Image image = Image::FromImageData(*m_device, pd, m_queue, m_graphicsQueueFamily, imgData);
+	Image image = Image::FromImageData(*m_device, pd, *m_queue, m_graphicsQueueFamily, imgData);
 	ASSERT_NE(image.State(), ImageState::Invalid);
 
 	// --- Use a nested directory that doesn't exist ---
@@ -221,7 +221,7 @@ TEST_F(ScreenshotTest, CaptureAttachment_AutoCreatesDirectory)
 
 	m_testOutputPath = nestedPath;
 	bool result = Screenshot::CaptureAttachment(*m_device, pd,
-	                                             m_queue, m_graphicsQueueFamily,
+	                                             *m_queue, m_graphicsQueueFamily,
 	                                             image, nestedPath);
 	EXPECT_TRUE(result);
 	EXPECT_TRUE(std::filesystem::exists(nestedPath));
@@ -261,7 +261,7 @@ TEST_F(ScreenshotTest, ExportShadowDepth_RestoresDepthMapState)
 	ASSERT_NE(depthMap, nullptr);
 	ASSERT_EQ(depthMap->State(), ImageState::DepthShaderRead);
 
-	Screenshot screenshot(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	Screenshot screenshot(*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	m_testOutputPath = screenshot.ExportShadowDepth(cache, kLightUID,
 	                                                "screenshots/test_sun_shadow");
 
@@ -296,7 +296,7 @@ TEST_F(ScreenshotTest, ExportShadowDepth_UnwrittenMapReturnsEmpty)
 	ASSERT_NE(depthMap, nullptr);
 	ASSERT_EQ(depthMap->State(), ImageState::Undefined);
 
-	Screenshot screenshot(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	Screenshot screenshot(*m_device, pd, *m_queue, m_graphicsQueueFamily);
 
 	// A map that was never rendered has nothing to export, and reading it would
 	// have to restore it to UNDEFINED - an invalid newLayout.

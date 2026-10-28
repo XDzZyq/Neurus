@@ -132,7 +132,7 @@ TEST_F(BufferGpuTest, VertexBuffer_CreateAndUpload_StoresCorrectMetadata)
 
 	VertexBuffer vbo(*m_device,
 	                 PhysicalDevice(),
-	                 m_queue,
+	                 *m_queue,
 	                 m_graphicsQueueFamily,
 	                 vertexData.data(),
 	                 kSize,
@@ -163,7 +163,7 @@ TEST_F(BufferGpuTest, IndexBuffer_CreateAndUpload_StoresCorrectMetadata)
 
 	IndexBuffer ibo(*m_device,
 	                PhysicalDevice(),
-	                m_queue,
+	                *m_queue,
 	                m_graphicsQueueFamily,
 	                indexData.data(),
 	                kSize,
@@ -206,7 +206,7 @@ TEST_F(BufferGpuTest, VertexAndIndexBuffer_TypicalMesh)
 
 	VertexBuffer vbo(*m_device,
 	                 PhysicalDevice(),
-	                 m_queue,
+	                 *m_queue,
 	                 m_graphicsQueueFamily,
 	                 vertexData.data(),
 	                 vertexDataSize,
@@ -215,7 +215,7 @@ TEST_F(BufferGpuTest, VertexAndIndexBuffer_TypicalMesh)
 
 	IndexBuffer ibo(*m_device,
 	                PhysicalDevice(),
-	                m_queue,
+	                *m_queue,
 	                m_graphicsQueueFamily,
 	                indexData.data(),
 	                indexDataSize,

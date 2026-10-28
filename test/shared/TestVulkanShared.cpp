@@ -7,6 +7,7 @@
 
 #include "render/Image.h"
 #include "render/Barrier.h"
+#include "render/SharedQueue.h"
 #include "render/shaders/ShaderLibrary.h"
 
 #include <iostream>
@@ -120,7 +121,8 @@ void VulkanTestShared::SetUp()
 
 		vk::DeviceCreateInfo devCI({}, qCI, {}, {}, &features, &descriptorIndexing);
 		m_device = std::make_unique<vk::raii::Device>(pd, devCI);
-		m_queue = m_device->getQueue(m_graphicsQueueFamily, 0);
+		m_queue = std::make_unique<neurus::SharedQueue>(
+			*m_device, m_device->getQueue(m_graphicsQueueFamily, 0), m_graphicsQueueFamily);
 
 		// --- Command pool ---
 		vk::CommandPoolCreateInfo poolCI(
@@ -135,7 +137,7 @@ void VulkanTestShared::SetUp()
 
 		// --- Reusable upload manager for tests (graphics + transfer share the same queue) ---
 		m_uploadManager = std::make_unique<UploadManager>(
-			*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+			*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 		m_hasVulkan = true;
 	}
@@ -181,8 +183,9 @@ void VulkanTestShared::EndSubmitWait(vk::raii::CommandBuffer& cmd)
 {
 	cmd.end();
 	vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmd));
-	m_queue.submit(submitInfo, nullptr);
-	m_device->waitIdle();
+	// SubmitAndWait blocks until this submission finished, so the caller can
+	// read its result straight away - no separate device drain needed.
+	m_queue->SubmitAndWait(submitInfo);
 }
 
 // ===========================================================================
@@ -302,7 +305,7 @@ std::pair<std::vector<TestVertex>, std::vector<uint32_t>> VulkanTestShared::Test
 std::vector<float> VulkanTestShared::ReadbackHdrOutput(
 	const vk::raii::Device& device,
 	const vk::raii::PhysicalDevice& pd,
-	vk::Queue queue,
+	neurus::SharedQueue& queue,
 	uint32_t qfi,
 	RenderCache& am,
 	uint32_t renderWidth,

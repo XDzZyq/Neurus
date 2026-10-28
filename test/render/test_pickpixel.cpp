@@ -164,7 +164,7 @@ TEST_F(PickPixelTest, ReadbackAtOrigin)
 	auto image = CreateCheckerboard4x4();
 
 	auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-	                             m_queue, m_graphicsQueueFamily, 0, 0);
+	                             *m_queue, m_graphicsQueueFamily, 0, 0);
 
 	ASSERT_EQ(bytes.size(), 4u) << "RGBA8 = 4 bytes per pixel";
 	const auto expected = CheckerboardPixel(0, 0);
@@ -184,7 +184,7 @@ TEST_F(PickPixelTest, ReadbackAtBottomRight)
 	auto image = CreateCheckerboard4x4();
 
 	auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-	                             m_queue, m_graphicsQueueFamily, 3, 3);
+	                             *m_queue, m_graphicsQueueFamily, 3, 3);
 
 	ASSERT_EQ(bytes.size(), 4u);
 	const auto expected = CheckerboardPixel(3, 3);
@@ -208,7 +208,7 @@ TEST_F(PickPixelTest, ReadbackAllPixels)
 		for (uint32_t x = 0; x < 4; ++x)
 		{
 			auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-			                             m_queue, m_graphicsQueueFamily, x, y);
+			                             *m_queue, m_graphicsQueueFamily, x, y);
 			ASSERT_EQ(bytes.size(), 4u)
 				<< "Pixel (" << x << ", " << y << ") should be 4 bytes";
 			const auto expected = CheckerboardPixel(x, y);
@@ -240,21 +240,21 @@ TEST_F(PickPixelTest, OutOfBoundsReturnsEmpty)
 	// x out of bounds
 	{
 		auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-		                             m_queue, m_graphicsQueueFamily, 4, 0);
+		                             *m_queue, m_graphicsQueueFamily, 4, 0);
 		EXPECT_TRUE(bytes.empty()) << "x=4 out of bounds for 4-wide image";
 	}
 
 	// y out of bounds
 	{
 		auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-		                             m_queue, m_graphicsQueueFamily, 0, 4);
+		                             *m_queue, m_graphicsQueueFamily, 0, 4);
 		EXPECT_TRUE(bytes.empty()) << "y=4 out of bounds for 4-tall image";
 	}
 
 	// Both out of bounds
 	{
 		auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-		                             m_queue, m_graphicsQueueFamily, 99, 99);
+		                             *m_queue, m_graphicsQueueFamily, 99, 99);
 		EXPECT_TRUE(bytes.empty()) << "both coordinates out of bounds";
 	}
 }
@@ -277,7 +277,7 @@ TEST_F(PickPixelTest, RepeatedReadbackSamePixel)
 	for (int i = 0; i < 3; ++i)
 	{
 		auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-		                             m_queue, m_graphicsQueueFamily, 1, 2);
+		                             *m_queue, m_graphicsQueueFamily, 1, 2);
 		ASSERT_EQ(bytes.size(), 4u) << "iteration " << i;
 		EXPECT_EQ(bytes[0], expected[0]) << "R, iteration " << i;
 		EXPECT_EQ(bytes[1], expected[1]) << "G, iteration " << i;
@@ -308,7 +308,7 @@ TEST_F(PickPixelTest, NeverWrittenImageReturnsEmpty)
 	ASSERT_EQ(image.State(), ImageState::Undefined);
 
 	auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-	                             m_queue, m_graphicsQueueFamily, 0, 0);
+	                             *m_queue, m_graphicsQueueFamily, 0, 0);
 
 	// There is no pixel of an image that was never written. The pick must record
 	// no GPU work at all: restoring the image to its "original" state would name
@@ -334,7 +334,7 @@ TEST_F(PickPixelTest, ReadbackPreservesTrackedState)
 	ASSERT_EQ(image.State(), ImageState::ColorShaderRead);
 
 	auto bytes = image.PickPixel(*m_device, PhysicalDevice(),
-	                             m_queue, m_graphicsQueueFamily, 1, 2);
+	                             *m_queue, m_graphicsQueueFamily, 1, 2);
 	ASSERT_EQ(bytes.size(), 4u);
 
 	EXPECT_EQ(image.State(), ImageState::ColorShaderRead)
@@ -344,7 +344,7 @@ TEST_F(PickPixelTest, ReadbackPreservesTrackedState)
 	// next transition is recorded against a layout the image is not in. Read
 	// again: same pixel, and still no state change.
 	auto again = image.PickPixel(*m_device, PhysicalDevice(),
-	                             m_queue, m_graphicsQueueFamily, 1, 2);
+	                             *m_queue, m_graphicsQueueFamily, 1, 2);
 	ASSERT_EQ(again.size(), 4u);
 	EXPECT_EQ(again, bytes) << "a restored image still holds its contents";
 	EXPECT_EQ(image.State(), ImageState::ColorShaderRead);
@@ -419,7 +419,7 @@ TEST_F(PickPixelTest, ReadbackRGBA32F)
 
 	// Read back pixel (1, 1) — should be R=1.0, G=1.0, B=2.0, A=1.0
 	auto bytes = image.PickPixel(*m_device, pd,
-	                             m_queue, m_graphicsQueueFamily, 1, 1);
+	                             *m_queue, m_graphicsQueueFamily, 1, 1);
 
 	// RGBA32F = 16 bytes per pixel
 	ASSERT_EQ(bytes.size(), 16u);

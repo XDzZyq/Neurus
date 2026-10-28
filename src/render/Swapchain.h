@@ -7,6 +7,8 @@
 
 namespace neurus {
 
+class SharedQueue;
+
 /**
  * @brief Manages the Vulkan swapchain and its image views.
  *
@@ -20,12 +22,15 @@ public:
 	 * @brief Creates a swapchain for the given surface and device.
 	 * @param physicalDevice Used for querying surface capabilities.
 	 * @param device Logical device that owns the swapchain.
+	 * @param presentQueue Queue that presents to @p surface (borrowed, must
+	 *                     outlive the swapchain); also drained before a rebuild.
 	 * @param surface Target surface for presentation.
 	 * @param width Desired swapchain width (clamped to surface capabilities).
 	 * @param height Desired swapchain height (clamped to surface capabilities).
 	 */
 	Swapchain(const vk::raii::PhysicalDevice& physicalDevice,
 	          const vk::raii::Device& device,
+	          SharedQueue& presentQueue,
 	          const vk::raii::SurfaceKHR& surface,
 	          uint32_t width,
 	          uint32_t height);
@@ -62,9 +67,8 @@ public:
 	 * @brief Presents the rendered image to the surface.
 	 * @param waitSemaphore Semaphore to wait on before presentation.
 	 * @param imageIndex Index of the image to present (from AcquireNextImage).
-	 * @param presentQueue The queue to use for presentation (must be present-capable).
 	 */
-	void Present(const vk::raii::Semaphore& waitSemaphore, uint32_t imageIndex, vk::Queue presentQueue);
+	void Present(const vk::raii::Semaphore& waitSemaphore, uint32_t imageIndex);
 
 	/** @brief Current swapchain extent (width × height). */
 	vk::Extent2D extent() const { return r_extent; }
@@ -119,6 +123,7 @@ private:
 	const vk::raii::PhysicalDevice& r_physicalDevice;
 	const vk::raii::Device& r_device;
 	const vk::raii::SurfaceKHR& r_surface;
+	SharedQueue* r_presentQueue = nullptr;
 
 	std::unique_ptr<vk::raii::SwapchainKHR> r_swapchain;
 	std::vector<vk::raii::ImageView> r_imageViews;

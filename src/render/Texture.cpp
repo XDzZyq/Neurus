@@ -2,6 +2,7 @@
 #include "buffers/StagingBuffer.h"
 #include "asset/data/ImageData.h"
 #include "render/Barrier.h"
+#include "render/SharedQueue.h"
 
 #include "core/Log.h"
 
@@ -83,7 +84,7 @@ static vk::raii::Sampler createSampler(const vk::raii::Device& device,
 
 Texture Texture::FromFile(const vk::raii::Device& device,
                           const vk::raii::PhysicalDevice& physicalDevice,
-                          vk::Queue queue,
+                          SharedQueue& queue,
                           const uint32_t queueFamilyIndex,
                           const char* path,
                           const vk::Format format,
@@ -144,7 +145,7 @@ Texture Texture::FromFile(const vk::raii::Device& device,
 
 Texture Texture::FromData(const vk::raii::Device& device,
                           const vk::raii::PhysicalDevice& physicalDevice,
-                          vk::Queue queue,
+                          SharedQueue& queue,
                           const uint32_t queueFamilyIndex,
                           const uint32_t width,
                           const uint32_t height,
@@ -229,7 +230,7 @@ Texture Texture::FromImage(std::unique_ptr<Image> image, vk::raii::Sampler sampl
 
 Texture Texture::createFromPixelData(const vk::raii::Device& device,
                                      const vk::raii::PhysicalDevice& physicalDevice,
-                                     const vk::Queue queue,
+                                     SharedQueue& queue,
                                      const uint32_t queueFamilyIndex,
                                      const uint32_t width,
                                      const uint32_t height,
@@ -297,7 +298,7 @@ uint32_t Texture::computeMipLevels(const uint32_t width, const uint32_t height)
 bool Texture::SaveImage(Image& image,
                          const vk::raii::Device& device,
                          const vk::raii::PhysicalDevice& physicalDevice,
-                         vk::Queue queue,
+                         SharedQueue& queue,
                          uint32_t queueFamilyIndex,
                          const std::string& path,
                          bool remapSigned)
@@ -319,8 +320,7 @@ bool Texture::SaveImage(Image& image,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	// --- 2. Read back ---
@@ -344,8 +344,7 @@ bool Texture::SaveImage(Image& image,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	// --- 4. Save pixel data ---
@@ -358,7 +357,7 @@ bool Texture::SaveImage(Image& image,
 
 bool Texture::SaveTexture(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
-                           vk::Queue queue,
+                           SharedQueue& queue,
                            uint32_t queueFamilyIndex,
                            Texture& texture,
                            const std::string& path,
@@ -378,7 +377,7 @@ std::unordered_map<std::string, Texture::TextureRes> Texture::s_cache;
 Texture::TextureRes Texture::LoadTexture(
 	const vk::raii::Device& device,
 	const vk::raii::PhysicalDevice& physicalDevice,
-	vk::Queue queue,
+	SharedQueue& queue,
 	uint32_t queueFamilyIndex,
 	const char* path,
 	vk::Format format,

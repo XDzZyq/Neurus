@@ -72,6 +72,7 @@ class Shader;
 class UploadManager;
 class RenderRequestExecutor;
 class Screenshot;
+class SharedQueue;
 
 /**
  * @brief Deferred renderer orchestrating GeometryPass → LightingPass → composite.
@@ -84,7 +85,8 @@ public:
 	 *
 	 * @param device           Logical device (borrowed, must outlive this object).
 	 * @param physicalDevice   Physical device (borrowed).
-	 * @param graphicsQueue    Graphics queue for submits and staging uploads.
+	 * @param graphicsQueue    Serialised graphics queue (borrowed, must outlive
+	 *                         this object) for submits, presents and readbacks.
 	 * @param queueFamilyIndex Queue family for command pool creation.
 	 * @param surface          Presentation surface (borrowed, must outlive swapchain).
 	 * @param width            Initial window width.
@@ -92,7 +94,7 @@ public:
 	 */
 	DeferredRenderer(const vk::raii::Device& device,
 	                 const vk::raii::PhysicalDevice& physicalDevice,
-	                 vk::Queue graphicsQueue,
+	                 SharedQueue& graphicsQueue,
 	                 uint32_t queueFamilyIndex,
 	                 const vk::raii::SurfaceKHR& surface,
 	                 uint32_t width,
@@ -155,7 +157,7 @@ public:
 	void WaitIdle() override;
 
 	/** @brief Returns the graphics queue. */
-	vk::Queue GetGraphicsQueue() const { return r_graphicsQueue; }
+	SharedQueue& GetGraphicsQueue() const { return *r_graphicsQueue; }
 
 	/** @brief Returns the graphics queue family index. */
 	uint32_t GetGraphicsQueueFamily() const { return r_queueFamilyIndex; }
@@ -187,9 +189,10 @@ public:
 	/**
 	 * @brief Reads a single pixel from the IDBuffer attachment and returns the object ID.
 	 *
-	 * Drains the GPU (queue.waitIdle) before the readback to ensure the
-	 * IDBuffer from the most recent frame is available. The readback restores
-	 * the image to the state it entered in, within the same submission.
+	 * Drains the GPU before the readback - the readback is a blocking submit
+	 * through the shared queue - to ensure the IDBuffer from the most recent
+	 * frame is available. The readback restores the image to the state it
+	 * entered in, within the same submission.
 	 *
 	 * @param x Pixel x-coordinate (0 = left edge).
 	 * @param y Pixel y-coordinate (0 = top edge, Vulkan convention).
@@ -260,7 +263,7 @@ public:
 	 *
 	 * Owns a Screenshot built in the constructor from the same device, physical
 	 * device, queue and family the renderer draws with; the Screenshot's own
-	 * capture methods do the GPU sync (queue waitIdle) internally.
+	 * capture methods do the GPU sync (a blocking submit per readback) internally.
 	 *
 	 * @param allAttachments  False: the swapchain image. True: every attachment.
 	 */
@@ -305,7 +308,7 @@ private:
 	// --- Borrowed objects ---
 	const vk::raii::Device& r_device;
 	const vk::raii::PhysicalDevice& r_physicalDevice;
-	vk::Queue r_graphicsQueue;
+	SharedQueue* r_graphicsQueue = nullptr;
 	uint32_t r_queueFamilyIndex;
 
 	// --- Swapchain ---

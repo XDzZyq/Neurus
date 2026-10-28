@@ -6,6 +6,8 @@
 
 namespace neurus {
 
+class SharedQueue;
+
 /**
  * @brief Device-local vertex buffer with staging-backed upload.
  *
@@ -24,7 +26,8 @@ public:
 	 *
 	 * @param device           Borrowed logical device (outlives this buffer).
 	 * @param physicalDevice   Borrowed physical device for memory queries.
-	 * @param queue            Borrowed graphics queue for staging submits.
+	 * @param queue            Borrowed graphics queue for staging submits;
+	 *                         the upload waits its own submit.
 	 * @param queueFamilyIndex Queue family index for temp command pool creation.
 	 * @param data             Pointer to host vertex data (raw bytes).
 	 * @param size             Total byte size of vertex data (vertexCount * stride).
@@ -34,7 +37,7 @@ public:
 	 */
 	VertexBuffer(const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice,
-	             vk::Queue queue,
+	             SharedQueue& queue,
 	             uint32_t queueFamilyIndex,
 	             const void* data,
 	             vk::DeviceSize size,

@@ -126,7 +126,8 @@ TEST_F(SharedQueueTest, SubmitAndWait_WorkIsCompleteOnReturn)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	SharedQueue queue(*m_device, m_queue, m_graphicsQueueFamily);
+	// The fixture's wrapper is the queue under test: one interlock, as in production.
+	auto& queue = *m_queue;
 	CPUBuffer slot(*m_device, PhysicalDevice(), kSlotBytes,
 	               vk::BufferUsageFlagBits::eTransferDst, "SharedQueueTest_Slot");
 
@@ -150,7 +151,8 @@ TEST_F(SharedQueueTest, Submit_SignalsGivenFence)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	SharedQueue queue(*m_device, m_queue, m_graphicsQueueFamily);
+	// The fixture's wrapper is the queue under test: one interlock, as in production.
+	auto& queue = *m_queue;
 	CPUBuffer slot(*m_device, PhysicalDevice(), kSlotBytes,
 	               vk::BufferUsageFlagBits::eTransferDst, "SharedQueueTest_Slot");
 
@@ -177,7 +179,8 @@ TEST_F(SharedQueueTest, WaitIdle_AfterSubmit_WorkComplete)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	SharedQueue queue(*m_device, m_queue, m_graphicsQueueFamily);
+	// The fixture's wrapper is the queue under test: one interlock, as in production.
+	auto& queue = *m_queue;
 	CPUBuffer slot(*m_device, PhysicalDevice(), kSlotBytes,
 	               vk::BufferUsageFlagBits::eTransferDst, "SharedQueueTest_Slot");
 
@@ -208,7 +211,8 @@ TEST_F(SharedQueueTest, ConcurrentSubmitAndWait_FourThreads_AllComplete)
 
 	CPUBuffer slots(*m_device, PhysicalDevice(), kSlotBytes * kThreads,
 	                vk::BufferUsageFlagBits::eTransferDst, "SharedQueueTest_Slots");
-	SharedQueue queue(*m_device, m_queue, m_graphicsQueueFamily);
+	// The fixture's wrapper is the queue under test: one interlock, as in production.
+	auto& queue = *m_queue;
 
 	// One entry per worker, written only by that worker: distinct elements of
 	// the array, so no synchronisation is needed to collect the outcome. An

@@ -70,7 +70,7 @@ protected:
 			// --- Attachment manager (G-Buffer + depth) - attachments created lazily ---
 			m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 			m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 			// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(

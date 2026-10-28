@@ -228,10 +228,10 @@ TEST_F(ImageTest, ReadImageData_RestoresStateAndContent)
 		pixels[i + 3] = 255;
 	}
 	ImageData src(pixels.data(), extent.width, extent.height, PixelFormat::RGBA8U);
-	Image image = Image::FromImageData(*m_device, pd, m_queue, m_graphicsQueueFamily, src);
+	Image image = Image::FromImageData(*m_device, pd, *m_queue, m_graphicsQueueFamily, src);
 	ASSERT_EQ(image.State(), ImageState::ColorShaderRead);
 
-	auto first = image.ReadImageData(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	auto first = image.ReadImageData(*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_NE(first, nullptr);
 	ASSERT_TRUE(first->IsValid());
 	EXPECT_EQ(image.State(), ImageState::ColorShaderRead)
@@ -241,7 +241,7 @@ TEST_F(ImageTest, ReadImageData_RestoresStateAndContent)
 	// real transition (not a no-op against a stale layout) and the contents are
 	// unchanged. A readback that stranded the image in TRANSFER_SRC would make
 	// the next transition a silent no-op.
-	auto second = image.ReadImageData(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	auto second = image.ReadImageData(*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_NE(second, nullptr);
 	EXPECT_EQ(first->GetPixelData(), second->GetPixelData());
 	EXPECT_EQ(image.State(), ImageState::ColorShaderRead);
@@ -261,7 +261,7 @@ TEST_F(ImageTest, ReadImageData_RefusesUnwrittenImage)
 	            1);
 	ASSERT_EQ(image.State(), ImageState::Undefined);
 
-	auto data = image.ReadImageData(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	auto data = image.ReadImageData(*m_device, pd, *m_queue, m_graphicsQueueFamily);
 
 	// Nothing to read, and no barrier: returning to UNDEFINED as a newLayout is
 	// invalid, so the transition is never recorded.

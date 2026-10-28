@@ -3,8 +3,8 @@
  * @brief Shared test fixture base class for GPU-dependent tests.
  *
  * Consolidates ~60 lines of duplicated Vulkan bootstrap (Instance → PhysicalDevice
- * → Queue → Device → CommandPool → CommandBuffers) from 6 test files into one
- * reusable base class, plus common helpers (BeginCmd, EndSubmitWait, ResolveAssetPath).
+ * → Device → SharedQueue → CommandPool → CommandBuffers) from 6 test files into
+ * one reusable base class, plus common helpers (BeginCmd, EndSubmitWait, ResolveAssetPath).
  */
 
 #pragma once
@@ -19,6 +19,7 @@
 #include "render/Barrier.h"
 #include "render/RenderCache.h"
 #include "render/RenderFrameSnapshot.h"
+#include "render/SharedQueue.h"
 #include "render/UploadManager.h"
 #include "render/passes/GeometryPass.h"
 #include "scene/Camera.h"
@@ -62,7 +63,7 @@ struct TestVertex
  *   - vk::Instance (with surface + win32-surface extensions, debug-utils in Debug)
  *   - Enumerates PhysicalDevices, picks discrete GPU when available
  *   - Finds a graphics queue family
- *   - Creates a Device + Queue
+ *   - Creates a Device, then the SharedQueue wrapper around that family's queue
  *   - Creates CommandPool + CommandBuffers (one-shot, reset-capable)
  *
  * TearDown calls m_device->waitIdle().
@@ -146,7 +147,7 @@ protected:
 	static std::vector<float> ReadbackHdrOutput(
 		const vk::raii::Device& device,
 		const vk::raii::PhysicalDevice& pd,
-		vk::Queue queue,
+		neurus::SharedQueue& queue,
 		uint32_t qfi,
 		neurus::RenderCache& am,
 		uint32_t renderWidth,
@@ -315,7 +316,7 @@ protected:
 		const neurus::Scene& scene,
 		const vk::raii::Device& device,
 		const vk::raii::PhysicalDevice& pd,
-		vk::Queue queue,
+		neurus::SharedQueue& queue,
 		uint32_t qfi)
 	{
 		neurus::UploadManager upload(device, pd, queue, qfi);
@@ -339,7 +340,7 @@ protected:
 		const neurus::Scene& scene,
 		const vk::raii::Device& device,
 		const vk::raii::PhysicalDevice& pd,
-		vk::Queue queue,
+		neurus::SharedQueue& queue,
 		uint32_t qfi)
 	{
 		neurus::UploadManager upload(device, pd, queue, qfi);
@@ -361,7 +362,14 @@ protected:
 	uint32_t m_selectedPdIndex = 0;
 	std::unique_ptr<vk::raii::Device> m_device;
 	uint32_t m_graphicsQueueFamily = 0;
-	vk::Queue m_queue = nullptr;
+
+	/**
+	 * @brief The shared wrapper every queue-taking collaborator is handed.
+	 *
+	 * A pointer so the wrapper's lifetime starts after the device it borrows
+	 * exists; declared after m_device so it is destroyed before it.
+	 */
+	std::unique_ptr<neurus::SharedQueue> m_queue;
 	std::unique_ptr<vk::raii::CommandPool> m_commandPool;
 	vk::raii::CommandBuffers m_commandBuffers = nullptr;
 

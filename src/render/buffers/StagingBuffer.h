@@ -8,6 +8,8 @@
 
 namespace neurus {
 
+class SharedQueue;
+
 /**
  * @brief Host-visible staging buffer for CPU↔GPU data transfer.
  *
@@ -74,13 +76,15 @@ public:
 	vk::raii::CommandBuffer& BeginStaging(uint32_t queueFamilyIndex);
 
 	/**
-	 * @brief Ends the command buffer, submits to @p queue, and waits idle.
+	 * @brief Ends the command buffer, submits it to @p queue, and waits for
+	 *        that submission to complete.
 	 *
-	 * Must be paired with a prior BeginStaging() call.
+	 * Must be paired with a prior BeginStaging() call. The wait covers only this
+	 * submit, not the whole queue, so other submitters are not blocked behind it.
 	 *
 	 * @param queue Queue to submit the transfer command buffer to.
 	 */
-	void EndStaging(vk::Queue queue);
+	void EndStaging(SharedQueue& queue);
 
 private:
 	std::unique_ptr<vk::raii::CommandPool> b_cmdPool;

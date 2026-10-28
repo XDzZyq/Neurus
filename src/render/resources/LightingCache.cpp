@@ -18,7 +18,7 @@ namespace neurus {
 
 LightingCache::LightingCache(const vk::raii::Device& device,
                          const vk::raii::PhysicalDevice& physicalDevice,
-                         vk::Queue graphicsQueue,
+                         SharedQueue& graphicsQueue,
                          uint32_t queueFamilyIndex)
 	: m_pointLightSSBO(device, physicalDevice, graphicsQueue, queueFamilyIndex,
 	                   vk::BufferUsageFlagBits::eStorageBuffer, "PointLightSSBO")

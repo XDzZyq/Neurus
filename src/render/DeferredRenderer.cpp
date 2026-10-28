@@ -19,6 +19,7 @@
 
 #include "RenderRequestExecutor.h"
 #include "Screenshot.h"
+#include "SharedQueue.h"
 #include "UploadManager.h"
 
 #include "overlay/OverlayEngine.h"
@@ -53,14 +54,14 @@ namespace neurus {
 
 DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
-                                    vk::Queue graphicsQueue,
+                                    SharedQueue& graphicsQueue,
                                     uint32_t queueFamilyIndex,
                                     const vk::raii::SurfaceKHR& surface,
                                     uint32_t width,
                                     uint32_t height)
 	: r_device(device)
 	, r_physicalDevice(physicalDevice)
-	, r_graphicsQueue(graphicsQueue)
+	, r_graphicsQueue(&graphicsQueue)
 	, r_queueFamilyIndex(queueFamilyIndex)
 	, r_commandPool(createCommandPool(device, queueFamilyIndex))
 {
@@ -68,7 +69,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	m_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
 
 	// --- 1. Create swapchain ---
-	r_swapchain = std::make_unique<Swapchain>(physicalDevice, device, surface, width, height);
+	r_swapchain = std::make_unique<Swapchain>(physicalDevice, device, graphicsQueue, surface, width, height);
 	const auto extent = r_swapchain->extent();
 
 	// --- 2. Create G-Buffer attachment cache (lazy creation on first access) ---
@@ -79,7 +80,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	// GPU themselves. Built after r_renderCache (an all-attachments capture reads
 	// it) and destroyed before it, per the member declaration order.
 	m_screenshot = std::make_unique<Screenshot>(
-		r_device, r_physicalDevice, r_graphicsQueue, r_queueFamilyIndex);
+		r_device, r_physicalDevice, graphicsQueue, r_queueFamilyIndex);
 
 	// --- 3. Create geometry pass ---
 	{
@@ -419,13 +420,13 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	                                   vk::PipelineStageFlagBits::eTransfer;
 
 	vk::SubmitInfo submitInfo(*imageAvailable, waitStage, cmdBufRaw, *renderFinished);
-	r_graphicsQueue.submit(submitInfo, *fence);
+	r_graphicsQueue->Submit(submitInfo, *fence);
 
 	// --- Present ---
 	bool presentFailed = false;
 	try
 	{
-		r_swapchain->Present(renderFinished, imageIndex, r_graphicsQueue);
+		r_swapchain->Present(renderFinished, imageIndex);
 	}
 	catch (const std::exception& e)
 	{
@@ -632,7 +633,7 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 
 	// The image is left in its original state on return.
 	auto bytes = idBuffer.PickPixel(r_device, r_physicalDevice,
-	                                 r_graphicsQueue, r_queueFamilyIndex,
+	                                 *r_graphicsQueue, r_queueFamilyIndex,
 	                                 x, y);
 
 	if (bytes.size() < sizeof(uint32_t))
@@ -666,7 +667,7 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 	// Destroy old swapchain (which held a reference to the old surface)
 	r_swapchain.reset();
 
-	r_swapchain = std::make_unique<Swapchain>(r_physicalDevice, r_device, newSurface, width, height);
+	r_swapchain = std::make_unique<Swapchain>(r_physicalDevice, r_device, *r_graphicsQueue, newSurface, width, height);
 
 	recreateSwapchain();
 

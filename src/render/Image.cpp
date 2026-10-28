@@ -86,7 +86,7 @@ Image::Image(const vk::raii::Device& device,
 
 Image Image::FromImageData(const vk::raii::Device& device,
                           const vk::raii::PhysicalDevice& physicalDevice,
-                          vk::Queue queue,
+                          SharedQueue& queue,
                           uint32_t queueFamilyIndex,
                           const ImageData& imageData,
                           const char* debugName,
@@ -376,7 +376,7 @@ void Image::GenerateMipmaps(const vk::raii::CommandBuffer& cmdBuf)
 
 void Image::UploadImageData(const vk::raii::Device& device,
                             const vk::raii::PhysicalDevice& physicalDevice,
-                            vk::Queue queue,
+                            SharedQueue& queue,
                             uint32_t queueFamilyIndex,
                             const ImageData& imageData)
 {
@@ -430,7 +430,7 @@ void Image::UploadImageData(const vk::raii::Device& device,
 
 std::shared_ptr<ImageData> Image::ReadImageData(const vk::raii::Device& device,
                                                 const vk::raii::PhysicalDevice& physicalDevice,
-                                                vk::Queue queue,
+                                                SharedQueue& queue,
                                                 uint32_t queueFamilyIndex,
                                                 const vk::ImageSubresourceRange* subresourceRange,
                                                 vk::Extent2D readExtent)
@@ -502,7 +502,7 @@ std::shared_ptr<ImageData> Image::ReadImageData(const vk::raii::Device& device,
 	Barrier::Transition(cmd, staging, BufferState::HostRead);
 
 	// --- Return the range to the state it entered in ---
-	// Same submission (one submit + one waitIdle), so no rendering code can
+	// Same submission (one submit and its own wait), so no rendering code can
 	// observe the intermediate TransferSrc layout. Nothing is left for the
 	// caller to restore, which is what keeps a readback from stranding an image
 	// in TRANSFER_SRC while im_state still claims it is readable.
@@ -524,7 +524,7 @@ std::shared_ptr<ImageData> Image::ReadImageData(const vk::raii::Device& device,
 
 std::vector<uint8_t> Image::PickPixel(const vk::raii::Device& device,
                                        const vk::raii::PhysicalDevice& physicalDevice,
-                                       vk::Queue queue,
+                                       SharedQueue& queue,
                                        uint32_t queueFamilyIndex,
                                        uint32_t x,
                                        uint32_t y,
@@ -597,7 +597,8 @@ std::vector<uint8_t> Image::PickPixel(const vk::raii::Device& device,
 	Barrier::Transition(cmd, staging, BufferState::HostRead);
 
 	// --- Restore the image subresource back to its original state ---
-	// Done before EndStaging so it's part of the same submission (one submit + one waitIdle).
+	// Done before EndStaging so it is part of the same submission, and the wait
+	// inside EndStaging therefore covers the copy and the restore together.
 	Barrier::Transition(cmd, *im_image, ImageState::TransferSrc, originalState, range);
 
 	staging.EndStaging(queue);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GPUBuffer.h"
+#include "render/SharedQueue.h"
 
 #include <algorithm>
 #include <cstring>
@@ -37,13 +38,13 @@ public:
 	 */
 	ArrayBuffer(const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice,
-	            vk::Queue queue,
+	            SharedQueue& queue,
 	            uint32_t queueFamilyIndex,
 	            vk::BufferUsageFlags usageFlags,
 	            const char* debugName = nullptr)
 		: m_device(device)
 		, m_physicalDevice(physicalDevice)
-		, m_queue(queue)
+		, m_queue(&queue)
 		, m_queueFamilyIndex(queueFamilyIndex)
 		, m_usageFlags(usageFlags)
 		, m_debugName(debugName)
@@ -119,7 +120,7 @@ public:
 		// eTransferSrc lets the buffer serve as the copy source in a future
 		// Resize().
 		auto newBuffer = std::make_unique<GPUBuffer>(
-			m_device, m_physicalDevice, m_queue, m_queueFamilyIndex,
+			m_device, m_physicalDevice, *m_queue, m_queueFamilyIndex,
 			newSizeBytes,
 			m_usageFlags | vk::BufferUsageFlagBits::eTransferSrc,
 			m_debugName);
@@ -166,8 +167,7 @@ public:
 				cmdBufs[0].end();
 
 				vk::SubmitInfo submitInfo({}, {}, *cmdBufs[0]);
-				m_queue.submit(submitInfo);
-				m_queue.waitIdle();
+				m_queue->SubmitAndWait(submitInfo);
 			}
 		}
 
@@ -241,7 +241,7 @@ private:
 	// --- Borrowed Vulkan handles (must outlive this object) ---
 	const vk::raii::Device& m_device;
 	const vk::raii::PhysicalDevice& m_physicalDevice;
-	vk::Queue m_queue;
+	SharedQueue* m_queue;   ///< Borrowed wrapper; must outlive this buffer.
 	uint32_t m_queueFamilyIndex;
 	vk::BufferUsageFlags m_usageFlags;
 	const char* m_debugName;

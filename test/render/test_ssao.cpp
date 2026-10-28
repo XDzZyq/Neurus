@@ -55,7 +55,7 @@ protected:
 		// --- Render pass infrastructure (attachments created lazily) ---
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
@@ -65,7 +65,7 @@ protected:
 		m_ssaoPass = std::make_unique<SSAOPass>(
 			*m_device, pd,
 			1u,   // one descriptor set for single-frame test
-			m_queue, m_graphicsQueueFamily);
+			*m_queue, m_graphicsQueueFamily);
 	}
 
 	void TearDown() override
@@ -96,7 +96,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	// Step 1: Load Cornell Box scene
 	// -------------------------------------------------------------------
-	auto cb = test::LoadCornellBox(*m_device, pd, m_queue, m_graphicsQueueFamily);
+	auto cb = test::LoadCornellBox(*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_GT(cb.scene->mesh_list.size(), 0u) << "No meshes loaded for Cornell Box";
 
 	// Adjust camera aspect ratio to match the render target
@@ -110,7 +110,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	VulkanTestShared::TransitionGbufferToColorAttachment(*m_renderCache, {kRenderWidth, kRenderHeight}, *this);
 
 	// Pre-register mesh GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *cb.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *cb.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	cb.scene->UseCamera(cb.camera);
 	cb.scene->ActivateCamera(cb.camera->GetObjectID());
@@ -145,7 +145,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 
 	Image& ssaoAttachment = m_renderCache->GetAttachment(AttachmentName::SSAO, {kRenderWidth, kRenderHeight});
 	const bool captured = Screenshot::CaptureAttachment(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		ssaoAttachment, tmpPath);
 
 	ASSERT_TRUE(captured) << "Failed to capture SSAO attachment";

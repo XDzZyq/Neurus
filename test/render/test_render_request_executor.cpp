@@ -74,9 +74,9 @@ protected:
 			auto& pd = PhysicalDevice();
 			m_cache = std::make_unique<RenderCache>(*m_device, pd);
 			m_cache->SetLightingCache(std::make_unique<LightingCache>(
-				*m_device, pd, m_queue, m_graphicsQueueFamily));
+				*m_device, pd, *m_queue, m_graphicsQueueFamily));
 			m_upload = std::make_unique<UploadManager>(
-				*m_device, pd, m_queue, m_graphicsQueueFamily);
+				*m_device, pd, *m_queue, m_graphicsQueueFamily);
 			m_geometryPass = std::make_unique<GeometryPass>(*m_device, pd);
 			m_executor = std::make_unique<RenderRequestExecutor>(
 				*m_device, *m_cache, m_upload.get(), m_geometryPass.get());

@@ -9,6 +9,8 @@
 
 namespace neurus {
 
+class SharedQueue;
+
 /**
  * @brief Device-local GPU buffer with staging-backed Map/Unmap.
  *
@@ -29,6 +31,7 @@ public:
 	 * @param device           Borrowed logical device (outlives this buffer).
 	 * @param physicalDevice   Borrowed physical device for memory queries.
 	 * @param queue            Borrowed graphics queue for staging transfers.
+	 *                         Unmap() waits for its own submit only.
 	 * @param queueFamilyIndex Queue family index for temp command pool creation.
 	 * @param size             Buffer size in bytes.
 	 * @param usageFlags       Buffer usage flags. eTransferDst is added automatically.
@@ -36,7 +39,7 @@ public:
 	 */
 	GPUBuffer(const vk::raii::Device& device,
 	          const vk::raii::PhysicalDevice& physicalDevice,
-	          vk::Queue queue,
+	          SharedQueue& queue,
 	          uint32_t queueFamilyIndex,
 	          vk::DeviceSize size,
 	          vk::BufferUsageFlags usageFlags,
@@ -69,12 +72,12 @@ public:
 	 * @brief Transfers the staging buffer content to the device-local buffer.
 	 *
 	 * Records a one-shot vkCmdCopyBuffer, submits it to the graphics queue
-	 * and waits for completion.
+	 * and waits for that submission to complete.
 	 */
 	void Unmap() override;
 
 private:
-	vk::Queue b_queue = nullptr;
+	SharedQueue* b_queue = nullptr;        ///< Borrowed; must outlive this buffer.
 	uint32_t b_queueFamilyIndex = 0;
 
 	std::unique_ptr<StagingBuffer> b_staging;

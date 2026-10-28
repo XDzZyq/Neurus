@@ -83,7 +83,7 @@ TEST_F(ArrayBufferGpuTest, DefaultConstruction_ZeroSizeAndCapacity)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer,
 	                             "TestArray");
@@ -103,7 +103,7 @@ TEST_F(ArrayBufferGpuTest, Resize_FirstAlloc_CreatesBuffer)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -120,7 +120,7 @@ TEST_F(ArrayBufferGpuTest, Resize_Grow_PreservesData)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -147,7 +147,7 @@ TEST_F(ArrayBufferGpuTest, Resize_Shrink_TruncatesSize)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -173,7 +173,7 @@ TEST_F(ArrayBufferGpuTest, Resize_ToZero_ReleasesBuffer)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -191,7 +191,7 @@ TEST_F(ArrayBufferGpuTest, Resize_SameCapacity_IsNoop)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -214,7 +214,7 @@ TEST_F(ArrayBufferGpuTest, Upload_Initial_PopulatesData)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -236,7 +236,7 @@ TEST_F(ArrayBufferGpuTest, Upload_ResizesAutomatically_WhenCapacityTooSmall)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -264,7 +264,7 @@ TEST_F(ArrayBufferGpuTest, Upload_EmptyVector_SetsSizeToZero)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -286,7 +286,7 @@ TEST_F(ArrayBufferGpuTest, Update_SingleElement_ModifiesCorrectSlot)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -311,7 +311,7 @@ TEST_F(ArrayBufferGpuTest, Update_AtZero_ModifiesFirstElement)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -333,7 +333,7 @@ TEST_F(ArrayBufferGpuTest, Update_AtLastIndex_ModifiesLastElement)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -359,7 +359,7 @@ TEST_F(ArrayBufferGpuTest, Update_BeforeAnyAllocation_Throws)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -371,7 +371,7 @@ TEST_F(ArrayBufferGpuTest, Update_OutOfBounds_Throws)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -392,7 +392,7 @@ TEST_F(ArrayBufferGpuTest, MoveConstructor_TransfersOwnership)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> src(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> src(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 
@@ -426,7 +426,7 @@ TEST_F(ArrayBufferGpuTest, ResizeAfterUpdate_PreservesUpdatedData)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), m_queue,
+	ArrayBuffer<TestElement> buf(*m_device, PhysicalDevice(), *m_queue,
 	                             m_graphicsQueueFamily,
 	                             vk::BufferUsageFlagBits::eStorageBuffer);
 

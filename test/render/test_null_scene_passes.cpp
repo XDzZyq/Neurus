@@ -70,7 +70,7 @@ protected:
 
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(std::make_unique<LightingCache>(
-			*m_device, pd, m_queue, m_graphicsQueueFamily));
+			*m_device, pd, *m_queue, m_graphicsQueueFamily));
 	}
 
 	/**
@@ -159,7 +159,7 @@ TEST_F(NullScenePassTest, ShadowDepthPassRecordsNothingWithoutAScene)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan device";
 
-	ShadowDepthPass pass(*m_device, PhysicalDevice(), m_queue,
+	ShadowDepthPass pass(*m_device, PhysicalDevice(), *m_queue,
 	                     m_graphicsQueueFamily);
 
 	const RenderContext ctx = EmptyContext();

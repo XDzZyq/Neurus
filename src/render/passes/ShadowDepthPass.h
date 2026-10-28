@@ -26,6 +26,7 @@ namespace neurus {
 
 class RenderShader;
 class Shader;
+class SharedQueue;
 
 class ShadowDepthPass : public Pass
 {
@@ -56,7 +57,7 @@ public:
 
 	ShadowDepthPass(const vk::raii::Device& device,
 	                const vk::raii::PhysicalDevice& physicalDevice,
-	                vk::Queue graphicsQueue,
+	                SharedQueue& graphicsQueue,
 	                uint32_t queueFamilyIndex,
 	                uint32_t resolution = kDefaultResolution);
 
@@ -80,13 +81,13 @@ private:
 
 	void createSSBOResources(const vk::raii::Device& device,
 	                         const vk::raii::PhysicalDevice& physicalDevice,
-	                         vk::Queue queue, uint32_t qfi);
+	                         SharedQueue& queue, uint32_t qfi);
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
 
 	// --- Parameters ---
 	uint32_t p_resolution;
-	vk::Queue p_queue = nullptr;          ///< Graphics queue (for MeshGPU staging uploads)
+	SharedQueue* p_queue = nullptr;       ///< Graphics queue (for MeshGPU staging uploads)
 	uint32_t p_queueFamilyIndex = 0;      ///< Queue family index (for MeshGPU staging uploads)
 
 	// --- GPU resources ---

@@ -62,9 +62,9 @@ protected:
 		auto& pd = PhysicalDevice();
 
 		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
-			*m_device, pd, m_queue, m_graphicsQueueFamily, kRes);
+			*m_device, pd, *m_queue, m_graphicsQueueFamily, kRes);
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
-		m_renderCache->SetLightingCache(std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		m_renderCache->SetLightingCache(std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 	}
 
 	void TearDown() override
@@ -270,7 +270,7 @@ TEST_F(ShadowCubemapTest, AllFacesDepth)
 	// Step 1: Build scene geometry
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadSimpleShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily);
+		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected 2 meshes (cube + plane)";
 
@@ -284,8 +284,8 @@ TEST_F(ShadowCubemapTest, AllFacesDepth)
 	// -------------------------------------------------------------------
 	// Step 3: Pre-register GPU resources before pass recording
 	// -------------------------------------------------------------------
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	// -------------------------------------------------------------------
 	// Step 3: Render all 6 faces into depth cubemap + colour output (via cache).
@@ -319,7 +319,7 @@ TEST_F(ShadowCubemapTest, AllFacesDepth)
 		{
 			auto layerRange = shadowCubemap.Layer(face);
 			auto data = shadowCubemap.ReadImageData(
-				*m_device, pd, m_queue, m_graphicsQueueFamily,
+				*m_device, pd, *m_queue, m_graphicsQueueFamily,
 				&layerRange, {kRes, kRes});
 			const float* depthData = reinterpret_cast<const float*>(data->GetPixelData().data());
 

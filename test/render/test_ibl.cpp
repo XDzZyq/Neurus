@@ -219,7 +219,7 @@ protected:
 	{
 		ImageData imgData(pixelData.data(), width, height, PixelFormat::RGBA32F);
 		return std::make_shared<Image>(Image::FromImageData(
-			*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily,
+			*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily,
 			imgData, debugName, vk::ImageUsageFlagBits::eStorage));
 	}
 
@@ -366,7 +366,7 @@ TEST_F(IBLConversionTest, E2C_C2E_Roundtrip_ProducesMatchingPixels)
 
 	// Read back result
 	auto resultData = m_outputEquirect->ReadImageData(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 	const float* resultPixels = reinterpret_cast<const float*>(resultData->GetPixelData().data());
 
 	// Compare with tolerance (bilinear filtering in both directions causes precision loss)
@@ -412,7 +412,7 @@ TEST_F(IBLConversionTest, SaveCubemapFacesAsHDR_ProducesValidFiles)
 	// Read back cubemap faces (all 6 layers)
 	vk::ImageSubresourceRange cubeAll(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
 	auto cubeData = m_cubemapImage->ReadImageData(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily, &cubeAll);
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily, &cubeAll);
 	ASSERT_TRUE(cubeData && cubeData->IsValid());
 	const float* cubeFloats = reinterpret_cast<const float*>(cubeData->GetPixelData().data());
 	const size_t faceFloats = static_cast<size_t>(kCubeFaceRes) * kCubeFaceRes * 4;
@@ -520,7 +520,7 @@ TEST_F(IBLConversionTest, SaveCubemapFacesAsPNG_ProducesValidFiles)
 	// Read back cubemap faces as RGBA32F
 	vk::ImageSubresourceRange cubeAll(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 6);
 	auto cubeData = m_cubemapImage->ReadImageData(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily, &cubeAll);
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily, &cubeAll);
 	ASSERT_TRUE(cubeData && cubeData->IsValid());
 	const auto* cubeFloats = reinterpret_cast<const float*>(cubeData->GetPixelData().data());
 	const size_t facePixelCount = static_cast<size_t>(kCubeFaceRes) * kCubeFaceRes;

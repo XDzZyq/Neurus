@@ -145,7 +145,7 @@ protected:
 	std::vector<Texel> ReadColor(AttachmentName name)
 	{
 		auto& att = m_cache->GetAttachment(name, Extent());
-		auto data = att.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		auto data = att.ReadImageData(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 		const auto* h = reinterpret_cast<const uint16_t*>(data->GetPixelData().data());
 
 		std::vector<Texel> out(static_cast<size_t>(kW) * kH);

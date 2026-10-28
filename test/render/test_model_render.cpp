@@ -86,7 +86,7 @@ protected:
 		// --- Attachment manager (G-Buffer + HDR color + depth) - attachments created lazily ---
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
@@ -165,7 +165,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	std::string texPath = ResolveAssetPath("res/tex/BAKED.png");
 
 	Texture albedoTexture = Texture::FromFile(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		texPath.c_str(),
 		vk::Format::eR8G8B8A8Srgb);
 
@@ -235,8 +235,8 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	scene.UseLight(light);
 
 	// --- Pre-register GPU resources before pass recording ---
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	// -----------------------------------------------------------------------
 	// Step 8: Camera registered via scene.UseCamera(); passes get it from ctx.scene->GetActiveCamera()
@@ -288,7 +288,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// Step 14: Read back HDR colour output
 	// -----------------------------------------------------------------------
 	std::vector<float> hdrPixels = VulkanTestShared::ReadbackHdrOutput(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily,
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily,
 		*m_renderCache, kRenderWidth, kRenderHeight);
 
 	// -----------------------------------------------------------------------

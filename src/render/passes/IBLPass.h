@@ -24,6 +24,7 @@ namespace neurus {
 // --- Forward declarations ---
 class Image;
 class RenderCache;
+class SharedQueue;
 
 /**
  * @brief IBL generation pass - equirect HDR to diffuse + specular cubemaps.
@@ -88,13 +89,14 @@ public:
 	 * Records one-shot command buffers: one irradiance dispatch, then one
 	 * specular prefilter dispatch per mip.
 	 *
-	 * @param queue            Compute-capable queue for one-shot command submits.
+	 * @param queue            Compute-capable queue for one-shot command submits;
+	 *                         each submit waits only for itself.
 	 * @param queueFamilyIndex Family of @p queue, for the transient command pool.
 	 * @param equirectImage  Equirectangular HDR panorama (2D image).
 	 * @param diffuseOut     Pre-created diffuse irradiance cubemap Image.
 	 * @param specularOut    Pre-created specular prefiltered cubemap Image.
 	 */
-	void Generate(vk::Queue queue, uint32_t queueFamilyIndex,
+	void Generate(SharedQueue& queue, uint32_t queueFamilyIndex,
 	              const Image& equirectImage, Image& diffuseOut, Image& specularOut);
 
 	/** @brief Static factory: creates a linear-clamp equirect sampler. */

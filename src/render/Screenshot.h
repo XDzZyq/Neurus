@@ -9,6 +9,7 @@ namespace neurus {
 // --- Forward declarations ---
 class Image;
 class RenderCache;
+class SharedQueue;
 
 /**
  * @brief Utility for capturing Vulkan images to PNG files.
@@ -16,7 +17,8 @@ class RenderCache;
  * Provides both instance methods (for high-level screenshot orchestration)
  * and static utility methods (for low-level capture of individual images).
  *
- * All capture operations are blocking (waits for queue idle).
+ * All capture operations are blocking: every submission is waited on before the
+ * readback, through the shared queue that serialises them with the frame.
  */
 class Screenshot
 {
@@ -25,12 +27,12 @@ public:
 	 * @brief Constructs a Screenshot instance for member capture methods.
 	 * @param device          Logical device (must outlive this instance).
 	 * @param physicalDevice  Physical device for memory allocation.
-	 * @param queue           Graphics queue for command submission.
+	 * @param queue           Graphics queue for command submission (borrowed).
 	 * @param queueFamilyIndex Queue family index for transient command pools.
 	 */
 	Screenshot(const vk::raii::Device& device,
 	           const vk::raii::PhysicalDevice& physicalDevice,
-	           vk::Queue queue,
+	           SharedQueue& queue,
 	           uint32_t queueFamilyIndex);
 
 	// Non-copyable, non-movable
@@ -135,7 +137,7 @@ public:
 	 */
 	static bool CaptureSwapchain(const vk::raii::Device& device,
 	                             const vk::raii::PhysicalDevice& physicalDevice,
-	                             vk::Queue queue,
+	                             SharedQueue& queue,
 	                             uint32_t queueFamilyIndex,
 	                             vk::Image image,
 	                             vk::Format format,
@@ -152,7 +154,7 @@ public:
 	 */
 	static bool CaptureAttachment(const vk::raii::Device& device,
 	                              const vk::raii::PhysicalDevice& physicalDevice,
-	                              vk::Queue queue,
+	                              SharedQueue& queue,
 	                              uint32_t queueFamilyIndex,
 	                              Image& vulkanImage,
 	                              const std::string& path);
@@ -168,7 +170,7 @@ public:
 	 */
 	static bool CaptureImageLayer(const vk::raii::Device& device,
 	                              const vk::raii::PhysicalDevice& physicalDevice,
-	                              vk::Queue queue,
+	                              SharedQueue& queue,
 	                              uint32_t queueFamilyIndex,
 	                              Image& vulkanImage,
 	                              uint32_t layerIndex,
@@ -181,7 +183,7 @@ public:
 	 */
 	static int CaptureAllAttachments(const vk::raii::Device& device,
 	                                 const vk::raii::PhysicalDevice& physicalDevice,
-	                                 vk::Queue queue,
+	                                 SharedQueue& queue,
 	                                 uint32_t queueFamilyIndex,
 	                                 RenderCache& renderCache,
 	                                 vk::Extent2D extent,
@@ -190,7 +192,7 @@ public:
 private:
 	const vk::raii::Device& m_device;
 	const vk::raii::PhysicalDevice& m_physicalDevice;
-	vk::Queue m_queue;
+	SharedQueue* m_queue = nullptr;
 	uint32_t m_queueFamilyIndex;
 };
 

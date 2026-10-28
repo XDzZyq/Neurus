@@ -47,7 +47,7 @@ namespace
 	 */
 	MeshGPU CreateTestMeshGPU(const vk::raii::Device& device,
 	                          const vk::raii::PhysicalDevice& physicalDevice,
-	                          vk::Queue queue,
+	                          neurus::SharedQueue& queue,
 	                          uint32_t queueFamilyIndex,
 	                          const MeshData& meshData,
 	                          int objectId)
@@ -109,7 +109,7 @@ protected:
 		if (!m_hasVulkan) return;
 
 		m_cache = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
-		m_cache->SetLightingCache(std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		m_cache->SetLightingCache(std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 	}
 
 	void TearDown() override
@@ -138,7 +138,7 @@ TEST_F(MeshRenderTest, UseMeshGPU_Stores)
 
 	constexpr int kTestObjectId = 42;
 	auto gpu = CreateTestMeshGPU(*m_device, PhysicalDevice(),
-	                              m_queue, m_graphicsQueueFamily,
+	                              *m_queue, m_graphicsQueueFamily,
 	                              *meshData, kTestObjectId);
 	EXPECT_NE(gpu.vertexBuffer, nullptr);
 	EXPECT_NE(gpu.indexBuffer, nullptr);
@@ -169,7 +169,7 @@ TEST_F(MeshRenderTest, GetMeshGPU_ReturnsCached)
 
 	constexpr int kTestObjectId = 99;
 	auto gpu = CreateTestMeshGPU(*m_device, PhysicalDevice(),
-	                              m_queue, m_graphicsQueueFamily,
+	                              *m_queue, m_graphicsQueueFamily,
 	                              *meshData, kTestObjectId);
 	m_cache->UseMeshGPU(kTestObjectId, std::move(gpu));
 
@@ -200,7 +200,7 @@ TEST_F(MeshRenderTest, RemoveMeshGPU_Destroys)
 
 	// Insert
 	auto gpu = CreateTestMeshGPU(*m_device, PhysicalDevice(),
-	                              m_queue, m_graphicsQueueFamily,
+	                              *m_queue, m_graphicsQueueFamily,
 	                              *meshData, kTestObjectId);
 	m_cache->UseMeshGPU(kTestObjectId, std::move(gpu));
 
@@ -214,7 +214,7 @@ TEST_F(MeshRenderTest, RemoveMeshGPU_Destroys)
 
 	// Re-insert a new one
 	auto gpu2 = CreateTestMeshGPU(*m_device, PhysicalDevice(),
-	                               m_queue, m_graphicsQueueFamily,
+	                               *m_queue, m_graphicsQueueFamily,
 	                               *meshData, kTestObjectId);
 	m_cache->UseMeshGPU(kTestObjectId, std::move(gpu2));
 

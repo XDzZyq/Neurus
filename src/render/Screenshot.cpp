@@ -1,6 +1,7 @@
 #include "Screenshot.h"
 #include "Image.h"
 #include "RenderCache.h"
+#include "SharedQueue.h"
 #include "asset/data/ImageData.h"
 #include "asset/PixelFormat.h"
 #include "Texture.h"
@@ -85,11 +86,11 @@ static uint32_t vkFormatByteSize(vk::Format format)
 
 Screenshot::Screenshot(const vk::raii::Device& device,
                        const vk::raii::PhysicalDevice& physicalDevice,
-                       vk::Queue queue,
+                       SharedQueue& queue,
                        uint32_t queueFamilyIndex)
 	: m_device(device)
 	, m_physicalDevice(physicalDevice)
-	, m_queue(queue)
+	, m_queue(&queue)
 	, m_queueFamilyIndex(queueFamilyIndex)
 {
 }
@@ -105,7 +106,7 @@ bool Screenshot::TakeScreenshot(vk::Image swapchainImage,
 	const std::string path = Screenshot::timestampedFilename("screenshots/swapchain", ".png");
 
 	return Screenshot::CaptureSwapchain(m_device, m_physicalDevice,
-	                                     m_queue, m_queueFamilyIndex,
+	                                     *m_queue, m_queueFamilyIndex,
 	                                     swapchainImage, swapchainFormat,
 	                                     swapchainExtent, path);
 }
@@ -121,7 +122,7 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 	int count = 0;
 
 	count = Screenshot::CaptureAllAttachments(m_device, m_physicalDevice,
-	                                           m_queue, m_queueFamilyIndex,
+	                                           *m_queue, m_queueFamilyIndex,
 	                                           renderCache,
 	                                           extent,
 	                                           "screenshots/gbuffer");
@@ -164,7 +165,7 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 				const std::string path = Screenshot::timestampedFilename(
 					"screenshots/shadow_intensity_Light" + std::to_string(lightUID), ".png");
 				if (Screenshot::CaptureImageLayer(m_device, m_physicalDevice,
-				                                   m_queue, m_queueFamilyIndex,
+				                                   *m_queue, m_queueFamilyIndex,
 				                                   *intensityArray, layer, path))
 				{
 					++count;
@@ -323,13 +324,12 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 		cmd.end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmd));
-		m_queue.submit(submitInfo);
-		m_queue.waitIdle();
+		m_queue->SubmitAndWait(submitInfo);
 	}
 
 	// --- 6. Read back equirect as grayscale PNG ---
 	auto equirectData = equirectImage.ReadImageData(
-		m_device, m_physicalDevice, m_queue, m_queueFamilyIndex);
+		m_device, m_physicalDevice, *m_queue, m_queueFamilyIndex);
 
 	if (!equirectData || !equirectData->IsValid())
 	{
@@ -392,7 +392,7 @@ std::string Screenshot::ExportShadowDepth(RenderCache& renderCache,
 	// A map that was never rendered (UNDEFINED) has nothing to export and is
 	// refused inside ReadImageData.
 	auto depthData = depthMap.ReadImageData(
-		m_device, m_physicalDevice, m_queue, m_queueFamilyIndex);
+		m_device, m_physicalDevice, *m_queue, m_queueFamilyIndex);
 
 	if (!depthData || !depthData->IsValid())
 	{
@@ -458,7 +458,7 @@ std::string Screenshot::timestampedFilename(const std::string& prefix,
 
 bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
                                    const vk::raii::PhysicalDevice& physicalDevice,
-                                   vk::Queue queue,
+                                   SharedQueue& queue,
                                    uint32_t queueFamilyIndex,
                                    vk::Image image,
                                    vk::Format format,
@@ -496,8 +496,7 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	// --- 2. Read back via staging buffer ---
@@ -580,8 +579,7 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	std::vector<uint8_t> rawData(static_cast<size_t>(imageSize));
@@ -615,8 +613,7 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	// --- 4. Delegate PNG write to ImageData ---
@@ -630,7 +627,7 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 
 bool Screenshot::CaptureAttachment(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
-                                    vk::Queue queue,
+                                    SharedQueue& queue,
                                     uint32_t queueFamilyIndex,
                                      Image& vulkanImage,
                                     const std::string& path)
@@ -650,7 +647,7 @@ bool Screenshot::CaptureAttachment(const vk::raii::Device& device,
 
 bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
-                                    vk::Queue queue,
+                                    SharedQueue& queue,
                                     uint32_t queueFamilyIndex,
                                     Image& vulkanImage,
                                     uint32_t layerIndex,
@@ -684,7 +681,7 @@ bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
 
 int Screenshot::CaptureAllAttachments(const vk::raii::Device& device,
                                        const vk::raii::PhysicalDevice& physicalDevice,
-                                       vk::Queue queue,
+                                       SharedQueue& queue,
                                        uint32_t queueFamilyIndex,
                                        RenderCache& renderCache,
                                        vk::Extent2D extent,

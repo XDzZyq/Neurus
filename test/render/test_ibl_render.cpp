@@ -157,7 +157,7 @@ protected:
 		// --- Render pass infrastructure ---
 		m_renderCache = std::make_unique<RenderCache>(dev, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
@@ -191,7 +191,7 @@ protected:
 
 		// 1. Upload equirect to GPU
 		auto equirectImage = std::make_shared<Image>(Image::FromImageData(
-			dev, pd, m_queue, m_graphicsQueueFamily,
+			dev, pd, *m_queue, m_graphicsQueueFamily,
 			*imgData, "Env_Equirect",
 			vk::ImageUsageFlagBits::eStorage));
 		ASSERT_NE(equirectImage->State(), ImageState::Invalid) << "Failed to upload equirect";
@@ -230,7 +230,7 @@ protected:
 		auto specularSampler = vk::raii::Sampler(dev, samplerCI);
 
 		// 4. Run IBL convolution
-		m_iblPass->Generate(m_queue, m_graphicsQueueFamily, *equirectImage, *diffuseImage, *specularImage);
+		m_iblPass->Generate(*m_queue, m_graphicsQueueFamily, *equirectImage, *diffuseImage, *specularImage);
 
 		// 5. Wrap in Textures and register
 		EnvironmentGPU gpu;
@@ -324,8 +324,8 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 				scene.env_list[m_env->GetObjectID()] = m_env;
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	auto lightDict = m_uploadManager->UploadLighting(scene.light_list);
 	m_renderCache->UpdateLighting(lightDict);
@@ -362,7 +362,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 
 	Image& hdrColor = m_renderCache->GetAttachment(AttachmentName::HDRColor, {kRenderWidth, kRenderHeight});
 	const bool captured = Screenshot::CaptureAttachment(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		hdrColor, tmpPath);
 
 	ASSERT_TRUE(captured) << "Failed to capture HDRColor attachment";
@@ -436,8 +436,8 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.ActivateCamera(camera->GetObjectID());
 				scene.env_list[m_env->GetObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
-				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 				auto lightDict = m_uploadManager->UploadLighting(scene.light_list);
 				m_renderCache->UpdateLighting(lightDict);
 
@@ -487,7 +487,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 	SCOPED_TRACE("Recreate passes");
 	m_renderCache = std::make_unique<RenderCache>(dev, pd);
 	m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	m_geometryPass = std::make_unique<GeometryPass>(
 		dev, pd);
@@ -518,7 +518,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 
 		// 1. Upload equirect to GPU
 		auto equirectImage = std::make_shared<Image>(Image::FromImageData(
-			device, physDev, m_queue, m_graphicsQueueFamily,
+			device, physDev, *m_queue, m_graphicsQueueFamily,
 			*imgData, "Env_Equirect",
 			vk::ImageUsageFlagBits::eStorage));
 		ASSERT_NE(equirectImage->State(), ImageState::Invalid) << "Failed to upload equirect";
@@ -557,7 +557,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 		auto specularSampler = vk::raii::Sampler(device, samplerCI);
 
 		// 4. Run IBL convolution
-		m_iblPass->Generate(m_queue, m_graphicsQueueFamily, *equirectImage, *diffuseImage, *specularImage);
+		m_iblPass->Generate(*m_queue, m_graphicsQueueFamily, *equirectImage, *diffuseImage, *specularImage);
 
 		// 5. Wrap in Textures and register
 		EnvironmentGPU gpu;
@@ -584,8 +584,8 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.ActivateCamera(camera->GetObjectID());
 				scene.env_list[m_env->GetObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
-				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 				auto lightDict = m_uploadManager->UploadLighting(scene.light_list);
 				m_renderCache->UpdateLighting(lightDict);
 

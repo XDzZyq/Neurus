@@ -177,7 +177,7 @@ protected:
 	{
 		auto& colorAtt = m_cache->GetAttachment(color, Extent());
 		auto data = colorAtt.ReadImageData(*m_device, PhysicalDevice(),
-		                                   m_queue, m_graphicsQueueFamily);
+		                                   *m_queue, m_graphicsQueueFamily);
 		const auto* h = reinterpret_cast<const uint16_t*>(data->GetPixelData().data());
 
 		std::vector<glm::vec3> rgb(static_cast<size_t>(kRes) * kRes);

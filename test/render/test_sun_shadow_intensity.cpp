@@ -81,11 +81,11 @@ protected:
 		auto& pd = PhysicalDevice();
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 		m_geometryPass = std::make_unique<GeometryPass>(
 			*m_device, pd);
 		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
-			*m_device, pd, m_queue, m_graphicsQueueFamily,
+			*m_device, pd, *m_queue, m_graphicsQueueFamily,
 			ShadowDepthPass::kSunResolution);
 		m_shadowIntensityPass = std::make_unique<ShadowIntensityPass>(
 			*m_device, pd, 1u);
@@ -114,14 +114,14 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_VerifyNonZero)
 	// Step 1: Load multi-shadow scene with SUNLIGHT (3 lights)
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadMultiShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		3, LightType::SUNLIGHT);
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 sun lights";
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected cube + plane";
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	// Verify all lights are SUNLIGHT
 	for (int uid : shadowRes.lightUIDs)
@@ -246,13 +246,13 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_ReferenceImage)
 	// Step 1: Load scene
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadMultiShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		3, LightType::SUNLIGHT);
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u);
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	// -------------------------------------------------------------------
 	// Step 2: Build render context

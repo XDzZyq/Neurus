@@ -83,7 +83,7 @@ private:
 SSAOPass::SSAOPass(const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets,
-                   vk::Queue graphicsQueue,
+                   SharedQueue& graphicsQueue,
                    uint32_t queueFamilyIndex)
 	: ComputePass(device, physicalDevice,
 	              SSAOPass::CreateDescriptorSetLayout(device), numSets)
