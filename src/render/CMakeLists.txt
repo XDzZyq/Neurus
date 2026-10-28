@@ -68,6 +68,8 @@ add_library(neurus_render STATIC
 	RenderFrameSnapshot.cpp
 	FrameMailbox.h
 	FrameMailbox.cpp
+	SharedQueue.h
+	SharedQueue.cpp
 	RenderRequests.h
 	RenderRequests.cpp
 	RenderRequestQueue.h
