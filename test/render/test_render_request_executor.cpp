@@ -79,13 +79,18 @@ protected:
 				*m_device, pd, *m_queue, m_graphicsQueueFamily);
 			m_geometryPass = std::make_unique<GeometryPass>(*m_device, pd);
 			m_executor = std::make_unique<RenderRequestExecutor>(
-				*m_device, *m_cache, m_upload.get(), m_geometryPass.get());
+				[this] { ++m_drains; m_device->waitIdle(); },
+				*m_cache, m_upload.get(), m_geometryPass.get());
 		}
 		catch (const std::exception& e)
 		{
 			std::cerr << "[RenderRequestExecutorTest::SetUp] " << e.what() << std::endl;
 			m_hasVulkan = false;
 		}
+
+		// Count only what a test's own requests asked for: wiring the executor
+		// must not have drained.
+		m_drains = 0;
 	}
 
 	void TearDown() override
@@ -128,6 +133,10 @@ protected:
 	std::unique_ptr<UploadManager>         m_upload;
 	std::unique_ptr<GeometryPass>          m_geometryPass;
 	std::unique_ptr<RenderRequestExecutor> m_executor;
+
+	/// @brief How many times this test's requests asked for the frames to be
+	///        drained; reset once the fixture is wired, so only requests count.
+	uint32_t m_drains = 0;
 };
 
 // ===========================================================================
@@ -448,4 +457,121 @@ TEST_F(RenderRequestExecutorTest, ResetAccumulation_IsHarmlessNoOp)
 	// still there, same slot. A handler that touched the cache would change this.
 	m_executor->Execute(ResetAccumulationRequest{});
 	EXPECT_EQ(m_cache->GetMeshGPU(kObjectId), before);
+}
+
+// ===========================================================================
+// Frame drain - which handlers must wait the in-flight frames
+// ===========================================================================
+//
+// Only a handler that REPLACES or FREES a resource a recorded frame may still
+// read drains; a first insert and a handler whose work waits its own submit do
+// not. Counting the drain (rather than timing it) is what makes that contract
+// observable: a handler that idled the device anyway would still pass a
+// residency assertion, but not a drain count.
+
+// ---------------------------------------------------------------------------
+// 11. A first pipeline insert displaces nothing, so it must not drain.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, EnsurePipeline_FirstInsert_DoesNotDrain)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = MakeShader("FirstInsertShader");
+	ASSERT_EQ(m_cache->GetPipelineCache().Get(shader->GetObjectID()), nullptr);
+
+	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
+
+	// The pipeline landed ...
+	EXPECT_NE(m_cache->GetPipelineCache().GetPipeline(
+		shader->GetObjectID(), shader->GetVersion()), nullptr);
+	// ... without waiting the frames: nothing was destroyed to wait for.
+	EXPECT_EQ(m_drains, 0u);
+}
+
+// ---------------------------------------------------------------------------
+// 12. A second version under the same shader id replaces the resident pipeline,
+//     destroying one a recorded frame may still bind: drain exactly once.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, EnsurePipeline_ReplaceVersion_DrainsOnce)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = MakeShader("ReplaceVersionShader");
+
+	// The first version is an insert, not a replace, so it leaves the count at 0.
+	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
+	ASSERT_EQ(m_drains, 0u);
+
+	shader->BumpVersion();
+	shader->CompileToSpv();
+	const int newVersion = shader->GetVersion();
+
+	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
+
+	EXPECT_NE(m_cache->GetPipelineCache().GetPipeline(
+		shader->GetObjectID(), newVersion), nullptr);
+	EXPECT_EQ(m_drains, 1u);
+}
+
+// ---------------------------------------------------------------------------
+// 13. The first environment upload creates the entry and destroys nothing, so
+//     it must not drain; its own upload wait covers the cubemaps it creates.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, UploadEnvironment_First_DoesNotDrain)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	constexpr int kEnvId = 400;
+	ASSERT_EQ(m_cache->GetEnvironmentGPU(kEnvId), nullptr);
+
+	m_executor->Execute(UploadEnvironmentRequest{
+		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = false});
+
+	EXPECT_NE(m_cache->GetEnvironmentGPU(kEnvId), nullptr);
+	EXPECT_EQ(m_drains, 0u);
+}
+
+// ---------------------------------------------------------------------------
+// 14. Regenerating over a resident environment replaces its cubemaps, so the
+//     handler must drain the frames once before destroying the old ones.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, UploadEnvironment_RegenerateResident_DrainsOnce)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	constexpr int kEnvId = 401;
+	m_executor->Execute(UploadEnvironmentRequest{
+		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = false});
+	ASSERT_NE(m_cache->GetEnvironmentGPU(kEnvId), nullptr);
+	ASSERT_EQ(m_drains, 0u);
+
+	m_executor->Execute(UploadEnvironmentRequest{
+		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = true});
+
+	EXPECT_EQ(m_drains, 1u);
+}
+
+// ---------------------------------------------------------------------------
+// 15. Dropping the scene frees every cached entry a recorded frame may still
+//     read, so it always drains - and the mesh upload before it, which waits its
+//     own submit, does not.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, DropSceneResources_DrainsOnce)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	constexpr int kObjectId = 500;
+	m_executor->Execute(UploadMeshRequest{.objectId = kObjectId, .data = MakeTriangle()});
+	ASSERT_NE(m_cache->GetMeshGPU(kObjectId), nullptr);
+	ASSERT_EQ(m_drains, 0u);
+
+	m_executor->Execute(DropSceneResourcesRequest{});
+
+	EXPECT_EQ(m_cache->GetMeshGPU(kObjectId), nullptr);
+	EXPECT_EQ(m_drains, 1u);
 }

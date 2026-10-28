@@ -133,8 +133,8 @@ struct EnsurePipelineRequest
 /**
  * @brief Release every scene-scoped GPU resource of the outgoing scene.
  *
- * Drains the device first: cached entries own RAII resources that the last
- * frame may still be reading.
+ * Drains the in-flight frames first: cached entries own RAII resources that a
+ * recorded frame may still be reading.
  */
 struct DropSceneResourcesRequest
 {

@@ -18,15 +18,16 @@
 #include "asset/data/MeshData.h"
 #include "core/Log.h"
 
+#include <utility>
 #include <variant>
 
 namespace neurus {
 
-RenderRequestExecutor::RenderRequestExecutor(const vk::raii::Device& device,
+RenderRequestExecutor::RenderRequestExecutor(std::function<void()> drainFrames,
                                              RenderCache& cache,
                                              UploadManager* uploader,
                                              GeometryPass* geometryPass)
-	: m_device(device)
+	: m_drainFrames(std::move(drainFrames))
 	, m_cache(cache)
 	, m_uploader(uploader)
 	, m_geometryPass(geometryPass)
@@ -121,10 +122,12 @@ void RenderRequestExecutor::handle(const UploadEnvironmentRequest& request)
 	}
 
 	// Regenerating over a resident entry REPLACES it, destroying the old
-	// cubemaps at once - the same hazard as a pipeline replace, so drain first.
-	// This argument depends on kMaxFramesInFlight == 1 (see DrawFrame).
+	// cubemaps at once - the same hazard as a pipeline replace, so drain the
+	// frames first. Every frame fence is waited, so no recorded frame still
+	// references the replaced cubemaps; the upload that follows waits its own
+	// submit, so nothing else is touching them either.
 	if (resident)
-		m_device.waitIdle();
+		m_drainFrames();
 
 	auto envGPU = m_uploader->UploadEnvironment(request.equirect);
 	m_cache.UseEnvironmentGPU(request.objectId, std::move(envGPU));
@@ -163,15 +166,17 @@ void RenderRequestExecutor::handle(const EnsurePipelineRequest& request)
 	}
 
 	// A store that REPLACES an entry destroys the displaced Pipeline at once, so
-	// drain first. Get ignores the version, GetPipeline does not: an entry under
-	// the id that fails the version check is one a store would replace. A first
-	// insert destroys nothing, so the drain is bounded to shader recompiles.
-	// This argument depends on kMaxFramesInFlight == 1 (see DrawFrame).
+	// drain the frames first. Get ignores the version, GetPipeline does not: an
+	// entry under the id that fails the version check is one a store would
+	// replace. A first insert destroys nothing, so the drain is bounded to
+	// shader recompiles. Draining the frames is enough because every frame fence
+	// is waited, so no recorded frame still binds the displaced pipeline; the
+	// build that follows submits its own work and waits it.
 	PipelineCache& pipelines = m_cache.GetPipelineCache();
 	const bool replaces = pipelines.Get(request.shaderId) != nullptr
 	                   && pipelines.GetPipeline(request.shaderId, request.version) == nullptr;
 	if (replaces)
-		m_device.waitIdle();
+		m_drainFrames();
 
 	m_geometryPass->EnsureMeshPipeline(m_cache, request);
 }
@@ -183,8 +188,10 @@ void RenderRequestExecutor::handle(const EnsurePipelineRequest& request)
 void RenderRequestExecutor::handle(const DropSceneResourcesRequest&)
 {
 	// Cached entries own vk::raii resources the last frame may still read, so
-	// drain before releasing them. kMaxFramesInFlight == 1 makes the wait exact.
-	m_device.waitIdle();
+	// drain the frames before releasing them. Every frame fence is waited, which
+	// covers every recorded frame; uploads and screenshots wait their own
+	// submits, so they cannot still be reading the released entries either.
+	m_drainFrames();
 	m_cache.RemoveSceneResources();
 	NEURUS_LOG("[RenderRequestExecutor] Dropped scene GPU resources");
 }

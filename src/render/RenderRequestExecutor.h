@@ -10,7 +10,7 @@
  *
  * This is the testable seam. DeferredRenderer cannot be constructed without a
  * window surface, so its request handling could not be exercised headless; the
- * executor needs only a device, a RenderCache, an UploadManager and a
+ * executor needs only a frame drain, a RenderCache, an UploadManager and a
  * GeometryPass, all of which a GPU test fixture already builds offscreen. The
  * one request DeferredRenderer keeps for itself is ResetAccumulationRequest,
  * which writes renderer state the executor does not own; RedrawOverlaysRequest is
@@ -23,9 +23,8 @@
 
 #include "RenderRequests.h"
 
-#include <vulkan/vulkan_raii.hpp>
-
 #include <cstdint>
+#include <functional>
 
 namespace neurus {
 
@@ -34,14 +33,17 @@ class UploadManager;
 class GeometryPass;
 
 /**
- * @brief Runs a RenderRequest on the renderer's device, cache and passes.
+ * @brief Runs a RenderRequest against the renderer's cache and passes.
  *
  * Borrows everything it touches. The UploadManager and GeometryPass pointers may
  * be null - the renderer is wired up in stages and a request whose collaborator
- * is absent is logged once and skipped rather than crashing. Calls
- * device.waitIdle() directly, because it runs on the submitting thread: a
- * handler that frees or replaces a resource must drain first, and with
- * kMaxFramesInFlight == 1 that is enough (see DeferredRenderer::DrawFrame).
+ * is absent is logged once and skipped rather than crashing.
+ *
+ * A handler that replaces or frees a resource calls the injected frame drain
+ * before it does so: every frame fence has to be waited, because a recorded
+ * frame may still be reading that resource. Draining the frame is the strongest
+ * wait this handler needs - uploads and screenshots wait their own submits, so
+ * nothing else can still be running against the resource being replaced.
  */
 class RenderRequestExecutor
 {
@@ -49,13 +51,14 @@ public:
 	/**
 	 * @brief Constructs the executor over the renderer's borrowed resources.
 	 *
-	 * @param device              Logical device (borrowed, must outlive this).
+	 * @param drainFrames         Waits every in-flight frame fence; called only
+	 *                            by the handlers that replace or free a resource.
 	 * @param cache               Render cache holding the resource maps.
 	 * @param uploader            Upload service, or null until the Application
 	 *                            wires one in via SetUploadManager().
 	 * @param geometryPass        Pass owning the per-mesh pipeline build, or null.
 	 */
-	RenderRequestExecutor(const vk::raii::Device& device,
+	RenderRequestExecutor(std::function<void()> drainFrames,
 	                      RenderCache& cache,
 	                      UploadManager* uploader,
 	                      GeometryPass* geometryPass);
@@ -87,10 +90,10 @@ private:
 	void handle(const RedrawOverlaysRequest& request);
 
 	// --- Borrowed objects ---
-	const vk::raii::Device& m_device;
-	RenderCache&            m_cache;
-	UploadManager*          m_uploader      = nullptr;
-	GeometryPass*           m_geometryPass  = nullptr;
+	std::function<void()> m_drainFrames;
+	RenderCache&          m_cache;
+	UploadManager*        m_uploader      = nullptr;
+	GeometryPass*         m_geometryPass  = nullptr;
 
 	// --- Latched "collaborator missing" reports (log once, not once per drain) ---
 	bool m_reportedNullUploaderMesh = false;

@@ -241,7 +241,7 @@ private:
 	// --- Borrowed Vulkan handles (must outlive this object) ---
 	const vk::raii::Device& m_device;
 	const vk::raii::PhysicalDevice& m_physicalDevice;
-	SharedQueue* m_queue;   ///< Borrowed wrapper; must outlive this buffer.
+	SharedQueue* m_queue = nullptr;   ///< Borrowed wrapper; must outlive this buffer.
 	uint32_t m_queueFamilyIndex;
 	vk::BufferUsageFlags m_usageFlags;
 	const char* m_debugName;

@@ -16,7 +16,8 @@ class SharedQueue;
  * Allocated with HOST_VISIBLE | HOST_COHERENT memory so the CPU can write
  * directly without explicit flush/invalidate calls. Owns a transient command
  * pool and one-shot command buffer: call BeginStaging() to start recording
- * transfer commands, then EndStaging() to submit and wait.
+ * transfer commands, then EndStaging() to submit and wait for that submit - never
+ * the device or the whole queue.
  */
 class StagingBuffer : public Buffer
 {

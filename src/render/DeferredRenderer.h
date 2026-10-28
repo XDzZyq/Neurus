@@ -153,7 +153,7 @@ public:
 	 */
 	bool WaitForFrameSlot() override;
 
-	/** @brief Blocks until all GPU work completes. */
+	/** @brief Blocks until the graphics queue completes its work. */
 	void WaitIdle() override;
 
 	/** @brief Returns the graphics queue. */
@@ -169,7 +169,9 @@ public:
 	 * @brief Returns the last acquired swapchain image for screenshot capture.
 	 *
 	 * The returned image is in PRESENT_SRC layout from the most recent frame.
-	 * Caller must wait for GPU idle before using the image for readback.
+	 * A caller's readback is submitted after the frame on the same queue, so its
+	 * barrier orders it after the frame's writes, and it waits its own submit -
+	 * no idle wait is needed.
 	 *
 	 * @return vk::Image handle (VK_NULL_HANDLE if swapchain not available or
 	 *         image index is invalid).
@@ -189,10 +191,10 @@ public:
 	/**
 	 * @brief Reads a single pixel from the IDBuffer attachment and returns the object ID.
 	 *
-	 * Drains the GPU before the readback - the readback is a blocking submit
-	 * through the shared queue - to ensure the IDBuffer from the most recent
-	 * frame is available. The readback restores the image to the state it
-	 * entered in, within the same submission.
+	 * The readback is its own submission through the shared queue and waits that
+	 * submission before mapping the result, so the IDBuffer from the most recent
+	 * frame is what gets read without idling the device. The readback restores
+	 * the image to the state it entered in, within the same submission.
 	 *
 	 * @param x Pixel x-coordinate (0 = left edge).
 	 * @param y Pixel y-coordinate (0 = top edge, Vulkan convention).
@@ -300,6 +302,16 @@ private:
 
 	/** @brief Destroys and re-creates sync objects after swapchain resize. */
 	void recreateSwapchain();
+
+	/**
+	 * @brief Waits every in-flight frame fence, so no recorded frame is still
+	 *        reading the resources a handler is about to replace or free.
+	 *
+	 * On a failed wait (timeout, device loss) it logs the result and falls back
+	 * to an idle queue: the caller must be able to release what it replaces, and
+	 * a fence that never signals cannot prove the GPU is done.
+	 */
+	void DrainInFlightFrames();
 
 	/** @brief Creates the command pool (static helper for init-list use). */
 	static vk::raii::CommandPool createCommandPool(const vk::raii::Device& device,

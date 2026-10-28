@@ -216,9 +216,10 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	// Built last: it borrows the geometry pass and the cache, both live by now.
 	// The UploadManager does not exist yet (the Application creates it after the
 	// renderer), so the executor starts without one; SetUploadManager() wires it
-	// in before the first scene upload.
+	// in before the first scene upload. Its frame drain is this object's fence
+	// wait, so a destroying handler never idles the device.
 	m_executor = std::make_unique<RenderRequestExecutor>(
-		r_device, *r_renderCache, /*uploader=*/nullptr, r_geometryPass);
+		[this] { DrainInFlightFrames(); }, *r_renderCache, /*uploader=*/nullptr, r_geometryPass);
 }
 
 DeferredRenderer::~DeferredRenderer()
@@ -251,6 +252,42 @@ bool DeferredRenderer::WaitForFrameSlot()
 	// not deadlock. A timeout means a hung GPU: the caller must not touch GPU
 	// resources, so it skips the frame and the requests stay queued.
 	return r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) == vk::Result::eSuccess;
+}
+
+void DeferredRenderer::DrainInFlightFrames()
+{
+	// Every fence, because a handler replaces or frees a resource any recorded
+	// frame may still read - not just the slot the next frame would reuse. The
+	// fences are created signaled, so a slot never submitted waits trivially.
+	std::vector<vk::Fence> fences;
+	fences.reserve(r_inFlightFences.size());
+	for (const auto& fence : r_inFlightFences)
+		fences.push_back(*fence);
+
+	vk::Result result = vk::Result::eSuccess;
+	try
+	{
+		result = r_device.waitForFences(fences, VK_TRUE, kFenceTimeoutNs);
+	}
+	catch (const std::exception& e)
+	{
+		// A device-loss wait throws instead of returning; the fallback below is
+		// the only thing that can still make the caller's release safe.
+		NEURUS_ERR("[DeferredRenderer] Frame fence drain threw (" << e.what()
+		          << ") - falling back to an idle queue");
+		r_graphicsQueue->WaitIdle();
+		return;
+	}
+
+	if (result != vk::Result::eSuccess)
+	{
+		// The fences did not prove the GPU is done, but the caller is about to
+		// destroy what a recorded frame may be reading: idle the queue so the
+		// release is safe even though the drain failed.
+		NEURUS_ERR("[DeferredRenderer] Frame fence drain returned "
+		          << vk::to_string(result) << " - falling back to an idle queue");
+		r_graphicsQueue->WaitIdle();
+	}
 }
 
 FrameWork DeferredRenderer::NextWork() const
@@ -289,12 +326,12 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
 
 	// --- Drain Editor-posted GPU requests ---
-	// Placed after the fence wait and before swapchain acquire: with
-	// kMaxFramesInFlight == 1 a signaled fence means the GPU has finished every
-	// frame we submitted, so a handler that replaces or frees a resource cannot
-	// pull it from under an executing frame. That argument holds ONLY for
-	// kMaxFramesInFlight == 1, which is exactly why the destroying handlers
-	// (pipeline replace, environment regenerate, scene drop) still WaitIdle.
+	// Placed after the fence wait and before swapchain acquire. The handlers that
+	// replace or free a resource drain every in-flight frame fence themselves
+	// (DrainInFlightFrames), so no recorded frame still references what they
+	// release - independent of how many frames are in flight. Uploads and
+	// screenshots wait their own submits, so nothing else can be running against
+	// the resource being replaced.
 	//
 	// The single-threaded path relies on this drain. On the render thread the
 	// loop already drained after its own WaitForFrameSlot(), so this second
@@ -590,7 +627,10 @@ void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
 
 void DeferredRenderer::WaitIdle()
 {
-	r_device.waitIdle();
+	// Rare event (shutdown, tests), so holding the queue lock across the wait is
+	// accepted. On a device with a separate transfer queue that queue is idle
+	// here too: every upload waits its own submit before returning.
+	r_graphicsQueue->WaitIdle();
 }
 
 uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
@@ -658,7 +698,11 @@ void DeferredRenderer::HandleResize(uint32_t width, uint32_t height)
 
 void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurface)
 {
-	r_device.waitIdle();
+	// The old swapchain's images must not be in use while it is destroyed, and
+	// this is a rare event (a window/monitor move), so holding the queue lock
+	// across the wait is accepted. A separate transfer queue is idle here
+	// because every upload waits its own submit.
+	r_graphicsQueue->WaitIdle();
 
 	// Preserve current extent to pass to the new swapchain
 	uint32_t width = r_swapchain ? r_swapchain->extent().width : 800;
@@ -681,7 +725,11 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 
 void DeferredRenderer::recreateSwapchain()
 {
-	r_device.waitIdle();
+	// The swapchain and the screen-space attachments it sizes are about to be
+	// replaced; a resize or an out-of-date present is rare, so holding the queue
+	// lock across the wait is accepted. A separate transfer queue is idle here
+	// because every upload waits its own submit.
+	r_graphicsQueue->WaitIdle();
 
 	uint32_t newImageCount = r_swapchain->imageCount();
 	vk::Extent2D newExtent = r_swapchain->extent();

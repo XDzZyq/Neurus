@@ -17,8 +17,9 @@ class SharedQueue;
  * Provides both instance methods (for high-level screenshot orchestration)
  * and static utility methods (for low-level capture of individual images).
  *
- * All capture operations are blocking: every submission is waited on before the
- * readback, through the shared queue that serialises them with the frame.
+ * All capture operations are blocking: each readback waits its own submit
+ * before reading the result - never the device or the whole queue - through the
+ * shared queue that serialises the submits with the frame's.
  */
 class Screenshot
 {

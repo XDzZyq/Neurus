@@ -230,8 +230,8 @@ void RenderThread::Run()
 		m_control.TakeAll();  // destroyed at scope exit -> broken promises
 	}
 
-	// Drain the device on the way out: this thread owns every GPU call, so the
-	// idle must happen here, not on the thread that joins us.
+	// Drain the graphics queue on the way out: this thread owns every frame
+	// submit, so the idle must happen here, not on the thread that joins us.
 	try
 	{
 		m_renderer.WaitIdle();
