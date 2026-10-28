@@ -7,6 +7,7 @@
 
 #include "core/Log.h"
 #include "editor/operations/OperationContext.h"
+#include "editor/operations/ScriptOperations.h"
 #include "editor/events/EventBus.h"
 
 namespace neurus {

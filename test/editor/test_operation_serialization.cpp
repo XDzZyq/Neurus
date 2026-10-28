@@ -38,6 +38,7 @@
 #include "editor/operations/OperationManager.h"
 #include "editor/operations/registrations/OperationRegistration.h"
 #include "editor/operations/SceneOperations.h"
+#include "editor/operations/ScriptOperations.h"
 #include "editor/events/ShaderEvents.h"
 #include "editor/operations/ShaderOperations.h"
 #include "render/shaders/RenderShader.h"

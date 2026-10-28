@@ -14,6 +14,7 @@
 #include "editor/operations/ConfigOperations.h"
 #include "editor/operations/Operation.h"
 #include "editor/operations/SceneOperations.h"
+#include "editor/operations/ScriptOperations.h"
 #include "editor/operations/ShaderOperations.h"
 
 // --- Concrete type registration (stable, stringized token names) ---
