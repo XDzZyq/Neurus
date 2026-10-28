@@ -40,12 +40,14 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <cereal/archives/json.hpp>
 
 #include "app/Preferences.h"
 #include "asset/Project.h"
 #include "asset/components/ConfigComponent.h"
+#include "asset/components/EditorComponent.h"
 #include "asset/components/HistoryComponent.h"
 #include "asset/components/ResourceComponent.h"
 #include "asset/components/SceneComponent.h"
@@ -57,6 +59,7 @@
 #include "editor/events/EventBus.h"
 #include "editor/operations/ConfigOperations.h"
 #include "editor/operations/OperationManager.h"
+#include "editor/viewport/EditorViewport.h"
 #include "core/RenderConfig.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
@@ -657,54 +660,70 @@ TEST(SerializeOptional, PreferencesCorruptFileKeepsLiveValues)
 // =======================================================================
 
 /**
- * @test Re-saving the shipped project drops none of the keys it arrived with.
+ * @test Re-saving a shipped example project drops none of the keys it arrived with.
  *
  * Every other test here builds its archive in memory, so none of them can tell
- * whether a *file on disk* — `res/default.neurus.json`, written before any of
- * this existed and still missing `r_debug_draw` — comes back out intact. That
- * is the whole backward-compatibility claim: open an older project, save it,
- * and the file is still the same format rather than one quietly short a field.
+ * whether a *file on disk* comes back out intact - the whole
+ * backward-compatibility claim: open an older project, save it, and the file is
+ * still the same format rather than one quietly short a field.
  *
- * The comparison is one-directional on purpose. The new file is allowed to have
- * *more* keys (it gains `r_debug_draw`, and `activeCamUid` if the old file
- * predates it); it may not have fewer. EditorComponent is deliberately left
- * unregistered — the shipped file has no `m_editor` node, so registering it
- * would only add a key to the right-hand side.
+ * The examples are fixed, test-only files under test/asset/projects/ (an
+ * application run cannot perturb them): one already carries the trailing
+ * `m_editor` node, one predates it. The comparison is one-directional on
+ * purpose - the new file may have *more* keys (it may gain a field a newer
+ * build writes), never fewer. EditorComponent is registered (last, as the
+ * application does) so the `m_editor` node round-trips either way.
  */
 TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 {
-	const std::string src = std::string(TEST_SOURCE_DIR) + "/res/default.neurus.json";
-	const std::string before = ReadText(src);
-	ASSERT_FALSE(before.empty()) << "cannot read " << src;
+	const std::string base = std::string(TEST_SOURCE_DIR) + "/test/asset/projects/";
+	const std::vector<std::string> fixtures = {
+		"with_editor.neurus.json",
+		"legacy.no_editor.neurus.json",
+	};
 
-	Scene            scene;
-	RenderConfig     config;
-	ResourceManager  resources;
-	std::string      ui;
-	EventQueue       bus;
-	OperationManager ops(bus);
-
-	ScratchFile out("test_serialize_optional_resave.neurus.json");
+	for (const std::string& name : fixtures)
 	{
-		project::Project p;
-		p.Register<project::ResourceComponent>(resources);
-		p.Register<project::SceneComponent>(scene, resources);
-		p.Register<project::ConfigComponent>(config);
-		p.Register<project::UIComponent>(ui);
-		p.Register<project::HistoryComponent>(ops);
-		ASSERT_NO_THROW(p.Load(src));
-		ASSERT_NO_THROW(p.Save(out.path));
+		SCOPED_TRACE(name);
+
+		const std::string src = base + name;
+		const std::string before = ReadText(src);
+		ASSERT_FALSE(before.empty()) << "cannot read " << src;
+
+		Scene            scene;
+		RenderConfig     config;
+		ResourceManager  resources;
+		std::string      ui;
+		EventQueue       bus;
+		OperationManager ops(bus);
+		EditorViewport   viewport;
+
+		ScratchFile out("test_serialize_optional_resave.neurus.json");
+		{
+			project::Project p;
+			p.Register<project::ResourceComponent>(resources);
+			p.Register<project::SceneComponent>(scene, resources);
+			p.Register<project::ConfigComponent>(config);
+			p.Register<project::UIComponent>(ui);
+			p.Register<project::HistoryComponent>(ops);
+			p.Register<project::EditorComponent>(viewport);
+			ASSERT_NO_THROW(p.Load(src));
+			ASSERT_NO_THROW(p.Save(out.path));
+		}
+
+		const std::string after = ReadText(out.path);
+		ASSERT_FALSE(after.empty()) << "nothing was written to " << out.path;
+
+		const auto oldKeys = KeyNames(before);
+		const auto newKeys = KeyNames(after);
+		ASSERT_FALSE(oldKeys.empty());
+		for (const auto& key : oldKeys)
+			EXPECT_TRUE(newKeys.count(key) != 0)
+				<< "re-saving " << name << " dropped the key '" << key << "'";
+
+		// Both forms keep or gain the editor node - never lose it.
+		EXPECT_TRUE(newKeys.count("m_editor") != 0) << name << " lost the m_editor node";
 	}
-
-	const std::string after = ReadText(out.path);
-	ASSERT_FALSE(after.empty()) << "nothing was written to " << out.path;
-
-	const auto oldKeys = KeyNames(before);
-	const auto newKeys = KeyNames(after);
-	ASSERT_FALSE(oldKeys.empty());
-	for (const auto& key : oldKeys)
-		EXPECT_TRUE(newKeys.count(key) != 0)
-			<< "re-saving the shipped project dropped the key '" << key << "'";
 }
 
 

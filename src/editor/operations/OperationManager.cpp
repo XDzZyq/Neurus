@@ -7,9 +7,21 @@
 
 #include "core/Log.h"
 #include "editor/operations/OperationContext.h"
+#include "editor/operations/ScriptOperations.h"
 #include "editor/events/EventBus.h"
 
 namespace neurus {
+
+const char* OperationManager::PhaseName(Phase phase)
+{
+	switch (phase)
+	{
+	case Phase::Idle: return "Idle";
+	case Phase::Replaying: return "Replaying";
+	case Phase::Script: return "Script";
+	}
+	return "Unknown";
+}
 
 OperationManager::OperationManager(EventQueue& bus, size_t maxUndoDepth)
 	: m_bus(bus)
@@ -18,6 +30,8 @@ OperationManager::OperationManager(EventQueue& bus, size_t maxUndoDepth)
 
 void OperationManager::Submit(std::unique_ptr<Operation> op)
 {
+	if (!op) return;
+
 	// Replay re-runs the originating handler, which calls Submit again; suppress
 	// it so history is not corrupted by its own playback. This is the EXPECTED
 	// path on every undo/redo, so it is informational, not an error condition.
@@ -27,7 +41,16 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 		           << op->Label());
 		return;
 	}
-	if (!op) return;
+
+	// A script run is one history entry: while the scope is open every op is
+	// buffered instead of pushed, so the run cannot fragment into N steps. Before
+	// the merge logic on purpose - coalescing is a per-entry concern and the
+	// buffer is committed as a single composite by EndScriptScope().
+	if (m_phase == Phase::Script)
+	{
+		m_scriptOps.push_back(std::move(op));
+		return;
+	}
 
 	// Coalesce a stream of same-key edits into the undo-stack top; the live state
 	// is already up to date, so merging only extends the recorded range.
@@ -53,7 +76,7 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 
 	NEURUS_LOG("[OperationManager] Submit: '" << m_undo.back()->Label()
 	           << "' (undo stack size " << m_undo.size()
-	           << ", phase=" << (m_phase == Phase::Replaying ? "Replaying" : "Idle")
+	           << ", phase=" << PhaseName(m_phase)
 	           << ", mergeKey='" << key << "')");
 }
 
@@ -113,10 +136,68 @@ void OperationManager::Redo()
 void OperationManager::Clear()
 {
 	NEURUS_LOG("[OperationManager] Clear: dropping " << m_undo.size()
-	           << " undo + " << m_redo.size() << " redo entries");
+	           << " undo + " << m_redo.size() << " redo entries and "
+	           << m_scriptOps.size() << " buffered script op(s)");
 	m_undo.clear();
 	m_redo.clear();
+	m_scriptOps.clear();
+	m_scriptName.clear();
 	++m_revision;
+}
+
+void OperationManager::BeginScriptScope(std::string name)
+{
+	// Nesting has no meaning: only the outermost run boundary could own the
+	// commit, and a second Begin would silently discard the first run's buffer.
+	if (m_phase != Phase::Idle)
+	{
+		NEURUS_ERR("[OperationManager] BeginScriptScope ignored: a scope is already open (phase="
+		           << PhaseName(m_phase) << ")");
+		return;
+	}
+
+	m_scriptOps.clear();
+	// Only a successful Begin adopts the new label, so an ignored one cannot
+	// rename the run whose buffer is still open.
+	m_scriptName = std::move(name);
+	m_phase = Phase::Script;
+	NEURUS_LOG("[OperationManager] BeginScriptScope: buffering edits into one undo step");
+}
+
+void OperationManager::EndScriptScope()
+{
+	if (m_phase != Phase::Script)
+	{
+		NEURUS_ERR("[OperationManager] EndScriptScope ignored: no script scope is open (phase="
+		           << PhaseName(m_phase) << ")");
+		return;
+	}
+
+	// Restore Idle FIRST: the composite's Submit() below must take the normal
+	// recording path, not re-enter the buffering branch.
+	m_phase = Phase::Idle;
+
+	std::vector<std::unique_ptr<Operation>> buffered = std::move(m_scriptOps);
+	m_scriptOps.clear();
+
+	// The label belongs to this run only: consume it on every exit path, the
+	// empty run included, so it can never name the next run.
+	std::string runName = std::move(m_scriptName);
+	m_scriptName.clear();
+
+	// A run that changed nothing (or only read) must not leave an empty entry on
+	// the undo stack - it would make Ctrl+Z appear to do nothing.
+	if (buffered.empty())
+	{
+		NEURUS_LOG("[OperationManager] EndScriptScope: the run recorded no edits");
+		return;
+	}
+
+	// The run records as one labelled step: ScriptRunOp is a CompositeOp that
+	// reports the run's name ("Run Script" when the host supplied none).
+	NEURUS_LOG("[OperationManager] EndScriptScope: committing " << buffered.size()
+	           << " buffered op(s) as one step");
+	Submit(std::make_unique<ScriptRunOp>(std::move(buffered), std::move(runName)));
 }
 
 void OperationManager::RestoreHistory(std::vector<std::unique_ptr<Operation>> undo,

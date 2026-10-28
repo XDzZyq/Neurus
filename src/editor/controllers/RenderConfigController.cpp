@@ -18,7 +18,7 @@ namespace neurus {
 
 void RenderConfigController::Init(ControllerContext& ctx)
 {
-	ctx.events.subscribe<ConfigEditBegin>([this, ctx](const ConfigEditBegin&) {
+	ctx.events.Subscribe<ConfigEditBegin>([this, ctx](const ConfigEditBegin&) {
 		if (RenderConfig* cfg = ctx.config())
 		{
 			m_before = *cfg;
@@ -26,13 +26,13 @@ void RenderConfigController::Init(ControllerContext& ctx)
 		}
 	});
 
-	ctx.events.subscribe<RenderConfigChangedEvent>([this, ctx](const RenderConfigChangedEvent& e) {
+	ctx.events.Subscribe<RenderConfigChangedEvent>([this, ctx](const RenderConfigChangedEvent& e) {
 		RenderConfig* cfg = ctx.config();
 		if (!cfg) return;
 
 		const RenderConfig before = *cfg;
 		*cfg = e.config;
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.Emit(RenderResetEvent{});
 
 		// During a slider gesture the drag is recorded once on ConfigEditEnd;
 		// discrete edits (no gesture) record immediately. Skip no-op writes.
@@ -42,7 +42,7 @@ void RenderConfigController::Init(ControllerContext& ctx)
 		}
 	});
 
-	ctx.events.subscribe<ConfigEditEnd>([this, ctx](const ConfigEditEnd&) {
+	ctx.events.Subscribe<ConfigEditEnd>([this, ctx](const ConfigEditEnd&) {
 		if (m_editing)
 		{
 			if (RenderConfig* cfg = ctx.config(); cfg && !(m_before == *cfg))

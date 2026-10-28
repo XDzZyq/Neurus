@@ -69,6 +69,10 @@ Conventionally only one `Environment` is active per scene.
 
 A scene containing zero cameras is a legal document, and deleting the last camera is a legal gesture. See [Viewport](../editor/viewport.md).
 
+## Display names
+
+`o_name` is the display name shown by the editor UI. Name uniqueness, suffixing and lookup are owned by the `ResourceManager` name registry, not by the scene: see [Resource names](../core/uid-and-resources.md#resource-names). Registering or removing a scene object only updates the typed pools and `obj_list`.
+
 ## Pooled data references
 
 Scene objects never hold file paths. They reference pooled data resources through integer IDs, which the loader re-wires after deserialization:

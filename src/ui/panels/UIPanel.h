@@ -32,6 +32,7 @@ enum class PanelType : uint8_t
 	ShaderEditor,
 	Profiling,
 	Log,
+	ScriptConsole,
 	Count
 };
 
@@ -80,6 +81,7 @@ public:
 		case PanelType::ShaderEditor:  return "dock.shaderEditor";
 		case PanelType::Profiling:     return "dock.profiling";
 		case PanelType::Log:           return "dock.log";
+		case PanelType::ScriptConsole: return "dock.scriptConsole";
 		case PanelType::Count:         break;
 		}
 		return "dock.unknown";
@@ -115,6 +117,7 @@ private:
 		case PanelType::ShaderEditor:   return "Shader Editor";
 		case PanelType::Profiling:      return "Profiling";
 		case PanelType::Log:            return "Log";
+		case PanelType::ScriptConsole:  return "Script Console";
 		case PanelType::Count:          break;
 		}
 		// Unreachable: Count is the enumerator bound, never a panel's type.

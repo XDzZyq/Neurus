@@ -13,10 +13,12 @@ ifeq ($(UNAME),Darwin)
   PRESET        := macos
   PRESET_REL    := macos
   PYTHON        := python3
+  SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
 else
   PRESET        := win
   PRESET_REL    := win
   PYTHON        := python
+  SETUP_PY_ENV  := powershell -ExecutionPolicy Bypass -File lib/scripts/setup_python_env.ps1
 endif
 
 .PHONY: configure build test clean nobuild release help app check update \
@@ -176,4 +178,5 @@ update:
 	# googletest is `update = none` (lazy) in lib/.gitmodules; init it on demand.
 	git -C lib -c "submodule.src/googletest.update=checkout" submodule update --init --depth 1 src/googletest
 	$(PYTHON) lib/scripts/fetch_prebuilt.py
+	$(SETUP_PY_ENV)
 	cmake --preset $(PRESET) $(if $(BINARY_DIR),-B $(BINARY_DIR),)

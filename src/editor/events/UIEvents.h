@@ -112,6 +112,14 @@ signals:
 	/** @brief Emitted when the user requests redo (Edit -> Redo / Ctrl+Shift+Z). */
 	void redoRequested(const RedoRequested& e);
 
+	// --- Script signals ---
+
+	/** @brief Emitted when the Script Console requests a snippet run. */
+	void runScriptRequested(const QString& code);
+
+	/** @brief Emitted when the Script Console requests a script file run. */
+	void runScriptFileRequested(const QString& path);
+
 	// --- Preferences signals ---
 
 	/** @brief Emitted when the user picks a new UI language in Preferences.
@@ -147,6 +155,9 @@ public:
 
 	void requestUndo() { emit undoRequested(UndoRequested{}); }
 	void requestRedo() { emit redoRequested(RedoRequested{}); }
+
+	void requestRunScript(const QString& code) { emit runScriptRequested(code); }
+	void requestRunScriptFile(const QString& path) { emit runScriptFileRequested(path); }
 
 	void requestLanguageChange(const QString& language) { emit languageChangeRequested(language); }
 	void requestTargetFps(int fps) { emit targetFpsChangeRequested(fps); }

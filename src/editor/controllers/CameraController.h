@@ -10,7 +10,7 @@
  *
  * @note Does not own the camera; each event carries a UID, resolved by the
  *       handler against the current scene.
- * @note Delta scaling is external: the enqueuer normalizes before enqueuing.
+ * @note Delta scaling is external: the emitting handler normalizes each delta.
  */
 #pragma once
 

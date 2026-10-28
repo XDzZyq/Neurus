@@ -49,12 +49,15 @@ add_executable(neurus_test
 	editor/test_input.cpp
 	editor/test_event_bus.cpp
 	editor/test_event_bus_typed.cpp
+	editor/test_object_controller.cpp
 	editor/test_scene_controller.cpp
 	editor/test_operation_manager.cpp
 	editor/test_operation_serialization.cpp
 	editor/test_render_config_controller.cpp
+	editor/test_script_controller.cpp
 	editor/test_shader_controller.cpp
 	editor/test_shader_editor_panel.cpp
+	editor/test_ui_events_script.cpp
 	editor/test_transform_gizmo.cpp
 	editor/test_transform_gizmo_controller.cpp
 	editor/test_viewport_camera.cpp
@@ -86,9 +89,24 @@ add_executable(neurus_test
 	ui/test_floating_window.cpp
 	ui/test_layout_restore.cpp
 	ui/test_ui_context.cpp
+	ui/test_code_highlighter_python.cpp
+	ui/test_script_console_panel.cpp
+	ui/test_run_script_menu.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
 )
+
+# Scripting engine unit tests (only when the script layer is enabled).
+if(NEURUS_ENABLE_SCRIPTING)
+	target_sources(neurus_test PRIVATE
+		script/test_script_engine.cpp
+		script/test_script_context.cpp
+		script/test_script_bindings.cpp
+		script/test_script_writes.cpp
+		script/test_script_file_roundtrip.cpp
+	script/test_script_isolation.cpp
+	)
+endif()
 
 target_link_libraries(neurus_test PRIVATE
 	neurus_scene
@@ -105,6 +123,12 @@ target_link_libraries(neurus_test PRIVATE
 	Qt6::Quick
 	Qt6::Qml
 )
+
+if(NEURUS_ENABLE_SCRIPTING)
+	target_link_libraries(neurus_test PRIVATE
+		neurus_script
+	)
+endif()
 
 target_include_directories(neurus_test PRIVATE
 	${CMAKE_SOURCE_DIR}/src
@@ -158,6 +182,16 @@ if(TARGET shaderc_shared)
 	)
 endif()
 
+# Deploy the CPython runtime DLL so the ScriptEngine tests can load Python.
+if(WIN32 AND NEURUS_ENABLE_SCRIPTING)
+	add_custom_command(TARGET neurus_test POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${NEURUS_PYTHON_DLL}"
+			"$<TARGET_FILE_DIR:neurus_test>"
+		COMMENT "Copying the CPython runtime DLL for runtime access"
+	)
+endif()
+
 # Copy res/ to the build directory so tests can access assets from CWD
 # (ctest runs from CMAKE_BINARY_DIR; no relative path probing needed)
 add_custom_command(TARGET neurus_test POST_BUILD
@@ -167,9 +201,18 @@ add_custom_command(TARGET neurus_test POST_BUILD
 	COMMENT "Copying res/ to build directory for test access"
 )
 
+# Copy test fixtures to the build directory. These live under test/ because res/
+# is shipped runtime content; tests still reach them relative to CWD.
+add_custom_command(TARGET neurus_test POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_CURRENT_SOURCE_DIR}/scripts"
+		"${CMAKE_BINARY_DIR}/testdata/scripts"
+	COMMENT "Copying test fixtures to build directory for test access"
+)
+
 # Register tests with CTest.
-# WORKING_DIRECTORY pinned to CMAKE_BINARY_DIR so res/ (copied there by
-# POST_BUILD) is always resolvable relative to CWD.
+# WORKING_DIRECTORY pinned to CMAKE_BINARY_DIR so res/ and testdata/ (copied
+# there by POST_BUILD) are always resolvable relative to CWD.
 include(GoogleTest)
 gtest_discover_tests(neurus_test
 	TEST_PREFIX "Neurus."

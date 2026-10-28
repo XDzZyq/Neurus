@@ -4,9 +4,16 @@
  *
  * Covers:
  * - Load<T> constructs + registers + returns a typed shared_ptr
+ * - Load<T> auto-registers a public o_name (suffix on collision, renameable)
+ *   and registers nothing for a type without one
  * - Duplicate registration throws (safety net)
  * - Get<T> type-checked lookup (wrong type -> nullptr)
  * - Contains / Remove / Clear / Size
+ * - Name registry: per-type uniqueness and suffixing, typed SetName/GetByName,
+ *   rename-to-own-name no-op, rename releasing the old forward entry, name
+ *   release on Remove/Clear, and a load into a non-empty pool dropping old names
+ * - Per-type index: ForEach<T> visits only its exact dynamic type, while
+ *   ForEachUID stays complete even with a base-typed instance pooled
  * - Polymorphic save/load round-trip (Camera + Mesh + Light + MeshData via
  *   cereal JSON archives), including UID preservation and post-load counter
  *   bump (new objects never collide with restored IDs).
@@ -17,7 +24,9 @@
 #include <gtest/gtest.h>
 
 #include <cereal/archives/json.hpp>
+#include <algorithm>
 #include <sstream>
+#include <vector>
 
 #include "core/ResourceManager.h"
 #include "scene/Camera.h"
@@ -37,8 +46,99 @@
 using namespace neurus;
 
 // -----------------------------------------------------------------------
+// Test-local resource types (name registry / type index)
+// -----------------------------------------------------------------------
+
+namespace
+{
+
+/**
+ * @brief Minimal UID resource used to exercise the name and type indexes.
+ */
+struct TestResource : neurus::UID
+{
+};
+
+/**
+ * @brief Second concrete type, distinct from TestResource.
+ */
+struct OtherTestResource : neurus::UID
+{
+};
+
+/**
+ * @brief UID resource carrying a display name, like a scene object does.
+ *
+ * Named differently from the real scene types so the assertions cannot lean on
+ * their constructor defaults.
+ */
+struct NamedResource : neurus::UID
+{
+	std::string o_name = "Named";
+};
+
+} // namespace
+
+// -----------------------------------------------------------------------
 // Load / Register semantics
 // -----------------------------------------------------------------------
+
+/**
+ * @test Load<T> auto-registers a type's o_name and mirrors the unique result,
+ *       so no creation path can forget the name.
+ */
+TEST(ResourceManagerTest, LoadAutoRegistersOname)
+{
+	ResourceManager pool;
+
+	auto first = pool.Load<NamedResource>();
+	EXPECT_EQ(first->o_name, "Named") << "the constructor name is mirrored back";
+	EXPECT_EQ(pool.GetByName<NamedResource>("Named"), first);
+
+	// The registry owns uniqueness: the second load is suffixed.
+	auto second = pool.Load<NamedResource>();
+	EXPECT_EQ(second->o_name, "Named.001");
+	EXPECT_EQ(pool.GetByName<NamedResource>("Named.001"), second);
+}
+
+/**
+ * @test A type without o_name is not registered by Load, so data resources stay
+ *       unnamed and cannot reserve a scene object's name.
+ */
+TEST(ResourceManagerTest, LoadWithoutOnameRegistersNothing)
+{
+	ResourceManager pool;
+	pool.Load<TestResource>();
+
+	EXPECT_EQ(pool.GetByName<TestResource>("Object"), nullptr);
+	EXPECT_EQ(pool.GetByName<TestResource>("Named"), nullptr);
+
+	// A named type still owns its bare spelling, proving nothing was reserved.
+	auto named = pool.Load<NamedResource>();
+	EXPECT_EQ(named->o_name, "Named");
+	EXPECT_EQ(pool.GetByName<NamedResource>("Named"), named);
+}
+
+/**
+ * @test A load-time registration is an ordinary one: renaming it frees the
+ *       constructor name for the next resource. EditorViewport::EnsureCamera
+ *       relies on exactly this when it renames the viewport camera.
+ */
+TEST(ResourceManagerTest, LoadRegistrationIsRenameable)
+{
+	ResourceManager pool;
+	auto cam = pool.Load<Camera>();
+	EXPECT_EQ(cam->o_name, "Camera");
+	EXPECT_EQ(pool.GetByName<Camera>("Camera"), cam);
+
+	cam->o_name = pool.SetName(cam->GetObjectID(), "ViewportCamera");
+	EXPECT_EQ(cam->o_name, "ViewportCamera");
+	EXPECT_EQ(pool.GetByName<Camera>("Camera"), nullptr);
+	EXPECT_EQ(pool.GetByName<Camera>("ViewportCamera"), cam);
+
+	auto docCam = pool.Load<Camera>();
+	EXPECT_EQ(docCam->o_name, "Camera") << "the freed name must be reusable";
+}
 
 /**
  * @test Load<T> constructs, registers, and returns a typed shared_ptr.
@@ -255,4 +355,270 @@ TEST(ResourceManagerTest, PooledShaderRecompilesAfterLoad)
 	EXPECT_FALSE(shader2->GetStage(ShaderType::VERTEX).spv.empty());
 	EXPECT_FALSE(shader2->GetStage(ShaderType::FRAGMENT).spv.empty());
 	EXPECT_GT(shader2->GetVersion(), 0);
+}
+
+// -----------------------------------------------------------------------
+// Name registry (per concrete type)
+// -----------------------------------------------------------------------
+
+/**
+ * @test Names are unique per concrete type: both types may be "Ground", while
+ *       a second resource of the same type gains the ".001" suffix.
+ */
+TEST(ResourceNameRegistry, SetAndGetByNamePerType)
+{
+	neurus::ResourceManager rm;
+	auto a = rm.Load<TestResource>();
+	auto b = rm.Load<TestResource>();
+	auto c = rm.Load<OtherTestResource>();
+
+	EXPECT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	EXPECT_EQ(rm.SetName(b->GetObjectID(), "Ground"), "Ground.001");
+	EXPECT_EQ(rm.SetName<OtherTestResource>(c->GetObjectID(), "Ground"), "Ground");
+
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), a);          // first keeps the bare name
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground.001"), b);      // second is suffixed
+	EXPECT_EQ(rm.GetByName<OtherTestResource>("Ground"), c);     // own namespace
+	EXPECT_EQ(rm.GetByName<TestResource>("Missing"), nullptr);
+	EXPECT_EQ(rm.GetByName<TestResource>("NoSuchType"), nullptr);
+}
+
+/**
+ * @test The typed setter rejects a resource of a different type and leaves the
+ *       registry untouched.
+ */
+TEST(ResourceNameRegistry, TypedSetterRejectsWrongType)
+{
+	neurus::ResourceManager rm;
+	auto c = rm.Load<OtherTestResource>();
+	EXPECT_EQ(rm.SetName<TestResource>(c->GetObjectID(), "Ground"), std::string{});
+	EXPECT_EQ(rm.GetByName<OtherTestResource>("Ground"), nullptr);
+}
+
+/**
+ * @test Remove frees the name; Clear drops the registry and type index too.
+ */
+TEST(ResourceNameRegistry, RemoveFreesNameAndClearEmptiesIndex)
+{
+	neurus::ResourceManager rm;
+	auto a = rm.Load<TestResource>();
+	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	ASSERT_TRUE(rm.Remove(a->GetObjectID()));
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
+	int remaining = 0;
+	rm.ForEach<TestResource>([&](const std::shared_ptr<TestResource>&) { ++remaining; });
+	EXPECT_EQ(remaining, 0);
+
+	auto b = rm.Load<TestResource>();
+	ASSERT_EQ(rm.SetName(b->GetObjectID(), "Ground"), "Ground");
+	rm.Clear();
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
+	EXPECT_EQ(rm.Size(), 0u);
+}
+
+/**
+ * @test Re-registering the name an object already owns is a no-op, not a suffix.
+ */
+TEST(ResourceNameRegistry, SetToOwnNameIsANoop)
+{
+	neurus::ResourceManager rm;
+	auto a = rm.Load<TestResource>();
+	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	EXPECT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), a);
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground.001"), nullptr);
+}
+
+/**
+ * @test A rename releases the old forward entry: the previous spelling must not
+ *       keep resolving to the object (or to nullptr through a stale id).
+ */
+TEST(ResourceNameRegistry, RenameLeavesNoStaleForwardEntry)
+{
+	neurus::ResourceManager rm;
+	auto a = rm.Load<TestResource>();
+	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Rock"), "Rock");
+
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
+	EXPECT_EQ(rm.GetByName<TestResource>("Rock"), a);
+}
+
+/**
+ * @test An absent id yields an empty string and registers nothing.
+ */
+TEST(ResourceNameRegistry, SetNameOnMissingIdReturnsEmpty)
+{
+	neurus::ResourceManager rm;
+	EXPECT_EQ(rm.SetName(123456, "Ground"), std::string{});
+	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
+}
+
+/**
+ * @test An empty requested name becomes "Object" (suffixed on collision).
+ */
+TEST(ResourceNameRegistry, EmptyNameBecomesObject)
+{
+	neurus::ResourceManager rm;
+	auto a = rm.Load<TestResource>();
+	auto b = rm.Load<TestResource>();
+	EXPECT_EQ(rm.SetName(a->GetObjectID(), ""), "Object");
+	EXPECT_EQ(rm.SetName(b->GetObjectID(), ""), "Object.001");
+}
+
+/**
+ * @test ForEachUID (virtual, untyped) sees every pooled resource.
+ */
+TEST(ResourceNameRegistry, ForEachUIDSeesEveryPooledResource)
+{
+	neurus::ResourceManager rm;
+	rm.Load<TestResource>();
+	rm.Load<OtherTestResource>();
+	const neurus::IResourceLookup& lookup = rm;
+	int count = 0;
+	lookup.ForEachUID([&](const std::shared_ptr<neurus::UID>&) { ++count; });
+	EXPECT_EQ(count, 2);
+}
+
+// -----------------------------------------------------------------------
+// Per-type index
+// -----------------------------------------------------------------------
+
+/**
+ * @test ForEach<T> visits only resources of T, served from the type index.
+ */
+TEST(ResourceTypeIndex, ForEachTypedVisitsOnlyThatType)
+{
+	neurus::ResourceManager rm;
+	auto a = rm.Load<TestResource>();
+	rm.Load<OtherTestResource>();
+	std::vector<int> seen;
+	rm.ForEach<TestResource>([&](const std::shared_ptr<TestResource>& r)
+	{
+		seen.push_back(r->GetObjectID());
+	});
+	ASSERT_EQ(seen.size(), 1u);
+	EXPECT_EQ(seen.front(), a->GetObjectID());
+}
+
+/**
+ * @test A pooled base instance must not hide derived objects from base
+ *       enumeration. The type index keys exact dynamic types, so ForEachUID is
+ *       the complete walk; ForEach<ObjectID> is pinned as exact-type only.
+ *
+ *       This is the invariant the load seeder and the script collections rely
+ *       on: once a bare ObjectID is pooled, ForEach<ObjectID> would see only it.
+ */
+TEST(ResourceTypeIndex, BaseInstanceDoesNotHideDerivedObjectsFromForEachUID)
+{
+	neurus::ResourceManager rm;
+	auto plain = rm.Load<neurus::ObjectID>();
+	auto cam = rm.Load<neurus::Camera>();
+	auto meshData = rm.Load<neurus::MeshData>("");
+	auto mesh = rm.Load<neurus::Mesh>(meshData);
+
+	const neurus::IResourceLookup& lookup = rm;
+	std::vector<int> seen;
+	lookup.ForEachUID([&](const std::shared_ptr<neurus::UID>& obj)
+	{
+		seen.push_back(obj->GetObjectID());
+	});
+	ASSERT_EQ(seen.size(), 4u) << "ForEachUID must be the complete walk";
+	for (const int id : {plain->GetObjectID(), cam->GetObjectID(), mesh->GetObjectID()})
+	{
+		EXPECT_TRUE(std::find(seen.begin(), seen.end(), id) != seen.end())
+			<< "ForEachUID missed uid " << id;
+	}
+
+	// The trap this guards: the plain ObjectID owns the typeid(ObjectID) index
+	// entry, so an exact-type walk sees only it - cameras and meshes vanish.
+	int objects = 0;
+	rm.ForEach<neurus::ObjectID>([&](const std::shared_ptr<neurus::ObjectID>&) { ++objects; });
+	EXPECT_EQ(objects, 1) << "ForEach<T> is exact-dynamic-type, not a base walk";
+}
+
+/**
+ * @test A type with no pooled instance (here the UID base) has no index entry,
+ *       so ForEachOfType falls back to scanning the whole pool. This is the
+ *       mechanism, NOT an enumeration idiom: pooling a UID instance would create
+ *       the entry and stop the fallback.
+ */
+TEST(ResourceTypeIndex, UntrackedTypeForEachFallsBackToEverything)
+{
+	neurus::ResourceManager rm;
+	rm.Load<TestResource>();
+	rm.Load<OtherTestResource>();
+	int count = 0;
+	rm.ForEach<neurus::UID>([&](const std::shared_ptr<neurus::UID>&) { ++count; });
+	EXPECT_EQ(count, 2);
+}
+
+/**
+ * @test The type index is derived state: a load rebuilds it from the restored
+ *       objects, while names (never serialized) stay unseeded.
+ */
+TEST(ResourceTypeIndex, LoadRebuildsTypeIndexAndKeepsNamesUnseeded)
+{
+	ResourceManager pool;
+	auto cam = pool.Load<Camera>();
+	pool.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
+	ASSERT_EQ(pool.SetName(cam->GetObjectID(), "Cam"), "Cam");
+
+	std::stringstream ss;
+	{
+		cereal::JSONOutputArchive ar(ss);
+		ar(pool);
+	}
+
+	ResourceManager loaded;
+	{
+		std::stringstream is(ss.str());
+		cereal::JSONInputArchive ar(is);
+		ar(loaded);
+	}
+
+	int cameras = 0;
+	int lights = 0;
+	loaded.ForEach<Camera>([&](const std::shared_ptr<Camera>&) { ++cameras; });
+	loaded.ForEach<Light>([&](const std::shared_ptr<Light>&) { ++lights; });
+	EXPECT_EQ(cameras, 1);
+	EXPECT_EQ(lights, 1);
+
+	// Names live in the registry only, so a load leaves them for the caller to
+	// re-seed (ResourceComponent does that from o_name).
+	EXPECT_EQ(loaded.GetByName<Camera>("Cam"), nullptr);
+}
+
+/**
+ * @test A load into a NON-EMPTY pool drops the old name registry. Names are not
+ *       derived state a rebuild can reproduce, so without the clear a name whose
+ *       object the load replaced would keep reserving the bare spelling and force
+ *       the next resource to "Stale.001".
+ */
+TEST(ResourceNameRegistry, LoadIntoNonEmptyPoolDropsTheOldRegistry)
+{
+	ResourceManager source;
+	source.Load<Camera>();
+
+	std::stringstream ss;
+	{
+		cereal::JSONOutputArchive ar(ss);
+		ar(source);
+	}
+
+	ResourceManager target;
+	auto stale = target.Load<Camera>();
+	ASSERT_EQ(target.SetName(stale->GetObjectID(), "Stale"), "Stale");
+
+	{
+		std::stringstream is(ss.str());
+		cereal::JSONInputArchive ar(is);
+		ar(target);
+	}
+
+	// The old object is gone with the replaced pool, and its name must be free.
+	EXPECT_EQ(target.GetByName<Camera>("Stale"), nullptr);
+	auto fresh = target.Load<Camera>();
+	EXPECT_EQ(target.SetName(fresh->GetObjectID(), "Stale"), "Stale")
+		<< "the previous document's name must not survive the load";
 }

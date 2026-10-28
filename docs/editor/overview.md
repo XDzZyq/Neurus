@@ -32,18 +32,20 @@ The `Controllers` base class declares `virtual Init(ControllerContext& ctx)`,
 which binds a controller to its context. `Editor::RegisterController<T>()` is the
 template factory that creates a controller, calls `Init(m_ctx)`, and stores it in
 `ed_controllers`. Controllers receive discrete events rather than polling per
-frame; `Editor::Edit()` dispatches all enqueued events through
-`EventQueue::Process()`. See [Controllers](controllers.md).
+frame; `Editor::Edit()` drains the UI boundary's queued events through
+`EventQueue::Process()`, and every event the editor emits itself dispatches
+synchronously. See [Controllers](controllers.md).
 
 ### GPU upload and asset import
 
 The Editor handles asset import events (mesh, camera, and light adds) and performs
 GPU uploads directly: mesh upload, light SSBO dictionary updates, and IBL
 generation. It subscribes to the cross-component `EditorEvents`
-(`LightGpuChanged`, `LightingRebuild`, `SceneModified`) emitted by
-`SceneController`, and executes the uploads against its
-`DeferredRenderer`/`UploadManager`. The Editor must not mutate GPU resources
-directly outside of event handlers; scene mutations go through `SceneController`.
+(`LightGpuChanged`, `LightingRebuild`, `SceneModified`), which `ObjectController`
+emits for object property writes and `SceneController` for scene membership, and
+executes the uploads against its `DeferredRenderer`/`UploadManager`. The Editor
+must not mutate GPU resources directly outside of event handlers; scene mutations
+go through the controllers.
 
 ## Layer boundaries
 
@@ -84,9 +86,9 @@ With the Renderer:
 
 - Provides scene data via `RenderContext` (and `UIContext` to the UI)
 - Receives rendering events via `UIEvents` (Qt signals)
-- Sends Editor events via `EventQueue` (typed dispatcher)
+- Dispatches its own events internally through `EventQueue` (typed dispatcher)
 - The Renderer never calls back into the Editor directly; the dependency is
-  one-way, Editor to Renderer, through the `EventQueue`
+  one-way, Editor to Renderer, and carries no event queue
 
 With the UI:
 
@@ -167,9 +169,10 @@ struct UIContext
     const RenderConfig*  config  = nullptr;  // read via Settings(), never directly
 
     // Application half - frame-scoped and service-backed
-    const FrameProfile*  profile = nullptr;
-    const LogBuffer*     log     = nullptr;
-    const HistoryView*   history = nullptr;
+    const FrameProfile*        profile       = nullptr;
+    const LogBuffer*           log           = nullptr;
+    const HistoryView*         history       = nullptr;
+    const ScriptConsoleBuffer* scriptConsole = nullptr;  // engine's console ring
 
     bool HasScene() const;
     const RenderConfig& Settings() const;      // defined in UIContext.cpp
@@ -191,7 +194,8 @@ Design:
 - `UpdateUIContext()` assigns fields only and must never call a `UIContext`
   method: it runs in `neurus_editor`, which does not link `neurus_ui` (that
   library links this one), so a symbol defined there would not resolve. The
-  Application adds the frame-scoped `profile`/`log`/`history` members.
+  Application adds the frame-scoped `profile`/`log`/`history`/`scriptConsole`
+  members.
 - Keeping the UI's view a separate two-field struct is what makes "the gizmo is
   not scene data" a property of the type rather than a convention.
 - **The fallback is hoisted, because there are now two callers.** `Settings()` is
@@ -329,7 +333,7 @@ in [Events](events.md).
 
 - `UIEvents` singleton with UI-to-Editor signals (`newFrame`, `windowResized`,
   and so on)
-- `EventQueue` typed event dispatcher for Editor-to-Renderer events
+- `EventQueue` typed event dispatcher for Editor-internal events
 - `RenderContext`: the renderer's view (scene, config, camera, debug and gizmo
   draw lists) plus the frame half, produced by `Editor::UpdateRenderContext()`
 - `UIContext`: the UI's view (scene and config), produced by
@@ -340,3 +344,8 @@ in [Events](events.md).
   (`IEventQueue` + `IResourceLookup` + `IOperationSink` + scene/config providers)
 - `CameraController`: event-driven orbit/zoom/dolly/pan via `CameraEvents` (int
   `camId` payloads)
+- `ObjectController`: every object property write (visibility, transforms, and the
+  camera / mesh / light / environment / debug knobs), resolved through
+  `IResourceLookup` rather than the scene
+- `ScriptController`: maps the script run boundary (`ScriptRunStarted`,
+  `ScriptRunFinished`) to the operation sink's one-step script scope

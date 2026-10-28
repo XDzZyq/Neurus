@@ -601,7 +601,7 @@ void OnFieldRemoved(const neurus::ShaderFieldRemoved& e, const neurus::Controlle
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// Init - subscribe to shader events
+// Init - register the shader event handlers
 // ---------------------------------------------------------------------------
 
 void ShaderController::Init(ControllerContext& ctx)
@@ -610,19 +610,19 @@ void ShaderController::Init(ControllerContext& ctx)
 	// RenderShader); this controller keeps only pool-free lifecycle handlers.
 	// Compile bumps the shader version, so the pipeline rebuilds and temporal
 	// accumulation must reset. These stay non-undoable.
-	ctx.events.subscribe<ShaderCompileRequested>(
+	ctx.events.Subscribe<ShaderCompileRequested>(
 		[ctx](const ShaderCompileRequested& e) {
 			OnCompileShader(e, ctx);
-			ctx.events.enqueue(RenderResetEvent{});
+			ctx.events.Emit(RenderResetEvent{});
 		});
 
 	// Code edits apply live; recording is bracketed by the ShaderEditBegin/End
 	// gesture so a keystroke burst collapses to one SetShaderCodeOp on focus-out.
-	ctx.events.subscribe<ShaderCodeEdited>(
+	ctx.events.Subscribe<ShaderCodeEdited>(
 		[ctx](const ShaderCodeEdited& e) {
 			OnCodeEdited(e, ctx);
 		});
-	ctx.events.subscribe<ShaderEditBegin>(
+	ctx.events.Subscribe<ShaderEditBegin>(
 		[this, ctx](const ShaderEditBegin& e) {
 			std::string before;
 			if (!SnapshotCode(ResolveMesh(ctx, e.objectUid), e.stage, before)) return;
@@ -631,7 +631,7 @@ void ShaderController::Init(ControllerContext& ctx)
 			m_editStage = e.stage;
 			m_beforeCode = std::move(before);
 		});
-	ctx.events.subscribe<ShaderEditEnd>(
+	ctx.events.Subscribe<ShaderEditEnd>(
 		[this, ctx](const ShaderEditEnd&) {
 			if (!m_codeEditing) return;
 			m_codeEditing = false;
@@ -650,7 +650,7 @@ void ShaderController::Init(ControllerContext& ctx)
 		});
 
 	// Discrete struct edits: snapshot the element, apply the edit, diff, record.
-	ctx.events.subscribe<ShaderStructEdited>(
+	ctx.events.Subscribe<ShaderStructEdited>(
 		[ctx](const ShaderStructEdited& e) {
 			ShaderUnit* unit = GetStageUnit(ResolveMesh(ctx, e.objectUid), e.stage);
 			if (!unit) return;
@@ -675,7 +675,7 @@ void ShaderController::Init(ControllerContext& ctx)
 				mesh->GetObjectID(), e.stage, e.section, e.fieldIndex,
 				std::move(before), std::move(after)));
 		});
-	ctx.events.subscribe<ShaderFieldAdded>(
+	ctx.events.Subscribe<ShaderFieldAdded>(
 		[ctx](const ShaderFieldAdded& e) {
 			ShaderUnit* unit = GetStageUnit(ResolveMesh(ctx, e.objectUid), e.stage);
 			if (!unit) return;
@@ -689,13 +689,13 @@ void ShaderController::Init(ControllerContext& ctx)
 
 	// Replay: re-apply one edit dimension + bump version so the panel refreshes.
 	// CPU-only, no recompile.
-	ctx.events.subscribe<ShaderCodeRestored>(
+	ctx.events.Subscribe<ShaderCodeRestored>(
 		[ctx](const ShaderCodeRestored& e) { OnCodeRestored(e, ctx); });
-	ctx.events.subscribe<ShaderFieldRestored>(
+	ctx.events.Subscribe<ShaderFieldRestored>(
 		[ctx](const ShaderFieldRestored& e) { OnFieldRestored(e, ctx); });
-	ctx.events.subscribe<ShaderFieldAddRestored>(
+	ctx.events.Subscribe<ShaderFieldAddRestored>(
 		[ctx](const ShaderFieldAddRestored& e) { OnFieldAddRestored(e, ctx); });
-	ctx.events.subscribe<ShaderFieldRemoved>(
+	ctx.events.Subscribe<ShaderFieldRemoved>(
 		[ctx](const ShaderFieldRemoved& e) { OnFieldRemoved(e, ctx); });
 }
 

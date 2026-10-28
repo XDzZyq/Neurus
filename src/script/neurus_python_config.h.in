@@ -1,0 +1,26 @@
+/**
+ * @file neurus_python_config.h.in
+ * @brief Configure-time Python paths for the embedded interpreter.
+ *
+ * Configured by the root CMakeLists.txt into
+ * `${CMAKE_BINARY_DIR}/generated/script/neurus_python_config.h`. Do not edit
+ * the generated copy.
+ *
+ * `PyConfig_InitIsolatedConfig()` leaves `home` empty, which makes CPython's
+ * `getpath` look for the standard library next to `Neurus.exe` and fail. The
+ * embedded interpreter therefore pins `home` to the *base* interpreter prefix
+ * - a virtual environment reuses the base interpreter's DLL and library (PEP
+ * 405), so `sys.base_prefix` is the right value.
+ */
+
+#pragma once
+
+#define NEURUS_PYTHON_HOME "@NEURUS_PYTHON_HOME@"
+
+/**
+ * @brief Build-time default managed-environment path (the uv env under `lib/`).
+ *
+ * `ScriptEngine::Initialize` attaches this environment's site-packages when the
+ * caller passes no explicit path. It may not exist (isolated base only).
+ */
+#define NEURUS_PYTHON_ENV "@NEURUS_PYTHON_ENV_STR@"

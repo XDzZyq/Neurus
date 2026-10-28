@@ -17,6 +17,9 @@
  *   another UID object internally - construction happens through Load<T>.
  * - The pool serializes the real objects (polymorphically); Scene serializes
  *   only ID references. Pool is loaded before the Scene.
+ * - Names are registry-owned: unique per concrete dynamic type, with a per-type
+ *   id index so typed enumeration does not scan the pool. Load<T> registers a
+ *   scene object's constructor name and mirrors the unique result into o_name.
  *
  * @note Thread-safety: Not thread-safe. Main thread only.
  */
@@ -29,8 +32,10 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <typeindex>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <cereal/cereal.hpp>
 #include <cereal/types/memory.hpp>
@@ -46,8 +51,13 @@ namespace neurus
  * @brief Single factory + registry for all UID objects (scene + data).
  *
  * Cleared on project new/open so no stale object leaks into a save.
- * Implements IResourceLookup (fetch/lookup only) so controllers can resolve
- * object references by integer id without depending on the concrete pool.
+ * Implements IResourceLookup (fetch/lookup, name registry, per-type
+ * enumeration) so controllers can resolve object references without depending
+ * on the concrete pool.
+ *
+ * Per-type enumeration keys the EXACT dynamic type: ForEach<T> is not a
+ * base-class walk. Base enumeration (ObjectID, UID) must use ForEachUID and
+ * cast, or a pooled base instance silently hides every derived object.
  */
 class ResourceManager : public IResourceLookup
 {
@@ -60,6 +70,13 @@ public:
 
 	/**
 	 * @brief Constructs a resource and registers it by its UID.
+	 *
+	 * When @p T exposes a public `o_name` (every scene object does, through
+	 * ObjectID), the constructor's default name is registered as the object's
+	 * display name and the unique result is mirrored back into `o_name`. This is
+	 * the single registration point, so no creation path can forget it; a
+	 * collision gains the usual ".001" suffix. Types without `o_name` (data
+	 * resources) stay unnamed.
 	 *
 	 * @tparam T Resource type (must inherit UID, directly or transitively).
 	 * @tparam Args Constructor argument types.
@@ -75,13 +92,23 @@ public:
 
 		auto resource = std::make_shared<T>(std::forward<Args>(args)...);
 		const int id = resource->GetObjectID();
-		auto [it, inserted] = resources_.emplace(id, std::move(resource));
+		// The copy stays alive for the naming step below; the map is the owner.
+		auto [it, inserted] = resources_.emplace(id, resource);
 		if (!inserted)
 		{
 			throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
 		}
+		IndexType(it->second.get());
 
-		return std::dynamic_pointer_cast<T>(it->second);
+		// Registry-owned uniqueness, mirrored back so the Outliner, the project
+		// file and name lookups agree. Duck-typed on o_name to keep core free of
+		// scene headers.
+		if constexpr (requires(T& t) { t.o_name; })
+		{
+			resource->o_name = SetName(id, resource->o_name);
+		}
+
+		return resource;
 	}
 
 	/**
@@ -93,6 +120,10 @@ public:
 	int Register(std::shared_ptr<UID> obj);
 
 	// --- IResourceLookup ---
+
+	using IResourceLookup::Get;
+	using IResourceLookup::GetByName;
+	using IResourceLookup::SetName;
 
 	/**
 	 * @brief Looks up a pooled resource by ID (base, untyped fetch).
@@ -113,48 +144,68 @@ public:
 	bool Contains(int id) const override { return resources_.count(id) != 0; }
 
 	/**
-	 * @brief Looks up a pooled resource by ID with type checking.
-	 * @tparam T Requested type (may be a base like UID/ObjectID).
-	 * @param id Resource UID.
-	 * @return Typed shared_ptr, or nullptr if absent or of a different type.
+	 * @brief Looks up a resource by its registered name within one concrete type.
+	 * @param type Concrete dynamic type of the resource (e.g. typeid(Mesh)).
+	 * @param name Registered name, unique among resources of that type.
+	 * @return Shared pointer to the UID base, or nullptr if no such name.
 	 */
-	template<class T>
-	std::shared_ptr<T> Get(int id) const
-	{
-		return std::dynamic_pointer_cast<T>(Get(id));
-	}
+	std::shared_ptr<UID> GetByName(std::type_index type, const std::string& name) const override;
 
 	/**
-	 * @brief Invokes @p fn on every pooled object of type T.
+	 * @brief Registers (or renames) a resource and returns its unique name.
 	 *
-	 * Used to mirror the pool into UID-keyed GPU caches, which follow the pool
-	 * rather than the scene (pooled objects stay referenced by undo history
-	 * after deletion).
+	 * Names are unique per concrete dynamic type; a collision is suffixed with a
+	 * zero-padded counter. Renaming to the name the resource already owns is a
+	 * no-op. The object itself is never modified.
 	 *
-	 * @tparam T Requested type (e.g. Mesh, Light).
-	 * @param fn Callback receiving each matching shared_ptr (any order).
+	 * @param id Resource UID.
+	 * @param name Requested name; an empty name becomes "Object".
+	 * @return The unique registered name, or an empty string if @p id is absent.
 	 */
-	template<class T>
-	void ForEach(const std::function<void(const std::shared_ptr<T>&)>& fn) const
-	{
-		for (const auto& [id, obj] : resources_)
-		{
-			auto typed = std::dynamic_pointer_cast<T>(obj);
-			if (typed)
-				fn(typed);
-		}
-	}
+	std::string SetName(int id, const std::string& name) override;
+
+	/**
+	 * @brief Invokes @p fn on every pooled resource, untyped.
+	 *
+	 * Always complete; this plus a cast is the base-class enumeration.
+	 *
+	 * @param fn Callback receiving each pooled object (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
+	 */
+	void ForEachUID(const std::function<void(const std::shared_ptr<UID>&)>& fn) const override;
+
+	/**
+	 * @brief Invokes @p fn on every pooled resource tracked under @p type.
+	 *
+	 * The index keys exact dynamic types, so a base class is not a base-class
+	 * walk: a pooled base instance owns the index entry and its derived types
+	 * are skipped. A type with no instance at all falls back to the whole pool.
+	 * Use ForEachUID for base enumeration.
+	 *
+	 * @param type Concrete dynamic type to enumerate (e.g. typeid(Mesh)).
+	 * @param fn Callback receiving each matching object (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
+	 */
+	void ForEachOfType(
+		std::type_index type,
+		const std::function<void(const std::shared_ptr<UID>&)>& fn) const override;
 
 	/**
 	 * @brief Removes a resource by ID.
+	 *
+	 * Frees the registered name and the per-type index entry with the object, so
+	 * a later resource can reuse the name.
+	 *
 	 * @return True if an entry was removed.
 	 */
-	bool Remove(int id) { return resources_.erase(id) != 0; }
+	bool Remove(int id);
 
 	/**
-	 * @brief Drops every pooled object (project new/open).
+	 * @brief Drops every pooled object and its name/type indexes (project new/open).
 	 */
-	void Clear() { resources_.clear(); }
+	void Clear();
 
 	/**
 	 * @brief Number of pooled resources.
@@ -165,7 +216,10 @@ public:
 	 * @brief Cereal serialization of the whole pool.
 	 *
 	 * Save writes every pooled UID object polymorphically; load restores them,
-	 * and each object's own serialize(load) restores its content.
+	 * and each object's own serialize(load) restores its content. Names and the
+	 * per-type index are derived state, never serialized: a load replaces the
+	 * pool, so it drops the old registry, rebuilds the type index from the
+	 * restored objects, and leaves names for the caller to re-seed.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -174,11 +228,59 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(CEREAL_NVP(resources_));
+		if constexpr (Archive::is_loading::value)
+		{
+			// Not derived state a rebuild can recover: names are only in the
+			// registry, so an old entry would survive its object and keep
+			// stealing the bare name from a later resource.
+			m_names.clear();
+			m_nameOf.clear();
+			RebuildTypeIndex();
+		}
 	}
 
 private:
+	/// Reverse entry for one registered name: the object's dynamic type + name.
+	struct NameEntry
+	{
+		std::type_index type;
+		std::string name;
+	};
+
+	/// Per-type name -> UID registry, keyed by the object's dynamic type.
+	std::unordered_map<std::type_index, std::unordered_map<std::string, int>> m_names;
+
+	/// Reverse lookup: UID -> (dynamic type, registered name).
+	std::unordered_map<int, NameEntry> m_nameOf;
+
+	/// Per-type enumeration, so ForEach<Mesh> does not scan every UID object.
+	std::unordered_map<std::type_index, std::vector<int>> m_byType;
+	std::unordered_map<int, std::type_index> m_typeOf;
+
 	/// Pool of every registered UID object, keyed by UID.
 	std::unordered_map<int, std::shared_ptr<UID>> resources_;
+
+	/**
+	 * @brief Returns @p base or the first free "base.NNN" for @p type.
+	 * @param type Concrete dynamic type whose namespace is checked.
+	 * @param base Requested name; empty is treated as "Object".
+	 */
+	std::string UniqueName(std::type_index type, const std::string& base) const;
+
+	/**
+	 * @brief Records @p obj's dynamic type in the per-type index.
+	 */
+	void IndexType(UID* obj);
+
+	/**
+	 * @brief Drops the registered name of @p id, if any.
+	 */
+	void EraseName(int id);
+
+	/**
+	 * @brief Rebuilds the per-type index from the current pool (after load).
+	 */
+	void RebuildTypeIndex();
 };
 
 } // namespace neurus

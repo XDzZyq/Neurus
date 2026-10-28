@@ -14,6 +14,7 @@
 #include "editor/operations/ConfigOperations.h"
 #include "editor/operations/Operation.h"
 #include "editor/operations/SceneOperations.h"
+#include "editor/operations/ScriptOperations.h"
 #include "editor/operations/ShaderOperations.h"
 
 // --- Concrete type registration (stable, stringized token names) ---
@@ -47,6 +48,7 @@ CEREAL_REGISTER_TYPE(neurus::SetSelectionOp)
 CEREAL_REGISTER_TYPE(neurus::SetActiveCameraOp)
 CEREAL_REGISTER_TYPE(neurus::SceneObjectAddOp)
 CEREAL_REGISTER_TYPE(neurus::CompositeOp)
+CEREAL_REGISTER_TYPE(neurus::ScriptRunOp)
 CEREAL_REGISTER_TYPE(neurus::SetRenderConfigOp)
 CEREAL_REGISTER_TYPE(neurus::SetShaderCodeOp)
 CEREAL_REGISTER_TYPE(neurus::SetShaderFieldOp)
@@ -84,6 +86,7 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetSelectionOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetActiveCameraOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SceneObjectAddOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::CompositeOp)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::ScriptRunOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetRenderConfigOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetShaderCodeOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetShaderFieldOp)

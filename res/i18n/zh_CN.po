@@ -340,6 +340,15 @@ msgstr "旋转"
 msgid "Rotation (°)"
 msgstr "旋转 (°)"
 
+msgid "Run"
+msgstr "运行"
+
+msgid "Run File..."
+msgstr "运行文件..."
+
+msgid "Run Script"
+msgstr "运行脚本"
+
 msgid "SDF Ray Marching"
 msgstr "SDF 光线步进"
 
@@ -554,6 +563,10 @@ msgid "Render Config"
 msgstr "渲染配置"
 
 msgctxt "Dock"
+msgid "Script Console"
+msgstr "脚本控制台"
+
+msgctxt "Dock"
 msgid "Shader Editor"
 msgstr "着色器编辑器"
 
@@ -564,6 +577,10 @@ msgstr "纹理查看器"
 msgctxt "Dock"
 msgid "Viewport"
 msgstr "视口"
+
+msgctxt "Placeholder"
+msgid "Python snippet"
+msgstr "Python 代码片段"
 
 msgctxt "Placeholder"
 msgid "Search..."
@@ -584,6 +601,10 @@ msgstr "渲染可见性"
 msgctxt "Tooltip"
 msgid "Reset position, rotation, and scale to identity values."
 msgstr "将位置、旋转和缩放重置为初始值。"
+
+msgctxt "Tooltip"
+msgid "Run the snippet (Ctrl+Enter)"
+msgstr "运行代码片段（Ctrl+Enter）"
 
 msgctxt "Tooltip"
 msgid "Viewport visibility"

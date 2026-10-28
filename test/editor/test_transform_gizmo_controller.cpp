@@ -95,19 +95,19 @@ protected:
 
 		m_controller.Init(m_ctx);
 
-		// Registered after the controller, so these see everything it enqueues --
-		// including the events it enqueues re-entrantly during Process().
-		m_eventBus.subscribe<SceneModified>([this](const SceneModified&) { ++m_tally.modified; });
-		m_eventBus.subscribe<RenderResetEvent>([this](const RenderResetEvent&) { ++m_tally.reset; });
-		m_eventBus.subscribe<LightGpuChanged>([this](const LightGpuChanged&) { ++m_tally.lightStruct; });
-		m_eventBus.subscribe<LightingRebuild>([this](const LightingRebuild&) { ++m_tally.lightDict; });
+		// Registered after the controller, so these see everything it emits --
+		// including the events it emits re-entrantly during Process().
+		m_eventBus.Subscribe<SceneModified>([this](const SceneModified&) { ++m_tally.modified; });
+		m_eventBus.Subscribe<RenderResetEvent>([this](const RenderResetEvent&) { ++m_tally.reset; });
+		m_eventBus.Subscribe<LightGpuChanged>([this](const LightGpuChanged&) { ++m_tally.lightStruct; });
+		m_eventBus.Subscribe<LightingRebuild>([this](const LightingRebuild&) { ++m_tally.lightDict; });
 	}
 
 	/// @brief Arms @p mode on @p uid with the cursor parked at the screen centre.
 	void Arm(GizmoMode mode, int uid)
 	{
 		m_viewport.SetCursor(glm::vec2(kW * 0.5f, kH * 0.5f));
-		m_eventBus.enqueue(GizmoModeRequested{uid, mode});
+		m_eventBus.Enqueue(GizmoModeRequested{uid, mode});
 		m_eventBus.Process();
 	}
 
@@ -116,19 +116,19 @@ protected:
 	{
 		MouseMoveEvent move{};
 		move.position = glm::vec2(x, kH * 0.5f);
-		m_eventBus.enqueue(move);
+		m_eventBus.Enqueue(move);
 		m_eventBus.Process();
 	}
 
 	void Confirm()
 	{
-		m_eventBus.enqueue(GizmoConfirmed{});
+		m_eventBus.Enqueue(GizmoConfirmed{});
 		m_eventBus.Process();
 	}
 
 	void Cancel()
 	{
-		m_eventBus.enqueue(GizmoCancelled{});
+		m_eventBus.Enqueue(GizmoCancelled{});
 		m_eventBus.Process();
 	}
 

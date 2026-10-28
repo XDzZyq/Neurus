@@ -51,12 +51,12 @@ Icons are embedded in the binary via `qt_add_resources(neurus_ui "icons" PREFIX 
 
 `CodeEditor` (`src/ui/items/CodeEditor.h`) is a `QPlainTextEdit` subclass for GLSL code with optional line numbers (a `LineNumberArea` child widget) and a monospace font:
 
-- `setLanguage(Language)` wires up a `ShaderHighlighter` for syntax coloring.
+- `setLanguage(Language)` wires up a `CodeHighlighter` for syntax coloring.
 - `setCode()` / `getCode()` exchange the buffer as a `std::string`.
 - `setLineNumbersVisible()` toggles the gutter.
 - `codeChanged(const std::string&)` fires on edits; `editingStarted()` / `editingFinished()` bracket the focus gesture so a code edit maps to one undo entry.
 
-See `src/ui/utils/ShaderHighlighter.h` for the GLSL highlighter.
+See `src/ui/utils/CodeHighlighter.h` for the GLSL highlighter.
 
 ## OutlinerRow
 

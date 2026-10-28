@@ -38,6 +38,10 @@ isolation; this page indexes every document in the set.
 - [Models](ui/models.md)
 - [Internationalization](ui/i18n.md)
 
+## Scripting
+
+- [Overview](script/overview.md) - the embedded CPython runtime, the read-only `neurus` module, and the Script Console
+
 ## Core, Scene and Asset
 
 - [UID and Resources](core/uid-and-resources.md)

@@ -3,7 +3,7 @@
  * @brief Event-driven camera navigation: orbit, dolly, pan and zoom handlers.
  *
  * All handlers are free functions over a resolved Camera; delta scaling is
- * external (the enqueuer normalizes before enqueuing events).
+ * external (the emitting handler normalizes each delta before emitting it).
  */
 
 #include "editor/controllers/CameraController.h"
@@ -252,20 +252,20 @@ void OnCameraResize(const neurus::CameraResizeEvent& e, const neurus::Controller
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// Init - subscribe to camera events
+// Init - register the camera event handlers
 // ---------------------------------------------------------------------------
 
 void CameraController::Init(ControllerContext& ctx)
 {
 	// --- Gesture boundaries: bound a continuous orbit/pan/dolly drag ---
-	ctx.events.subscribe<CameraDragBegin>([this, ctx](const CameraDragBegin& e) {
+	ctx.events.Subscribe<CameraDragBegin>([this, ctx](const CameraDragBegin& e) {
 		neurus::Camera* cam = ResolveCamera(ctx, e.camId);
 		if (!cam) return;
 		m_dragging = true;
 		m_camId = e.camId;
 		m_before = CameraPose{ cam->GetPosition(), cam->cam_tar };
 	});
-	ctx.events.subscribe<CameraDragEnd>([this, ctx](const CameraDragEnd& e) {
+	ctx.events.Subscribe<CameraDragEnd>([this, ctx](const CameraDragEnd& e) {
 		if (m_dragging && m_camId == e.camId)
 		{
 			// One op per gesture, non-mergeable: a following separate drag on
@@ -278,34 +278,34 @@ void CameraController::Init(ControllerContext& ctx)
 	});
 
 	// --- Continuous drag moves: mutate live, DO NOT record (bounded above) ---
-	ctx.events.subscribe<CameraRotateEvent>([ctx](const CameraRotateEvent& e) {
+	ctx.events.Subscribe<CameraRotateEvent>([ctx](const CameraRotateEvent& e) {
 		OnCameraRotate(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.Emit(RenderResetEvent{});
 	});
-	ctx.events.subscribe<CameraPushEvent>([ctx](const CameraPushEvent& e) {
+	ctx.events.Subscribe<CameraPushEvent>([ctx](const CameraPushEvent& e) {
 		OnCameraPush(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.Emit(RenderResetEvent{});
 	});
-	ctx.events.subscribe<CameraSlideEvent>([ctx](const CameraSlideEvent& e) {
+	ctx.events.Subscribe<CameraSlideEvent>([ctx](const CameraSlideEvent& e) {
 		OnCameraSlide(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.Emit(RenderResetEvent{});
 	});
 
 	// --- Scroll zoom: no press/release, record per-event and merge via MergeKey ---
-	ctx.events.subscribe<CameraZoomEvent>([ctx](const CameraZoomEvent& e) {
+	ctx.events.Subscribe<CameraZoomEvent>([ctx](const CameraZoomEvent& e) {
 		neurus::Camera* cam = ResolveCamera(ctx, e.camId);
 		if (!cam) return;
 		const glm::vec3 bp = cam->GetPosition();
 		const glm::vec3 bt = cam->cam_tar;
 		OnCameraZoom(e, ctx);
 		RecordCameraPose<CameraZoomOp>(ctx.ops, *cam, bp, bt);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.Emit(RenderResetEvent{});
 	});
 
 	// Resize is viewport-driven, not a user edit - not recorded.
-	ctx.events.subscribe<CameraResizeEvent>([ctx](const CameraResizeEvent& e) {
+	ctx.events.Subscribe<CameraResizeEvent>([ctx](const CameraResizeEvent& e) {
 		OnCameraResize(e, ctx);
-		ctx.events.enqueue(RenderResetEvent{});
+		ctx.events.Emit(RenderResetEvent{});
 	});
 }
 

@@ -3,12 +3,12 @@
  * @brief Event handlers for the modal G / R / S transform gesture.
  *
  * All handlers are free functions. Each resolves the gesture's object uid
- * against the *current* scene, calls one TransformGizmo method, and enqueues the
+ * against the *current* scene, calls one TransformGizmo method, and emits the
  * notifications that mutation implies - through neurus::notify, shared with the
  * scene mutation path so the two cannot drift. A live drag is a preview (no
  * dirty mark); a confirm is committed.
  *
- * Every handler enqueues a repaint, including the cancel path, because that is
+ * Every handler emits a repaint, including the cancel path, because that is
  * also what makes the guide geometry appear, follow the cursor and disappear.
  */
 
@@ -237,17 +237,17 @@ void TransformGizmoController::Init(ControllerContext& ctx)
 {
 	// The context is captured BY VALUE so the stored handler lambdas are fully
 	// self-contained (the context's references + providers copy cheaply).
-	ctx.events.subscribe<GizmoModeRequested>(
+	ctx.events.Subscribe<GizmoModeRequested>(
 	    [ctx](const GizmoModeRequested& e) { OnModeRequested(e, ctx); });
-	ctx.events.subscribe<GizmoAxisRequested>(
+	ctx.events.Subscribe<GizmoAxisRequested>(
 	    [ctx](const GizmoAxisRequested& e) { OnAxisRequested(e, ctx); });
-	ctx.events.subscribe<MouseMoveEvent>(
+	ctx.events.Subscribe<MouseMoveEvent>(
 	    [ctx](const MouseMoveEvent& e) { OnMouseMove(e, ctx); });
-	ctx.events.subscribe<GizmoConfirmed>(
+	ctx.events.Subscribe<GizmoConfirmed>(
 	    [ctx](const GizmoConfirmed&) { OnConfirmed(ctx); });
-	ctx.events.subscribe<GizmoCancelled>(
+	ctx.events.Subscribe<GizmoCancelled>(
 	    [ctx](const GizmoCancelled&) { OnAborted(ctx); });
-	ctx.events.subscribe<ViewportFocusLost>(
+	ctx.events.Subscribe<ViewportFocusLost>(
 	    [ctx](const ViewportFocusLost&) { OnAborted(ctx); });
 }
 

@@ -15,30 +15,86 @@ zero Qt dependencies, and all cross-layer wiring is auditable in one file.
 Panel Qt signal (e.g. Outliner::objectClicked - pure input intent)
   |-- Application::ConnectUIEvent<Outliner, ObjectClicked>
         |-- [lambda calls Editor::OnUIEvent(e)]
-              |-- EventQueue::enqueue<ObjectClicked>
-                    |-- EventQueue::Process() -> Editor wraps to ObjectSelected, then subscriber handles it
+              |-- EventQueue::Enqueue<ObjectClicked>   (the only deferred step)
+                    |-- EventQueue::Process() in the next Edit()
+                          |-- handlers run; every Emit they make runs here too
 ```
+
+The deferral exists only at the UI boundary. Everything the Editor or a
+controller emits dispatches synchronously, so an event and its consequences are
+complete before the emitting call returns.
 
 ### ID-carrying events
 
-Every event in Neurus is ephemeral: enqueued and processed within a single frame,
-then destroyed once `EventQueue::Process()` returns. Events carry plain integer
-object UIDs (never raw `UID*`/`Camera*` pointers). A raw pointer can dangle after
+Every event in Neurus is ephemeral: emitted synchronously, it is fully handled and
+destroyed before the emitting call returns. A UI signal's event is the one that
+waits - it is queued by `Enqueue`, dispatched by the next frame's `Edit()`, and
+destroyed with the dispatch. Events carry plain integer object UIDs (never raw
+`UID*`/`Camera*` pointers). A raw pointer can dangle after
 the object is deleted, while a UID is a stable identity that controllers resolve
 against the current scene/pool at dispatch time. `UID` is the common base of
-`Scene` and `ObjectID`, so the same integer space covers both. Controllers resolve
-an event's `int objectUid` to the live object via their `ControllerContext`
-(scene lookup for property edits, pool lookup for membership); see
-[Controllers](controllers.md). The scene itself is not carried in events:
-scene-scoped handlers obtain the current Scene from the context, so a scene swap
-on New/Load can never leave an event holding a stale pointer. This id-based model
-is what makes pointer-free event payloads safe across frames, serialization, and
-undo/redo replay.
+`Scene` and `ObjectID`, so the same integer space covers both. Object property
+handlers resolve an event's `int objectUid` through `IResourceLookup` (the pool);
+shader and scene handlers resolve it against the current Scene; both come from the
+`ControllerContext`. See [Controllers](controllers.md). The scene itself is not
+carried in events: scene-scoped handlers obtain the current Scene from the
+context, so a scene swap on New/Load can never leave an event holding a stale
+pointer. This id-based model is what makes pointer-free event payloads safe across
+frames, serialization, and undo/redo replay.
 
-### Three event paths
+### Dispatch paths
 
-Cross-layer traffic flows along three distinct paths, all still "UI emits, Editor
-wraps or forwards, controllers handle":
+Two paths exist, and they differ only in **when** dispatch happens:
+
+1. **Deferred: the UI boundary.** `Editor::OnUIEvent` calls
+   `EventQueue::Enqueue`, which stores a thunk. `Editor::Edit()` calls
+   `Process()` once per frame, which pops the queue in FIFO order and dispatches
+   each event. `Enqueue` exists on the concrete `EventQueue` only - `IEventQueue`,
+   the surface controllers and scripts see, offers no way to defer.
+2. **Synchronous: everything else.** Every other production emit goes through
+   `IEventQueue::Emit`, which runs every handler for that type before it returns.
+   Dispatch is depth-first: an event a handler emits completes before that
+   handler resumes, so the caller observes the whole consequence chain, not just
+   its first hop.
+
+Depth-first dispatch turns a handler cycle from a bounded queue loop into
+recursion, so `EventQueue::Dispatch` counts live frames and refuses at
+`kMaxDispatchDepth` (64): it logs `NEURUS_ERR` naming the event type and drops
+the event, without invoking handlers. `Process()` saves the entry depth, zeroes it
+for the drain and restores it afterwards, so one runaway chain cannot poison a
+later frame.
+
+### Ordering consequences
+
+Dispatch order is registration order within a type. Two places depend on it, and
+both hold because their subscribers sit in the same `Dispatch` call:
+
+- `SceneObjectDeleteRequested`: `SceneController` removes the objects first, then
+  the Editor's own subscription re-syncs the viewport camera, in the same
+  dispatch. Without that order the viewport would hold a dangling pointer until
+  the next `Edit()`.
+- `ObjectSelected`, `ObjectDeselected` and `SelectionChanged`: `SceneController`
+  records the operation, then the Editor marks the gizmo dirty.
+
+One pair that shares an event is deliberately order-independent:
+`TransformGizmoController` handles `MouseMoveEvent` before the Editor does, and
+reads the cursor from `e.position` rather than from `EditorViewport::Cursor()`, so
+it does not matter that the Editor has not pushed the cursor into the viewport
+yet. `CameraController` shares no event type with the gizmo at all - the gizmo
+takes `MouseMoveEvent`, the camera controller the `Camera*` events the Editor
+derives from it - so their registration order has no dispatch consequence either.
+
+A separate consequence of synchronous dispatch is that GPU uploads run inside the
+handler that mutated the object rather than later in a drain. The queue never
+deduplicated, so the amount of work is unchanged; only its interleaving is.
+Notification chains terminate (a `RenderResetEvent`, `SceneModified` or
+`LightGpuChanged` handler emits nothing), which is why the depth guard is a
+backstop rather than a routine outcome.
+
+### Event domains
+
+The three groups below differ in **who wraps** the event and **where it is
+resolved**, not in when it is dispatched:
 
 1. UI to Editor pure intents (`InputEvents.h`): the raw input stream, mouse
    move/press/release/scroll plus `ObjectClicked { int objectUid; int modifiers; }`
@@ -48,7 +104,7 @@ wraps or forwards, controllers handle":
    scene mutations (selection, transform, visibility, property edits, shader
    edits) carrying `int objectUid`. Panels emit these with the active object's
    integer UID; `Editor::OnUIEvent` enqueues them unchanged and controllers
-   resolve the UID against the current scene via their `ControllerContext`.
+   resolve the UID via their `ControllerContext`.
 3. Editor to Controller wrapped events: `ObjectSelected` (the Editor subscribes
    to `ObjectClicked` and forwards `ObjectSelected{ objectUid, modifiers }`, and
    the Application emits it for the viewport IDBuffer pick), `ObjectDeleteRequested`
@@ -61,8 +117,10 @@ wraps or forwards, controllers handle":
 
 | File | Purpose |
 |------|---------|
-| `src/editor/events/SceneEvents.h` | Scene-domain events (selection, transform, visibility, camera/mesh/light/env property changes) - ephemeral, carry `int objectUid` |
+| `src/editor/events/IEventQueue.h` | The only dispatch surface controllers and scripts see: `Subscribe` and synchronous `Emit` - no deferral |
+| `src/editor/events/SceneEvents.h` | Scene-domain events (selection, transform, visibility, camera/mesh/light/env/debug property changes) - ephemeral, carry `int objectUid` |
 | `src/editor/events/EditorEvents.h` | Cross-component events only (`RenderResetEvent`, `EnvironmentChanged`, `SceneModified`, `LightGpuChanged`, `LightingRebuild`, `SceneObjectGpuUploadRequested`) - pure data, no Qt |
+| `src/editor/events/ScriptEvents.h` | Script run boundaries (`ScriptRunStarted`, `ScriptRunFinished`) that bound one run to one undo step |
 | `src/editor/events/CameraEvents.h` | Camera input events (rotate, push, slide, zoom, resize) |
 | `src/editor/events/InputEvents.h` | Viewport raw input events (mouse move, press, release, scroll) |
 | `src/editor/events/ProjectEvents.h` | Project lifecycle events (new, open, save, saveAs) |
@@ -72,7 +130,7 @@ wraps or forwards, controllers handle":
 | `src/editor/events/ShaderEvents.h` | Shader editor events (create, compile, code/struct edit, field add) |
 | `src/editor/events/GizmoEvents.h` | Modal transform intents (arm, constrain, confirm, cancel) + the shared `GizmoMode`/`GizmoAxis` enums |
 | `src/editor/events/UIEvents.h` | QObject singleton - Qt signal definitions for UI-to-Editor dispatch |
-| `src/editor/events/EventBus.h` | Header-only typed event dispatcher (`EventQueue` class, zero Qt dependency) |
+| `src/editor/events/EventBus.h` | The concrete `EventQueue`: `IEventQueue` plus the deferred `Enqueue`/`Process` pair the UI boundary uses (zero Qt dependency) |
 
 ## Event structs (pure data)
 
@@ -122,14 +180,15 @@ struct ScaleChanged    { int objectUid; float sclX, sclY, sclZ; };
 // Camera properties
 struct CameraTargetChanged { int objectUid; float targetX, targetY, targetZ; };
 struct CameraFovChanged    { int objectUid; float fov; };
-// Absolute camera pose (position + target) - replay only, dispatched by
-// CameraTransformOp on undo/redo (live navigation carries relative deltas).
+// Absolute camera pose (position + target), dispatched by CameraTransformOp on
+// undo/redo and by a live script write of Camera.position (live navigation
+// carries relative deltas instead).
 struct CameraPoseChanged   { int objectUid; float posX, posY, posZ, tarX, tarY, tarZ; };
 // Which SCENE camera the viewport looks through; 0 = none, which hands the view
 // back to the viewport's own camera. Scene state, deliberately independent of
 // selection. One event for both the PropertyPanel checkbox and SetActiveCameraOp
 // replay. The handler activates/deactivates, records the op only when the value
-// actually changed, and enqueues a CameraResizeEvent for the newly activated
+// actually changed, and emits a CameraResizeEvent for the newly activated
 // camera so it cannot take the view with a stale aspect.
 struct ActiveCameraChanged { int camUid; };
 
@@ -139,6 +198,7 @@ struct MeshMaterialChanged { int objectUid; bool enabled; };
 
 // Light properties
 struct LightPowerChanged      { int objectUid; float power; };
+struct LightColorChanged      { int objectUid; float r, g, b; };
 struct LightRadiusChanged     { int objectUid; float radius; };
 struct LightShadowChanged     { int objectUid; bool enabled; };
 struct LightCutoffChanged     { int objectUid; float cutoff; };
@@ -166,20 +226,21 @@ struct ObjectDeleteRequested { };                                           // E
 ```
 
 Scene events carry integer UIDs. Scene-domain events follow the system-wide
-id-carrying rule: they carry `int objectUid`, never object pointers. Controllers
-resolve the UID against the current Scene (typed pool lookup, e.g.
-`mesh_list.find`) via their `ControllerContext` and mutate the object directly,
-with no pointer payload to dangle. `Editor::OnUIEvent` just enqueues them
-unchanged.
+id-carrying rule: they carry `int objectUid`, never object pointers. The
+`ObjectController` resolves a property event's UID through the resource pool
+(typed lookup, e.g. `Get<Mesh>`) and mutates the object directly; the
+`SceneController` resolves selection and membership against the current Scene.
+Neither carries a pointer that could dangle. `Editor::OnUIEvent` just enqueues
+them unchanged.
 
 One debug event set, three pools. The debug events above are shared by
 `DebugLine`, `DebugPoints` and `DebugMesh` rather than split per type: color,
 opacity and x-ray are literally the same property on three unrelated pools, so
-the handler resolves the UID against whichever pool holds it (`SceneController`'s
+the handler resolves the UID against whichever pool holds it (`ObjectController`'s
 `ForDebugObject`) instead of the event naming a type. A type-specific knob (line
 width, point shape) simply never reaches an object that has no such property; an
 unknown UID is ignored and records nothing. Every handler ends in `Mutated()`,
-which enqueues `RenderResetEvent` and so marks `DebugDrawBuilder` dirty: a debug
+which emits `RenderResetEvent` and so marks `DebugDrawBuilder` dirty: a debug
 property edit is only visible after a reflatten.
 
 `DebugPositionsChanged` is absolute: it carries the whole position list, so one
@@ -206,10 +267,11 @@ subscribes to the pure `DeleteRequested` intent (Delete key in
 Outliner/Viewport) and forwards `ObjectDeleteRequested{}`, so the UI no longer
 stamps the scene. It is forward-only (the recorded composite replays via
 `SceneObjectDeleteRequested`, never this gesture event). The `SceneController`
-snapshots the selection, deselects, and defers the actual removals as one batched
-`SceneObjectDeleteRequested` carrying all selected UIDs, so the batched handler is
-the single removal path shared by the gesture and by undo/redo replay (no
-replay-only handling), and records one light composite
+snapshots the selection, deselects, emits one batched
+`SceneObjectDeleteRequested` carrying all selected UIDs - the removal runs
+synchronously inside that emit - so the batched handler is the single removal path
+shared by the gesture and by undo/redo replay (no replay-only handling), and
+records one composite
 (`CompositeOp[SetSelectionOp(before->none), SceneObjectAddOp(uids,false)]`: a
 delete of N objects is one op, not N). The forward add path records
 `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(before->{u})]`: add and
@@ -218,11 +280,11 @@ select collapse to one undo entry.
 ### EditorEvents.h
 
 Cross-component events only, for things that involve a different component than
-the emitter (SceneController to Editor, Editor to Renderer). Scene-domain events
+the emitter (controller to Editor, Editor to Renderer). Scene-domain events
 live in `SceneEvents.h`.
 
 ```cpp
-// Cross-component events (SceneController -> Editor, Editor -> Renderer)
+// Cross-component events (controllers -> Editor, Editor -> Renderer)
 struct SceneModified {};                       // mark project dirty
 struct LightGpuChanged { int objectUid; };     // single light SSBO update
 struct LightingRebuild {};                     // full light SSBO dict rebuild
@@ -251,7 +313,8 @@ struct CameraDragEnd   { int camId; };
 
 Camera events carry the camera's integer UID (never a raw `Camera*`, since the
 camera could be deleted mid-drag; a UID stays stable). `CameraController` resolves
-`camId` against the current scene's `cam_list` via its `ControllerContext`.
+`camId` through the resource pool, not the scene's `cam_list`, so the pooled
+viewport camera (which is never scene content) is navigated by the same events.
 Scroll zoom has no press/release, so it is not bracketed: `CameraZoomEvent`
 records per-event and relies on `CameraZoomOp::MergeKey()` to coalesce a scroll
 burst into one undo step.
@@ -334,7 +397,7 @@ Version flow: only `ShaderCreateRequested` and `ShaderCompileRequested` bump
 `Shader::m_version` (and only on successful compile). The other events mutate
 data without recompiling; the user must press Compile to apply changes to the GPU
 pipeline. Because create/compile rebuild the pipeline, `ShaderController`
-enqueues `RenderResetEvent` after both, so temporal accumulation resets.
+emits `RenderResetEvent` after both, so temporal accumulation resets.
 
 Undo/redo flow: content edits are recorded as delta-only ops matching each edit
 event: `SetShaderCodeOp` (before/after code), `SetShaderFieldOp` (before/after of
@@ -374,14 +437,16 @@ struct GizmoCancelled     { };   // Esc, RMB, or viewport focus loss
 
 `GizmoAxis::None` is a live state, not an absent one. It means the view plane for
 Move, uniform for Scale and the view axis for Rotate, both the state a bare
-G/R/S leaves behind and the state `W` returns to. So `W` enqueues
+G/R/S leaves behind and the state `W` returns to. So `W` emits
 `GizmoAxisRequested{GizmoAxis::None}`; there is no separate "unconstrain" event.
 
-Every branch of the Editor's key handler enqueues unconditionally. Nothing in the
-Editor reads gizmo state to decide whether to enqueue, and the controller drops
-what it cannot use. This is not defensive coding: `EventQueue::Process()` is FIFO
-and drains re-entrant enqueues within the same call, so a gate in the Editor would
-silently swallow an axis key that arrived in the same frame as its mode key.
+Every branch of the Editor's key handler emits unconditionally. Nothing in the
+Editor reads gizmo state to decide whether to emit, and the controller drops what
+it cannot use. This is not defensive coding: both key events arrive through the
+deferred UI boundary, `Process()` pops them one at a time in FIFO order, and a
+mode handler's synchronous work is complete before the axis event is popped, so a
+gate in the Editor would silently swallow an axis key that arrived in the same
+frame as its mode key.
 
 Cursor motion is not a gizmo event. The controller subscribes to the existing
 `MouseMoveEvent` and ignores it while nothing is armed, reading `e.position`
@@ -423,28 +488,49 @@ public:
 
 ## EventQueue (typed dispatcher, no Qt)
 
-Header-only template-based dispatcher for Editor-internal event routing. Events
-are enqueued and batch-processed via `Process()`.
+Header-only, zero Qt dependency, Editor-internal: `src/render/` never includes it,
+and the Renderer is reached through `RenderContext` and the Editor's upload calls,
+never through an event. Two surfaces share one implementation:
+
+- `IEventQueue` (`src/editor/events/IEventQueue.h`) is what controllers and
+  scripts are given: `Subscribe<TEvent>(handler)` and `Emit<TEvent>(event)`. It
+  has no way to defer, so anything a controller or a script emits has been applied
+  before the emitting call returns.
+- `EventQueue` (`src/editor/events/EventBus.h`) adds `Enqueue<TEvent>(event)`,
+  `Process(int maxEvents = 1000)` and `PendingCount()`. `Enqueue` is a property of
+  the concrete queue, not of the interface, because deferral exists for exactly
+  one caller: `Editor::OnUIEvent`.
 
 ```cpp
 // Subscribe to typed events
-eventBus.subscribe<LightGpuChanged>([](const LightGpuChanged& e) {
+eventBus.Subscribe<LightGpuChanged>([](const LightGpuChanged& e) {
     uploadSingleLight(/* resolve e.objectUid via the pool */);
 });
 
-// Enqueue events (deferred dispatch)
-eventBus.enqueue(LightGpuChanged{lightUid});
+// Emit synchronously: every handler has run on return
+ctx.events.Emit(PositionChanged{uid, x, y, z});
 
-// Process all queued events (call once per frame or on input)
+// Defer to the next Process() - the UI boundary only
+eventBus.Enqueue(ObjectClicked{uid, modifiers});
+
+// Drain the deferred queue (Editor::Edit(), once per frame)
 eventBus.Process();
 ```
 
 Properties:
 
-- Header-only, zero Qt dependency; safe to include from any layer
-- Deferred FIFO queue: `enqueue()` stores, `Process()` dispatches
-- Re-entrant safe: events emitted from handlers are appended to the queue
-- Max events cap (default 1000) prevents infinite loops
+- Header-only, zero Qt dependency; safe to include from any layer, but only the
+  Editor does
+- `Emit` dispatches synchronously and depth-first: a handler's own emits complete
+  before it returns, so the caller sees the whole consequence chain
+- `Enqueue`/`Process` are a deferred FIFO queue, drained once per frame by
+  `Editor::Edit()`; `Process` also drains anything a handler enqueued while it
+  ran, up to the `maxEvents` cap
+- Synchronous dispatch depth is capped at `EventQueue::kMaxDispatchDepth` (64).
+  A handler cycle recurses instead of queueing, so at the limit `Dispatch` logs
+  `NEURUS_ERR` naming the event type and drops the event, without invoking
+  handlers. `Process()` saves the entry depth, zeroes it for the drain and
+  restores it afterwards, so one runaway chain cannot poison later frames
 - Not thread-safe; all calls on the main thread
 
 ## Template-based event forwarding
@@ -487,35 +573,40 @@ ConnectUIEvent(viewport, &Viewport::mouseScrolled);
 ### Step 3 - Editor::OnUIEvent enqueues
 
 ```cpp
-// Editor.h
+// Editor.h - the only deferred call site in production
 template<typename Event>
 void OnUIEvent(const Event& e) {
-    ed_eventBus.enqueue<Event>(e);
+    ed_eventBus.Enqueue<Event>(e);
 }
 ```
 
 ### Step 4 - Controller subscribes
 
 ```cpp
-// SceneController::Init() - handles scene-domain events via free-function handlers
-ctx.events.subscribe<ObjectSelected>([ctx](const ObjectSelected& e) {
+// SceneController::Init() - selection and membership via free-function handlers
+ctx.events.Subscribe<ObjectSelected>([ctx](const ObjectSelected& e) {
     OnObjectSelected(e, ctx);
 });
-ctx.events.subscribe<VisibilityChanged>([ctx](const VisibilityChanged& e) {
-    OnVisibilityChanged(e, ctx);
+ctx.events.Subscribe<SceneObjectDeleteRequested>([ctx](const SceneObjectDeleteRequested& e) {
+    OnSceneObjectDeleteRequested(e, ctx);
+});
+
+// ObjectController::Init() - property writes, resolved through the pool
+ctx.events.Subscribe<PositionChanged>([ctx](const PositionChanged& e) {
+    OnPositionChanged(e, ctx);
 });
 
 // Editor::Initialize() - handles cross-component GPU-sync events
-ed_eventBus.subscribe<LightGpuChanged>([this](const LightGpuChanged& e) {
+ed_eventBus.Subscribe<LightGpuChanged>([this](const LightGpuChanged& e) {
     auto light = m_resources->Get<Light>(e.objectUid);
     if (!light) return;
     auto gpuStruct = ed_uploadManager->UploadLighting(*light);
     ed_renderer->GetRenderCache().UpdateLight(e.objectUid, gpuStruct);
 });
-ed_eventBus.subscribe<LightingRebuild>([this](const LightingRebuild&) {
+ed_eventBus.Subscribe<LightingRebuild>([this](const LightingRebuild&) {
     UploadLighting();
 });
-ed_eventBus.subscribe<SceneModified>([this](const SceneModified&) {
+ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
     m_dirty = true;
 });
 ```
@@ -532,17 +623,21 @@ UI Panel (Qt signal, e.g. Outliner::objectClicked - pure intent)
 Application::ConnectUIEvent<T>   <- single wiring point
     |  [lambda calls editor->OnUIEvent(e)]
     v
-Editor::OnUIEvent<T>             <- generic template
-    |  eventBus.enqueue<T>(e)
+Editor::OnUIEvent<T>             <- generic template, DEFERRED here
+    |  eventBus.Enqueue<T>(e)
     v
-EventQueue<T>::Process()         <- batch dispatch
+EventQueue::Process()            <- in Edit(), once per frame
     |
     v
-SceneController / Editor handlers <- business logic
-    |- Select / Deselect (SceneController)
-    |- SetVisible / transform setters (SceneController)
-    |- SetRenderConfig / GPU uploads (Editor)
+SceneController / ObjectController / Editor handlers   <- business logic
+    |- Select / Deselect, add / delete (SceneController)
+    |- property writes, resolved through the pool (ObjectController)
+    |- GPU uploads, render config, project state (Editor)
 ```
+
+Everything below `OnUIEvent` is synchronous: a handler that emits another event
+runs that event's handlers before it returns, so the diagram is a call tree, not
+a second queue.
 
 ## Adding a new event
 
@@ -550,7 +645,7 @@ SceneController / Editor handlers <- business logic
    data, no Qt includes).
 2. Emit it from the panel as a Qt signal.
 3. Wire it in Application with one `ConnectUIEvent` call.
-4. Subscribe in Editor with one `eventBus.subscribe<T>()` call.
+4. Subscribe in Editor with one `eventBus.Subscribe<T>()` call.
 
 That is four changes, all in different layers, no cross-layer includes needed.
 
@@ -565,11 +660,12 @@ struct RenderResetEvent
 An empty marker event emitted whenever the scene state changes in a way that
 invalidates temporal accumulation (camera movement, light/object transform,
 visibility toggle, config change, project load, asset import, environment change,
-shader create/compile). Camera movement events are enqueued by `CameraController`
+shader create/compile). Camera movement events are emitted by `CameraController`
 after each frame handler (Zoom, Rotate, Push, Slide, Resize). Shader create and
-compile events are enqueued by `ShaderController` after the shader version bumps.
-Scene mutations are handled by `SceneController`, which enqueues
-`RenderResetEvent{}` via the shared `Mutated()` helper after every mutation.
+compile events are emitted by `ShaderController` after the shader version bumps.
+Scene property writes are handled by `ObjectController`, scene membership by
+`SceneController`; both emit `RenderResetEvent{}` through the shared
+`neurus::notify` helpers after every mutation.
 
 Subscribers listen for this event to reset per-frame history:
 
@@ -577,15 +673,15 @@ Subscribers listen for this event to reset per-frame history:
   iteration counter.
 - Future: SSAO temporal accumulation, SSR temporal accumulation, TAA jitter reset.
 
-## SceneController GPU-sync flow
+## Controller GPU-sync flow
 
 Scene mutations that affect GPU resources follow a three-tier event pattern:
 
 ```
-SceneController mutation handler
-  |- Resolves the object UID from the event's int objectUid against the
-  |   current Scene (via the ControllerContext) and mutates the object
-  |- Enqueues one or more EditorEvents:
+SceneController / ObjectController mutation handler
+  |- Resolves the object UID - against the pool (ObjectController) or the
+  |   current Scene (SceneController) - and mutates the object
+  |- Emits one or more EditorEvents, synchronously:
         |- SceneModified{} -> Editor marks project dirty
         |- RenderResetEvent{} -> DeferredRenderer resets temporal accumulation
         |
@@ -607,7 +703,8 @@ SceneController mutation handler
                   -> all light SSBOs re-uploaded
 ```
 
-The key invariant: `SceneController` never touches GPU resources. It mutates
-scene objects and emits `EditorEvents`. The Editor handles all GPU uploads in its
-event handlers. This keeps the controller stateless and preserves the
+The key invariant: controllers never touch GPU resources. They mutate scene
+objects and emit `EditorEvents`. The Editor handles all GPU uploads in its event
+handlers, and because dispatch is synchronous the upload has already run when the
+mutation handler returns. This keeps the controllers stateless and preserves the
 Editor-to-Renderer GPU upload boundary.

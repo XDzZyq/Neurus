@@ -17,6 +17,7 @@
 
 #include <cstdio>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -370,4 +371,80 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 	EXPECT_EQ(line->GetVertices()[1], glm::vec3(1.0f, 2.0f, 3.0f));
 	EXPECT_FALSE(line->GetXRay());
 	EXPECT_EQ(loadedScene.dLine_list.size(), 1u);
+}
+
+// -----------------------------------------------------------------------
+// Display names restored from a project file
+// -----------------------------------------------------------------------
+
+/**
+ * @test Duplicate names stored in a project file are suffixed on load in
+ *       ascending UID order, so the resource name registry is deterministic.
+ */
+TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
+{
+	TempFile tmp("test_scene_duplicate_names.neurus.json");
+
+	int firstUid = 0;
+	int secondUid = 0;
+
+	{
+		Scene scene;
+		RenderConfig config;
+		ResourceManager resources;
+
+		auto first = resources.Load<Mesh>();
+		first->o_name = "Clash";
+		scene.UseMesh(first);
+		firstUid = first->GetObjectID();
+
+		auto second = resources.Load<Mesh>();
+		second->o_name = "Clash";
+		scene.UseMesh(second);
+		secondUid = second->GetObjectID();
+
+		// Both objects carry the same name on purpose (scene registration no
+		// longer touches names); the load path's registry seeding must
+		// disambiguate them.
+		project::Project p;
+		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::SceneComponent>(scene, resources);
+		p.Register<project::ConfigComponent>(config);
+		p.Save(tmp.path);
+	}
+
+	ASSERT_LT(firstUid, secondUid);
+
+	Scene loadedScene;
+	RenderConfig loadedConfig;
+	ResourceManager loadedResources;
+	project::Project p;
+	p.Register<project::ResourceComponent>(loadedResources);
+	p.Register<project::SceneComponent>(loadedScene, loadedResources);
+	p.Register<project::ConfigComponent>(loadedConfig);
+	ASSERT_NO_THROW(p.Load(tmp.path));
+
+	const ObjectID* first = loadedScene.GetObjectID(firstUid);
+	const ObjectID* second = loadedScene.GetObjectID(secondUid);
+	ASSERT_NE(first, nullptr);
+	ASSERT_NE(second, nullptr);
+
+	// Lower UID keeps the bare name; the other is suffixed. The registry is the
+	// authority for name lookups, and the load path mirrors the unique name back
+	// into o_name so a re-save preserves it.
+	EXPECT_EQ(first->o_name, "Clash");
+	EXPECT_EQ(second->o_name, "Clash.001");
+
+	auto clash = loadedResources.GetByName<Mesh>("Clash");
+	auto clash001 = loadedResources.GetByName<Mesh>("Clash.001");
+	ASSERT_NE(clash, nullptr);
+	ASSERT_NE(clash001, nullptr);
+	EXPECT_EQ(clash->GetObjectID(), firstUid);
+	EXPECT_EQ(clash001->GetObjectID(), secondUid);
+
+	// The per-type index is rebuilt with the pool, so typed enumeration is exact
+	// without scanning every resource.
+	int meshCount = 0;
+	loadedResources.ForEach<Mesh>([&](const std::shared_ptr<Mesh>&) { ++meshCount; });
+	EXPECT_EQ(meshCount, 2);
 }

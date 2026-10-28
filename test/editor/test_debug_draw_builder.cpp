@@ -770,12 +770,12 @@ TEST(DebugDrawBuilder, WireMesh_MixedDepthModesStayInAuthoringOrder)
 //
 // ObjectID carries `is_viewport` and `is_rendered`, the pair the Outliner's two
 // per-row toggles drive through UIEvents -> VisibilityChanged ->
-// SceneController -> ObjectID::SetVisible. Every other consumer of a scene pool
+// ObjectController -> ObjectID::SetVisible. Every other consumer of a scene pool
 // (GeometryPass, ShadowDepthPass, UploadManager) skips an object when either
 // flag is clear, and the overlay has to do the same here: `DebugDrawList` has no
 // per-primitive enable bit, so an invisible object must simply not be flattened.
 //
-// The rebuild that follows a toggle is already wired -- SceneController enqueues
+// The rebuild that follows a toggle is already wired -- ObjectController emits
 // RenderResetEvent, whose handler calls MarkDirty() -- so these tests pin the
 // half that was missing: the filter itself.
 
