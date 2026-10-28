@@ -12,7 +12,8 @@
  *
  * Covered: read-after-write inside one run, one undo step per run (including a
  * raising run), pool-only (detached) objects, a write to an object that has left
- * the pool, a config write, and coexistence with a queued UI event.
+ * the pool, a camera pose write, a config write, and coexistence with a queued UI
+ * event.
  */
 
 #include <gtest/gtest.h>
@@ -33,6 +34,7 @@
 #include "editor/events/EventBus.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/operations/OperationManager.h"
+#include "scene/Camera.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 #include "script/ScriptContext.h"
@@ -67,6 +69,10 @@ protected:
 
 		m_detached = m_resources.Load<neurus::Mesh>();
 		m_detached->o_name = m_resources.SetName(m_detached->GetObjectID(), "Detached");
+
+		// Pooled and scene-detached, like the meshes above: `Load` names the
+		// first camera "Camera", which is how the script addresses it.
+		m_camera = m_resources.Load<neurus::Camera>();
 
 		m_scriptCtx.scene     = &m_scene;
 		m_scriptCtx.config    = &m_config;
@@ -114,9 +120,10 @@ protected:
 	neurus::SceneController        m_sceneController;
 	neurus::RenderConfigController m_configController;
 	neurus::ScriptContext          m_scriptCtx;
-	std::shared_ptr<neurus::Mesh>  m_mesh;
-	std::shared_ptr<neurus::Mesh>  m_detached;
-	neurus::ScriptEngine           m_engine;
+	std::shared_ptr<neurus::Mesh>   m_mesh;
+	std::shared_ptr<neurus::Mesh>   m_detached;
+	std::shared_ptr<neurus::Camera> m_camera;
+	neurus::ScriptEngine            m_engine;
 };
 
 }  // namespace
@@ -164,14 +171,45 @@ TEST_F(ScriptWrites, DetachedObjectIsWritable)
 	EXPECT_EQ(m_detached->GetPosition(), glm::vec3(5.0f));
 }
 
+/**
+ * @test A scripted `Camera.position` write moves the camera AND records exactly
+ *       one undoable Camera Transform, so the document and the undo stack agree.
+ *       Before this, the setter emitted a pose event whose handler only replayed.
+ */
+TEST_F(ScriptWrites, CameraPositionIsOneUndoStep)
+{
+	const glm::vec3 before = m_camera->GetPosition();
+
+	RunCleanly("import neurus\nneurus.data.cameras['Camera'].position = (5, 0, 0)\n");
+
+	EXPECT_EQ(m_camera->GetPosition(), glm::vec3(5.0f, 0.0f, 0.0f));
+	ASSERT_EQ(m_operations.GetUndoStack().size(), 1u);
+
+	m_operations.Undo();
+	EXPECT_EQ(m_camera->GetPosition(), before);
+}
+
 TEST_F(ScriptWrites, WriteToDeletedObjectRaises)
 {
 	const int uid = m_detached->GetObjectID();
+	const glm::vec3 before = m_detached->GetPosition();
 	RunCleanly("import neurus\nmesh = neurus.data.meshes['Detached']\n");
 	m_resources.Remove(uid);
 
-	Run("mesh.position = (1, 1, 1)\n");  // `mesh` persists in __main__
-	EXPECT_GE(neurus::LogBuffer::instance().ErrorCount(), 1u);
+	// `mesh` persists in __main__. The snippet asserts the failure itself, so a
+	// write that silently succeeded (or raised the wrong type) fails the run.
+	const std::size_t errors = neurus::LogBuffer::instance().ErrorCount();
+	Run(R"(
+try:
+    mesh.position = (1, 1, 1)
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("expected RuntimeError for a deleted object")
+)");
+
+	EXPECT_EQ(neurus::LogBuffer::instance().ErrorCount(), errors) << "the snippet's own assertion failed";
+	EXPECT_EQ(m_detached->GetPosition(), before);
 }
 
 TEST_F(ScriptWrites, LoopSeesEachWrite)

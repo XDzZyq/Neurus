@@ -142,9 +142,16 @@ void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::Contr
 	auto cam = ctx.resources.Get<neurus::Camera>(e.objectUid);
 	if (!cam) return;
 
-	// Replay path for CameraTransformOp: apply the absolute pose, non-recording.
-	cam->SetPosition(glm::vec3(e.posX, e.posY, e.posZ));
-	cam->SetTarPos(glm::vec3(e.tarX, e.tarY, e.tarZ));
+	// One path for a live absolute-pose write (a script setting Camera.position)
+	// and the replay of CameraTransformOp: capture the before pose, apply the
+	// new one, then record it. The Replaying guard inside Submit() suppresses
+	// the recording a replay re-enters here with, so this cannot double-record.
+	const neurus::CameraPose before{ cam->GetPosition(), cam->cam_tar };
+	const neurus::CameraPose after{ glm::vec3(e.posX, e.posY, e.posZ),
+	                                glm::vec3(e.tarX, e.tarY, e.tarZ) };
+	cam->SetPosition(after.position);
+	cam->SetTarPos(after.target);
+	ctx.ops.Submit(std::make_unique<neurus::CameraTransformOp>(cam->GetObjectID(), before, after));
 	neurus::notify::Mutated(ctx.events);
 }
 

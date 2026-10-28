@@ -289,8 +289,9 @@ Design:
 - Stateless: free functions in an anonymous namespace. Most handlers capture the
   before value, mutate through the pool, submit one forward operation through
   `ctx.ops`, and route the consequences through `neurus::notify`.
-  `OnCameraPoseChanged` is the exception: it is the replay path for
-  `CameraTransformOp`, so it applies the absolute pose and submits nothing.
+  `OnCameraPoseChanged` follows the same shape: an absolute pose write applies
+  the pose and records a `CameraTransformOp`, and the replay of that op re-enters
+  the handler with `Submit` suppressed by the phase guard.
 - Debug property handlers go through one `ForDebugObject(resources, uid, fn)`
   helper that probes the `DebugLine`, `DebugPoints` and `DebugMesh` pools in turn
   and invokes a generic lambda on the first hit. The three classes share
@@ -301,8 +302,9 @@ Design:
   inside the lambda and submits its `TransitionOp` there, so undo is per-property.
 - Camera target edits fold into the coupled `CameraTransformOp` (position
   unchanged) so a panel target edit and a viewport drag share one undoable
-  "Camera Transform"; FOV records a `CameraFovOp` of its own, and the pose event
-  is replayed, never recorded.
+  "Camera Transform"; FOV records a `CameraFovOp` of its own, and an absolute
+  pose write records a `CameraTransformOp` - both on the live path (a script
+  setting `Camera.position`) and on replay.
 
 ## ShaderController
 

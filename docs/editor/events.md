@@ -180,8 +180,9 @@ struct ScaleChanged    { int objectUid; float sclX, sclY, sclZ; };
 // Camera properties
 struct CameraTargetChanged { int objectUid; float targetX, targetY, targetZ; };
 struct CameraFovChanged    { int objectUid; float fov; };
-// Absolute camera pose (position + target) - replay only, dispatched by
-// CameraTransformOp on undo/redo (live navigation carries relative deltas).
+// Absolute camera pose (position + target), dispatched by CameraTransformOp on
+// undo/redo and by a live script write of Camera.position (live navigation
+// carries relative deltas instead).
 struct CameraPoseChanged   { int objectUid; float posX, posY, posZ, tarX, tarY, tarZ; };
 // Which SCENE camera the viewport looks through; 0 = none, which hands the view
 // back to the viewport's own camera. Scene state, deliberately independent of

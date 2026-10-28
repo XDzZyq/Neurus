@@ -109,8 +109,9 @@ struct CameraFovChanged
 /**
  * @brief Absolute camera pose (position + look-at target) set.
  *
- * Emitted only when replaying a CameraTransformOp: live navigation events carry
- * relative deltas and cannot be replayed, so the op stores absolute endpoints.
+ * Emitted by an absolute pose write - the replay of a CameraTransformOp, or a
+ * live script setting `Camera.position`. Live navigation events carry relative
+ * deltas and cannot be replayed, so the op stores absolute endpoints.
  */
 struct CameraPoseChanged
 {

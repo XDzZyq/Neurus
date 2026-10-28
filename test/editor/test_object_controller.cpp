@@ -172,6 +172,23 @@ TEST_F(ObjectControllerTest, CameraFovChanged_Applies)
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, 45.0f);
 }
 
+/**
+ * @test The live path of CameraPoseChanged (a script setting Camera.position) is
+ *       recorded, not merely applied. The replay path re-enters the same handler
+ *       with Submit() suppressed by the phase guard, so one write is one entry.
+ */
+TEST_F(ObjectControllerTest, CameraPoseChanged_AppliesAndRecordsOneOperation)
+{
+	const glm::vec3 before = m_camera->GetPosition();
+	ASSERT_NE(before, glm::vec3(5.0f, 1.0f, 0.0f)); // a real move, not a no-op write
+
+	m_eventBus.Emit(CameraPoseChanged{ m_camera->GetObjectID(), 5.0f, 1.0f, 0.0f, 2.0f, 0.0f, 0.0f });
+
+	EXPECT_EQ(m_camera->GetPosition(), glm::vec3(5.0f, 1.0f, 0.0f));
+	EXPECT_EQ(m_camera->cam_tar, glm::vec3(2.0f, 0.0f, 0.0f));
+	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
+}
+
 // --- Mesh ------------------------------------------------------------------
 
 TEST_F(ObjectControllerTest, MeshShadowChanged_Applies)
