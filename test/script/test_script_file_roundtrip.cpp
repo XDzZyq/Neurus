@@ -2,15 +2,16 @@
  * @file test_script_file_roundtrip.cpp
  * @brief A real script file's history entry survives a project save and reopen.
  *
- * The script (`res/scripts/test.py`) performs three writes on a mesh named
+ * The script (`test/scripts/test.py`) performs three writes on a mesh named
  * "Ground". Running it through the real editor and engine records one
  * ScriptRunOp labelled "Run test.py"; this test saves the project WITH the
  * HistoryComponent, reopens it, and proves the restored entry keeps its label,
  * its concrete type and its undo, which rewinds all three writes together.
  *
  * No GPU and no Vulkan: `Editor(nullptr, nullptr)` skips every upload path. The
- * script path is relative to the build tree's `res/` copy, which CTest pins as
- * the working directory (the POST_BUILD step copies the whole `res/` tree).
+ * script path is relative to the build tree's `testdata/` mirror, which CTest
+ * pins as the working directory (the POST_BUILD step copies `test/scripts/`
+ * there).
  */
 
 #include <gtest/gtest.h>
@@ -47,8 +48,9 @@ namespace
 /// Same starter mesh Application passes to CreateDefaultScene().
 constexpr const char* kObj = "res/obj/sphere.obj";
 
-/// The checked-in script fixture: three writes on the mesh named "Ground".
-constexpr const char* kScript = "res/scripts/test.py";
+/// The script fixture (`test/scripts/`, mirrored to `testdata/` by POST_BUILD):
+/// three writes on the mesh named "Ground".
+constexpr const char* kScript = "testdata/scripts/test.py";
 
 /// The History label a file run derives from its basename.
 constexpr const char* kLabel = "Run test.py";

@@ -201,9 +201,18 @@ add_custom_command(TARGET neurus_test POST_BUILD
 	COMMENT "Copying res/ to build directory for test access"
 )
 
+# Copy test fixtures to the build directory. These live under test/ because res/
+# is shipped runtime content; tests still reach them relative to CWD.
+add_custom_command(TARGET neurus_test POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_CURRENT_SOURCE_DIR}/scripts"
+		"${CMAKE_BINARY_DIR}/testdata/scripts"
+	COMMENT "Copying test fixtures to build directory for test access"
+)
+
 # Register tests with CTest.
-# WORKING_DIRECTORY pinned to CMAKE_BINARY_DIR so res/ (copied there by
-# POST_BUILD) is always resolvable relative to CWD.
+# WORKING_DIRECTORY pinned to CMAKE_BINARY_DIR so res/ and testdata/ (copied
+# there by POST_BUILD) are always resolvable relative to CWD.
 include(GoogleTest)
 gtest_discover_tests(neurus_test
 	TEST_PREFIX "Neurus."
