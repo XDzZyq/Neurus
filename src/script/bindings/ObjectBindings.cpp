@@ -43,18 +43,6 @@ py::tuple ToTuple(const glm::vec3& value)
 }
 
 /**
- * @brief Raises when the object a `Transform3D` setter addresses is no longer pooled.
- *
- * The facet's own `Resolve()` returns a `Transform3D` and hides the base
- * resolver, so the base one is named explicitly: the write addresses the OBJECT,
- * and a target that has left the pool must raise rather than vanish.
- */
-void RequireTransformTarget(const Transform3DProxy& self)
-{
-	self.ProxyBase::Resolve();
-}
-
-/**
  * @brief `neurus.data.objects`: every pooled `ObjectID`, iterable and keyed by UID.
  *
  * Constructed once with the engine's view. Iteration and UID lookup go through
@@ -127,7 +115,10 @@ void RegisterObjectBindings(py::module_& data)
 			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetPosition()); },
 			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
-				RequireTransformTarget(self);
+				// The facet's Resolve() is stricter than the base one: it rejects
+				// a missing object and an object without a transform alike, and a
+				// write must raise rather than vanish.
+				self.Resolve();
 				const auto [x, y, z] = value;
 				EmitEvent(self, PositionChanged{self.uid, x, y, z});
 			},
@@ -137,7 +128,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetRotation()); },
 			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
-				RequireTransformTarget(self);
+				self.Resolve();
 				const auto [x, y, z] = value;
 				EmitEvent(self, RotationChanged{self.uid, x, y, z});
 			},
@@ -147,7 +138,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetScale()); },
 			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
-				RequireTransformTarget(self);
+				self.Resolve();
 				const auto [x, y, z] = value;
 				EmitEvent(self, ScaleChanged{self.uid, x, y, z});
 			},

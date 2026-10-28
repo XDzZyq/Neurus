@@ -52,6 +52,15 @@ public:
 
 	// --- IOperationSink ---
 	void Submit(std::unique_ptr<Operation> op) override;
+
+	/**
+	 * @brief Opens a script run's buffer, so the whole run lands as one entry.
+	 *
+	 * Logs and returns when a phase is already open (a nested or overlapping
+	 * run, or a call during replay). The refusal is not harmless: the caller's
+	 * later Submit() calls keep buffering into the still-open scope, and the next
+	 * successful EndScriptScope() commits two runs as a single undo step.
+	 */
 	void BeginScriptScope() override;
 	void EndScriptScope() override;
 
@@ -98,6 +107,11 @@ private:
 	 * so one script run lands as a single history entry.
 	 */
 	enum class Phase { Idle, Replaying, Script };
+
+	/**
+	 * @brief Display name of @p phase, for the log lines.
+	 */
+	static const char* PhaseName(Phase phase);
 
 	/**
 	 * @brief Emits an operation synchronously under the replay guard.

@@ -37,7 +37,12 @@ using namespace neurus;
 
 namespace {
 
-/** @brief UID used by the script-scope tests; deliberately no pooled object. */
+/**
+ * @brief UID used by the script-scope tests that assert buffering and commit only.
+ *
+ * Deliberately unpooled: those tests never claim replay semantics, which are
+ * covered by ScriptScopeCompactsIntoOneEntry and test_editor/test_script_controller.cpp.
+ */
 constexpr int kScriptUid = 9001;
 
 } // anonymous namespace
@@ -576,12 +581,16 @@ TEST_F(OperationManagerTest, ExceptionDuringRedo_DoesNotPushToUndo)
 
 TEST_F(OperationManagerTest, ScriptScopeCompactsIntoOneEntry)
 {
+	// The mesh is pooled, so the composite's Undo replays into a real object: the
+	// run is one entry that rewinds as a whole, not merely one stack slot.
+	const int uid = m_mesh->GetObjectID();
 	m_operations.BeginScriptScope();
-	m_operations.Submit(std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.Submit(std::make_unique<SetPositionOp>(uid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
 	m_operations.Submit(
-		std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(2.0f, 0.0f, 0.0f)));
+		std::make_unique<SetPositionOp>(uid, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(2.0f, 0.0f, 0.0f)));
 	m_operations.Submit(
-		std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(3.0f, 0.0f, 0.0f)));
+		std::make_unique<SetPositionOp>(uid, glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(3.0f, 0.0f, 0.0f)));
+	m_mesh->SetPosition(glm::vec3(3.0f, 0.0f, 0.0f)); // where the run left the object
 	m_operations.EndScriptScope();
 
 	ASSERT_EQ(m_operations.GetUndoStack().size(), 1u);
@@ -590,6 +599,37 @@ TEST_F(OperationManagerTest, ScriptScopeCompactsIntoOneEntry)
 
 	m_operations.Undo();
 	EXPECT_TRUE(m_operations.GetUndoStack().empty());
+	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(0.0f));
+}
+
+/**
+ * @test A script write to a mergeable property must not fold into the entry the
+ *       previous live edit left on the stack: the run boundary stops coalescing
+ *       even when the MergeKey matches exactly.
+ */
+TEST_F(OperationManagerTest, ScriptScopeDoesNotMergeWithThePreviousEntry)
+{
+	const int uid = m_camera->GetObjectID();
+	const float original = m_camera->cam_pers;
+
+	// A live panel edit on the same camera, same op type, same MergeKey.
+	m_camera->ChangeCamPersp(40.0f);
+	m_operations.Submit(std::make_unique<CameraFovOp>(uid, original, 40.0f));
+
+	m_operations.BeginScriptScope();
+	m_camera->ChangeCamPersp(55.0f);
+	m_operations.Submit(std::make_unique<CameraFovOp>(uid, 40.0f, 55.0f));
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetUndoStack().size(), 2u);
+
+	// One undo leaves the first entry's recorded end state (40), not 55: it kept
+	// its own value instead of swallowing the script write.
+	m_operations.Undo();
+	EXPECT_FLOAT_EQ(m_camera->cam_pers, 40.0f);
+	ASSERT_TRUE(m_operations.CanUndo());
+	m_operations.Undo();
+	EXPECT_FLOAT_EQ(m_camera->cam_pers, original);
 }
 
 TEST_F(OperationManagerTest, EmptyScriptScopeCreatesNoEntry)

@@ -48,7 +48,9 @@ exit path; `ScriptController` forwards both to `BeginScriptScope()` and
 
 - `BeginScriptScope` logs and returns when a phase is already active - a nested or
   overlapping scope has no meaningful owner - and only otherwise clears the buffer
-  and enters `Phase::Script`.
+  and enters `Phase::Script`. A refused call is not harmless: every later `Submit`
+  keeps buffering into the still-open scope, so the next successful
+  `EndScriptScope` commits two runs as a single undo step.
 - `EndScriptScope` restores `Idle` first, so the composite's own `Submit` takes the
   normal recording path instead of re-entering the buffer. It then wraps the
   buffered operations in one `CompositeOp` and submits it, which clears the redo
@@ -62,7 +64,9 @@ exit path; `ScriptController` forwards both to `BeginScriptScope()` and
 
 The buffered operations are not replayed from the buffer: the committed
 `CompositeOp` is an ordinary history entry, so undo and redo replay it like any
-other composite. See also the write path in
+other composite. One pre-existing `CompositeOp` property becomes more visible as
+script composites grow: if replaying a child throws, `Replay` drops the whole
+entry while the document is already partially rewound. See also the write path in
 [Scripting](../script/overview.md#one-undo-step-per-run).
 
 ## Operation model

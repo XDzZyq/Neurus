@@ -11,6 +11,17 @@
 
 namespace neurus {
 
+const char* OperationManager::PhaseName(Phase phase)
+{
+	switch (phase)
+	{
+	case Phase::Idle: return "Idle";
+	case Phase::Replaying: return "Replaying";
+	case Phase::Script: return "Script";
+	}
+	return "Unknown";
+}
+
 OperationManager::OperationManager(EventQueue& bus, size_t maxUndoDepth)
 	: m_bus(bus)
 	, m_maxUndoDepth(maxUndoDepth)
@@ -18,6 +29,8 @@ OperationManager::OperationManager(EventQueue& bus, size_t maxUndoDepth)
 
 void OperationManager::Submit(std::unique_ptr<Operation> op)
 {
+	if (!op) return;
+
 	// Replay re-runs the originating handler, which calls Submit again; suppress
 	// it so history is not corrupted by its own playback. This is the EXPECTED
 	// path on every undo/redo, so it is informational, not an error condition.
@@ -27,7 +40,6 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 		           << op->Label());
 		return;
 	}
-	if (!op) return;
 
 	// A script run is one history entry: while the scope is open every op is
 	// buffered instead of pushed, so the run cannot fragment into N steps. Before
@@ -63,7 +75,7 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 
 	NEURUS_LOG("[OperationManager] Submit: '" << m_undo.back()->Label()
 	           << "' (undo stack size " << m_undo.size()
-	           << ", phase=" << (m_phase == Phase::Replaying ? "Replaying" : "Idle")
+	           << ", phase=" << PhaseName(m_phase)
 	           << ", mergeKey='" << key << "')");
 }
 
@@ -138,7 +150,7 @@ void OperationManager::BeginScriptScope()
 	if (m_phase != Phase::Idle)
 	{
 		NEURUS_ERR("[OperationManager] BeginScriptScope ignored: a scope is already open (phase="
-		           << (m_phase == Phase::Script ? "Script" : "Replaying") << ")");
+		           << PhaseName(m_phase) << ")");
 		return;
 	}
 
@@ -152,7 +164,7 @@ void OperationManager::EndScriptScope()
 	if (m_phase != Phase::Script)
 	{
 		NEURUS_ERR("[OperationManager] EndScriptScope ignored: no script scope is open (phase="
-		           << (m_phase == Phase::Replaying ? "Replaying" : "Idle") << ")");
+		           << PhaseName(m_phase) << ")");
 		return;
 	}
 
