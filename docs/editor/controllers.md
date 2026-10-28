@@ -106,12 +106,15 @@ operation sink, scene, and render config), so every controller - including
 `RegisterController<T>()`; no providers are constructed manually. Controllers are
 event-driven, so no per-frame polling is required.
 
-Registration order matters where two controllers (or a controller and an Editor
-subscription) handle the same event: handlers run in registration order, and
-because dispatch is synchronous they also run in that order within one call. That
-is why `TransformGizmoController` is registered after `CameraController` (a drag
-sees the camera pose the orbit already produced) and why `ObjectController`'s
-relative order to `SceneController` does not matter (they share no event type).
+Registration order matters where two subscribers handle the same event: handlers
+run in registration order, and because dispatch is synchronous they also run in
+that order within one call. That is why `SceneController`, registered with the
+controllers, removes objects before the Editor's own `SceneObjectDeleteRequested`
+subscription re-syncs the viewport camera. Where subscribers share no event type,
+order is free: `ObjectController` and `SceneController` never see the same event,
+and neither does the gizmo with `CameraController` - the gizmo takes
+`MouseMoveEvent` and reads the cursor from `e.position`, while `CameraController`
+takes the `Camera*` events the Editor derives from it.
 
 ## Mutation notification
 
@@ -215,9 +218,12 @@ Design:
   fetches the pooled object by UID, because the pool owns the resource.
 - Scene-owned state (selection, membership, active camera) is reached through the
   context's scene provider; events never carry the scene.
-- Every mutating handler ends in a `neurus::notify` call rather than its own
-  `Emit`s, so the `EditorEvents` it emits (`SceneModified`, `LightingRebuild`,
-  `RenderResetEvent`) cannot drift from the gizmo's.
+- Most mutating handlers finish with a `neurus::notify` call rather than their own
+  `Emit`s, so the `EditorEvents` they emit (`SceneModified`, `LightingRebuild`,
+  `RenderResetEvent`) cannot drift from the gizmo's. The add handler and the
+  active-camera handler also emit their own follow-up events: the add handler
+  asks for the GPU upload before it submits its composite, and camera activation
+  emits a `CameraResizeEvent` for the camera it just activated.
 - GPU uploads are delegated to the Editor via `EditorEvents`
   (`LightGpuChanged`, `LightingRebuild`, `SceneModified`, `RenderResetEvent`,
   `SceneObjectGpuUploadRequested`), which the Editor subscribes to and executes
@@ -280,21 +286,23 @@ Design:
   the object enters the scene.
 - It never reads the scene: `test/editor/test_object_controller.cpp` hands it a
   scene provider that calls `ADD_FAILURE()`, so a regression cannot pass silently.
-- Stateless: free functions in an anonymous namespace. Each handler captures the
-  before value, mutates through the pool, submits one forward operation through
-  `ctx.ops`, and routes the consequences through `neurus::notify`.
+- Stateless: free functions in an anonymous namespace. Most handlers capture the
+  before value, mutate through the pool, submit one forward operation through
+  `ctx.ops`, and route the consequences through `neurus::notify`.
+  `OnCameraPoseChanged` is the exception: it is the replay path for
+  `CameraTransformOp`, so it applies the absolute pose and submits nothing.
 - Debug property handlers go through one `ForDebugObject(resources, uid, fn)`
   helper that probes the `DebugLine`, `DebugPoints` and `DebugMesh` pools in turn
-  and invokes a generic lambda on the first hit. The three debug classes share no
-  base beyond `ObjectID`, so the lambda is `auto&` and only compiles against
-  members all three have (color, opacity, x-ray) or is used from a type-specific
-  handler. It returns whether a pool held the UID, so an unknown UID mutates
-  nothing, records nothing, and skips `Mutated()`. Each handler captures the
-  before value inside the lambda and submits its `TransitionOp` there, so undo is
-  per-property.
-- Camera properties fold into the coupled `CameraTransformOp` where the panel and
-  viewport navigation must share one undoable entry; `CameraTargetChanged`
-  records a pose op with the position unchanged for exactly that reason.
+  and invokes a generic lambda on the first hit. The three classes share
+  `ObjectID` and `Transform3D`, but no shared base declares color, opacity or
+  x-ray, so the lambda is `auto&` and the three pool lookups stay in one place.
+  It returns whether a pool held the UID, so an unknown UID mutates nothing,
+  records nothing, and skips `Mutated()`. Each handler captures the before value
+  inside the lambda and submits its `TransitionOp` there, so undo is per-property.
+- Camera target edits fold into the coupled `CameraTransformOp` (position
+  unchanged) so a panel target edit and a viewport drag share one undoable
+  "Camera Transform"; FOV records a `CameraFovOp` of its own, and the pose event
+  is replayed, never recorded.
 
 ## ShaderController
 
@@ -386,12 +394,14 @@ its scope. The scope itself is the operation manager's; see
 ## TransformGizmoController
 
 `TransformGizmoController` owns the event-driven modal transform via
-`GizmoEvents` (arm, constrain, drag, confirm, cancel). It owns nothing, calls
-exactly one `TransformGizmo` method per event, and is registered after
-`CameraController` so a drag handler sees the camera pose this frame's orbit
-already produced. The drag writes `Transform3D` directly and submits nothing;
-confirm submits exactly one `SetPositionOp`/`SetRotationOp`/`SetScaleOp` for the
-whole gesture. Because the ops are not what notifies, the controller notifies
+`GizmoEvents` (arm, constrain, drag, confirm, cancel). It owns nothing and calls
+exactly one `TransformGizmo` method per event; it shares no event type with
+`CameraController`, and it reads the drag cursor from the event's `position`
+rather than from the viewport, so its registration order next to
+`CameraController` has no dispatch consequence. The drag writes `Transform3D`
+directly and submits nothing; confirm submits exactly one
+`SetPositionOp`/`SetRotationOp`/`SetScaleOp` for the whole gesture. Because the
+ops are not what notifies, the controller notifies
 itself through the shared `neurus::notify` tiers above, never its own `Emit`s:
 every drag frame (and the cancel path, which restores the snapshot) is
 `ObjectPreviewed`, a confirm is `ObjectMutated`, and a guide that merely appeared

@@ -22,8 +22,9 @@ namespace script
 /**
  * @brief Engine-owned state handed to every view and proxy at construction.
  *
- * Non-owning. `ctx` is the document published for the run (null outside a run);
- * `dispatch` is the mutation funnel (null when no editor is attached).
+ * Non-owning. In the engine's own view `ctx` points at the document published
+ * for the run, which is an empty context between runs, and `dispatch` points at
+ * the mutation funnel, whose `Emit` raises until a queue is attached.
  */
 struct ScriptView
 {

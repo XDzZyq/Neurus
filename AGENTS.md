@@ -40,7 +40,8 @@ No layer knows the internals of the next.
 Cross-layer traffic MUST go through exactly one of:
 
 - **UIEvents** (Qt Signals/Slots) for UI <-> Editor.
-- **EventQueue** (typed events) for Editor <-> Renderer.
+- **EventQueue** (typed events) inside the Editor: UI input is enqueued and
+  drained once per frame, controller reactions are synchronous.
 - **Context objects** (`RenderContext`, `UIContext`) for
   read-only data queries.
 

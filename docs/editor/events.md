@@ -66,8 +66,8 @@ later frame.
 
 ### Ordering consequences
 
-Dispatch order is registration order within a type. Three places depend on it;
-all three hold because both subscribers sit in the same `Dispatch` call:
+Dispatch order is registration order within a type. Two places depend on it, and
+both hold because their subscribers sit in the same `Dispatch` call:
 
 - `SceneObjectDeleteRequested`: `SceneController` removes the objects first, then
   the Editor's own subscription re-syncs the viewport camera, in the same
@@ -75,8 +75,14 @@ all three hold because both subscribers sit in the same `Dispatch` call:
   the next `Edit()`.
 - `ObjectSelected`, `ObjectDeselected` and `SelectionChanged`: `SceneController`
   records the operation, then the Editor marks the gizmo dirty.
-- `MouseMoveEvent`: `TransformGizmoController` is registered before the Editor, so
-  a drag handler sees the camera pose this frame's orbit already produced.
+
+One pair that shares an event is deliberately order-independent:
+`TransformGizmoController` handles `MouseMoveEvent` before the Editor does, and
+reads the cursor from `e.position` rather than from `EditorViewport::Cursor()`, so
+it does not matter that the Editor has not pushed the cursor into the viewport
+yet. `CameraController` shares no event type with the gizmo at all - the gizmo
+takes `MouseMoveEvent`, the camera controller the `Camera*` events the Editor
+derives from it - so their registration order has no dispatch consequence either.
 
 A separate consequence of synchronous dispatch is that GPU uploads run inside the
 handler that mutated the object rather than later in a drain. The queue never
@@ -260,10 +266,11 @@ subscribes to the pure `DeleteRequested` intent (Delete key in
 Outliner/Viewport) and forwards `ObjectDeleteRequested{}`, so the UI no longer
 stamps the scene. It is forward-only (the recorded composite replays via
 `SceneObjectDeleteRequested`, never this gesture event). The `SceneController`
-snapshots the selection, deselects, and defers the actual removals as one batched
-`SceneObjectDeleteRequested` carrying all selected UIDs, so the batched handler is
-the single removal path shared by the gesture and by undo/redo replay (no
-replay-only handling), and records one light composite
+snapshots the selection, deselects, emits one batched
+`SceneObjectDeleteRequested` carrying all selected UIDs - the removal runs
+synchronously inside that emit - so the batched handler is the single removal path
+shared by the gesture and by undo/redo replay (no replay-only handling), and
+records one composite
 (`CompositeOp[SetSelectionOp(before->none), SceneObjectAddOp(uids,false)]`: a
 delete of N objects is one op, not N). The forward add path records
 `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(before->{u})]`: add and

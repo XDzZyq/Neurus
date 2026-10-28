@@ -46,9 +46,9 @@ The run boundary is carried by two events. `ScriptEngineImpl::RunSource` emits
 exit path; `ScriptController` forwards both to `BeginScriptScope()` and
 `EndScriptScope()`:
 
-- `BeginScriptScope` refuses when a phase is already active - a nested or
-  overlapping scope has no meaningful owner - then clears the buffer and enters
-  `Phase::Script`.
+- `BeginScriptScope` logs and returns when a phase is already active - a nested or
+  overlapping scope has no meaningful owner - and only otherwise clears the buffer
+  and enters `Phase::Script`.
 - `EndScriptScope` restores `Idle` first, so the composite's own `Submit` takes the
   normal recording path instead of re-entering the buffer. It then wraps the
   buffered operations in one `CompositeOp` and submits it, which clears the redo

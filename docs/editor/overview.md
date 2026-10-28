@@ -32,18 +32,20 @@ The `Controllers` base class declares `virtual Init(ControllerContext& ctx)`,
 which binds a controller to its context. `Editor::RegisterController<T>()` is the
 template factory that creates a controller, calls `Init(m_ctx)`, and stores it in
 `ed_controllers`. Controllers receive discrete events rather than polling per
-frame; `Editor::Edit()` dispatches all enqueued events through
-`EventQueue::Process()`. See [Controllers](controllers.md).
+frame; `Editor::Edit()` drains the UI boundary's queued events through
+`EventQueue::Process()`, and every event the editor emits itself dispatches
+synchronously. See [Controllers](controllers.md).
 
 ### GPU upload and asset import
 
 The Editor handles asset import events (mesh, camera, and light adds) and performs
 GPU uploads directly: mesh upload, light SSBO dictionary updates, and IBL
 generation. It subscribes to the cross-component `EditorEvents`
-(`LightGpuChanged`, `LightingRebuild`, `SceneModified`) emitted by
-`SceneController`, and executes the uploads against its
-`DeferredRenderer`/`UploadManager`. The Editor must not mutate GPU resources
-directly outside of event handlers; scene mutations go through `SceneController`.
+(`LightGpuChanged`, `LightingRebuild`, `SceneModified`), which `ObjectController`
+emits for object property writes and `SceneController` for scene membership, and
+executes the uploads against its `DeferredRenderer`/`UploadManager`. The Editor
+must not mutate GPU resources directly outside of event handlers; scene mutations
+go through the controllers.
 
 ## Layer boundaries
 
@@ -342,3 +344,8 @@ in [Events](events.md).
   (`IEventQueue` + `IResourceLookup` + `IOperationSink` + scene/config providers)
 - `CameraController`: event-driven orbit/zoom/dolly/pan via `CameraEvents` (int
   `camId` payloads)
+- `ObjectController`: every object property write (visibility, transforms, and the
+  camera / mesh / light / environment / debug knobs), resolved through
+  `IResourceLookup` rather than the scene
+- `ScriptController`: maps the script run boundary (`ScriptRunStarted`,
+  `ScriptRunFinished`) to the operation sink's one-step script scope

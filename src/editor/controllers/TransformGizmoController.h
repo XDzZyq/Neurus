@@ -35,8 +35,9 @@ public:
 	/**
 	 * @brief Subscribes to the gizmo and input events that drive the gesture.
 	 *
-	 * Must be called after CameraController::Init() so a drag handler sees the
-	 * camera pose this frame's orbit already produced.
+	 * Order next to CameraController::Init() does not matter: the two share no
+	 * event type, and the drag reads the cursor from the MouseMoveEvent payload
+	 * rather than from the viewport.
 	 */
 	void Init(ControllerContext& ctx) override;
 };

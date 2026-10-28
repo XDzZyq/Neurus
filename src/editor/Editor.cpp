@@ -216,9 +216,10 @@ void Editor::Initialize()
 	// the pooled-object lookup, the operation sink, the scene, the render config,
 	// the viewport and the gizmo state.
 	//
-	// TransformGizmoController comes AFTER CameraController on purpose: handlers
-	// dispatch in registration order, so the gizmo's MouseMoveEvent handler sees a
-	// camera the camera controller has already updated this frame.
+	// TransformGizmoController and CameraController share no event type, so their
+	// relative order has no dispatch consequence: the gizmo handles MouseMoveEvent
+	// and reads the cursor from e.position, while the camera controller handles the
+	// Camera* events the Editor derives from that same event.
 	RegisterController<CameraController>();
 	RegisterController<TransformGizmoController>();
 	RegisterController<ShaderController>();

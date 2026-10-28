@@ -289,10 +289,10 @@ void OnEnvironmentRotationChanged(const neurus::EnvironmentRotationChanged& e,
  * @brief Applies `fn` to whichever pooled debug object `uid` names.
  * @return true if the UID named a pooled debug object.
  *
- * The three debug types share the color / opacity / x-ray knobs but no base
- * beyond ObjectID, so `fn` is a generic lambda and the three pool lookups stay
- * in one place. Type-specific knobs skip this and resolve their own type
- * directly.
+ * The three debug types all expose color / opacity / x-ray (they share ObjectID
+ * and Transform3D), but no shared base declares those knobs, so `fn` is a generic
+ * lambda and the three pool lookups stay in one place. Type-specific knobs skip
+ * this and resolve their own type directly.
  */
 template <typename Fn>
 bool ForDebugObject(const neurus::IResourceLookup& resources, int uid, Fn&& fn)
