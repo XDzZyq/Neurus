@@ -41,7 +41,7 @@ class GeometryPass;
  *
  * A handler that replaces or frees a resource calls the injected frame drain
  * before it does so: every frame fence has to be waited, because a recorded
- * frame may still be reading that resource. Draining the frame is the strongest
+ * frame may still be reading that resource. Draining the frames is the strongest
  * wait this handler needs - uploads and screenshots wait their own submits, so
  * nothing else can still be running against the resource being replaced.
  */

@@ -106,10 +106,11 @@ public:
 	 * @brief Waits for the queue to drain, holding the lock across the wait.
 	 * @throws Whatever `vk::Queue::waitIdle()` throws on failure.
 	 *
-	 * Only for swapchain rebuild, surface change and shutdown - rare events where
-	 * blocking every other submitter is accepted, and where a submit slipping in
-	 * after the wait started would defeat the drain entirely. Never call this on
-	 * a per-frame path: that is the stall this type exists to avoid.
+	 * Only for swapchain rebuild, surface change, shutdown, and the fallback when
+	 * a frame-fence drain fails (a hung GPU) - rare events where blocking every
+	 * other submitter is accepted, and where a submit slipping in after the wait
+	 * started would defeat the drain entirely. Never call this on a per-frame
+	 * path: that is the stall this type exists to avoid.
 	 */
 	void WaitIdle();
 

@@ -169,9 +169,8 @@ public:
 	 * @brief Returns the last acquired swapchain image for screenshot capture.
 	 *
 	 * The returned image is in PRESENT_SRC layout from the most recent frame.
-	 * A caller's readback is submitted after the frame on the same queue, so its
-	 * barrier orders it after the frame's writes, and it waits its own submit -
-	 * no idle wait is needed.
+	 * A caller's readback is submitted after the frame on the same queue and
+	 * waits its own submit, so no idle wait is needed.
 	 *
 	 * @return vk::Image handle (VK_NULL_HANDLE if swapchain not available or
 	 *         image index is invalid).

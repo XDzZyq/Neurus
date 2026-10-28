@@ -575,3 +575,41 @@ TEST_F(RenderRequestExecutorTest, DropSceneResources_DrainsOnce)
 	EXPECT_EQ(m_cache->GetMeshGPU(kObjectId), nullptr);
 	EXPECT_EQ(m_drains, 1u);
 }
+
+// ---------------------------------------------------------------------------
+// 16. regenerate=true for an id that is not resident is a first upload: there is
+//     nothing to replace, so the drain keys on residency, not on the flag.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, UploadEnvironment_RegenerateFresh_DoesNotDrain)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	constexpr int kEnvId = 402;
+	ASSERT_EQ(m_cache->GetEnvironmentGPU(kEnvId), nullptr);
+
+	m_executor->Execute(UploadEnvironmentRequest{
+		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = true});
+
+	EXPECT_NE(m_cache->GetEnvironmentGPU(kEnvId), nullptr);
+	EXPECT_EQ(m_drains, 0u);
+}
+
+// ---------------------------------------------------------------------------
+// 17. The same shader id at the same version is already resident: the store
+//     keeps the entry, so the drain keys on the version, not on the id alone.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, EnsurePipeline_SameVersionTwice_DoesNotDrain)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = MakeShader("SameVersionShader");
+
+	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
+	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
+
+	EXPECT_NE(m_cache->GetPipelineCache().GetPipeline(
+		shader->GetObjectID(), shader->GetVersion()), nullptr);
+	EXPECT_EQ(m_drains, 0u);
+}
