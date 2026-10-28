@@ -66,9 +66,10 @@ vk::Result SharedQueue::Present(const vk::PresentInfoKHR& info)
 void SharedQueue::WaitIdle()
 {
 	// The one place the lock stays held across a GPU wait. Callers wait only for
-	// a swapchain rebuild, a surface change or shutdown, where no submit is
-	// racing anyway - and letting a submit through after the drain started would
-	// leave exactly the in-flight work this call promises is gone.
+	// a swapchain rebuild, a surface change or shutdown, rare enough that
+	// blocking other submitters is accepted - and letting a submit through after
+	// the drain started would leave exactly the in-flight work this call
+	// promises is gone.
 	std::lock_guard<std::mutex> lock(m_mutex);
 	m_queue.waitIdle();
 }

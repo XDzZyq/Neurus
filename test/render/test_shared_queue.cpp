@@ -36,6 +36,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <exception>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -115,16 +117,6 @@ uint32_t ReadSlot(const CPUBuffer& buffer, vk::DeviceSize offset)
  */
 class SharedQueueTest : public VulkanTestShared
 {
-protected:
-	void SetUp() override
-	{
-		VulkanTestShared::SetUp();
-	}
-
-	void TearDown() override
-	{
-		VulkanTestShared::TearDown();
-	}
 };
 
 TEST_F(SharedQueueTest, SubmitAndWait_WorkIsCompleteOnReturn)
@@ -218,9 +210,10 @@ TEST_F(SharedQueueTest, ConcurrentSubmitAndWait_FourThreads_AllComplete)
 	                vk::BufferUsageFlagBits::eTransferDst, "SharedQueueTest_Slots");
 	SharedQueue queue(*m_device, m_queue, m_graphicsQueueFamily);
 
-	// One flag per worker entry, written only by that worker: distinct elements
-	// of the array, so no synchronisation is needed to collect the outcome.
-	std::array<int, kThreads> failures{};
+	// One entry per worker, written only by that worker: distinct elements of
+	// the array, so no synchronisation is needed to collect the outcome. An
+	// empty string means the worker finished without throwing.
+	std::array<std::string, kThreads> failures{};
 
 	std::vector<std::thread> workers;
 	workers.reserve(kThreads);
@@ -243,11 +236,15 @@ TEST_F(SharedQueueTest, ConcurrentSubmitAndWait_FourThreads_AllComplete)
 					queue.SubmitAndWait(vk::SubmitInfo({}, {}, *cmds[0]));
 				}
 			}
+			// Reported after the join: an assertion here would abort only this
+			// worker and leave the others running unattended.
+			catch (const std::exception& e)
+			{
+				failures[t] = e.what();
+			}
 			catch (...)
 			{
-				// Reported after the join: an assertion here would abort only
-				// this worker and leave the others running unattended.
-				failures[t] = 1;
+				failures[t] = "unknown exception";
 			}
 		});
 	}
@@ -259,7 +256,7 @@ TEST_F(SharedQueueTest, ConcurrentSubmitAndWait_FourThreads_AllComplete)
 
 	for (uint32_t t = 0; t < kThreads; ++t)
 	{
-		EXPECT_EQ(failures[t], 0) << "worker " << t << " threw";
+		EXPECT_TRUE(failures[t].empty()) << "worker " << t << " threw: " << failures[t];
 		// The last iteration's value: anything older means a submit or its wait
 		// was lost, anything from another worker means the slots overlapped.
 		EXPECT_EQ(ReadSlot(slots, t * kSlotBytes), t * 1000u + (kIterations - 1))
