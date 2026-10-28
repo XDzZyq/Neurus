@@ -1,6 +1,6 @@
 /**
  * @file ConfigBindings.cpp
- * @brief `neurus.render.config`: a read-only proxy over the run's `RenderConfig`.
+ * @brief `neurus.render.config`: a proxy over the run's `RenderConfig`.
  *
  * The proxy is constructed with the run's `ScriptView` and reads the config from
  * it on every access; each getter is `None` when the run has none. Setters never

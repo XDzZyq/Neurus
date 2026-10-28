@@ -7,8 +7,8 @@ sits, what it exposes, and how to run a script.
 ## Layer placement
 
 `src/script/` sits on the **Editor** layer and never includes Renderer or UI
-headers. It exposes scene and editor state to Python for **reading**, and routes
-every requested mutation through the editor's typed events rather than touching
+headers. It exposes scene and editor state to Python for reading and writing,
+and routes every mutation through the editor's typed events rather than touching
 state directly. The isolation boundary is enforced by a test
 (`test/script/test_script_isolation.cpp`).
 
@@ -34,7 +34,7 @@ through the Script Console panel and the Tools menu.
 
 ## The `neurus` module
 
-The module is split by subject, not by layer. Read-only in this phase:
+The module is split by subject, not by layer:
 
 - `neurus.data` - the resource pool, independent of scene membership:
   - `neurus.data.objects` - every pooled `ObjectID`, iterable and keyed by UID
@@ -97,24 +97,70 @@ appears in `neurus.data.cameras` but not in `neurus.scene.cameras`.
 `__getitem__` and `__contains__` agree on every collection: a UID or name that a
 lookup resolves is also what `in` reports, and `objects` is UID-only in both.
 
-## Writes are gated
+## Writes
 
-Setters exist but do **not** write the C++ property. Each one constructs the
-exact typed editor event it will emit and passes it to a single dispatch funnel
-(`ScriptDispatch::Emit`). In this read-only phase the dispatch carries no event
-queue, so a setter raises `neurus.ReadOnlyError`:
+Setters write the live object. A setter resolves its target through the run's
+resource pool, builds the exact typed editor event for the property, and emits it
+through `ScriptDispatch::Emit`, the single funnel into the editor's synchronous
+dispatch:
 
-```python
-o = list(neurus.data.objects)[0]
-try:
-    o.transform.position = (0, 0, 0)
-except neurus.ReadOnlyError as e:
-    print("refused:", e)
+```
+mesh.position = (2, 2, 2)
+  |-- resolve the UID through IResourceLookup (raises when it is gone)
+  |-- PositionChanged { objectUid, posX, posY, posZ }
+  |-- IEventQueue::Emit -> ObjectController::OnPositionChanged
+        |-- mutates the object's Transform3D
+        |-- submits one SetPositionOp to the OperationManager
+        |-- emits SceneModified + RenderResetEvent, plus LightingRebuild for a light
 ```
 
-Enabling writes later means supplying an `IEventQueue` to the dispatch and
-nothing else changes: the event flows to the existing controller and the
-`OperationManager`, so scripted edits undo and redo like any other action.
+Dispatch is synchronous and depth-first, so every handler has run before the
+setter returns: a write is visible on the very next Python statement, and a loop
+can read back each value it assigns.
+
+```python
+mesh = neurus.data.meshes["Ground"]
+mesh.position = (1, 2, 3)
+print(mesh.position)            # (1.0, 2.0, 3.0) - already applied
+```
+
+Writability is a property of the resource pool, not of scene membership: a pooled
+object that is not in the scene - an object held by undo history, or the pooled
+viewport camera - is writable too, as long as a setter names it. A target that
+has left the pool keeps its Python proxy, but the next write raises
+`RuntimeError`, because the setter resolves the UID before it emits:
+
+```python
+mesh = neurus.data.meshes["Ground"]
+# ... the object is removed from the pool
+mesh.position = (0, 0, 0)       # RuntimeError: ... refers to a missing object
+```
+
+`Camera.is_active` is the exception: it names no object, it chooses which scene
+camera the viewport looks through, so there is no target to resolve - and the
+`SceneController` keeps refusing a camera the scene does not use.
+
+`neurus.ReadOnlyError` no longer exists: there is no read-only mode left to
+report, and an engine with no editor attached raises `RuntimeError` instead of
+dropping the write silently.
+
+### One undo step per run
+
+A scripted write is recorded like a panel edit, so scripted changes undo and redo
+like any other action. `ScriptEngineImpl::RunSource` brackets each run with
+`ScriptRunStarted` and `ScriptRunFinished`; `ScriptController` forwards both to
+the operation sink's `BeginScriptScope()` / `EndScriptScope()`, and
+`OperationManager` implements them by buffering every operation the run records
+and committing the buffer as one `CompositeOp`. One `Ctrl+Z` therefore removes the
+whole run, not its last statement. A run that raises still closes its scope, so the
+writes before the error stay as one entry; a run that changed nothing records no
+entry at all. See
+[Operations](../editor/operations.md#one-undo-step-per-script-run).
+
+Scripts run on the GUI thread inside the frame loop, before `Editor::Edit()`, and
+`RunSource` holds the GIL for the whole run. Controller work and the GPU uploads
+a write triggers therefore execute under the GIL as well: the model is
+single-threaded, and a script's cost is frame time like any other editor work.
 
 ## Environment
 

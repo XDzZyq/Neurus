@@ -1,6 +1,6 @@
 /**
  * @file SceneProxies.h
- * @brief Typed read-only proxies over the pooled scene objects.
+ * @brief Typed proxies over the pooled scene objects.
  *
  * `CameraProxy`, `LightProxy`, `MeshProxy` and `EnvironmentProxy` each compose
  * the shared `ObjectProxy` and `Transform3DProxy` facets with a typed resolve

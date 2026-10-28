@@ -28,8 +28,8 @@ responsibility, and Core supplies utilities shared across all of them.
 
 - Contains application logic and scene mutation
 - Owns Controllers (CameraController, TransformGizmoController,
-  ShaderController, SceneController, RenderConfigController) via
-  `src/editor/controllers/`
+  ShaderController, SceneController, ObjectController, RenderConfigController,
+  ScriptController) via `src/editor/controllers/`
 - Publishes the two frame views as one pivot: `RenderContext` (the renderer's
   view) via `UpdateRenderContext()` and `UIContext` (the UI's view) via
   `UpdateUIContext()`
@@ -41,14 +41,20 @@ responsibility, and Core supplies utilities shared across all of them.
   the Scene. The Editor itself holds no camera and exposes no camera API, only
   `GetViewport()` and the timing (`SyncCamera` in `Edit()`). A scene with zero
   cameras is a legal document. See [Editor Overview](../editor/overview.md).
-- Owns UIEvents (Qt signals) and EventQueue (typed EventPool)
-- Communicates with Renderer via Context and typed EventQueue
+- Owns UIEvents (Qt signals) and the typed `EventQueue`
+- The `EventQueue` is **Editor-internal**: it is not a channel to the Renderer
+  and nothing under `src/render/` includes it. It is drained once per frame
+  (`Edit()`) for events that originated at the UI boundary; everything else in
+  the editor dispatches synchronously through `Emit`
+- Communicates with the Renderer through `RenderContext` and its own GPU-upload
+  calls (`UploadSceneResources`, `UploadLighting`, the on-demand upload
+  handlers); the Renderer never receives an event
 - Must NOT directly manipulate GPU resources
-- Controller registry pattern: `Editor::RegisterController<T>(bus)` creates
-  controller, calls `Init(bus)`, stores in `m_controllers`
-- Event-driven controller communication: `Editor::Edit(input)` translates
-  InputState -> typed events -> EventQueue.Process() -> controllers handle
-  events
+- Controller registry pattern: `Editor::RegisterController<T>()` creates the
+  controller, calls `Init(m_ctx)` and stores it in `ed_controllers`
+- Event-driven controller communication: a UI signal reaches
+  `Editor::OnUIEvent`, the next `Edit()` drains it to the controllers, and every
+  event a handler emits is dispatched before that handler returns
 
 ## UI Layer (`src/ui/`)
 

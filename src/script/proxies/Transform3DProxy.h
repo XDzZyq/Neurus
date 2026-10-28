@@ -24,7 +24,7 @@ namespace neurus
 namespace script
 {
 
-/// @brief Read-only 3D transform facet: position, rotation and scale.
+/// @brief 3D transform facet: position, rotation and scale.
 struct Transform3DProxy : virtual ProxyBase
 {
 	Transform3DProxy() = default;
