@@ -86,9 +86,9 @@ With the Renderer:
 
 - Provides scene data via `RenderContext` (and `UIContext` to the UI)
 - Receives rendering events via `UIEvents` (Qt signals)
-- Sends Editor events via `EventQueue` (typed dispatcher)
+- Dispatches its own events internally through `EventQueue` (typed dispatcher)
 - The Renderer never calls back into the Editor directly; the dependency is
-  one-way, Editor to Renderer, through the `EventQueue`
+  one-way, Editor to Renderer, and carries no event queue
 
 With the UI:
 
@@ -333,7 +333,7 @@ in [Events](events.md).
 
 - `UIEvents` singleton with UI-to-Editor signals (`newFrame`, `windowResized`,
   and so on)
-- `EventQueue` typed event dispatcher for Editor-to-Renderer events
+- `EventQueue` typed event dispatcher for Editor-internal events
 - `RenderContext`: the renderer's view (scene, config, camera, debug and gizmo
   draw lists) plus the frame half, produced by `Editor::UpdateRenderContext()`
 - `UIContext`: the UI's view (scene and config), produced by

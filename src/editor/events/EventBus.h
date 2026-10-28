@@ -17,9 +17,9 @@ public:
 	/**
 	 * @brief Hard limit on nested synchronous dispatch depth.
 	 *
-	 * A handler that synchronously re-emits an event type recurses instead of
-	 * reaching the deferred queue, so dispatch stops at this depth, logs once
-	 * and returns.
+	 * A handler that re-emits an event synchronously recurses instead of
+	 * reaching the deferred queue, so dispatch stops at this depth, logs every
+	 * blocked attempt and returns.
 	 */
 	static constexpr int kMaxDispatchDepth = 64;
 

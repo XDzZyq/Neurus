@@ -10,9 +10,9 @@
  * one op for the whole gesture. Because the drag bypasses the scene-mutation
  * path, this controller emits the dirty/GPU/repaint notifications itself.
  *
- * Registered AFTER CameraController so its handlers see an already-updated
- * camera, and it reads the cursor from the event rather than from the viewport,
- * since dispatch is registration-ordered.
+ * Registration order next to CameraController does not matter: the two share no
+ * event type, and the drag reads the cursor from the `MouseMoveEvent` payload
+ * rather than from the viewport.
  */
 
 #pragma once

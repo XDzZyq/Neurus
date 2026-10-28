@@ -102,7 +102,7 @@ TEST_F(SceneControllerTest, ObjectDeselected_RemovesFromSelection)
 
 // --- Dirty / reset semantics ----------------------------------------------
 
-TEST_F(SceneControllerTest, Selection_DoesNotEnqueueSceneModified)
+TEST_F(SceneControllerTest, Selection_DoesNotEmitSceneModified)
 {
 	int modified = 0;
 	m_eventBus.Subscribe<SceneModified>([&](const SceneModified&) { modified++; });

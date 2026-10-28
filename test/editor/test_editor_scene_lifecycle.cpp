@@ -373,7 +373,7 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededCameraAdoptsTheViewportExtent)
 
 	// The DEACTIVATED scene camera is deliberately left at its own defaults: only
 	// the camera in use is re-framed here. A camera picks the extent up when it
-	// becomes the view camera, because activation enqueues a CameraResizeEvent
+	// becomes the view camera, because activation emits a CameraResizeEvent
 	// for it (SceneController::OnActiveCameraChanged).
 	ASSERT_EQ(editor.GetScene().cam_list.size(), 1u);
 	EXPECT_EQ(editor.GetScene().GetActiveCamera(), nullptr);

@@ -845,7 +845,7 @@ void Editor::UploadEnvironmentIBL()
 	// IBL is only enabled when the project provides an environment.
 	if (scene->env_list.empty())
 	{
-		NEURUS_LOG("[Editor] No environment in scene 鈥?IBL disabled (black background)");
+		NEURUS_LOG("[Editor] No environment in scene - IBL disabled (black background)");
 		return;
 	}
 

@@ -84,7 +84,7 @@ compute pass and full G-Buffer pipeline through the isolated layers.
 - Qt6 Widgets window with Qt-Advanced-Docking-System (ADS)
 - Viewport as a dockable central widget
 - `UIEvents` singleton over Qt signals (UI <-> Editor)
-- Typed `EventQueue` for Editor <-> Renderer dispatch
+- Typed `EventQueue` for Editor-internal dispatch
 - Swapchain recreation on window resize
 - Validation layers in Debug builds
 - Embedded SPIR-V shaders (compiled at CMake time)

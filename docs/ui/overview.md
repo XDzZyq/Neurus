@@ -25,7 +25,7 @@ Renderer Layer (Vulkan-HPP vk::raii)
 - The Editor translates raw input into typed events through `EventQueue` and dispatches them to Controllers.
 - The Renderer receives read-only scene data through `Context` objects and never calls back into the Editor.
 
-Cross-layer communication must go through `UIEvents` (UI to Editor), `EventQueue` (Editor to Renderer), or `Context` objects. Direct coupling across layers is forbidden - the Renderer must not include Editor or UI headers, and the UI must not include Renderer headers (it exposes only the viewport's native window handle).
+Cross-layer communication must go through `UIEvents` (UI to Editor) or `Context` objects; inside the Editor, controllers communicate through the typed `EventQueue`, which is not a channel to the Renderer. Direct coupling across layers is forbidden - the Renderer must not include Editor or UI headers, and the UI must not include Renderer headers (it exposes only the viewport's native window handle).
 
 The UI layer owns the main window, the dock layout, and the viewport widget. The viewport exposes a native window handle (`Viewport::hwnd()`); the surface and every other Vulkan object live below the UI.
 

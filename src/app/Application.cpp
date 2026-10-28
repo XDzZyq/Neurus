@@ -351,8 +351,9 @@ void Application::InitScripting()
 
 void Application::OnRunScript(const std::string& code)
 {
-	// Deferred: the engine queues it and the frame loop runs it just before the
-	// event drain, so the events it emits are processed by that same drain.
+	// Deferred: the engine queues it and the frame loop runs it. The run
+	// dispatches every event synchronously as it executes, so no later drain is
+	// involved - the mutation is applied before the next Python statement.
 	app_script->Submit(code);
 }
 
@@ -484,9 +485,10 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                 [this]() {
 	                     if (app_renderer && app_editor)
 	                     {
-	                         // Run any queued scripts first, so the events they
-	                         // emit ride the drain below, this same frame. The
-	                         // context is generated fresh for this batch.
+	                         // Run any queued scripts first: a run dispatches its
+	                         // events synchronously, so its mutations are already
+	                         // applied when the queued UI events drain below.
+	                         // The context is generated fresh for this batch.
 	                         neurus::ScriptContext scriptCtx;
 	                         app_editor->UpdateScriptContext(scriptCtx);
 	                         app_script->ExecutePending(scriptCtx);

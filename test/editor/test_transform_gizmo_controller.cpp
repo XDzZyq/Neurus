@@ -95,8 +95,8 @@ protected:
 
 		m_controller.Init(m_ctx);
 
-		// Registered after the controller, so these see everything it enqueues --
-		// including the events it enqueues re-entrantly during Process().
+		// Registered after the controller, so these see everything it emits --
+		// including the events it emits re-entrantly during Process().
 		m_eventBus.Subscribe<SceneModified>([this](const SceneModified&) { ++m_tally.modified; });
 		m_eventBus.Subscribe<RenderResetEvent>([this](const RenderResetEvent&) { ++m_tally.reset; });
 		m_eventBus.Subscribe<LightGpuChanged>([this](const LightGpuChanged&) { ++m_tally.lightStruct; });

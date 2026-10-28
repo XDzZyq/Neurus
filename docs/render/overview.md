@@ -24,7 +24,7 @@ The renderer must not:
 - Directly call UI or Editor functions
 - Include headers from `src/editor/` or `src/ui/`
 
-Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor, the EventQueue for Editor to renderer events, and Context objects for data queries. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
+Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor and Context objects for data queries; the EventQueue is Editor-internal and is not a channel to the renderer. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
 
 ### Vulkan ownership
 
