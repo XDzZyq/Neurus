@@ -40,6 +40,11 @@ bool ScriptEngine::IsReady() const
 	return m_impl->IsReady();
 }
 
+void ScriptEngine::SetEventQueue(IEventQueue* queue)
+{
+	m_impl->SetEventQueue(queue);
+}
+
 void ScriptEngine::RunString(const std::string& code, const ScriptContext* ctx)
 {
 	m_impl->RunString(code, ctx);

@@ -20,9 +20,8 @@
 
 #include <pybind11/embed.h>
 
-#include "script/ScriptDispatch.h"
-#include "script/bindings/Bindings.h"
 #include "script/ScriptView.h"
+#include "script/bindings/Bindings.h"
 
 namespace py = pybind11;
 
@@ -40,7 +39,7 @@ void ForceLinkBindings()
 
 void RegisterNeurusModule(py::module_& m)
 {
-	m.doc() = "Neurus scripting API (read-only phase 1).";
+	m.doc() = "Neurus scripting API.";
 
 	py::module_ data = m.def_submodule("data", "Resource pool access.");
 	py::module_ scene = m.def_submodule("scene", "Current scene access.");
@@ -53,9 +52,6 @@ void RegisterNeurusModule(py::module_& m)
 
 	// `neurus.data.scene` is the scene module itself, not a second proxy object.
 	data.attr("scene") = scene;
-
-	// Scripted mutations are refused in this phase.
-	py::register_exception<ReadOnlyError>(m, "ReadOnlyError", PyExc_RuntimeError);
 }
 
 void InstallNeurusViews(py::module_& m, const ScriptView* view)

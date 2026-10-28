@@ -340,6 +340,10 @@ void Application::InitEditor()
 
 void Application::InitScripting()
 {
+	// Scripted writes go through the editor's own dispatch, so a script mutation
+	// is applied by the same controller as the equivalent panel edit.
+	app_script->SetEventQueue(&app_editor->GetEventQueue());
+
 	// The engine resolves its own environment (NEURUS_PYTHON_ENV override, else
 	// the build-time lib/.venv default). A failure degrades to a no-op engine.
 	app_script->Initialize();

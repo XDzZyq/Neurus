@@ -138,6 +138,15 @@ public:
 	 */
 	OperationManager& GetOperations() { return ed_operations; }
 
+	/**
+	 * @brief Returns the editor's typed event dispatch.
+	 *
+	 * Exists for the script engine's dispatch: a scripted property write is
+	 * emitted here and applied synchronously by the same controllers a panel
+	 * edit reaches, so the script observes its own mutation on return.
+	 */
+	IEventQueue& GetEventQueue() { return ed_eventBus; }
+
 	template<typename T>
 	void RegisterController()
 	{

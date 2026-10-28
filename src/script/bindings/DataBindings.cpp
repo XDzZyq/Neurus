@@ -10,8 +10,9 @@
  * and no collection holds a run-scoped pointer. Names resolve through the pool's
  * per-type registry, which is authoritative for lookup. Collections are empty -
  * never a null dereference - when the run has no resource lookup. No setter
- * writes a C++ property: each routes the exact typed event through the run
- * dispatch, which refuses in this phase.
+ * writes a C++ property: each resolves its target, then routes the exact typed
+ * event through the run dispatch, which delivers it synchronously to the
+ * controller that owns the write.
  */
 
 #include <pybind11/pybind11.h>
@@ -159,11 +160,15 @@ void RegisterResourceCollection(py::module_& data, const char* name)
 /// @brief Registers the typed proxy and pool collection classes (once).
 void RegisterDataBindings(py::module_& data)
 {
-	py::class_<CameraProxy, ObjectProxy, Transform3DProxy>(data, "Camera", "Read-only proxy over a scene camera.")
+	py::class_<CameraProxy, ObjectProxy, Transform3DProxy>(data, "Camera", "Proxy over a scene camera.")
 		.def_property(
 			"fov",
 			[](const CameraProxy& s) { return s.Resolve()->cam_pers; },
-			[](const CameraProxy& s, float value) { EmitEvent(s, CameraFovChanged{s.uid, value}); })
+			[](const CameraProxy& s, float value)
+			{
+				s.Resolve();
+				EmitEvent(s, CameraFovChanged{s.uid, value});
+			})
 		.def_property_readonly("near", [](const CameraProxy& s) { return s.Resolve()->cam_near; })
 		.def_property_readonly("far", [](const CameraProxy& s) { return s.Resolve()->cam_far; })
 		.def_property(
@@ -185,49 +190,80 @@ void RegisterDataBindings(py::module_& data)
 				const Scene* scene = (s.view != nullptr && s.view->ctx != nullptr) ? s.view->ctx->scene : nullptr;
 				return scene != nullptr && scene->ActiveCameraID() == s.uid;
 			},
+			// Activation names no object: it sets the scene's active camera, so
+			// there is no target to resolve first.
 			[](const CameraProxy& s, bool value) { EmitEvent(s, ActiveCameraChanged{value ? s.uid : 0}); });
 
-	py::class_<LightProxy, ObjectProxy, Transform3DProxy>(data, "Light", "Read-only proxy over a scene light.")
+	py::class_<LightProxy, ObjectProxy, Transform3DProxy>(data, "Light", "Proxy over a scene light.")
 		.def_property_readonly("type",
 		     [](const LightProxy& s) { return static_cast<int>(s.Resolve()->light_type); })
 		.def_property(
 			"power",
 			[](const LightProxy& s) { return s.Resolve()->light_power; },
-			[](const LightProxy& s, float value) { EmitEvent(s, LightPowerChanged{s.uid, value}); })
+			[](const LightProxy& s, float value)
+			{
+				s.Resolve();
+				EmitEvent(s, LightPowerChanged{s.uid, value});
+			})
 		.def_property(
 			"color",
 			[](const LightProxy& s) { return ToTuple(s.Resolve()->light_color); },
 			[](const LightProxy& s, std::tuple<float, float, float> value)
 			{
+				s.Resolve();
 				const auto [r, g, b] = value;
 				EmitEvent(s, LightColorChanged{s.uid, r, g, b});
 			})
 		.def_property(
 			"radius",
 			[](const LightProxy& s) { return s.Resolve()->light_radius; },
-			[](const LightProxy& s, float value) { EmitEvent(s, LightRadiusChanged{s.uid, value}); })
+			[](const LightProxy& s, float value)
+			{
+				s.Resolve();
+				EmitEvent(s, LightRadiusChanged{s.uid, value});
+			})
 		.def_property(
 			"shadow",
 			[](const LightProxy& s) { return s.Resolve()->use_shadow; },
-			[](const LightProxy& s, bool value) { EmitEvent(s, LightShadowChanged{s.uid, value}); })
+			[](const LightProxy& s, bool value)
+			{
+				s.Resolve();
+				EmitEvent(s, LightShadowChanged{s.uid, value});
+			})
 		.def_property(
 			"cutoff",
 			[](const LightProxy& s) { return s.Resolve()->spot_cutoff; },
-			[](const LightProxy& s, float value) { EmitEvent(s, LightCutoffChanged{s.uid, value}); })
+			[](const LightProxy& s, float value)
+			{
+				s.Resolve();
+				EmitEvent(s, LightCutoffChanged{s.uid, value});
+			})
 		.def_property(
 			"outer_cutoff",
 			[](const LightProxy& s) { return s.Resolve()->spot_outer_cutoff; },
-			[](const LightProxy& s, float value) { EmitEvent(s, LightOuterCutoffChanged{s.uid, value}); });
+			[](const LightProxy& s, float value)
+			{
+				s.Resolve();
+				EmitEvent(s, LightOuterCutoffChanged{s.uid, value});
+			});
 
-	py::class_<MeshProxy, ObjectProxy, Transform3DProxy>(data, "Mesh", "Read-only proxy over a scene mesh.")
+	py::class_<MeshProxy, ObjectProxy, Transform3DProxy>(data, "Mesh", "Proxy over a scene mesh.")
 		.def_property(
 			"shadow",
 			[](const MeshProxy& s) { return s.Resolve()->using_shadow; },
-			[](const MeshProxy& s, bool value) { EmitEvent(s, MeshShadowChanged{s.uid, value}); })
+			[](const MeshProxy& s, bool value)
+			{
+				s.Resolve();
+				EmitEvent(s, MeshShadowChanged{s.uid, value});
+			})
 		.def_property(
 			"using_material",
 			[](const MeshProxy& s) { return s.Resolve()->using_material; },
-			[](const MeshProxy& s, bool value) { EmitEvent(s, MeshMaterialChanged{s.uid, value}); })
+			[](const MeshProxy& s, bool value)
+			{
+				s.Resolve();
+				EmitEvent(s, MeshMaterialChanged{s.uid, value});
+			})
 		.def_property_readonly("material",
 		     [](const MeshProxy& s) -> py::object
 		     {
@@ -239,15 +275,23 @@ void RegisterDataBindings(py::module_& data)
 			     return py::str(mat->mat_name);
 		     });
 
-	py::class_<EnvironmentProxy, ObjectProxy, Transform3DProxy>(data, "Environment", "Read-only proxy over the scene environment.")
+	py::class_<EnvironmentProxy, ObjectProxy, Transform3DProxy>(data, "Environment", "Proxy over the scene environment.")
 		.def_property(
 			"intensity",
 			[](const EnvironmentProxy& s) { return s.Resolve()->GetIntensity(); },
-			[](const EnvironmentProxy& s, float value) { EmitEvent(s, EnvironmentIntensityChanged{s.uid, value}); })
+			[](const EnvironmentProxy& s, float value)
+			{
+				s.Resolve();
+				EmitEvent(s, EnvironmentIntensityChanged{s.uid, value});
+			})
 		.def_property(
 			"rotation",
 			[](const EnvironmentProxy& s) { return s.Resolve()->GetRotation(); },
-			[](const EnvironmentProxy& s, float value) { EmitEvent(s, EnvironmentRotationChanged{s.uid, value}); });
+			[](const EnvironmentProxy& s, float value)
+			{
+				s.Resolve();
+				EmitEvent(s, EnvironmentRotationChanged{s.uid, value});
+			});
 
 	RegisterResourceCollection<CameraProxy, Camera>(data, "cameras");
 	RegisterResourceCollection<LightProxy, Light>(data, "lights");

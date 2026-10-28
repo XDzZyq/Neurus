@@ -1,14 +1,14 @@
 /**
  * @file ObjectBindings.cpp
- * @brief Read-only `Object` / `Transform3D` proxies and `neurus.data.objects`.
+ * @brief `Object` / `Transform3D` proxies and `neurus.data.objects`.
  *
  * The collection is constructed once with the engine's `ScriptView`; the proxies
  * it hands out copy that view, so each one resolves its own object through the
  * run's resource pool on every access and nothing is cached. Iteration and UID
  * lookup go through the pool too, so a pooled object detached from the scene is
- * still reachable. No setter writes a C++ property - each constructs the exact
- * typed event and routes it through the run dispatch, which refuses in this
- * phase.
+ * still reachable. No setter writes a C++ property - each resolves its target and
+ * constructs the exact typed event, which the run dispatch delivers synchronously
+ * to the controller that owns the write.
  */
 
 #include <pybind11/pybind11.h>
@@ -40,6 +40,18 @@ namespace
 py::tuple ToTuple(const glm::vec3& value)
 {
 	return py::make_tuple(value.x, value.y, value.z);
+}
+
+/**
+ * @brief Raises when the object a `Transform3D` setter addresses is no longer pooled.
+ *
+ * The facet's own `Resolve()` returns a `Transform3D` and hides the base
+ * resolver, so the base one is named explicitly: the write addresses the OBJECT,
+ * and a target that has left the pool must raise rather than vanish.
+ */
+void RequireTransformTarget(const Transform3DProxy& self)
+{
+	self.ProxyBase::Resolve();
 }
 
 /**
@@ -109,13 +121,13 @@ struct ObjectCollection
 /// @brief Registers the proxy classes (once) on the `data` submodule.
 void RegisterObjectBindings(py::module_& data)
 {
-	py::class_<Transform3DProxy>(data, "Transform3D",
-	                             "Read-only 3D transform shared by every spatial scene object.")
+	py::class_<Transform3DProxy>(data, "Transform3D", "3D transform shared by every spatial scene object.")
 		.def_property(
 			"position",
 			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetPosition()); },
 			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
+				RequireTransformTarget(self);
 				const auto [x, y, z] = value;
 				EmitEvent(self, PositionChanged{self.uid, x, y, z});
 			},
@@ -125,6 +137,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetRotation()); },
 			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
+				RequireTransformTarget(self);
 				const auto [x, y, z] = value;
 				EmitEvent(self, RotationChanged{self.uid, x, y, z});
 			},
@@ -134,12 +147,13 @@ void RegisterObjectBindings(py::module_& data)
 			[](const Transform3DProxy& self) { return ToTuple(self.Resolve()->GetScale()); },
 			[](const Transform3DProxy& self, std::tuple<float, float, float> value)
 			{
+				RequireTransformTarget(self);
 				const auto [x, y, z] = value;
 				EmitEvent(self, ScaleChanged{self.uid, x, y, z});
 			},
 			"Per-axis scale as an (x, y, z) tuple.");
 
-	py::class_<ObjectProxy>(data, "Object", "Read-only proxy over a scene object.")
+	py::class_<ObjectProxy>(data, "Object", "Proxy over a scene object.")
 		.def_property_readonly(
 			"uid",
 			[](const ObjectProxy& self) { return self.uid; },
@@ -157,6 +171,7 @@ void RegisterObjectBindings(py::module_& data)
 			[](const ObjectProxy& self) { return self.Resolve()->is_viewport; },
 			[](const ObjectProxy& self, bool value)
 			{
+				self.Resolve();
 				EmitEvent(self, VisibilityChanged{self.uid, value, value});
 			},
 			"Whether the object is visible in the viewport.")

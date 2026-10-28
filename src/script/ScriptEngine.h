@@ -24,6 +24,8 @@
 namespace neurus
 {
 
+class IEventQueue;
+
 /**
  * @brief Owns the embedded CPython interpreter and executes Python code.
  */
@@ -35,6 +37,16 @@ public:
 
 	ScriptEngine(const ScriptEngine&) = delete;
 	ScriptEngine& operator=(const ScriptEngine&) = delete;
+
+	/**
+	 * @brief Attach the event queue scripted mutations are dispatched to.
+	 *
+	 * Without a queue every setter raises, so the engine is attached before
+	 * `Initialize()` in the application and before the first run in a test.
+	 *
+	 * @param queue Borrowed editor queue; must outlive the engine.
+	 */
+	void SetEventQueue(IEventQueue* queue);
 
 	/**
 	 * @brief Initialize CPython in isolated mode.

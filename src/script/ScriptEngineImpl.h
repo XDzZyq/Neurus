@@ -21,6 +21,8 @@
 #include <vector>
 
 #include "core/Log.h"
+#include "editor/events/IEventQueue.h"
+#include "editor/events/ScriptEvents.h"
 #include "script/ScriptDispatch.h"
 #include "script/ScriptEngine.h"
 #include "script/bindings/Bindings.h"
@@ -140,6 +142,12 @@ struct ScriptEngine::Impl
 		return m_ready;
 	}
 
+	/// @brief Attach the queue scripted mutations are dispatched to.
+	void SetEventQueue(IEventQueue* queue)
+	{
+		m_dispatch.SetEventQueue(queue);
+	}
+
 	/**
 	 * @brief Execute a Python snippet, buffering output and logging failures.
 	 * @param code UTF-8 Python source.
@@ -235,6 +243,13 @@ private:
 		// read a finished run's state.
 		ContextScope scope(m_current, ctx);
 
+		// Bracket the run so the operation sink compacts every write it makes
+		// into one undo step. Declared before the exec try-block and after the
+		// document is published, so it closes on every exit path - including a
+		// raising script - and the run's writes are recorded while the context
+		// is still live.
+		RunScope runScope(m_dispatch.EventQueue());
+
 		try
 		{
 			// Redirect before running so `print` and tracebacks land in the
@@ -319,6 +334,61 @@ private:
 	private:
 		ScriptContext& m_slot;
 		ScriptContext  m_saved;  ///< Outer run's document, restored on exit (nested runs).
+	};
+
+	/**
+	 * @brief Brackets one script run so its writes compact into one undo step.
+	 *
+	 * Emits `ScriptRunStarted` on construction and `ScriptRunFinished` on
+	 * destruction; `ScriptController` forwards both to the operation sink's
+	 * script scope. A raising run still reaches the destructor, so the scope
+	 * always closes.
+	 *
+	 * Constructor and destructor are both `noexcept`: an exception leaving a
+	 * destructor during unwinding calls `std::terminate`. Clearing
+	 * @ref m_events in the constructor's catch keeps the pair symmetric - if
+	 * Started never landed, Finished must not be sent either.
+	 */
+	class RunScope
+	{
+	public:
+		explicit RunScope(IEventQueue* events) noexcept
+			: m_events(events)
+		{
+			try
+			{
+				if (m_events != nullptr)
+				{
+					m_events->Emit(ScriptRunStarted{});
+				}
+			}
+			catch (...)
+			{
+				// Never leave a scope half-open.
+				m_events = nullptr;
+			}
+		}
+
+		~RunScope() noexcept
+		{
+			try
+			{
+				if (m_events != nullptr)
+				{
+					m_events->Emit(ScriptRunFinished{});
+				}
+			}
+			catch (...)
+			{
+				NEURUS_ERR("[ScriptEngine] ScriptRunFinished could not be emitted");
+			}
+		}
+
+		RunScope(const RunScope&) = delete;
+		RunScope& operator=(const RunScope&) = delete;
+
+	private:
+		IEventQueue* m_events = nullptr;
 	};
 
 	/**
@@ -449,7 +519,7 @@ private:
 	bool m_ready = false;
 	pybind11::module_ m_neuru;           ///< Embedded module; views registered once.
 	ScriptConsoleBuffer m_console;
-	ScriptDispatch m_dispatch;          ///< Read-only (no event queue) in this phase.
+	ScriptDispatch m_dispatch;          ///< Funnel for scripted mutations; attached by SetEventQueue().
 	ScriptContext m_current;            ///< Document published for the run in progress.
 	script::ScriptView m_view{&m_current, &m_dispatch};  ///< Injected into the module once.
 	std::vector<PendingRun> m_pending;  ///< Runs queued for the next ExecutePending().

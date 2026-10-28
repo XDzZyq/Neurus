@@ -4,9 +4,9 @@
  *
  * The proxy is constructed with the run's `ScriptView` and reads the config from
  * it on every access; each getter is `None` when the run has none. Setters never
- * write the live config; each emits a `RenderConfigChangedEvent` carrying a copy
- * with the one field changed, which the run dispatch refuses in this phase
- * (`neurus.ReadOnlyError`).
+ * write the live config directly; each emits a `RenderConfigChangedEvent`
+ * carrying a copy with the one field changed, which the render config controller
+ * applies synchronously.
  */
 
 #include <pybind11/pybind11.h>
