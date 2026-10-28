@@ -63,13 +63,13 @@ exit path; `ScriptController` forwards both to `BeginScriptScope()` and
 - `Clear()` drops any buffered script operations along with both stacks.
 
 The buffered operations are not replayed from the buffer: the committed
-`CompositeOp` is an ordinary history entry, so undo and redo replay it like any
-other composite. One pre-existing `CompositeOp` property becomes more visible as
-script composites grow: if replaying a child throws, `Replay` drops the whole
-entry while the document is already partially rewound. A run is recorded as a
-`ScriptRunOp` - a `CompositeOp` subclass labelled "Script Run" and registered with
-cereal, so the label is the same in the undo list, the redo list and after a
-save/reload. See also the write path in
+`ScriptRunOp` is an ordinary history entry, so undo and redo replay it like any
+other composite. It carries the run name as its label, defaulting to "Run Script"
+when the host supplied none, and serializes that name with the edits, so the
+label is the same in the undo list, the redo list and after a save/reload. One
+pre-existing `CompositeOp` property becomes more visible as script composites
+grow: if replaying a child throws, `Replay` drops the whole entry while the
+document is already partially rewound. See also the write path in
 [Scripting](../script/overview.md#one-undo-step-per-run).
 
 ## Operation model

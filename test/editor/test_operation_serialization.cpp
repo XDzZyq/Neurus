@@ -342,19 +342,27 @@ TEST_F(OperationSerializationTest, HistoryComponent_SaveLoad_BothStacks)
 }
 
 /**
- * @test A script run is saved and reloaded as a ScriptRunOp: the restored entry
- *       still reports "Script Run" rather than its first edit's label, and its
- *       inverse keeps the label on the redo stack.
+ * @test A script run is saved and reloaded as a ScriptRunOp carrying its name:
+ *       a file run's "Run demo.py" and a console run's default "Run Script" both
+ *       survive, and Undo() puts the same labels on the redo list.
  */
 TEST_F(OperationSerializationTest, ScriptRunOp_SurvivesHistorySaveLoad)
 {
-	m_operations.BeginScriptScope();
+	// One file run (custom label) and one console run (default label).
+	m_operations.BeginScriptScope("Run demo.py");
 	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
 	Process();
 	m_operations.EndScriptScope();
 
-	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
-	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Script Run");
+	m_operations.BeginScriptScope();
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 7.0f, 8.0f, 9.0f });
+	Process();
+	m_operations.EndScriptScope();
+
+	const HistoryView before = m_operations.GetHistoryView();
+	ASSERT_EQ(before.undo.size(), 2u);
+	EXPECT_EQ(before.undo[0], "Run demo.py");
+	EXPECT_EQ(before.undo[1], "Run Script");
 
 	// Save through the Serializable adapter.
 	std::stringstream ss;
@@ -373,14 +381,19 @@ TEST_F(OperationSerializationTest, ScriptRunOp_SurvivesHistorySaveLoad)
 	}
 
 	const HistoryView after = fresh.GetHistoryView();
-	ASSERT_EQ(after.undo.size(), 1u);
-	EXPECT_EQ(after.undo.back(), "Script Run");
+	ASSERT_EQ(after.undo.size(), 2u);
+	EXPECT_EQ(after.undo[0], "Run demo.py");
+	EXPECT_EQ(after.undo[1], "Run Script");
 
-	// The concrete type survived, so Undo() puts another labelled run on redo.
+	// Both entries kept their concrete type and name, so Undo() re-labels redo.
+	ASSERT_NE(dynamic_cast<ScriptRunOp*>(fresh.GetUndoStack().front().get()), nullptr);
 	ASSERT_NE(dynamic_cast<ScriptRunOp*>(fresh.GetUndoStack().back().get()), nullptr);
 	fresh.Undo();
 	ASSERT_EQ(fresh.GetHistoryView().redo.size(), 1u);
-	EXPECT_EQ(fresh.GetHistoryView().redo.front(), "Script Run");
+	EXPECT_EQ(fresh.GetHistoryView().redo.front(), "Run Script");
+	fresh.Undo();
+	ASSERT_EQ(fresh.GetHistoryView().redo.size(), 2u);
+	EXPECT_EQ(fresh.GetHistoryView().redo.front(), "Run demo.py");
 }
 
 TEST_F(OperationSerializationTest, HistoryComponent_Load_MissingNode_ClearsHistory)

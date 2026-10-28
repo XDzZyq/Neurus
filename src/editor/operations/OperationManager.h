@@ -9,9 +9,9 @@
  *
  * A third phase, Phase::Script, exists for script runs: opening the script scope
  * makes Submit() buffer into m_scriptOps instead of the undo stack, so the whole
- * run can be committed as one CompositeOp - one history entry - when the scope
- * closes. Without it a single run would fragment into one step per property
- * write, which is not what "run script" means to a user.
+ * run can be committed as one ScriptRunOp - one history entry carrying the run's
+ * label - when the scope closes. Without it a single run would fragment into one
+ * step per property write, which is not what "run script" means to a user.
  *
  * Needs no scene or resource access: operations are pure value descriptors that
  * dispatch events carrying integer UIDs, resolved by the handlers at replay
@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "editor/operations/HistoryView.h"
@@ -57,11 +58,14 @@ public:
 	 * @brief Opens a script run's buffer, so the whole run lands as one entry.
 	 *
 	 * Logs and returns when a phase is already open (a nested or overlapping
-	 * run, or a call during replay). The refusal is not harmless: the caller's
-	 * later Submit() calls keep buffering into the still-open scope, and the next
-	 * successful EndScriptScope() commits two runs as a single undo step.
+	 * run, or a call during replay), keeping the name the open scope already
+	 * holds. The refusal is not harmless: the caller's later Submit() calls keep
+	 * buffering into the still-open scope, and the next successful
+	 * EndScriptScope() commits two runs as a single undo step.
+	 *
+	 * @param name History label for the run; empty means the default "Run Script".
 	 */
-	void BeginScriptScope() override;
+	void BeginScriptScope(std::string name = {}) override;
 	void EndScriptScope() override;
 
 	// --- History control ---
@@ -130,8 +134,11 @@ private:
 	std::vector<std::unique_ptr<Operation>> m_undo;
 	std::vector<std::unique_ptr<Operation>> m_redo;
 
-	/// Ops recorded while a script scope is open; committed as one CompositeOp.
+	/// Ops recorded while a script scope is open; committed as one ScriptRunOp.
 	std::vector<std::unique_ptr<Operation>> m_scriptOps;
+
+	/// History label of the open script run; empty means "Run Script".
+	std::string m_scriptName;
 
 	/// Maximum undo-stack depth; oldest entries evicted past this.
 	size_t m_maxUndoDepth = kDefaultMaxUndoDepth;

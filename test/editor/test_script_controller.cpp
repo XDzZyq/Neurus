@@ -67,6 +67,26 @@ TEST_F(ScriptControllerTest, RunBoundaryEventsOpenAndCloseTheScope)
 	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(4.0f, 5.0f, 6.0f));
 }
 
+TEST_F(ScriptControllerTest, RunNameBecomesTheHistoryLabel)
+{
+	m_eventBus.Emit(ScriptRunStarted{ "Run demo.py" });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(ScriptRunFinished{});
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run demo.py");
+}
+
+TEST_F(ScriptControllerTest, EmptyRunNameUsesTheDefaultLabel)
+{
+	m_eventBus.Emit(ScriptRunStarted{});
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(ScriptRunFinished{});
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run Script");
+}
+
 TEST_F(ScriptControllerTest, UndoOfARunRestoresTheRunStartState)
 {
 	m_eventBus.Emit(ScriptRunStarted{});

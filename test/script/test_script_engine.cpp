@@ -6,6 +6,14 @@
 #include <string>
 
 #include "core/Log.h"
+#include "core/RenderConfig.h"
+#include "core/ResourceManager.h"
+#include "editor/controllers/ObjectController.h"
+#include "editor/controllers/ScriptController.h"
+#include "editor/events/EventBus.h"
+#include "editor/operations/OperationManager.h"
+#include "scene/Mesh.h"
+#include "scene/Scene.h"
 #include "script/ScriptConsole.h"
 #include "script/ScriptEngine.h"
 
@@ -73,6 +81,52 @@ TEST(ScriptEngine, RunFileExecutesATempScript)
 
 	engine.Shutdown();
 	std::filesystem::remove(path);
+}
+
+TEST(ScriptEngine, FileRunRecordsOneEntryLabelledWithItsBasename)
+{
+	// The editor stack a file run writes through: the run boundary reaches
+	// ScriptController -> OperationManager, and the property write reaches
+	// ObjectController. Only the renderer and the UI are absent.
+	neurus::EventQueue events;
+	neurus::Scene scene;
+	neurus::OperationManager operations{ events };
+	neurus::ResourceManager resources;
+	neurus::RenderConfig config;
+	neurus::ControllerContext ctx{ events, resources, operations,
+	                               [&scene]() { return &scene; },
+	                               [&config]() { return &config; } };
+	neurus::ScriptController scriptController;
+	neurus::ObjectController objectController;
+	scriptController.Init(ctx);
+	objectController.Init(ctx);
+
+	auto mesh = resources.Load<neurus::Mesh>();
+	mesh->o_name = resources.SetName(mesh->GetObjectID(), "Ground");
+	scene.UseMesh(mesh);
+
+	neurus::ScriptContext scriptCtx;
+	scriptCtx.scene = &scene;
+	scriptCtx.config = &config;
+	scriptCtx.resources = &resources;
+
+	// Declared last so the engine is torn down before the document it hands to
+	// Python, matching the other scripted-write fixture.
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.SetEventQueue(&events);
+
+	const auto path = std::filesystem::temp_directory_path() / "neurus_runfile_label_test.py";
+	std::ofstream(path) << "import neurus\n"
+	                       "neurus.data.meshes['Ground'].position = (1, 2, 3)\n";
+
+	EXPECT_NO_THROW(engine.RunFile(path.string(), &scriptCtx));
+	std::filesystem::remove(path);
+
+	ASSERT_EQ(operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(operations.GetHistoryView().undo.back(), "Run neurus_runfile_label_test.py");
+
+	engine.Shutdown();
 }
 
 TEST(ScriptEngine, CapturesStdoutInConsole)

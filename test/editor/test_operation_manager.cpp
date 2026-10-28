@@ -633,9 +633,9 @@ TEST_F(OperationManagerTest, ScriptScopeDoesNotMergeWithThePreviousEntry)
 }
 
 /**
- * @test A script run names itself in the History panel: "Script Run" on the undo
- *       list, and again on the redo list after Undo - never the first child's
- *       label.
+ * @test A script run names itself in the History panel: the default "Run Script"
+ *       on the undo list, and again on the redo list after Undo - never the first
+ *       child's label.
  */
 TEST_F(OperationManagerTest, ScriptRun_IsLabelledInUndoAndRedo)
 {
@@ -645,11 +645,30 @@ TEST_F(OperationManagerTest, ScriptRun_IsLabelledInUndoAndRedo)
 	m_operations.EndScriptScope();
 
 	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
-	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Script Run");
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run Script");
 
 	m_operations.Undo();
 	ASSERT_EQ(m_operations.GetHistoryView().redo.size(), 1u);
-	EXPECT_EQ(m_operations.GetHistoryView().redo.front(), "Script Run");
+	EXPECT_EQ(m_operations.GetHistoryView().redo.front(), "Run Script");
+}
+
+/**
+ * @test The host's name is the history label, and the redo entry keeps it: a file
+ *       run passes "Run <file>" so it cannot be mistaken for a console run.
+ */
+TEST_F(OperationManagerTest, ScriptRun_UsesTheHostSuppliedName)
+{
+	m_operations.BeginScriptScope("Run demo.py");
+	m_operations.Submit(std::make_unique<SetPositionOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run demo.py");
+
+	m_operations.Undo();
+	ASSERT_EQ(m_operations.GetHistoryView().redo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().redo.front(), "Run demo.py");
 }
 
 /**

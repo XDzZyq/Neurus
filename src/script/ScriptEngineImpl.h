@@ -15,6 +15,7 @@
 
 #include <Python.h>
 
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -160,7 +161,7 @@ struct ScriptEngine::Impl
 			return;
 		}
 
-		RunSource(code, "ScriptEngine::RunString", ctx);
+		RunSource(code, "ScriptEngine::RunString", {}, ctx);
 	}
 
 	/**
@@ -186,7 +187,8 @@ struct ScriptEngine::Impl
 		// CPython decodes UTF-8 source itself.
 		const std::string source((std::istreambuf_iterator<char>(file)),
 		                         std::istreambuf_iterator<char>());
-		RunSource(source, "ScriptEngine::RunFile", ctx);
+		RunSource(source, "ScriptEngine::RunFile",
+		          "Run " + std::filesystem::path(path).filename().string(), ctx);
 	}
 
 	/// @brief The buffer captured Python output and errors are written to.
@@ -234,7 +236,12 @@ struct ScriptEngine::Impl
 
 private:
 	/// @brief Shared run path: GIL, stdout/stderr capture, error surfacing.
-	void RunSource(const std::string& source, const char* entryName, const ScriptContext* ctx)
+	/// @param source Python source to execute.
+	/// @param entryName Caller name used in error reporting, not as a label.
+	/// @param runName History label for the run; empty means "Run Script".
+	/// @param ctx Document view to publish for the run.
+	void RunSource(const std::string& source, const char* entryName, const std::string& runName,
+	               const ScriptContext* ctx)
 	{
 		pybind11::gil_scoped_acquire gil;
 
@@ -248,7 +255,7 @@ private:
 		// document is published, so it closes on every exit path - including a
 		// raising script - and the run's writes are recorded while the context
 		// is still live.
-		RunScope runScope(m_dispatch.EventQueue());
+		RunScope runScope(m_dispatch.EventQueue(), runName);
 
 		try
 		{
@@ -341,8 +348,9 @@ private:
 	 *
 	 * Emits `ScriptRunStarted` on construction and `ScriptRunFinished` on
 	 * destruction; `ScriptController` forwards both to the operation sink's
-	 * script scope. A raising run still reaches the destructor, so the scope
-	 * always closes.
+	 * script scope. The history label travels with `ScriptRunStarted`, so a
+	 * console run records as "Run Script" and a file run as "Run <file>.py". A
+	 * raising run still reaches the destructor, so the scope always closes.
 	 *
 	 * Constructor and destructor are both `noexcept`: an exception leaving a
 	 * destructor during unwinding calls `std::terminate`. Clearing
@@ -352,14 +360,14 @@ private:
 	class RunScope
 	{
 	public:
-		explicit RunScope(IEventQueue* events) noexcept
+		explicit RunScope(IEventQueue* events, const std::string& name) noexcept
 			: m_events(events)
 		{
 			try
 			{
 				if (m_events != nullptr)
 				{
-					m_events->Emit(ScriptRunStarted{});
+					m_events->Emit(ScriptRunStarted{ name });
 				}
 			}
 			catch (...)

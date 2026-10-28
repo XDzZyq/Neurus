@@ -13,6 +13,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 namespace neurus {
 
@@ -33,8 +34,11 @@ public:
 	 */
 	virtual void Submit(std::unique_ptr<Operation> op) = 0;
 
-	/// @brief Opens the script scope: subsequent Submit() calls buffer into one step.
-	virtual void BeginScriptScope() = 0;
+	/**
+	 * @brief Opens the script scope: subsequent Submit() calls buffer into one step.
+	 * @param name History label for the run; empty means the default "Run Script".
+	 */
+	virtual void BeginScriptScope(std::string name = {}) = 0;
 
 	/// @brief Closes the script scope, committing the buffered operations as one step.
 	virtual void EndScriptScope() = 0;

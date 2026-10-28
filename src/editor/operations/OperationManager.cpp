@@ -140,10 +140,11 @@ void OperationManager::Clear()
 	m_undo.clear();
 	m_redo.clear();
 	m_scriptOps.clear();
+	m_scriptName.clear();
 	++m_revision;
 }
 
-void OperationManager::BeginScriptScope()
+void OperationManager::BeginScriptScope(std::string name)
 {
 	// Nesting has no meaning: only the outermost run boundary could own the
 	// commit, and a second Begin would silently discard the first run's buffer.
@@ -155,6 +156,9 @@ void OperationManager::BeginScriptScope()
 	}
 
 	m_scriptOps.clear();
+	// Only a successful Begin adopts the new label, so an ignored one cannot
+	// rename the run whose buffer is still open.
+	m_scriptName = std::move(name);
 	m_phase = Phase::Script;
 	NEURUS_LOG("[OperationManager] BeginScriptScope: buffering edits into one undo step");
 }
@@ -175,6 +179,11 @@ void OperationManager::EndScriptScope()
 	std::vector<std::unique_ptr<Operation>> buffered = std::move(m_scriptOps);
 	m_scriptOps.clear();
 
+	// The label belongs to this run only: consume it on every exit path, the
+	// empty run included, so it can never name the next run.
+	std::string runName = std::move(m_scriptName);
+	m_scriptName.clear();
+
 	// A run that changed nothing (or only read) must not leave an empty entry on
 	// the undo stack - it would make Ctrl+Z appear to do nothing.
 	if (buffered.empty())
@@ -184,10 +193,10 @@ void OperationManager::EndScriptScope()
 	}
 
 	// The run records as one labelled step: ScriptRunOp is a CompositeOp that
-	// reports "Script Run" instead of the first edit's label.
+	// reports the run's name ("Run Script" when the host supplied none).
 	NEURUS_LOG("[OperationManager] EndScriptScope: committing " << buffered.size()
 	           << " buffered op(s) as one step");
-	Submit(std::make_unique<ScriptRunOp>(std::move(buffered)));
+	Submit(std::make_unique<ScriptRunOp>(std::move(buffered), std::move(runName)));
 }
 
 void OperationManager::RestoreHistory(std::vector<std::unique_ptr<Operation>> undo,

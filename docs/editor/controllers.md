@@ -379,14 +379,17 @@ sink. It subscribes to two events and does nothing else:
 ```cpp
 void ScriptController::Init(ControllerContext& ctx)
 {
-    ctx.events.Subscribe<ScriptRunStarted>([ctx](const ScriptRunStarted&) {
-        ctx.ops.BeginScriptScope();
+    ctx.events.Subscribe<ScriptRunStarted>([ctx](const ScriptRunStarted& e) {
+        ctx.ops.BeginScriptScope(e.name);
     });
     ctx.events.Subscribe<ScriptRunFinished>([ctx](const ScriptRunFinished&) {
         ctx.ops.EndScriptScope();
     });
 }
 ```
+
+`e.name` is the History label the host chose - "Run Script" for a console run,
+"Run <file>.py" for a file run.
 
 `ScriptEngineImpl::RunSource` emits `ScriptRunStarted` before it executes the
 source and `ScriptRunFinished` on every exit path, so a raising run still closes

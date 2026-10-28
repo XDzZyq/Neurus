@@ -151,10 +151,11 @@ like any other action. `ScriptEngineImpl::RunSource` brackets each run with
 `ScriptRunStarted` and `ScriptRunFinished`; `ScriptController` forwards both to
 the operation sink's `BeginScriptScope()` / `EndScriptScope()`, and
 `OperationManager` implements them by buffering every operation the run records
-and committing the buffer as one `CompositeOp`. One `Ctrl+Z` therefore removes the
-whole run, not its last statement. A run that raises still closes its scope, so the
-writes before the error stay as one entry; a run that changed nothing records no
-entry at all. See
+and committing the buffer as one `ScriptRunOp`. The run supplies that entry's
+History label: a console run shows "Run Script", a file run shows "Run <file>.py".
+One `Ctrl+Z` therefore removes the whole run, not its last statement. A run that
+raises still closes its scope, so the writes before the error stay as one entry; a
+run that changed nothing records no entry at all. See
 [Operations](../editor/operations.md#one-undo-step-per-script-run).
 
 Scripts run on the GUI thread inside the frame loop, before `Editor::Edit()`, and

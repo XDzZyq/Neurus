@@ -10,12 +10,13 @@
 namespace {
 
 /**
- * @brief Handles ScriptRunStarted: opens the buffering scope on the sink.
+ * @brief Handles ScriptRunStarted: opens the buffering scope with the run's label.
+ * @param e Run boundary carrying the host-chosen history label.
  * @param ctx Controller context carrying the operation sink.
  */
-void OnScriptRunStarted(const neurus::ScriptRunStarted&, const neurus::ControllerContext& ctx)
+void OnScriptRunStarted(const neurus::ScriptRunStarted& e, const neurus::ControllerContext& ctx)
 {
-	ctx.ops.BeginScriptScope();
+	ctx.ops.BeginScriptScope(e.name);
 }
 
 /**
