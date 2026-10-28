@@ -190,6 +190,7 @@ TEST_F(ScriptWrites, TwoConfigWritesInOneRunBothApply)
 	RunCleanly(R"(
 import neurus
 neurus.render.config.gamma = 2.0
+assert neurus.render.config.gamma == 2.0, neurus.render.config.gamma
 neurus.render.config.gamma = 3.0
 )");
 

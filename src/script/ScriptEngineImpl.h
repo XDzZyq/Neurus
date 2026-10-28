@@ -364,7 +364,12 @@ private:
 			}
 			catch (...)
 			{
-				// Never leave a scope half-open.
+				// Clear the pointer so Started and Finished stay paired: a run
+				// whose start never landed must not send its finish either. The
+				// run still executes; it just records per-edit instead of as one
+				// undo step.
+				NEURUS_ERR("[ScriptEngine] ScriptRunStarted could not be emitted: "
+				           "this run will record individual undo steps");
 				m_events = nullptr;
 			}
 		}
