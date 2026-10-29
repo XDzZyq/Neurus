@@ -849,8 +849,8 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 	try
 	{
 		// Load<T> constructs + registers the pooled RenderShader; parse explicitly
-		// here. Paths use the "res/..." prefix, resolved from the working directory
-		// by the shader pipeline.
+		// here. Paths keep the "res/..." prefix: the shader parser resolves them
+		// against the shader directory, so the stored path stays portable.
 		auto shader = m_resources->Load<RenderShader>(
 			shaderName, "res/shaders/render/gbuffer.vert", "res/shaders/render/gbuffer.frag");
 		if (!shader->ParseAndGenerate())

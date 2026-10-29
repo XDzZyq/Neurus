@@ -16,13 +16,18 @@
 
 #include <gtest/gtest.h>
 
+#include "render/shaders/RenderShader.h"
 #include "render/shaders/ShaderGenerator.h"
 #include "render/shaders/ShaderParser.h"
 #include "render/shaders/ShaderStruct.h"
+#include "core/Log.h"
 #include "core/Parameters.h"
 
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 
 using namespace neurus;
 
@@ -1045,4 +1050,102 @@ TEST_F(ShaderParserTest, GenerateShader_RoundTrip_PbrLighting)
     EXPECT_FALSE(regenerated.SB_list.empty());
 
     ExpectStructurallyEquivalent(original, regenerated, relPath);
+}
+
+// ===========================================================================
+// Section: Working-directory independence
+//   "res/..." paths are resolved by the parser against the compile-time shader
+//   directory, so shader creation works whatever the process CWD is.
+// ===========================================================================
+
+namespace {
+
+/**
+ * @brief RAII guard that points the process CWD at a fresh empty directory.
+ *
+ * Restores the previous working directory and removes the temporary directory
+ * in the destructor, including when the test fails mid-way.
+ */
+class ScopedEmptyWorkingDirectory
+{
+public:
+    ScopedEmptyWorkingDirectory()
+        : m_previous(std::filesystem::current_path())
+    {
+        static int s_counter = 0;
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        m_directory = std::filesystem::temp_directory_path()
+                      / ("neurus_cwd_" + std::to_string(++s_counter) + "_" + std::to_string(stamp));
+
+        std::error_code ec;
+        std::filesystem::create_directories(m_directory, ec);
+        if (ec)
+        {
+            ADD_FAILURE() << "Cannot create temp directory '" << m_directory.string()
+                          << "': " << ec.message();
+            return;
+        }
+
+        std::filesystem::current_path(m_directory, ec);
+        if (ec)
+        {
+            ADD_FAILURE() << "Cannot switch CWD to '" << m_directory.string()
+                          << "': " << ec.message();
+        }
+    }
+
+    ~ScopedEmptyWorkingDirectory()
+    {
+        std::error_code ec;
+        std::filesystem::current_path(m_previous, ec);
+        if (ec)
+        {
+            NEURUS_ERR("ScopedEmptyWorkingDirectory: cannot restore CWD '"
+                       << m_previous.string() << "': " << ec.message());
+        }
+
+        std::filesystem::remove_all(m_directory, ec);
+        if (ec)
+        {
+            NEURUS_ERR("ScopedEmptyWorkingDirectory: cannot remove directory '"
+                       << m_directory.string() << "': " << ec.message());
+        }
+    }
+
+    ScopedEmptyWorkingDirectory(const ScopedEmptyWorkingDirectory&) = delete;
+    ScopedEmptyWorkingDirectory& operator=(const ScopedEmptyWorkingDirectory&) = delete;
+
+private:
+    std::filesystem::path m_previous;
+    std::filesystem::path m_directory;
+};
+
+} // namespace
+
+TEST_F(ShaderParserTest, ParseFile_RelativePath_IndependentOfWorkingDirectory)
+{
+    ScopedEmptyWorkingDirectory cwd;
+
+    const ShaderStruct parsed = ShaderParser::ParseShaderFile(
+        "res/shaders/render/gbuffer.vert", ShaderType::VERTEX);
+
+    EXPECT_FALSE(parsed.IsEmpty())
+        << "Parsing must not depend on the process working directory";
+    EXPECT_EQ(parsed.version, 450);
+}
+
+TEST_F(ShaderParserTest, RenderShaderParseAndGenerate_RelativePaths_IndependentOfWorkingDirectory)
+{
+    ScopedEmptyWorkingDirectory cwd;
+
+    RenderShader shader("CwdIndependent",
+                        "res/shaders/render/gbuffer.vert",
+                        "res/shaders/render/gbuffer.frag");
+
+    ASSERT_TRUE(shader.ParseAndGenerate());
+
+    // The stored paths are serialized into project files - they must stay
+    // portable, so parsing must resolve without rewriting them.
+    EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert");
+    EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag");
 }
