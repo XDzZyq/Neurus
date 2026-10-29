@@ -16,6 +16,12 @@
  *      its own slot; every slot must end holding its worker's last value. Slots
  *      are per worker on purpose - a shared cell would let a lost or reordered
  *      submission still "pass".
+ *   3. **The lock covers the call, not the GPU work.** One thread's
+ *      SubmitAndWait() parked on a timeline value must not stop another thread
+ *      from submitting: if the interlock were held across the fence wait, a
+ *      long bake would freeze every other submitter. The main thread is the only
+ *      signaller and never takes the queue lock, so a wrapper that got this
+ *      wrong shows up as a late future instead of as a hung test.
  *
  * The workers are the real client shape: command pools are externally
  * synchronised too, so each worker owns one, and the queue is the only thing
@@ -31,12 +37,17 @@
 #include "shared/TestVulkanShared.h"
 
 #include "render/SharedQueue.h"
+#include "render/TimelineSemaphore.h"
 #include "render/buffers/CPUBuffer.h"
 
+#include "core/Log.h"
+
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <future>
 #include <string>
 #include <thread>
 #include <vector>
@@ -109,6 +120,64 @@ uint32_t ReadSlot(const CPUBuffer& buffer, vk::DeviceSize offset)
 	std::memcpy(&value, static_cast<const uint8_t*>(buffer.Data()) + offset, sizeof(value));
 	return value;
 }
+
+/**
+ * @brief Releases the timeline blocker and joins both threads, whatever happens.
+ *
+ * Thread A can only leave its wait once the blocker is signalled, so this is the
+ * one thing that must run on every path - including the paths a test failure
+ * takes. Armed before the threads exist and holding them by reference, it skips
+ * whatever is already finished: the joinable() checks make it correct both on
+ * the normal path (already joined) and on the exception path, where a joinable
+ * std::thread would otherwise be destroyed (std::terminate) and A abandoned on a
+ * value nobody would ever signal.
+ */
+struct BlockerGuard
+{
+	TimelineSemaphore& blocker;
+	std::thread&       a;
+	std::thread&       b;
+	uint64_t           value;
+	bool               released = false;
+
+	/**
+	 * @brief Signals the blocker once; called explicitly on the normal path.
+	 *
+	 * Idempotent because signalling the same value twice is a validation error,
+	 * not a no-op (the value must strictly increase).
+	 */
+	void Release()
+	{
+		if (released)
+		{
+			return;
+		}
+		blocker.Signal(value);
+		released = true;
+	}
+
+	~BlockerGuard() noexcept
+	{
+		try
+		{
+			Release();
+		}
+		// A destructor cannot propagate, but the joins below still have to run.
+		catch (const std::exception& e)
+		{
+			NEURUS_ERR("[SharedQueueTest] Releasing the timeline blocker failed: " << e.what());
+		}
+
+		if (a.joinable())
+		{
+			a.join();
+		}
+		if (b.joinable())
+		{
+			b.join();
+		}
+	}
+};
 
 } // namespace
 
@@ -266,4 +335,133 @@ TEST_F(SharedQueueTest, ConcurrentSubmitAndWait_FourThreads_AllComplete)
 		EXPECT_EQ(ReadSlot(slots, t * kSlotBytes), t * 1000u + (kIterations - 1))
 			<< "worker " << t << " did not finish its last fill";
 	}
+}
+
+TEST_F(SharedQueueTest, SubmitAndWait_ReleasesLockWhileWaiting)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	// Thread A parks a submit on a timeline value only this thread can signal, so
+	// its SubmitAndWait is genuinely waiting when thread B submits. The wrapper's
+	// own fence wait is what A is inside of; whether the lock is held across it is
+	// exactly what B's timing answers.
+	TimelineSemaphore blocker(*m_device, "SharedQueueTest_Blocker");
+	constexpr uint64_t kBlockingValue = 1;
+
+	auto& queue = *m_queue;
+
+	std::promise<void> aDone;
+	std::future<void> aReturned = aDone.get_future();
+	std::string aFailure;
+
+	std::promise<void> bDone;
+	std::future<void> bReturned = bDone.get_future();
+	std::string bFailure;
+
+	// Created and waited by this thread: B only hands the handle to its submit.
+	vk::raii::Fence bFence(*m_device, vk::FenceCreateInfo{});
+
+	std::thread a;
+	std::thread b;
+
+	// Armed before either thread exists, so every throw from here on still ends
+	// with the blocker signalled and both threads joined - never with a joinable
+	// std::thread destroyed (std::terminate) and A left parked on a value nobody
+	// signals.
+	BlockerGuard guard{blocker, a, b, kBlockingValue};
+
+	a = std::thread([&]
+	{
+		try
+		{
+			vk::raii::CommandPool pool(*m_device, vk::CommandPoolCreateInfo(
+				vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_graphicsQueueFamily));
+			vk::raii::CommandBuffers cmds(*m_device, vk::CommandBufferAllocateInfo(
+				*pool, vk::CommandBufferLevel::ePrimary, 1));
+
+			cmds[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+			cmds[0].end();
+
+			const vk::CommandBuffer cmdHandle = *cmds[0];
+			const vk::Semaphore waitSemaphore = blocker.Handle();
+			const vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eAllCommands;
+			const uint64_t waitValues[] = { kBlockingValue };
+			const vk::TimelineSemaphoreSubmitInfo timelineInfo(1, waitValues, 0, nullptr);
+			const vk::SubmitInfo submitInfo(1, &waitSemaphore, &waitStage, 1, &cmdHandle, 0, nullptr,
+			                                &timelineInfo);
+
+			queue.SubmitAndWait(submitInfo);
+		}
+		// Reported after the join: an assertion here would abort only this thread.
+		catch (const std::exception& e)
+		{
+			aFailure = e.what();
+		}
+		catch (...)
+		{
+			aFailure = "unknown exception";
+		}
+		aDone.set_value();
+	});
+
+	// 50 ms so A is inside its wait, not merely on its way there. Nothing below
+	// depends on the window: if A had not submitted yet, B would just be faster.
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+	b = std::thread([&]
+	{
+		try
+		{
+			vk::raii::CommandPool pool(*m_device, vk::CommandPoolCreateInfo(
+				vk::CommandPoolCreateFlagBits::eResetCommandBuffer, m_graphicsQueueFamily));
+			vk::raii::CommandBuffers cmds(*m_device, vk::CommandBufferAllocateInfo(
+				*pool, vk::CommandBufferLevel::ePrimary, 1));
+
+			// An empty submit: the point is that it reaches the queue at all, not
+			// that it renders anything.
+			cmds[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+			cmds[0].end();
+
+			const vk::CommandBuffer cmdHandle = *cmds[0];
+			queue.Submit(vk::SubmitInfo({}, {}, cmdHandle), *bFence);
+		}
+		catch (const std::exception& e)
+		{
+			bFailure = e.what();
+		}
+		catch (...)
+		{
+			bFailure = "unknown exception";
+		}
+		bDone.set_value();
+	});
+
+	// A future with a deadline, never the queue: this thread must not be able to
+	// block on the very lock the test is about, or a wrong wrapper would hang the
+	// suite instead of failing it.
+	const std::future_status bStatus = bReturned.wait_for(std::chrono::seconds(1));
+
+	// The only signaller, and unconditional: A's wait can only end here, so this
+	// runs before any join no matter what B did - even when the wrapper is broken
+	// and B is still stuck on the lock. The guard repeats it only if a throw
+	// skipped this line.
+	guard.Release();
+
+	a.join();
+	b.join();
+
+	EXPECT_TRUE(aFailure.empty()) << "SubmitAndWait threw: " << aFailure;
+	EXPECT_TRUE(bFailure.empty()) << "Submit threw: " << bFailure;
+	EXPECT_EQ(bStatus, std::future_status::ready)
+		<< "Submit was still blocked after 1 s while another thread's SubmitAndWait was "
+		   "waiting its fence: the queue lock is held across the GPU wait";
+	EXPECT_EQ(aReturned.wait_for(std::chrono::seconds(0)), std::future_status::ready)
+		<< "SubmitAndWait did not return after the timeline value it waited for was signalled";
+
+	// B's submit must really have landed: a fence that never signals would mean
+	// the call returned without submitting anything.
+	ASSERT_EQ(m_device->waitForFences(*bFence, VK_TRUE, kFenceTimeoutNs), vk::Result::eSuccess);
 }

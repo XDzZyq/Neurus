@@ -138,9 +138,19 @@ void VulkanContext::InitDevice()
 	sync2.synchronization2 = VK_TRUE;
 	sync2.pNext = &demote;
 
+	// Timeline semaphores: the renderer signals one value per submitted frame, so
+	// the GPU's progress is a counter any thread can read - core in Vulkan 1.2,
+	// hence no extension string. Requested as a standalone feature struct: adding
+	// a PhysicalDeviceVulkan12Features next to the standalone
+	// DescriptorIndexingFeatures below would include the same feature twice
+	// (VUID-VkDeviceCreateInfo-pNext-02830).
+	vk::PhysicalDeviceTimelineSemaphoreFeatures timelineSemaphore;
+	timelineSemaphore.timelineSemaphore = VK_TRUE;
+	timelineSemaphore.pNext = &sync2;
+
 	vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
 	descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
-	descriptorIndexing.pNext = &sync2;
+	descriptorIndexing.pNext = &timelineSemaphore;
 
 	ctx_enabledFeatures = selectOptionalFeatures(pd);
 	std::vector<const char*> devExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };

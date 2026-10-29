@@ -149,8 +149,9 @@ protected:
 			vk::DeviceQueueCreateInfo qCI({}, m_graphicsQueueFamily, 1, &prio);
 
 			// Mirror VulkanContext::InitDevice: DeferredRenderer's passes need
-			// dynamic rendering, synchronization2, multiview (shadow cubemaps) and
-			// shaderDemoteToHelperInvocation (`discard` under SPIR-V 1.6).
+			// dynamic rendering, synchronization2, multiview (shadow cubemaps),
+			// shaderDemoteToHelperInvocation (`discard` under SPIR-V 1.6) and
+			// timeline semaphores (the renderer's per-frame timeline signal).
 			vk::PhysicalDeviceMultiviewFeatures multiviewFeature;
 			multiviewFeature.multiview = VK_TRUE;
 			vk::PhysicalDeviceDynamicRenderingFeatures dynRendering;
@@ -162,9 +163,12 @@ protected:
 			vk::PhysicalDeviceSynchronization2Features sync2;
 			sync2.synchronization2 = VK_TRUE;
 			sync2.pNext = &demote;
+			vk::PhysicalDeviceTimelineSemaphoreFeatures timelineSemaphore;
+			timelineSemaphore.timelineSemaphore = VK_TRUE;
+			timelineSemaphore.pNext = &sync2;
 			vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
 			descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
-			descriptorIndexing.pNext = &sync2;
+			descriptorIndexing.pNext = &timelineSemaphore;
 
 			const vk::PhysicalDeviceFeatures supported = pd.getFeatures();
 			vk::PhysicalDeviceFeatures features;

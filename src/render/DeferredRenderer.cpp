@@ -64,6 +64,7 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	, r_graphicsQueue(&graphicsQueue)
 	, r_queueFamilyIndex(queueFamilyIndex)
 	, r_commandPool(createCommandPool(device, queueFamilyIndex))
+	, r_renderTimeline(device, "DeferredRenderer::RenderTimeline")
 {
 	// --- 0. Create the optional GPU timestamp query pool (no-op if unsupported) ---
 	m_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
@@ -457,10 +458,30 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// stage, not a color-attachment write, so the acquire semaphore must be waited
 	// on before transfer as well: waiting only at eColorAttachmentOutput lets the
 	// blit overwrite an image the presentation engine is still reading.
-	vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput |
-	                                   vk::PipelineStageFlagBits::eTransfer;
+	const vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+	                                         vk::PipelineStageFlagBits::eTransfer;
 
-	vk::SubmitInfo submitInfo(*imageAvailable, waitStage, cmdBufRaw, *renderFinished);
+	// --- Frame timeline signal ---
+	// Each submit signals the next render-timeline value, so the GPU's progress
+	// is one counter the main thread can read (CompletedFrameValue()) instead of
+	// a fence it would have to own. The binary semaphores stay in the same
+	// submission: the timeline rides alongside the present chain, it does not
+	// replace it. VkTimelineSemaphoreSubmitInfo carries one value per semaphore
+	// slot, and 0 is the only legal value for a binary semaphore's slot - only
+	// the timeline entry carries a real value.
+	const uint64_t frameValue = ++r_nextFrameValue;
+	const vk::Semaphore imageAvailableHandle = *imageAvailable;
+	const vk::Semaphore renderFinishedHandle = *renderFinished;
+	const vk::Semaphore signalSemaphores[] = { renderFinishedHandle, r_renderTimeline.Handle() };
+	const uint64_t waitValues[] = { 0 };
+	const uint64_t signalValues[] = { 0, frameValue };
+	const vk::TimelineSemaphoreSubmitInfo timelineInfo(1, waitValues, 2, signalValues);
+
+	const vk::SubmitInfo submitInfo(
+		1, &imageAvailableHandle, &waitStage,
+		1, &cmdBufRaw,
+		2, signalSemaphores,
+		&timelineInfo);
 	r_graphicsQueue->Submit(submitInfo, *fence);
 
 	// --- Present ---

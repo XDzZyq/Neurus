@@ -29,9 +29,11 @@
 
 #pragma once
 
+#include "FramesInFlight.h"
 #include "GPUProfiler.h"
 #include "IFrameRenderer.h"
 #include "ProfilingData.h"
+#include "TimelineSemaphore.h"
 #include "passes/Pass.h"
 #include "core/RenderConfig.h"
 #include "RenderContext.h"
@@ -186,6 +188,20 @@ public:
 	RenderCache& GetRenderCache() { return *r_renderCache; }
 
 	const vk::raii::Device& GetDevice() const { return r_device; }
+
+	/**
+	 * @brief The frame timeline value the GPU has completed.
+	 *
+	 * Every frame submit signals the next value of the render timeline, so this
+	 * counter is a high-water mark of finished frames: a frame whose value is at
+	 * or below it may be overwritten by the CPU. A plain counter read, not a
+	 * wait - safe to call from any thread, and the only progress query a
+	 * non-render thread needs.
+	 *
+	 * @return The highest frame value the GPU has signalled so far (0 before
+	 *         the first submitted frame).
+	 */
+	uint64_t CompletedFrameValue() const { return r_renderTimeline.Value(); }
 
 	/**
 	 * @brief Reads a single pixel from the IDBuffer attachment and returns the object ID.
@@ -393,15 +409,36 @@ private:
 	std::vector<vk::raii::CommandBuffer> r_commandBuffers;
 
 	// --- Synchronization ---
-	// One frame in flight: the render cache returns one shared attachment per
-	// name, so a second in-flight frame would write an attachment the previous
-	// frame's blit still reads. Raising this above 1 requires per-frame-slot
-	// attachments first.
-	static constexpr uint32_t kMaxFramesInFlight = 1;
+	/**
+	 * @brief Frames in flight, as declared in FramesInFlight.h.
+	 *
+	 * An alias, not a second constant: the frame data pool and the per-frame
+	 * descriptor sets must agree with this class on one number. The reason it
+	 * is 1 lives with the constant.
+	 */
+	static constexpr uint32_t kMaxFramesInFlight = neurus::kMaxFramesInFlight;
 	/// Deadlock guard, not a frame budget: a Debug build with validation layers
 	/// spends ~600 ms per frame here, so a short timeout would fire routinely.
 	/// Only a genuinely hung GPU should trip this.
 	static constexpr uint64_t kFenceTimeoutNs = 5'000'000'000;
+
+	/**
+	 * @brief GPU timeline signalled once per submitted frame.
+	 *
+	 * Every submit signals `++r_nextFrameValue`, so CompletedFrameValue() is a
+	 * monotonic high-water mark of finished frames - readable from the main
+	 * thread without touching a fence the render thread owns. Never recreated
+	 * with the swapchain: the values must keep climbing across a resize.
+	 */
+	TimelineSemaphore r_renderTimeline;
+	/// @brief The last value handed to a frame submit (0 = none submitted yet).
+	///
+	/// Pre-incremented before the submit, so this names the value the frame *is
+	/// about to* signal - it says nothing about the GPU having finished it. A
+	/// submit that fails after the increment leaves a gap, which is harmless:
+	/// later frames signal larger values and the counter only ever moves
+	/// forward, so a skipped value is never waited for.
+	uint64_t r_nextFrameValue = 0;
 
 	std::vector<vk::raii::Fence> r_inFlightFences;
 	std::vector<vk::raii::Semaphore> r_imageAvailableSemaphores;

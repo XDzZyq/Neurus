@@ -49,6 +49,7 @@ add_executable(neurus_test
 	render/test_render_thread.cpp
 	render/test_render_request_executor.cpp
 	render/test_shared_queue.cpp
+	render/test_timeline_semaphore.cpp
 	editor/test_camera_controller.cpp
 	editor/test_debug_draw_builder.cpp
 	editor/test_editor_scene_lifecycle.cpp

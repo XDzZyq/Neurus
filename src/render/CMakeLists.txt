@@ -70,6 +70,9 @@ add_library(neurus_render STATIC
 	FrameMailbox.cpp
 	SharedQueue.h
 	SharedQueue.cpp
+	FramesInFlight.h
+	TimelineSemaphore.h
+	TimelineSemaphore.cpp
 	RenderRequests.h
 	RenderRequests.cpp
 	RenderRequestQueue.h

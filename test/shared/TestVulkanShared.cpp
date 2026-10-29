@@ -106,9 +106,17 @@ void VulkanTestShared::SetUp()
 		vk::PhysicalDeviceSynchronization2Features sync2;
 		sync2.synchronization2 = VK_TRUE;
 		sync2.pNext = &demote;
+
+		// Mirrors VulkanContext: the renderer's per-frame timeline signal needs
+		// the feature enabled, and TimelineSemaphore tests signal one from the
+		// host. Core in Vulkan 1.2, so no extension string is involved.
+		vk::PhysicalDeviceTimelineSemaphoreFeatures timelineSemaphore;
+		timelineSemaphore.timelineSemaphore = VK_TRUE;
+		timelineSemaphore.pNext = &sync2;
+
 		vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
 		descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
-		descriptorIndexing.pNext = &sync2;
+		descriptorIndexing.pNext = &timelineSemaphore;
 
 		// Mirror VulkanContext::selectOptionalFeatures so DebugPass's
 		// wireframe (VK_POLYGON_MODE_LINE) and point-sprite pipelines are
