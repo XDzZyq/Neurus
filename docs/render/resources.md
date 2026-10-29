@@ -6,7 +6,7 @@
 
 `RenderCache` owns cross-frame mutable GPU resources beyond framebuffer attachments. These resources separate GPU ownership from the Vulkan-free scene and asset layers.
 
-**Scene-scoped eviction.** Mesh, environment and light entries - plus the shadow-layer / SSBO-index maps and the shadow intensity array derived from them - are dropped together by `RenderCache::RemoveSceneResources()`. The renderer calls it when it executes a `DropSceneResourcesRequest`, which the Editor posts whenever it replaces the scene (from `BeginLoad()` and `NewScene()`); the executor drains the device first, since the entries own `vk::raii` resources the last frame may still read. Keying by object UID makes this necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project file, so an entry left behind by the previous scene shadows whatever returns under the same id. FIFO ordering is what makes the drop safe across a replacement - the Editor posts the drop before the new scene's upload requests, so the old cache is evicted before the new scene uploads. Screen-space attachments, the pipeline cache and the `LightingCache` survive it - they are recreated lazily, versioned, or owned by `UploadManager` rather than by the scene.
+**Scene-scoped eviction.** Mesh, environment and light entries - plus the shadow-layer / SSBO-index maps and the shadow intensity array derived from them - are dropped together by `RenderCache::RemoveSceneResources()`. The renderer calls it when it executes a `DropSceneResourcesRequest`, which the Editor posts whenever it replaces the scene (from `BeginLoad()` and `NewScene()`); the executor drains the in-flight frames first, since the entries own `vk::raii` resources the last frame may still read. Keying by object UID makes this necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project file, so an entry left behind by the previous scene shadows whatever returns under the same id. FIFO ordering is what makes the drop safe across a replacement - the Editor posts the drop before the new scene's upload requests, so the old cache is evicted before the new scene uploads. Screen-space attachments, the pipeline cache and the `LightingCache` survive it - they are recreated lazily, versioned, or owned by `UploadManager` rather than by the scene.
 
 ## Render request path
 
@@ -32,12 +32,14 @@ outgoing scene, reset accumulation - is posted instead as a typed
   it exists. Requests posted inside one `Editor::Edit()` execute in that same
   tick's `DrawFrame()`, so there is no one-frame delay.
 
-- **Why that drain placement.** With `kMaxFramesInFlight == 1` a signaled fence
-  means the GPU has finished every submitted frame, so a handler that frees or
-  replaces a resource cannot pull it from under an executing frame. That argument
-  holds only for one frame in flight, which is why the destroying handlers
-  (pipeline replace, environment regenerate, scene drop) still call
-  `device.waitIdle()`.
+- **Why that drain placement.** The handlers that free or replace a resource
+  cannot pull it from under an executing frame, so they drain every in-flight
+  frame fence first (`DeferredRenderer::DrainInFlightFrames`, injected into the
+  executor; it waits each fence with `kFenceTimeoutNs` and idles the graphics
+  queue if the wait fails). That is why the destroying handlers (pipeline
+  replace, environment regenerate over a resident entry, scene drop) no longer
+  depend on `kMaxFramesInFlight == 1`: uploads and readbacks wait their own
+  submits, so the frames are the only other work a resource can be in.
 
 - **FIFO ordering is a contract.** Within a batch, append order is execution
   order. An upload posted after `DropSceneResourcesRequest` lands in the new

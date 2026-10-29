@@ -19,7 +19,7 @@ Responsibilities:
 - Create `vk::raii::Instance` (with surface extensions + debug-utils in Debug)
 - Enumerate physical devices, prefer discrete GPU
 - Find graphics queue family
-- Create `vk::raii::Device` + `vk::Queue`
+- Create `vk::raii::Device` + `SharedQueue` (the mutex-guarded queue wrapper)
 - Create `vk::raii::CommandPool` + one-shot command buffers
 - Own shared `UploadManager` (`m_uploadManager`) for mesh/light/environment
   uploads
@@ -32,12 +32,12 @@ protected:
     bool HasVulkan() const;
     vk::raii::PhysicalDevice& PhysicalDevice();
     vk::raii::CommandBuffer& BeginCmd();       // Returns a begun one-shot cmd buffer
-    void EndSubmitWait(vk::raii::CommandBuffer& cmd);  // Submits + waitIdle
+    void EndSubmitWait(vk::raii::CommandBuffer& cmd);  // Submits + waits that submit
     static std::string ResolveAssetPath(const char* assetRelative);
 
     bool m_hasVulkan = false;
     std::unique_ptr<vk::raii::Device> m_device;
-    vk::Queue m_queue = nullptr;
+    std::unique_ptr<neurus::SharedQueue> m_queue;
     uint32_t m_graphicsQueueFamily = 0;
     std::unique_ptr<UploadManager> m_uploadManager;  // Shared upload service
     // ... (full state in header)

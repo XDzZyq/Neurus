@@ -38,6 +38,13 @@ the **rule** that prevents it. Design detail behind these lives in
   consumer wanted, so the consumer's barrier covered no writes. Rule: a pass
   transitions the images it is about to *use* and leaves its own outputs in its
   own write state (`ShaderWrite`); the consumer orders against it.
+- **Two threads submit to the same queue: a validation threading error, or a
+  MoltenVK crash inside `vkQueueSubmit`.** Vulkan requires external
+  synchronisation on a queue handle, and two wrappers around the same handle
+  give it two mutexes - the same as no mutex. Rule: reach a queue only through
+  `SharedQueue`, one per handle (`VulkanContext` hands out the same object when
+  graphics and transfer return one `VkQueue`); never call a raw `vk::Queue`
+  method or `device.waitIdle()` directly.
 - **A discard transition hazards against the previous reader.**
   `Undefined`/`Invalid` must use `eAllCommands`, never `eTopOfPipe`, as a source
   stage.

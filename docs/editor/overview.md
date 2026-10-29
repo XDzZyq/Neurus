@@ -308,9 +308,10 @@ upload loses the surface, so `Run()` uploads once after `show()`, while
 Replacing a scene drops the outgoing scene's GPU resources first.
 `DropSceneGpuResources()` posts a `DropSceneResourcesRequest` and is called by
 `BeginLoad()` and `NewScene()`. The drain and the eviction happen renderer-side:
-the executor calls `device.waitIdle()` (the entries own `vk::raii` resources the
-last frame may still read) and then `RenderCache::RemoveSceneResources()`. What
-the Editor still guarantees is ORDER - this post precedes the new scene's upload
+the executor drains the in-flight frames first
+(`DeferredRenderer::DrainInFlightFrames` - the entries own `vk::raii` resources
+the last frame may still read) and then `RenderCache::RemoveSceneResources()`.
+What the Editor still guarantees is ORDER - this post precedes the new scene's upload
 posts, and FIFO execution evicts the old scene before the new one uploads. This
 is not housekeeping: the caches are keyed by object UID and `UID::serialize()`
 restores `o_id` from the file, so an entry left behind shadows whatever returns

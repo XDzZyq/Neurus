@@ -150,8 +150,8 @@ a fresh one, and `Idle` parks on the mailbox without acquiring a swapchain image
 A converged viewport therefore costs one parked thread and no presents.
 
 Shutdown: after the Qt event loop returns, `RenderThread::Stop()` joins the
-thread (which breaks any pending promise and leaves the device idle) before any
-GPU member is destroyed.
+thread (which breaks any pending promise and leaves the graphics queue idle)
+before any GPU member is destroyed.
 
 ## Context System (Data)
 
