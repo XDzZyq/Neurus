@@ -19,6 +19,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <future>
 #include <variant>
 
@@ -57,10 +58,17 @@ struct PickControl
 	std::promise<uint32_t> objectId;
 };
 
-/// @brief Write the last presented image, or every attachment, to disk.
+/**
+ * @brief Write the last presented image, or every attachment, to disk.
+ *
+ * The directory is carried here as a value because only the Application knows
+ * where the executable lives; the renderer must stay Qt-free and must not
+ * resolve paths against the process working directory.
+ */
 struct ScreenshotControl
 {
-	bool allAttachments = false;
+	bool                  allAttachments = false;
+	std::filesystem::path directory;  ///< Destination root (created on demand).
 };
 
 using RenderControl = std::variant<ResizeControl,

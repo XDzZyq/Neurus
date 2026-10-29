@@ -543,18 +543,24 @@ void DeferredRenderer::ProcessRequests()
 	}
 }
 
-void DeferredRenderer::CaptureScreenshot(bool allAttachments)
+void DeferredRenderer::CaptureScreenshot(bool allAttachments,
+                                          const std::filesystem::path& directory)
 {
 	// Mirrors the capture the Application used to drive: an all-attachments dump
 	// reads the whole render cache, a plain screenshot reads back the last
-	// presented swapchain image. The Screenshot methods sync the GPU themselves.
+	// presented swapchain image. The Screenshot methods sync the GPU themselves
+	// and log the saved path (or the reason they failed) as they go.
 	if (allAttachments)
 	{
-		m_screenshot->TakeScreenshotAllAttachments(*r_renderCache, GetExtent(), 1024);
+		const int count =
+			m_screenshot->TakeScreenshotAllAttachments(*r_renderCache, GetExtent(), 1024, directory);
+		// Screenshot already reported the count and the destination directory.
+		(void)count;
 	}
-	else
+	else if (!m_screenshot->TakeScreenshot(GetLastSwapchainImage(), GetSwapchainFormat(),
+	                                      GetExtent(), directory))
 	{
-		m_screenshot->TakeScreenshot(GetLastSwapchainImage(), GetSwapchainFormat(), GetExtent());
+		NEURUS_ERR("[DeferredRenderer] Swapchain screenshot failed; see the [Screenshot] log line above.");
 	}
 }
 

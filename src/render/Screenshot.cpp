@@ -19,12 +19,27 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <system_error>
 
 namespace neurus {
 
 // ---------------------------------------------------------------------------
 // Local helpers (format conversion)
 // ---------------------------------------------------------------------------
+
+/**
+ * @brief Formats @p path as an absolute path for logging, without throwing.
+ *
+ * std::filesystem::absolute() reports the current directory on the caller's
+ * terms; a failure here must never cost the screenshot itself, so the original
+ * path is the fallback.
+ */
+static std::string AbsoluteForLog(const std::filesystem::path& path)
+{
+	std::error_code ec;
+	const std::filesystem::path abs = std::filesystem::absolute(path, ec);
+	return (ec ? path : abs).string();
+}
 
 /**
  * @brief Converts a Vulkan vk::Format to the CPU-side PixelFormat equivalent.
@@ -101,14 +116,28 @@ Screenshot::Screenshot(const vk::raii::Device& device,
 
 bool Screenshot::TakeScreenshot(vk::Image swapchainImage,
                                 vk::Format swapchainFormat,
-                                vk::Extent2D swapchainExtent)
+                                vk::Extent2D swapchainExtent,
+                                const std::filesystem::path& directory)
 {
-	const std::string path = Screenshot::timestampedFilename("screenshots/swapchain", ".png");
+	const std::string path = Screenshot::timestampedFilename(
+		(directory / "swapchain").string(), ".png");
 
-	return Screenshot::CaptureSwapchain(m_device, m_physicalDevice,
-	                                     *m_queue, m_queueFamilyIndex,
-	                                     swapchainImage, swapchainFormat,
-	                                     swapchainExtent, path);
+	const bool saved = Screenshot::CaptureSwapchain(m_device, m_physicalDevice,
+	                                                *m_queue, m_queueFamilyIndex,
+	                                                swapchainImage, swapchainFormat,
+	                                                swapchainExtent, path);
+	if (saved)
+	{
+		NEURUS_LOG("[Screenshot] saved " << AbsoluteForLog(path));
+	}
+	else
+	{
+		// The old code dropped this false on the floor, so a broken screenshot
+		// looked exactly like a silent success.
+		NEURUS_ERR("[Screenshot] failed to write the swapchain screenshot to "
+		           << AbsoluteForLog(path));
+	}
+	return saved;
 }
 
 // ===========================================================================
@@ -117,7 +146,8 @@ bool Screenshot::TakeScreenshot(vk::Image swapchainImage,
 
 int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
                                              vk::Extent2D extent,
-                                             uint32_t cubemapResolution)
+                                             uint32_t cubemapResolution,
+                                             const std::filesystem::path& directory)
 {
 	int count = 0;
 
@@ -125,7 +155,7 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 	                                           *m_queue, m_queueFamilyIndex,
 	                                           renderCache,
 	                                           extent,
-	                                           "screenshots/gbuffer");
+	                                           (directory / "gbuffer").string());
 
 	// --- Export shadow maps: cubemaps → equirect, 2D → direct depth readback ---
 	{
@@ -135,7 +165,8 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 			// Cubemaps (point lights) only; returns empty otherwise.
 			{
 				const std::string result = ExportShadowDepthEquirect(
-					renderCache, lightUID, "screenshots/shadow_cubemap", cubemapResolution);
+					renderCache, lightUID, (directory / "shadow_cubemap").string(),
+					cubemapResolution);
 				if (!result.empty())
 				{
 					++count;
@@ -144,7 +175,7 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 			// 2D depth maps (sun lights) only; returns empty otherwise.
 			{
 				const std::string result = ExportShadowDepth(
-					renderCache, lightUID, "screenshots/sun_shadow");
+					renderCache, lightUID, (directory / "sun_shadow").string());
 				if (!result.empty())
 				{
 					++count;
@@ -163,15 +194,32 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 			{
 				const uint32_t layer = renderCache.GetShadowIntensityLayerIndex(lightUID);
 				const std::string path = Screenshot::timestampedFilename(
-					"screenshots/shadow_intensity_Light" + std::to_string(lightUID), ".png");
+					(directory / ("shadow_intensity_Light" + std::to_string(lightUID))).string(),
+					".png");
 				if (Screenshot::CaptureImageLayer(m_device, m_physicalDevice,
 				                                   *m_queue, m_queueFamilyIndex,
 				                                   *intensityArray, layer, path))
 				{
 					++count;
 				}
+				else
+				{
+					NEURUS_ERR("[Screenshot] failed to write the shadow intensity layer of "
+					           << "light " << lightUID << " to " << AbsoluteForLog(path));
+				}
 			}
 		}
+	}
+
+	if (count > 0)
+	{
+		NEURUS_LOG("[Screenshot] saved " << count << " attachment capture(s) under "
+		                                 << AbsoluteForLog(directory));
+	}
+	else
+	{
+		NEURUS_ERR("[Screenshot] no attachment could be captured under "
+		           << AbsoluteForLog(directory));
 	}
 
 	return count;
@@ -467,6 +515,9 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 {
 	if (vkFormatByteSize(format) == 0)
 	{
+		// Silent before: an unsupported swapchain format looked like a no-op.
+		NEURUS_ERR("[Screenshot] CaptureSwapchain: format " << vk::to_string(format)
+		           << " cannot be read back; not writing " << AbsoluteForLog(path));
 		return false;
 	}
 
@@ -618,7 +669,12 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 
 	// --- 4. Delegate PNG write to ImageData ---
 	ImageData imgData(rawData.data(), extent.width, extent.height, vkFormatToPixelFormat(format));
-	return imgData.SavePNG(path);
+	if (!imgData.SavePNG(path))
+	{
+		NEURUS_ERR("[Screenshot] CaptureSwapchain: failed to write " << AbsoluteForLog(path));
+		return false;
+	}
+	return true;
 }
 
 // ===========================================================================
@@ -634,6 +690,8 @@ bool Screenshot::CaptureAttachment(const vk::raii::Device& device,
 {
 	if (vkFormatByteSize(vulkanImage.Format()) == 0)
 	{
+		NEURUS_ERR("[Screenshot] CaptureAttachment: format " << vk::to_string(vulkanImage.Format())
+		           << " cannot be read back; not writing " << AbsoluteForLog(path));
 		return false;
 	}
 

@@ -18,7 +18,8 @@
  *   3. **Single-threaded renderer access.** Controls never run inside DrawFrame:
  *      the fake records a violation if a resize lands while a draw is in flight.
  *   4. **Resize coalescing**, **pick coordinate mapping**, **surface-change and
- *      pick promises**, and the **broken-promise shutdown** that keeps a waiting
+ *      pick promises**, the **screenshot request carrying its destination
+ *      directory**, and the **broken-promise shutdown** that keeps a waiting
  *      caller from hanging on a dead thread.
  *   5. **The fence gate**: with WaitForFrameSlot() false, neither controls nor
  *      requests run; once it returns true a wake lets them through.
@@ -50,6 +51,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <filesystem>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -311,12 +313,14 @@ public:
 		return m_extent;
 	}
 
-	void CaptureScreenshot(bool allAttachments) override
+	void CaptureScreenshot(bool allAttachments,
+	                       const std::filesystem::path& directory) override
 	{
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
 			m_screenshots       += 1;
 			m_lastScreenshotAll  = allAttachments;
+			m_lastScreenshotDir  = directory;
 		}
 		m_cv.notify_all();
 	}
@@ -385,6 +389,12 @@ public:
 		return m_cv.wait_for(lock, WAIT_LIMIT, [&] { return m_waitIdleCalls >= atLeast; });
 	}
 
+	bool WaitForScreenshots(int atLeast)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_cv.wait_for(lock, WAIT_LIMIT, [&] { return m_screenshots >= atLeast; });
+	}
+
 	// --- Accessors (each takes a snapshot under the mutex) ---
 
 	int  Drawn()              const { std::lock_guard<std::mutex> l(m_mutex); return m_drawn; }
@@ -408,6 +418,20 @@ public:
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
 		return {m_lastResizeW, m_lastResizeH};
+	}
+
+	int Screenshots() const { std::lock_guard<std::mutex> l(m_mutex); return m_screenshots; }
+
+	bool LastScreenshotAll() const
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		return m_lastScreenshotAll;
+	}
+
+	std::filesystem::path LastScreenshotDir() const
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		return m_lastScreenshotDir;
 	}
 
 private:
@@ -454,6 +478,9 @@ private:
 	uint32_t m_lastResizeW     = 0;
 	uint32_t m_lastResizeH     = 0;
 	bool     m_lastScreenshotAll = false;
+
+	/// @brief Directory the renderer was asked to write into, delivered as-is.
+	std::filesystem::path m_lastScreenshotDir;
 
 	FrameProfile m_profile{};
 };
@@ -960,6 +987,36 @@ TEST(RenderThreadTest, PickIsAnsweredWhileTheRendererIsIdle)
 
 	EXPECT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "a pick forced a frame";
 	EXPECT_EQ(fake.Drawn(), 3);
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, PostScreenshotDeliversTheFlagAndTheDirectoryUnchanged)
+{
+	// The directory is the Application's answer to "where does Neurus live" - the
+	// renderer must receive it verbatim, or screenshots fall back into a working
+	// directory the user does not control (the bug: "screenshots/..." resolved
+	// against the CWD). The flag picks the swapchain image or the full dump, so
+	// both requests are checked.
+	FakeRenderer fake;
+	RenderThread thread(fake);
+	thread.Start();
+
+	const std::filesystem::path plainDir = std::filesystem::path("exe dir") / "screenshots";
+	const std::filesystem::path dumpDir  = std::filesystem::path("exe dir") / "dump";
+
+	thread.PostScreenshot(false, plainDir);
+	ASSERT_TRUE(fake.WaitForScreenshots(1)) << "the plain screenshot never reached the renderer";
+	EXPECT_FALSE(fake.LastScreenshotAll()) << "PostScreenshot(false) asked for more than the image";
+	EXPECT_EQ(fake.LastScreenshotDir().string(), plainDir.string())
+		<< "the render thread must not rewrite the directory it was given";
+
+	thread.PostScreenshot(true, dumpDir);
+	ASSERT_TRUE(fake.WaitForScreenshots(2)) << "the attachment dump never reached the renderer";
+	EXPECT_TRUE(fake.LastScreenshotAll()) << "PostScreenshot(true) did not request every attachment";
+	EXPECT_EQ(fake.LastScreenshotDir().string(), dumpDir.string());
+
+	EXPECT_EQ(fake.Screenshots(), 2) << "each request must be serviced exactly once";
 
 	thread.Stop();
 }

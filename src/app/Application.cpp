@@ -43,11 +43,13 @@
 
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QGuiApplication>
 #include <QTimer>
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <future>
 
 #include <iostream>
@@ -849,21 +851,32 @@ void Application::RecreateSignals(neurus::UIEvents& uiEvents)
 
 void Application::ScreenShotSignals(neurus::UIEvents& uiEvents)
 {
+	// Screenshots always land next to the executable, never in the process
+	// working directory: a macOS launch or a shortcut sets a CWD the user does
+	// not control, while the executable directory is one they can find. Only
+	// this layer may ask Qt where Neurus lives; the renderer stays Qt-free by
+	// receiving the resolved directory as a value with each request.
+	const std::filesystem::path screenshotDir(
+		QDir(QCoreApplication::applicationDirPath())
+			.filePath("screenshots")
+			.toStdU16String());
+	NEURUS_LOG("[Application] screenshots are written under " << screenshotDir.string());
+
 	// Screenshot requests (F12 / menu action)
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotRequested,
-	                 [this]() {
+	                 [this, screenshotDir]() {
 	                     if (app_renderThread)
 	                     {
-	                         app_renderThread->PostScreenshot(false);
+	                         app_renderThread->PostScreenshot(false, screenshotDir);
 	                     }
 	                 });
 
 	// Attachment dump requests (Ctrl+F12)
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotAllRequested,
-	                 [this]() {
+	                 [this, screenshotDir]() {
 	                     if (app_renderThread)
 	                     {
-	                         app_renderThread->PostScreenshot(true);
+	                         app_renderThread->PostScreenshot(true, screenshotDir);
 	                     }
 	                 });
 }

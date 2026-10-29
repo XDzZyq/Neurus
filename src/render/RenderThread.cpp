@@ -124,10 +124,14 @@ std::future<uint32_t> RenderThread::PostPick(float u, float v)
 	return future;
 }
 
-void RenderThread::PostScreenshot(bool allAttachments)
+void RenderThread::PostScreenshot(bool allAttachments, std::filesystem::path directory)
 {
+	ScreenshotControl control;
+	control.allAttachments = allAttachments;
+	control.directory      = std::move(directory);
+
 	// Plain wake: the screenshot reads whatever was drawn last.
-	PostControl(ScreenshotControl{allAttachments}, false);
+	PostControl(std::move(control), false);
 }
 
 RendererStatus RenderThread::Status() const
@@ -338,7 +342,7 @@ void RenderThread::DrainControl()
 		{
 			try
 			{
-				m_renderer.CaptureScreenshot(screenshot->allAttachments);
+				m_renderer.CaptureScreenshot(screenshot->allAttachments, screenshot->directory);
 			}
 			catch (const std::exception& e)
 			{

@@ -948,7 +948,9 @@ acceptable - skip none of these steps.
 
 5. **Verify feature works visually**
    - Screenshots: check that `TakeScreenshotAllAttachments()` exports all
-     relevant attachments (screenshots/ directory).
+     relevant attachments. They are written under `<exe dir>/screenshots`
+     (the executable's directory, not the process working directory), and the
+     saved path is logged.
    - Visual check: the rendered viewport shows the expected result (lighting,
      shadows, geometry, etc.).
    - Runtime behaviour: resize the window, interact with the viewport, verify no

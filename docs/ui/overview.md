@@ -111,7 +111,7 @@ Only `Floatable` is locked, so dragging a panel to a different *dock position* s
 | **File** | New, Open..., Save, Save As..., Preferences... (`Ctrl+,`), Exit |
 | **View** | Restore Default Layout, Full Screen (`F11`) |
 | **Edit** | Undo, Redo, Add (Mesh... / Camera / Light > Point, Sun, Spot) |
-| **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) |
+| **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) - written under `<exe dir>/screenshots` |
 | **Help** | About Neurus |
 
 Each menu action is registered as an `(QAction*, key)` pair so `RetranslateAll()` can re-text it on a language change.

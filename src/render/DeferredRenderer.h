@@ -267,8 +267,10 @@ public:
 	 * capture methods do the GPU sync (a blocking submit per readback) internally.
 	 *
 	 * @param allAttachments  False: the swapchain image. True: every attachment.
+	 * @param directory       Destination root, created on demand.
 	 */
-	void CaptureScreenshot(bool allAttachments) override;
+	void CaptureScreenshot(bool allAttachments,
+	                       const std::filesystem::path& directory) override;
 
 	/**
 	 * @brief Sets the upload service the request executor uses (non-owning).

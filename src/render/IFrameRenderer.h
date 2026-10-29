@@ -24,6 +24,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include <cstdint>
+#include <filesystem>
 
 namespace neurus {
 
@@ -96,8 +97,12 @@ public:
 	/**
 	 * @brief Write the last presented image, or every attachment, to disk.
 	 * @param allAttachments  False: the swapchain image. True: every attachment.
+	 * @param directory       Destination root, created on demand. Carried as a
+	 *                        value so this layer stays Qt-free (only the
+	 *                        Application knows the executable directory).
 	 */
-	virtual void CaptureScreenshot(bool allAttachments) = 0;
+	virtual void CaptureScreenshot(bool allAttachments,
+	                               const std::filesystem::path& directory) = 0;
 
 	/** @brief Block until all GPU work completes; called once on shutdown. */
 	virtual void WaitIdle() = 0;

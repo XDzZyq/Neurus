@@ -76,6 +76,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <future>
 #include <mutex>
 #include <thread>
@@ -162,8 +163,14 @@ public:
 	 */
 	std::future<uint32_t> PostPick(float u, float v);
 
-	/** @brief Write a screenshot (or every attachment) between frames. */
-	void PostScreenshot(bool allAttachments);
+	/**
+	 * @brief Write a screenshot (or every attachment) between frames.
+	 * @param allAttachments  False: the swapchain image. True: every attachment.
+	 * @param directory       Destination root; the Application resolves it from
+	 *                        the executable directory, so the renderer never
+	 *                        depends on the process working directory.
+	 */
+	void PostScreenshot(bool allAttachments, std::filesystem::path directory);
 
 	/** @return A copy of the latest status; callable from any thread. */
 	RendererStatus Status() const;

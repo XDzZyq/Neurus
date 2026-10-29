@@ -129,7 +129,11 @@ the frame fence:
   the native window); `PostSurfaceChange` rebuilds the swapchain and the main
   thread waits up to 2 s before destroying the old surface. On timeout or
   failure neither surface is destroyed until shutdown.
-- **Screenshot** - `PostScreenshot(allAttachments)`, fire and forget.
+- **Screenshot** - `PostScreenshot(allAttachments, directory)`, fire and forget.
+  The Application resolves `directory` from the executable location (Qt's
+  `applicationDirPath()`), because the process working directory is not under
+  the user's control; the render thread hands the path to the renderer
+  unchanged, so the Renderer stays Qt-free.
 
 Resize and surface change also invalidate the mailbox: both restart accumulation,
 so a snapshot published before them would seed frame 0 with a stale camera or

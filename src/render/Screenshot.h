@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <filesystem>
 #include <string>
 
 namespace neurus {
@@ -49,16 +50,20 @@ public:
 	/**
 	 * @brief Captures a swapchain image to a PNG file.
 	 *
-	 * Reads back the given swapchain image and writes a timestamped PNG.
+	 * Reads back the given swapchain image and writes a timestamped PNG under
+	 * @p directory, logging the absolute path on success and the reason on
+	 * failure.
 	 *
 	 * @param swapchainImage  The VkImage handle of the swapchain image.
 	 * @param swapchainFormat Format of the swapchain image.
 	 * @param swapchainExtent Extent of the swapchain image.
+	 * @param directory       Destination root, created on demand.
 	 * @return true on success.
 	 */
 	bool TakeScreenshot(vk::Image swapchainImage,
 	                    vk::Format swapchainFormat,
-	                    vk::Extent2D swapchainExtent);
+	                    vk::Extent2D swapchainExtent,
+	                    const std::filesystem::path& directory);
 
 	/**
 	 * @brief Captures all G-Buffer, post-chain and overlay attachments.
@@ -72,11 +77,13 @@ public:
 	 * @param renderCache       Render cache for attachment & shadow map access.
 	 * @param extent            Viewport extent for G-Buffer attachments.
 	 * @param cubemapResolution Per-face resolution of shadow cubemaps.
+	 * @param directory         Destination root, created on demand.
 	 * @return Number of attachments captured.
 	 */
 	int TakeScreenshotAllAttachments(RenderCache& renderCache,
 	                                 vk::Extent2D extent,
-	                                 uint32_t cubemapResolution);
+	                                 uint32_t cubemapResolution,
+	                                 const std::filesystem::path& directory);
 
 	/**
 	 * @brief Exports a shadow depth cubemap as an equirectangular grayscale PNG.
