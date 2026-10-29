@@ -10,9 +10,9 @@
 
 ## Render request path
 
-The renderer is the sole GPU submitter: the Editor touches no `VkQueue`, no
-device-wide wait and none of the `RenderCache` resource maps. Everything it used
-to do to them directly - upload a mesh, allocate a light's shadow maps,
+The renderer is the sole GPU submitter: the Editor touches no `VkQueue`, waits
+on none of them and writes none of the `RenderCache` resource maps. Everything it
+used to do to them directly - upload a mesh, allocate a light's shadow maps,
 (re)generate IBL, rewrite the light SSBOs, warm a per-mesh pipeline, drop the
 outgoing scene, reset accumulation - is posted instead as a typed
 `RenderRequest` value and executed by the renderer on the thread that submits.
@@ -36,10 +36,15 @@ outgoing scene, reset accumulation - is posted instead as a typed
   cannot pull it from under an executing frame, so they drain every in-flight
   frame fence first (`DeferredRenderer::DrainInFlightFrames`, injected into the
   executor; it waits each fence with `kFenceTimeoutNs` and idles the graphics
-  queue if the wait fails). That is why the destroying handlers (pipeline
-  replace, environment regenerate over a resident entry, scene drop) no longer
-  depend on `kMaxFramesInFlight == 1`: uploads and readbacks wait their own
-  submits, so the frames are the only other work a resource can be in.
+  queue if the wait fails). That is why the pipeline replace, the environment
+  regenerate over a resident entry and the scene drop do not depend on the frame
+  count: uploads and readbacks wait their own submits, so the frames are the only
+  other work a resource can be in. Not every request is handled that way. Light
+  SSBO growth (`UpdateLighting`, whose `LightingCache` upload resizes the old
+  buffer away) and the in-place camera, light and SSAO UBO/SSBO rewrites do not
+  drain; they rely on the frame-slot fence wait that precedes the drain, which
+  only covers the slot the next frame would reuse and so holds only with one
+  frame in flight.
 
 - **FIFO ordering is a contract.** Within a batch, append order is execution
   order. An upload posted after `DropSceneResourcesRequest` lands in the new

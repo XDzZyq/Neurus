@@ -141,6 +141,14 @@ void RenderRequestExecutor::handle(const UploadEnvironmentRequest& request)
 
 void RenderRequestExecutor::handle(const UpdateLightingRequest& request)
 {
+	// No drain, unlike the handlers that replace a cubemap, a pipeline or a whole
+	// scene. The in-place rewrite of the light SSBOs is only safe because the
+	// request drain runs after the frame-slot fence wait with one frame in
+	// flight, so no recorded frame is still reading the old content; the growth
+	// path makes it sharper still - ArrayBuffer::Resize destroys the old buffer,
+	// and this handler reaches it without waiting for anything. Raising
+	// kMaxFramesInFlight therefore means draining here (or making the resize
+	// wait) first.
 	m_cache.UpdateLighting(request.lights);
 }
 

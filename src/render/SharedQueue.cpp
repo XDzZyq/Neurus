@@ -47,6 +47,10 @@ void SharedQueue::SubmitAndWait(const vk::SubmitInfo& info)
 	// here would block a concurrent submit or present for the whole duration of
 	// this work - a long bake would freeze the frame loop.
 	const vk::Result result = m_device.waitForFences(*fence, VK_TRUE, UINT64_MAX);
+	// Defensive only. With Vulkan-HPP exceptions enabled waitForFences throws on
+	// every failure it can report (device loss included) and the infinite timeout
+	// cannot elapse, so no other result reaches this branch today; it stays so the
+	// wait is never silently unchecked if that ever changes.
 	if (result != vk::Result::eSuccess)
 	{
 		throw std::runtime_error("SharedQueue::SubmitAndWait: waitForFences returned "

@@ -78,7 +78,7 @@ events: scene-scoped handlers obtain it from the context.
 
 ## Render Request Path (Editor to Renderer GPU work)
 
-The Editor never touches a `VkQueue`, the device-wide wait or the renderer's
+The Editor never touches a `VkQueue`, waits on one or writes the renderer's
 resource maps. All GPU work it used to do directly - upload a mesh, allocate a
 light's shadow maps, (re)generate IBL, rewrite the light SSBOs, warm a per-mesh
 pipeline, drop the outgoing scene's resources, reset accumulation, redraw the

@@ -54,6 +54,7 @@
 
 #include <iostream>
 #include <memory>
+#include <string>
 #include <utility>
 
 namespace {
@@ -78,6 +79,24 @@ constexpr auto kSurfaceChangeTimeout = std::chrono::seconds(2);
 static QString resolveResourcePath(const char* relativePath)
 {
 	return QCoreApplication::applicationDirPath() + "/res/" + relativePath;
+}
+
+/**
+ * @brief Narrows @p path to UTF-8 for a log line, without throwing.
+ *
+ * std::filesystem::path::string() yields the *native* narrow encoding, which MSVC
+ * maps to the ANSI code page: it throws std::system_error for any character
+ * outside it, and a log line is no place to lose a screenshot to an install path.
+ * u8string() cannot fail that way, and on POSIX the native narrow encoding is
+ * already UTF-8, so the bytes are exactly what string() produced.
+ *
+ * Only referenced from a NEURUS_LOG call, which compiles out in Release - hence
+ * the attribute.
+ */
+[[maybe_unused]] static std::string utf8PathForLog(const std::filesystem::path& path)
+{
+	const std::u8string utf8 = path.u8string();
+	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
 }
 
 // Registers the live components on every call. Order matters: the resource
@@ -860,7 +879,10 @@ void Application::ScreenShotSignals(neurus::UIEvents& uiEvents)
 		QDir(QCoreApplication::applicationDirPath())
 			.filePath("screenshots")
 			.toStdU16String());
-	NEURUS_LOG("[Application] screenshots are written under " << screenshotDir.string());
+	// Logged through utf8PathForLog rather than path::string(): on MSVC the latter
+	// throws std::system_error for a character outside the ANSI code page, and this
+	// line runs outside any try block.
+	NEURUS_LOG("[Application] screenshots are written under " << utf8PathForLog(screenshotDir));
 
 	// Screenshot requests (F12 / menu action)
 	QObject::connect(&uiEvents, &neurus::UIEvents::screenshotRequested,

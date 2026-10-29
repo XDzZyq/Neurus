@@ -19,13 +19,35 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <string>
 #include <system_error>
 
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// Local helpers (format conversion)
+// Local helpers (paths and format conversion)
 // ---------------------------------------------------------------------------
+
+/**
+ * @brief Narrows @p path to a UTF-8 std::string for a log line, without throwing.
+ *
+ * std::filesystem::path::string() converts to the *native* narrow encoding, which
+ * MSVC maps to the ANSI code page: it throws std::system_error for any character
+ * outside it, so a non-ANSI install directory could kill a capture from a log
+ * statement. u8string() does not have that failure, and on POSIX the native
+ * narrow encoding is already UTF-8, so the bytes are exactly what string() gave.
+ *
+ * Logging only. The PNG writer opens a narrow `const char*` through the C
+ * runtime, which on Windows reads it in the ANSI code page, so the paths handed
+ * to it stay path::string(): UTF-8 bytes there would break every non-ASCII path
+ * the code page can represent. A path it cannot represent throws inside the
+ * capture, which the render thread catches.
+ */
+static std::string Utf8Path(const std::filesystem::path& path)
+{
+	const std::u8string utf8 = path.u8string();
+	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+}
 
 /**
  * @brief Formats @p path as an absolute path for logging, without throwing.
@@ -38,7 +60,7 @@ static std::string AbsoluteForLog(const std::filesystem::path& path)
 {
 	std::error_code ec;
 	const std::filesystem::path abs = std::filesystem::absolute(path, ec);
-	return (ec ? path : abs).string();
+	return Utf8Path(ec ? path : abs);
 }
 
 /**

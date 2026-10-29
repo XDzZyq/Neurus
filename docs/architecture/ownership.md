@@ -38,9 +38,10 @@ Renderer Layer owns:
     renderer's RenderRequestExecutor drives it)
 ```
 
-The renderer is the **sole GPU submitter**: every `VkQueue` submit, the
-device-wide wait and all writes to the RenderCache's resource maps happen on the
-renderer's own thread. The Editor drives GPU state only by posting a
+The renderer is the **sole GPU submitter**: every `VkQueue` submit, every wait
+on queue work (a frame-fence drain or a graphics-queue idle) and all writes to
+the RenderCache's resource maps happen on the renderer's own thread. The Editor
+drives GPU state only by posting a
 `RenderRequest` (see [Data Flow](data-flow.md#render-request-path-editor-to-renderer-gpu-work));
 `DeferredRenderer` drains the queue per frame and its `RenderRequestExecutor`
 performs the work. Single ownership is the point, not tidiness: on MoltenVK the
@@ -68,7 +69,7 @@ been removed.
 1. **No cross-layer direct coupling** - Use UIEvents/EventQueue/RenderRequest/Context only
 2. **Renderer is stateless** - Application state lives in Editor
 3. **Renderer is the sole GPU submitter** - the Editor drives GPU state only by
-   posting a `RenderRequest`; it never submits, waits the device, or writes the
+   posting a `RenderRequest`; it never submits, waits the queue, or writes the
    renderer's resource maps
 4. **Full RAII** - No two-phase initialization; no `Init()`/`Terminate()` methods
 5. **Explicit GPU ownership** - Each Vulkan handle has one owning layer

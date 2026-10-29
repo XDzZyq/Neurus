@@ -104,7 +104,7 @@ public:
 	virtual void CaptureScreenshot(bool allAttachments,
 	                               const std::filesystem::path& directory) = 0;
 
-	/** @brief Block until all GPU work completes; called once on shutdown. */
+	/** @brief Idle the graphics queue; called once on shutdown. */
 	virtual void WaitIdle() = 0;
 
 protected:

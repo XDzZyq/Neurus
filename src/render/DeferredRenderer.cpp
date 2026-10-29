@@ -329,7 +329,11 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// Placed after the fence wait and before swapchain acquire. The handlers that
 	// replace or free a resource drain every in-flight frame fence themselves
 	// (DrainInFlightFrames), so no recorded frame still references what they
-	// release - independent of how many frames are in flight. Uploads and
+	// release - that does not depend on how many frames are in flight. The
+	// in-place rewrites do: light SSBO growth in UpdateLighting (the resize
+	// destroys the old buffer) and the camera, light and SSAO UBO/SSBO writes
+	// touch memory a recorded frame may read, so they rely on the slot fence
+	// wait above - safe only while kMaxFramesInFlight is 1. Uploads and
 	// screenshots wait their own submits, so nothing else can be running against
 	// the resource being replaced.
 	//

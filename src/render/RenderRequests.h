@@ -2,8 +2,8 @@
  * @file RenderRequests.h
  * @brief GPU work the Editor asks the renderer to do, as owned values.
  *
- * The renderer is the only code that touches a VkQueue, the device-wide wait,
- * or the RenderCache's resource maps. Everything the Editor used to do to them
+ * The renderer is the only code that touches a VkQueue, waits on one, or writes
+ * the RenderCache's resource maps. Everything the Editor used to do to them
  * directly - upload a mesh, allocate a light's shadow maps, regenerate IBL,
  * rewrite the lighting SSBOs, warm a per-mesh pipeline, drop the outgoing
  * scene's resources - is posted instead as one of the requests below and

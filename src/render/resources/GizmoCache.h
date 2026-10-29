@@ -14,8 +14,8 @@
  * Host-visible memory (CPUBuffer) for the same reason DebugCache uses it, only more
  * so: a gesture rebuilds its guide geometry on every cursor move, so this buffer is
  * rewritten on essentially every frame a modal is live. A device-local GPUBuffer
- * write is a staging copy plus a submit plus a waitIdle, which is far more than a
- * ~200-byte memcpy is worth.
+ * write is a staging copy plus a submit plus a wait on that submission
+ * (`SharedQueue::SubmitAndWait`), which is far more than a ~200-byte memcpy is worth.
  *
  * ## Deliberately simpler than DebugCache, in two ways
  *
