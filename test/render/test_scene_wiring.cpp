@@ -446,3 +446,66 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 
 	m_renderer->WaitIdle();
 }
+
+// ---------------------------------------------------------------------------
+// 5. A drawn frame holds the mesh table it drew with until its fence signals:
+//    removing a mesh from the cache must not destroy geometry the GPU is still
+//    reading, and seeing the fence is what releases it.
+// ---------------------------------------------------------------------------
+
+TEST_F(SceneWiringTest, AFrameHoldsItsMeshTableUntilItsFence)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	ASSERT_NO_FATAL_FAILURE(CreateRenderer(kRenderWidth, kRenderHeight));
+
+	Scene scene;
+	auto cam = CreateDefaultCamera();
+	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
+
+	auto mesh = CreateAndUploadTriangleMesh();
+	ASSERT_NE(mesh, nullptr);
+	scene.UseMesh(mesh);
+	const int meshId = mesh->GetObjectID();
+
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+
+	// PublishFrame builds the snapshot but uploads nothing: the cache has to own
+	// the geometry before the frame that draws it is recorded.
+	EnsureMeshesUploaded(m_renderer->GetRenderCache(), scene, *m_device, PhysicalDevice(),
+	                     *m_queue, m_graphicsQueueFamily);
+	ASSERT_NE(m_renderer->GetRenderCache().GetMeshGPU(meshId), nullptr);
+
+	// Exactly one frame: a camera and a live swapchain make this a sample frame,
+	// and the submit is what arms the held table.
+	m_renderer->DrawFrame(ctx);
+
+	// Observed through a weak_ptr, so after the removal the only thing keeping
+	// the entry alive is the table the frame holds.
+	std::weak_ptr<const MeshGPU> entry;
+	{
+		const std::shared_ptr<const MeshTable> table = m_renderer->GetRenderCache().Meshes();
+		const auto it = table->find(meshId);
+		ASSERT_NE(it, table->end());
+		entry = it->second;
+		ASSERT_FALSE(entry.expired());
+	}
+
+	m_renderer->GetRenderCache().RemoveMeshGPU(meshId);
+	EXPECT_EQ(m_renderer->GetRenderCache().GetMeshGPU(meshId), nullptr);
+
+	// Still in flight: the geometry the frame was drawn with must still exist.
+	EXPECT_FALSE(entry.expired());
+
+	// The slot's fence signaling is the proof that the frame finished reading.
+	ASSERT_TRUE(m_renderer->WaitForFrameSlot());
+	EXPECT_TRUE(entry.expired());
+
+	m_renderer->WaitIdle();
+}

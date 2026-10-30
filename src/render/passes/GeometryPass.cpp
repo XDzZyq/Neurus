@@ -293,7 +293,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 			if (!inst.hasGeometry) continue;
 			if (!inst.visibleInViewport || !inst.rendered) continue;
 
-			MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
+			const MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
 			if (!gpuPtr)
 			{
 				NEURUS_ERR("[GeometryPass] GetMeshGPU returned nullptr for objectId=" << inst.objectId);

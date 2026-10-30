@@ -227,7 +227,11 @@ DeferredRenderer::~DeferredRenderer()
 {
 	WaitIdle();
 	// vk::raii destructors clean up automatically in reverse declaration order;
-	// r_passes destroys all passes before RenderCache.
+	// r_passes destroys all passes before RenderCache. WaitIdle() is what makes
+	// the held tables safe to release: with the queue idle no submitted frame is
+	// still reading the meshes and environments they kept alive, and they are
+	// destroyed first (declared after r_renderCache) so nothing outlives the
+	// cache they came from.
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +256,16 @@ bool DeferredRenderer::WaitForFrameSlot()
 	// return after a successful wait leaves it signaled and the next wait does
 	// not deadlock. A timeout means a hung GPU: the caller must not touch GPU
 	// resources, so it skips the frame and the requests stay queued.
-	return r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) == vk::Result::eSuccess;
+	const bool signaled =
+		r_device.waitForFences(*fence, VK_TRUE, kFenceTimeoutNs) == vk::Result::eSuccess;
+
+	// The slot's fence signaling is the only proof that the frame recorded
+	// against these tables has finished reading them, so releasing is tied to
+	// it: a timeout proves nothing about the GPU and keeps them held.
+	if (signaled)
+		r_heldTables[r_currentFrame] = {};
+
+	return signaled;
 }
 
 void DeferredRenderer::DrainInFlightFrames()
@@ -288,7 +301,14 @@ void DeferredRenderer::DrainInFlightFrames()
 		NEURUS_ERR("[DeferredRenderer] Frame fence drain returned "
 		          << vk::to_string(result) << " - falling back to an idle queue");
 		r_graphicsQueue->WaitIdle();
+		return;
 	}
+
+	// Every slot's fence signaled - a slot never submitted was created signaled,
+	// so it waits trivially - and no recorded frame can still be reading the
+	// tables it drew with.
+	for (HeldTables& held : r_heldTables)
+		held = {};
 }
 
 FrameWork DeferredRenderer::NextWork() const
@@ -483,6 +503,14 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		2, signalSemaphores,
 		&timelineInfo);
 	r_graphicsQueue->Submit(submitInfo, *fence);
+
+	// The tables this frame recorded against are now the GPU's to read: hold
+	// them until this slot's fence is seen signalled, so a request that replaces
+	// or drops an entry while the frame is in flight cannot free geometry it is
+	// still drawing. This runs after the submit and before r_currentFrame
+	// advances, and the slot's table is empty here - the fence wait at the top of
+	// this call is what released the previous frame's.
+	r_heldTables[r_currentFrame] = { r_renderCache->Meshes(), r_renderCache->Environments() };
 
 	// --- Present ---
 	bool presentFailed = false;

@@ -362,7 +362,7 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 			if (!inst.hasGeometry) continue;
 			if (!inst.visibleInViewport || !inst.rendered) continue;
 
-			MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
+			const MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
 			if (!gpuPtr)
 			{
 				NEURUS_ERR("[ShadowDepthPass] GetMeshGPU returned nullptr for objectId=" << inst.objectId);
@@ -482,7 +482,7 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 			{
 				if (!inst.hasGeometry) continue;
 
-				MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
+				const MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
 				if (!gpuPtr || !gpuPtr->vertexBuffer || !gpuPtr->indexBuffer) continue;
 
 				const glm::mat4 model = inst.model;

@@ -374,7 +374,7 @@ PassStats DebugPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 
 		for (const auto& wire : snapshot.debugDraw.wireMeshes)
 		{
-			MeshGPU* gpu = cache.GetMeshGPU(wire.meshObjectId);
+			const MeshGPU* gpu = cache.GetMeshGPU(wire.meshObjectId);
 			if (!gpu || !gpu->vertexBuffer || !gpu->indexBuffer)
 			{
 				continue;   // geometry not uploaded yet; it appears next frame

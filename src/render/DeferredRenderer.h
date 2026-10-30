@@ -33,6 +33,7 @@
 #include "GPUProfiler.h"
 #include "IFrameRenderer.h"
 #include "ProfilingData.h"
+#include "RenderCache.h"
 #include "TimelineSemaphore.h"
 #include "passes/Pass.h"
 #include "core/RenderConfig.h"
@@ -150,6 +151,9 @@ public:
 	 * messages and request drains on the same fence wait a draw would do. The
 	 * fence is reset only on the submit path in DrawFrame, never here, so a
 	 * caller may wait, skip the frame, and wait again without deadlocking.
+	 *
+	 * A successful wait also releases the scene tables that slot's frame held:
+	 * the fence signaling is the only proof the GPU is done reading them.
 	 *
 	 * @return False on timeout (a hung GPU); nothing may touch GPU resources then.
 	 */
@@ -329,6 +333,9 @@ private:
 	 * @brief Waits every in-flight frame fence, so no recorded frame is still
 	 *        reading the resources a handler is about to replace or free.
 	 *
+	 * A drain that observes every fence also releases the scene tables those
+	 * frames held - the fences are the proof the GPU is done with them.
+	 *
 	 * On a failed wait (timeout, device loss) it logs the result and falls back
 	 * to an idle queue: the caller must be able to release what it replaces, and
 	 * a fence that never signals cannot prove the GPU is done.
@@ -450,6 +457,27 @@ private:
 	std::vector<vk::raii::Semaphore> r_renderFinishedSemaphores;
 	uint32_t r_currentFrame = 0;
 	uint32_t r_swapchainGeneration = 0;
+
+	/**
+	 * @brief The scene tables one submitted frame drew with.
+	 *
+	 * A request may replace or drop a table entry while the GPU still reads the
+	 * geometry it displaced, so each frame keeps the tables it recorded against
+	 * until its fence is seen signalled. Empty means nothing is held.
+	 */
+	struct HeldTables
+	{
+		std::shared_ptr<const MeshTable>        meshes;
+		std::shared_ptr<const EnvironmentTable> environments;
+	};
+
+	/// @brief Per-slot held tables. Declared after r_renderCache so they are
+	///        destroyed before it: each frame's tables are a borrowed view of the
+	///        cache's, so they are released first, while the device the entries
+	///        came from is still alive. ~DeferredRenderer waits the queue idle
+	///        before any member dies, so no submitted frame is still reading
+	///        them by then.
+	std::array<HeldTables, kMaxFramesInFlight> r_heldTables;
 
 	// --- Last acquired swapchain image index ---
 	uint32_t r_lastImageIndex = 0;

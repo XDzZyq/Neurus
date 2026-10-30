@@ -182,29 +182,36 @@ bool RenderCache::HasAttachment(const AttachmentName name) const
 }
 
 // ---------------------------------------------------------------------------
-// Mesh GPU resources (query-only)
+// Mesh GPU resources (refcounted table, copy on write)
 // ---------------------------------------------------------------------------
-
-MeshGPU* RenderCache::GetMeshGPU(const int objectId)
-{
-	auto it = rc_meshGPUs.find(objectId);
-	return (it != rc_meshGPUs.end()) ? &it->second : nullptr;
-}
 
 const MeshGPU* RenderCache::GetMeshGPU(const int objectId) const
 {
-	auto it = rc_meshGPUs.find(objectId);
-	return (it != rc_meshGPUs.end()) ? &it->second : nullptr;
+	const auto it = rc_meshGPUs->find(objectId);
+	return (it != rc_meshGPUs->end()) ? it->second.get() : nullptr;
+}
+
+std::shared_ptr<const MeshTable> RenderCache::Meshes() const
+{
+	return rc_meshGPUs;
 }
 
 void RenderCache::RemoveMeshGPU(const int objectId)
 {
-	rc_meshGPUs.erase(objectId);
+	// Nothing to release and nothing to copy for an id that was never there.
+	if (rc_meshGPUs->find(objectId) == rc_meshGPUs->end())
+		return;
+
+	auto table = std::make_shared<MeshTable>(*rc_meshGPUs);
+	table->erase(objectId);
+	rc_meshGPUs = std::move(table);
 }
 
 void RenderCache::UseMeshGPU(const int objectId, MeshGPU meshGPU)
 {
-	rc_meshGPUs[objectId] = std::move(meshGPU);
+	auto table = std::make_shared<MeshTable>(*rc_meshGPUs);
+	(*table)[objectId] = std::make_shared<const MeshGPU>(std::move(meshGPU));
+	rc_meshGPUs = std::move(table);
 	NEURUS_LOG("[RenderCache] Registered MeshGPU for objectId=" << objectId);
 }
 
@@ -216,8 +223,10 @@ void RenderCache::Clean()
 {
 	rc_attachments.clear();
 	rc_shadowIntensityArray.reset();
-	rc_meshGPUs.clear();
-	rc_environmentGPUs.clear();
+	// Fresh empty tables rather than clears: a frame still holding the old one
+	// keeps drawing from it until its fence is seen signalled.
+	rc_meshGPUs = std::make_shared<const MeshTable>();
+	rc_environmentGPUs = std::make_shared<const EnvironmentTable>();
 	rc_lightGPUs.clear();
 	rc_uidToShadowLayer.clear();
 	rc_lightingCache.reset();
@@ -226,8 +235,8 @@ void RenderCache::Clean()
 
 void RenderCache::RemoveSceneResources()
 {
-	rc_meshGPUs.clear();
-	rc_environmentGPUs.clear();
+	rc_meshGPUs = std::make_shared<const MeshTable>();
+	rc_environmentGPUs = std::make_shared<const EnvironmentTable>();
 	rc_lightGPUs.clear();
 	rc_uidToShadowLayer.clear();
 	rc_uidToSSBOIdx.clear();
@@ -251,29 +260,35 @@ void RenderCache::CleanScreenSpace()
 }
 
 // ---------------------------------------------------------------------------
-// Environment GPU resources (registration/query)
+// Environment GPU resources (refcounted table, copy on write)
 // ---------------------------------------------------------------------------
-
-EnvironmentGPU* RenderCache::GetEnvironmentGPU(const int envId)
-{
-	auto it = rc_environmentGPUs.find(envId);
-	return (it != rc_environmentGPUs.end()) ? &it->second : nullptr;
-}
 
 const EnvironmentGPU* RenderCache::GetEnvironmentGPU(const int envId) const
 {
-	auto it = rc_environmentGPUs.find(envId);
-	return (it != rc_environmentGPUs.end()) ? &it->second : nullptr;
+	const auto it = rc_environmentGPUs->find(envId);
+	return (it != rc_environmentGPUs->end()) ? it->second.get() : nullptr;
+}
+
+std::shared_ptr<const EnvironmentTable> RenderCache::Environments() const
+{
+	return rc_environmentGPUs;
 }
 
 void RenderCache::RemoveEnvironmentGPU(const int envId)
 {
-	rc_environmentGPUs.erase(envId);
+	if (rc_environmentGPUs->find(envId) == rc_environmentGPUs->end())
+		return;
+
+	auto table = std::make_shared<EnvironmentTable>(*rc_environmentGPUs);
+	table->erase(envId);
+	rc_environmentGPUs = std::move(table);
 }
 
 void RenderCache::UseEnvironmentGPU(const int envId, EnvironmentGPU envGPU)
 {
-	rc_environmentGPUs[envId] = std::move(envGPU);
+	auto table = std::make_shared<EnvironmentTable>(*rc_environmentGPUs);
+	(*table)[envId] = std::make_shared<const EnvironmentGPU>(std::move(envGPU));
+	rc_environmentGPUs = std::move(table);
 	NEURUS_LOG("[RenderCache] Registered EnvironmentGPU for envId=" << envId);
 }
 

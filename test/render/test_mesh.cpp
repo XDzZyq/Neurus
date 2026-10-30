@@ -6,6 +6,8 @@
  *   - UseMeshGPU stores a MeshGPU and GetMeshGPU returns it
  *   - GetMeshGPU returns the same MeshGPU on subsequent calls (caching)
  *   - RemoveMeshGPU destroys GPU buffers
+ *   - the mesh table is copied on write, so a table a frame holds keeps
+ *     entries that were removed or dropped with the scene alive
  *
  * @note Requires a Vulkan 1.4-capable GPU. Skipped in CI without GPU.
  */
@@ -146,7 +148,7 @@ TEST_F(MeshRenderTest, UseMeshGPU_Stores)
 
 	m_cache->UseMeshGPU(kTestObjectId, std::move(gpu));
 
-	MeshGPU* retrieved = m_cache->GetMeshGPU(kTestObjectId);
+	const MeshGPU* retrieved = m_cache->GetMeshGPU(kTestObjectId);
 	ASSERT_NE(retrieved, nullptr);
 	EXPECT_NE(retrieved->vertexBuffer, nullptr);
 	EXPECT_NE(retrieved->indexBuffer, nullptr);
@@ -173,8 +175,8 @@ TEST_F(MeshRenderTest, GetMeshGPU_ReturnsCached)
 	                              *meshData, kTestObjectId);
 	m_cache->UseMeshGPU(kTestObjectId, std::move(gpu));
 
-	MeshGPU* first  = m_cache->GetMeshGPU(kTestObjectId);
-	MeshGPU* second = m_cache->GetMeshGPU(kTestObjectId);
+	const MeshGPU* first  = m_cache->GetMeshGPU(kTestObjectId);
+	const MeshGPU* second = m_cache->GetMeshGPU(kTestObjectId);
 
 	ASSERT_NE(first, nullptr);
 	EXPECT_EQ(first, second);
@@ -204,7 +206,7 @@ TEST_F(MeshRenderTest, RemoveMeshGPU_Destroys)
 	                              *meshData, kTestObjectId);
 	m_cache->UseMeshGPU(kTestObjectId, std::move(gpu));
 
-	MeshGPU* created = m_cache->GetMeshGPU(kTestObjectId);
+	const MeshGPU* created = m_cache->GetMeshGPU(kTestObjectId);
 	ASSERT_NE(created, nullptr);
 	EXPECT_NE(created->vertexBuffer, nullptr);
 
@@ -218,7 +220,7 @@ TEST_F(MeshRenderTest, RemoveMeshGPU_Destroys)
 	                               *meshData, kTestObjectId);
 	m_cache->UseMeshGPU(kTestObjectId, std::move(gpu2));
 
-	MeshGPU* recreated = m_cache->GetMeshGPU(kTestObjectId);
+	const MeshGPU* recreated = m_cache->GetMeshGPU(kTestObjectId);
 	ASSERT_NE(recreated, nullptr);
 	EXPECT_NE(recreated->vertexBuffer, nullptr);
 	// Verify re-inserted entry has the expected vertex count
@@ -244,9 +246,152 @@ TEST_F(MeshRenderTest, UseMeshGPU_EmptyMeshData)
 	MeshGPU emptyGpu;
 	m_cache->UseMeshGPU(kTestObjectId, std::move(emptyGpu));
 
-	MeshGPU* retrieved = m_cache->GetMeshGPU(kTestObjectId);
+	const MeshGPU* retrieved = m_cache->GetMeshGPU(kTestObjectId);
 	ASSERT_NE(retrieved, nullptr);
 	EXPECT_EQ(retrieved->vertexBuffer, nullptr);
 	EXPECT_EQ(retrieved->indexBuffer, nullptr);
 	EXPECT_EQ(retrieved->indexCount, 0u);
+}
+
+// ---------------------------------------------------------------------------
+// MeshTable_PointerUnchangedWithoutAWrite
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief A read never copies the table: the same pointer comes back as long as
+ *        nothing is written, so a converged frame pays nothing for looking up
+ *        the tables it holds.
+ */
+TEST_F(MeshRenderTest, MeshTable_PointerUnchangedWithoutAWrite)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan GPU.";
+
+	auto meshData = std::make_shared<MeshData>();
+	ASSERT_TRUE(meshData->LoadObjFromString(kTriangleObj));
+
+	constexpr int kTestObjectId = 131;
+	m_cache->UseMeshGPU(kTestObjectId, CreateTestMeshGPU(*m_device, PhysicalDevice(),
+	                                                     *m_queue, m_graphicsQueueFamily,
+	                                                     *meshData, kTestObjectId));
+
+	const std::shared_ptr<const MeshTable> first = m_cache->Meshes();
+	ASSERT_NE(first, nullptr);
+
+	// A lookup in between must not copy either: it is a pure read.
+	ASSERT_NE(m_cache->GetMeshGPU(kTestObjectId), nullptr);
+
+	const std::shared_ptr<const MeshTable> second = m_cache->Meshes();
+
+	// A read that copied would still answer the same lookups, so only the
+	// identity of the table proves that nothing was copied.
+	EXPECT_EQ(first.get(), second.get());
+}
+
+// ---------------------------------------------------------------------------
+// MeshTable_CopiedOnUse
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief A write installs a fresh table: the old one keeps exactly the entries
+ *        it had, which is what lets a frame keep drawing from it.
+ */
+TEST_F(MeshRenderTest, MeshTable_CopiedOnUse)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan GPU.";
+
+	auto meshData = std::make_shared<MeshData>();
+	ASSERT_TRUE(meshData->LoadObjFromString(kTriangleObj));
+
+	constexpr int kFirstId  = 140;
+	constexpr int kSecondId = 141;
+	m_cache->UseMeshGPU(kFirstId, CreateTestMeshGPU(*m_device, PhysicalDevice(),
+	                                                *m_queue, m_graphicsQueueFamily,
+	                                                *meshData, kFirstId));
+
+	const std::shared_ptr<const MeshTable> before = m_cache->Meshes();
+	ASSERT_EQ(before->count(kFirstId), 1u);
+
+	m_cache->UseMeshGPU(kSecondId, CreateTestMeshGPU(*m_device, PhysicalDevice(),
+	                                                 *m_queue, m_graphicsQueueFamily,
+	                                                 *meshData, kSecondId));
+	const std::shared_ptr<const MeshTable> after = m_cache->Meshes();
+
+	// A new table, not the old one mutated in place ...
+	EXPECT_NE(before.get(), after.get());
+	// ... carrying what the old one already had ...
+	EXPECT_EQ(after->count(kFirstId), 1u);
+	// ... while the old one never sees the id written after it was taken.
+	EXPECT_EQ(before->count(kSecondId), 0u);
+	EXPECT_EQ(after->count(kSecondId), 1u);
+}
+
+// ---------------------------------------------------------------------------
+// HeldMeshTable_KeepsARemovedMeshAlive
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief The table a frame holds keeps a removed mesh's GPU buffers alive until
+ *        that table is released - the point of holding it per frame.
+ */
+TEST_F(MeshRenderTest, HeldMeshTable_KeepsARemovedMeshAlive)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan GPU.";
+
+	auto meshData = std::make_shared<MeshData>();
+	ASSERT_TRUE(meshData->LoadObjFromString(kTriangleObj));
+
+	constexpr int kTestObjectId = 150;
+	m_cache->UseMeshGPU(kTestObjectId, CreateTestMeshGPU(*m_device, PhysicalDevice(),
+	                                                     *m_queue, m_graphicsQueueFamily,
+	                                                     *meshData, kTestObjectId));
+
+	// What a submitted frame holds, plus a way to observe the entry itself.
+	std::shared_ptr<const MeshTable> held = m_cache->Meshes();
+	const auto it = held->find(kTestObjectId);
+	ASSERT_NE(it, held->end());
+	std::weak_ptr<const MeshGPU> entry = it->second;
+	ASSERT_FALSE(entry.expired());
+
+	m_cache->RemoveMeshGPU(kTestObjectId);
+
+	// Gone from the cache, still alive for whoever drew with it.
+	EXPECT_EQ(m_cache->GetMeshGPU(kTestObjectId), nullptr);
+	EXPECT_FALSE(entry.expired());
+
+	held.reset();
+	EXPECT_TRUE(entry.expired());
+}
+
+// ---------------------------------------------------------------------------
+// HeldMeshTable_KeepsMeshesAliveAcrossRemoveSceneResources
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Dropping the scene drops the cache's table, not the one a frame holds:
+ *        the outgoing scene's geometry survives until that frame is done.
+ */
+TEST_F(MeshRenderTest, HeldMeshTable_KeepsMeshesAliveAcrossRemoveSceneResources)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan GPU.";
+
+	auto meshData = std::make_shared<MeshData>();
+	ASSERT_TRUE(meshData->LoadObjFromString(kTriangleObj));
+
+	constexpr int kTestObjectId = 160;
+	m_cache->UseMeshGPU(kTestObjectId, CreateTestMeshGPU(*m_device, PhysicalDevice(),
+	                                                     *m_queue, m_graphicsQueueFamily,
+	                                                     *meshData, kTestObjectId));
+
+	std::shared_ptr<const MeshTable> held = m_cache->Meshes();
+	const auto it = held->find(kTestObjectId);
+	ASSERT_NE(it, held->end());
+	std::weak_ptr<const MeshGPU> entry = it->second;
+
+	m_cache->RemoveSceneResources();
+
+	EXPECT_EQ(m_cache->GetMeshGPU(kTestObjectId), nullptr);
+	EXPECT_FALSE(entry.expired());
+
+	held.reset();
+	EXPECT_TRUE(entry.expired());
 }

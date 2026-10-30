@@ -121,14 +121,12 @@ void RenderRequestExecutor::handle(const UploadEnvironmentRequest& request)
 		return;
 	}
 
-	// Regenerating over a resident entry REPLACES it, destroying the old
-	// cubemaps at once - the same hazard as a pipeline replace, so drain the
-	// frames first. Every frame fence is waited, so no recorded frame still
-	// references the replaced cubemaps; the upload that follows waits its own
-	// submit, so nothing else is touching them either.
-	if (resident)
-		m_drainFrames();
-
+	// Regenerating over a resident entry REPLACES it in the cache's table, but
+	// destroys nothing the GPU is reading: the cache installs a new table rather
+	// than mutating the old one, so the frames already submitted keep the old
+	// entry alive until their fences are seen signalled. That is why no drain is
+	// needed here. The upload that follows waits its own submit, so nothing else
+	// is touching the new cubemaps either.
 	auto envGPU = m_uploader->UploadEnvironment(request.equirect);
 	m_cache.UseEnvironmentGPU(request.objectId, std::move(envGPU));
 	NEURUS_LOG("[RenderRequestExecutor] Uploaded EnvironmentGPU for objectId=" << request.objectId

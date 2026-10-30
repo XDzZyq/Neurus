@@ -171,16 +171,16 @@ TEST_F(RenderRequestExecutorTest, UploadMesh_FlipsResidency_SecondIsNoOp)
 
 	m_executor->Execute(UploadMeshRequest{.objectId = kObjectId, .data = MakeTriangle()});
 
-	MeshGPU* resident = m_cache->GetMeshGPU(kObjectId);
+	const MeshGPU* resident = m_cache->GetMeshGPU(kObjectId);
 	ASSERT_NE(resident, nullptr);
 	EXPECT_NE(resident->vertexBuffer, nullptr);
 	EXPECT_NE(resident->indexBuffer, nullptr);
 	EXPECT_EQ(resident->indexCount, 3u);
 
 	// Posting twice is harmless by design: the second request sees residency and
-	// returns without touching the slot. Compare the owned buffer, not the
-	// MeshGPU address: a re-upload assigned into the same map slot would keep
-	// that address while replacing the buffer, so only the buffer can tell.
+	// returns without touching the table. Compare the owned buffer, not the
+	// MeshGPU address: a re-upload would install a new table with a fresh entry,
+	// so only the buffer proves the slot was left alone.
 	const auto* firstVertexBuffer = resident->vertexBuffer.get();
 	m_executor->Execute(UploadMeshRequest{.objectId = kObjectId, .data = MakeTriangle()});
 	ASSERT_NE(m_cache->GetMeshGPU(kObjectId), nullptr);
@@ -321,7 +321,7 @@ TEST_F(RenderRequestExecutorTest, UploadEnvironment_NullEquirect_Fallback)
 		.objectId = kEnvId, .equirect = nullptr, .regenerate = false});
 
 	// Fallback still yields real cubemaps, not an empty entry.
-	EnvironmentGPU* env = m_cache->GetEnvironmentGPU(kEnvId);
+	const EnvironmentGPU* env = m_cache->GetEnvironmentGPU(kEnvId);
 	ASSERT_NE(env, nullptr);
 	EXPECT_NE(env->diffuseTexture, nullptr);
 	EXPECT_NE(env->specularTexture, nullptr);
@@ -342,7 +342,7 @@ TEST_F(RenderRequestExecutorTest, UploadEnvironment_IdempotentVsRegenerate)
 	// First upload creates the entry.
 	m_executor->Execute(UploadEnvironmentRequest{
 		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = false});
-	EnvironmentGPU* first = m_cache->GetEnvironmentGPU(kEnvId);
+	const EnvironmentGPU* first = m_cache->GetEnvironmentGPU(kEnvId);
 	ASSERT_NE(first, nullptr);
 	Texture* firstDiffuse = first->diffuseTexture.get();
 	ASSERT_NE(firstDiffuse, nullptr);
@@ -351,7 +351,7 @@ TEST_F(RenderRequestExecutorTest, UploadEnvironment_IdempotentVsRegenerate)
 	// is still mapped - a handler that regenerated anyway would swap the pointer.
 	m_executor->Execute(UploadEnvironmentRequest{
 		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = false});
-	EnvironmentGPU* skipped = m_cache->GetEnvironmentGPU(kEnvId);
+	const EnvironmentGPU* skipped = m_cache->GetEnvironmentGPU(kEnvId);
 	ASSERT_NE(skipped, nullptr);
 	EXPECT_EQ(skipped->diffuseTexture.get(), firstDiffuse);
 
@@ -359,7 +359,7 @@ TEST_F(RenderRequestExecutorTest, UploadEnvironment_IdempotentVsRegenerate)
 	// entry is replaced and the diffuse texture pointer must change.
 	m_executor->Execute(UploadEnvironmentRequest{
 		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = true});
-	EnvironmentGPU* regenerated = m_cache->GetEnvironmentGPU(kEnvId);
+	const EnvironmentGPU* regenerated = m_cache->GetEnvironmentGPU(kEnvId);
 	ASSERT_NE(regenerated, nullptr);
 	EXPECT_NE(regenerated->diffuseTexture.get(), firstDiffuse);
 }
@@ -462,7 +462,7 @@ TEST_F(RenderRequestExecutorTest, ResetAccumulation_IsHarmlessNoOp)
 
 	constexpr int kObjectId = 300;
 	m_executor->Execute(UploadMeshRequest{.objectId = kObjectId, .data = MakeTriangle()});
-	MeshGPU* before = m_cache->GetMeshGPU(kObjectId);
+	const MeshGPU* before = m_cache->GetMeshGPU(kObjectId);
 	ASSERT_NE(before, nullptr);
 
 	// Executing the reset does nothing to the executor's resources: the mesh is
@@ -547,24 +547,34 @@ TEST_F(RenderRequestExecutorTest, UploadEnvironment_First_DoesNotDrain)
 }
 
 // ---------------------------------------------------------------------------
-// 14. Regenerating over a resident environment replaces its cubemaps, so the
-//     handler must drain the frames once before destroying the old ones.
+// 14. Regenerating over a resident environment replaces its table entry, which
+//     destroys nothing the GPU is reading: the frames already submitted hold the
+//     old table, so the handler must NOT drain the frames.
 // ---------------------------------------------------------------------------
 
-TEST_F(RenderRequestExecutorTest, UploadEnvironment_RegenerateResident_DrainsOnce)
+TEST_F(RenderRequestExecutorTest, UploadEnvironment_RegenerateResident_DoesNotDrain)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	constexpr int kEnvId = 401;
 	m_executor->Execute(UploadEnvironmentRequest{
 		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = false});
-	ASSERT_NE(m_cache->GetEnvironmentGPU(kEnvId), nullptr);
+	const EnvironmentGPU* first = m_cache->GetEnvironmentGPU(kEnvId);
+	ASSERT_NE(first, nullptr);
+	ASSERT_NE(first->diffuseTexture, nullptr);
+	// The cubemaps the regenerate is about to displace.
+	const Texture* firstDiffuse = first->diffuseTexture.get();
 	ASSERT_EQ(m_drains, 0u);
 
 	m_executor->Execute(UploadEnvironmentRequest{
 		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = true});
 
-	EXPECT_EQ(m_drains, 1u);
+	const EnvironmentGPU* regenerated = m_cache->GetEnvironmentGPU(kEnvId);
+	ASSERT_NE(regenerated, nullptr);
+	EXPECT_NE(regenerated->diffuseTexture.get(), firstDiffuse);
+	// Nothing was destroyed - the displaced entry lives in the held table - so
+	// waiting the frames would have been pure cost.
+	EXPECT_EQ(m_drains, 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -788,4 +798,46 @@ TEST_F(RenderRequestExecutorTest, UpdateLighting_GrowthInAnyKind_Drains)
 	EXPECT_EQ(lighting->GetPointLightCapacity(), 0u);
 	EXPECT_EQ(lighting->GetSunLightCapacity(), 2u);
 	EXPECT_EQ(lighting->GetSpotLightCapacity(), 2u);
+}
+
+// ===========================================================================
+// Held tables - what replaces the drain for refcounted resources
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// 22. A regenerated environment is NOT drained: the table a submitted frame
+//     holds keeps the displaced cubemaps alive on its own, until that table is
+//     released. This is the observable difference between draining and holding -
+//     the old entry outlives its replacement in the cache.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, HeldEnvironmentTable_KeepsTheReplacedEnvironmentAlive)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	constexpr int kEnvId = 403;
+	m_executor->Execute(UploadEnvironmentRequest{
+		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = false});
+	ASSERT_NE(m_cache->GetEnvironmentGPU(kEnvId), nullptr);
+
+	// What a submitted frame holds, plus a way to observe the entry itself.
+	std::shared_ptr<const EnvironmentTable> held = m_cache->Environments();
+	const auto it = held->find(kEnvId);
+	ASSERT_NE(it, held->end());
+	std::weak_ptr<const EnvironmentGPU> entry = it->second;
+	const Texture* heldDiffuse = it->second->diffuseTexture.get();
+	ASSERT_NE(heldDiffuse, nullptr);
+
+	m_executor->Execute(UploadEnvironmentRequest{
+		.objectId = kEnvId, .equirect = MakeEquirect(), .regenerate = true});
+
+	// The cache shows the regenerated cubemaps ...
+	const EnvironmentGPU* regenerated = m_cache->GetEnvironmentGPU(kEnvId);
+	ASSERT_NE(regenerated, nullptr);
+	EXPECT_NE(regenerated->diffuseTexture.get(), heldDiffuse);
+	// ... while the replaced entry is still alive for the frame drawing it.
+	EXPECT_FALSE(entry.expired());
+
+	held.reset();
+	EXPECT_TRUE(entry.expired());
 }
