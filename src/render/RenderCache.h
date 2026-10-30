@@ -409,6 +409,24 @@ public:
 	                    std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict);
 
 	/**
+	 * @brief True when UpdateLighting(lightDict) would replace an existing light SSBO.
+	 *
+	 * A kind grows when its count exceeds the SSBO's capacity, and ArrayBuffer
+	 * only resizes on growth - so that is the only path that destroys a buffer.
+	 * A kind whose capacity is still zero has no buffer to destroy: its first
+	 * allocation replaces nothing.
+	 *
+	 * Read-only: it partitions @a lightDict exactly as UpdateLighting does and
+	 * compares the per-kind counts against the live SSBO state, so it answers
+	 * for the same upload the full rebuild would perform.
+	 *
+	 * @param lightDict  Map: light UID to variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
+	 * @return true if the rebuild would resize (and so free) at least one SSBO.
+	 */
+	bool UpdateLightingReallocates(const std::unordered_map<int,
+	                    std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict) const;
+
+	/**
 	 * @brief Updates a single light in the SSBO without rebuilding the array.
 	 *
 	 * Looks up @a lightUID in the internal uid -> index maps, restores the

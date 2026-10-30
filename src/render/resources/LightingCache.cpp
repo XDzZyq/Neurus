@@ -55,6 +55,11 @@ uint32_t LightingCache::GetPointLightCount() const
 	return m_pointLightSSBO.size();
 }
 
+uint32_t LightingCache::GetPointLightCapacity() const
+{
+	return m_pointLightSSBO.capacity();
+}
+
 // ---------------------------------------------------------------------------
 // Sun light SSBO
 // ---------------------------------------------------------------------------
@@ -80,6 +85,11 @@ uint32_t LightingCache::GetSunLightCount() const
 	return m_sunLightSSBO.size();
 }
 
+uint32_t LightingCache::GetSunLightCapacity() const
+{
+	return m_sunLightSSBO.capacity();
+}
+
 // ---------------------------------------------------------------------------
 // Spot light SSBO
 // ---------------------------------------------------------------------------
@@ -103,6 +113,11 @@ const GPUBuffer* LightingCache::GetSpotLightSSBO() const
 uint32_t LightingCache::GetSpotLightCount() const
 {
 	return m_spotLightSSBO.size();
+}
+
+uint32_t LightingCache::GetSpotLightCapacity() const
+{
+	return m_spotLightSSBO.capacity();
 }
 
 } // namespace neurus

@@ -222,11 +222,29 @@ public:
 	/** @brief Number of point lights in the SSBO. */
 	uint32_t GetPointLightCount() const;
 
+	/**
+	 * @brief Number of point lights the point SSBO can hold.
+	 * @return Allocated element count, or 0 when no buffer exists yet.
+	 */
+	uint32_t GetPointLightCapacity() const;
+
 	/** @brief Number of sun lights in the SSBO. */
 	uint32_t GetSunLightCount() const;
 
+	/**
+	 * @brief Number of sun lights the sun SSBO can hold.
+	 * @return Allocated element count, or 0 when no buffer exists yet.
+	 */
+	uint32_t GetSunLightCapacity() const;
+
 	/** @brief Number of spot lights in the SSBO. */
 	uint32_t GetSpotLightCount() const;
+
+	/**
+	 * @brief Number of spot lights the spot SSBO can hold.
+	 * @return Allocated element count, or 0 when no buffer exists yet.
+	 */
+	uint32_t GetSpotLightCapacity() const;
 
 private:
 	// --- Owned GPU buffers ---

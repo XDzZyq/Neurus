@@ -43,6 +43,7 @@
 #include "scene/Light.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <variant>
 #include <vector>
@@ -79,7 +80,14 @@ protected:
 				*m_device, pd, *m_queue, m_graphicsQueueFamily);
 			m_geometryPass = std::make_unique<GeometryPass>(*m_device, pd);
 			m_executor = std::make_unique<RenderRequestExecutor>(
-				[this] { ++m_drains; m_device->waitIdle(); },
+				[this]
+				{
+					++m_drains;
+					// A test can observe the cache at the exact moment a handler
+					// asks for the frames to be waited, before its own work runs.
+					if (m_onDrain) m_onDrain();
+					m_device->waitIdle();
+				},
 				*m_cache, m_upload.get(), m_geometryPass.get());
 		}
 		catch (const std::exception& e)
@@ -137,6 +145,10 @@ protected:
 	/// @brief How many times this test's requests asked for the frames to be
 	///        drained; reset once the fixture is wired, so only requests count.
 	uint32_t m_drains = 0;
+
+	/// @brief Runs inside the drain, before the requesting handler's own work, so
+	///        a test can read the cache at the moment the frames are waited.
+	std::function<void()> m_onDrain;
 };
 
 // ===========================================================================
@@ -612,4 +624,168 @@ TEST_F(RenderRequestExecutorTest, EnsurePipeline_SameVersionTwice_DoesNotDrain)
 	EXPECT_NE(m_cache->GetPipelineCache().GetPipeline(
 		shader->GetObjectID(), shader->GetVersion()), nullptr);
 	EXPECT_EQ(m_drains, 0u);
+}
+
+// ===========================================================================
+// UpdateLightingRequest - light SSBO growth
+// ===========================================================================
+//
+// ArrayBuffer::Upload resizes only when a count exceeds the capacity, and
+// Resize is what destroys the old GPUBuffer a submitted frame may still be
+// reading. A first allocation and an in-place rewrite free nothing, so only
+// growth may cost a drain - and the drain has to come BEFORE the resize.
+
+namespace
+{
+	/// @brief A rebuild request carrying one default point light per UID.
+	UpdateLightingRequest MakePointLightRequest(const std::vector<int>& uids)
+	{
+		UpdateLightingRequest request;
+		for (const int uid : uids)
+			request.lights.emplace(uid, PointLightStruct{});
+		return request;
+	}
+
+	/// @brief A rebuild request carrying one default sun light per UID.
+	UpdateLightingRequest MakeSunLightRequest(const std::vector<int>& uids)
+	{
+		UpdateLightingRequest request;
+		for (const int uid : uids)
+			request.lights.emplace(uid, SunLightStruct{});
+		return request;
+	}
+
+	/// @brief A rebuild request carrying one default spot light per UID.
+	UpdateLightingRequest MakeSpotLightRequest(const std::vector<int>& uids)
+	{
+		UpdateLightingRequest request;
+		for (const int uid : uids)
+			request.lights.emplace(uid, SpotLightStruct{});
+		return request;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// 18. The first light allocation creates the SSBO and destroys nothing, so the
+//     request must not wait the frames. The capacity proves a buffer now exists
+//     at exactly the size of the uploaded set.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, UpdateLighting_FirstAllocation_DoesNotDrain)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	LightingCache* lighting = m_cache->GetLightingCache();
+	ASSERT_NE(lighting, nullptr);
+	// Lazily allocated: no buffer before the first upload, so there is nothing
+	// a first allocation could replace.
+	ASSERT_EQ(lighting->GetPointLightCapacity(), 0u);
+	ASSERT_EQ(lighting->GetPointLightSSBO(), nullptr);
+
+	m_executor->Execute(MakePointLightRequest({1}));
+
+	EXPECT_NE(lighting->GetPointLightSSBO(), nullptr);
+	EXPECT_EQ(lighting->GetPointLightCapacity(), 1u);
+	EXPECT_EQ(lighting->GetPointLightCount(), 1u);
+	// Created, not replaced.
+	EXPECT_EQ(m_drains, 0u);
+}
+
+// ---------------------------------------------------------------------------
+// 19. An equal or smaller light set rewrites the existing allocation in place;
+//     the buffer is never resized, so no frame may be reading a freed one and
+//     no drain is warranted. Shrinking keeps the capacity, so a later count up
+//     to it still fits - which is what the last upload of zero lights exercises.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, UpdateLighting_SameOrFewer_DoesNotDrain)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	LightingCache* lighting = m_cache->GetLightingCache();
+	ASSERT_NE(lighting, nullptr);
+
+	m_executor->Execute(MakePointLightRequest({1, 2}));
+	ASSERT_EQ(lighting->GetPointLightCapacity(), 2u);
+	ASSERT_EQ(m_drains, 0u);
+
+	m_executor->Execute(MakePointLightRequest({1, 2}));   // same count
+	m_executor->Execute(MakePointLightRequest({1}));      // fewer
+	m_executor->Execute(MakePointLightRequest({}));       // none
+
+	EXPECT_EQ(m_drains, 0u);
+	// The allocation survived the shrink: Upload only resizes on growth.
+	EXPECT_EQ(lighting->GetPointLightCapacity(), 2u);
+	EXPECT_EQ(lighting->GetPointLightCount(), 0u);
+}
+
+// ---------------------------------------------------------------------------
+// 20. Growing past the capacity replaces the buffer, so the handler must wait
+//     the in-flight frames - and the wait must land before the resize: at the
+//     moment of the drain the old buffer is still the live one.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, UpdateLighting_Growth_DrainsOnceBeforeTheResize)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	LightingCache* lighting = m_cache->GetLightingCache();
+	ASSERT_NE(lighting, nullptr);
+
+	m_executor->Execute(MakePointLightRequest({1}));
+	ASSERT_EQ(m_drains, 0u);
+
+	// The buffer one light is reading: it must still be live at drain time and
+	// gone right after.
+	const GPUBuffer* before = lighting->GetPointLightSSBO();
+	ASSERT_NE(before, nullptr);
+
+	bool drainedBeforeResize = false;
+	m_onDrain = [&]
+	{
+		drainedBeforeResize = lighting->GetPointLightSSBO() == before;
+	};
+
+	m_executor->Execute(MakePointLightRequest({1, 2, 3}));
+
+	EXPECT_EQ(m_drains, 1u);
+	// The frame wait happened while the old buffer was still the live one; a
+	// handler that uploaded first and drained after would see the new buffer.
+	EXPECT_TRUE(drainedBeforeResize);
+	// The growth really did replace the allocation, which is why it had to wait.
+	EXPECT_NE(lighting->GetPointLightSSBO(), nullptr);
+	EXPECT_NE(lighting->GetPointLightSSBO(), before);
+	EXPECT_EQ(lighting->GetPointLightCapacity(), 3u);
+}
+
+// ---------------------------------------------------------------------------
+// 21. Growth of any kind drains, not just point lights: the three SSBOs are
+//     separate allocations, so each kind's first growth past its capacity is
+//     its own replacement. A kind's first upload is still not growth.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, UpdateLighting_GrowthInAnyKind_Drains)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	LightingCache* lighting = m_cache->GetLightingCache();
+	ASSERT_NE(lighting, nullptr);
+
+	// Sun lights: first upload allocates, the second outgrows it.
+	m_executor->Execute(MakeSunLightRequest({1}));
+	ASSERT_EQ(m_drains, 0u);
+	m_executor->Execute(MakeSunLightRequest({1, 2}));
+	ASSERT_EQ(m_drains, 1u);
+
+	// Spot lights repeat it on their own allocation.
+	m_executor->Execute(MakeSpotLightRequest({1}));
+	ASSERT_EQ(m_drains, 1u);
+	m_executor->Execute(MakeSpotLightRequest({1, 2}));
+	EXPECT_EQ(m_drains, 2u);
+
+	// Each kind's SSBO is its own: the sun and spot growth left the never-used
+	// point SSBO unallocated.
+	EXPECT_EQ(lighting->GetPointLightCapacity(), 0u);
+	EXPECT_EQ(lighting->GetSunLightCapacity(), 2u);
+	EXPECT_EQ(lighting->GetSpotLightCapacity(), 2u);
 }

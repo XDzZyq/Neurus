@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <utility>
 
 namespace neurus {
 
@@ -341,6 +342,49 @@ void RenderCache::RemovePipeline(const int uid)
 // Lighting GPU resources
 // ---------------------------------------------------------------------------
 
+namespace
+{
+	/**
+	 * @brief The light dict split by kind, each entry keeping its UID.
+	 *
+	 * Both the full rebuild and the growth test key on this partition: the
+	 * rebuild builds its SSBO vectors from it, the growth test compares each
+	 * kind's count against the SSBO that rebuild would upload into. Splitting the
+	 * dict by hand in two places is how the two would drift apart.
+	 */
+	struct LightPartition
+	{
+		std::vector<std::pair<int, PointLightStruct>> points;
+		std::vector<std::pair<int, SunLightStruct>> suns;
+		std::vector<std::pair<int, SpotLightStruct>> spots;
+	};
+
+	LightPartition PartitionLights(
+		const std::unordered_map<int,
+			std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict)
+	{
+		LightPartition partition;
+
+		for (const auto& [uid, lightVariant] : lightDict)
+		{
+			if (const auto* point = std::get_if<PointLightStruct>(&lightVariant))
+			{
+				partition.points.push_back({uid, *point});
+			}
+			else if (const auto* sun = std::get_if<SunLightStruct>(&lightVariant))
+			{
+				partition.suns.push_back({uid, *sun});
+			}
+			else if (const auto* spot = std::get_if<SpotLightStruct>(&lightVariant))
+			{
+				partition.spots.push_back({uid, *spot});
+			}
+		}
+
+		return partition;
+	}
+} // namespace
+
 void RenderCache::UpdateLighting(const std::unordered_map<int,
                                  std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict)
 {
@@ -350,26 +394,11 @@ void RenderCache::UpdateLighting(const std::unordered_map<int,
 	rc_uidToSSBOIdx.clear();
 	rc_uidToShadowLayer.clear();
 
-	// --- Separate and sort by UID for deterministic SSBO ordering ---
-	std::vector<std::pair<int, PointLightStruct>> pointEntries;
-	std::vector<std::pair<int, SunLightStruct>> sunEntries;
-	std::vector<std::pair<int, SpotLightStruct>> spotEntries;
-
-	for (const auto& [uid, lightVariant] : lightDict)
-	{
-		if (std::holds_alternative<PointLightStruct>(lightVariant))
-		{
-			pointEntries.push_back({uid, std::get<PointLightStruct>(lightVariant)});
-		}
-		else if (std::holds_alternative<SunLightStruct>(lightVariant))
-		{
-			sunEntries.push_back({uid, std::get<SunLightStruct>(lightVariant)});
-		}
-		else if (std::holds_alternative<SpotLightStruct>(lightVariant))
-		{
-			spotEntries.push_back({uid, std::get<SpotLightStruct>(lightVariant)});
-		}
-	}
+	// --- Separate by kind; the SSBO order is UID-sorted for determinism ---
+	LightPartition partition = PartitionLights(lightDict);
+	std::vector<std::pair<int, PointLightStruct>>& pointEntries = partition.points;
+	std::vector<std::pair<int, SunLightStruct>>& sunEntries = partition.suns;
+	std::vector<std::pair<int, SpotLightStruct>>& spotEntries = partition.spots;
 
 	std::sort(pointEntries.begin(), pointEntries.end(),
 	          [](const auto& a, const auto& b) { return a.first < b.first; });
@@ -450,6 +479,29 @@ void RenderCache::UpdateLighting(const std::unordered_map<int,
 	           << " point lights, " << sunVec.size() << " sun lights, "
 	           << spotVec.size() << " spot lights, "
 	           << rc_uidToShadowLayer.size() << " shadow casters");
+}
+
+bool RenderCache::UpdateLightingReallocates(const std::unordered_map<int,
+                                            std::variant<PointLightStruct, SunLightStruct,
+                                                         SpotLightStruct>>& lightDict) const
+{
+	// No lighting storage means the rebuild asserts; nothing can be replaced.
+	if (!rc_lightingCache)
+		return false;
+
+	// ArrayBuffer::Upload resizes only when the count exceeds the capacity, and
+	// Resize is what destroys the old GPUBuffer. Equal or smaller counts write
+	// over the existing allocation, and a zero capacity has no buffer to
+	// destroy, so neither is a replacement.
+	const auto grows = [](const size_t count, const uint32_t capacity)
+	{
+		return capacity > 0 && static_cast<uint32_t>(count) > capacity;
+	};
+
+	const LightPartition partition = PartitionLights(lightDict);
+	return grows(partition.points.size(), rc_lightingCache->GetPointLightCapacity())
+	    || grows(partition.suns.size(), rc_lightingCache->GetSunLightCapacity())
+	    || grows(partition.spots.size(), rc_lightingCache->GetSpotLightCapacity());
 }
 
 void RenderCache::UpdateLight(int lightUID,
