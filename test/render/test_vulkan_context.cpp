@@ -100,3 +100,21 @@ TEST_F(VulkanContextTest, InstanceCleanup_NoCrash)
 	// If we get here without crash, cleanup worked
 	SUCCEED();
 }
+
+TEST_F(VulkanContextTest, InitDevice_UploadsUseTheGraphicsFamily)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	VulkanContext ctx(VulkanContext::CreateInstance(*m_platform));
+	ctx.InitDevice();
+
+	// Uploads are synchronous on the render thread, so they ride the graphics
+	// queue: a separate family would need queue-family ownership transfers on
+	// every image it writes, and the upload barriers name fragment stages a
+	// compute-only queue does not support. The rule is not MoltenVK's single
+	// family - it must hold on a device that has several.
+	EXPECT_EQ(ctx.transferQueueFamily(), ctx.graphicsQueueFamily());
+}

@@ -110,15 +110,16 @@ void VulkanContext::InitDevice()
 	ctx_graphicsQueueFamily = findGraphicsQueueFamily();
 	ctx_transferQueueFamily = findTransferQueueFamily();
 
+	NEURUS_LOG("[VulkanContext] uploads use the graphics queue family "
+	           << ctx_transferQueueFamily);
+
+	// One queue on purpose: uploads are synchronous on the render thread, so a
+	// second family for them buys no overlap, and the ownership transfers it
+	// would need are not recorded anywhere. A second DeviceQueueCreateInfo can
+	// no longer be reached.
 	float graphicsPriority = 1.0f;
 	std::vector<vk::DeviceQueueCreateInfo> queueCIs;
 	queueCIs.push_back(vk::DeviceQueueCreateInfo({}, ctx_graphicsQueueFamily, 1, &graphicsPriority));
-
-	if (ctx_transferQueueFamily != ctx_graphicsQueueFamily)
-	{
-		float transferPriority = 0.5f;
-		queueCIs.push_back(vk::DeviceQueueCreateInfo({}, ctx_transferQueueFamily, 1, &transferPriority));
-	}
 
 	vk::PhysicalDeviceMultiviewFeatures multiviewFeature;
 	multiviewFeature.multiview = VK_TRUE;
@@ -241,33 +242,18 @@ uint32_t VulkanContext::findGraphicsQueueFamilyWithPresent(const vk::raii::Surfa
 // findTransferQueueFamily
 // ---------------------------------------------------------------------------
 
+/**
+ * @brief The queue family uploads go through: the graphics family, always.
+ *
+ * Uploads run synchronously on the render thread, so a second queue buys no
+ * overlap: the copy is submitted and waited on inside the frame it belongs to,
+ * and the command buffer that consumes its result records graphics work. The
+ * separate-family path would also be wrong on its own terms - the images it
+ * writes are eExclusive with no queue-family ownership transfer recorded, and
+ * the upload barriers name fragment-shader stages a compute-only queue lacks.
+ */
 uint32_t VulkanContext::findTransferQueueFamily()
 {
-	auto& pd = ctx_physicalDevices[ctx_selectedDeviceIndex];
-	auto qf = pd.getQueueFamilyProperties();
-
-	// This queue carries UploadManager's staging copies AND the IBL convolution
-	// dispatches, so it must support compute: a transfer-only family would fail
-	// vkCmdDispatch. Prefer an async-compute family (compute + transfer, no
-	// graphics) so uploads stay off the graphics queue.
-	//
-	// Known gap: with a separate family, the images it writes are eExclusive
-	// and no queue-family ownership transfer is recorded, and the upload
-	// barriers name fragment-shader stages this queue does not support. Until
-	// both are fixed, only a device whose fallback below is taken (e.g.
-	// MoltenVK, a single family) is validation-clean.
-	const auto computeTransfer = vk::QueueFlagBits::eCompute | vk::QueueFlagBits::eTransfer;
-	for (uint32_t i = 0; i < (uint32_t)qf.size(); ++i)
-	{
-		if ((qf[i].queueFlags & computeTransfer) == computeTransfer &&
-		    !(qf[i].queueFlags & vk::QueueFlagBits::eGraphics))
-		{
-			return i;
-		}
-	}
-
-	// Fall back to the graphics family: a graphics family always supports
-	// compute and transfer.
 	return ctx_graphicsQueueFamily;
 }
 
