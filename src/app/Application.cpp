@@ -579,6 +579,16 @@ bool Application::IsDirty() const
 	return app_editor->IsDirty() || (app_mainWindow->ExportLayout() != app_savedUiState);
 }
 
+namespace
+{
+
+/// A tick that outruns a frame's budget at 60 FPS stalls the UI thread; logging
+/// it separates a hitch caused by main-thread work from one caused by waiting
+/// on the render thread.
+constexpr auto kSlowTickMs = std::chrono::milliseconds(20);
+
+} // anonymous namespace
+
 // =========================================================================
 // NewFrameSignals – render request + timer-driven loop
 // =========================================================================
@@ -588,6 +598,10 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	// --- Render request (manual frame trigger); the timer below drives it ---
 	QObject::connect(&uiEvents, &neurus::UIEvents::newFrame,
 	                 [this]() {
+	                     // The null check below does no work, so it is the only
+	                     // exit that skips the measurement without hiding cost.
+	                     const auto tickStart = std::chrono::steady_clock::now();
+
 	                     if (!app_renderThread || !app_editor)
 	                     {
 	                         return;
@@ -623,6 +637,13 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     ctx.log = &neurus::LogBuffer::instance();
 	                     ctx.history = &history;
 	                     app_mainWindow->Refresh(ctx);
+
+	                     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+	                         std::chrono::steady_clock::now() - tickStart);
+	                     if (elapsed > kSlowTickMs)
+	                     {
+	                         NEURUS_LOG("[Application] slow tick " << elapsed.count() << " ms");
+	                     }
 	                 });
 
 	// StartRenderLoop - timer-driven ~60 FPS render loop

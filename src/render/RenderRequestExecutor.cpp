@@ -18,6 +18,7 @@
 #include "asset/data/MeshData.h"
 #include "core/Log.h"
 
+#include <chrono>
 #include <utility>
 #include <variant>
 
@@ -127,10 +128,19 @@ void RenderRequestExecutor::handle(const UploadEnvironmentRequest& request)
 	// entry alive until their fences are seen signalled. That is why no drain is
 	// needed here. The upload that follows waits its own submit, so nothing else
 	// is touching the new cubemaps either.
+	//
+	// The bake runs synchronously on this thread, and nothing is drawn while it
+	// runs: the measured time is the viewport pause the request costs, not just
+	// a copy.
+	const auto bakeStart = std::chrono::steady_clock::now();
 	auto envGPU = m_uploader->UploadEnvironment(request.equirect);
+	// NEURUS_LOG drops its argument in Release, so the duration is only consumed
+	// by debug builds.
+	[[maybe_unused]] const auto bakeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now() - bakeStart);
 	m_cache.UseEnvironmentGPU(request.objectId, std::move(envGPU));
-	NEURUS_LOG("[RenderRequestExecutor] Uploaded EnvironmentGPU for objectId=" << request.objectId
-	           << " (regenerate=" << (request.regenerate ? "yes" : "no") << ")");
+	NEURUS_LOG("[RenderRequestExecutor] environment " << request.objectId << " uploaded in "
+	           << bakeMs.count() << " ms (regenerate=" << (request.regenerate ? "yes" : "no") << ")");
 }
 
 // ---------------------------------------------------------------------------
