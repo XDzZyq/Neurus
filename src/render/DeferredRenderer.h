@@ -255,25 +255,13 @@ public:
 	 * The only entry point the Editor uses to drive the renderer's GPU state:
 	 * upload a mesh, allocate a light's shadow maps, regenerate IBL, rewrite the
 	 * lighting SSBOs, warm a pipeline, drop the outgoing scene, reset
-	 * accumulation. Requests are executed FIFO at the top of DrawFrame (see
-	 * RenderRequests.h). Returns at once; nothing blocks the caller.
+	 * accumulation. Requests are executed FIFO by the next DrawFrame, after its
+	 * fence wait (see RenderRequests.h). Returns at once; nothing blocks the
+	 * caller, and a caller with no frame to draw simply leaves the request queued.
 	 *
 	 * @param request  The request; moved into the queue, never copied.
 	 */
 	void Post(RenderRequest&& request) override;
-
-	/**
-	 * @brief Drain the request queue and execute every pending request, FIFO.
-	 *
-	 * Called by DrawFrame after the frame-slot fence wait, but public so a test
-	 * or a non-drawing caller can flush the queue without a frame. Two kinds are
-	 * handled here because they write renderer state the executor does not own:
-	 * ResetAccumulationRequest and RedrawOverlaysRequest. Every other request
-	 * restarts accumulation (m_iteration = 0) before it is delegated to the
-	 * executor, so the next frame samples from scratch; that is the convergence
-	 * contract IFrameRenderer::NextWork() documents.
-	 */
-	void ProcessRequests() override;
 
 	/**
 	 * @brief Write the last presented image, or every attachment, to disk.
@@ -301,6 +289,23 @@ public:
 	void SetUploadManager(UploadManager* uploader);
 
 private:
+	/**
+	 * @brief Drain the request queue and execute every pending request, FIFO.
+	 *
+	 * DrawFrame calls this after its frame-slot fence wait, before it decides
+	 * what to draw; nothing else does. That single call site is the whole contract
+	 * - it is the only drain on the single-threaded path and on the render-thread
+	 * path alike, so a request can never execute outside a frame, and a fence
+	 * timeout leaves the queue intact for the next one.
+	 *
+	 * Two kinds are handled here because they write renderer state the executor
+	 * does not own: ResetAccumulationRequest and RedrawOverlaysRequest. Every
+	 * other request restarts accumulation (m_iteration = 0) before it is delegated
+	 * to the executor, so the next frame samples from scratch; that is the
+	 * convergence contract IFrameRenderer::NextWork() documents.
+	 */
+	void ProcessRequests();
+
 	/**
 	 * @brief Records one frame's work into a command buffer.
 	 *

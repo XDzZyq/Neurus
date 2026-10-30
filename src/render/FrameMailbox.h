@@ -1,16 +1,18 @@
 /**
  * @file FrameMailbox.h
- * @brief Latest-wins handoff of one RenderFrameSnapshot, plus a wake signal.
+ * @brief Latest-wins handoff of one PublishedFrame, plus a wake signal.
  *
  * A dedicated render thread and the Qt main thread do not run at the same rate,
  * and only one of the two is allowed to care. The main thread owns the Scene and
  * the event loop: if it ever waits on the GPU, the whole application stutters.
- * So the handoff is deliberately lossy in one direction - the producer always
- * returns immediately, and a frame that the renderer never got to is dropped
- * rather than queued.
+ * So the handoff of the SNAPSHOT is deliberately lossy in one direction - the
+ * producer always returns immediately, and a frame that the renderer never got
+ * to is dropped rather than queued. The requests are the other half: a request
+ * is a command, not a state, so none is ever dropped - the ones that rode a
+ * displaced frame are prepended to the next one.
  *
  * The render thread blocks here and nowhere else, so this is also where it must
- * learn about control messages (resize, surface change, upload requests) posted
+ * learn about control messages (resize, surface change, pick, screenshot) posted
  * while no frame is coming - a static viewport publishes nothing, yet a resize
  * still has to be serviced promptly. Two condition variables cannot be waited on
  * atomically and timed polling wastes an idle core, so the single wait gains a
@@ -18,12 +20,17 @@
  *
  * That is the whole design in one slot and a few flags:
  *
- * - **Publish never blocks and never grows.** One snapshot is pending at a time;
- *   a second Publish overwrites the first. A queue would turn a slow GPU into
- *   unbounded memory growth and, once bounded, into back-pressure on the UI.
- * - **A dropped frame is the correct outcome.** Snapshots are absolute state,
+ * - **Publish never blocks.** One frame is pending at a time; a second Publish
+ *   displaces the first. A queue of frames would turn a slow GPU into unbounded
+ *   memory growth and, once bounded, into back-pressure on the UI. The slot does
+ *   grow by the REQUESTS carried by a displaced frame, and by nothing else: a
+ *   request is a command, so a newer snapshot cannot make it redundant.
+ * - **A dropped snapshot is the correct outcome.** Snapshots are absolute state,
  *   not deltas, so the newest one makes every older one redundant - there is
- *   nothing to replay and nothing to reconcile.
+ *   nothing to replay and nothing to reconcile. Its requests are the exception:
+ *   Publish puts them in front of the frame it publishes, so they still execute,
+ *   in posting order, before that frame is drawn. Posting a request therefore
+ *   never loses it, however many publishes it outlives.
  * - **Acquire blocks instead of spinning.** With no stop, no wake and no frame
  *   pending the consumer waits on a condition variable, so an idle renderer
  *   costs no CPU.
@@ -41,20 +48,25 @@
  * - **Acquire asks for only as much as the consumer needs.** A consumer that is
  *   still accumulating can redraw the frame it already holds (Reuse) instead of
  *   waiting for a new one; a consumer that has nothing left to do parks until a
- *   control message arrives and ignores published frames entirely (Idle). Both
- *   fall back to Wait until a frame has been delivered once - before the first
- *   frame there is nothing to redraw and nothing to idle on - and again after
- *   Invalidate() dropped the held frame.
+ *   control message or a request arrives and otherwise ignores published frames
+ *   (Idle). Both fall back to Wait until a frame has been delivered once - before
+ *   the first frame there is nothing to redraw and nothing to idle on - and again
+ *   after Invalidate() dropped the held frame.
+ * - **Idle does not swallow requests.** A frame carrying requests is taken even
+ *   in Idle, because those requests have to execute; a frame carrying none is
+ *   still left in the slot, so a converged renderer does not wake for a publish
+ *   it has nothing to do with.
  * - **Invalidate() forbids drawing what is already in the slot.** A request may
  *   change what a frame means (a restarted accumulation must not sample a
  *   camera the request replaced), so a snapshot published before the request
- *   must never be drawn after it. Invalidate() drops the pending slot, raises
- *   the wake flag and forces the next Acquire to wait for a fresh Publish.
+ *   must never be drawn after it. Invalidate() drops the pending slot, keeps the
+ *   requests that rode it for the next Publish, raises the wake flag and forces
+ *   the next Acquire to wait for a fresh Publish.
  *
  * The canonical consumer loop:
  *
  * @code
- * RenderFrameSnapshot frame;                  // kept across iterations
+ * PublishedFrame frame;                       // kept across iterations
  * for (;;)
  * {
  *     DrainControl();                         // the owner's control queue
@@ -76,7 +88,7 @@
  * the semantics only make sense for one of each: two consumers would race for
  * one frame, and two producers would drop each other's.
  *
- * Vulkan-free and Qt-free: it only moves RenderFrameSnapshot values, so it is
+ * Vulkan-free and Qt-free: it only moves PublishedFrame values, so it is
  * usable from the render layer, and testable with no device at all.
  *
  * @note std::jthread / std::stop_token would express the stop handshake more
@@ -90,8 +102,9 @@
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <vector>
 
-#include "render/RenderFrameSnapshot.h"
+#include "render/PublishedFrame.h"
 
 namespace neurus
 {
@@ -114,7 +127,7 @@ enum class AcquireMode
 {
 	Wait,   ///< Block until a frame, a wake or a stop; a pending frame is taken.
 	Reuse,  ///< Take a pending frame, else return Repeat at once - never blocks.
-	Idle,   ///< Block until a wake or a stop only; a pending frame is left alone.
+	Idle,   ///< Block until a wake, a stop or a frame that carries requests; a plain frame is left alone.
 };
 
 /**
@@ -141,13 +154,18 @@ public:
 
 	/**
 	 * @brief Hand over a frame, replacing any frame not yet acquired.
-	 * @param snapshot  The frame; moved into the slot, never copied.
+	 * @param frame  The frame; moved into the slot, never copied.
 	 *
 	 * Called by the producer (main) thread. Returns without waiting for the
 	 * consumer, in every state - including after RequestStop(), where the frame
 	 * is simply never read.
+	 *
+	 * The snapshot may be dropped, the requests may not: a frame still in the
+	 * slot is displaced, and its requests are moved in front of @p frame 's own,
+	 * so nothing posted is lost and the posting order is preserved. That is the
+	 * one way the slot grows - by requests the renderer was too busy to take.
 	 */
-	void Publish(RenderFrameSnapshot&& snapshot);
+	void Publish(PublishedFrame&& frame);
 
 	/**
 	 * @brief Take the pending frame, or report why one is not being handed over.
@@ -157,7 +175,7 @@ public:
 	 *              with a frame it already holds. See AcquireMode.
 	 * @return Stopped if shutdown was requested (sticky, outranks all else),
 	 *         Interrupted if a wake is pending (outranks a pending frame and
-	 *         consumes the wake flag), Frame if a snapshot was handed over,
+	 *         consumes the wake flag), Frame if a frame was handed over,
 	 *         otherwise Repeat.
 	 *
 	 * Called by the consumer (render) thread. On Frame the slot is emptied, so
@@ -166,16 +184,17 @@ public:
 	 *
 	 * Wait blocks until a stop, a wake or a frame arrives. Reuse takes a pending
 	 * frame and otherwise returns Repeat immediately - it never blocks. Idle
-	 * blocks until a stop or a wake only, and leaves a pending frame in the slot
-	 * for the next call; a Publish() wakes it but its predicate rechecks and it
-	 * keeps waiting.
+	 * blocks until a stop, a wake or a frame that carries requests: it leaves a
+	 * request-free frame in the slot for the next call and keeps waiting, but it
+	 * takes one whose requests still have to execute, since ignoring that frame
+	 * would starve the requests it carries.
 	 *
 	 * @note Reuse and Idle behave exactly like Wait while no frame has been
 	 *       delivered yet, and until a fresh frame follows Invalidate(): there
 	 *       is nothing to redraw and nothing to idle on before the first frame,
 	 *       and a snapshot that predates a request must not be drawn after it.
 	 */
-	AcquireStatus Acquire(RenderFrameSnapshot& out, AcquireMode mode = AcquireMode::Wait);
+	AcquireStatus Acquire(PublishedFrame& out, AcquireMode mode = AcquireMode::Wait);
 
 	/**
 	 * @brief Raise the wake signal so a blocked Acquire() returns Interrupted.
@@ -199,9 +218,14 @@ public:
 	 * Callable from any thread. Use this instead of Wake() when a published
 	 * snapshot may no longer be drawn - typically right after posting a request
 	 * whose effect that snapshot predates. Drops any pending unconsumed frame,
-	 * raises the wake flag and clears the "a frame has been delivered" state, so
-	 * Reuse and Idle wait for the next Publish instead of redrawing a frame the
-	 * caller must no longer draw.
+	 * keeps the requests that rode it for the next Publish, raises the wake flag
+	 * and clears the "a frame has been delivered" state, so Reuse and Idle wait
+	 * for the next Publish instead of redrawing a frame the caller must no
+	 * longer draw.
+	 *
+	 * @note Requests survive the drop because they are the side of the handoff
+	 *       that cannot be made redundant: the request that prompted this call
+	 *       has to execute, and so do the ones queued behind it.
 	 *
 	 * @note Ordering contract for the owner, exactly as for Wake(): enqueue the
 	 *       control message or request FIRST, then call Invalidate().
@@ -223,7 +247,15 @@ private:
 	std::condition_variable m_cv;
 
 	/// @brief The single pending frame, if any. Guarded by m_mutex.
-	std::optional<RenderFrameSnapshot> m_slot;
+	std::optional<PublishedFrame> m_slot;
+
+	/**
+	 * @brief Requests whose frame never reached the render thread, FIFO.
+	 *
+	 * Filled when a Publish displaces a pending frame or an Invalidate drops one,
+	 * emptied into the front of the next frame Publish. Guarded by m_mutex.
+	 */
+	std::vector<RenderRequest> m_carried;
 
 	/// @brief Wake signal; outranks m_slot but not m_stop. Guarded by m_mutex.
 	bool m_wake = false;

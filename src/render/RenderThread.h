@@ -12,27 +12,31 @@
  * The loop, one iteration per wake:
  *
  * @code
- * RenderFrameSnapshot frame;               // kept across iterations
+ * PublishedFrame frame;                   // kept across iterations
  * for (;;)
  * {
- *     if (renderer.WaitForFrameSlot())     // GPU done with the previous frame
- *     {
- *         DrainControl();                  // resize, surface, pick, screenshot
- *         renderer.ProcessRequests();      // Editor requests: uploads, reset, ...
- *     }
+ *     if (renderer.WaitForFrameSlot())    // GPU done with the previous frame
+ *         DrainControl();                 // resize, surface, pick, screenshot
  *     const auto mode = ModeFor(renderer.NextWork());  // see NextWork
  *     const auto s = mailbox.Acquire(frame, mode);
- *     if (s == AcquireStatus::Stopped)     break;
+ *     if (s == AcquireStatus::Stopped)    break;
  *     if (s == AcquireStatus::Interrupted) continue;
- *     renderer.DrawFrame(frame);           // on Repeat, the frame already held
+ *     if (s == AcquireStatus::Frame)      // a Repeat frame carries nothing
+ *     {
+ *         for (auto& request : frame.requests)
+ *             renderer.Post(std::move(request));   // the tick's requests, FIFO
+ *         frame.requests.clear();         // a Reuse draw must not post them again
+ *     }
+ *     renderer.DrawFrame(frame);          // on Repeat, the frame already held
  * }
  * renderer.WaitIdle();
  * @endcode
  *
- * Why the fence wait comes first: a control message or request may replace or
- * read a resource the previous frame's submission still uses. Before the thread
- * existed this held because requests ran inside DrawFrame after its own fence
- * wait; an Interrupted iteration does not draw, so the loop waits itself.
+ * Why the fence wait comes first: a control message may replace or read a
+ * resource the previous frame's submission still uses, and a control is executed
+ * here, so an Interrupted iteration does not draw and the loop waits for the slot
+ * before draining. Requests need no such gate: the loop only queues them, and
+ * DrawFrame executes them after its own fence wait.
  *
  * Why the loop asks the renderer how much work is left before it waits: once
  * progressive accumulation has converged there is nothing to sample any more,
@@ -40,17 +44,19 @@
  * nothing. NextWork() answers what the next DrawFrame would do, and the answer
  * decides how long the thread blocks: Sample reuses the frame it holds (no new
  * snapshot needed for the remaining samples), Overlay and Retry wait for a new
- * one, Idle parks until a control message arrives and ignores publishes.
+ * one, Idle parks until a control message or a request-carrying frame arrives.
  *
- * Ordering guarantee (the reason Post() invalidates): a frame published after
- * a Post() is drawn only after that request executed. Post enqueues, then
- * Invalidate()s; Publish fills the slot afterwards; Acquire ranks a pending
- * wake above a pending frame, so the consumer drains once more before taking
- * the frame. Invalidate additionally drops any frame published before the
- * request - a snapshot of the pre-request camera must never be drawn once the
- * request restarted accumulation - so the thread waits for a fresh Publish
- * instead of redrawing its held frame. Skipping both "because a frame is about
- * to be published anyway" would let the stale frame be drawn first.
+ * Ordering guarantee (the reason a request is not posted straight to the
+ * renderer): a request is queued for the next Publish, which attaches it to the
+ * frame of the tick that posted it. The loop hands that frame's requests to the
+ * renderer before DrawFrame, and DrawFrame drains them before it draws, so a
+ * request never executes against a snapshot older than its own tick - nor does a
+ * frame ever draw before the requests that belong to it. Nothing is lost on the
+ * way: a frame displaced before the render thread acquired it, and one discarded
+ * by Invalidate() (a resize or a surface change restarts accumulation), leave
+ * their requests behind for the next publish. Only a request posted after a
+ * Publish waits for the following one, which is exactly the ordering Post() and
+ * Publish() establish under the posting lock.
  *
  * Lifetime: Start() once. Stop() is idempotent and the destructor calls it.
  * When the loop ends - stop or an escaped exception - the thread stops
@@ -68,6 +74,7 @@
 #include "FrameMailbox.h"
 #include "IFrameRenderer.h"
 #include "ProfilingData.h"
+#include "PublishedFrame.h"
 #include "RenderControl.h"
 #include "RenderFrameSnapshot.h"
 #include "RenderRequestSink.h"
@@ -80,6 +87,7 @@
 #include <future>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace neurus {
 
@@ -131,17 +139,20 @@ public:
 	/** @return True between Start() and the end of the loop. */
 	bool Running() const;
 
-	/** @brief Hand over the newest frame (latest-wins; never blocks). */
+	/**
+	 * @brief Hand over the newest frame, carrying the requests posted since the
+	 *        previous publish (latest-wins; never blocks).
+	 */
 	void Publish(RenderFrameSnapshot&& snapshot);
 
 	/**
-	 * @brief Enqueue an Editor request into the renderer, then invalidate the
-	 *        held frame and wake the thread.
+	 * @brief Queue an Editor request for the next published frame.
 	 *
-	 * Always invalidates, even when a frame is about to be published: a request
-	 * restarts accumulation or marks overlays stale, so a frame snapshotted
-	 * before it must not be drawn after it. See the ordering guarantee in the
-	 * file header.
+	 * Appends to the posting queue that Publish() moves into the frame it hands
+	 * over, so the request executes with the snapshot of the tick that posted it -
+	 * before that frame is drawn, and never with an older one. Neither wakes nor
+	 * invalidates anything: a request arriving between two publishes belongs to
+	 * the next one, and there is no frame yet to invalidate.
 	 */
 	void Post(RenderRequest&& request) override;
 
@@ -211,9 +222,18 @@ private:
 	RendererStatus     m_status;   ///< Guarded by m_statusMutex.
 
 	/// Render-thread-only: the frame being drawn; DrawFrame's context points at
-	/// it. On Repeat it keeps the last snapshot, which is what makes a Sample
-	/// redraw possible without a new publish.
-	RenderFrameSnapshot m_frame;
+	/// its snapshot. On Repeat it keeps the last one, which is what makes a Sample
+	/// redraw possible without a new publish. Its requests are handed over and
+	/// cleared on every Frame, so a Repeat draw posts none.
+	PublishedFrame m_frame;
+
+	/// Guards m_posted: Post() may run on any thread while Publish() takes the
+	/// queue from the main one.
+	std::mutex m_postMutex;
+
+	/// @brief Requests posted since the last Publish, in posting order; moved into
+	///        the frame Publish() hands over. Guarded by m_postMutex.
+	std::vector<RenderRequest> m_posted;
 
 	std::thread m_thread;
 	bool        m_started = false; ///< Main-thread-only.

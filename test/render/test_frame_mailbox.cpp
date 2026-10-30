@@ -21,6 +21,13 @@
  *      condition variable and every cross-thread wait is bounded, so a missing
  *      `notify` fails the test instead of hanging the suite.
  *
+ * The `requests` field carries the other half of the handoff, and it follows the
+ * opposite rule: a request is a command, so it is never dropped. A Publish that
+ * displaces a pending frame, and an Invalidate that drops one, keep that frame's
+ * requests and put them in front of the next published frame's own. Those rules,
+ * and Idle taking a frame that carries requests, are pinned in the last section
+ * below.
+ *
  * The render thread also blocks here and nowhere else, so Acquire() must be
  * interruptible: a Wake() posted while no frame is coming has to break the wait
  * and return Interrupted, outranking a pending frame but not a stop. Those three
@@ -36,11 +43,11 @@
  * including the rule that they fall back to Wait until a frame has actually been
  * delivered.
  *
- * `Publish` must also MOVE: a snapshot owns two vectors and two draw lists, so
- * a copy per frame is a per-frame allocation on the UI thread. That is pinned
- * by capturing `meshes.data()` before publishing and asserting the acquired
- * snapshot reports the same buffer address - true only if the vector's storage
- * was stolen rather than duplicated.
+ * `Publish` must also MOVE: a frame owns a snapshot of two vectors and two draw
+ * lists plus the request list, so a copy per frame is a per-frame allocation on
+ * the UI thread. That is pinned by capturing `meshes.data()` before publishing
+ * and asserting the acquired snapshot reports the same buffer address - true
+ * only if the vector's storage was stolen rather than duplicated.
  *
  * Threading is standard C++ only (std::thread + mutex + condition_variable and
  * std::promise/std::future), matching ThreadPool: AppleClang's libc++ ships no
@@ -50,7 +57,8 @@
 #include <gtest/gtest.h>
 
 #include "render/FrameMailbox.h"
-#include "render/RenderFrameSnapshot.h"
+#include "render/PublishedFrame.h"
+#include "render/RenderRequests.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -60,6 +68,7 @@
 #include <optional>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace neurus;
@@ -91,6 +100,57 @@ RenderFrameSnapshot MakeSnapshot(int id, size_t meshCount = 2)
 }
 
 /**
+ * @brief A publishable frame: the tagged snapshot plus the requests it carries.
+ * @param id          Snapshot tag; see MakeSnapshot.
+ * @param meshCount   Mesh entries in the snapshot.
+ * @param requests    Requests the publishing tick posted, in posting order.
+ */
+PublishedFrame MakeFrame(int id, size_t meshCount = 2, std::vector<RenderRequest> requests = {})
+{
+	PublishedFrame frame;
+	frame.snapshot = MakeSnapshot(id, meshCount);
+	frame.requests = std::move(requests);
+	return frame;
+}
+
+/**
+ * @brief The uids of the CreateLightGpuRequest values in a frame, in order.
+ *
+ * Requests carry no printable identity of their own, so the tests tag each one
+ * with a uid and read the sequence back - the only way to pin "these requests,
+ * in this order" rather than "some requests".
+ */
+std::vector<int> RequestUids(const PublishedFrame& frame)
+{
+	std::vector<int> uids;
+	for (const RenderRequest& request : frame.requests)
+	{
+		if (const auto* light = std::get_if<CreateLightGpuRequest>(&request))
+			uids.push_back(light->uid);
+	}
+	return uids;
+}
+
+/**
+ * @brief A CreateLightGpuRequest carrying @p uid, which the tests read back.
+ *
+ * Requests have no printable identity, so the uid is the witness for "this
+ * request, in this position" in the sequence assertions below.
+ */
+RenderRequest LightRequest(int uid)
+{
+	CreateLightGpuRequest request;
+	request.uid = uid;
+	return request;
+}
+
+/// @brief A frame carrying one CreateLightGpuRequest tagged @p uid.
+PublishedFrame MakeRequestFrame(int id, int uid)
+{
+	return MakeFrame(id, 2, {LightRequest(uid)});
+}
+
+/**
  * @brief Shared state for the two-thread tests, plus the mailbox under test.
  *
  * Held through a shared_ptr and captured by value by the consumer thread: a
@@ -110,6 +170,7 @@ struct Handoff
 	AcquireStatus               status       = AcquireStatus::Frame;  ///< What that Acquire() returned.
 	int                         acquiredId   = 0;        ///< activeObjectId it saw, on Frame.
 	const MeshInstanceSnapshot* acquiredData = nullptr;  ///< Its meshes buffer address, on Frame.
+	std::vector<int>            acquiredRequests;        ///< Uids of its CreateLightGpuRequests, on Frame.
 
 	/// Set before the consumer starts: which mode that single Acquire() asks for.
 	AcquireMode mode = AcquireMode::Wait;
@@ -131,6 +192,7 @@ struct Handoff
 		status       = AcquireStatus::Frame;
 		acquiredId   = 0;
 		acquiredData = nullptr;
+		acquiredRequests.clear();
 	}
 };
 
@@ -156,15 +218,18 @@ void ConsumeOneFrame(std::shared_ptr<Handoff> handoff)
 	}
 	handoff->cv.notify_all();
 
-	RenderFrameSnapshot frame;
+	PublishedFrame frame;
 	const AcquireStatus status = handoff->mailbox.Acquire(frame, handoff->mode);
 
 	{
 		std::lock_guard<std::mutex> lock(handoff->mutex);
 		handoff->status       = status;
-		handoff->acquiredId   = (status == AcquireStatus::Frame) ? frame.activeObjectId : 0;
-		handoff->acquiredData =
-			(status == AcquireStatus::Frame && !frame.meshes.empty()) ? frame.meshes.data() : nullptr;
+		handoff->acquiredId   = (status == AcquireStatus::Frame) ? frame.snapshot.activeObjectId : 0;
+		handoff->acquiredData = (status == AcquireStatus::Frame && !frame.snapshot.meshes.empty())
+		                            ? frame.snapshot.meshes.data()
+		                            : nullptr;
+		if (status == AcquireStatus::Frame)
+			handoff->acquiredRequests = RequestUids(frame);
 		handoff->finished = true;
 	}
 	handoff->cv.notify_all();
@@ -235,20 +300,20 @@ TEST(FrameMailboxTest, Publish_ReplacesTheUnconsumedFrameWithTheLatest)
 	// dropped 1 and 2 outright - which the second half proves by publishing a
 	// fourth frame and demanding *that* one, not a leftover.
 	FrameMailbox mailbox;
-	mailbox.Publish(MakeSnapshot(1));
-	mailbox.Publish(MakeSnapshot(2));
-	mailbox.Publish(MakeSnapshot(3));
+	mailbox.Publish(MakeFrame(1));
+	mailbox.Publish(MakeFrame(2));
+	mailbox.Publish(MakeFrame(3));
 
-	RenderFrameSnapshot newest;
+	PublishedFrame newest;
 	ASSERT_EQ(mailbox.Acquire(newest), AcquireStatus::Frame);
-	EXPECT_EQ(newest.activeObjectId, 3) << "Acquire must yield the newest frame, not a queued one";
-	ASSERT_EQ(newest.meshes.size(), 2u);
-	EXPECT_EQ(newest.meshes[0].objectId, 3000) << "payload must belong to frame 3";
+	EXPECT_EQ(newest.snapshot.activeObjectId, 3) << "Acquire must yield the newest frame, not a queued one";
+	ASSERT_EQ(newest.snapshot.meshes.size(), 2u);
+	EXPECT_EQ(newest.snapshot.meshes[0].objectId, 3000) << "payload must belong to frame 3";
 
-	mailbox.Publish(MakeSnapshot(4));
-	RenderFrameSnapshot after;
+	mailbox.Publish(MakeFrame(4));
+	PublishedFrame after;
 	ASSERT_EQ(mailbox.Acquire(after), AcquireStatus::Frame);
-	EXPECT_EQ(after.activeObjectId, 4) << "frames 1 and 2 must have been dropped, not backlogged";
+	EXPECT_EQ(after.snapshot.activeObjectId, 4) << "frames 1 and 2 must have been dropped, not backlogged";
 }
 
 TEST(FrameMailboxTest, Publish_LeavesNoFrameBehindAfterItIsConsumed)
@@ -257,16 +322,16 @@ TEST(FrameMailboxTest, Publish_LeavesNoFrameBehindAfterItIsConsumed)
 	// frame, publish a new one, and require the new id. An implementation that
 	// kept the consumed frame around would answer with the stale id.
 	FrameMailbox mailbox;
-	mailbox.Publish(MakeSnapshot(10));
+	mailbox.Publish(MakeFrame(10));
 
-	RenderFrameSnapshot first;
+	PublishedFrame first;
 	ASSERT_EQ(mailbox.Acquire(first), AcquireStatus::Frame);
-	EXPECT_EQ(first.activeObjectId, 10);
+	EXPECT_EQ(first.snapshot.activeObjectId, 10);
 
-	mailbox.Publish(MakeSnapshot(11));
-	RenderFrameSnapshot second;
+	mailbox.Publish(MakeFrame(11));
+	PublishedFrame second;
 	ASSERT_EQ(mailbox.Acquire(second), AcquireStatus::Frame);
-	EXPECT_EQ(second.activeObjectId, 11) << "the consumed frame must not be re-delivered";
+	EXPECT_EQ(second.snapshot.activeObjectId, 11) << "the consumed frame must not be re-delivered";
 }
 
 TEST(FrameMailboxTest, Acquire_EmptiesTheSlotSoAReplacedFrameIsGoneNotShadowed)
@@ -288,13 +353,13 @@ TEST(FrameMailboxTest, Acquire_EmptiesTheSlotSoAReplacedFrameIsGoneNotShadowed)
 	// parked. A fixed duration is justified here because it bounds "still
 	// blocked", a property with no event to wait on.
 	auto handoff = std::make_shared<Handoff>();
-	handoff->mailbox.Publish(MakeSnapshot(1));
-	handoff->mailbox.Publish(MakeSnapshot(2));
-	handoff->mailbox.Publish(MakeSnapshot(3));
+	handoff->mailbox.Publish(MakeFrame(1));
+	handoff->mailbox.Publish(MakeFrame(2));
+	handoff->mailbox.Publish(MakeFrame(3));
 
-	RenderFrameSnapshot newest;
+	PublishedFrame newest;
 	ASSERT_EQ(handoff->mailbox.Acquire(newest), AcquireStatus::Frame);
-	EXPECT_EQ(newest.activeObjectId, 3) << "the drain must return the newest frame";
+	EXPECT_EQ(newest.snapshot.activeObjectId, 3) << "the drain must return the newest frame";
 
 	std::thread consumer(ConsumeOneFrame, handoff);
 	ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->parked; }))
@@ -352,7 +417,7 @@ TEST(FrameMailboxTest, Publish_NeverBlocksWithNoConsumerInExistence)
 	{
 		for (int id = 1; id <= PUBLISH_COUNT; ++id)
 		{
-			mailbox->Publish(MakeSnapshot(id));
+			mailbox->Publish(MakeFrame(id));
 			++published;
 		}
 		{
@@ -377,9 +442,9 @@ TEST(FrameMailboxTest, Publish_NeverBlocksWithNoConsumerInExistence)
 	EXPECT_EQ(published, PUBLISH_COUNT) << "every Publish must have returned without a reader";
 	EXPECT_FALSE(mailbox->StopRequested()) << "publishing must not imply stop";
 
-	RenderFrameSnapshot frame;
+	PublishedFrame frame;
 	ASSERT_EQ(mailbox->Acquire(frame), AcquireStatus::Frame);
-	EXPECT_EQ(frame.activeObjectId, PUBLISH_COUNT) << "only the last of the 256 frames survives";
+	EXPECT_EQ(frame.snapshot.activeObjectId, PUBLISH_COUNT) << "only the last of the 256 frames survives";
 }
 
 // ============================================================================
@@ -388,54 +453,65 @@ TEST(FrameMailboxTest, Publish_NeverBlocksWithNoConsumerInExistence)
 
 TEST(FrameMailboxTest, Publish_MovesTheFrameInsteadOfCopyingIt)
 {
-	// A snapshot owns two vectors and two draw lists; copying one per frame is
-	// a per-frame allocation on the UI thread. Each owned buffer's address is
-	// the witness: it can only survive Publish -> slot -> Acquire unchanged if
-	// the storage was stolen at every step. A copy anywhere reallocates and the
-	// addresses differ. All four heavy members are witnessed, not just the two
-	// vectors: a future hand-written copy-assignment on RenderFrameSnapshot
-	// could regress debugDraw or gizmoDraw silently otherwise.
+	// A frame owns a snapshot of two vectors and two draw lists, plus the request
+	// list; copying one per frame is a per-frame allocation on the UI thread. Each
+	// owned buffer's address is the witness: it can only survive Publish -> slot ->
+	// Acquire unchanged if the storage was stolen at every step. A copy anywhere
+	// reallocates and the addresses differ. All five heavy members are witnessed,
+	// not just the two vectors: a future hand-written copy-assignment on
+	// RenderFrameSnapshot could regress debugDraw, gizmoDraw or the requests
+	// silently otherwise.
 	FrameMailbox mailbox;
 
-	RenderFrameSnapshot snapshot = MakeSnapshot(21, 4);
-	snapshot.lights.push_back(LightSnapshot{});
-	snapshot.debugDraw.segments.push_back(DebugSegment{});
-	snapshot.gizmoDraw.segments.push_back(OverlaySegment{});
-	const MeshInstanceSnapshot* meshes     = snapshot.meshes.data();
-	const LightSnapshot*        lights     = snapshot.lights.data();
-	const DebugSegment*         debugSegs  = snapshot.debugDraw.segments.data();
-	const OverlaySegment*       gizmoSegs  = snapshot.gizmoDraw.segments.data();
+	PublishedFrame frame = MakeFrame(21, 4);
+	frame.snapshot.lights.push_back(LightSnapshot{});
+	frame.snapshot.debugDraw.segments.push_back(DebugSegment{});
+	frame.snapshot.gizmoDraw.segments.push_back(OverlaySegment{});
+	CreateLightGpuRequest request;
+	request.uid = 7;
+	frame.requests.push_back(request);
+
+	const MeshInstanceSnapshot* meshes    = frame.snapshot.meshes.data();
+	const LightSnapshot*        lights    = frame.snapshot.lights.data();
+	const DebugSegment*         debugSegs = frame.snapshot.debugDraw.segments.data();
+	const OverlaySegment*       gizmoSegs = frame.snapshot.gizmoDraw.segments.data();
+	const RenderRequest*        requests  = frame.requests.data();
 	ASSERT_NE(meshes, nullptr);
 	ASSERT_NE(lights, nullptr);
 	ASSERT_NE(debugSegs, nullptr);
 	ASSERT_NE(gizmoSegs, nullptr);
+	ASSERT_NE(requests, nullptr);
 
-	mailbox.Publish(std::move(snapshot));
+	mailbox.Publish(std::move(frame));
 
-	RenderFrameSnapshot acquired;
+	PublishedFrame acquired;
 	ASSERT_EQ(mailbox.Acquire(acquired), AcquireStatus::Frame);
-	EXPECT_EQ(acquired.activeObjectId, 21);
-	EXPECT_EQ(acquired.meshes.data(), meshes) << "mesh storage was copied, not moved";
-	EXPECT_EQ(acquired.lights.data(), lights) << "light storage was copied, not moved";
-	EXPECT_EQ(acquired.debugDraw.segments.data(), debugSegs) << "debug segment storage was copied, not moved";
-	EXPECT_EQ(acquired.gizmoDraw.segments.data(), gizmoSegs) << "gizmo segment storage was copied, not moved";
+	EXPECT_EQ(acquired.snapshot.activeObjectId, 21);
+	EXPECT_EQ(acquired.snapshot.meshes.data(), meshes) << "mesh storage was copied, not moved";
+	EXPECT_EQ(acquired.snapshot.lights.data(), lights) << "light storage was copied, not moved";
+	EXPECT_EQ(acquired.snapshot.debugDraw.segments.data(), debugSegs)
+		<< "debug segment storage was copied, not moved";
+	EXPECT_EQ(acquired.snapshot.gizmoDraw.segments.data(), gizmoSegs)
+		<< "gizmo segment storage was copied, not moved";
+	EXPECT_EQ(acquired.requests.data(), requests) << "request storage was copied, not moved";
+	EXPECT_EQ(RequestUids(acquired), std::vector<int>{7}) << "the request itself must survive too";
 }
 
 TEST(FrameMailboxTest, Publish_MovesTheReplacementFrameToo)
 {
 	// Latest-wins must not quietly turn into a copy on the replacement path.
 	FrameMailbox mailbox;
-	mailbox.Publish(MakeSnapshot(30, 3));
+	mailbox.Publish(MakeFrame(30, 3));
 
-	RenderFrameSnapshot         replacement = MakeSnapshot(31, 3);
-	const MeshInstanceSnapshot* meshes      = replacement.meshes.data();
+	PublishedFrame              replacement = MakeFrame(31, 3);
+	const MeshInstanceSnapshot* meshes      = replacement.snapshot.meshes.data();
 	ASSERT_NE(meshes, nullptr);
 	mailbox.Publish(std::move(replacement));
 
-	RenderFrameSnapshot acquired;
+	PublishedFrame acquired;
 	ASSERT_EQ(mailbox.Acquire(acquired), AcquireStatus::Frame);
-	EXPECT_EQ(acquired.activeObjectId, 31) << "the replacement must win";
-	EXPECT_EQ(acquired.meshes.data(), meshes) << "replacement storage was copied, not moved";
+	EXPECT_EQ(acquired.snapshot.activeObjectId, 31) << "the replacement must win";
+	EXPECT_EQ(acquired.snapshot.meshes.data(), meshes) << "replacement storage was copied, not moved";
 }
 
 // ============================================================================
@@ -462,7 +538,7 @@ TEST(FrameMailboxTest, Acquire_ReturnsStoppedImmediatelyWhenStopCameFirst)
 	FrameMailbox mailbox;
 	mailbox.RequestStop();
 
-	RenderFrameSnapshot out;
+	PublishedFrame out;
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Stopped);
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Stopped) << "stop is sticky, not one-shot";
 }
@@ -474,12 +550,12 @@ TEST(FrameMailboxTest, RequestStop_DiscardsAFramePublishedBeforeIt)
 	// out. Pinned here because the opposite choice (drain, then stop) is equally
 	// plausible to a reader. `out` must stay untouched when stop wins.
 	FrameMailbox mailbox;
-	mailbox.Publish(MakeSnapshot(40));
+	mailbox.Publish(MakeFrame(40));
 	mailbox.RequestStop();
 
-	RenderFrameSnapshot out = MakeSnapshot(-1);
+	PublishedFrame out = MakeFrame(-1);
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Stopped) << "stop must outrank the pending frame";
-	EXPECT_EQ(out.activeObjectId, -1) << "out must be untouched when Acquire returns Stopped";
+	EXPECT_EQ(out.snapshot.activeObjectId, -1) << "out must be untouched when Acquire returns Stopped";
 }
 
 TEST(FrameMailboxTest, Stop_OutranksAPendingWakeAndAPendingFrameAndStaysStopped)
@@ -490,10 +566,10 @@ TEST(FrameMailboxTest, Stop_OutranksAPendingWakeAndAPendingFrameAndStaysStopped)
 	// sticky even while a wake and a frame sit unconsumed behind it.
 	FrameMailbox mailbox;
 	mailbox.Wake();
-	mailbox.Publish(MakeSnapshot(70));
+	mailbox.Publish(MakeFrame(70));
 	mailbox.RequestStop();
 
-	RenderFrameSnapshot out;
+	PublishedFrame out;
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Stopped)
 		<< "stop outranks both a pending wake and a pending frame";
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Stopped)
@@ -508,7 +584,7 @@ TEST(FrameMailboxTest, WakeAfterRequestStop_StillReturnsStopped)
 	mailbox.RequestStop();
 	mailbox.Wake();
 
-	RenderFrameSnapshot out;
+	PublishedFrame out;
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Stopped) << "stop outranks a wake raised after it";
 }
 
@@ -524,11 +600,11 @@ TEST(FrameMailboxTest, Wake_WithNoFrameReturnsInterruptedAndLeavesOutUntouched)
 	FrameMailbox mailbox;
 	mailbox.Wake();
 
-	RenderFrameSnapshot         out    = MakeSnapshot(99, 3);
-	const MeshInstanceSnapshot* before = out.meshes.data();
+	PublishedFrame              out    = MakeFrame(99, 3);
+	const MeshInstanceSnapshot* before = out.snapshot.meshes.data();
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Interrupted) << "a pending wake interrupts Acquire";
-	EXPECT_EQ(out.activeObjectId, 99) << "out must be untouched on Interrupted";
-	EXPECT_EQ(out.meshes.data(), before) << "out storage must be untouched on Interrupted";
+	EXPECT_EQ(out.snapshot.activeObjectId, 99) << "out must be untouched on Interrupted";
+	EXPECT_EQ(out.snapshot.meshes.data(), before) << "out storage must be untouched on Interrupted";
 }
 
 TEST(FrameMailboxTest, WakeThenPublish_YieldsInterruptedFirstThenTheFrame)
@@ -538,15 +614,15 @@ TEST(FrameMailboxTest, WakeThenPublish_YieldsInterruptedFirstThenTheFrame)
 	// interrupt to be delivered on the very next Acquire.
 	FrameMailbox mailbox;
 	mailbox.Wake();
-	mailbox.Publish(MakeSnapshot(50));
+	mailbox.Publish(MakeFrame(50));
 
-	RenderFrameSnapshot out;
+	PublishedFrame out;
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Interrupted)
 		<< "a pending wake outranks the pending frame";
 
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Frame)
 		<< "the frame survives the interrupt and is delivered next";
-	EXPECT_EQ(out.activeObjectId, 50) << "the frame left in the slot must be the published one";
+	EXPECT_EQ(out.snapshot.activeObjectId, 50) << "the frame left in the slot must be the published one";
 }
 
 TEST(FrameMailboxTest, MultipleWakesCoalesceIntoASingleInterrupt)
@@ -562,13 +638,13 @@ TEST(FrameMailboxTest, MultipleWakesCoalesceIntoASingleInterrupt)
 	mailbox.Wake();
 	mailbox.Wake();
 
-	RenderFrameSnapshot out;
+	PublishedFrame out;
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Interrupted) << "three wakes collapse to one interrupt";
 
-	mailbox.Publish(MakeSnapshot(60));
+	mailbox.Publish(MakeFrame(60));
 	EXPECT_EQ(mailbox.Acquire(out), AcquireStatus::Frame)
 		<< "a second wake must not have survived the first Interrupted";
-	EXPECT_EQ(out.activeObjectId, 60);
+	EXPECT_EQ(out.snapshot.activeObjectId, 60);
 }
 
 // ============================================================================
@@ -631,8 +707,8 @@ TEST(FrameMailboxTest, Publish_WakesAnAcquireThatIsAlreadyBlockedAndHandsOverTha
 		}
 		LetConsumerReachTheWait();
 
-		RenderFrameSnapshot         frame  = MakeSnapshot(77, 3);
-		const MeshInstanceSnapshot* meshes = frame.meshes.data();
+		PublishedFrame              frame  = MakeFrame(77, 3);
+		const MeshInstanceSnapshot* meshes = frame.snapshot.meshes.data();
 		handoff->mailbox.Publish(std::move(frame));
 
 		if (!WaitUntil(*handoff, [&] { return handoff->finished; }))
@@ -665,7 +741,7 @@ TEST(FrameMailboxTest, Wake_WakesAConsumerBlockedInAcquireOnAnotherThread)
 
 	std::thread consumer([&]
 	{
-		RenderFrameSnapshot frame;
+		PublishedFrame frame;
 		result.set_value(mailbox.Acquire(frame));
 	});
 
@@ -708,7 +784,7 @@ TEST(FrameMailboxTest, EnqueueThenWake_IsSeenByTheConsumerDrainingOnInterrupted)
 	{
 		for (;;)
 		{
-			RenderFrameSnapshot frame;
+			PublishedFrame frame;
 			const AcquireStatus s = mailbox.Acquire(frame);
 			if (s == AcquireStatus::Stopped)
 			{
@@ -774,7 +850,7 @@ TEST(FrameMailboxTest, Acquire_NeverYieldsAFrameOlderThanOneAlreadyConsumed)
 	{
 		for (;;)
 		{
-			RenderFrameSnapshot frame;
+			PublishedFrame frame;
 			const AcquireStatus s = mailbox->Acquire(frame);
 			if (s == AcquireStatus::Stopped)
 				break;
@@ -782,7 +858,7 @@ TEST(FrameMailboxTest, Acquire_NeverYieldsAFrameOlderThanOneAlreadyConsumed)
 				continue;
 			{
 				std::lock_guard<std::mutex> lock(mutex);
-				received.push_back(frame.activeObjectId);
+				received.push_back(frame.snapshot.activeObjectId);
 			}
 			cv.notify_all();
 		}
@@ -791,7 +867,7 @@ TEST(FrameMailboxTest, Acquire_NeverYieldsAFrameOlderThanOneAlreadyConsumed)
 	// Hand over one frame and wait for it, so the run below cannot finish
 	// before the consumer has started and leave nothing to check.
 	constexpr int PUBLISH_COUNT = 500;
-	mailbox->Publish(MakeSnapshot(1));
+	mailbox->Publish(MakeFrame(1));
 	bool started = false;
 	{
 		std::unique_lock<std::mutex> lock(mutex);
@@ -805,7 +881,7 @@ TEST(FrameMailboxTest, Acquire_NeverYieldsAFrameOlderThanOneAlreadyConsumed)
 	}
 
 	for (int id = 2; id <= PUBLISH_COUNT; ++id)
-		mailbox->Publish(MakeSnapshot(id));
+		mailbox->Publish(MakeFrame(id));
 
 	mailbox->RequestStop();
 	consumer.join();
@@ -832,18 +908,18 @@ TEST(FrameMailboxTest, Acquire_ReuseReturnsRepeatWithoutBlockingWhenNoFrameIsPen
 	// would never get here, since the slot is empty and nobody will publish.
 	FrameMailbox mailbox;
 
-	mailbox.Publish(MakeSnapshot(1));
-	RenderFrameSnapshot held;
+	mailbox.Publish(MakeFrame(1));
+	PublishedFrame held;
 	ASSERT_EQ(mailbox.Acquire(held, AcquireMode::Reuse), AcquireStatus::Frame)
 		<< "the first Reuse has no frame to repeat, so it must wait for one";
-	EXPECT_EQ(held.activeObjectId, 1);
+	EXPECT_EQ(held.snapshot.activeObjectId, 1);
 
-	RenderFrameSnapshot         probe  = MakeSnapshot(-1, 3);
-	const MeshInstanceSnapshot* before = probe.meshes.data();
+	PublishedFrame              probe  = MakeFrame(-1, 3);
+	const MeshInstanceSnapshot* before = probe.snapshot.meshes.data();
 	EXPECT_EQ(mailbox.Acquire(probe, AcquireMode::Reuse), AcquireStatus::Repeat)
 		<< "an empty slot must yield Repeat, not a block and not a stale frame";
-	EXPECT_EQ(probe.activeObjectId, -1) << "out must be untouched on Repeat";
-	EXPECT_EQ(probe.meshes.data(), before) << "out storage must be untouched on Repeat";
+	EXPECT_EQ(probe.snapshot.activeObjectId, -1) << "out must be untouched on Repeat";
+	EXPECT_EQ(probe.snapshot.meshes.data(), before) << "out storage must be untouched on Repeat";
 }
 
 TEST(FrameMailboxTest, Acquire_ReuseTakesAPendingFrameInsteadOfRepeating)
@@ -851,15 +927,15 @@ TEST(FrameMailboxTest, Acquire_ReuseTakesAPendingFrameInsteadOfRepeating)
 	// Reuse is not "ignore the producer": a frame that is actually there is
 	// taken, which is what lets accumulation follow a camera that moved.
 	FrameMailbox mailbox;
-	mailbox.Publish(MakeSnapshot(2));
-	RenderFrameSnapshot first;
+	mailbox.Publish(MakeFrame(2));
+	PublishedFrame first;
 	ASSERT_EQ(mailbox.Acquire(first), AcquireStatus::Frame);
 
-	mailbox.Publish(MakeSnapshot(3));
-	RenderFrameSnapshot second;
+	mailbox.Publish(MakeFrame(3));
+	PublishedFrame second;
 	ASSERT_EQ(mailbox.Acquire(second, AcquireMode::Reuse), AcquireStatus::Frame)
 		<< "Reuse must take a pending frame rather than repeat the held one";
-	EXPECT_EQ(second.activeObjectId, 3);
+	EXPECT_EQ(second.snapshot.activeObjectId, 3);
 
 	EXPECT_EQ(mailbox.Acquire(second, AcquireMode::Reuse), AcquireStatus::Repeat)
 		<< "the delivery emptied the slot, so the next Reuse repeats";
@@ -881,7 +957,7 @@ TEST(FrameMailboxTest, Acquire_ReuseAndIdleWaitForTheVeryFirstFrame)
 		EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
 			<< "mode " << static_cast<int>(mode) << " returned before any frame existed";
 
-		handoff->mailbox.Publish(MakeSnapshot(4));
+		handoff->mailbox.Publish(MakeFrame(4));
 		ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
 			<< "the first Publish did not release mode " << static_cast<int>(mode);
 		consumer.join();
@@ -908,14 +984,14 @@ TEST(FrameMailboxTest, Acquire_IdleIgnoresAPublishAndYieldsToAWake)
 
 	// Seed the mailbox the consumer actually uses: until it has delivered a
 	// frame, needFresh makes Idle behave like Wait.
-	handoff->mailbox.Publish(MakeSnapshot(1));
-	RenderFrameSnapshot first;
+	handoff->mailbox.Publish(MakeFrame(1));
+	PublishedFrame first;
 	ASSERT_EQ(handoff->mailbox.Acquire(first), AcquireStatus::Frame) << "seed the held-frame state";
 
 	std::thread consumer;
 	ASSERT_TRUE(StartAndPark(consumer, handoff)) << "consumer never announced itself";
 
-	handoff->mailbox.Publish(MakeSnapshot(2));
+	handoff->mailbox.Publish(MakeFrame(2));
 	EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
 		<< "a Publish must not end an Idle wait";
 
@@ -927,10 +1003,10 @@ TEST(FrameMailboxTest, Acquire_IdleIgnoresAPublishAndYieldsToAWake)
 	EXPECT_EQ(handoff->status, AcquireStatus::Interrupted) << "an Idle wait ends on Wake, not on a frame";
 	EXPECT_EQ(handoff->acquiredId, 0) << "Idle must never take a frame";
 
-	RenderFrameSnapshot kept;
+	PublishedFrame kept;
 	ASSERT_EQ(handoff->mailbox.Acquire(kept), AcquireStatus::Frame)
 		<< "the published frame must still be in the slot for the next Wait";
-	EXPECT_EQ(kept.activeObjectId, 2) << "Idle consumed the frame it was not going to draw";
+	EXPECT_EQ(kept.snapshot.activeObjectId, 2) << "Idle consumed the frame it was not going to draw";
 }
 
 TEST(FrameMailboxTest, Acquire_IdleReturnsStoppedWhenStopIsRequested)
@@ -941,8 +1017,8 @@ TEST(FrameMailboxTest, Acquire_IdleReturnsStoppedWhenStopIsRequested)
 	// Wait that a mailbox with no frame yet gets.
 	auto handoff = std::make_shared<Handoff>();
 
-	handoff->mailbox.Publish(MakeSnapshot(1));
-	RenderFrameSnapshot first;
+	handoff->mailbox.Publish(MakeFrame(1));
+	PublishedFrame first;
 	ASSERT_EQ(handoff->mailbox.Acquire(first), AcquireStatus::Frame) << "seed the held-frame state";
 
 	handoff->mode = AcquireMode::Idle;
@@ -976,13 +1052,13 @@ TEST(FrameMailboxTest, Invalidate_DropsThePendingFrameSoOnlyALaterPublishIsDrawn
 	// nothing about the drop.
 	auto handoff = std::make_shared<Handoff>();
 
-	handoff->mailbox.Publish(MakeSnapshot(1));
+	handoff->mailbox.Publish(MakeFrame(1));
 	handoff->mailbox.Invalidate();
 
-	RenderFrameSnapshot out = MakeSnapshot(-1);
+	PublishedFrame out = MakeFrame(-1);
 	EXPECT_EQ(handoff->mailbox.Acquire(out), AcquireStatus::Interrupted)
 		<< "Invalidate must raise the wake so the request runs before any draw";
-	EXPECT_EQ(out.activeObjectId, -1) << "out must be untouched on Interrupted";
+	EXPECT_EQ(out.snapshot.activeObjectId, -1) << "out must be untouched on Interrupted";
 
 	// The dropped frame must be gone: a waiter on the same mailbox now has
 	// nothing to take. Had the stale slot survived, this Acquire would return
@@ -992,7 +1068,7 @@ TEST(FrameMailboxTest, Invalidate_DropsThePendingFrameSoOnlyALaterPublishIsDrawn
 	EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
 		<< "the pre-Invalidate frame was still deliverable";
 
-	handoff->mailbox.Publish(MakeSnapshot(2));
+	handoff->mailbox.Publish(MakeFrame(2));
 	ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
 		<< "the frame published after Invalidate was never delivered";
 	consumer.join();
@@ -1012,8 +1088,8 @@ TEST(FrameMailboxTest, Invalidate_ForcesReuseAndIdleToWaitForAFreshFrame)
 	// would block merely because it has never seen a frame.
 	auto handoff = std::make_shared<Handoff>();
 
-	handoff->mailbox.Publish(MakeSnapshot(1));
-	RenderFrameSnapshot held;
+	handoff->mailbox.Publish(MakeFrame(1));
+	PublishedFrame held;
 	ASSERT_EQ(handoff->mailbox.Acquire(held, AcquireMode::Reuse), AcquireStatus::Frame);
 	ASSERT_EQ(handoff->mailbox.Acquire(held, AcquireMode::Reuse), AcquireStatus::Repeat)
 		<< "baseline: Reuse repeats rather than blocking";
@@ -1031,7 +1107,7 @@ TEST(FrameMailboxTest, Invalidate_ForcesReuseAndIdleToWaitForAFreshFrame)
 		EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
 			<< "Reuse repeated a frame that predates Invalidate";
 
-		handoff->mailbox.Publish(MakeSnapshot(2));
+		handoff->mailbox.Publish(MakeFrame(2));
 		ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
 			<< "the fresh frame never reached the Reuse consumer";
 		consumer.join();
@@ -1053,7 +1129,7 @@ TEST(FrameMailboxTest, Invalidate_ForcesReuseAndIdleToWaitForAFreshFrame)
 		EXPECT_FALSE(FinishedWithin(*handoff, BLOCKED_PROBE_LIMIT))
 			<< "Idle returned before the fresh frame existed";
 
-		handoff->mailbox.Publish(MakeSnapshot(3));
+		handoff->mailbox.Publish(MakeFrame(3));
 		ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
 			<< "the fresh frame never reached the Idle consumer";
 		consumer.join();
@@ -1068,16 +1144,115 @@ TEST(FrameMailboxTest, Invalidate_StopStillOutranksEverything)
 	// Invalidate sets two flags at once; neither may shield a stopped mailbox.
 	// Every mode must still answer Stopped, and out must stay untouched.
 	FrameMailbox mailbox;
-	mailbox.Publish(MakeSnapshot(1));
+	mailbox.Publish(MakeFrame(1));
 	mailbox.Invalidate();
-	mailbox.Publish(MakeSnapshot(2));  // a fresh frame is pending
+	mailbox.Publish(MakeFrame(2));  // a fresh frame is pending
 	mailbox.RequestStop();
 
 	for (AcquireMode mode : {AcquireMode::Wait, AcquireMode::Reuse, AcquireMode::Idle})
 	{
-		RenderFrameSnapshot out = MakeSnapshot(-1);
+		PublishedFrame out = MakeFrame(-1);
 		EXPECT_EQ(mailbox.Acquire(out, mode), AcquireStatus::Stopped)
 			<< "stop must outrank the fresh-frame requirement (mode " << static_cast<int>(mode) << ")";
-		EXPECT_EQ(out.activeObjectId, -1) << "out must be untouched when Acquire returns Stopped";
+		EXPECT_EQ(out.snapshot.activeObjectId, -1) << "out must be untouched when Acquire returns Stopped";
 	}
+}
+
+// ============================================================================
+// Requests travel with the frame
+//
+// A snapshot is state and may be dropped when a newer one arrives; a request is
+// a command and may not. These pin that split: the snapshot half of a displaced
+// or invalidated frame is gone, its requests are not, and they still run in
+// posting order before the frame that replaced them.
+// ============================================================================
+
+TEST(FrameMailboxTest, Publish_PrependsTheDisplacedFramesRequestsInOrder)
+{
+	// Two frames published with nobody acquiring: the first is displaced. Its
+	// snapshot must be replaced, but its requests must survive - in front of the
+	// second frame's own, because they were posted first. A mailbox that dropped
+	// them loses an upload; one that appended them behind the newer requests
+	// executes a drop after the upload that belongs to the new scene.
+	FrameMailbox mailbox;
+	mailbox.Publish(MakeFrame(1, 2, {LightRequest(1), LightRequest(2)}));
+	mailbox.Publish(MakeFrame(2, 2, {LightRequest(3)}));
+
+	PublishedFrame out;
+	ASSERT_EQ(mailbox.Acquire(out), AcquireStatus::Frame);
+	EXPECT_EQ(out.snapshot.activeObjectId, 2) << "the newest snapshot must be the one delivered";
+	EXPECT_EQ(RequestUids(out), (std::vector<int>{1, 2, 3}))
+		<< "the displaced frame's requests must precede the newest frame's own, in posting order";
+}
+
+TEST(FrameMailboxTest, Publish_AfterAcquireCarriesNothingForward)
+{
+	// The carried list must be emptied by the Publish that hands it over, and a
+	// frame that WAS acquired leaves nothing behind either: its requests were
+	// consumed with it. A mailbox that kept them would run every request twice.
+	FrameMailbox mailbox;
+	mailbox.Publish(MakeRequestFrame(1, 1));
+
+	PublishedFrame first;
+	ASSERT_EQ(mailbox.Acquire(first), AcquireStatus::Frame);
+	EXPECT_EQ(RequestUids(first), std::vector<int>{1});
+
+	mailbox.Publish(MakeRequestFrame(2, 2));
+	PublishedFrame second;
+	ASSERT_EQ(mailbox.Acquire(second), AcquireStatus::Frame);
+	EXPECT_EQ(second.snapshot.activeObjectId, 2);
+	EXPECT_EQ(RequestUids(second), std::vector<int>{2})
+		<< "request 1 already travelled with the acquired frame and must not repeat";
+}
+
+TEST(FrameMailboxTest, Invalidate_KeepsTheDroppedFramesRequestsForTheNextPublish)
+{
+	// Invalidate drops a snapshot whose camera a request just replaced. The
+	// requests riding that snapshot are unrelated to the drop and must still run:
+	// they are queued behind the very request that prompted the invalidate. They
+	// go in front of the next frame's own requests when it is published.
+	FrameMailbox mailbox;
+	mailbox.Publish(MakeRequestFrame(1, 1));
+	mailbox.Invalidate();
+
+	PublishedFrame interrupted = MakeFrame(-1);
+	EXPECT_EQ(mailbox.Acquire(interrupted), AcquireStatus::Interrupted)
+		<< "Invalidate raises the wake so the request runs before any draw";
+	EXPECT_EQ(interrupted.snapshot.activeObjectId, -1) << "out must be untouched on Interrupted";
+
+	mailbox.Publish(MakeRequestFrame(2, 2));
+	PublishedFrame out;
+	ASSERT_EQ(mailbox.Acquire(out), AcquireStatus::Frame);
+	EXPECT_EQ(out.snapshot.activeObjectId, 2) << "only a frame published after Invalidate may be drawn";
+	EXPECT_EQ(RequestUids(out), (std::vector<int>{1, 2}))
+		<< "the invalidated frame's request must run before the frame that replaced it";
+}
+
+TEST(FrameMailboxTest, Idle_TakesAFrameThatCarriesRequests)
+{
+	// A converged renderer parks in Idle and ignores publishes - but not one that
+	// carries requests: those have to execute, and no later publish is coming to
+	// carry them (a static viewport publishes only when something changed). The
+	// frame is delivered without any wake, which is what proves the predicate
+	// takes a request-carrying slot rather than merely not blocking.
+	auto handoff  = std::make_shared<Handoff>();
+	handoff->mode = AcquireMode::Idle;
+
+	// Seed a delivered frame first, so this really is Idle and not the fallback to
+	// Wait that a mailbox with no frame yet gets.
+	handoff->mailbox.Publish(MakeFrame(1));
+	PublishedFrame seed;
+	ASSERT_EQ(handoff->mailbox.Acquire(seed), AcquireStatus::Frame) << "seed the held-frame state";
+
+	std::thread consumer;
+	ASSERT_TRUE(StartAndPark(consumer, handoff)) << "consumer never announced itself";
+
+	handoff->mailbox.Publish(MakeRequestFrame(5, 42));
+	ASSERT_TRUE(WaitUntil(*handoff, [&] { return handoff->finished; }))
+		<< "Idle left a frame carrying requests in the slot, so they never ran";
+	consumer.join();
+
+	EXPECT_EQ(handoff->status, AcquireStatus::Frame) << "a request-carrying frame must end an Idle wait";
+	EXPECT_EQ(handoff->acquiredId, 5);
+	EXPECT_EQ(handoff->acquiredRequests, std::vector<int>{42}) << "the requests must travel with it";
 }

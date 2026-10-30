@@ -11,9 +11,10 @@
  * is thread-safe on its own; RenderThread is what serialises them.
  *
  * Call-order contract RenderThread honours, and an implementation may rely on:
- * HandleResize, HandleSurfaceChange, ReadIDBufferPixel, CaptureScreenshot and
- * ProcessRequests are only called after WaitForFrameSlot() returned true, i.e.
- * when the GPU no longer uses anything the previous frame submitted.
+ * HandleResize, HandleSurfaceChange, ReadIDBufferPixel and CaptureScreenshot are
+ * only called after WaitForFrameSlot() returned true, i.e. when the GPU no
+ * longer uses anything the previous frame submitted. Post() is the exception: it
+ * may arrive at any time, from any thread.
  */
 
 #pragma once
@@ -47,6 +48,8 @@ enum class FrameWork
  *
  * Post() (inherited) is the one method that may be called from another thread
  * concurrently with the rest: implementations back it with a thread-safe queue.
+ * Requests are executed by DrawFrame, after its own fence wait and before it
+ * draws, so there is no separate drain for the caller to sequence.
  */
 class IFrameRenderer : public RenderRequestSink
 {
@@ -59,13 +62,14 @@ public:
 	 */
 	virtual bool WaitForFrameSlot() = 0;
 
-	/** @brief Execute every posted request, FIFO, as one batch. */
-	virtual void ProcessRequests() = 0;
-
 	/**
 	 * @brief Draw one frame: acquire, record, submit, present.
 	 * @param ctx  Context whose snapshot points at the frame to draw.
 	 * @return The latest profile, valid until the next call.
+	 *
+	 * Every request posted before the call executes first, FIFO, in one batch:
+	 * this is the only place requests run, and it runs them after its own fence
+	 * wait so no recorded frame still reads what a handler replaces.
 	 */
 	virtual const FrameProfile& DrawFrame(const RenderContext& ctx) = 0;
 

@@ -10,14 +10,14 @@
  * Two implementations:
  * - DeferredRenderer, single-threaded: Post() enqueues and the next DrawFrame
  *   drains it on the same thread.
- * - RenderThread: Post() enqueues into the renderer and then wakes the render
- *   thread, so a request posted while no frame is coming is still serviced.
+ * - RenderThread: Post() hands the request to the render thread, which attaches
+ *   it to the next published frame so it runs before that frame is drawn.
  *
- * Ordering contract for callers on the main thread: every Post() belonging to a
- * tick must happen before that tick's frame is published. The render thread
- * guarantees that a frame is drawn only after every request posted before its
- * publication has executed; a request posted after publication is only
- * guaranteed to execute before the NEXT frame.
+ * Ordering contract for callers on the main thread: a request posted before a
+ * publish executes with that frame, before it is drawn; one posted after it
+ * executes with the next published frame. Requests are never dropped - a frame
+ * displaced or invalidated before the renderer took it carries its requests on
+ * to the next one, in posting order.
  */
 
 #pragma once

@@ -338,10 +338,11 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// screenshots wait their own submits, so nothing else can be running against
 	// the resource being replaced.
 	//
-	// The single-threaded path relies on this drain. On the render thread the
-	// loop already drained after its own WaitForFrameSlot(), so this second
-	// drain is usually empty - but kept, because it is the only drain the
-	// single-threaded (QTimer) path has.
+	// This is the ONLY drain, on both paths. On the render thread the loop hands
+	// the frame's requests over with Post() before it calls DrawFrame, so they
+	// are already queued here; the single-threaded (QTimer) path has nobody but
+	// itself to queue them. Draining anywhere else would let a request run
+	// outside a frame, against resources this wait has not proved free.
 	//
 	// The drain runs before the no-camera early-out below, so a camera-less
 	// session still executes its queued requests instead of queueing forever.
@@ -528,10 +529,11 @@ void DeferredRenderer::ResetShadowAccumulation()
 void DeferredRenderer::Post(RenderRequest&& request)
 {
 	m_requestQueue.Push(std::move(request));
-	// Single-threaded: DrawFrame drains the queue directly, so there is nothing
-	// to wake here. The threaded caller (RenderThread::Post) wakes the render
-	// thread after enqueuing, so a request posted while no frame is coming is
-	// still serviced.
+	// The queue is the only handoff: DrawFrame drains it after its own fence wait,
+	// so there is nothing to wake. RenderThread does not post into this queue at
+	// the moment of the Editor's call either - it attaches the request to the
+	// next published frame and posts it just before drawing that frame, so the
+	// request executes with the snapshot of the tick that posted it.
 }
 
 void DeferredRenderer::ProcessRequests()

@@ -4,7 +4,7 @@
  *
  * The design and the loop itself live in RenderThread.h; this file only spells
  * out the ordering the header promises - fence-first, resize coalescing, the
- * invalidate-after-Post(), and the broken-promise shutdown path.
+ * request-carrying publish, and the broken-promise shutdown path.
  */
 
 #include "RenderThread.h"
@@ -76,20 +76,29 @@ bool RenderThread::Running() const
 
 void RenderThread::Publish(RenderFrameSnapshot&& snapshot)
 {
-	m_mailbox.Publish(std::move(snapshot));
+	PublishedFrame frame;
+	frame.snapshot = std::move(snapshot);
+
+	// Take the queue under the same lock Post() appends under, so the split
+	// between "this tick" and "the next one" is a single point in time: a request
+	// posted before this call rides this frame, one posted after it rides the next.
+	{
+		std::lock_guard<std::mutex> lock(m_postMutex);
+		frame.requests.swap(m_posted);
+	}
+
+	m_mailbox.Publish(std::move(frame));
 }
 
 void RenderThread::Post(RenderRequest&& request)
 {
-	m_renderer.Post(std::move(request));
-
-	// Invalidate rather than just wake: a request restarts accumulation or
-	// marks overlays stale, so a frame snapshotted before it describes state the
-	// request replaced. Invalidate raises the wake (the request still has to run
-	// before any later frame is drawn, the ordering guarantee in the header) and
-	// drops the held frame, so the loop waits for a fresh Publish instead of
-	// redrawing the one whose camera predates the request.
-	m_mailbox.Invalidate();
+	// Queued for the next Publish, which attaches it to that frame: the request
+	// then executes with the snapshot of the tick that posted it. Waking or
+	// invalidating here would be wrong in both directions - a wake with no frame
+	// to draw only makes the loop wait again, and an invalidate would discard a
+	// frame this request does not make stale.
+	std::lock_guard<std::mutex> lock(m_postMutex);
+	m_posted.push_back(std::move(request));
 }
 
 void RenderThread::PostResize(uint32_t width, uint32_t height)
@@ -175,21 +184,21 @@ void RenderThread::Run()
 	{
 		for (;;)
 		{
-			// Fence first: a control message or request may replace or read a
-			// resource the previous frame's submission still uses, so wait for
-			// the slot before draining either. An Interrupted iteration does not
-			// draw, so the loop waits here again before the next drain.
+			// Fence first: a control message may replace or read a resource the
+			// previous frame's submission still uses, so wait for the slot before
+			// draining it. An Interrupted iteration does not draw, so the loop
+			// waits here again before the next drain. Requests are not gated on
+			// this: the loop only queues them, and DrawFrame executes them after
+			// its own fence wait - a closed slot leaves them queued for the next
+			// draw, as it always has.
 			if (m_renderer.WaitForFrameSlot())
-			{
 				DrainControl();
-				m_renderer.ProcessRequests();
-			}
 
 			// Ask the renderer how much work the next draw is worth before
 			// deciding how long to wait. Sample can redraw the frame already
 			// held; Overlay waits for the fresh frame a RedrawOverlaysRequest
-			// always arrives with; Idle parks until a control message and never
-			// consumes a published frame; Retry waits because the last draw
+			// always arrives with; Idle parks until a control message or a
+			// request-carrying frame arrives; Retry waits because the last draw
 			// produced nothing (no camera, acquire failure) and must not spin.
 			AcquireMode mode = AcquireMode::Wait;
 			switch (m_renderer.NextWork())
@@ -206,10 +215,22 @@ void RenderThread::Run()
 			if (status == AcquireStatus::Interrupted)
 				continue;
 
-			// Frame or Repeat. On Repeat nothing was moved into m_frame, so it
-			// still holds the last snapshot - exactly what a Sample draw wants.
+			// Frame or Repeat. On Frame the requests the tick posted travel ahead
+			// of their snapshot: handing them over first is what makes a request
+			// execute before the frame it belongs to is drawn, and clearing them
+			// is what keeps a Repeat draw - which reuses the held frame - from
+			// posting them a second time.
+			if (status == AcquireStatus::Frame)
+			{
+				for (RenderRequest& request : m_frame.requests)
+					m_renderer.Post(std::move(request));
+				m_frame.requests.clear();
+			}
+
+			// On Repeat nothing was moved into m_frame, so it still holds the last
+			// snapshot - exactly what a Sample draw wants.
 			RenderContext ctx;
-			ctx.snapshot = &m_frame;
+			ctx.snapshot = &m_frame.snapshot;
 			const FrameProfile& profile = m_renderer.DrawFrame(ctx);
 
 			std::lock_guard<std::mutex> lock(m_statusMutex);

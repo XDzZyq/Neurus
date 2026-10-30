@@ -10,19 +10,21 @@
  *   1. **Start/Stop/destructor lifetime.** Stop() joins, is idempotent, and is
  *      safe without a Start(); the destructor calls it; WaitIdle runs once on the
  *      way out so the renderer is drained before the thread is gone.
- *   2. **Request-before-frame ordering.** A frame published after a Post() is
- *      drawn only after that request executed. The fake's DrawFrame asserts
- *      `processed >= tag` and the fake deliberately does NOT drain requests in
- *      DrawFrame, so the only thing that can satisfy the invariant is the loop
- *      draining before it draws - the whole point of Post() always waking.
+ *   2. **Request-before-frame ordering.** A request travels with the frame
+ *      published by the tick that posted it. The fake's DrawFrame drains the
+ *      queue after its fence gate - exactly where DeferredRenderer drains it -
+ *      and asserts `processed == tag`: drawing tag i means exactly requests 1..i
+ *      ran, so a frame can neither beat its own requests nor overtake one posted
+ *      later.
  *   3. **Single-threaded renderer access.** Controls never run inside DrawFrame:
  *      the fake records a violation if a resize lands while a draw is in flight.
  *   4. **Resize coalescing**, **pick coordinate mapping**, **surface-change and
  *      pick promises**, the **screenshot request carrying its destination
  *      directory**, and the **broken-promise shutdown** that keeps a waiting
  *      caller from hanging on a dead thread.
- *   5. **The fence gate**: with WaitForFrameSlot() false, neither controls nor
- *      requests run; once it returns true a wake lets them through.
+ *   5. **The fence gate**: with WaitForFrameSlot() false, no control runs and a
+ *      draw records that it drew nothing while leaving its requests queued; once
+ *      it returns true a wake lets the controls through.
  *   6. **Fail-loud**: an exception escaping DrawFrame ends the loop, after which
  *      the thread stops accepting and every pending promise breaks.
  *   7. **Stop rendering after convergence**: the loop asks the renderer what the
@@ -82,8 +84,10 @@ constexpr auto STABLE_PROBE = std::chrono::milliseconds(100);
 /**
  * @brief A frame tagged through environmentId, which the fake reads as its tag.
  *
- * The ordering invariant in the fake is `processed >= tag`, so a test that has
- * posted requests must tag its frames with at least the number posted so far.
+ * The ordering invariant in the fake is `processed == tag`: a test tags frame i
+ * exactly i, after exactly i requests have been posted and before any further
+ * one. Posting between a publish and the next one shifts the count, so each
+ * publish's tag must match the total posted up to it.
  */
 RenderFrameSnapshot MakeTaggedFrame(int tag)
 {
@@ -102,8 +106,9 @@ RenderFrameSnapshot MakeTaggedFrame(int tag)
  * landed) with a bound instead of sleeping. Post() is backed by a thread-safe
  * BatchQueue, the one method the thread may call from another thread.
  *
- * DrawFrame deliberately does NOT drain requests: the ordering test only proves
- * something because draining is the loop's job, not the renderer's.
+ * DrawFrame drains the request queue itself, after its fence gate - the same
+ * place DeferredRenderer drains it. The loop only hands the frame's requests
+ * over, so what the fake executes is exactly what travelled with the frame.
  *
  * It also models accumulation closely enough to script the loop: `iteration`
  * counts scene samples, `samplingCount` is how many it takes to converge, a
@@ -118,8 +123,9 @@ public:
 	/**
 	 * @brief One DrawFrame call, kept so a test can inspect what was drawn when.
 	 *
-	 * `processed` is the number of requests the loop had executed before this
-	 * draw, which is how a test tells a post-request draw from a stale one.
+	 * `processed` is the number of requests executed before this draw - the
+	 * frame's own requests travel with it and drain inside the call, so a tag
+	 * that disagrees with it means the wrong set of requests ran.
 	 */
 	struct DrawRecord
 	{
@@ -185,33 +191,6 @@ public:
 		return ready;
 	}
 
-	void ProcessRequests() override
-	{
-		std::vector<RenderRequest> batch = m_requests.TakeAll();
-		{
-			std::lock_guard<std::mutex> lock(m_mutex);
-			m_processed += static_cast<int>(batch.size());
-			for (const RenderRequest& request : batch)
-			{
-				if (std::holds_alternative<RedrawOverlaysRequest>(request))
-				{
-					// Overlays only: the converged scene image stays, so the
-					// accumulation count is deliberately left alone.
-					m_overlayDirty = true;
-				}
-				else
-				{
-					// Every other request restarts accumulation, as
-					// IFrameRenderer::NextWork documents. A scene draw redraws
-					// the overlays too, so the stale flag goes with it.
-					m_iteration    = 0;
-					m_overlayDirty = false;
-				}
-			}
-		}
-		m_cv.notify_all();
-	}
-
 	FrameWork NextWork() const override
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -229,6 +208,31 @@ public:
 	const FrameProfile& DrawFrame(const RenderContext& ctx) override
 	{
 		const int tag = ctx.Frame().environmentId;
+
+		// DeferredRenderer's fence wait comes first, and on a closed slot it returns
+		// WITHOUT draining: the requests stay queued for the next frame.
+		bool slotReady = false;
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			slotReady = m_slotReady;
+			if (!slotReady)
+			{
+				m_drawCalls += 1;
+				m_draws.push_back(DrawRecord{tag, m_processed, true});
+				m_lastDrewNothing = true;
+				m_lastTag         = tag;
+			}
+		}
+		if (!slotReady)
+		{
+			m_cv.notify_all();
+			return m_profile;
+		}
+
+		// The one drain, where DeferredRenderer has it: the requests the loop handed
+		// over with this frame execute before its snapshot is drawn.
+		Drain();
+
 		bool shouldThrow = false;
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
@@ -238,8 +242,10 @@ public:
 			m_inDraw = true;
 
 			// The request-before-frame guarantee, as an invariant: drawing tag=i
-			// means >= i requests ran, because request i was posted before frame i.
-			if (m_processed < tag)
+			// means exactly requests 1..i ran, because they travelled with frame i.
+			// Fewer means the frame overtook its own requests; more means a request
+			// posted after the publish got in first.
+			if (m_processed != tag)
 				m_orderingViolations += 1;
 
 			m_drawCalls += 1;
@@ -395,10 +401,31 @@ public:
 		return m_cv.wait_for(lock, WAIT_LIMIT, [&] { return m_screenshots >= atLeast; });
 	}
 
+	/**
+	 * @brief Bounded wait for a draw of the frame tagged @p tag.
+	 *
+	 * Used where the frame before it may legitimately be dropped (latest-wins),
+	 * so a draw count would be the wrong thing to wait on.
+	 */
+	bool WaitForTagDrawn(int tag)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_cv.wait_for(lock, WAIT_LIMIT, [&]
+		{
+			for (const DrawRecord& draw : m_draws)
+			{
+				if (draw.tag == tag)
+					return true;
+			}
+			return false;
+		});
+	}
+
 	// --- Accessors (each takes a snapshot under the mutex) ---
 
 	int  Drawn()              const { std::lock_guard<std::mutex> l(m_mutex); return m_drawn; }
 	int  DrawCalls()          const { std::lock_guard<std::mutex> l(m_mutex); return m_drawCalls; }
+	int  Processed()          const { std::lock_guard<std::mutex> l(m_mutex); return m_processed; }
 	int  SampledIteration()   const { std::lock_guard<std::mutex> l(m_mutex); return m_iteration; }
 	int  OrderingViolations() const { std::lock_guard<std::mutex> l(m_mutex); return m_orderingViolations; }
 	int  DrawViolations()     const { std::lock_guard<std::mutex> l(m_mutex); return m_drawViolations; }
@@ -435,6 +462,40 @@ public:
 	}
 
 private:
+	/**
+	 * @brief Execute every queued request, FIFO, as one batch.
+	 *
+	 * Only DrawFrame calls this, and only after its fence gate, mirroring
+	 * DeferredRenderer: the loop never drains, it just hands over the requests
+	 * that travelled with the frame.
+	 */
+	void Drain()
+	{
+		std::vector<RenderRequest> batch = m_requests.TakeAll();
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_processed += static_cast<int>(batch.size());
+			for (const RenderRequest& request : batch)
+			{
+				if (std::holds_alternative<RedrawOverlaysRequest>(request))
+				{
+					// Overlays only: the converged scene image stays, so the
+					// accumulation count is deliberately left alone.
+					m_overlayDirty = true;
+				}
+				else
+				{
+					// Every other request restarts accumulation, as
+					// IFrameRenderer::NextWork documents. A scene draw redraws
+					// the overlays too, so the stale flag goes with it.
+					m_iteration    = 0;
+					m_overlayDirty = false;
+				}
+			}
+		}
+		m_cv.notify_all();
+	}
+
 	mutable std::mutex      m_mutex;
 	std::condition_variable m_cv;
 
@@ -559,14 +620,15 @@ TEST(RenderThreadTest, StopWithoutStartIsSafeAndIdempotent)
 // Request-before-frame ordering
 // ============================================================================
 
-TEST(RenderThreadTest, AFramePublishedAfterAPostIsDrawnOnlyAfterThatRequestRan)
+TEST(RenderThreadTest, EachFrameIsDrawnWithExactlyTheRequestsPostedBeforeIt)
 {
-	// For each tick: Post a request, then Publish the matching frame. The fake
-	// draws the newest frame it is handed and checks `processed >= tag`. Frames
-	// may be dropped (latest-wins), but a drawn tag=i can only appear after the
-	// loop drained request i - which it does only because Post() always wakes and
-	// the wake outranks the pending frame. The fake never drains in DrawFrame, so
-	// nothing else could satisfy the invariant.
+	// For each tick: Post one request, then Publish the matching frame. The
+	// request rides that frame; the loop hands it to the fake, which drains it
+	// before drawing. Frames may be dropped (latest-wins), but a dropped frame's
+	// requests are carried into the next publish, so whatever frame is drawn was
+	// drawn with exactly the requests posted up to its tag - `processed == tag`,
+	// not `>= tag`. That equality is what catches a request executed against
+	// another tick's snapshot, which a lower bound cannot see.
 	FakeRenderer fake;
 	RenderThread thread(fake);
 	thread.Start();
@@ -578,12 +640,15 @@ TEST(RenderThreadTest, AFramePublishedAfterAPostIsDrawnOnlyAfterThatRequestRan)
 		thread.Publish(MakeTaggedFrame(i));
 	}
 
-	ASSERT_TRUE(fake.WaitForDrawn(1)) << "no frame was ever drawn";
+	ASSERT_TRUE(fake.WaitForTagDrawn(TICKS)) << "the last tick's frame was never drawn";
 	thread.Stop();
 
-	EXPECT_GE(fake.Drawn(), 1) << "at least one frame must have been drawn";
+	const std::vector<FakeRenderer::DrawRecord> draws = fake.Draws();
+	ASSERT_FALSE(draws.empty()) << "no frame was ever drawn";
+	EXPECT_EQ(draws.back().tag, TICKS) << "the newest publish must be the last frame drawn";
+	EXPECT_EQ(draws.back().processed, TICKS) << "the last frame must have run every request posted before it";
 	EXPECT_EQ(fake.OrderingViolations(), 0)
-		<< "a frame was drawn before the request posted ahead of it had executed";
+		<< "a frame was drawn with the wrong set of requests executed";
 }
 
 // ============================================================================
@@ -603,9 +668,10 @@ TEST(RenderThreadTest, ControlsNeverRunWhileAFrameIsBeingDrawn)
 	std::atomic<bool> stopPublishing{false};
 	std::thread publisher([&]
 	{
-		int tag = 0;
+		// No requests are posted here, so every frame is tagged 0: the tag must
+		// stay equal to the number of requests posted before it.
 		while (!stopPublishing.load())
-			thread.Publish(MakeTaggedFrame(++tag));
+			thread.Publish(MakeTaggedFrame(0));
 	});
 
 	constexpr int RESIZES = 200;
@@ -751,7 +817,7 @@ TEST(RenderThreadTest, StatusReportsTheProfileOfTheLastDrawnFrame)
 	RenderThread thread(fake);
 	thread.Start();
 
-	thread.Publish(MakeTaggedFrame(1));
+	thread.Publish(MakeTaggedFrame(0));  // no requests posted, so tag 0
 	ASSERT_TRUE(fake.WaitForDrawn(1)) << "no frame was drawn";
 
 	const auto deadline = std::chrono::steady_clock::now() + WAIT_LIMIT;
@@ -769,11 +835,11 @@ TEST(RenderThreadTest, StatusReportsTheProfileOfTheLastDrawnFrame)
 
 TEST(RenderThreadTest, AClosedFrameSlotHoldsOffControlsAndRequestsUntilItOpens)
 {
-	// With WaitForFrameSlot() false the loop must not drain controls or requests:
-	// a resize posted now stays unapplied. Proven by waiting (bounded) for the
-	// loop to re-check the fence after the resize's wake and then asserting the
-	// resize did not run. Opening the fence and posting a request to wake lets
-	// the queued resize through.
+	// With WaitForFrameSlot() false the loop must not run controls: a resize
+	// posted now stays unapplied. Proven by waiting (bounded) for the loop to
+	// re-check the fence after the resize's wake and then asserting the resize did
+	// not run. Opening the fence and posting a plain wake - a pick, which carries
+	// no request and no frame - lets the queued resize through.
 	FakeRenderer fake;
 	fake.SetSlotReady(false);
 	RenderThread thread(fake);
@@ -787,10 +853,15 @@ TEST(RenderThreadTest, AClosedFrameSlotHoldsOffControlsAndRequestsUntilItOpens)
 		<< "the resize's wake was never observed by the loop";
 	EXPECT_EQ(fake.ResizeCalls(), 0) << "a resize ran while the frame slot was closed";
 
+	// A request would no longer wake anything: it waits for the next publish and
+	// rides it. A pick is the plain wake this test needs, and it is exactly what
+	// must not smuggle a control past the closed fence.
 	fake.SetSlotReady(true);
-	thread.Post(ResetAccumulationRequest{});  // wake the loop so it re-checks the now-open fence
+	std::future<uint32_t> pick = thread.PostPick(0.5f, 0.5f);
 	ASSERT_TRUE(fake.WaitForResizeCalls(1)) << "opening the fence must let the queued resize run";
 	EXPECT_EQ(fake.LastResize(), (std::pair<uint32_t, uint32_t>{7, 7}));
+	ASSERT_EQ(pick.wait_for(WAIT_LIMIT), std::future_status::ready) << "the wake's pick was never answered";
+	EXPECT_EQ(pick.get(), 3u * 1000 + 3) << "the pick must run after the resize reset the extent to 7x7";
 
 	thread.Stop();
 }
@@ -809,7 +880,7 @@ TEST(RenderThreadTest, AnExceptionInDrawFrameEndsTheLoopAndBreaksPendingPromises
 	RenderThread thread(fake);
 	thread.Start();
 
-	thread.Publish(MakeTaggedFrame(1));
+	thread.Publish(MakeTaggedFrame(0));  // no requests posted, so tag 0
 	ASSERT_TRUE(WaitForRunningFalse(thread)) << "an exception in DrawFrame must end the loop";
 
 	std::future<uint32_t> pick = thread.PostPick(0.5f, 0.5f);
@@ -907,11 +978,12 @@ TEST(RenderThreadTest, AnOverlayRedrawDrawsOnceMoreWithoutRestartingAccumulation
 
 TEST(RenderThreadTest, AFramePublishedBeforeAPostIsNeverDrawnAfterIt)
 {
-	// Why Post() invalidates instead of merely waking. Converge first, so the
-	// thread sits in Idle holding frame A in its own storage; then post a request
-	// and publish B. A snapshot taken before the request describes the camera the
-	// request replaced, so drawing it - even once - would bake that camera into
-	// every sample of the restarted accumulation, permanently.
+	// A request posted between two publishes must not be applied to the frame that
+	// was already published: doing so would bake a camera the request replaced into
+	// every sample of the restarted accumulation, permanently. Converge first, so
+	// the thread sits in Idle holding frame A; then post a request and publish B.
+	// The request travels with B - A is never offered again - and the Idle wait
+	// takes B because it carries that request.
 	FakeRenderer fake;
 	fake.SetSamplingCount(3);
 	RenderThread thread(fake);
@@ -922,7 +994,7 @@ TEST(RenderThreadTest, AFramePublishedBeforeAPostIsNeverDrawnAfterIt)
 	ASSERT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "the thread was not idle before the request";
 
 	thread.Post(ResetAccumulationRequest{});
-	thread.Publish(MakeTaggedFrame(1));  // B: published after the request
+	thread.Publish(MakeTaggedFrame(1));  // B: carries the request, so tag 1
 
 	ASSERT_TRUE(fake.WaitForDrawn(6)) << "the restarted accumulation never drew from the new frame";
 	EXPECT_FALSE(fake.WaitForDrawnWithin(7, STABLE_PROBE));
@@ -935,6 +1007,71 @@ TEST(RenderThreadTest, AFramePublishedBeforeAPostIsNeverDrawnAfterIt)
 			<< "draw " << i << " sampled the frame published before the request";
 		EXPECT_EQ(draws[i].processed, 1) << "draw " << i << " ran before the request executed";
 	}
+	EXPECT_EQ(fake.OrderingViolations(), 0);
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, ARequestPostedAfterAPublishWaitsForTheNextPublish)
+{
+	// The contract the Editor relies on: a request belongs to the tick that posted
+	// it. Posted between publishes it must neither draw a frame on its own nor be
+	// executed against the snapshot already on screen - it waits for the next
+	// publish and rides that one.
+	FakeRenderer fake;
+	fake.SetSamplingCount(1);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Publish(MakeTaggedFrame(0));  // no requests yet, so tag 0
+	ASSERT_TRUE(fake.WaitForDrawn(1)) << "the first frame never drew";
+	ASSERT_FALSE(fake.WaitForDrawnWithin(2, STABLE_PROBE)) << "the thread was not idle before the request";
+
+	thread.Post(ResetAccumulationRequest{});
+
+	// Nothing to draw with: the request alone must not wake a draw.
+	EXPECT_FALSE(fake.WaitForDrawnWithin(2, STABLE_PROBE))
+		<< "a request posted between publishes drew a frame by itself";
+	EXPECT_EQ(fake.Processed(), 0) << "the request executed without a frame to belong to";
+
+	thread.Publish(MakeTaggedFrame(1));  // one request posted, so tag 1
+	ASSERT_TRUE(fake.WaitForTagDrawn(1)) << "the request did not execute with the next published frame";
+
+	const std::vector<FakeRenderer::DrawRecord> draws = fake.Draws();
+	ASSERT_EQ(draws.size(), 2u);
+	EXPECT_EQ(draws.back().processed, 1) << "the frame must be drawn after the request it carries ran";
+	EXPECT_EQ(fake.OrderingViolations(), 0);
+
+	thread.Stop();
+}
+
+TEST(RenderThreadTest, AReusedFrameExecutesNoRequest)
+{
+	// A Sample iteration redraws the frame the thread already holds (Repeat). Its
+	// requests ran on the draw that acquired it, so the held frame must be left
+	// carrying none: re-posting them would run every request sampling-count times
+	// and restart accumulation on every sample.
+	FakeRenderer fake;
+	fake.SetSamplingCount(3);
+	RenderThread thread(fake);
+	thread.Start();
+
+	thread.Post(ResetAccumulationRequest{});
+	thread.Publish(MakeTaggedFrame(1));  // one request posted, so tag 1
+
+	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the frame's accumulation never converged";
+	EXPECT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE))
+		<< "a converged frame kept drawing: a Repeat draw posted its requests again";
+
+	const std::vector<FakeRenderer::DrawRecord> draws = fake.Draws();
+	ASSERT_EQ(draws.size(), 3u) << "exactly sampling-count draws, no more";
+	for (size_t i = 0; i < draws.size(); ++i)
+	{
+		EXPECT_EQ(draws[i].tag, 1) << "draw " << i << " drew a different frame";
+		EXPECT_EQ(draws[i].processed, 1)
+			<< "draw " << i << " executed requests again - a Repeat draw re-posted them";
+	}
+	EXPECT_EQ(fake.Processed(), 1) << "the one request must have executed exactly once";
 	EXPECT_EQ(fake.OrderingViolations(), 0);
 
 	thread.Stop();
