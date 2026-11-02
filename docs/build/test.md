@@ -627,10 +627,12 @@ GPU tests:
   broken.
 - **Verify references with Python** before committing: use `PIL.Image` to check
   uniform values, unique pixel counts, and histogram analysis.
-- **Use `Mesh::UploadToGPU()` instead of raw VBO/IBO** in rendering tests.
+- **Use `UploadManager::UploadMeshData()` + `RenderCache::UseMeshGPU()` instead
+  of raw VBO/IBO** in rendering tests.
   Instead of creating `VertexBuffer`/`IndexBuffer` directly (which duplicates GPU
-  upload logic and bypasses the Mesh abstraction), load geometry through
-  `MeshData` and `Mesh`:
+  upload logic and bypasses the `MeshData` path), load geometry through
+  `MeshData` and let the upload service build the buffers and the cache hold
+  them:
 
   ```cpp
   // BEFORE (direct buffer creation - only for buffer-specific tests):
@@ -640,12 +642,17 @@ GPU tests:
   // AFTER (required for rendering/feature tests):
   auto meshData = std::make_shared<MeshData>();
   meshData->LoadObjFromString(kObjString);  // or LoadObj(path)
-  auto mesh = std::make_shared<Mesh>();
-  mesh->o_mesh = meshData;
-  mesh->UploadToGPU(device, pd, queue, qfi);
-  // Access GPU resources via:
-  //   mesh->GetVertexBuffer(), mesh->GetIndexBuffer(), mesh->GetGPUIndexCount()
+  UploadManager upload(device, pd, queue, qfi);
+  cache.UseMeshGPU(objectId, upload.UploadMeshData(*meshData));
+  // Access GPU resources through the cache, never through a Mesh:
+  //   const MeshGPU* gpu = cache.GetMeshGPU(objectId);
+  //   gpu->vertexBuffer, gpu->indexBuffer, gpu->vertexCount, gpu->indexCount
   ```
+
+  Tests that already build a `Scene` call
+  `VulkanTestShared::EnsureMeshesUploaded(cache, scene, device, pd, queue, qfi)`
+  instead, which uploads every mesh and skips the ones already
+  resident.
 
   **Exemption**: `test_buffers.cpp` and `test_vulkan_buffer.cpp` are the unit
   tests for `VertexBuffer`/`IndexBuffer`/`Buffer` hierarchy - they use raw
@@ -895,7 +902,7 @@ GPU tests:
 | First-run reference stale | Test passed against old reference | Delete PNGs, regenerate, verify |
 | No `VK_EXT_DEBUG_UTILS` | Deferred validation errors | Include in Debug builds |
 | Manual Vulkan bootstrap | Test file has its own Instance/Device/Queue/CommandPool setup (~70 lines) | Inherit `VulkanTestShared` base class |
-| Raw VBO/IBO in rendering test | Test creates `VertexBuffer`/`IndexBuffer` directly | Use `Mesh::UploadToGPU()` |
+| Raw VBO/IBO in rendering test | Test creates `VertexBuffer`/`IndexBuffer` directly | Use `UploadManager::UploadMeshData()` + `RenderCache::UseMeshGPU()` (or `EnsureMeshesUploaded` for a scene) |
 | Duplicated `TestVertex` struct | `struct TestVertex { ... }` defined locally in test file | Use `TestVertex` from `TestVulkanShared.h` |
 | Duplicated helper functions | `HalfToFloat`, `TransitionGbufferToColorAttachment`, `FindMemoryType` repeated across files | Use static helpers from `VulkanTestShared` |
 | Placeholder/stub test file | File with single `GTEST_SKIP` test | Delete from CMakeLists.txt; do NOT write new test logic unless planned |

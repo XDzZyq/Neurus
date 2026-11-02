@@ -18,8 +18,11 @@ outgoing scene, reset accumulation - is posted instead as a typed
 `RenderRequest` value and executed by the renderer on the thread that submits.
 
 - **Queue and drain.** The Editor holds a `RenderRequestSink*` (Post only).
-  `DeferredRenderer::Post(RenderRequest&&)` pushes into a mutex-guarded FIFO
-  (`RenderRequestQueue`, a `BatchQueue<RenderRequest>`). `DrawFrame()` drains the whole batch
+  With `RenderThread` driving the renderer, `Post` appends to the thread's posting
+  queue and the request rides the next published frame (ordering below); the loop
+  hands it to `DeferredRenderer::Post(RenderRequest&&)`, which pushes into a
+  mutex-guarded FIFO (`RenderRequestQueue`, a `BatchQueue<RenderRequest>`).
+  `DrawFrame()` drains the whole batch
   with `TakeAll()` *after* the frame-slot fence wait and *before* swapchain
   acquire (and before the no-camera early-out). `RenderRequestExecutor` runs each
   request against the device, cache, `UploadManager` and `GeometryPass`.
@@ -29,22 +32,28 @@ outgoing scene, reset accumulation - is posted instead as a typed
   (`m_iteration = 0`) before it reaches the executor, so the next frame samples
   from scratch. `RedrawOverlaysRequest` is the one exception - it marks the
   overlays stale and keeps the converged scene image, which is the whole reason
-  it exists. Requests posted inside one `Editor::Edit()` execute in that same
-  tick's `DrawFrame()`, so there is no one-frame delay.
+  it exists. Requests posted inside one `Editor::Edit()` therefore execute for
+  that tick, with no one-frame delay while the render thread keeps up.
 
-- **Why that drain placement.** The handlers that free or replace a resource
-  cannot pull it from under an executing frame, so they drain every in-flight
-  frame fence first (`DeferredRenderer::DrainInFlightFrames`, injected into the
-  executor; it waits each fence with `kFenceTimeoutNs` and idles the graphics
-  queue if the wait fails). That is why the pipeline replace, the environment
-  regenerate over a resident entry and the scene drop do not depend on the frame
-  count: uploads and readbacks wait their own submits, so the frames are the only
-  other work a resource can be in. Not every request is handled that way. Light
-  SSBO growth (`UpdateLighting`, whose `LightingCache` upload resizes the old
-  buffer away) and the in-place camera, light and SSAO UBO/SSBO rewrites do not
-  drain; they rely on the frame-slot fence wait that precedes the drain, which
-  only covers the slot the next frame would reuse and so holds only with one
-  frame in flight.
+- **Which handlers drain.** A handler that frees or replaces memory a recorded
+  frame may still read drains every in-flight frame fence first
+  (`DeferredRenderer::DrainInFlightFrames`, injected into the executor; it waits
+  each fence with `kFenceTimeoutNs` and idles the graphics queue if the wait
+  fails). That is the pipeline replacement in `EnsurePipelineRequest`, light-SSBO
+  growth in `UpdateLighting` (a kind's count exceeds its allocation, so
+  `ArrayBuffer::Upload` resizes the old buffer away; a first allocation destroys
+  nothing), and the scene drop - so none of the three depends on the frame count.
+  Uploads and readbacks wait their own submits, so the frames are the only other
+  work a resource can be in. A mesh or environment entry that is replaced or
+  removed needs no drain (a mesh upload over a resident id is a no-op, so a mesh
+  entry only goes away with the scene): the mesh and environment tables hold
+  `shared_ptr<const MeshGPU>` / `shared_ptr<const EnvironmentGPU>`, the cache
+  installs a fresh table instead of mutating the old, and each submitted frame
+  keeps the table it drew with
+  (`DeferredRenderer::HeldTables`) until its fence is seen signalled. The
+  in-place camera, light and SSAO UBO/SSBO rewrites do not drain either; they
+  rely on the frame-slot fence wait that precedes the drain, which only covers
+  the slot the next frame would reuse and so holds only with one frame in flight.
 
 - **FIFO ordering is a contract.** Within a batch, append order is execution
   order. An upload posted after `DropSceneResourcesRequest` lands in the new
@@ -60,24 +69,32 @@ outgoing scene, reset accumulation - is posted instead as a typed
   `Shader`, so a recompile landing before the drain cannot change the code under
   a version it no longer belongs to.
 
-- **Ordering against frames on the render thread.** With `RenderThread` driving
-  the renderer, two rules keep "Edit -> Upload -> Reset -> Render" intact
-  without the main thread ever waiting: `RenderThread::Post` always enqueues and
-  *then* invalidates the mailbox (a pending wake outranks a pending frame, so the
-  loop drains once more before it draws, and the held snapshot - published before
-  the request - is dropped so it cannot be drawn after it), and every `Post` of a
-  tick happens before that tick's frame is published. A request posted after the
-  publish is only guaranteed to run before the next frame. The loop waits the
-  frame fence itself before draining, because an interrupted iteration does not
-  draw. Requests are never bundled into the frame message: the mailbox is
-  latest-wins, so a dropped frame would drop its requests.
+- **Ordering against frames on the render thread.** A request does not reach the
+  renderer when the Editor makes it. `RenderThread::Post` appends to a posting
+  queue and returns - no wake and no invalidate, because a request is a command
+  for the next frame, not a reason to redraw or discard one already available -
+  and the tick's `RenderThread::Publish` moves that queue into the
+  `PublishedFrame` it hands to the mailbox (`{snapshot, requests}`). The loop
+  hands the frame's requests to the renderer before it draws that frame, and
+  `DrawFrame` drains them after its own fence wait, so a request executes with
+  the snapshot of its own tick or a newer one, never an older one. The loop
+  clears the requests it handed over, so a frame reused to finish an accumulation
+  run posts none. Nothing is lost on the way: the mailbox is latest-wins for
+  snapshots only, so a frame displaced by a newer publish - or dropped by
+  `Invalidate()` (resize, surface change) - leaves its requests behind, and the
+  next publish puts them in front of its own in posting order. This is what keeps
+  "Edit -> Upload -> Reset -> Render" intact without the main thread ever waiting.
+  A request posted after the publish only runs before the *next* frame, which is
+  exactly the boundary `Post` and `Publish` establish under the posting lock.
 
 - **Waiting is decided by the work, not the tick.** Once accumulation has
   converged there may be nothing to draw for many published frames, so
   `RenderThread` asks `IFrameRenderer::NextWork()` before it waits: `Sample`
   reuses the snapshot already held (`AcquireMode::Reuse`), `Overlay` and `Retry`
-  wait for a new one, and `Idle` parks on the mailbox ignoring publishes until a
-  control message arrives. Resize and surface change invalidate the held frame
+  wait for a new one, and `Idle` parks on the mailbox, ignoring request-free
+  publishes until a control message or a request-carrying frame arrives (a frame
+  with requests is taken even in Idle, or the edit it carries would never
+  execute). Resize and surface change invalidate the held frame
   (they restart accumulation); pick and screenshot only wake the loop, since they
   read what was drawn last.
 
@@ -121,10 +138,10 @@ The shadow intensity array (R8_UNORM, layered 2D_ARRAY) is created via `RenderCa
 
 `MeshGPU` (`src/render/resources/MeshGPU.h`) holds device-local `VertexBuffer` + `IndexBuffer` for a mesh, plus vertex/index counts.
 
-- Created lazily via `RenderCache::GetMeshGPU(objectId, meshData, device, pd, queue, qfi)`, which uploads geometry from `MeshData` to the GPU.
-- Subsequent calls return the cached `MeshGPU` immediately.
-- Destroyed via `RenderCache::RemoveMeshGPU(objectId)` or `RenderCache::Clean()`.
-- Scene `Mesh` objects call `RenderCache::GetMeshGPU()` through `Mesh::UploadToGPU()`; the scene layer never owns GPU buffers directly.
+- Uploaded by `UploadManager::UploadMeshData()` and registered with `RenderCache::UseMeshGPU(objectId, std::move(meshGPU))`, which installs a fresh `shared_ptr<const MeshTable>` with the entry added. `UploadMeshRequest` carries the `MeshData`; the request executor is the caller.
+- Read through `RenderCache::GetMeshGPU(objectId)`, a const lookup that returns a borrowed pointer or nullptr from the live table. It stays valid only until the table is next written; the table the frame holds (see `DeferredRenderer::HeldTables`) is what keeps the entry it recorded against alive after a replace.
+- `RenderCache::RemoveMeshGPU(objectId)` and `RenderCache::Clean()` install a table without the entry. Neither destroys the `MeshGPU`: any table a submitted frame still holds keeps it alive, and the last of them releases it.
+- The scene layer never owns GPU buffers, and nothing in it uploads: the Editor posts one `UploadMeshRequest` per mesh it needs resident.
 
 ### MeshPushConstants
 
@@ -134,9 +151,9 @@ The shadow intensity array (R8_UNORM, layered 2D_ARRAY) is created via `RenderCa
 
 `EnvironmentGPU` (`src/render/resources/EnvironmentGPU.h`) holds diffuse irradiance and specular prefiltered cubemap `Texture` objects (each wraps `Image` + sampler + descriptor).
 
-- Created lazily via `RenderCache::CreateEnvironmentGPU(envId, device, pd, queue, qfi, env)` from an `Environment` scene object.
-- Read per-frame by `LightingPass` via `RenderCache::GetEnvironmentGPU(envId)`.
-- Destroyed via `RenderCache::RemoveEnvironmentGPU(envId)`.
+- Uploaded by `UploadManager::UploadEnvironment(std::shared_ptr<const ImageData>)`, which bakes both cubemaps, and registered with `RenderCache::UseEnvironmentGPU(envId, std::move(envGPU))` - a fresh `shared_ptr<const EnvironmentTable>` with the entry added or replaced. No drain is needed for the replace: the frames already submitted keep the old table alive until their fences.
+- Read per-frame by `LightingPass` via `RenderCache::GetEnvironmentGPU(envId)`, which reads the live table at record time; the table the frame holds (see `DeferredRenderer::HeldTables`) is what keeps the entry it recorded against alive after a replace.
+- `RenderCache::RemoveEnvironmentGPU(envId)` installs a table without the entry; the cubemaps live on in any table a submitted frame still holds.
 
 ## LightingCache
 

@@ -10,12 +10,12 @@ What the next frame is worth is published by `IFrameRenderer::NextWork()` before
 
 - **Sample**: the budget is unspent - run the scene graph, then the overlay graph. The remaining samples reuse the last snapshot (`AcquireMode::Reuse`); they do not need a new publish.
 - **Overlay**: converged, but overlay content changed (`RedrawOverlaysRequest`) - redraw the overlay graph over the converged scene image, no scene pass.
-- **Idle**: converged and nothing stale - draw nothing and acquire no swapchain image. The thread parks on the mailbox (`AcquireMode::Idle`) until a control message arrives.
+- **Idle**: converged and nothing stale - draw nothing and acquire no swapchain image. The thread parks on the mailbox (`AcquireMode::Idle`) until a control message or a request-carrying frame arrives.
 - **Retry**: the last `DrawFrame()` drew nothing (no camera, failed acquire/present) - wait for a new frame instead of redrawing a stale one.
 
 The main thread never waits for the budget: publishing is latest-wins and non-blocking, and the renderer's state is not read back to decide when to stop.
 
-A **restart** is anything that invalidates the accumulated average: any `RenderRequest` except `RedrawOverlaysRequest`, a resize, or a surface change. Those also `FrameMailbox::Invalidate()` the held snapshot, which drops a frame published before the request and forces the next `Acquire` to wait for a fresh `Publish` - so a restarted run can never bake a camera the request replaced. Pick and screenshot only `Wake()`: they read what was drawn last and must neither discard nor force a frame.
+A **restart** is anything that invalidates the accumulated average: any `RenderRequest` except `RedrawOverlaysRequest`, a resize, or a surface change. A request needs nothing beyond its own handoff: it rides the next published frame and executes before that frame is drawn, so the run it restarts begins with a snapshot that already includes it - `Post` neither wakes nor invalidates. A resize or a surface change goes further and `FrameMailbox::Invalidate()`s the held snapshot, which drops a frame published before it (keeping its requests for the next publish) and forces the next `Acquire` to wait for a fresh `Publish` - so a restarted run can never bake a camera or an extent it replaced. Pick and screenshot only `Wake()`: they read what was drawn last and must neither discard nor force a frame.
 
 ## Shadow accumulation
 

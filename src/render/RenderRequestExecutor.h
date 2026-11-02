@@ -39,11 +39,17 @@ class GeometryPass;
  * be null - the renderer is wired up in stages and a request whose collaborator
  * is absent is logged once and skipped rather than crashing.
  *
- * A handler that replaces or frees a resource calls the injected frame drain
- * before it does so: every frame fence has to be waited, because a recorded
- * frame may still be reading that resource. Draining the frames is the strongest
- * wait this handler needs - uploads and screenshots wait their own submits, so
- * nothing else can still be running against the resource being replaced.
+ * A handler that frees or replaces memory a recorded frame may still read calls
+ * the injected frame drain before it does so: every frame fence has to be
+ * waited. Draining the frames is the strongest wait such a handler needs -
+ * uploads and screenshots wait their own submits, so nothing else can still be
+ * running against the resource being replaced. A mesh or environment entry that
+ * is replaced or removed is the exception: the cache installs a fresh refcounted
+ * table (shared_ptr<const MeshTable>/EnvironmentTable) and each submitted frame
+ * holds the table it drew with until its fence, so nothing is freed under it and
+ * no drain is needed. (A mesh upload over a resident id is a no-op, so a mesh
+ * entry only goes away with the scene.) Light-SSBO growth drains only when a
+ * kind outgrows its allocation - a first allocation destroys nothing.
  */
 class RenderRequestExecutor
 {
@@ -51,8 +57,11 @@ public:
 	/**
 	 * @brief Constructs the executor over the renderer's borrowed resources.
 	 *
-	 * @param drainFrames         Waits every in-flight frame fence; called only
-	 *                            by the handlers that replace or free a resource.
+	 * @param drainFrames         Waits every in-flight frame fence; called by the
+	 *                            handlers that free or replace a resource that is
+	 *                            not refcounted (a replaced pipeline, light-SSBO
+	 *                            growth, the scene drop), never by a mesh or
+	 *                            environment entry that is replaced or removed.
 	 * @param cache               Render cache holding the resource maps.
 	 * @param uploader            Upload service, or null until the Application
 	 *                            wires one in via SetUploadManager().

@@ -42,8 +42,9 @@ GPU work - mesh upload, light SSBO updates, IBL (re)generation, per-mesh pipelin
 warming, scene-resource eviction - without ever touching the GPU itself. It
 subscribes to the cross-component `EditorEvents` (`LightGpuChanged`,
 `LightingRebuild`, `SceneModified`) emitted by `SceneController`, converts the
-work into typed `RenderRequest` values, and posts them through
-`DeferredRenderer::Post()`. The renderer drains the queue per frame and executes
+work into typed `RenderRequest` values, and posts them through the
+`RenderRequestSink*` it holds (`RenderThread` once the render thread runs). The
+renderer drains its queue per frame and executes
 each request on the thread that submits (see
 [Data Flow](../architecture/data-flow.md#render-request-path-editor-to-renderer-gpu-work)).
 The Editor holds no `UploadManager` and never calls Vulkan; scene mutations go
@@ -200,9 +201,11 @@ Design:
   [Viewport](viewport.md)), every mesh and light in UID order, the environment,
   the active object, the debug list when `RequiresDebugDraw()`, and the gizmo
   list unconditionally. The Application builds a fresh snapshot each tick and
-  moves it into `RenderThread::Publish` (a latest-wins `FrameMailbox`); posting a
-  request, a resize or a surface change invalidates the slot, so a frame
-  snapshotted before one of them is never drawn after it. The render thread
+  moves it into `RenderThread::Publish` (a latest-wins `FrameMailbox`); the
+  requests posted during that tick ride the same `PublishedFrame`, so a request
+  executes with its own tick's snapshot or a newer one, and never an older one. A resize or
+  a surface change invalidates the slot instead, so a frame snapshotted before one
+  of them is never drawn after it. The render thread
   points `RenderContext::snapshot` at the frame it acquired, and
   `DeferredRenderer::recordFrame()` then stamps the frame half (`width`,
   `height`, `frameIndex`, `jitter`, `iteration`) into a **local copy**, which is
@@ -357,7 +360,7 @@ The frame loop, main thread then render thread:
 ```
 UIEvents::newFrame() -> Editor::Edit(input) -> Editor::BuildSnapshot()
                      -> RenderThread::Publish(snapshot)        (never blocks)
-render thread:          fence -> controls -> requests -> NextWork -> Acquire -> DrawFrame
+render thread:          fence -> controls -> NextWork -> Acquire -> hand over requests -> DrawFrame
 ```
 
 `NextWork()` decides how much the next draw is worth, and therefore how long the

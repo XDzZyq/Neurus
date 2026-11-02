@@ -9,11 +9,12 @@
  * scene's resources - is posted instead as one of the requests below and
  * executed by DeferredRenderer at the top of DrawFrame, in posting order.
  *
- * Single ownership is the point, not tidiness. On MoltenVK the "transfer
- * queue" resolves to the graphics queue, so an upload submitted from one thread
- * while a frame is submitted from another is a race on the queue itself, which
- * no cache lock repairs. With every submit issued by the renderer, a render
- * thread later only has to move the drain, not make it safe.
+ * Single ownership is the point, not tidiness: every device uploads through the
+ * graphics queue family, so an upload submitted from one thread while a frame is
+ * submitted from another is a race on the one queue handle that no cache lock
+ * repairs. With every submit issued by the renderer, the render thread has only
+ * to hand the requests over with their published frame - DrawFrame already runs
+ * them after its fence wait, before it draws.
  *
  * Payload rule, binding for every request type added here: a payload is a
  * value, or a `shared_ptr<const T>` to data nobody mutates after creation. It is

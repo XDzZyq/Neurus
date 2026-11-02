@@ -33,15 +33,17 @@ enum LightType : int;    // scene/Light.h
 	/**
 	 * @brief CPU-to-GPU upload service.
 	 *
-	 * Owns a separate command pool and IBLPass for asynchronous uploads.
+	 * Owns its own command pool and IBLPass. Uploads run synchronously on the
+	 * calling (render) thread, through the graphics queue family.
 	 * Stateless — each Upload*() method performs one-shot construction and
 	 * returns the GPU resource by value.
 	 *
 	 * @param device               Logical device.
 	 * @param physicalDevice       Physical device (for buffer memory queries).
 	 * @param transferQueue        Upload queue for staging copies and IBL dispatches,
-	 *                             shared with every other submitter; its family must
-	 *                             support transfer and compute.
+	 *                             shared with every other submitter; it is the
+	 *                             graphics queue, whose family always supports
+	 *                             transfer and compute.
 	 * @param transferQueueFamily  Family index of @p transferQueue.
 	 */
 	class UploadManager
@@ -84,8 +86,8 @@ enum LightType : int;    // scene/Light.h
 	 * The Scene-free half of UploadEnvironment(), for the request executor,
 	 * which holds no Environment. A null or invalid @p equirect selects the
 	 * pink-purple procedural fallback, exactly as a missing source file does.
-	 * The convolution dispatches on this manager's own upload queue, which is
-	 * why that queue's family must support compute (see
+	 * The convolution dispatches run on this manager's upload queue, which is
+	 * the graphics queue family and therefore always supports compute (see
 	 * VulkanContext::findTransferQueueFamily).
 	 *
 	 * @param equirect Equirectangular source, or null for the fallback.

@@ -49,6 +49,30 @@ the **rule** that prevents it. Design detail behind these lives in
   `Undefined`/`Invalid` must use `eAllCommands`, never `eTopOfPipe`, as a source
   stage.
 
+## Renderer threading and resource lifetime
+
+- **One frame drawn with lights or meshes that do not match its snapshot.** A
+  request that ran ahead of its snapshot changes the GPU state the frame draws
+  with (a light SSBO, a mesh entry) while the snapshot still describes the older
+  state, so the image disagrees with the panel and the edit can be undone by the
+  next draw. Rule: requests reach the renderer only with their published frame -
+  `RenderThread::Post` appends to the posting queue and `Publish` moves it into
+  the frame it hands over - so never execute a request from `Post`. A frame
+  displaced before the render thread took it, or dropped by `Invalidate()`, hands
+  its requests to the next publish in posting order, so nothing is lost and no
+  request runs against an older snapshot than its own tick.
+- **Use-after-free of a mesh or an environment entry that is replaced or
+  removed.** Regenerating an environment over a resident entry, or dropping the
+  scene's entries, would free GPU buffers a submitted frame still reads. A mesh
+  upload over a resident id is a no-op (`UploadMeshRequest` returns early), so a
+  mesh entry is only ever removed with the scene. Rule: never write an uploaded
+  `MeshGPU`/`EnvironmentGPU`. Install a new table entry instead
+  (`RenderCache::UseMeshGPU` / `UseEnvironmentGPU` install a fresh
+  `shared_ptr<const MeshTable>`/`EnvironmentTable`) and let each frame keep the
+  table it drew with until its fence is seen signalled. That is why those handlers
+  need no drain, while a pipeline replace, light-SSBO growth and the scene drop
+  still do.
+
 ## Correctness and "do not cheat yourself"
 
 - **A uniform, all-black or all-white reference image "passes".** Rule: verify
@@ -84,6 +108,12 @@ the **rule** that prevents it. Design detail behind these lives in
 - **Push constants or SSBO data read as garbage.** Keep the C++ struct
   byte-for-byte with the GLSL declaration; `static_assert` the size and check
   `offsetof` for every field.
+- **Metal logs `Impacting Interactivity` and loses the device under `-j4`.**
+  The GPU watchdog reclaims a process the window server cannot service for
+  seconds, and a validation-instrumented four-way run can submit enough GPU work
+  at once to cross that line. Rule: keep each GPU submit short; a rerun that
+  passes is the accepted evidence for an `UploadEnvironment_*` watchdog hit, not
+  a longer timeout or a smaller test set.
 
 ## Temporal accumulation
 

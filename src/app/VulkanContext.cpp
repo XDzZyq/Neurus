@@ -115,8 +115,7 @@ void VulkanContext::InitDevice()
 
 	// One queue on purpose: uploads are synchronous on the render thread, so a
 	// second family for them buys no overlap, and the ownership transfers it
-	// would need are not recorded anywhere. A second DeviceQueueCreateInfo can
-	// no longer be reached.
+	// would need are not recorded anywhere.
 	float graphicsPriority = 1.0f;
 	std::vector<vk::DeviceQueueCreateInfo> queueCIs;
 	queueCIs.push_back(vk::DeviceQueueCreateInfo({}, ctx_graphicsQueueFamily, 1, &graphicsPriority));

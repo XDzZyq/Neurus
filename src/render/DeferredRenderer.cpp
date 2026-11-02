@@ -350,12 +350,16 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// Placed after the fence wait and before swapchain acquire. The handlers that
 	// replace or free a resource drain every in-flight frame fence themselves
 	// (DrainInFlightFrames), so no recorded frame still references what they
-	// release - that does not depend on how many frames are in flight. The
-	// in-place rewrites do: the camera, light and SSAO UBO/SSBO writes touch
-	// memory a recorded frame may read, so they rely on the slot fence wait
-	// above - safe only while kMaxFramesInFlight is 1. Uploads and screenshots
-	// wait their own submits, so nothing else can be running against the
-	// resource being replaced.
+	// release - that does not depend on how many frames are in flight. A mesh or
+	// environment entry that is replaced or removed is the exception that needs
+	// no drain: their tables are refcounted and this frame holds the table it
+	// recorded against (r_heldTables) until its fence, so a replacement frees
+	// nothing still in use. The in-place rewrites do depend on the frame count:
+	// the camera, light and SSAO UBO/SSBO writes touch memory a recorded frame
+	// may read, so they rely on the slot fence wait above - safe only while
+	// kMaxFramesInFlight is 1.
+	// Uploads and screenshots wait their own submits, so nothing else can be
+	// running against the resource being replaced.
 	//
 	// This is the ONLY drain, on both paths. On the render thread the loop hands
 	// the frame's requests over with Post() before it calls DrawFrame, so they

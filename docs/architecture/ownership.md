@@ -26,10 +26,10 @@ Renderer Layer owns:
   VkDescriptorPool + VkDescriptorSet (DescriptorManager)
   Barrier::Transition (centralized layout transitions, ImageState -> Vulkan
     mapping)
-  MeshGPU (GPU-side mesh resources: VertexBuffer + IndexBuffer, owned by
-    RenderCache)
+  MeshGPU (GPU-side mesh resources: VertexBuffer + IndexBuffer, held by
+    RenderCache in a refcounted table)
   EnvironmentGPU (GPU-side IBL resources: diffuse + specular cubemap Textures,
-    owned by RenderCache)
+    held by RenderCache in a refcounted table)
   LightingCache (GPU-side light SSBOs: point + sun light, owned by RenderCache)
 
   Also borrows (owned by the Application, destroyed after the renderer):
@@ -44,13 +44,16 @@ the RenderCache's resource maps happen on the renderer's own thread. The Editor
 drives GPU state only by posting a
 `RenderRequest` (see [Data Flow](data-flow.md#render-request-path-editor-to-renderer-gpu-work));
 `DeferredRenderer` drains the queue per frame and its `RenderRequestExecutor`
-performs the work. Single ownership is the point, not tidiness: on MoltenVK the
-"upload queue" resolves to the graphics queue, so an upload submitted from one
-thread while a frame is submitted from another is a race on the queue itself that
-no cache lock repairs.
+performs the work. Single ownership is the point, not tidiness: every device
+uploads through the graphics queue family, so an upload submitted from one thread
+while a frame is submitted from another is a race on the one `VkQueue` handle
+that no cache lock repairs. With every submit issued by the renderer on its own
+thread, that queue has exactly one user.
 
-Scene and Asset layers own NO GPU resources. `Mesh::UploadToGPU()` delegates to
-`RenderCache::GetMeshGPU()` which creates and owns the `MeshGPU`. `ImageData`
+Scene and Asset layers own NO GPU resources. The Editor posts an
+`UploadMeshRequest` carrying the mesh's `MeshData`; the renderer uploads it and
+holds the resulting `MeshGPU` in a refcounted table, and each submitted frame
+keeps the table it drew with until its fence. `ImageData`
 provides CPU-side pixel buffers; GPU upload goes through `Image::FromImageData`.
 The `GeometryRenderItem` struct that previously mixed CPU and GPU concerns has
 been removed.

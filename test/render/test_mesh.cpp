@@ -5,7 +5,8 @@
  * Validates that:
  *   - UseMeshGPU stores a MeshGPU and GetMeshGPU returns it
  *   - GetMeshGPU returns the same MeshGPU on subsequent calls (caching)
- *   - RemoveMeshGPU destroys GPU buffers
+ *   - RemoveMeshGPU drops the table entry; the buffers die when the last table
+ *     holding them is released
  *   - the mesh table is copied on write, so a table a frame holds keeps
  *     entries that were removed or dropped with the scene alive
  *

@@ -15,12 +15,13 @@ responsibility, and Core supplies utilities shared across all of them.
   pass dispatch
 - Centralized image barrier management via `Barrier::Transition` (ImageState ->
   Vulkan layout/stage/access)
-- Owns `MeshGPU` (GPU-side mesh resources: VertexBuffer + IndexBuffer) via
-  `RenderCache::GetMeshGPU()`
-- Owns `EnvironmentGPU` (GPU-side IBL resources: diffuse + specular cubemap
-  Textures) via `RenderCache::CreateEnvironmentGPU()`
+- Holds `MeshGPU` (GPU-side mesh resources: VertexBuffer + IndexBuffer) in a
+  refcounted table (`RenderCache::UseMeshGPU()` / `Meshes()`)
+- Holds `EnvironmentGPU` (GPU-side IBL resources: diffuse + specular cubemap
+  Textures) in a refcounted table (`RenderCache::UseEnvironmentGPU()` /
+  `Environments()`)
 - Owns `LightingCache` (light SSBOs: point + sun) via
-  `RenderCache::InitLightingCache()` / `GetLightingCache()`
+  `RenderCache::SetLightingCache()` / `GetLightingCache()`
 - Must NOT mutate application state
 - Must NOT depend on Editor or UI layers
 
@@ -85,9 +86,10 @@ responsibility, and Core supplies utilities shared across all of them.
 - Vulkan-free in public interface: no GPU types exposed to consumers
 - Scene objects (Camera, Light, Transform, Mesh, UID) define logical scene
   structure
-- GPU resources (VertexBuffer, IndexBuffer) are separated into `MeshGPU` owned
-  by RenderCache
-- `Mesh::UploadToGPU()` bridges scene data to Renderer-owned GPU resources
+- GPU resources (VertexBuffer, IndexBuffer) are separated into `MeshGPU` held by
+  RenderCache
+- Scene objects never upload: the Editor posts an `UploadMeshRequest` carrying the
+  `MeshData`, and the renderer owns the result
 
 ## Core Layer (`src/core/`)
 

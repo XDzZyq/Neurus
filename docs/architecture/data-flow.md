@@ -87,18 +87,27 @@ renderer on the thread that submits:
 
 ```
 Editor::Edit() -> RenderRequestSink::Post(RenderRequest&&)
-                  (RenderThread: enqueue into the renderer, then invalidate
-                  the held frame and wake)
-   -> RenderRequestQueue (BatchQueue<RenderRequest>, mutex-guarded FIFO)
-   -> the render thread drains the batch after the frame fence wait, before
-      it acquires the next frame (DrawFrame drains once more, usually empty)
+                  (RenderThread: append to the posting queue for the next
+                  Publish - no wake, no invalidate)
+   -> RenderThread::Publish(RenderFrameSnapshot&&) moves the posting queue into a
+      PublishedFrame {snapshot, requests} and hands it to the FrameMailbox
+   -> FrameMailbox: one slot, latest-wins for snapshots only; a frame displaced
+      before the render thread took it, or dropped by Invalidate(), leaves its
+      requests behind for the next publish
+   -> the render thread hands the frame's requests to the renderer, then draws it
+   -> DeferredRenderer::DrawFrame drains the batch (RenderRequestQueue, a
+      BatchQueue<RenderRequest>) after the frame fence wait, before it acquires
+      the swapchain image
    -> RenderRequestExecutor runs each request against the device, RenderCache,
       UploadManager and GeometryPass
 ```
 
-Requests posted inside one `Edit()` are drained before the frame that tick
-publishes is drawn (every Post precedes the Publish, and a pending wake outranks
-a pending frame), so there is no one-frame delay. Execution is strict FIFO, which is a contract:
+Requests posted inside one `Edit()` are executed for the frame that tick
+publishes: every Post precedes the Publish, and Publish moves the posting queue
+into the frame it hands over. A request posted after a publish rides the next
+published frame, so it never runs against a snapshot older than its own tick -
+and a frame that was displaced before the render thread took it hands its
+requests to the next publish in posting order. Execution is strict FIFO, which is a contract:
 an upload posted after `DropSceneResourcesRequest` lands in the new scene, and
 one posted before it is discarded with the old one. `RedrawOverlaysRequest` is
 the one request that does not restart accumulation: it only marks the overlays
@@ -112,9 +121,24 @@ correct however the Editor edits or deletes afterward. See
 
 Once `RenderThread::Start()` runs, the render thread is the only thread that
 calls into `DeferredRenderer`. The Application never draws or waits the GPU; it
-publishes one snapshot per tick and sends control messages
+publishes one `PublishedFrame` per tick and sends control messages
 (`src/render/RenderControl.h`) that the thread executes between frames, after
 the frame fence:
+
+**One publish per tick carries the tick's requests.** `RenderThread::Publish`
+takes the snapshot the Application built and moves the posting queue into it, so
+one `PublishedFrame {snapshot, requests}` goes into the latest-wins mailbox.
+Requests posted between two publishes travel with the second; `Post` itself
+neither wakes the render thread nor invalidates anything, because a request is a
+command for the next frame rather than a change to a frame already published.
+The mailbox drops snapshots, never requests: a frame displaced by a newer
+publish, or dropped by an `Invalidate` (resize, surface change), leaves its
+requests behind, and the next publish puts them in front of its own, in posting
+order. A frame the render thread reuses to finish an accumulation run carries
+none - the loop hands a frame's requests over and clears them before it draws, so
+a repeat draw posts nothing.
+
+The control messages are:
 
 - **Resize** - `PostResize(w, h)`, fire and forget; the last resize of a batch
   wins. The viewport gets an estimated physical extent at once and is corrected
@@ -135,10 +159,11 @@ the frame fence:
   the user's control; the render thread hands the path to the renderer
   unchanged, so the Renderer stays Qt-free.
 
-Resize and surface change also invalidate the mailbox: both restart accumulation,
+Resize and surface change invalidate the mailbox: both restart accumulation,
 so a snapshot published before them would seed frame 0 with a stale camera or
 extent. Pick and screenshot only wake the loop - they read whatever was drawn
-last and must neither discard nor force a frame.
+last and must neither discard nor force a frame. A `RenderRequest` does neither:
+it rides the next publish and so executes with the snapshot of its own tick.
 
 **Waiting is driven by the work left, not by the tick.** `DeferredRenderer` draws
 `r_sampling_count` scene frames after every restart and then stops, so a
@@ -146,8 +171,10 @@ publisher that keeps publishing must not keep the GPU busy for nothing. Before
 each wait the thread asks `IFrameRenderer::NextWork()`: `Sample` reuses the
 snapshot it already holds (`AcquireMode::Reuse`), `Overlay` and `Retry` wait for
 a fresh one, and `Idle` parks on the mailbox without acquiring a swapchain image
-(`AcquireMode::Idle`), ignoring published frames until a control message arrives.
-A converged viewport therefore costs one parked thread and no presents.
+(`AcquireMode::Idle`), ignoring request-free published frames until a control
+message arrives - or taking one that carries requests, so a converged viewport
+still sees the edit. A converged viewport therefore costs one parked thread and
+no presents.
 
 Shutdown: after the Qt event loop returns, `RenderThread::Stop()` joins the
 thread (which breaks any pending promise and leaves the graphics queue idle)
@@ -160,8 +187,9 @@ pivot, so neither consumer reaches around it for the other's data:
 
 - `RenderContext` (`src/render/RenderContext.h`) - the renderer's view. The
   Editor half is a single owned frame snapshot: the Application publishes one
-  `RenderFrameSnapshot` per frame (built by `Editor::BuildSnapshot()`) and points
-  `ctx.snapshot` at it; `DeferredRenderer` then stamps the frame half (`width`,
+  `PublishedFrame` per tick (the `Editor::BuildSnapshot()` snapshot plus that
+  tick's requests), and the render thread points `ctx.snapshot` at the snapshot
+  of the frame it is drawing; `DeferredRenderer` then stamps the frame half (`width`,
   `height`, `frameIndex`, `jitter`, `iteration`) through `recordFrame()`. There
   is no second publication path - a pass reads what is being rendered through
   `ctx.Frame()`.
