@@ -45,6 +45,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -448,6 +449,43 @@ TEST_F(RenderRequestExecutorTest, UpdateLighting_ThenUpdateLight_FindsUid)
 	constexpr int kUnknown = 999;
 	m_executor->Execute(UpdateLightRequest{.uid = kUnknown, .light = PointLightStruct{}});
 	EXPECT_EQ(m_cache->GetShadowIndex(kUnknown), 0u);
+}
+
+// ---------------------------------------------------------------------------
+// 9b. More shadow-casting lights than MAX_SHADOW_LAYERS: the rebuild assigns one
+//     layer each to the first four and leaves the fifth at -1. The layer lookup
+//     must report that as absence instead of asserting or handing out layer 0 -
+//     layer 0 belongs to another light, and exporting it under the fifth light's
+//     name would silently mislabel a real shadow map.
+// ---------------------------------------------------------------------------
+
+TEST_F(RenderRequestExecutorTest, ShadowLayerOverflow_ExtraLightGetsNoLayer)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	UpdateLightingRequest rebuild;
+	for (int uid = 1; uid <= 5; ++uid)
+	{
+		rebuild.lights.emplace(uid, PointLightStruct{});
+	}
+	m_executor->Execute(std::move(rebuild));
+
+	// Layers are assigned in UID order, so uids 1..4 own 0..3 and uid 5 has none.
+	for (int uid = 1; uid <= 4; ++uid)
+	{
+		const std::optional<uint32_t> layer = m_cache->GetShadowIntensityLayerIndex(uid);
+		ASSERT_TRUE(layer.has_value()) << "Light uid " << uid << " lost its layer";
+		EXPECT_EQ(*layer, static_cast<uint32_t>(uid - 1));
+	}
+	EXPECT_FALSE(m_cache->GetShadowIntensityLayerIndex(5).has_value())
+		<< "Light uid 5 is past MAX_SHADOW_LAYERS and must have no layer";
+
+	// The allocating lookup has the same answer and must not grow the map. The
+	// extent is unused by the lookup; any value works.
+	const vk::Extent2D lookupExtent(256, 256);
+	EXPECT_FALSE(m_cache->GetShadowIntensityLayer(5, lookupExtent).has_value());
+	EXPECT_FALSE(m_cache->GetShadowIntensityLayerIndex(5).has_value())
+		<< "A lookup for an overflow light must not allocate a layer";
 }
 
 // ---------------------------------------------------------------------------

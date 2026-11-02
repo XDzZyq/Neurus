@@ -18,6 +18,7 @@
 #include <cstring>
 #include <ctime>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -214,13 +215,18 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 			const auto shadowUIDs = renderCache.GetShadowMapUIDs();
 			for (int lightUID : shadowUIDs)
 			{
-				const uint32_t layer = renderCache.GetShadowIntensityLayerIndex(lightUID);
+				// Lights beyond MAX_SHADOW_LAYERS get no layer - nothing to export,
+				// and layer 0 belongs to another light.
+				const std::optional<uint32_t> layer =
+					renderCache.GetShadowIntensityLayerIndex(lightUID);
+				if (!layer) continue;
+
 				const std::string path = Screenshot::timestampedFilename(
 					(directory / ("shadow_intensity_Light" + std::to_string(lightUID))).string(),
 					".png");
 				if (Screenshot::CaptureImageLayer(m_device, m_physicalDevice,
 				                                   *m_queue, m_queueFamilyIndex,
-				                                   *intensityArray, layer, path))
+				                                   *intensityArray, *layer, path))
 				{
 					++count;
 				}

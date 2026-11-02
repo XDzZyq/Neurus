@@ -113,7 +113,7 @@ Image& RenderCache::GetShadowIntensityArray(const vk::Extent2D extent)
 	return *rc_shadowIntensityArray;
 }
 
-uint32_t RenderCache::GetShadowIntensityLayer(const int lightUID, const vk::Extent2D /*extent*/)
+std::optional<uint32_t> RenderCache::GetShadowIntensityLayer(const int lightUID, const vk::Extent2D /*extent*/)
 {
 	// Fast path: the shadow index map is always in sync with the SSBO's
 	// shadowMapIndex field and the current visibility state.
@@ -128,10 +128,10 @@ uint32_t RenderCache::GetShadowIntensityLayer(const int lightUID, const vk::Exte
 	const uint32_t layer = static_cast<uint32_t>(rc_uidToShadowLayer.size());
 	if (layer >= MAX_SHADOW_LAYERS)
 	{
-		NEURUS_ERR("[RenderCache] Shadow intensity layer overflow: lightUID="
-		           << lightUID << " exceeds MAX_SHADOW_LAYERS=" << MAX_SHADOW_LAYERS);
-		assert(false && "MAX_SHADOW_LAYERS exceeded");
-		return 0;
+		// More shadow casters than layers is a normal user state: UpdateLighting
+		// leaves the extras at shadowMapIndex = -1, so the shader applies no
+		// shadow for them. The caller skips the light; no log per frame.
+		return std::nullopt;
 	}
 
 	rc_uidToShadowLayer[lightUID] = layer;
@@ -145,10 +145,14 @@ Image* RenderCache::GetShadowIntensityArray() const
 	return rc_shadowIntensityArray.get();
 }
 
-uint32_t RenderCache::GetShadowIntensityLayerIndex(const int lightUID) const
+std::optional<uint32_t> RenderCache::GetShadowIntensityLayerIndex(const int lightUID) const
 {
 	const auto it = rc_uidToShadowLayer.find(lightUID);
-	return (it != rc_uidToShadowLayer.end()) ? it->second : 0;
+	if (it == rc_uidToShadowLayer.end())
+	{
+		return std::nullopt;
+	}
+	return it->second;
 }
 
 std::vector<int> RenderCache::GetShadowMapUIDs() const
@@ -489,6 +493,14 @@ void RenderCache::UpdateLighting(const std::unordered_map<int,
 	rc_lightingCache->UpdatePointLights(pointVec);
 	rc_lightingCache->UpdateSunLights(sunVec);
 	rc_lightingCache->UpdateSpotLights(spotVec);
+
+	const size_t lightCount = pointVec.size() + sunVec.size() + spotVec.size();
+	if (rc_uidToShadowLayer.size() < lightCount)
+	{
+		NEURUS_LOG("[RenderCache] " << (lightCount - rc_uidToShadowLayer.size())
+		           << " light(s) got no shadow layer (MAX_SHADOW_LAYERS="
+		           << MAX_SHADOW_LAYERS << "), they cast no shadow");
+	}
 
 	NEURUS_LOG("[RenderCache] UpdateLighting: " << pointVec.size()
 	           << " point lights, " << sunVec.size() << " sun lights, "

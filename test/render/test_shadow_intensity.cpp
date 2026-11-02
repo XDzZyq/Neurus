@@ -50,6 +50,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <vector>
 
 using namespace neurus;
@@ -181,7 +182,10 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// Step 4: Read back R8 shadow intensity from the layered array
 	// -------------------------------------------------------------------
 	auto& intensityArray = m_renderCache->GetShadowIntensityArray(renderExtent);
-	const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+	const std::optional<uint32_t> layerOpt =
+		m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+	ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+	const uint32_t layer = *layerOpt;
 	const vk::DeviceSize bufSize = static_cast<vk::DeviceSize>(kRes) * kRes;
 	std::vector<uint8_t> u8ShadowData(kRes * kRes);
 	{

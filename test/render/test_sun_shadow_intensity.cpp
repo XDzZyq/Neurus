@@ -59,6 +59,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -168,7 +169,10 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_VerifyNonZero)
 	for (size_t li = 0; li < shadowRes.lightUIDs.size(); ++li)
 	{
 		int lightUID = shadowRes.lightUIDs[li];
-		const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		const std::optional<uint32_t> layerOpt =
+			m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+		const uint32_t layer = *layerOpt;
 		std::vector<uint8_t> u8Data(pixelCount);
 
 		{
@@ -292,7 +296,10 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_ReferenceImage)
 	for (size_t li = 0; li < shadowRes.lightUIDs.size(); ++li)
 	{
 		int lightUID = shadowRes.lightUIDs[li];
-		const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		const std::optional<uint32_t> layerOpt =
+			m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+		const uint32_t layer = *layerOpt;
 		std::vector<uint8_t> pixelData(pixelCount);
 
 		{

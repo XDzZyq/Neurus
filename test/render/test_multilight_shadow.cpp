@@ -48,9 +48,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -288,6 +290,125 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 }
 
 // ===========================================================================
+// MoreShadowLightsThanLayers_OverflowCastsNoShadow - overflow must not crash
+// ===========================================================================
+
+/**
+ * @brief Five shadow-casting lights against MAX_SHADOW_LAYERS = 4.
+ *
+ * UpdateLighting() fills the shared layer pool point -> spot -> sun, so the 3
+ * point lights and the spot own layers 0..3 and the sun is left at
+ * shadowMapIndex = -1. ShadowIntensityPass must skip that light instead of
+ * asserting on the layer lookup, and the four lights that do have a layer must
+ * still own distinct slots in [0, MAX_SHADOW_LAYERS).
+ */
+TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto& pd = PhysicalDevice();
+	const vk::Extent2D renderExtent(kRenderWidth, kRenderHeight);
+
+	// -------------------------------------------------------------------
+	// Scene: 3 point lights from the shared builder, plus a spot and a sun
+	// -------------------------------------------------------------------
+	auto shadowRes = neurus::test::LoadMultiShadow(
+		*m_device, pd, *m_queue, m_graphicsQueueFamily, 3);
+	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 point lights";
+
+	std::vector<int> lightUIDs = shadowRes.lightUIDs;
+
+	// Direction (0,0,-1): GetDirection() maps pitch = -90, yaw = 0 to straight down.
+	{
+		auto spot = std::make_shared<Light>(LightType::SPOTLIGHT, 5.0f, glm::vec3(1.0f));
+		spot->o_name = "OverflowSpotLight";
+		spot->SetPosition(glm::vec3(1.0f, 0.0f, 3.0f));
+		spot->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
+		spot->SetPower(3.0f);
+		spot->SetShadow(true);
+		shadowRes.scene->UseLight(spot);
+		lightUIDs.push_back(spot->GetObjectID());
+	}
+	{
+		auto sun = std::make_shared<Light>(LightType::SUNLIGHT, 5.0f, glm::vec3(1.0f));
+		sun->o_name = "OverflowSunLight";
+		sun->SetPower(0.5f);
+		sun->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
+		sun->SetShadow(true);
+		shadowRes.scene->UseLight(sun);
+		lightUIDs.push_back(sun->GetObjectID());
+	}
+	ASSERT_EQ(lightUIDs.size(), 5u);
+
+	ASSERT_FALSE(shadowRes.scene->cam_list.empty()) << "Scene must have a camera";
+	const auto& camera = shadowRes.scene->cam_list.begin()->second;
+	camera->ChangeCamRatio(static_cast<float>(kRenderWidth), static_cast<float>(kRenderHeight));
+
+	// Every shadow-casting light needs a LightGPU, including the two that end up
+	// without a layer - the pass only skips lights it can otherwise render.
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device,
+	                                       PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device,
+	                                             PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+
+	// -------------------------------------------------------------------
+	// Context + light upload
+	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
+	RenderContext ctx{};
+	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
+	const RenderConfig config = ShadowReferenceConfig();
+
+	VulkanTestShared::TransitionGbufferToColorAttachment(
+		*m_renderCache, renderExtent, *this);
+
+	{
+		auto lightDict = m_uploadManager->UploadLighting(shadowRes.scene->light_list);
+		ASSERT_EQ(lightDict.size(), 5u);
+		m_renderCache->UpdateLighting(lightDict);
+	}
+
+	// The sun is the overflow light: point -> spot -> sun is the layer order.
+	const int sunUID = lightUIDs.back();
+	EXPECT_FALSE(m_renderCache->GetShadowIntensityLayerIndex(sunUID).has_value())
+		<< "Sun light " << sunUID << " must not own a shadow intensity layer";
+	EXPECT_FALSE(m_renderCache->GetShadowIntensityLayer(sunUID, renderExtent).has_value())
+		<< "A layer lookup for an overflow light must return nullopt, not allocate or assert";
+
+	// -------------------------------------------------------------------
+	// Record geometry + shadow depth + shadow intensity and submit
+	// -------------------------------------------------------------------
+	{
+		auto& cmd = BeginCmd();
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
+		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
+		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		EndSubmitWait(cmd);
+	}
+
+	// -------------------------------------------------------------------
+	// The four lights inside the pool keep distinct layers
+	// -------------------------------------------------------------------
+	std::vector<uint32_t> layers;
+	for (size_t i = 0; i + 1 < lightUIDs.size(); ++i)
+	{
+		const std::optional<uint32_t> layer =
+			m_renderCache->GetShadowIntensityLayerIndex(lightUIDs[i]);
+		ASSERT_TRUE(layer.has_value()) << "Light " << lightUIDs[i] << " lost its layer";
+		EXPECT_LT(*layer, RenderCache::MAX_SHADOW_LAYERS);
+		layers.push_back(*layer);
+	}
+
+	ASSERT_EQ(layers.size(), 4u);
+	std::sort(layers.begin(), layers.end());
+	EXPECT_EQ(layers, (std::vector<uint32_t>{0, 1, 2, 3}))
+		<< "The four shadow-casting lights must own exactly layers 0..3";
+
+	SUCCEED();
+}
+
+// ===========================================================================
 // ShadowIntensityReadback — verify per-light shadow intensity data
 // ===========================================================================
 
@@ -358,7 +479,10 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 
 	for (int lightUID : shadowRes.lightUIDs)
 	{
-		const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		const std::optional<uint32_t> layerOpt =
+			m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+		const uint32_t layer = *layerOpt;
 		std::vector<uint8_t> u8Data(pixelCount);
 
 		{
@@ -501,7 +625,10 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	for (size_t li = 0; li < shadowRes.lightUIDs.size(); ++li)
 	{
 		int lightUID = shadowRes.lightUIDs[li];
-		const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		const std::optional<uint32_t> layerOpt =
+			m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+		const uint32_t layer = *layerOpt;
 		std::vector<uint8_t> pixelData(pixelCount);
 
 		// --- Manual staging-buffer readback ---

@@ -13,6 +13,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -188,23 +189,30 @@ public:
 	/**
 	 * @brief Returns (or allocates) the layer index for a light's shadow intensity.
 	 *
-	 * On first call for a lightUID, allocates the next available layer (0, 1, 2…).
-	 * The array must have been created first via GetShadowIntensityArray().
-	 * Asserts if MAX_SHADOW_LAYERS is exceeded.
+	 * On first call for a lightUID that UpdateLighting() has not seen, allocates
+	 * the next available layer (0, 1, 2…) so single-pass test contexts keep
+	 * working. The array must have been created first via
+	 * GetShadowIntensityArray().
 	 *
-	 * @param lightUID Unique identifier of the point light (int).
+	 * A scene may hold more shadow-casting lights than there are layers. Lights
+	 * UpdateLighting() could not give a layer to (their SSBO @c shadowMapIndex is
+	 * @c -1, so the shader applies no shadow) have no layer here either, and this
+	 * returns @c std::nullopt - that is a normal user state, not an error.
+	 *
+	 * @param lightUID Unique identifier of the light (int).
 	 * @param extent   Image dimensions (must match GetShadowIntensityArray's extent).
-	 * @return Layer index (0 … MAX_SHADOW_LAYERS-1).
+	 * @return Layer index (0 … MAX_SHADOW_LAYERS-1), or @c std::nullopt if the light
+	 *         has none and every layer is taken.
 	 */
-	uint32_t GetShadowIntensityLayer(int lightUID, vk::Extent2D extent);
+	std::optional<uint32_t> GetShadowIntensityLayer(int lightUID, vk::Extent2D extent);
 
 	/**
 	 * @brief Returns the shadow intensity layer index for a light (lookup only, no allocation).
 	 *
-	 * @param lightUID Unique identifier of the point light (int).
-	 * @return Layer index, or 0 if not found.
+	 * @param lightUID Unique identifier of the light (int).
+	 * @return Layer index, or @c std::nullopt if the light has no layer.
 	 */
-	uint32_t GetShadowIntensityLayerIndex(int lightUID) const;
+	std::optional<uint32_t> GetShadowIntensityLayerIndex(int lightUID) const;
 
 	/**
 	 * @brief Returns all light UIDs that currently have LightGPU entries.

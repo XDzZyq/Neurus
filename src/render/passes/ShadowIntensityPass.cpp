@@ -25,6 +25,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -463,6 +464,12 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			Barrier::Transition(cmdBuf, shadowCube, ImageState::DepthShaderRead);
 		}
 
+		// Lights past MAX_SHADOW_LAYERS have no layer (UpdateLighting stamps their
+		// shadowMapIndex = -1). Record nothing for them; lightIndex must not
+		// advance, so the next recorded light reuses the free descriptor slot.
+		const std::optional<uint32_t> layer = cache.GetShadowIntensityLayer(uid, renderExtent);
+		if (!layer) continue;
+
 		const uint32_t setIdx = frameIndex * kSetsPerFrameSlot + (lightIndex % kSetsPerFrameSlot);
 
 		WriteDescriptors(setIdx, renderExtent, cache);
@@ -475,7 +482,6 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 		{
 			const glm::vec3 pos = ls.position;
-			const uint32_t layer = cache.GetShadowIntensityLayer(uid, renderExtent);
 
 			ShadowEvalPushConstants pc = {};
 			pc.lightPosX   = pos.x;
@@ -485,7 +491,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 				? Light::spot_shadow_far
 				: Light::point_shadow_far;
 			pc.bias        = shadowBias;
-			pc.layerIndex  = static_cast<int32_t>(layer);
+			pc.layerIndex  = static_cast<int32_t>(*layer);
 			pc.jitterX     = ctx.jitter.x;
 			pc.jitterY     = ctx.jitter.y;
 			pc.jitterZ     = ctx.jitter.z;
@@ -526,6 +532,11 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			Barrier::Transition(cmdBuf, sunShadowMap, ImageState::DepthShaderRead);
 		}
 
+		// Same overflow rule as the point loop: a sun past MAX_SHADOW_LAYERS has
+		// no layer, so nothing is recorded and sunLightIndex stays put.
+		const std::optional<uint32_t> layer = cache.GetShadowIntensityLayer(uid, renderExtent);
+		if (!layer) continue;
+
 		const uint32_t setIdx = frameIndex * kSetsPerFrameSlot + (sunLightIndex % kSetsPerFrameSlot);
 
 		WriteSunDescriptors(setIdx, renderExtent, cache);
@@ -564,12 +575,10 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			const glm::mat4 lightView = glm::lookAt(lightEye, center, up);
 			const glm::mat4 lightViewProj = lightProj * lightView;
 
-			const uint32_t layer = cache.GetShadowIntensityLayer(uid, renderExtent);
-
 			SunShadowEvalPushConstants pc = {};
 			pc.lightViewProj = lightViewProj;
 			pc.bias          = shadowBias;
-			pc.layerIndex    = static_cast<int32_t>(layer);
+			pc.layerIndex    = static_cast<int32_t>(*layer);
 			pc.jitterX       = ctx.jitter.x;
 			pc.jitterY       = ctx.jitter.y;
 			pc.jitterZ       = ctx.jitter.z;
