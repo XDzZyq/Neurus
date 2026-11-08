@@ -46,6 +46,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QTimer>
 
 #include <cmath>
@@ -105,6 +106,9 @@ Application::Application(int argc, char* argv[])
 	app_renderTimer->setInterval(16);  // ~60 FPS
 	app_qtApp->setApplicationName("Neurus");
 	app_qtApp->setApplicationVersion("0.1.0");
+	// Set before any window exists so every top-level widget (the main window,
+	// dialogs) inherits the window and taskbar icon.
+	app_qtApp->setWindowIcon(QIcon(":/app/neurus.svg"));
 }
 
 Application::~Application()

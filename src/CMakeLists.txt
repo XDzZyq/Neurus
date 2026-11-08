@@ -37,6 +37,12 @@ endif()
 # Main Executable
 # ---------------------------------------------------------------------------
 
+# The executable icon comes from a resource script, which needs the RC
+# language; project() enables CXX only.
+if(WIN32)
+	enable_language(RC)
+endif()
+
 add_executable(Neurus
 	main.cpp
 )
@@ -76,6 +82,9 @@ if(WIN32)
 		VS_DEBUGGER_COMMAND "$(OutDir)Neurus.exe"
 		VS_DEBUGGER_WORKING_DIRECTORY "$(OutDir)"
 	)
+
+	# Application icon embedded in Neurus.exe (Explorer, shortcuts, taskbar).
+	target_sources(Neurus PRIVATE "${CMAKE_SOURCE_DIR}/res/ui/logo/neurus.rc")
 
 	# Suppress LNK4099 for pre-compiled libraries without PDBs
 	target_link_options(Neurus PRIVATE /ignore:4099)
