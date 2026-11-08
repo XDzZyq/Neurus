@@ -29,8 +29,8 @@ responsibility, and Core supplies utilities shared across all of them.
 
 - Contains application logic and scene mutation
 - Owns Controllers (CameraController, TransformGizmoController,
-  ShaderController, SceneController, RenderConfigController) via
-  `src/editor/controllers/`
+  ShaderController, SceneController, ObjectController, RenderConfigController,
+  ScriptController) via `src/editor/controllers/`
 - Produces the two frame views: the renderer's view as an owned
   `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
   via `UpdateUIContext()`
@@ -42,15 +42,19 @@ responsibility, and Core supplies utilities shared across all of them.
   the Scene. The Editor itself holds no camera and exposes no camera API, only
   `GetViewport()` and the timing (`SyncCamera` in `Edit()`). A scene with zero
   cameras is a legal document. See [Editor Overview](../editor/overview.md).
-- Owns UIEvents (Qt signals) and EventQueue (typed EventPool)
-- Communicates with Renderer via Context (read-only frame snapshot) and typed
+- Owns UIEvents (Qt signals) and the typed `EventQueue`
+- The `EventQueue` is **Editor-internal**: it is not a channel to the Renderer
+  and nothing under `src/render/` includes it. It is drained once per frame
+  (`Edit()`) for events that originated at the UI boundary; everything else in
+  the editor dispatches synchronously through `Emit`
+- Communicates with the Renderer via Context (read-only frame snapshot) and typed
   `RenderRequest`s posted through a `RenderRequestSink*`
 - Must NOT directly manipulate GPU resources
-- Controller registry pattern: `Editor::RegisterController<T>(bus)` creates
-  controller, calls `Init(bus)`, stores in `m_controllers`
-- Event-driven controller communication: `Editor::Edit(input)` translates
-  InputState -> typed events -> EventQueue.Process() -> controllers handle
-  events
+- Controller registry pattern: `Editor::RegisterController<T>()` creates the
+  controller, calls `Init(m_ctx)` and stores it in `ed_controllers`
+- Event-driven controller communication: a UI signal reaches
+  `Editor::OnUIEvent`, the next `Edit()` drains it to the controllers, and every
+  event a handler emits is dispatched before that handler returns
 
 ## UI Layer (`src/ui/`)
 
@@ -64,7 +68,7 @@ responsibility, and Core supplies utilities shared across all of them.
 - `src/ui/models/`: Qt item models (ShaderStructModel, LogModel,
   LogFilterProxy)
 - `src/ui/delegates/`: Qt item delegates (ShaderFieldDelegate, LogDelegate)
-- `src/ui/utils/`: Non-widget UI helpers (ShaderHighlighter)
+- `src/ui/utils/`: Non-widget UI helpers (CodeHighlighter)
 - Displays data and captures user input
 - Emits Qt signals via UIEvents for state changes
 - Must NOT directly access Renderer internals
@@ -98,7 +102,7 @@ Vulkan-free utilities shared across the other layers:
 - `UID` - generic unique identifier primitive (resource base)
 - `ResourceManager` - single factory + UID pool (`Load<T>`, polymorphic
   serialize)
-- `IResourceLookup` - read-only pool lookup interface
+- `IResourceLookup` - pool fetch/lookup and name-registry interface
 - `Log` - `NEURUS_LOG` / `NEURUS_ERR` macros
 - `RenderConfig` - user-settable pipeline options (Vulkan-free; read by four
   layers)

@@ -40,7 +40,11 @@ void Viewport::Refresh(const UIContext& /*ctx*/)
 
 void Viewport::paintEvent(QPaintEvent* /*event*/)
 {
-	// No-op; the override stops Qt from filling the widget background.
+	// No Qt painting here: the override stops the widget background from being
+	// filled over the presented image. The invalidation itself still needs an
+	// answer - the renderer presents only when it has work - so ask for one
+	// redraw of the image that is already there.
+	emit exposed();
 }
 
 void Viewport::resizeEvent(QResizeEvent* event)
@@ -106,6 +110,11 @@ void Viewport::focusOutEvent(QFocusEvent* event)
 	const Qt::FocusReason reason = event->reason();
 	if (reason != Qt::ActiveWindowFocusReason && reason != Qt::PopupFocusReason)
 		emit focusLost(ViewportFocusLost{});
+
+	// Clicking another panel is the usual way the viewport is invalidated while
+	// the renderer is converged, so ask for one fresh present as well. Cheap:
+	// the Editor only queues an overlay redraw.
+	emit exposed();
 
 	QWidget::focusOutEvent(event);
 }

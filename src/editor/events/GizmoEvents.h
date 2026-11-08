@@ -3,7 +3,7 @@
  * @brief Typed intents for the modal transform gizmo (move / rotate / scale).
  *
  * These are *intents*, not state changes: the Editor translates a viewport
- * keystroke into one of them and enqueues it unconditionally, and the controller
+ * keystroke into one of them and emits it unconditionally, and the controller
  * decides whether it means anything. Only the gesture-opening event carries an
  * object uid, a stable identity the controller resolves at dispatch time; the
  * later events need none, since the controller already holds the latched target.

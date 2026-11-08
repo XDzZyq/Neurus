@@ -123,9 +123,9 @@ protected:
 		// Wire the panel exactly like Application::ConnectUIEvent: Qt signal
 		// -> EventQueue (deferred to the next Process()).
 		QObject::connect(&m_panel, &ShaderEditorPanel::fieldAdded,
-		                 [this](const ShaderFieldAdded& e) { m_bus.enqueue(e); });
+		                 [this](const ShaderFieldAdded& e) { m_bus.Enqueue(e); });
 		QObject::connect(&m_panel, &ShaderEditorPanel::structEdited,
-		                 [this](const ShaderStructEdited& e) { m_bus.enqueue(e); });
+		                 [this](const ShaderStructEdited& e) { m_bus.Enqueue(e); });
 
 		// Show the panel so the tree lays out and visualRect works for the
 		// delegate-cell clicks used by these tests.

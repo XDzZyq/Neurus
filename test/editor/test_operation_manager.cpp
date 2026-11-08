@@ -17,6 +17,7 @@
 
 #include "glm/glm.hpp"
 
+#include "editor/controllers/ObjectController.h"
 #include "editor/controllers/SceneController.h"
 #include "editor/events/EventBus.h"
 #include "editor/events/SceneEvents.h"
@@ -34,15 +35,32 @@
 
 using namespace neurus;
 
+namespace {
+
+/**
+ * @brief UID used by the script-scope tests that assert buffering and commit only.
+ *
+ * Deliberately unpooled: those tests never claim replay semantics, which are
+ * covered by ScriptScopeCompactsIntoOneEntry and test_editor/test_script_controller.cpp.
+ */
+constexpr int kScriptUid = 9001;
+
+} // anonymous namespace
+
 class OperationManagerTest : public ::testing::Test
 {
 protected:
 	void SetUp() override
 	{
 		m_controller.Init(m_ctx);
+		m_objectController.Init(m_ctx);
 
 		m_mesh   = std::make_shared<Mesh>();
 		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+		// Pooled: property writes and their op replay resolve through
+		// ctx.resources, so a non-pooled object would drop every edit.
+		m_resources.Register(m_mesh);
+		m_resources.Register(m_light);
 		// Pooled: camera ops are replayed against ctx.resources, not cam_list.
 		m_camera = m_resources.Load<Camera>();
 		m_scene.UseMesh(m_mesh);
@@ -62,6 +80,7 @@ protected:
 	                         [this]() { return &m_scene; },
 	                         [this]() { return &m_config; } };
 	SceneController m_controller;
+	ObjectController m_objectController;
 	std::shared_ptr<Mesh> m_mesh;
 	std::shared_ptr<Light> m_light;
 	std::shared_ptr<Camera> m_camera;
@@ -71,7 +90,7 @@ protected:
 
 TEST_F(OperationManagerTest, LightPower_RoundTrip)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
 	Process();
 	EXPECT_FLOAT_EQ(m_light->light_power, 42.0f);
 	ASSERT_TRUE(m_operations.CanUndo());
@@ -90,7 +109,7 @@ TEST_F(OperationManagerTest, LightPower_RoundTrip)
 
 TEST_F(OperationManagerTest, Position_RoundTrip)
 {
-	m_eventBus.enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	Process();
 	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
 
@@ -105,7 +124,7 @@ TEST_F(OperationManagerTest, Position_RoundTrip)
 
 TEST_F(OperationManagerTest, Replay_DoesNotRecordNewOperations)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
 	Process();
 
 	// Undo/Redo replay events synchronously through the same handler that
@@ -129,13 +148,13 @@ TEST_F(OperationManagerTest, Replay_DoesNotRecordNewOperations)
 
 TEST_F(OperationManagerTest, NewForwardOperation_ClearsRedo)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 30.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 30.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
 
 	// A fresh edit after an undo invalidates the redo branch.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 55.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 55.0f });
 	Process();
 	EXPECT_FALSE(m_operations.CanRedo());
 	EXPECT_TRUE(m_operations.CanUndo());
@@ -152,7 +171,7 @@ TEST_F(OperationManagerTest, Inverse_IsInvolution)
 	EXPECT_EQ(twice->Label(), op->Label());
 
 	OperationContext ctx{ m_eventBus };
-	twice->Apply(ctx); // emitNow() dispatches synchronously.
+	twice->Apply(ctx); // Emit() dispatches synchronously.
 	EXPECT_FLOAT_EQ(m_light->light_power, 77.0f);
 }
 
@@ -193,7 +212,7 @@ TEST_F(OperationManagerTest, UndoRedo_EmptyStacks_AreNoOps)
 
 TEST_F(OperationManagerTest, Clear_EmptiesBothStacks)
 {
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 15.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 15.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
@@ -211,7 +230,7 @@ TEST_F(OperationManagerTest, Visibility_RoundTrip)
 	ASSERT_TRUE(m_mesh->is_viewport);
 	ASSERT_TRUE(m_mesh->is_rendered);
 
-	m_eventBus.enqueue(VisibilityChanged{ m_mesh->GetObjectID(), false, false });
+	m_eventBus.Enqueue(VisibilityChanged{ m_mesh->GetObjectID(), false, false });
 	Process();
 	EXPECT_FALSE(m_mesh->is_viewport);
 	EXPECT_FALSE(m_mesh->is_rendered);
@@ -231,7 +250,7 @@ TEST_F(OperationManagerTest, CameraFov_RoundTrip)
 {
 	const float original = m_camera->cam_pers;
 
-	m_eventBus.enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
 	Process();
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, 35.0f);
 
@@ -348,9 +367,9 @@ TEST_F(OperationManagerTest, CameraTransform_DoesNotMerge_SeparateEntries)
 
 TEST_F(OperationManagerTest, DifferentKeys_DoNotMerge)
 {
-	m_eventBus.enqueue(CameraFovChanged{ m_camera->GetObjectID(), 40.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 40.0f });
 	Process();
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 25.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 25.0f });
 	Process();
 
 	// Two different-key edits are two entries: two undos to clear.
@@ -384,7 +403,7 @@ TEST_F(OperationManagerTest, CameraTransform_Inverse_IsInvolution)
 TEST_F(OperationManagerTest, Selection_RoundTrip)
 {
 	// Select the mesh.
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
 	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
@@ -404,9 +423,9 @@ TEST_F(OperationManagerTest, Selection_RoundTrip)
 TEST_F(OperationManagerTest, Selection_MultiSelect_RoundTrip)
 {
 	// Select mesh, then shift-add the light.
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
-	m_eventBus.enqueue(ObjectSelected{ m_light->GetObjectID(), Input::Mod_Shift });
+	m_eventBus.Enqueue(ObjectSelected{ m_light->GetObjectID(), Input::Mod_Shift });
 	Process();
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 2u);
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
@@ -427,7 +446,7 @@ TEST_F(OperationManagerTest, Selection_MultiSelect_RoundTrip)
 TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 {
 	// Record a real edit, then undo it so a redo is pending.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
 	Process();
 	m_operations.Undo();
 	EXPECT_FLOAT_EQ(m_light->light_power, 10.0f);
@@ -435,7 +454,7 @@ TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 
 	// A selection change is transparent: it appends to undo but MUST keep the
 	// pending redo intact (the key property of PreservesRedo()).
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
 	ASSERT_TRUE(m_operations.CanRedo());
@@ -448,17 +467,17 @@ TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 TEST_F(OperationManagerTest, RealEdit_ClearsRedo_AfterSelection)
 {
 	// Undo a real edit (redo pending), interleave a selection, then a real edit.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
 
-	m_eventBus.enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
 	Process();
 	ASSERT_TRUE(m_operations.CanRedo()); // selection preserved redo
 
 	// A branching edit still discards the redo timeline.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 88.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 88.0f });
 	Process();
 	EXPECT_FALSE(m_operations.CanRedo());
 }
@@ -535,7 +554,7 @@ TEST_F(OperationManagerTest, ExceptionDuringUndo_DoesNotKillRecording)
 	EXPECT_FALSE(m_operations.CanRedo()); // failed op dropped, not moved to redo
 
 	// A fresh edit must still record after the failed undo.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 7.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 7.0f });
 	Process();
 	EXPECT_TRUE(m_operations.CanUndo());
 
@@ -555,6 +574,148 @@ TEST_F(OperationManagerTest, ExceptionDuringRedo_DoesNotPushToUndo)
 	// Redo must not throw, and the failed forward op must not be pushed to undo.
 	m_operations.Redo();
 	EXPECT_FALSE(m_operations.CanRedo());
+	EXPECT_FALSE(m_operations.CanUndo());
+}
+
+// --- Script scope: one run, one undo step -----------------------------------
+
+TEST_F(OperationManagerTest, ScriptScopeCompactsIntoOneEntry)
+{
+	// The mesh is pooled, so the composite's Undo replays into a real object: the
+	// run is one entry that rewinds as a whole, not merely one stack slot.
+	const int uid = m_mesh->GetObjectID();
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(uid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.Submit(
+		std::make_unique<SetPositionOp>(uid, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(2.0f, 0.0f, 0.0f)));
+	m_operations.Submit(
+		std::make_unique<SetPositionOp>(uid, glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(3.0f, 0.0f, 0.0f)));
+	m_mesh->SetPosition(glm::vec3(3.0f, 0.0f, 0.0f)); // where the run left the object
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetUndoStack().size(), 1u);
+	EXPECT_TRUE(m_operations.CanUndo());
+	EXPECT_FALSE(m_operations.CanRedo());
+
+	m_operations.Undo();
+	EXPECT_TRUE(m_operations.GetUndoStack().empty());
+	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(0.0f));
+}
+
+/**
+ * @test A script write to a mergeable property must not fold into the entry the
+ *       previous live edit left on the stack: the run boundary stops coalescing
+ *       even when the MergeKey matches exactly.
+ */
+TEST_F(OperationManagerTest, ScriptScopeDoesNotMergeWithThePreviousEntry)
+{
+	const int uid = m_camera->GetObjectID();
+	const float original = m_camera->cam_pers;
+
+	// A live panel edit on the same camera, same op type, same MergeKey.
+	m_camera->ChangeCamPersp(40.0f);
+	m_operations.Submit(std::make_unique<CameraFovOp>(uid, original, 40.0f));
+
+	m_operations.BeginScriptScope();
+	m_camera->ChangeCamPersp(55.0f);
+	m_operations.Submit(std::make_unique<CameraFovOp>(uid, 40.0f, 55.0f));
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetUndoStack().size(), 2u);
+
+	// One undo leaves the first entry's recorded end state (40), not 55: it kept
+	// its own value instead of swallowing the script write.
+	m_operations.Undo();
+	EXPECT_FLOAT_EQ(m_camera->cam_pers, 40.0f);
+	ASSERT_TRUE(m_operations.CanUndo());
+	m_operations.Undo();
+	EXPECT_FLOAT_EQ(m_camera->cam_pers, original);
+}
+
+/**
+ * @test A script run names itself in the History panel: the default "Run Script"
+ *       on the undo list, and again on the redo list after Undo - never the first
+ *       child's label.
+ */
+TEST_F(OperationManagerTest, ScriptRun_IsLabelledInUndoAndRedo)
+{
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run Script");
+
+	m_operations.Undo();
+	ASSERT_EQ(m_operations.GetHistoryView().redo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().redo.front(), "Run Script");
+}
+
+/**
+ * @test The host's name is the history label, and the redo entry keeps it: a file
+ *       run passes "Run <file>" so it cannot be mistaken for a console run.
+ */
+TEST_F(OperationManagerTest, ScriptRun_UsesTheHostSuppliedName)
+{
+	m_operations.BeginScriptScope("Run demo.py");
+	m_operations.Submit(std::make_unique<SetPositionOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.EndScriptScope();
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run demo.py");
+
+	m_operations.Undo();
+	ASSERT_EQ(m_operations.GetHistoryView().redo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().redo.front(), "Run demo.py");
+}
+
+/**
+ * @test A composite that is not a script run still reports its first child's
+ *       label, so existing History text (an add or delete step) does not change.
+ */
+TEST_F(OperationManagerTest, Composite_KeepsTheFirstChildLabel)
+{
+	std::vector<std::unique_ptr<Operation>> edits;
+	edits.push_back(std::make_unique<SetPositionOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	edits.push_back(std::make_unique<SetRotationOp>(
+		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 45.0f)));
+	m_operations.Submit(std::make_unique<CompositeOp>(std::move(edits)));
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Move");
+}
+
+TEST_F(OperationManagerTest, EmptyScriptScopeCreatesNoEntry)
+{
+	m_operations.BeginScriptScope();
+	m_operations.EndScriptScope();
+	EXPECT_TRUE(m_operations.GetUndoStack().empty());
+}
+
+TEST_F(OperationManagerTest, ScriptScopeRecoversFromAFailedRun)
+{
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+	m_operations.EndScriptScope(); // a raising run still calls this
+
+	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
+	EXPECT_TRUE(m_operations.GetUndoStack().back() != nullptr);
+}
+
+TEST_F(OperationManagerTest, Clear_DropsAnOpenScriptBuffer)
+{
+	m_operations.BeginScriptScope();
+	m_operations.Submit(std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+
+	// New/Load wipes the history mid-scope: the buffered op must go with it
+	// instead of surfacing as a step in the next document.
+	m_operations.Clear();
+	m_operations.EndScriptScope();
+
+	EXPECT_TRUE(m_operations.GetUndoStack().empty());
 	EXPECT_FALSE(m_operations.CanUndo());
 }
 

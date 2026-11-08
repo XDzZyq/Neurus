@@ -16,6 +16,7 @@
 #include "render/DeferredRenderer.h"
 #include "render/RenderThread.h"
 #include "render/UploadManager.h"
+#include "script/ScriptEngine.h"
 #include "app/Preferences.h"
 #include "ui/UIManager.h"
 #include "platform/PlatformSurface.h"
@@ -59,6 +60,7 @@ private:
 	bool InitVulkan();
 	bool InitRenderer();
 	void InitEditor();
+	void InitScripting();
 	void ResizeViewport(int width, int height);
 
 	/**
@@ -102,6 +104,10 @@ private:
 	void OnProjectNew();
 	void OnProjectOpen(const std::string& path);
 	void OnProjectSave(const std::string& path = std::string());
+
+	// --- Scripting (Script Console → ScriptEngine) ---
+	void OnRunScript(const std::string& code);
+	void OnRunFile(const std::string& path);
 
 	/** @brief Aggregated document dirtiness: editor scene/config OR UI-state drift. */
 	bool IsDirty() const;
@@ -147,10 +153,16 @@ private:
 	// the Application forwards to the Editor (the shader editor's highlighter
 	// reports a text change from its destructor), and the Editor never points
 	// into the UI, so the UI must go first.
-	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared -> destroyed 8th (LAST)
-	std::unique_ptr<Editor>               app_editor;          // 2nd declared -> destroyed 7th
-	std::unique_ptr<UIManager>            app_mainWindow;      // 3rd declared -> destroyed 6th
-	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 4th declared -> destroyed 5th
+	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared -> destroyed 9th (LAST)
+	std::unique_ptr<Editor>               app_editor;          // 2nd declared -> destroyed 8th
+	// Declared AFTER app_editor so reverse-order destruction tears the engine
+	// down BEFORE the Editor: the engine may hold a ScriptContext that borrows
+	// the Editor's scene/config/resources, so releasing the engine first avoids
+	// dangling borrows during Python finalization. It still outlives the frame
+	// loop.
+	std::unique_ptr<ScriptEngine>         app_script;          // 3rd declared -> destroyed 7th
+	std::unique_ptr<UIManager>            app_mainWindow;      // 4th declared -> destroyed 6th
+	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 5th declared -> destroyed 5th
 
 	/**
 	 * @brief Surfaces whose swapchain use could not be proven finished.
@@ -160,11 +172,11 @@ private:
 	 * old one stays in app_surface: both live until shutdown, long after the
 	 * render thread joined and the renderer went idle.
 	 */
-	std::vector<std::unique_ptr<vk::raii::SurfaceKHR>> app_retiredSurfaces;  // 5th -> destroyed 4th
+	std::vector<std::unique_ptr<vk::raii::SurfaceKHR>> app_retiredSurfaces;  // 6th -> destroyed 4th
 
-	std::unique_ptr<UploadManager>        app_uploadManager;   // 6th declared -> destroyed 3rd
-	std::unique_ptr<DeferredRenderer>     app_renderer;        // 7th declared -> destroyed 2nd
-	std::unique_ptr<RenderThread>         app_renderThread;    // 8th declared -> destroyed 1st (FIRST)
+	std::unique_ptr<UploadManager>        app_uploadManager;   // 7th declared -> destroyed 3rd
+	std::unique_ptr<DeferredRenderer>     app_renderer;        // 8th declared -> destroyed 2nd
+	std::unique_ptr<RenderThread>         app_renderThread;    // 9th declared -> destroyed 1st (FIRST)
 };
 
 } // namespace neurus

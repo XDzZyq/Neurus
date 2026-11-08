@@ -43,6 +43,8 @@ Cross-layer traffic MUST go through exactly one of:
 - **RenderRequest** (typed values posted through `RenderRequestSink`) for
   Editor -> Renderer GPU work. The Editor's `EventQueue` is Editor-internal
   (input -> Controllers) and never crosses into the Renderer.
+- **EventQueue** (typed events) inside the Editor: the UI boundary is enqueued
+  and drained once per frame, while controller reactions dispatch synchronously.
 - **Context objects** (`RenderContext`, `UIContext`) for
   read-only data queries.
 
@@ -118,6 +120,7 @@ Stop and wait for user verification after each phase.
 | Editor: viewport, controllers, events, operations, gizmo, overlays | [docs/editor/overview.md](docs/editor/overview.md) and its siblings |
 | UI: panels, items, models, i18n | [docs/ui/overview.md](docs/ui/overview.md) and its siblings |
 | Core (UID, serialization, render config, logging), scene and assets | [docs/core/uid-and-resources.md](docs/core/uid-and-resources.md), [docs/scene/objects.md](docs/scene/objects.md), [docs/asset/data-resources.md](docs/asset/data-resources.md) |
+| Scripting: embedded CPython, the `neurus` module, Script Console | [docs/script/overview.md](docs/script/overview.md) |
 | Full indexes | [.github/instructions/README.md](.github/instructions/README.md), [docs/README.md](docs/README.md) |
 
 Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
@@ -131,6 +134,11 @@ Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
   they never invoke the build system, run `ctest` or launch `Neurus.exe`.
 - Only **one** agent runs `ctest`/`Neurus.exe` at a time - the binary is locked.
 - Never `git stash` while others are editing.
+- **Push Neurus-Lib before Neurus.** If the `lib` submodule is modified (or its
+  pointer moved), push Neurus-Lib and wait for its build/release workflow to
+  succeed before pushing Neurus - Neurus CI downloads the prebuilt libs from that
+  release, so pushing Neurus first breaks CI. See
+  [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md).
 - Keep changes minimal and localized; respect layer isolation. See
   [roles.instructions.md](.github/instructions/roles.instructions.md) for the
   full set.

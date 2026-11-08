@@ -7,6 +7,12 @@
  * the inverse. Replay is guarded by Phase::Replaying, so the Submit() the
  * re-run handler performs is suppressed rather than corrupting the stacks.
  *
+ * A third phase, Phase::Script, exists for script runs: opening the script scope
+ * makes Submit() buffer into m_scriptOps instead of the undo stack, so the whole
+ * run can be committed as one ScriptRunOp - one history entry carrying the run's
+ * label - when the scope closes. Without it a single run would fragment into one
+ * step per property write, which is not what "run script" means to a user.
+ *
  * Needs no scene or resource access: operations are pure value descriptors that
  * dispatch events carrying integer UIDs, resolved by the handlers at replay
  * time. Implements IOperationSink so controllers record without knowing the
@@ -18,6 +24,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "editor/operations/HistoryView.h"
@@ -47,6 +54,20 @@ public:
 	// --- IOperationSink ---
 	void Submit(std::unique_ptr<Operation> op) override;
 
+	/**
+	 * @brief Opens a script run's buffer, so the whole run lands as one entry.
+	 *
+	 * Logs and returns when a phase is already open (a nested or overlapping
+	 * run, or a call during replay), keeping the name the open scope already
+	 * holds. The refusal is not harmless: the caller's later Submit() calls keep
+	 * buffering into the still-open scope, and the next successful
+	 * EndScriptScope() commits two runs as a single undo step.
+	 *
+	 * @param name History label for the run; empty means the default "Run Script".
+	 */
+	void BeginScriptScope(std::string name = {}) override;
+	void EndScriptScope() override;
+
 	// --- History control ---
 	/** @brief Undoes the most recent operation (no-op if none). */
 	void Undo();
@@ -62,7 +83,7 @@ public:
 	 */
 	HistoryView GetHistoryView() const;
 
-	/** @brief Clears both stacks (e.g. on New/Load scene). */
+	/** @brief Clears both stacks and any half-open script buffer. */
 	void Clear();
 
 	// --- Persistence hooks ---
@@ -82,8 +103,19 @@ public:
 	                    std::vector<std::unique_ptr<Operation>> redo);
 
 private:
-	/** @brief Replay phase - Submit() is suppressed while Replaying. */
-	enum class Phase { Idle, Replaying };
+	/**
+	 * @brief Recording phase.
+	 *
+	 * Idle records normally; Replaying suppresses Submit() because undo/redo
+	 * re-runs the originating handler; Script buffers Submit() into m_scriptOps
+	 * so one script run lands as a single history entry.
+	 */
+	enum class Phase { Idle, Replaying, Script };
+
+	/**
+	 * @brief Display name of @p phase, for the log lines.
+	 */
+	static const char* PhaseName(Phase phase);
 
 	/**
 	 * @brief Emits an operation synchronously under the replay guard.
@@ -101,6 +133,12 @@ private:
 
 	std::vector<std::unique_ptr<Operation>> m_undo;
 	std::vector<std::unique_ptr<Operation>> m_redo;
+
+	/// Ops recorded while a script scope is open; committed as one ScriptRunOp.
+	std::vector<std::unique_ptr<Operation>> m_scriptOps;
+
+	/// History label of the open script run; empty means "Run Script".
+	std::string m_scriptName;
 
 	/// Maximum undo-stack depth; oldest entries evicted past this.
 	size_t m_maxUndoDepth = kDefaultMaxUndoDepth;

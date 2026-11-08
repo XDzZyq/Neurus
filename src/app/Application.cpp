@@ -39,6 +39,7 @@
 #include "ui/panels/PropertyPanel.h"
 #include "ui/panels/RenderConfigPanel.h"
 #include "ui/panels/ShaderEditorPanel.h"
+#include "ui/panels/ScriptConsolePanel.h"
 #include "ui/panels/Viewport.h"
 
 #include <QApplication>
@@ -216,6 +217,7 @@ int Application::Run()
 
 	// Now renderer + uploadManager exist - safe to create Editor
 	InitEditor();
+	InitScripting();
 
 	const auto projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
 	const std::string objPath = kDefaultSceneObj;
@@ -464,7 +466,36 @@ void Application::InitEditor()
 	// the thread: a request posted while no frame is coming is still serviced.
 	app_editor = std::make_unique<neurus::Editor>(app_renderThread.get());
 	app_editor->Initialize();
+
+	// Created here with the other subsystems so NewFrameSignals has a stable
+	// Console() buffer; python startup happens in InitScripting().
+	app_script = std::make_unique<neurus::ScriptEngine>();
+
 	NEURUS_LOG("[Application] Editor initialized, IBL handled by Editor");
+}
+
+void Application::InitScripting()
+{
+	// Scripted writes go through the editor's own dispatch, so a script mutation
+	// is applied by the same controller as the equivalent panel edit.
+	app_script->SetEventQueue(&app_editor->GetEventQueue());
+
+	// The engine resolves its own environment (NEURUS_PYTHON_ENV override, else
+	// the build-time lib/.venv default). A failure degrades to a no-op engine.
+	app_script->Initialize();
+}
+
+void Application::OnRunScript(const std::string& code)
+{
+	// Deferred: the engine queues it and the frame loop runs it. The run
+	// dispatches every event synchronously as it executes, so no later drain is
+	// involved - the mutation is applied before the next Python statement.
+	app_script->Submit(code);
+}
+
+void Application::OnRunFile(const std::string& path)
+{
+	app_script->SubmitFile(path);
 }
 
 // =========================================================================
@@ -602,10 +633,18 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     // exit that skips the measurement without hiding cost.
 	                     const auto tickStart = std::chrono::steady_clock::now();
 
-	                     if (!app_renderThread || !app_editor)
+	                     if (!app_renderThread || !app_editor || !app_script)
 	                     {
 	                         return;
 	                     }
+
+	                     // Run any queued scripts first: a run dispatches its
+	                     // events synchronously, so its mutations are already
+	                     // applied when the queued UI events drain below.
+	                     // The context is generated fresh for this batch.
+	                     neurus::ScriptContext scriptCtx;
+	                     app_editor->UpdateScriptContext(scriptCtx);
+	                     app_script->ExecutePending(scriptCtx);
 
 	                     // A finished pick enters as a selection event, so this
 	                     // tick's Edit() handles it like any other UI event.
@@ -636,6 +675,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     ctx.profile = &status.profile;
 	                     ctx.log = &neurus::LogBuffer::instance();
 	                     ctx.history = &history;
+	                     ctx.scriptConsole = &app_script->Console();
 	                     app_mainWindow->Refresh(ctx);
 
 	                     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -678,6 +718,21 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::undoRequested);
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::redoRequested);
 
+	// --- Script Console → Application (runs Python through the engine) ---
+	// The console panel emits its own signals; the UIEvents requests let other
+	// UI (e.g. the Tools menu) trigger a run without holding the panel.
+	if (auto* console = app_mainWindow->GetPanel<neurus::ScriptConsolePanel>())
+	{
+		QObject::connect(console, &neurus::ScriptConsolePanel::runSnippetRequested,
+		                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+		QObject::connect(console, &neurus::ScriptConsolePanel::runFileRequested,
+		                 [this](const QString& path) { OnRunFile(path.toStdString()); });
+	}
+	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptRequested,
+	                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptFileRequested,
+	                 [this](const QString& path) { OnRunFile(path.toStdString()); });
+
 	// --- Outliner selection → Editor (via ConnectUIEvent → EventQueue) ---
 	if (auto* outliner = app_mainWindow->GetPanel<neurus::Outliner>())
 	{
@@ -713,6 +768,15 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 		// and the focus-loss abort.
 		ConnectUIEvent(viewport, &neurus::Viewport::keyPressed);
 		ConnectUIEvent(viewport, &neurus::Viewport::focusLost);
+
+		// A Qt repaint of the native viewport (focus change, window uncovered)
+		// does not redraw the presented image. Queue one overlay redraw so a
+		// converged renderer presents again instead of leaving the client area
+		// black.
+		QObject::connect(viewport, &neurus::Viewport::exposed,
+		                 [editor = app_editor.get()]() {
+		                     editor->OnUIEvent(neurus::ViewportExposed{});
+		                 });
 
 		// Left-click: pixel-perfect object selection via the ID buffer.
 		QObject::connect(viewport, &neurus::Viewport::mousePressed,

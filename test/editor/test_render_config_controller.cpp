@@ -78,7 +78,7 @@ TEST_F(RenderConfigControllerTest, DiscreteEdit_AppliesAndRecords_RoundTrip)
 	const float original = m_config.r_gamma;
 	const RenderConfig edited = ConfigWithGamma(2.2f);
 
-	m_eventBus.enqueue(RenderConfigChangedEvent{ edited });
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ edited });
 	Process();
 	EXPECT_FLOAT_EQ(m_config.r_gamma, 2.2f);
 	ASSERT_TRUE(m_operations.CanUndo());
@@ -99,7 +99,7 @@ TEST_F(RenderConfigControllerTest, NoOpEdit_RecordsNothing)
 {
 	// Writing the current (default) config back is a no-op: applied but not
 	// recorded, so the undo history stays empty.
-	m_eventBus.enqueue(RenderConfigChangedEvent{ m_config });
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ m_config });
 	Process();
 	EXPECT_FALSE(m_operations.CanUndo());
 }
@@ -113,11 +113,11 @@ TEST_F(RenderConfigControllerTest, SliderGesture_CollapsesToOneUndoEntry)
 	// Bracket a stream of intermediate slider values with begin/end. Every
 	// intermediate write applies live but is NOT recorded; only the release
 	// commits one op spanning the whole drag.
-	m_eventBus.enqueue(ConfigEditBegin{});
-	m_eventBus.enqueue(RenderConfigChangedEvent{ ConfigWithGamma(1.5f) });
-	m_eventBus.enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.0f) });
-	m_eventBus.enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.2f) });
-	m_eventBus.enqueue(ConfigEditEnd{});
+	m_eventBus.Enqueue(ConfigEditBegin{});
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(1.5f) });
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.0f) });
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.2f) });
+	m_eventBus.Enqueue(ConfigEditEnd{});
 	Process();
 
 	EXPECT_FLOAT_EQ(m_config.r_gamma, 2.2f);
@@ -139,10 +139,10 @@ TEST_F(RenderConfigControllerTest, SliderGesture_NetNoChange_RecordsNothing)
 
 	// Drag away and back to the starting value: at release the before/after
 	// configs are equal, so nothing is recorded.
-	m_eventBus.enqueue(ConfigEditBegin{});
-	m_eventBus.enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.0f) });
-	m_eventBus.enqueue(RenderConfigChangedEvent{ ConfigWithGamma(original) });
-	m_eventBus.enqueue(ConfigEditEnd{});
+	m_eventBus.Enqueue(ConfigEditBegin{});
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.0f) });
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(original) });
+	m_eventBus.Enqueue(ConfigEditEnd{});
 	Process();
 
 	EXPECT_FLOAT_EQ(m_config.r_gamma, original);
@@ -153,14 +153,14 @@ TEST_F(RenderConfigControllerTest, DuringGesture_NoIntermediateEntries)
 {
 	// Mid-gesture, before release, no op has been recorded yet even though the
 	// live config already reflects the latest intermediate value.
-	m_eventBus.enqueue(ConfigEditBegin{});
-	m_eventBus.enqueue(RenderConfigChangedEvent{ ConfigWithGamma(1.7f) });
+	m_eventBus.Enqueue(ConfigEditBegin{});
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(1.7f) });
 	Process();
 
 	EXPECT_FLOAT_EQ(m_config.r_gamma, 1.7f);
 	EXPECT_FALSE(m_operations.CanUndo());
 
-	m_eventBus.enqueue(ConfigEditEnd{});
+	m_eventBus.Enqueue(ConfigEditEnd{});
 	Process();
 	EXPECT_TRUE(m_operations.CanUndo());
 }

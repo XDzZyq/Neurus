@@ -6,15 +6,18 @@ living in `src/editor/operations/`.
 ## Overview
 
 Operations never mutate the scene directly: `Apply()` re-dispatches the
-originating scene event via `EventQueue::emitNow`, so the existing controller
+originating scene event through `IEventQueue::Emit`, so the existing controller
 handler performs the mutation. This keeps a single mutation path: undo/redo
 exercises the same code as a live edit.
 
 A `Phase::Replaying` guard in `OperationManager` makes `Submit()` a no-op during
-replay so playback does not re-record. The guard is RAII (restored on exception),
-`Replay()` catches and logs handler exceptions and returns whether the op applied,
-and `Undo()`/`Redo()` only move an op onto the opposite stack when replay
-succeeded; a failed replay is dropped, never enqueued as a phantom entry.
+replay so playback does not re-record. `Replay()` saves the phase, sets
+`Replaying`, and restores the saved phase on every exit path - after a successful
+`Apply()`, and in both catch blocks - so this is manual save/restore rather than
+an RAII guard: a new exit path means a new restore. `Replay()` catches and logs
+handler exceptions and returns whether the op applied, and `Undo()`/`Redo()` only
+move an op onto the opposite stack when replay succeeded; a failed replay is
+dropped, never pushed as a phantom entry.
 
 Diagnostic hint: a stuck `Replaying` phase presents as "undo stopped working",
 because `Submit()` stays a no-op while the guard is held.
@@ -22,6 +25,52 @@ because `Submit()` stays a no-op while the guard is held.
 The controller-side wiring that produces operations (gesture begin/end,
 per-controller specifics) lives in [Controllers](controllers.md); this page
 covers the operation model, coalescing rules, and persistence.
+
+## One undo step per script run
+
+A script run is a burst of ordinary writes: each one reaches its controller and
+`Submit` exactly like a panel edit. Left alone, that would fragment a run into one
+undo entry per property set, so the manager tracks the recording phase explicitly:
+
+```cpp
+enum class Phase { Idle, Replaying, Script };
+```
+
+`Idle` records normally. `Replaying` drops `Submit` (undo/redo re-runs the same
+handlers). `Script` appends `Submit` to a buffer instead of the undo stack, and it
+does so before the merge logic, so a write inside a run never folds into an entry
+that already exists - nothing merges across a run boundary.
+
+The run boundary is carried by two events. `ScriptEngineImpl::RunSource` emits
+`ScriptRunStarted` before it executes the source and `ScriptRunFinished` on every
+exit path; `ScriptController` forwards both to `BeginScriptScope()` and
+`EndScriptScope()`:
+
+- `BeginScriptScope` logs and returns when a phase is already active - a nested or
+  overlapping scope has no meaningful owner - and only otherwise clears the buffer
+  and enters `Phase::Script`. A refused call is not harmless: every later `Submit`
+  keeps buffering into the still-open scope, so the next successful
+  `EndScriptScope` commits two runs as a single undo step.
+- `EndScriptScope` restores `Idle` first, so the composite's own `Submit` takes the
+  normal recording path instead of re-entering the buffer. It then wraps the
+  buffered operations in one `ScriptRunOp` and submits it, which clears the redo
+  stack and honours the undo-depth cap like any other entry.
+- An empty run records nothing, so a run that only reads cannot leave an entry
+  that makes `Ctrl+Z` appear to do nothing.
+- A run that raises still closes its scope, because `ScriptRunFinished` is emitted
+  by a scope guard's destructor. The writes made before the error stay as one
+  entry, so one undo removes exactly what the run did.
+- `Clear()` drops any buffered script operations along with both stacks.
+
+The buffered operations are not replayed from the buffer: the committed
+`ScriptRunOp` is an ordinary history entry, so undo and redo replay it like any
+other composite. It carries the run name as its label, defaulting to "Run Script"
+when the host supplied none, and serializes that name with the edits, so the
+label is the same in the undo list, the redo list and after a save/reload. One
+pre-existing `CompositeOp` property becomes more visible as script composites
+grow: if replaying a child throws, `Replay` drops the whole entry while the
+document is already partially rewound. See also the write path in
+[Scripting](../script/overview.md#one-undo-step-per-run).
 
 ## Operation model
 
@@ -49,7 +98,7 @@ covers the operation model, coalescing rules, and persistence.
   derives from `Operation` directly rather than from `TransitionOp`, stores the
   before/after camera UIDs (`0` = no scene camera, which hands the view back to
   the viewport's own camera), and `Apply()` does
-  `emitNow(ActiveCameraChanged{after})`, the same event the PropertyPanel
+  `Emit(ActiveCameraChanged{after})`, the same event the PropertyPanel
   checkbox emits, so there is no replay-only path. `Inverse()` swaps the
   endpoints. It does not override `PreservesRedo()`: changing the view camera is a
   real edit that branches history, unlike selection. The handler records it only
@@ -130,9 +179,9 @@ records nothing, and confirm submits exactly one `SetPositionOp`/`SetRotationOp`
 `SetScaleOp` for the whole gesture, or none at all when the value is unchanged,
 which is also what makes a cancelled gesture leave no entry behind. Routing the
 drag through `PositionChanged`/`RotationChanged`/`ScaleChanged` instead would
-record roughly 60 entries per second: `SceneController` submits on every one of
+record roughly 60 entries per second: `ObjectController` submits on every one of
 those events, and those three ops declare no `MergeKey()`, so nothing would
-coalesce. The cost of bypassing `SceneController` is that this controller must
+coalesce. The cost of bypassing `ObjectController` is that this controller must
 emit `SceneModified` + `RenderResetEvent` itself, plus `LightGpuChanged` for a
 light, whose GPU position lives in an SSBO the transform write does not touch.
 

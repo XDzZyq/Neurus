@@ -164,7 +164,7 @@ void Swapchain::Recreate(uint32_t width, uint32_t height)
 	++r_generation;
 }
 
-uint32_t Swapchain::AcquireNextImage(const vk::raii::Semaphore& signalSemaphore)
+std::optional<uint32_t> Swapchain::AcquireNextImage(const vk::raii::Semaphore& signalSemaphore)
 {
 	try
 	{
@@ -173,10 +173,26 @@ uint32_t Swapchain::AcquireNextImage(const vk::raii::Semaphore& signalSemaphore)
 		auto [result, imageIndex] = r_swapchain->acquireNextImage(
 			UINT64_MAX, *signalSemaphore, nullptr);
 
-		if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
+		// Suboptimal still acquired an image and signalled the semaphore, so it
+		// must be rendered and presented like any other. Recreating here would
+		// drop the acquired image and leave its semaphore signalled for the next
+		// acquire to signal again. The present path decides whether to rebuild.
+		if (result == vk::Result::eSuboptimalKHR)
+		{
+			return imageIndex;
+		}
+
+		if (result == vk::Result::eErrorOutOfDateKHR)
 		{
 			Recreate(r_recreateWidth, r_recreateHeight);
-			return 0;
+			return std::nullopt;
+		}
+
+		if (result == vk::Result::eErrorSurfaceLostKHR)
+		{
+			// The non-throwing form of the same failure the catch below handles.
+			NEURUS_LOG("[Swapchain] Surface lost during acquire - deferring.");
+			return std::nullopt;
 		}
 
 		if (result != vk::Result::eSuccess)
@@ -190,12 +206,18 @@ uint32_t Swapchain::AcquireNextImage(const vk::raii::Semaphore& signalSemaphore)
 	{
 		// vk::raii wrapper may throw instead of returning the error result
 		Recreate(r_recreateWidth, r_recreateHeight);
-		return 0;
+		return std::nullopt;
 	}
 	catch (const vk::SurfaceLostKHRError&)
 	{
-		// Surface lost - can't acquire. Keep the old swapchain, signal caller.
-		return 0;
+		// Nothing was acquired and the semaphore stayed unsignalled. Reporting
+		// index 0 as if it were an acquisition would make the caller submit a
+		// frame that waits on a never-signalled semaphore and presents an image
+		// it never acquired (VUID-vkQueueSubmit-pWaitSemaphores-03238 and
+		// VUID-VkPresentInfoKHR-pImageIndices-01430). Keep the swapchain and let
+		// the surface-change path rebuild it.
+		NEURUS_LOG("[Swapchain] Surface lost during acquire - deferring.");
+		return std::nullopt;
 	}
 }
 
@@ -222,7 +244,9 @@ void Swapchain::Present(const vk::raii::Semaphore& waitSemaphore, uint32_t image
 	}
 	catch (const vk::SurfaceLostKHRError&)
 	{
-		// Surface lost - can't present. Don't recreate (would fail).
+		// No queue operation can present to a surface that no longer exists; the
+		// surface-change path owns recovery. Log it - a silent catch hid this.
+		NEURUS_LOG("[Swapchain] Surface lost during present - dropping the frame.");
 	}
 }
 

@@ -31,8 +31,8 @@ add_library(neurus_ui STATIC
 	delegates/LogDelegate.cpp
 	delegates/ShaderFieldDelegate.h
 	delegates/ShaderFieldDelegate.cpp
-	utils/ShaderHighlighter.h
-	utils/ShaderHighlighter.cpp
+	utils/CodeHighlighter.h
+	utils/CodeHighlighter.cpp
 	utils/I18n.h
 	utils/I18n.cpp
 	utils/POCatalog.h
@@ -63,6 +63,8 @@ add_library(neurus_ui STATIC
 	panels/ShaderEditorPanel.cpp
 	panels/LogPanel.h
 	panels/LogPanel.cpp
+	panels/ScriptConsolePanel.h
+	panels/ScriptConsolePanel.cpp
 	panels/PreferencesDialog.h
 	panels/PreferencesDialog.cpp
 )

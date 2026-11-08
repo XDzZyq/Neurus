@@ -1,12 +1,16 @@
 /**
  * @file SceneController.h
- * @brief Scene mutation controller - event-driven, no per-frame polling.
+ * @brief Scene document controller - selection and membership, event-driven.
  *
- * Translates scene-domain events (selection, transform, visibility, property
- * edits) into scene object mutations. Fully stateless: all handlers are free
- * functions in the .cpp; every event carries an integer UID, resolved against
- * the current scene through the context, so a scene swap can never leave a
- * handler holding a stale object.
+ * Owns what the scene document CONTAINS and what is selected in it: add,
+ * delete, select, deselect and camera activation. Object property writes
+ * (visibility, transforms, camera / mesh / light / environment / debug knobs)
+ * belong to ObjectController, which resolves through the resource pool rather
+ * than the scene.
+ *
+ * Fully stateless: all handlers are free functions in the .cpp; every event
+ * carries an integer UID, resolved against the current scene through the
+ * context, so a scene swap can never leave a handler holding a stale object.
  *
  * GPU uploads stay out of here: the controller emits typed change events that
  * the Editor subscribes to.
@@ -28,13 +32,13 @@ public:
 	SceneController() = default;
 
 	/**
-	 * @brief Subscribes to scene events on the given context.
+	 * @brief Subscribes to scene-document events on the given context.
 	 *
 	 * Registers lambda handlers that forward each event to the corresponding
-	 * free-function handler; property/transform handlers capture the before
-	 * value, mutate, then record a forward operation via the sink.
+	 * free-function handler; selection and membership handlers capture the
+	 * before state, mutate the scene, then record an operation via the sink.
 	 *
-	 * @param ctx Controller context (events, resources, ops, scene).
+	 * @param ctx Controller context (events, resources, ops, scene, viewport).
 	 */
 	void Init(ControllerContext& ctx) override;
 };

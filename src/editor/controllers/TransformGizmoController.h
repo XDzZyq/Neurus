@@ -4,15 +4,15 @@
  *
  * Stateless beyond what the state machine already holds: every handler resolves
  * the object uid against the current scene, calls exactly one TransformGizmo
- * method, and enqueues the notifications that mutation implies.
+ * method, and emits the notifications that mutation implies.
  *
  * The drag mutates the transform directly and submits nothing; confirm submits
  * one op for the whole gesture. Because the drag bypasses the scene-mutation
  * path, this controller emits the dirty/GPU/repaint notifications itself.
  *
- * Registered AFTER CameraController so its handlers see an already-updated
- * camera, and it reads the cursor from the event rather than from the viewport,
- * since dispatch is registration-ordered.
+ * Registration order next to CameraController does not matter: the two share no
+ * event type, and the drag reads the cursor from the `MouseMoveEvent` payload
+ * rather than from the viewport.
  */
 
 #pragma once
@@ -35,8 +35,9 @@ public:
 	/**
 	 * @brief Subscribes to the gizmo and input events that drive the gesture.
 	 *
-	 * Must be called after CameraController::Init() so a drag handler sees the
-	 * camera pose this frame's orbit already produced.
+	 * Order next to CameraController::Init() does not matter: the two share no
+	 * event type, and the drag reads the cursor from the MouseMoveEvent payload
+	 * rather than from the viewport.
 	 */
 	void Init(ControllerContext& ctx) override;
 };

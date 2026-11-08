@@ -42,6 +42,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
@@ -426,8 +427,20 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	bool skipFrame = false;
 	try
 	{
-		imageIndex = r_swapchain->AcquireNextImage(imageAvailable);
-		r_lastImageIndex = imageIndex;
+		const std::optional<uint32_t> acquired =
+			r_swapchain->AcquireNextImage(imageAvailable);
+		if (acquired)
+		{
+			imageIndex = *acquired;
+			r_lastImageIndex = imageIndex;
+		}
+		else
+		{
+			// Out of date (the swapchain was already rebuilt) or surface lost
+			// (nothing acquired, no semaphore signalled). Either way there is
+			// no image to submit or present this frame.
+			skipFrame = true;
+		}
 	}
 	catch (const vk::OutOfDateKHRError&)
 	{

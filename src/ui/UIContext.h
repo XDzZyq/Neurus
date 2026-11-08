@@ -9,13 +9,13 @@
  *
  * Two writers, each filling only its own half: the Editor owns the document
  * state it is the source of (scene, config), and the Application owns everything
- * frame-scoped or service-backed (profile, log, history). A new member belongs
+ * frame-scoped or service-backed (profile, log, history, console). A new member belongs
  * to whoever owns its source, and the Editor half must be plain assignable
  * fields: UpdateUIContext() runs in neurus_editor, which does not link neurus_ui
  * and so may not call a UIContext symbol defined there.
  *
  * Null policy: `scene` must be checked (HasScene()), `config` must not be read
- * directly - go through Settings(), which never returns null. The three
+ * directly - go through Settings(), which never returns null. The four
  * Application-filled pointers are set every frame in production, but a
  * default-constructed UIContext leaves them null, so a panel must check before
  * dereferencing.
@@ -31,6 +31,7 @@ namespace neurus
 class RenderConfig;      // src/core/RenderConfig.h - Vulkan-free
 class Scene;             // src/scene/Scene.h
 class LogBuffer;         // src/core/Log.h
+class ScriptConsoleBuffer;  // src/script/ScriptConsole.h - Vulkan-free
 struct FrameProfile;     // src/render/ProfilingData.h - Vulkan-free
 struct HistoryView;      // src/editor/operations/HistoryView.h
 
@@ -38,7 +39,7 @@ struct HistoryView;      // src/editor/operations/HistoryView.h
  * @brief Read-only context passed to UIPanel::Refresh() each frame.
  *
  * Filled by the Editor (scene, config) and the Application (profile, log,
- * history) each frame.
+ * history, console) each frame.
  */
 struct UIContext
 {
@@ -66,6 +67,9 @@ struct UIContext
 
 	/** @brief The current undo/redo snapshot, or nullptr. Set by the Application. */
 	const HistoryView* history = nullptr;
+
+	/** @brief The Script Console ring buffer, or nullptr. Set by the Application. */
+	const ScriptConsoleBuffer* scriptConsole = nullptr;
 
 	// --- Null policy for the Editor half ---
 

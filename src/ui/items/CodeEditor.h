@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-#include "utils/ShaderHighlighter.h"
+#include "utils/CodeHighlighter.h"
 
 namespace neurus {
 
@@ -13,7 +13,7 @@ class CodeEditor : public QPlainTextEdit
     Q_OBJECT
 
 public:
-    using Language = ShaderHighlighter::Language;
+    using Language = CodeHighlighter::Language;
 
     explicit CodeEditor(QWidget* parent = nullptr);
     ~CodeEditor() override = default;
@@ -61,7 +61,7 @@ private:
     void lineNumberAreaPaintEvent(QPaintEvent* event);
 
     LineNumberArea*              m_lineNumberArea      = nullptr;
-    std::unique_ptr<ShaderHighlighter> m_highlighter;
+    std::unique_ptr<CodeHighlighter> m_highlighter;
     bool                         m_lineNumbersVisible  = true;
 };
 

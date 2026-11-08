@@ -26,6 +26,7 @@ class MeshData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
+struct ScriptContext;   // script/ScriptContext.h - Vulkan/Qt-free script view
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
 }
 
@@ -181,6 +182,15 @@ public:
 	void UpdateUIContext(UIContext& ctx) const;
 
 	/**
+	 * @brief Fills the script-facing view: the borrowed scene, render config and
+	 *        resource pool.
+	 *
+	 * Mirrors UpdateUIContext - three field assignments, nothing else. The caller
+	 * builds a ScriptContext for one script run and discards it afterwards.
+	 */
+	void UpdateScriptContext(ScriptContext& ctx) const;
+
+	/**
 	 * @brief Returns a read-only snapshot of the undo/redo history.
 	 */
 	HistoryView GetHistory() const { return ed_operations.GetHistoryView(); }
@@ -189,6 +199,15 @@ public:
 	 * @brief Returns the undo/redo manager (for project history persistence).
 	 */
 	OperationManager& GetOperations() { return ed_operations; }
+
+	/**
+	 * @brief Returns the editor's typed event dispatch.
+	 *
+	 * Exists for the script engine's dispatch: a scripted property write is
+	 * emitted here and applied synchronously by the same controllers a panel
+	 * edit reaches, so the script observes its own mutation on return.
+	 */
+	IEventQueue& GetEventQueue() { return ed_eventBus; }
 
 	template<typename T>
 	void RegisterController()
@@ -200,9 +219,17 @@ public:
 
 	void Edit();
 
+	/**
+	 * @brief The single deferred entry point: the UI boundary.
+	 *
+	 * Everything inside the editor dispatches synchronously, so a script or a
+	 * controller observes its own mutation before the call returns. Only the
+	 * Qt-facing UI hands events over here, and Edit() drains them once per frame.
+	 */
 	template<typename Event>
-	void OnUIEvent(const Event& e){
-		ed_eventBus.enqueue<Event>(e);
+	void OnUIEvent(const Event& e)
+	{
+		ed_eventBus.Enqueue<Event>(e);
 	}
 
 	/**

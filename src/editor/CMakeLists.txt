@@ -15,6 +15,8 @@ add_library(neurus_editor STATIC
 	viewport/GizmoDrawBuilder.cpp
 	controllers/SceneController.h
 	controllers/SceneController.cpp
+	controllers/ObjectController.h
+	controllers/ObjectController.cpp
 	controllers/Controllers.h
 	controllers/ControllerContext.h
 	controllers/MutationNotify.h
@@ -22,6 +24,8 @@ add_library(neurus_editor STATIC
 	controllers/CameraController.cpp
 	controllers/RenderConfigController.h
 	controllers/RenderConfigController.cpp
+	controllers/ScriptController.h
+	controllers/ScriptController.cpp
 	controllers/ShaderController.h
 	controllers/ShaderController.cpp
 	controllers/TransformGizmoController.h
@@ -34,11 +38,13 @@ add_library(neurus_editor STATIC
 	operations/SceneOperations.h
 	operations/ConfigOperations.h
 	operations/ShaderOperations.h
+	operations/ScriptOperations.h
 	operations/registrations/OperationRegistration.h
 	operations/registrations/OperationRegistration.cpp
 	events/UIEvents.h
 	events/UIEvents.cpp
 	events/GizmoEvents.h
+	events/ScriptEvents.h
 )
 
 target_link_libraries(neurus_editor PUBLIC

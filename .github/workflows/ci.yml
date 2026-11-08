@@ -109,6 +109,12 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # `make update` provisions lib/.venv (the pybind11 environment) with uv.
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+
       - name: Update dependencies and configure
         shell: bash
         env:

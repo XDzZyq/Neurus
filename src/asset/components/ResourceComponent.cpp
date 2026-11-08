@@ -4,6 +4,7 @@
  */
 
 #include "asset/components/ResourceComponent.h"
+
 #include "core/Log.h"
 #include "core/ResourceManager.h"
 
@@ -13,6 +14,7 @@
 #include "scene/Environment.h"
 #include "scene/DebugMesh.h"
 #include "scene/Mesh.h"
+#include "scene/ObjectID.h"
 #include "render/shaders/Shader.h"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
@@ -20,6 +22,11 @@
 #include "scene/registrations/TypeRegistration.h"
 #include "asset/registrations/DataRegistration.h"
 #include "render/registrations/ShaderRegistration.h"
+
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace neurus::project
 {
@@ -94,6 +101,28 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		}
 		env->SetEquirectData(imageData);
 	});
+
+	// Seed the name registry from the restored object names. Sorting by UID keeps
+	// duplicate-name suffixing deterministic; writing the returned unique name back
+	// keeps o_name and the registry in sync across saves.
+	//
+	// ForEachUID, not ForEach<ObjectID>: the latter keys the EXACT dynamic type,
+	// so a pooled base ObjectID would hide every camera/mesh/light from the seed.
+	std::vector<std::pair<int, std::string>> named;
+	m_resources->ForEachUID([&](const std::shared_ptr<UID>& resource)
+	{
+		auto obj = std::dynamic_pointer_cast<ObjectID>(resource);
+		if (obj && !obj->o_name.empty())
+			named.emplace_back(obj->GetObjectID(), obj->o_name);
+	});
+	std::sort(named.begin(), named.end(),
+	          [](const auto& l, const auto& r) { return l.first < r.first; });
+	for (const auto& [id, name] : named)
+	{
+		const std::string unique = m_resources->SetName(id, name);
+		if (auto obj = m_resources->Get<ObjectID>(id))
+			obj->o_name = unique.empty() ? name : unique;
+	}
 }
 
 } // namespace neurus::project

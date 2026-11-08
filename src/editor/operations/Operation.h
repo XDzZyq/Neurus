@@ -116,7 +116,7 @@ public:
 	{
 		// The replayed event carries the target UID; the controller handler
 		// resolves it and no-ops stale ids.
-		ctx.events.emitNow(static_cast<const Derived*>(this)->MakeEvent(m_uid, m_after));
+		ctx.events.Emit(static_cast<const Derived*>(this)->MakeEvent(m_uid, m_after));
 	}
 
 	std::unique_ptr<Operation> Inverse() const override
@@ -183,11 +183,7 @@ public:
 
 	std::unique_ptr<Operation> Inverse() const override
 	{
-		std::vector<std::unique_ptr<Operation>> inv;
-		inv.reserve(m_ops.size());
-		for (auto it = m_ops.rbegin(); it != m_ops.rend(); ++it)
-			inv.push_back((*it)->Inverse());
-		return std::make_unique<CompositeOp>(std::move(inv));
+		return std::make_unique<CompositeOp>(InvertedSequence());
 	}
 
 	std::string Label() const override
@@ -204,6 +200,22 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(CEREAL_NVP(m_ops));
+	}
+
+protected:
+	/**
+	 * @brief Reversed, individually-inverted copy of the sequence.
+	 *
+	 * The shared inversion step for every composite subclass: each one hands the
+	 * result back to its own type, so it keeps its own label across undo and redo.
+	 */
+	std::vector<std::unique_ptr<Operation>> InvertedSequence() const
+	{
+		std::vector<std::unique_ptr<Operation>> inv;
+		inv.reserve(m_ops.size());
+		for (auto it = m_ops.rbegin(); it != m_ops.rend(); ++it)
+			inv.push_back((*it)->Inverse());
+		return inv;
 	}
 
 private:

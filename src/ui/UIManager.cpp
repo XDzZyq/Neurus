@@ -6,6 +6,7 @@
 #include "panels/ProfilingPanel.h"
 #include "panels/PropertyPanel.h"
 #include "panels/RenderConfigPanel.h"
+#include "panels/ScriptConsolePanel.h"
 #include "panels/ShaderEditorPanel.h"
 #include "panels/Viewport.h"
 #include "UIContext.h"
@@ -334,6 +335,24 @@ void UIManager::CreateMenus()
 		neurus::UIEvents::instance().requestScreenshotAll();
 	});
 
+	// Reuses the "Run Script" key already translated for the console + dialog.
+	auto* runScriptAction = trAction(toolsMenu, N_("Run Script"));
+	runScriptAction->setObjectName(QStringLiteral("runScriptAction"));
+	connect(runScriptAction, &QAction::triggered, this, [this]() {
+		const QString path = QFileDialog::getOpenFileName(
+			this, I18n::instance().translate("Run Script"), QString(),
+			QStringLiteral("Python scripts (*.py);;All files (*)"));
+		if (path.isEmpty())
+		{
+			return;
+		}
+		if (auto* dock = GetDock(PanelType::ScriptConsole))
+		{
+			dock->toggleView(true);
+		}
+		neurus::UIEvents::instance().requestRunScriptFile(path);
+	});
+
 	auto* helpMenu = addMenu(menuBar(), N_("&Help"));
 	auto* aboutAction = trAction(helpMenu, N_("&About Neurus"));
 	connect(aboutAction, &QAction::triggered, this, [this]() {
@@ -371,7 +390,8 @@ ads::DockWidgetArea DefaultDockArea(PanelType type)
 	case PanelType::PropertyPanel:
 	case PanelType::RenderConfig:   return ads::RightDockWidgetArea;
 	case PanelType::Profiling:
-	case PanelType::Log:            return ads::BottomDockWidgetArea;
+	case PanelType::Log:
+	case PanelType::ScriptConsole:  return ads::BottomDockWidgetArea;
 	case PanelType::Count:          break;
 	}
 	return ads::CenterDockWidgetArea;
@@ -575,6 +595,17 @@ void UIManager::CreateDocks()
 	                         I18n::instance().translateCtx("%1 new error(s): %2", "StatusBar")
 	                             .arg(delta).arg(first), 3000);
 	                 });
+
+	// --- Bottom: Script Console (tabbed with the Log panel) ---
+	auto scriptConsole = std::make_unique<neurus::ScriptConsolePanel>();
+	auto* scriptDock = MakeDock(scriptConsole.get());
+	scriptDock->setWidget(scriptConsole.get(), ads::CDockWidget::ForceNoScrollArea);
+	scriptDock->resize(640, 220);
+	scriptDock->setMinimumSize(320, 140);
+	win_dockManager->addDockWidget(ads::BottomDockWidgetArea, scriptDock,
+	                               logDock->dockAreaWidget());
+	m_panels[PanelType::ScriptConsole] = scriptConsole.release();
+	m_docks[PanelType::ScriptConsole] = scriptDock;
 
 	// Notify the new native window handle for surface recreation.
 	UIEvents::instance().requestUIRecreation(reinterpret_cast<quintptr>(newHwnd));

@@ -122,6 +122,16 @@ signals:
 	 */
 	void focusLost(const neurus::ViewportFocusLost& event);
 
+	/**
+	 * @brief Emitted when the native window needs the last image presented again.
+	 *
+	 * A Qt paint event does not redraw a Vulkan surface, and a converged renderer
+	 * presents nothing on its own, so the Editor turns this into one overlay
+	 * redraw. Also emitted on focus loss: clicking another panel is the common
+	 * way the viewport gets invalidated.
+	 */
+	void exposed();
+
 protected:
 	/**
 	 * @brief Override to prevent Qt from drawing a background.

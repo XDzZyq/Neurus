@@ -126,9 +126,9 @@ protected:
 TEST_F(ShaderControllerTest, CodeEditGesture_AppliesAndRecords_RoundTrip)
 {
 	// Begin gesture -> live keystroke -> end gesture: one op on focus-out.
-	m_eventBus.enqueue(ShaderEditBegin{ MeshObj(), kVertex });
-	m_eventBus.enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V1" });
-	m_eventBus.enqueue(ShaderEditEnd{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V1" });
+	m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
 	Process();
 
 	EXPECT_EQ(VertexUnit().code, "VERT_V1");
@@ -152,8 +152,8 @@ TEST_F(ShaderControllerTest, CodeEditGesture_AppliesAndRecords_RoundTrip)
 TEST_F(ShaderControllerTest, CodeEditGesture_NoNetChange_RecordsNothing)
 {
 	// Begin/end with no intervening code change: nothing recorded.
-	m_eventBus.enqueue(ShaderEditBegin{ MeshObj(), kVertex });
-	m_eventBus.enqueue(ShaderEditEnd{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
 	Process();
 
 	EXPECT_EQ(VertexUnit().code, "VERT_V0");
@@ -163,10 +163,10 @@ TEST_F(ShaderControllerTest, CodeEditGesture_NoNetChange_RecordsNothing)
 TEST_F(ShaderControllerTest, CodeEditGesture_DrainAwayAndBack_RecordsNothing)
 {
 	// Edit within a gesture then return to the original code: net no-op.
-	m_eventBus.enqueue(ShaderEditBegin{ MeshObj(), kVertex });
-	m_eventBus.enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_TEMP" });
-	m_eventBus.enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V0" });
-	m_eventBus.enqueue(ShaderEditEnd{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_TEMP" });
+	m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V0" });
+	m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
 	Process();
 
 	EXPECT_EQ(VertexUnit().code, "VERT_V0");
@@ -180,7 +180,7 @@ TEST_F(ShaderControllerTest, FieldAdd_AppliesAndRecords_RoundTrip)
 	ASSERT_TRUE(VertexUnit().parsed.AB_list.empty());
 
 	// Adding an attribute is a discrete edit: recorded immediately, one op.
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
 	Process();
 
 	ASSERT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
@@ -202,7 +202,7 @@ TEST_F(ShaderControllerTest, StructEdit_RenamesField_RoundTrip)
 	VertexUnit().parsed.AB_list.push_back(
 		S_IO{ 0, "orig", ParaType::FLOAT, "", Interp::Smooth });
 
-	m_eventBus.enqueue(ShaderStructEdited{
+	m_eventBus.Enqueue(ShaderStructEdited{
 		MeshObj(), kVertex, ShaderSection::Attributes, /*fieldIndex*/ 0,
 		/*subFieldIndex*/ -1, /*field*/ "name", /*value*/ "renamed" });
 	Process();
@@ -221,7 +221,7 @@ TEST_F(ShaderControllerTest, StructEdit_RenamesField_RoundTrip)
 TEST_F(ShaderControllerTest, StructEdit_NoMatchingField_RecordsNothing)
 {
 	// fieldIndex out of range: VisitElement returns false, no op recorded.
-	m_eventBus.enqueue(ShaderStructEdited{
+	m_eventBus.Enqueue(ShaderStructEdited{
 		MeshObj(), kVertex, ShaderSection::Attributes, /*fieldIndex*/ 5,
 		/*subFieldIndex*/ -1, /*field*/ "name", /*value*/ "x" });
 	Process();
@@ -398,8 +398,8 @@ TEST_F(ShaderControllerTest, FieldAdd_TwoDifferentSections_UndoRestoresBoth)
 	const size_t unifs = VertexUnit().parsed.uniform_list.size();
 
 	// Add one field to Attributes and one to Uniforms (two different sections).
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Uniforms, -1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Uniforms, -1 });
 	Process();
 
 	ASSERT_EQ(VertexUnit().parsed.AB_list.size(), attrs + 1);
@@ -428,8 +428,8 @@ TEST_F(ShaderControllerTest, FieldAdd_TwoDifferentStructDefs_UndoRestoresBoth)
 	const size_t b = sd[1].fields.size();
 
 	// Add a member field to struct 0, then a member to struct 1.
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::StructDefs, 0 });
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::StructDefs, 1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::StructDefs, 0 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::StructDefs, 1 });
 	Process();
 
 	ASSERT_EQ(sd[0].fields.size(), a + 1);
@@ -450,13 +450,13 @@ TEST_F(ShaderControllerTest, FieldAdd_MixedAdds_ThenCodeEdit_UndoKeepsWorking)
 	const size_t attrs = VertexUnit().parsed.AB_list.size();
 
 	// Two adds in different sections, then a code-edit gesture on top.
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Uniforms, -1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Uniforms, -1 });
 	Process();
 
-	m_eventBus.enqueue(ShaderEditBegin{ MeshObj(), kVertex });
-	m_eventBus.enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V1" });
-	m_eventBus.enqueue(ShaderEditEnd{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
+	m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V1" });
+	m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
 	Process();
 	ASSERT_EQ(VertexUnit().code, "VERT_V1");
 
@@ -478,7 +478,7 @@ TEST_F(ShaderControllerTest, StructEdit_TypeEditOnRealisticIR_UndoRestores)
 	SeedRealisticIR(VertexUnit().parsed);
 
 	// Change the attribute's type from vec3 to vec4 (as the type combo delivers).
-	m_eventBus.enqueue(ShaderStructEdited{
+	m_eventBus.Enqueue(ShaderStructEdited{
 		MeshObj(), kVertex, ShaderSection::Attributes, /*fieldIndex*/ 0,
 		/*subFieldIndex*/ -1, /*field*/ "type", /*value*/ "vec4" });
 	Process();
@@ -499,7 +499,7 @@ TEST_F(ShaderControllerTest, StructEdit_StructMemberEdit_UndoRestores)
 	SeedRealisticIR(VertexUnit().parsed);
 
 	// Rename struct 0's member 1 (fieldIndex=struct, subFieldIndex=member).
-	m_eventBus.enqueue(ShaderStructEdited{
+	m_eventBus.Enqueue(ShaderStructEdited{
 		MeshObj(), kVertex, ShaderSection::StructDefs, /*fieldIndex*/ 0,
 		/*subFieldIndex*/ 1, /*field*/ "name", /*value*/ "diffuse" });
 	Process();
@@ -539,8 +539,8 @@ TEST_F(ShaderControllerTest, FieldAdd_RealGbufferVert_AttributesAndPassOutputs_U
 	ASSERT_GT(pass, 0u);
 
 	// The reported combo: one add into Attributes, one into Pass Outputs.
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
-	m_eventBus.enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::PassOutputs, -1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
+	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::PassOutputs, -1 });
 	Process();
 
 	ASSERT_EQ(VertexUnit().parsed.AB_list.size(), attrs + 1);
@@ -578,12 +578,12 @@ protected:
 		m_scene.UseMesh(m_mesh);
 		m_shader = m_pool.Load<RenderShader>("MeshShader_1", "v.vert", "f.frag");
 
-		m_eventBus.subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
+		m_eventBus.Subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
 			auto mesh = m_pool.Get<Mesh>(e.objectUid);
 			if (!mesh) return;
 			mesh->SetObjShader(m_pool.Get<RenderShader>(e.shaderId));
 		});
-		m_eventBus.subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
+		m_eventBus.Subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
 			auto mesh = m_pool.Get<Mesh>(e.objectUid);
 			if (!mesh) return;
 			mesh->SetObjShader(nullptr);
@@ -670,13 +670,13 @@ TEST_F(ShaderControllerTest, Compile_Success_EmitsShaderCompiledWithShaderId)
 
 	bool fired = false;
 	int captured = -1;
-	m_eventBus.subscribe<ShaderCompiled>([&](const ShaderCompiled& e) {
+	m_eventBus.Subscribe<ShaderCompiled>([&](const ShaderCompiled& e) {
 		fired = true;
 		captured = e.shaderObjectId;
 	});
 
 	// unitType 1 regenerates GLSL from the parsed IR, then compiles.
-	m_eventBus.enqueue(ShaderCompileRequested{ MeshObj(), kVertex, 1 });
+	m_eventBus.Enqueue(ShaderCompileRequested{ MeshObj(), kVertex, 1 });
 	Process();
 
 	// The emit is what this asserts: delete the enqueue in OnCompileShader and
@@ -699,9 +699,9 @@ TEST_F(ShaderControllerTest, Compile_Failure_DoesNotEmitShaderCompiled)
 	m_mesh->o_shader = shader;
 
 	bool fired = false;
-	m_eventBus.subscribe<ShaderCompiled>([&](const ShaderCompiled&) { fired = true; });
+	m_eventBus.Subscribe<ShaderCompiled>([&](const ShaderCompiled&) { fired = true; });
 
-	m_eventBus.enqueue(ShaderCompileRequested{ MeshObj(), kVertex, 1 });
+	m_eventBus.Enqueue(ShaderCompileRequested{ MeshObj(), kVertex, 1 });
 	Process();
 
 	EXPECT_FALSE(fired);

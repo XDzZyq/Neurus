@@ -25,6 +25,7 @@
 
 #include "glm/glm.hpp"
 
+#include "editor/controllers/ObjectController.h"
 #include "editor/controllers/SceneController.h"
 #include "editor/events/EventBus.h"
 #include "editor/events/SceneEvents.h"
@@ -37,6 +38,7 @@
 #include "editor/operations/OperationManager.h"
 #include "editor/operations/registrations/OperationRegistration.h"
 #include "editor/operations/SceneOperations.h"
+#include "editor/operations/ScriptOperations.h"
 #include "editor/events/ShaderEvents.h"
 #include "editor/operations/ShaderOperations.h"
 #include "render/shaders/RenderShader.h"
@@ -71,6 +73,7 @@ protected:
 	void SetUp() override
 	{
 		m_controller.Init(m_ctx);
+		m_objectController.Init(m_ctx);
 
 		m_mesh   = std::make_shared<Mesh>();
 		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
@@ -83,8 +86,11 @@ protected:
 		// The ShaderLinkOp restore handlers resolve the mesh via the POOL (the
 		// Editor pattern), so the fixture mesh must also be pooled. The camera is
 		// pooled the same way, for the same reason: camera-property ops replay
-		// through ctx.resources.
+		// through ctx.resources. The light joins them because ObjectController
+		// resolves every property write - and therefore every op replay - through
+		// the pool.
 		m_resources.Register(m_mesh);
+		m_resources.Register(m_light);
 	}
 
 	void Process() { m_eventBus.Process(); }
@@ -98,6 +104,7 @@ protected:
 	                         [this]() { return &m_scene; },
 	                         [this]() { return &m_config; } };
 	SceneController m_controller;
+	ObjectController m_objectController;
 	std::shared_ptr<Mesh> m_mesh;
 	std::shared_ptr<Light> m_light;
 	std::shared_ptr<Camera> m_camera;
@@ -234,12 +241,12 @@ TEST_F(OperationSerializationTest, SceneObjectAddOp_RoundTrip)
 TEST_F(OperationSerializationTest, ShaderLinkOp_RoundTrip)
 {
 	// Editor-style restore handlers (mirror Editor::Initialize).
-	m_eventBus.subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
+	m_eventBus.Subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
 		auto mesh = m_resources.Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(m_resources.Get<RenderShader>(e.shaderId));
 	});
-	m_eventBus.subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
+	m_eventBus.Subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
 		auto mesh = m_resources.Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(nullptr);
@@ -296,11 +303,11 @@ TEST_F(OperationSerializationTest, CompositeOp_RoundTrip)
 TEST_F(OperationSerializationTest, HistoryComponent_SaveLoad_BothStacks)
 {
 	// Record three edits, then undo one so BOTH stacks are populated.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
 	Process();
-	m_eventBus.enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	Process();
-	m_eventBus.enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
 	Process();
 	m_operations.Undo(); // camera fov edit → redo stack
 
@@ -335,11 +342,66 @@ TEST_F(OperationSerializationTest, HistoryComponent_SaveLoad_BothStacks)
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, 35.0f);
 }
 
+/**
+ * @test A script run is saved and reloaded as a ScriptRunOp carrying its name:
+ *       a file run's "Run demo.py" and a console run's default "Run Script" both
+ *       survive, and Undo() puts the same labels on the redo list.
+ */
+TEST_F(OperationSerializationTest, ScriptRunOp_SurvivesHistorySaveLoad)
+{
+	// One file run (custom label) and one console run (default label).
+	m_operations.BeginScriptScope("Run demo.py");
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
+	Process();
+	m_operations.EndScriptScope();
+
+	m_operations.BeginScriptScope();
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 7.0f, 8.0f, 9.0f });
+	Process();
+	m_operations.EndScriptScope();
+
+	const HistoryView before = m_operations.GetHistoryView();
+	ASSERT_EQ(before.undo.size(), 2u);
+	EXPECT_EQ(before.undo[0], "Run demo.py");
+	EXPECT_EQ(before.undo[1], "Run Script");
+
+	// Save through the Serializable adapter.
+	std::stringstream ss;
+	{
+		cereal::JSONOutputArchive out(ss);
+		project::HistoryComponent saveComp(m_operations);
+		saveComp.Save(out);
+	}
+
+	// Load into a completely fresh manager bound to the SAME event queue.
+	OperationManager fresh{ m_eventBus };
+	{
+		cereal::JSONInputArchive in(ss);
+		project::HistoryComponent loadComp(fresh);
+		loadComp.Load(in);
+	}
+
+	const HistoryView after = fresh.GetHistoryView();
+	ASSERT_EQ(after.undo.size(), 2u);
+	EXPECT_EQ(after.undo[0], "Run demo.py");
+	EXPECT_EQ(after.undo[1], "Run Script");
+
+	// Both entries kept their concrete type and name, so Undo() re-labels redo.
+	ASSERT_NE(dynamic_cast<ScriptRunOp*>(fresh.GetUndoStack().front().get()), nullptr);
+	ASSERT_NE(dynamic_cast<ScriptRunOp*>(fresh.GetUndoStack().back().get()), nullptr);
+	fresh.Undo();
+	ASSERT_EQ(fresh.GetHistoryView().redo.size(), 1u);
+	EXPECT_EQ(fresh.GetHistoryView().redo.front(), "Run Script");
+	fresh.Undo();
+	ASSERT_EQ(fresh.GetHistoryView().redo.size(), 2u);
+	EXPECT_EQ(fresh.GetHistoryView().redo.front(), "Run demo.py");
+}
+
 TEST_F(OperationSerializationTest, HistoryComponent_Load_MissingNode_ClearsHistory)
 {
 	// A project file without an "m_history" node (older format) must not throw
 	// and must leave the manager with empty stacks.
-	m_eventBus.enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
 	Process();
 	ASSERT_TRUE(m_operations.CanUndo());
 

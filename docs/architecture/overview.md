@@ -86,6 +86,7 @@ compute pass and full G-Buffer pipeline through the isolated layers.
 - Viewport as a dockable central widget
 - `UIEvents` singleton over Qt signals (UI <-> Editor)
 - Typed `RenderRequest` queue for Editor -> Renderer GPU work (`RenderRequestSink`, `RenderThread`)
+- Typed `EventQueue` for Editor-internal dispatch
 - Swapchain recreation on window resize
 - Validation layers in Debug builds
 - Embedded SPIR-V shaders (compiled at CMake time)

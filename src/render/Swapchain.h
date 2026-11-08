@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <optional>
 #include <vector>
 #include <memory>
 
@@ -58,10 +59,13 @@ public:
 	/**
 	 * @brief Acquires the next available swapchain image.
 	 * @param signalSemaphore Semaphore to signal when the image is ready.
-	 * @return Index of the acquired image.
+	 * @return The acquired image index, or `std::nullopt` when no image was
+	 *         acquired (the swapchain is out of date or the surface was lost).
+	 *         No semaphore was signalled in that case, so the caller must not
+	 *         submit or present a frame.
 	 * @throws std::runtime_error on fatal error (device lost).
 	 */
-	uint32_t AcquireNextImage(const vk::raii::Semaphore& signalSemaphore);
+	std::optional<uint32_t> AcquireNextImage(const vk::raii::Semaphore& signalSemaphore);
 
 	/**
 	 * @brief Presents the rendered image to the surface.

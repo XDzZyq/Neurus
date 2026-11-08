@@ -30,6 +30,15 @@ graph over the converged image instead of restarting accumulation. An idle tick
 posts nothing. See [Temporal](../render/temporal.md) and
 [Render Request Path](../architecture/data-flow.md#render-request-path-editor-to-renderer-gpu-work).
 
+A native-window expose is the second source of that redraw. Qt repaints the widget
+wrapper but cannot redraw the Vulkan surface, and a converged renderer presents
+nothing of its own, so clicking another panel or uncovering the window would leave
+the client area black until something else dirtied it. `Viewport` emits
+`exposed()` from its paint event and again on focus loss - a panel click is the
+common way the viewport is invalidated - and the Editor's `ViewportExposed`
+subscription calls `MarkOverlaysDirty()`, reusing the same
+`RedrawOverlaysRequest` path.
+
 Upload is revision-gated: an unchanged list re-uses the buffer a frame slot
 already holds and skips the memcpy entirely.
 

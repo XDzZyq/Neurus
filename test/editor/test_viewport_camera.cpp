@@ -333,11 +333,17 @@ TEST(ViewportCameraTest, SelectingASceneCameraDoesNotChangeTheView)
 // ---------------------------------------------------------------------------
 
 /**
- * @test The viewport camera's identity AND pose survive a save/reopen. The object
- *       rides along in the serialized pool; EditorComponent records only which
- *       pooled camera the viewport claims as its own, which is the part that would
- *       otherwise be lost — FinishLoad() would then mint a fresh camera at the
- *       default framing and the user's viewpoint would snap back on every open.
+ * @test The viewport camera's identity AND pose survive a save/reopen, and it
+ *       does not steal the document camera's name. The object rides along in the
+ *       serialized pool; EditorComponent records only which pooled camera the
+ *       viewport claims as its own, which is the part that would otherwise be
+ *       lost — FinishLoad() would then mint a fresh camera at the default framing
+ *       and the user's viewpoint would snap back on every open.
+ *
+ *       The name half is load-bearing: the viewport camera is pooled and
+ *       serialized too, so before it was registered as "ViewportCamera" the load
+ *       seeder (ascending UID) gave it the bare "Camera" and renamed the user's
+ *       scene camera to "Camera.001" on every reopen.
  */
 TEST(ViewportCameraTest, ViewportCameraSurvivesSaveAndReopen)
 {
@@ -366,6 +372,22 @@ TEST(ViewportCameraTest, ViewportCameraSurvivesSaveAndReopen)
 	ASSERT_NE(cam, nullptr);
 	EXPECT_EQ(cam->GetObjectID(), savedUid);
 	EXPECT_EQ(cam->GetPosition(), pose);
+
+	// The document camera keeps its own "Camera" name, and the pooled viewport
+	// camera answers to the reserved one. Before this, the seeder handed the
+	// lower UID (the viewport camera) the bare name on every reopen.
+	ResourceManager& resources = editor.GetResourceManager();
+	Scene& scene = editor.GetScene();
+	ASSERT_EQ(scene.cam_list.size(), 1u);
+	const Camera* sceneCam = scene.cam_list.begin()->second.get();
+	ASSERT_NE(sceneCam, nullptr);
+	EXPECT_EQ(sceneCam->o_name, "Camera");
+	EXPECT_EQ(resources.GetByName<Camera>("Camera").get(), sceneCam)
+		<< "\"Camera\" must still name the document camera after a reopen";
+	EXPECT_EQ(resources.GetByName<Camera>("ViewportCamera").get(), vp.ViewportCamera())
+		<< "the viewport camera is the reserved \"ViewportCamera\"";
+	ASSERT_NE(vp.ViewportCamera(), nullptr);
+	EXPECT_EQ(vp.ViewportCamera()->o_name, "ViewportCamera");
 }
 
 /**

@@ -102,11 +102,27 @@
                     }
                 },
                 {
+                    "key": 102,
+                    "value": {
+                        "polymorphic_id": 2147483650,
+                        "polymorphic_name": "neurus::MeshData",
+                        "ptr_wrapper": {
+                            "id": 2147483651,
+                            "data": {
+                                "value0": {
+                                    "o_id": 102
+                                },
+                                "m_path": "res/obj/shadow/grid1.obj"
+                            }
+                        }
+                    }
+                },
+                {
                     "key": 6,
                     "value": {
                         "polymorphic_id": 1,
                         "ptr_wrapper": {
-                            "id": 2147483651,
+                            "id": 2147483652,
                             "data": {
                                 "value0": {
                                     "value0": {
@@ -153,10 +169,10 @@
                 {
                     "key": 8,
                     "value": {
-                        "polymorphic_id": 2147483650,
+                        "polymorphic_id": 2147483651,
                         "polymorphic_name": "neurus::Mesh",
                         "ptr_wrapper": {
-                            "id": 2147483652,
+                            "id": 2147483653,
                             "data": {
                                 "value0": {
                                     "value0": {
@@ -199,7 +215,7 @@
                     "value": {
                         "polymorphic_id": 1,
                         "ptr_wrapper": {
-                            "id": 2147483653,
+                            "id": 2147483654,
                             "data": {
                                 "value0": {
                                     "value0": {
@@ -244,25 +260,9 @@
                     }
                 },
                 {
-                    "key": 102,
-                    "value": {
-                        "polymorphic_id": 2147483651,
-                        "polymorphic_name": "neurus::MeshData",
-                        "ptr_wrapper": {
-                            "id": 2147483654,
-                            "data": {
-                                "value0": {
-                                    "o_id": 102
-                                },
-                                "m_path": "res/obj/shadow/grid1.obj"
-                            }
-                        }
-                    }
-                },
-                {
                     "key": 9,
                     "value": {
-                        "polymorphic_id": 2,
+                        "polymorphic_id": 3,
                         "ptr_wrapper": {
                             "id": 2147483655,
                             "data": {
@@ -336,8 +336,8 @@
                                         "z": 1.0
                                     }
                                 },
-                                "cam_w": 850.0,
-                                "cam_h": 636.0,
+                                "cam_w": 1012.0,
+                                "cam_h": 730.0,
                                 "cam_pers": 60.0,
                                 "cam_near": 0.10000000149011612,
                                 "cam_far": 100.0,
@@ -354,7 +354,7 @@
                 {
                     "key": 101,
                     "value": {
-                        "polymorphic_id": 3,
+                        "polymorphic_id": 2,
                         "ptr_wrapper": {
                             "id": 2147483657,
                             "data": {
@@ -369,7 +369,7 @@
                 {
                     "key": 10,
                     "value": {
-                        "polymorphic_id": 2,
+                        "polymorphic_id": 3,
                         "ptr_wrapper": {
                             "id": 2147483658,
                             "data": {
@@ -412,7 +412,7 @@
                 {
                     "key": 100,
                     "value": {
-                        "polymorphic_id": 3,
+                        "polymorphic_id": 2,
                         "ptr_wrapper": {
                             "id": 2147483659,
                             "data": {
@@ -420,6 +420,54 @@
                                     "o_id": 100
                                 },
                                 "m_path": "res/obj/shadow/ground.obj"
+                            }
+                        }
+                    }
+                },
+                {
+                    "key": 108,
+                    "value": {
+                        "polymorphic_id": 4,
+                        "ptr_wrapper": {
+                            "id": 2147483660,
+                            "data": {
+                                "value0": {
+                                    "value0": {
+                                        "o_id": 108
+                                    },
+                                    "o_name": "Camera",
+                                    "o_type": 0,
+                                    "is_viewport": true,
+                                    "is_rendered": true
+                                },
+                                "transform": {
+                                    "m_position": {
+                                        "x": 0.0,
+                                        "y": -5.0,
+                                        "z": 2.0
+                                    },
+                                    "m_rotation": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 0.0
+                                    },
+                                    "m_scale": {
+                                        "x": 1.0,
+                                        "y": 1.0,
+                                        "z": 1.0
+                                    }
+                                },
+                                "cam_w": 1012.0,
+                                "cam_h": 730.0,
+                                "cam_pers": 60.0,
+                                "cam_near": 0.10000000149011612,
+                                "cam_far": 100.0,
+                                "cam_tar": {
+                                    "x": 0.0,
+                                    "y": 0.0,
+                                    "z": 0.0
+                                },
+                                "cam_floatData": []
                             }
                         }
                     }
@@ -446,7 +494,9 @@
             "dPointsIds": [],
             "envIds": [],
             "selectedUids": [],
-            "activeUid": 0
+            "activeUid": 0,
+            "dMeshIds": [],
+            "activeCamUid": 2
         },
         "proj_config": {
             "r_pipeline": 1,
@@ -463,12 +513,16 @@
             "r_fxaa_subpix": 0.75,
             "r_fxaa_edge_threshold": 0.16599999368190766,
             "r_fxaa_edge_threshold_min": 0.08330000191926956,
-            "r_sampling_mode": 0
+            "r_sampling_mode": 0,
+            "r_debug_draw": true
         },
-        "ui": "AdnQywADAAAAAAAAAAAAAAAABZ8AAAODAAAAAQAAADsAAAWeAAADKAAAAAAABAAABaAAAAAAAAAAAAAABZ8AAAOD\nAAADv3jajVNNb4MwDL3vV0TcWyhorAdKVbH1uA/165w1LouWJiiYrp324+d0E1IZhZ0S2y/P79lKMj3uFTuALaXRE280DDwGemuE1PnEWy3ng7E3TZMXnIkD11sQ92b7TrXFqUTYs3X90GOrEmwdE01mNHKpKePKaVLHbK4Mx3ODgPKLQklESj9ZCQTBM8HAEVQaJ154FfNVY6J/8swscLbkr2dJLKusBVcSZGpoKlROHsE2UuSA7JHvoVlkmTIlCCfdTxPfEXbTFtYUYPH0zDWoVu5LRGuDhfyEMo3COxaFMUv8n5jOX8/dEg4SPgpjsbV7XexzFjZp6SrA0lp3Mm+lvgBc0v8Fl2+cwA9CorGdQxjFbHwbsDAO+gYRNRUrk1/bwE7SfvtVOoY+DMIRKwtrGix0WonJQhiNWm349Xeh+5Xvl958A9RUPhw=",
+        "ui": "AdnQywADAAAAAAAA////+QAABqoAAAP6AAAAAQAAADsAAAWeAAADKAAAAAACAAAABqsAAAAAAAAAFwAABqoAAAP6\nAAAD+HjajVNNb8IwDL3vV0S9Qwsdg0mlCLFx3IcY7Jw1posWkipxGUz78XPZVKkQ6E6N7dfn9xwnmew2im3BOmn0OOh1o4CBzoyQOh8Hy5d5ZxRM0uQZp2LLdQbizmQfVFvsHcKGreofA7Z0YOuYaGZGI5eaMlU5TeqYzZXheGgQUX5RKIlI6UcrgSB4IOhUBKXGcdA/i/muMfE/eaYWOHvhbwdJbFZaC1VJkKmuKVFV8gj2KkUOyB74Bo6LbKaMA1FJD9MkrAgv0xbWFGBx/8Q1KC93E+FtsJBf4NJ4eMPi4YAl4W9M3z/PlyVsJXwWxqK3e11sc9Y/pqWjAEvXupa5l7oBaNKfgt07J/C9kGhs2xB6Ua/P4ui2bRLXx5JdZmWBpMgZBV7NTUSbaGXajSHssLSwojmf7I93GdaSVi2/NIPhgGYwirz2w/qd0fnMu02vfgDOulIW",
         "m_history": {
             "undo": [],
             "redo": []
+        },
+        "m_editor": {
+            "viewportCamUid": 108
         }
     }
 }

@@ -32,8 +32,9 @@ The `Controllers` base class declares `virtual Init(ControllerContext& ctx)`,
 which binds a controller to its context. `Editor::RegisterController<T>()` is the
 template factory that creates a controller, calls `Init(m_ctx)`, and stores it in
 `ed_controllers`. Controllers receive discrete events rather than polling per
-frame; `Editor::Edit()` dispatches all enqueued events through
-`EventQueue::Process()`. See [Controllers](controllers.md).
+frame; `Editor::Edit()` drains the UI boundary's queued events through
+`EventQueue::Process()`, and every event the editor emits itself dispatches
+synchronously. See [Controllers](controllers.md).
 
 ### GPU upload and asset import
 
@@ -41,14 +42,15 @@ The Editor handles asset import events (mesh, camera, and light adds) and drives
 GPU work - mesh upload, light SSBO updates, IBL (re)generation, per-mesh pipeline
 warming, scene-resource eviction - without ever touching the GPU itself. It
 subscribes to the cross-component `EditorEvents` (`LightGpuChanged`,
-`LightingRebuild`, `SceneModified`) emitted by `SceneController`, converts the
-work into typed `RenderRequest` values, and posts them through the
+`LightingRebuild`, `SceneModified`) emitted by `ObjectController` for object
+property writes and by `SceneController` for scene membership, converts the work
+into typed `RenderRequest` values, and posts them through the
 `RenderRequestSink*` it holds (`RenderThread` once the render thread runs). The
 renderer drains its queue per frame and executes
 each request on the thread that submits (see
 [Data Flow](../architecture/data-flow.md#render-request-path-editor-to-renderer-gpu-work)).
 The Editor holds no `UploadManager` and never calls Vulkan; scene mutations go
-through `SceneController`.
+through the controllers.
 
 ## Layer boundaries
 
@@ -91,6 +93,8 @@ With the Renderer:
 - Receives rendering events via `UIEvents` (Qt signals)
 - Posts GPU work as typed `RenderRequest` values through a `RenderRequestSink*`
   (Post only); its `EventQueue` stays internal to the Editor
+- Dispatches its own events internally through `EventQueue` (typed dispatcher),
+  synchronously through `Emit` inside the editor and deferred at the UI boundary
 - The Renderer never calls back into the Editor directly; the dependency is
   one-way, Editor to Renderer, through `RenderRequest`s and the frame snapshot
 
@@ -184,9 +188,10 @@ struct UIContext
     const RenderConfig*  config  = nullptr;  // read via Settings(), never directly
 
     // Application half - frame-scoped and service-backed
-    const FrameProfile*  profile = nullptr;
-    const LogBuffer*     log     = nullptr;
-    const HistoryView*   history = nullptr;
+    const FrameProfile*        profile       = nullptr;
+    const LogBuffer*           log           = nullptr;
+    const HistoryView*         history       = nullptr;
+    const ScriptConsoleBuffer* scriptConsole = nullptr;  // engine's console ring
 
     bool HasScene() const;
     const RenderConfig& Settings() const;      // defined in UIContext.cpp
@@ -223,7 +228,8 @@ Design:
 - `UpdateUIContext()` assigns fields only and must never call a `UIContext`
   method: it runs in `neurus_editor`, which does not link `neurus_ui` (that
   library links this one), so a symbol defined there would not resolve. The
-  Application adds the frame-scoped `profile`/`log`/`history` members.
+  Application adds the frame-scoped `profile`/`log`/`history`/`scriptConsole`
+  members.
 - Keeping the UI's view a separate two-field struct is what makes "the gizmo is
   not scene data" a property of the type rather than a convention.
 - **The fallback is one value, reached two ways.** `UIContext::Settings()` is
@@ -399,3 +405,8 @@ in [Events](events.md).
   (`IEventQueue` + `IResourceLookup` + `IOperationSink` + scene/config providers)
 - `CameraController`: event-driven orbit/zoom/dolly/pan via `CameraEvents` (int
   `camId` payloads)
+- `ObjectController`: every object property write (visibility, transforms, and the
+  camera / mesh / light / environment / debug knobs), resolved through
+  `IResourceLookup` rather than the scene
+- `ScriptController`: maps the script run boundary (`ScriptRunStarted`,
+  `ScriptRunFinished`) to the operation sink's one-step script scope

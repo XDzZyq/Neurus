@@ -24,7 +24,7 @@ The renderer must not:
 - Directly call UI or Editor functions
 - Include headers from `src/editor/` or `src/ui/`
 
-Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor, the EventQueue for typed events inside the Editor, typed `RenderRequest` values the Editor posts through `RenderRequestSink` for Editor to renderer GPU work, and Context objects for data queries. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
+Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Editor, the EventQueue for typed events inside the Editor, typed `RenderRequest` values the Editor posts through `RenderRequestSink` for Editor to renderer GPU work, and Context objects for data queries. The EventQueue is Editor-internal and is not a channel to the renderer. The renderer receives read-only scene data through Context objects and never calls back into the Editor.
 
 ### Vulkan ownership
 
@@ -159,11 +159,13 @@ Release mode:
 - Recreate the swapchain with the new surface dimensions
 - `Swapchain::Recreate()` idles the present queue (`SharedQueue::WaitIdle`) before destroying the old swapchain: it also runs directly from `Present()`/`AcquireNextImage()`, while the frame just presented is still in flight, and on MoltenVK the present-completion handler dereferences the old swapchain until that frame completes. With the render thread presenting back-to-back during a window drag, skipping the wait is a use-after-free.
 - Continue rendering with the new swapchain
+- **`VK_SUBOPTIMAL_KHR` from `vkAcquireNextImageKHR` is a success**, not a failure: an image was acquired and the semaphore was signalled, so it must be rendered and presented like any other frame. Recreating on acquire would drop that image and leave its semaphore signalled for the next acquire to signal again. The present path is where a suboptimal swapchain is rebuilt.
+- **`AcquireNextImage` returns `std::optional<uint32_t>`**: a nullopt means no image was acquired and no semaphore was signalled, so `DrawFrame` skips the frame. This matters when `Recreate()` defers - a zero-area surface (minimize/dock transition) or a lost surface leaves the old swapchain in place and does not bump its generation, and reporting index 0 as if it had been acquired made the renderer submit a frame waiting on an unsignalled semaphore (`VUID-vkQueueSubmit-pWaitSemaphores-03238`) and present an unacquired image (`VUID-VkPresentInfoKHR-pImageIndices-01430`). Only a successful acquire may reach the submit/present path.
 
 ### Surface lost (`VK_ERROR_SURFACE_LOST_KHR`)
 
 - Window destroyed or display disconnected
-- Clean up, stop rendering, signal the application to exit
+- No image is acquired: `AcquireNextImage` returns nullopt and logs once; `Present` logs and drops the frame. Neither submits against a dead surface. The surface-change path owns recovery, and shutdown joins the render thread before the members it touches are destroyed.
 
 ## Swapchain and frame pacing
 
