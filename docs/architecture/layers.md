@@ -35,12 +35,13 @@ responsibility, and Core supplies utilities shared across all of them.
   `UpdateUIContext()`
 - Owns `EditorViewport`, the viewport composition root: the **viewport camera**
   (a pooled `Camera` that is not scene content), the debug/gizmo builders and
-  the resize. `EditorViewport::GetCamera()` publishes the activated scene
-  camera when the Scene names one and the viewport camera otherwise, and
-  `RenderContext::camera` carries that choice to the renderer, so no pass reads
-  the Scene. The Editor itself holds no camera and exposes no camera API, only
-  `GetViewport()` and the timing (`SyncCamera` in `Edit()`). A scene with zero
-  cameras is a legal document. See [Editor Overview](../editor/overview.md).
+  the resize. `Editor::ActiveCamera()` selects the activated scene camera when the
+  Scene names one and the viewport camera otherwise; `Editor::PublishActiveCamera()`
+  hands that choice to `EditorViewport`, and `RenderContext::camera` carries it to
+  the renderer, so no pass reads the Scene. The Editor itself exposes no public
+  camera API, only `GetViewport()` and the timing (`PublishActiveCamera` in
+  `Edit()`). A scene with zero cameras is a legal document. See
+  [Editor Overview](../editor/overview.md).
 - Owns UIEvents (Qt signals) and the typed `EventQueue`
 - The `EventQueue` is **Editor-internal**: it is not a channel to the Renderer
   and nothing under `src/render/` includes it. It is drained once per frame

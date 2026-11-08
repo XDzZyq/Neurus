@@ -315,9 +315,10 @@ void Application::ResizeViewport(int width, int height)
 
 	// The viewport needs both extents: logical for every projection query,
 	// physical for the ID-buffer readback. The physical one is read back AFTER
-	// the resize above, so it is the extent the swapchain actually got.
+	// the resize above, so it is the extent the swapchain actually got. The
+	// Editor forwards the logical extent to whichever camera is active.
 	const auto extent = app_renderer->GetExtent();
-	app_editor->GetViewport().HandleResize(
+	app_editor->HandleViewportResize(
 		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
 		glm::uvec2{extent.width, extent.height});
 }

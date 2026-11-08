@@ -82,7 +82,8 @@ the camera dollies, and is why a camera change must `MarkGizmoDirty()` even thou
 the state machine has not moved (`HandleResize` does exactly that). `Rebuild()`
 early-returns when clean and the builder starts dirty. It runs inside
 `RebuildOverlays()`, which `Edit()` calls after the queue drains and after the
-second `SyncCamera()`, for exactly that reason. See [Viewport](viewport.md).
+active camera has been republished, for exactly that reason. See
+[Viewport](viewport.md).
 
 ## The anchor
 
