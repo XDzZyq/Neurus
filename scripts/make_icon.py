@@ -12,6 +12,10 @@ The renderer understands the subset of SVG the logo uses: a viewBox, a <style>
 block mapping class selectors to solid fills, and <rect> elements. Each output
 pixel is an exact area-weighted average of the rectangles covering it, which
 gives clean antialiasing without an external library.
+
+The README and the documentation site show the same artwork. MkDocs only serves
+files under `docs_dir`, so this script also refreshes the copy at
+`docs/assets/neurus.svg` whenever it regenerates the default icon.
 """
 
 import argparse
@@ -27,6 +31,7 @@ SVG_NS = "{http://www.w3.org/2000/svg}"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SVG = REPO_ROOT / "res" / "ui" / "logo" / "neurus.svg"
 DEFAULT_ICO = REPO_ROOT / "res" / "ui" / "logo" / "neurus.ico"
+DOCS_SVG = REPO_ROOT / "docs" / "assets" / "neurus.svg"
 
 
 def parse_rects(svg_path):
@@ -147,6 +152,13 @@ def build_ico(svg_path, ico_path):
         offset += len(data)
 
     ico_path.write_bytes(struct.pack("<HHH", 0, 1, len(SIZES)) + bytes(directory) + bytes(blobs))
+
+    # MkDocs only serves files under docs_dir, so the site keeps its own copy of
+    # the source artwork; refresh it alongside the icon it belongs to.
+    if svg_path.resolve() == DEFAULT_SVG.resolve():
+        DOCS_SVG.parent.mkdir(parents=True, exist_ok=True)
+        DOCS_SVG.write_bytes(svg_path.read_bytes())
+        print(f"  synced {DOCS_SVG.relative_to(REPO_ROOT)}")
 
     preview = render(256, view_w, view_h, rects)
     colours = len({preview[i:i + 4] for i in range(0, len(preview), 4)})

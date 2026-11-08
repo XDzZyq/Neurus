@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="res/ui/logo/neurus.svg" width="112" alt="Neurus logo">
+</p>
+
 # Neurus
 
 A real-time renderer built on C++20 and Vulkan-HPP 1.4, for experimenting with

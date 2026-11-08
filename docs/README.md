@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/neurus.svg" width="112" alt="Neurus logo">
+</p>
+
 # Neurus Documentation
 
 Neurus is a C++20 Vulkan-HPP 1.4 real-time renderer built around strict layer
