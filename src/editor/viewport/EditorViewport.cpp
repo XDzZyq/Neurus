@@ -92,8 +92,8 @@ void EditorViewport::EnsureCamera(ResourceManager& pool)
 	v_camera->SetPosition(kDefaultEye);
 	v_camera->SetTarPos(kDefaultTarget);
 
-	// Framed here rather than waiting for the next SyncCamera(): a fresh Camera is
-	// 1x1, and a projection against that is squashed rather than merely unframed.
+	// Framed here rather than waiting for the first frame: a fresh Camera is 1x1,
+	// and a projection against that is squashed rather than merely unframed.
 	FrameCamera(v_camera.get());
 
 	NEURUS_LOG("[Viewport] Viewport camera created (UID " << v_camUid << ")");
@@ -109,22 +109,6 @@ void EditorViewport::ForgetCamera()
 	p_camera = nullptr;
 }
 
-void EditorViewport::SyncCamera(Scene& scene)
-{
-	Camera* sceneCam = scene.GetActiveCamera();
-
-	// The activated scene camera wins; the viewport's own is the fallback. This is
-	// activation, not selection - selecting a camera leaves the view alone.
-	p_camera = sceneCam ? static_cast<const Camera*>(sceneCam)
-	                    : static_cast<const Camera*>(v_camera.get());
-
-	// Both candidates, not just the chosen one: activation can switch the view with
-	// no resize in between, and a camera that missed one would present a stretched
-	// image the moment it took over.
-	FrameCamera(v_camera.get());
-	FrameCamera(sceneCam);
-}
-
 void EditorViewport::FrameCamera(Camera* cam) const
 {
 	if (!cam) return;
@@ -134,7 +118,7 @@ void EditorViewport::FrameCamera(Camera* cam) const
 	const float h = static_cast<float>(v_logical.y);
 
 	// Guarded on an actual change: ChangeCamRatio() recomputes the projection, and
-	// this runs twice per frame for both candidates.
+	// a camera that already matches the viewport needs no work.
 	if (cam->cam_w == w && cam->cam_h == h) return;
 
 	cam->ChangeCamRatio(w, h);
@@ -152,10 +136,9 @@ void EditorViewport::HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent)
 
 	SetViewportSize(logical, renderExtent);
 
-	// Immediately, not via the event queue: a resize must be in effect for the
-	// frame that follows it. The activated scene camera is re-framed by the next
-	// SyncCamera().
-	FrameCamera(v_camera.get());
+	// No camera is written here. The Editor turns this resize into a
+	// CameraResizeEvent for whichever camera is active, so the controller stays
+	// the only writer and the inactive camera is left completely alone.
 
 	// Constant-pixel guide geometry is a CPU computation against the viewport
 	// height, so a resize changes the world-space guide even mid-gesture.

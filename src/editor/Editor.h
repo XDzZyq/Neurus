@@ -15,6 +15,7 @@
 
 // Forward declarations (no render headers!)
 namespace neurus {
+class Camera;
 class DeferredRenderer;
 class MeshData;
 class Scene;
@@ -158,6 +159,16 @@ public:
 	void Edit();
 
 	/**
+	 * @brief Takes a viewport resize from the window and forwards it to the camera.
+	 *
+	 * The viewport caches the new extents and dirties the gizmo; the Editor then
+	 * emits a CameraResizeEvent for the active camera. That keeps the controller
+	 * the only camera writer and leaves the inactive camera untouched, whichever
+	 * kind it is.
+	 */
+	void HandleViewportResize(glm::uvec2 logical, glm::uvec2 renderExtent);
+
+	/**
 	 * @brief The single deferred entry point: the UI boundary.
 	 *
 	 * Everything inside the editor dispatches synchronously, so a script or a
@@ -209,6 +220,27 @@ private:
 	void OnSceneObjectGpuUpload(int objectUid);
 
 	/**
+	 * @brief The camera the current frame renders through.
+	 * @return The scene's activated camera, otherwise the viewport camera.
+	 *
+	 * Pure selection: the two cameras stay independent, and nothing is copied
+	 * between them.
+	 */
+	const Camera* ActiveCamera() const;
+
+	/**
+	 * @brief Publishes the active camera to the viewport, framing it if it changed.
+	 * @param extentChanged True after a viewport resize, when the same camera must
+	 *                      be re-framed for the new extent.
+	 *
+	 * Pointer comparison only: no pose or aspect is copied between cameras. When
+	 * the active camera changes (activation, deactivation, load, delete/undo) or
+	 * the extent changed, the Editor emits a CameraResizeEvent for it so
+	 * CameraController applies the viewport aspect to whichever camera is active.
+	 */
+	void PublishActiveCamera(bool extentChanged = false);
+
+	/**
 	 * @brief Adds the default scene's demo debug objects.
 	 * @param meshData The demo mesh's geometry, reused for the DebugMesh wireframe
 	 *                 so the wire-mesh path is exercised on a fresh launch. May be null.
@@ -225,8 +257,9 @@ private:
 	 * @brief The viewport: its own camera, its screen space, and its overlays.
 	 *
 	 * The Editor's only involvement with any of that is lifecycle: it hands the
-	 * viewport the pool on each scene swap (EnsureCamera/ForgetCamera), the Scene
-	 * once per frame (SyncCamera/RebuildOverlays), and nothing else.
+	 * viewport the pool on each scene swap (EnsureCamera/ForgetCamera), publishes
+	 * the active camera once per frame (PublishActiveCamera), rebuilds overlays
+	 * (RebuildOverlays), and nothing else.
 	 */
 	EditorViewport        m_viewport;
 

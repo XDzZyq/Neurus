@@ -41,25 +41,32 @@ overlay dirty flags) are the Editor's alone, which is why controllers receive a
 Every view-projection pass reads `ctx.camera`
 (`ShadowDepthPass`, `ShadowIntensityPass`, `SSAOPass`, `LightingPass`, plus
 `GeometryPass` through the shared `CameraGPU`), and no pass reads the Scene.
-`EditorViewport` decides what that pointer is, in `SyncCamera(Scene&)`:
+The Editor chooses that pointer:
 
 ```
-EditorViewport::SyncCamera(scene):
-    p_camera = scene.GetActiveCamera()     // the activated scene camera
-               ?: ViewportCamera()         // otherwise the viewport camera
-EditorViewport::GetCamera()  =  p_camera   // published, never recomputed
+Editor::ActiveCamera()       = scene.GetActiveCamera()  // activated scene camera
+                               ?: viewport.ViewportCamera()
+Editor::PublishActiveCamera() -> viewport.SetCamera(active)
+EditorViewport::GetCamera()  = published pointer
 ```
 
-The Editor owns no camera and exposes no camera API. It holds the viewport
-(`GetViewport()`) and contributes only the timing: `Editor::Edit()` calls
-`SyncCamera(GetScene())`, and `RenderContext::camera` is filled from
-`GetViewport().GetCamera()`. Everything about which camera the frame belongs to,
-how it is framed, and how long it lives is the viewport's business. That is also
-why `GetCamera()` is a published pointer rather than a fresh choice per call: the
-gizmo's projection math and the renderer's `CameraGPU` read the same one pointer,
-so they cannot disagree about which camera the frame belongs to. A test that
-calls `Scene::ActivateCamera`/`DeactivateCamera` by hand must therefore re-sync
-where a frame would (`test_viewport_camera.cpp`'s `SyncFrame` helper).
+This is selection, not synchronization. The viewport camera and an activated
+scene camera stay independent: no pose or aspect is copied between them. When a
+scene camera is active it is the camera the frame renders through; when it is
+deactivated the viewport camera takes over at the pose and aspect it already had.
+
+`Editor::Edit()` publishes before and after `ed_eventBus.Process()`, because
+activation, deactivation, deletion and undo/redo all land inside the drain and can
+change which camera the frame belongs to. A `SceneObjectDeleteRequested`
+subscription republishes earlier, right after the controllers remove the object,
+so nothing in the rest of that dispatch reads a camera that is no longer the
+view. Publishing is a pointer comparison, not per-frame camera work.
+
+That is also why `GetCamera()` is a published pointer rather than a fresh choice
+per call: the gizmo's projection math and the renderer's `CameraGPU` read the same
+one pointer, so they cannot disagree about which camera the frame belongs to. A
+test that activates or deactivates by hand must therefore name the frame
+boundary itself (`test_viewport_camera.cpp`'s `PublishFrame` helper).
 
 ### A scene with zero cameras is legal
 
@@ -73,7 +80,7 @@ The viewport camera lives in the `ResourceManager` so
 `CameraController::ResolveCamera` can resolve and orbit it by UID like any other
 camera, and it is absent from `cam_list`, so it cannot be selected, deleted, or
 activated. `Scene::ActivateCamera` validates membership in `cam_list` and refuses
-it. Orbiting to inspect a model therefore no longer edits scene content.
+it.
 
 ### It cannot be created once in the constructor
 
@@ -92,8 +99,8 @@ bare-construction test sites:
 - `FinishLoad()`: `EnsureCamera()`. A uid restored from the file resolves to the
   serialized camera; a missing one mints a fresh camera.
 
-`EnsureCamera` frames the camera it establishes, so no caller replays the extent
-by hand.
+`EnsureCamera` frames the camera it establishes, so a freshly created viewport
+camera never renders with its default 1x1 projection.
 
 ### Identity is serialized, so the viewpoint survives a reopen
 
@@ -110,57 +117,49 @@ existed simply lacks the node; `Load()` falls back rather than throwing, and a
 project written before the rename carries the field as `editorCamUid`, which
 `Load()` still reads (an explicit migration, spelled as a second `Optional()`).
 
-### Edit() syncs the view camera twice per frame
-
-`Edit()` syncs the view camera twice per frame, before and after
-`ed_eventBus.Process()`. Activating or deactivating a scene camera, and deleting
-the activated one, all land inside `Process()`, and the gizmo rebuild that
-follows projects its geometry through this viewport at most once per dirty flag.
-Rebuilding against the camera the frame started with would leave the handle at
-the previous camera's scale and screen position. A third sync lives in the
-`SceneObjectDeleteRequested` subscription, registered after the controllers so it
-runs once the object is actually gone, which is what keeps the pointer from
-dangling for the rest of that `Process()`.
-
 ## Resize and framing
 
-The viewport extent outlives the scene and reaches both cameras.
+The viewport extent outlives the scene and reaches exactly the camera the frame
+renders through.
 
-`EditorViewport::HandleResize(logical, renderExtent)` caches both extents before
-anything camera-related: the extent is a property of the viewport, not of
-whichever scene happens to be loaded, and it arrives once at startup, long before
-any File > New. A camera seeded later, or restored from a project saved on a
-differently sized window, carries an aspect ratio unrelated to the current
-viewport (a fresh `Camera` is 1x1), and only a window resize ever corrected it,
-so New rendered a squashed frame until the user dragged the window. A zero extent
-is the one thing dropped rather than stored: it is what the window reports before
-it is first shown, and it would divide by zero in the projection, so the previous
-extent is a better answer than none.
+`EditorViewport::HandleResize(logical, renderExtent)` caches both extents and
+dirties the gizmo guide, whose geometry is a fixed pixel budget against the
+viewport height. It writes no camera at all. The extent is a property of the
+viewport, not of whichever scene happens to be loaded, and it arrives once at
+startup, long before any File > New. A zero extent is the one thing dropped rather
+than stored: it is what the window reports before it is first shown, and it would
+divide by zero in the projection, so the previous extent is a better answer than
+none.
 
-There is one framing mechanism, not two. `HandleResize` frames the viewport
-camera immediately (no `CameraResizeEvent` is enqueued on the resize path any
-more) and marks the gizmo dirty, because the guide is a fixed pixel budget and
-the extent is an input to the picture. `SyncCamera` then frames both view
-candidates behind a change-guard (it runs twice per frame, so re-framing
-unconditionally would recompute matrices for nothing). Both are re-framed, not
-just the one currently in use: activation can switch the view with no resize in
-between, and a camera that missed a resize would present a stretched image the
-moment it took over.
+The resize reaches a camera through the existing controller path:
 
-`SceneController::OnActiveCameraChanged` still enqueues a `CameraResizeEvent` on
-activation, and `CameraController::OnCameraResize` is untouched. That path exists
-for the camera becoming the view, not for the window changing size. The event
-carries a UID and `CameraController` resolves it through the pool, which is why
-the viewport camera is reachable by the ordinary event despite not being scene
-content.
+```
+Application::ResizeViewport
+  -> Editor::HandleViewportResize(logical, render)
+       -> EditorViewport::HandleResize(...)          // cache extent, no camera write
+       -> CameraResizeEvent{ activeCameraUid, logical }
+  -> CameraController::OnCameraResize
+       -> ChangeCamRatio(...)
+```
 
-`FrameCamera()` is the one place the correction is written. It no-ops while the
-extent is still 0x0 (startup, before the window is shown) rather than pushing a
-degenerate aspect into the projection. Both branches are pinned by
-`test_editor_scene_lifecycle.cpp`;
-`test_viewport_camera.cpp::ResizeReframesBothTheViewportAndTheActivatedSceneCamera`
-pins the two-camera half and the two different moments at which each is framed,
-and `ZeroResizeIsIgnored` pins the dropped extent.
+`PublishActiveCamera()` emits the same `CameraResizeEvent` whenever the active
+camera changes - activation, deactivation, or load - so a fresh 1x1 scene camera
+gets the current aspect once on becoming the view, and the viewport camera gets
+the current aspect back on deactivation. One event type covers both resize and
+camera handoff, and `CameraController` is the only thing that writes a camera's
+aspect. It still receives only a UID, so it never needs to know whether the camera
+is scene content or the viewport's own.
+
+The inactive camera is never touched, whichever kind it is. `FrameCamera()` remains
+the initial framing used by `EnsureCamera()` (a freshly created viewport camera is
+1x1); it no-ops while the extent is still 0x0 at startup.
+
+`test_editor_scene_lifecycle.cpp::NewProject_SeededCameraAdoptsTheViewportExtent`
+pins the seeded-camera half.
+`test_viewport_camera.cpp::ResizeFramesOnlyTheActiveViewportCamera` and
+`ResizeFramesOnlyTheActivatedSceneCamera` pin the one-camera half in both states,
+`ActivationFramesTheSceneCameraToTheCurrentViewport` pins the handoff, and
+`ZeroResizeIsIgnored` pins the dropped extent.
 
 ## Screen-space queries
 

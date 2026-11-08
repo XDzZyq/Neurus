@@ -23,7 +23,6 @@
 #include "editor/events/EditorEvents.h"
 #include "editor/operations/SceneOperations.h"
 #include "editor/Input.h"
-#include "editor/viewport/EditorViewport.h"
 
 #include "scene/Camera.h"
 #include "scene/Environment.h"
@@ -108,8 +107,9 @@ void OnSelectionChanged(const neurus::SelectionChanged& e, const neurus::Control
  *
  * Gesture and replay path both. The op is recorded only when the value actually
  * changes. Activating a UID that is not scene content is refused, which keeps the
- * viewport camera unactivatable. The newly activated camera needs the viewport's
- * extent, so a resize event is emitted for it.
+ * viewport camera unactivatable. The Editor republishes the active camera after
+ * the dispatch, which also applies the current viewport aspect to it; this
+ * controller does not need a resize event of its own.
  */
 void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::ControllerContext& ctx)
 {
@@ -126,19 +126,6 @@ void OnActiveCameraChanged(const neurus::ActiveCameraChanged& e, const neurus::C
 	if (after == before) return; // no-op toggle: record nothing, emit nothing
 
 	ctx.ops.Submit(std::make_unique<neurus::SetActiveCameraOp>(before, after));
-
-	if (after != 0)
-	{
-		if (const neurus::EditorViewport* vp = ctx.viewport())
-		{
-			const glm::uvec2 size = vp->Size();
-			if (size.x != 0 && size.y != 0)
-			{
-				ctx.events.Emit(neurus::CameraResizeEvent{
-					after, static_cast<int>(size.x), static_cast<int>(size.y)});
-			}
-		}
-	}
 
 	neurus::notify::Mutated(ctx.events);
 }

@@ -182,8 +182,12 @@ Design:
   never scene content) is manipulated by the same events as any scene camera.
 - Does not own the camera; resolves it by UID per event.
 
-A `CameraResizeEvent` is emitted on camera activation because a camera restored
-on a different window size (or never framed) carries a stale aspect.
+`CameraController::OnCameraResize` resizes whichever camera a
+`CameraResizeEvent` names, resolved through the pool. The Editor emits it for the
+active camera on a viewport resize and on a camera handoff (activation,
+deactivation, load), so a camera restored on a different window size (or never
+framed) gets the current aspect once. The controller never needs to know whether
+that UID is a scene camera or the viewport camera.
 
 ## SceneController
 
@@ -220,10 +224,11 @@ Design:
   context's scene provider; events never carry the scene.
 - Most mutating handlers finish with a `neurus::notify` call rather than their own
   `Emit`s, so the `EditorEvents` they emit (`SceneModified`, `LightingRebuild`,
-  `RenderResetEvent`) cannot drift from the gizmo's. The add handler and the
-  active-camera handler also emit their own follow-up events: the add handler
-  asks for the GPU upload before it submits its composite, and camera activation
-  emits a `CameraResizeEvent` for the camera it just activated.
+  `RenderResetEvent`) cannot drift from the gizmo's. The add handler also emits
+  its own follow-up event: it asks for the GPU upload before it submits its
+  composite. Camera activation records the op and mutates only the Scene; the
+  Editor republishes the active camera after the dispatch and emits the
+  `CameraResizeEvent` that frames it for the viewport.
 - GPU uploads are delegated to the Editor via `EditorEvents`
   (`LightGpuChanged`, `LightingRebuild`, `SceneModified`, `RenderResetEvent`,
   `SceneObjectGpuUploadRequested`), which the Editor subscribes to and executes

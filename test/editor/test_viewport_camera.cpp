@@ -24,11 +24,11 @@
  *   ResourceComponent serializes the camera object with the rest of the pool —
  *   including from a file written under the pre-rename `editorCamUid` key.
  * - An activated scene camera takes the view, and deactivating hands it back to
- *   the viewport camera *at the pose it was left at*: the viewport camera is not
- *   reset by a scene camera coming and going.
- * - Which camera a frame renders through is *published* by SyncCamera(), not
- *   recomputed per query, so a test that toggles activation by hand has to say
- *   where the frame boundary is (SyncFrame() below).
+ *   the viewport camera *at the pose it was left at*. The two cameras stay
+ *   independent: activation copies no pose or aspect between them.
+ * - Which camera a frame renders through is *published* by the Editor through
+ *   PublishActiveCamera(), not recomputed per query, so a test that toggles
+ *   activation by hand has to name the frame boundary (PublishFrame() below).
  *
  * No GPU and no Vulkan: `Editor(nullptr, nullptr)` skips every upload path. The
  * starter assets are CPU-side loads resolved against the CWD, which CTest pins
@@ -48,7 +48,9 @@
 #include "asset/components/SceneComponent.h"
 #include "core/ResourceManager.h"
 #include "editor/Editor.h"
+#include "editor/events/SceneEvents.h"
 #include "editor/viewport/EditorViewport.h"
+#include "render/RenderContext.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 
@@ -80,18 +82,18 @@ void NewProject(Editor& editor)
 }
 
 /**
- * @brief Re-publishes the view camera, exactly where a frame would.
+ * @brief Publishes the active camera, exactly where a frame would.
  *
- * `EditorViewport::GetCamera()` hands back a pointer the viewport *published*,
- * not a choice it recomputes per call — one pointer per frame is what stops the
- * gizmo's projection math and the renderer's CameraGPU from disagreeing about
- * which camera the frame belongs to. Activation is a Scene mutation, so a test
- * that activates or deactivates by hand has to name the frame boundary itself;
- * Editor::Edit() is the production caller.
+ * `EditorViewport::GetCamera()` hands back the pointer the Editor published for
+ * this frame, not a choice the viewport recomputes per call. The Editor's choice
+ * is the scene's activated camera or the viewport camera, and it stays a pure
+ * pointer publish: the two cameras never copy state from each other.
+ * `Editor::Edit()` is the production caller; a test that activates or deactivates
+ * by hand must name the frame boundary itself.
  */
-void SyncFrame(Editor& editor)
+void PublishFrame(Editor& editor)
 {
-	editor.GetViewport().SyncCamera(editor.GetScene());
+	editor.Edit();
 }
 
 struct TempFile
@@ -263,7 +265,7 @@ TEST(ViewportCameraTest, DeletingEverySceneCamera_LeavesAWorkingViewCamera)
 		ASSERT_TRUE(scene.RemoveCamera(scene.cam_list.begin()->first));
 
 	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
-	SyncFrame(editor);
+	PublishFrame(editor);
 
 	const EditorViewport& vp = editor.GetViewport();
 	const Camera* cam = vp.GetCamera();
@@ -296,14 +298,14 @@ TEST(ViewportCameraTest, ActivationSwitchesTheViewAndDeactivationRestoresThePose
 	ASSERT_EQ(scene.cam_list.size(), 1u);
 	Camera* sceneCam = scene.cam_list.begin()->second.get();
 	ASSERT_TRUE(scene.ActivateCamera(sceneCam->GetObjectID()));
-	SyncFrame(editor);
+	PublishFrame(editor);
 
 	const EditorViewport& vp = editor.GetViewport();
 	EXPECT_EQ(vp.GetCamera(), sceneCam) << "an activated scene camera takes the view";
 	EXPECT_NE(vp.GetCamera()->GetObjectID(), vp.CameraID());
 
 	scene.DeactivateCamera();
-	SyncFrame(editor);
+	PublishFrame(editor);
 	ASSERT_EQ(vp.GetCamera(), viewportCam);
 	EXPECT_EQ(vp.GetCamera()->GetPosition(), orbited)
 		<< "the viewport camera must keep the pose it was left at";
@@ -321,7 +323,7 @@ TEST(ViewportCameraTest, SelectingASceneCameraDoesNotChangeTheView)
 	Scene& scene = editor.GetScene();
 	ASSERT_EQ(scene.cam_list.size(), 1u);
 	scene.selections.Select(scene.cam_list.begin()->second.get(), false);
-	SyncFrame(editor);
+	PublishFrame(editor);
 
 	const EditorViewport& vp = editor.GetViewport();
 	ASSERT_NE(vp.GetCamera(), nullptr);
@@ -496,63 +498,125 @@ TEST(ViewportCameraTest, CameraLessProjectLoads_WithNothingInjected)
 }
 
 // ---------------------------------------------------------------------------
-// Aspect ratio reaches both view candidates
+// Resize and activation frame only the active camera
 // ---------------------------------------------------------------------------
 
 /**
- * @test One resize re-frames the viewport camera *and* the activated scene camera,
- *       not just whichever is currently in use. A default-constructed Camera is
- *       1x1, and activation can switch the view with no resize in between — so a
- *       camera that missed a resize would present a stretched image the moment it
- *       took the view.
- *
- *       The two are framed at different *moments*, which is the design and not an
- *       accident: HandleResize() frames the viewport's own camera immediately,
- *       because a resize must be in effect for the frame that follows it, while
- *       the activated scene camera needs a Scene to find and is picked up by the
- *       next SyncCamera() — which Edit() runs before anything draws. No
- *       CameraResizeEvent is involved any more: there is one framing mechanism
- *       (EditorViewport::FrameCamera) rather than an event path beside it.
+ * @test A resize frames exactly the camera the frame renders through, and no
+ *       other. With no scene camera activated that is the viewport camera; the
+ *       scene camera keeps its own aspect.
  */
-TEST(ViewportCameraTest, ResizeReframesBothTheViewportAndTheActivatedSceneCamera)
+TEST(ViewportCameraTest, ResizeFramesOnlyTheActiveViewportCamera)
 {
 	Editor editor(nullptr, nullptr);
+	editor.Initialize();
+	NewProject(editor);
+
+	Scene& scene = editor.GetScene();
+	ASSERT_EQ(scene.cam_list.size(), 1u);
+	Camera* sceneCam = scene.cam_list.begin()->second.get();
+	ASSERT_EQ(scene.GetActiveCamera(), nullptr);
+
+	Camera* viewportCam = editor.GetViewport().ViewportCamera();
+	ASSERT_NE(viewportCam, nullptr);
+
+	editor.HandleViewportResize(glm::uvec2(800, 600), glm::uvec2(800, 600));
+
+	EXPECT_FLOAT_EQ(viewportCam->cam_w, 800.0f);
+	EXPECT_FLOAT_EQ(viewportCam->cam_h, 600.0f);
+	EXPECT_FLOAT_EQ(sceneCam->cam_w, 1.0f)
+		<< "the inactive scene camera must be untouched";
+	EXPECT_FLOAT_EQ(sceneCam->cam_h, 1.0f);
+}
+
+/**
+ * @test With a scene camera activated, the same resize reaches that camera and
+ *       leaves the viewport camera alone. The controller still only sees a UID,
+ *       so it does not know which kind of camera it resized.
+ */
+TEST(ViewportCameraTest, ResizeFramesOnlyTheActivatedSceneCamera)
+{
+	Editor editor(nullptr, nullptr);
+	editor.Initialize();
 	NewProject(editor);
 
 	Scene& scene = editor.GetScene();
 	ASSERT_EQ(scene.cam_list.size(), 1u);
 	Camera* sceneCam = scene.cam_list.begin()->second.get();
 	ASSERT_TRUE(scene.ActivateCamera(sceneCam->GetObjectID()));
+	PublishFrame(editor);
 
 	Camera* viewportCam = editor.GetViewport().ViewportCamera();
 	ASSERT_NE(viewportCam, nullptr);
-	ASSERT_NE(viewportCam->cam_w, 800.0f) << "precondition: no viewport extent yet";
+	const float viewportW = viewportCam->cam_w;
+	const float viewportH = viewportCam->cam_h;
 
-	editor.GetViewport().HandleResize(glm::uvec2(800, 600), glm::uvec2(800, 600));
-
-	EXPECT_FLOAT_EQ(viewportCam->cam_w, 800.0f)
-		<< "the camera not in use must be re-framed too, and immediately";
-	EXPECT_FLOAT_EQ(viewportCam->cam_h, 600.0f);
-
-	editor.Edit(); // SyncCamera() reaches the activated scene camera
+	editor.HandleViewportResize(glm::uvec2(800, 600), glm::uvec2(800, 600));
 
 	EXPECT_FLOAT_EQ(sceneCam->cam_w, 800.0f);
 	EXPECT_FLOAT_EQ(sceneCam->cam_h, 600.0f);
+	EXPECT_FLOAT_EQ(viewportCam->cam_w, viewportW)
+		<< "the viewport camera is skipped while a scene camera is active";
+	EXPECT_FLOAT_EQ(viewportCam->cam_h, viewportH);
+}
+
+/**
+ * @test Activation applies the current viewport extent to the newly active scene
+ *       camera once, through the same CameraResizeEvent a resize uses. A fresh
+ *       Camera is 1x1, so without this the first activated frame is stretched.
+ */
+TEST(ViewportCameraTest, ActivationFramesTheSceneCameraToTheCurrentViewport)
+{
+	Editor editor(nullptr, nullptr);
+	editor.Initialize();
+	NewProject(editor);
+
+	editor.HandleViewportResize(glm::uvec2(1024, 768), glm::uvec2(1024, 768));
+
+	Scene& scene = editor.GetScene();
+	ASSERT_EQ(scene.cam_list.size(), 1u);
+	Camera* sceneCam = scene.cam_list.begin()->second.get();
+	ASSERT_FLOAT_EQ(sceneCam->cam_w, 1.0f) << "precondition: not active, not framed";
+
+	editor.OnUIEvent(ActiveCameraChanged{sceneCam->GetObjectID()});
+	editor.Edit();
+
+	EXPECT_FLOAT_EQ(sceneCam->cam_w, 1024.0f);
+	EXPECT_FLOAT_EQ(sceneCam->cam_h, 768.0f);
+	EXPECT_EQ(editor.GetViewport().GetCamera(), sceneCam);
+}
+
+/**
+ * @test RenderContext is handed the same published camera the viewport uses, so
+ *       the renderer and the editor cannot disagree about which camera the frame
+ *       belongs to.
+ */
+TEST(ViewportCameraTest, RenderContextReceivesTheActiveCamera)
+{
+	Editor editor(nullptr, nullptr);
+	NewProject(editor);
+
+	RenderContext renderCtx{};
+	editor.UpdateRenderContext(renderCtx);
+
+	ASSERT_NE(renderCtx.camera, nullptr);
+	EXPECT_EQ(renderCtx.camera, editor.GetViewport().GetCamera());
 }
 
 /**
  * @test A zero extent is dropped rather than stored. It is what the window reports
  *       before it is first shown, and a zero height would divide by zero in the
- *       projection — the previous extent is a better answer than none.
+ *       projection - the previous extent is a better answer than none.
  */
 TEST(ViewportCameraTest, ZeroResizeIsIgnored)
 {
 	Editor editor(nullptr, nullptr);
+	editor.Initialize();
 	editor.NewScene();
 
 	EditorViewport& vp = editor.GetViewport();
-	vp.HandleResize(glm::uvec2(800, 600), glm::uvec2(800, 600));
-	vp.HandleResize(glm::uvec2(0, 0), glm::uvec2(0, 0));
+	editor.HandleViewportResize(glm::uvec2(800, 600), glm::uvec2(800, 600));
+	editor.HandleViewportResize(glm::uvec2(0, 0), glm::uvec2(0, 0));
 
 	EXPECT_EQ(vp.Size(), glm::uvec2(800, 600));
 	EXPECT_FLOAT_EQ(vp.ViewportCamera()->cam_w, 800.0f);
