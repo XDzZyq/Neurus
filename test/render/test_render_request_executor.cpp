@@ -26,8 +26,8 @@
 #include "shared/TestVulkanShared.h"
 
 #include "render/RenderCache.h"
-#include "render/RenderRequestExecutor.h"
-#include "render/RenderRequests.h"
+#include "render/requests/RenderRequestExecutor.h"
+#include "render/requests/RenderRequests.h"
 #include "render/UploadManager.h"
 #include "render/passes/GeometryPass.h"
 #include "render/resources/EnvironmentGPU.h"
@@ -486,27 +486,6 @@ TEST_F(RenderRequestExecutorTest, ShadowLayerOverflow_ExtraLightGetsNoLayer)
 	EXPECT_FALSE(m_cache->GetShadowIntensityLayer(5, lookupExtent).has_value());
 	EXPECT_FALSE(m_cache->GetShadowIntensityLayerIndex(5).has_value())
 		<< "A lookup for an overflow light must not allocate a layer";
-}
-
-// ---------------------------------------------------------------------------
-// 10. ResetAccumulationRequest is a no-op in the executor (DeferredRenderer owns
-//     it): it must not crash and must leave the cache untouched. The no-op is
-//     what keeps Execute's std::visit total, so handing it here is harmless.
-// ---------------------------------------------------------------------------
-
-TEST_F(RenderRequestExecutorTest, ResetAccumulation_IsHarmlessNoOp)
-{
-	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
-
-	constexpr int kObjectId = 300;
-	m_executor->Execute(UploadMeshRequest{.objectId = kObjectId, .data = MakeTriangle()});
-	const MeshGPU* before = m_cache->GetMeshGPU(kObjectId);
-	ASSERT_NE(before, nullptr);
-
-	// Executing the reset does nothing to the executor's resources: the mesh is
-	// still there, same slot. A handler that touched the cache would change this.
-	m_executor->Execute(ResetAccumulationRequest{});
-	EXPECT_EQ(m_cache->GetMeshGPU(kObjectId), before);
 }
 
 // ===========================================================================

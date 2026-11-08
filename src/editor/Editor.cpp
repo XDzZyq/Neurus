@@ -21,8 +21,8 @@
 #include "editor/operations/ShaderOperations.h"
 #include "editor/events/EventBus.h"
 
-#include "render/RenderRequestSink.h"
-#include "render/RenderRequests.h"
+#include "render/requests/RenderRequestSink.h"
+#include "render/requests/RenderRequests.h"
 #include "render/UploadManager.h"
 
 #include "render/RenderFrameSnapshot.h"

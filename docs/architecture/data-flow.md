@@ -110,11 +110,12 @@ Editor::Edit() -> RenderRequestSink::Post(RenderRequest&&)
       before the render thread took it, or dropped by Invalidate(), leaves its
       requests behind for the next publish
    -> the render thread hands the frame's requests to the renderer, then draws it
-   -> DeferredRenderer::DrawFrame drains the batch (RenderRequestQueue, a
-      BatchQueue<RenderRequest>) after the frame fence wait, before it acquires
-      the swapchain image
-   -> RenderRequestExecutor runs each request against the device, RenderCache,
-      UploadManager and GeometryPass
+   -> DeferredRenderer::DrawFrame calls RenderRequestProcessor::Drain() after the
+      frame fence wait, before it acquires the swapchain image; Drain takes the
+      whole batch (BatchQueue<RenderRequest>) and applies the two renderer-state
+      requests itself
+   -> RenderRequestExecutor runs every GPU request against the device,
+      RenderCache, UploadManager and GeometryPass
 ```
 
 Requests posted inside one `Edit()` are executed for the frame that tick

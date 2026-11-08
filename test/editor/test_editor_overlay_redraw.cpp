@@ -33,8 +33,8 @@
 #include "editor/Editor.h"
 #include "editor/events/GizmoEvents.h"
 #include "editor/events/SceneEvents.h"
-#include "render/RenderRequestSink.h"
-#include "render/RenderRequests.h"
+#include "render/requests/RenderRequestSink.h"
+#include "render/requests/RenderRequests.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 

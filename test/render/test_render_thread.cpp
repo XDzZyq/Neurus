@@ -45,7 +45,7 @@
 #include "render/IFrameRenderer.h"
 #include "render/RenderContext.h"
 #include "render/RenderFrameSnapshot.h"
-#include "render/RenderRequests.h"
+#include "render/requests/RenderRequests.h"
 
 #include "core/BatchQueue.h"
 

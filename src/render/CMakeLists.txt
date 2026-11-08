@@ -74,16 +74,17 @@ add_library(neurus_render STATIC
 	FramesInFlight.h
 	TimelineSemaphore.h
 	TimelineSemaphore.cpp
-	RenderRequests.h
-	RenderRequests.cpp
-	RenderRequestQueue.h
-	RenderRequestSink.h
+	requests/RenderRequests.h
+	requests/RenderRequests.cpp
+	requests/RenderRequestSink.h
+	requests/RenderRequestExecutor.h
+	requests/RenderRequestExecutor.cpp
+	requests/RenderRequestProcessor.h
+	requests/RenderRequestProcessor.cpp
 	RenderControl.h
 	IFrameRenderer.h
 	RenderThread.h
 	RenderThread.cpp
-	RenderRequestExecutor.h
-	RenderRequestExecutor.cpp
 	overlay/OverlayGeometry.h
 	overlay/DebugDrawList.h
 	overlay/GizmoDrawList.h

@@ -11,12 +11,12 @@
  * This is the testable seam. DeferredRenderer cannot be constructed without a
  * window surface, so its request handling could not be exercised headless; the
  * executor needs only a frame drain, a RenderCache, an UploadManager and a
- * GeometryPass, all of which a GPU test fixture already builds offscreen. The
- * one request DeferredRenderer keeps for itself is ResetAccumulationRequest,
- * which writes renderer state the executor does not own; RedrawOverlaysRequest is
- * the other, since it only sets the flag deciding the next frame's work. The
- * executor treats both as no-ops so std::visit stays total and a stray one is
- * harmless.
+ * GeometryPass, all of which a GPU test fixture already builds offscreen.
+ *
+ * It handles the GPU kinds only. `ResetAccumulationRequest` and
+ * `RedrawOverlaysRequest` change renderer state instead of resources, so the
+ * owning `RenderRequestProcessor` intercepts them before Execute(); the
+ * constrained template makes that split a type rule rather than a convention.
  */
 
 #pragma once
@@ -25,6 +25,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <type_traits>
 
 namespace neurus {
 
@@ -80,8 +81,20 @@ public:
 	RenderRequestExecutor(RenderRequestExecutor&&)                 = delete;
 	RenderRequestExecutor& operator=(RenderRequestExecutor&&)      = delete;
 
-	/** @brief Execute one request, dispatched on its active variant alternative. */
-	void Execute(const RenderRequest& request);
+	/**
+	 * @brief Execute one GPU request, dispatched on its static type.
+	 *
+	 * Deliberately not a `RenderRequest` overload: the processor has already
+	 * peeled the two renderer-state kinds, so a state request is a compile
+	 * error here rather than a silent no-op.
+	 */
+	template <typename TRequest>
+	    requires(!std::is_same_v<TRequest, ResetAccumulationRequest> &&
+	             !std::is_same_v<TRequest, RedrawOverlaysRequest>)
+	void Execute(const TRequest& request)
+	{
+		handle(request);
+	}
 
 	/** @brief Set the upload service once the Application has created it. */
 	void SetUploadManager(UploadManager* uploader) { m_uploader = uploader; }
@@ -95,8 +108,6 @@ private:
 	void handle(const UpdateLightRequest& request);
 	void handle(const EnsurePipelineRequest& request);
 	void handle(const DropSceneResourcesRequest& request);
-	void handle(const ResetAccumulationRequest& request);
-	void handle(const RedrawOverlaysRequest& request);
 
 	// --- Borrowed objects ---
 	std::function<void()> m_drainFrames;

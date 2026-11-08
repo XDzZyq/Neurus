@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "render/RenderFrameSnapshot.h"
-#include "render/RenderRequests.h"
+#include "render/requests/RenderRequests.h"
 
 namespace neurus
 {

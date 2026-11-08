@@ -20,7 +20,7 @@
 #pragma once
 
 #include "ProfilingData.h"
-#include "RenderRequestSink.h"
+#include "requests/RenderRequestSink.h"
 
 #include <vulkan/vulkan_raii.hpp>
 

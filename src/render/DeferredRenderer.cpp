@@ -17,7 +17,7 @@
 
 #include "shaders/Shader.h"
 
-#include "RenderRequestExecutor.h"
+#include "requests/RenderRequestProcessor.h"
 #include "Screenshot.h"
 #include "SharedQueue.h"
 #include "UploadManager.h"
@@ -214,14 +214,17 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	          << " swapchainImages=" << imageCount
 	          << " transferDst=" << (hasTransferDst ? "yes" : "no"));
 
-	// --- Request executor ---
+	// --- Request processor ---
 	// Built last: it borrows the geometry pass and the cache, both live by now.
 	// The UploadManager does not exist yet (the Application creates it after the
-	// renderer), so the executor starts without one; SetUploadManager() wires it
-	// in before the first scene upload. Its frame drain is this object's fence
-	// wait, so a destroying handler never idles the device.
-	m_executor = std::make_unique<RenderRequestExecutor>(
-		[this] { DrainInFlightFrames(); }, *r_renderCache, /*uploader=*/nullptr, r_geometryPass);
+	// renderer), so it starts without one; SetUploadManager() wires it in before
+	// the first scene upload. Its frame drain is this object's fence wait, so a
+	// destroying handler never idles the device. The two state callbacks are the
+	// accumulation iteration and the overlays-stale flag this renderer owns; the
+	// processor applies them in the same order the old per-frame drain did.
+	m_requests = std::make_unique<RenderRequestProcessor>(
+		[this] { DrainInFlightFrames(); }, *r_renderCache, r_geometryPass,
+		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; });
 }
 
 DeferredRenderer::~DeferredRenderer()
@@ -370,7 +373,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	//
 	// The drain runs before the no-camera early-out below, so a camera-less
 	// session still executes its queued requests instead of queueing forever.
-	ProcessRequests();
+	m_requests->Drain();
 
 	// What this call performs, decided after the drain: a request handled above
 	// may have restarted accumulation or marked the overlays stale.
@@ -572,46 +575,12 @@ void DeferredRenderer::ResetShadowAccumulation()
 
 void DeferredRenderer::Post(RenderRequest&& request)
 {
-	m_requestQueue.Push(std::move(request));
-	// The queue is the only handoff: DrawFrame drains it after its own fence wait,
-	// so there is nothing to wake. RenderThread does not post into this queue at
-	// the moment of the Editor's call either - it attaches the request to the
-	// next published frame and posts it just before drawing that frame, so the
-	// request executes with the snapshot of the tick that posted it.
-}
-
-void DeferredRenderer::ProcessRequests()
-{
-	// Whole batch at once: a request a handler posts lands in the next TakeAll(),
-	// never mid-iteration over this one.
-	std::vector<RenderRequest> batch = m_requestQueue.TakeAll();
-	for (const RenderRequest& request : batch)
-	{
-		// Two requests write renderer state the executor does not own, so they are
-		// handled here. Routing them through the queue rather than a direct call
-		// keeps the rule simple once the renderer runs on its own thread: the
-		// Editor never calls in except to Post.
-
-		// Overlays only: keep the converged scene image and redraw on top of it.
-		// This is the one request that must NOT restart accumulation - doing so
-		// would throw away the converged image the overlay redraw exists for.
-		if (std::holds_alternative<RedrawOverlaysRequest>(request))
-		{
-			m_overlaysDirty = true;
-			continue;
-		}
-
-		// Everything else changes scene content, GPU resources or the view, which
-		// invalidates the accumulated average: restart from frame 0. That includes
-		// ResetAccumulationRequest, which needs no further handling (it exists to
-		// ask for exactly this), so it stops here instead of reaching the executor.
-		m_iteration = 0;
-
-		if (std::holds_alternative<ResetAccumulationRequest>(request))
-			continue;
-
-		m_executor->Execute(request);
-	}
+	m_requests->Post(std::move(request));
+	// The processor's queue is the only handoff: DrawFrame drains it after its
+	// own fence wait, so there is nothing to wake. RenderThread does not post
+	// into it at the moment of the Editor's call either - it attaches the request
+	// to the next published frame and posts it just before drawing that frame, so
+	// the request executes with the snapshot of the tick that posted it.
 }
 
 void DeferredRenderer::CaptureScreenshot(bool allAttachments,
@@ -637,7 +606,7 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
 
 void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 {
-	m_executor->SetUploadManager(uploader);
+	m_requests->SetUploadManager(uploader);
 }
 
 void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)

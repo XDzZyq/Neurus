@@ -58,7 +58,7 @@
 
 #include "render/FrameMailbox.h"
 #include "render/PublishedFrame.h"
-#include "render/RenderRequests.h"
+#include "render/requests/RenderRequests.h"
 
 #include <chrono>
 #include <condition_variable>

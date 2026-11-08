@@ -1,10 +1,11 @@
 /**
  * @file test_render_request_queue.cpp
- * @brief The handoff contract of RenderRequestQueue: strict FIFO within a
+ * @brief The handoff contract of the render-request batch: strict FIFO within a
  *        batch, whole-batch swap-out, next-batch isolation, and move-through.
  *
- * The queue is the single point of handoff between the Editor (posting GPU work
- * as values) and the renderer (draining a batch per frame). Three properties
+ * `BatchQueue<RenderRequest>` is the storage the `RenderRequestProcessor` drains,
+ * and the single point of handoff between the Editor (posting GPU work as
+ * values) and the renderer (draining a batch per frame). Three properties
  * carry that contract, and each is easy to "pass" by accident unless the
  * assertion names the thing it depends on:
  *
@@ -30,8 +31,7 @@
 #include <gtest/gtest.h>
 
 #include "core/BatchQueue.h"
-#include "render/RenderRequestQueue.h"
-#include "render/RenderRequests.h"
+#include "render/requests/RenderRequests.h"
 #include "render/resources/LightingCache.h"
 #include "scene/Light.h"
 
@@ -63,7 +63,7 @@ namespace
 
 TEST(RenderRequestQueueTest, EmptyTracksPostAndTake)
 {
-	RenderRequestQueue queue;
+	BatchQueue<RenderRequest> queue;
 	EXPECT_TRUE(queue.Empty());
 
 	queue.Push(UploadMeshRequest{.objectId = 1});
@@ -86,7 +86,7 @@ TEST(RenderRequestQueueTest, EmptyTracksPostAndTake)
 
 TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 {
-	RenderRequestQueue queue;
+	BatchQueue<RenderRequest> queue;
 
 	// A deliberately interleaved sequence across request kinds: order is the
 	// contract, independent of alternative. DropScene between two uploads is the
@@ -124,7 +124,7 @@ TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 
 TEST(RenderRequestQueueTest, PostDuringProcessingLandsInNextBatch)
 {
-	RenderRequestQueue queue;
+	BatchQueue<RenderRequest> queue;
 
 	queue.Push(UploadMeshRequest{.objectId = 100});
 	queue.Push(UploadMeshRequest{.objectId = 101});
@@ -154,7 +154,7 @@ TEST(RenderRequestQueueTest, PostDuringProcessingLandsInNextBatch)
 
 TEST(RenderRequestQueueTest, TakeAllAfterDrainReturnsEmpty)
 {
-	RenderRequestQueue queue;
+	BatchQueue<RenderRequest> queue;
 	queue.Push(UploadMeshRequest{.objectId = 7});
 
 	auto first = queue.TakeAll();
@@ -173,7 +173,7 @@ TEST(RenderRequestQueueTest, TakeAllAfterDrainReturnsEmpty)
 
 TEST(RenderRequestQueueTest, LightingMapPayloadSurvives)
 {
-	RenderRequestQueue queue;
+	BatchQueue<RenderRequest> queue;
 
 	UpdateLightingRequest req;
 	SunLightStruct sun{};
@@ -209,7 +209,7 @@ TEST(RenderRequestQueueTest, LightingMapPayloadSurvives)
 
 TEST(RenderRequestQueueTest, SpirvPayloadMovedNotCopied)
 {
-	RenderRequestQueue queue;
+	BatchQueue<RenderRequest> queue;
 
 	EnsurePipelineRequest req;
 	req.shaderId = 11;

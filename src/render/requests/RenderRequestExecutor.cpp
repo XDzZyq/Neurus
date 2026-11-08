@@ -35,13 +35,6 @@ RenderRequestExecutor::RenderRequestExecutor(std::function<void()> drainFrames,
 {
 }
 
-void RenderRequestExecutor::Execute(const RenderRequest& request)
-{
-	// The lambda forwards to the matching private handle() overload; defined
-	// here inside a member so it reaches the private handlers.
-	std::visit([this](const auto& r) { handle(r); }, request);
-}
-
 // ---------------------------------------------------------------------------
 // Mesh upload
 // ---------------------------------------------------------------------------
@@ -214,28 +207,5 @@ void RenderRequestExecutor::handle(const DropSceneResourcesRequest&)
 	NEURUS_LOG("[RenderRequestExecutor] Dropped scene GPU resources");
 }
 
-// ---------------------------------------------------------------------------
-// Accumulation reset (owned by DeferredRenderer; no-op here)
-// ---------------------------------------------------------------------------
-
-void RenderRequestExecutor::handle(const ResetAccumulationRequest&)
-{
-	// DeferredRenderer executes this one itself - it writes renderer state the
-	// executor does not own. The no-op keeps Execute's std::visit total so the
-	// executor can be handed any request kind without a crash.
-}
-
-// ---------------------------------------------------------------------------
-// Overlay-only redraw (owned by DeferredRenderer; no-op here)
-// ---------------------------------------------------------------------------
-
-void RenderRequestExecutor::handle(const RedrawOverlaysRequest&)
-{
-	// DeferredRenderer intercepts this one too: it only sets the renderer's
-	// "overlays stale" flag, which decides the next frame's work (see NextWork).
-	// There is no GPU resource for the executor to touch - the overlay graph
-	// re-runs the passes it already owns against the image already on the GPU.
-	// The no-op keeps Execute's std::visit total.
-}
 
 } // namespace neurus

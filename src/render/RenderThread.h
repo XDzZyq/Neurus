@@ -77,7 +77,7 @@
 #include "PublishedFrame.h"
 #include "RenderControl.h"
 #include "RenderFrameSnapshot.h"
-#include "RenderRequestSink.h"
+#include "requests/RenderRequestSink.h"
 
 #include <vulkan/vulkan_raii.hpp>
 

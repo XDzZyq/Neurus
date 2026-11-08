@@ -38,7 +38,6 @@
 #include "passes/Pass.h"
 #include "core/RenderConfig.h"
 #include "RenderContext.h"
-#include "RenderRequestQueue.h"
 #include "Swapchain.h"
 #include "render_graph/RenderGraph.h"
 
@@ -73,7 +72,7 @@ class OverlayEngine;
 struct CameraUBOData;
 class Shader;
 class UploadManager;
-class RenderRequestExecutor;
+class RenderRequestProcessor;
 class Screenshot;
 class SharedQueue;
 
@@ -294,23 +293,6 @@ public:
 
 private:
 	/**
-	 * @brief Drain the request queue and execute every pending request, FIFO.
-	 *
-	 * DrawFrame calls this after its frame-slot fence wait, before it decides
-	 * what to draw; nothing else does. That single call site is the whole contract
-	 * - it is the only drain on the single-threaded path and on the render-thread
-	 * path alike, so a request can never execute outside a frame, and a fence
-	 * timeout leaves the queue intact for the next one.
-	 *
-	 * Two kinds are handled here because they write renderer state the executor
-	 * does not own: ResetAccumulationRequest and RedrawOverlaysRequest. Every
-	 * other request restarts accumulation (m_iteration = 0) before it is delegated
-	 * to the executor, so the next frame samples from scratch; that is the
-	 * convergence contract IFrameRenderer::NextWork() documents.
-	 */
-	void ProcessRequests();
-
-	/**
 	 * @brief Records one frame's work into a command buffer.
 	 *
 	 * Rebuilds the scene graph when the pipeline signature changes, then records
@@ -517,11 +499,9 @@ private:
 	bool m_reportedNoCamera = false;
 
 	// --- Editor-posted GPU requests (drained at the top of DrawFrame) ---
-	// The queue is the handoff from the Editor; the executor runs each request
-	// against the device, the cache and the passes. Both single-threaded today;
-	// the queue carries the mutex a future render thread needs.
-	RenderRequestQueue                     m_requestQueue;
-	std::unique_ptr<RenderRequestExecutor> m_executor;
+	// The processor owns the queue and the executor. It borrows the cache and
+	// the geometry pass, both declared before it, so it is destroyed first.
+	std::unique_ptr<RenderRequestProcessor> m_requests;
 
 };
 

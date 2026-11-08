@@ -16,7 +16,7 @@
 
 #include "../resources/MeshGPU.h"
 #include "RenderFrameSnapshot.h"
-#include "RenderRequests.h"
+#include "requests/RenderRequests.h"
 
 #include <array>
 #include <cstdint>

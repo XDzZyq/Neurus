@@ -29,7 +29,7 @@
 
 namespace neurus {
 
-struct EnsurePipelineRequest;  // render/RenderRequests.h
+struct EnsurePipelineRequest;  // render/requests/RenderRequests.h
 
 /**
  * @brief G-Buffer geometry pass using dynamic rendering.

@@ -20,15 +20,16 @@ outgoing scene, reset accumulation - is posted instead as a typed
 - **Queue and drain.** The Editor holds a `RenderRequestSink*` (Post only).
   With `RenderThread` driving the renderer, `Post` appends to the thread's posting
   queue and the request rides the next published frame (ordering below); the loop
-  hands it to `DeferredRenderer::Post(RenderRequest&&)`, which pushes into a
-  mutex-guarded FIFO (`RenderRequestQueue`, a `BatchQueue<RenderRequest>`).
-  `DrawFrame()` drains the whole batch
+  hands it to `DeferredRenderer::Post(RenderRequest&&)`, which forwards to
+  `RenderRequestProcessor::Post`. The processor owns the mutex-guarded FIFO
+  (`BatchQueue<RenderRequest>`) and the executor.
+  `DrawFrame()` calls `Drain()` once, which takes the whole batch
   with `TakeAll()` *after* the frame-slot fence wait and *before* swapchain
-  acquire (and before the no-camera early-out). `RenderRequestExecutor` runs each
-  request against the device, cache, `UploadManager` and `GeometryPass`.
-  `DeferredRenderer` keeps two requests for itself, because they write renderer
-  state the executor does not own: `ResetAccumulationRequest` and
-  `RedrawOverlaysRequest`. Every other request restarts accumulation
+  acquire (and before the no-camera early-out). The processor applies the two
+  renderer-state requests itself - `ResetAccumulationRequest` and
+  `RedrawOverlaysRequest` - and passes every GPU request to
+  `RenderRequestExecutor`, which runs it against the device, cache,
+  `UploadManager` and `GeometryPass`. Every GPU request restarts accumulation
   (`m_iteration = 0`) before it reaches the executor, so the next frame samples
   from scratch. `RedrawOverlaysRequest` is the one exception - it marks the
   overlays stale and keeps the converged scene image, which is the whole reason
