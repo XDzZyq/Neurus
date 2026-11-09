@@ -46,6 +46,10 @@ isolation; this page indexes every document in the set.
 
 - [Overview](script/overview.md) - the embedded CPython runtime, the read-only `neurus` module, and the Script Console
 
+## Commands
+
+- [Overview](command/overview.md) - named background sessions, the loopback protocol, security and the `neurus` CLI
+
 ## Core, Scene and Asset
 
 - [UID and Resources](core/uid-and-resources.md)

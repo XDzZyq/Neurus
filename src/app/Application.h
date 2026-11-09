@@ -6,12 +6,16 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include <cstdint>
+#include <chrono>
 #include <future>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "app/VulkanContext.h"
+#include "app/AppArgs.h"
+#include "command/ISessionState.h"
 #include "editor/Editor.h"
 #include "render/DeferredRenderer.h"
 #include "render/RenderThread.h"
@@ -24,6 +28,7 @@
 namespace neurus {
 
 class UIEvents;
+class SessionServer;
 
 /**
  * @brief Application lifecycle manager - fully RAII.
@@ -33,7 +38,7 @@ class UIEvents;
  * declared in teardown order, so reverse-order destruction releases GPU
  * resources in the required sequence.
  */
-class Application
+class Application : public command::ISessionState
 {
 public:
 	/**
@@ -54,6 +59,15 @@ public:
 	 * @return Application exit code (0 on success, -1 on fatal error).
 	 */
 	int Run();
+
+	// --- ISessionState (read-only view for command handlers) ---
+	int Pid() const override;
+	std::string SessionName() const override;
+	std::string ProjectPath() const override;
+	bool IsDirty() const override;
+	bool Save(std::string& error) override;
+	std::int64_t UptimeSeconds() const override;
+	std::string AppVersion() const override;
 
 private:
 	// --- Initialisation helpers (called in order by Run()) ---
@@ -103,14 +117,11 @@ private:
 	// --- Project lifecycle (the Application owns the project path) ---
 	void OnProjectNew();
 	void OnProjectOpen(const std::string& path);
-	void OnProjectSave(const std::string& path = std::string());
+	bool OnProjectSave(const std::string& path = std::string(), std::string* error = nullptr);
 
 	// --- Scripting (Script Console → ScriptEngine) ---
 	void OnRunScript(const std::string& code);
 	void OnRunFile(const std::string& path);
-
-	/** @brief Aggregated document dirtiness: editor scene/config OR UI-state drift. */
-	bool IsDirty() const;
 
 	/**
 	 * @brief Applies the target-FPS preference to the render timer.
@@ -146,6 +157,12 @@ private:
 	std::string app_savedUiState;   ///< UI blob as last saved/loaded (dirty baseline).
 	std::unique_ptr<Preferences> app_preferences;  ///< ~/.neurus/preferences.json (loaded before the window).
 
+	// --- Command session state ---
+	AppArgs      app_args;          ///< Parsed --session / --project.
+	QStringList  app_rawArguments;  ///< argv captured before QApplication parses it.
+	std::string  app_sessionName;   ///< Named session, empty for a normal launch.
+	std::chrono::steady_clock::time_point app_startTime;  ///< Session uptime origin.
+
 	// --- GPU / UI stack (destroyed in REVERSE declaration order) ---
 	// The render thread goes first: its destructor joins the thread and leaves
 	// the renderer idle, so nothing below may be torn down while it runs.
@@ -161,6 +178,7 @@ private:
 	// dangling borrows during Python finalization. It still outlives the frame
 	// loop.
 	std::unique_ptr<ScriptEngine>         app_script;          // 3rd declared -> destroyed 7th
+	std::unique_ptr<SessionServer>        app_session;         // command server; destroyed before editor
 	std::unique_ptr<UIManager>            app_mainWindow;      // 4th declared -> destroyed 6th
 	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 5th declared -> destroyed 5th
 

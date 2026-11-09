@@ -1,13 +1,24 @@
 # src/platform/CMakeLists.txt - Platform abstraction layer
 
-add_library(neurus_platform STATIC
-	PlatformSurface.h
-	PlatformSurface.cpp
+# Platform paths are standard-library only. They are a separate target so the
+# Qt-free, Vulkan-free command transport and CLI can use them without inheriting
+# the surface layer's Vulkan dependency.
+add_library(neurus_platform_paths STATIC
 	PlatformPaths.h
 	PlatformPaths.cpp
 )
 
-target_link_libraries(neurus_platform PUBLIC Vulkan::Vulkan)
+target_include_directories(neurus_platform_paths PUBLIC ${CMAKE_SOURCE_DIR}/src)
+
+add_library(neurus_platform STATIC
+	PlatformSurface.h
+	PlatformSurface.cpp
+)
+
+target_link_libraries(neurus_platform PUBLIC
+	Vulkan::Vulkan
+	neurus_platform_paths
+)
 target_include_directories(neurus_platform PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
 if(WIN32)

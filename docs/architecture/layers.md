@@ -96,6 +96,24 @@ responsibility, and Core supplies utilities shared across all of them.
 - Scene objects never upload: the Editor posts an `UploadMeshRequest` carrying the
   `MeshData`, and the renderer owns the result
 
+## Command Layer (`src/command/`, `src/ipc/`, `src/cli/`)
+
+- `neurus_command` - Qt-free, Vulkan-free request/result values, stable error
+  codes, command descriptors, the versioned JSON codec and the main-thread
+  dispatcher
+- `neurus_ipc` - Qt-free, Vulkan-free length framing, session registry, token
+  generation, and the Asio loopback client/server
+- `neurus_cli` (`neurus`) - Qt-free, Vulkan-free CLI11 parsing, process launch
+  and output formatting
+- The application hosts the server in `src/app/session/`; that is the only new
+  code allowed to use Qt
+- The Asio thread only accepts, reads and writes. Every command executes on the
+  main thread in `Application::NewFrameSignals`, before scripts and
+  `Editor::Edit()`, and mutates through the existing typed events and
+  controllers
+- The CLI never constructs an `Editor`; a request without a live session is an
+  error
+
 ## Core Layer (`src/core/`)
 
 Vulkan-free utilities shared across the other layers:

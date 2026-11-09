@@ -142,3 +142,10 @@ Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
 - Keep changes minimal and localized; respect layer isolation. See
   [roles.instructions.md](.github/instructions/roles.instructions.md) for the
   full set.
+- **Command/IPC/CLI targets stay Qt-free and Vulkan-free.** `neurus_command`,
+  `neurus_ipc` and `neurus_cli` must not include Qt, Vulkan, Editor or UI
+  headers. The IPC I/O thread never touches editor state; only the
+  main-thread drain in `Application::NewFrameSignals` may execute a command.
+  The CLI never constructs an `Editor`, and the session registry under
+  `~/.neurus/sessions` is per-user and owner-only. See
+  [docs/command/overview.md](docs/command/overview.md).

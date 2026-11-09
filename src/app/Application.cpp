@@ -11,6 +11,7 @@
 #include "app/Application.h"
 
 #include "VulkanContext.h"
+#include "app/session/SessionServer.h"
 #include "core/Log.h"
 #include "editor/Editor.h"
 #include "editor/events/SceneEvents.h"
@@ -58,6 +59,12 @@
 #include <memory>
 #include <string>
 #include <utility>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -130,11 +137,19 @@ namespace neurus {
 Application::Application(int argc, char* argv[])
 {
 	// --- Qt Application ---
+	// Capture our own flags before QApplication can consume them: Qt treats
+	// --session as its -session option and removes it from its argument list.
+	app_rawArguments.reserve(argc);
+	app_rawArguments.push_back(QStringLiteral("Neurus"));
+	for (int i = 1; i < argc; ++i)
+		app_rawArguments.push_back(QString::fromLocal8Bit(argv[i]));
+
 	app_qtApp = std::make_unique<QApplication>(argc, argv);
 	app_renderTimer = std::make_unique<QTimer>();
 	app_renderTimer->setInterval(16);  // ~60 FPS
 	app_qtApp->setApplicationName("Neurus");
 	app_qtApp->setApplicationVersion("0.1.0");
+	app_startTime = std::chrono::steady_clock::now();
 	// Set before any window exists so every top-level widget (the main window,
 	// dialogs) inherits the window and taskbar icon. Skipped on macOS: the Dock
 	// shows the bundle's neurus.icns, which the system masks to the rounded
@@ -155,6 +170,18 @@ Application::~Application()
 
 int Application::Run()
 {
+	app_args = AppArgs::Parse(app_rawArguments);
+	if (!app_args.error.empty())
+	{
+		NEURUS_ERR("[Application] " << app_args.error);
+		return -1;
+	}
+	if (app_args.session && !ipc::IsValidSessionName(*app_args.session))
+	{
+		NEURUS_ERR("[Application] Invalid session name: " << *app_args.session);
+		return -1;
+	}
+
 	// --- Preferences: the Application is their sole manager. Loaded BEFORE the
 	// window is built so the UI starts in the saved language; the file is
 	// created on first run. ---
@@ -228,7 +255,21 @@ int Application::Run()
 	InitEditor();
 	InitScripting();
 
-	const auto projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
+	std::string projectPath;
+	if (app_args.project)
+	{
+		std::error_code pathError;
+		if (!std::filesystem::is_regular_file(*app_args.project, pathError))
+		{
+			NEURUS_ERR("[Application] Project file not found: " << *app_args.project);
+			return -1;
+		}
+		projectPath = *app_args.project;
+	}
+	else
+	{
+		projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
+	}
 	const std::string objPath = kDefaultSceneObj;
 
 	try
@@ -266,6 +307,19 @@ int Application::Run()
 	// first frame because the swapchain is not fully ready.
 	app_editor->UploadSceneResources();
 
+	if (app_args.session)
+	{
+		app_sessionName = *app_args.session;
+		app_session = std::make_unique<SessionServer>(
+			*this, app_qtApp->applicationVersion().toStdString());
+		std::string sessionError;
+		if (!app_session->Start(app_sessionName, app_projectPath, sessionError))
+		{
+			NEURUS_ERR("[Application] Cannot start command session: " << sessionError);
+			return -1;
+		}
+	}
+
 	// Requests and resizes posted before this point are queued and serviced by
 	// the thread's first iteration, so nothing posted above is lost.
 	app_renderThread->Start();
@@ -275,6 +329,9 @@ int Application::Run()
 	NEURUS_LOG("[Application] Entering event loop");
 	app_renderTimer->start();
 	int result = app_qtApp->exec();
+
+	if (app_session)
+		app_session->Stop();
 
 	// Explicit: join here, while every member the thread touches still exists.
 	// The destructor's Stop() then has nothing left to do.
@@ -597,13 +654,15 @@ void Application::OnProjectOpen(const std::string& path)
 	}
 }
 
-void Application::OnProjectSave(const std::string& path)
+bool Application::OnProjectSave(const std::string& path, std::string* error)
 {
 	const std::string target = path.empty() ? app_projectPath : path;
 	if (target.empty())
 	{
 		NEURUS_ERR("[Application] Save requested but no project path is set.");
-		return;
+		if (error)
+			*error = "No project path is set.";
+		return false;
 	}
 
 	try
@@ -619,12 +678,53 @@ void Application::OnProjectSave(const std::string& path)
 	catch (const std::exception& e)
 	{
 		NEURUS_ERR("[Application] Failed to save project: " << e.what());
+		if (error)
+			*error = e.what();
+		return false;
 	}
+	return true;
 }
 
 bool Application::IsDirty() const
 {
 	return app_editor->IsDirty() || (app_mainWindow->ExportLayout() != app_savedUiState);
+}
+
+// --- ISessionState -------------------------------------------------------
+
+int Application::Pid() const
+{
+#ifdef _WIN32
+	return _getpid();
+#else
+	return static_cast<int>(::getpid());
+#endif
+}
+
+std::string Application::SessionName() const
+{
+	return app_sessionName;
+}
+
+std::string Application::ProjectPath() const
+{
+	return app_projectPath;
+}
+
+bool Application::Save(std::string& error)
+{
+	return OnProjectSave({}, &error);
+}
+
+std::int64_t Application::UptimeSeconds() const
+{
+	return std::chrono::duration_cast<std::chrono::seconds>(
+		std::chrono::steady_clock::now() - app_startTime).count();
+}
+
+std::string Application::AppVersion() const
+{
+	return app_qtApp->applicationVersion().toStdString();
 }
 
 namespace
@@ -653,6 +753,19 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     if (!app_renderThread || !app_editor || !app_script)
 	                     {
 	                         return;
+	                     }
+
+	                     // Commands run first: their handlers dispatch events
+	                     // synchronously, so mutations are visible to this tick.
+	                     if (app_session)
+	                     {
+		                     app_session->DrainOnMainThread();
+		                     if (app_session->CloseRequested())
+		                     {
+			                     app_session->WaitForWrites(std::chrono::seconds(2));
+			                     app_qtApp->quit();
+			                     return;
+		                     }
 	                     }
 
 	                     // Run any queued scripts first: a run dispatches its

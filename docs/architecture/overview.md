@@ -54,6 +54,12 @@ The architecture prioritizes:
 Scene objects (`src/scene/`) and Core utilities (`src/core/`) are shared across
 layers.
 
+The command subsystem (`src/command/`, `src/ipc/`, `src/cli/`) is a Qt-free and
+Vulkan-free sidecar. The standalone `neurus` CLI reaches a running application
+over loopback IPC, and the application executes each request on its main thread
+through the same editor events and controllers as a UI edit. See
+[Command Sessions](../command/overview.md).
+
 ### Generated Structure Graph
 
 <!-- The link below is raw HTML on purpose. graphify.html is generated build

@@ -22,6 +22,24 @@ UI Layer (Qt6) -> UIEvents (Qt Signals) -> Editor -> EventQueue (typed events) -
 - Each arrow represents a **decoupled interface** (signals, events, contexts).
   No layer knows the internals of the next.
 
+## Command Path
+
+A command reaches the same editor mutation path from outside the UI:
+
+```
+neurus CLI -> loopback IPC (Asio thread) -> CommandDispatcher queue
+           -> main-thread drain in NewFrameSignals -> ICommandExecutor
+           -> typed EventQueue -> Controllers -> Operations
+```
+
+- The IPC thread never touches the editor. It only parses a framed request and
+  queues it.
+- The main thread drains at most 16 commands per tick and answers only after
+  every controller has run, so a response means the change is applied.
+- Query commands read the editor's live state directly; mutations use the same
+  typed events as a panel edit, including undo/redo.
+- `session.close` writes its response before it asks the application to quit.
+
 ## Three Event Paths
 
 Event structs in `src/editor/events/` are split by domain:

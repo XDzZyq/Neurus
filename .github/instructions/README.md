@@ -13,6 +13,7 @@ this folder does not restate them.
 | [lessons.instructions.md](lessons.instructions.md) | Encountered issues and pitfalls, each as a short symptom -> rule |
 | [tips.instructions.md](tips.instructions.md) | Build/test commands, the two build trees, worktree tools, graphify and presets |
 | [roles.instructions.md](roles.instructions.md) | Master vs. subagent rules, racing prevention, lane patterns and agent roles |
+| [../../docs/command/overview.md](../../docs/command/overview.md) | Command sessions, loopback protocol, security and the `neurus` CLI |
 
 Product documentation is the design authority: [`docs/README.md`](../../docs/README.md).
 

@@ -105,6 +105,16 @@ add_executable(neurus_test
 	ui/test_run_script_menu.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
+	command/test_dependencies.cpp
+	command/test_command_types.cpp
+	command/test_command_json.cpp
+	command/test_dispatcher.cpp
+	command/test_frame.cpp
+	command/test_session_registry.cpp
+	command/test_ipc_roundtrip.cpp
+	command/test_cli_parse.cpp
+	app/test_app_args.cpp
+	session/test_session_command.cpp
 )
 
 # Scripting engine unit tests (only when the script layer is enabled).
@@ -123,11 +133,15 @@ target_link_libraries(neurus_test PRIVATE
 	neurus_scene
 	neurus_app
 	neurus_platform
+	neurus_command
+	neurus_ipc
 	neurus_render
 	neurus_editor
 	neurus_ui
 	neurus_asset
 	gtest
+	cli11
+	neurus_cli_core
 	Vulkan::Vulkan
 	Qt6::Core
 	Qt6::Test
