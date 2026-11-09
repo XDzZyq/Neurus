@@ -32,7 +32,7 @@ not fail - it answers about a different codebase.
 
 | Tree | Generator (typical) | Run its tests with | Binaries |
 |------|---------------------|--------------------|----------|
-| `build/debug` | single-config Ninja | `cd build/debug && ctest` | `build/debug/Neurus`, `build/debug/neurus_test` |
+| `build/debug` | single-config Ninja | `cd build/debug && ctest` | `build/debug/neurus_test`, macOS `build/debug/Neurus.app/Contents/MacOS/Neurus` |
 | `build/` | multi-config (VS on Windows, Ninja Multi-Config on CI/macOS) | `cd build && ctest -C Debug` | `build/Debug/...` per config |
 
 - **A bare `ctest` in a multi-config tree prints `Total Tests: 0` and exits 0.**

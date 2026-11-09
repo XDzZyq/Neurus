@@ -51,7 +51,7 @@ Makefile convenience targets:
 
 - `make update` - init submodules, download pre-compiled deps, configure CMake
 - `make build` - full Debug build; `make build app` / `make build test` narrow to
-  `Neurus.exe` / `neurus_test`
+  `Neurus` (`Neurus.exe` on Windows, `Neurus.app` on macOS) / `neurus_test`
 - `make check` - run all tests (or `make check FILTER="-R Pattern"`)
 - `make release` - configure + build Release
 - `make nobuild` - generate the VS 2022 solution at `../Neurus_VS2022`
@@ -209,7 +209,7 @@ different codebase:
 
 | tree | generator | run its tests with | binaries |
 |------|-----------|--------------------|----------|
-| `build/debug` | `Ninja` (single-config) | `cd build/debug && ctest` | `build/debug/Neurus`, `build/debug/neurus_test` |
+| `build/debug` | `Ninja` (single-config) | `cd build/debug && ctest` | `build/debug/neurus_test`, macOS `build/debug/Neurus.app/Contents/MacOS/Neurus` |
 | `build/` | `Ninja Multi-Config` | `cd build && ctest -C Debug` | `build/Debug/...` per config |
 
 **A bare `ctest` in `build/` prints `Total Tests: 0` and exits 0.** A multi-config
@@ -222,6 +222,21 @@ macOS filesystems are case-insensitive by default, so the Multi-Config tree's
 Debug output directory `build/Debug` **is** `build/debug`, the single-config
 tree's root. Re-running `cmake --preset macos` and building Debug writes into the
 live tree. Pick one tree per machine and stay in it.
+
+**macOS application bundle**: on macOS the `Neurus` target is a `MACOSX_BUNDLE`,
+so the executable lives at `Neurus.app/Contents/MacOS/Neurus` inside the config
+directory (for example `build/Debug/Neurus.app/Contents/MacOS/Neurus`) instead
+of at the tree root. The bundle is what gives Finder, the Dock and Cmd-Tab the
+application icon: `res/ui/logo/neurus.icns` is packaged into
+`Contents/Resources` and named by `CFBundleIconFile`. Both `neurus.icns` and
+the Windows `neurus.ico` are generated from the source SVG by
+`python scripts/make_icon.py`. The POST_BUILD copy still writes `res/` next to
+the executable inside the bundle, so `QCoreApplication::applicationDirPath()`
+resolves it; launch through `open build/Debug/Neurus.app` or run the inner
+binary directly.
+
+Windows is unaffected: there `Neurus` stays a plain `Neurus.exe` in the config
+directory.
 
 **Test working directory**: `test/CMakeLists.txt` pins
 `gtest_discover_tests(WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")`, so every test

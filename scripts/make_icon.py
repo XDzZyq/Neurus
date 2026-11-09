@@ -1,12 +1,17 @@
-"""Generate the multi-size Windows application icon from the source SVG.
+"""Generate the platform application icons from the source SVG.
 
-The icon lives in the repository as both an SVG (embedded in the Qt resources
-and used for the window/taskbar icon) and an ICO (compiled into Neurus.exe by
-res/ui/logo/neurus.rc). The ICO cannot be derived at build time without adding
-an SVG rasteriser to the toolchain, so it is committed and regenerated here
-whenever the SVG changes:
+The icon lives in the repository as an SVG (embedded in the Qt resources and
+used for the window/taskbar icon), an ICO (compiled into Neurus.exe by
+res/ui/logo/neurus.rc) and an ICNS (packaged into Neurus.app by CMake on macOS).
+Neither binary format can be derived at build time without adding an SVG
+rasteriser to the toolchain, so both are committed and regenerated here whenever
+the SVG changes:
 
     python scripts/make_icon.py
+
+On macOS the .icns is what Finder, the Dock and Cmd-Tab read; the bundle's
+CFBundleIconFile names it. Both files are written from the same rectangles, so
+they always depict the same artwork.
 
 The renderer understands the subset of SVG the logo uses: a viewBox, a <style>
 block mapping class selectors to solid fills, and <rect> elements. Each output
@@ -19,6 +24,7 @@ files under `docs_dir`, so this script also refreshes the copy at
 """
 
 import argparse
+import math
 import struct
 import xml.etree.ElementTree as ET
 import zlib
@@ -27,10 +33,28 @@ from pathlib import Path
 # Sizes Windows asks for: taskbar, title bar, Alt-Tab, Explorer, large icons.
 SIZES = [16, 24, 32, 48, 64, 128, 256]
 
+# ICNS entries as (OSType, pixel size). icp4..icp6 are the legacy small slots;
+# ic07..ic10 are 1x, ic11..ic14 the matching @2x slots. Several types share a
+# size, so each distinct size is rendered once and reused.
+ICNS_ENTRIES = [
+    (b"icp4", 16),
+    (b"icp5", 32),
+    (b"icp6", 64),
+    (b"ic07", 128),
+    (b"ic08", 256),
+    (b"ic09", 512),
+    (b"ic10", 1024),
+    (b"ic11", 32),
+    (b"ic12", 64),
+    (b"ic13", 256),
+    (b"ic14", 512),
+]
+
 SVG_NS = "{http://www.w3.org/2000/svg}"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SVG = REPO_ROOT / "res" / "ui" / "logo" / "neurus.svg"
 DEFAULT_ICO = REPO_ROOT / "res" / "ui" / "logo" / "neurus.ico"
+DEFAULT_ICNS = REPO_ROOT / "res" / "ui" / "logo" / "neurus.icns"
 DOCS_SVG = REPO_ROOT / "docs" / "assets" / "neurus.svg"
 
 
@@ -72,31 +96,53 @@ def parse_rects(svg_path):
 
 
 def render(size, view_w, view_h, rects):
-    """Return RGBA bytes at size x size using exact rectangle coverage."""
+    """Return RGBA bytes at size x size using exact rectangle coverage.
+
+    Each rectangle only contributes to the pixel rows and columns it overlaps,
+    so the cost follows the covered area rather than pixels x rectangles. The
+    per-pixel accumulation still happens in document order, which keeps the
+    result bit-identical to a brute-force scan of every pixel.
+    """
     scale_x, scale_y = view_w / size, view_h / size
     pixel_area = scale_x * scale_y
-    out = bytearray(size * size * 4)
-    for py in range(size):
-        sy0, sy1 = py * scale_y, (py + 1) * scale_y
-        for px in range(size):
-            sx0, sx1 = px * scale_x, (px + 1) * scale_x
-            r = g = b = 0.0
-            for x, y, w, h, (cr, cg, cb) in rects:
-                ix = min(x + w, sx1) - max(x, sx0)
+    cells = size * size
+    red = [0.0] * cells
+    green = [0.0] * cells
+    blue = [0.0] * cells
+    for x, y, w, h, (cr, cg, cb) in rects:
+        x1, y1 = x + w, y + h
+        # One pixel of slack on each side: floor/ceil on the scaled edge can be
+        # off by an ulp, and a pixel outside the true range accumulates nothing.
+        px0 = max(0, math.floor(x / scale_x) - 1)
+        px1 = min(size, math.ceil(x1 / scale_x) + 1)
+        py0 = max(0, math.floor(y / scale_y) - 1)
+        py1 = min(size, math.ceil(y1 / scale_y) + 1)
+        if px0 >= px1 or py0 >= py1:
+            continue
+        spans = [min(x1, (px + 1) * scale_x) - max(x, px * scale_x)
+                 for px in range(px0, px1)]
+        for py in range(py0, py1):
+            sy0, sy1 = py * scale_y, (py + 1) * scale_y
+            iy = min(y1, sy1) - max(y, sy0)
+            if iy <= 0:
+                continue
+            base = py * size + px0
+            for k, ix in enumerate(spans):
                 if ix <= 0:
                     continue
-                iy = min(y + h, sy1) - max(y, sy0)
-                if iy <= 0:
-                    continue
                 area = ix * iy
-                r += cr * area
-                g += cg * area
-                b += cb * area
-            i = (py * size + px) * 4
-            out[i] = int(r / pixel_area + 0.5)
-            out[i + 1] = int(g / pixel_area + 0.5)
-            out[i + 2] = int(b / pixel_area + 0.5)
-            out[i + 3] = 255
+                i = base + k
+                red[i] += cr * area
+                green[i] += cg * area
+                blue[i] += cb * area
+
+    out = bytearray(cells * 4)
+    for i in range(cells):
+        j = i * 4
+        out[j] = int(red[i] / pixel_area + 0.5)
+        out[j + 1] = int(green[i] / pixel_area + 0.5)
+        out[j + 2] = int(blue[i] / pixel_area + 0.5)
+        out[j + 3] = 255
     return bytes(out)
 
 
@@ -168,12 +214,37 @@ def build_ico(svg_path, ico_path):
         raise SystemExit("icon is a single flat colour - refusing to keep it")
 
 
+def build_icns(svg_path, icns_path):
+    """Write a macOS .icns with PNG entries for every slot in ICNS_ENTRIES."""
+    view_w, view_h, rects = parse_rects(svg_path)
+
+    # icp5/ic11 (32), icp6/ic12 (64), ic08/ic13 (256) and ic09/ic14 (512) share
+    # a pixel size, so render each distinct size exactly once.
+    blobs = {}
+    for _, size in ICNS_ENTRIES:
+        if size not in blobs:
+            blobs[size] = png_bytes(size, render(size, view_w, view_h, rects))
+
+    body = bytearray()
+    for ostype, size in ICNS_ENTRIES:
+        data = blobs[size]
+        body += ostype + struct.pack(">I", 8 + len(data)) + data
+
+    # "icns" magic, total file length, then the entries (each length includes
+    # its own 8-byte type/length header).
+    icns_path.write_bytes(b"icns" + struct.pack(">I", 8 + len(body)) + bytes(body))
+    print(f"{svg_path} -> {icns_path} ({icns_path.stat().st_size} bytes)")
+    print(f"  {len(ICNS_ENTRIES)} entries, {len(blobs)} distinct sizes")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("svg", nargs="?", type=Path, default=DEFAULT_SVG)
     parser.add_argument("ico", nargs="?", type=Path, default=DEFAULT_ICO)
+    parser.add_argument("icns", nargs="?", type=Path, default=DEFAULT_ICNS)
     args = parser.parse_args()
     build_ico(args.svg, args.ico)
+    build_icns(args.svg, args.icns)
 
 
 if __name__ == "__main__":

@@ -18,13 +18,18 @@ For Qt model/view helpers see [Models](models.md); for type-specific property ed
 
 Icons are embedded in the binary via `qt_add_resources(neurus_ui "icons" PREFIX "/icons" ...)` in `src/ui/CMakeLists.txt`; SVGs live under `res/ui/icons/`.
 
-The **application icon** - window, taskbar and Explorer - is separate from this
-registry. `res/ui/logo/neurus.svg` is embedded as `:/app/neurus.svg` by the
-`app_icon` resource, and `Application` calls `QApplication::setWindowIcon()`
-before any window exists, so every top-level widget inherits it. On Windows,
-`res/ui/logo/neurus.rc` compiles the generated multi-size `neurus.ico` into
-`Neurus.exe` for Explorer, shortcuts and the UAC prompt. After editing the SVG,
-regenerate the `.ico` with `python scripts/make_icon.py`.
+The **application icon** - window, taskbar, Explorer, Finder, Dock and Cmd-Tab -
+is separate from this registry. `res/ui/logo/neurus.svg` is embedded as
+`:/app/neurus.svg` by the `app_icon` resource, and `Application` calls
+`QApplication::setWindowIcon()` before any window exists, so every top-level
+widget inherits it. On Windows, `res/ui/logo/neurus.rc` compiles the generated
+multi-size `neurus.ico` into `Neurus.exe` for Explorer, shortcuts and the UAC
+prompt. On macOS the executable is packaged as `Neurus.app`, whose
+`CFBundleIconFile` names the generated `res/ui/logo/neurus.icns` - the file
+Finder, the Dock and Cmd-Tab display. macOS masks it to the rounded app-icon
+shape, so `Application` skips `setWindowIcon()` there: the runtime icon would
+replace the bundle icon in the Dock with the unmasked square SVG. After editing
+the SVG, regenerate both icons with `python scripts/make_icon.py`.
 
 ## ScalarSlider
 

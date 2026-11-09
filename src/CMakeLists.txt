@@ -112,6 +112,28 @@ if(WIN32)
 	endif()
 endif()
 
+# macOS: build a real application bundle so Finder, the Dock and Cmd-Tab show
+# the Neurus icon. The executable lands in Neurus.app/Contents/MacOS, which is
+# still $<TARGET_FILE_DIR:Neurus>, so the res/ POST_BUILD copy below keeps
+# matching QCoreApplication::applicationDirPath().
+if(APPLE)
+	set_target_properties(Neurus PROPERTIES
+		MACOSX_BUNDLE TRUE
+		MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/cmake/MacOSXBundleInfo.plist.in"
+		MACOSX_BUNDLE_BUNDLE_NAME Neurus
+		MACOSX_BUNDLE_GUI_IDENTIFIER io.github.xdzzyq.neurus
+		MACOSX_BUNDLE_ICON_FILE neurus.icns
+		MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+		MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+	)
+
+	# The bundle step copies this into Contents/Resources and CFBundleIconFile
+	# points at it.
+	set_source_files_properties("${CMAKE_SOURCE_DIR}/res/ui/logo/neurus.icns"
+		PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+	target_sources(Neurus PRIVATE "${CMAKE_SOURCE_DIR}/res/ui/logo/neurus.icns")
+endif()
+
 # Copy res/ folder to the output directory so resources resolve at runtime
 # without walking up the source tree.
 add_custom_command(TARGET Neurus POST_BUILD
