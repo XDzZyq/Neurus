@@ -1,6 +1,7 @@
 #include "Screenshot.h"
 #include "Image.h"
 #include "RenderCache.h"
+#include "SharedQueue.h"
 #include "asset/data/ImageData.h"
 #include "asset/PixelFormat.h"
 #include "Texture.h"
@@ -17,13 +18,51 @@
 #include <cstring>
 #include <ctime>
 #include <iomanip>
+#include <optional>
 #include <sstream>
+#include <string>
+#include <system_error>
 
 namespace neurus {
 
 // ---------------------------------------------------------------------------
-// Local helpers (format conversion)
+// Local helpers (paths and format conversion)
 // ---------------------------------------------------------------------------
+
+/**
+ * @brief Narrows @p path to a UTF-8 std::string for a log line, without throwing.
+ *
+ * std::filesystem::path::string() converts to the *native* narrow encoding, which
+ * MSVC maps to the ANSI code page: it throws std::system_error for any character
+ * outside it, so a non-ANSI install directory could kill a capture from a log
+ * statement. u8string() does not have that failure, and on POSIX the native
+ * narrow encoding is already UTF-8, so the bytes are exactly what string() gave.
+ *
+ * Logging only. The PNG writer opens a narrow `const char*` through the C
+ * runtime, which on Windows reads it in the ANSI code page, so the paths handed
+ * to it stay path::string(): UTF-8 bytes there would break every non-ASCII path
+ * the code page can represent. A path it cannot represent throws inside the
+ * capture, which the render thread catches.
+ */
+static std::string Utf8Path(const std::filesystem::path& path)
+{
+	const std::u8string utf8 = path.u8string();
+	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+}
+
+/**
+ * @brief Formats @p path as an absolute path for logging, without throwing.
+ *
+ * std::filesystem::absolute() reports the current directory on the caller's
+ * terms; a failure here must never cost the screenshot itself, so the original
+ * path is the fallback.
+ */
+static std::string AbsoluteForLog(const std::filesystem::path& path)
+{
+	std::error_code ec;
+	const std::filesystem::path abs = std::filesystem::absolute(path, ec);
+	return Utf8Path(ec ? path : abs);
+}
 
 /**
  * @brief Converts a Vulkan vk::Format to the CPU-side PixelFormat equivalent.
@@ -85,11 +124,11 @@ static uint32_t vkFormatByteSize(vk::Format format)
 
 Screenshot::Screenshot(const vk::raii::Device& device,
                        const vk::raii::PhysicalDevice& physicalDevice,
-                       vk::Queue queue,
+                       SharedQueue& queue,
                        uint32_t queueFamilyIndex)
 	: m_device(device)
 	, m_physicalDevice(physicalDevice)
-	, m_queue(queue)
+	, m_queue(&queue)
 	, m_queueFamilyIndex(queueFamilyIndex)
 {
 }
@@ -100,14 +139,28 @@ Screenshot::Screenshot(const vk::raii::Device& device,
 
 bool Screenshot::TakeScreenshot(vk::Image swapchainImage,
                                 vk::Format swapchainFormat,
-                                vk::Extent2D swapchainExtent)
+                                vk::Extent2D swapchainExtent,
+                                const std::filesystem::path& directory)
 {
-	const std::string path = Screenshot::timestampedFilename("screenshots/swapchain", ".png");
+	const std::string path = Screenshot::timestampedFilename(
+		(directory / "swapchain").string(), ".png");
 
-	return Screenshot::CaptureSwapchain(m_device, m_physicalDevice,
-	                                     m_queue, m_queueFamilyIndex,
-	                                     swapchainImage, swapchainFormat,
-	                                     swapchainExtent, path);
+	const bool saved = Screenshot::CaptureSwapchain(m_device, m_physicalDevice,
+	                                                *m_queue, m_queueFamilyIndex,
+	                                                swapchainImage, swapchainFormat,
+	                                                swapchainExtent, path);
+	if (saved)
+	{
+		NEURUS_LOG("[Screenshot] saved " << AbsoluteForLog(path));
+	}
+	else
+	{
+		// The old code dropped this false on the floor, so a broken screenshot
+		// looked exactly like a silent success.
+		NEURUS_ERR("[Screenshot] failed to write the swapchain screenshot to "
+		           << AbsoluteForLog(path));
+	}
+	return saved;
 }
 
 // ===========================================================================
@@ -116,15 +169,16 @@ bool Screenshot::TakeScreenshot(vk::Image swapchainImage,
 
 int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
                                              vk::Extent2D extent,
-                                             uint32_t cubemapResolution)
+                                             uint32_t cubemapResolution,
+                                             const std::filesystem::path& directory)
 {
 	int count = 0;
 
 	count = Screenshot::CaptureAllAttachments(m_device, m_physicalDevice,
-	                                           m_queue, m_queueFamilyIndex,
+	                                           *m_queue, m_queueFamilyIndex,
 	                                           renderCache,
 	                                           extent,
-	                                           "screenshots/gbuffer");
+	                                           (directory / "gbuffer").string());
 
 	// --- Export shadow maps: cubemaps → equirect, 2D → direct depth readback ---
 	{
@@ -134,7 +188,8 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 			// Cubemaps (point lights) only; returns empty otherwise.
 			{
 				const std::string result = ExportShadowDepthEquirect(
-					renderCache, lightUID, "screenshots/shadow_cubemap", cubemapResolution);
+					renderCache, lightUID, (directory / "shadow_cubemap").string(),
+					cubemapResolution);
 				if (!result.empty())
 				{
 					++count;
@@ -143,7 +198,7 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 			// 2D depth maps (sun lights) only; returns empty otherwise.
 			{
 				const std::string result = ExportShadowDepth(
-					renderCache, lightUID, "screenshots/sun_shadow");
+					renderCache, lightUID, (directory / "sun_shadow").string());
 				if (!result.empty())
 				{
 					++count;
@@ -160,17 +215,39 @@ int Screenshot::TakeScreenshotAllAttachments(RenderCache& renderCache,
 			const auto shadowUIDs = renderCache.GetShadowMapUIDs();
 			for (int lightUID : shadowUIDs)
 			{
-				const uint32_t layer = renderCache.GetShadowIntensityLayerIndex(lightUID);
+				// Lights beyond MAX_SHADOW_LAYERS get no layer - nothing to export,
+				// and layer 0 belongs to another light.
+				const std::optional<uint32_t> layer =
+					renderCache.GetShadowIntensityLayerIndex(lightUID);
+				if (!layer) continue;
+
 				const std::string path = Screenshot::timestampedFilename(
-					"screenshots/shadow_intensity_Light" + std::to_string(lightUID), ".png");
+					(directory / ("shadow_intensity_Light" + std::to_string(lightUID))).string(),
+					".png");
 				if (Screenshot::CaptureImageLayer(m_device, m_physicalDevice,
-				                                   m_queue, m_queueFamilyIndex,
-				                                   *intensityArray, layer, path))
+				                                   *m_queue, m_queueFamilyIndex,
+				                                   *intensityArray, *layer, path))
 				{
 					++count;
 				}
+				else
+				{
+					NEURUS_ERR("[Screenshot] failed to write the shadow intensity layer of "
+					           << "light " << lightUID << " to " << AbsoluteForLog(path));
+				}
 			}
 		}
+	}
+
+	if (count > 0)
+	{
+		NEURUS_LOG("[Screenshot] saved " << count << " attachment capture(s) under "
+		                                 << AbsoluteForLog(directory));
+	}
+	else
+	{
+		NEURUS_ERR("[Screenshot] no attachment could be captured under "
+		           << AbsoluteForLog(directory));
 	}
 
 	return count;
@@ -192,6 +269,17 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 	// Cubemaps only; 2D shadow maps are handled by ExportShadowDepth().
 	if (cubemap.Type() != Image::ImageType::eCube)
 	{
+		return {};
+	}
+
+	// A cubemap that was never rendered has nothing to project, and there is no
+	// legal "original" state to return it to afterwards (UNDEFINED may only be a
+	// source layout).
+	const ImageState originalState = cubemap.State();
+	if (originalState == ImageState::Undefined || originalState == ImageState::Invalid)
+	{
+		NEURUS_ERR("[ExportShadowDepthEquirect] Cubemap for lightUID=" << lightUID
+		           << " was never rendered - skipping");
 		return {};
 	}
 
@@ -300,16 +388,24 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 			Barrier::Transition(*cmd, equirectImage, ImageState::TransferSrc);
 		}
 
+		// Return the shadow cubemap to the state it entered in. The compute
+		// shader only samples it, but leaving it in ColorShaderRead would make
+		// the tracked state disagree with the layout the shadow pass expects
+		// (DepthShaderRead / DEPTH_STENCIL_READ_ONLY_OPTIMAL) and every later
+		// barrier would be recorded against a state the image is not in.
+		{
+			Barrier::Transition(*cmd, cubemap, originalState);
+		}
+
 		cmd.end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmd));
-		m_queue.submit(submitInfo);
-		m_queue.waitIdle();
+		m_queue->SubmitAndWait(submitInfo);
 	}
 
 	// --- 6. Read back equirect as grayscale PNG ---
 	auto equirectData = equirectImage.ReadImageData(
-		m_device, m_physicalDevice, m_queue, m_queueFamilyIndex);
+		m_device, m_physicalDevice, *m_queue, m_queueFamilyIndex);
 
 	if (!equirectData || !equirectData->IsValid())
 	{
@@ -362,10 +458,17 @@ std::string Screenshot::ExportShadowDepth(RenderCache& renderCache,
 	}
 
 	const vk::Extent2D extent = depthMap.Extent();
-	const auto originalState = depthMap.State();
 
+	// ReadImageData transitions the depth map to TRANSFER_SRC and returns it to
+	// its own state within the same submission, so the shadow pass still finds
+	// the layout its tracked state promises. Do not restore it here: a second,
+	// caller-side restore used to be gated on the PNG save, and the gate never
+	// opened because the tracked state is not changed by the readback.
+	//
+	// A map that was never rendered (UNDEFINED) has nothing to export and is
+	// refused inside ReadImageData.
 	auto depthData = depthMap.ReadImageData(
-		m_device, m_physicalDevice, m_queue, m_queueFamilyIndex);
+		m_device, m_physicalDevice, *m_queue, m_queueFamilyIndex);
 
 	if (!depthData || !depthData->IsValid())
 	{
@@ -392,24 +495,6 @@ std::string Screenshot::ExportShadowDepth(RenderCache& renderCache,
 	ImageData grayImg(grayPixels.data(), extent.width, extent.height,
 	                   PixelFormat::R8U);
 	const bool saved = grayImg.SavePNG(path);
-
-	// Restore the original layout - ReadImageData transitions to TransferSrc.
-	if (saved && depthMap.State() != originalState)
-	{
-		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
-		                                  m_queueFamilyIndex);
-		vk::raii::CommandPool cmdPool(m_device, poolCI);
-		vk::CommandBufferAllocateInfo allocInfo(*cmdPool, vk::CommandBufferLevel::ePrimary, 1);
-		vk::raii::CommandBuffers cmdBufs(m_device, allocInfo);
-
-		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-		Barrier::Transition(*cmdBufs[0], depthMap, originalState);
-		cmdBufs[0].end();
-
-		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		m_queue.submit(submitInfo);
-		m_queue.waitIdle();
-	}
 
 	if (saved)
 	{
@@ -449,7 +534,7 @@ std::string Screenshot::timestampedFilename(const std::string& prefix,
 
 bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
                                    const vk::raii::PhysicalDevice& physicalDevice,
-                                   vk::Queue queue,
+                                   SharedQueue& queue,
                                    uint32_t queueFamilyIndex,
                                    vk::Image image,
                                    vk::Format format,
@@ -458,6 +543,9 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 {
 	if (vkFormatByteSize(format) == 0)
 	{
+		// Silent before: an unsupported swapchain format looked like a no-op.
+		NEURUS_ERR("[Screenshot] CaptureSwapchain: format " << vk::to_string(format)
+		           << " cannot be read back; not writing " << AbsoluteForLog(path));
 		return false;
 	}
 
@@ -487,8 +575,7 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	// --- 2. Read back via staging buffer ---
@@ -571,8 +658,7 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	std::vector<uint8_t> rawData(static_cast<size_t>(imageSize));
@@ -606,13 +692,17 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 		cmdBufs[0].end();
 
 		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
+		queue.SubmitAndWait(submitInfo);
 	}
 
 	// --- 4. Delegate PNG write to ImageData ---
 	ImageData imgData(rawData.data(), extent.width, extent.height, vkFormatToPixelFormat(format));
-	return imgData.SavePNG(path);
+	if (!imgData.SavePNG(path))
+	{
+		NEURUS_ERR("[Screenshot] CaptureSwapchain: failed to write " << AbsoluteForLog(path));
+		return false;
+	}
+	return true;
 }
 
 // ===========================================================================
@@ -621,13 +711,15 @@ bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
 
 bool Screenshot::CaptureAttachment(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
-                                    vk::Queue queue,
+                                    SharedQueue& queue,
                                     uint32_t queueFamilyIndex,
                                      Image& vulkanImage,
                                     const std::string& path)
 {
 	if (vkFormatByteSize(vulkanImage.Format()) == 0)
 	{
+		NEURUS_ERR("[Screenshot] CaptureAttachment: format " << vk::to_string(vulkanImage.Format())
+		           << " cannot be read back; not writing " << AbsoluteForLog(path));
 		return false;
 	}
 
@@ -641,7 +733,7 @@ bool Screenshot::CaptureAttachment(const vk::raii::Device& device,
 
 bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
-                                    vk::Queue queue,
+                                    SharedQueue& queue,
                                     uint32_t queueFamilyIndex,
                                     Image& vulkanImage,
                                     uint32_t layerIndex,
@@ -652,11 +744,10 @@ bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
 		return false;
 	}
 
-	// Save the original layout - ReadImageData transitions the image to
-	// TRANSFER_SRC_OPTIMAL for readback and does not restore it.
-	const auto originalState = vulkanImage.State();
-
 	// Read back the specified layer via the Layer() subresource range.
+	// ReadImageData restores that range to its entry state inside the same
+	// submission, so the array keeps the layout its tracked state promises and
+	// no restore is needed here.
 	const auto layerRange = vulkanImage.Layer(layerIndex);
 	auto imageData = vulkanImage.ReadImageData(
 		device, physicalDevice, queue, queueFamilyIndex, &layerRange);
@@ -667,29 +758,7 @@ bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
 		return false;
 	}
 
-	const bool saved = imageData->SavePNG(path);
-
-	// Restore original layout so rendering can continue without validation errors.
-	// ReadImageData transitions to TransferSrc but the image must be returned
-	// to its original state (e.g., ShaderRead for ShadowIntensityArray).
-	if (saved && vulkanImage.State() != originalState)
-	{
-		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
-		                                  queueFamilyIndex);
-		vk::raii::CommandPool cmdPool(device, poolCI);
-		vk::CommandBufferAllocateInfo allocInfo(*cmdPool, vk::CommandBufferLevel::ePrimary, 1);
-		vk::raii::CommandBuffers cmdBufs(device, allocInfo);
-
-		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-		Barrier::Transition(*cmdBufs[0], vulkanImage, originalState);
-		cmdBufs[0].end();
-
-		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.submit(submitInfo);
-		queue.waitIdle();
-	}
-
-	return saved;
+	return imageData->SavePNG(path);
 }
 
 // ===========================================================================
@@ -698,7 +767,7 @@ bool Screenshot::CaptureImageLayer(const vk::raii::Device& device,
 
 int Screenshot::CaptureAllAttachments(const vk::raii::Device& device,
                                        const vk::raii::PhysicalDevice& physicalDevice,
-                                       vk::Queue queue,
+                                       SharedQueue& queue,
                                        uint32_t queueFamilyIndex,
                                        RenderCache& renderCache,
                                        vk::Extent2D extent,
@@ -713,6 +782,7 @@ int Screenshot::CaptureAllAttachments(const vk::raii::Device& device,
 		AttachmentName::HDRColor,
 		AttachmentName::SSAO,
 		AttachmentName::SSR,
+		AttachmentName::OverlayOutput,
 	};
 
 	int capturedCount = 0;

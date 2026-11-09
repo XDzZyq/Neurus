@@ -38,7 +38,7 @@ overlay dirty flags) are the Editor's alone, which is why controllers receive a
 
 ## The view camera
 
-Every view-projection pass reads `ctx.camera`
+Every view-projection pass reads the frame's camera (`ctx.Frame().camera`)
 (`ShadowDepthPass`, `ShadowIntensityPass`, `SSAOPass`, `LightingPass`, plus
 `GeometryPass` through the shared `CameraGPU`), and no pass reads the Scene.
 The Editor chooses that pointer:
@@ -235,3 +235,9 @@ The viewport owns two overlay systems, each documented on its own page:
   scene objects, flattened by `DebugDrawBuilder` into `DebugDrawList`.
 - [Transform gizmo](gizmo.md): the transient modal G/R/S handle driven by
   `TransformGizmo` and flattened by `GizmoDrawBuilder`.
+
+Both are rebuilt on a dirty flag, not per frame, by `RebuildOverlays()`. It
+returns `true` when at least one payload was actually rebuilt - the only way the
+Editor can tell that this tick's overlays differ from the ones the renderer last
+saw, and therefore whether it has to post a `RedrawOverlaysRequest` for a
+converged renderer to draw them.

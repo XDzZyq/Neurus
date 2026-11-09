@@ -29,6 +29,7 @@ namespace neurus {
 
 // --- Forward declarations ---
 class RenderCache;
+class SharedQueue;
 
 // ---------------------------------------------------------------------------
 // GPU-side data structures (std140-compatible)
@@ -106,7 +107,8 @@ public:
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (for sampler creation).
 	 * @param numSets           Number of descriptor sets (one per in-flight frame).
-	 * @param graphicsQueue     Graphics queue for noise UBO staging upload.
+	 * @param graphicsQueue     Graphics queue for the noise UBO staging upload;
+	 *                          the upload waits its own submit.
 	 * @param queueFamilyIndex  Queue family index for staging command pool.
 	 *
 	 * @throws std::runtime_error if shader or pipeline creation fails.
@@ -114,7 +116,7 @@ public:
 	SSAOPass(const vk::raii::Device& device,
 	         const vk::raii::PhysicalDevice& physicalDevice,
 	         uint32_t numSets,
-	         vk::Queue graphicsQueue,
+	         SharedQueue& graphicsQueue,
 	         uint32_t queueFamilyIndex);
 
 	// -------------------------------------------------------------------

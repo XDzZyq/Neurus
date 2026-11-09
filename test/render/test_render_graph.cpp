@@ -186,9 +186,11 @@ TEST(RenderGraphTest, CompileAllowsExternalInputs)
 	EXPECT_EQ(order[0], cn);
 }
 
-TEST(RenderGraphTest, CompileRejectsCycle)
+TEST(RenderGraphTest, ConnectRejectsCycle)
 {
-	// Build a 2-node cycle: A reads X and writes Y; B reads Y and writes X.
+	// Build a would-be 2-node cycle: A reads X and writes Y; B reads Y and
+	// writes X. Connect now rejects the edge that would close the cycle, so
+	// the graph stays acyclic and Compile() succeeds.
 	MockPass a("A", {AttachmentName::Position}, {AttachmentName::HDRColor});
 	MockPass b("B", {AttachmentName::HDRColor}, {AttachmentName::Position});
 
@@ -196,11 +198,11 @@ TEST(RenderGraphTest, CompileRejectsCycle)
 	auto* na = g.AddPass(&a);
 	auto* nb = g.AddPass(&b);
 
-	// A → B via HDRColor; B → A via Position.
-	ASSERT_TRUE(g.Connect(na, AttachmentName::HDRColor, nb));
-	ASSERT_TRUE(g.Connect(nb, AttachmentName::Position, na));
+	ASSERT_TRUE(g.Connect(na, AttachmentName::HDRColor, nb));   // A → B
+	EXPECT_FALSE(g.Connect(nb, AttachmentName::Position, na));  // B → A rejected
 
-	EXPECT_THROW(g.Compile(), std::runtime_error);
+	g.Compile();  // stays acyclic → no throw
+	EXPECT_EQ(g.CompiledOrder().size(), 2u);
 }
 
 // ---------------------------------------------------------------------------
@@ -388,16 +390,23 @@ TEST(RenderGraphTest, RebuildProducesSameOrder)
 
 TEST(RenderGraphTest, CycleErrorNamesInvolvedNodes)
 {
-	// 2-node cycle; the thrown message should name the cyclic passes so a
-	// misconfiguration is debuggable without bisecting.
+	// Connect keeps the graph acyclic, so to exercise Compile's own cycle
+	// guard we force the closing edge raw (bypassing Connect). The thrown
+	// message should still name the cyclic passes so a misconfiguration is
+	// debuggable without bisecting.
 	MockPass a("AlphaPass", {AttachmentName::Position}, {AttachmentName::HDRColor});
 	MockPass b("BetaPass",  {AttachmentName::HDRColor}, {AttachmentName::Position});
 
 	RenderGraph g;
 	auto* na = g.AddPass(&a);
 	auto* nb = g.AddPass(&b);
-	ASSERT_TRUE(g.Connect(na, AttachmentName::HDRColor, nb));
-	ASSERT_TRUE(g.Connect(nb, AttachmentName::Position, na));
+	ASSERT_TRUE(g.Connect(na, AttachmentName::HDRColor, nb));   // A → B
+
+	// Force B → A raw: each pass here has exactly one input/output socket.
+	ASSERT_EQ(na->inputs.size(), 1u);
+	ASSERT_EQ(nb->outputs.size(), 1u);
+	nb->outputs[0]->targets.push_back(na->inputs[0].get());
+	na->inputs[0]->source = nb->outputs[0].get();
 
 	try
 	{

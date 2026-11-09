@@ -152,15 +152,13 @@ protected:
 	 */
 	PassStats RunPass(const GizmoDrawList* list)
 	{
+		RenderFrameSnapshot snapStorage;
 		RenderContext ctx;
 		ctx.width = kRes;
 		ctx.height = kRes;
 		ctx.frameIndex = 0;
-		ctx.config = &m_config;
-		ctx.scene = &m_scene;
-		ctx.gizmoDraw = list;
 
-		PublishSceneCamera(*m_cache, m_scene);
+		PublishFrame(*m_cache, ctx, snapStorage, &m_scene, &m_config, nullptr, list);
 		if (list) m_cache->UpdateGizmoDraw(ctx.frameIndex, *list);
 
 		auto& c = BeginCmd();
@@ -179,7 +177,7 @@ protected:
 	{
 		auto& colorAtt = m_cache->GetAttachment(color, Extent());
 		auto data = colorAtt.ReadImageData(*m_device, PhysicalDevice(),
-		                                   m_queue, m_graphicsQueueFamily);
+		                                   *m_queue, m_graphicsQueueFamily);
 		const auto* h = reinterpret_cast<const uint16_t*>(data->GetPixelData().data());
 
 		std::vector<glm::vec3> rgb(static_cast<size_t>(kRes) * kRes);

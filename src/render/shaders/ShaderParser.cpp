@@ -9,6 +9,8 @@
 
 #include "ShaderParser.h"
 
+#include "ShaderLibrary.h"
+
 #include "core/Log.h"
 
 #include <algorithm>
@@ -198,10 +200,15 @@ std::pair<uint32_t, uint32_t> ShaderParser::GetStd140Layout(const std::string& t
 
 ShaderStruct ShaderParser::ParseShaderFile(const std::string& filepath, ShaderType type)
 {
-	std::ifstream file(filepath);
+	// Resolve "res/..." against the compile-time shader directory so parsing does
+	// not depend on the process working directory; absolute paths pass through.
+	const std::string resolvedPath = ShaderLibrary::ResolveShaderPath(filepath);
+
+	std::ifstream file(resolvedPath);
 	if (!file.is_open())
 	{
-		NEURUS_ERR("ShaderParser: cannot open file '" << filepath << "'");
+		NEURUS_ERR("ShaderParser: cannot open file '" << filepath
+			<< "' (resolved to '" << resolvedPath << "')");
 		return ShaderStruct();
 	}
 
@@ -209,7 +216,8 @@ ShaderStruct ShaderParser::ParseShaderFile(const std::string& filepath, ShaderTy
 
 	if (source.empty())
 	{
-		NEURUS_ERR("ShaderParser: file is empty '" << filepath << "'");
+		NEURUS_ERR("ShaderParser: file is empty '" << filepath
+			<< "' (resolved to '" << resolvedPath << "')");
 		return ShaderStruct();
 	}
 

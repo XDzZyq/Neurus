@@ -1,5 +1,7 @@
 #pragma once
 
+#include "render/SharedQueue.h"
+
 #include <vulkan/vulkan_raii.hpp>
 
 #include <cstdint>
@@ -46,9 +48,11 @@ public:
 	const vk::raii::Device& device() const { return *ctx_device; }
 	const vk::raii::PhysicalDevice& physicalDevice() const { return ctx_physicalDevices[ctx_selectedDeviceIndex]; }
 	uint32_t graphicsQueueFamily() const { return ctx_graphicsQueueFamily; }
-	vk::Queue graphicsQueue() const { return ctx_graphicsQueue; }
+	/** @brief Graphics queue; valid after InitQueue(). */
+	SharedQueue& graphicsQueue() const { return *ctx_graphicsQueue; }
 	uint32_t transferQueueFamily() const { return ctx_transferQueueFamily; }
-	vk::Queue transferQueue() const { return ctx_transferQueue; }
+	/** @brief Transfer queue; valid after InitDevice(). */
+	SharedQueue& transferQueue() const { return *ctx_transferQueue; }
 	const std::string& gpuName() const { return ctx_gpuName; }
 
 	/**
@@ -74,10 +78,15 @@ private:
 	std::unique_ptr<vk::raii::Device> ctx_device;
 
 	uint32_t ctx_graphicsQueueFamily = 0;
-	vk::Queue ctx_graphicsQueue = nullptr;
-
 	uint32_t ctx_transferQueueFamily = 0;
-	vk::Queue ctx_transferQueue = nullptr;
+
+	// Declared after ctx_device so the wrappers - which borrow it - are destroyed
+	// first. Each owned wrapper holds the one mutex every submit through that
+	// queue must share, so a queue handle must never get two of them.
+	std::unique_ptr<SharedQueue> ctx_transferQueueOwned;  // created in InitDevice
+	std::unique_ptr<SharedQueue> ctx_graphicsQueueOwned;  // null when aliased
+	SharedQueue* ctx_transferQueue = nullptr;
+	SharedQueue* ctx_graphicsQueue = nullptr;
 
 	std::string ctx_gpuName;
 	vk::PhysicalDeviceFeatures ctx_enabledFeatures;

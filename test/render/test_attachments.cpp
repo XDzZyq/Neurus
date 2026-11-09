@@ -42,7 +42,7 @@ TEST_F(RenderCacheTest, CreateGBuffer_AllAttachmentsHaveCorrectFormatAndExtent)
 
 	RenderCache manager(*m_device, pd);
 	manager.SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	// Lazy creation via first GetAttachment call
 	manager.GetAttachment(AttachmentName::Position, extent);
@@ -107,7 +107,7 @@ TEST_F(RenderCacheTest, CreatePostFX_AllAttachmentsHaveCorrectFormatAndExtent)
 
 	RenderCache manager(*m_device, pd);
 	manager.SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	// Lazy creation via first GetAttachment call
 	manager.GetAttachment(AttachmentName::Position, extent);
@@ -161,7 +161,7 @@ TEST_F(RenderCacheTest, Resize_AllAttachmentsHaveNewExtent)
 
 	RenderCache manager(*m_device, pd);
 	manager.SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	// Lazy creation at initial extent via first GetAttachment
 	manager.GetAttachment(AttachmentName::Position, initialExtent);
@@ -219,7 +219,7 @@ TEST_F(RenderCacheTest, GetAllAttachments_ByEnumAndString)
 	const vk::Extent2D extent(1280, 720);
 	RenderCache manager(*m_device, pd);
 	manager.SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	// Lazy creation via first GetAttachment call
 	manager.GetAttachment(AttachmentName::Position, extent);
@@ -281,7 +281,7 @@ TEST_F(RenderCacheTest, HasAttachment_TrueForCreatedAttachments)
 	const vk::Extent2D extent(800, 600);
 	RenderCache manager(*m_device, pd);
 	manager.SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	// Lazy creation via GetAttachment calls
 	manager.GetAttachment(AttachmentName::Position, extent);

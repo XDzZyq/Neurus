@@ -54,10 +54,10 @@ protected:
 
 	void SetUp() override { VulkanTestShared::SetUp(); if (!m_hasVulkan) return;
 		auto& pd = PhysicalDevice();
-		m_pass = std::make_unique<ShadowDepthPass>(*m_device,pd,m_queue,m_graphicsQueueFamily,kRes);
+		m_pass = std::make_unique<ShadowDepthPass>(*m_device,pd,*m_queue,m_graphicsQueueFamily,kRes);
 		m_cache = std::make_unique<RenderCache>(*m_device,pd);
 		m_cache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily)); }
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily)); }
 	void TearDown() override { VulkanTestShared::TearDown(); }
 
 	static float ExpectedDepth() {
@@ -119,16 +119,17 @@ TEST_F(SunShadowDepthTest, OrthoDepthMap)
 	const int uid=ts.uid;
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_cache, *ts.s, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_cache, *ts.s, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_cache, *ts.s, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_cache, *ts.s, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	{ auto& cmd=BeginCmd();
+		// Snapshot storage must outlive the context that borrows it.
+		RenderFrameSnapshot snap;
 		RenderContext ctx{};
 		ctx.width=kRes; ctx.height=kRes;
-		ctx.scene=ts.s.get();
-		// The sun path reads the viewing camera from the context, standing in for
-		// what DeferredRenderer::recordFrame() injects.
-		VulkanTestShared::PublishSceneCamera(*m_cache, ctx);
+		// Publish the whole frame before recording - the sun path skips its
+		// cascade with no camera, standing in for DeferredRenderer::recordFrame().
+		VulkanTestShared::PublishFrame(*m_cache, ctx, snap, ts.s.get());
 		m_pass->Record(*cmd,*m_cache,ctx);
 		EndSubmitWait(cmd); }
 
@@ -137,7 +138,7 @@ TEST_F(SunShadowDepthTest, OrthoDepthMap)
 		ASSERT_NE(lgpu, nullptr);
 		ASSERT_NE(lgpu->shadowDepthMap, nullptr);
 		auto& sm = *lgpu->shadowDepthMap;
-		auto data=sm.ReadImageData(*m_device,pd,m_queue,m_graphicsQueueFamily,nullptr,{kRes,kRes});
+		auto data=sm.ReadImageData(*m_device,pd,*m_queue,m_graphicsQueueFamily,nullptr,{kRes,kRes});
 		const float* rd=reinterpret_cast<const float*>(data->GetPixelData().data());
 		dd.assign(rd,rd+kRes*kRes);
 		float mn=rd[0],mx=rd[0]; int zc=0,oc=0;

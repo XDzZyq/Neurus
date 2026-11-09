@@ -13,8 +13,9 @@
  * Why host-visible memory (CPUBuffer) and not a device-local GPUBuffer: the
  * Editor re-flattens the list on every `RenderResetEvent`, and CameraController
  * raises one on every camera change, so a drag re-uploads on every frame. Each
- * GPUBuffer write is a staging copy plus a queue submit plus a waitIdle, and one
- * waitIdle costs more than issue #22's whole 0.5 ms budget for 10,000 segments.
+ * GPUBuffer write is a staging copy plus a queue submit plus a wait on that
+ * submission (`SharedQueue::SubmitAndWait`), and one such wait costs more than
+ * issue #22's whole 0.5 ms budget for 10,000 segments.
  * A revision check skips the memcpy on the frames where nothing moved, so the
  * cost on a still viewport is one integer compare either way.
  */

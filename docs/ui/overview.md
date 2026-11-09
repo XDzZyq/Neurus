@@ -14,7 +14,7 @@ UI Layer (Qt6 Widgets + ADS)
         | Qt signals / slots
         v
 Editor Layer
-  owns: Scene, RenderConfig, UploadManager, Controllers
+  owns: Scene, RenderConfig, ResourceManager, Controllers
         |
         v
 Renderer Layer (Vulkan-HPP vk::raii)
@@ -25,7 +25,7 @@ Renderer Layer (Vulkan-HPP vk::raii)
 - The Editor translates raw input into typed events through `EventQueue` and dispatches them to Controllers.
 - The Renderer receives read-only scene data through `Context` objects and never calls back into the Editor.
 
-Cross-layer communication must go through `UIEvents` (UI to Editor) or `Context` objects; inside the Editor, controllers communicate through the typed `EventQueue`, which is not a channel to the Renderer. Direct coupling across layers is forbidden - the Renderer must not include Editor or UI headers, and the UI must not include Renderer headers (it exposes only the viewport's native window handle).
+Cross-layer communication must go through `UIEvents` (UI to Editor), `EventQueue` (typed events inside the Editor), typed `RenderRequest`s (Editor to Renderer), or `Context` objects; the `EventQueue` is not a channel to the Renderer. Direct coupling across layers is forbidden - the Renderer must not include Editor or UI headers, and the UI must not include Renderer headers (it exposes only the viewport's native window handle).
 
 The UI layer owns the main window, the dock layout, and the viewport widget. The viewport exposes a native window handle (`Viewport::hwnd()`); the surface and every other Vulkan object live below the UI.
 
@@ -111,7 +111,7 @@ Only `Floatable` is locked, so dragging a panel to a different *dock position* s
 | **File** | New, Open..., Save, Save As..., Preferences... (`Ctrl+,`), Exit |
 | **View** | Restore Default Layout, Full Screen (`F11`) |
 | **Edit** | Undo, Redo, Add (Mesh... / Camera / Light > Point, Sun, Spot) |
-| **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) |
+| **Tools** | Take Screenshot (`F12`), Screenshot All Passes (`Ctrl+F12`) - written under `<exe dir>/screenshots` |
 | **Help** | About Neurus |
 
 Each menu action is registered as an `(QAction*, key)` pair so `RetranslateAll()` can re-text it on a language change.
@@ -127,7 +127,7 @@ All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
 
 See [Panels](panels.md) for each panel, and [Items](items.md), [Models](models.md) and [i18n](i18n.md) for the shared building blocks.
 
-`UIContext` is the UI's view of the frame, two fields wide: `scene` (`const Scene*`) and `config` (`const RenderConfig*`), both filled by `Editor::UpdateUIContext()` and both plain forward-declared pointers. It deliberately carries no camera and no overlay draw list - a panel has no business naming either - so the UI's view is a property of the type rather than a convention. The render settings are read through `Settings()`, which never returns null: it falls back to `core/RenderConfig.h`'s `DefaultRenderConfig()`, the same single fallback `RenderContext::Settings()` applies, so a panel and a pass cannot disagree about an unset value. `scene` must still be checked - `HasScene()` - before dereferencing.
+`UIContext` is the UI's view of the frame, two fields wide: `scene` (`const Scene*`) and `config` (`const RenderConfig*`), both filled by `Editor::UpdateUIContext()` and both plain forward-declared pointers. It deliberately carries no camera and no overlay draw list - a panel has no business naming either - so the UI's view is a property of the type rather than a convention. The render settings are read through `Settings()`, which never returns null: it falls back to `core/RenderConfig.h`'s `DefaultRenderConfig()`, the same single default a pass resolves to through `ctx.Frame().Settings()`, so a panel and a pass cannot disagree about an unset value. `scene` must still be checked - `HasScene()` - before dereferencing.
 
 `UIContext` also carries four typed pointers, each forward-declared in `UIContext.h`, as the Application's half: `const FrameProfile* profile` (the profile returned by `DeferredRenderer::DrawFrame()`), `const LogBuffer* log`, `const HistoryView* history` and `const ScriptConsoleBuffer* scriptConsole` (the script engine's console buffer). The Editor fills `scene` and `config` through `Editor::UpdateUIContext()`; the Application adds these four each frame, and the `ProfilingPanel` reads `profile` directly to render a real-time per-pass tree. All four are null in a default-constructed `UIContext` - what a widget test builds - so a panel checks before dereferencing.
 

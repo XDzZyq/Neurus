@@ -12,6 +12,8 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <memory>
+#include <optional>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -20,6 +22,21 @@ namespace neurus {
 
 struct DebugDrawList;
 struct GizmoDrawList;
+
+/**
+ * @brief The mesh table a frame draws from: object id to its GPU geometry.
+ *
+ * Always handled through @c shared_ptr and copied on every write, so a frame
+ * that is still reading the table it drew with keeps that exact table - and the
+ * meshes in it - alive while an upload installs the cache's next one.
+ */
+using MeshTable = std::unordered_map<int, std::shared_ptr<const MeshGPU>>;
+
+/**
+ * @brief The environment table a frame draws from: environment id to its IBL
+ *        cubemaps. Refcounted for the same reason as MeshTable.
+ */
+using EnvironmentTable = std::unordered_map<int, std::shared_ptr<const EnvironmentGPU>>;
 
 /**
  * @brief Named attachment identifiers for G-Buffer and post-FX framebuffer attachments.
@@ -50,6 +67,9 @@ enum class AttachmentName
 	// --- Anti-Aliasing ---
 	FXAAOutput,         ///< FXAA anti-aliased output (RGBA16F)
 	FXAAOffsets,        ///< FXAA edge subpixel offsets (RG16F, 2-channel)
+
+	// --- Overlay ---
+	OverlayOutput,      ///< Scene tail copy + overlays, the swapchain blit source (RGBA16F)
 
 	// --- Shadow ---
 	// Logical shadow resources. Unlike the single-image attachments above,
@@ -129,20 +149,30 @@ public:
 	/// Maximum number of shadow-casting lights (array layers in the intensity image).
 	static constexpr uint32_t MAX_SHADOW_LAYERS = 4;
 
-	// --- Mesh GPU resources (lazily created) ---
+	// --- Mesh GPU resources (refcounted, copy on write) ---
 
 	/**
 	 * @brief Returns the cached MeshGPU for an object, or nullptr.
 	 *
-	 * Read-only lookup - does NOT create.
+	 * Read-only lookup - does NOT create and does not copy the table.
 	 *
 	 * @param objectId Unique object ID of the mesh.
-	 * @return Non-owning pointer, or nullptr if not found.
+	 * @return Non-owning pointer, or nullptr if not found. It stays valid only
+	 *         until the mesh table is next written, so a frame that draws from
+	 *         it must also hold Meshes() until the GPU is done with it.
 	 */
-	MeshGPU* GetMeshGPU(int objectId);
-
-	/** @brief const overload of GetMeshGPU(). */
 	const MeshGPU* GetMeshGPU(int objectId) const;
+
+	/**
+	 * @brief Returns the live mesh table, so a frame can keep it alive.
+	 *
+	 * Only the pointer is copied, never the table. Writes install a new table
+	 * rather than mutating this one, so a caller holding it keeps seeing exactly
+	 * the meshes that were there when it asked.
+	 *
+	 * @return The live table; never null.
+	 */
+	std::shared_ptr<const MeshTable> Meshes() const;
 
 	/**
 	 * @brief Returns (or lazily creates) the shadow intensity image array.
@@ -159,23 +189,30 @@ public:
 	/**
 	 * @brief Returns (or allocates) the layer index for a light's shadow intensity.
 	 *
-	 * On first call for a lightUID, allocates the next available layer (0, 1, 2…).
-	 * The array must have been created first via GetShadowIntensityArray().
-	 * Asserts if MAX_SHADOW_LAYERS is exceeded.
+	 * On first call for a lightUID that UpdateLighting() has not seen, allocates
+	 * the next available layer (0, 1, 2…) so single-pass test contexts keep
+	 * working. The array must have been created first via
+	 * GetShadowIntensityArray().
 	 *
-	 * @param lightUID Unique identifier of the point light (int).
+	 * A scene may hold more shadow-casting lights than there are layers. Lights
+	 * UpdateLighting() could not give a layer to (their SSBO @c shadowMapIndex is
+	 * @c -1, so the shader applies no shadow) have no layer here either, and this
+	 * returns @c std::nullopt - that is a normal user state, not an error.
+	 *
+	 * @param lightUID Unique identifier of the light (int).
 	 * @param extent   Image dimensions (must match GetShadowIntensityArray's extent).
-	 * @return Layer index (0 … MAX_SHADOW_LAYERS-1).
+	 * @return Layer index (0 … MAX_SHADOW_LAYERS-1), or @c std::nullopt if the light
+	 *         has none and every layer is taken.
 	 */
-	uint32_t GetShadowIntensityLayer(int lightUID, vk::Extent2D extent);
+	std::optional<uint32_t> GetShadowIntensityLayer(int lightUID, vk::Extent2D extent);
 
 	/**
 	 * @brief Returns the shadow intensity layer index for a light (lookup only, no allocation).
 	 *
-	 * @param lightUID Unique identifier of the point light (int).
-	 * @return Layer index, or 0 if not found.
+	 * @param lightUID Unique identifier of the light (int).
+	 * @return Layer index, or @c std::nullopt if the light has no layer.
 	 */
-	uint32_t GetShadowIntensityLayerIndex(int lightUID) const;
+	std::optional<uint32_t> GetShadowIntensityLayerIndex(int lightUID) const;
 
 	/**
 	 * @brief Returns all light UIDs that currently have LightGPU entries.
@@ -273,47 +310,66 @@ public:
 
 	/**
 	 * @brief Removes the cached MeshGPU for a given object ID.
-	 * Safe to call for objects with no MeshGPU yet.
+	 *
+	 * Safe to call for objects with no MeshGPU yet: the table is copied only
+	 * when the entry is actually there. The entry itself lives on in any table a
+	 * submitted frame still holds.
+	 *
 	 * @param objectId Object ID to remove.
 	 */
 	void RemoveMeshGPU(int objectId);
 
 	/**
 	 * @brief Register a previously-constructed MeshGPU into the cache.
-	 * Takes ownership via move semantics.  Overwrites any existing
-	 * entry for the same objectId.
+	 *
+	 * Takes ownership via move semantics and installs a fresh table (the old one
+	 * is left untouched for whoever still holds it), so it overwrites any
+	 * existing entry for the same objectId.
+	 *
 	 * @param objectId  Unique object identifier.
-	 * @param meshGPU   Constructed MeshGPU to cache (moved in).
+	 * @param meshGPU   Constructed MeshGPU to cache (moved in). Never written
+	 *                  after it enters the table.
 	 */
 	void UseMeshGPU(int objectId, MeshGPU meshGPU);
 
-	// --- Environment GPU resources (registration/query) ---
+	// --- Environment GPU resources (refcounted, copy on write) ---
 
 	/**
 	 * @brief Register a previously-constructed EnvironmentGPU into the cache.
-	 * Takes ownership via move semantics.  Overwrites any existing
-	 * entry for the same envId.
+	 *
+	 * Takes ownership via move semantics and installs a fresh table, so it
+	 * overwrites any existing entry for the same envId while leaving the
+	 * replaced cubemaps alive for any frame that still holds the old table.
+	 *
 	 * @param envId   Unique environment identifier.
-	 * @param envGPU  Constructed EnvironmentGPU to cache (moved in).
+	 * @param envGPU  Constructed EnvironmentGPU to cache (moved in). Never
+	 *                written after it enters the table.
 	 */
 	void UseEnvironmentGPU(int envId, EnvironmentGPU envGPU);
 
 	/**
 	 * @brief Returns the cached EnvironmentGPU for an environment, or nullptr.
 	 *
-	 * Read-only lookup - does NOT create.
+	 * Read-only lookup - does NOT create and does not copy the table.
 	 *
 	 * @param envId Unique object ID of the environment.
-	 * @return Non-owning pointer, or nullptr if not yet created.
+	 * @return Non-owning pointer, or nullptr if not yet created. It stays valid
+	 *         only until the environment table is next written, so a frame that
+	 *         draws from it must also hold Environments() until the GPU is done
+	 *         with it.
 	 */
-	EnvironmentGPU* GetEnvironmentGPU(int envId);
-
-	/** @brief const overload of GetEnvironmentGPU(). */
 	const EnvironmentGPU* GetEnvironmentGPU(int envId) const;
+
+	/** @brief Returns the live environment table; never null. @see Meshes(). */
+	std::shared_ptr<const EnvironmentTable> Environments() const;
 
 	/**
 	 * @brief Removes the cached EnvironmentGPU for a given env ID.
-	 * Safe to call for environments with no GPU resources yet.
+	 *
+	 * Safe to call for environments with no GPU resources yet: the table is
+	 * copied only when the entry is actually there. The cubemaps live on in any
+	 * table a submitted frame still holds.
+	 *
 	 * @param envId Environment object ID to remove.
 	 */
 	void RemoveEnvironmentGPU(int envId);
@@ -404,6 +460,24 @@ public:
 	 */
 	void UpdateLighting(const std::unordered_map<int,
 	                    std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict);
+
+	/**
+	 * @brief True when UpdateLighting(lightDict) would replace an existing light SSBO.
+	 *
+	 * A kind grows when its count exceeds the SSBO's capacity, and ArrayBuffer
+	 * only resizes on growth - so that is the only path that destroys a buffer.
+	 * A kind whose capacity is still zero has no buffer to destroy: its first
+	 * allocation replaces nothing.
+	 *
+	 * Read-only: it partitions @a lightDict exactly as UpdateLighting does and
+	 * compares the per-kind counts against the live SSBO state, so it answers
+	 * for the same upload the full rebuild would perform.
+	 *
+	 * @param lightDict  Map: light UID to variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
+	 * @return true if the rebuild would resize (and so free) at least one SSBO.
+	 */
+	bool UpdateLightingReallocates(const std::unordered_map<int,
+	                    std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict) const;
 
 	/**
 	 * @brief Updates a single light in the SSBO without rebuilding the array.
@@ -526,16 +600,20 @@ private:
 
 	std::unique_ptr<Image> rc_shadowIntensityArray;
 
-	// --- Per-mesh lazy GPU resources (key = object UID as int) ---
-	std::unordered_map<int, MeshGPU> rc_meshGPUs;
+	// --- Per-mesh GPU resources (key = object UID as int) ---
+	// Copy on write: a write installs a new table instead of mutating this one,
+	// so a frame holding the old table keeps its meshes alive while it draws.
+	std::shared_ptr<const MeshTable> rc_meshGPUs = std::make_shared<const MeshTable>();
 
-	// --- Per-environment lazy GPU resources (key = environment UID as int) ---
-	std::unordered_map<int, EnvironmentGPU> rc_environmentGPUs;
+	// --- Per-environment GPU resources (key = environment UID as int) ---
+	// Copy on write, for the same reason: a regenerated environment replaces the
+	// table entry without destroying cubemaps a submitted frame still samples.
+	std::shared_ptr<const EnvironmentTable> rc_environmentGPUs = std::make_shared<const EnvironmentTable>();
 
 	// --- Per-light GPU resources (key = light UID as int) ---
 	std::unordered_map<int, LightGPU> rc_lightGPUs;
 
-	// --- Pipeline cache (keyed by shader UID string) ---
+	// --- Pipeline cache (keyed by shader UID int) ---
 	PipelineCache rc_pipelineCache;
 
 	// --- Lighting SSBO storage (owned) ---

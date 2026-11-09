@@ -128,16 +128,17 @@ TEST_F(FXAATest, StairPattern_MatchesAnalyticalGradient)
 	cfg.r_fxaa_edge_threshold    = 0.166f;
 	cfg.r_fxaa_edge_threshold_min = 0.0833f;
 
+	RenderFrameSnapshot snapStorage;
 	RenderContext ctx;
 	ctx.width = kW; ctx.height = kH; ctx.frameIndex = 0;
-	ctx.config = &cfg; ctx.scene = nullptr;
+	PublishFrame(*m_cache, ctx, snapStorage, nullptr, &cfg);
 
 	auto& c = BeginCmd();
 	m_fxaaPass->Record(*c, *m_cache, ctx);
 	EndSubmitWait(c);
 
 	auto& out = m_cache->GetAttachment(AttachmentName::FXAAOutput, e);
-	auto id = out.ReadImageData(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	auto id = out.ReadImageData(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 	const auto* hd = reinterpret_cast<const uint16_t*>(id->GetPixelData().data());
 
 	float sumSqErr = 0.0f, maxErr = 0.0f;

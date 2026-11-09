@@ -7,6 +7,7 @@
 
 #include "RenderCache.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "render/Barrier.h"
 #include "shaders/ShaderLibrary.h"
 #include "core/Log.h"
@@ -185,8 +186,13 @@ PassStats GizmoPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const 
 	// No gesture: touch no image, so every state the upstream pass left behind
 	// stays valid, including the layout the swapchain blit expects. This is
 	// also what lets the pass sit in the graph unconditionally.
-	const GizmoDrawList* list = ctx.gizmoDraw;
-	if (!list || list->Empty())
+	//
+	// The snapshot publishes gizmoDraw as a value that always exists and reads
+	// empty when nothing is selected or armed, so the null case the borrowed
+	// pointer carried cannot occur and only the empty early-out survives.
+	const RenderFrameSnapshot& snapshot = ctx.Frame();
+	const GizmoDrawList& list = snapshot.gizmoDraw;
+	if (list.Empty())
 	{
 		return stats;
 	}

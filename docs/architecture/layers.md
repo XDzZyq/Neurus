@@ -11,16 +11,17 @@ responsibility, and Core supplies utilities shared across all of them.
 - Owns VkDevice, VkSwapchainKHR, VkPipeline, VkCommandPool
 - Consumes read-only VkSurfaceKHR from UI layer
 - Consumes the per-frame RenderContext (the renderer's view of the frame: the
-  Editor's semantic half plus the frame half `recordFrame()` stamps) for pass
-  dispatch
+  Editor's owned frame snapshot plus the frame half `recordFrame()` stamps) for
+  pass dispatch
 - Centralized image barrier management via `Barrier::Transition` (ImageState ->
   Vulkan layout/stage/access)
-- Owns `MeshGPU` (GPU-side mesh resources: VertexBuffer + IndexBuffer) via
-  `RenderCache::GetMeshGPU()`
-- Owns `EnvironmentGPU` (GPU-side IBL resources: diffuse + specular cubemap
-  Textures) via `RenderCache::CreateEnvironmentGPU()`
+- Holds `MeshGPU` (GPU-side mesh resources: VertexBuffer + IndexBuffer) in a
+  refcounted table (`RenderCache::UseMeshGPU()` / `Meshes()`)
+- Holds `EnvironmentGPU` (GPU-side IBL resources: diffuse + specular cubemap
+  Textures) in a refcounted table (`RenderCache::UseEnvironmentGPU()` /
+  `Environments()`)
 - Owns `LightingCache` (light SSBOs: point + sun) via
-  `RenderCache::InitLightingCache()` / `GetLightingCache()`
+  `RenderCache::SetLightingCache()` / `GetLightingCache()`
 - Must NOT mutate application state
 - Must NOT depend on Editor or UI layers
 
@@ -30,26 +31,25 @@ responsibility, and Core supplies utilities shared across all of them.
 - Owns Controllers (CameraController, TransformGizmoController,
   ShaderController, SceneController, ObjectController, RenderConfigController,
   ScriptController) via `src/editor/controllers/`
-- Publishes the two frame views as one pivot: `RenderContext` (the renderer's
-  view) via `UpdateRenderContext()` and `UIContext` (the UI's view) via
-  `UpdateUIContext()`
+- Produces the two frame views: the renderer's view as an owned
+  `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
+  via `UpdateUIContext()`
 - Owns `EditorViewport`, the viewport composition root: the **viewport camera**
   (a pooled `Camera` that is not scene content), the debug/gizmo builders and
   the resize. `Editor::ActiveCamera()` selects the activated scene camera when the
   Scene names one and the viewport camera otherwise; `Editor::PublishActiveCamera()`
-  hands that choice to `EditorViewport`, and `RenderContext::camera` carries it to
-  the renderer, so no pass reads the Scene. The Editor itself exposes no public
-  camera API, only `GetViewport()` and the timing (`PublishActiveCamera` in
-  `Edit()`). A scene with zero cameras is a legal document. See
+  hands that choice to `EditorViewport`, and the frame snapshot's camera carries it
+  to the renderer, so no pass reads the Scene. The Editor exposes no public camera
+  API, only `GetViewport()` and the timing (`PublishActiveCamera` in `Edit()`). A
+  scene with zero cameras is a legal document. See
   [Editor Overview](../editor/overview.md).
 - Owns UIEvents (Qt signals) and the typed `EventQueue`
 - The `EventQueue` is **Editor-internal**: it is not a channel to the Renderer
   and nothing under `src/render/` includes it. It is drained once per frame
   (`Edit()`) for events that originated at the UI boundary; everything else in
   the editor dispatches synchronously through `Emit`
-- Communicates with the Renderer through `RenderContext` and its own GPU-upload
-  calls (`UploadSceneResources`, `UploadLighting`, the on-demand upload
-  handlers); the Renderer never receives an event
+- Communicates with the Renderer via Context (read-only frame snapshot) and typed
+  `RenderRequest`s posted through a `RenderRequestSink*`
 - Must NOT directly manipulate GPU resources
 - Controller registry pattern: `Editor::RegisterController<T>()` creates the
   controller, calls `Init(m_ctx)` and stores it in `ed_controllers`
@@ -91,9 +91,10 @@ responsibility, and Core supplies utilities shared across all of them.
 - Vulkan-free in public interface: no GPU types exposed to consumers
 - Scene objects (Camera, Light, Transform, Mesh, UID) define logical scene
   structure
-- GPU resources (VertexBuffer, IndexBuffer) are separated into `MeshGPU` owned
-  by RenderCache
-- `Mesh::UploadToGPU()` bridges scene data to Renderer-owned GPU resources
+- GPU resources (VertexBuffer, IndexBuffer) are separated into `MeshGPU` held by
+  RenderCache
+- Scene objects never upload: the Editor posts an `UploadMeshRequest` carrying the
+  `MeshData`, and the renderer owns the result
 
 ## Core Layer (`src/core/`)
 

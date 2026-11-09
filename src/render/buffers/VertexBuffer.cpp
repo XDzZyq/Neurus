@@ -12,7 +12,7 @@ namespace neurus {
 
 VertexBuffer::VertexBuffer(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
-                           vk::Queue queue,
+                           SharedQueue& queue,
                            uint32_t queueFamilyIndex,
                            const void* data,
                            vk::DeviceSize size,

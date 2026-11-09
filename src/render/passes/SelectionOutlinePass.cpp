@@ -11,6 +11,7 @@
 #include "render/Barrier.h"
 #include "render/render_graph/DescriptorBinder.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "shaders/ShaderLibrary.h"
 #include "shaders/ComputeShader.h"
 
@@ -145,8 +146,9 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 	PassStats stats{};
 
 	// A frame recorded before a scene exists is legal, and the push constant
-	// below reads the active selection off the scene.
-	if (!ctx.HasScene())
+	// below reads the active selection off the frame snapshot.
+	const RenderFrameSnapshot& frame = ctx.Frame();
+	if (!frame.HasScene())
 	{
 		NEURUS_LOG("[SelectionOutlinePass] No scene, skipping");
 		return stats;
@@ -174,12 +176,10 @@ PassStats SelectionOutlinePass::Record(vk::CommandBuffer cmdBuf, RenderCache& ca
 	                          {});
 
 	{
-		// Read the selection from the scene rather than duplicating it in the
-		// context.
-		uint32_t activeObjectId = 0;
-		const auto* activeObj = ctx.scene->selections.GetActiveObject();
-		if (activeObj)
-			activeObjectId = static_cast<uint32_t>(activeObj->GetObjectID());
+		// The snapshot carries the selected object's UID directly, and 0 means
+		// none - the same value this pass pushes for "nothing selected", so the
+		// null branch collapses into the ordinary path.
+		const uint32_t activeObjectId = static_cast<uint32_t>(frame.activeObjectId);
 
 		cmdBuf.pushConstants<uint32_t>(
 			*p_pipelines[0].pipelineLayout,

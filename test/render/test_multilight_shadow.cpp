@@ -48,9 +48,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -84,7 +86,7 @@ protected:
 		// --- Render pass infrastructure (attachments created lazily) ---
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
@@ -92,7 +94,7 @@ protected:
 
 		// --- Shadow depth pass ---
 		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
-			*m_device, pd, m_queue, m_graphicsQueueFamily,
+			*m_device, pd, *m_queue, m_graphicsQueueFamily,
 			ShadowDepthPass::kDefaultResolution);
 		// --- Shadow intensity pass (1 set = single-frame recording) ---
 		m_shadowIntensityPass = std::make_unique<ShadowIntensityPass>(
@@ -133,13 +135,13 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	// Step 1: Load multi-shadow scene (2 lights by default)
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadMultiShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily);
+		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected cube + plane (2 meshes)";
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 shadow-casting lights";
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	// Get the camera from the scene
 	ASSERT_FALSE(shadowRes.scene->cam_list.empty()) << "Scene must have a camera";
@@ -156,13 +158,11 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	// Step 2: Build RenderContext with both light UIDs
 	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	ctx.frameIndex   = 0;
-	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Transition G-Buffer to renderable layouts
@@ -186,7 +186,7 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -205,7 +205,7 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 		AttachmentName::HDRColor, renderExtent);
 
 	const bool captured = Screenshot::CaptureAttachment(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		hdrAttachment, tmpPath);
 
 	ASSERT_TRUE(captured) << "Failed to capture HDRColor attachment to " << tmpPath;
@@ -248,7 +248,7 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 	// Load scene
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadMultiShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily);
+		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_FALSE(shadowRes.scene->cam_list.empty());
 
 	const auto& camera = shadowRes.scene->cam_list.begin()->second;
@@ -257,12 +257,10 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 	// -------------------------------------------------------------------
 	// Build context
 	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
-	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Transition + upload + record
@@ -277,7 +275,7 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -288,6 +286,125 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 	// If we reach here without crash/exception, the test passes.
 	// Validation layer errors are printed to stderr by the debug callback
 	// and will appear in ctest --output-on-failure output.
+	SUCCEED();
+}
+
+// ===========================================================================
+// MoreShadowLightsThanLayers_OverflowCastsNoShadow - overflow must not crash
+// ===========================================================================
+
+/**
+ * @brief Five shadow-casting lights against MAX_SHADOW_LAYERS = 4.
+ *
+ * UpdateLighting() fills the shared layer pool point -> spot -> sun, so the 3
+ * point lights and the spot own layers 0..3 and the sun is left at
+ * shadowMapIndex = -1. ShadowIntensityPass must skip that light instead of
+ * asserting on the layer lookup, and the four lights that do have a layer must
+ * still own distinct slots in [0, MAX_SHADOW_LAYERS).
+ */
+TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto& pd = PhysicalDevice();
+	const vk::Extent2D renderExtent(kRenderWidth, kRenderHeight);
+
+	// -------------------------------------------------------------------
+	// Scene: 3 point lights from the shared builder, plus a spot and a sun
+	// -------------------------------------------------------------------
+	auto shadowRes = neurus::test::LoadMultiShadow(
+		*m_device, pd, *m_queue, m_graphicsQueueFamily, 3);
+	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 point lights";
+
+	std::vector<int> lightUIDs = shadowRes.lightUIDs;
+
+	// Direction (0,0,-1): GetDirection() maps pitch = -90, yaw = 0 to straight down.
+	{
+		auto spot = std::make_shared<Light>(LightType::SPOTLIGHT, 5.0f, glm::vec3(1.0f));
+		spot->o_name = "OverflowSpotLight";
+		spot->SetPosition(glm::vec3(1.0f, 0.0f, 3.0f));
+		spot->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
+		spot->SetPower(3.0f);
+		spot->SetShadow(true);
+		shadowRes.scene->UseLight(spot);
+		lightUIDs.push_back(spot->GetObjectID());
+	}
+	{
+		auto sun = std::make_shared<Light>(LightType::SUNLIGHT, 5.0f, glm::vec3(1.0f));
+		sun->o_name = "OverflowSunLight";
+		sun->SetPower(0.5f);
+		sun->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
+		sun->SetShadow(true);
+		shadowRes.scene->UseLight(sun);
+		lightUIDs.push_back(sun->GetObjectID());
+	}
+	ASSERT_EQ(lightUIDs.size(), 5u);
+
+	ASSERT_FALSE(shadowRes.scene->cam_list.empty()) << "Scene must have a camera";
+	const auto& camera = shadowRes.scene->cam_list.begin()->second;
+	camera->ChangeCamRatio(static_cast<float>(kRenderWidth), static_cast<float>(kRenderHeight));
+
+	// Every shadow-casting light needs a LightGPU, including the two that end up
+	// without a layer - the pass only skips lights it can otherwise render.
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device,
+	                                       PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device,
+	                                             PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+
+	// -------------------------------------------------------------------
+	// Context + light upload
+	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
+	RenderContext ctx{};
+	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
+	const RenderConfig config = ShadowReferenceConfig();
+
+	VulkanTestShared::TransitionGbufferToColorAttachment(
+		*m_renderCache, renderExtent, *this);
+
+	{
+		auto lightDict = m_uploadManager->UploadLighting(shadowRes.scene->light_list);
+		ASSERT_EQ(lightDict.size(), 5u);
+		m_renderCache->UpdateLighting(lightDict);
+	}
+
+	// The sun is the overflow light: point -> spot -> sun is the layer order.
+	const int sunUID = lightUIDs.back();
+	EXPECT_FALSE(m_renderCache->GetShadowIntensityLayerIndex(sunUID).has_value())
+		<< "Sun light " << sunUID << " must not own a shadow intensity layer";
+	EXPECT_FALSE(m_renderCache->GetShadowIntensityLayer(sunUID, renderExtent).has_value())
+		<< "A layer lookup for an overflow light must return nullopt, not allocate or assert";
+
+	// -------------------------------------------------------------------
+	// Record geometry + shadow depth + shadow intensity and submit
+	// -------------------------------------------------------------------
+	{
+		auto& cmd = BeginCmd();
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
+		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
+		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		EndSubmitWait(cmd);
+	}
+
+	// -------------------------------------------------------------------
+	// The four lights inside the pool keep distinct layers
+	// -------------------------------------------------------------------
+	std::vector<uint32_t> layers;
+	for (size_t i = 0; i + 1 < lightUIDs.size(); ++i)
+	{
+		const std::optional<uint32_t> layer =
+			m_renderCache->GetShadowIntensityLayerIndex(lightUIDs[i]);
+		ASSERT_TRUE(layer.has_value()) << "Light " << lightUIDs[i] << " lost its layer";
+		EXPECT_LT(*layer, RenderCache::MAX_SHADOW_LAYERS);
+		layers.push_back(*layer);
+	}
+
+	ASSERT_EQ(layers.size(), 4u);
+	std::sort(layers.begin(), layers.end());
+	EXPECT_EQ(layers, (std::vector<uint32_t>{0, 1, 2, 3}))
+		<< "The four shadow-casting lights must own exactly layers 0..3";
+
 	SUCCEED();
 }
 
@@ -313,13 +430,13 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	// Load scene
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadMultiShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily, 3 /*numLights*/);
+		*m_device, pd, *m_queue, m_graphicsQueueFamily, 3 /*numLights*/);
 	ASSERT_FALSE(shadowRes.scene->cam_list.empty());
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 shadow-casting lights";
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	const auto& camera = shadowRes.scene->cam_list.begin()->second;
 	camera->ChangeCamRatio(static_cast<float>(kRenderWidth), static_cast<float>(kRenderHeight));
@@ -327,12 +444,10 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	// -------------------------------------------------------------------
 	// Build context
 	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
-	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Transition G-Buffer
@@ -346,7 +461,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -364,7 +479,10 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 
 	for (int lightUID : shadowRes.lightUIDs)
 	{
-		const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		const std::optional<uint32_t> layerOpt =
+			m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+		const uint32_t layer = *layerOpt;
 		std::vector<uint8_t> u8Data(pixelCount);
 
 		{
@@ -448,12 +566,12 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	// Load scene (2 lights by default)
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadMultiShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily);
+		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 shadow-casting lights";
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	const auto& camera = shadowRes.scene->cam_list.begin()->second;
 	camera->ChangeCamRatio(static_cast<float>(kRenderWidth), static_cast<float>(kRenderHeight));
@@ -461,12 +579,10 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	// -------------------------------------------------------------------
 	// Build context
 	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
-	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Transition G-Buffer
@@ -487,7 +603,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -509,7 +625,10 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	for (size_t li = 0; li < shadowRes.lightUIDs.size(); ++li)
 	{
 		int lightUID = shadowRes.lightUIDs[li];
-		const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		const std::optional<uint32_t> layerOpt =
+			m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+		ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+		const uint32_t layer = *layerOpt;
 		std::vector<uint8_t> pixelData(pixelCount);
 
 		// --- Manual staging-buffer readback ---
@@ -622,14 +741,14 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	// Step 1: Load multi-shadow scene with SUNLIGHT (3 lights)
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadMultiShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		3, LightType::SUNLIGHT);
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected cube + plane (2 meshes)";
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 sun lights";
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	// Verify all lights are SUNLIGHT
 	for (int uid : shadowRes.lightUIDs)
@@ -656,13 +775,11 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	// Step 2: Build RenderContext
 	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
 	ctx.frameIndex   = 0;
-	// renderItems removed — ShadowDepthPass iterates scene.mesh_list directly
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Transition G-Buffer to renderable layouts
@@ -695,7 +812,7 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -714,7 +831,7 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 		AttachmentName::HDRColor, renderExtent);
 
 	const bool captured = Screenshot::CaptureAttachment(
-		*m_device, pd, m_queue, m_graphicsQueueFamily,
+		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		hdrAttachment, tmpPath);
 
 	ASSERT_TRUE(captured) << "Failed to capture HDRColor attachment to " << tmpPath;

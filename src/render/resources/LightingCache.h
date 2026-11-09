@@ -24,6 +24,8 @@
 
 namespace neurus {
 
+class SharedQueue;
+
 // ---------------------------------------------------------------------------
 // GPU-side data structures (std140-compatible)
 // ---------------------------------------------------------------------------
@@ -127,12 +129,13 @@ public:
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (for buffer memory queries).
-	 * @param graphicsQueue     Graphics queue for staging uploads.
+	 * @param graphicsQueue     Graphics queue for staging uploads; each upload
+	 *                          waits its own submit.
 	 * @param queueFamilyIndex  Queue family index for staging command pool.
 	 */
 	LightingCache(const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice,
-	            vk::Queue graphicsQueue,
+	            SharedQueue& graphicsQueue,
 	            uint32_t queueFamilyIndex);
 
 	// Non-copyable — owns GPU resources (reference members prevent move-assign)
@@ -219,11 +222,29 @@ public:
 	/** @brief Number of point lights in the SSBO. */
 	uint32_t GetPointLightCount() const;
 
+	/**
+	 * @brief Number of point lights the point SSBO can hold.
+	 * @return Allocated element count, or 0 when no buffer exists yet.
+	 */
+	uint32_t GetPointLightCapacity() const;
+
 	/** @brief Number of sun lights in the SSBO. */
 	uint32_t GetSunLightCount() const;
 
+	/**
+	 * @brief Number of sun lights the sun SSBO can hold.
+	 * @return Allocated element count, or 0 when no buffer exists yet.
+	 */
+	uint32_t GetSunLightCapacity() const;
+
 	/** @brief Number of spot lights in the SSBO. */
 	uint32_t GetSpotLightCount() const;
+
+	/**
+	 * @brief Number of spot lights the spot SSBO can hold.
+	 * @return Allocated element count, or 0 when no buffer exists yet.
+	 */
+	uint32_t GetSpotLightCapacity() const;
 
 private:
 	// --- Owned GPU buffers ---

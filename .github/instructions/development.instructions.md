@@ -41,16 +41,27 @@ Rules that hold across waves:
 - Keep classes lean and functions small (single responsibility); refactor
   "clumsy" code early.
 
-## Phase 3 - Verify (per wave, non-negotiable)
+## Phase 3 - Verify (gated, non-negotiable)
 
-Do not move to the next wave if any check fails.
+Do not move to the next wave if a check that applies has failed. Which checks
+apply depends on what you are about to do:
+
+| Gate | Checks |
+|------|--------|
+| Before every commit | build 0 errors; i18n `--check` if any user-visible string changed; PIL sweep if any reference image changed |
+| After a large modification | the full suite, even mid-wave - cross-system refactor, new feature, anything crossing layers |
+| Before every push | `make check` all green; launch `Neurus.exe` with zero `VUID-` |
 
 ```
-cmake --build build --config Debug                # 0 errors
+cmake --build build --config Debug                # 0 errors   - commit gate
 python scripts/extract_i18n.py --check            # 100% translated, not stale
-make check                                        # all pass, including regression
-& "build/Debug/Neurus.exe" 2>&1 | Select-String "VUID-"   # zero matches
+make check                                        # all pass   - push gate
+& "build/Debug/Neurus.exe" 2>&1 | Select-String "VUID-"   # zero matches - push gate
 ```
+
+A commit that does not build is never acceptable. Running the suite per commit
+is not required - running it only at the push gate after a wave of cross-layer
+work is how a bisect lands on a 20-file commit.
 
 - **Every new user-visible string is translated in the same commit.**
   `scripts/extract_i18n.py` only extracts; a new key lands with an empty
@@ -59,9 +70,9 @@ make check                                        # all pass, including regressi
 - **Always launch `Neurus.exe`** and check the terminal for `VUID-` validation
   errors, crashes and unexpected `NEURUS_ERR` lines; then check the viewport
   visually and exercise resize/interaction for deadlocks.
-- **Verify every reference image with Python PIL** before committing: not empty,
-  not uniform, not all-black or all-white. The exact checks are in
-  [docs/build/test.md](../../docs/build/test.md).
+- **Verify every reference image with Python PIL** before committing a change
+  that touches one: not empty, not uniform, not all-black or all-white. The
+  exact checks are in [docs/build/test.md](../../docs/build/test.md).
 
 ## Phase 4 - Fix common bugs
 
@@ -74,15 +85,17 @@ Check there first when a wave misbehaves.
 - **Do not commit until the user explicitly approves** unless they told you in
   advance that you may.
 - Follow the current commit format (`feat(scope): what was built`).
-- In the description, add: "No validation error, no unreasonable reference image,
-  all tests passed."
+- In the description, add "No validation error, no unreasonable reference image,
+  all tests passed." **only when those checks actually ran.** The suite is not a
+  commit gate, so when a commit lands on the build gate alone, say what was
+  verified instead - the trailer is evidence, not decoration.
 - See [git-workflow.instructions.md](git-workflow.instructions.md).
 
 ## Checklist
 
 - [ ] All four waves complete
-- [ ] Build: 0 errors, 0 warnings
-- [ ] All tests pass (`make check`)
+- [ ] Build: 0 errors, 0 warnings (every commit)
+- [ ] All tests pass (`make check`) - before pushing, and after any large change
 - [ ] Zero `VUID-` validation errors from `Neurus.exe` and the test binary
 - [ ] No untranslated or stale catalogs (`python scripts/extract_i18n.py --check`)
 - [ ] Every reference image verified with Python PIL

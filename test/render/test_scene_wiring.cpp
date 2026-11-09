@@ -17,6 +17,7 @@
 
 #include "asset/data/MeshData.h"
 #include "render/DeferredRenderer.h"
+#include "render/SharedQueue.h"
 #include "scene/Camera.h"
 #include "scene/Light.h"
 #include "scene/Mesh.h"
@@ -148,8 +149,9 @@ protected:
 			vk::DeviceQueueCreateInfo qCI({}, m_graphicsQueueFamily, 1, &prio);
 
 			// Mirror VulkanContext::InitDevice: DeferredRenderer's passes need
-			// dynamic rendering, synchronization2, multiview (shadow cubemaps) and
-			// shaderDemoteToHelperInvocation (`discard` under SPIR-V 1.6).
+			// dynamic rendering, synchronization2, multiview (shadow cubemaps),
+			// shaderDemoteToHelperInvocation (`discard` under SPIR-V 1.6) and
+			// timeline semaphores (the renderer's per-frame timeline signal).
 			vk::PhysicalDeviceMultiviewFeatures multiviewFeature;
 			multiviewFeature.multiview = VK_TRUE;
 			vk::PhysicalDeviceDynamicRenderingFeatures dynRendering;
@@ -161,9 +163,12 @@ protected:
 			vk::PhysicalDeviceSynchronization2Features sync2;
 			sync2.synchronization2 = VK_TRUE;
 			sync2.pNext = &demote;
+			vk::PhysicalDeviceTimelineSemaphoreFeatures timelineSemaphore;
+			timelineSemaphore.timelineSemaphore = VK_TRUE;
+			timelineSemaphore.pNext = &sync2;
 			vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
 			descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
-			descriptorIndexing.pNext = &sync2;
+			descriptorIndexing.pNext = &timelineSemaphore;
 
 			const vk::PhysicalDeviceFeatures supported = pd.getFeatures();
 			vk::PhysicalDeviceFeatures features;
@@ -172,7 +177,8 @@ protected:
 
 			vk::DeviceCreateInfo devCI({}, qCI, {}, devExts, &features, &descriptorIndexing);
 			m_device = std::make_unique<vk::raii::Device>(pd, devCI);
-			m_queue = m_device->getQueue(m_graphicsQueueFamily, 0);
+			m_queue = std::make_unique<neurus::SharedQueue>(
+				*m_device, m_device->getQueue(m_graphicsQueueFamily, 0), m_graphicsQueueFamily);
 
 			// --- Native window + surface ---
 #ifdef _WIN32
@@ -236,7 +242,7 @@ protected:
 		m_renderer = std::make_unique<DeferredRenderer>(
 			*m_device,
 			m_physicalDevices[m_selectedPdIndex],
-			m_queue,
+			*m_queue,
 			m_graphicsQueueFamily,
 			*m_surface,
 			width, height);
@@ -292,7 +298,12 @@ TEST_F(SceneWiringTest, DrawFrame_EmptyScene_NoCrash)
 	scene.UseCamera(cam);
 	scene.ActivateCamera(cam->GetObjectID());
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
+	// A snapshot pointer cannot live in a temporary that dies at the semicolon,
+	// so publish into named storage that outlives the DrawFrame call.
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
 	m_renderer->WaitIdle();
 }
 
@@ -316,7 +327,11 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithOnlyCamera_NoCrash)
 
 	ASSERT_NE(scene.GetActiveCamera(), nullptr);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
+	// Named storage so the published snapshot outlives DrawFrame (see test 1).
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
 	m_renderer->WaitIdle();
 }
 
@@ -347,8 +362,13 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
-	EXPECT_NO_THROW(m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()}));
+	// Build the frame once after the whole scene exists; the snapshot is a copy
+	// taken at this instant, so every mesh and light must be registered first.
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
+	EXPECT_NO_THROW(m_renderer->DrawFrame(ctx));
 
 	m_renderer->WaitIdle();
 }
@@ -378,12 +398,18 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
+	// Build the frame once after the whole scene exists, then reuse ctx across
+	// the three frames below; the snapshot must outlive every DrawFrame call.
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+
 	// Profiling is always on; every frame produces per-pass CPU timers + counters.
 
 	// Frame 1: per-pass CPU timers + counters are recorded; GPU timestamp
 	// readback for this slot happens at the start of frame 2 (fence-based).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()});
+		const FrameProfile& profile = m_renderer->DrawFrame(ctx);
 		EXPECT_GT(profile.passCount, 0u);
 		EXPECT_FALSE(profile.passes.empty());
 		for (const auto& pass : profile.passes)
@@ -399,7 +425,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 
 	// Frame 2: exercises the GPU timestamp readback path for frame 1's slot.
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()});
+		const FrameProfile& profile = m_renderer->DrawFrame(ctx);
 		EXPECT_GT(profile.passCount, 0u);
 	}
 
@@ -407,7 +433,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	// guarded so pre-signaled, never-written slots are skipped on startup
 	// (VUID-vkGetQueryPoolResults-None-09401).
 	{
-		const FrameProfile& profile = m_renderer->DrawFrame(RenderContext{.scene = &scene, .camera = scene.GetActiveCamera()});
+		const FrameProfile& profile = m_renderer->DrawFrame(ctx);
 		EXPECT_GT(profile.passCount, 0u);
 		if (profile.gpuTimingAvailable)
 		{
@@ -417,6 +443,69 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 				EXPECT_GE(pass.gpuMs, 0.0);
 		}
 	}
+
+	m_renderer->WaitIdle();
+}
+
+// ---------------------------------------------------------------------------
+// 5. A drawn frame holds the mesh table it drew with until its fence signals:
+//    removing a mesh from the cache must not destroy geometry the GPU is still
+//    reading, and seeing the fence is what releases it.
+// ---------------------------------------------------------------------------
+
+TEST_F(SceneWiringTest, AFrameHoldsItsMeshTableUntilItsFence)
+{
+	if (!m_hasVulkan)
+	{
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	}
+
+	ASSERT_NO_FATAL_FAILURE(CreateRenderer(kRenderWidth, kRenderHeight));
+
+	Scene scene;
+	auto cam = CreateDefaultCamera();
+	scene.UseCamera(cam);
+	scene.ActivateCamera(cam->GetObjectID());
+
+	auto mesh = CreateAndUploadTriangleMesh();
+	ASSERT_NE(mesh, nullptr);
+	scene.UseMesh(mesh);
+	const int meshId = mesh->GetObjectID();
+
+	RenderFrameSnapshot snap{};
+	RenderContext ctx{};
+	PublishFrame(m_renderer->GetRenderCache(), ctx, snap, &scene);
+
+	// PublishFrame builds the snapshot but uploads nothing: the cache has to own
+	// the geometry before the frame that draws it is recorded.
+	EnsureMeshesUploaded(m_renderer->GetRenderCache(), scene, *m_device, PhysicalDevice(),
+	                     *m_queue, m_graphicsQueueFamily);
+	ASSERT_NE(m_renderer->GetRenderCache().GetMeshGPU(meshId), nullptr);
+
+	// Exactly one frame: a camera and a live swapchain make this a sample frame,
+	// and the submit is what arms the held table.
+	m_renderer->DrawFrame(ctx);
+
+	// Observed through a weak_ptr, so after the removal the only thing keeping
+	// the entry alive is the table the frame holds.
+	std::weak_ptr<const MeshGPU> entry;
+	{
+		const std::shared_ptr<const MeshTable> table = m_renderer->GetRenderCache().Meshes();
+		const auto it = table->find(meshId);
+		ASSERT_NE(it, table->end());
+		entry = it->second;
+		ASSERT_FALSE(entry.expired());
+	}
+
+	m_renderer->GetRenderCache().RemoveMeshGPU(meshId);
+	EXPECT_EQ(m_renderer->GetRenderCache().GetMeshGPU(meshId), nullptr);
+
+	// Still in flight: the geometry the frame was drawn with must still exist.
+	EXPECT_FALSE(entry.expired());
+
+	// The slot's fence signaling is the proof that the frame finished reading.
+	ASSERT_TRUE(m_renderer->WaitForFrameSlot());
+	EXPECT_TRUE(entry.expired());
 
 	m_renderer->WaitIdle();
 }

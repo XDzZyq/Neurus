@@ -71,7 +71,7 @@ protected:
 		// --- Attachment manager (G-Buffer + HDR color + depth) - attachments created lazily ---
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 		// --- Upload manager for CPU→GPU struct conversion ---
 
@@ -119,7 +119,7 @@ protected:
 		Scene testScene;
 		testScene.UseMesh(mesh);
 
-		VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, testScene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+		VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, testScene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 		auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 		testScene.UseCamera(testCam);
@@ -127,11 +127,12 @@ protected:
 
 		{
 			auto& cmd = BeginCmd();
-			PublishSceneCamera(*m_renderCache, testScene);
-			m_geometryPass->Record(*cmd, *m_renderCache, RenderContext{
-			.scene = &testScene,
+			RenderFrameSnapshot frameSnapshot;
+			RenderContext ctx{
 				.width = kRenderWidth, .height = kRenderHeight,
-			});
+			};
+			PublishFrame(*m_renderCache, ctx, frameSnapshot, &testScene);
+			m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 			EndSubmitWait(cmd);
 		}
 	}
@@ -242,18 +243,20 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 		scene.UseCamera(testCam);
 		scene.ActivateCamera(testCam->GetObjectID());
 
-		m_lightingPass->Record(*cmd, *m_renderCache, RenderContext{
-			.scene = &scene, .camera = scene.GetActiveCamera(),
+		RenderFrameSnapshot frameSnapshot;
+		RenderContext ctx{
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
-		});
+		};
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
+		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);
 	}
 
 	// --- Step 4: Read back HDR output ---
 	std::vector<float> hdrPixels = VulkanTestShared::ReadbackHdrOutput(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily,
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily,
 		*m_renderCache, kRenderWidth, kRenderHeight);
 
 	// --- Step 5: Verify at least one pixel has non-zero colour ---
@@ -319,18 +322,19 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 		scene.UseCamera(testCam);
 		scene.ActivateCamera(testCam->GetObjectID());
 
+		RenderFrameSnapshot frameSnapshot;
 		RenderContext ctx{
-			.scene = &scene, .camera = scene.GetActiveCamera(),
 			.width = kRenderWidth, .height = kRenderHeight,
 			.frameIndex = 0,
 		};
+		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
 		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
 	// --- Read back ---
 	std::vector<float> hdrPixels = VulkanTestShared::ReadbackHdrOutput(
-		*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily,
+		*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily,
 		*m_renderCache, kRenderWidth, kRenderHeight);
 
 	// --- Verify: the GPU didn't crash, no VUID errors, HDR data is valid ---

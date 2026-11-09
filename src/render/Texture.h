@@ -11,6 +11,8 @@
 
 namespace neurus {
 
+class SharedQueue;
+
 /**
  * @brief Configuration for the VkSampler created alongside a Texture.
  *
@@ -63,7 +65,8 @@ public:
 	 *
 	 * @param device           Logical device.
 	 * @param physicalDevice   Physical device for memory queries.
-	 * @param queue            Graphics queue for staging upload submits.
+	 * @param queue            Graphics queue for staging upload submits; each
+	 *                         upload waits its own submit.
 	 * @param queueFamilyIndex Queue family index for transient command pools.
 	 * @param path             File path to the image (PNG, JPG, HDR, etc.).
 	 * @param format           Desired Vulkan format (e.g., eR8G8B8A8Srgb for LDR,
@@ -73,7 +76,7 @@ public:
 	 */
 	static Texture FromFile(const vk::raii::Device& device,
 	                        const vk::raii::PhysicalDevice& physicalDevice,
-	                        vk::Queue queue,
+	                        SharedQueue& queue,
 	                        uint32_t queueFamilyIndex,
 	                        const char* path,
 	                        vk::Format format,
@@ -86,7 +89,8 @@ public:
 	 *
 	 * @param device           Logical device.
 	 * @param physicalDevice   Physical device for memory queries.
-	 * @param queue            Graphics queue for staging upload submits.
+	 * @param queue            Graphics queue for staging upload submits; each
+	 *                         upload waits its own submit.
 	 * @param queueFamilyIndex Queue family index for transient command pools.
 	 * @param width            Image width in pixels.
 	 * @param height           Image height in pixels.
@@ -98,7 +102,7 @@ public:
 	 */
 	static Texture FromData(const vk::raii::Device& device,
 	                        const vk::raii::PhysicalDevice& physicalDevice,
-	                        vk::Queue queue,
+	                        SharedQueue& queue,
 	                        uint32_t queueFamilyIndex,
 	                        uint32_t width,
 	                        uint32_t height,
@@ -173,7 +177,7 @@ public:
 	 */
 	static TextureRes LoadTexture(const vk::raii::Device& device,
 	                              const vk::raii::PhysicalDevice& physicalDevice,
-	                              vk::Queue queue,
+	                              SharedQueue& queue,
 	                              uint32_t queueFamilyIndex,
 	                              const char* path,
 	                              vk::Format format,
@@ -199,7 +203,7 @@ public:
 	 */
 	static bool SaveTexture(const vk::raii::Device& device,
 	                        const vk::raii::PhysicalDevice& physicalDevice,
-	                        vk::Queue queue,
+	                        SharedQueue& queue,
 	                        uint32_t queueFamilyIndex,
 	                        Texture& texture,
 	                        const std::string& path,
@@ -222,7 +226,7 @@ public:
 	static bool SaveImage(Image& image,
 	                      const vk::raii::Device& device,
 	                      const vk::raii::PhysicalDevice& physicalDevice,
-	                      vk::Queue queue,
+	                      SharedQueue& queue,
 	                      uint32_t queueFamilyIndex,
 	                      const std::string& path,
 	                      bool remapSigned = false);
@@ -234,7 +238,7 @@ private:
 	 */
 	static Texture createFromPixelData(const vk::raii::Device& device,
 	                                   const vk::raii::PhysicalDevice& physicalDevice,
-	                                   vk::Queue queue,
+	                                   SharedQueue& queue,
 	                                   uint32_t queueFamilyIndex,
 	                                   uint32_t width,
 	                                   uint32_t height,

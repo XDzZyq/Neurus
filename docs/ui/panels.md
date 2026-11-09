@@ -96,7 +96,7 @@ Its **position table** is the only place in the panel that edits a *list* rather
 - **Ambient Occlusion**: Algorithm (None / SSAO), kernel size spinbox, radius `ScalarSlider` (0.0-5.0).
 - **Lighting**: IBL toggle, translucency toggle, exposure `ScalarSlider` (0.0-5.0).
 - **Post-Processing**: Anti-aliasing combo, gamma `ScalarSlider` (1.0-3.0), FXAA sliders.
-- **Pipeline**: Pipeline type (Forward / Deferred), SSR mode, samples per frame.
+- **Pipeline**: Pipeline type (Forward / Deferred), SSR mode, samples per frame, sampling count (`QSpinBox`, 1-4096, default 64 - the scene frames accumulated after a restart before the renderer stops).
 
 Each control change emits `configValueChanged(RenderConfigChangedEvent)`, wired by the Application to `Editor::SetRenderConfig(cfg)`. A bounded slider edit begin/end (`editBegin` / `editEnd`) bounds one undo entry for continuous slider drags.
 

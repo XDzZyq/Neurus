@@ -1,6 +1,6 @@
 /**
  * @file ComposePass.cpp
- * @brief Final compositing compute pass implementation.
+ * @brief Final scene compositing compute pass implementation.
  */
 
 #include "RenderCache.h"
@@ -11,6 +11,7 @@
 #include "Image.h"
 #include "render/Barrier.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "shaders/ShaderLibrary.h"
 #include "shaders/ComputeShader.h"
 #include "core/Log.h"
@@ -59,12 +60,8 @@ DescriptorSetLayout ComposePass::CreateDescriptorSetLayout(const vk::raii::Devic
 		.AddBinding(0,
 		            vk::DescriptorType::eCombinedImageSampler,
 		            vk::ShaderStageFlagBits::eCompute)
-		// SelectionOutline input (combined image sampler)
-		.AddBinding(1,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
 		// ComposedOutput (storage image, RGBA16F)
-		.AddBinding(2,
+		.AddBinding(1,
 		            vk::DescriptorType::eStorageImage,
 		            vk::ShaderStageFlagBits::eCompute)
 		.Build(device);
@@ -123,20 +120,6 @@ void ComposePass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rende
 		                  vk::DescriptorType::eCombinedImageSampler);
 	}
 
-	// --- Write SelectionOutline input (combined image sampler) ---
-	{
-		const auto& outlineAtt = cache.GetAttachment(AttachmentName::SelectionOutline, extent);
-
-		vk::DescriptorImageInfo imageInfo(
-			*p_sampler,                              // sampler
-			*outlineAtt.ImageViewHandle(),           // imageView
-			vk::ImageLayout::eShaderReadOnlyOptimal  // imageLayout
-		);
-
-		dstSet.WriteImage(1, imageInfo,
-		                  vk::DescriptorType::eCombinedImageSampler);
-	}
-
 	{
 		const auto& compAtt = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
 
@@ -146,7 +129,7 @@ void ComposePass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, Rende
 			vk::ImageLayout::eGeneral     // imageLayout
 		);
 
-		dstSet.WriteImage(2, imageInfo,
+		dstSet.WriteImage(1, imageInfo,
 		                  vk::DescriptorType::eStorageImage);
 	}
 }
@@ -164,16 +147,13 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 
 	// Settings() is never null; with no published config it resolves to
 	// RenderConfig's own declared default.
-	const float gamma = ctx.Settings().r_gamma;
+	const float gamma = ctx.Frame().Settings().r_gamma;
 
 	WriteDescriptors(frameIndex, renderExtent, cache);
 
 	{
 		auto& hdrAtt = cache.GetAttachment(AttachmentName::HDRColor, renderExtent);
 		Barrier::Transition(cmdBuf, hdrAtt, ImageState::ColorShaderRead);
-
-		auto& outlineAtt = cache.GetAttachment(AttachmentName::SelectionOutline, renderExtent);
-		Barrier::Transition(cmdBuf, outlineAtt, ImageState::ColorShaderRead);
 
 		auto& compAtt = cache.GetAttachment(AttachmentName::ComposedOutput, renderExtent);
 		Barrier::Transition(cmdBuf, compAtt, ImageState::ShaderWrite);
@@ -214,11 +194,10 @@ PassIO ComposePass::GetIO() const
 	PassIO io;
 	io.name  = "ComposePass";
 	io.reads = {
-		{AttachmentName::HDRColor,         0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-		{AttachmentName::SelectionOutline, 1, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
+		{AttachmentName::HDRColor,      0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
 	};
 	io.writes = {
-		{AttachmentName::ComposedOutput, 2, vk::DescriptorType::eStorageImage, vk::ImageLayout::eGeneral},
+		{AttachmentName::ComposedOutput, 1, vk::DescriptorType::eStorageImage, vk::ImageLayout::eGeneral},
 	};
 	return io;
 }

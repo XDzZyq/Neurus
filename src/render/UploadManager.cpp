@@ -7,6 +7,7 @@
 
 #include "Image.h"
 #include "PipelineBuilder.h"
+#include "SharedQueue.h"
 #include "Texture.h"
 #include "resources/MeshGPU.h"
 #include "resources/EnvironmentGPU.h"
@@ -31,11 +32,11 @@ namespace neurus {
 
 UploadManager::UploadManager(const vk::raii::Device& device,
                              const vk::raii::PhysicalDevice& physicalDevice,
-                             vk::Queue transferQueue,
+                             SharedQueue& transferQueue,
                              uint32_t transferQueueFamily)
 	: um_device(&device)
 	, um_physicalDevice(&physicalDevice)
-	, um_transferQueue(transferQueue)
+	, um_transferQueue(&transferQueue)
 	, um_transferQueueFamily(transferQueueFamily)
 {
 	vk::CommandPoolCreateInfo poolInfo({}, transferQueueFamily);
@@ -50,11 +51,6 @@ UploadManager::~UploadManager()
 	NEURUS_LOG("[UploadManager] Destroyed");
 }
 
-void UploadManager::WaitIdle()
-{
-	um_device->waitIdle();
-}
-
 // ---------------------------------------------------------------------------
 // LightingCache creation (transfer queue)
 // ---------------------------------------------------------------------------
@@ -64,7 +60,7 @@ std::unique_ptr<LightingCache> UploadManager::CreateLightingCache(
 	const vk::raii::PhysicalDevice& physicalDevice)
 {
 	return std::make_unique<LightingCache>(device, physicalDevice,
-	                                     um_transferQueue, um_transferQueueFamily);
+	                                     *um_transferQueue, um_transferQueueFamily);
 }
 
 MeshGPU UploadManager::UploadMesh(const Mesh& mesh)
@@ -110,14 +106,14 @@ MeshGPU UploadManager::UploadMeshData(const MeshData& meshData)
 
 	// --- Create GPU buffers ---
 	auto vbo = std::make_unique<VertexBuffer>(
-		*um_device, *um_physicalDevice, um_transferQueue, um_transferQueueFamily,
+		*um_device, *um_physicalDevice, *um_transferQueue, um_transferQueueFamily,
 		strippedVertices.data(), vertexDataSize,
 		vertexStride,
 		static_cast<uint32_t>(vertexCount),
 		"UploadMesh_VBO");
 
 	auto ibo = std::make_unique<IndexBuffer>(
-		*um_device, *um_physicalDevice, um_transferQueue, um_transferQueueFamily,
+		*um_device, *um_physicalDevice, *um_transferQueue, um_transferQueueFamily,
 		rawMesh.indexArray.data(), indexDataSize,
 		static_cast<uint32_t>(indexCount),
 		"UploadMesh_IBO");
@@ -128,9 +124,13 @@ MeshGPU UploadManager::UploadMeshData(const MeshData& meshData)
 	               static_cast<uint32_t>(vertexCount), static_cast<uint32_t>(indexCount)};
 }
 
-EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env,
-                                                 vk::Queue graphicsQueue,
-                                                 uint32_t graphicsQueueFamily)
+EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env)
+{
+	// Only the wrapped equirect is read; delegate so there is one upload path.
+	return UploadEnvironment(env.GetEquirectData());
+}
+
+EnvironmentGPU UploadManager::UploadEnvironment(std::shared_ptr<const ImageData> equirect)
 {
 	// --- 0. Lazy-init IBLPass ---
 	if (!um_iblPass)
@@ -139,10 +139,10 @@ EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env,
 		NEURUS_LOG("[UploadManager] Lazily created IBLPass for environment uploads");
 	}
 
-	// --- 1. Load equirectangular ImageData (CPU-side) ---
-	// Use the environment's wrapped (pooled) ImageData; if it is invalid
-	// (missing source file), fall back to the pink-purple gradient.
-	std::shared_ptr<ImageData> equirectData = env.GetEquirectData();
+	// --- 1. Resolve the equirectangular ImageData (CPU-side) ---
+	// If the source is null or invalid (missing source file), fall back to the
+	// pink-purple gradient.
+	std::shared_ptr<const ImageData> equirectData = std::move(equirect);
 	if (!equirectData || !equirectData->IsValid())
 	{
 		// Generate pink-purple fallback equirect (64x32)
@@ -164,7 +164,7 @@ EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env,
 	// --- 2. Upload equirect to GPU ---
 	auto equirectImage = Image::FromImageData(
 		*um_device, *um_physicalDevice,
-		um_transferQueue, um_transferQueueFamily,
+		*um_transferQueue, um_transferQueueFamily,
 		*equirectData,
 		"Env_Equirect",
 		vk::ImageUsageFlagBits::eStorage);
@@ -225,8 +225,8 @@ EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env,
 	samplerCI.setMaxLod(static_cast<float>(kSpecularMips));
 	auto specularSampler = vk::raii::Sampler(*um_device, samplerCI);
 
-	// --- 5. Run IBL convolution (needs graphics queue for compute dispatches) ---
-	um_iblPass->Generate(graphicsQueue, graphicsQueueFamily, equirectImage, *diffuseImage, *specularImage);
+	// --- 5. Run IBL convolution on the upload queue (its family supports compute) ---
+	um_iblPass->Generate(*um_transferQueue, um_transferQueueFamily, equirectImage, *diffuseImage, *specularImage);
 
 	// --- 6. Wrap in Textures and return ---
 	EnvironmentGPU gpu;
@@ -244,16 +244,18 @@ EnvironmentGPU UploadManager::UploadEnvironment(const Environment& env,
 
 LightGPU UploadManager::UploadLight(const Light& light)
 {
-	const LightType type = light.light_type;
+	// Only the uid and type are read; delegate so there is one allocation path.
+	return UploadLight(light.GetObjectID(), light.light_type);
+}
 
+LightGPU UploadManager::UploadLight(int uid, LightType type)
+{
 	// --- Invalid / unhandled light type ---
 	if (type == LightType::NONELIGHT)
 	{
 		NEURUS_ERR("[UploadManager] Unhandled light type: " << static_cast<int>(type));
 		return LightGPU{};
 	}
-
-	const int uid = light.GetObjectID();
 
 	// --- Sun light: 2D orthographic depth map ---
 	if (type == LightType::SUNLIGHT)

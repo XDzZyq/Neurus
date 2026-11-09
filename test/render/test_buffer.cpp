@@ -144,7 +144,7 @@ TEST_F(BufferTest, GPUBuffer_CreateDeviceLocal_Succeeds)
 	ASSERT_NO_THROW({
 		GPUBuffer buf(*m_device,
 		              PhysicalDevice(),
-		              m_queue,
+		              *m_queue,
 		              m_graphicsQueueFamily,
 		              kSize,
 		              vk::BufferUsageFlagBits::eVertexBuffer);
@@ -169,7 +169,7 @@ TEST_F(BufferTest, GPUBuffer_Upload_DataRoundtrips)
 
 	GPUBuffer buf(*m_device,
 	              PhysicalDevice(),
-	              m_queue,
+	              *m_queue,
 	              m_graphicsQueueFamily,
 	              kSize,
 	              vk::BufferUsageFlagBits::eStorageBuffer);
@@ -253,7 +253,7 @@ TEST_F(BufferTest, GetDescriptorInfo_ReturnsValidInfo)
 
 		GPUBuffer buf(*m_device,
 		              PhysicalDevice(),
-		              m_queue,
+		              *m_queue,
 		              m_graphicsQueueFamily,
 		              kSize,
 		              vk::BufferUsageFlagBits::eUniformBuffer);
@@ -298,7 +298,7 @@ TEST_F(BufferTest, MoveConstructor_TransfersOwnership)
 
 	GPUBuffer bufA(*m_device,
 	               PhysicalDevice(),
-	               m_queue,
+	               *m_queue,
 	               m_graphicsQueueFamily,
 	               kSize,
 	               vk::BufferUsageFlagBits::eUniformBuffer);
@@ -324,7 +324,7 @@ TEST_F(BufferTest, MoveAssignment_TransfersOwnership)
 
 	GPUBuffer bufA(*m_device,
 	               PhysicalDevice(),
-	               m_queue,
+	               *m_queue,
 	               m_graphicsQueueFamily,
 	               kSize,
 	               vk::BufferUsageFlagBits::eUniformBuffer);
@@ -334,7 +334,7 @@ TEST_F(BufferTest, MoveAssignment_TransfersOwnership)
 	// Move-assign
 	GPUBuffer bufB(*m_device,
 	               PhysicalDevice(),
-	               m_queue,
+	               *m_queue,
 	               m_graphicsQueueFamily,
 	               32,  // different size
 	               vk::BufferUsageFlagBits::eStorageBuffer);
@@ -360,7 +360,7 @@ TEST_F(BufferTest, BufferAccessor_ReturnsValidHandle)
 
 	GPUBuffer buf(*m_device,
 	              PhysicalDevice(),
-	              m_queue,
+	              *m_queue,
 	              m_graphicsQueueFamily,
 	              kSize,
 	              vk::BufferUsageFlagBits::eUniformBuffer);

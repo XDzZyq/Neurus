@@ -148,6 +148,9 @@ void RenderConfigPanel::Retranslate()
 	SetComboItems(m_ssrCombo,
 	              {N_("None"), N_("Ray Marching"), N_("SDF Ray Marching"), N_("SDF Resolved")});
 	SetFormRowLabel(pipelineForm, m_samplesPerFrameSpin, N_("Samples / Frame"));
+	SetFormRowLabel(pipelineForm, m_samplingCountSpin, N_("Sampling Count"));
+	m_samplingCountSpin->setToolTip(
+		i18n.translateCtx("Frames accumulated before rendering stops.", "Tooltip"));
 }
 
 // =========================================================================
@@ -298,6 +301,11 @@ void RenderConfigPanel::BuildPipelineSection()
 		{"None", "Ray Marching", "SDF Ray Marching", "SDF Resolved"});
 
 	m_samplesPerFrameSpin = addSpinRow(form, "Samples / Frame", 1, 1024, 128);
+
+	// How many scene frames accumulate before the renderer stops drawing, i.e.
+	// the depth of the progressive image. Bounded well above any practical value
+	// so it reads as "effectively unlimited" rather than silently wrapping.
+	m_samplingCountSpin = addSpinRow(form, "Sampling Count", 1, 4096, 64);
 }
 
 // =========================================================================
@@ -369,6 +377,8 @@ void RenderConfigPanel::ConnectAllSignals()
 	connect(m_ssrCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
 		this, emitCfg);
 	connect(m_samplesPerFrameSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+		this, emitCfg);
+	connect(m_samplingCountSpin, QOverload<int>::of(&QSpinBox::valueChanged),
 		this, emitCfg);
 }
 
@@ -460,6 +470,9 @@ void RenderConfigPanel::Refresh(const UIContext& ctx)
 
 		QSignalBlocker b3(m_samplesPerFrameSpin);
 		m_samplesPerFrameSpin->setValue(cfg.r_sample_pf);
+
+		QSignalBlocker b4(m_samplingCountSpin);
+		m_samplingCountSpin->setValue(cfg.r_sampling_count);
 	}
 }
 
@@ -524,6 +537,7 @@ RenderConfig RenderConfigPanel::Save() const
 	case 3: config.r_ssr = SSRAlg::SDFResolvedRayMarching;  break;
 	}
 	config.r_sample_pf = m_samplesPerFrameSpin->value();
+	config.r_sampling_count = m_samplingCountSpin->value();
 
 	return config;
 }

@@ -5,6 +5,7 @@
 #include "Barrier.h"
 #include "Image.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "shaders/ShaderLibrary.h"
 #include "shaders/ComputeShader.h"
 #include "core/Log.h"
@@ -106,7 +107,7 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 
 	// Settings() is never null and resolves to RenderConfig's own in-class
 	// defaults, so the three tuning values below carry no literal of their own.
-	const RenderConfig& cfg = ctx.Settings();
+	const RenderConfig& cfg = ctx.Frame().Settings();
 
 	WriteDescriptors(fi, extent, cache);
 

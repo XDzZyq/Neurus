@@ -8,6 +8,7 @@
 #include "../PipelineBuilder.h"
 #include "RenderCache.h"
 #include "RenderContext.h"
+#include "RenderFrameSnapshot.h"
 #include "Image.h"
 #include "render/Barrier.h"
 #include "core/RenderConfig.h"
@@ -286,27 +287,27 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	PassStats stats{};
 
 	// A frame recorded before a scene exists is legal, and this pass
-	// dereferences `scene` below (light_list, env_list), so the check belongs
-	// here rather than at each use.
-	if (!ctx.HasScene())
+	// dereferences the frame's lights and environment below, so the check
+	// belongs here rather than at each use.
+	const RenderFrameSnapshot& frame = ctx.Frame();
+	if (!frame.HasScene())
 	{
 		NEURUS_LOG("[LightingPass] No scene, skipping");
 		return stats;
 	}
-	const Scene* scene = ctx.scene;
 
-	// The viewing camera comes from the context, never from the Scene: the
-	// editor injects the camera it wants rendered. Re-deriving it here would
-	// split this pass's invProjView from the CameraGPU the vertex stage used.
-	const Camera* cam = ctx.camera;
-	if (!cam)
+	// The viewing camera comes from the frame snapshot, never from the Scene:
+	// the editor publishes the camera it wants rendered. Re-deriving it here
+	// would split this pass's invProjView from the CameraGPU the vertex stage
+	// used.
+	if (!frame.HasCamera())
 	{
 		NEURUS_LOG("[LightingPass] No camera in RenderContext, skipping");
 		return stats;
 	}
-	const glm::vec3 cameraPos = cam->GetPosition();
-	const glm::mat4 viewMatrix = cam->GetViewMatrix();
-	const glm::mat4 invProjView = glm::inverse(cam->GetProjectionMatrix() * cam->GetViewMatrix());
+	const glm::vec3 cameraPos = frame.camera.position;
+	const glm::mat4 viewMatrix = frame.camera.view;
+	const glm::mat4 invProjView = glm::inverse(frame.camera.projection * frame.camera.view);
 	const vk::Extent2D renderExtent{ctx.width, ctx.height};
 	const uint32_t frameIndex = ctx.frameIndex;
 
@@ -315,7 +316,7 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	// IBL cubemap descriptors (bindings 8-9).
 	{
 		DescriptorSet& dstSet = p_descriptorSets[frameIndex];
-		const bool hasEnv = !scene->env_list.empty();
+		const bool hasEnv = frame.HasEnvironment();
 
 		// Try to write real environment cubemap descriptors
 		bool wroteIrradiance = false;
@@ -323,8 +324,11 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 
 		if (hasEnv)
 		{
-			auto& env = scene->env_list.begin()->second;
-			const EnvironmentGPU* envGPU = cache.GetEnvironmentGPU(env->GetObjectID());
+			// The snapshot's producer picked this environment by lowest UID, so
+			// the same scene lights identically every run; it is authoritative
+			// over any walk of the Scene's unordered_map, whose first element
+			// a rehash is free to change.
+			const EnvironmentGPU* envGPU = cache.GetEnvironmentGPU(frame.environmentId);
 
 			if (envGPU && envGPU->diffuseTexture && envGPU->diffuseTexture->GetImage())
 			{
@@ -452,10 +456,10 @@ PassStats LightingPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 			pc.view[i] = vm[i];
 		}
 
-		pc.iblEnabled = !scene->env_list.empty() ? 1 : 0;
+		pc.iblEnabled = frame.HasEnvironment() ? 1 : 0;
 
 		// Transparent background (checkerboard).
-		pc.transEnabled = ctx.Settings().r_transparent ? 1 : 0;
+		pc.transEnabled = frame.Settings().r_transparent ? 1 : 0;
 
 		// Copy inverse(proj * view) matrix for skybox background ray
 		const float* ipv = &invProjView[0][0];

@@ -30,7 +30,7 @@
  *   PublishActiveCamera(), not recomputed per query, so a test that toggles
  *   activation by hand has to name the frame boundary (PublishFrame() below).
  *
- * No GPU and no Vulkan: `Editor(nullptr, nullptr)` skips every upload path. The
+ * No GPU and no Vulkan: `Editor(nullptr)` skips every upload path. The
  * starter assets are CPU-side loads resolved against the CWD, which CTest pins
  * to the build dir (res/ is copied there by a POST_BUILD step).
  */
@@ -50,7 +50,7 @@
 #include "editor/Editor.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/viewport/EditorViewport.h"
-#include "render/RenderContext.h"
+#include "render/RenderFrameSnapshot.h"
 #include "scene/Camera.h"
 #include "scene/Scene.h"
 
@@ -176,7 +176,7 @@ void RewriteKey(const std::string& path, const std::string& from, const std::str
  */
 TEST(ViewportCameraTest, ViewportCameraIsPooledButNotSceneContent)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	const EditorViewport& vp = editor.GetViewport();
@@ -205,7 +205,7 @@ TEST(ViewportCameraTest, ViewportCameraIsPooledButNotSceneContent)
  */
 TEST(ViewportCameraTest, ViewportCameraIsSeededWithAUsablePose)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.NewScene(); // no content needed: this is the viewport camera alone
 
 	const Camera* cam = editor.GetViewport().ViewportCamera();
@@ -228,7 +228,7 @@ TEST(ViewportCameraTest, ViewportCameraIsSeededWithAUsablePose)
  */
 TEST(ViewportCameraTest, RepeatedNewScene_RebuildsTheViewportCamera)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 
 	int previousUid = 0;
 	for (int i = 0; i < 3; ++i)
@@ -256,7 +256,7 @@ TEST(ViewportCameraTest, RepeatedNewScene_RebuildsTheViewportCamera)
  */
 TEST(ViewportCameraTest, DeletingEverySceneCamera_LeavesAWorkingViewCamera)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	Scene& scene = editor.GetScene();
@@ -285,7 +285,7 @@ TEST(ViewportCameraTest, DeletingEverySceneCamera_LeavesAWorkingViewCamera)
  */
 TEST(ViewportCameraTest, ActivationSwitchesTheViewAndDeactivationRestoresThePose)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	// Stand in for the user having orbited: a pose the seeded default is not.
@@ -317,7 +317,7 @@ TEST(ViewportCameraTest, ActivationSwitchesTheViewAndDeactivationRestoresThePose
  */
 TEST(ViewportCameraTest, SelectingASceneCameraDoesNotChangeTheView)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
 	Scene& scene = editor.GetScene();
@@ -354,7 +354,7 @@ TEST(ViewportCameraTest, ViewportCameraSurvivesSaveAndReopen)
 	int savedUid = 0;
 
 	{
-		Editor editor(nullptr, nullptr);
+		Editor editor(nullptr);
 		NewProject(editor);
 		ASSERT_NE(editor.GetViewport().ViewportCamera(), nullptr);
 		editor.GetViewport().ViewportCamera()->SetPosition(pose); // as if orbited
@@ -362,7 +362,7 @@ TEST(ViewportCameraTest, ViewportCameraSurvivesSaveAndReopen)
 		SaveProject(tmp.path, editor);
 	}
 
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor); // a document is already open when File > Open runs
 	ASSERT_NE(editor.GetViewport().CameraID(), savedUid)
 		<< "precondition: a different camera";
@@ -407,7 +407,7 @@ TEST(ViewportCameraTest, LegacyEditorCamUidKey_StillRestoresTheSavedCamera)
 	int savedUid = 0;
 
 	{
-		Editor editor(nullptr, nullptr);
+		Editor editor(nullptr);
 		NewProject(editor);
 		editor.GetViewport().ViewportCamera()->SetPosition(pose);
 		savedUid = editor.GetViewport().CameraID();
@@ -417,7 +417,7 @@ TEST(ViewportCameraTest, LegacyEditorCamUidKey_StillRestoresTheSavedCamera)
 	// Exactly what a file from before the rename contains.
 	RewriteKey(tmp.path, "viewportCamUid", "editorCamUid");
 
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 	ASSERT_NE(editor.GetViewport().CameraID(), savedUid);
 	LoadProject(tmp.path, editor);
@@ -439,7 +439,7 @@ TEST(ViewportCameraTest, ProjectWithoutTheSavedUid_MintsAFreshViewportCamera)
 	TempFile tmp("test_viewport_camera_legacy.neurus.json");
 
 	{
-		Editor editor(nullptr, nullptr);
+		Editor editor(nullptr);
 		NewProject(editor);
 		project::Project proj;
 		proj.Register<project::ResourceComponent>(editor.GetResourceManager());
@@ -448,7 +448,7 @@ TEST(ViewportCameraTest, ProjectWithoutTheSavedUid_MintsAFreshViewportCamera)
 		proj.Save(tmp.path); // no EditorComponent: the node never gets written
 	}
 
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 	LoadProject(tmp.path, editor);
 
@@ -472,7 +472,7 @@ TEST(ViewportCameraTest, CameraLessProjectLoads_WithNothingInjected)
 	TempFile tmp("test_viewport_camera_nocam.neurus.json");
 
 	{
-		Editor editor(nullptr, nullptr);
+		Editor editor(nullptr);
 		NewProject(editor);
 		Scene& scene = editor.GetScene();
 		while (!scene.cam_list.empty())
@@ -480,7 +480,7 @@ TEST(ViewportCameraTest, CameraLessProjectLoads_WithNothingInjected)
 		SaveProject(tmp.path, editor);
 	}
 
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 	ASSERT_FALSE(editor.GetScene().cam_list.empty()) << "precondition: the starter camera";
 	LoadProject(tmp.path, editor);
@@ -508,7 +508,7 @@ TEST(ViewportCameraTest, CameraLessProjectLoads_WithNothingInjected)
  */
 TEST(ViewportCameraTest, ResizeFramesOnlyTheActiveViewportCamera)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.Initialize();
 	NewProject(editor);
 
@@ -536,7 +536,7 @@ TEST(ViewportCameraTest, ResizeFramesOnlyTheActiveViewportCamera)
  */
 TEST(ViewportCameraTest, ResizeFramesOnlyTheActivatedSceneCamera)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.Initialize();
 	NewProject(editor);
 
@@ -567,7 +567,7 @@ TEST(ViewportCameraTest, ResizeFramesOnlyTheActivatedSceneCamera)
  */
 TEST(ViewportCameraTest, ActivationFramesTheSceneCameraToTheCurrentViewport)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.Initialize();
 	NewProject(editor);
 
@@ -587,20 +587,28 @@ TEST(ViewportCameraTest, ActivationFramesTheSceneCameraToTheCurrentViewport)
 }
 
 /**
- * @test RenderContext is handed the same published camera the viewport uses, so
- *       the renderer and the editor cannot disagree about which camera the frame
- *       belongs to.
+ * @test The frame snapshot carries the same published camera the viewport uses,
+ *       so the renderer and the editor cannot disagree about which camera the
+ *       frame belongs to.
  */
-TEST(ViewportCameraTest, RenderContextReceivesTheActiveCamera)
+TEST(ViewportCameraTest, SnapshotReceivesTheActiveCamera)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	NewProject(editor);
 
-	RenderContext renderCtx{};
-	editor.UpdateRenderContext(renderCtx);
+	RenderFrameSnapshot snapshot;
+	editor.BuildSnapshot(snapshot);
 
-	ASSERT_NE(renderCtx.camera, nullptr);
-	EXPECT_EQ(renderCtx.camera, editor.GetViewport().GetCamera());
+	const Camera* published = editor.GetViewport().GetCamera();
+	ASSERT_NE(published, nullptr);
+	ASSERT_TRUE(snapshot.hasCamera);
+
+	const glm::vec3 position = published->GetPosition();
+	EXPECT_FLOAT_EQ(snapshot.camera.position.x, position.x);
+	EXPECT_FLOAT_EQ(snapshot.camera.position.y, position.y);
+	EXPECT_FLOAT_EQ(snapshot.camera.position.z, position.z);
+	EXPECT_FLOAT_EQ(snapshot.camera.width, published->cam_w);
+	EXPECT_FLOAT_EQ(snapshot.camera.height, published->cam_h);
 }
 
 /**
@@ -610,7 +618,7 @@ TEST(ViewportCameraTest, RenderContextReceivesTheActiveCamera)
  */
 TEST(ViewportCameraTest, ZeroResizeIsIgnored)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	editor.Initialize();
 	editor.NewScene();
 

@@ -1,6 +1,7 @@
 #include "GPUBuffer.h"
 
 #include "render/Barrier.h"
+#include "render/SharedQueue.h"
 #include "core/Log.h"
 
 #include <stdexcept>
@@ -14,12 +15,12 @@ namespace neurus {
 
 GPUBuffer::GPUBuffer(const vk::raii::Device& device,
                      const vk::raii::PhysicalDevice& physicalDevice,
-                     vk::Queue queue,
+                     SharedQueue& queue,
                      uint32_t queueFamilyIndex,
                      vk::DeviceSize size,
                      vk::BufferUsageFlags usageFlags,
                      const char* debugName)
-	: b_queue(queue)
+	: b_queue(&queue)
 	, b_queueFamilyIndex(queueFamilyIndex)
 {
 	createBuffer(device, physicalDevice,
@@ -96,7 +97,7 @@ void GPUBuffer::Unmap()
 	// it to ShaderRead/ShaderWrite on first use.
 	b_state = BufferState::TransferDst;
 
-	b_staging->EndStaging(b_queue);
+	b_staging->EndStaging(*b_queue);
 }
 
 } // namespace neurus

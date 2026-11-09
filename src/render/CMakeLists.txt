@@ -64,9 +64,32 @@ add_library(neurus_render STATIC
 	RenderCache.cpp
 	RenderContext.h
 	RenderContext.cpp
+	RenderFrameSnapshot.h
+	RenderFrameSnapshot.cpp
+	FrameMailbox.h
+	FrameMailbox.cpp
+	PublishedFrame.h
+	SharedQueue.h
+	SharedQueue.cpp
+	FramesInFlight.h
+	TimelineSemaphore.h
+	TimelineSemaphore.cpp
+	requests/RenderRequests.h
+	requests/RenderRequests.cpp
+	requests/RenderRequestSink.h
+	requests/RenderRequestExecutor.h
+	requests/RenderRequestExecutor.cpp
+	requests/RenderRequestProcessor.h
+	requests/RenderRequestProcessor.cpp
+	RenderControl.h
+	IFrameRenderer.h
+	RenderThread.h
+	RenderThread.cpp
 	overlay/OverlayGeometry.h
 	overlay/DebugDrawList.h
 	overlay/GizmoDrawList.h
+	overlay/OverlayEngine.h
+	overlay/OverlayEngine.cpp
 	ProfilingData.h
 	GPUProfiler.h
 	GPUProfiler.cpp

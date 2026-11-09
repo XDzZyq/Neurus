@@ -8,7 +8,7 @@
  * HistoryComponent, reopens it, and proves the restored entry keeps its label,
  * its concrete type and its undo, which rewinds all three writes together.
  *
- * No GPU and no Vulkan: `Editor(nullptr, nullptr)` skips every upload path. The
+ * No GPU and no Vulkan: `Editor(nullptr)` skips every upload path. The
  * script path is relative to the build tree's `testdata/` mirror, which CTest
  * pins as the working directory (the POST_BUILD step copies `test/scripts/`
  * there).
@@ -104,7 +104,7 @@ void LoadProject(const std::string& path, Editor& editor)
  */
 TEST(ScriptFileRoundTripTest, HistoryLabelAndUndoSurviveProjectSaveAndLoad)
 {
-	Editor editor(nullptr, nullptr);
+	Editor editor(nullptr);
 	// Subscribes the Editor's own handlers and every controller, ScriptController
 	// and ObjectController included. Without it a script write reaches no handler,
 	// so nothing mutates and no undo entry is recorded.

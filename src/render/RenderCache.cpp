@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <utility>
 
 namespace neurus {
 
@@ -112,7 +113,7 @@ Image& RenderCache::GetShadowIntensityArray(const vk::Extent2D extent)
 	return *rc_shadowIntensityArray;
 }
 
-uint32_t RenderCache::GetShadowIntensityLayer(const int lightUID, const vk::Extent2D /*extent*/)
+std::optional<uint32_t> RenderCache::GetShadowIntensityLayer(const int lightUID, const vk::Extent2D /*extent*/)
 {
 	// Fast path: the shadow index map is always in sync with the SSBO's
 	// shadowMapIndex field and the current visibility state.
@@ -127,10 +128,10 @@ uint32_t RenderCache::GetShadowIntensityLayer(const int lightUID, const vk::Exte
 	const uint32_t layer = static_cast<uint32_t>(rc_uidToShadowLayer.size());
 	if (layer >= MAX_SHADOW_LAYERS)
 	{
-		NEURUS_ERR("[RenderCache] Shadow intensity layer overflow: lightUID="
-		           << lightUID << " exceeds MAX_SHADOW_LAYERS=" << MAX_SHADOW_LAYERS);
-		assert(false && "MAX_SHADOW_LAYERS exceeded");
-		return 0;
+		// More shadow casters than layers is a normal user state: UpdateLighting
+		// leaves the extras at shadowMapIndex = -1, so the shader applies no
+		// shadow for them. The caller skips the light; no log per frame.
+		return std::nullopt;
 	}
 
 	rc_uidToShadowLayer[lightUID] = layer;
@@ -144,10 +145,14 @@ Image* RenderCache::GetShadowIntensityArray() const
 	return rc_shadowIntensityArray.get();
 }
 
-uint32_t RenderCache::GetShadowIntensityLayerIndex(const int lightUID) const
+std::optional<uint32_t> RenderCache::GetShadowIntensityLayerIndex(const int lightUID) const
 {
 	const auto it = rc_uidToShadowLayer.find(lightUID);
-	return (it != rc_uidToShadowLayer.end()) ? it->second : 0;
+	if (it == rc_uidToShadowLayer.end())
+	{
+		return std::nullopt;
+	}
+	return it->second;
 }
 
 std::vector<int> RenderCache::GetShadowMapUIDs() const
@@ -181,29 +186,36 @@ bool RenderCache::HasAttachment(const AttachmentName name) const
 }
 
 // ---------------------------------------------------------------------------
-// Mesh GPU resources (query-only)
+// Mesh GPU resources (refcounted table, copy on write)
 // ---------------------------------------------------------------------------
-
-MeshGPU* RenderCache::GetMeshGPU(const int objectId)
-{
-	auto it = rc_meshGPUs.find(objectId);
-	return (it != rc_meshGPUs.end()) ? &it->second : nullptr;
-}
 
 const MeshGPU* RenderCache::GetMeshGPU(const int objectId) const
 {
-	auto it = rc_meshGPUs.find(objectId);
-	return (it != rc_meshGPUs.end()) ? &it->second : nullptr;
+	const auto it = rc_meshGPUs->find(objectId);
+	return (it != rc_meshGPUs->end()) ? it->second.get() : nullptr;
+}
+
+std::shared_ptr<const MeshTable> RenderCache::Meshes() const
+{
+	return rc_meshGPUs;
 }
 
 void RenderCache::RemoveMeshGPU(const int objectId)
 {
-	rc_meshGPUs.erase(objectId);
+	// Nothing to release and nothing to copy for an id that was never there.
+	if (rc_meshGPUs->find(objectId) == rc_meshGPUs->end())
+		return;
+
+	auto table = std::make_shared<MeshTable>(*rc_meshGPUs);
+	table->erase(objectId);
+	rc_meshGPUs = std::move(table);
 }
 
 void RenderCache::UseMeshGPU(const int objectId, MeshGPU meshGPU)
 {
-	rc_meshGPUs[objectId] = std::move(meshGPU);
+	auto table = std::make_shared<MeshTable>(*rc_meshGPUs);
+	(*table)[objectId] = std::make_shared<const MeshGPU>(std::move(meshGPU));
+	rc_meshGPUs = std::move(table);
 	NEURUS_LOG("[RenderCache] Registered MeshGPU for objectId=" << objectId);
 }
 
@@ -215,8 +227,10 @@ void RenderCache::Clean()
 {
 	rc_attachments.clear();
 	rc_shadowIntensityArray.reset();
-	rc_meshGPUs.clear();
-	rc_environmentGPUs.clear();
+	// Fresh empty tables rather than clears: a frame still holding the old one
+	// keeps drawing from it until its fence is seen signalled.
+	rc_meshGPUs = std::make_shared<const MeshTable>();
+	rc_environmentGPUs = std::make_shared<const EnvironmentTable>();
 	rc_lightGPUs.clear();
 	rc_uidToShadowLayer.clear();
 	rc_lightingCache.reset();
@@ -225,8 +239,8 @@ void RenderCache::Clean()
 
 void RenderCache::RemoveSceneResources()
 {
-	rc_meshGPUs.clear();
-	rc_environmentGPUs.clear();
+	rc_meshGPUs = std::make_shared<const MeshTable>();
+	rc_environmentGPUs = std::make_shared<const EnvironmentTable>();
 	rc_lightGPUs.clear();
 	rc_uidToShadowLayer.clear();
 	rc_uidToSSBOIdx.clear();
@@ -250,29 +264,35 @@ void RenderCache::CleanScreenSpace()
 }
 
 // ---------------------------------------------------------------------------
-// Environment GPU resources (registration/query)
+// Environment GPU resources (refcounted table, copy on write)
 // ---------------------------------------------------------------------------
-
-EnvironmentGPU* RenderCache::GetEnvironmentGPU(const int envId)
-{
-	auto it = rc_environmentGPUs.find(envId);
-	return (it != rc_environmentGPUs.end()) ? &it->second : nullptr;
-}
 
 const EnvironmentGPU* RenderCache::GetEnvironmentGPU(const int envId) const
 {
-	auto it = rc_environmentGPUs.find(envId);
-	return (it != rc_environmentGPUs.end()) ? &it->second : nullptr;
+	const auto it = rc_environmentGPUs->find(envId);
+	return (it != rc_environmentGPUs->end()) ? it->second.get() : nullptr;
+}
+
+std::shared_ptr<const EnvironmentTable> RenderCache::Environments() const
+{
+	return rc_environmentGPUs;
 }
 
 void RenderCache::RemoveEnvironmentGPU(const int envId)
 {
-	rc_environmentGPUs.erase(envId);
+	if (rc_environmentGPUs->find(envId) == rc_environmentGPUs->end())
+		return;
+
+	auto table = std::make_shared<EnvironmentTable>(*rc_environmentGPUs);
+	table->erase(envId);
+	rc_environmentGPUs = std::move(table);
 }
 
 void RenderCache::UseEnvironmentGPU(const int envId, EnvironmentGPU envGPU)
 {
-	rc_environmentGPUs[envId] = std::move(envGPU);
+	auto table = std::make_shared<EnvironmentTable>(*rc_environmentGPUs);
+	(*table)[envId] = std::make_shared<const EnvironmentGPU>(std::move(envGPU));
+	rc_environmentGPUs = std::move(table);
 	NEURUS_LOG("[RenderCache] Registered EnvironmentGPU for envId=" << envId);
 }
 
@@ -341,6 +361,49 @@ void RenderCache::RemovePipeline(const int uid)
 // Lighting GPU resources
 // ---------------------------------------------------------------------------
 
+namespace
+{
+	/**
+	 * @brief The light dict split by kind, each entry keeping its UID.
+	 *
+	 * Both the full rebuild and the growth test key on this partition: the
+	 * rebuild builds its SSBO vectors from it, the growth test compares each
+	 * kind's count against the SSBO that rebuild would upload into. Splitting the
+	 * dict by hand in two places is how the two would drift apart.
+	 */
+	struct LightPartition
+	{
+		std::vector<std::pair<int, PointLightStruct>> points;
+		std::vector<std::pair<int, SunLightStruct>> suns;
+		std::vector<std::pair<int, SpotLightStruct>> spots;
+	};
+
+	LightPartition PartitionLights(
+		const std::unordered_map<int,
+			std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict)
+	{
+		LightPartition partition;
+
+		for (const auto& [uid, lightVariant] : lightDict)
+		{
+			if (const auto* point = std::get_if<PointLightStruct>(&lightVariant))
+			{
+				partition.points.push_back({uid, *point});
+			}
+			else if (const auto* sun = std::get_if<SunLightStruct>(&lightVariant))
+			{
+				partition.suns.push_back({uid, *sun});
+			}
+			else if (const auto* spot = std::get_if<SpotLightStruct>(&lightVariant))
+			{
+				partition.spots.push_back({uid, *spot});
+			}
+		}
+
+		return partition;
+	}
+} // namespace
+
 void RenderCache::UpdateLighting(const std::unordered_map<int,
                                  std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>& lightDict)
 {
@@ -350,26 +413,11 @@ void RenderCache::UpdateLighting(const std::unordered_map<int,
 	rc_uidToSSBOIdx.clear();
 	rc_uidToShadowLayer.clear();
 
-	// --- Separate and sort by UID for deterministic SSBO ordering ---
-	std::vector<std::pair<int, PointLightStruct>> pointEntries;
-	std::vector<std::pair<int, SunLightStruct>> sunEntries;
-	std::vector<std::pair<int, SpotLightStruct>> spotEntries;
-
-	for (const auto& [uid, lightVariant] : lightDict)
-	{
-		if (std::holds_alternative<PointLightStruct>(lightVariant))
-		{
-			pointEntries.push_back({uid, std::get<PointLightStruct>(lightVariant)});
-		}
-		else if (std::holds_alternative<SunLightStruct>(lightVariant))
-		{
-			sunEntries.push_back({uid, std::get<SunLightStruct>(lightVariant)});
-		}
-		else if (std::holds_alternative<SpotLightStruct>(lightVariant))
-		{
-			spotEntries.push_back({uid, std::get<SpotLightStruct>(lightVariant)});
-		}
-	}
+	// --- Separate by kind; the SSBO order is UID-sorted for determinism ---
+	LightPartition partition = PartitionLights(lightDict);
+	std::vector<std::pair<int, PointLightStruct>>& pointEntries = partition.points;
+	std::vector<std::pair<int, SunLightStruct>>& sunEntries = partition.suns;
+	std::vector<std::pair<int, SpotLightStruct>>& spotEntries = partition.spots;
 
 	std::sort(pointEntries.begin(), pointEntries.end(),
 	          [](const auto& a, const auto& b) { return a.first < b.first; });
@@ -446,10 +494,41 @@ void RenderCache::UpdateLighting(const std::unordered_map<int,
 	rc_lightingCache->UpdateSunLights(sunVec);
 	rc_lightingCache->UpdateSpotLights(spotVec);
 
+	const size_t lightCount = pointVec.size() + sunVec.size() + spotVec.size();
+	if (rc_uidToShadowLayer.size() < lightCount)
+	{
+		NEURUS_LOG("[RenderCache] " << (lightCount - rc_uidToShadowLayer.size())
+		           << " light(s) got no shadow layer (MAX_SHADOW_LAYERS="
+		           << MAX_SHADOW_LAYERS << "), they cast no shadow");
+	}
+
 	NEURUS_LOG("[RenderCache] UpdateLighting: " << pointVec.size()
 	           << " point lights, " << sunVec.size() << " sun lights, "
 	           << spotVec.size() << " spot lights, "
 	           << rc_uidToShadowLayer.size() << " shadow casters");
+}
+
+bool RenderCache::UpdateLightingReallocates(const std::unordered_map<int,
+                                            std::variant<PointLightStruct, SunLightStruct,
+                                                         SpotLightStruct>>& lightDict) const
+{
+	// No lighting storage means the rebuild asserts; nothing can be replaced.
+	if (!rc_lightingCache)
+		return false;
+
+	// ArrayBuffer::Upload resizes only when the count exceeds the capacity, and
+	// Resize is what destroys the old GPUBuffer. Equal or smaller counts write
+	// over the existing allocation, and a zero capacity has no buffer to
+	// destroy, so neither is a replacement.
+	const auto grows = [](const size_t count, const uint32_t capacity)
+	{
+		return capacity > 0 && static_cast<uint32_t>(count) > capacity;
+	};
+
+	const LightPartition partition = PartitionLights(lightDict);
+	return grows(partition.points.size(), rc_lightingCache->GetPointLightCapacity())
+	    || grows(partition.suns.size(), rc_lightingCache->GetSunLightCapacity())
+	    || grows(partition.spots.size(), rc_lightingCache->GetSpotLightCapacity());
 }
 
 void RenderCache::UpdateLight(int lightUID,
@@ -612,6 +691,17 @@ RenderCache::AttachmentConfig RenderCache::ConfigFor(const AttachmentName name)
 	case AttachmentName::FXAAOffsets:
 		return { vk::Format::eR16G16Sfloat,
 		         vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc, e2D };
+
+	// --- Overlay ---
+	// The overlay engine's output: the scene tail copied in (STORAGE write by
+	// the copy pass, then LOAD_OP_LOAD color writes by the overlay rasters),
+	// sampled by nothing but read back by the screenshot path, and transferred
+	// out to the swapchain - hence storage + color attachment + transfer src,
+	// with transfer dst so a copy into it never needs a new image.
+	case AttachmentName::OverlayOutput:
+		return { vk::Format::eR16G16B16A16Sfloat,
+		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage |
+		             vk::ImageUsageFlagBits::eTransferDst, e2D };
 	}
 
 	throw std::invalid_argument("RenderCache::ConfigFor: unknown attachment name");
@@ -640,6 +730,7 @@ const char* AttachmentNameToString(const AttachmentName name)
 	case AttachmentName::ComposedOutput:    return "ComposedOutput";
 	case AttachmentName::FXAAOutput:        return "FXAAOutput";
 	case AttachmentName::FXAAOffsets:       return "FXAAOffsets";
+	case AttachmentName::OverlayOutput:     return "OverlayOutput";
 	}
 	return "Unknown";
 }

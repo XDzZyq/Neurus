@@ -1,6 +1,7 @@
 #include "StagingBuffer.h"
 
 #include "core/Log.h"
+#include "render/SharedQueue.h"
 
 #include <stdexcept>
 #include <cstring>
@@ -85,14 +86,13 @@ vk::raii::CommandBuffer& StagingBuffer::BeginStaging(uint32_t queueFamilyIndex)
 	return cmd;
 }
 
-void StagingBuffer::EndStaging(vk::Queue queue)
+void StagingBuffer::EndStaging(SharedQueue& queue)
 {
 	auto& cmd = (*b_cmdBufs)[0];
 	cmd.end();
 
 	const vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmd));
-	queue.submit(submitInfo);
-	queue.waitIdle();
+	queue.SubmitAndWait(submitInfo);
 }
 
 } // namespace neurus

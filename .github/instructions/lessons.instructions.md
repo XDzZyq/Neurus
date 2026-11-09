@@ -38,9 +38,40 @@ the **rule** that prevents it. Design detail behind these lives in
   consumer wanted, so the consumer's barrier covered no writes. Rule: a pass
   transitions the images it is about to *use* and leaves its own outputs in its
   own write state (`ShaderWrite`); the consumer orders against it.
+- **Two threads submit to the same queue: a validation threading error, or a
+  MoltenVK crash inside `vkQueueSubmit`.** Vulkan requires external
+  synchronisation on a queue handle, and two wrappers around the same handle
+  give it two mutexes - the same as no mutex. Rule: reach a queue only through
+  `SharedQueue`, one per handle (`VulkanContext` hands out the same object when
+  graphics and transfer return one `VkQueue`); never call a raw `vk::Queue`
+  method or `device.waitIdle()` directly.
 - **A discard transition hazards against the previous reader.**
   `Undefined`/`Invalid` must use `eAllCommands`, never `eTopOfPipe`, as a source
   stage.
+
+## Renderer threading and resource lifetime
+
+- **One frame drawn with lights or meshes that do not match its snapshot.** A
+  request that ran ahead of its snapshot changes the GPU state the frame draws
+  with (a light SSBO, a mesh entry) while the snapshot still describes the older
+  state, so the image disagrees with the panel and the edit can be undone by the
+  next draw. Rule: requests reach the renderer only with their published frame -
+  `RenderThread::Post` appends to the posting queue and `Publish` moves it into
+  the frame it hands over - so never execute a request from `Post`. A frame
+  displaced before the render thread took it, or dropped by `Invalidate()`, hands
+  its requests to the next publish in posting order, so nothing is lost and no
+  request runs against an older snapshot than its own tick.
+- **Use-after-free of a mesh or an environment entry that is replaced or
+  removed.** Regenerating an environment over a resident entry, or dropping the
+  scene's entries, would free GPU buffers a submitted frame still reads. A mesh
+  upload over a resident id is a no-op (`UploadMeshRequest` returns early), so a
+  mesh entry is only ever removed with the scene. Rule: never write an uploaded
+  `MeshGPU`/`EnvironmentGPU`. Install a new table entry instead
+  (`RenderCache::UseMeshGPU` / `UseEnvironmentGPU` install a fresh
+  `shared_ptr<const MeshTable>`/`EnvironmentTable`) and let each frame keep the
+  table it drew with until its fence is seen signalled. That is why those handlers
+  need no drain, while a pipeline replace, light-SSBO growth and the scene drop
+  still do.
 
 ## Correctness and "do not cheat yourself"
 
@@ -60,9 +91,16 @@ the **rule** that prevents it. Design detail behind these lives in
 - **G-Buffer attachments are uniform everywhere.** The object is too large or the
   camera too far - scale vertices (`pos * 0.25f`) or move the camera back.
 - **A pass draws nothing and reports no error.** A test that drives a pass
-  directly must publish the camera first
-  (`VulkanTestShared::PublishSceneCamera`), and a scene camera must be activated
-  (`scene.ActivateCamera(...)`) - no camera is active by default.
+  directly must publish a frame first
+  (`VulkanTestShared::PublishFrame(cache, ctx, out, scene, ...)`) from
+  caller-owned `out` that outlives `ctx`, and a scene camera must be activated
+  (`scene.ActivateCamera(...)`) - no camera is active by default. Two ways to get
+  silence instead of a compile error: publish no frame and every pass reads the
+  empty `ctx.Frame()` - zero draws, black image; or publish a frame with no
+  active camera and the lighting and shadow passes skip on
+  `ctx.Frame().HasCamera()`. Build the snapshot through the production
+  `Editor::BuildSnapshot()`, never a hand-rolled one, or the suite validates
+  passes against a frame production never builds.
 - **Shadow depth is off by 2x / clip-space Z is wrong.** Define
   `GLM_FORCE_DEPTH_ZERO_TO_ONE` before any GLM include.
 - **Shadow intensity is zero everywhere.** Enable comparison mode on the shadow
@@ -70,6 +108,12 @@ the **rule** that prevents it. Design detail behind these lives in
 - **Push constants or SSBO data read as garbage.** Keep the C++ struct
   byte-for-byte with the GLSL declaration; `static_assert` the size and check
   `offsetof` for every field.
+- **Metal logs `Impacting Interactivity` and loses the device under `-j4`.**
+  The GPU watchdog reclaims a process the window server cannot service for
+  seconds, and a validation-instrumented four-way run can submit enough GPU work
+  at once to cross that line. Rule: keep each GPU submit short; a rerun that
+  passes is the accepted evidence for an `UploadEnvironment_*` watchdog hit, not
+  a longer timeout or a smaller test set.
 
 ## Temporal accumulation
 

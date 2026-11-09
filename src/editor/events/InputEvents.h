@@ -70,6 +70,19 @@ struct ViewportFocusLost
 };
 
 /**
+ * @brief The viewport's native window was exposed (paint, focus change, ...).
+ *
+ * Qt repaints the widget wrapper but cannot redraw the presented image, and the
+ * renderer presents only when it has work - so a converged viewport would stay
+ * black after a focus change until something else dirtied it. The Editor answers
+ * by marking the overlays stale, which makes the renderer draw over the image it
+ * already has and present again.
+ */
+struct ViewportExposed
+{
+};
+
+/**
  * @brief Pure UI->Editor intent: user clicked a scene-object row in the Outliner.
  *
  * Carries the object's integer UID only.

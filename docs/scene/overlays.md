@@ -38,18 +38,18 @@ The debug-domain names `DebugFlag`, `DebugSegment`, `DebugPointSprite` and `Debu
 - Draw order matters: with depth testing off and alpha-over blending, whatever is submitted last lands on top, so segments are drawn before points and the pivot dot sits above the axis line.
 - `Empty()` lets the pass skip; `Clear()` keeps capacity.
 
-The list is published **unconditionally** through `RenderContext::gizmoDraw` - interaction feedback is not hideable by a debug toggle - so during normal operation the pointer is non-null and *empty* rather than null when nothing is armed, and the pass early-outs on `Empty()`.
+The list is published **unconditionally** on the frame snapshot's `gizmoDraw` - interaction feedback is not hideable by a debug toggle - so it is always present and simply *empty* rather than absent when nothing is armed, and the pass early-outs on `Empty()`.
 
 ## Why two containers
 
-The two have opposite lifetimes (scene-object lifetime versus one gesture) and opposite authoring rules (retained, revision-gated, toggleable versus rebuilt every move and never hideable). Sharing one payload would mean one revision counter and one enable flag serving both, which is exactly the coupling that made a drag re-upload every scene debug primitive. What they legitimately share is the record layout and therefore the shader program. Both containers live in the Vulkan-free `render/overlay/` tier; `RenderContext` forward-declares them.
+The two have opposite lifetimes (scene-object lifetime versus one gesture) and opposite authoring rules (retained, revision-gated, toggleable versus rebuilt every move and never hideable). Sharing one payload would mean one revision counter and one enable flag serving both, which is exactly the coupling that made a drag re-upload every scene debug primitive. What they legitimately share is the record layout and therefore the shader program. Both containers live in the Vulkan-free `render/overlay/` tier, and `RenderFrameSnapshot` carries one of each by value.
 
 ## Publication and null policy
 
-`RenderContext` (`render/RenderContext.h`) carries `const DebugDrawList* debugDraw` and `const GizmoDrawList* gizmoDraw` as typed forward-declared pointers, produced once per frame by `Editor::UpdateRenderContext()`:
+Both lists travel as values on `RenderFrameSnapshot` (`render/RenderFrameSnapshot.h`), copied once per frame by `Editor::BuildSnapshot()` rather than borrowed through a pointer. A pass reads them as `ctx.Frame().debugDraw` and `ctx.Frame().gizmoDraw`:
 
-- `debugDraw` is null when `r_debug_draw` is off or when no scene is published; consumers must check it. See [Render Config](../core/render-config.md).
-- `gizmoDraw` is published unconditionally and checked the same way.
-- Both pointers are borrowed and frame-scoped: valid only for the frame that produced them, never stored across frames.
+- The debug list is gated by `r_debug_draw`: when the toggle is off (or no scene is published) the producer leaves `hasDebugDraw` false and the list empty, so `ctx.Frame().HasDebugDraw()` is false and `DebugPass` draws nothing. The gate decides whether the overlay is published at all, never the RenderGraph topology - the pass stays in the graph unconditionally. See [Render Config](../core/render-config.md).
+- The gizmo list is published unconditionally - interaction feedback is not a hideable debug visualization - so it is always present and empty when nothing is armed; the pass early-outs on `Empty()`.
+- Neither list is borrowed: the frame owns its copy, so a reader may keep it while the Editor edits on.
 
 See [Data Flow](../architecture/data-flow.md).

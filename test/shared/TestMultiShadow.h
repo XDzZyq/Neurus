@@ -45,6 +45,9 @@
 #include <vector>
 
 namespace neurus {
+
+class SharedQueue;
+
 namespace test {
 
 /**
@@ -97,7 +100,7 @@ struct MultiShadowResources
 inline MultiShadowResources LoadMultiShadow(
 	const vk::raii::Device& device,
 	const vk::raii::PhysicalDevice& physicalDevice,
-	vk::Queue graphicsQueue,
+	neurus::SharedQueue& graphicsQueue,
 	uint32_t queueFamilyIndex,
 	int numLights = 3,
 	LightType lightType = LightType::POINTLIGHT)

@@ -231,8 +231,9 @@ Design:
   `CameraResizeEvent` that frames it for the viewport.
 - GPU uploads are delegated to the Editor via `EditorEvents`
   (`LightGpuChanged`, `LightingRebuild`, `SceneModified`, `RenderResetEvent`,
-  `SceneObjectGpuUploadRequested`), which the Editor subscribes to and executes
-  against its `DeferredRenderer`/`UploadManager`.
+  `SceneObjectGpuUploadRequested`), which the Editor subscribes to and turns into
+  `RenderRequest` values posted to the `DeferredRenderer`; the renderer executes
+  them at its per-frame drain.
 
 ### Import/Add split and the delete path
 

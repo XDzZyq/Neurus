@@ -39,6 +39,9 @@
 #include <vector>
 
 namespace neurus {
+
+class SharedQueue;
+
 namespace test {
 
 /**
@@ -80,7 +83,7 @@ struct SimpleShadowResources
 inline SimpleShadowResources LoadSimpleShadow(
 	const vk::raii::Device& device,
 	const vk::raii::PhysicalDevice& physicalDevice,
-	vk::Queue graphicsQueue,
+	neurus::SharedQueue& graphicsQueue,
 	uint32_t queueFamilyIndex)
 {
 	SimpleShadowResources res;

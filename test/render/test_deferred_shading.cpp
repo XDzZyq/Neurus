@@ -93,7 +93,7 @@ protected:
 		// --- Render pass infrastructure (attachments created lazily) ---
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 		// --- Upload manager for CPU→GPU struct conversion ---
 
@@ -144,22 +144,24 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	VulkanTestShared::TransitionGbufferToColorAttachment(*m_renderCache, {kRenderWidth, kRenderHeight}, *this);
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	resources.scene->UseCamera(resources.camera);
 	resources.scene->ActivateCamera(resources.camera->GetObjectID());
 
+	// Snapshot storage must outlive ctx - the renderer half only; PublishFrame
+	// fills the Editor half and publishes the owned snapshot below.
+	RenderFrameSnapshot snapshot{};
 	RenderContext ctx{
-		.scene = resources.scene.get(),
-			.width = kRenderWidth, .height = kRenderHeight,
+		.width = kRenderWidth, .height = kRenderHeight,
 		.frameIndex = 0,
 	};
 
 	// --- Record geometry pass ---
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snapshot, resources.scene.get());
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
@@ -195,7 +197,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 
 		Image& attachment = m_renderCache->GetAttachment(name, {kRenderWidth, kRenderHeight});
 		const bool captured = Screenshot::CaptureAttachment(
-			*m_device, pd, m_queue, m_graphicsQueueFamily,
+			*m_device, pd, *m_queue, m_graphicsQueueFamily,
 			attachment, tmpPath);
 
 		ASSERT_TRUE(captured) << "Failed to capture attachment: "

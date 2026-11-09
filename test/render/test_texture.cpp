@@ -51,7 +51,7 @@ TEST_F(TextureTest, FromData_4x4_RGBA8_Valid)
 		texture = Texture::FromData(
 			*m_device,
 			PhysicalDevice(),
-			m_queue,
+			*m_queue,
 			m_graphicsQueueFamily,
 			kWidth,
 			kHeight,
@@ -94,7 +94,7 @@ TEST_F(TextureTest, FromData_2x2_HDR_Valid)
 		texture = Texture::FromData(
 			*m_device,
 			PhysicalDevice(),
-			m_queue,
+			*m_queue,
 			m_graphicsQueueFamily,
 			kWidth,
 			kHeight,
@@ -166,7 +166,7 @@ TEST_F(TextureTest, FromData_CustomSampler)
 		texture = Texture::FromData(
 			*m_device,
 			PhysicalDevice(),
-			m_queue,
+			*m_queue,
 			m_graphicsQueueFamily,
 			kSize,
 			kSize,

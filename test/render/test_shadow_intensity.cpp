@@ -50,6 +50,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <vector>
 
 using namespace neurus;
@@ -67,11 +68,11 @@ protected:
 		auto& pd = PhysicalDevice();
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
 		m_renderCache->SetLightingCache(
-		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily));
+		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 		m_geometryPass = std::make_unique<GeometryPass>(
 			*m_device, pd);
 		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
-			*m_device, pd, m_queue, m_graphicsQueueFamily,
+			*m_device, pd, *m_queue, m_graphicsQueueFamily,
 			ShadowDepthPass::kDefaultResolution);
 		m_shadowIntensityPass = std::make_unique<ShadowIntensityPass>(
 			*m_device, pd, 1u);
@@ -131,12 +132,12 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// Step 1: Load test scene
 	// -------------------------------------------------------------------
 	auto shadowRes = neurus::test::LoadSimpleShadow(
-		*m_device, pd, m_queue, m_graphicsQueueFamily);
+		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u);
 
 	// Pre-register GPU resources before pass recording
-	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
-	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *shadowRes.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	const auto& camera   = shadowRes.scene->cam_list.begin()->second;
 	const int   lightUID = shadowRes.scene->light_list.begin()->first;
@@ -160,18 +161,17 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// -------------------------------------------------------------------
 	// Step 2: One shared RenderContext for all three passes
 	// -------------------------------------------------------------------
+	RenderFrameSnapshot snap;
 	RenderContext ctx{};
 	ctx.width = renderExtent.width; ctx.height = renderExtent.height;
-	ctx.scene = shadowRes.scene.get();
 	const RenderConfig config = ShadowReferenceConfig();
-	ctx.config = &config;
 
 	// -------------------------------------------------------------------
 	// Step 3: Record all passes in a single command buffer
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		PublishSceneCamera(*m_renderCache, ctx);
+		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
 		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
 		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
@@ -182,7 +182,10 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// Step 4: Read back R8 shadow intensity from the layered array
 	// -------------------------------------------------------------------
 	auto& intensityArray = m_renderCache->GetShadowIntensityArray(renderExtent);
-	const uint32_t layer = m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+	const std::optional<uint32_t> layerOpt =
+		m_renderCache->GetShadowIntensityLayer(lightUID, renderExtent);
+	ASSERT_TRUE(layerOpt.has_value()) << "Light UID " << lightUID << " has no shadow intensity layer";
+	const uint32_t layer = *layerOpt;
 	const vk::DeviceSize bufSize = static_cast<vk::DeviceSize>(kRes) * kRes;
 	std::vector<uint8_t> u8ShadowData(kRes * kRes);
 	{

@@ -110,15 +110,15 @@ void VulkanContext::InitDevice()
 	ctx_graphicsQueueFamily = findGraphicsQueueFamily();
 	ctx_transferQueueFamily = findTransferQueueFamily();
 
+	NEURUS_LOG("[VulkanContext] uploads use the graphics queue family "
+	           << ctx_transferQueueFamily);
+
+	// One queue on purpose: uploads are synchronous on the render thread, so a
+	// second family for them buys no overlap, and the ownership transfers it
+	// would need are not recorded anywhere.
 	float graphicsPriority = 1.0f;
 	std::vector<vk::DeviceQueueCreateInfo> queueCIs;
 	queueCIs.push_back(vk::DeviceQueueCreateInfo({}, ctx_graphicsQueueFamily, 1, &graphicsPriority));
-
-	if (ctx_transferQueueFamily != ctx_graphicsQueueFamily)
-	{
-		float transferPriority = 0.5f;
-		queueCIs.push_back(vk::DeviceQueueCreateInfo({}, ctx_transferQueueFamily, 1, &transferPriority));
-	}
 
 	vk::PhysicalDeviceMultiviewFeatures multiviewFeature;
 	multiviewFeature.multiview = VK_TRUE;
@@ -138,9 +138,19 @@ void VulkanContext::InitDevice()
 	sync2.synchronization2 = VK_TRUE;
 	sync2.pNext = &demote;
 
+	// Timeline semaphores: the renderer signals one value per submitted frame, so
+	// the GPU's progress is a counter any thread can read - core in Vulkan 1.2,
+	// hence no extension string. Requested as a standalone feature struct: adding
+	// a PhysicalDeviceVulkan12Features next to the standalone
+	// DescriptorIndexingFeatures below would include the same feature twice
+	// (VUID-VkDeviceCreateInfo-pNext-02830).
+	vk::PhysicalDeviceTimelineSemaphoreFeatures timelineSemaphore;
+	timelineSemaphore.timelineSemaphore = VK_TRUE;
+	timelineSemaphore.pNext = &sync2;
+
 	vk::PhysicalDeviceDescriptorIndexingFeatures descriptorIndexing;
 	descriptorIndexing.descriptorBindingPartiallyBound = VK_TRUE;
-	descriptorIndexing.pNext = &sync2;
+	descriptorIndexing.pNext = &timelineSemaphore;
 
 	ctx_enabledFeatures = selectOptionalFeatures(pd);
 	std::vector<const char*> devExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
@@ -162,13 +172,32 @@ void VulkanContext::InitDevice()
 	ctx_device = std::make_unique<vk::raii::Device>(pd, devCI);
 
 	// Get transfer queue handle immediately (does not need present check)
-	ctx_transferQueue = ctx_device->getQueue(ctx_transferQueueFamily, 0);
+	ctx_transferQueueOwned = std::make_unique<SharedQueue>(
+		*ctx_device, ctx_device->getQueue(ctx_transferQueueFamily, 0),
+		ctx_transferQueueFamily);
+	ctx_transferQueue = ctx_transferQueueOwned.get();
 }
 
 void VulkanContext::InitQueue(const vk::raii::SurfaceKHR& surface)
 {
 	ctx_graphicsQueueFamily = findGraphicsQueueFamilyWithPresent(surface);
-	ctx_graphicsQueue = ctx_device->getQueue(ctx_graphicsQueueFamily, 0);
+	const vk::Queue graphicsHandle = ctx_device->getQueue(ctx_graphicsQueueFamily, 0);
+
+	// One wrapper per distinct handle: a single-family device (MoltenVK, a
+	// desktop-baseline profile) returns the same VkQueue for both families, and
+	// a second wrapper would guard that queue with a second mutex - which is the
+	// same as no mutex at all. Aliasing keeps one lock for both roles.
+	if (graphicsHandle == ctx_transferQueue->Handle())
+	{
+		ctx_graphicsQueue = ctx_transferQueue;
+		NEURUS_LOG("[VulkanContext] graphics and transfer share one VkQueue (one lock)");
+		return;
+	}
+
+	ctx_graphicsQueueOwned = std::make_unique<SharedQueue>(
+		*ctx_device, graphicsHandle, ctx_graphicsQueueFamily);
+	ctx_graphicsQueue = ctx_graphicsQueueOwned.get();
+	NEURUS_LOG("[VulkanContext] graphics and transfer use separate VkQueues (two locks)");
 }
 
 VulkanContext::~VulkanContext() {}
@@ -212,22 +241,18 @@ uint32_t VulkanContext::findGraphicsQueueFamilyWithPresent(const vk::raii::Surfa
 // findTransferQueueFamily
 // ---------------------------------------------------------------------------
 
+/**
+ * @brief The queue family uploads go through: the graphics family, always.
+ *
+ * Uploads run synchronously on the render thread, so a second queue buys no
+ * overlap: the copy is submitted and waited on inside the frame it belongs to,
+ * and the command buffer that consumes its result records graphics work. The
+ * separate-family path would also be wrong on its own terms - the images it
+ * writes are eExclusive with no queue-family ownership transfer recorded, and
+ * the upload barriers name fragment-shader stages a compute-only queue lacks.
+ */
 uint32_t VulkanContext::findTransferQueueFamily()
 {
-	auto& pd = ctx_physicalDevices[ctx_selectedDeviceIndex];
-	auto qf = pd.getQueueFamilyProperties();
-
-	// Prefer a dedicated transfer-only queue (eTransfer but not eGraphics).
-	for (uint32_t i = 0; i < (uint32_t)qf.size(); ++i)
-	{
-		if (qf[i].queueFlags & vk::QueueFlagBits::eTransfer &&
-		    !(qf[i].queueFlags & vk::QueueFlagBits::eGraphics))
-		{
-			return i;
-		}
-	}
-
-	// Fall back to the graphics queue family (graphics queues always support transfer).
 	return ctx_graphicsQueueFamily;
 }
 

@@ -1,0 +1,211 @@
+/**
+ * @file RenderRequestExecutor.cpp
+ * @brief RenderRequestExecutor implementation.
+ */
+
+#include "RenderRequestExecutor.h"
+
+#include "RenderCache.h"
+#include "UploadManager.h"
+
+#include "resources/EnvironmentGPU.h"
+#include "resources/LightGPU.h"
+#include "resources/MeshGPU.h"
+#include "resources/PipelineCache.h"
+
+#include "passes/GeometryPass.h"
+
+#include "asset/data/MeshData.h"
+#include "core/Log.h"
+
+#include <chrono>
+#include <utility>
+#include <variant>
+
+namespace neurus {
+
+RenderRequestExecutor::RenderRequestExecutor(std::function<void()> drainFrames,
+                                             RenderCache& cache,
+                                             UploadManager* uploader,
+                                             GeometryPass* geometryPass)
+	: m_drainFrames(std::move(drainFrames))
+	, m_cache(cache)
+	, m_uploader(uploader)
+	, m_geometryPass(geometryPass)
+{
+}
+
+// ---------------------------------------------------------------------------
+// Mesh upload
+// ---------------------------------------------------------------------------
+
+void RenderRequestExecutor::handle(const UploadMeshRequest& request)
+{
+	// Already resident: posting twice is harmless by design, so this is the
+	// common case, not an error.
+	if (m_cache.GetMeshGPU(request.objectId)) return;
+
+	if (!m_uploader)
+	{
+		if (!m_reportedNullUploaderMesh)
+		{
+			m_reportedNullUploaderMesh = true;
+			NEURUS_ERR("[RenderRequestExecutor] UploadMeshRequest with no UploadManager - skipping");
+		}
+		return;
+	}
+
+	// A null payload is the same error UploadManager reports for a mesh with no
+	// MeshData: name it and skip, never upload an empty slot.
+	if (!request.data)
+	{
+		NEURUS_ERR("[RenderRequestExecutor] UploadMeshRequest for objectId="
+		           << request.objectId << " has null MeshData - skipping");
+		return;
+	}
+
+	auto meshGPU = m_uploader->UploadMeshData(*request.data);
+	m_cache.UseMeshGPU(request.objectId, std::move(meshGPU));
+	NEURUS_LOG("[RenderRequestExecutor] Uploaded MeshGPU for objectId=" << request.objectId);
+}
+
+// ---------------------------------------------------------------------------
+// Light shadow-map allocation
+// ---------------------------------------------------------------------------
+
+void RenderRequestExecutor::handle(const CreateLightGpuRequest& request)
+{
+	// The use_shadow gate stays in the Editor (it reads the Scene); a request
+	// only reaches here for a shadow-casting light. Resident is a no-op.
+	if (m_cache.GetLightGPU(request.uid)) return;
+
+	if (!m_uploader)
+	{
+		if (!m_reportedNullUploaderLight)
+		{
+			m_reportedNullUploaderLight = true;
+			NEURUS_ERR("[RenderRequestExecutor] CreateLightGpuRequest with no UploadManager - skipping");
+		}
+		return;
+	}
+
+	auto lightGPU = m_uploader->UploadLight(request.uid, request.type);
+	m_cache.UseLightGPU(request.uid, std::move(lightGPU));
+	NEURUS_LOG("[RenderRequestExecutor] Created LightGPU for lightUID=" << request.uid);
+}
+
+// ---------------------------------------------------------------------------
+// Environment upload / IBL regeneration
+// ---------------------------------------------------------------------------
+
+void RenderRequestExecutor::handle(const UploadEnvironmentRequest& request)
+{
+	// Resident and not asked to regenerate: the idempotent scene-upload path,
+	// where regenerating cubemaps is the most expensive step to repeat.
+	const bool resident = m_cache.GetEnvironmentGPU(request.objectId) != nullptr;
+	if (resident && !request.regenerate) return;
+
+	if (!m_uploader)
+	{
+		if (!m_reportedNullUploaderEnv)
+		{
+			m_reportedNullUploaderEnv = true;
+			NEURUS_ERR("[RenderRequestExecutor] UploadEnvironmentRequest with no UploadManager - skipping");
+		}
+		return;
+	}
+
+	// Regenerating over a resident entry REPLACES it in the cache's table, but
+	// destroys nothing the GPU is reading: the cache installs a new table rather
+	// than mutating the old one, so the frames already submitted keep the old
+	// entry alive until their fences are seen signalled. That is why no drain is
+	// needed here. The upload that follows waits its own submit, so nothing else
+	// is touching the new cubemaps either.
+	//
+	// The bake runs synchronously on this thread, and nothing is drawn while it
+	// runs: the measured time is the viewport pause the request costs, not just
+	// a copy.
+	const auto bakeStart = std::chrono::steady_clock::now();
+	auto envGPU = m_uploader->UploadEnvironment(request.equirect);
+	// NEURUS_LOG drops its argument in Release, so the duration is only consumed
+	// by debug builds.
+	[[maybe_unused]] const auto bakeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now() - bakeStart);
+	m_cache.UseEnvironmentGPU(request.objectId, std::move(envGPU));
+	NEURUS_LOG("[RenderRequestExecutor] environment " << request.objectId << " uploaded in "
+	           << bakeMs.count() << " ms (regenerate=" << (request.regenerate ? "yes" : "no") << ")");
+}
+
+// ---------------------------------------------------------------------------
+// Lighting SSBO rewrite (full) / single-light rewrite
+// ---------------------------------------------------------------------------
+
+void RenderRequestExecutor::handle(const UpdateLightingRequest& request)
+{
+	// A rewrite that fits the existing buffers only overwrites memory a recorded
+	// frame may read, which is why it rides the drain's slot fence wait. Growth
+	// is different: ArrayBuffer::Upload resizes, and Resize destroys the old
+	// GPUBuffer that a submitted frame may still be reading. Drain the frames
+	// first, so the replacement happens with nothing recorded against the old
+	// buffer. A first allocation destroys nothing and is left alone, so this
+	// waits only when the light set actually outgrows its allocation.
+	if (m_cache.UpdateLightingReallocates(request.lights))
+		m_drainFrames();
+
+	m_cache.UpdateLighting(request.lights);
+}
+
+void RenderRequestExecutor::handle(const UpdateLightRequest& request)
+{
+	m_cache.UpdateLight(request.uid, request.light);
+}
+
+// ---------------------------------------------------------------------------
+// Per-mesh pipeline warm
+// ---------------------------------------------------------------------------
+
+void RenderRequestExecutor::handle(const EnsurePipelineRequest& request)
+{
+	if (!m_geometryPass)
+	{
+		if (!m_reportedNullGeometryPass)
+		{
+			m_reportedNullGeometryPass = true;
+			NEURUS_ERR("[RenderRequestExecutor] EnsurePipelineRequest with no GeometryPass - skipping");
+		}
+		return;
+	}
+
+	// A store that REPLACES an entry destroys the displaced Pipeline at once, so
+	// drain the frames first. Get ignores the version, GetPipeline does not: an
+	// entry under the id that fails the version check is one a store would
+	// replace. A first insert destroys nothing, so the drain is bounded to
+	// shader recompiles. Draining the frames is enough because every frame fence
+	// is waited, so no recorded frame still binds the displaced pipeline; the
+	// build that follows submits its own work and waits it.
+	PipelineCache& pipelines = m_cache.GetPipelineCache();
+	const bool replaces = pipelines.Get(request.shaderId) != nullptr
+	                   && pipelines.GetPipeline(request.shaderId, request.version) == nullptr;
+	if (replaces)
+		m_drainFrames();
+
+	m_geometryPass->EnsureMeshPipeline(m_cache, request);
+}
+
+// ---------------------------------------------------------------------------
+// Drop the outgoing scene's resources
+// ---------------------------------------------------------------------------
+
+void RenderRequestExecutor::handle(const DropSceneResourcesRequest&)
+{
+	// Cached entries own vk::raii resources the last frame may still read, so
+	// drain the frames before releasing them. Every frame fence is waited, which
+	// covers every recorded frame; uploads and screenshots wait their own
+	// submits, so they cannot still be reading the released entries either.
+	m_drainFrames();
+	m_cache.RemoveSceneResources();
+	NEURUS_LOG("[RenderRequestExecutor] Dropped scene GPU resources");
+}
+
+
+} // namespace neurus

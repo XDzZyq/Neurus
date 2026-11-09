@@ -100,6 +100,7 @@ public:
 	int32_t r_ao_ksize    = 16;       ///< AO kernel size (number of samples)
 	float   r_ao_radius   = 0.5f;     ///< AO sample radius in world-space
 	int32_t r_sample_pf   = 128;      ///< Samples per frame for progressive rendering
+	int32_t r_sampling_count = 64;    ///< Scene frames accumulated after a restart before rendering stops (>= 1)
 	bool    r_transparent = false;    ///< Transparent background (checkerboard instead of skybox)
 
 	/**
@@ -144,7 +145,8 @@ public:
 		                  CEREAL_NVP(r_fxaa_subpix), CEREAL_NVP(r_fxaa_edge_threshold),
 		                  CEREAL_NVP(r_fxaa_edge_threshold_min),
 		                  CEREAL_NVP(r_sampling_mode),
-		                  CEREAL_NVP(r_debug_draw));
+		                  CEREAL_NVP(r_debug_draw),
+		                  CEREAL_NVP(r_sampling_count));
 	}
 
 	// --- Query helpers ---

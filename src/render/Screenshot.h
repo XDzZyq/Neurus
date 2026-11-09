@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <filesystem>
 #include <string>
 
 namespace neurus {
@@ -9,6 +10,7 @@ namespace neurus {
 // --- Forward declarations ---
 class Image;
 class RenderCache;
+class SharedQueue;
 
 /**
  * @brief Utility for capturing Vulkan images to PNG files.
@@ -16,7 +18,9 @@ class RenderCache;
  * Provides both instance methods (for high-level screenshot orchestration)
  * and static utility methods (for low-level capture of individual images).
  *
- * All capture operations are blocking (waits for queue idle).
+ * All capture operations are blocking: each readback waits its own submit
+ * before reading the result - never the device or the whole queue - through the
+ * shared queue that serialises the submits with the frame's.
  */
 class Screenshot
 {
@@ -25,12 +29,12 @@ public:
 	 * @brief Constructs a Screenshot instance for member capture methods.
 	 * @param device          Logical device (must outlive this instance).
 	 * @param physicalDevice  Physical device for memory allocation.
-	 * @param queue           Graphics queue for command submission.
+	 * @param queue           Graphics queue for command submission (borrowed).
 	 * @param queueFamilyIndex Queue family index for transient command pools.
 	 */
 	Screenshot(const vk::raii::Device& device,
 	           const vk::raii::PhysicalDevice& physicalDevice,
-	           vk::Queue queue,
+	           SharedQueue& queue,
 	           uint32_t queueFamilyIndex);
 
 	// Non-copyable, non-movable
@@ -46,33 +50,40 @@ public:
 	/**
 	 * @brief Captures a swapchain image to a PNG file.
 	 *
-	 * Reads back the given swapchain image and writes a timestamped PNG.
+	 * Reads back the given swapchain image and writes a timestamped PNG under
+	 * @p directory, logging the absolute path on success and the reason on
+	 * failure.
 	 *
 	 * @param swapchainImage  The VkImage handle of the swapchain image.
 	 * @param swapchainFormat Format of the swapchain image.
 	 * @param swapchainExtent Extent of the swapchain image.
+	 * @param directory       Destination root, created on demand.
 	 * @return true on success.
 	 */
 	bool TakeScreenshot(vk::Image swapchainImage,
 	                    vk::Format swapchainFormat,
-	                    vk::Extent2D swapchainExtent);
+	                    vk::Extent2D swapchainExtent,
+	                    const std::filesystem::path& directory);
 
 	/**
-	 * @brief Captures all G-Buffer, shadow, and intensity attachments.
+	 * @brief Captures all G-Buffer, post-chain and overlay attachments.
 	 *
-	 * Iterates G-Buffer attachments (Position, Normal, Albedo,
-	 * MetallicRoughness, HDRColor, SSAO, SSR), exports shadow cubemaps
-	 * as equirectangular projections, and dumps shadow intensity array
-	 * layers.
+	 * Iterates the screen-space attachments (Position, Normal, Albedo,
+	 * MetallicRoughness, IDBuffer, HDRColor, SSAO, SSR, OverlayOutput - the last
+	 * being what the swapchain blit reads, i.e. the presented image plus overlays),
+	 * exports shadow cubemaps as equirectangular projections, and dumps shadow
+	 * intensity array layers.
 	 *
 	 * @param renderCache       Render cache for attachment & shadow map access.
 	 * @param extent            Viewport extent for G-Buffer attachments.
 	 * @param cubemapResolution Per-face resolution of shadow cubemaps.
+	 * @param directory         Destination root, created on demand.
 	 * @return Number of attachments captured.
 	 */
 	int TakeScreenshotAllAttachments(RenderCache& renderCache,
 	                                 vk::Extent2D extent,
-	                                 uint32_t cubemapResolution);
+	                                 uint32_t cubemapResolution,
+	                                 const std::filesystem::path& directory);
 
 	/**
 	 * @brief Exports a shadow depth cubemap as an equirectangular grayscale PNG.
@@ -96,7 +107,12 @@ public:
 	 *
 	 * Reads back a D32_SFLOAT 2D shadow map, normalises depth values to
 	 * [0, 1], and saves as an R8 grayscale PNG.  Returns empty string for
-	 * cubemap shadow maps.
+	 * cubemap shadow maps, for a map that was never rendered, or when the
+	 * readback/save fails.
+	 *
+	 * The depth map is left in the state it entered in - the readback restores
+	 * it inside its own submission - so the shadow pass can keep rendering into
+	 * it regardless of whether the PNG was written.
 	 *
 	 * @param renderCache     Render cache for shadow map access.
 	 * @param lightUID        UID of the sun light whose shadow map to export.
@@ -129,7 +145,7 @@ public:
 	 */
 	static bool CaptureSwapchain(const vk::raii::Device& device,
 	                             const vk::raii::PhysicalDevice& physicalDevice,
-	                             vk::Queue queue,
+	                             SharedQueue& queue,
 	                             uint32_t queueFamilyIndex,
 	                             vk::Image image,
 	                             vk::Format format,
@@ -146,7 +162,7 @@ public:
 	 */
 	static bool CaptureAttachment(const vk::raii::Device& device,
 	                              const vk::raii::PhysicalDevice& physicalDevice,
-	                              vk::Queue queue,
+	                              SharedQueue& queue,
 	                              uint32_t queueFamilyIndex,
 	                              Image& vulkanImage,
 	                              const std::string& path);
@@ -154,12 +170,15 @@ public:
 	/**
 	 * @brief Captures a single layer of an Image array to a PNG file.
 	 *
+	 * The array is left in the state it entered in: the readback restores the
+	 * captured layer's subresource range within its own submission.
+	 *
 	 * @param layerIndex 0-based layer index within the array image.
 	 * @return true on success.
 	 */
 	static bool CaptureImageLayer(const vk::raii::Device& device,
 	                              const vk::raii::PhysicalDevice& physicalDevice,
-	                              vk::Queue queue,
+	                              SharedQueue& queue,
 	                              uint32_t queueFamilyIndex,
 	                              Image& vulkanImage,
 	                              uint32_t layerIndex,
@@ -172,7 +191,7 @@ public:
 	 */
 	static int CaptureAllAttachments(const vk::raii::Device& device,
 	                                 const vk::raii::PhysicalDevice& physicalDevice,
-	                                 vk::Queue queue,
+	                                 SharedQueue& queue,
 	                                 uint32_t queueFamilyIndex,
 	                                 RenderCache& renderCache,
 	                                 vk::Extent2D extent,
@@ -181,7 +200,7 @@ public:
 private:
 	const vk::raii::Device& m_device;
 	const vk::raii::PhysicalDevice& m_physicalDevice;
-	vk::Queue m_queue;
+	SharedQueue* m_queue = nullptr;
 	uint32_t m_queueFamilyIndex;
 };
 
