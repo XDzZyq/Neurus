@@ -356,9 +356,9 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededCameraAdoptsTheViewportExtent)
 	// application at all, and it arrives long before File > New. A freshly created
 	// Camera defaults to cam_w = cam_h = 1, i.e. a square 1:1 projection, so a New
 	// on a 16:9 window used to render the scene horizontally squashed until the
-	// next resize happened to poke the camera. HandleResize therefore caches the
-	// extent unconditionally, and the viewport replays it onto the camera in use —
-	// immediately for its own camera, and on the next SyncCamera for the scene's.
+	// next resize happened to poke the camera. HandleResize caches the extent
+	// unconditionally, and EnsureCamera frames the viewport camera with it as soon
+	// as that camera exists.
 	constexpr uint32_t kW = 1280;
 	constexpr uint32_t kH = 720;
 
@@ -372,9 +372,9 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededCameraAdoptsTheViewportExtent)
 	EXPECT_FLOAT_EQ(cam->cam_h, static_cast<float>(kH));
 
 	// The DEACTIVATED scene camera is deliberately left at its own defaults: only
-	// the camera in use is re-framed here. A camera picks the extent up when it
-	// becomes the view camera, because activation emits a CameraResizeEvent
-	// for it (SceneController::OnActiveCameraChanged).
+	// the camera the frame renders through is framed. A scene camera picks the
+	// extent up when it becomes active, through the CameraResizeEvent the Editor
+	// publishes for the newly active camera.
 	ASSERT_EQ(editor.GetScene().cam_list.size(), 1u);
 	EXPECT_EQ(editor.GetScene().GetActiveCamera(), nullptr);
 

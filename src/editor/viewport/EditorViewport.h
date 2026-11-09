@@ -5,9 +5,11 @@
  *
  * Owns the viewport camera: pooled in the ResourceManager (so it is serialized
  * with the pool) but deliberately NOT scene content, so a scene with zero
- * cameras is a legal, fully renderable document. SyncCamera() chooses the
- * scene's *activated* camera when it names one and the viewport's own otherwise,
- * and GetCamera() is the single answer every consumer reads.
+ * cameras is a legal, fully renderable document. The Editor publishes whichever
+ * camera is active for the frame - the scene's activated camera when there is
+ * one, otherwise this viewport camera - through SetCamera(); GetCamera() is the
+ * single answer every consumer reads. The viewport camera and an activated scene
+ * camera stay independent: there is no pose or aspect propagation between them.
  *
  * Owns the overlay builders - debug flattening, gizmo state and gizmo geometry -
  * which compute against this camera and this extent; this class is their
@@ -195,17 +197,6 @@ public:
 	Camera* ViewportCamera() { return v_camera.get(); }
 	const Camera* ViewportCamera() const { return v_camera.get(); }
 
-	/**
-	 * @brief Chooses the camera this frame is rendered through, and frames it.
-	 * @param scene Read for its *activated* camera only; never retained.
-	 *
-	 * The scene's activated camera wins, the viewport's own is the fallback;
-	 * selection has nothing to do with it. Both candidates are brought up to the
-	 * current extent, because activation can switch the view with no resize in
-	 * between.
-	 */
-	void SyncCamera(Scene& scene);
-
 	// -----------------------------------------------------------------------
 	// Mutators - Editor only
 	// -----------------------------------------------------------------------
@@ -215,9 +206,11 @@ public:
 	 * @param logical      Widget size in logical (Qt) pixels.
 	 * @param renderExtent Swapchain size in physical pixels.
 	 *
-	 * Re-frames the viewport camera immediately, so a resize needs no frame to take
-	 * effect, and dirties the gizmo guide, whose geometry is a pixel budget against
-	 * the viewport height. A zero-sized extent is ignored rather than stored.
+	 * Caches the extent and dirties the gizmo guide, whose geometry is a pixel
+	 * budget against the viewport height. It does not write any camera: the
+	 * Editor turns the resize into a CameraResizeEvent for whichever camera is
+	 * active, so the controller stays the only camera writer. A zero-sized extent
+	 * is ignored rather than stored.
 	 */
 	void HandleResize(glm::uvec2 logical, glm::uvec2 renderExtent);
 
@@ -233,12 +226,13 @@ public:
 	void SetViewportSize(glm::uvec2 logical, glm::uvec2 renderExtent);
 
 	/**
-	 * @brief Publishes a camera to look through directly, bypassing SyncCamera().
+	 * @brief Publishes the camera this frame is rendered through.
 	 * @param cam Borrowed, not owned; nullptr is legal and makes every query invalid.
 	 *
-	 * The primitive SyncCamera() is built on, and the way to point a viewport at a
-	 * camera when there is no Scene to choose from. Borrowed rather than held: the
-	 * pointed-at camera can be deleted between frames.
+	 * A pure pointer publish, not a sync: the Editor chooses the active camera
+	 * (scene camera when one is activated, otherwise ViewportCamera()) and hands
+	 * it over. No pose or aspect is copied between cameras. Borrowed rather than
+	 * held: the pointed-at camera can be deleted between frames.
 	 */
 	void SetCamera(const Camera* cam);
 
@@ -307,9 +301,10 @@ public:
 	/**
 	 * @brief The camera this frame is rendered through, or nullptr.
 	 *
-	 * The viewport's own camera unless a scene camera is activated. Everything
-	 * editor-side that needs a camera goes through here, which keeps every
-	 * consumer ignorant of which of the two it has.
+	 * The camera the Editor last published: an activated scene camera when there
+	 * is one, otherwise the viewport camera. Everything editor-side that needs a
+	 * camera goes through here, which keeps every consumer ignorant of which of
+	 * the two it has.
 	 */
 	const Camera* GetCamera() const { return p_camera; }
 

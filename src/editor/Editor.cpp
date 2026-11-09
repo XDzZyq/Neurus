@@ -212,14 +212,14 @@ void Editor::Initialize()
 	// sink's script scope, so every write the run makes lands as one undo step.
 	RegisterController<ScriptController>();
 
-	// --- Keep the viewport's camera pointer alive across a deletion ---
+	// --- Keep the published camera correct across a deletion ---
 	// Registered after the controllers, because both subscribers to this event run
 	// inside ONE synchronous dispatch, in registration order: SceneController's
-	// handler removes the objects, then this one re-syncs the viewport. Without it,
-	// deleting the activated camera would leave the viewport holding a dangling
-	// pointer until the next Edit().
+	// handler removes the objects, then this one republishes the active camera.
+	// Without it, deleting the activated camera would leave the viewport pointing
+	// at a camera that is no longer the document's view for the rest of Process().
 	ed_eventBus.Subscribe<SceneObjectDeleteRequested>([this](const SceneObjectDeleteRequested&) {
-		m_viewport.SyncCamera(GetScene());
+		PublishActiveCamera();
 	});
 
 	// --- Subscribe to EnvironmentChanged to regenerate IBL cubemaps on demand ---
@@ -406,6 +406,50 @@ void Editor::Initialize()
 Scene& Editor::GetScene()
 {
 	return *m_scene;
+}
+
+// =========================================================================
+// Active camera - selection, not synchronization
+// =========================================================================
+
+const Camera* Editor::ActiveCamera() const
+{
+	// The scene's activated camera wins; the viewport camera is the fallback. The
+	// two stay independent: this chooses one, it never copies state between them.
+	const Scene& scene = *m_scene;
+	if (const Camera* sceneCam = scene.GetActiveCamera())
+		return sceneCam;
+	return m_viewport.ViewportCamera();
+}
+
+void Editor::PublishActiveCamera(bool extentChanged)
+{
+	const Camera* active = ActiveCamera();
+	const bool changed = active != m_viewport.GetCamera();
+
+	m_viewport.SetCamera(active);
+	if (!active) return;
+
+	// A camera becoming active needs the current viewport aspect once (a fresh
+	// Camera is 1x1); a resize needs it re-applied to the same camera. Both go
+	// through the same event, and CameraController is the only writer.
+	const glm::uvec2 size = m_viewport.Size();
+	if ((changed || extentChanged) && size.x != 0u && size.y != 0u)
+	{
+		ed_eventBus.Emit(CameraResizeEvent{
+			active->GetObjectID(),
+			static_cast<int>(size.x), static_cast<int>(size.y)});
+	}
+
+	// A camera change rescales every fixed-pixel gizmo handle.
+	if (changed)
+		m_viewport.MarkGizmoDirty();
+}
+
+void Editor::HandleViewportResize(glm::uvec2 logical, glm::uvec2 renderExtent)
+{
+	m_viewport.HandleResize(logical, renderExtent);
+	PublishActiveCamera(true);
 }
 
 // =========================================================================
@@ -600,7 +644,7 @@ void Editor::NewScene()
 		// scene content.
 		m_viewport.ForgetCamera();
 		m_viewport.EnsureCamera(*m_resources);
-		m_viewport.SyncCamera(*m_scene);
+		PublishActiveCamera();
 
 		// An empty document is its own saved baseline, not an unsaved edit.
 		m_dirty = false;
@@ -756,7 +800,7 @@ void Editor::FinishLoad()
 	// written before it existed. Both paths re-adopt the live extent rather than
 	// trusting the archived aspect.
 	m_viewport.EnsureCamera(*m_resources);
-	m_viewport.SyncCamera(*m_scene);
+	PublishActiveCamera();
 	// Debug objects came back from the project file, and the restored selection
 	// anchors a new handle.
 	m_viewport.MarkOverlaysDirty();
@@ -1078,22 +1122,16 @@ void Editor::UploadLighting()
 
 void Editor::Edit()
 {
-	// Chosen BEFORE the queue is drained, and every frame rather than on change:
-	// the gizmo's projection math and the renderer's camera data both read the
-	// viewport's one published pointer, so they cannot disagree about which camera
-	// the frame belongs to. The delete subscription re-syncs it mid-Process, since
-	// Process() can delete the activated camera within this very call.
-	m_viewport.SyncCamera(GetScene());
+	// Publish BEFORE the queue is drained, so anything that arrives this frame
+	// (a click, a script write) mutates the camera the renderer is about to use.
+	PublishActiveCamera();
 
 	ed_eventBus.Process();
 
-	// Chosen AGAIN, because the drain above can have changed which camera the frame
-	// belongs to: activating, deactivating or deleting a scene camera all land
-	// inside Process(). The overlay rebuild below runs at most once per dirty flag,
-	// so rebuilding against the camera the frame STARTED with would leave geometry
-	// at the previous camera's scale and screen position until something else
-	// happened to dirty it.
-	m_viewport.SyncCamera(GetScene());
+	// Publish AGAIN, because activation, deactivation, deletion and undo/redo all
+	// land inside Process() and can change which camera the frame belongs to. The
+	// overlay rebuild below must use the camera this frame ended up with.
+	PublishActiveCamera();
 
 	// After the queue is drained, so a scene change and its overlay consequences
 	// land in the same frame. Which overlays are dirty and what they anchor on are

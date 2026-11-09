@@ -188,8 +188,8 @@ struct CameraPoseChanged   { int objectUid; float posX, posY, posZ, tarX, tarY, 
 // back to the viewport's own camera. Scene state, deliberately independent of
 // selection. One event for both the PropertyPanel checkbox and SetActiveCameraOp
 // replay. The handler activates/deactivates, records the op only when the value
-// actually changed, and emits a CameraResizeEvent for the newly activated
-// camera so it cannot take the view with a stale aspect.
+// actually changed; the Editor republishes the active camera after the dispatch
+// and emits the CameraResizeEvent that frames it.
 struct ActiveCameraChanged { int camUid; };
 
 // Mesh properties

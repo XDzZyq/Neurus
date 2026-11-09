@@ -235,7 +235,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_SurvivesLaterSceneMutation)
 
 	// The camera the viewport publishes is its own while no scene camera is
 	// activated, so mutating it through ViewportCamera() is observable in the
-	// next snapshot. Asserted rather than assumed: if SyncCamera ever chose
+	// next snapshot. Asserted rather than assumed: if the camera publish ever chose
 	// differently, the camera half below would silently stop discriminating.
 	Camera* cam = editor.GetViewport().ViewportCamera();
 	ASSERT_NE(cam, nullptr);

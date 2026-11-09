@@ -374,7 +374,13 @@ void Application::ResizeViewport(int width, int height)
 		return static_cast<uint32_t>(physical > 0 ? physical : 1);
 	};
 
-	app_editor->GetViewport().HandleResize(
+	// The viewport needs both extents: logical for every projection query,
+	// physical for the ID-buffer readback. The physical one is estimated from the
+	// widget's device pixel ratio because the swapchain now rebuilds on the render
+	// thread; ReconcileRenderExtent() corrects the estimate once the thread
+	// reports the extent it actually got. The Editor forwards the logical extent
+	// to whichever camera is active.
+	app_editor->HandleViewportResize(
 		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
 		glm::uvec2{toPhysical(width), toPhysical(height)});
 }
@@ -407,14 +413,16 @@ void Application::ReconcileRenderExtent(const vk::Extent2D& actual)
 	}
 
 	// The swapchain can clamp or round what the estimate assumed; its own
-	// extent is the truth, and the viewport derives its DPI ratio from it.
+	// extent is the truth, and the viewport derives its DPI ratio from it. Go
+	// through the Editor so the active camera is re-framed for the real extent,
+	// not only the estimate handed to the render thread.
 	const glm::uvec2 render = viewport.RenderExtent();
 	if (render.x == actual.width && render.y == actual.height)
 	{
 		return;
 	}
 
-	viewport.HandleResize(logical, glm::uvec2{actual.width, actual.height});
+	app_editor->HandleViewportResize(logical, glm::uvec2{actual.width, actual.height});
 }
 
 void Application::ResolvePendingPick()
