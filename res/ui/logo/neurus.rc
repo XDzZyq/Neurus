@@ -1,0 +1,3 @@
+// Application icon embedded in Neurus.exe. Windows picks the lowest-numbered
+// icon group as the default icon shown by Explorer, shortcuts and the taskbar.
+1 ICON "neurus.ico"

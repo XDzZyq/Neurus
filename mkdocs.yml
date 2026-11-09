@@ -22,6 +22,10 @@ copyright: Copyright &copy; XDzZyq
 
 theme:
   name: material
+  # The site logo and favicon mirror res/ui/logo/neurus.svg; MkDocs only serves
+  # files under docs_dir, so scripts/make_icon.py keeps this copy in sync.
+  logo: assets/neurus.svg
+  favicon: assets/neurus.svg
   icon:
     repo: fontawesome/brands/github
   features:

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="_图层_1" data-name="图层 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #e5e5e5;
+      }
+
+      .cls-2 {
+        fill: #bfbfbf;
+      }
+
+      .cls-3 {
+        fill: #333;
+      }
+
+      .cls-4 {
+        fill: #191919;
+      }
+
+      .cls-5 {
+        fill: #7f7f7f;
+      }
+    </style>
+  </defs>
+  <rect class="cls-4" y="409.6" width="102.4" height="102.4"/>
+  <rect class="cls-3" x="102.4" y="409.6" width="102.4" height="102.4"/>
+  <rect class="cls-5" x="204.8" y="409.6" width="102.4" height="102.4"/>
+  <rect class="cls-2" x="307.2" y="409.6" width="102.4" height="102.4"/>
+  <rect class="cls-1" x="409.6" y="409.6" width="102.4" height="102.4"/>
+  <rect class="cls-3" y="307.2" width="102.4" height="102.4"/>
+  <rect class="cls-5" x="102.4" y="307.2" width="102.4" height="102.4"/>
+  <rect class="cls-2" x="204.8" y="307.2" width="102.4" height="102.4"/>
+  <rect class="cls-1" x="307.2" y="307.2" width="102.4" height="102.4"/>
+  <rect class="cls-2" x="409.6" y="307.2" width="102.4" height="102.4"/>
+  <rect class="cls-5" y="204.8" width="102.4" height="102.4"/>
+  <rect class="cls-2" x="102.4" y="204.8" width="102.4" height="102.4"/>
+  <rect class="cls-1" x="204.8" y="204.8" width="102.4" height="102.4"/>
+  <rect class="cls-2" x="307.2" y="204.8" width="102.4" height="102.4"/>
+  <rect class="cls-5" x="409.6" y="204.8" width="102.4" height="102.4"/>
+  <rect class="cls-2" y="102.4" width="102.4" height="102.4"/>
+  <rect class="cls-1" x="102.4" y="102.4" width="102.4" height="102.4"/>
+  <rect class="cls-2" x="204.8" y="102.4" width="102.4" height="102.4"/>
+  <rect class="cls-5" x="307.2" y="102.4" width="102.4" height="102.4"/>
+  <rect class="cls-3" x="409.6" y="102.4" width="102.4" height="102.4"/>
+  <rect class="cls-1" width="102.4" height="102.4"/>
+  <rect class="cls-2" x="102.4" width="102.4" height="102.4"/>
+  <rect class="cls-5" x="204.8" width="102.4" height="102.4"/>
+  <rect class="cls-3" x="307.2" width="102.4" height="102.4"/>
+  <rect class="cls-4" x="409.6" width="102.4" height="102.4"/>
+</svg>

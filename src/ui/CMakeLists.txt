@@ -114,6 +114,14 @@ qt_add_resources(neurus_ui "icons"
 		"${CMAKE_SOURCE_DIR}/res/ui/icons/editor/render_visible.svg"
 )
 
+# Qt resource file (application icon - used for the window and taskbar icon)
+qt_add_resources(neurus_ui "app_icon"
+	PREFIX "/app"
+	BASE "${CMAKE_SOURCE_DIR}/res/ui/logo"
+	FILES
+		"${CMAKE_SOURCE_DIR}/res/ui/logo/neurus.svg"
+)
+
 # Qt resource file (i18n dictionaries — loaded on demand by I18n)
 # Globbed so dropping res/i18n/<code>.po in is the only step needed to add a
 # language; I18n::supportedLanguages() enumerates the embedded catalogs.

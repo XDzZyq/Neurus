@@ -37,6 +37,12 @@ endif()
 # Main Executable
 # ---------------------------------------------------------------------------
 
+# The executable icon comes from a resource script, which needs the RC
+# language; project() enables CXX only.
+if(WIN32)
+	enable_language(RC)
+endif()
+
 add_executable(Neurus
 	main.cpp
 )
@@ -77,6 +83,9 @@ if(WIN32)
 		VS_DEBUGGER_WORKING_DIRECTORY "$(OutDir)"
 	)
 
+	# Application icon embedded in Neurus.exe (Explorer, shortcuts, taskbar).
+	target_sources(Neurus PRIVATE "${CMAKE_SOURCE_DIR}/res/ui/logo/neurus.rc")
+
 	# Suppress LNK4099 for pre-compiled libraries without PDBs
 	target_link_options(Neurus PRIVATE /ignore:4099)
 
@@ -101,6 +110,28 @@ if(WIN32)
 			COMMENT "Copying the CPython runtime DLL"
 		)
 	endif()
+endif()
+
+# macOS: build a real application bundle so Finder, the Dock and Cmd-Tab show
+# the Neurus icon. The executable lands in Neurus.app/Contents/MacOS, which is
+# still $<TARGET_FILE_DIR:Neurus>, so the res/ POST_BUILD copy below keeps
+# matching QCoreApplication::applicationDirPath().
+if(APPLE)
+	set_target_properties(Neurus PROPERTIES
+		MACOSX_BUNDLE TRUE
+		MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/cmake/MacOSXBundleInfo.plist.in"
+		MACOSX_BUNDLE_BUNDLE_NAME Neurus
+		MACOSX_BUNDLE_GUI_IDENTIFIER io.github.xdzzyq.neurus
+		MACOSX_BUNDLE_ICON_FILE neurus.icns
+		MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+		MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+	)
+
+	# The bundle step copies this into Contents/Resources and CFBundleIconFile
+	# points at it.
+	set_source_files_properties("${CMAKE_SOURCE_DIR}/res/ui/logo/neurus.icns"
+		PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+	target_sources(Neurus PRIVATE "${CMAKE_SOURCE_DIR}/res/ui/logo/neurus.icns")
 endif()
 
 # Copy res/ folder to the output directory so resources resolve at runtime
