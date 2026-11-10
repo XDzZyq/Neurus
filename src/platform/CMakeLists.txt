@@ -6,20 +6,27 @@
 add_library(neurus_platform_paths STATIC
 	PlatformPaths.h
 	PlatformProcess.h
+	PlatformFile.h
+	PlatformCrypto.h
 )
 
 if(WIN32)
 	target_sources(neurus_platform_paths PRIVATE
 		win/Win32Paths.cpp
 		win/Win32Process.cpp
+		win/Win32File.cpp
+		win/Win32Crypto.cpp
 	)
+	target_link_libraries(neurus_platform_paths PUBLIC bcrypt)
 elseif(APPLE)
 	target_sources(neurus_platform_paths PRIVATE
 		mac/MacOSPaths.cpp
 		mac/MacOSProcess.cpp
+		mac/MacOSFile.cpp
+		mac/MacOSCrypto.cpp
 	)
 else()
-	message(FATAL_ERROR "PlatformPaths and PlatformProcess have no implementation for this platform.")
+	message(FATAL_ERROR "Platform helpers have no implementation for this platform.")
 endif()
 
 target_include_directories(neurus_platform_paths PUBLIC ${CMAKE_SOURCE_DIR}/src)

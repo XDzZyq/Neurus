@@ -26,6 +26,15 @@ std::filesystem::path CurrentExecutablePath();
 /// @return The `NEURUS_APP` value, or an empty string when unset.
 std::string AppEnvironmentPath();
 
+/// @return The calling process id.
+int CurrentProcessId();
+
+/// @return True when a process with @p pid is running.
+bool IsProcessAlive(int pid);
+
+/// @return The environment value for @p name, or an empty string when unset.
+std::string EnvironmentValue(const char* name);
+
 /**
  * @brief Spawns a detached process with stdout/stderr in a log file.
  * @param app Executable to launch.

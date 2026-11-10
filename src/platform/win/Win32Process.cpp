@@ -1,6 +1,7 @@
 #include "platform/PlatformProcess.h"
 
 #include <cstdlib>
+#include <process.h>
 #include <system_error>
 #include <vector>
 
@@ -181,9 +182,34 @@ std::filesystem::path CurrentExecutablePath()
 
 std::string AppEnvironmentPath()
 {
+	return EnvironmentValue("NEURUS_APP");
+}
+
+int CurrentProcessId()
+{
+	return _getpid();
+}
+
+bool IsProcessAlive(int pid)
+{
+	if (pid <= 0)
+		return false;
+
+	const HANDLE handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+	                                  FALSE, static_cast<DWORD>(pid));
+	if (handle == nullptr)
+		return false;
+	DWORD exitCode = 0;
+	const bool alive = GetExitCodeProcess(handle, &exitCode) != 0 && exitCode == STILL_ACTIVE;
+	CloseHandle(handle);
+	return alive;
+}
+
+std::string EnvironmentValue(const char* name)
+{
 	char* value = nullptr;
 	size_t length = 0;
-	if (_dupenv_s(&value, &length, "NEURUS_APP") == 0 && value)
+	if (_dupenv_s(&value, &length, name) == 0 && value)
 	{
 		std::string result(value);
 		std::free(value);

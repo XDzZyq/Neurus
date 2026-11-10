@@ -5,6 +5,8 @@
 #include <system_error>
 #include <vector>
 
+#include <cerrno>
+#include <csignal>
 #include <fcntl.h>
 #include <mach-o/dyld.h>
 #include <sys/types.h>
@@ -112,7 +114,26 @@ std::filesystem::path CurrentExecutablePath()
 
 std::string AppEnvironmentPath()
 {
-	const char* value = std::getenv("NEURUS_APP");
+	return EnvironmentValue("NEURUS_APP");
+}
+
+int CurrentProcessId()
+{
+	return static_cast<int>(::getpid());
+}
+
+bool IsProcessAlive(int pid)
+{
+	if (pid <= 0)
+		return false;
+	if (::kill(static_cast<pid_t>(pid), 0) == 0)
+		return true;
+	return errno == EPERM;
+}
+
+std::string EnvironmentValue(const char* name)
+{
+	const char* value = std::getenv(name);
 	return value ? std::string(value) : std::string{};
 }
 

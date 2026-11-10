@@ -1,32 +1,16 @@
 #include "ipc/SessionRegistry.h"
 
+#include "platform/PlatformFile.h"
 #include "platform/PlatformPaths.h"
+#include "platform/PlatformProcess.h"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <cstdlib>
 #include <fstream>
 #include <random>
 #include <system_error>
 #include <utility>
-
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <process.h>
-#include <windows.h>
-#else
-#include <cerrno>
-#include <csignal>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 namespace neurus::ipc
 {
@@ -34,37 +18,6 @@ namespace
 {
 
 using Json = nlohmann::json;
-
-int CurrentPid()
-{
-#ifdef _WIN32
-	return _getpid();
-#else
-	return static_cast<int>(::getpid());
-#endif
-}
-
-std::optional<std::string> ReadEnvironment(const char* name)
-{
-#ifdef _WIN32
-	char* value = nullptr;
-	size_t length = 0;
-	if (_dupenv_s(&value, &length, name) == 0 && value)
-	{
-		std::string result(value);
-		std::free(value);
-		if (!result.empty())
-			return result;
-	}
-	std::free(value);
-	return std::nullopt;
-#else
-	const char* value = std::getenv(name);
-	if (value && *value)
-		return std::string(value);
-	return std::nullopt;
-#endif
-}
 
 Json ToJson(const SessionRecord& record)
 {
@@ -100,28 +53,6 @@ std::optional<SessionRecord> FromJson(const Json& json)
 	record.protocolVersion = json.value("protocol_version", 1);
 	record.startedAt = json.value("started_at", std::string{});
 	return record;
-}
-
-bool CreateExclusiveFile(const std::filesystem::path& path, const std::string& contents)
-{
-#ifdef _WIN32
-	const HANDLE handle = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
-	                                  CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (handle == INVALID_HANDLE_VALUE)
-		return false;
-	DWORD written = 0;
-	const bool ok = WriteFile(handle, contents.data(), static_cast<DWORD>(contents.size()),
-	                          &written, nullptr) != 0;
-	CloseHandle(handle);
-	return ok;
-#else
-	const int fd = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0600);
-	if (fd < 0)
-		return false;
-	const ssize_t written = ::write(fd, contents.data(), contents.size());
-	::close(fd);
-	return written == static_cast<ssize_t>(contents.size());
-#endif
 }
 
 bool FileExists(const std::filesystem::path& path)
@@ -168,8 +99,9 @@ std::string RandomSuffix()
 
 std::filesystem::path ResolveSessionsDirectory()
 {
-	if (const auto overridePath = ReadEnvironment("NEURUS_SESSIONS_DIR"))
-		return std::filesystem::path(*overridePath);
+	const std::string overridePath = neurus::EnvironmentValue("NEURUS_SESSIONS_DIR");
+	if (!overridePath.empty())
+		return std::filesystem::path(overridePath);
 	return SessionsDirectory();
 }
 
@@ -192,22 +124,7 @@ bool IsValidSessionName(std::string_view name)
 
 bool IsProcessAlive(int pid)
 {
-	if (pid <= 0)
-		return false;
-#ifdef _WIN32
-	const HANDLE handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
-	                                  FALSE, static_cast<DWORD>(pid));
-	if (handle == nullptr)
-		return false;
-	DWORD exitCode = 0;
-	const bool alive = GetExitCodeProcess(handle, &exitCode) != 0 && exitCode == STILL_ACTIVE;
-	CloseHandle(handle);
-	return alive;
-#else
-	if (::kill(static_cast<pid_t>(pid), 0) == 0)
-		return true;
-	return errno == EPERM;
-#endif
+	return neurus::IsProcessAlive(pid);
 }
 
 SessionRegistry::SessionRegistry(std::filesystem::path directory)
@@ -237,16 +154,12 @@ bool SessionRegistry::EnsureDirectory(std::string& error) const
 		error = "Cannot create session directory: " + code.message();
 		return false;
 	}
-#ifndef _WIN32
-	std::filesystem::permissions(m_directory,
-	                             std::filesystem::perms::owner_all,
-	                             std::filesystem::perm_options::replace, code);
-	if (code)
+	std::string permissionError;
+	if (!platform::RestrictToOwner(m_directory, true, permissionError))
 	{
-		error = "Cannot secure session directory: " + code.message();
+		error = "Cannot secure session directory: " + permissionError;
 		return false;
 	}
-#endif
 	return true;
 }
 
@@ -263,7 +176,7 @@ bool SessionRegistry::TryClaim(std::string_view name, std::string& error)
 	const auto path = PathFor(name, ".claim");
 	for (int attempt = 0; attempt < 2; ++attempt)
 	{
-		if (CreateExclusiveFile(path, std::to_string(CurrentPid())))
+		if (platform::CreateExclusiveFile(path, std::to_string(neurus::CurrentProcessId())))
 			return true;
 
 		std::error_code code;
@@ -279,7 +192,7 @@ bool SessionRegistry::TryClaim(std::string_view name, std::string& error)
 			std::ifstream in(path);
 			in >> owner;
 		}
-		if (owner > 0 && IsProcessAlive(owner))
+		if (owner > 0 && neurus::IsProcessAlive(owner))
 		{
 			error = "Session name is already claimed: " + std::string(name);
 			return false;
@@ -331,12 +244,14 @@ bool SessionRegistry::Write(const SessionRecord& record, std::string& error)
 			return false;
 		}
 	}
-#ifndef _WIN32
-	std::error_code permissionError;
-	std::filesystem::permissions(temporary,
-	                             std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
-	                             std::filesystem::perm_options::replace, permissionError);
-#endif
+	std::string permissionError;
+	if (!platform::RestrictToOwner(temporary, false, permissionError))
+	{
+		std::error_code ignored;
+		std::filesystem::remove(temporary, ignored);
+		error = "Cannot secure session entry: " + permissionError;
+		return false;
+	}
 
 	std::error_code code;
 	std::filesystem::remove(target, code);
