@@ -135,6 +135,23 @@ TEST_F(EditorCommandAdapterTest, ObjectSetRenamesAndResolvesByTheNewName)
 	EXPECT_EQ(byNew.details["object"]["name"], "Mesh A");
 }
 
+TEST_F(EditorCommandAdapterTest, ObjectSetRenameIsUndoable)
+{
+	Mesh* mesh = dynamic_cast<Mesh*>(FirstOfType(ObjectID::GOType::GO_MESH));
+	ASSERT_NE(mesh, nullptr);
+	const std::size_t before = m_editor->GetOperations().GetUndoStack().size();
+
+	ASSERT_TRUE(m_adapter->Execute(
+		{kObjectSet, {{"name", "Mesh"}, {"rename", "Mesh A"}}}).ok);
+	EXPECT_EQ(mesh->o_name, "Mesh A");
+	EXPECT_EQ(m_editor->GetOperations().GetUndoStack().size(), before + 1);
+
+	ASSERT_TRUE(m_adapter->Execute({kHistoryUndo, {}}).ok);
+	EXPECT_EQ(mesh->o_name, "Mesh");
+	ASSERT_TRUE(m_adapter->Execute({kHistoryRedo, {}}).ok);
+	EXPECT_EQ(mesh->o_name, "Mesh A");
+}
+
 TEST_F(EditorCommandAdapterTest, TypeSpecificWriteOnTheWrongObjectIsRejected)
 {
 	const auto result = m_adapter->Execute({kObjectSet, {{"name", "Mesh"}, {"fov", 50.0f}}});

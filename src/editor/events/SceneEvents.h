@@ -88,6 +88,13 @@ struct ScaleChanged
 	float sclZ = 1.0f;
 };
 
+/** @brief Emitted when an object's display name is edited. */
+struct RenameObjectRequested
+{
+	int objectUid = 0;
+	std::string name;
+};
+
 // ---------------------------------------------------------------------------
 // Camera property events
 // ---------------------------------------------------------------------------

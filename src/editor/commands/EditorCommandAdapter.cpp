@@ -576,9 +576,8 @@ void ApplyEditProperties(Editor& editor, Scene& scene, ObjectID& object,
 
 	if (edit.hasRename)
 	{
-		const std::string unique = editor.GetResourceManager().SetName(uid, edit.rename);
-		object.o_name = unique.empty() ? edit.rename : unique;
-		notify::Mutated(events);
+		// Routed through the controller so the rename is recorded and undoable.
+		events.Emit(RenameObjectRequested{uid, edit.rename});
 	}
 	if (edit.hasPosition)
 		events.Emit(PositionChanged{uid, edit.position.x, edit.position.y, edit.position.z});
