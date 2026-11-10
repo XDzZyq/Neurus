@@ -1,4 +1,4 @@
-#include "cli/OpenCommand.h"
+#include "cli/subcommands/OpenCommand.h"
 
 #include "cli/Output.h"
 #include "cli/ProcessLaunch.h"
@@ -11,8 +11,10 @@
 
 namespace neurus::cli
 {
+namespace
+{
 
-CliExit RunOpen(const OpenOptions& options)
+CliExit ExecuteOpen(const OpenOptions& options)
 {
 	std::string error;
 	if (!ValidateOpenOptions(options, error))
@@ -101,6 +103,39 @@ CliExit RunOpen(const OpenOptions& options)
 	PrintError(options.format, command::CommandErrorCode::Timeout,
 	           "Timed out waiting for the session to become ready.");
 	return CliExit::Transport;
+}
+
+} // namespace
+
+void OpenCommand::Register(CLI::App& parent, const std::string& globalFormat)
+{
+	m_globalFormat = &globalFormat;
+	m_app = parent.add_subcommand("open", "Launch a named background Neurus session.");
+	m_app->add_option("project", m_project, "Project file to open.");
+	m_app->add_option("--name", m_name, "Session name; allocated when omitted.");
+	m_app->add_option("--app", m_appPath, "Path to the Neurus executable.");
+	m_app->add_option("--timeout", m_timeoutSeconds, "Readiness timeout in seconds.")
+		->check(CLI::PositiveNumber);
+	m_app->add_flag("--no-wait", m_noWait, "Do not wait for readiness.");
+	AddFormatOption(*m_app, m_format);
+}
+
+bool OpenCommand::Selected() const
+{
+	return m_app != nullptr && m_app->parsed();
+}
+
+CliExit OpenCommand::Execute()
+{
+	OpenOptions options;
+	options.project = m_project;
+	options.name = m_name;
+	if (m_appPath)
+		options.app = std::filesystem::path(*m_appPath);
+	options.timeoutSeconds = m_timeoutSeconds;
+	options.noWait = m_noWait;
+	options.format = Format(m_format);
+	return ExecuteOpen(options);
 }
 
 } // namespace neurus::cli

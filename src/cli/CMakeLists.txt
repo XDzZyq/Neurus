@@ -13,14 +13,16 @@ add_library(neurus_cli_core STATIC
 	ProcessLaunch.cpp
 	SessionClient.h
 	SessionClient.cpp
-	OpenCommand.h
-	OpenCommand.cpp
-	CloseCommand.h
-	CloseCommand.cpp
-	StatusCommand.h
-	StatusCommand.cpp
-	ListCommand.h
-	ListCommand.cpp
+	SubCommand.h
+	SubCommand.cpp
+	subcommands/OpenCommand.h
+	subcommands/OpenCommand.cpp
+	subcommands/CloseCommand.h
+	subcommands/CloseCommand.cpp
+	subcommands/StatusCommand.h
+	subcommands/StatusCommand.cpp
+	subcommands/ListCommand.h
+	subcommands/ListCommand.cpp
 )
 
 target_include_directories(neurus_cli_core PUBLIC

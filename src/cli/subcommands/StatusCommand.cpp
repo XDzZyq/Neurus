@@ -1,4 +1,4 @@
-#include "cli/StatusCommand.h"
+#include "cli/subcommands/StatusCommand.h"
 
 #include "cli/Output.h"
 #include "cli/SessionClient.h"
@@ -8,8 +8,10 @@
 
 namespace neurus::cli
 {
+namespace
+{
 
-CliExit RunStatus(const StatusOptions& options)
+CliExit ExecuteStatus(const StatusOptions& options)
 {
 	std::string error;
 	if (!ValidateStatusOptions(options, error))
@@ -59,6 +61,32 @@ CliExit RunStatus(const StatusOptions& options)
 
 	PrintSession(record, result->details.value("dirty", false), options.format);
 	return CliExit::Ok;
+}
+
+} // namespace
+
+void StatusCommand::Register(CLI::App& parent, const std::string& globalFormat)
+{
+	m_globalFormat = &globalFormat;
+	m_app = parent.add_subcommand("status", "Report a running session.");
+	m_app->add_option("name", m_name, "Session name.");
+	m_app->add_option("--timeout", m_timeoutSeconds, "Command timeout in seconds.")
+		->check(CLI::PositiveNumber);
+	AddFormatOption(*m_app, m_format);
+}
+
+bool StatusCommand::Selected() const
+{
+	return m_app != nullptr && m_app->parsed();
+}
+
+CliExit StatusCommand::Execute()
+{
+	StatusOptions options;
+	options.name = m_name;
+	options.timeoutSeconds = m_timeoutSeconds;
+	options.format = Format(m_format);
+	return ExecuteStatus(options);
 }
 
 } // namespace neurus::cli

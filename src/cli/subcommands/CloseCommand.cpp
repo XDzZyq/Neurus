@@ -1,4 +1,4 @@
-#include "cli/CloseCommand.h"
+#include "cli/subcommands/CloseCommand.h"
 
 #include "cli/Output.h"
 #include "cli/SessionClient.h"
@@ -12,8 +12,10 @@
 
 namespace neurus::cli
 {
+namespace
+{
 
-CliExit RunClose(const CloseOptions& options)
+CliExit ExecuteClose(const CloseOptions& options)
 {
 	std::string error;
 	if (!ValidateCloseOptions(options, error))
@@ -67,6 +69,38 @@ CliExit RunClose(const CloseOptions& options)
 			return ExitCodeFor(result.code);
 	}
 	return CliExit::Ok;
+}
+
+} // namespace
+
+void CloseCommand::Register(CLI::App& parent, const std::string& globalFormat)
+{
+	m_globalFormat = &globalFormat;
+	m_app = parent.add_subcommand("close", "Close a running Neurus session.");
+	m_app->add_option("name", m_name, "Session name.");
+	m_app->add_flag("--all", m_all, "Close every live session.");
+	m_app->add_flag("--save", m_save, "Save the project before closing.");
+	m_app->add_flag("--force", m_force, "Discard unsaved changes.");
+	m_app->add_option("--timeout", m_timeoutSeconds, "Command timeout in seconds.")
+		->check(CLI::PositiveNumber);
+	AddFormatOption(*m_app, m_format);
+}
+
+bool CloseCommand::Selected() const
+{
+	return m_app != nullptr && m_app->parsed();
+}
+
+CliExit CloseCommand::Execute()
+{
+	CloseOptions options;
+	options.name = m_name;
+	options.all = m_all;
+	options.save = m_save;
+	options.force = m_force;
+	options.timeoutSeconds = m_timeoutSeconds;
+	options.format = Format(m_format);
+	return ExecuteClose(options);
 }
 
 } // namespace neurus::cli
