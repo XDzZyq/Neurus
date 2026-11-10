@@ -7,6 +7,9 @@
 
 #include "app/AppArgs.h"
 
+#include <string>
+#include <vector>
+
 using namespace neurus;
 
 TEST(AppArgs, ParsesSessionAndProject)
@@ -47,4 +50,17 @@ TEST(AppArgs, UnknownArgumentsDoNotFail)
 	const auto args = AppArgs::Parse(3, argv);
 	EXPECT_TRUE(args.error.empty());
 	EXPECT_FALSE(args.session.has_value());
+}
+
+TEST(AppArgs, ParsesEqualsForm)
+{
+	const std::vector<std::string> arguments{
+		"Neurus", "--session=build-1", "--project=C:/work/p.neurus.json"};
+
+	const auto args = AppArgs::Parse(arguments);
+	EXPECT_TRUE(args.error.empty());
+	ASSERT_TRUE(args.session.has_value());
+	EXPECT_EQ(*args.session, "build-1");
+	ASSERT_TRUE(args.project.has_value());
+	EXPECT_EQ(*args.project, "C:/work/p.neurus.json");
 }

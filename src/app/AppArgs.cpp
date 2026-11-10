@@ -5,11 +5,11 @@ namespace neurus
 namespace
 {
 
-bool TakeValue(const QStringList& arguments, int& index,
+bool TakeValue(const std::vector<std::string>& arguments, std::size_t& index,
                const char* name, std::optional<std::string>& value, std::string& error)
 {
-	const QString argument = arguments[index];
-	const QString option = QString::fromLatin1(name);
+	const std::string& argument = arguments[index];
+	const std::string option = name;
 	if (argument == option)
 	{
 		if (index + 1 >= arguments.size())
@@ -17,14 +17,14 @@ bool TakeValue(const QStringList& arguments, int& index,
 			error = std::string("Missing value for ") + name + ".";
 			return true;
 		}
-		value = arguments[++index].toStdString();
+		value = arguments[++index];
 		return true;
 	}
 
-	const QString prefix = option + QLatin1Char('=');
-	if (argument.startsWith(prefix))
+	const std::string prefix = option + "=";
+	if (argument.rfind(prefix, 0) == 0)
 	{
-		value = argument.mid(prefix.size()).toStdString();
+		value = argument.substr(prefix.size());
 		return true;
 	}
 	return false;
@@ -32,10 +32,10 @@ bool TakeValue(const QStringList& arguments, int& index,
 
 } // namespace
 
-AppArgs AppArgs::Parse(const QStringList& arguments)
+AppArgs AppArgs::Parse(const std::vector<std::string>& arguments)
 {
 	AppArgs result;
-	for (int index = 1; index < arguments.size(); ++index)
+	for (std::size_t index = 1; index < arguments.size(); ++index)
 	{
 		if (TakeValue(arguments, index, "--session", result.session, result.error))
 		{
@@ -56,10 +56,10 @@ AppArgs AppArgs::Parse(const QStringList& arguments)
 
 AppArgs AppArgs::Parse(int argc, char* argv[])
 {
-	QStringList arguments;
-	arguments.reserve(argc);
+	std::vector<std::string> arguments;
+	arguments.reserve(static_cast<std::size_t>(argc));
 	for (int i = 0; i < argc; ++i)
-		arguments.push_back(QString::fromLocal8Bit(argv[i]));
+		arguments.emplace_back(argv[i] ? argv[i] : "");
 	return Parse(arguments);
 }
 

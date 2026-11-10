@@ -1,9 +1,8 @@
 #pragma once
 
-#include <QStringList>
-
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace neurus
 {
@@ -21,10 +20,10 @@ struct AppArgs
 	std::string                error;    ///< Parse error, empty when valid.
 
 	/**
-	 * @brief Parses arguments as returned by QCoreApplication::arguments().
-	 * @param arguments Argument list, including the program name.
+	 * @brief Parses an argument list.
+	 * @param arguments Argument list, including the program name at index 0.
 	 */
-	static AppArgs Parse(const QStringList& arguments);
+	static AppArgs Parse(const std::vector<std::string>& arguments);
 
 	/**
 	 * @brief Parses a raw argv array.

@@ -159,7 +159,7 @@ private:
 
 	// --- Command session state ---
 	AppArgs      app_args;          ///< Parsed --session / --project.
-	QStringList  app_rawArguments;  ///< argv captured before QApplication parses it.
+	std::vector<std::string> app_rawArguments;  ///< argv captured before QApplication parses it.
 	std::string  app_sessionName;   ///< Named session, empty for a normal launch.
 	std::chrono::steady_clock::time_point app_startTime;  ///< Session uptime origin.
 

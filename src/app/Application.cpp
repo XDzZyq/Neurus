@@ -139,10 +139,9 @@ Application::Application(int argc, char* argv[])
 	// --- Qt Application ---
 	// Capture our own flags before QApplication can consume them: Qt treats
 	// --session as its -session option and removes it from its argument list.
-	app_rawArguments.reserve(argc);
-	app_rawArguments.push_back(QStringLiteral("Neurus"));
-	for (int i = 1; i < argc; ++i)
-		app_rawArguments.push_back(QString::fromLocal8Bit(argv[i]));
+	app_rawArguments.reserve(static_cast<std::size_t>(argc));
+	for (int i = 0; i < argc; ++i)
+		app_rawArguments.emplace_back(argv[i] ? argv[i] : "");
 
 	app_qtApp = std::make_unique<QApplication>(argc, argv);
 	app_renderTimer = std::make_unique<QTimer>();
