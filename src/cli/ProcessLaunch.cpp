@@ -19,6 +19,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 namespace neurus::cli
 {
@@ -29,15 +32,6 @@ bool IsFile(const std::filesystem::path& path)
 {
 	std::error_code error;
 	return std::filesystem::is_regular_file(path, error);
-}
-
-std::filesystem::path AppFileName()
-{
-#ifdef _WIN32
-	return "Neurus.exe";
-#else
-	return "Neurus";
-#endif
 }
 
 #ifdef _WIN32
@@ -85,7 +79,8 @@ std::optional<std::filesystem::path> ResolveAppExecutable(
 	const std::filesystem::path& cliPath,
 	const std::optional<std::filesystem::path>& overridePath,
 	const std::string& envValue)
-{	if (overridePath && IsFile(*overridePath))
+{
+	if (overridePath && IsFile(*overridePath))
 		return *overridePath;
 	if (!envValue.empty() && IsFile(envValue))
 		return std::filesystem::path(envValue);
@@ -94,20 +89,30 @@ std::optional<std::filesystem::path> ResolveAppExecutable(
 		? std::filesystem::current_path()
 		: std::filesystem::absolute(cliPath);
 	const auto directory = base.parent_path();
-	const auto fileName = AppFileName();
+	const auto parent = directory.parent_path();
+	const auto grandparent = parent.parent_path();
 
-	const auto parent = directory.parent_path() / fileName;
-	if (IsFile(parent))
-		return parent;
+	// The CLI is usually in <build>/<config>/cli, next to the app. A macOS
+	// build is a bundle, so the executable is inside Neurus.app/Contents/MacOS.
+	const std::filesystem::path names[] = {
+#ifdef _WIN32
+		"Neurus.exe",
+#elif defined(__APPLE__)
+		"Neurus.app/Contents/MacOS/Neurus",
+		"Neurus",
+#else
+		"Neurus",
+#endif
+	};
 
-	const auto sibling = directory / fileName;
-	if (IsFile(sibling))
-		return sibling;
-
-	const auto grandparent = directory.parent_path().parent_path() / fileName;
-	if (IsFile(grandparent))
-		return grandparent;
-
+	for (const auto& name : names)
+	{
+		for (const auto& candidate : {parent / name, directory / name, grandparent / name})
+		{
+			if (IsFile(candidate))
+				return candidate;
+		}
+	}
 	return std::nullopt;
 }
 
@@ -244,6 +249,15 @@ std::filesystem::path CurrentExecutablePath()
 		return {};
 	buffer.resize(length);
 	return std::filesystem::path(buffer);
+#elif defined(__APPLE__)
+	std::uint32_t size = 0;
+	_NSGetExecutablePath(nullptr, &size);
+	std::vector<char> buffer(size);
+	if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+		return {};
+	std::error_code error;
+	const auto resolved = std::filesystem::weakly_canonical(buffer.data(), error);
+	return error ? std::filesystem::path(buffer.data()) : resolved;
 #else
 	std::array<char, 4096> buffer{};
 	const ssize_t length = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);

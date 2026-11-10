@@ -113,6 +113,7 @@ add_executable(neurus_test
 	command/test_session_registry.cpp
 	command/test_ipc_roundtrip.cpp
 	command/test_cli_parse.cpp
+	command/test_process_launch.cpp
 	app/test_app_args.cpp
 	session/test_session_command.cpp
 )
