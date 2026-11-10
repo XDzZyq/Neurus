@@ -530,37 +530,49 @@ bool ValidateEdit(ObjectID& object, const ObjectEdit& edit, std::string& error)
 	return true;
 }
 
-void ApplyEdit(Editor& editor, Scene& scene, ObjectID& object, const ObjectEdit& edit)
+/**
+ * @brief RAII command edit scope: one command commits one undo entry.
+ *
+ * The guard closes the scope on an exception path too, so a failed write cannot
+ * leave later commands buffering into this one.
+ */
+class CommandEditScope
+{
+public:
+	CommandEditScope(OperationManager& operations, std::string label)
+		: m_operations(operations)
+	{
+		m_operations.BeginCommandScope(std::move(label));
+	}
+
+	~CommandEditScope()
+	{
+		if (m_active)
+			m_operations.EndCommandScope();
+	}
+
+	void Close()
+	{
+		if (m_active)
+		{
+			m_operations.EndCommandScope();
+			m_active = false;
+		}
+	}
+
+	CommandEditScope(const CommandEditScope&) = delete;
+	CommandEditScope& operator=(const CommandEditScope&) = delete;
+
+private:
+	OperationManager& m_operations;
+	bool              m_active = true;
+};
+
+void ApplyEditProperties(Editor& editor, Scene& scene, ObjectID& object,
+                         const ObjectEdit& edit)
 {
 	const int uid = object.GetObjectID();
 	IEventQueue& events = editor.GetEventQueue();
-	OperationManager& operations = editor.GetOperations();
-
-	// One command is one undo entry: buffer every property write and commit the
-	// batch as a composite. The guard closes the scope on an exception path too,
-	// so a failed write cannot leave later commands buffering into this one.
-	struct CommandScope
-	{
-		OperationManager& operations;
-		bool active = true;
-
-		~CommandScope()
-		{
-			if (active)
-				operations.EndCommandScope();
-		}
-
-		void Close()
-		{
-			if (active)
-			{
-				operations.EndCommandScope();
-				active = false;
-			}
-		}
-	} scope{operations};
-
-	operations.BeginCommandScope("Set Object");
 
 	if (edit.hasRename)
 	{
@@ -633,6 +645,12 @@ void ApplyEdit(Editor& editor, Scene& scene, ObjectID& object, const ObjectEdit&
 	if (edit.hasEnvironmentRotation)
 		events.Emit(EnvironmentRotationChanged{uid, edit.environmentRotation});
 
+}
+
+void ApplyEdit(Editor& editor, Scene& scene, ObjectID& object, const ObjectEdit& edit)
+{
+	CommandEditScope scope(editor.GetOperations(), "Set Object");
+	ApplyEditProperties(editor, scene, object, edit);
 	scope.Close();
 }
 
@@ -833,12 +851,18 @@ command::CommandResult EditorCommandAdapter::Execute(const command::CommandReque
 {
 	if (request.name == command::kSceneList)
 		return ExecuteSceneList(request.args);
+	if (request.name == command::kSceneInfo)
+		return ExecuteSceneInfo();
 	if (request.name == command::kObjectGet)
 		return ExecuteObjectGet(request.args);
 	if (request.name == command::kObjectSet)
 		return ExecuteObjectSet(request.args);
 	if (request.name == command::kObjectLoad)
 		return ExecuteObjectLoad(request.args);
+	if (request.name == command::kObjectAdd)
+		return ExecuteObjectAdd(request.args);
+	if (request.name == command::kObjectDuplicate)
+		return ExecuteObjectDuplicate(request.args);
 	if (request.name == command::kObjectDelete)
 		return ExecuteObjectDelete(request.args);
 	if (request.name == command::kRenderGet)
@@ -895,6 +919,56 @@ command::CommandResult EditorCommandAdapter::ExecuteSceneList(const command::Jso
 		{"type", type},
 		{"count", entries.size()},
 		{"objects", entries},
+	});
+}
+
+command::CommandResult EditorCommandAdapter::ExecuteSceneInfo()
+{
+	Scene& scene = m_editor.GetScene();
+	int meshes = 0;
+	int lights = 0;
+	int cameras = 0;
+	int environments = 0;
+	int sprites = 0;
+	int debug = 0;
+	for (auto& [id, object] : scene.obj_list)
+	{
+		(void)id;
+		switch (object->o_type)
+		{
+		case ObjectID::GOType::GO_MESH: ++meshes; break;
+		case ObjectID::GOType::GO_LIGHT:
+		case ObjectID::GOType::GO_POLYLIGHT: ++lights; break;
+		case ObjectID::GOType::GO_CAM: ++cameras; break;
+		case ObjectID::GOType::GO_ENVIR: ++environments; break;
+		case ObjectID::GOType::GO_SPRITE: ++sprites; break;
+		case ObjectID::GOType::GO_DL:
+		case ObjectID::GOType::GO_DP:
+		case ObjectID::GOType::GO_DM: ++debug; break;
+		case ObjectID::GOType::GO_SDFFIELD:
+		case ObjectID::GOType::NONE_GO: break;
+		}
+	}
+
+	std::vector<int> selected;
+	int activeUid = 0;
+	SnapshotSelectionUids(scene.selections, selected, activeUid);
+	Json selectedJson = Json::array();
+	for (int uid : selected)
+		selectedJson.push_back(uid);
+
+	return CommandResult::Success({
+		{"objects", scene.obj_list.size()},
+		{"meshes", meshes},
+		{"lights", lights},
+		{"cameras", cameras},
+		{"environments", environments},
+		{"sprites", sprites},
+		{"debug", debug},
+		{"selected", selectedJson},
+		{"active_uid", activeUid},
+		{"active_camera", scene.ActiveCameraID()},
+		{"dirty", m_editor.IsDirty()},
 	});
 }
 
@@ -967,6 +1041,155 @@ command::CommandResult EditorCommandAdapter::ExecuteObjectLoad(const command::Js
 		{"loaded", true},
 		{"object", ObjectJson(scene, *object)},
 	});
+}
+
+command::CommandResult EditorCommandAdapter::ExecuteObjectAdd(const command::Json& args)
+{
+	std::string error;
+	std::string type;
+	bool hasType = false;
+	if (!ReadString(args, "type", type, hasType, error) || !hasType || type.empty())
+	{
+		return CommandResult::Failure(CommandErrorCode::InvalidArgument,
+		                              "'type' is required.");
+	}
+
+	if (type == "light" || type == "point-light" || type == "point_light"
+	    || type == "sun-light" || type == "sun_light" || type == "spot-light"
+	    || type == "spot_light")
+	{
+		return CommandResult::Failure(
+			CommandErrorCode::InvalidArgument,
+			"Adding lights is disabled while issue #60 is open.");
+	}
+	if (type != "camera")
+	{
+		return CommandResult::Failure(CommandErrorCode::InvalidArgument,
+		                              "Unsupported object type: " + type
+		                                  + ". Only camera can be added.");
+	}
+
+	std::string name;
+	bool hasName = false;
+	if (!ReadString(args, "name", name, hasName, error))
+		return CommandResult::Failure(CommandErrorCode::InvalidArgument, error);
+
+	ObjectEdit edit;
+	if (!ReadEdit(args, edit, error))
+		return CommandResult::Failure(CommandErrorCode::InvalidArgument, error);
+
+	// Validate before creating anything, so a rejected property cannot leave a
+	// half-configured object behind.
+	Camera probe;
+	if (!ValidateEdit(probe, edit, error))
+		return CommandResult::Failure(CommandErrorCode::InvalidArgument, error);
+
+	CommandEditScope scope(m_editor.GetOperations(), "Add Object");
+	std::string addError;
+	const int uid = m_editor.AddCameraObject(name, addError);
+	if (uid == 0)
+	{
+		return CommandResult::Failure(
+			CommandErrorCode::IoError,
+			addError.empty() ? "Creating the camera failed." : addError);
+	}
+
+	Scene& scene = m_editor.GetScene();
+	ObjectID* object = scene.GetObjectID(uid);
+	if (object == nullptr)
+	{
+		return CommandResult::Failure(CommandErrorCode::Internal,
+		                              "The new camera did not enter the scene.");
+	}
+	if (edit.Any())
+		ApplyEditProperties(m_editor, scene, *object, edit);
+	scope.Close();
+
+	return CommandResult::Success(ObjectEnvelope(scene, *object));
+}
+
+command::CommandResult EditorCommandAdapter::ExecuteObjectDuplicate(const command::Json& args)
+{
+	Scene& scene = m_editor.GetScene();
+	std::string error;
+	CommandErrorCode code = CommandErrorCode::InvalidArgument;
+	ObjectID* source = ResolveTarget(scene, args, error, code);
+	if (source == nullptr)
+		return CommandResult::Failure(code, error);
+
+	std::string rename;
+	bool hasRename = false;
+	if (!ReadString(args, "rename", rename, hasRename, error))
+		return CommandResult::Failure(CommandErrorCode::InvalidArgument, error);
+	if (hasRename && rename.empty())
+		return CommandResult::Failure(CommandErrorCode::InvalidArgument,
+		                              "'rename' cannot be empty.");
+
+	if (source->IsLight())
+	{
+		return CommandResult::Failure(
+			CommandErrorCode::InvalidArgument,
+			"Duplicating lights is disabled while issue #60 is open.");
+	}
+
+	auto* camera = dynamic_cast<Camera*>(source);
+	auto* mesh = dynamic_cast<Mesh*>(source);
+	if (camera == nullptr && mesh == nullptr)
+	{
+		return CommandResult::Failure(
+			CommandErrorCode::InvalidArgument,
+			"Duplicating a " + TypeName(*source) + " is not supported.");
+	}
+
+	CommandEditScope scope(m_editor.GetOperations(), "Duplicate Object");
+	ResourceManager& resources = m_editor.GetResourceManager();
+	int uid = 0;
+	if (camera != nullptr)
+	{
+		auto copy = resources.Load<Camera>(
+			camera->cam_w, camera->cam_h, camera->cam_pers, camera->cam_near, camera->cam_far);
+		copy->SetPosition(camera->GetPosition());
+		copy->SetRotation(camera->GetRotation());
+		copy->SetScale(camera->GetScale());
+		copy->SetTarPos(camera->cam_tar);
+		uid = copy->GetObjectID();
+	}
+	else
+	{
+		auto copy = resources.Load<Mesh>(mesh->o_mesh);
+		copy->SetPosition(mesh->GetPosition());
+		copy->SetRotation(mesh->GetRotation());
+		copy->SetScale(mesh->GetScale());
+		copy->using_shadow = mesh->using_shadow;
+		copy->using_material = mesh->using_material;
+		copy->using_sdf = mesh->using_sdf;
+		copy->is_closure = mesh->is_closure;
+		copy->o_material = mesh->o_material;
+		if (mesh->o_shader)
+			copy->SetObjShader(mesh->o_shader);
+		uid = copy->GetObjectID();
+	}
+
+	auto pooled = resources.Get<ObjectID>(uid);
+	if (pooled == nullptr)
+	{
+		return CommandResult::Failure(CommandErrorCode::Internal,
+		                              "The duplicate resource is missing.");
+	}
+	const std::string name = hasRename ? rename : source->o_name + " Copy";
+	const std::string unique = resources.SetName(uid, name);
+	pooled->o_name = unique.empty() ? name : unique;
+	m_editor.GetEventQueue().Emit(SceneObjectAddRequested{uid});
+
+	ObjectID* object = scene.GetObjectID(uid);
+	if (object == nullptr)
+	{
+		return CommandResult::Failure(CommandErrorCode::Internal,
+		                              "The duplicate did not enter the scene.");
+	}
+	scope.Close();
+
+	return CommandResult::Success(ObjectEnvelope(scene, *object));
 }
 
 command::CommandResult EditorCommandAdapter::ExecuteObjectDelete(const command::Json& args)

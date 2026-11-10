@@ -16,6 +16,7 @@ public:
 private:
 	CLI::App* m_app = nullptr;
 	CLI::App* m_listApp = nullptr;
+	CLI::App* m_infoApp = nullptr;
 
 	std::string m_type;
 	std::string m_session;

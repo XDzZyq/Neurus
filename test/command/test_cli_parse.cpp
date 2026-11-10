@@ -53,6 +53,8 @@ TEST(CliParse, ExitCodesMap)
 	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::Timeout), CliExit::Transport);
 	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::DirtyProject),
 	          CliExit::Rejected);
+	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::ScriptError),
+	          CliExit::Rejected);
 	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::AppExited), CliExit::AppMissing);
 	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::SessionNotFound),
 	          CliExit::NoSession);

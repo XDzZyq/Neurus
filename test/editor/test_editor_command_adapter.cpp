@@ -178,6 +178,80 @@ TEST_F(EditorCommandAdapterTest, MultiPropertySetIsOneUndoEntryAndUndoRevertsAll
 	EXPECT_TRUE(mesh->is_rendered);
 }
 
+TEST_F(EditorCommandAdapterTest, SceneInfoReportsCountsAndSelection)
+{
+	const auto result = m_adapter->Execute({kSceneInfo, {}});
+	ASSERT_TRUE(result.ok) << result.message;
+	EXPECT_EQ(result.details["meshes"], 1);
+	EXPECT_EQ(result.details["lights"], 1);
+	EXPECT_EQ(result.details["cameras"], 1);
+	EXPECT_EQ(result.details["environments"], 1);
+	EXPECT_GT(result.details["debug"].get<int>(), 0);
+	EXPECT_FALSE(result.details["dirty"].get<bool>());
+}
+
+TEST_F(EditorCommandAdapterTest, ObjectAddCreatesNamedCameraAsOneUndoEntry)
+{
+	const std::size_t before = m_editor->GetOperations().GetUndoStack().size();
+	const auto result = m_adapter->Execute(
+		{kObjectAdd,
+		 {{"type", "camera"},
+		  {"name", "Camera A"},
+		  {"position", {1.0f, 2.0f, 3.0f}},
+		  {"fov", 55.0f}}});
+	ASSERT_TRUE(result.ok) << result.message;
+	EXPECT_EQ(result.details["object"]["name"], "Camera A");
+	EXPECT_EQ(result.details["object"]["type"], "camera");
+	EXPECT_EQ(result.details["object"]["fov"], 55.0f);
+	EXPECT_EQ(result.details["object"]["position"][0], 1.0f);
+	EXPECT_EQ(m_editor->GetScene().cam_list.size(), 2u);
+	EXPECT_EQ(m_editor->GetOperations().GetUndoStack().size(), before + 1);
+}
+
+TEST_F(EditorCommandAdapterTest, ObjectAddRejectsLightsWhileIssue60IsOpen)
+{
+	const auto result = m_adapter->Execute({kObjectAdd, {{"type", "point-light"}}});
+	EXPECT_FALSE(result.ok);
+	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+	EXPECT_NE(result.message.find("issue #60"), std::string::npos);
+}
+
+TEST_F(EditorCommandAdapterTest, ObjectDuplicateCopiesMeshAndCamera)
+{
+	Mesh* mesh = dynamic_cast<Mesh*>(FirstOfType(ObjectID::GOType::GO_MESH));
+	Camera* camera = dynamic_cast<Camera*>(FirstOfType(ObjectID::GOType::GO_CAM));
+	ASSERT_NE(mesh, nullptr);
+	ASSERT_NE(camera, nullptr);
+
+	mesh->SetPosition(glm::vec3(4.0f, 5.0f, 6.0f));
+	const std::size_t meshCount = m_editor->GetScene().mesh_list.size();
+	const auto meshCopy = m_adapter->Execute(
+		{kObjectDuplicate, {{"uid", mesh->GetObjectID()}, {"rename", "Mesh Copy"}}});
+	ASSERT_TRUE(meshCopy.ok) << meshCopy.message;
+	EXPECT_EQ(meshCopy.details["object"]["name"], "Mesh Copy");
+	EXPECT_EQ(meshCopy.details["object"]["position"][0], 4.0f);
+	EXPECT_EQ(m_editor->GetScene().mesh_list.size(), meshCount + 1);
+
+	const std::size_t cameraCount = m_editor->GetScene().cam_list.size();
+	const auto cameraCopy = m_adapter->Execute(
+		{kObjectDuplicate, {{"uid", camera->GetObjectID()}}});
+	ASSERT_TRUE(cameraCopy.ok) << cameraCopy.message;
+	EXPECT_EQ(cameraCopy.details["object"]["type"], "camera");
+	EXPECT_EQ(cameraCopy.details["object"]["name"], std::string("Camera Copy"));
+	EXPECT_EQ(m_editor->GetScene().cam_list.size(), cameraCount + 1);
+}
+
+TEST_F(EditorCommandAdapterTest, ObjectDuplicateRejectsLights)
+{
+	ObjectID* light = FirstOfType(ObjectID::GOType::GO_LIGHT);
+	ASSERT_NE(light, nullptr);
+	const auto result = m_adapter->Execute(
+		{kObjectDuplicate, {{"uid", light->GetObjectID()}}});
+	EXPECT_FALSE(result.ok);
+	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+	EXPECT_NE(result.message.find("issue #60"), std::string::npos);
+}
+
 TEST_F(EditorCommandAdapterTest, ObjectDeleteAcceptsAUidList)
 {	const int mesh = FirstOfType(ObjectID::GOType::GO_MESH)->GetObjectID();
 	const int light = FirstOfType(ObjectID::GOType::GO_LIGHT)->GetObjectID();

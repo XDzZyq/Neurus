@@ -60,10 +60,12 @@ bool ReadOptionalString(const command::Json& arguments, const char* key,
 
 SessionCommandExecutor::SessionCommandExecutor(command::ISessionState& state,
                                                std::function<void()> requestClose,
-                                               command::IEditorCommands* editor)
+                                               command::IEditorCommands* editor,
+                                               command::IScriptCommands* script)
 	: m_state(state)
 	, m_requestClose(std::move(requestClose))
 	, m_editor(editor)
+	, m_script(script)
 {
 }
 
@@ -79,6 +81,14 @@ command::CommandResult SessionCommandExecutor::Execute(const command::CommandReq
 
 	if (command::IsEditorCommand(request.name) && m_editor != nullptr)
 		return m_editor->Execute(request);
+
+	if (request.name.rfind("script.", 0) == 0)
+	{
+		if (m_script != nullptr)
+			return m_script->Execute(request);
+		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+		                                      "Scripting is not available.");
+	}
 
 	return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
 	                                      "Unknown command: " + request.name);

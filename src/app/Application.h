@@ -16,6 +16,7 @@
 #include "app/VulkanContext.h"
 #include "app/AppArgs.h"
 #include "command/ISessionState.h"
+#include "command/IScriptCommands.h"
 #include "editor/Editor.h"
 #include "render/DeferredRenderer.h"
 #include "render/RenderThread.h"
@@ -39,7 +40,7 @@ class EditorCommandAdapter;
  * declared in teardown order, so reverse-order destruction releases GPU
  * resources in the required sequence.
  */
-class Application : public command::ISessionState
+class Application : public command::ISessionState, public command::IScriptCommands
 {
 public:
 	/**
@@ -73,6 +74,9 @@ public:
 	int SceneObjectCount() const override;
 	std::int64_t UptimeSeconds() const override;
 	std::string AppVersion() const override;
+
+	// --- IScriptCommands (script.run) ---
+	command::CommandResult Execute(const command::CommandRequest& request) override;
 
 private:
 	// --- Initialisation helpers (called in order by Run()) ---

@@ -2,6 +2,7 @@
 
 #include "command/ICommandExecutor.h"
 #include "command/IEditorCommands.h"
+#include "command/IScriptCommands.h"
 #include "command/ISessionState.h"
 
 #include <functional>
@@ -25,10 +26,12 @@ public:
 	 * @param requestClose Invoked once a close has been accepted.
 	 * @param editor Scene/object sub-executor; null when the session has no
 	 *               editor command surface.
+	 * @param script Script sub-executor; null when scripting is unavailable.
 	 */
 	SessionCommandExecutor(command::ISessionState& state,
 	                       std::function<void()> requestClose,
-	                       command::IEditorCommands* editor = nullptr);
+	                       command::IEditorCommands* editor = nullptr,
+	                       command::IScriptCommands* script = nullptr);
 
 	command::CommandResult Execute(const command::CommandRequest& request) override;
 
@@ -48,6 +51,7 @@ private:
 	command::ISessionState& m_state;
 	std::function<void()>   m_requestClose;
 	command::IEditorCommands* m_editor = nullptr;
+	command::IScriptCommands* m_script = nullptr;
 	bool                    m_closeRequested = false;
 };
 

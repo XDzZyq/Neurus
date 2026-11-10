@@ -94,6 +94,10 @@ CliExit ExitCodeFor(command::CommandErrorCode code)
 		return CliExit::Transport;
 	case CommandErrorCode::DirtyProject:
 	case CommandErrorCode::SaveFailed:
+	case CommandErrorCode::IoError:
+	case CommandErrorCode::ScriptError:
+	case CommandErrorCode::ObjectNotFound:
+	case CommandErrorCode::AmbiguousObject:
 	case CommandErrorCode::Internal:
 		return CliExit::Rejected;
 	case CommandErrorCode::AppExited:

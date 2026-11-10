@@ -267,6 +267,18 @@ public:
 	 */
 	int ImportMeshObject(const std::string& path, const std::string& name, std::string& error);
 
+	/**
+	 * @brief Creates a camera, names it and adds it to the scene.
+	 *
+	 * Uses the same default pose as the Add Camera action. The caller may apply
+	 * further properties through the normal typed events.
+	 *
+	 * @param name Display name; empty keeps the generated one.
+	 * @param error Receives a reason when creation fails.
+	 * @return New object UID, or 0 on failure.
+	 */
+	int AddCameraObject(const std::string& name, std::string& error);
+
 	void UploadLighting();
 
 private:

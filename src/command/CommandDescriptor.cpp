@@ -35,15 +35,19 @@ CommandCatalog MakeCommandCatalog()
 		CommandDescriptor{"project.open", "Load a project file.", true, false, {"path"}},
 		CommandDescriptor{"project.save", "Save the project to its path or a new path.", true, false, {}},
 		CommandDescriptor{"scene.list", "List scene objects, optionally by type.", false, false, {}},
+		CommandDescriptor{"scene.info", "Report scene counts and selection.", false, false, {}},
 		CommandDescriptor{"object.get", "Report one scene object.", false, false, {}},
 		CommandDescriptor{"object.set", "Change properties of one scene object.", true, false, {}},
 		CommandDescriptor{"object.load", "Load a mesh file into the scene.", true, false, {"path"}},
+		CommandDescriptor{"object.add", "Create an object in the scene.", true, false, {"type"}},
+		CommandDescriptor{"object.duplicate", "Duplicate a scene object.", true, false, {}},
 		CommandDescriptor{"object.delete", "Remove one or more scene objects.", true, false, {}},
 		CommandDescriptor{"render.get", "Report the render configuration.", false, false, {}},
 		CommandDescriptor{"render.set", "Change render configuration values.", true, false, {}},
 		CommandDescriptor{"history.get", "Report the undo/redo history.", false, false, {}},
 		CommandDescriptor{"history.undo", "Undo the most recent edit.", true, false, {}},
 		CommandDescriptor{"history.redo", "Redo the most recently undone edit.", true, false, {}},
+		CommandDescriptor{"script.run", "Run a Python snippet or file.", true, true, {}},
 	});
 }
 

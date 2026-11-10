@@ -851,17 +851,31 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 
 void Editor::OnCameraAdd()
 {
+	std::string error;
+	if (AddCameraObject({}, error) == 0)
+		NEURUS_ERR("Failed to add camera: " << error);
+}
+
+int Editor::AddCameraObject(const std::string& name, std::string& error)
+{
 	try {
 		auto camera = m_resources->Load<Camera>();
 		camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 		// SetTarPos, not a raw cam_tar write: the view matrix is cached eagerly, so
 		// assigning the field would leave the cache looking at the old target.
 		camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
+		if (!name.empty())
+		{
+			const std::string unique = m_resources->SetName(camera->GetObjectID(), name);
+			camera->o_name = unique.empty() ? name : unique;
+		}
 		ed_eventBus.Emit(SceneObjectAddRequested{camera->GetObjectID()});
-		NEURUS_LOG("[Editor] Added camera at (0, -5, 2)");
+		NEURUS_LOG("[Editor] Added camera at (0, -5, 2) as " << camera->o_name);
+		return camera->GetObjectID();
 	}
 	catch (const std::exception& e) {
-		NEURUS_ERR("Failed to add camera: " << e.what());
+		error = e.what();
+		return 0;
 	}
 }
 

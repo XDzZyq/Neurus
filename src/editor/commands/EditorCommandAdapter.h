@@ -26,9 +26,12 @@ public:
 
 private:
 	command::CommandResult ExecuteSceneList(const command::Json& args);
+	command::CommandResult ExecuteSceneInfo();
 	command::CommandResult ExecuteObjectGet(const command::Json& args);
 	command::CommandResult ExecuteObjectSet(const command::Json& args);
 	command::CommandResult ExecuteObjectLoad(const command::Json& args);
+	command::CommandResult ExecuteObjectAdd(const command::Json& args);
+	command::CommandResult ExecuteObjectDuplicate(const command::Json& args);
 	command::CommandResult ExecuteObjectDelete(const command::Json& args);
 	command::CommandResult ExecuteRenderGet();
 	command::CommandResult ExecuteRenderSet(const command::Json& args);

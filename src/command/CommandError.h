@@ -23,6 +23,7 @@ enum class CommandErrorCode
 	DirtyProject,
 	SaveFailed,
 	IoError,
+	ScriptError,
 	ObjectNotFound,
 	AmbiguousObject,
 	Unauthorized,

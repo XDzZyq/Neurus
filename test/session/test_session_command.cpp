@@ -101,6 +101,18 @@ public:
 	CommandRequest lastRequest;
 };
 
+class FakeScriptCommands final : public IScriptCommands
+{
+public:
+	CommandResult Execute(const CommandRequest& request) override
+	{
+		lastRequest = request;
+		return CommandResult::Success({{"delegated", request.name}});
+	}
+
+	CommandRequest lastRequest;
+};
+
 } // namespace
 
 TEST(SessionCommand, StatusReportsDirtyAndPid)
@@ -310,6 +322,29 @@ TEST(SessionCommand, RenderAndHistoryCommandsDelegateToTheEditor)
 		ASSERT_TRUE(result.ok) << name;
 		EXPECT_EQ(editor.lastRequest.name, name);
 	}
+}
+
+TEST(SessionCommand, ScriptCommandsDelegateToTheScriptExecutor)
+{
+	FakeSessionState state;
+	FakeScriptCommands script;
+	SessionCommandExecutor executor(state, [] {}, nullptr, &script);
+
+	const auto result = executor.Execute({kScriptRun, {{"code", "print(1)"}}});
+	ASSERT_TRUE(result.ok);
+	EXPECT_EQ(result.details["delegated"], "script.run");
+	EXPECT_EQ(script.lastRequest.name, "script.run");
+	EXPECT_EQ(script.lastRequest.args["code"], "print(1)");
+}
+
+TEST(SessionCommand, ScriptCommandsAreUnavailableWithoutAnExecutor)
+{
+	FakeSessionState state;
+	SessionCommandExecutor executor(state, [] {});
+
+	const auto result = executor.Execute({kScriptRun, {{"code", "print(1)"}}});
+	EXPECT_FALSE(result.ok);
+	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
 }
 
 TEST(SessionCommand, SceneCommandsAreUnknownWithoutAnEditor)

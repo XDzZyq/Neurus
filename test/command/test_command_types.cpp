@@ -33,6 +33,8 @@ TEST(CommandTypes, EveryErrorCodeHasAStableString)
 	EXPECT_EQ(ToString(CommandErrorCode::None), "");
 	EXPECT_EQ(ParseErrorCode("DIRTY_PROJECT"), CommandErrorCode::DirtyProject);
 	EXPECT_EQ(ParseErrorCode("FRAME_TOO_LARGE"), CommandErrorCode::FrameTooLarge);
+	EXPECT_EQ(ToString(CommandErrorCode::ScriptError), "SCRIPT_ERROR");
+	EXPECT_EQ(ParseErrorCode("SCRIPT_ERROR"), CommandErrorCode::ScriptError);
 	EXPECT_FALSE(ParseErrorCode("NOT_A_CODE").has_value());
 }
 

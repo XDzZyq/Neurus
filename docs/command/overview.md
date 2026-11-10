@@ -118,7 +118,8 @@ Timeouts: connect 3 s, handshake 3 s, command 10 s, `close --save` 60 s, and a
 - Each session uses a 256-bit token from the operating-system CSPRNG, compared
   in constant time.
 - Logging in is a handshake, not an argument on every request.
-- `session.close` is marked sensitive. Later `script.run` will be too.
+- `session.close` and `script.run` are marked sensitive. Later commands can opt
+  in the same way.
 - No raw pointers or memory addresses cross the protocol.
 
 ## CLI reference
@@ -131,6 +132,7 @@ neurus list
 neurus use [NAME] [--clear]
 neurus project info|new [--force]|open --path FILE [--force]|save [--path FILE]
 neurus scene list [--type all|mesh|light|camera|environment|sprite|debug]
+neurus scene info
 neurus object [--name NAME|--uid N] [--position|--rotation|--scale|--visible]
 neurus object get --name NAME|--uid N [--type TYPE]
 neurus object set --name NAME|--uid N [--rename NAME] [--position X,Y,Z]
@@ -142,6 +144,9 @@ neurus object set --name NAME|--uid N [--rename NAME] [--position X,Y,Z]
                    [--material true|false] [--intensity I]
                    [--environment-rotation DEG]
 neurus object load -f PATH [--name NAME]
+neurus object add --type camera [--name NAME] [--position X,Y,Z]
+                   [--target X,Y,Z] [--fov DEG] [--active true|false]
+neurus object duplicate --name NAME|--uid N [--rename NAME] [--type TYPE]
 neurus object delete --name NAME|--uid N|--uids N,N,... [--type TYPE]
 neurus render get
 neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
@@ -154,6 +159,7 @@ neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
                   [--fxaa-subpix V] [--fxaa-edge-threshold V]
                   [--fxaa-edge-threshold-min V]
 neurus history show|undo|redo
+neurus script run --code "PYTHON" | --file FILE
 neurus --format human|json
 ```
 
@@ -177,15 +183,20 @@ sessions from different terminals.
 - `project` creates, opens, saves and reports the document. `new` and `open`
   refuse to discard a dirty document without `--force`.
 - `scene list` reports scene membership, optionally filtered by object type.
+- `scene info` reports counts by type, selection and the active camera.
 - `object` reads and writes scene objects. The root form with a property flag
-  is the read shorthand; `get`, `set`, `load` and `delete` are explicit.
-  Transform and property writes go through the same typed events as the panels,
-  so they are undoable and visible to the next frame. A multi-property `set` is
-  one undo entry.
+  is the read shorthand; `get`, `set`, `add`, `duplicate`, `load` and `delete`
+  are explicit. `add` currently creates cameras only; adding and duplicating
+  lights stay disabled until issue #60 is fixed. Transform and property writes
+  go through the same typed events as the panels, so they are undoable and
+  visible to the next frame. A multi-property `set`, an `add` with properties,
+  and a `duplicate` are each one undo entry.
 - `render get` reports the render configuration; `render set` changes any
   subset through the render-config controller and its undo entry.
 - `history show` reports the undo/redo stacks; `history undo` and
   `history redo` step them.
+- `script run` executes Python in the running application and returns the
+  captured output. A run is one undo entry, like the Script Console.
 
 Exit codes:
 
@@ -195,7 +206,7 @@ Exit codes:
 | 2 | Usage or validation error |
 | 3 | No session, or an ambiguous target |
 | 4 | Transport failure or timeout |
-| 5 | Command rejected (dirty project, save failed) |
+| 5 | Command rejected (dirty project, save/script failure, object lookup) |
 | 6 | Application missing or exited during startup |
 
 ## Error codes
@@ -210,6 +221,7 @@ Exit codes:
 | `DIRTY_PROJECT` | `close`, `project.new` or `project.open` refused because of unsaved changes |
 | `SAVE_FAILED` | `project.save` or `close --save` failed to persist |
 | `IO_ERROR` | Project or mesh file could not be read/written |
+| `SCRIPT_ERROR` | Python code raised an exception |
 | `OBJECT_NOT_FOUND` | No scene object matched the name or UID |
 | `AMBIGUOUS_OBJECT` | Several scene objects matched the name; pass `type` or `uid` |
 | `UNAUTHORIZED` | Missing or wrong token, or non-loopback peer |
@@ -225,7 +237,8 @@ Exit codes:
 ## Current command surface
 
 Version 1 implements session lifecycle, project persistence, scene/object reads
-and writes, render settings and undo history:
+and writes, camera creation, render settings, undo history and Python script
+runs:
 
 - `session.status` - session name, pid, project, dirty flag, object count,
   versions, uptime.
@@ -235,17 +248,21 @@ and writes, render settings and undo history:
 - `project.open` - load a project file.
 - `project.save` - save to the current path or a new path.
 - `scene.list` - scene objects, optionally filtered by type.
+- `scene.info` - counts by type, selection and active camera.
 - `object.get` - full object record by name or UID.
 - `object.set` - rename, transform, visibility and type-specific properties.
 - `object.load` - load an OBJ mesh and add it to the scene.
+- `object.add` - create a camera (lights are disabled until issue #60 is fixed).
+- `object.duplicate` - copy a mesh or camera.
 - `object.delete` - remove one or more objects from the scene.
 - `render.get` - pipeline, anti-aliasing, AO, shadow, SSR and quality settings.
 - `render.set` - change a subset of render settings.
 - `history.get` - undo/redo labels and availability.
 - `history.undo` - undo the most recent edit.
 - `history.redo` - redo the most recently undone edit.
+- `script.run` - run Python and return its captured output.
 
-The next families remain reserved: `script.run`, `snapshot.capture`.
+The next family remains reserved: `snapshot.capture`.
 
 ## Testing
 

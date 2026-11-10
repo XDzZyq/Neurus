@@ -12,6 +12,7 @@
 
 #include "VulkanContext.h"
 #include "app/session/SessionServer.h"
+#include "command/Commands.h"
 #include "core/Log.h"
 #include "editor/Editor.h"
 #include "editor/commands/EditorCommandAdapter.h"
@@ -307,7 +308,8 @@ int Application::Run()
 	{
 		app_sessionName = *app_args.session;
 		app_session = std::make_unique<SessionServer>(
-			*this, app_qtApp->applicationVersion().toStdString(), app_editorCommands.get());
+			*this, app_qtApp->applicationVersion().toStdString(), app_editorCommands.get(),
+			this);
 		std::string sessionError;
 		if (!app_session->Start(app_sessionName, app_projectPath, sessionError))
 		{
@@ -769,6 +771,97 @@ bool Application::OpenProject(const std::string& path, bool force, std::string& 
 int Application::SceneObjectCount() const
 {
 	return app_editor ? static_cast<int>(app_editor->GetScene().obj_list.size()) : 0;
+}
+
+command::CommandResult Application::Execute(const command::CommandRequest& request)
+{
+	if (request.name != command::kScriptRun)
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+		                                      "Unknown command: " + request.name);
+	}
+	if (!app_script || !app_script->IsReady())
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::Internal,
+		                                      "Scripting is not initialized.");
+	}
+	if (!app_editor)
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::Internal,
+		                                      "The editor is not available.");
+	}
+
+	const command::Json& args = request.args;
+	const bool hasCode = args.contains("code");
+	const bool hasPath = args.contains("path");
+	if (hasCode == hasPath)
+	{
+		return command::CommandResult::Failure(
+			command::CommandErrorCode::InvalidArgument,
+			"Pass exactly one of 'code' or 'path'.");
+	}
+
+	std::string code;
+	std::string path;
+	if (hasCode)
+	{
+		if (!args["code"].is_string())
+		{
+			return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+			                                      "'code' must be a string.");
+		}
+		code = args["code"].get<std::string>();
+	}
+	else
+	{
+		if (!args["path"].is_string() || args["path"].get<std::string>().empty())
+		{
+			return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+			                                      "'path' must be a non-empty string.");
+		}
+		path = args["path"].get<std::string>();
+		std::error_code fileError;
+		if (!std::filesystem::is_regular_file(path, fileError))
+		{
+			return command::CommandResult::Failure(
+				command::CommandErrorCode::IoError,
+				"Script file not found: " + path, {{"path", path}});
+		}
+	}
+
+	ScriptConsoleBuffer& console = app_script->Console();
+	std::uint64_t lastSeq = 0;
+	if (console.Size() > 0)
+		lastSeq = console.At(console.Size() - 1).seq;
+
+	ScriptContext context;
+	app_editor->UpdateScriptContext(context);
+	if (hasPath)
+		app_script->RunFile(path, &context);
+	else
+		app_script->RunString(code, &context);
+
+	std::string output;
+	std::string scriptError;
+	const std::size_t lineCount = console.Size();
+	for (std::size_t i = 0; i < lineCount; ++i)
+	{
+		const ScriptLine line = console.At(i);
+		if (line.seq <= lastSeq)
+			continue;
+		if (line.kind == ScriptLineKind::Error)
+			scriptError += line.text;
+		else if (line.kind == ScriptLineKind::Output || line.kind == ScriptLineKind::Result)
+			output += line.text;
+	}
+
+	if (!scriptError.empty())
+	{
+		return command::CommandResult::Failure(
+			command::CommandErrorCode::ScriptError, scriptError,
+			{{"output", output}, {"error", scriptError}});
+	}
+	return command::CommandResult::Success({{"output", output}});
 }
 
 std::int64_t Application::UptimeSeconds() const

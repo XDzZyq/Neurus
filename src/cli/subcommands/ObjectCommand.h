@@ -18,13 +18,17 @@ public:
 private:
 	CliExit ExecuteGet(bool shorthand);
 	CliExit ExecuteLoad();
+	CliExit ExecuteAdd();
 	CliExit ExecuteSet();
+	CliExit ExecuteDuplicate();
 	CliExit ExecuteDelete();
 
 	CLI::App* m_app = nullptr;
 	CLI::App* m_getApp = nullptr;
 	CLI::App* m_loadApp = nullptr;
+	CLI::App* m_addApp = nullptr;
 	CLI::App* m_setApp = nullptr;
+	CLI::App* m_duplicateApp = nullptr;
 	CLI::App* m_deleteApp = nullptr;
 
 	// Shorthand `object --name ... --position`.
@@ -44,6 +48,16 @@ private:
 	std::string m_loadSession;
 	std::string m_loadFormat;
 	int         m_loadTimeout = 10;
+
+	std::string m_addType;
+	std::string m_addName;
+	std::string m_addPosition;
+	std::string m_addTarget;
+	std::string m_addFov;
+	std::string m_addActive;
+	std::string m_addSession;
+	std::string m_addFormat;
+	int         m_addTimeout = 10;
 
 	std::string m_setName;
 	int         m_setUid = 0;
@@ -78,6 +92,14 @@ private:
 	std::string m_deleteSession;
 	std::string m_deleteFormat;
 	int         m_deleteTimeout = 10;
+
+	std::string m_duplicateName;
+	int         m_duplicateUid = 0;
+	std::string m_duplicateType;
+	std::string m_duplicateRename;
+	std::string m_duplicateSession;
+	std::string m_duplicateFormat;
+	int         m_duplicateTimeout = 10;
 };
 
 } // namespace neurus::cli

@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace neurus::cli
@@ -243,6 +244,23 @@ void ObjectCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 	m_loadApp->add_option("--name", m_loadName, "Display name for the new object.");
 	AddCommonOptions(*m_loadApp, m_loadSession, m_loadFormat, m_loadTimeout);
 
+	m_addApp = m_app->add_subcommand("add", "Create an object in the scene.");
+	m_addApp->add_option("--type", m_addType, "Object type. Currently only camera is supported.");
+	m_addApp->add_option("--name", m_addName, "Display name for the new object.");
+	m_addApp->add_option("--position", m_addPosition, "Position: x,y,z.");
+	m_addApp->add_option("--target", m_addTarget, "Camera look-at target: x,y,z.");
+	m_addApp->add_option("--fov", m_addFov, "Camera field of view in degrees.");
+	m_addApp->add_option("--active", m_addActive, "Activate the new camera: true|false.");
+	AddCommonOptions(*m_addApp, m_addSession, m_addFormat, m_addTimeout);
+
+	m_duplicateApp = m_app->add_subcommand("duplicate", "Duplicate a mesh or camera.");
+	m_duplicateApp->add_option("--name", m_duplicateName, "Source object name.");
+	m_duplicateApp->add_option("--uid", m_duplicateUid, "Source object UID.");
+	m_duplicateApp->add_option("--type", m_duplicateType, "Source object type filter.");
+	m_duplicateApp->add_option("--rename", m_duplicateRename, "Name for the duplicate.");
+	AddCommonOptions(*m_duplicateApp, m_duplicateSession, m_duplicateFormat,
+	                 m_duplicateTimeout);
+
 	m_setApp = m_app->add_subcommand("set", "Change properties of one scene object.");
 	m_setApp->add_option("--name", m_setName, "Object name.");
 	m_setApp->add_option("--uid", m_setUid, "Object UID.");
@@ -288,8 +306,12 @@ CliExit ObjectCommand::Execute()
 {
 	if (m_loadApp != nullptr && m_loadApp->parsed())
 		return ExecuteLoad();
+	if (m_addApp != nullptr && m_addApp->parsed())
+		return ExecuteAdd();
 	if (m_setApp != nullptr && m_setApp->parsed())
 		return ExecuteSet();
+	if (m_duplicateApp != nullptr && m_duplicateApp->parsed())
+		return ExecuteDuplicate();
 	if (m_deleteApp != nullptr && m_deleteApp->parsed())
 		return ExecuteDelete();
 	if (m_getApp != nullptr && m_getApp->parsed())
@@ -361,6 +383,100 @@ CliExit ObjectCommand::ExecuteLoad()
 	const auto result = RunSessionCommand(SessionName(m_loadSession),
 	                                      {command::kObjectLoad, args}, format, exitCode,
 	                                      m_loadTimeout);
+	if (!result)
+		return exitCode;
+
+	PrintObjectFull(result->details["object"], format);
+	return CliExit::Ok;
+}
+
+CliExit ObjectCommand::ExecuteAdd()
+{
+	const OutputFormat format = Format(m_addFormat);
+	if (m_addType.empty())
+	{
+		PrintError(format, command::CommandErrorCode::InvalidArgument,
+		           "--type is required.");
+		return CliExit::Usage;
+	}
+
+	command::Json args{{"type", m_addType}};
+	std::string error;
+	if (!m_addName.empty())
+		args["name"] = m_addName;
+	if (!m_addPosition.empty())
+	{
+		command::Json value;
+		if (!ParseVec3(m_addPosition, value, error))
+		{
+			PrintError(format, command::CommandErrorCode::InvalidArgument,
+			           "--position: " + error);
+			return CliExit::Usage;
+		}
+		args["position"] = std::move(value);
+	}
+	if (!m_addTarget.empty())
+	{
+		command::Json value;
+		if (!ParseVec3(m_addTarget, value, error))
+		{
+			PrintError(format, command::CommandErrorCode::InvalidArgument,
+			           "--target: " + error);
+			return CliExit::Usage;
+		}
+		args["target"] = std::move(value);
+	}
+	if (!m_addFov.empty())
+	{
+		float value = 0.0f;
+		if (!ParseFloat(m_addFov, value, error))
+		{
+			PrintError(format, command::CommandErrorCode::InvalidArgument,
+			           "--fov: " + error);
+			return CliExit::Usage;
+		}
+		args["fov"] = value;
+	}
+	if (!m_addActive.empty())
+	{
+		bool value = false;
+		if (!ParseBool(m_addActive, value))
+		{
+			PrintError(format, command::CommandErrorCode::InvalidArgument,
+			           "--active: expected true or false.");
+			return CliExit::Usage;
+		}
+		args["active"] = value;
+	}
+
+	CliExit exitCode = CliExit::Ok;
+	const auto result = RunSessionCommand(SessionName(m_addSession),
+	                                      {command::kObjectAdd, args}, format, exitCode,
+	                                      m_addTimeout);
+	if (!result)
+		return exitCode;
+
+	PrintObjectFull(result->details["object"], format);
+	return CliExit::Ok;
+}
+
+CliExit ObjectCommand::ExecuteDuplicate()
+{
+	const OutputFormat format = Format(m_duplicateFormat);
+	command::Json args;
+	std::string error;
+	if (!BuildTarget(m_duplicateName, m_duplicateUid, m_duplicateType, args, error))
+	{
+		PrintError(format, command::CommandErrorCode::InvalidArgument, error);
+		return CliExit::Usage;
+	}
+	if (!m_duplicateRename.empty())
+		args["rename"] = m_duplicateRename;
+
+	CliExit exitCode = CliExit::Ok;
+	const auto result = RunSessionCommand(SessionName(m_duplicateSession),
+	                                      {command::kObjectDuplicate, args}, format, exitCode,
+	                                      m_duplicateTimeout);
 	if (!result)
 		return exitCode;
 

@@ -18,11 +18,14 @@ inline constexpr const char* kProjectSave = "project.save";
 
 // --- Scene ---
 inline constexpr const char* kSceneList = "scene.list";
+inline constexpr const char* kSceneInfo = "scene.info";
 
 // --- Objects ---
 inline constexpr const char* kObjectGet = "object.get";
 inline constexpr const char* kObjectSet = "object.set";
 inline constexpr const char* kObjectLoad = "object.load";
+inline constexpr const char* kObjectAdd = "object.add";
+inline constexpr const char* kObjectDuplicate = "object.duplicate";
 inline constexpr const char* kObjectDelete = "object.delete";
 
 // --- Render settings ---
@@ -33,6 +36,9 @@ inline constexpr const char* kRenderSet = "render.set";
 inline constexpr const char* kHistoryGet = "history.get";
 inline constexpr const char* kHistoryUndo = "history.undo";
 inline constexpr const char* kHistoryRedo = "history.redo";
+
+// --- Scripting ---
+inline constexpr const char* kScriptRun = "script.run";
 
 /**
  * @brief True for commands implemented by the editor-side adapter.
