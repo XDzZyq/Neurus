@@ -9,8 +9,8 @@ add_library(neurus_cli_core STATIC
 	CliParse.cpp
 	Output.h
 	Output.cpp
-	ProcessLaunch.h
-	ProcessLaunch.cpp
+	AppArguments.h
+	AppArguments.cpp
 	SessionClient.h
 	SessionClient.cpp
 	SubCommand.h
@@ -31,6 +31,7 @@ target_include_directories(neurus_cli_core PUBLIC
 
 target_link_libraries(neurus_cli_core PUBLIC
 	neurus_ipc
+	neurus_platform_paths
 	cli11
 	nlohmann_json
 )

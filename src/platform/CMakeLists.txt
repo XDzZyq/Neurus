@@ -1,12 +1,21 @@
 # src/platform/CMakeLists.txt - Platform abstraction layer
 
-# Platform paths are standard-library only. They are a separate target so the
-# Qt-free, Vulkan-free command transport and CLI can use them without inheriting
-# the surface layer's Vulkan dependency.
+# Platform path and process helpers are standard-library only. They are a
+# separate target so the Qt-free, Vulkan-free command transport and CLI can use
+# them without inheriting the surface layer's Vulkan dependency.
 add_library(neurus_platform_paths STATIC
 	PlatformPaths.h
 	PlatformPaths.cpp
+	PlatformProcess.h
 )
+
+if(WIN32)
+	target_sources(neurus_platform_paths PRIVATE win/Win32Process.cpp)
+elseif(APPLE)
+	target_sources(neurus_platform_paths PRIVATE mac/MacOSProcess.cpp)
+else()
+	message(FATAL_ERROR "PlatformProcess has no implementation for this platform.")
+endif()
 
 target_include_directories(neurus_platform_paths PUBLIC ${CMAKE_SOURCE_DIR}/src)
 

@@ -11,8 +11,10 @@
 #include <functional>
 #include <string>
 
-#include "cli/ProcessLaunch.h"
+#include "cli/AppArguments.h"
+#include "platform/PlatformProcess.h"
 
+using namespace neurus;
 using namespace neurus::cli;
 
 namespace

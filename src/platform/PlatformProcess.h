@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace neurus::cli
+namespace neurus
 {
 
 /**
@@ -20,14 +20,18 @@ std::optional<std::filesystem::path> ResolveAppExecutable(
 	const std::optional<std::filesystem::path>& overridePath,
 	const std::string& envValue);
 
-/// @return The path of the running `neurus` executable.
+/// @return The path of the running executable.
 std::filesystem::path CurrentExecutablePath();
 
 /// @return The `NEURUS_APP` value, or an empty string when unset.
 std::string AppEnvironmentPath();
 
 /**
- * @brief Spawns the application detached with stdout/stderr in a log file.
+ * @brief Spawns a detached process with stdout/stderr in a log file.
+ * @param app Executable to launch.
+ * @param arguments Command-line arguments, excluding the executable.
+ * @param logPath File receiving stdout and stderr.
+ * @param error Receives a reason when the launch fails.
  * @return The child pid, or std::nullopt with @p error set.
  */
 std::optional<int> SpawnDetached(const std::filesystem::path& app,
@@ -35,8 +39,4 @@ std::optional<int> SpawnDetached(const std::filesystem::path& app,
                                  const std::filesystem::path& logPath,
                                  std::string& error);
 
-/// Builds `--session <name> [--project <path>]`.
-std::vector<std::string> BuildAppArguments(const std::string& session,
-                                          const std::optional<std::string>& project);
-
-} // namespace neurus::cli
+} // namespace neurus

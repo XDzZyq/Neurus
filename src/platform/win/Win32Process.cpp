@@ -1,11 +1,9 @@
-#include "cli/ProcessLaunch.h"
+#include "platform/PlatformProcess.h"
 
-#include <array>
 #include <cstdlib>
 #include <system_error>
 #include <vector>
 
-#ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -13,17 +11,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#else
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#endif
 
-namespace neurus::cli
+namespace neurus
 {
 namespace
 {
@@ -34,7 +23,6 @@ bool IsFile(const std::filesystem::path& path)
 	return std::filesystem::is_regular_file(path, error);
 }
 
-#ifdef _WIN32
 std::wstring QuoteArgument(const std::wstring& argument)
 {
 	if (argument.empty())
@@ -71,7 +59,6 @@ std::wstring QuoteArgument(const std::wstring& argument)
 	result.push_back(L'"');
 	return result;
 }
-#endif
 
 } // namespace
 
@@ -92,26 +79,12 @@ std::optional<std::filesystem::path> ResolveAppExecutable(
 	const auto parent = directory.parent_path();
 	const auto grandparent = parent.parent_path();
 
-	// The CLI is usually in <build>/<config>/cli, next to the app. A macOS
-	// build is a bundle, so the executable is inside Neurus.app/Contents/MacOS.
-	const std::filesystem::path names[] = {
-#ifdef _WIN32
-		"Neurus.exe",
-#elif defined(__APPLE__)
-		"Neurus.app/Contents/MacOS/Neurus",
-		"Neurus",
-#else
-		"Neurus",
-#endif
-	};
-
-	for (const auto& name : names)
+	// The CLI is usually in <build>/<config>/cli, next to the app.
+	for (const auto& candidate : {parent / "Neurus.exe", directory / "Neurus.exe",
+	                              grandparent / "Neurus.exe"})
 	{
-		for (const auto& candidate : {parent / name, directory / name, grandparent / name})
-		{
-			if (IsFile(candidate))
-				return candidate;
-		}
+		if (IsFile(candidate))
+			return candidate;
 	}
 	return std::nullopt;
 }
@@ -124,7 +97,6 @@ std::optional<int> SpawnDetached(const std::filesystem::path& app,
 	std::error_code directoryError;
 	std::filesystem::create_directories(logPath.parent_path(), directoryError);
 
-#ifdef _WIN32
 	std::wstring commandLine = QuoteArgument(app.wstring());
 	for (const auto& argument : arguments)
 	{
@@ -193,54 +165,10 @@ std::optional<int> SpawnDetached(const std::filesystem::path& app,
 	CloseHandle(process.hThread);
 	CloseHandle(process.hProcess);
 	return pid;
-#else
-	const int pid = fork();
-	if (pid < 0)
-	{
-		error = "Cannot fork the Neurus application.";
-		return std::nullopt;
-	}
-	if (pid == 0)
-	{
-		setsid();
-		const int log = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
-		if (log >= 0)
-		{
-			dup2(log, STDOUT_FILENO);
-			dup2(log, STDERR_FILENO);
-			close(log);
-		}
-
-		std::vector<std::string> storage;
-		storage.push_back(app.string());
-		storage.insert(storage.end(), arguments.begin(), arguments.end());
-		std::vector<char*> argv;
-		argv.reserve(storage.size() + 1);
-		for (auto& value : storage)
-			argv.push_back(value.data());
-		argv.push_back(nullptr);
-		execv(app.c_str(), argv.data());
-		_exit(127);
-	}
-	return pid;
-#endif
-}
-
-std::vector<std::string> BuildAppArguments(const std::string& session,
-                                          const std::optional<std::string>& project)
-{
-	std::vector<std::string> arguments{"--session", session};
-	if (project)
-	{
-		arguments.push_back("--project");
-		arguments.push_back(*project);
-	}
-	return arguments;
 }
 
 std::filesystem::path CurrentExecutablePath()
 {
-#ifdef _WIN32
 	std::wstring buffer;
 	buffer.resize(32768);
 	const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
@@ -249,27 +177,10 @@ std::filesystem::path CurrentExecutablePath()
 		return {};
 	buffer.resize(length);
 	return std::filesystem::path(buffer);
-#elif defined(__APPLE__)
-	std::uint32_t size = 0;
-	_NSGetExecutablePath(nullptr, &size);
-	std::vector<char> buffer(size);
-	if (_NSGetExecutablePath(buffer.data(), &size) != 0)
-		return {};
-	std::error_code error;
-	const auto resolved = std::filesystem::weakly_canonical(buffer.data(), error);
-	return error ? std::filesystem::path(buffer.data()) : resolved;
-#else
-	std::array<char, 4096> buffer{};
-	const ssize_t length = readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
-	if (length <= 0)
-		return {};
-	return std::filesystem::path(std::string(buffer.data(), static_cast<std::size_t>(length)));
-#endif
 }
 
 std::string AppEnvironmentPath()
 {
-#ifdef _WIN32
 	char* value = nullptr;
 	size_t length = 0;
 	if (_dupenv_s(&value, &length, "NEURUS_APP") == 0 && value)
@@ -280,10 +191,6 @@ std::string AppEnvironmentPath()
 	}
 	std::free(value);
 	return {};
-#else
-	const char* value = std::getenv("NEURUS_APP");
-	return value ? std::string(value) : std::string{};
-#endif
 }
 
-} // namespace neurus::cli
+} // namespace neurus

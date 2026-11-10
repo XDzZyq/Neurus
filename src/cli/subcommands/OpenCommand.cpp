@@ -1,10 +1,11 @@
 #include "cli/subcommands/OpenCommand.h"
 
+#include "cli/AppArguments.h"
 #include "cli/Output.h"
-#include "cli/ProcessLaunch.h"
 #include "cli/SessionClient.h"
 #include "command/Commands.h"
 #include "ipc/SessionRegistry.h"
+#include "platform/PlatformProcess.h"
 
 #include <chrono>
 #include <thread>
