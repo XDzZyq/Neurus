@@ -3,6 +3,8 @@
 add_library(neurus_app STATIC
 	Application.h
 	Application.cpp
+	ApplicationCommands.cpp
+	ApplicationSignals.cpp
 	AppArgs.h
 	AppArgs.cpp
 	Preferences.h
