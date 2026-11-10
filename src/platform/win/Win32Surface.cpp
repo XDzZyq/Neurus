@@ -1,4 +1,3 @@
-#define VK_USE_PLATFORM_WIN32_KHR
 #include "Win32Surface.h"
 
 #include <Windows.h>
@@ -20,6 +19,11 @@ vk::raii::SurfaceKHR Win32Surface::createSurface(
 	HINSTANCE hinstance = GetModuleHandle(nullptr);
 	vk::Win32SurfaceCreateInfoKHR createInfo({}, hinstance, static_cast<HWND>(windowHandle));
 	return vk::raii::SurfaceKHR(instance, createInfo);
+}
+
+std::unique_ptr<PlatformSurface> CreatePlatformSurface()
+{
+	return std::make_unique<Win32Surface>();
 }
 
 } // namespace neurus

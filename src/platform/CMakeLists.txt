@@ -5,23 +5,27 @@
 # them without inheriting the surface layer's Vulkan dependency.
 add_library(neurus_platform_paths STATIC
 	PlatformPaths.h
-	PlatformPaths.cpp
 	PlatformProcess.h
 )
 
 if(WIN32)
-	target_sources(neurus_platform_paths PRIVATE win/Win32Process.cpp)
+	target_sources(neurus_platform_paths PRIVATE
+		win/Win32Paths.cpp
+		win/Win32Process.cpp
+	)
 elseif(APPLE)
-	target_sources(neurus_platform_paths PRIVATE mac/MacOSProcess.cpp)
+	target_sources(neurus_platform_paths PRIVATE
+		mac/MacOSPaths.cpp
+		mac/MacOSProcess.cpp
+	)
 else()
-	message(FATAL_ERROR "PlatformProcess has no implementation for this platform.")
+	message(FATAL_ERROR "PlatformPaths and PlatformProcess have no implementation for this platform.")
 endif()
 
 target_include_directories(neurus_platform_paths PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
 add_library(neurus_platform STATIC
 	PlatformSurface.h
-	PlatformSurface.cpp
 )
 
 target_link_libraries(neurus_platform PUBLIC

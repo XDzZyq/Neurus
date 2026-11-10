@@ -1,4 +1,3 @@
-#define VK_USE_PLATFORM_METAL_EXT
 #include <vulkan/vulkan.h>
 
 #include "MacOSSurface.h"
@@ -146,6 +145,11 @@ void MacOSSurface::onResize(NativeWindowHandle windowHandle,
                             uint32_t /*width*/, uint32_t /*height*/) const
 {
     updateMetalLayerSize(windowHandle);
+}
+
+std::unique_ptr<PlatformSurface> CreatePlatformSurface()
+{
+    return std::make_unique<MacOSSurface>();
 }
 
 } // namespace neurus
