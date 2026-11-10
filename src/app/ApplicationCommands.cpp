@@ -21,6 +21,22 @@
 #include <string>
 #include <vector>
 
+namespace {
+
+const char* ScriptKindName(neurus::ScriptLineKind kind)
+{
+	switch (kind)
+	{
+	case neurus::ScriptLineKind::Input: return "input";
+	case neurus::ScriptLineKind::Output: return "output";
+	case neurus::ScriptLineKind::Error: return "error";
+	case neurus::ScriptLineKind::Result: return "result";
+	}
+	return "unknown";
+}
+
+} // namespace
+
 namespace neurus {
 
 bool Application::IsDirty() const
@@ -82,7 +98,79 @@ int Application::SceneObjectCount() const
 
 command::CommandResult Application::Execute(const command::CommandRequest& request)
 {
-	if (request.name != command::kScriptRun)
+	const command::Json& args = request.args;
+	ScriptConsoleBuffer* console = app_script ? &app_script->Console() : nullptr;
+
+	if (request.name == command::kScriptInfo)
+	{
+		const bool ready = app_script && app_script->IsReady();
+		return command::CommandResult::Success({
+			{"ready", ready},
+			{"python_version", app_script ? app_script->PythonVersion() : std::string{}},
+			{"environment", app_script ? app_script->EnvironmentPath() : std::string{}},
+			{"console_lines", console ? console->Size() : 0},
+		});
+	}
+
+	if (request.name == command::kScriptConsole)
+	{
+		if (!console)
+		{
+			return command::CommandResult::Failure(command::CommandErrorCode::Internal,
+			                                      "Scripting is not initialized.");
+		}
+		int tail = 50;
+		if (args.contains("tail"))
+		{
+			if (!args["tail"].is_number_integer())
+			{
+				return command::CommandResult::Failure(
+					command::CommandErrorCode::InvalidArgument,
+					"'tail' must be a positive integer.");
+			}
+			tail = args["tail"].get<int>();
+			if (tail <= 0)
+			{
+				return command::CommandResult::Failure(
+					command::CommandErrorCode::InvalidArgument,
+					"'tail' must be a positive integer.");
+			}
+		}
+
+		const std::size_t total = console->Size();
+		const std::size_t first = total > static_cast<std::size_t>(tail)
+			? total - static_cast<std::size_t>(tail)
+			: 0;
+		command::Json lines = command::Json::array();
+		for (std::size_t i = first; i < total; ++i)
+		{
+			const ScriptLine line = console->At(i);
+			lines.push_back({
+				{"seq", line.seq},
+				{"kind", ScriptKindName(line.kind)},
+				{"text", line.text},
+			});
+		}
+		return command::CommandResult::Success({
+			{"lines", lines},
+			{"count", lines.size()},
+			{"total", total},
+		});
+	}
+
+	if (request.name == command::kScriptClear)
+	{
+		if (!console)
+		{
+			return command::CommandResult::Failure(command::CommandErrorCode::Internal,
+			                                      "Scripting is not initialized.");
+		}
+		console->Clear();
+		return command::CommandResult::Success({{"cleared", true}});
+	}
+
+	const bool isEval = request.name == command::kScriptEval;
+	if (!isEval && request.name != command::kScriptRun)
 	{
 		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
 		                                      "Unknown command: " + request.name);
@@ -98,21 +186,12 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 		                                      "The editor is not available.");
 	}
 
-	const command::Json& args = request.args;
-	const bool hasCode = args.contains("code");
-	const bool hasPath = args.contains("path");
-	if (hasCode == hasPath)
-	{
-		return command::CommandResult::Failure(
-			command::CommandErrorCode::InvalidArgument,
-			"Pass exactly one of 'code' or 'path'.");
-	}
-
 	std::string code;
 	std::string path;
-	if (hasCode)
+	bool hasPath = false;
+	if (isEval)
 	{
-		if (!args["code"].is_string())
+		if (!args.contains("code") || !args["code"].is_string())
 		{
 			return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
 			                                      "'code' must be a string.");
@@ -121,44 +200,76 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 	}
 	else
 	{
-		if (!args["path"].is_string() || args["path"].get<std::string>().empty())
-		{
-			return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
-			                                      "'path' must be a non-empty string.");
-		}
-		path = args["path"].get<std::string>();
-		std::error_code fileError;
-		if (!std::filesystem::is_regular_file(path, fileError))
+		const bool hasCode = args.contains("code");
+		hasPath = args.contains("path");
+		if (hasCode == hasPath)
 		{
 			return command::CommandResult::Failure(
-				command::CommandErrorCode::IoError,
-				"Script file not found: " + path, {{"path", path}});
+				command::CommandErrorCode::InvalidArgument,
+				"Pass exactly one of 'code' or 'path'.");
+		}
+
+		if (hasCode)
+		{
+			if (!args["code"].is_string())
+			{
+				return command::CommandResult::Failure(
+					command::CommandErrorCode::InvalidArgument, "'code' must be a string.");
+			}
+			code = args["code"].get<std::string>();
+		}
+		else
+		{
+			if (!args["path"].is_string() || args["path"].get<std::string>().empty())
+			{
+				return command::CommandResult::Failure(
+					command::CommandErrorCode::InvalidArgument,
+					"'path' must be a non-empty string.");
+			}
+			path = args["path"].get<std::string>();
+			std::error_code fileError;
+			if (!std::filesystem::is_regular_file(path, fileError))
+			{
+				return command::CommandResult::Failure(
+					command::CommandErrorCode::IoError,
+					"Script file not found: " + path, {{"path", path}});
+			}
 		}
 	}
 
-	ScriptConsoleBuffer& console = app_script->Console();
+	ScriptConsoleBuffer& stream = app_script->Console();
 	std::uint64_t lastSeq = 0;
-	if (console.Size() > 0)
-		lastSeq = console.At(console.Size() - 1).seq;
+	if (stream.Size() > 0)
+		lastSeq = stream.At(stream.Size() - 1).seq;
 
 	ScriptContext context;
 	app_editor->UpdateScriptContext(context);
-	if (hasPath)
+	std::string result;
+	if (isEval)
+	{
+		result = app_script->EvalString(code, &context);
+	}
+	else if (hasPath)
+	{
 		app_script->RunFile(path, &context);
+	}
 	else
+	{
 		app_script->RunString(code, &context);
+	}
 
 	std::string output;
 	std::string scriptError;
-	const std::size_t lineCount = console.Size();
+	const std::size_t lineCount = stream.Size();
 	for (std::size_t i = 0; i < lineCount; ++i)
 	{
-		const ScriptLine line = console.At(i);
+		const ScriptLine line = stream.At(i);
 		if (line.seq <= lastSeq)
 			continue;
 		if (line.kind == ScriptLineKind::Error)
 			scriptError += line.text;
-		else if (line.kind == ScriptLineKind::Output || line.kind == ScriptLineKind::Result)
+		else if ((line.kind == ScriptLineKind::Output
+		          || (line.kind == ScriptLineKind::Result && !isEval)))
 			output += line.text;
 	}
 
@@ -168,6 +279,8 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 			command::CommandErrorCode::ScriptError, scriptError,
 			{{"output", output}, {"error", scriptError}});
 	}
+	if (isEval)
+		return command::CommandResult::Success({{"result", result}, {"output", output}});
 	return command::CommandResult::Success({{"output", output}});
 }
 

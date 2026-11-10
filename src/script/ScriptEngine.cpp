@@ -40,6 +40,21 @@ bool ScriptEngine::IsReady() const
 	return m_impl->IsReady();
 }
 
+std::string ScriptEngine::PythonVersion() const
+{
+	return m_impl->PythonVersion();
+}
+
+std::string ScriptEngine::EnvironmentPath() const
+{
+	return m_impl->EnvironmentPath();
+}
+
+std::string ScriptEngine::EvalString(const std::string& expression, const ScriptContext* ctx)
+{
+	return m_impl->EvalString(expression, ctx);
+}
+
 void ScriptEngine::SetEventQueue(IEventQueue* queue)
 {
 	m_impl->SetEventQueue(queue);

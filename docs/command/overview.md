@@ -160,6 +160,10 @@ neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
                   [--fxaa-edge-threshold-min V]
 neurus history show|undo|redo
 neurus script run --code "PYTHON" | --file FILE
+neurus script eval "EXPRESSION"
+neurus script info
+neurus script console [--tail N]
+neurus script clear
 neurus snapshot capture --path PATH [--all]
 neurus --format human|json
 ```
@@ -198,6 +202,11 @@ sessions from different terminals.
   `history redo` step them.
 - `script run` executes Python in the running application and returns the
   captured output. A run is one undo entry, like the Script Console.
+- `script eval` evaluates one expression and returns its `repr`.
+- `script info` reports readiness, the Python version and the managed
+  environment.
+- `script console` returns recent captured lines; `script clear` empties the
+  buffer.
 - `snapshot capture` writes a PNG of the presented viewport, or every render
   attachment with `--all`. The session name is injected into the destination so
   parallel sessions cannot overwrite each other: `out.png` becomes
@@ -267,6 +276,10 @@ runs:
 - `history.undo` - undo the most recent edit.
 - `history.redo` - redo the most recently undone edit.
 - `script.run` - run Python and return its captured output.
+- `script.eval` - evaluate one Python expression and return its `repr`.
+- `script.info` - readiness, Python version, managed environment and console size.
+- `script.console` - recent captured console lines.
+- `script.clear` - clear the console buffer.
 - `snapshot.capture` - write the viewport or all attachments, with the session
   name injected into the path.
 

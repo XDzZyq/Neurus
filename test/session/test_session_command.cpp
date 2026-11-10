@@ -349,6 +349,13 @@ TEST(SessionCommand, ScriptCommandsDelegateToTheScriptExecutor)
 	EXPECT_EQ(result.details["delegated"], "script.run");
 	EXPECT_EQ(script.lastRequest.name, "script.run");
 	EXPECT_EQ(script.lastRequest.args["code"], "print(1)");
+
+	for (const char* name : {kScriptEval, kScriptInfo, kScriptConsole, kScriptClear})
+	{
+		const auto routed = executor.Execute({name, {}});
+		ASSERT_TRUE(routed.ok) << name;
+		EXPECT_EQ(script.lastRequest.name, name);
+	}
 }
 
 TEST(SessionCommand, ScriptCommandsAreUnavailableWithoutAnExecutor)

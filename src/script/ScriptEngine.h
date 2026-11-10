@@ -63,6 +63,25 @@ public:
 	/// @brief True between a successful `Initialize()` and `Shutdown()`.
 	bool IsReady() const;
 
+	/// @return Python runtime version, or an empty string before initialization.
+	std::string PythonVersion() const;
+
+	/// @return Managed environment path requested at initialization, or empty.
+	std::string EnvironmentPath() const;
+
+	/**
+	 * @brief Evaluate one Python expression and return its `repr`.
+	 *
+	 * Runs through the same capture and run-boundary path as @ref RunString, so
+	 * side effects are one undo entry and captured output lands in the console.
+	 *
+	 * @param expression Python expression source.
+	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @return The expression result as `repr`, or an empty string when the
+	 *         evaluation raised or the engine is not ready.
+	 */
+	std::string EvalString(const std::string& expression, const ScriptContext* ctx = nullptr);
+
 	/**
 	 * @brief Execute a Python snippet on the main thread.
 	 * @param code UTF-8 Python source.

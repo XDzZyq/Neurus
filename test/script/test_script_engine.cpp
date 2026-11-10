@@ -34,6 +34,45 @@ TEST(ScriptEngine, RunStringExecutesWithoutThrowing)
 	engine.Shutdown();
 }
 
+TEST(ScriptEngine, EvalStringReturnsReprAndLogsResult)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.Console().Clear();
+	EXPECT_EQ(engine.EvalString("1 + 2"), "3");
+
+	bool logged = false;
+	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
+	{
+		const neurus::ScriptLine line = engine.Console().At(i);
+		if (line.kind == neurus::ScriptLineKind::Result && line.text.find('3') != std::string::npos)
+			logged = true;
+	}
+	EXPECT_TRUE(logged);
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, EvalStringRaisesWithoutBreakingTheEngine)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
+	EXPECT_EQ(engine.EvalString("1 / 0"), "");
+	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), before);
+	EXPECT_EQ(engine.EvalString("2 + 2"), "4");
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, ReportsPythonVersion)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	EXPECT_FALSE(engine.PythonVersion().empty());
+	EXPECT_NO_THROW((void)engine.EnvironmentPath());
+	engine.Shutdown();
+	EXPECT_TRUE(engine.PythonVersion().empty());
+}
+
 TEST(ScriptEngine, RaisingScriptLogsErrorAndSurvives)
 {
 	neurus::ScriptEngine engine;

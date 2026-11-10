@@ -48,6 +48,10 @@ CommandCatalog MakeCommandCatalog()
 		CommandDescriptor{"history.undo", "Undo the most recent edit.", true, false, {}},
 		CommandDescriptor{"history.redo", "Redo the most recently undone edit.", true, false, {}},
 		CommandDescriptor{"script.run", "Run a Python snippet or file.", true, true, {}},
+		CommandDescriptor{"script.eval", "Evaluate a Python expression.", true, true, {"code"}},
+		CommandDescriptor{"script.info", "Report scripting readiness and versions.", false, false, {}},
+		CommandDescriptor{"script.console", "Report captured script console lines.", false, false, {}},
+		CommandDescriptor{"script.clear", "Clear the script console.", true, false, {}},
 		CommandDescriptor{"snapshot.capture", "Capture the viewport or all attachments.", true, false, {"path"}},
 	});
 }

@@ -97,7 +97,8 @@ struct ScriptEngine::Impl
 
 		// An explicit path wins; otherwise the build-time default environment
 		// (the uv-managed lib/.venv) is attached, or skipped when it is absent.
-		AttachEnvironment(envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath);
+		m_envPath = envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath;
+		AttachEnvironment(m_envPath);
 
 		// Keep the module handle: the views were registered once and resolve
 		// through the engine's ScriptView.
@@ -141,6 +142,58 @@ struct ScriptEngine::Impl
 	bool IsReady() const
 	{
 		return m_ready;
+	}
+
+	/// @return Python runtime version, or empty before initialization.
+	std::string PythonVersion() const
+	{
+		if (!m_ready)
+			return {};
+		std::string version(Py_GetVersion());
+		const std::size_t newline = version.find('\n');
+		if (newline != std::string::npos)
+			version.resize(newline);
+		return version;
+	}
+
+	/// @return Managed environment path requested at initialization.
+	std::string EnvironmentPath() const
+	{
+		return m_envPath;
+	}
+
+	/**
+	 * @brief Evaluate one expression, buffer its repr and return it.
+	 *
+	 * Shares the run boundary, context and stream capture with RunSource so an
+	 * expression with side effects is one undo entry and its prints are visible.
+	 */
+	std::string EvalString(const std::string& expression, const ScriptContext* ctx)
+	{
+		if (!m_ready)
+		{
+			NEURUS_ERR("scripting not initialized");
+			return {};
+		}
+
+		pybind11::gil_scoped_acquire gil;
+		ContextScope scope(m_current, ctx);
+		RunScope runScope(m_dispatch.EventQueue(), {});
+
+		try
+		{
+			StreamRedirect redirect(m_console);
+			pybind11::object value =
+				pybind11::eval(expression, pybind11::globals(), pybind11::globals());
+			const std::string result = pybind11::repr(value).cast<std::string>();
+			m_console.Append(ScriptLineKind::Result, result + "\n");
+			return result;
+		}
+		catch (const pybind11::error_already_set& e)
+		{
+			ReportError(e, "ScriptEngine::EvalString");
+			return {};
+		}
 	}
 
 	/// @brief Attach the queue scripted mutations are dispatched to.
@@ -530,6 +583,7 @@ private:
 	};
 
 	bool m_ready = false;
+	std::string m_envPath;              ///< Environment requested at initialization.
 	pybind11::module_ m_neuru;           ///< Embedded module; views registered once.
 	ScriptConsoleBuffer m_console;
 	ScriptDispatch m_dispatch;          ///< Funnel for scripted mutations; attached by SetEventQueue().

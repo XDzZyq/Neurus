@@ -39,6 +39,10 @@ inline constexpr const char* kHistoryRedo = "history.redo";
 
 // --- Scripting ---
 inline constexpr const char* kScriptRun = "script.run";
+inline constexpr const char* kScriptEval = "script.eval";
+inline constexpr const char* kScriptInfo = "script.info";
+inline constexpr const char* kScriptConsole = "script.console";
+inline constexpr const char* kScriptClear = "script.clear";
 
 // --- Snapshots ---
 inline constexpr const char* kSnapshotCapture = "snapshot.capture";
