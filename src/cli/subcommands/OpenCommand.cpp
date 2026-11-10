@@ -8,12 +8,53 @@
 #include "platform/PlatformProcess.h"
 
 #include <chrono>
+#include <cstddef>
+#include <fstream>
+#include <iostream>
+#include <sstream>
 #include <thread>
+#include <vector>
 
 namespace neurus::cli
 {
 namespace
 {
+
+void PrintStarting(const std::string& session, int pid, OutputFormat format)
+{
+	if (format == OutputFormat::Json)
+	{
+		const command::Json json{
+			{"ok", true},
+			{"session", {{"name", session}, {"pid", pid}, {"starting", true}}},
+		};
+		std::cout << json.dump(2) << '\n';
+		return;
+	}
+	std::cout << "session " << session << " pid " << pid << " (starting)\n";
+}
+
+std::string ReadLogTail(const std::filesystem::path& path, std::size_t maxLines)
+{
+	std::ifstream in(path, std::ios::binary);
+	if (!in.is_open())
+		return {};
+
+	std::vector<std::string> lines;
+	std::string line;
+	while (std::getline(in, line))
+	{
+		lines.push_back(std::move(line));
+		if (lines.size() > maxLines * 2)
+			lines.erase(lines.begin(), lines.begin() + static_cast<std::ptrdiff_t>(maxLines));
+	}
+
+	std::ostringstream out;
+	const std::size_t first = lines.size() > maxLines ? lines.size() - maxLines : 0;
+	for (std::size_t i = first; i < lines.size(); ++i)
+		out << lines[i] << '\n';
+	return out.str();
+}
 
 CliExit ExecuteOpen(const OpenOptions& options)
 {

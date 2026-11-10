@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iostream>
 #include <utility>
 #include <vector>
 
@@ -14,6 +15,42 @@ namespace neurus::cli
 {
 namespace
 {
+
+void PrintCloseResults(const std::vector<std::pair<std::string, command::CommandResult>>& results,
+                       OutputFormat format)
+{
+	if (format == OutputFormat::Json)
+	{
+		command::Json entries = command::Json::array();
+		bool allOk = true;
+		for (const auto& [session, result] : results)
+		{
+			command::Json entry{{"session", session}, {"ok", result.ok}};
+			if (result.ok)
+				entry["result"] = result.details;
+			else
+			{
+				allOk = false;
+				entry["error"] = {{"code", std::string(command::ToString(result.code))},
+				                  {"message", result.message},
+				                  {"details", result.details}};
+			}
+			entries.push_back(std::move(entry));
+		}
+		const command::Json json{{"ok", allOk}, {"results", entries}};
+		std::cout << json.dump(2) << '\n';
+		return;
+	}
+
+	for (const auto& [session, result] : results)
+	{
+		if (result.ok)
+			std::cout << "closed " << session << '\n';
+		else
+			std::cout << session << ": " << command::ToString(result.code) << ": "
+			          << result.message << '\n';
+	}
+}
 
 CliExit ExecuteClose(const CloseOptions& options)
 {

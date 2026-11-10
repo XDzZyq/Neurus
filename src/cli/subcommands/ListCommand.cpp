@@ -3,8 +3,35 @@
 #include "cli/Output.h"
 #include "cli/SessionClient.h"
 
+#include <iostream>
+#include <vector>
+
 namespace neurus::cli
 {
+namespace
+{
+
+void PrintSessions(const std::vector<ipc::SessionRecord>& records, OutputFormat format)
+{
+	if (format == OutputFormat::Json)
+	{
+		command::Json sessions = command::Json::array();
+		for (const auto& record : records)
+			sessions.push_back(SessionRecordJson(record));
+		const command::Json json{{"ok", true}, {"sessions", sessions}};
+		std::cout << json.dump(2) << '\n';
+		return;
+	}
+
+	std::cout << "session\tpid\tport\tproject\n";
+	for (const auto& record : records)
+	{
+		std::cout << record.session << '\t' << record.pid << '\t' << record.port << '\t'
+		          << record.project << '\n';
+	}
+}
+
+} // namespace
 
 void ListCommand::Register(CLI::App& parent, const std::string& globalFormat)
 {
