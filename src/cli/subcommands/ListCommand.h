@@ -11,7 +11,7 @@ namespace neurus::cli
 class ListCommand final : public SubCommand
 {
 public:
-	void Register(CLI::App& parent, const std::string& globalFormat) override;
+	void Register(CLI::App& parent, const GlobalOptions& globals) override;
 	bool Selected() const override;
 	CliExit Execute() override;
 

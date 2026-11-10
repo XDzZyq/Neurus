@@ -20,6 +20,20 @@ and operations. It is not a second mutation or undo system.
   the session running. Use `neurus close` or close the window.
 - `neurus open` waits for the readiness handshake before it exits, so a
   following command can target the session immediately.
+- `neurus open` binds the new session to the current terminal, and
+  `neurus use NAME` changes that binding. A terminal binding lets parallel
+  agents work against different sessions without passing `--session` on every
+  command. Explicit `--session` and `NEURUS_SESSION` override the binding.
+
+Session targeting resolves in this order:
+
+1. `--session NAME` on the command.
+2. `NEURUS_SESSION` from the environment.
+3. The terminal binding written by `neurus open` or `neurus use`.
+4. The only live session, if exactly one exists.
+
+With several live sessions and no explicit target, the command fails as
+`AMBIGUOUS_SESSION` instead of guessing.
 
 ## Architecture
 
@@ -39,8 +53,8 @@ neurus (CLI) -> neurus_ipc -> neurus_command -> neurus_core
   launch and output formatting.
 - `src/app/session/` hosts the server in the running application. It is the
   only new code that uses Qt.
-- `src/editor/commands/` is reserved for the later scene and object command
-  adapters.
+- `src/editor/commands/` holds the scene/object adapter. It reads the scene and
+  pool directly and emits the same typed events the UI emits for writes.
 
 The renderer is not involved. Commands reach it only when an editor handler
 posts a `RenderRequest`, exactly like a UI edit.
@@ -65,11 +79,14 @@ Entries live in `~/.neurus/sessions`, next to `preferences.json`:
 - `<name>.json` - pid, port, token, project, versions and start time.
 - `<name>.log` - stdout and stderr of the spawned application.
 - `<name>.claim` - a short-lived claim used while `neurus open` waits.
+- `terminals/<hash>.json` - the session bound to one terminal/tab.
 
 The directory is per-user and owner-only on POSIX. The token never enters the
 project directory. A session name must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`,
 which also prevents path traversal. Stale entries (dead pid) are pruned during
 discovery. `NEURUS_SESSIONS_DIR` overrides the directory for tests.
+`NEURUS_TERMINAL_ID` overrides the terminal identity, which is useful for
+harnesses that do not expose a stable terminal/tab id.
 
 ## Protocol
 
@@ -107,24 +124,68 @@ Timeouts: connect 3 s, handshake 3 s, command 10 s, `close --save` 60 s, and a
 ## CLI reference
 
 ```
-neurus open [PROJECT] [--name NAME] [--app PATH] [--timeout SECS] [--no-wait]
+neurus open [PROJECT] [--name NAME] [--app PATH] [--timeout SECS] [--no-wait] [--no-bind]
 neurus close [NAME] [--all] [--save] [--force] [--timeout SECS]
 neurus status [NAME]
 neurus list
+neurus use [NAME] [--clear]
+neurus project info|new [--force]|open --path FILE [--force]|save [--path FILE]
+neurus scene list [--type all|mesh|light|camera|environment|sprite|debug]
+neurus object [--name NAME|--uid N] [--position|--rotation|--scale|--visible]
+neurus object get --name NAME|--uid N [--type TYPE]
+neurus object set --name NAME|--uid N [--rename NAME] [--position X,Y,Z]
+                   [--rotation X,Y,Z] [--scale X,Y,Z] [--visible true|false]
+                   [--viewport-visible true|false] [--render-visible true|false]
+                   [--fov DEG] [--target X,Y,Z] [--active true|false]
+                   [--power P] [--color R,G,B] [--radius R] [--cutoff C]
+                   [--outer-cutoff C] [--shadow true|false]
+                   [--material true|false] [--intensity I]
+                   [--environment-rotation DEG]
+neurus object load -f PATH [--name NAME]
+neurus object delete --name NAME|--uid N|--uids N,N,... [--type TYPE]
+neurus render get
+neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
+                  [--ao none|ssao]
+                  [--shadow none|shadow_mapping|sdf_soft|vssm]
+                  [--ssr none|ray_marching|sdf_ray_marching|sdf_resolved]
+                  [--gamma G] [--shadow-bias B] [--ao-radius R] [--ao-ksize N]
+                  [--sample-pf N] [--sampling-count N] [--sampling-mode 0|1]
+                  [--transparent true|false] [--debug-draw true|false]
+                  [--fxaa-subpix V] [--fxaa-edge-threshold V]
+                  [--fxaa-edge-threshold-min V]
+neurus history show|undo|redo
 neurus --format human|json
 ```
 
-`--format` is accepted before or after the subcommand.
+`--format` and `--session` are accepted before or after the subcommand. Every
+document command accepts `--session`, so several agents can target different
+sessions from different terminals.
 
 - `open` allocates a name when none is given, claims it, spawns the application
   detached with `--session` and optional `--project`, then polls
-  `session.status` until ready. `--no-wait` prints the pid immediately.
-- `close` targets a name, the only live session when no name is given, or every
-  session with `--all`. Several live sessions without a name is
-  `AMBIGUOUS_SESSION` and changes nothing. A dirty project is refused unless
-  `--save` or `--force` is given.
+  `session.status` until ready. It binds the session to the current terminal
+  unless `--no-bind` is given. `--no-wait` prints the pid immediately.
+- `close` targets a name, the terminal binding, the only live session when no
+  name is given, or every session with `--all`. Several live sessions without a
+  target is `AMBIGUOUS_SESSION` and changes nothing. A dirty project is refused
+  unless `--save` or `--force` is given. A successful close clears a binding
+  that points at the closed session.
 - `status` performs the handshake and reports one session.
-- `list` reads only the local registry and prunes stale entries.
+- `list` reads only the local registry and prunes stale entries. The bound
+  session is marked with `*` in human output and `bound: true` in JSON.
+- `use` binds a live session to this terminal, or reports/clears the binding.
+- `project` creates, opens, saves and reports the document. `new` and `open`
+  refuse to discard a dirty document without `--force`.
+- `scene list` reports scene membership, optionally filtered by object type.
+- `object` reads and writes scene objects. The root form with a property flag
+  is the read shorthand; `get`, `set`, `load` and `delete` are explicit.
+  Transform and property writes go through the same typed events as the panels,
+  so they are undoable and visible to the next frame. A multi-property `set` is
+  one undo entry.
+- `render get` reports the render configuration; `render set` changes any
+  subset through the render-config controller and its undo entry.
+- `history show` reports the undo/redo stacks; `history undo` and
+  `history redo` step them.
 
 Exit codes:
 
@@ -144,10 +205,13 @@ Exit codes:
 | `INVALID_ARGUMENT` | Missing, malformed or conflicting argument |
 | `SESSION_NOT_FOUND` | Named registry entry absent or pruned |
 | `SESSION_EXISTS` | `open` requested a live name |
-| `AMBIGUOUS_SESSION` | `close` had no name and several live sessions |
+| `AMBIGUOUS_SESSION` | A command had no explicit target and several live sessions exist |
 | `NO_SESSIONS` | No live session was found |
-| `DIRTY_PROJECT` | `close` refused because of unsaved changes |
-| `SAVE_FAILED` | `close --save` failed to persist |
+| `DIRTY_PROJECT` | `close`, `project.new` or `project.open` refused because of unsaved changes |
+| `SAVE_FAILED` | `project.save` or `close --save` failed to persist |
+| `IO_ERROR` | Project or mesh file could not be read/written |
+| `OBJECT_NOT_FOUND` | No scene object matched the name or UID |
+| `AMBIGUOUS_OBJECT` | Several scene objects matched the name; pass `type` or `uid` |
 | `UNAUTHORIZED` | Missing or wrong token, or non-loopback peer |
 | `PROTOCOL_VERSION_MISMATCH` | Unsupported protocol major |
 | `FRAME_INVALID` | Malformed frame or JSON |
@@ -160,19 +224,35 @@ Exit codes:
 
 ## Current command surface
 
-Version 1 implements session lifecycle only:
+Version 1 implements session lifecycle, project persistence, scene/object reads
+and writes, render settings and undo history:
 
-- `session.status` - session name, pid, project, dirty flag, versions, uptime.
+- `session.status` - session name, pid, project, dirty flag, object count,
+  versions, uptime.
 - `session.close` - dirty policy, optional save, graceful shutdown.
+- `project.info` - path, dirty flag, object count, versions, uptime.
+- `project.new` - replace the document with the default scene.
+- `project.open` - load a project file.
+- `project.save` - save to the current path or a new path.
+- `scene.list` - scene objects, optionally filtered by type.
+- `object.get` - full object record by name or UID.
+- `object.set` - rename, transform, visibility and type-specific properties.
+- `object.load` - load an OBJ mesh and add it to the scene.
+- `object.delete` - remove one or more objects from the scene.
+- `render.get` - pipeline, anti-aliasing, AO, shadow, SSR and quality settings.
+- `render.set` - change a subset of render settings.
+- `history.get` - undo/redo labels and availability.
+- `history.undo` - undo the most recent edit.
+- `history.redo` - redo the most recently undone edit.
 
-The command naming convention reserves later families: `scene.list`,
-`object.set`, `project.save`, `render.set`, `script.run`, `snapshot.capture`.
-They will map onto the existing typed events and operations, with name-to-UID
-resolution performed on the application side.
+The next families remain reserved: `script.run`, `snapshot.capture`.
 
 ## Testing
 
-The command core, protocol, registry, dispatcher and close policy are covered by
-CPU-only GoogleTest suites under `test/command`, `test/app` and `test/session`.
-The end-to-end `open`, `status`, `close` sequence needs a windowed application
-and is documented in [Test](../build/test.md).
+The command core, protocol, registry, dispatcher, close policy and terminal
+binding are covered by CPU-only GoogleTest suites under `test/command`,
+`test/app`, `test/session` and `test/editor`. `test_editor_command_adapter`
+drives the real editor controllers with no GPU, so the JSON shape and the
+scene/undo behavior are verified without a window. The end-to-end `open`,
+`project`, `object`, `save`, `close` sequence needs a windowed application and
+is documented in [Test](../build/test.md).

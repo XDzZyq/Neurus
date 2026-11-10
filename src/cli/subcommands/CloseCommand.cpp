@@ -2,6 +2,7 @@
 
 #include "cli/Output.h"
 #include "cli/SessionClient.h"
+#include "cli/TerminalBinding.h"
 #include "command/CommandError.h"
 #include "command/Commands.h"
 
@@ -64,7 +65,9 @@ CliExit ExecuteClose(const CloseOptions& options)
 	const auto live = LiveSessions();
 	std::vector<ipc::SessionRecord> targets;
 	std::vector<std::string> ambiguousNames;
-	const auto resolution = ResolveTargets(options.name, options.all, live, targets, ambiguousNames);
+	const auto targetName = ResolveSessionNameForCommand(
+		options.all ? std::nullopt : options.name, live);
+	const auto resolution = ResolveTargets(targetName, options.all, live, targets, ambiguousNames);
 
 	switch (resolution)
 	{
@@ -74,11 +77,12 @@ CliExit ExecuteClose(const CloseOptions& options)
 		return CliExit::NoSession;
 	case TargetResolution::NotFound:
 		PrintError(options.format, command::CommandErrorCode::SessionNotFound,
-		           "No running session named " + options.name.value_or("") + ".");
+		           "No running session named " + targetName.value_or("") + ".");
 		return CliExit::NoSession;
 	case TargetResolution::Ambiguous:
 		PrintError(options.format, command::CommandErrorCode::AmbiguousSession,
-		           "Several sessions are running; name one or pass --all.", {{"sessions", ambiguousNames}});
+		           "Several sessions are running; name one, pass --all, or run 'neurus use <name>'.",
+		           {{"sessions", ambiguousNames}});
 		return CliExit::NoSession;
 	case TargetResolution::Ok:
 		break;
@@ -102,6 +106,12 @@ CliExit ExecuteClose(const CloseOptions& options)
 
 	for (const auto& [session, result] : results)
 	{
+		if (result.ok)
+			ClearTerminalBindingIfMatches(session);
+	}
+
+	for (const auto& [session, result] : results)
+	{
 		if (!result.ok)
 			return ExitCodeFor(result.code);
 	}
@@ -110,11 +120,12 @@ CliExit ExecuteClose(const CloseOptions& options)
 
 } // namespace
 
-void CloseCommand::Register(CLI::App& parent, const std::string& globalFormat)
+void CloseCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 {
-	m_globalFormat = &globalFormat;
+	SetGlobals(globals);
 	m_app = parent.add_subcommand("close", "Close a running Neurus session.");
 	m_app->add_option("name", m_name, "Session name.");
+	AddSessionOption(*m_app, m_session);
 	m_app->add_flag("--all", m_all, "Close every live session.");
 	m_app->add_flag("--save", m_save, "Save the project before closing.");
 	m_app->add_flag("--force", m_force, "Discard unsaved changes.");
@@ -131,7 +142,14 @@ bool CloseCommand::Selected() const
 CliExit CloseCommand::Execute()
 {
 	CloseOptions options;
-	options.name = m_name;
+	const auto session = SessionName(m_session);
+	if (m_name && session)
+	{
+		PrintError(Format(m_format), command::CommandErrorCode::InvalidArgument,
+		           "Pass the session name either positionally or with --session, not both.");
+		return CliExit::Usage;
+	}
+	options.name = m_name ? m_name : session;
 	options.all = m_all;
 	options.save = m_save;
 	options.force = m_force;

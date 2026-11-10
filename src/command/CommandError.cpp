@@ -23,6 +23,12 @@ std::string_view ToString(CommandErrorCode code)
 		return "DIRTY_PROJECT";
 	case CommandErrorCode::SaveFailed:
 		return "SAVE_FAILED";
+	case CommandErrorCode::IoError:
+		return "IO_ERROR";
+	case CommandErrorCode::ObjectNotFound:
+		return "OBJECT_NOT_FOUND";
+	case CommandErrorCode::AmbiguousObject:
+		return "AMBIGUOUS_OBJECT";
 	case CommandErrorCode::Unauthorized:
 		return "UNAUTHORIZED";
 	case CommandErrorCode::ProtocolVersionMismatch:
@@ -52,7 +58,9 @@ std::optional<CommandErrorCode> ParseErrorCode(std::string_view text)
 	                  CommandErrorCode::SessionNotFound, CommandErrorCode::SessionExists,
 	                  CommandErrorCode::AmbiguousSession, CommandErrorCode::NoSessions,
 	                  CommandErrorCode::DirtyProject, CommandErrorCode::SaveFailed,
-	                  CommandErrorCode::Unauthorized, CommandErrorCode::ProtocolVersionMismatch,
+	                  CommandErrorCode::IoError, CommandErrorCode::ObjectNotFound,
+	                  CommandErrorCode::AmbiguousObject, CommandErrorCode::Unauthorized,
+	                  CommandErrorCode::ProtocolVersionMismatch,
 	                  CommandErrorCode::FrameInvalid, CommandErrorCode::FrameTooLarge,
 	                  CommandErrorCode::ServerBusy, CommandErrorCode::Timeout,
 	                  CommandErrorCode::AppUnreachable, CommandErrorCode::AppExited,

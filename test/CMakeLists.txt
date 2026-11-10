@@ -55,6 +55,7 @@ add_executable(neurus_test
 	editor/test_camera_controller.cpp
 	editor/test_debug_draw_builder.cpp
 	editor/test_editor_scene_lifecycle.cpp
+	editor/test_editor_command_adapter.cpp
 	editor/test_editor_overlay_redraw.cpp
 	editor/test_editor_viewport.cpp
 	editor/test_gizmo_draw_builder.cpp
@@ -115,6 +116,7 @@ add_executable(neurus_test
 	command/test_ipc_roundtrip.cpp
 	command/test_cli_parse.cpp
 	command/test_process_launch.cpp
+	command/test_terminal_binding.cpp
 	app/test_app_args.cpp
 	session/test_session_command.cpp
 )

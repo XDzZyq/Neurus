@@ -12,7 +12,7 @@ namespace neurus::cli
 class OpenCommand final : public SubCommand
 {
 public:
-	void Register(CLI::App& parent, const std::string& globalFormat) override;
+	void Register(CLI::App& parent, const GlobalOptions& globals) override;
 	bool Selected() const override;
 	CliExit Execute() override;
 
@@ -22,6 +22,7 @@ private:
 	std::optional<std::string> m_appPath;
 	int                        m_timeoutSeconds = 30;
 	bool                       m_noWait = false;
+	bool                       m_noBind = false;
 	std::string                m_format;
 };
 

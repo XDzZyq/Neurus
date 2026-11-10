@@ -14,6 +14,7 @@
 #include "app/session/SessionServer.h"
 #include "core/Log.h"
 #include "editor/Editor.h"
+#include "editor/commands/EditorCommandAdapter.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/events/ShaderEvents.h"
 #include "editor/events/UIEvents.h"
@@ -42,6 +43,7 @@
 #include "ui/panels/ShaderEditorPanel.h"
 #include "ui/panels/ScriptConsolePanel.h"
 #include "ui/panels/Viewport.h"
+#include "platform/PlatformProcess.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -59,12 +61,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
 
 namespace {
 
@@ -252,6 +248,7 @@ int Application::Run()
 
 	// Now renderer + uploadManager exist - safe to create Editor
 	InitEditor();
+	app_editorCommands = std::make_unique<EditorCommandAdapter>(*app_editor);
 	InitScripting();
 
 	std::string projectPath;
@@ -310,7 +307,7 @@ int Application::Run()
 	{
 		app_sessionName = *app_args.session;
 		app_session = std::make_unique<SessionServer>(
-			*this, app_qtApp->applicationVersion().toStdString());
+			*this, app_qtApp->applicationVersion().toStdString(), app_editorCommands.get());
 		std::string sessionError;
 		if (!app_session->Start(app_sessionName, app_projectPath, sessionError))
 		{
@@ -607,7 +604,7 @@ void Application::ApplyTargetFps(int fps)
 // Project lifecycle – app-level persistence coordination
 // =========================================================================
 
-void Application::OnProjectNew()
+bool Application::OnProjectNew(std::string* error)
 {
 	// File > New is two editor steps: reset the document to empty, then fill
 	// it with the same default content a first launch gets. Keeping them apart
@@ -625,16 +622,29 @@ void Application::OnProjectNew()
 	catch (const std::exception& e)
 	{
 		NEURUS_ERR("Failed to create new project: " << e.what());
+		if (error)
+			*error = e.what();
+		return false;
 	}
 
 	app_projectPath.clear();
 	// Layout is intentionally left untouched on New; rebase the dirty
 	// baseline so a fresh project isn't reported as having unsaved changes.
 	app_savedUiState = app_mainWindow->ExportLayout();
+	return true;
 }
 
-void Application::OnProjectOpen(const std::string& path)
+bool Application::OnProjectOpen(const std::string& path, std::string* error)
 {
+	std::error_code fileError;
+	if (!std::filesystem::is_regular_file(path, fileError))
+	{
+		NEURUS_ERR("[Application] Project file not found: " << path);
+		if (error)
+			*error = "Project file not found: " + path;
+		return false;
+	}
+
 	try
 	{
 		app_editor->BeginLoad();
@@ -649,7 +659,28 @@ void Application::OnProjectOpen(const std::string& path)
 	catch (const std::exception& e)
 	{
 		NEURUS_ERR("[Application] Failed to open project: " << e.what());
+		if (error)
+			*error = e.what();
+
+		// BeginLoad() already dropped the previous document, so a failed read
+		// must leave something valid behind rather than a half-loaded scene.
+		try
+		{
+			app_editor->NewScene();
+			app_editor->CreateDefaultScene(kDefaultSceneObj);
+			app_editor->ClearDirty();
+			app_editor->UploadSceneResources();
+			app_projectPath.clear();
+			app_savedUiState = app_mainWindow->ExportLayout();
+		}
+		catch (const std::exception& resetError)
+		{
+			NEURUS_ERR("[Application] Failed to recover after a project open failure: "
+			           << resetError.what());
+		}
+		return false;
 	}
+	return true;
 }
 
 bool Application::OnProjectSave(const std::string& path, std::string* error)
@@ -692,11 +723,7 @@ bool Application::IsDirty() const
 
 int Application::Pid() const
 {
-#ifdef _WIN32
-	return _getpid();
-#else
-	return static_cast<int>(::getpid());
-#endif
+	return neurus::CurrentProcessId();
 }
 
 std::string Application::SessionName() const
@@ -712,6 +739,36 @@ std::string Application::ProjectPath() const
 bool Application::Save(std::string& error)
 {
 	return OnProjectSave({}, &error);
+}
+
+bool Application::SaveAs(const std::string& path, std::string& error)
+{
+	return OnProjectSave(path, &error);
+}
+
+bool Application::NewProject(bool force, std::string& error)
+{
+	if (IsDirty() && !force)
+	{
+		error = "The project has unsaved changes; pass force to discard them.";
+		return false;
+	}
+	return OnProjectNew(&error);
+}
+
+bool Application::OpenProject(const std::string& path, bool force, std::string& error)
+{
+	if (IsDirty() && !force)
+	{
+		error = "The project has unsaved changes; pass force to discard them.";
+		return false;
+	}
+	return OnProjectOpen(path, &error);
+}
+
+int Application::SceneObjectCount() const
+{
+	return app_editor ? static_cast<int>(app_editor->GetScene().obj_list.size()) : 0;
 }
 
 std::int64_t Application::UptimeSeconds() const
@@ -831,8 +888,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	QObject::connect(&uiEvents, &neurus::UIEvents::projectNewRequested,
 	                 [this](const neurus::ProjectNewEvent&) { OnProjectNew(); });
 	QObject::connect(&uiEvents, &neurus::UIEvents::projectOpenRequested,
-	                 [this](const neurus::ProjectOpenEvent& e) { OnProjectOpen(e.path); });
-	QObject::connect(&uiEvents, &neurus::UIEvents::projectSaveRequested,
+	                 [this](const neurus::ProjectOpenEvent& e) { OnProjectOpen(e.path); });	QObject::connect(&uiEvents, &neurus::UIEvents::projectSaveRequested,
 	                 [this](const neurus::ProjectSaveEvent&) { OnProjectSave(); });
 	QObject::connect(&uiEvents, &neurus::UIEvents::projectSaveAsRequested,
 	                 [this](const neurus::ProjectSaveAsEvent& e) { OnProjectSave(e.path); });

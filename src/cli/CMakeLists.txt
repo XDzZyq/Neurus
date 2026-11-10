@@ -13,6 +13,10 @@ add_library(neurus_cli_core STATIC
 	AppArguments.cpp
 	SessionClient.h
 	SessionClient.cpp
+	TerminalBinding.h
+	TerminalBinding.cpp
+	CommandClient.h
+	CommandClient.cpp
 	SubCommand.h
 	SubCommand.cpp
 	subcommands/OpenCommand.h
@@ -23,6 +27,18 @@ add_library(neurus_cli_core STATIC
 	subcommands/StatusCommand.cpp
 	subcommands/ListCommand.h
 	subcommands/ListCommand.cpp
+	subcommands/ProjectCommand.h
+	subcommands/ProjectCommand.cpp
+	subcommands/SceneCommand.h
+	subcommands/SceneCommand.cpp
+	subcommands/ObjectCommand.h
+	subcommands/ObjectCommand.cpp
+	subcommands/RenderCommand.h
+	subcommands/RenderCommand.cpp
+	subcommands/HistoryCommand.h
+	subcommands/HistoryCommand.cpp
+	subcommands/UseCommand.h
+	subcommands/UseCommand.cpp
 )
 
 target_include_directories(neurus_cli_core PUBLIC

@@ -48,9 +48,10 @@ private:
 };
 
 /**
- * @brief Builds the catalog implemented by the first milestone.
- * @return Descriptors for session.status and session.close.
+ * @brief Builds the catalog of commands this application implements.
+ * @return Descriptors for the session, project, scene, object, render and
+ *         history families.
  */
-CommandCatalog MakeSessionCatalog();
+CommandCatalog MakeCommandCatalog();
 
 } // namespace neurus::command

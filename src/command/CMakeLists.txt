@@ -11,6 +11,7 @@ add_library(neurus_command STATIC
 	CommandJson.h
 	CommandJson.cpp
 	ICommandExecutor.h
+	IEditorCommands.h
 	Commands.h
 	ISessionState.h
 )

@@ -36,6 +36,34 @@ public:
 	 */
 	virtual bool Save(std::string& error) = 0;
 
+	/**
+	 * @brief Persists the current project to @p path and makes it current.
+	 * @param path Destination project path.
+	 * @param error Receives a human-readable reason on failure.
+	 * @return True on success.
+	 */
+	virtual bool SaveAs(const std::string& path, std::string& error) = 0;
+
+	/**
+	 * @brief Replaces the document with a new default scene.
+	 * @param force True to discard unsaved changes.
+	 * @param error Receives a human-readable reason on failure.
+	 * @return True on success.
+	 */
+	virtual bool NewProject(bool force, std::string& error) = 0;
+
+	/**
+	 * @brief Loads a project file into the document.
+	 * @param path Project file to open.
+	 * @param force True to discard unsaved changes.
+	 * @param error Receives a human-readable reason on failure.
+	 * @return True on success.
+	 */
+	virtual bool OpenProject(const std::string& path, bool force, std::string& error) = 0;
+
+	/// @return Number of objects currently registered in the scene.
+	virtual int SceneObjectCount() const = 0;
+
 	/// @return Whole seconds since this session started.
 	virtual std::int64_t UptimeSeconds() const = 0;
 

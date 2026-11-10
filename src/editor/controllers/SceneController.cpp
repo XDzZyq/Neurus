@@ -15,6 +15,7 @@
 
 #include "editor/controllers/SceneController.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "editor/controllers/MutationNotify.h"
@@ -218,8 +219,7 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
  */
 void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
                              const neurus::ControllerContext& ctx)
-{
-	neurus::Scene* scene = ctx.scene();
+{	neurus::Scene* scene = ctx.scene();
 	if (!scene) return;
 
 	const neurus::SelectionState before = SnapshotSelection(*scene);
@@ -239,6 +239,40 @@ void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
 	std::vector<std::unique_ptr<neurus::Operation>> seq;
 	seq.push_back(std::make_unique<neurus::SetSelectionOp>(before, neurus::SelectionState{}));
 	seq.push_back(std::make_unique<neurus::SceneObjectAddOp>(before.selectedUids, false));
+	ctx.ops.Submit(std::make_unique<neurus::CompositeOp>(std::move(seq)));
+}
+
+/**
+ * @brief Explicit-UID delete gesture: remove the listed scene objects as ONE undo entry.
+ *
+ * FORWARD-ONLY. The removal itself runs through the shared batched handler
+ * (SceneObjectDeleteRequested), so the command and the Delete key share one
+ * removal implementation. Stale and duplicate UIDs are ignored.
+ */
+void OnDeleteObjectsRequested(const neurus::DeleteObjectsRequested& e,
+                              const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	std::vector<int> removed;
+	removed.reserve(e.uids.size());
+	for (int uid : e.uids)
+	{
+		if (uid == 0 || !scene->GetObjectID(uid)) continue;
+		if (std::find(removed.begin(), removed.end(), uid) != removed.end()) continue;
+		removed.push_back(uid);
+	}
+	if (removed.empty()) return;
+
+	const neurus::SelectionState before = SnapshotSelection(*scene);
+	ctx.events.Emit(neurus::SceneObjectDeleteRequested{removed});
+	const neurus::SelectionState after = SnapshotSelection(*scene);
+
+	std::vector<std::unique_ptr<neurus::Operation>> seq;
+	seq.push_back(std::make_unique<neurus::SceneObjectAddOp>(removed, false));
+	if (before.selectedUids != after.selectedUids || before.activeUid != after.activeUid)
+		seq.push_back(std::make_unique<neurus::SetSelectionOp>(before, after));
 	ctx.ops.Submit(std::make_unique<neurus::CompositeOp>(std::move(seq)));
 }
 
@@ -298,6 +332,9 @@ void SceneController::Init(ControllerContext& ctx)
 	});
 	ctx.events.Subscribe<ObjectDeleteRequested>([ctx](const ObjectDeleteRequested& e) {
 		OnObjectDeleteRequested(e, ctx);
+	});
+	ctx.events.Subscribe<DeleteObjectsRequested>([ctx](const DeleteObjectsRequested& e) {
+		OnDeleteObjectsRequested(e, ctx);
 	});
 }
 

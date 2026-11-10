@@ -3,15 +3,18 @@
 #include "cli/AppArguments.h"
 #include "cli/Output.h"
 #include "cli/SessionClient.h"
+#include "cli/TerminalBinding.h"
 #include "command/Commands.h"
 #include "ipc/SessionRegistry.h"
 #include "platform/PlatformProcess.h"
 
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -58,8 +61,17 @@ std::string ReadLogTail(const std::filesystem::path& path, std::size_t maxLines)
 
 CliExit ExecuteOpen(const OpenOptions& options)
 {
+	OpenOptions resolved = options;
+	if (resolved.project)
+	{
+		std::error_code pathError;
+		const auto absolute = std::filesystem::absolute(*resolved.project, pathError);
+		if (!pathError)
+			resolved.project = absolute.string();
+	}
+
 	std::string error;
-	if (!ValidateOpenOptions(options, error))
+	if (!ValidateOpenOptions(resolved, error))
 	{
 		PrintError(options.format, command::CommandErrorCode::InvalidArgument, error);
 		return CliExit::Usage;
@@ -68,7 +80,7 @@ CliExit ExecuteOpen(const OpenOptions& options)
 	ipc::SessionRegistry registry(ipc::ResolveSessionsDirectory());
 	std::string name = options.name
 		? *options.name
-		: ipc::AllocateSessionName(options.project.value_or(""), registry);
+		: ipc::AllocateSessionName(resolved.project.value_or(""), registry);
 	if (!ipc::IsValidSessionName(name))
 	{
 		PrintError(options.format, command::CommandErrorCode::InvalidArgument,
@@ -94,7 +106,7 @@ CliExit ExecuteOpen(const OpenOptions& options)
 
 	const auto logPath = registry.Directory() / (name + ".log");
 	const auto pid = SpawnDetached(*resolvedApp,
-	                               BuildAppArguments(name, options.project), logPath, error);
+	                               BuildAppArguments(name, resolved.project), logPath, error);
 	if (!pid)
 	{
 		registry.ReleaseClaim(name);
@@ -105,6 +117,12 @@ CliExit ExecuteOpen(const OpenOptions& options)
 	if (options.noWait)
 	{
 		registry.ReleaseClaim(name);
+		if (!options.noBind)
+		{
+			std::string bindError;
+			if (!WriteTerminalBinding(name, bindError))
+				std::cerr << "warning: " << bindError << '\n';
+		}
 		PrintStarting(name, *pid, options.format);
 		return CliExit::Ok;
 	}
@@ -121,6 +139,12 @@ CliExit ExecuteOpen(const OpenOptions& options)
 			if (result && result->ok)
 			{
 				registry.ReleaseClaim(name);
+				if (!options.noBind)
+				{
+					std::string bindError;
+					if (!WriteTerminalBinding(name, bindError))
+						std::cerr << "warning: " << bindError << '\n';
+				}
 				PrintSession(*record, result->details.value("dirty", false), options.format);
 				return CliExit::Ok;
 			}
@@ -149,9 +173,9 @@ CliExit ExecuteOpen(const OpenOptions& options)
 
 } // namespace
 
-void OpenCommand::Register(CLI::App& parent, const std::string& globalFormat)
+void OpenCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 {
-	m_globalFormat = &globalFormat;
+	SetGlobals(globals);
 	m_app = parent.add_subcommand("open", "Launch a named background Neurus session.");
 	m_app->add_option("project", m_project, "Project file to open.");
 	m_app->add_option("--name", m_name, "Session name; allocated when omitted.");
@@ -159,6 +183,7 @@ void OpenCommand::Register(CLI::App& parent, const std::string& globalFormat)
 	m_app->add_option("--timeout", m_timeoutSeconds, "Readiness timeout in seconds.")
 		->check(CLI::PositiveNumber);
 	m_app->add_flag("--no-wait", m_noWait, "Do not wait for readiness.");
+	m_app->add_flag("--no-bind", m_noBind, "Do not bind the session to this terminal.");
 	AddFormatOption(*m_app, m_format);
 }
 
@@ -176,6 +201,7 @@ CliExit OpenCommand::Execute()
 		options.app = std::filesystem::path(*m_appPath);
 	options.timeoutSeconds = m_timeoutSeconds;
 	options.noWait = m_noWait;
+	options.noBind = m_noBind;
 	options.format = Format(m_format);
 	return ExecuteOpen(options);
 }

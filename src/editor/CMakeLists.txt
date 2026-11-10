@@ -5,6 +5,8 @@ add_library(neurus_editor STATIC
 	Editor.cpp
 	Input.h
 	Input.cpp
+	commands/EditorCommandAdapter.h
+	commands/EditorCommandAdapter.cpp
 	viewport/DebugDrawBuilder.h
 	viewport/DebugDrawBuilder.cpp
 	viewport/EditorViewport.h
@@ -49,6 +51,7 @@ add_library(neurus_editor STATIC
 
 target_link_libraries(neurus_editor PUBLIC
 	Qt6::Core
+	neurus_command
 	neurus_scene
 	stb
 )

@@ -137,4 +137,30 @@ std::string EnvironmentValue(const char* name)
 	return value ? std::string(value) : std::string{};
 }
 
+bool SetEnvironmentValue(const char* name, const char* value)
+{
+	if (value == nullptr)
+		return ::unsetenv(name) == 0;
+	return ::setenv(name, value, 1) == 0;
+}
+
+std::string TerminalIdentity()
+{
+	const std::string override = EnvironmentValue("NEURUS_TERMINAL_ID");
+	if (!override.empty())
+		return "explicit:" + override;
+
+	for (const char* name : {"TERM_SESSION_ID", "TMUX_PANE"})
+	{
+		const std::string value = EnvironmentValue(name);
+		if (!value.empty())
+			return std::string(name) + ":" + value;
+	}
+
+	if (const char* tty = ::ttyname(STDIN_FILENO))
+		return "tty:" + std::string(tty) + ":" + std::to_string(::getppid());
+
+	return "posix:" + std::to_string(::getppid());
+}
+
 } // namespace neurus

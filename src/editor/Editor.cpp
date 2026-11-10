@@ -810,6 +810,15 @@ void Editor::FinishLoad()
 
 void Editor::OnMeshImport(const std::string& path)
 {
+	std::string error;
+	const int uid = ImportMeshObject(path, {}, error);
+	if (uid == 0)
+		NEURUS_ERR("Failed to import mesh: " << error);
+}
+
+int Editor::ImportMeshObject(const std::string& path, const std::string& name,
+                             std::string& error)
+{
 	try {
 		// Import = load the resource into the pool; the Add operation and the
 		// MeshGPU upload happen on demand when the add is processed - no inline
@@ -824,11 +833,19 @@ void Editor::OnMeshImport(const std::string& path)
 		auto meshData = m_resources->Load<MeshData>(storedPath);
 		auto mesh = m_resources->Load<Mesh>(meshData);
 
+		if (!name.empty())
+		{
+			const std::string unique = m_resources->SetName(mesh->GetObjectID(), name);
+			mesh->o_name = unique.empty() ? name : unique;
+		}
+
 		ed_eventBus.Emit(SceneObjectAddRequested{mesh->GetObjectID()});
-		NEURUS_LOG("[Editor] Imported mesh: " << storedPath);
+		NEURUS_LOG("[Editor] Imported mesh: " << storedPath << " as " << mesh->o_name);
+		return mesh->GetObjectID();
 	}
 	catch (const std::exception& e) {
-		NEURUS_ERR("Failed to import mesh: " << e.what());
+		error = e.what();
+		return 0;
 	}
 }
 

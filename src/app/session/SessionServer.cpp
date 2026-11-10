@@ -33,9 +33,11 @@ std::string UtcTimestamp()
 
 } // namespace
 
-SessionServer::SessionServer(command::ISessionState& state, std::string appVersion)
+SessionServer::SessionServer(command::ISessionState& state, std::string appVersion,
+                             command::IEditorCommands* editor)
 	: m_state(state)
 	, m_appVersion(std::move(appVersion))
+	, m_editorCommands(editor)
 	, m_registry(ipc::ResolveSessionsDirectory())
 {
 }
@@ -61,9 +63,9 @@ bool SessionServer::Start(const std::string& session, const std::string& project
 		return false;
 	}
 
-	m_executor = std::make_unique<SessionCommandExecutor>(m_state, [] {});
+	m_executor = std::make_unique<SessionCommandExecutor>(m_state, [] {}, m_editorCommands);
 	m_server = std::make_unique<ipc::IpcServer>(
-		ipc::IpcServerOptions{m_token, m_executor.get(), command::MakeSessionCatalog(), m_appVersion});
+		ipc::IpcServerOptions{m_token, m_executor.get(), command::MakeCommandCatalog(), m_appVersion});
 
 	if (!m_server->Start(0, error))
 	{

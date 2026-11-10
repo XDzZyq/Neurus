@@ -13,6 +13,11 @@ namespace neurus::ipc
 class IpcServer;
 }
 
+namespace neurus::command
+{
+class IEditorCommands;
+}
+
 namespace neurus
 {
 
@@ -30,8 +35,10 @@ public:
 	/**
 	 * @param state Live application state used by the command executor.
 	 * @param appVersion Version reported by the hello handshake and status.
+	 * @param editor Scene/object sub-executor; may be null in a headless app.
 	 */
-	SessionServer(command::ISessionState& state, std::string appVersion);
+	SessionServer(command::ISessionState& state, std::string appVersion,
+	              command::IEditorCommands* editor = nullptr);
 	~SessionServer();
 
 	SessionServer(const SessionServer&) = delete;
@@ -63,6 +70,7 @@ public:
 private:
 	command::ISessionState&                  m_state;
 	std::string                              m_appVersion;
+	command::IEditorCommands*                m_editorCommands = nullptr;
 	ipc::SessionRegistry                     m_registry;
 	std::string                              m_session;
 	std::string                              m_token;

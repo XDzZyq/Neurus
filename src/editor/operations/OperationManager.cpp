@@ -80,6 +80,18 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 	           << ", mergeKey='" << key << "')");
 }
 
+void OperationManager::BeginCommandScope(std::string label)
+{
+	if (label.empty())
+		label = "Command";
+	BeginScriptScope(std::move(label));
+}
+
+void OperationManager::EndCommandScope()
+{
+	EndScriptScope();
+}
+
 void OperationManager::Undo()
 {
 	if (m_undo.empty())

@@ -36,16 +36,22 @@ TEST(CommandTypes, EveryErrorCodeHasAStableString)
 	EXPECT_FALSE(ParseErrorCode("NOT_A_CODE").has_value());
 }
 
-TEST(CommandTypes, SessionCatalogHasNoDuplicatesAndMarksSensitive)
+TEST(CommandTypes, CatalogHasNoDuplicatesAndMarksSensitive)
 {
-	auto catalog = MakeSessionCatalog();
-	ASSERT_EQ(catalog.All().size(), 2u);
+	auto catalog = MakeCommandCatalog();
 	EXPECT_NE(catalog.Find("session.status"), nullptr);
+	EXPECT_NE(catalog.Find("project.save"), nullptr);
+	EXPECT_NE(catalog.Find("object.set"), nullptr);
 
 	const auto* close = catalog.Find("session.close");
 	ASSERT_NE(close, nullptr);
 	EXPECT_TRUE(close->sensitive);
 	EXPECT_TRUE(close->mutating);
+
+	const auto* open = catalog.Find("project.open");
+	ASSERT_NE(open, nullptr);
+	EXPECT_TRUE(open->mutating);
+	EXPECT_EQ(open->requiredArgs, std::vector<std::string>{"path"});
 
 	EXPECT_EQ(catalog.Find("session.unknown"), nullptr);
 }

@@ -334,4 +334,17 @@ struct ObjectDeleteRequested
 {
 };
 
+/**
+ * @brief Command/script delete gesture for an explicit UID list.
+ *
+ * FORWARD-ONLY, like ObjectDeleteRequested: the recorded composite replays via
+ * SceneObjectDeleteRequested. The handler removes exactly the listed scene
+ * objects and records ONE composite operation, so a command delete is a single
+ * undo entry.
+ */
+struct DeleteObjectsRequested
+{
+	std::vector<int> uids; ///< Scene object UIDs to remove (duplicates ignored).
+};
+
 } // namespace neurus

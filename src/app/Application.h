@@ -29,6 +29,7 @@ namespace neurus {
 
 class UIEvents;
 class SessionServer;
+class EditorCommandAdapter;
 
 /**
  * @brief Application lifecycle manager - fully RAII.
@@ -66,6 +67,10 @@ public:
 	std::string ProjectPath() const override;
 	bool IsDirty() const override;
 	bool Save(std::string& error) override;
+	bool SaveAs(const std::string& path, std::string& error) override;
+	bool NewProject(bool force, std::string& error) override;
+	bool OpenProject(const std::string& path, bool force, std::string& error) override;
+	int SceneObjectCount() const override;
 	std::int64_t UptimeSeconds() const override;
 	std::string AppVersion() const override;
 
@@ -115,8 +120,8 @@ private:
 	void ScreenShotSignals(UIEvents& uiEvents);
 
 	// --- Project lifecycle (the Application owns the project path) ---
-	void OnProjectNew();
-	void OnProjectOpen(const std::string& path);
+	bool OnProjectNew(std::string* error = nullptr);
+	bool OnProjectOpen(const std::string& path, std::string* error = nullptr);
 	bool OnProjectSave(const std::string& path = std::string(), std::string* error = nullptr);
 
 	// --- Scripting (Script Console → ScriptEngine) ---
@@ -169,6 +174,8 @@ private:
 	// into the UI, so the UI must go first.
 	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared -> destroyed 10th (LAST)
 	std::unique_ptr<Editor>               app_editor;          // 2nd declared -> destroyed 9th
+	/// Command-side view of the editor: outlives the session server below.
+	std::unique_ptr<EditorCommandAdapter> app_editorCommands;  // 3rd declared -> destroyed 8th
 	// Declared AFTER app_editor so reverse-order destruction tears the engine
 	// down BEFORE the Editor: the engine may hold a ScriptContext that borrows
 	// the Editor's scene/config/resources, so releasing the engine first avoids

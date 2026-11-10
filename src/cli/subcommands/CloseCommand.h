@@ -12,12 +12,13 @@ namespace neurus::cli
 class CloseCommand final : public SubCommand
 {
 public:
-	void Register(CLI::App& parent, const std::string& globalFormat) override;
+	void Register(CLI::App& parent, const GlobalOptions& globals) override;
 	bool Selected() const override;
 	CliExit Execute() override;
 
 private:
 	std::optional<std::string> m_name;
+	std::string                m_session;
 	bool                       m_all = false;
 	bool                       m_save = false;
 	bool                       m_force = false;

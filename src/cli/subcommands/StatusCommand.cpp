@@ -23,7 +23,8 @@ CliExit ExecuteStatus(const StatusOptions& options)
 	const auto live = LiveSessions();
 	std::vector<ipc::SessionRecord> targets;
 	std::vector<std::string> ambiguousNames;
-	const auto resolution = ResolveTargets(options.name, false, live, targets, ambiguousNames);
+	const auto targetName = ResolveSessionNameForCommand(options.name, live);
+	const auto resolution = ResolveTargets(targetName, false, live, targets, ambiguousNames);
 
 	if (resolution == TargetResolution::NoSessions)
 	{
@@ -34,13 +35,14 @@ CliExit ExecuteStatus(const StatusOptions& options)
 	if (resolution == TargetResolution::NotFound)
 	{
 		PrintError(options.format, command::CommandErrorCode::SessionNotFound,
-		           "No running session named " + options.name.value_or("") + ".");
+		           "No running session named " + targetName.value_or("") + ".");
 		return CliExit::NoSession;
 	}
 	if (resolution == TargetResolution::Ambiguous)
 	{
 		PrintError(options.format, command::CommandErrorCode::AmbiguousSession,
-		           "Several sessions are running; name one.", {{"sessions", ambiguousNames}});
+		           "Several sessions are running; pass --session or run 'neurus use <name>'.",
+		           {{"sessions", ambiguousNames}});
 		return CliExit::NoSession;
 	}
 
@@ -65,11 +67,12 @@ CliExit ExecuteStatus(const StatusOptions& options)
 
 } // namespace
 
-void StatusCommand::Register(CLI::App& parent, const std::string& globalFormat)
+void StatusCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 {
-	m_globalFormat = &globalFormat;
+	SetGlobals(globals);
 	m_app = parent.add_subcommand("status", "Report a running session.");
 	m_app->add_option("name", m_name, "Session name.");
+	AddSessionOption(*m_app, m_session);
 	m_app->add_option("--timeout", m_timeoutSeconds, "Command timeout in seconds.")
 		->check(CLI::PositiveNumber);
 	AddFormatOption(*m_app, m_format);
@@ -83,7 +86,14 @@ bool StatusCommand::Selected() const
 CliExit StatusCommand::Execute()
 {
 	StatusOptions options;
-	options.name = m_name;
+	const auto session = SessionName(m_session);
+	if (m_name && session)
+	{
+		PrintError(Format(m_format), command::CommandErrorCode::InvalidArgument,
+		           "Pass the session name either positionally or with --session, not both.");
+		return CliExit::Usage;
+	}
+	options.name = m_name ? m_name : session;
 	options.timeoutSeconds = m_timeoutSeconds;
 	options.format = Format(m_format);
 	return ExecuteStatus(options);

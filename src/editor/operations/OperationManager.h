@@ -68,6 +68,20 @@ public:
 	void BeginScriptScope(std::string name = {}) override;
 	void EndScriptScope() override;
 
+	/**
+	 * @brief Opens a command's edit buffer, so all of its writes land as one entry.
+	 *
+	 * Same buffering mechanism as a script run; only the origin differs. A
+	 * command executes on the main thread with no script scope open, so this is
+	 * normally a no-op wrapper around BeginScriptScope() with a command label.
+	 *
+	 * @param label History label for the command; empty means "Command".
+	 */
+	void BeginCommandScope(std::string label = {});
+
+	/// @brief Commits the buffered command edits as one composite entry.
+	void EndCommandScope();
+
 	// --- History control ---
 	/** @brief Undoes the most recent operation (no-op if none). */
 	void Undo();

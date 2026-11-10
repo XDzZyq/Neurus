@@ -1,7 +1,9 @@
 #include "platform/PlatformProcess.h"
 
 #include <cstdlib>
+#include <cstdint>
 #include <process.h>
+#include <string>
 #include <system_error>
 #include <vector>
 
@@ -12,6 +14,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <tlhelp32.h>
 
 namespace neurus
 {
@@ -216,6 +219,82 @@ std::string EnvironmentValue(const char* name)
 		return result;
 	}
 	std::free(value);
+	return {};
+}
+
+bool SetEnvironmentValue(const char* name, const char* value)
+{
+	return _putenv_s(name, value == nullptr ? "" : value) == 0;
+}
+
+std::string TerminalIdentity()
+{
+	const std::string override = EnvironmentValue("NEURUS_TERMINAL_ID");
+	if (!override.empty())
+		return "explicit:" + override;
+
+	std::string hint;
+	for (const char* name : {"WT_SESSION", "TERM_SESSION_ID", "TMUX_PANE", "ConEmuPID"})
+	{
+		const std::string value = EnvironmentValue(name);
+		if (!value.empty())
+		{
+			hint = std::string(name) + ":" + value;
+			break;
+		}
+	}
+
+	DWORD parentPid = 0;
+	const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snapshot != INVALID_HANDLE_VALUE)
+	{
+		PROCESSENTRY32W entry{};
+		entry.dwSize = sizeof(entry);
+		const DWORD self = GetCurrentProcessId();
+		if (Process32FirstW(snapshot, &entry))
+		{
+			do
+			{
+				if (entry.th32ProcessID == self)
+				{
+					parentPid = entry.th32ParentProcessID;
+					break;
+				}
+			} while (Process32NextW(snapshot, &entry));
+		}
+		CloseHandle(snapshot);
+	}
+
+	unsigned long long creation = 0;
+	if (parentPid != 0)
+	{
+		const HANDLE parent = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, parentPid);
+		if (parent != nullptr)
+		{
+			FILETIME created{};
+			FILETIME exited{};
+			FILETIME kernel{};
+			FILETIME user{};
+			if (GetProcessTimes(parent, &created, &exited, &kernel, &user))
+			{
+				creation = (static_cast<unsigned long long>(created.dwHighDateTime) << 32)
+					| created.dwLowDateTime;
+			}
+			CloseHandle(parent);
+		}
+
+		std::string identity = hint.empty() ? "win" : hint;
+		identity += ":" + std::to_string(parentPid);
+		if (creation != 0)
+			identity += ":" + std::to_string(creation);
+		return identity;
+	}
+
+	if (!hint.empty())
+		return hint;
+
+	if (const HWND console = GetConsoleWindow())
+		return "console:" + std::to_string(reinterpret_cast<std::uintptr_t>(console));
 	return {};
 }
 

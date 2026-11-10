@@ -253,6 +253,20 @@ public:
 	 */
 	void UploadSceneResources();
 
+	/**
+	 * @brief Loads a mesh file, names the object and adds it to the scene.
+	 *
+	 * Reuses the same import path as File > Import: the pooled MeshData holds
+	 * the source path, the Mesh references it, and SceneObjectAddRequested
+	 * performs the membership change and its undo entry.
+	 *
+	 * @param path Mesh file path, absolute or relative to the process.
+	 * @param name Display name; empty keeps the generated one.
+	 * @param error Receives a reason when the load fails.
+	 * @return New object UID, or 0 on failure.
+	 */
+	int ImportMeshObject(const std::string& path, const std::string& name, std::string& error);
+
 	void UploadLighting();
 
 private:

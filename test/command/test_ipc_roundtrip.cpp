@@ -50,7 +50,7 @@ protected:
 	{
 		m_token = GenerateToken();
 		m_server = std::make_unique<IpcServer>(
-			IpcServerOptions{m_token, &m_executor, MakeSessionCatalog(), "0.1.0"});
+			IpcServerOptions{m_token, &m_executor, MakeCommandCatalog(), "0.1.0"});
 		std::string error;
 		ASSERT_TRUE(m_server->Start(0, error)) << error;
 	}
@@ -132,7 +132,7 @@ TEST_F(IpcRoundtripTest, UnknownCommandIsRejectedWithoutDispatching)
 {
 	IpcClient client({m_server->Port(), m_token, std::chrono::seconds(2)});
 	CommandError error{};
-	auto result = client.Send({"scene.list", {}}, 3, error);
+	auto result = client.Send({"nonsense.command", {}}, 3, error);
 
 	ASSERT_TRUE(result.has_value()) << error.message;
 	EXPECT_FALSE(result->ok);

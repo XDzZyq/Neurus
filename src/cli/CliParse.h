@@ -36,6 +36,7 @@ struct OpenOptions
 	std::optional<std::filesystem::path> app;
 	int                             timeoutSeconds = 30;
 	bool                            noWait = false;
+	bool                            noBind = false;
 	OutputFormat                    format = OutputFormat::Human;
 };
 

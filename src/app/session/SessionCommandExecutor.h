@@ -1,6 +1,7 @@
 #pragma once
 
 #include "command/ICommandExecutor.h"
+#include "command/IEditorCommands.h"
 #include "command/ISessionState.h"
 
 #include <functional>
@@ -9,10 +10,12 @@ namespace neurus
 {
 
 /**
- * @brief Executes the session.status and session.close commands.
+ * @brief Executes session, project, scene and object commands.
  *
- * Close policy lives here rather than in the IPC layer so it can be tested
- * against a fake ISessionState without Qt or a window.
+ * Session and project policy lives here rather than in the IPC layer so it can
+ * be tested against a fake ISessionState without Qt or a window. Scene and
+ * object commands are delegated to the editor, which owns the scene and the
+ * typed event queue.
  */
 class SessionCommandExecutor final : public command::ICommandExecutor
 {
@@ -20,8 +23,12 @@ public:
 	/**
 	 * @param state Live application state.
 	 * @param requestClose Invoked once a close has been accepted.
+	 * @param editor Scene/object sub-executor; null when the session has no
+	 *               editor command surface.
 	 */
-	SessionCommandExecutor(command::ISessionState& state, std::function<void()> requestClose);
+	SessionCommandExecutor(command::ISessionState& state,
+	                       std::function<void()> requestClose,
+	                       command::IEditorCommands* editor = nullptr);
 
 	command::CommandResult Execute(const command::CommandRequest& request) override;
 
@@ -32,8 +39,15 @@ private:
 	command::CommandResult ExecuteStatus() const;
 	command::CommandResult ExecuteClose(const command::CommandRequest& request);
 
+	command::CommandResult ExecuteProject(const command::CommandRequest& request);
+	command::CommandResult ExecuteProjectInfo() const;
+	command::CommandResult ExecuteProjectNew(const command::CommandRequest& request);
+	command::CommandResult ExecuteProjectOpen(const command::CommandRequest& request);
+	command::CommandResult ExecuteProjectSave(const command::CommandRequest& request);
+
 	command::ISessionState& m_state;
 	std::function<void()>   m_requestClose;
+	command::IEditorCommands* m_editor = nullptr;
 	bool                    m_closeRequested = false;
 };
 
