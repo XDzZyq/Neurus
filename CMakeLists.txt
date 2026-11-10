@@ -62,7 +62,7 @@ target_include_directories(cereal INTERFACE lib/src/cereal/include)
 
 # Standalone Asio (header-only networking, loopback command transport)
 add_library(asio INTERFACE)
-target_include_directories(asio SYSTEM INTERFACE lib/src/asio/asio/include)
+target_include_directories(asio SYSTEM INTERFACE lib/src/asio/include)
 target_compile_definitions(asio INTERFACE
 	ASIO_STANDALONE
 	ASIO_NO_DEPRECATED
