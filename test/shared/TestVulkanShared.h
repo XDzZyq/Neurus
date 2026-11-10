@@ -15,7 +15,6 @@
 
 #include "core/RenderConfig.h"
 #include "editor/Editor.h"
-#include "platform/PlatformSurface.h"
 #include "render/Barrier.h"
 #include "render/RenderCache.h"
 #include "render/RenderFrameSnapshot.h"
@@ -355,7 +354,6 @@ protected:
 
 	// --- Vulkan state (destructor order: reverse declaration) ---
 	bool m_hasVulkan = false;
-	std::unique_ptr<neurus::PlatformSurface> m_platform;
 	vk::raii::Context m_context;
 	std::unique_ptr<vk::raii::Instance> m_instance;
 	vk::raii::PhysicalDevices m_physicalDevices = nullptr;

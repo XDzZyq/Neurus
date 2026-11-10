@@ -32,14 +32,14 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 }
 
 
-vk::raii::Instance VulkanContext::CreateInstance(const PlatformSurface& platform)
+vk::raii::Instance VulkanContext::CreateInstance()
 {
 	vk::ApplicationInfo appInfo("Neurus", VK_MAKE_VERSION(0,1,0), "NeurusRenderer", VK_MAKE_VERSION(0,1,0), VK_API_VERSION_1_4);
-	auto extensions = platform.requiredInstanceExtensions();
+	auto extensions = platform::RequiredInstanceExtensions();
 	if constexpr (kEnableValidation)
 		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
-	vk::InstanceCreateInfo createInfo(platform.instanceCreateFlags(), &appInfo, {}, extensions);
+	vk::InstanceCreateInfo createInfo(platform::InstanceCreateFlags(), &appInfo, {}, extensions);
 
 	if constexpr (kEnableValidation)
 	{

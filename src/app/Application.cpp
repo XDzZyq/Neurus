@@ -348,8 +348,7 @@ bool Application::InitVulkan()
 
 	try
 	{
-		app_platform = CreatePlatformSurface();
-		auto vkInstance = neurus::VulkanContext::CreateInstance(*app_platform);
+		auto vkInstance = neurus::VulkanContext::CreateInstance();
 		app_vkContext = std::make_unique<neurus::VulkanContext>(std::move(vkInstance));
 
 		// The window is seeded with plain preference values (language / FPS /
@@ -362,7 +361,7 @@ bool Application::InitVulkan()
 
 		NativeWindowHandle hwnd = app_mainWindow->getViewportHwnd();
 		app_surface = std::make_unique<vk::raii::SurfaceKHR>(
-			app_platform->createSurface(app_vkContext->instance(), hwnd));
+			neurus::platform::CreateSurface(app_vkContext->instance(), hwnd));
 
 		app_vkContext->InitDevice();
 
@@ -418,7 +417,7 @@ void Application::ResizeViewport(int width, int height)
 {
 	// AppKit must see the resize on the main thread; the swapchain itself is
 	// rebuilt on the render thread.
-	app_platform->onResize(
+	neurus::platform::OnResize(
 		app_mainWindow->getViewportHwnd(),
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 	app_renderThread->PostResize(
@@ -1035,7 +1034,7 @@ void Application::RecreateSignals(neurus::UIEvents& uiEvents)
 	                     try
 	                     {
 	                         new_surface = std::make_unique<vk::raii::SurfaceKHR>(
-	                             app_platform->createSurface(
+	                             neurus::platform::CreateSurface(
 	                                 app_vkContext->instance(),
 	                                 reinterpret_cast<NativeWindowHandle>(newHwnd)));
 	                     }
