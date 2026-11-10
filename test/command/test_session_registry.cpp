@@ -11,26 +11,12 @@
 
 #include "ipc/RandomToken.h"
 #include "ipc/SessionRegistry.h"
-
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
+#include "platform/PlatformProcess.h"
 
 using namespace neurus::ipc;
 
 namespace
 {
-
-int CurrentPid()
-{
-#ifdef _WIN32
-	return _getpid();
-#else
-	return static_cast<int>(::getpid());
-#endif
-}
 
 SessionRecord MakeRecord(std::string name, int pid, std::uint16_t port = 51234)
 {
@@ -71,7 +57,7 @@ TEST_F(SessionRegistryTest, WriteReadRemove)
 {
 	SessionRegistry registry(m_directory);
 	std::string error;
-	ASSERT_TRUE(registry.Write(MakeRecord("build-1", CurrentPid()), error)) << error;
+	ASSERT_TRUE(registry.Write(MakeRecord("build-1", neurus::CurrentProcessId()), error)) << error;
 
 	auto loaded = registry.Read("build-1");
 	ASSERT_TRUE(loaded.has_value());
@@ -87,7 +73,7 @@ TEST_F(SessionRegistryTest, WriteLeavesNoTemporaryFile)
 {
 	SessionRegistry registry(m_directory);
 	std::string error;
-	ASSERT_TRUE(registry.Write(MakeRecord("build-1", CurrentPid()), error)) << error;
+	ASSERT_TRUE(registry.Write(MakeRecord("build-1", neurus::CurrentProcessId()), error)) << error;
 	EXPECT_FALSE(std::filesystem::exists(m_directory / "build-1.json.tmp"));
 }
 
@@ -107,7 +93,7 @@ TEST_F(SessionRegistryTest, InvalidNameTouchesNothing)
 {
 	SessionRegistry registry(m_directory);
 	std::string error;
-	EXPECT_FALSE(registry.Write(MakeRecord("../escape", CurrentPid()), error));
+	EXPECT_FALSE(registry.Write(MakeRecord("../escape", neurus::CurrentProcessId()), error));
 	EXPECT_FALSE(std::filesystem::exists(m_directory.parent_path() / "escape.json"));
 }
 
@@ -116,7 +102,7 @@ TEST_F(SessionRegistryTest, ListLivePrunesDeadPid)
 	SessionRegistry registry(m_directory);
 	std::string error;
 	ASSERT_TRUE(registry.Write(MakeRecord("dead", 0, 1), error)) << error;
-	ASSERT_TRUE(registry.Write(MakeRecord("alive", CurrentPid(), 2), error)) << error;
+	ASSERT_TRUE(registry.Write(MakeRecord("alive", neurus::CurrentProcessId(), 2), error)) << error;
 
 	const auto live = registry.ListLive();
 	ASSERT_EQ(live.size(), 1u);
@@ -158,7 +144,7 @@ TEST_F(SessionRegistryTest, AllocationAvoidsExistingNames)
 	std::string error;
 	const auto name = AllocateSessionName("", registry);
 	ASSERT_TRUE(IsValidSessionName(name));
-	ASSERT_TRUE(registry.Write(MakeRecord(name, CurrentPid()), error)) << error;
+	ASSERT_TRUE(registry.Write(MakeRecord(name, neurus::CurrentProcessId()), error)) << error;
 
 	const auto second = AllocateSessionName("", registry);
 	EXPECT_TRUE(IsValidSessionName(second));

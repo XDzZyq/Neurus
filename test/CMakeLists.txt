@@ -3,6 +3,7 @@
 add_executable(neurus_test
 	shared/TestVulkanShared.cpp
 	shared/TestVulkanShared.h
+	shared/TestWindow.h
 	shared/TestMinimalSpv.h
 	shared/test_main.cpp
 	render/test_arraybuffer.cpp
@@ -149,6 +150,12 @@ target_link_libraries(neurus_test PRIVATE
 	Qt6::Quick
 	Qt6::Qml
 )
+
+if(WIN32)
+	target_sources(neurus_test PRIVATE shared/win/TestWindowWin32.cpp)
+elseif(APPLE)
+	target_sources(neurus_test PRIVATE shared/mac/TestWindowMacOS.cpp)
+endif()
 
 if(NEURUS_ENABLE_SCRIPTING)
 	target_link_libraries(neurus_test PRIVATE

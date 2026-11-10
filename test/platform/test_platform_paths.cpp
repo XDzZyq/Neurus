@@ -10,12 +10,12 @@
 
 #include <gtest/gtest.h>
 
-#include <cstdlib>
 #include <filesystem>
 #include <string>
 
 #include "app/Preferences.h"
 #include "platform/PlatformPaths.h"
+#include "platform/PlatformProcess.h"
 
 using namespace neurus;
 
@@ -36,22 +36,9 @@ TEST(PlatformPathsTest, HomeDirectoryIsNonEmptyAndAbsolute)
 
 TEST(PlatformPathsTest, HomeDirectoryFollowsHomeEnvVar)
 {
-#ifdef _WIN32
-	char* value = nullptr;
-	size_t length = 0;
-	if (_dupenv_s(&value, &length, kHomeEnv) != 0 || value == nullptr || *value == '\0')
-	{
-		std::free(value);
+	const std::string env = neurus::EnvironmentValue(kHomeEnv);
+	if (env.empty())
 		return;  // Unset env: fallback path, nothing to compare against.
-	}
-	const std::string env(value);
-	std::free(value);
-#else
-	const char* raw = std::getenv(kHomeEnv);
-	if (!raw || !*raw)
-		return;
-	const std::string env(raw);
-#endif
 
 	EXPECT_EQ(HomeDirectory().string(), env);
 }
