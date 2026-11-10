@@ -143,6 +143,19 @@ void RenderThread::PostScreenshot(bool allAttachments, std::filesystem::path dir
 	PostControl(std::move(control), false);
 }
 
+std::future<bool> RenderThread::PostScreenshotSync(bool allAttachments,
+                                                   std::filesystem::path directory)
+{
+	SyncScreenshotControl control;
+	control.allAttachments = allAttachments;
+	control.directory      = std::move(directory);
+	control.done           = std::make_shared<std::promise<bool>>();
+
+	std::future<bool> future = control.done->get_future();
+	PostControl(std::move(control), false);
+	return future;
+}
+
 RendererStatus RenderThread::Status() const
 {
 	std::lock_guard<std::mutex> lock(m_statusMutex);
@@ -368,6 +381,27 @@ void RenderThread::DrainControl()
 			catch (const std::exception& e)
 			{
 				NEURUS_ERR("[RenderThread] screenshot failed: " << e.what());
+			}
+		}
+		else if (auto* screenshot = std::get_if<SyncScreenshotControl>(&message))
+		{
+			if (!screenshot->done)
+				continue;
+			try
+			{
+				m_renderer.CaptureScreenshot(screenshot->allAttachments, screenshot->directory);
+				screenshot->done->set_value(true);
+			}
+			catch (...)
+			{
+				try
+				{
+					screenshot->done->set_exception(std::current_exception());
+				}
+				catch (...)
+				{
+					NEURUS_ERR("[RenderThread] sync screenshot promise was already satisfied");
+				}
 			}
 		}
 	}

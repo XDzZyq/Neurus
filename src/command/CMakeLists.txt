@@ -13,6 +13,7 @@ add_library(neurus_command STATIC
 	ICommandExecutor.h
 	IEditorCommands.h
 	IScriptCommands.h
+	ISnapshotCommands.h
 	Commands.h
 	ISessionState.h
 )

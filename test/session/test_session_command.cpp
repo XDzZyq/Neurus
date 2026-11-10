@@ -113,6 +113,20 @@ public:
 	CommandRequest lastRequest;
 };
 
+class FakeSnapshotCommands final : public ISnapshotCommands
+{
+public:
+	CommandResult Capture(const std::string& capturePath, bool all) override
+	{
+		path = capturePath;
+		allAttachments = all;
+		return CommandResult::Success({{"captured", capturePath}, {"all", all}});
+	}
+
+	std::string path;
+	bool        allAttachments = false;
+};
+
 } // namespace
 
 TEST(SessionCommand, StatusReportsDirtyAndPid)
@@ -343,6 +357,37 @@ TEST(SessionCommand, ScriptCommandsAreUnavailableWithoutAnExecutor)
 	SessionCommandExecutor executor(state, [] {});
 
 	const auto result = executor.Execute({kScriptRun, {{"code", "print(1)"}}});
+	EXPECT_FALSE(result.ok);
+	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+}
+
+TEST(SessionCommand, SnapshotCommandsDelegateToTheSnapshotExecutor)
+{
+	FakeSessionState state;
+	FakeSnapshotCommands snapshot;
+	SessionCommandExecutor executor(state, [] {}, nullptr, nullptr, &snapshot);
+
+	const auto result = executor.Execute(
+		{kSnapshotCapture, {{"path", "C:/shots/out.png"}, {"all", true}}});
+	ASSERT_TRUE(result.ok) << result.message;
+	EXPECT_EQ(result.details["captured"], "C:/shots/out.png");
+	EXPECT_EQ(result.details["all"], true);
+	EXPECT_EQ(snapshot.path, "C:/shots/out.png");
+	EXPECT_TRUE(snapshot.allAttachments);
+}
+
+TEST(SessionCommand, SnapshotRequiresAPathAndAnExecutor)
+{
+	FakeSessionState state;
+	SessionCommandExecutor executor(state, [] {});
+
+	auto result = executor.Execute({kSnapshotCapture, {{"path", "C:/shots/out.png"}}});
+	EXPECT_FALSE(result.ok);
+	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+
+	FakeSnapshotCommands snapshot;
+	SessionCommandExecutor withSnapshot(state, [] {}, nullptr, nullptr, &snapshot);
+	result = withSnapshot.Execute({kSnapshotCapture, {}});
 	EXPECT_FALSE(result.ok);
 	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
 }

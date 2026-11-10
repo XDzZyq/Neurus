@@ -17,6 +17,7 @@ namespace neurus::command
 {
 class IEditorCommands;
 class IScriptCommands;
+class ISnapshotCommands;
 }
 
 namespace neurus
@@ -38,10 +39,12 @@ public:
 	 * @param appVersion Version reported by the hello handshake and status.
 	 * @param editor Scene/object sub-executor; may be null in a headless app.
 	 * @param script Script sub-executor; may be null when scripting is off.
+	 * @param snapshot Snapshot sub-executor; may be null in a headless app.
 	 */
 	SessionServer(command::ISessionState& state, std::string appVersion,
 	              command::IEditorCommands* editor = nullptr,
-	              command::IScriptCommands* script = nullptr);
+	              command::IScriptCommands* script = nullptr,
+	              command::ISnapshotCommands* snapshot = nullptr);
 	~SessionServer();
 
 	SessionServer(const SessionServer&) = delete;
@@ -75,6 +78,7 @@ private:
 	std::string                              m_appVersion;
 	command::IEditorCommands*                m_editorCommands = nullptr;
 	command::IScriptCommands*                m_scriptCommands = nullptr;
+	command::ISnapshotCommands*              m_snapshotCommands = nullptr;
 	ipc::SessionRegistry                     m_registry;
 	std::string                              m_session;
 	std::string                              m_token;

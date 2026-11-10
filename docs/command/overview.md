@@ -160,6 +160,7 @@ neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
                   [--fxaa-edge-threshold-min V]
 neurus history show|undo|redo
 neurus script run --code "PYTHON" | --file FILE
+neurus snapshot capture --path PATH [--all]
 neurus --format human|json
 ```
 
@@ -197,6 +198,11 @@ sessions from different terminals.
   `history redo` step them.
 - `script run` executes Python in the running application and returns the
   captured output. A run is one undo entry, like the Script Console.
+- `snapshot capture` writes a PNG of the presented viewport, or every render
+  attachment with `--all`. The session name is injected into the destination so
+  parallel sessions cannot overwrite each other: `out.png` becomes
+  `out-<session>.png`, and `--all --path DIR` writes under `DIR/<session>/`.
+  The response carries the final path and every written file.
 
 Exit codes:
 
@@ -261,8 +267,10 @@ runs:
 - `history.undo` - undo the most recent edit.
 - `history.redo` - redo the most recently undone edit.
 - `script.run` - run Python and return its captured output.
+- `snapshot.capture` - write the viewport or all attachments, with the session
+  name injected into the path.
 
-The next family remains reserved: `snapshot.capture`.
+The command surface is complete for this milestone; later work is additive.
 
 ## Testing
 

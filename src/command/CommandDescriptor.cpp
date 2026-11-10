@@ -48,6 +48,7 @@ CommandCatalog MakeCommandCatalog()
 		CommandDescriptor{"history.undo", "Undo the most recent edit.", true, false, {}},
 		CommandDescriptor{"history.redo", "Redo the most recently undone edit.", true, false, {}},
 		CommandDescriptor{"script.run", "Run a Python snippet or file.", true, true, {}},
+		CommandDescriptor{"snapshot.capture", "Capture the viewport or all attachments.", true, false, {"path"}},
 	});
 }
 

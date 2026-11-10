@@ -10,6 +10,7 @@
 #include "cli/subcommands/RenderCommand.h"
 #include "cli/subcommands/SceneCommand.h"
 #include "cli/subcommands/ScriptCommand.h"
+#include "cli/subcommands/SnapshotCommand.h"
 #include "cli/subcommands/StatusCommand.h"
 #include "cli/subcommands/UseCommand.h"
 
@@ -45,6 +46,7 @@ int RunCli(int argc, char* argv[])
 	commands.push_back(std::make_unique<RenderCommand>());
 	commands.push_back(std::make_unique<HistoryCommand>());
 	commands.push_back(std::make_unique<ScriptCommand>());
+	commands.push_back(std::make_unique<SnapshotCommand>());
 	commands.push_back(std::make_unique<UseCommand>());
 	const GlobalOptions globals{globalFormat, globalSession};
 	try

@@ -1157,3 +1157,21 @@ TEST(RenderThreadTest, PostScreenshotDeliversTheFlagAndTheDirectoryUnchanged)
 
 	thread.Stop();
 }
+
+TEST(RenderThreadTest, PostScreenshotSyncCompletesAfterTheCapture)
+{
+	FakeRenderer fake;
+	RenderThread thread(fake);
+	thread.Start();
+
+	const std::filesystem::path dir = std::filesystem::path("exe dir") / "command-capture";
+	auto future = thread.PostScreenshotSync(true, dir);
+	ASSERT_EQ(future.wait_for(WAIT_LIMIT), std::future_status::ready)
+		<< "the synchronous screenshot never completed";
+	EXPECT_TRUE(future.get());
+	EXPECT_EQ(fake.Screenshots(), 1);
+	EXPECT_TRUE(fake.LastScreenshotAll());
+	EXPECT_EQ(fake.LastScreenshotDir().string(), dir.string());
+
+	thread.Stop();
+}

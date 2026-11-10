@@ -17,6 +17,7 @@
 #include "app/AppArgs.h"
 #include "command/ISessionState.h"
 #include "command/IScriptCommands.h"
+#include "command/ISnapshotCommands.h"
 #include "editor/Editor.h"
 #include "render/DeferredRenderer.h"
 #include "render/RenderThread.h"
@@ -40,7 +41,9 @@ class EditorCommandAdapter;
  * declared in teardown order, so reverse-order destruction releases GPU
  * resources in the required sequence.
  */
-class Application : public command::ISessionState, public command::IScriptCommands
+class Application : public command::ISessionState,
+                    public command::IScriptCommands,
+                    public command::ISnapshotCommands
 {
 public:
 	/**
@@ -77,6 +80,9 @@ public:
 
 	// --- IScriptCommands (script.run) ---
 	command::CommandResult Execute(const command::CommandRequest& request) override;
+
+	// --- ISnapshotCommands (snapshot.capture) ---
+	command::CommandResult Capture(const std::string& path, bool all) override;
 
 private:
 	// --- Initialisation helpers (called in order by Run()) ---

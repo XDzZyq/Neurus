@@ -39,6 +39,8 @@ add_library(neurus_cli_core STATIC
 	subcommands/HistoryCommand.cpp
 	subcommands/ScriptCommand.h
 	subcommands/ScriptCommand.cpp
+	subcommands/SnapshotCommand.h
+	subcommands/SnapshotCommand.cpp
 	subcommands/UseCommand.h
 	subcommands/UseCommand.cpp
 )

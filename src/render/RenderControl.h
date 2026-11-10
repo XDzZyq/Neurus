@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <future>
+#include <memory>
 #include <variant>
 
 namespace neurus {
@@ -71,9 +72,25 @@ struct ScreenshotControl
 	std::filesystem::path directory;  ///< Destination root (created on demand).
 };
 
+/**
+ * @brief Write a screenshot and wake the caller when the capture is complete.
+ *
+ * The synchronous variant of @ref ScreenshotControl, used by a command that must
+ * report the files it wrote. The promise carries true once the renderer returned;
+ * the caller still checks the directory because a capture can fail without
+ * throwing (the renderer logs the reason).
+ */
+struct SyncScreenshotControl
+{
+	bool                  allAttachments = false;
+	std::filesystem::path directory;  ///< Destination root (created on demand).
+	std::shared_ptr<std::promise<bool>> done;
+};
+
 using RenderControl = std::variant<ResizeControl,
                                    SurfaceChangeControl,
                                    PickControl,
-                                   ScreenshotControl>;
+                                   ScreenshotControl,
+                                   SyncScreenshotControl>;
 
 } // namespace neurus

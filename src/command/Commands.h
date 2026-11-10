@@ -40,6 +40,9 @@ inline constexpr const char* kHistoryRedo = "history.redo";
 // --- Scripting ---
 inline constexpr const char* kScriptRun = "script.run";
 
+// --- Snapshots ---
+inline constexpr const char* kSnapshotCapture = "snapshot.capture";
+
 /**
  * @brief True for commands implemented by the editor-side adapter.
  *

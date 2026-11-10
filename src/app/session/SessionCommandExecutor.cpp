@@ -61,11 +61,13 @@ bool ReadOptionalString(const command::Json& arguments, const char* key,
 SessionCommandExecutor::SessionCommandExecutor(command::ISessionState& state,
                                                std::function<void()> requestClose,
                                                command::IEditorCommands* editor,
-                                               command::IScriptCommands* script)
+                                               command::IScriptCommands* script,
+                                               command::ISnapshotCommands* snapshot)
 	: m_state(state)
 	, m_requestClose(std::move(requestClose))
 	, m_editor(editor)
 	, m_script(script)
+	, m_snapshot(snapshot)
 {
 }
 
@@ -89,6 +91,9 @@ command::CommandResult SessionCommandExecutor::Execute(const command::CommandReq
 		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
 		                                      "Scripting is not available.");
 	}
+
+	if (request.name.rfind("snapshot.", 0) == 0)
+		return ExecuteSnapshot(request);
 
 	return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
 	                                      "Unknown command: " + request.name);
@@ -280,6 +285,36 @@ command::CommandResult SessionCommandExecutor::ExecuteProjectSave(const command:
 		{"objects", m_state.SceneObjectCount()},
 		{"saved", true},
 	});
+}
+
+command::CommandResult SessionCommandExecutor::ExecuteSnapshot(const command::CommandRequest& request)
+{
+	if (request.name != command::kSnapshotCapture)
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+		                                      "Unknown command: " + request.name);
+	}
+
+	std::string path;
+	std::string error;
+	if (!ReadRequiredString(request.args, "path", path, error))
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+		                                      error);
+	}
+	bool all = false;
+	if (!ReadOptionalBool(request.args, "all", false, all))
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+		                                      "'all' must be a boolean.");
+	}
+
+	if (m_snapshot == nullptr)
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+		                                      "Snapshot capture is not available.");
+	}
+	return m_snapshot->Capture(path, all);
 }
 
 } // namespace neurus

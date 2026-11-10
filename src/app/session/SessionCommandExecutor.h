@@ -3,6 +3,7 @@
 #include "command/ICommandExecutor.h"
 #include "command/IEditorCommands.h"
 #include "command/IScriptCommands.h"
+#include "command/ISnapshotCommands.h"
 #include "command/ISessionState.h"
 
 #include <functional>
@@ -27,11 +28,13 @@ public:
 	 * @param editor Scene/object sub-executor; null when the session has no
 	 *               editor command surface.
 	 * @param script Script sub-executor; null when scripting is unavailable.
+	 * @param snapshot Snapshot sub-executor; null when capture is unavailable.
 	 */
 	SessionCommandExecutor(command::ISessionState& state,
 	                       std::function<void()> requestClose,
 	                       command::IEditorCommands* editor = nullptr,
-	                       command::IScriptCommands* script = nullptr);
+	                       command::IScriptCommands* script = nullptr,
+	                       command::ISnapshotCommands* snapshot = nullptr);
 
 	command::CommandResult Execute(const command::CommandRequest& request) override;
 
@@ -47,11 +50,13 @@ private:
 	command::CommandResult ExecuteProjectNew(const command::CommandRequest& request);
 	command::CommandResult ExecuteProjectOpen(const command::CommandRequest& request);
 	command::CommandResult ExecuteProjectSave(const command::CommandRequest& request);
+	command::CommandResult ExecuteSnapshot(const command::CommandRequest& request);
 
 	command::ISessionState& m_state;
 	std::function<void()>   m_requestClose;
 	command::IEditorCommands* m_editor = nullptr;
 	command::IScriptCommands* m_script = nullptr;
+	command::ISnapshotCommands* m_snapshot = nullptr;
 	bool                    m_closeRequested = false;
 };
 
