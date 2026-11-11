@@ -1,13 +1,15 @@
 # src/platform/CMakeLists.txt - Platform abstraction layer
 
-# Platform path and process helpers are standard-library only. They are a
-# separate target so the Qt-free, Vulkan-free command transport and CLI can use
-# them without inheriting the surface layer's Vulkan dependency.
+# Platform path, process, file and system helpers need only the standard
+# library plus the OS SDK. They are a separate target so the Qt-free,
+# Vulkan-free command transport and CLI can use them without inheriting the
+# surface layer's Vulkan dependency.
 add_library(neurus_platform_paths STATIC
 	PlatformPaths.h
 	PlatformProcess.h
 	PlatformFile.h
 	PlatformCrypto.h
+	PlatformSystem.h
 )
 
 if(WIN32)
@@ -16,6 +18,7 @@ if(WIN32)
 		win/Win32Process.cpp
 		win/Win32File.cpp
 		win/Win32Crypto.cpp
+		win/Win32System.cpp
 	)
 	target_link_libraries(neurus_platform_paths PUBLIC bcrypt shell32)
 elseif(APPLE)
@@ -24,6 +27,7 @@ elseif(APPLE)
 		mac/MacOSProcess.cpp
 		mac/MacOSFile.cpp
 		mac/MacOSCrypto.cpp
+		mac/MacOSSystem.cpp
 	)
 else()
 	message(FATAL_ERROR "Platform helpers have no implementation for this platform.")

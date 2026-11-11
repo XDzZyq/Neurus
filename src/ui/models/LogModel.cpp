@@ -7,6 +7,7 @@
 #include <QString>
 
 #include "core/Log.h"
+#include "platform/PlatformSystem.h"
 
 namespace neurus
 {
@@ -16,12 +17,7 @@ QString FormatLogTimestamp(std::chrono::system_clock::time_point tp)
 	const std::time_t t = std::chrono::system_clock::to_time_t(tp);
 	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 	                    tp.time_since_epoch()).count() % 1000;
-	std::tm tmv{};
-#ifdef _WIN32
-	localtime_s(&tmv, &t);
-#else
-	localtime_r(&t, &tmv);
-#endif
+	const std::tm tmv = platform::LocalTime(t);
 	char buf[32];
 	std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
 	              tmv.tm_hour, tmv.tm_min, tmv.tm_sec, static_cast<int>(ms));

@@ -23,6 +23,7 @@
 #include "editor/commands/EditorCommandAdapter.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/events/UIEvents.h"
+#include "platform/PlatformSystem.h"
 #include "ui/UIManager.h"
 #include "ui/panels/Viewport.h"
 #include "ui/utils/I18n.h"
@@ -105,13 +106,13 @@ Application::Application(int argc, char* argv[])
 	app_qtApp->setApplicationVersion("0.1.0");
 	app_startTime = std::chrono::steady_clock::now();
 	// Set before any window exists so every top-level widget (the main window,
-	// dialogs) inherits the window and taskbar icon. Skipped on macOS: the Dock
-	// shows the bundle's neurus.icns, which the system masks to the rounded
-	// app-icon shape, and setWindowIcon() would replace it at runtime with the
-	// raw square SVG (NSApp.applicationIconImage is drawn unmasked).
-#ifndef __APPLE__
-	app_qtApp->setWindowIcon(QIcon(":/app/neurus.svg"));
-#endif
+	// dialogs) inherits the window and taskbar icon. Skipped when the OS draws
+	// the icon from the installed bundle (macOS): the Dock shows the bundle's
+	// neurus.icns, which the system masks to the rounded app-icon shape, and
+	// setWindowIcon() would replace it at runtime with the raw square SVG
+	// (NSApp.applicationIconImage is drawn unmasked).
+	if (!platform::BundleProvidesAppIcon())
+		app_qtApp->setWindowIcon(QIcon(":/app/neurus.svg"));
 }
 
 Application::~Application()

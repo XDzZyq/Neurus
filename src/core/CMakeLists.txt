@@ -28,4 +28,7 @@ target_link_libraries(neurus_core PUBLIC
 	glm
 	cereal
 	Threads::Threads
+	# Log.h's TTY check lives in the platform layer, so every translation unit
+	# that expands NEURUS_LOG/NEURUS_ERR needs its symbols.
+	neurus_platform_paths
 )

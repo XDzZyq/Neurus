@@ -24,13 +24,7 @@
 #include <string>
 #include <utility>
 
-#ifdef _WIN32
-#include <io.h>
-#define NEURUS_ISATTY(fd) _isatty(_fileno(fd))
-#else
-#include <unistd.h>
-#define NEURUS_ISATTY(fd) isatty(fileno(fd))
-#endif
+#include "platform/PlatformSystem.h"
 
 namespace neurus
 {
@@ -239,7 +233,7 @@ private:
 				std::chrono::system_clock::now(), \
 				__func__, __LINE__, \
 				neurusLogOs.str(), 0 /* seq assigned inside Append() */ }); \
-		if (NEURUS_ISATTY(stdout)) { \
+		if (::neurus::platform::IsTerminal(stdout)) { \
 			std::cout << "\033[36m[" << __func__ << ":" << __LINE__ << "]\033[0m " \
 			          << neurusLogOs.str() << "\n"; \
 		} else { \
@@ -266,7 +260,7 @@ private:
 				std::chrono::system_clock::now(), \
 				__func__, __LINE__, \
 				neurusLogOs.str(), 0 /* seq assigned inside Append() */ }); \
-		if (NEURUS_ISATTY(stderr)) { \
+		if (::neurus::platform::IsTerminal(stderr)) { \
 			std::cerr << "\033[1;31m[" << __func__ << ":" << __LINE__ << "] ERROR:\033[0m " \
 			          << neurusLogOs.str() << "\n"; \
 		} else { \

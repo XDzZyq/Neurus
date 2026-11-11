@@ -107,6 +107,7 @@ add_executable(neurus_test
 	ui/test_run_script_menu.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
+	platform/test_platform_system.cpp
 	command/test_dependencies.cpp
 	command/test_command_types.cpp
 	command/test_command_json.cpp
