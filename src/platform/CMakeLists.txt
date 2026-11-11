@@ -17,7 +17,7 @@ if(WIN32)
 		win/Win32File.cpp
 		win/Win32Crypto.cpp
 	)
-	target_link_libraries(neurus_platform_paths PUBLIC bcrypt)
+	target_link_libraries(neurus_platform_paths PUBLIC bcrypt shell32)
 elseif(APPLE)
 	target_sources(neurus_platform_paths PRIVATE
 		mac/MacOSPaths.cpp

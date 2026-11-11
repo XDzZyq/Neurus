@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <future>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -245,17 +246,21 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 	ScriptContext context;
 	app_editor->UpdateScriptContext(context);
 	std::string result;
+	bool runOk = false;
 	if (isEval)
 	{
-		result = app_script->EvalString(code, &context);
+		const std::optional<std::string> evaluated =
+			app_script->EvalStringChecked(code, &context);
+		runOk = evaluated.has_value();
+		result = evaluated.value_or(std::string{});
 	}
 	else if (hasPath)
 	{
-		app_script->RunFile(path, &context);
+		runOk = app_script->RunFileChecked(path, &context);
 	}
 	else
 	{
-		app_script->RunString(code, &context);
+		runOk = app_script->RunStringChecked(code, &context);
 	}
 
 	std::string output;
@@ -273,15 +278,21 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 			output += line.text;
 	}
 
-	if (!scriptError.empty())
+	if (!runOk)
 	{
+		const std::string message = scriptError.empty()
+			? "The script raised an exception."
+			: scriptError;
 		return command::CommandResult::Failure(
-			command::CommandErrorCode::ScriptError, scriptError,
+			command::CommandErrorCode::ScriptError, message,
 			{{"output", output}, {"error", scriptError}});
 	}
 	if (isEval)
-		return command::CommandResult::Success({{"result", result}, {"output", output}});
-	return command::CommandResult::Success({{"output", output}});
+	{
+		return command::CommandResult::Success(
+			{{"result", result}, {"output", output}, {"stderr", scriptError}});
+	}
+	return command::CommandResult::Success({{"output", output}, {"stderr", scriptError}});
 }
 
 command::CommandResult Application::Capture(const std::string& path, bool all)

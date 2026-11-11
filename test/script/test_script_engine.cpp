@@ -63,6 +63,41 @@ TEST(ScriptEngine, EvalStringRaisesWithoutBreakingTheEngine)
 	engine.Shutdown();
 }
 
+TEST(ScriptEngine, CheckedRunDistinguishesStderrFromARaise)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.Console().Clear();
+
+	// stderr output alone is not a failed run: a script may log to it.
+	EXPECT_TRUE(engine.RunStringChecked(
+		"import sys; print('out'); print('err', file=sys.stderr)"));
+	EXPECT_FALSE(engine.RunStringChecked("raise RuntimeError('boom')"));
+
+	bool sawOutput = false;
+	bool sawError = false;
+	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
+	{
+		const neurus::ScriptLine line = engine.Console().At(i);
+		sawOutput = sawOutput
+			|| (line.kind == neurus::ScriptLineKind::Output && line.text.find("out") != std::string::npos);
+		sawError = sawError
+			|| (line.kind == neurus::ScriptLineKind::Error && line.text.find("err") != std::string::npos);
+	}
+	EXPECT_TRUE(sawOutput);
+	EXPECT_TRUE(sawError);
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, CheckedEvalReportsFailureAsNullopt)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	EXPECT_EQ(engine.EvalStringChecked("6 * 7").value_or(""), "42");
+	EXPECT_FALSE(engine.EvalStringChecked("1 / 0").has_value());
+	engine.Shutdown();
+}
+
 TEST(ScriptEngine, ReportsPythonVersion)
 {
 	neurus::ScriptEngine engine;

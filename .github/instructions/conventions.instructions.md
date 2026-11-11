@@ -92,6 +92,19 @@ NEURUS_ERR("Texture::createFromPixelData failed: " << e.what());
 - Before committing, scan staged changes for the replacement-character byte
   sequence (`EF BF BD`) and fail if any file contains it.
 
+## Platform-specific code
+
+- Keep OS APIs and `#ifdef _WIN32` / `#ifdef __APPLE__` inside
+  `src/platform/win/` and `src/platform/mac/`, selected by
+  `src/platform/CMakeLists.txt`.
+- A caller in app, editor, UI, command, IPC, CLI, script or tests uses a free
+  function from a `Platform*.h` header instead of branching on the OS.
+- An ifdef in a test is acceptable only when the expected value itself differs by
+  platform (for example the executable name or the home environment variable).
+- When a new platform primitive is needed, add it to the shared header and both
+  implementations in the same change; do not leave one platform with a stub that
+  silently succeeds.
+
 ## Shader Conventions
 
 - GLSL source lives in `res/shaders/`.

@@ -124,6 +124,25 @@ mesh.position = (1, 2, 3)
 print(mesh.position)            # (1.0, 2.0, 3.0) - already applied
 ```
 
+Names, visibility, deletion and selection are writable too, each through the
+same typed-event path:
+
+```python
+mesh.name = "Ground A"          # rename, one undo entry
+mesh.viewport_visible = False
+mesh.render_visible = True
+mesh.delete()                   # remove from the scene, one undo entry
+
+neurus.scene.select(mesh)
+neurus.scene.select([mesh], additive=True)
+neurus.scene.clear_selection()
+neurus.scene.delete([mesh, other])
+```
+
+`visible` sets both flags at once; `viewport_visible` and `render_visible` set
+them independently. Deletion removes scene membership only: the pooled object
+stays alive for undo, and a later write through a stale proxy raises.
+
 Writability is a property of the resource pool, not of scene membership: a pooled
 object that is not in the scene - an object held by undo history, or the pooled
 viewport camera - is writable too, as long as a setter names it. A target that
@@ -188,3 +207,23 @@ Two surfaces drive the engine:
 
 Output (`print`, tracebacks) appears in the console. Errors also reach the Log
 panel as `NEURUS_ERR`, and never crash the host.
+
+`stdout` is normal output; `stderr` is diagnostic output and does not by itself
+fail a run. A Python exception is different: the engine records it as an error
+and the CLI reports `SCRIPT_ERROR`. The engine's checked run API lets the CLI
+make that distinction, so a script that only logs to `stderr` still exits
+successfully.
+
+The CLI also exposes the same engine as a document driver:
+
+```text
+neurus script run --code "print('hello')"
+neurus script run -f script.py
+neurus script eval "1 + 2"
+neurus script info
+neurus script console --tail 20
+neurus script clear
+```
+
+`script eval` is expression-only; use `script run` for assignments, imports and
+multi-line statements.

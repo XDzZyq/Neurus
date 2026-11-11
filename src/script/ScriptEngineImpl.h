@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -168,12 +169,13 @@ struct ScriptEngine::Impl
 	 * Shares the run boundary, context and stream capture with RunSource so an
 	 * expression with side effects is one undo entry and its prints are visible.
 	 */
-	std::string EvalString(const std::string& expression, const ScriptContext* ctx)
+	std::optional<std::string> EvalStringChecked(const std::string& expression,
+	                                             const ScriptContext* ctx)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
-			return {};
+			return std::nullopt;
 		}
 
 		pybind11::gil_scoped_acquire gil;
@@ -192,8 +194,14 @@ struct ScriptEngine::Impl
 		catch (const pybind11::error_already_set& e)
 		{
 			ReportError(e, "ScriptEngine::EvalString");
-			return {};
+			return std::nullopt;
 		}
+	}
+
+	/// @brief Compatibility wrapper returning an empty string on failure.
+	std::string EvalString(const std::string& expression, const ScriptContext* ctx)
+	{
+		return EvalStringChecked(expression, ctx).value_or(std::string{});
 	}
 
 	/// @brief Attach the queue scripted mutations are dispatched to.
@@ -203,45 +211,57 @@ struct ScriptEngine::Impl
 	}
 
 	/**
-	 * @brief Execute a Python snippet, buffering output and logging failures.
+	 * @brief Execute a Python snippet and report whether it raised.
 	 * @param code UTF-8 Python source.
 	 */
-	void RunString(const std::string& code, const ScriptContext* ctx)
+	bool RunStringChecked(const std::string& code, const ScriptContext* ctx)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
-			return;
+			return false;
 		}
 
-		RunSource(code, "ScriptEngine::RunString", {}, ctx);
+		return RunSource(code, "ScriptEngine::RunString", {}, ctx);
+	}
+
+	/// @brief Execute a snippet; compatibility wrapper that ignores the result.
+	void RunString(const std::string& code, const ScriptContext* ctx)
+	{
+		(void)RunStringChecked(code, ctx);
 	}
 
 	/**
-	 * @brief Read and execute a Python file, buffering output and logging.
+	 * @brief Read and execute a Python file, reporting whether it ran.
 	 * @param path Filesystem path to a UTF-8 Python source file.
 	 */
-	void RunFile(const std::string& path, const ScriptContext* ctx)
+	bool RunFileChecked(const std::string& path, const ScriptContext* ctx)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
-			return;
+			return false;
 		}
 
 		std::ifstream file(path, std::ios::binary);
 		if (!file)
 		{
 			NEURUS_ERR("ScriptEngine::RunFile: cannot open '" << path << "'");
-			return;
+			return false;
 		}
 
 		// Slurp the whole file: `py::exec` needs a complete source string, and
 		// CPython decodes UTF-8 source itself.
 		const std::string source((std::istreambuf_iterator<char>(file)),
 		                         std::istreambuf_iterator<char>());
-		RunSource(source, "ScriptEngine::RunFile",
-		          "Run " + std::filesystem::path(path).filename().string(), ctx);
+		return RunSource(source, "ScriptEngine::RunFile",
+		                 "Run " + std::filesystem::path(path).filename().string(), ctx);
+	}
+
+	/// @brief Execute a file; compatibility wrapper that ignores the result.
+	void RunFile(const std::string& path, const ScriptContext* ctx)
+	{
+		(void)RunFileChecked(path, ctx);
 	}
 
 	/// @brief The buffer captured Python output and errors are written to.
@@ -293,7 +313,7 @@ private:
 	/// @param entryName Caller name used in error reporting, not as a label.
 	/// @param runName History label for the run; empty means "Run Script".
 	/// @param ctx Document view to publish for the run.
-	void RunSource(const std::string& source, const char* entryName, const std::string& runName,
+	bool RunSource(const std::string& source, const char* entryName, const std::string& runName,
 	               const ScriptContext* ctx)
 	{
 		pybind11::gil_scoped_acquire gil;
@@ -318,10 +338,12 @@ private:
 			// still held) as this try scope unwinds.
 			StreamRedirect redirect(m_console);
 			pybind11::exec(source, pybind11::globals(), pybind11::globals());
+			return true;
 		}
 		catch (const pybind11::error_already_set& e)
 		{
 			ReportError(e, entryName);
+			return false;
 		}
 	}
 

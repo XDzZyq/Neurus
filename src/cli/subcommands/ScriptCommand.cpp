@@ -26,6 +26,14 @@ void PrintScriptOutput(const command::Json& result, OutputFormat format)
 	std::cout << output;
 	if (!output.empty() && output.back() != '\n')
 		std::cout << '\n';
+
+	const std::string error = result.value("stderr", std::string{});
+	if (!error.empty())
+	{
+		std::cerr << error;
+		if (error.back() != '\n')
+			std::cerr << '\n';
+	}
 }
 
 void PrintScriptEval(const command::Json& result, OutputFormat format)
@@ -44,6 +52,15 @@ void PrintScriptEval(const command::Json& result, OutputFormat format)
 		if (output.back() != '\n')
 			std::cout << '\n';
 	}
+
+	const std::string error = result.value("stderr", std::string{});
+	if (!error.empty())
+	{
+		std::cerr << error;
+		if (error.back() != '\n')
+			std::cerr << '\n';
+	}
+
 	std::cout << result.value("result", std::string{}) << '\n';
 }
 

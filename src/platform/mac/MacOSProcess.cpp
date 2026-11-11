@@ -144,6 +144,11 @@ bool SetEnvironmentValue(const char* name, const char* value)
 	return ::setenv(name, value, 1) == 0;
 }
 
+std::vector<std::string> CommandLineArguments(int argc, char* argv[])
+{
+	return std::vector<std::string>(argv, argv + argc);
+}
+
 std::string TerminalIdentity()
 {
 	const std::string override = EnvironmentValue("NEURUS_TERMINAL_ID");

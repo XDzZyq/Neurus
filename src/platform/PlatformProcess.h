@@ -44,6 +44,18 @@ std::string EnvironmentValue(const char* name);
 bool SetEnvironmentValue(const char* name, const char* value);
 
 /**
+ * @brief Returns the process command line as UTF-8 strings, including argv[0].
+ *
+ * Windows rebuilds the arguments from the UTF-16 command line so non-ASCII
+ * paths and script sources survive a non-UTF-8 ANSI code page. POSIX forwards
+ * argv unchanged, where the bytes are already UTF-8.
+ *
+ * @param argc C runtime argument count.
+ * @param argv C runtime argument vector.
+ */
+std::vector<std::string> CommandLineArguments(int argc, char* argv[]);
+
+/**
  * @brief Returns a stable identifier for the terminal/tab running this process.
  *
  * The CLI uses it to bind a default session per terminal, so parallel agents in

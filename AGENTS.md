@@ -60,6 +60,15 @@ events - never poll per frame. Renderer never calls back into Editor.
 - No shared ownership of GPU resources across layers. GPU-resource classes
   `= delete` copy/assign and use `vk::raii` - never a raw `vkDestroy*`.
 
+### Platform-specific code is isolated
+
+OS-specific code lives under `src/platform/win/` or `src/platform/mac/`, selected
+by `src/platform/CMakeLists.txt`. App, editor, UI, CLI, script and test code call
+the platform free functions; do not add `#ifdef _WIN32` or `#ifdef __APPLE__`
+outside those implementations. A test may keep an ifdef only when the defended
+value is itself platform-specific, such as an executable name or environment
+variable name.
+
 ### Coordinate system (Z-up, +Y forward, right-hand)
 
 - Up `+Z`, forward `+Y`, right `+X` (Blender convention).

@@ -19,12 +19,15 @@
 
 #include <pybind11/pybind11.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "core/IResourceLookup.h"
+#include "editor/events/SceneEvents.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"
@@ -189,6 +192,30 @@ void RegisterSceneCollection(py::module_& scene, const char* name, bool resolves
 }
 
 /**
+ * @brief Extracts object UIDs from one proxy or any iterable of proxies.
+ *
+ * A single proxy is not iterable; a list, tuple or generator is. Casting each
+ * item to ObjectProxy accepts every typed proxy through its registered base.
+ */
+std::vector<int> ObjectUids(const py::object& objects)
+{
+	std::vector<int> uids;
+	if (objects.is_none())
+		return uids;
+
+	if (PyObject_HasAttrString(objects.ptr(), "__iter__"))
+	{
+		for (py::handle item : py::reinterpret_borrow<py::iterable>(objects))
+			uids.push_back(py::cast<ObjectProxy>(item).uid);
+	}
+	else
+	{
+		uids.push_back(py::cast<ObjectProxy>(objects).uid);
+	}
+	return uids;
+}
+
+/**
  * @brief Internal helper behind `neurus.scene.active_camera()` and `.selection()`.
  *
  * Deliberately not a registered Python class: the scene module binds the two
@@ -284,6 +311,52 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 	          "The scene's active camera as a Camera proxy, or None when none is active.");
 	scene.def("selection", [view]() { return ContextProxy{view}.Selection(); },
 	          "The scene's selected objects as a list of Object proxies.");
+
+	scene.def(
+		"select",
+		[view](const py::object& objects, bool additive)
+		{
+			std::vector<int> uids = ObjectUids(objects);
+			int activeUid = uids.empty() ? 0 : uids.back();
+			if (additive)
+			{
+				const Scene* scene =
+					(view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
+				if (scene != nullptr)
+				{
+					std::vector<int> current;
+					int currentActive = 0;
+					SnapshotSelectionUids(scene->selections, current, currentActive);
+					if (uids.empty())
+						activeUid = currentActive;
+					for (const int uid : current)
+					{
+						if (std::find(uids.begin(), uids.end(), uid) == uids.end())
+							uids.push_back(uid);
+					}
+				}
+			}
+			EmitEvent(ProxyBase{0, view}, SelectionSetRequested{std::move(uids), activeUid});
+		},
+		py::arg("objects"), py::arg("additive") = false,
+		"Select one object or an iterable of objects; additive appends to the current set.");
+
+	scene.def(
+		"clear_selection",
+		[view]() { EmitEvent(ProxyBase{0, view}, SelectionSetRequested{{}, 0}); },
+		"Clear the scene selection.");
+
+	scene.def(
+		"delete",
+		[view](const py::object& objects)
+		{
+			const std::vector<int> uids = ObjectUids(objects);
+			if (uids.empty())
+				return;
+			EmitEvent(ProxyBase{0, view}, DeleteObjectsRequested{uids});
+		},
+		py::arg("objects"),
+		"Remove one object or an iterable of objects from the scene as one undo entry.");
 }
 
 }  // namespace script

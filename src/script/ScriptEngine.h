@@ -16,6 +16,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "script/ScriptConsole.h"
@@ -83,10 +84,38 @@ public:
 	std::string EvalString(const std::string& expression, const ScriptContext* ctx = nullptr);
 
 	/**
+	 * @brief Execute a Python snippet and report whether it raised.
+	 *
+	 * Same capture and run-boundary path as RunString, but the host can tell a
+	 * Python exception from ordinary stderr output.
+	 *
+	 * @param code UTF-8 Python source.
+	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @return True when the snippet completed without a Python exception.
+	 */
+	bool RunStringChecked(const std::string& code, const ScriptContext* ctx = nullptr);
+
+	/**
+	 * @brief Execute a Python file and report whether it raised.
+	 * @param path Filesystem path to a UTF-8 Python source file.
+	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @return False when the file cannot be read or the script raised.
+	 */
+	bool RunFileChecked(const std::string& path, const ScriptContext* ctx = nullptr);
+
+	/**
+	 * @brief Evaluate one expression and report failure explicitly.
+	 * @param expression Python expression source.
+	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @return The expression result as `repr`, or std::nullopt when it raised.
+	 */
+	std::optional<std::string> EvalStringChecked(const std::string& expression,
+	                                             const ScriptContext* ctx = nullptr);
+
+	/**
 	 * @brief Execute a Python snippet on the main thread.
 	 * @param code UTF-8 Python source.
-	 * @param ctx Read-only view for this run (borrowed, may be null). The caller
-	 *            builds it fresh per run; the engine stores nothing.
+	 * @param ctx Read-only view for this run (borrowed, may be null).
 	 * @note `stdout`/`stderr` are captured into the console buffer; a Python
 	 *       error is buffered and logged but never propagates to the host.
 	 */

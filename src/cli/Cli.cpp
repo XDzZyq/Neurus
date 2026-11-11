@@ -16,6 +16,7 @@
 
 #include <CLI/CLI.hpp>
 
+#include <algorithm>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -25,9 +26,10 @@
 namespace neurus::cli
 {
 
-int RunCli(int argc, char* argv[])
+int RunCli(const std::vector<std::string>& arguments)
 {
 	CLI::App app{"Neurus command-line session control"};
+	app.name(arguments.empty() ? "neurus" : arguments.front());
 	app.set_version_flag("--version", "0.1.0");
 	std::string globalFormat;
 	AddFormatOption(app, globalFormat);
@@ -62,7 +64,12 @@ int RunCli(int argc, char* argv[])
 
 	try
 	{
-		app.parse(argc, argv);
+		// CLI11's vector form expects the arguments reversed and without the
+		// program name; the argv form builds exactly this shape internally.
+		std::vector<std::string> parseArgs(arguments.begin() + (arguments.empty() ? 0 : 1),
+		                                   arguments.end());
+		std::reverse(parseArgs.begin(), parseArgs.end());
+		app.parse(std::move(parseArgs));
 	}
 	catch (const CLI::ParseError& error)
 	{
@@ -87,7 +94,6 @@ int RunCli(int argc, char* argv[])
 		std::cerr << "neurus: unknown failure\n";
 		return 1;
 	}
-	return static_cast<int>(CliExit::Usage);
 	return static_cast<int>(CliExit::Usage);
 }
 

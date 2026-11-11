@@ -128,6 +128,89 @@ protected:
 
 }  // namespace
 
+TEST_F(ScriptWrites, RenameSetterIsUndoable)
+{
+	const std::size_t before = m_operations.GetUndoStack().size();
+	RunCleanly(R"(
+import neurus
+mesh = neurus.data.meshes["Ground"]
+mesh.name = "Ground Renamed"
+assert mesh.name == "Ground Renamed"
+)");
+	EXPECT_EQ(m_mesh->o_name, "Ground Renamed");
+	EXPECT_EQ(m_operations.GetUndoStack().size(), before + 1);
+
+	m_operations.Undo();
+	EXPECT_EQ(m_mesh->o_name, "Ground");
+}
+
+TEST_F(ScriptWrites, ObjectDeleteRemovesSceneMembershipAndIsUndoable)
+{
+	const int uid = m_mesh->GetObjectID();
+	const std::size_t before = m_operations.GetUndoStack().size();
+	RunCleanly(R"(
+import neurus
+neurus.data.meshes["Ground"].delete()
+)");
+	EXPECT_EQ(m_scene.GetObjectID(uid), nullptr);
+	EXPECT_NE(m_resources.Get<neurus::Mesh>(uid), nullptr);
+	EXPECT_EQ(m_operations.GetUndoStack().size(), before + 1);
+
+	m_operations.Undo();
+	EXPECT_NE(m_scene.GetObjectID(uid), nullptr);
+}
+
+TEST_F(ScriptWrites, SceneDeleteAcceptsASingleObject)
+{
+	const int uid = m_mesh->GetObjectID();
+	RunCleanly(R"(
+import neurus
+neurus.scene.delete(neurus.data.meshes["Ground"])
+)");
+	EXPECT_EQ(m_scene.GetObjectID(uid), nullptr);
+}
+
+TEST_F(ScriptWrites, SceneSelectionIsWritableAndUndoable)
+{
+	const std::size_t before = m_operations.GetUndoStack().size();
+	RunCleanly(R"(
+import neurus
+neurus.scene.select(neurus.data.meshes["Ground"])
+assert [o.name for o in neurus.scene.selection()] == ["Ground"]
+)");
+	EXPECT_EQ(m_mesh->o_name, "Ground");
+	EXPECT_EQ(m_operations.GetUndoStack().size(), before + 1);
+
+	m_operations.Undo();
+	EXPECT_TRUE(m_scene.selections.GetSelectedList().empty());
+}
+
+TEST_F(ScriptWrites, SceneClearSelectionWorks)
+{
+	RunCleanly(R"(
+import neurus
+neurus.scene.select(neurus.data.meshes["Ground"])
+neurus.scene.clear_selection()
+assert neurus.scene.selection() == []
+)");
+	EXPECT_TRUE(m_scene.selections.GetSelectedList().empty());
+}
+
+TEST_F(ScriptWrites, VisibilityFlagsAreIndependentlyWritable)
+{
+	RunCleanly(R"(
+import neurus
+mesh = neurus.data.meshes["Ground"]
+mesh.viewport_visible = False
+mesh.render_visible = True
+assert mesh.visible is False
+assert mesh.viewport_visible is False
+assert mesh.render_visible is True
+)");
+	EXPECT_FALSE(m_mesh->is_viewport);
+	EXPECT_TRUE(m_mesh->is_rendered);
+}
+
 TEST_F(ScriptWrites, WriteIsVisibleOnTheNextStatement)
 {
 	RunCleanly(R"(

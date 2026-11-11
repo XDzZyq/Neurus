@@ -45,6 +45,19 @@ struct SelectionChanged
 	int activeUid = 0;             ///< Active object UID (0 = none).
 };
 
+/**
+ * @brief Absolute selection write from a script or command gesture.
+ *
+ * Unlike @ref SelectionChanged, which is the replay path and records nothing,
+ * this is a live edit: the controller applies the set and records one undo
+ * entry. Stale UIDs are skipped by the shared restore path.
+ */
+struct SelectionSetRequested
+{
+	std::vector<int> uids;      ///< Requested selected object UIDs.
+	int              activeUid = 0; ///< Active object UID (0 = none).
+};
+
 // ---------------------------------------------------------------------------
 // Visibility
 // ---------------------------------------------------------------------------

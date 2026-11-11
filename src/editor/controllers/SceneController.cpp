@@ -99,6 +99,28 @@ void OnSelectionChanged(const neurus::SelectionChanged& e, const neurus::Control
 	neurus::RestoreSelectionUids(*scene, e.selectedUids, e.activeUid);
 }
 
+/**
+ * @brief Live selection write from a script or command: one undoable edit.
+ *
+ * Applies the absolute set, records one SetSelectionOp, and publishes
+ * SelectionChanged so the gizmo and selection outline observe the new state.
+ */
+void OnSelectionSetRequested(const neurus::SelectionSetRequested& e,
+                             const neurus::ControllerContext& ctx)
+{
+	neurus::Scene* scene = ctx.scene();
+	if (!scene) return;
+
+	const neurus::SelectionState before = SnapshotSelection(*scene);
+	neurus::RestoreSelectionUids(*scene, e.uids, e.activeUid);
+	const neurus::SelectionState after = SnapshotSelection(*scene);
+	if (before.selectedUids == after.selectedUids && before.activeUid == after.activeUid)
+		return;
+
+	ctx.ops.Submit(std::make_unique<neurus::SetSelectionOp>(before, after));
+	ctx.events.Emit(neurus::SelectionChanged{e.uids, e.activeUid});
+}
+
 // ---------------------------------------------------------------------------
 // Active camera
 // ---------------------------------------------------------------------------
@@ -321,6 +343,9 @@ void SceneController::Init(ControllerContext& ctx)
 	ctx.events.Subscribe<ObjectSelected>([ctx](const ObjectSelected& e) { OnObjectSelected(e, ctx); });
 	ctx.events.Subscribe<ObjectDeselected>([ctx](const ObjectDeselected& e) { OnObjectDeselected(e, ctx); });
 	ctx.events.Subscribe<SelectionChanged>([ctx](const SelectionChanged& e) { OnSelectionChanged(e, ctx); });
+	ctx.events.Subscribe<SelectionSetRequested>([ctx](const SelectionSetRequested& e) {
+		OnSelectionSetRequested(e, ctx);
+	});
 	ctx.events.Subscribe<ActiveCameraChanged>([ctx](const ActiveCameraChanged& e) { OnActiveCameraChanged(e, ctx); });
 
 	// --- Scene membership (add / delete) ---

@@ -5,6 +5,7 @@
 #include <process.h>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -14,6 +15,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <shellapi.h>
 #include <tlhelp32.h>
 
 namespace neurus
@@ -225,6 +227,33 @@ std::string EnvironmentValue(const char* name)
 bool SetEnvironmentValue(const char* name, const char* value)
 {
 	return _putenv_s(name, value == nullptr ? "" : value) == 0;
+}
+
+std::vector<std::string> CommandLineArguments(int argc, char* argv[])
+{
+	int wideArgc = 0;
+	LPWSTR* wideArgv = CommandLineToArgvW(GetCommandLineW(), &wideArgc);
+	if (wideArgv == nullptr)
+		return std::vector<std::string>(argv, argv + argc);
+
+	std::vector<std::string> arguments;
+	arguments.reserve(static_cast<std::size_t>(wideArgc));
+	for (int i = 0; i < wideArgc; ++i)
+	{
+		const int size = WideCharToMultiByte(CP_UTF8, 0, wideArgv[i], -1,
+		                                     nullptr, 0, nullptr, nullptr);
+		if (size <= 0)
+		{
+			arguments.emplace_back();
+			continue;
+		}
+		std::string value(static_cast<std::size_t>(size - 1), '\0');
+		WideCharToMultiByte(CP_UTF8, 0, wideArgv[i], -1,
+		                    value.data(), size, nullptr, nullptr);
+		arguments.push_back(std::move(value));
+	}
+	LocalFree(wideArgv);
+	return arguments;
 }
 
 std::string TerminalIdentity()

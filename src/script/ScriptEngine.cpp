@@ -55,6 +55,22 @@ std::string ScriptEngine::EvalString(const std::string& expression, const Script
 	return m_impl->EvalString(expression, ctx);
 }
 
+std::optional<std::string> ScriptEngine::EvalStringChecked(const std::string& expression,
+                                                           const ScriptContext* ctx)
+{
+	return m_impl->EvalStringChecked(expression, ctx);
+}
+
+bool ScriptEngine::RunStringChecked(const std::string& code, const ScriptContext* ctx)
+{
+	return m_impl->RunStringChecked(code, ctx);
+}
+
+bool ScriptEngine::RunFileChecked(const std::string& path, const ScriptContext* ctx)
+{
+	return m_impl->RunFileChecked(path, ctx);
+}
+
 void ScriptEngine::SetEventQueue(IEventQueue* queue)
 {
 	m_impl->SetEventQueue(queue);
