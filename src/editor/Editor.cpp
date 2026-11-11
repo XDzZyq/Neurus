@@ -155,6 +155,22 @@ void Editor::Initialize()
 		neurus::notify::Repaint(ed_eventBus);
 	});
 
+	// Script/command content creation. The Editor owns the ResourceManager, so
+	// these requests land here; the creation itself still forwards the usual
+	// SceneObjectAddRequested, which keeps the undo entry unchanged.
+	ed_eventBus.Subscribe<MeshImportRequested>([this](const MeshImportRequested& e) {
+		OnMeshImportRequested(e);
+		neurus::notify::Repaint(ed_eventBus);
+	});
+	ed_eventBus.Subscribe<CameraAddRequested>([this](const CameraAddRequested& e) {
+		OnCameraAddRequested(e);
+		neurus::notify::Repaint(ed_eventBus);
+	});
+	ed_eventBus.Subscribe<ObjectDuplicateRequested>([this](const ObjectDuplicateRequested& e) {
+		OnObjectDuplicateRequested(e);
+		neurus::notify::Repaint(ed_eventBus);
+	});
+
 	// Shader creation constructs a pooled RenderShader, so it is Editor-owned
 	// (like mesh/light/camera adds); ShaderController keeps only pool-free
 	// handlers.
@@ -302,7 +318,17 @@ void Editor::Initialize()
 		ed_eventBus.Emit(ObjectSelected{ e.objectUid, e.modifiers });
 	});
 	ed_eventBus.Subscribe<DeleteRequested>([this](const DeleteRequested&) {
-		ed_eventBus.Emit(ObjectDeleteRequested{});
+		// Stamp the gesture with the current selection: the controller takes an
+		// explicit UID list, so the Delete key and a command share one handler.
+		// An empty selection does nothing.
+		std::vector<int> selected;
+		for (const ObjectID* obj : GetScene().selections.GetSelectedList())
+		{
+			if (obj != nullptr)
+				selected.push_back(obj->GetObjectID());
+		}
+		if (selected.empty()) return;
+		ed_eventBus.Emit(DeleteObjectsRequested{std::move(selected)});
 	});
 
 	// --- Viewport keystrokes -> modal transform intents ---
@@ -617,12 +643,11 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 {
 	// Same shape as UpdateUIContext: borrowed pointers, no symbol calls. The pool
 	// is handed over as its read-only interface so a script can resolve names
-	// and ids without reaching the Editor's mutable ResourceManager; the
-	// creation surface is a narrow interface, not the Editor itself.
+	// and ids without reaching the Editor's mutable ResourceManager. Content
+	// creation is not exposed here: a script asks for it through typed events.
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 	ctx.resources = m_resources.get();
-	ctx.editor = this;
 }
 
 // =========================================================================
@@ -820,10 +845,13 @@ void Editor::OnMeshImport(const std::string& path)
 		NEURUS_ERR("Failed to import mesh: " << error);
 }
 
-int Editor::ImportMesh(const std::string& path, const std::string& name,
-                       std::string& error)
+void Editor::OnMeshImportRequested(const MeshImportRequested& e)
 {
-	return ImportMeshObject(path, name, error);
+	ObjectCreateResult local;
+	ObjectCreateResult& result = e.result != nullptr ? *e.result : local;
+	result.uid = ImportMeshObject(e.path, e.name, result.error);
+	if (result.uid == 0 && e.result == nullptr)
+		NEURUS_ERR("Failed to import mesh: " << result.error);
 }
 
 int Editor::ImportMeshObject(const std::string& path, const std::string& name,
@@ -889,9 +917,13 @@ void Editor::OnCameraAdd()
 		NEURUS_ERR("Failed to add camera: " << error);
 }
 
-int Editor::AddCamera(const std::string& name, std::string& error)
+void Editor::OnCameraAddRequested(const CameraAddRequested& e)
 {
-	return AddCameraObject(name, error);
+	ObjectCreateResult local;
+	ObjectCreateResult& result = e.result != nullptr ? *e.result : local;
+	result.uid = AddCameraObject(e.name, result.error);
+	if (result.uid == 0 && e.result == nullptr)
+		NEURUS_ERR("Failed to add camera: " << result.error);
 }
 
 int Editor::AddCameraObject(const std::string& name, std::string& error)
@@ -981,6 +1013,15 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 		error = e.what();
 		return 0;
 	}
+}
+
+void Editor::OnObjectDuplicateRequested(const ObjectDuplicateRequested& e)
+{
+	ObjectCreateResult local;
+	ObjectCreateResult& result = e.result != nullptr ? *e.result : local;
+	result.uid = DuplicateObject(e.sourceUid, e.name, result.error);
+	if (result.uid == 0 && e.result == nullptr)
+		NEURUS_ERR("Failed to duplicate object: " << result.error);
 }
 
 void Editor::OnLightAdd()

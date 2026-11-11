@@ -286,7 +286,6 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 
 	ScriptContext context;
 	app_editor->UpdateScriptContext(context);
-	context.host = this;
 
 	std::string result;
 	bool runOk = false;
@@ -528,33 +527,6 @@ command::CommandResult Application::Capture(const std::string& path, bool all)
 		{"all", false},
 		{"session", session},
 	});
-}
-
-bool Application::SaveProject(const std::string& path, std::string& error)
-{
-	return path.empty() ? Save(error) : SaveAs(path, error);
-}
-
-bool Application::CaptureSnapshot(const std::string& path, bool all, std::string& error,
-                                  std::vector<std::string>& files)
-{
-	const command::CommandResult result = Capture(path, all);
-	if (!result.ok)
-	{
-		error = result.message;
-		return false;
-	}
-
-	files.clear();
-	if (result.details.contains("files") && result.details["files"].is_array())
-	{
-		for (const auto& file : result.details["files"])
-		{
-			if (file.is_string())
-				files.push_back(file.get<std::string>());
-		}
-	}
-	return true;
 }
 
 std::int64_t Application::UptimeSeconds() const

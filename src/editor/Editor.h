@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "controllers/Controllers.h"
-#include "editor/IScriptEditor.h"
 #include "editor/viewport/EditorViewport.h"
 #include "editor/events/EventBus.h"
 #include "editor/operations/HistoryView.h"
@@ -27,6 +26,9 @@ class MeshData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
+struct MeshImportRequested;
+struct CameraAddRequested;
+struct ObjectDuplicateRequested;
 struct ScriptContext;   // script/ScriptContext.h - Vulkan/Qt-free script view
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
 }
@@ -41,7 +43,7 @@ namespace neurus {
  * Scene persistence is driven from outside through BeginLoad()/FinishLoad() and
  * NewScene(); GPU work is posted through a non-owning RenderRequestSink pointer.
  */
-class Editor : public IScriptEditor
+class Editor
 {
 public:	/**
 	 * @brief Builds the editor around the renderer's request sink.
@@ -182,11 +184,13 @@ public:	/**
 	void UpdateUIContext(UIContext& ctx) const;
 
 	/**
-	 * @brief Fills the script-facing view: the borrowed scene, render config,
-	 *        resource pool and content-creation surface.
+	 * @brief Fills the script-facing view: the borrowed scene, render config
+	 *        and resource pool.
 	 *
-	 * Mirrors UpdateUIContext - field assignments, nothing else. The caller
-	 * builds a ScriptContext for one script run and discards it afterwards.
+	 * Mirrors UpdateUIContext - field assignments, nothing else. Content
+	 * creation is not a borrowed surface here: a script asks for it through
+	 * typed editor events, so this context stays read-only. The caller builds a
+	 * ScriptContext for one script run and discards it afterwards.
 	 */
 	void UpdateScriptContext(ScriptContext& ctx);
 
@@ -267,16 +271,9 @@ public:	/**
 	 */
 	int ImportMeshObject(const std::string& path, const std::string& name, std::string& error);
 
-	/// @brief IScriptEditor: import a mesh into the scene.
-	int ImportMesh(const std::string& path, const std::string& name,
-	               std::string& error) override;
-
-	/// @brief IScriptEditor: create and add a camera.
-	int AddCamera(const std::string& name, std::string& error) override;
-
-	/// @brief IScriptEditor: duplicate a pooled mesh or camera into the scene.
+	/// @brief Duplicate a pooled mesh or camera into the scene.
 	int DuplicateObject(int sourceUid, const std::string& name,
-	                    std::string& error) override;
+	                    std::string& error);
 
 	/**
 	 * @brief Creates a camera, names it and adds it to the scene.
@@ -319,6 +316,17 @@ private:
 	void OnSpotLightAdd();
 	void OnCreateShader(const ShaderCreateRequested& e);
 	void OnSceneObjectGpuUpload(int objectUid);
+
+	/**
+	 * @brief Script/command content-creation requests: create, then fill the reply.
+	 *
+	 * The reply slot is borrowed from the emitter and is valid only for the
+	 * synchronous dispatch, so the outcome is written before the call returns.
+	 * A null slot means the outcome is only logged.
+	 */
+	void OnMeshImportRequested(const MeshImportRequested& e);
+	void OnCameraAddRequested(const CameraAddRequested& e);
+	void OnObjectDuplicateRequested(const ObjectDuplicateRequested& e);
 
 	/**
 	 * @brief The camera the current frame renders through.

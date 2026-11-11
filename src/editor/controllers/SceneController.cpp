@@ -99,28 +99,6 @@ void OnSelectionChanged(const neurus::SelectionChanged& e, const neurus::Control
 	neurus::RestoreSelectionUids(*scene, e.selectedUids, e.activeUid);
 }
 
-/**
- * @brief Live selection write from a script or command: one undoable edit.
- *
- * Applies the absolute set, records one SetSelectionOp, and publishes
- * SelectionChanged so the gizmo and selection outline observe the new state.
- */
-void OnSelectionSetRequested(const neurus::SelectionSetRequested& e,
-                             const neurus::ControllerContext& ctx)
-{
-	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-
-	const neurus::SelectionState before = SnapshotSelection(*scene);
-	neurus::RestoreSelectionUids(*scene, e.uids, e.activeUid);
-	const neurus::SelectionState after = SnapshotSelection(*scene);
-	if (before.selectedUids == after.selectedUids && before.activeUid == after.activeUid)
-		return;
-
-	ctx.ops.Submit(std::make_unique<neurus::SetSelectionOp>(before, after));
-	ctx.events.Emit(neurus::SelectionChanged{e.uids, e.activeUid});
-}
-
 // ---------------------------------------------------------------------------
 // Active camera
 // ---------------------------------------------------------------------------
@@ -232,44 +210,17 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
 }
 
 /**
- * @brief FORWARD-ONLY entry: deselect all, delete every selected object, record ONE composite op.
- *
- * This is the user-intent entry point and is never replayed; the recorded
- * composite replays through the batched removal handler. The actual removals go
- * through ONE batched request, so the removal logic lives in exactly one
- * handler, shared by the gesture and by undo/redo replay.
- */
-void OnObjectDeleteRequested(const neurus::ObjectDeleteRequested&,
-                             const neurus::ControllerContext& ctx)
-{	neurus::Scene* scene = ctx.scene();
-	if (!scene) return;
-
-	const neurus::SelectionState before = SnapshotSelection(*scene);
-	if (before.selectedUids.empty()) return;
-
-	// Cameras are deleted like any other object - there is deliberately no
-	// last-camera guard. A camera-less scene is legal: the viewport falls back to
-	// its own camera, which is not scene content and cannot be deleted here.
-	scene->selections.ClearSelection();
-
-	// Emitted before the composite submit, and safe there: the removal runs
-	// synchronously inside this emit, while SceneObjectAddOp below stores only a
-	// UID list and a direction, so the later Submit reads no scene state the
-	// removal could have invalidated.
-	ctx.events.Emit(neurus::SceneObjectDeleteRequested{before.selectedUids});
-
-	std::vector<std::unique_ptr<neurus::Operation>> seq;
-	seq.push_back(std::make_unique<neurus::SetSelectionOp>(before, neurus::SelectionState{}));
-	seq.push_back(std::make_unique<neurus::SceneObjectAddOp>(before.selectedUids, false));
-	ctx.ops.Submit(std::make_unique<neurus::CompositeOp>(std::move(seq)));
-}
-
-/**
  * @brief Explicit-UID delete gesture: remove the listed scene objects as ONE undo entry.
  *
  * FORWARD-ONLY. The removal itself runs through the shared batched handler
- * (SceneObjectDeleteRequested), so the command and the Delete key share one
- * removal implementation. Stale and duplicate UIDs are ignored.
+ * (SceneObjectDeleteRequested), so a command, a script and the Delete key share
+ * one removal implementation. Stale and duplicate UIDs are ignored; an empty or
+ * fully stale list records nothing.
+ *
+ * The selection op is recorded BEFORE the removal op so that undo reverses it
+ * last: re-registering a deleted object selects it, and the selection restore
+ * then overwrites that with the exact pre-delete set (this is what makes a
+ * multi-selection restore correctly).
  */
 void OnDeleteObjectsRequested(const neurus::DeleteObjectsRequested& e,
                               const neurus::ControllerContext& ctx)
@@ -292,9 +243,9 @@ void OnDeleteObjectsRequested(const neurus::DeleteObjectsRequested& e,
 	const neurus::SelectionState after = SnapshotSelection(*scene);
 
 	std::vector<std::unique_ptr<neurus::Operation>> seq;
-	seq.push_back(std::make_unique<neurus::SceneObjectAddOp>(removed, false));
 	if (before.selectedUids != after.selectedUids || before.activeUid != after.activeUid)
 		seq.push_back(std::make_unique<neurus::SetSelectionOp>(before, after));
+	seq.push_back(std::make_unique<neurus::SceneObjectAddOp>(removed, false));
 	ctx.ops.Submit(std::make_unique<neurus::CompositeOp>(std::move(seq)));
 }
 
@@ -343,9 +294,6 @@ void SceneController::Init(ControllerContext& ctx)
 	ctx.events.Subscribe<ObjectSelected>([ctx](const ObjectSelected& e) { OnObjectSelected(e, ctx); });
 	ctx.events.Subscribe<ObjectDeselected>([ctx](const ObjectDeselected& e) { OnObjectDeselected(e, ctx); });
 	ctx.events.Subscribe<SelectionChanged>([ctx](const SelectionChanged& e) { OnSelectionChanged(e, ctx); });
-	ctx.events.Subscribe<SelectionSetRequested>([ctx](const SelectionSetRequested& e) {
-		OnSelectionSetRequested(e, ctx);
-	});
 	ctx.events.Subscribe<ActiveCameraChanged>([ctx](const ActiveCameraChanged& e) { OnActiveCameraChanged(e, ctx); });
 
 	// --- Scene membership (add / delete) ---
@@ -354,9 +302,6 @@ void SceneController::Init(ControllerContext& ctx)
 	});
 	ctx.events.Subscribe<SceneObjectDeleteRequested>([ctx](const SceneObjectDeleteRequested& e) {
 		OnSceneObjectDeleteRequested(e, ctx);
-	});
-	ctx.events.Subscribe<ObjectDeleteRequested>([ctx](const ObjectDeleteRequested& e) {
-		OnObjectDeleteRequested(e, ctx);
 	});
 	ctx.events.Subscribe<DeleteObjectsRequested>([ctx](const DeleteObjectsRequested& e) {
 		OnDeleteObjectsRequested(e, ctx);

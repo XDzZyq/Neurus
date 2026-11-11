@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "core/Log.h"
 #include "core/RenderConfig.h"
@@ -39,40 +38,11 @@
 #include "scene/Camera.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
-#include "script/IScriptHost.h"
 #include "script/ScriptContext.h"
 #include "script/ScriptEngine.h"
 
 namespace
 {
-
-class FakeScriptHost final : public neurus::IScriptHost
-{
-public:
-	std::string ProjectPath() const override { return "/tmp/test.neurus.json"; }
-	bool IsDirty() const override { return true; }
-
-	bool SaveProject(const std::string& path, std::string& /*error*/) override
-	{
-		saved = true;
-		savedPath = path.empty() ? ProjectPath() : path;
-		return true;
-	}
-
-	bool CaptureSnapshot(const std::string& path, bool all, std::string& /*error*/,
-	                     std::vector<std::string>& files) override
-	{
-		snapshotPath = path;
-		snapshotAll = all;
-		files = {"a.png", "b.png"};
-		return true;
-	}
-
-	bool        saved = false;
-	std::string savedPath;
-	std::string snapshotPath;
-	bool        snapshotAll = false;
-};
 
 /**
  * @brief A document, the controllers that own its writes, and a live engine.
@@ -108,7 +78,6 @@ protected:
 		m_scriptCtx.scene     = &m_scene;
 		m_scriptCtx.config    = &m_config;
 		m_scriptCtx.resources = &m_resources;
-		m_scriptCtx.host      = &m_host;
 
 		ASSERT_TRUE(m_engine.Initialize());
 		m_engine.SetEventQueue(&m_eventBus);
@@ -152,7 +121,6 @@ protected:
 	neurus::SceneController        m_sceneController;
 	neurus::RenderConfigController m_configController;
 	neurus::ScriptContext          m_scriptCtx;
-	FakeScriptHost                 m_host;
 	std::shared_ptr<neurus::Mesh>   m_mesh;
 	std::shared_ptr<neurus::Mesh>   m_detached;
 	std::shared_ptr<neurus::Camera> m_camera;
@@ -242,23 +210,6 @@ assert mesh.render_visible is True
 )");
 	EXPECT_FALSE(m_mesh->is_viewport);
 	EXPECT_TRUE(m_mesh->is_rendered);
-}
-
-TEST_F(ScriptWrites, ProjectAndSnapshotBindingsUseTheHost)
-{
-	RunCleanly(R"(
-import neurus
-info = neurus.project.info()
-assert info["path"] == "/tmp/test.neurus.json"
-assert info["dirty"] is True
-assert neurus.project.save() == "/tmp/test.neurus.json"
-files = neurus.snapshot.capture("shots/frame.png", all=True)
-assert files == ["a.png", "b.png"]
-)");
-	EXPECT_TRUE(m_host.saved);
-	EXPECT_EQ(m_host.savedPath, "/tmp/test.neurus.json");
-	EXPECT_EQ(m_host.snapshotPath, "shots/frame.png");
-	EXPECT_TRUE(m_host.snapshotAll);
 }
 
 TEST(ScriptEditorWrites, ImportAddAndDuplicateCreateSceneContent)

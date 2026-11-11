@@ -207,7 +207,7 @@ void SceneController::Init(ControllerContext& ctx)
     // Membership
     ctx.events.Subscribe<SceneObjectAddRequested>(...);
     ctx.events.Subscribe<SceneObjectDeleteRequested>(...);
-    ctx.events.Subscribe<ObjectDeleteRequested>(...);
+    ctx.events.Subscribe<DeleteObjectsRequested>(...);
 }
 ```
 
@@ -242,15 +242,24 @@ the pool and forward the object UID via `SceneObjectAddRequested`. The
 `SceneController` fetches the pooled object by UID, registers it, selects it, and
 records `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(...)]`.
 
-The Delete gesture (`ObjectDeleteRequested`, the Editor wraps the UI's
-`DeleteRequested` intent) is forward-only. The `SceneController` snapshots the
-selection, deselects, then emits one batched `SceneObjectDeleteRequested`
-carrying all selected UIDs, so the batched handler is the single removal path
-shared with replay (no replay-only handling), and records
-`CompositeOp[SetSelectionOp(before->none), SceneObjectAddOp(uids,false)]` (delete
-of N is one op). The emit deliberately precedes the submit: the removal runs
-synchronously inside it, while `SceneObjectAddOp` stores only a UID list and a
-direction, so the later submit reads no state the removal invalidated.
+The Delete gesture (`DeleteObjectsRequested`) is forward-only and carries an
+explicit UID list. The Editor subscribes to the UI's `DeleteRequested` intent and
+stamps it with the current selection's UIDs; a CLI or script command emits it
+directly. The `SceneController` removes exactly the listed objects through one
+batched `SceneObjectDeleteRequested`, so the batched handler is the single
+removal path shared with replay (no replay-only handling), and records
+`CompositeOp[SetSelectionOp(before->after), SceneObjectAddOp(uids,false)]` (delete
+of N is one op; the selection entry is skipped when nothing changed, and it is
+first so undo restores the exact pre-delete selection after the objects come
+back). The emit deliberately precedes the submit: the removal runs synchronously
+inside it, while `SceneObjectAddOp` stores only a UID list and a direction, so
+the later submit reads no state the removal invalidated.
+
+Content creation (`MeshImportRequested`, `CameraAddRequested`,
+`ObjectDuplicateRequested`) also lands in the Editor, which owns the pool: it
+creates the object and fills the emitter's borrowed `ObjectCreateResult` reply
+slot during the synchronous dispatch. A null slot means the outcome is only
+logged. The script layer uses these instead of calling the Editor.
 
 Light membership changes emit `LightingRebuild` (the SSBO is a scene projection).
 GPU caches (`MeshGPU`, shadow maps) are scene-scoped: `UploadSceneResources`
@@ -262,8 +271,8 @@ upload (skip-if-cached).
 ### Pure-intent wrapping
 
 The Editor subscribes to the UI's `ObjectClicked` and `DeleteRequested` intents
-and forwards the dedicated scene events `ObjectSelected{ objectUid, modifiers }`
-and `ObjectDeleteRequested{}` (the two wrap subscriptions in
+and stamps the dedicated scene events `ObjectSelected{ objectUid, modifiers }`
+and `DeleteObjectsRequested{ uids }` (the two wrap subscriptions in
 `Editor::Initialize`). Panels never stamp the scene.
 
 ## ObjectController

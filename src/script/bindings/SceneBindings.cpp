@@ -19,7 +19,7 @@
 
 #include <pybind11/pybind11.h>
 
-#include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -27,7 +27,7 @@
 #include <vector>
 
 #include "core/IResourceLookup.h"
-#include "editor/IScriptEditor.h"
+#include "editor/Input.h"
 #include "editor/events/SceneEvents.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
@@ -217,18 +217,6 @@ std::vector<int> ObjectUids(const py::object& objects)
 }
 
 /**
- * @brief Returns the run's content-creation surface or raises.
- */
-IScriptEditor& EditorOf(const ScriptView* view)
-{
-	if (view == nullptr || view->ctx == nullptr || view->ctx->editor == nullptr)
-	{
-		throw std::runtime_error("neurus: script has no editor creation surface");
-	}
-	return *view->ctx->editor;
-}
-
-/**
  * @brief Wraps a newly created pooled object in its typed Python proxy.
  */
 py::object ProxyForUid(const ScriptView* view, int uid)
@@ -348,34 +336,29 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 		"select",
 		[view](const py::object& objects, bool additive)
 		{
-			std::vector<int> uids = ObjectUids(objects);
-			int activeUid = uids.empty() ? 0 : uids.back();
-			if (additive)
+			const std::vector<int> uids = ObjectUids(objects);
+			// Reuse the live click event instead of a separate set-write event:
+			// the first UID replaces the selection (or adds, when additive), every
+			// later one adds with Shift, so the last UID becomes active. That is
+			// exactly the set a click gesture builds, and each event records its
+			// own SetSelectionOp - all folded into the run's single undo entry.
+			if (uids.empty())
 			{
-				const Scene* scene =
-					(view != nullptr && view->ctx != nullptr) ? view->ctx->scene : nullptr;
-				if (scene != nullptr)
-				{
-					std::vector<int> current;
-					int currentActive = 0;
-					SnapshotSelectionUids(scene->selections, current, currentActive);
-					if (uids.empty())
-						activeUid = currentActive;
-					for (const int uid : current)
-					{
-						if (std::find(uids.begin(), uids.end(), uid) == uids.end())
-							uids.push_back(uid);
-					}
-				}
+				if (!additive)
+					EmitEvent(ProxyBase{0, view}, ObjectSelected{0, 0}); // clear
+				return;
 			}
-			EmitEvent(ProxyBase{0, view}, SelectionSetRequested{std::move(uids), activeUid});
+			EmitEvent(ProxyBase{0, view},
+			          ObjectSelected{uids.front(), additive ? Input::Mod_Shift : 0});
+			for (std::size_t i = 1; i < uids.size(); ++i)
+				EmitEvent(ProxyBase{0, view}, ObjectSelected{uids[i], Input::Mod_Shift});
 		},
 		py::arg("objects"), py::arg("additive") = false,
 		"Select one object or an iterable of objects; additive appends to the current set.");
 
 	scene.def(
 		"clear_selection",
-		[view]() { EmitEvent(ProxyBase{0, view}, SelectionSetRequested{{}, 0}); },
+		[view]() { EmitEvent(ProxyBase{0, view}, ObjectSelected{0, 0}); },
 		"Clear the scene selection.");
 
 	scene.def(
@@ -394,11 +377,13 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 		"import_mesh",
 		[view](const std::string& path, const std::string& name) -> py::object
 		{
-			std::string error;
-			const int uid = EditorOf(view).ImportMesh(path, name, error);
-			if (uid == 0)
-				throw std::runtime_error(error.empty() ? "neurus: mesh import failed" : error);
-			return ProxyForUid(view, uid);
+			// The Editor owns the pool, so creation is requested through a typed
+			// event; the reply slot is borrowed for the synchronous dispatch.
+			ObjectCreateResult result;
+			EmitEvent(ProxyBase{0, view}, MeshImportRequested{path, name, &result});
+			if (result.uid == 0)
+				throw std::runtime_error(result.error.empty() ? "neurus: mesh import failed" : result.error);
+			return ProxyForUid(view, result.uid);
 		},
 		py::arg("path"), py::arg("name") = std::string{},
 		"Load a mesh file, add it to the scene and return its Mesh proxy.");
@@ -407,11 +392,11 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 		"add_camera",
 		[view](const std::string& name) -> py::object
 		{
-			std::string error;
-			const int uid = EditorOf(view).AddCamera(name, error);
-			if (uid == 0)
-				throw std::runtime_error(error.empty() ? "neurus: camera creation failed" : error);
-			return ProxyForUid(view, uid);
+			ObjectCreateResult result;
+			EmitEvent(ProxyBase{0, view}, CameraAddRequested{name, &result});
+			if (result.uid == 0)
+				throw std::runtime_error(result.error.empty() ? "neurus: camera creation failed" : result.error);
+			return ProxyForUid(view, result.uid);
 		},
 		py::arg("name") = std::string{},
 		"Create a camera, add it to the scene and return its Camera proxy.");
@@ -421,11 +406,11 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 		[view](const py::object& object, const std::string& name) -> py::object
 		{
 			const ObjectProxy source = py::cast<ObjectProxy>(object);
-			std::string error;
-			const int uid = EditorOf(view).DuplicateObject(source.uid, name, error);
-			if (uid == 0)
-				throw std::runtime_error(error.empty() ? "neurus: duplication failed" : error);
-			return ProxyForUid(view, uid);
+			ObjectCreateResult result;
+			EmitEvent(ProxyBase{0, view}, ObjectDuplicateRequested{source.uid, name, &result});
+			if (result.uid == 0)
+				throw std::runtime_error(result.error.empty() ? "neurus: duplication failed" : result.error);
+			return ProxyForUid(view, result.uid);
 		},
 		py::arg("object"), py::arg("name") = std::string{},
 		"Duplicate a pooled mesh or camera, add it to the scene and return its proxy.");

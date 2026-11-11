@@ -6,6 +6,10 @@
  * pointers: a UID stays a stable identity that controllers resolve against the
  * current scene at dispatch time. Each event carries `objectUid`; the scene
  * itself is never carried, so a scene swap can never leave a stale pointer.
+ *
+ * The one pointer exception is the content-creation reply slot
+ * (`ObjectCreateResult*`): it is non-owning, borrowed from the emitter and valid
+ * only during the synchronous dispatch, so it cannot outlive the event.
  */
 
 #pragma once
@@ -43,19 +47,6 @@ struct SelectionChanged
 {
 	std::vector<int> selectedUids; ///< Ordered selected object UIDs.
 	int activeUid = 0;             ///< Active object UID (0 = none).
-};
-
-/**
- * @brief Absolute selection write from a script or command gesture.
- *
- * Unlike @ref SelectionChanged, which is the replay path and records nothing,
- * this is a live edit: the controller applies the set and records one undo
- * entry. Stale UIDs are skipped by the shared restore path.
- */
-struct SelectionSetRequested
-{
-	std::vector<int> uids;      ///< Requested selected object UIDs.
-	int              activeUid = 0; ///< Active object UID (0 = none).
 };
 
 // ---------------------------------------------------------------------------
@@ -340,31 +331,70 @@ struct SceneObjectDeleteRequested
 };
 
 /**
- * @brief Editor->Controller delete gesture: delete ALL selected objects (Delete key).
+ * @brief Command/script delete gesture for an explicit UID list (also the Delete key).
  *
- * FORWARD-ONLY: the recorded composite replays via SceneObjectDeleteRequested,
- * never this gesture event. The controller snapshots the selection, deselects,
- * removes every selected object, and records ONE composite operation.
- *
- * Nothing is guarded: a scene with zero cameras is legal, and deleting the
- * activated camera simply leaves a stale activation UID, which the active-camera
- * lookup reads as "none".
- */
-struct ObjectDeleteRequested
-{
-};
-
-/**
- * @brief Command/script delete gesture for an explicit UID list.
- *
- * FORWARD-ONLY, like ObjectDeleteRequested: the recorded composite replays via
- * SceneObjectDeleteRequested. The handler removes exactly the listed scene
- * objects and records ONE composite operation, so a command delete is a single
- * undo entry.
+ * FORWARD-ONLY: the recorded composite replays via SceneObjectDeleteRequested.
+ * The handler removes exactly the listed scene objects and records ONE composite
+ * operation, so N deletions are a single undo entry. The Delete key reaches this
+ * event through the Editor, which stamps it with the current selection's UIDs;
+ * stale and duplicate UIDs are ignored, and an empty list is a no-op.
  */
 struct DeleteObjectsRequested
 {
 	std::vector<int> uids; ///< Scene object UIDs to remove (duplicates ignored).
+};
+
+// ---------------------------------------------------------------------------
+// Content creation (script / command requests)
+// ---------------------------------------------------------------------------
+//
+// A request event carries a non-owning reply slot the Editor fills before the
+// synchronous dispatch returns. Creation itself lands as the usual
+// SceneObjectAddRequested, so undo is unchanged.
+
+/** @brief Reply slot for a content-creation request; filled by the Editor. */
+struct ObjectCreateResult
+{
+	int         uid = 0;  ///< New object UID; 0 on failure.
+	std::string error;    ///< Reason on failure.
+};
+
+/**
+ * @brief Loads a mesh file into the pool and adds it to the scene.
+ *
+ * @p result is non-owning and valid only during the synchronous dispatch; it may
+ * be null, in which case the outcome is only logged.
+ */
+struct MeshImportRequested
+{
+	std::string         path;              ///< Mesh file path, absolute or relative.
+	std::string         name;              ///< Display name; empty keeps the generated one.
+	ObjectCreateResult* result = nullptr;  ///< Optional reply slot, borrowed.
+};
+
+/**
+ * @brief Creates a camera and adds it to the scene.
+ *
+ * @p result is non-owning and valid only during the synchronous dispatch; it may
+ * be null, in which case the outcome is only logged.
+ */
+struct CameraAddRequested
+{
+	std::string         name;              ///< Display name; empty keeps the generated one.
+	ObjectCreateResult* result = nullptr;  ///< Optional reply slot, borrowed.
+};
+
+/**
+ * @brief Duplicates a pooled mesh or camera and adds the copy to the scene.
+ *
+ * @p result is non-owning and valid only during the synchronous dispatch; it may
+ * be null, in which case the outcome is only logged.
+ */
+struct ObjectDuplicateRequested
+{
+	int                 sourceUid = 0;     ///< Pooled source object UID.
+	std::string         name;              ///< Display name; empty generates "<source> Copy".
+	ObjectCreateResult* result = nullptr;  ///< Optional reply slot, borrowed.
 };
 
 } // namespace neurus

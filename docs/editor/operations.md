@@ -166,8 +166,10 @@ changes but must collapse to a single undo entry. Three strategies exist:
   primitive sequence. Scene add records
   `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(before->{u})]` (add and
   select = one undo entry); scene delete records
-  `CompositeOp[SetSelectionOp(before->none), SceneObjectAddOp(uids,false)]`
-  (deselect and remove every selected object in one batched op = one undo entry).
+  `CompositeOp[SetSelectionOp(before->after), SceneObjectAddOp(uids,false)]`
+  (remove the listed objects in one batched op = one undo entry; the selection
+  entry is skipped when the delete left it unchanged, and it comes first so undo
+  restores the exact pre-delete selection after the objects are re-added).
   Undo replays the reversed, inverted sequence.
 
 For the concrete controller wiring (`CameraController`, `RenderConfigController`,

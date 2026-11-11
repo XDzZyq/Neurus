@@ -1,18 +1,37 @@
 # Layers
 
-The renderer, editor, UI, asset and scene layers each own a distinct
-responsibility, and Core supplies utilities shared across all of them.
+The application, renderer, editor, script, UI, asset and scene layers each own a
+distinct responsibility, and Core supplies utilities shared across all of them.
 
 ## Renderer Layer (`src/render/`)
 
 - Pure rendering service with no application logic
-- Owns ALL GPU resources (device, swapchain, pipeline, command buffers,
-  buffers, images, descriptors, RenderCache, Barrier state mapping)
-- Owns VkDevice, VkSwapchainKHR, VkPipeline, VkCommandPool
-- Consumes read-only VkSurfaceKHR from UI layer
+- Runs on its own thread: `RenderThread` owns the frame mailbox and the control
+  queue and is the only caller into the renderer once started. The main thread
+  publishes a `RenderFrameSnapshot` and posts control messages (resize, surface
+  change, pick, screenshot)
+- Borrows the `VkSurfaceKHR`, `VkDevice`, physical device and graphics queue
+  from the Application; it creates no instance or device
+- Owns the presentation chain: `Swapchain` wraps `VkSwapchainKHR` and its image
+  views, recreates them on a resize or an out-of-date acquire, and presents
+  through the shared graphics queue
+- Owns every GPU resource behind that image: `RenderCache` and its attachments,
+  the passes and their pipelines, command pools and buffers, buffers, images,
+  descriptors, Barrier state mapping
+- Owns `OverlayEngine`, a separate `RenderGraph` over the scene graph's tail
+  image. It runs SelectionOutlinePass -> OverlayCopyPass -> DebugPass ->
+  GizmoPass into `OverlayOutput`, which the renderer then blits to the
+  swapchain. The scene image is never presented directly, so an overlay-only
+  change redraws without re-running a scene pass
+- Builds the scene graph from `RenderConfig`: ShadowDepthPass, GeometryPass
+  (G-Buffer), SSAOPass, ShadowIntensityPass, LightingPass, ComposePass and, when
+  enabled, FXAAPass
 - Consumes the per-frame RenderContext (the renderer's view of the frame: the
   Editor's owned frame snapshot plus the frame half `recordFrame()` stamps) for
   pass dispatch
+- Drains posted `RenderRequest` values per frame through
+  `RenderRequestProcessor` and `RenderRequestExecutor`: the Editor requests GPU
+  work, it never submits
 - Centralized image barrier management via `Barrier::Transition` (ImageState ->
   Vulkan layout/stage/access)
 - Holds `MeshGPU` (GPU-side mesh resources: VertexBuffer + IndexBuffer) in a
@@ -31,6 +50,10 @@ responsibility, and Core supplies utilities shared across all of them.
 - Owns Controllers (CameraController, TransformGizmoController,
   ShaderController, SceneController, ObjectController, RenderConfigController,
   ScriptController) via `src/editor/controllers/`
+- Owns `OperationManager` (`src/editor/operations/`): undo/redo over
+  event-replay `Operation` values. Controllers record through `IOperationSink`,
+  undo and redo re-emit the inverse event synchronously, and a script run or a
+  command is buffered into one history entry
 - Produces the two frame views: the renderer's view as an owned
   `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
   via `UpdateUIContext()`
@@ -57,6 +80,24 @@ responsibility, and Core supplies utilities shared across all of them.
   `Editor::OnUIEvent`, the next `Edit()` drains it to the controllers, and every
   event a handler emits is dispatched before that handler returns
 
+## Script Layer (`src/script/`)
+
+- Embedded CPython runtime (`ScriptEngine`), owned by the Application and run on
+  the main thread. Its PIMPL body keeps Python and pybind11 headers out of every
+  other layer
+- Owns the interpreter, the `neurus` module and its bindings, the scene and
+  object proxies, and the Script Console ring buffer
+- Reads one `ScriptContext` per run: borrowed, non-owning `Scene`,
+  `RenderConfig` and `IResourceLookup` pointers built by
+  `Editor::UpdateScriptContext()`. There is no process-wide context
+- Mutates only by emitting typed editor events: `ScriptDispatch::Emit()` hands
+  the event to the Editor's `IEventQueue` synchronously, so the controller
+  applies the change before the Python statement returns
+- Has no project save and no snapshot capture; both stay CLI and UI operations
+- Must NOT include Renderer or UI headers
+- Must NOT call Editor methods or hold a persistent Editor pointer
+- Vulkan-free and Qt-free
+
 ## UI Layer (`src/ui/`)
 
 - Qt6 Widgets presentation layer with Qt-Advanced-Docking-System (ADS)
@@ -72,8 +113,33 @@ responsibility, and Core supplies utilities shared across all of them.
 - `src/ui/utils/`: Non-widget UI helpers (CodeHighlighter)
 - Displays data and captures user input
 - Emits Qt signals via UIEvents for state changes
+- Exposes the viewport's native window handle; creates no Vulkan object,
+  including `VkSurfaceKHR` (the Application creates the surface from that
+  handle)
 - Must NOT directly access Renderer internals
 - Must NOT mutate scene state directly
+
+## Application Layer (`src/app/`)
+
+- Composition root and process lifetime: creates `QApplication`, `Preferences`,
+  `UIManager`, the `VulkanContext` (instance, device, queues), the editor, the
+  renderer and its thread, the upload manager, the script engine and the
+  session server
+- Owns `VkSurfaceKHR`, created from the viewport's native handle with
+  `platform::CreateSurface()`. On a viewport recreation it creates a new
+  surface, asks the render thread to rebuild the swapchain, and only then
+  destroys the old one
+- Owns the project path and the project lifecycle (new, open, save)
+- Runs the per-tick frame loop: drain session commands, run queued scripts,
+  apply a finished pick, `Editor::Edit()`, build and publish the frame snapshot,
+  then refresh the UI from `UIContext`
+- Wires every channel: UI signals into `Editor::OnUIEvent`, viewport recreation
+  into a new surface and swapchain, and the command side through
+  `EditorCommandAdapter`
+- Implements the command-side views (`ISessionState`, `IScriptCommands`,
+  `ISnapshotCommands`)
+- Must NOT implement rendering or scene mutation itself; it delegates to the
+  Renderer and the Editor
 
 ## Asset Layer (`src/asset/`)
 
@@ -105,8 +171,8 @@ responsibility, and Core supplies utilities shared across all of them.
   generation, and the Asio loopback client/server
 - `neurus_cli` (`neurus`) - Qt-free, Vulkan-free CLI11 parsing, process launch
   and output formatting
-- The application hosts the server in `src/app/session/`; that is the only new
-  code allowed to use Qt
+- The application hosts the server in `src/app/session/`; it is the only
+  Command-side code that uses Qt
 - The Asio thread only accepts, reads and writes. Every command executes on the
   main thread in `Application::NewFrameSignals`, before scripts and
   `Editor::Edit()`, and mutates through the existing typed events and

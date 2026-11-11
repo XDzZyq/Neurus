@@ -72,15 +72,15 @@ UI boundary is deferred, everything else is synchronous. See
 3. **Editor -> Controller wrapped events**: `ObjectSelected` (the Editor
    subscribes to `ObjectClicked` and forwards
    `ObjectSelected { objectUid, modifiers }`, and the Application emits it for
-   the viewport IDBuffer pick), `ObjectDeleteRequested` (the Editor subscribes
-   to `DeleteRequested` and forwards `ObjectDeleteRequested { }`), the
+   the viewport IDBuffer pick), `DeleteObjectsRequested` (the Editor subscribes
+   to `DeleteRequested` and stamps it with the current selection's UIDs), the
    membership events (`SceneObjectAddRequested` / `SceneObjectDeleteRequested`),
    and the replay / restore events. `CameraEvents` carry `int camId` (resolved
    by the controller).
 
 On the UI->Editor path the UI emits PURE INPUT INTENTS (`InputEvents.h`) that
 carry no scene; the Editor wraps them into dedicated scene events
-(`ObjectSelected`, `ObjectDeleteRequested`), and controllers handle complete
+(`ObjectSelected`, `DeleteObjectsRequested`), and controllers handle complete
 scene mutations carrying `int objectUid`, resolving the UID to the live object
 via their `ControllerContext` (never raw pointers - a UID stays stable after
 deletion while a pointer would dangle). The scene itself is not carried in

@@ -22,14 +22,23 @@ UI (Qt6) -> UIEvents (Qt signals) -> Editor -> EventQueue (typed events)
 Each arrow is a **decoupled interface** (signals, typed events, context objects).
 No layer knows the internals of the next.
 
-- **Renderer** (`src/render/`): pure rendering service; owns all GPU resources;
+- **Application** (`src/app/`): composition root; owns the Qt app, Preferences,
+  `VulkanContext` (instance, device, queues) and the `VkSurfaceKHR`; wires UI,
+  Editor, Renderer, Script and the command `SessionServer`.
+- **Renderer** (`src/render/`): pure rendering service; borrows the surface,
+  device and queues and owns the swapchain and every GPU resource below it;
   consumes read-only scene data; must never mutate application state; must never
   include Editor or UI headers.
 - **Editor** (`src/editor/`): application logic and scene mutation; owns the
   Scene, `RenderConfig`, Controllers and the `ResourceManager`; communicates via
   Context, UIEvents, its internal typed EventQueue and posted `RenderRequest`s.
 - **UI** (`src/ui/`): Qt6 Widgets presentation only; owns the native window and
-  the surface; emits signals; must never include Renderer headers.
+  exposes its handle (no Vulkan objects); emits signals; must never include
+  Renderer headers.
+- **Script** (`src/script/`): embedded CPython `neurus` module; reads the scene
+  through a read-only `ScriptContext` and mutates only by emitting typed editor
+  events through `ScriptDispatch`; never calls Editor methods, never reaches
+  project save or snapshot capture, never includes Renderer or UI headers.
 - **Asset** (`src/asset/`): Vulkan-free CPU-side asset loading (`MeshData`,
   `ImageData`, `PixelFormat`).
 - **Scene** (`src/scene/`): Vulkan-free logical objects (Camera, Light, Mesh,
@@ -45,7 +54,9 @@ Cross-layer traffic MUST go through exactly one of:
   (input -> Controllers) and never crosses into the Renderer.
 - **EventQueue** (typed events) inside the Editor: the UI boundary is enqueued
   and drained once per frame, while controller reactions dispatch synchronously.
-- **Context objects** (`RenderContext`, `UIContext`) for
+- **Typed editor events** (`ScriptDispatch` -> `IEventQueue`) for Script ->
+  Editor writes, dispatched synchronously.
+- **Context objects** (`RenderContext`, `UIContext`, `ScriptContext`) for
   read-only data queries.
 
 Direct coupling across layers is forbidden. Controllers react to discrete typed
@@ -53,10 +64,12 @@ events - never poll per frame. Renderer never calls back into Editor.
 
 ### Vulkan ownership
 
-- UI owns `VkSurfaceKHR` (created from the native window via
-  `src/platform/PlatformSurface`).
-- Renderer owns everything else: instance (shared via `QVulkanInstance`),
-  device, queues, swapchain, pipelines, command pools and all GPU resources.
+- Application owns the instance, device and queues (`src/app/VulkanContext`, no
+  `QVulkanInstance`) and the `VkSurfaceKHR`, created with
+  `platform::CreateSurface` from the viewport's native window handle.
+- Renderer borrows the surface, device and queues and owns everything below
+  them: swapchain, pipelines, command pools and all GPU resources.
+- UI owns no Vulkan objects; it only exposes the native window handle.
 - No shared ownership of GPU resources across layers. GPU-resource classes
   `= delete` copy/assign and use `vk::raii` - never a raw `vkDestroy*`.
 

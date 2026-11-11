@@ -3,7 +3,6 @@
 add_library(neurus_editor STATIC
 	Editor.h
 	Editor.cpp
-	IScriptEditor.h
 	Input.h
 	Input.cpp
 	commands/EditorCommandAdapter.h
