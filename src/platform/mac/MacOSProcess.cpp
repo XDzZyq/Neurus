@@ -242,6 +242,12 @@ std::string TerminalIdentity()
 				+ std::to_string(info.pbi_start_tvsec) + "."
 				+ std::to_string(info.pbi_start_tvusec);
 		}
+
+		// The leader may have exited while the session lives on (CI runners,
+		// daemonised shells). The id alone still names it: fork never hands
+		// out a pid that is a live session id. Falling back to the parent pid
+		// here would give every process in the session a different identity.
+		return "session:" + std::to_string(sid);
 	}
 
 	return "posix:" + std::to_string(::getppid());

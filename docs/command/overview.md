@@ -92,7 +92,8 @@ discovery. `NEURUS_SESSIONS_DIR` overrides the directory for tests.
 harnesses that do not expose a stable terminal/tab id. Without it, a terminal
 hint (`WT_SESSION`, `TERM_SESSION_ID`, `TMUX_PANE`, ...) is used when present.
 Otherwise Windows keys on the parent process and its creation time, and macOS
-keys on the POSIX session (`getsid`) and its leader's start time, so a binding
+keys on the POSIX session (`getsid`) and its leader's start time (the session
+id alone once the leader has exited), so a binding
 survives `sh -c` wrappers and stdin redirection but not a new terminal.
 
 ## Protocol

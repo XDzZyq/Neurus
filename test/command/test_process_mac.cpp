@@ -49,6 +49,53 @@ private:
 	std::string m_previous;
 };
 
+/// Reads everything from @p fd until EOF, then closes it.
+std::string ReadAll(int fd)
+{
+	std::string text;
+	char buffer[512];
+	for (;;)
+	{
+		const ssize_t bytes = ::read(fd, buffer, sizeof(buffer));
+		if (bytes > 0)
+		{
+			text.append(buffer, static_cast<std::size_t>(bytes));
+			continue;
+		}
+		if (bytes < 0 && errno == EINTR)
+			continue;
+		break;
+	}
+	::close(fd);
+	return text;
+}
+
+/// Returns TerminalIdentity() as computed by a forked child of this process.
+std::string ChildIdentity()
+{
+	int fds[2] = {-1, -1};
+	if (::pipe(fds) != 0)
+		return "pipe failed";
+
+	const pid_t pid = ::fork();
+	if (pid < 0)
+		return "fork failed";
+	if (pid == 0)
+	{
+		::close(fds[0]);
+		const std::string identity = TerminalIdentity();
+		(void)!::write(fds[1], identity.data(), identity.size());
+		::_exit(0);
+	}
+
+	::close(fds[1]);
+	std::string identity = ReadAll(fds[0]);
+	int status = 0;
+	if (::waitpid(pid, &status, 0) != pid || !WIFEXITED(status))
+		return "child failed";
+	return identity;
+}
+
 } // namespace
 
 TEST(ProcessMac, ChildInTheSameSessionSharesTheIdentity)
@@ -59,44 +106,63 @@ TEST(ProcessMac, ChildInTheSameSessionSharesTheIdentity)
 	EnvironmentGuard termSession("TERM_SESSION_ID");
 	EnvironmentGuard tmuxPane("TMUX_PANE");
 
+	const std::string childIdentity = ChildIdentity();
+	const std::string identity = TerminalIdentity();
+	EXPECT_EQ(identity.rfind("session:", 0), 0u) << identity;
+	EXPECT_EQ(childIdentity, identity);
+}
+
+TEST(ProcessMac, SessionWhoseLeaderExitedStillSharesTheIdentity)
+{
+	// CI runners start tests in a session whose leader is already gone, so the
+	// leader's start time is unreadable; the identity must still follow the
+	// session rather than fall back to the parent pid.
+	EnvironmentGuard terminalId("NEURUS_TERMINAL_ID");
+	EnvironmentGuard termSession("TERM_SESSION_ID");
+	EnvironmentGuard tmuxPane("TMUX_PANE");
+
 	int fds[2] = {-1, -1};
 	ASSERT_EQ(::pipe(fds), 0);
 
-	const pid_t pid = ::fork();
-	ASSERT_GE(pid, 0);
-
-	if (pid == 0)
+	const pid_t leader = ::fork();
+	ASSERT_GE(leader, 0);
+	if (leader == 0)
 	{
 		::close(fds[0]);
-		const std::string identity = TerminalIdentity();
-		(void)!::write(fds[1], identity.data(), identity.size());
+		if (::setsid() < 0)
+			::_exit(1);
+		const pid_t leaderPid = ::getpid();
+		const pid_t member = ::fork();
+		if (member < 0)
+			::_exit(1);
+		if (member == 0)
+		{
+			// Wait until the leader has exited and this process is re-parented.
+			for (int i = 0; i < 500 && ::getppid() == leaderPid; ++i)
+				::usleep(10000);
+			const std::string own = TerminalIdentity();
+			const std::string child = ChildIdentity();
+			const std::string report = own + "\n" + child;
+			(void)!::write(fds[1], report.data(), report.size());
+			::_exit(0);
+		}
 		::_exit(0);
 	}
 
 	::close(fds[1]);
-	std::string childIdentity;
-	char buffer[512];
-	for (;;)
-	{
-		const ssize_t bytes = ::read(fds[0], buffer, sizeof(buffer));
-		if (bytes > 0)
-		{
-			childIdentity.append(buffer, static_cast<std::size_t>(bytes));
-			continue;
-		}
-		if (bytes < 0 && errno == EINTR)
-			continue;
-		break;
-	}
-	::close(fds[0]);
-
 	int status = 0;
-	ASSERT_EQ(::waitpid(pid, &status, 0), pid);
+	ASSERT_EQ(::waitpid(leader, &status, 0), leader);
 	ASSERT_TRUE(WIFEXITED(status));
+	ASSERT_EQ(WEXITSTATUS(status), 0);
 
-	const std::string identity = TerminalIdentity();
-	EXPECT_EQ(identity.rfind("session:", 0), 0u) << identity;
-	EXPECT_EQ(childIdentity, identity);
+	// EOF arrives once the orphaned member exits and closes its write end.
+	const std::string report = ReadAll(fds[0]);
+	const auto newline = report.find('\n');
+	ASSERT_NE(newline, std::string::npos) << report;
+	const std::string own = report.substr(0, newline);
+	const std::string child = report.substr(newline + 1);
+	EXPECT_EQ(own.rfind("session:", 0), 0u) << own;
+	EXPECT_EQ(child, own);
 }
 
 TEST(ProcessMac, DetachedLaunchDoesNotInheritTheCallersDescriptors)
