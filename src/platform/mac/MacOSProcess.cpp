@@ -1,5 +1,7 @@
 #include "platform/PlatformProcess.h"
 
+#include "platform/PlatformPaths.h"
+
 #include <cstdint>
 #include <cstdlib>
 #include <system_error>
@@ -7,8 +9,12 @@
 
 #include <cerrno>
 #include <csignal>
+#include <crt_externs.h>
 #include <fcntl.h>
+#include <libproc.h>
 #include <mach-o/dyld.h>
+#include <spawn.h>
+#include <sys/proc_info.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -61,6 +67,22 @@ std::optional<std::filesystem::path> ResolveAppExecutable(
 	return std::nullopt;
 }
 
+std::optional<std::filesystem::path> InstalledAppExecutable()
+{
+	// A bundle installed in /Applications has no fixed relationship to the
+	// CLI's build directory; `open` falls back here after the local lookup.
+	const std::filesystem::path candidates[] = {
+		"/Applications/Neurus.app/Contents/MacOS/Neurus",
+		HomeDirectory() / "Applications" / "Neurus.app" / "Contents" / "MacOS" / "Neurus",
+	};
+	for (const auto& candidate : candidates)
+	{
+		if (IsFile(candidate))
+			return candidate;
+	}
+	return std::nullopt;
+}
+
 std::optional<int> SpawnDetached(const std::filesystem::path& app,
                                  const std::vector<std::string>& arguments,
                                  const std::filesystem::path& logPath,
@@ -69,7 +91,6 @@ std::optional<int> SpawnDetached(const std::filesystem::path& app,
 	std::error_code directoryError;
 	std::filesystem::create_directories(logPath.parent_path(), directoryError);
 
-	// Build argv before fork: the child may only make async-signal-safe calls.
 	std::vector<std::string> storage;
 	storage.push_back(app.string());
 	storage.insert(storage.end(), arguments.begin(), arguments.end());
@@ -80,56 +101,60 @@ std::optional<int> SpawnDetached(const std::filesystem::path& app,
 	argv.push_back(nullptr);
 	const std::string logFile = logPath.string();
 
-	// A close-on-exec pipe reports the launch result: a successful execv closes
-	// the write end with nothing written, a failed one writes errno first. This
-	// gives the synchronous failure CreateProcess reports on Windows.
-	int status[2];
-	if (pipe(status) != 0)
+	// posix_spawn reports an exec failure synchronously, like CreateProcess on
+	// Windows, and its file actions let the child redirect its own descriptors
+	// without a fork window that inherits the caller's files.
+	posix_spawn_file_actions_t actions;
+	if (posix_spawn_file_actions_init(&actions) != 0)
 	{
-		error = "Cannot create the launch status pipe.";
+		error = "Cannot prepare the launch file actions.";
 		return std::nullopt;
 	}
-	fcntl(status[0], F_SETFD, FD_CLOEXEC);
-	fcntl(status[1], F_SETFD, FD_CLOEXEC);
-
-	const pid_t pid = fork();
-	if (pid < 0)
+	int action = posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
+	                                              O_RDONLY, 0);
+	if (action == 0)
 	{
-		close(status[0]);
-		close(status[1]);
-		error = "Cannot fork the Neurus application.";
+		action = posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, logFile.c_str(),
+		                                          O_CREAT | O_WRONLY | O_TRUNC, 0600);
+	}
+	if (action == 0)
+		action = posix_spawn_file_actions_adddup2(&actions, STDOUT_FILENO, STDERR_FILENO);
+	if (action != 0)
+	{
+		posix_spawn_file_actions_destroy(&actions);
+		error = "Cannot prepare the launch file actions.";
 		return std::nullopt;
 	}
-	if (pid == 0)
+
+	posix_spawnattr_t attributes;
+	if (posix_spawnattr_init(&attributes) != 0)
 	{
-		close(status[0]);
-		setsid();
-		const int log = open(logFile.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
-		if (log >= 0)
-		{
-			dup2(log, STDOUT_FILENO);
-			dup2(log, STDERR_FILENO);
-			close(log);
-		}
-		execv(argv[0], argv.data());
-		const int code = errno;
-		(void)!write(status[1], &code, sizeof(code));
-		_exit(127);
+		posix_spawn_file_actions_destroy(&actions);
+		error = "Cannot prepare the launch attributes.";
+		return std::nullopt;
+	}
+	// A new session detaches the app from the CLI's terminal, and the default
+	// close-on-exec closes every descriptor the CLI happens to hold.
+	const short flags = POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT;
+	if (posix_spawnattr_setflags(&attributes, flags) != 0)
+	{
+		posix_spawnattr_destroy(&attributes);
+		posix_spawn_file_actions_destroy(&actions);
+		error = "Cannot prepare the launch attributes.";
+		return std::nullopt;
 	}
 
-	close(status[1]);
-	int code = 0;
-	ssize_t bytes = 0;
-	do
-		bytes = read(status[0], &code, sizeof(code));
-	while (bytes < 0 && errno == EINTR);
-	close(status[0]);
+	pid_t pid = 0;
+	char** environment = *_NSGetEnviron();
+	const int result = posix_spawn(&pid, app.c_str(), &actions, &attributes, argv.data(),
+	                               environment);
+	posix_spawnattr_destroy(&attributes);
+	posix_spawn_file_actions_destroy(&actions);
 
-	if (bytes == static_cast<ssize_t>(sizeof(code)))
+	if (result != 0)
 	{
-		waitpid(pid, nullptr, 0);
 		error = "Cannot start " + app.string() + ": "
-			+ std::generic_category().message(code);
+			+ std::generic_category().message(result);
 		return std::nullopt;
 	}
 	return static_cast<int>(pid);
@@ -203,8 +228,21 @@ std::string TerminalIdentity()
 			return std::string(name) + ":" + value;
 	}
 
-	if (const char* tty = ::ttyname(STDIN_FILENO))
-		return "tty:" + std::string(tty) + ":" + std::to_string(::getppid());
+	// The POSIX session outlives a `sh -c` wrapper, so a binding survives a
+	// script that re-parents the CLI; a terminal always has one session. The
+	// leader's start time guards against a reused session id.
+	const pid_t sid = ::getsid(0);
+	if (sid >= 0)
+	{
+		proc_bsdinfo info{};
+		if (::proc_pidinfo(sid, PROC_PIDTBSDINFO, 0, &info, sizeof(info))
+		    == static_cast<int>(sizeof(info)))
+		{
+			return "session:" + std::to_string(sid) + ":"
+				+ std::to_string(info.pbi_start_tvsec) + "."
+				+ std::to_string(info.pbi_start_tvusec);
+		}
+	}
 
 	return "posix:" + std::to_string(::getppid());
 }

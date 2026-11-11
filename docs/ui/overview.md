@@ -145,10 +145,10 @@ App-level settings (distinct from the per-project `.neurus.json` files) live in 
 
 - Fields: `language` (`"en"` / `"zh_CN"`, or `"auto"` = follow the system UI language) and `target_fps` (0 = unlimited).
 - **`"auto"` is stored verbatim and stays that way.** `I18n::setLanguage()` resolves the sentinel itself, so nothing on the load path rewrites the preference with a concrete code - resolving it in place would turn "follow the system language" into "pin to whatever the system said at first launch" the moment the file was next written.
-- The **Application is the sole manager**: it loads the file before the window is built, applies the saved language and target FPS, saves on every edit, and saves once more on `aboutToQuit`.
+- The **Application is the sole manager**: it loads the file before the window is built, applies the saved language and target FPS, saves on every edit, and saves once more on `aboutToQuit` only when the values differ from the loaded ones (`Preferences::operator==`). A run that only reads them, such as a test session, leaves the file untouched.
 - **Loading distinguishes missing from corrupt** (`Preferences::LoadResult`), and never mutates the fields on either failure - parsing goes into a scratch copy, so a truncated or schema-drifted file cannot leave values half-applied:
   - `Ok` - values in effect.
-  - `Missing` - first run; the Application writes the defaults.
+  - `Missing` - first run; defaults are in effect and the file is created by the first preference edit.
   - `Corrupt` - the Application logs it, keeps defaults, and calls `Preferences::Backup()` to move the file to `preferences.json.bak`. It must **not** save instead: that would destroy still-recoverable settings, and the move also stops the `aboutToQuit` save from clobbering the evidence.
 - **The UI never touches the `Preferences` type.** The Application seeds the window with plain values; the `PreferencesDialog` is a pure UI widget holding only those plain values and emits requests through `UIEvents`. See [Panels](panels.md) for the dialog.
 

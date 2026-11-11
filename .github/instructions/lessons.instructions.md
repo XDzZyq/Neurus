@@ -163,8 +163,20 @@ the **rule** that prevents it. Design detail behind these lives in
 - **`neurus open` on macOS waits for the full timeout on an app that already
   died.** `kill(pid, 0)` succeeds on an unreaped zombie, and a failed `execv` in
   the forked child is invisible to the parent. Rule: `IsProcessAlive` reaps its
-  own exited child with `waitpid(WNOHANG)` first, and `SpawnDetached` reports
-  `execv` failure through a close-on-exec pipe, matching `CreateProcess`.
+  own exited child with `waitpid(WNOHANG)` first, and `SpawnDetached` uses
+  `posix_spawn`, which returns the exec error synchronously, matching
+  `CreateProcess`.
+- **The detached app holds the CLI's files open on macOS.** A plain fork/exec
+  passes every descriptor without `O_CLOEXEC` to the app. Rule: spawn with
+  `POSIX_SPAWN_CLOEXEC_DEFAULT` and open only stdin/stdout/stderr explicitly.
+- **`neurus use` binding is lost under `sh -c` or a script on macOS.** A
+  parent-pid identity changes with every wrapper. Rule: key the macOS fallback
+  identity on the POSIX session and its leader's start time. Each agent shell
+  tool call usually starts a new session, so a binding made in one call is not
+  seen by the next; pass `--session` or `NEURUS_TERMINAL_ID` in harnesses.
+- **An e2e session rewrites the user's `~/.neurus/preferences.json`.**
+  `NEURUS_SESSIONS_DIR` redirects only the registry. Rule: the Application saves
+  preferences at shutdown only when they changed since load.
 
 ## Documentation build
 

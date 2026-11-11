@@ -20,6 +20,15 @@ std::optional<std::filesystem::path> ResolveAppExecutable(
 	const std::optional<std::filesystem::path>& overridePath,
 	const std::string& envValue);
 
+/**
+ * @brief Finds the app installed in the platform's standard location.
+ *
+ * Used only after ResolveAppExecutable finds nothing, so its unit tests stay
+ * deterministic.
+ * @return The executable path, or std::nullopt when no install exists.
+ */
+std::optional<std::filesystem::path> InstalledAppExecutable();
+
 /// @return The path of the running executable.
 std::filesystem::path CurrentExecutablePath();
 
@@ -62,8 +71,9 @@ std::vector<std::string> CommandLineArguments(int argc, char* argv[]);
  * separate terminals do not have to pass `--session` on every command.
  *
  * Resolution is: `NEURUS_TERMINAL_ID` override, a terminal-provided session id,
- * otherwise the parent shell process and its creation time. An empty result
- * means the terminal cannot be identified and no binding is stored.
+ * otherwise the terminal's POSIX session (macOS) or the parent process and its
+ * creation time (Windows). An empty result means the terminal cannot be
+ * identified and no binding is stored.
  */
 std::string TerminalIdentity();
 

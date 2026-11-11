@@ -50,6 +50,12 @@ bool ValidateCloseOptions(const CloseOptions& options, std::string& error)
 		error = "A session name and --all cannot be combined.";
 		return false;
 	}
+	// force discards unsaved state, so asking to save as well is contradictory.
+	if (options.save && options.force)
+	{
+		error = "--save and --force are mutually exclusive.";
+		return false;
+	}
 	if (options.name && !ipc::IsValidSessionName(*options.name))
 	{
 		error = "Invalid session name: " + *options.name;

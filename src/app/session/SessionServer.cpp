@@ -8,7 +8,7 @@
 #include "ipc/SessionRegistry.h"
 
 #include <chrono>
-#include <ctime>
+#include <cstdio>
 #include <utility>
 
 namespace neurus
@@ -18,16 +18,23 @@ namespace
 
 std::string UtcTimestamp()
 {
-	const std::time_t now = std::chrono::system_clock::to_time_t(
+	// Calendar arithmetic over system_clock: no time_t and no gmtime, so the
+	// same code serves every platform. snprintf keeps the output identical to
+	// the previous strftime format without relying on std::format's chrono
+	// support in the standard library at hand.
+	const auto now = std::chrono::floor<std::chrono::seconds>(
 		std::chrono::system_clock::now());
-	std::tm utc{};
-#ifdef _WIN32
-	gmtime_s(&utc, &now);
-#else
-	gmtime_r(&now, &utc);
-#endif
+	const auto day = std::chrono::floor<std::chrono::days>(now);
+	const std::chrono::year_month_day ymd{day};
+	const std::chrono::hh_mm_ss hms{now - day};
 	char buffer[32]{};
-	std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &utc);
+	std::snprintf(buffer, sizeof(buffer), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+	              static_cast<int>(ymd.year()),
+	              static_cast<int>(static_cast<unsigned>(ymd.month())),
+	              static_cast<int>(static_cast<unsigned>(ymd.day())),
+	              static_cast<int>(hms.hours().count()),
+	              static_cast<int>(hms.minutes().count()),
+	              static_cast<int>(hms.seconds().count()));
 	return buffer;
 }
 

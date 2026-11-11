@@ -16,7 +16,9 @@ public:
 	CliExit Execute() override;
 
 private:
-	CliExit ExecuteGet(bool shorthand);
+	/// Target and property-selection options shared by `object` and `object get`.
+	void AddGetOptions(CLI::App& app);
+	CliExit ExecuteGet();
 	CliExit ExecuteLoad();
 	CliExit ExecuteAdd();
 	CliExit ExecuteSet();
@@ -24,14 +26,13 @@ private:
 	CliExit ExecuteDelete();
 
 	CLI::App* m_app = nullptr;
-	CLI::App* m_getApp = nullptr;
 	CLI::App* m_loadApp = nullptr;
 	CLI::App* m_addApp = nullptr;
 	CLI::App* m_setApp = nullptr;
 	CLI::App* m_duplicateApp = nullptr;
 	CLI::App* m_deleteApp = nullptr;
 
-	// Shorthand `object --name ... --position`.
+	// Target and property selection for `object` and `object get`.
 	std::string m_getName;
 	int         m_getUid = 0;
 	std::string m_getType;

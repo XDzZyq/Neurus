@@ -218,26 +218,29 @@ bool BuildTarget(const std::string& name, int uid, const std::string& type,
 
 } // namespace
 
+void ObjectCommand::AddGetOptions(CLI::App& app)
+{
+	app.add_option("--name", m_getName, "Object name.");
+	app.add_option("--uid", m_getUid, "Object UID.");
+	app.add_option("--type", m_getType, "Object type filter.");
+	app.add_flag("--position", m_getPosition, "Print only the position.");
+	app.add_flag("--rotation", m_getRotation, "Print only the rotation.");
+	app.add_flag("--scale", m_getScale, "Print only the scale.");
+	app.add_flag("--visible", m_getVisible, "Print only visibility.");
+}
+
 void ObjectCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 {
 	SetGlobals(globals);
 	m_app = parent.add_subcommand("object", "Read and write scene objects.");
 
-	// Shorthand read: `object --name "Mesh A" --position`.
-	m_app->add_option("--name", m_getName, "Object name.");
-	m_app->add_option("--uid", m_getUid, "Object UID.");
-	m_app->add_option("--type", m_getType, "Object type filter.");
-	m_app->add_flag("--position", m_getPosition, "Print only the position.");
-	m_app->add_flag("--rotation", m_getRotation, "Print only the rotation.");
-	m_app->add_flag("--scale", m_getScale, "Print only the scale.");
-	m_app->add_flag("--visible", m_getVisible, "Print only visibility.");
+	// `object ...` is the shorthand read; `object get ...` takes the same flags.
+	AddGetOptions(*m_app);
 	AddCommonOptions(*m_app, m_getSession, m_getFormat, m_getTimeout);
 
-	m_getApp = m_app->add_subcommand("get", "Report one scene object.");
-	m_getApp->add_option("--name", m_getName, "Object name.");
-	m_getApp->add_option("--uid", m_getUid, "Object UID.");
-	m_getApp->add_option("--type", m_getType, "Object type filter.");
-	AddCommonOptions(*m_getApp, m_getSession, m_getFormat, m_getTimeout);
+	CLI::App* getApp = m_app->add_subcommand("get", "Report one scene object.");
+	AddGetOptions(*getApp);
+	AddCommonOptions(*getApp, m_getSession, m_getFormat, m_getTimeout);
 
 	m_loadApp = m_app->add_subcommand("load", "Load a mesh file into the scene.");
 	m_loadApp->add_option("-f,--file", m_loadPath, "Mesh file to load.")->required();
@@ -314,12 +317,11 @@ CliExit ObjectCommand::Execute()
 		return ExecuteDuplicate();
 	if (m_deleteApp != nullptr && m_deleteApp->parsed())
 		return ExecuteDelete();
-	if (m_getApp != nullptr && m_getApp->parsed())
-		return ExecuteGet(false);
-	return ExecuteGet(true);
+	// Both `object ...` and `object get ...` read the same member options.
+	return ExecuteGet();
 }
 
-CliExit ObjectCommand::ExecuteGet(bool shorthand)
+CliExit ObjectCommand::ExecuteGet()
 {
 	const OutputFormat format = Format(m_getFormat);
 	command::Json args;
@@ -338,12 +340,6 @@ CliExit ObjectCommand::ExecuteGet(bool shorthand)
 		return exitCode;
 
 	const command::Json& object = result->details["object"];
-	if (!shorthand)
-	{
-		PrintObjectFull(object, format);
-		return CliExit::Ok;
-	}
-
 	std::vector<std::string> fields;
 	if (m_getPosition)
 		fields.push_back("position");

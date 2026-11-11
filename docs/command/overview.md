@@ -81,12 +81,19 @@ Entries live in `~/.neurus/sessions`, next to `preferences.json`:
 - `<name>.claim` - a short-lived claim used while `neurus open` waits.
 - `terminals/<hash>.json` - the session bound to one terminal/tab.
 
-The directory is per-user and owner-only on POSIX. The token never enters the
+The directory is per-user and owner-only on POSIX. Entries and bindings are
+written owner-only from creation (`platform::WriteOwnerOnlyFile`) and renamed
+into place, and a parent directory the CLI or app creates (such as `~/.neurus`)
+is owner-only too; an existing parent keeps its mode. The token never enters the
 project directory. A session name must match `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`,
 which also prevents path traversal. Stale entries (dead pid) are pruned during
 discovery. `NEURUS_SESSIONS_DIR` overrides the directory for tests.
 `NEURUS_TERMINAL_ID` overrides the terminal identity, which is useful for
-harnesses that do not expose a stable terminal/tab id.
+harnesses that do not expose a stable terminal/tab id. Without it, a terminal
+hint (`WT_SESSION`, `TERM_SESSION_ID`, `TMUX_PANE`, ...) is used when present.
+Otherwise Windows keys on the parent process and its creation time, and macOS
+keys on the POSIX session (`getsid`) and its leader's start time, so a binding
+survives `sh -c` wrappers and stdin redirection but not a new terminal.
 
 ## Protocol
 
@@ -126,7 +133,7 @@ Timeouts: connect 3 s, handshake 3 s, command 10 s, `close --save` 60 s, and a
 
 ```
 neurus open [PROJECT] [--name NAME] [--app PATH] [--timeout SECS] [--no-wait] [--no-bind]
-neurus close [NAME] [--all] [--save] [--force] [--timeout SECS]
+neurus close [NAME] [--all] [--save|--force] [--timeout SECS]
 neurus status [NAME]
 neurus list
 neurus use [NAME] [--clear]
@@ -135,6 +142,7 @@ neurus scene list [--type all|mesh|light|camera|environment|sprite|debug]
 neurus scene info
 neurus object [--name NAME|--uid N] [--position|--rotation|--scale|--visible]
 neurus object get --name NAME|--uid N [--type TYPE]
+                   [--position|--rotation|--scale|--visible]
 neurus object set --name NAME|--uid N [--rename NAME] [--position X,Y,Z]
                    [--rotation X,Y,Z] [--scale X,Y,Z] [--visible true|false]
                    [--viewport-visible true|false] [--render-visible true|false]
@@ -176,7 +184,10 @@ sessions from different terminals.
   detached with `--session` and optional `--project`, then polls
   `session.status` until ready. A name whose entry belongs to a live process is
   `SESSION_EXISTS`; a stale entry is replaced. Only an entry carrying the pid
-  this launch spawned counts as ready. A launch that cannot start (for example a
+  this launch spawned counts as ready. The app is `--app`, then `NEURUS_APP`,
+  then the build tree next to the CLI; only when neither override is given does
+  it fall back to the installed bundle (`/Applications`, then
+  `~/Applications` on macOS). A launch that cannot start (for example a
   non-executable `--app`) fails at once with `APP_EXITED`, and an app that exits
   during startup is reported as soon as it is gone. It binds the session to the
   current terminal unless `--no-bind` is given. `--no-wait` prints the pid
@@ -184,7 +195,8 @@ sessions from different terminals.
 - `close` targets a name, the terminal binding, the only live session when no
   name is given, or every session with `--all`. Several live sessions without a
   target is `AMBIGUOUS_SESSION` and changes nothing. A dirty project is refused
-  unless `--save` or `--force` is given. A successful close clears a binding
+  unless `--save` or `--force` is given; the two are mutually exclusive, so
+  `--save --force` is a usage error. A successful close clears a binding
   that points at the closed session.
 - `status` performs the handshake and reports one session, with the project the
   application has open now (the registry keeps the launch-time project, which
@@ -197,12 +209,13 @@ sessions from different terminals.
 - `scene list` reports scene membership, optionally filtered by object type.
 - `scene info` reports counts by type, selection and the active camera.
 - `object` reads and writes scene objects. The root form with a property flag
-  is the read shorthand; `get`, `set`, `add`, `duplicate`, `load` and `delete`
-  are explicit. `add` currently creates cameras only; adding and duplicating
-  lights stay disabled until issue #60 is fixed. Transform and property writes
-  go through the same typed events as the panels, so they are undoable and
-  visible to the next frame. A multi-property `set`, an `add` with properties,
-  and a `duplicate` are each one undo entry.
+  is the read shorthand; `get` accepts the same target and property flags and
+  prints the same subset, or the whole object when none is given. `set`, `add`,
+  `duplicate`, `load` and `delete` are explicit. `add` currently creates cameras
+  only; adding and duplicating lights stay disabled until issue #60 is fixed.
+  Transform and property writes go through the same typed events as the panels,
+  so they are undoable and visible to the next frame. A multi-property `set`, an
+  `add` with properties, and a `duplicate` are each one undo entry.
 - `render get` reports the render configuration; `render set` changes any
   subset through the render-config controller and its undo entry.
 - `history show` reports the undo/redo stacks; `history undo` and

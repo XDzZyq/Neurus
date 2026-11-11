@@ -94,8 +94,12 @@ CliExit ExecuteOpen(const OpenOptions& options)
 		return CliExit::Usage;
 	}
 
-	const auto resolvedApp = ResolveAppExecutable(
+	auto resolvedApp = ResolveAppExecutable(
 		CurrentExecutablePath(), options.app, AppEnvironmentPath());
+	// A build-tree lookup wins; the installed bundle is the last resort, and
+	// never stands in for an explicit --app / NEURUS_APP that does not exist.
+	if (!resolvedApp && !options.app && AppEnvironmentPath().empty())
+		resolvedApp = InstalledAppExecutable();
 	if (!resolvedApp)
 	{
 		registry.ReleaseClaim(name);

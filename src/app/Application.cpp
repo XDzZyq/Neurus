@@ -137,8 +137,10 @@ int Application::Run()
 	}
 
 	// --- Preferences: the Application is their sole manager. Loaded BEFORE the
-	// window is built so the UI starts in the saved language; the file is
-	// created on first run. ---
+	// window is built so the UI starts in the saved language. Nothing is written
+	// unless a value changes: a run that only reads them (a test session, which
+	// redirects NEURUS_SESSIONS_DIR but shares the real home) must leave the
+	// user's file alone. ---
 	app_preferences = std::make_unique<neurus::Preferences>();
 	const std::string prefsPath = neurus::Preferences::DefaultPath();
 
@@ -149,7 +151,7 @@ int Application::Run()
 	case neurus::Preferences::LoadResult::Ok:
 		break;
 	case neurus::Preferences::LoadResult::Missing:
-		app_preferences->Save(prefsPath);  // First run: create the file.
+		// Stays missing: the first preference edit saves the file eagerly.
 		break;
 	case neurus::Preferences::LoadResult::Corrupt:
 		// Defaults are in effect, but the file is NOT overwritten here: move it
@@ -164,10 +166,15 @@ int Application::Run()
 		QString::fromStdString(app_preferences->language));
 	ApplyTargetFps(app_preferences->targetFps);
 
-	// Persist preferences once more on clean shutdown (safety net; changes
-	// are also saved eagerly on every edit).
+	// Clean-shutdown safety net: edits already save eagerly through
+	// ApplicationSignals, so only a value that differs from the loaded snapshot
+	// is written here.
+	const neurus::Preferences loadedPreferences = *app_preferences;
 	QObject::connect(app_qtApp.get(), &QCoreApplication::aboutToQuit,
-	                 [this]() { app_preferences->Save(neurus::Preferences::DefaultPath()); });
+	                 [this, loadedPreferences]() {
+		                 if (*app_preferences != loadedPreferences)
+			                 app_preferences->Save(neurus::Preferences::DefaultPath());
+	                 });
 
 	if (!InitVulkan())
 	{

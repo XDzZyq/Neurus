@@ -11,6 +11,7 @@
 
 #include "ipc/RandomToken.h"
 #include "ipc/SessionRegistry.h"
+#include "platform/PlatformFile.h"
 #include "platform/PlatformProcess.h"
 
 using namespace neurus::ipc;
@@ -75,6 +76,32 @@ TEST_F(SessionRegistryTest, WriteLeavesNoTemporaryFile)
 	std::string error;
 	ASSERT_TRUE(registry.Write(MakeRecord("build-1", neurus::CurrentProcessId()), error)) << error;
 	EXPECT_FALSE(std::filesystem::exists(m_directory / "build-1.json.tmp"));
+}
+
+// The entry carries the IPC token, so it must never be readable by anyone but
+// its owner - not even briefly while it is written. Windows derives
+// std::filesystem permissions from the read-only attribute instead of POSIX
+// mode bits, so probe whether the platform expresses them and skip only there.
+TEST_F(SessionRegistryTest, RegistryEntryIsOwnerOnly)
+{
+	SessionRegistry registry(m_directory);
+	std::string error;
+	ASSERT_TRUE(registry.Write(MakeRecord("build-1", neurus::CurrentProcessId()), error)) << error;
+
+	constexpr auto kGroupOrOthers = std::filesystem::perms::group_all
+		| std::filesystem::perms::others_all;
+
+	const auto probe = m_directory / "permissions-probe";
+	ASSERT_TRUE(neurus::platform::CreateExclusiveFile(probe, "probe"));
+	ASSERT_TRUE(neurus::platform::RestrictToOwner(probe, false, error)) << error;
+	if ((std::filesystem::status(probe).permissions() & kGroupOrOthers)
+	    != std::filesystem::perms::none)
+	{
+		GTEST_SKIP() << "This platform does not report POSIX ownership bits.";
+	}
+
+	const auto permissions = std::filesystem::status(m_directory / "build-1.json").permissions();
+	EXPECT_EQ(permissions & kGroupOrOthers, std::filesystem::perms::none);
 }
 
 TEST(SessionNameValidation, RejectsTraversalAndSeparators)

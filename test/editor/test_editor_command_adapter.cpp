@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "command/Commands.h"
+#include "core/ResourceManager.h"
 #include "editor/Editor.h"
 #include "editor/commands/EditorCommandAdapter.h"
 #include "scene/Camera.h"
@@ -18,6 +19,8 @@
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 
@@ -99,6 +102,53 @@ TEST_F(EditorCommandAdapterTest, ObjectLoadAddsANamedMesh)
 	EXPECT_EQ(m_editor->GetScene().mesh_list.size(), static_cast<std::size_t>(before + 1));
 	EXPECT_NE(m_editor->GetScene().GetObjectID(loaded.details["object"]["uid"].get<int>()),
 	          nullptr);
+}
+
+/**
+ * @brief A missing file is reported as not found, not as an empty mesh.
+ *
+ * It also may not leave a MeshData behind: the pool is serialized by project
+ * save, so a stale entry would make every later open of that project log a
+ * load failure for a file that never existed.
+ */
+TEST_F(EditorCommandAdapterTest, ObjectLoadMissingFileIsNotFoundAndLeavesNoResource)
+{
+	const std::size_t poolBefore = m_editor->GetResourceManager().Size();
+	const std::string missing =
+		(std::filesystem::temp_directory_path() / "neurus_no_such_mesh.obj").string();
+
+	const auto loaded = m_adapter->Execute({kObjectLoad, {{"path", missing}}});
+
+	ASSERT_FALSE(loaded.ok);
+	EXPECT_EQ(loaded.code, CommandErrorCode::IoError);
+	EXPECT_NE(loaded.message.find("not found"), std::string::npos) << loaded.message;
+	EXPECT_EQ(loaded.message.find("no geometry"), std::string::npos) << loaded.message;
+	EXPECT_EQ(m_editor->GetResourceManager().Size(), poolBefore);
+}
+
+/**
+ * @brief An existing OBJ with vertices but no faces fails as "no geometry" and
+ *        must not stay in the pool either.
+ */
+TEST_F(EditorCommandAdapterTest, ObjectLoadEmptyObjLeavesNoResource)
+{
+	const std::filesystem::path path =
+		std::filesystem::temp_directory_path() / "neurus_empty_mesh.obj";
+	{
+		std::ofstream out(path);
+		ASSERT_TRUE(out.is_open());
+		out << "o Empty\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"; // vertices, no faces
+	}
+
+	const std::size_t poolBefore = m_editor->GetResourceManager().Size();
+	const auto loaded = m_adapter->Execute({kObjectLoad, {{"path", path.string()}}});
+	std::error_code ignored;
+	std::filesystem::remove(path, ignored);
+
+	ASSERT_FALSE(loaded.ok);
+	EXPECT_EQ(loaded.code, CommandErrorCode::IoError);
+	EXPECT_NE(loaded.message.find("no geometry"), std::string::npos) << loaded.message;
+	EXPECT_EQ(m_editor->GetResourceManager().Size(), poolBefore);
 }
 
 TEST_F(EditorCommandAdapterTest, ObjectSetUpdatesPositionAndReadBackAgrees)

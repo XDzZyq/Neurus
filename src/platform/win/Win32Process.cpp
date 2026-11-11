@@ -95,6 +95,13 @@ std::optional<std::filesystem::path> ResolveAppExecutable(
 	return std::nullopt;
 }
 
+std::optional<std::filesystem::path> InstalledAppExecutable()
+{
+	// No installer location is defined for Windows yet, so only the paths next
+	// to the CLI can be found.
+	return std::nullopt;
+}
+
 std::optional<int> SpawnDetached(const std::filesystem::path& app,
                                  const std::vector<std::string>& arguments,
                                  const std::filesystem::path& logPath,

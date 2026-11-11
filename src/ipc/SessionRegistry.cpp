@@ -148,11 +148,25 @@ std::filesystem::path SessionRegistry::PathFor(std::string_view name, std::strin
 bool SessionRegistry::EnsureDirectory(std::string& error) const
 {
 	std::error_code code;
+	// create_directories leaves levels it creates world-traversable; the
+	// per-user root stores session tokens, so a root this call brings into
+	// existence must be owner-only. A pre-existing one keeps its mode.
+	const auto parent = m_directory.parent_path();
+	const bool parentExisted = !parent.empty() && FileExists(parent);
 	std::filesystem::create_directories(m_directory, code);
 	if (code)
 	{
 		error = "Cannot create session directory: " + code.message();
 		return false;
+	}
+	if (!parent.empty() && !parentExisted)
+	{
+		std::string parentError;
+		if (!platform::RestrictToOwner(parent, true, parentError))
+		{
+			error = "Cannot secure the session parent directory: " + parentError;
+			return false;
+		}
 	}
 	std::string permissionError;
 	if (!platform::RestrictToOwner(m_directory, true, permissionError))
@@ -241,26 +255,14 @@ bool SessionRegistry::Write(const SessionRecord& record, std::string& error)
 	const auto target = PathFor(record.session, ".json");
 	const auto temporary = PathFor(record.session, ".json.tmp");
 
-	{
-		std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-		if (!out.is_open())
-		{
-			error = "Cannot open session entry for writing.";
-			return false;
-		}
-		out << ToJson(record).dump(2);
-		if (!out.good())
-		{
-			error = "Cannot write session entry.";
-			return false;
-		}
-	}
-	std::string permissionError;
-	if (!platform::RestrictToOwner(temporary, false, permissionError))
+	// The entry carries the IPC token, so it must be owner-only from the moment
+	// it exists rather than chmod'ed after a plain ofstream created it 0644.
+	std::string writeError;
+	if (!platform::WriteOwnerOnlyFile(temporary, ToJson(record).dump(2), writeError))
 	{
 		std::error_code ignored;
 		std::filesystem::remove(temporary, ignored);
-		error = "Cannot secure session entry: " + permissionError;
+		error = "Cannot write session entry: " + writeError;
 		return false;
 	}
 

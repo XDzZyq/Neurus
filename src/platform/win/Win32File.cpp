@@ -8,6 +8,8 @@
 #endif
 #include <windows.h>
 
+#include <fstream>
+
 namespace neurus::platform
 {
 
@@ -30,6 +32,28 @@ bool RestrictToOwner(const std::filesystem::path& /*path*/, bool /*directory*/,
 {
 	// The per-user profile already carries the ACL; there is no portable chmod.
 	return true;
+}
+
+bool WriteOwnerOnlyFile(const std::filesystem::path& path, std::string_view contents,
+                        std::string& error)
+{
+	std::ofstream out(path, std::ios::binary | std::ios::trunc);
+	if (!out.is_open())
+	{
+		error = "Cannot open file for writing.";
+		return false;
+	}
+	out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+	if (!out.good())
+	{
+		error = "Cannot write file.";
+		return false;
+	}
+	out.close();
+
+	// The profile ACL already scopes the file to this user; keep the call so the
+	// contract matches POSIX and a future ACL implementation lands here too.
+	return RestrictToOwner(path, false, error);
 }
 
 } // namespace neurus::platform

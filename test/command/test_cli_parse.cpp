@@ -5,11 +5,42 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <string>
+
 #include "cli/Cli.h"
 #include "cli/CliParse.h"
+#include "platform/PlatformProcess.h"
 
 using namespace neurus::cli;
 using namespace neurus::ipc;
+
+namespace
+{
+
+/// Sets an environment variable for one test and restores the previous value.
+class EnvironmentGuard
+{
+public:
+	EnvironmentGuard(const char* name, const std::string& value)
+		: m_name(name)
+		, m_previous(neurus::EnvironmentValue(name))
+	{
+		neurus::SetEnvironmentValue(m_name.c_str(), value.c_str());
+	}
+
+	~EnvironmentGuard()
+	{
+		neurus::SetEnvironmentValue(m_name.c_str(),
+		                            m_previous.empty() ? nullptr : m_previous.c_str());
+	}
+
+private:
+	std::string m_name;
+	std::string m_previous;
+};
+
+} // namespace
 
 TEST(CliParse, ParseErrorsExitWithUsageCode)
 {
@@ -29,6 +60,33 @@ TEST(CliParse, CloseRejectsNameWithAll)
 	std::string error;
 	EXPECT_FALSE(ValidateCloseOptions(options, error));
 	EXPECT_FALSE(error.empty());
+}
+
+TEST(CliParse, CloseRejectsSaveWithForce)
+{
+	CloseOptions options;
+	options.save = true;
+	options.force = true;
+	std::string error;
+	EXPECT_FALSE(ValidateCloseOptions(options, error));
+	EXPECT_NE(error.find("mutually exclusive"), std::string::npos);
+}
+
+TEST(CliParse, ObjectGetAcceptsPropertyFlag)
+{
+	// An empty registry: the get subcommand must accept --position, then fail
+	// with the no-session code instead of the usage code.
+	const auto directory = std::filesystem::temp_directory_path()
+		/ ("neurus-cli-parse-" + std::to_string(neurus::CurrentProcessId()));
+	std::error_code code;
+	std::filesystem::remove_all(directory, code);
+
+	EnvironmentGuard sessions("NEURUS_SESSIONS_DIR", directory.string());
+	EnvironmentGuard terminal("NEURUS_TERMINAL_ID", "unit-test-cli-parse");
+
+	EXPECT_EQ(RunCli({"neurus", "object", "get", "--name", "Mesh", "--position",
+	                  "--session", "nosuch"}),
+	          static_cast<int>(CliExit::NoSession));
 }
 
 TEST(CliParse, OpenRejectsMissingProjectFile)

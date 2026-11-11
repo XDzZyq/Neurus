@@ -36,11 +36,25 @@ std::string HashIdentity(const std::string& identity)
 bool EnsureDirectory(const std::filesystem::path& directory, std::string& error)
 {
 	std::error_code code;
+	// A directory this call creates is tightened before it is used; a
+	// pre-existing one keeps the mode its owner chose.
+	const auto parent = directory.parent_path();
+	const bool parentExisted = !parent.empty() && std::filesystem::exists(parent, code);
+	code.clear();
 	std::filesystem::create_directories(directory, code);
 	if (code)
 	{
 		error = "Cannot create the terminal binding directory: " + code.message();
 		return false;
+	}
+	if (!parent.empty() && !parentExisted)
+	{
+		std::string parentError;
+		if (!platform::RestrictToOwner(parent, true, parentError))
+		{
+			error = "Cannot secure the terminal binding parent directory: " + parentError;
+			return false;
+		}
 	}
 	std::string permissionError;
 	if (!platform::RestrictToOwner(directory, true, permissionError))
@@ -130,34 +144,20 @@ bool WriteTerminalBinding(const std::string& session, std::string& error)
 	const auto path = directory / (HashIdentity(identity) + ".json");
 	const auto temporary = directory / (HashIdentity(identity) + ".tmp");
 
-	std::error_code code;
-	std::filesystem::remove(temporary, code);
+	// The binding names the session a command reaches, so it is owner-only from
+	// creation instead of being chmod'ed after a readable window existed.
+	std::string writeError;
+	if (!platform::WriteOwnerOnlyFile(temporary, json.dump(2) + '\n', writeError))
 	{
-		std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-		if (!out.is_open())
-		{
-			error = "Cannot write the terminal binding.";
-			return false;
-		}
-		out << json.dump(2) << '\n';
-		if (!out.good())
-		{
-			out.close();
-			std::filesystem::remove(temporary, code);
-			error = "Cannot write the terminal binding.";
-			return false;
-		}
-	}
-
-	std::string permissionError;
-	if (!platform::RestrictToOwner(temporary, false, permissionError))
-	{
-		std::filesystem::remove(temporary, code);
-		error = "Cannot secure the terminal binding: " + permissionError;
+		std::error_code ignored;
+		std::filesystem::remove(temporary, ignored);
+		error = "Cannot write the terminal binding: " + writeError;
 		return false;
 	}
 
+	std::error_code code;
 	std::filesystem::remove(path, code);
+	code.clear();
 	std::filesystem::rename(temporary, path, code);
 	if (code)
 	{

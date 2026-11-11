@@ -156,7 +156,10 @@ target_link_libraries(neurus_test PRIVATE
 if(WIN32)
 	target_sources(neurus_test PRIVATE shared/win/TestWindowWin32.cpp)
 elseif(APPLE)
-	target_sources(neurus_test PRIVATE shared/mac/TestWindowMacOS.cpp)
+	target_sources(neurus_test PRIVATE
+		shared/mac/TestWindowMacOS.cpp
+		command/test_process_mac.cpp
+	)
 endif()
 
 if(NEURUS_ENABLE_SCRIPTING)

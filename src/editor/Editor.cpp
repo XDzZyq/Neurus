@@ -49,6 +49,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
 
@@ -828,6 +830,18 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
                              std::string& error)
 {
 	try {
+		// A missing file is not an empty mesh. Check before the load: the caller
+		// (command / GUI / script) reports the message verbatim, and nothing may
+		// enter the pool for a file we could not even open. ResolveAssetPath
+		// returns the path as given when nothing matches, so this still tests
+		// what the caller named.
+		std::error_code fsError;
+		if (!std::filesystem::is_regular_file(ResolveAssetPath(path), fsError))
+		{
+			error = "Mesh file not found: " + path;
+			return 0;
+		}
+
 		// Import = load the resource into the pool; the Add operation and the
 		// MeshGPU upload happen on demand when the add is processed - no inline
 		// upload here. A portable relative "res/..." path is stored when the file
@@ -841,6 +855,12 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 		auto meshData = m_resources->Load<MeshData>(storedPath);
 		if (!meshData || meshData->GetVertexCount() == 0 || meshData->GetIndexCount() == 0)
 		{
+			// Project save serializes the whole pool, so a geometry-less MeshData
+			// would be written out and re-parsed on every later open. Load always
+			// creates a fresh UID, so removing this one cannot evict an earlier
+			// successful load from the same path.
+			if (meshData)
+				m_resources->Remove(meshData->GetObjectID());
 			error = "Mesh file contains no geometry: " + storedPath;
 			return 0;
 		}
