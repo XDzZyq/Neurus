@@ -5,11 +5,14 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "cli/AppArguments.h"
 #include "platform/PlatformProcess.h"
@@ -23,9 +26,13 @@ namespace
 #ifdef _WIN32
 constexpr const char* kAppName = "Neurus.exe";
 constexpr const char* kCliName = "neurus.exe";
+constexpr const char* kExitingProgram = "C:/Windows/System32/cmd.exe";
+const std::vector<std::string> kExitingArguments = {"/c", "exit"};
 #else
 constexpr const char* kAppName = "Neurus";
 constexpr const char* kCliName = "neurus";
+constexpr const char* kExitingProgram = "/usr/bin/true";
+const std::vector<std::string> kExitingArguments = {};
 #endif
 
 class ProcessLaunchTest : public ::testing::Test
@@ -99,6 +106,32 @@ TEST_F(ProcessLaunchTest, BuildsSessionArguments)
 
 	const auto withoutProject = BuildAppArguments("build-1", std::nullopt);
 	ASSERT_EQ(withoutProject.size(), 2u);
+}
+
+TEST_F(ProcessLaunchTest, SpawningANonExecutableFails)
+{
+	// `open` must report a launch that never started instead of polling a
+	// process that is already gone.
+	const auto notAnApp = Touch(m_root / "not-an-app");
+	std::string error;
+	const auto pid = SpawnDetached(notAnApp, {}, m_root / "launch.log", error);
+	EXPECT_FALSE(pid.has_value());
+	EXPECT_FALSE(error.empty());
+}
+
+TEST_F(ProcessLaunchTest, ExitedChildIsNotAlive)
+{
+	// `open` polls IsProcessAlive() to notice an app that died during startup;
+	// an exited child must stop counting as alive even before anyone reaps it.
+	std::string error;
+	const auto pid = SpawnDetached(kExitingProgram, kExitingArguments,
+	                               m_root / "launch.log", error);
+	ASSERT_TRUE(pid.has_value()) << error;
+
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+	while (IsProcessAlive(*pid) && std::chrono::steady_clock::now() < deadline)
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	EXPECT_FALSE(IsProcessAlive(*pid));
 }
 
 #ifdef __APPLE__

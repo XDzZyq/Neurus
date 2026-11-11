@@ -121,6 +121,26 @@ TEST_F(SessionRegistryTest, ClaimIsExclusive)
 	EXPECT_TRUE(registry.TryClaim("build-1", error)) << error;
 }
 
+TEST_F(SessionRegistryTest, ClaimRefusesLiveSession)
+{
+	SessionRegistry registry(m_directory);
+	std::string error;
+	ASSERT_TRUE(registry.Write(MakeRecord("build-1", neurus::CurrentProcessId()), error)) << error;
+
+	EXPECT_FALSE(registry.TryClaim("build-1", error));
+	EXPECT_FALSE(std::filesystem::exists(m_directory / "build-1.claim"));
+	EXPECT_TRUE(registry.Read("build-1").has_value());
+}
+
+TEST_F(SessionRegistryTest, ClaimReplacesStaleSession)
+{
+	SessionRegistry registry(m_directory);
+	std::string error;
+	ASSERT_TRUE(registry.Write(MakeRecord("build-1", 0), error)) << error;
+
+	EXPECT_TRUE(registry.TryClaim("build-1", error)) << error;
+}
+
 TEST_F(SessionRegistryTest, DeadClaimIsRecovered)
 {
 	SessionRegistry registry(m_directory);

@@ -239,7 +239,10 @@ int Application::Run()
 		app_editor->FinishLoad();
 		app_mainWindow->ApplyLayout(app_uiLayout);
 		app_projectPath = projectPath;
-		app_savedUiState = app_uiLayout;
+		// Rebase on what Qt re-exports, not the file blob: restoring a layout
+		// saved on another screen normalises the geometry, so the stored bytes
+		// never compare equal and a just-opened project would read as dirty.
+		app_savedUiState = app_mainWindow->ExportLayout();
 		NEURUS_LOG("[Application] Loaded project: " << projectPath);
 	}
 	catch (const std::exception& e)
@@ -565,7 +568,8 @@ bool Application::OnProjectOpen(const std::string& path, std::string* error)
 		app_editor->FinishLoad();
 		app_mainWindow->ApplyLayout(app_uiLayout);
 		app_projectPath = path;
-		app_savedUiState = app_uiLayout;
+		// Same rebase as the startup load: the re-exported layout, not the blob.
+		app_savedUiState = app_mainWindow->ExportLayout();
 	}
 	catch (const std::exception& e)
 	{

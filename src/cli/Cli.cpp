@@ -73,7 +73,10 @@ int RunCli(const std::vector<std::string>& arguments)
 	}
 	catch (const CLI::ParseError& error)
 	{
-		return app.exit(error);
+		// app.exit() prints the message (or help) and returns CLI11's own code;
+		// map every failure onto the documented usage exit code.
+		const int code = app.exit(error);
+		return code == 0 ? static_cast<int>(CliExit::Ok) : static_cast<int>(CliExit::Usage);
 	}
 
 	try

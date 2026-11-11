@@ -177,7 +177,18 @@ bool SessionRegistry::TryClaim(std::string_view name, std::string& error)
 	for (int attempt = 0; attempt < 2; ++attempt)
 	{
 		if (platform::CreateExclusiveFile(path, std::to_string(neurus::CurrentProcessId())))
+		{
+			// The claim only guards a pending launch; a running session owns
+			// the name through its entry, and launching over it would orphan it.
+			const auto live = Read(name);
+			if (live && live->pid > 0 && neurus::IsProcessAlive(live->pid))
+			{
+				ReleaseClaim(name);
+				error = "A session named " + std::string(name) + " is already running.";
+				return false;
+			}
 			return true;
+		}
 
 		std::error_code code;
 		if (!std::filesystem::exists(path, code))

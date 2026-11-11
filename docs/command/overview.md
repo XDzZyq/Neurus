@@ -174,14 +174,21 @@ sessions from different terminals.
 
 - `open` allocates a name when none is given, claims it, spawns the application
   detached with `--session` and optional `--project`, then polls
-  `session.status` until ready. It binds the session to the current terminal
-  unless `--no-bind` is given. `--no-wait` prints the pid immediately.
+  `session.status` until ready. A name whose entry belongs to a live process is
+  `SESSION_EXISTS`; a stale entry is replaced. Only an entry carrying the pid
+  this launch spawned counts as ready. A launch that cannot start (for example a
+  non-executable `--app`) fails at once with `APP_EXITED`, and an app that exits
+  during startup is reported as soon as it is gone. It binds the session to the
+  current terminal unless `--no-bind` is given. `--no-wait` prints the pid
+  immediately.
 - `close` targets a name, the terminal binding, the only live session when no
   name is given, or every session with `--all`. Several live sessions without a
   target is `AMBIGUOUS_SESSION` and changes nothing. A dirty project is refused
   unless `--save` or `--force` is given. A successful close clears a binding
   that points at the closed session.
-- `status` performs the handshake and reports one session.
+- `status` performs the handshake and reports one session, with the project the
+  application has open now (the registry keeps the launch-time project, which
+  `list` shows).
 - `list` reads only the local registry and prunes stale entries. The bound
   session is marked with `*` in human output and `bound: true` in JSON.
 - `use` binds a live session to this terminal, or reports/clears the binding.
@@ -218,7 +225,7 @@ Exit codes:
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 2 | Usage or validation error |
+| 2 | Usage or validation error, including any command-line parse error |
 | 3 | No session, or an ambiguous target |
 | 4 | Transport failure or timeout |
 | 5 | Command rejected (dirty project, save/script failure, object lookup) |

@@ -61,7 +61,11 @@ CliExit ExecuteStatus(const StatusOptions& options)
 		return ExitCodeFor(result->code);
 	}
 
-	PrintSession(record, result->details.value("dirty", false), options.format);
+	// The registry holds the launch-time project; the app reports the live one,
+	// which differs after `project open`, `project new` or `project save --path`.
+	ipc::SessionRecord current = record;
+	current.project = result->details.value("project", record.project);
+	PrintSession(current, result->details.value("dirty", false), options.format);
 	return CliExit::Ok;
 }
 

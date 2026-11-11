@@ -131,7 +131,9 @@ CliExit ExecuteOpen(const OpenOptions& options)
 		+ std::chrono::seconds(options.timeoutSeconds);
 	while (std::chrono::steady_clock::now() < deadline)
 	{
-		if (const auto record = registry.Read(name))
+		// Only the process this launch spawned counts as ready; any other
+		// entry under the name is not the session the caller asked for.
+		if (const auto record = registry.Read(name); record && record->pid == *pid)
 		{
 			command::CommandError clientError{};
 			const auto result = SendCommand(*record, {command::kSessionStatus, {}}, 1,

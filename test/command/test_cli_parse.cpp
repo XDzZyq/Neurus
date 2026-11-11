@@ -5,10 +5,21 @@
 
 #include <gtest/gtest.h>
 
+#include "cli/Cli.h"
 #include "cli/CliParse.h"
 
 using namespace neurus::cli;
 using namespace neurus::ipc;
+
+TEST(CliParse, ParseErrorsExitWithUsageCode)
+{
+	// The documented contract is exit 2 for any usage error; CLI11's own codes
+	// (106 for a missing option, 109 for an extra argument) must not leak.
+	EXPECT_EQ(RunCli({"neurus", "object", "load"}), static_cast<int>(CliExit::Usage));
+	EXPECT_EQ(RunCli({"neurus", "project", "open", "extra.neurus.json"}),
+	          static_cast<int>(CliExit::Usage));
+	EXPECT_EQ(RunCli({"neurus", "--help"}), static_cast<int>(CliExit::Ok));
+}
 
 TEST(CliParse, CloseRejectsNameWithAll)
 {

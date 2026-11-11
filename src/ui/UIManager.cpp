@@ -58,6 +58,11 @@ UIManager::UIManager(const QString& language, int targetFps,
 	ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting, true);
 
 	win_dockManager = new ads::CDockManager(this);
+	// Create the status bar up front. QMainWindow::statusBar() creates it on
+	// first use, and the first error notification would then shrink the dock
+	// area and refit every splitter, so the layout of a just-opened project
+	// would no longer match its saved state and the project would read dirty.
+	statusBar();
 
 	CreateDocks();
 	CreateMenus();

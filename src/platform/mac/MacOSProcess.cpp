@@ -69,35 +69,70 @@ std::optional<int> SpawnDetached(const std::filesystem::path& app,
 	std::error_code directoryError;
 	std::filesystem::create_directories(logPath.parent_path(), directoryError);
 
-	const int pid = fork();
+	// Build argv before fork: the child may only make async-signal-safe calls.
+	std::vector<std::string> storage;
+	storage.push_back(app.string());
+	storage.insert(storage.end(), arguments.begin(), arguments.end());
+	std::vector<char*> argv;
+	argv.reserve(storage.size() + 1);
+	for (auto& value : storage)
+		argv.push_back(value.data());
+	argv.push_back(nullptr);
+	const std::string logFile = logPath.string();
+
+	// A close-on-exec pipe reports the launch result: a successful execv closes
+	// the write end with nothing written, a failed one writes errno first. This
+	// gives the synchronous failure CreateProcess reports on Windows.
+	int status[2];
+	if (pipe(status) != 0)
+	{
+		error = "Cannot create the launch status pipe.";
+		return std::nullopt;
+	}
+	fcntl(status[0], F_SETFD, FD_CLOEXEC);
+	fcntl(status[1], F_SETFD, FD_CLOEXEC);
+
+	const pid_t pid = fork();
 	if (pid < 0)
 	{
+		close(status[0]);
+		close(status[1]);
 		error = "Cannot fork the Neurus application.";
 		return std::nullopt;
 	}
 	if (pid == 0)
 	{
+		close(status[0]);
 		setsid();
-		const int log = open(logPath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
+		const int log = open(logFile.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0600);
 		if (log >= 0)
 		{
 			dup2(log, STDOUT_FILENO);
 			dup2(log, STDERR_FILENO);
 			close(log);
 		}
-
-		std::vector<std::string> storage;
-		storage.push_back(app.string());
-		storage.insert(storage.end(), arguments.begin(), arguments.end());
-		std::vector<char*> argv;
-		argv.reserve(storage.size() + 1);
-		for (auto& value : storage)
-			argv.push_back(value.data());
-		argv.push_back(nullptr);
-		execv(app.c_str(), argv.data());
+		execv(argv[0], argv.data());
+		const int code = errno;
+		(void)!write(status[1], &code, sizeof(code));
 		_exit(127);
 	}
-	return pid;
+
+	close(status[1]);
+	int code = 0;
+	ssize_t bytes = 0;
+	do
+		bytes = read(status[0], &code, sizeof(code));
+	while (bytes < 0 && errno == EINTR);
+	close(status[0]);
+
+	if (bytes == static_cast<ssize_t>(sizeof(code)))
+	{
+		waitpid(pid, nullptr, 0);
+		error = "Cannot start " + app.string() + ": "
+			+ std::generic_category().message(code);
+		return std::nullopt;
+	}
+	return static_cast<int>(pid);
 }
 
 std::filesystem::path CurrentExecutablePath()
@@ -125,6 +160,12 @@ int CurrentProcessId()
 bool IsProcessAlive(int pid)
 {
 	if (pid <= 0)
+		return false;
+	// An exited child stays a zombie until it is reaped, and kill(pid, 0) still
+	// succeeds on a zombie, so a launcher would wait forever on an app that died
+	// during startup. Reap our own exited child first; for any other pid
+	// waitpid fails with ECHILD and the signal probe decides.
+	if (::waitpid(static_cast<pid_t>(pid), nullptr, WNOHANG) == static_cast<pid_t>(pid))
 		return false;
 	if (::kill(static_cast<pid_t>(pid), 0) == 0)
 		return true;
