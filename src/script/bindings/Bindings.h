@@ -67,5 +67,8 @@ void InstallSceneViews(pybind11::module_& scene, const ScriptView* view);
 void RegisterConfigBindings(pybind11::module_& render);
 void InstallConfigProxies(pybind11::module_& render, const ScriptView* view);
 
+void RegisterHostBindings(pybind11::module_& m);
+void InstallHostViews(pybind11::module_& m, const ScriptView* view);
+
 }  // namespace script
 }  // namespace neurus

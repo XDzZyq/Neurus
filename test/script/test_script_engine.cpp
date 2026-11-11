@@ -264,6 +264,18 @@ TEST(ScriptEngine, RunsQueuedScriptsOnExecutePending)
 	engine.Shutdown();
 }
 
+TEST(ScriptConsoleBuffer, TruncatesHugeLines)
+{
+	neurus::ScriptConsoleBuffer buffer;
+	buffer.Append(neurus::ScriptLineKind::Output,
+	              std::string(neurus::kScriptConsoleMaxLine + 100, 'x'));
+
+	ASSERT_EQ(buffer.Size(), 1u);
+	const neurus::ScriptLine line = buffer.At(0);
+	EXPECT_LT(line.text.size(), neurus::kScriptConsoleMaxLine + 32);
+	EXPECT_NE(line.text.find("[truncated]"), std::string::npos);
+}
+
 TEST(ScriptConsoleBuffer, RingDropsOldestAndAssignsSeq)
 {
 	neurus::ScriptConsoleBuffer buffer;

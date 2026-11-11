@@ -18,6 +18,7 @@
 #include "command/ISessionState.h"
 #include "command/IScriptCommands.h"
 #include "command/ISnapshotCommands.h"
+#include "script/IScriptHost.h"
 #include "editor/Editor.h"
 #include "render/DeferredRenderer.h"
 #include "render/RenderThread.h"
@@ -43,7 +44,8 @@ class EditorCommandAdapter;
  */
 class Application : public command::ISessionState,
                     public command::IScriptCommands,
-                    public command::ISnapshotCommands
+                    public command::ISnapshotCommands,
+                    public IScriptHost
 {
 public:
 	/**
@@ -83,6 +85,11 @@ public:
 
 	// --- ISnapshotCommands (snapshot.capture) ---
 	command::CommandResult Capture(const std::string& path, bool all) override;
+
+	// --- IScriptHost (project save and script snapshot) ---
+	bool SaveProject(const std::string& path, std::string& error) override;
+	bool CaptureSnapshot(const std::string& path, bool all, std::string& error,
+	                     std::vector<std::string>& files) override;
 
 private:
 	// --- Initialisation helpers (called in order by Run()) ---

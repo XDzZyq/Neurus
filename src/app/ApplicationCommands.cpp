@@ -36,6 +36,24 @@ const char* ScriptKindName(neurus::ScriptLineKind kind)
 	return "unknown";
 }
 
+constexpr std::size_t kMaxScriptOutput = 1024 * 1024;
+constexpr std::size_t kMaxConsoleLine = 64 * 1024;
+
+void AppendLimited(std::string& target, const std::string& text, std::size_t limit)
+{
+	if (target.size() >= limit)
+		return;
+
+	const std::size_t remaining = limit - target.size();
+	if (text.size() <= remaining)
+	{
+		target += text;
+		return;
+	}
+	target.append(text, 0, remaining);
+	target += "\n[truncated]\n";
+}
+
 } // namespace
 
 namespace neurus {
@@ -143,19 +161,42 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 			? total - static_cast<std::size_t>(tail)
 			: 0;
 		command::Json lines = command::Json::array();
+		std::size_t emitted = 0;
+		bool truncated = false;
 		for (std::size_t i = first; i < total; ++i)
 		{
 			const ScriptLine line = console->At(i);
+			std::string text = line.text;
+			if (text.size() > kMaxConsoleLine)
+			{
+				text.resize(kMaxConsoleLine);
+				text += "\n[truncated]\n";
+			}
+			if (emitted >= kMaxScriptOutput)
+			{
+				truncated = true;
+				break;
+			}
+			if (emitted + text.size() > kMaxScriptOutput)
+			{
+				text.resize(kMaxScriptOutput - emitted);
+				text += "\n[truncated]\n";
+				truncated = true;
+			}
+			emitted += text.size();
 			lines.push_back({
 				{"seq", line.seq},
 				{"kind", ScriptKindName(line.kind)},
-				{"text", line.text},
+				{"text", std::move(text)},
 			});
+			if (truncated)
+				break;
 		}
 		return command::CommandResult::Success({
 			{"lines", lines},
 			{"count", lines.size()},
 			{"total", total},
+			{"truncated", truncated},
 		});
 	}
 
@@ -245,6 +286,8 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 
 	ScriptContext context;
 	app_editor->UpdateScriptContext(context);
+	context.host = this;
+
 	std::string result;
 	bool runOk = false;
 	if (isEval)
@@ -272,10 +315,16 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 		if (line.seq <= lastSeq)
 			continue;
 		if (line.kind == ScriptLineKind::Error)
-			scriptError += line.text;
+			AppendLimited(scriptError, line.text, kMaxScriptOutput);
 		else if ((line.kind == ScriptLineKind::Output
 		          || (line.kind == ScriptLineKind::Result && !isEval)))
-			output += line.text;
+			AppendLimited(output, line.text, kMaxScriptOutput);
+	}
+
+	if (isEval && result.size() > kMaxScriptOutput)
+	{
+		result.resize(kMaxScriptOutput);
+		result += "\n[truncated]\n";
 	}
 
 	if (!runOk)
@@ -479,6 +528,33 @@ command::CommandResult Application::Capture(const std::string& path, bool all)
 		{"all", false},
 		{"session", session},
 	});
+}
+
+bool Application::SaveProject(const std::string& path, std::string& error)
+{
+	return path.empty() ? Save(error) : SaveAs(path, error);
+}
+
+bool Application::CaptureSnapshot(const std::string& path, bool all, std::string& error,
+                                  std::vector<std::string>& files)
+{
+	const command::CommandResult result = Capture(path, all);
+	if (!result.ok)
+	{
+		error = result.message;
+		return false;
+	}
+
+	files.clear();
+	if (result.details.contains("files") && result.details["files"].is_array())
+	{
+		for (const auto& file : result.details["files"])
+		{
+			if (file.is_string())
+				files.push_back(file.get<std::string>());
+		}
+	}
+	return true;
 }
 
 std::int64_t Application::UptimeSeconds() const

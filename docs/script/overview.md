@@ -53,6 +53,15 @@ The module is split by subject, not by layer:
   - `.objects` - every object the scene uses, keyed by UID only.
   - `.active_camera()` - the active camera proxy, or `None` when none is active.
   - `.selection()` - the selected objects as a list of `Object` proxies.
+  - `.import_mesh(path, name="")`, `.add_camera(name="")` and
+    `.duplicate(object, name="")` create scene content and return typed proxies.
+  - `.select(objects, additive=False)`, `.clear_selection()` and
+    `.delete(objects)` edit selection and scene membership.
+- `neurus.project` - `.info()` returns the path and dirty state; `.save(path="")`
+  persists the document and returns the final path.
+- `neurus.snapshot` - `.capture(path, all=False)` writes the viewport or every
+  attachment and returns the written files. The application injects the session
+  name exactly like the CLI.
 - `neurus.render.config` - the render settings (`gamma`, `pipeline`, ...).
 
 ```python
@@ -142,6 +151,46 @@ neurus.scene.delete([mesh, other])
 `visible` sets both flags at once; `viewport_visible` and `render_visible` set
 them independently. Deletion removes scene membership only: the pooled object
 stays alive for undo, and a later write through a stale proxy raises.
+
+### Creating content
+
+`neurus.scene` creates meshes and cameras through the same editor path as the
+CLI and the panels:
+
+```python
+import neurus
+
+mesh = neurus.scene.import_mesh("res/obj/plane.obj", "Ground")
+camera = neurus.scene.add_camera("Shot Camera")
+copy = neurus.scene.duplicate(mesh, "Ground Copy")
+
+camera.position = (0, -8, 3)
+camera.is_active = True
+```
+
+A missing or geometry-less mesh file raises `RuntimeError` instead of adding an
+empty object. Light creation remains disabled until issue #60 is fixed.
+`import_mesh`, `add_camera` and `duplicate` land as one undo entry per script run.
+
+### Project and snapshot
+
+The application-level operations are available to a script through narrow
+interfaces:
+
+```python
+print(neurus.project.info())                 # {"path": ..., "dirty": ...}
+neurus.project.save("build/out.neurus.json")
+
+files = neurus.snapshot.capture("build/frames/frame.png")
+all_files = neurus.snapshot.capture("build/frames/all", all=True)
+```
+
+`project.save` uses the current path when none is given. `snapshot.capture`
+injects the session name and returns the final files. `project.new` and
+`project.open` are deliberately not exposed: they replace the scene while the
+running script still holds proxies into it. Use the CLI for those operations.
+Undo, redo and history inspection likewise stay application-level operations;
+they are not part of the Python module.
 
 Writability is a property of the resource pool, not of scene membership: a pooled
 object that is not in the scene - an object held by undo history, or the pooled

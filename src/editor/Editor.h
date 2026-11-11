@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "controllers/Controllers.h"
+#include "editor/IScriptEditor.h"
 #include "editor/viewport/EditorViewport.h"
 #include "editor/events/EventBus.h"
 #include "editor/operations/HistoryView.h"
@@ -40,10 +41,9 @@ namespace neurus {
  * Scene persistence is driven from outside through BeginLoad()/FinishLoad() and
  * NewScene(); GPU work is posted through a non-owning RenderRequestSink pointer.
  */
-class Editor
+class Editor : public IScriptEditor
 {
-public:
-	/**
+public:	/**
 	 * @brief Builds the editor around the renderer's request sink.
 	 *
 	 * @param renderer  The sink every GPU request is posted to (DeferredRenderer
@@ -182,13 +182,13 @@ public:
 	void UpdateUIContext(UIContext& ctx) const;
 
 	/**
-	 * @brief Fills the script-facing view: the borrowed scene, render config and
-	 *        resource pool.
+	 * @brief Fills the script-facing view: the borrowed scene, render config,
+	 *        resource pool and content-creation surface.
 	 *
-	 * Mirrors UpdateUIContext - three field assignments, nothing else. The caller
+	 * Mirrors UpdateUIContext - field assignments, nothing else. The caller
 	 * builds a ScriptContext for one script run and discards it afterwards.
 	 */
-	void UpdateScriptContext(ScriptContext& ctx) const;
+	void UpdateScriptContext(ScriptContext& ctx);
 
 	/**
 	 * @brief Returns a read-only snapshot of the undo/redo history.
@@ -266,6 +266,17 @@ public:
 	 * @return New object UID, or 0 on failure.
 	 */
 	int ImportMeshObject(const std::string& path, const std::string& name, std::string& error);
+
+	/// @brief IScriptEditor: import a mesh into the scene.
+	int ImportMesh(const std::string& path, const std::string& name,
+	               std::string& error) override;
+
+	/// @brief IScriptEditor: create and add a camera.
+	int AddCamera(const std::string& name, std::string& error) override;
+
+	/// @brief IScriptEditor: duplicate a pooled mesh or camera into the scene.
+	int DuplicateObject(int sourceUid, const std::string& name,
+	                    std::string& error) override;
 
 	/**
 	 * @brief Creates a camera, names it and adds it to the scene.

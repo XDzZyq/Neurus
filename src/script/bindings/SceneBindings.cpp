@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "core/IResourceLookup.h"
+#include "editor/IScriptEditor.h"
 #include "editor/events/SceneEvents.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
@@ -216,6 +217,37 @@ std::vector<int> ObjectUids(const py::object& objects)
 }
 
 /**
+ * @brief Returns the run's content-creation surface or raises.
+ */
+IScriptEditor& EditorOf(const ScriptView* view)
+{
+	if (view == nullptr || view->ctx == nullptr || view->ctx->editor == nullptr)
+	{
+		throw std::runtime_error("neurus: script has no editor creation surface");
+	}
+	return *view->ctx->editor;
+}
+
+/**
+ * @brief Wraps a newly created pooled object in its typed Python proxy.
+ */
+py::object ProxyForUid(const ScriptView* view, int uid)
+{
+	const IResourceLookup* pool = PoolOf(view);
+	if (pool == nullptr)
+		return py::cast(ObjectProxy{uid, view});
+	if (pool->Get<Mesh>(uid))
+		return py::cast(MeshProxy{uid, view});
+	if (pool->Get<Camera>(uid))
+		return py::cast(CameraProxy{uid, view});
+	if (pool->Get<Light>(uid))
+		return py::cast(LightProxy{uid, view});
+	if (pool->Get<Environment>(uid))
+		return py::cast(EnvironmentProxy{uid, view});
+	return py::cast(ObjectProxy{uid, view});
+}
+
+/**
  * @brief Internal helper behind `neurus.scene.active_camera()` and `.selection()`.
  *
  * Deliberately not a registered Python class: the scene module binds the two
@@ -357,6 +389,46 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 		},
 		py::arg("objects"),
 		"Remove one object or an iterable of objects from the scene as one undo entry.");
+
+	scene.def(
+		"import_mesh",
+		[view](const std::string& path, const std::string& name) -> py::object
+		{
+			std::string error;
+			const int uid = EditorOf(view).ImportMesh(path, name, error);
+			if (uid == 0)
+				throw std::runtime_error(error.empty() ? "neurus: mesh import failed" : error);
+			return ProxyForUid(view, uid);
+		},
+		py::arg("path"), py::arg("name") = std::string{},
+		"Load a mesh file, add it to the scene and return its Mesh proxy.");
+
+	scene.def(
+		"add_camera",
+		[view](const std::string& name) -> py::object
+		{
+			std::string error;
+			const int uid = EditorOf(view).AddCamera(name, error);
+			if (uid == 0)
+				throw std::runtime_error(error.empty() ? "neurus: camera creation failed" : error);
+			return ProxyForUid(view, uid);
+		},
+		py::arg("name") = std::string{},
+		"Create a camera, add it to the scene and return its Camera proxy.");
+
+	scene.def(
+		"duplicate",
+		[view](const py::object& object, const std::string& name) -> py::object
+		{
+			const ObjectProxy source = py::cast<ObjectProxy>(object);
+			std::string error;
+			const int uid = EditorOf(view).DuplicateObject(source.uid, name, error);
+			if (uid == 0)
+				throw std::runtime_error(error.empty() ? "neurus: duplication failed" : error);
+			return ProxyForUid(view, uid);
+		},
+		py::arg("object"), py::arg("name") = std::string{},
+		"Duplicate a pooled mesh or camera, add it to the scene and return its proxy.");
 }
 
 }  // namespace script

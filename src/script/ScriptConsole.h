@@ -42,6 +42,9 @@ struct ScriptLine
 /** @brief Ring buffer capacity (drops oldest lines beyond this). */
 constexpr std::size_t kScriptConsoleCapacity = 2000;
 
+/// Longest line stored in the ring; longer writes are truncated with a marker.
+constexpr std::size_t kScriptConsoleMaxLine = 64 * 1024;
+
 /**
  * @brief Thread-safe fixed-capacity ring buffer for Script Console lines.
  *
@@ -56,9 +59,17 @@ public:
 	 * @brief Appends a line, assigning its monotonic seq.
 	 * @note Drops the oldest line when full (ring semantics). Seq is assigned
 	 *       here, not by the caller, so concurrent producers never race.
+	 * @note A line longer than @ref kScriptConsoleMaxLine is truncated before it
+	 *       enters the ring; a multi-megabyte `print` must not freeze the panel.
 	 */
 	void Append(ScriptLineKind kind, std::string text)
 	{
+		if (text.size() > kScriptConsoleMaxLine)
+		{
+			text.resize(kScriptConsoleMaxLine);
+			text += "\n[truncated]\n";
+		}
+
 		std::lock_guard<std::mutex> lock(m_mtx);
 		ScriptLine line{kind, ++m_headSeq, std::move(text)};
 

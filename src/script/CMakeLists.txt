@@ -16,6 +16,7 @@ add_library(neurus_script STATIC
 	ScriptEngine.cpp
 	ScriptEngineImpl.h
 	ScriptView.h
+	IScriptHost.h
 	proxies/ProxyBase.h
 	proxies/ObjectProxy.h
 	proxies/Transform3DProxy.h
@@ -25,6 +26,7 @@ add_library(neurus_script STATIC
 	bindings/DataBindings.cpp
 	bindings/SceneBindings.cpp
 	bindings/ConfigBindings.cpp
+	bindings/HostBindings.cpp
 	bindings/Module.cpp
 )
 

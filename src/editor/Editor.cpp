@@ -611,14 +611,16 @@ void Editor::UpdateUIContext(UIContext& ctx) const
 	ctx.config = &m_config;
 }
 
-void Editor::UpdateScriptContext(ScriptContext& ctx) const
+void Editor::UpdateScriptContext(ScriptContext& ctx)
 {
 	// Same shape as UpdateUIContext: borrowed pointers, no symbol calls. The pool
 	// is handed over as its read-only interface so a script can resolve names
-	// and ids without reaching the Editor's mutable ResourceManager.
+	// and ids without reaching the Editor's mutable ResourceManager; the
+	// creation surface is a narrow interface, not the Editor itself.
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 	ctx.resources = m_resources.get();
+	ctx.editor = this;
 }
 
 // =========================================================================
@@ -816,6 +818,12 @@ void Editor::OnMeshImport(const std::string& path)
 		NEURUS_ERR("Failed to import mesh: " << error);
 }
 
+int Editor::ImportMesh(const std::string& path, const std::string& name,
+                       std::string& error)
+{
+	return ImportMeshObject(path, name, error);
+}
+
 int Editor::ImportMeshObject(const std::string& path, const std::string& name,
                              std::string& error)
 {
@@ -831,6 +839,11 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 		}
 
 		auto meshData = m_resources->Load<MeshData>(storedPath);
+		if (!meshData || meshData->GetVertexCount() == 0 || meshData->GetIndexCount() == 0)
+		{
+			error = "Mesh file contains no geometry: " + storedPath;
+			return 0;
+		}
 		auto mesh = m_resources->Load<Mesh>(meshData);
 
 		if (!name.empty())
@@ -856,6 +869,11 @@ void Editor::OnCameraAdd()
 		NEURUS_ERR("Failed to add camera: " << error);
 }
 
+int Editor::AddCamera(const std::string& name, std::string& error)
+{
+	return AddCameraObject(name, error);
+}
+
 int Editor::AddCameraObject(const std::string& name, std::string& error)
 {
 	try {
@@ -872,6 +890,72 @@ int Editor::AddCameraObject(const std::string& name, std::string& error)
 		ed_eventBus.Emit(SceneObjectAddRequested{camera->GetObjectID()});
 		NEURUS_LOG("[Editor] Added camera at (0, -5, 2) as " << camera->o_name);
 		return camera->GetObjectID();
+	}
+	catch (const std::exception& e) {
+		error = e.what();
+		return 0;
+	}
+}
+
+int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string& error)
+{
+	try {
+		auto source = m_resources->Get<ObjectID>(sourceUid);
+		if (!source)
+		{
+			error = "No pooled object with uid " + std::to_string(sourceUid) + ".";
+			return 0;
+		}
+		if (source->IsLight())
+		{
+			error = "Duplicating lights is disabled while issue #60 is open.";
+			return 0;
+		}
+
+		int uid = 0;
+		if (auto* camera = dynamic_cast<Camera*>(source.get()))
+		{
+			auto copy = m_resources->Load<Camera>(
+				camera->cam_w, camera->cam_h, camera->cam_pers, camera->cam_near, camera->cam_far);
+			copy->SetPosition(camera->GetPosition());
+			copy->SetRotation(camera->GetRotation());
+			copy->SetScale(camera->GetScale());
+			copy->SetTarPos(camera->cam_tar);
+			uid = copy->GetObjectID();
+		}
+		else if (auto* mesh = dynamic_cast<Mesh*>(source.get()))
+		{
+			auto copy = m_resources->Load<Mesh>(mesh->o_mesh);
+			copy->SetPosition(mesh->GetPosition());
+			copy->SetRotation(mesh->GetRotation());
+			copy->SetScale(mesh->GetScale());
+			copy->using_shadow = mesh->using_shadow;
+			copy->using_material = mesh->using_material;
+			copy->using_sdf = mesh->using_sdf;
+			copy->is_closure = mesh->is_closure;
+			copy->o_material = mesh->o_material;
+			if (mesh->o_shader)
+				copy->SetObjShader(mesh->o_shader);
+			uid = copy->GetObjectID();
+		}
+		else
+		{
+			error = "Duplicating this object type is not supported.";
+			return 0;
+		}
+
+		auto pooled = m_resources->Get<ObjectID>(uid);
+		if (!pooled)
+		{
+			error = "The duplicate resource is missing.";
+			return 0;
+		}
+		const std::string resolvedName = name.empty() ? source->o_name + " Copy" : name;
+		const std::string unique = m_resources->SetName(uid, resolvedName);
+		pooled->o_name = unique.empty() ? resolvedName : unique;
+
+		ed_eventBus.Emit(SceneObjectAddRequested{uid});
+		return uid;
 	}
 	catch (const std::exception& e) {
 		error = e.what();

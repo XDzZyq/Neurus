@@ -1124,61 +1124,17 @@ command::CommandResult EditorCommandAdapter::ExecuteObjectDuplicate(const comman
 		return CommandResult::Failure(CommandErrorCode::InvalidArgument,
 		                              "'rename' cannot be empty.");
 
-	if (source->IsLight())
-	{
-		return CommandResult::Failure(
-			CommandErrorCode::InvalidArgument,
-			"Duplicating lights is disabled while issue #60 is open.");
-	}
-
-	auto* camera = dynamic_cast<Camera*>(source);
-	auto* mesh = dynamic_cast<Mesh*>(source);
-	if (camera == nullptr && mesh == nullptr)
-	{
-		return CommandResult::Failure(
-			CommandErrorCode::InvalidArgument,
-			"Duplicating a " + TypeName(*source) + " is not supported.");
-	}
-
 	CommandEditScope scope(m_editor.GetOperations(), "Duplicate Object");
-	ResourceManager& resources = m_editor.GetResourceManager();
-	int uid = 0;
-	if (camera != nullptr)
+	std::string duplicateError;
+	const int uid = m_editor.DuplicateObject(source->GetObjectID(),
+	                                         hasRename ? rename : std::string{},
+	                                         duplicateError);
+	if (uid == 0)
 	{
-		auto copy = resources.Load<Camera>(
-			camera->cam_w, camera->cam_h, camera->cam_pers, camera->cam_near, camera->cam_far);
-		copy->SetPosition(camera->GetPosition());
-		copy->SetRotation(camera->GetRotation());
-		copy->SetScale(camera->GetScale());
-		copy->SetTarPos(camera->cam_tar);
-		uid = copy->GetObjectID();
+		return CommandResult::Failure(
+			CommandErrorCode::InvalidArgument,
+			duplicateError.empty() ? "Duplicating the object failed." : duplicateError);
 	}
-	else
-	{
-		auto copy = resources.Load<Mesh>(mesh->o_mesh);
-		copy->SetPosition(mesh->GetPosition());
-		copy->SetRotation(mesh->GetRotation());
-		copy->SetScale(mesh->GetScale());
-		copy->using_shadow = mesh->using_shadow;
-		copy->using_material = mesh->using_material;
-		copy->using_sdf = mesh->using_sdf;
-		copy->is_closure = mesh->is_closure;
-		copy->o_material = mesh->o_material;
-		if (mesh->o_shader)
-			copy->SetObjShader(mesh->o_shader);
-		uid = copy->GetObjectID();
-	}
-
-	auto pooled = resources.Get<ObjectID>(uid);
-	if (pooled == nullptr)
-	{
-		return CommandResult::Failure(CommandErrorCode::Internal,
-		                              "The duplicate resource is missing.");
-	}
-	const std::string name = hasRename ? rename : source->o_name + " Copy";
-	const std::string unique = resources.SetName(uid, name);
-	pooled->o_name = unique.empty() ? name : unique;
-	m_editor.GetEventQueue().Emit(SceneObjectAddRequested{uid});
 
 	ObjectID* object = scene.GetObjectID(uid);
 	if (object == nullptr)

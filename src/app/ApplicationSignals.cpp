@@ -168,6 +168,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     // The context is generated fresh for this batch.
 	                     neurus::ScriptContext scriptCtx;
 	                     app_editor->UpdateScriptContext(scriptCtx);
+	                     scriptCtx.host = this;
 	                     app_script->ExecutePending(scriptCtx);
 
 	                     // A finished pick enters as a selection event, so this
