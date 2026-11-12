@@ -74,10 +74,6 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.details
-  # Image captions: `![alt](img)` followed by a `/// caption` block renders as a
-  # figure. attr_list and md_in_html are already on, which is the rest of the
-  # image feature set (alignment, width, lazy loading).
-  - pymdownx.blocks.caption
   - admonition
   - attr_list
   - md_in_html

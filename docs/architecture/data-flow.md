@@ -128,12 +128,12 @@ renderer on the thread that submits:
 
 ```mermaid
 flowchart TD
-    edit["Editor::Edit()<br/>RenderRequestSink::Post(RenderRequest&&)<br/>appends to the posting queue - no wake, no invalidate"]
-    publish["RenderThread::Publish(RenderFrameSnapshot&&)<br/>moves the posting queue into a<br/>PublishedFrame (snapshot, requests)"]
-    mailbox["FrameMailbox<br/>one slot, latest-wins for snapshots only<br/>a displaced or invalidated frame leaves its<br/>requests behind for the next publish"]
-    handoff["the render thread hands the frame's requests<br/>to the renderer, then draws the frame"]
-    drain["DeferredRenderer::DrawFrame<br/>RenderRequestProcessor::Drain() after the frame fence wait,<br/>before the swapchain acquire: takes the whole batch<br/>(BatchQueue of RenderRequest)"]
-    execute["RenderRequestExecutor<br/>runs every GPU request against the device,<br/>RenderCache, UploadManager and GeometryPass"]
+    edit["Editor::Edit()<br/>RenderRequestSink::Post<br/>appends, no wake"]
+    publish["RenderThread::Publish<br/>the posting queue joins the frame"]
+    mailbox["FrameMailbox<br/>one slot, snapshots latest-wins"]
+    handoff["the render thread hands the requests over,<br/>then draws the frame"]
+    drain["RenderRequestProcessor::Drain<br/>after the fence wait, before acquire"]
+    execute["RenderRequestExecutor<br/>applies every GPU request"]
 
     edit --> publish --> mailbox --> handoff --> drain --> execute
 ```

@@ -66,7 +66,10 @@ NEURUS_ERR("Texture::createFromPixelData failed: " << e.what());
   carries the contract.
 - A code block that shows a real file carries `title="<path>"` rather than a
   `// path` comment line.
-- An image goes in a `<figure markdown="span">` with a `<figcaption>`.
+- A node label is a title plus at most two short lines. Long labels widen the
+  node past the article column, so the detail belongs in the prose.
+- An image is a Markdown image with `width` and `align` attributes, not a
+  figure: captions live in the prose.
 - Data tables are plain Markdown; `tablesort` makes every table in an article
   sortable in the browser.
 

@@ -17,14 +17,14 @@ Shadow resources are logical `AttachmentName` members resolved by their owning p
 flowchart TD
     subgraph scene["Scene graph - DeferredRenderer::m_mainGraph"]
         direction TD
-        shadow["ShadowDepthPass<br/>per-light depth -> RenderCache via GetShadowMap(uid, lightType)<br/>point and spot lights: cubemap geometry pass, 6 faces, multiview<br/>sun light: 2D orthographic geometry pass, 2048x2048, single view"]
+        shadow["ShadowDepthPass<br/>per-light depth into RenderCache<br/>point and spot: cubemap, sun: ortho"]
         geometry["GeometryPass<br/>G-Buffer MRT: Position, Normal, Albedo,<br/>MetallicRoughness, IDBuffer, Depth"]
         ssao["SSAOPass<br/>compute: reads the G-Buffer, writes AO to an R8 attachment"]
-        intensity["ShadowIntensityPass<br/>compute: per-light shadow eval -> layered R8_UNORM 2D_ARRAY<br/>point and spot lights: one cubemap depth lookup, jittered<br/>sun light: one ortho 2D depth lookup, jittered<br/>both accumulate with an EMA over the sampling budget"]
-        lighting["LightingPass<br/>compute: reads G-Buffer + AO + shadow intensity array,<br/>reads LightingCache SSBOs from RenderCache, writes HDRColor<br/>binding 5: PointLight SSBO, binding 6: SunLight SSBO,<br/>binding 11: SpotLight SSBO"]
+        intensity["ShadowIntensityPass<br/>per-light shadow eval into a layered R8 array<br/>one jittered lookup, EMA over the budget"]
+        lighting["LightingPass<br/>G-Buffer + AO + shadow array -> HDRColor<br/>reads the point, sun and spot SSBOs"]
         ibl["IBLPass<br/>compute: reads G-Buffer + HDRColor,<br/>applies diffuse + specular IBL, writes HDRColor"]
         compose["ComposePass<br/>compute: tone maps HDRColor, applies gamma,<br/>writes ComposedOutput"]
-        fxaa["FXAAPass<br/>compute: reads ComposedOutput, luma-based edge detection<br/>plus full-iteration edge search, writes FXAAOutput<br/>conditional: only when AA == AAAlg::FXAA"]
+        fxaa["FXAAPass<br/>luma edge detection plus edge search<br/>only when AA is FXAA"]
         tail["scene tail<br/>ComposedOutput (no FXAA) | FXAAOutput (FXAA)"]
 
         shadow --> geometry --> ssao --> intensity --> lighting --> ibl --> compose
@@ -38,11 +38,11 @@ flowchart TD
 flowchart TD
     subgraph overlay["Overlay graph - OverlayEngine, its own RenderGraph"]
         direction TD
-        outline["SelectionOutlinePass<br/>compute: reads IDBuffer, 3x3 edge detection<br/>for activeObjectId, writes an R8 mask"]
-        copy["OverlayCopyPass<br/>compute: copies the scene tail into OverlayOutput and blends<br/>the mask onto it, one dispatch - overlay_copy.comp"]
-        debug["DebugPass<br/>raster: draws DebugDrawList over OverlayOutput with LOAD_OP_LOAD,<br/>depth-tested against the G-Buffer Depth it only reads<br/>lines -> screen-space quads, 6 verts/segment, SSBO-indexed<br/>points -> ePointList sprites, square / rhombus / circle mask<br/>wireframes -> PolygonMode::eLine over the existing MeshGPU"]
-        gizmo["GizmoPass<br/>raster: draws GizmoDrawList over OverlayOutput with LOAD_OP_LOAD -<br/>no depth attachment at all, so every guide is unconditionally x-ray<br/>lines -> screen-space quads, the shared overlay_line pipeline<br/>points -> ePointList sprites, the shared overlay_point pipeline"]
-        blit["Blit to the swapchain<br/>OverlayEngine::OutputAttachment() == OverlayOutput<br/>vkCmdBlitImage"]
+        outline["SelectionOutlinePass<br/>3x3 edge detection on IDBuffer<br/>writes an R8 mask"]
+        copy["OverlayCopyPass<br/>seeds OverlayOutput from the scene tail<br/>and blends the selection mask"]
+        debug["DebugPass<br/>DebugDrawList over OverlayOutput<br/>lines, points and wireframes"]
+        gizmo["GizmoPass<br/>GizmoDrawList over OverlayOutput<br/>x-ray, no depth attachment"]
+        blit["Blit to the swapchain<br/>OverlayOutput -> vkCmdBlitImage"]
 
         outline --> copy --> debug --> gizmo --> blit
     end

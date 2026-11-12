@@ -6,7 +6,7 @@ Per-mesh shaders are editable at runtime through the Shader Editor panel, and th
 
 ```mermaid
 flowchart TD
-    library["ShaderLibrary::LoadRenderShader(name, vertPath, fragPath)"]
+    library["ShaderLibrary::LoadRenderShader"]
     shader["Shader<br/>owns one ShaderUnit per stage:<br/>VERTEX / FRAGMENT / COMPUTE / GEOMETRY"]
     code["ShaderUnit::code<br/>GLSL source text, edited in Code mode"]
     parsed["ShaderUnit::parsed<br/>ShaderStruct IR, edited in Structure mode"]

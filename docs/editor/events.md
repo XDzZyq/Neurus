@@ -642,10 +642,10 @@ ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
 flowchart TD
     input["User input (QML / Qt widgets)"]
     panel["UI panel Qt signal<br/>e.g. Outliner::objectClicked - pure intent"]
-    bridge["Application::ConnectUIEvent&lt;T&gt;<br/>single wiring point<br/>lambda calls editor->OnUIEvent(e)"]
-    onui["Editor::OnUIEvent&lt;T&gt;<br/>generic template, DEFERRED here<br/>eventBus.Enqueue&lt;T&gt;(e)"]
+    bridge["Application::ConnectUIEvent&lt;T&gt;<br/>the single wiring point"]
+    onui["Editor::OnUIEvent&lt;T&gt;<br/>deferred here"]
     process["EventQueue::Process()<br/>in Edit(), once per frame"]
-    handlers["SceneController / ObjectController / Editor handlers<br/>business logic<br/>select / deselect, add / delete (SceneController)<br/>property writes, resolved through the pool (ObjectController)<br/>GPU uploads, render config, project state (Editor)"]
+    handlers["SceneController / ObjectController / Editor<br/>the business logic"]
 
     input --> panel --> bridge --> onui --> process --> handlers
 ```
@@ -696,22 +696,22 @@ Scene mutations that affect GPU resources follow a three-tier event pattern:
 
 ```mermaid
 flowchart TD
-    handler["SceneController / ObjectController mutation handler<br/>resolves the object UID - against the pool (ObjectController)<br/>or the current Scene (SceneController) - and mutates the object"]
+    handler["SceneController / ObjectController<br/>resolves the UID, mutates the object"]
 
     handler --> modified["SceneModified"]
     handler --> reset["RenderResetEvent"]
-    handler --> upload["SceneObjectGpuUploadRequested<br/>a scene object enters the scene (add / undo-redo re-add),<br/>or a light's shadow is toggled ON"]
+    handler --> upload["SceneObjectGpuUploadRequested<br/>object added, or shadow toggled on"]
     handler --> lightGpu["LightGpuChanged<br/>a light property changed"]
-    handler --> rebuild["LightingRebuild<br/>a light's transform, visibility or shadow toggle changed"]
+    handler --> rebuild["LightingRebuild<br/>a light's transform or visibility changed"]
 
     modified --> dirty["Editor marks the project dirty"]
     reset --> accumulation["DeferredRenderer resets temporal accumulation"]
 
     upload --> uploadHandler["Editor::OnSceneObjectGpuUpload<br/>resolves the pooled object by UID"]
-    uploadHandler --> uploadRequest["posts UploadMeshRequest / CreateLightGpuRequest /<br/>UploadEnvironmentRequest"]
+    uploadHandler --> uploadRequest["posts the matching RenderRequest"]
     uploadRequest --> uploadRun["the renderer runs it skip-if-cached at its drain"]
 
-    lightGpu --> lightHandler["Editor::LightGpuChanged<br/>resolves the pooled Light and converts it with<br/>UploadManager::UploadLighting (pure CPU)"]
+    lightGpu --> lightHandler["Editor::LightGpuChanged<br/>converts the light, pure CPU"]
     lightHandler --> updateRequest["posts UpdateLightRequest(uid, struct)"]
     updateRequest --> ssbo["the renderer rewrites the single SSBO entry"]
 

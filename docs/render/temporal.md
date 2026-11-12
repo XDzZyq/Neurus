@@ -10,10 +10,10 @@ What the next frame is worth is published by `IFrameRenderer::NextWork()` before
 
 ```mermaid
 flowchart LR
-    next["IFrameRenderer::NextWork()<br/>published before the render thread waits"] --> sample["Sample<br/>the budget is unspent: run the scene graph, then the overlay graph"]
-    next --> overlay["Overlay<br/>converged but overlay content changed: redraw the overlay graph<br/>over the converged scene image, no scene pass"]
-    next --> idle["Idle<br/>converged and nothing stale: draw nothing, acquire no image,<br/>park on the mailbox"]
-    next --> retry["Retry<br/>the last DrawFrame() drew nothing: wait for a new frame<br/>instead of redrawing a stale one"]
+    next["IFrameRenderer::NextWork()<br/>published before the thread waits"] --> sample["Sample<br/>budget unspent"]
+    next --> overlay["Overlay<br/>overlay content changed"]
+    next --> idle["Idle<br/>nothing stale"]
+    next --> retry["Retry<br/>the last draw drew nothing"]
 
     sample --> reuse["the remaining samples reuse the last snapshot<br/>(AcquireMode::Reuse) and need no new publish"]
 ```

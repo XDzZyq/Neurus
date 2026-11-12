@@ -22,9 +22,9 @@ The architecture prioritizes:
 
 ```mermaid
 flowchart TD
-    ui["UI Layer - src/ui/<br/>owns: main window (ADS), docks, panels, native window handle<br/>emits: Qt signals through UIEvents<br/>no Vulkan object, no scene state"]
-    editor["Editor Layer - src/editor/<br/>owns: Scene, RenderConfig, ResourceManager, Controllers,<br/>EventQueue (internal), OperationManager (undo/redo)<br/>builds: RenderFrameSnapshot (renderer view), UIContext (UI view)<br/>posts: RenderRequest values through RenderRequestSink"]
-    renderer["Renderer Layer - src/render/<br/>owns: VkSwapchainKHR and image views, RenderCache and every<br/>attachment, pipelines, command pools, OverlayEngine<br/>borrows: VkSurfaceKHR, VkDevice, VkQueue (all owned by the app)<br/>drives: RenderThread (frame mailbox, control queue); acquires and<br/>presents via Swapchain; blits OverlayOutput to it"]
+    ui["UI Layer - src/ui/<br/>main window, docks, panels<br/>emits Qt signals, owns no Vulkan object"]
+    editor["Editor Layer - src/editor/<br/>Scene, RenderConfig, ResourceManager,<br/>Controllers, EventBus, Operations"]
+    renderer["Renderer Layer - src/render/<br/>swapchain, RenderCache, passes, OverlayEngine<br/>borrows the surface, device and queues"]
 
     ui -->|"UIEvents (Qt signals / slots)"| editor
     editor -->|"RenderFrameSnapshot + RenderRequest"| renderer
@@ -36,8 +36,8 @@ The remaining layers sit outside that chain:
 flowchart TB
     subgraph standalone["process-level layers"]
         direction LR
-        script["Script Layer - src/script/<br/>owns: embedded CPython, the neurus module, bindings, proxies,<br/>Script Console buffer<br/>reads: ScriptContext (Scene, RenderConfig, resource lookup)<br/>mutates: typed editor events only, ScriptDispatch -> EventQueue<br/>no project save, no snapshot, no Renderer or UI headers"]
-        application["Application Layer - src/app/<br/>owns: QApplication, Preferences, VulkanContext (VkInstance,<br/>VkDevice, VkQueue), VkSurfaceKHR, UploadManager,<br/>RenderThread, DeferredRenderer, ScriptEngine, SessionServer<br/>builds every layer and wires the channels between them"]
+        script["Script Layer - src/script/<br/>embedded CPython and the neurus module<br/>mutates through typed events only"]
+        application["Application Layer - src/app/<br/>composition root: creates every layer<br/>and wires the channels between them"]
     end
     subgraph shared["shared, Vulkan-free libraries"]
         direction LR
@@ -81,7 +81,7 @@ A command arrives from a separate process:
 ```mermaid
 flowchart LR
     cli["CLI process (separate)<br/>neurus CLI, src/cli/<br/>parses arguments, attaches to a named session, formats results"]
-    host["Host application<br/>SessionServer - src/app/session/: token, registry, loopback listener<br/>src/ipc/: Asio I/O thread accepts, reads and writes only<br/>main-thread drain -> EditorCommandAdapter (src/editor/commands/)<br/>emits typed editor events<br/>src/command/: Qt-free and Vulkan-free request/result values,<br/>codec, descriptors"]
+    host["Host application<br/>SessionServer and the Asio loopback listener<br/>main-thread drain -> typed editor events"]
 
     cli -->|"JSON request"| host
     host -->|"result"| cli
