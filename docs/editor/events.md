@@ -11,13 +11,16 @@ typed event structs; the Editor subscribes and handles them through an internal
 `EventQueue`. The result: panels never include Editor headers, the Editor has
 zero Qt dependencies, and all cross-layer wiring is auditable in one file.
 
-```
-Panel Qt signal (e.g. Outliner::objectClicked - pure input intent)
-  |-- Application::ConnectUIEvent<Outliner, ObjectClicked>
-        |-- [lambda calls Editor::OnUIEvent(e)]
-              |-- EventQueue::Enqueue<ObjectClicked>   (the only deferred step)
-                    |-- EventQueue::Process() in the next Edit()
-                          |-- handlers run; every Emit they make runs here too
+```mermaid
+flowchart TD
+    signal["Panel Qt signal<br/>e.g. Outliner::objectClicked - pure input intent"]
+    bridge["Application::ConnectUIEvent(Outliner, ObjectClicked)"]
+    onui["Editor::OnUIEvent(e)"]
+    enqueue["EventQueue::Enqueue(ObjectClicked)<br/>the only deferred step"]
+    process["EventQueue::Process() in the next Edit()"]
+    handlers["handlers run; every Emit they make runs here too"]
+
+    signal --> bridge --> onui --> enqueue --> process --> handlers
 ```
 
 The deferral exists only at the UI boundary. Everything the Editor or a
@@ -636,26 +639,16 @@ ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
 
 ## Data flow summary
 
-```
-User Input (QML / Qt widgets)
-    |
-    v
-UI Panel (Qt signal, e.g. Outliner::objectClicked - pure intent)
-    |
-    v
-Application::ConnectUIEvent<T>   <- single wiring point
-    |  [lambda calls editor->OnUIEvent(e)]
-    v
-Editor::OnUIEvent<T>             <- generic template, DEFERRED here
-    |  eventBus.Enqueue<T>(e)
-    v
-EventQueue::Process()            <- in Edit(), once per frame
-    |
-    v
-SceneController / ObjectController / Editor handlers   <- business logic
-    |- Select / Deselect, add / delete (SceneController)
-    |- property writes, resolved through the pool (ObjectController)
-    |- GPU uploads, render config, project state (Editor)
+```mermaid
+flowchart TD
+    input["User input (QML / Qt widgets)"]
+    panel["UI panel Qt signal<br/>e.g. Outliner::objectClicked - pure intent"]
+    bridge["Application::ConnectUIEvent&lt;T&gt;<br/>single wiring point<br/>lambda calls editor->OnUIEvent(e)"]
+    onui["Editor::OnUIEvent&lt;T&gt;<br/>generic template, DEFERRED here<br/>eventBus.Enqueue&lt;T&gt;(e)"]
+    process["EventQueue::Process()<br/>in Edit(), once per frame"]
+    handlers["SceneController / ObjectController / Editor handlers<br/>business logic<br/>select / deselect, add / delete (SceneController)<br/>property writes, resolved through the pool (ObjectController)<br/>GPU uploads, render config, project state (Editor)"]
+
+    input --> panel --> bridge --> onui --> process --> handlers
 ```
 
 Everything below `OnUIEvent` is synchronous: a handler that emits another event
@@ -702,32 +695,30 @@ Subscribers listen for this event to reset per-frame history:
 
 Scene mutations that affect GPU resources follow a three-tier event pattern:
 
-```
-SceneController / ObjectController mutation handler
-  |- Resolves the object UID - against the pool (ObjectController) or the
-  |   current Scene (SceneController) - and mutates the object
-  |- Emits one or more EditorEvents, synchronously:
-        |- SceneModified{} -> Editor marks project dirty
-        |- RenderResetEvent{} -> DeferredRenderer resets temporal accumulation
-        |
-        |- Scene object enters scene (add / undo-redo re-add) or light
-        |   shadow toggled ON -> SceneObjectGpuUploadRequested{objectUid}
-        |     |- Editor::OnSceneObjectGpuUpload handler:
-        |         resolves the pooled object by UID and posts the upload
-        |         (UploadMeshRequest / CreateLightGpuRequest / UploadEnvironmentRequest),
-        |         which the renderer runs skip-if-cached at its drain
-        |
-        |- Light property change -> LightGpuChanged{objectUid}
-        |     |- Editor::LightGpuChanged handler:
-        |         resolves the pooled Light*, converts it with
-        |         UploadManager::UploadLighting(*light) (pure CPU),
-        |         posts UpdateLightRequest{uid, struct}
-        |         -> renderer rewrites the single SSBO entry
-        |
-        |- Light transform/visibility/shadow toggle -> LightingRebuild{}
-              |- Editor::LightingRebuild handler:
-                  posts UpdateLightingRequest{full light dict} (pure CPU convert)
-                  -> renderer rebuilds all light SSBOs
+```mermaid
+flowchart TD
+    handler["SceneController / ObjectController mutation handler<br/>resolves the object UID - against the pool (ObjectController)<br/>or the current Scene (SceneController) - and mutates the object"]
+
+    handler --> modified["SceneModified"]
+    handler --> reset["RenderResetEvent"]
+    handler --> upload["SceneObjectGpuUploadRequested<br/>a scene object enters the scene (add / undo-redo re-add),<br/>or a light's shadow is toggled ON"]
+    handler --> lightGpu["LightGpuChanged<br/>a light property changed"]
+    handler --> rebuild["LightingRebuild<br/>a light's transform, visibility or shadow toggle changed"]
+
+    modified --> dirty["Editor marks the project dirty"]
+    reset --> accumulation["DeferredRenderer resets temporal accumulation"]
+
+    upload --> uploadHandler["Editor::OnSceneObjectGpuUpload<br/>resolves the pooled object by UID"]
+    uploadHandler --> uploadRequest["posts UploadMeshRequest / CreateLightGpuRequest /<br/>UploadEnvironmentRequest"]
+    uploadRequest --> uploadRun["the renderer runs it skip-if-cached at its drain"]
+
+    lightGpu --> lightHandler["Editor::LightGpuChanged<br/>resolves the pooled Light and converts it with<br/>UploadManager::UploadLighting (pure CPU)"]
+    lightHandler --> updateRequest["posts UpdateLightRequest(uid, struct)"]
+    updateRequest --> ssbo["the renderer rewrites the single SSBO entry"]
+
+    rebuild --> rebuildHandler["Editor::LightingRebuild<br/>converts the full light dict (pure CPU)"]
+    rebuildHandler --> rebuildRequest["posts UpdateLightingRequest(full light dict)"]
+    rebuildRequest --> ssbos["the renderer rebuilds all light SSBOs"]
 ```
 
 The key invariant: controllers never touch GPU resources. They mutate scene

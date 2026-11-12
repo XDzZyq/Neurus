@@ -14,6 +14,15 @@ The graph is built on the generic `neurus::Graph<SData, NData>` DAG template (`s
 
 ## Lifecycle
 
+```mermaid
+flowchart LR
+    add["AddPass(pass)<br/>materializes one socket per declared read/write"] --> connect["Connect(producer, resource, consumer)<br/>rejects self-loops and duplicate edges"]
+    connect --> compile["Compile()<br/>Kahn topological sort; a cycle throws"]
+    compile --> execute["Execute(cmd, cache, ctx, profiler, profile)<br/>invokes each pass's Record() in compiled order"]
+    execute --> clear["Clear()<br/>drops all nodes so the graph can be rebuilt"]
+    clear --> add
+```
+
 - `AddPass(pass)` - materializes one socket per declared read/write from `GetIO()`.
 - `Connect(...)` - wires producer to consumer; self-loops and duplicate edges are rejected (returns `false`).
 - `Compile()` - Kahn topological sort. Inputs with no in-graph producer are **external** (produced by a RenderCache attachment) and are allowed. A cycle throws `std::runtime_error` naming the involved passes.

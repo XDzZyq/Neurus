@@ -8,6 +8,16 @@ The renderer does not draw forever. Every restart begins a run of `r_sampling_co
 
 What the next frame is worth is published by `IFrameRenderer::NextWork()` before the render thread waits, so the thread knows what to wait for:
 
+```mermaid
+flowchart LR
+    next["IFrameRenderer::NextWork()<br/>published before the render thread waits"] --> sample["Sample<br/>the budget is unspent: run the scene graph, then the overlay graph"]
+    next --> overlay["Overlay<br/>converged but overlay content changed: redraw the overlay graph<br/>over the converged scene image, no scene pass"]
+    next --> idle["Idle<br/>converged and nothing stale: draw nothing, acquire no image,<br/>park on the mailbox"]
+    next --> retry["Retry<br/>the last DrawFrame() drew nothing: wait for a new frame<br/>instead of redrawing a stale one"]
+
+    sample --> reuse["the remaining samples reuse the last snapshot<br/>(AcquireMode::Reuse) and need no new publish"]
+```
+
 - **Sample**: the budget is unspent - run the scene graph, then the overlay graph. The remaining samples reuse the last snapshot (`AcquireMode::Reuse`); they do not need a new publish.
 - **Overlay**: converged, but overlay content changed (`RedrawOverlaysRequest`) - redraw the overlay graph over the converged scene image, no scene pass.
 - **Idle**: converged and nothing stale - draw nothing and acquire no swapchain image. The thread parks on the mailbox (`AcquireMode::Idle`) until a control message or a request-carrying frame arrives.

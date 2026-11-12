@@ -196,14 +196,15 @@ The first milestone implemented a minimal but correct rendering path:
 
 Its data flow was:
 
-```
-UIEvents::newFrame() -> DeferredRenderer::DrawFrame()
-                             |-- Swapchain::AcquireNextImage()
-                             |-- Begin dynamic rendering
-                             |-- Bind pipeline
-                             |-- Draw (3 vertices for triangle)
-                             |-- End dynamic rendering
-                             `-- Swapchain::Present()
+```mermaid
+flowchart TD
+    frame["UIEvents::newFrame()"] --> draw["DeferredRenderer::DrawFrame()"]
+    draw --> acquire["Swapchain::AcquireNextImage()"]
+    acquire --> begin["begin dynamic rendering"]
+    begin --> bind["bind pipeline"]
+    bind --> vertices["draw - 3 vertices for the triangle"]
+    vertices --> endRender["end dynamic rendering"]
+    endRender --> present["Swapchain::Present()"]
 ```
 
 This path has since been superseded by the deferred pipeline in [Passes](passes.md); the triangle remains only as the historical starting point.

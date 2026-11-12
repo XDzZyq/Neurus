@@ -56,9 +56,14 @@ theme:
         name: Switch to light mode
 
 markdown_extensions:
-  # The architecture docs lean on fenced box-drawing diagrams; superfences keeps
-  # them intact and enables nested fences inside lists.
-  - pymdownx.superfences
+  # Every diagram in `docs/` is a ```mermaid fence. Material bundles the Mermaid
+  # runtime and initialises it per page, so the custom fence is the whole
+  # integration - no extra_javascript entry is needed.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   # content.code.copy only attaches a copy button to blocks the highlighter
   # wraps, so highlight has to be enabled even though most Neurus fences are
   # language-less diagrams.

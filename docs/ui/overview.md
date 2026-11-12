@@ -6,19 +6,14 @@ The Neurus UI layer is a Qt6 Widgets application built on Qt-Advanced-Docking-Sy
 
 The UI is the top of the unidirectional isolation chain:
 
-```
-UI Layer (Qt6 Widgets + ADS)
-  owns: the QMainWindow, the Viewport window, UIEvents (QObject singleton)
-  QML provides window + input ONLY. No rendering logic.
-        |
-        | Qt signals / slots
-        v
-Editor Layer
-  owns: Scene, RenderConfig, ResourceManager, Controllers
-        |
-        v
-Renderer Layer (Vulkan-HPP vk::raii)
-  consumes: the viewport's native window handle (read-only)
+```mermaid
+flowchart TD
+    ui["UI Layer (Qt6 Widgets + ADS)<br/>owns: the QMainWindow, the Viewport window, UIEvents (QObject singleton)<br/>QML provides window + input ONLY. No rendering logic."]
+    editor["Editor Layer<br/>owns: Scene, RenderConfig, ResourceManager, Controllers"]
+    renderer["Renderer Layer (Vulkan-HPP vk::raii)<br/>consumes: the viewport's native window handle (read-only)"]
+
+    ui -->|"Qt signals / slots"| editor
+    editor --> renderer
 ```
 
 - UI emits signals via `UIEvents`. It never calls the Editor or Renderer directly.

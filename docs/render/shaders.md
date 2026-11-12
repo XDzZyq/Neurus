@@ -4,16 +4,22 @@ Per-mesh shaders are editable at runtime through the Shader Editor panel, and th
 
 ## Shader pipeline
 
-```
-ShaderLibrary::LoadRenderShader(name, vertPath, fragPath)
-    `-- Shader (owns ShaderUnit per stage: VERTEX/FRAGMENT/COMPUTE/GEOMETRY)
-          |-- ShaderUnit::code      - GLSL source text (edited in Code mode)
-          |-- ShaderUnit::parsed    - ShaderStruct IR (edited in Structure mode)
-          |-- ShaderUnit::spv       - compiled SPIR-V
-          `-- ShaderUnit::m_version - bumped on successful compile
-                |
-                v
-GeometryPass pipeline (mesh shader) rebuilt when Shader::m_version changes
+```mermaid
+flowchart TD
+    library["ShaderLibrary::LoadRenderShader(name, vertPath, fragPath)"]
+    shader["Shader<br/>owns one ShaderUnit per stage:<br/>VERTEX / FRAGMENT / COMPUTE / GEOMETRY"]
+    code["ShaderUnit::code<br/>GLSL source text, edited in Code mode"]
+    parsed["ShaderUnit::parsed<br/>ShaderStruct IR, edited in Structure mode"]
+    spv["ShaderUnit::spv<br/>compiled SPIR-V"]
+    version["ShaderUnit::m_version<br/>bumped on a successful compile"]
+    pipeline["GeometryPass pipeline (mesh shader)<br/>rebuilt when Shader::m_version changes"]
+
+    library --> shader
+    shader --> code
+    shader --> parsed
+    shader --> spv
+    shader --> version
+    version --> pipeline
 ```
 
 Only the concrete leaf shader is pooled; shaders created via `ShaderLibrary` for individual passes or tests stay outside the pool.

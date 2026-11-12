@@ -75,8 +75,13 @@ Editor MUST NOT:
 Across the whole program, data and control follow one unidirectional isolation
 chain:
 
-```
-UI Layer (Qt6) -> UIEvents (Qt signals) -> Editor -> EventQueue (typed events) -> Controllers -> Context -> Renderer
+```mermaid
+flowchart LR
+    ui["UI Layer (Qt6)"] -->|"UIEvents (Qt signals)"| editor[Editor]
+    editor -->|typed events| queue[EventQueue]
+    queue --> controllers[Controllers]
+    controllers -->|read-only| context[Context]
+    context --> renderer[Renderer]
 ```
 
 Each arrow is a decoupled interface (signals, events, contexts); no layer knows
@@ -351,22 +356,34 @@ each `RenderShader` re-parses and recompiles inside its own `serialize`.
 
 ## Data flow
 
-```
-User Input (QML) -> UIEvents Signal -> Editor Subscriber -> State Update
-                                                              |
-                                                       EventQueue.enqueue
-                                                              |
-                                                       EventQueue.Process()
-                                                              |
-                                                       UI Refresh
+```mermaid
+flowchart TD
+    input["User input (QML)"] --> signal["UIEvents signal"]
+    signal --> subscriber["Editor subscriber"]
+    subscriber --> enqueue["EventQueue::Enqueue<br/>the only deferred step"]
+    enqueue --> process["EventQueue::Process()<br/>once per Edit()"]
+    process --> update["State update<br/>controllers and operations"]
+    update --> refresh["UI refresh from UIContext"]
 ```
 
 The frame loop, main thread then render thread:
 
-```
-UIEvents::newFrame() -> Editor::Edit(input) -> Editor::BuildSnapshot()
-                     -> RenderThread::Publish(snapshot)        (never blocks)
-render thread:          fence -> controls -> NextWork -> Acquire -> hand over requests -> DrawFrame
+```mermaid
+flowchart LR
+    subgraph main["main thread"]
+        direction LR
+        newFrame["UIEvents::newFrame()"] --> edit["Editor::Edit(input)"]
+        edit --> snapshot["Editor::BuildSnapshot()"]
+        snapshot --> publish["RenderThread::Publish(snapshot)<br/>never blocks"]
+    end
+
+    subgraph render["render thread"]
+        direction LR
+        fence["fence"] --> controls["controls"] --> work["NextWork"] --> acquire["Acquire"]
+        acquire --> handover["hand over requests"] --> draw["DrawFrame"]
+    end
+
+    publish -->|PublishedFrame| fence
 ```
 
 `NextWork()` decides how much the next draw is worth, and therefore how long the

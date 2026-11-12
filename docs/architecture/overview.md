@@ -20,75 +20,71 @@ The architecture prioritizes:
 
 ## Layer Diagram
 
+```mermaid
+flowchart TD
+    ui["UI Layer - src/ui/<br/>owns: main window (ADS), docks, panels, native window handle<br/>emits: Qt signals through UIEvents<br/>no Vulkan object, no scene state"]
+    editor["Editor Layer - src/editor/<br/>owns: Scene, RenderConfig, ResourceManager, Controllers,<br/>EventQueue (internal), OperationManager (undo/redo)<br/>builds: RenderFrameSnapshot (renderer view), UIContext (UI view)<br/>posts: RenderRequest values through RenderRequestSink"]
+    renderer["Renderer Layer - src/render/<br/>owns: VkSwapchainKHR and image views, RenderCache and every<br/>attachment, pipelines, command pools, OverlayEngine<br/>borrows: VkSurfaceKHR, VkDevice, VkQueue (all owned by the app)<br/>drives: RenderThread (frame mailbox, control queue); acquires and<br/>presents via Swapchain; blits OverlayOutput to it"]
+
+    ui -->|"UIEvents (Qt signals / slots)"| editor
+    editor -->|"RenderFrameSnapshot + RenderRequest"| renderer
 ```
-+--------------------------------------------------------------------+
-| UI Layer                                                src/ui/    |
-|  owns: main window (ADS), docks, panels, native window handle      |
-|  emits: Qt signals through UIEvents                                |
-|  no Vulkan object, no scene state                                  |
-+---------------------------------+----------------------------------+
-                                  |
-                                  | UIEvents (Qt signals / slots)
-                                  v
-+--------------------------------------------------------------------+
-| Editor Layer                                         src/editor/   |
-|  owns: Scene, RenderConfig, ResourceManager, Controllers,          |
-|        EventQueue (internal), OperationManager (undo/redo)         |
-|  builds: RenderFrameSnapshot (renderer view), UIContext (UI view)  |
-|  posts: RenderRequest values through RenderRequestSink             |
-+---------------------------------+----------------------------------+
-                                  |
-                                  | RenderFrameSnapshot + RenderRequest
-                                  v
-+--------------------------------------------------------------------+
-| Renderer Layer                                       src/render/   |
-|  owns: VkSwapchainKHR and image views, RenderCache and every       |
-|        attachment, pipelines, command pools, OverlayEngine         |
-|  borrows: VkSurfaceKHR, VkDevice, VkQueue (all owned by the app)   |
-|  drives: RenderThread (frame mailbox, control queue); acquires and |
-|          presents via Swapchain; blits OverlayOutput to it         |
-+--------------------------------------------------------------------+
 
-+--------------------------------------------------------------------+
-| Script Layer                                         src/script/   |
-|  owns: embedded CPython, the `neurus` module, bindings, proxies,   |
-|        Script Console buffer                                       |
-|  reads: ScriptContext (Scene, RenderConfig, resource lookup)       |
-|  mutates: typed editor events only, ScriptDispatch -> EventQueue   |
-|  no project save, no snapshot, no Renderer or UI headers           |
-+--------------------------------------------------------------------+
+The remaining layers sit outside that chain:
 
-+--------------------------------------------------------------------+
-| Application Layer                                       src/app/   |
-|  owns: QApplication, Preferences, VulkanContext (VkInstance,       |
-|        VkDevice, VkQueue), VkSurfaceKHR, UploadManager,            |
-|        RenderThread, DeferredRenderer, ScriptEngine, SessionServer |
-|  builds every layer and wires the channels between them            |
-+--------------------------------------------------------------------+
+```mermaid
+flowchart TB
+    subgraph standalone["process-level layers"]
+        direction LR
+        script["Script Layer - src/script/<br/>owns: embedded CPython, the neurus module, bindings, proxies,<br/>Script Console buffer<br/>reads: ScriptContext (Scene, RenderConfig, resource lookup)<br/>mutates: typed editor events only, ScriptDispatch -> EventQueue<br/>no project save, no snapshot, no Renderer or UI headers"]
+        application["Application Layer - src/app/<br/>owns: QApplication, Preferences, VulkanContext (VkInstance,<br/>VkDevice, VkQueue), VkSurfaceKHR, UploadManager,<br/>RenderThread, DeferredRenderer, ScriptEngine, SessionServer<br/>builds every layer and wires the channels between them"]
+    end
+    subgraph shared["shared, Vulkan-free libraries"]
+        direction LR
+        asset["Asset Layer - src/asset/<br/>CPU data: MeshData, ImageData, PixelFormat"]
+        scene["Scene Layer - src/scene/<br/>objects: Camera, Light, Mesh, Transform, UID"]
+        core["Core Layer - src/core/<br/>UID, ResourceManager, RenderConfig, Log, Graph"]
+    end
+```
 
-+--------------------------------+  +--------------------------------+
-| Asset Layer        src/asset/  |  | Scene Layer        src/scene/  |
-| Vulkan-free CPU data:          |  | Vulkan-free objects:           |
-| MeshData, ImageData,           |  | Camera, Light, Mesh,           |
-| PixelFormat                    |  | Transform, UID                 |
-+--------------------------------+  +--------------------------------+
+### The event bus is the pivot
 
-+--------------------------+        +--------------------------------+
-| CLI process (separate)   |        | host application               |
-| `neurus` CLI, src/cli/   |  --->  | SessionServer                  |
-| parses arguments,        |  JSON  | src/app/session/: token,       |
-| attaches to a named      |  --->  | registry, loopback listener    |
-| session, formats         |  <---  | src/ipc/                       |
-| results                  | result | Asio I/O thread accepts,       |
-+--------------------------+        | reads and writes only          |
-                                    | main-thread drain ->           |
-                                    | EditorCommandAdapter           |
-                                    | (src/editor/commands/) emits   |
-                                    | typed editor events            |
-                                    | src/command/: Qt-free and      |
-                                    | Vulkan-free request/result     |
-                                    | values, codec, descriptors     |
-                                    +--------------------------------+
+Every editor mutation crosses one node, whichever layer starts it:
+
+```mermaid
+flowchart LR
+    ui["UI panels"] --> uiEvents["UIEvents<br/>Qt signals"]
+    uiEvents --> onUIEvent["Editor::OnUIEvent"]
+    onUIEvent -->|"Enqueue"| bus["EventBus (EventQueue)<br/>owned by the Editor"]
+    bus -->|"Process once per Edit()"| controllers["Controllers<br/>owned by the Editor"]
+    controllers -->|"Emit (synchronous)"| bus
+    script["Script Layer<br/>ScriptDispatch"] -->|"Emit (synchronous)"| bus
+    controllers -->|"record"| ops["OperationManager<br/>undo / redo"]
+    ops -->|"replay the inverse event"| bus
+    controllers -->|"mutate"| scene["Scene and ResourceManager<br/>owned by the Editor"]
+    onUIEvent -->|"RenderRequest + frame snapshot"| renderer["Renderer"]
+```
+
+The bus carries four paths, and they differ only in who starts the walk:
+
+- **UI intent**: `UIEvents` -> `Editor::OnUIEvent` -> `Enqueue` -> `Process` -> controllers.
+- **Script write**: `ScriptDispatch::Emit` -> controllers, synchronously.
+- **Undo / redo**: a controller records an `Operation`; `Apply()` re-emits the
+  original event through the bus, so replay runs the same handler a live edit
+  runs.
+- **GPU work**: controllers mutate the Scene, and the Editor posts
+  `RenderRequest`s and publishes the frame snapshot to the Renderer - the
+  Renderer never sees an event.
+
+A command arrives from a separate process:
+
+```mermaid
+flowchart LR
+    cli["CLI process (separate)<br/>neurus CLI, src/cli/<br/>parses arguments, attaches to a named session, formats results"]
+    host["Host application<br/>SessionServer - src/app/session/: token, registry, loopback listener<br/>src/ipc/: Asio I/O thread accepts, reads and writes only<br/>main-thread drain -> EditorCommandAdapter (src/editor/commands/)<br/>emits typed editor events<br/>src/command/: Qt-free and Vulkan-free request/result values,<br/>codec, descriptors"]
+
+    cli -->|"JSON request"| host
+    host -->|"result"| cli
 ```
 
 Scene objects (`src/scene/`) and Core utilities (`src/core/`) are shared across
@@ -112,7 +108,7 @@ issued them.
      AND unrewritten, so this path is URL-relative to /architecture/overview/,
      not source-relative like a markdown link would be. -->
 
-The diagram above is hand-maintained. For a generated counterpart, the
+The diagrams above are hand-maintained. For a generated counterpart, the
 <a href="../../graphify.html" target="_blank">structure graph</a> maps the
 classes and functions in `src/` and the calls, inheritance and containment
 between them, grouped into communities that track the layer boundaries above. It

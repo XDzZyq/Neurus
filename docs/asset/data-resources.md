@@ -70,21 +70,13 @@ Asset path resolution keeps project files portable:
 
 ## Data flow
 
-```
-File System (OBJ, PNG)
-    |
-    v
-asset/data: MeshData / ImageData (CPU-side loading)
-    |                              ^
-    |  Image::FromImageData()      |  Image::ReadImageData()
-    v                              |
-render: Image (GPU) ---------------+
-    |
-    v
-render/buffers: Buffer / StagingBuffer / GPUBuffer / UniformBuffer
-    |
-    v
-Renderer passes (GeometryPass, LightingPass): consume GPU resources
+```mermaid
+flowchart TD
+    fileSystem["File system (OBJ, PNG)"] --> load["asset/data: MeshData / ImageData<br/>CPU-side loading"]
+    load -->|"Image::FromImageData()"| image["render: Image (GPU)"]
+    image -->|"Image::ReadImageData()"| load
+    image --> buffers["render/buffers: Buffer / StagingBuffer /<br/>GPUBuffer / UniformBuffer"]
+    buffers --> passes["Renderer passes (GeometryPass, LightingPass):<br/>consume GPU resources"]
 ```
 
 All image layout transitions go through `Barrier::Transition()`. See [Buffers](../render/buffers.md) and [Data Flow](../architecture/data-flow.md).

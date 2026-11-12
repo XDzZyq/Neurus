@@ -12,52 +12,40 @@ The two graphs exchange data only through `RenderCache` attachments, never in pl
 
 Shadow resources are logical `AttachmentName` members resolved by their owning pass (not `GetAttachment`): `ShadowDepth` (per-light bundle in `LightGPU`) and `ShadowIntensity` (2D array via `GetShadowIntensityArray`).
 
-```
-Scene graph (DeferredRenderer::m_mainGraph)
-ShadowDepthPass (per-light depth -> RenderCache via GetShadowMap(uid, lightType))
-    |-- Point light: cubemap geometry pass (6 faces, multiview)
-    `-- Sun light:   2D orthographic geometry pass (2048x2048, single view)
-    v
-GeometryPass (G-Buffer MRT: Position, Normal, Albedo, MetallicRoughness, IDBuffer, Depth)
-    v
-SSAOPass (compute: reads G-Buffer, writes AO to R8 attachment)
-    v
-ShadowIntensityPass (compute: per-light shadow eval -> layered R8_UNORM 2D_ARRAY)
-    |-- Point light: samplerCube depth comparison, PCF via cubemap sampling
-    `-- Sun light:   sampler2D depth comparison, ortho PCF, NDC Z in [0,1]
-    v
-LightingPass (compute: reads G-Buffer + AO + shadow intensity array,
-              reads LightingCache SSBOs from RenderCache, writes HDRColor)
-    |-- Binding 5: PointLight SSBO (from RenderCache::GetLightingCache())
-    `-- Binding 6: SunLight SSBO   (from RenderCache::GetLightingCache())
-    v
-IBLPass (compute: reads G-Buffer + HDRColor, applies diffuse+specular IBL, writes HDRColor)
-    v
-ComposePass (compute: tone maps HDRColor, applies gamma, writes ComposedOutput)
-    v
-FXAAPass (compute: reads ComposedOutput, luma-based edge detection + full-iteration edge search, writes FXAAOutput)
-    |  (conditional: only when AA == AAAlg::FXAA)
-    v
-scene tail: ComposedOutput (no FXAA) | FXAAOutput (FXAA)
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 320}}}%%
+flowchart TD
+    subgraph scene["Scene graph - DeferredRenderer::m_mainGraph"]
+        direction TD
+        shadow["ShadowDepthPass<br/>per-light depth -> RenderCache via GetShadowMap(uid, lightType)<br/>point and spot lights: cubemap geometry pass, 6 faces, multiview<br/>sun light: 2D orthographic geometry pass, 2048x2048, single view"]
+        geometry["GeometryPass<br/>G-Buffer MRT: Position, Normal, Albedo,<br/>MetallicRoughness, IDBuffer, Depth"]
+        ssao["SSAOPass<br/>compute: reads the G-Buffer, writes AO to an R8 attachment"]
+        intensity["ShadowIntensityPass<br/>compute: per-light shadow eval -> layered R8_UNORM 2D_ARRAY<br/>point and spot lights: one cubemap depth lookup, jittered<br/>sun light: one ortho 2D depth lookup, jittered<br/>both accumulate with an EMA over the sampling budget"]
+        lighting["LightingPass<br/>compute: reads G-Buffer + AO + shadow intensity array,<br/>reads LightingCache SSBOs from RenderCache, writes HDRColor<br/>binding 5: PointLight SSBO, binding 6: SunLight SSBO,<br/>binding 11: SpotLight SSBO"]
+        ibl["IBLPass<br/>compute: reads G-Buffer + HDRColor,<br/>applies diffuse + specular IBL, writes HDRColor"]
+        compose["ComposePass<br/>compute: tone maps HDRColor, applies gamma,<br/>writes ComposedOutput"]
+        fxaa["FXAAPass<br/>compute: reads ComposedOutput, luma-based edge detection<br/>plus full-iteration edge search, writes FXAAOutput<br/>conditional: only when AA == AAAlg::FXAA"]
+        tail["scene tail<br/>ComposedOutput (no FXAA) | FXAAOutput (FXAA)"]
 
-Overlay graph (OverlayEngine, its own RenderGraph)
-SelectionOutlinePass (compute: reads IDBuffer, 3x3 edge detection for activeObjectId, writes R8 mask)
-    v
-OverlayCopyPass (compute: copies the scene tail into OverlayOutput and blends the
-                mask onto it, one dispatch - overlay_copy.comp)
-    v
-DebugPass (raster: draws DebugDrawList over OverlayOutput with LOAD_OP_LOAD,
-           depth-tested against the G-Buffer Depth it only reads)
-    |-- lines      -> screen-space quads (6 verts/segment, SSBO-indexed)
-    |-- points     -> ePointList sprites (square / rhombus / circle mask)
-    `-- wireframes -> PolygonMode::eLine over the DebugMesh's existing MeshGPU
-    v
-GizmoPass (raster: draws GizmoDrawList over OverlayOutput with LOAD_OP_LOAD -
-           no depth attachment at all, so every guide is unconditionally x-ray)
-    |-- lines      -> screen-space quads (the shared overlay_line pipeline)
-    `-- points     -> ePointList sprites (the shared overlay_point pipeline)
-    v
-Blit (OverlayEngine::OutputAttachment() == OverlayOutput) -> Swapchain (vkCmdBlitImage)
+        shadow --> geometry --> ssao --> intensity --> lighting --> ibl --> compose
+        compose -->|"no FXAA"| tail
+        compose --> fxaa
+        fxaa -->|"FXAA"| tail
+    end
+```
+
+```mermaid
+flowchart TD
+    subgraph overlay["Overlay graph - OverlayEngine, its own RenderGraph"]
+        direction TD
+        outline["SelectionOutlinePass<br/>compute: reads IDBuffer, 3x3 edge detection<br/>for activeObjectId, writes an R8 mask"]
+        copy["OverlayCopyPass<br/>compute: copies the scene tail into OverlayOutput and blends<br/>the mask onto it, one dispatch - overlay_copy.comp"]
+        debug["DebugPass<br/>raster: draws DebugDrawList over OverlayOutput with LOAD_OP_LOAD,<br/>depth-tested against the G-Buffer Depth it only reads<br/>lines -> screen-space quads, 6 verts/segment, SSBO-indexed<br/>points -> ePointList sprites, square / rhombus / circle mask<br/>wireframes -> PolygonMode::eLine over the existing MeshGPU"]
+        gizmo["GizmoPass<br/>raster: draws GizmoDrawList over OverlayOutput with LOAD_OP_LOAD -<br/>no depth attachment at all, so every guide is unconditionally x-ray<br/>lines -> screen-space quads, the shared overlay_line pipeline<br/>points -> ePointList sprites, the shared overlay_point pipeline"]
+        blit["Blit to the swapchain<br/>OverlayEngine::OutputAttachment() == OverlayOutput<br/>vkCmdBlitImage"]
+
+        outline --> copy --> debug --> gizmo --> blit
+    end
 ```
 
 A **Sample** frame executes both graphs; an **Overlay** frame executes the overlay graph alone over the image the last sample left; an **Idle** frame does neither and acquires no image. See [Temporal Accumulation](temporal.md) for the budget that decides which.
@@ -74,8 +62,19 @@ The overlays are not part of the scene graph, and that is the point: they draw a
 
 The shadow depth pass renders per-light depth into `RenderCache` via `GetShadowMap(uid, lightType)`:
 
-- **Point light**: a cubemap geometry pass (6 faces, multiview).
+- **Point light**: a cubemap geometry pass (6 faces, multiview), far plane `Light::point_shadow_far` (10).
+- **Spot light**: the same cubemap path as a point light, with `Light::spot_shadow_far` (100) as its far plane. The cone does not clip the depth pass; `pbr_lighting.comp` weights the shaded result by `smoothstep(outerCutoff, innerCutoff, dot(dir, -L))` instead, so one shadow map serves the whole sphere and the lobe is pure shading.
 - **Sun light**: a 2D orthographic geometry pass (2048x2048, single view).
+
+### Point and spot light shadow projection
+
+- **Format**: `D32_SFLOAT`, 1024x1024 per face, six layers of one `2D_ARRAY` sampled as a cubemap.
+- **Geometry pass**: all six faces in a single multiview render pass; `LightPushData` carries the light position and the far plane, and the vertex shader picks the face matrix from `gl_ViewIndex`. Depth is stored as `distance / farPlane` - linear, not clip-space.
+- **Far plane**: `Light::point_shadow_far` (10) for a point light, `Light::spot_shadow_far` (100) for a spot light. The eval shader divides by the same constant, so the two agree by construction.
+- **Evaluation**: `shadow_eval.comp` takes one non-compare `samplerCube` lookup per pixel and compares `distance / farPlane - bias` against it. There is no PCF kernel: the softness comes from the temporal accumulation - a 3D jitter on the light position, EMA-blended over `r_sampling_count` frames. See [Temporal Accumulation](temporal.md).
+- **Spot cone**: neither the depth pass nor the eval sees the cone. `pbr_lighting.comp` multiplies the spot lobe by `smoothstep(outerCutoff, innerCutoff, dot(dir, -L))`, so one cubemap serves the whole sphere and the cone is pure shading.
+- **Layer budget**: the `ShadowIntensity` array has `RenderCache::MAX_SHADOW_LAYERS` (4) layers shared by all three light types - point lights first, then spot lights, then sun lights. A light past the budget gets `shadowMapIndex = -1` and is simply unshadowed.
+- **Sun exclusion**: this loop skips sun lights (`LightType::SUNLIGHT`), which the second pipeline and the separate sun orthographic path handle.
 
 ### Sun light shadow projection
 
@@ -89,10 +88,10 @@ The shadow depth pass renders per-light depth into `RenderCache` via `GetShadowM
 - **Eye placement**: `eye = center - sunDir * sun_depth_range` (NOT `* farPlane`, which would place geometry at the far boundary).
 - **Push constant**: `SunShadowPushConstants` carries `mat4 lightViewProj` (view x projection).
 - **Shadow map resolution**: 2048x2048, `VK_FORMAT_D32_SFLOAT`.
-- **PCF**: percentage-closer filtering via `sampler2DShadow` with a UV offset kernel, ortho depth comparison.
+- **Evaluation**: `sun_shadow_eval.comp` projects the world position into the sun's light space, jitters the UV, and takes one non-compare `sampler2D` lookup, comparing `ndc.z - bias` against the stored depth. Softness comes from the temporal accumulation, not from a PCF kernel.
 - **Shadow intensity**: written to the per-light layer in the `ShadowIntensity` 2D array via the `SunShadowIntensityEval` compute shader.
 - **Shadow bias**: depth bias read from `RenderConfig::r_shadow_bias` (default 0.02) via `ctx.Frame().Settings()`. The pass states no fallback of its own - it used to hardcode `0.0005f` when no config was published, 40x off the declared default.
-- **Shadow mode**: supports `HARD`, `SOFT_PCF_16`, `SOFT_PCF_64` modes matching the point-light shadow pipeline.
+- **Algorithm selection**: `RenderConfig::r_shadow` (`ShadowAlg`) reaches the frame through the snapshot, but no pass branches on it yet - the implemented path is `ShadowMapping`, and every light that sets `useShadow` renders through it.
 
 ## SSAO pass
 
