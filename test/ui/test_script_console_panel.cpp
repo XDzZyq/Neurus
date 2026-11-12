@@ -12,6 +12,7 @@
 #include <QtTest/QTest>
 
 #include <QString>
+#include <QToolButton>
 
 #include "script/ScriptConsole.h"
 #include "ui/UIContext.h"
@@ -53,4 +54,17 @@ TEST(ScriptConsolePanelTest, CtrlEnterEmitsRunSnippetWithInput)
 
 	QTest::keyClick(input, Qt::Key_Return, Qt::ControlModifier);
 	EXPECT_EQ(received, QStringLiteral("x = 1"));
+}
+
+TEST(ScriptConsolePanelTest, SandboxToggleStartsOffAndReportsItsState)
+{
+	ScriptConsolePanel panel;
+	auto* toggle = panel.findChild<QToolButton*>(QStringLiteral("scriptSandboxToggle"));
+	ASSERT_NE(toggle, nullptr);
+	EXPECT_TRUE(toggle->isCheckable());
+	EXPECT_FALSE(toggle->text().isEmpty());
+	EXPECT_FALSE(panel.IsSandboxed());
+
+	toggle->setChecked(true);
+	EXPECT_TRUE(panel.IsSandboxed());
 }

@@ -26,7 +26,8 @@ enum class CliExit
 	NoSession = 3,
 	Transport = 4,
 	Rejected = 5,
-	AppMissing = 6
+	AppMissing = 6,
+	SandboxViolation = 7
 };
 
 struct OpenOptions

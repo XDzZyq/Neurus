@@ -169,8 +169,12 @@ neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
                   [--fxaa-edge-threshold-min V]
 neurus history show|undo|redo
 neurus script run --code "PYTHON" | --file FILE
-neurus script eval "EXPRESSION"
+                   [--sandbox|--trusted] [--allow-read PATH] [--allow-write PATH]
+                   [--block MODULE] [--allow-network] [--allow-subprocess]
+                   [--allow-ctypes] [--time-limit SECONDS] [--memory-limit MB]
+neurus script eval "EXPRESSION" [--sandbox|--trusted] [--allow-read PATH] ...
 neurus script info
+neurus script mode [trusted|sandboxed]
 neurus script console [--tail N]
 neurus script clear
 neurus snapshot capture --path PATH [--all]
@@ -222,10 +226,16 @@ sessions from different terminals.
 - `history show` reports the undo/redo stacks; `history undo` and
   `history redo` step them.
 - `script run` executes Python in the running application and returns the
-  captured output. A run is one undo entry, like the Script Console.
-- `script eval` evaluates one expression and returns its `repr`.
-- `script info` reports readiness, the Python version and the managed
-  environment.
+  captured output. A run is one undo entry, like the Script Console. It runs
+  sandboxed by default; `--trusted` removes the restriction and the policy flags
+  override the sandbox defaults. A refusal is `SCRIPT_SANDBOX_VIOLATION`.
+- `script eval` evaluates one expression and returns its `repr`, with the same
+  sandbox flags and error mapping.
+- `script info` reports readiness, the Python version, the managed environment,
+  the session mode and the policy summary a run under that mode would use.
+- `script mode` reports the session pin, or sets it to `trusted` or
+  `sandboxed`. The pin drives the Tools-menu run and the `script info`
+  summary; it does not override an explicit CLI choice.
 - `script console` returns recent captured lines; `script clear` empties the
   buffer.
 - `snapshot capture` writes a PNG of the presented viewport, or every render
@@ -244,6 +254,7 @@ Exit codes:
 | 4 | Transport failure or timeout |
 | 5 | Command rejected (dirty project, save/script failure, object lookup) |
 | 6 | Application missing or exited during startup |
+| 7 | A sandbox policy refused an operation during a script run |
 
 ## Error codes
 
@@ -257,7 +268,8 @@ Exit codes:
 | `DIRTY_PROJECT` | `close`, `project.new` or `project.open` refused because of unsaved changes |
 | `SAVE_FAILED` | `project.save` or `close --save` failed to persist |
 | `IO_ERROR` | Project or mesh file could not be read/written |
-| `SCRIPT_ERROR` | Python code raised an exception |
+| `SCRIPT_ERROR` | Python code raised an exception, or a run exceeded its wall-clock limit |
+| `SCRIPT_SANDBOX_VIOLATION` | The script policy refused a filesystem, import, network, subprocess or ctypes operation |
 | `OBJECT_NOT_FOUND` | No scene object matched the name or UID |
 | `AMBIGUOUS_OBJECT` | Several scene objects matched the name; pass `type` or `uid` |
 | `UNAUTHORIZED` | Missing or wrong token, or non-loopback peer |
@@ -296,9 +308,12 @@ runs:
 - `history.get` - undo/redo labels and availability.
 - `history.undo` - undo the most recent edit.
 - `history.redo` - redo the most recently undone edit.
-- `script.run` - run Python and return its captured output.
+- `script.run` - run Python and return its captured output, optionally under a
+  sandbox policy.
 - `script.eval` - evaluate one Python expression and return its `repr`.
-- `script.info` - readiness, Python version, managed environment and console size.
+- `script.info` - readiness, Python version, managed environment, session mode
+  and the policy summary.
+- `script.mode` - report or pin the session scripting mode.
 - `script.console` - recent captured console lines.
 - `script.clear` - clear the console buffer.
 - `snapshot.capture` - write the viewport or all attachments, with the session

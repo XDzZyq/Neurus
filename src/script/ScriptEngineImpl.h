@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,6 +28,7 @@
 #include "editor/events/ScriptEvents.h"
 #include "script/ScriptDispatch.h"
 #include "script/ScriptEngine.h"
+#include "script/ScriptSandbox.h"
 #include "script/bindings/Bindings.h"
 #include "script/ScriptView.h"
 #include "script/neurus_python_config.h"
@@ -118,6 +120,16 @@ struct ScriptEngine::Impl
 		// lifetime; only the document it exposes changes per run.
 		script::InstallNeurusViews(m_neuru, &m_view);
 
+		// Install the in-process guardrail once, after the module exists. A
+		// failure does not disable the engine: trusted runs keep working and a
+		// sandboxed run is refused rather than silently running unrestricted.
+		m_sandbox = std::make_unique<ScriptSandbox>();
+		if (!m_sandbox->Install())
+		{
+			NEURUS_ERR("ScriptEngine: the script sandbox is unavailable; "
+			           "sandboxed runs will be refused");
+		}
+
 		m_ready = true;
 		return true;
 	}
@@ -131,6 +143,13 @@ struct ScriptEngine::Impl
 		}
 
 		m_ready = false;
+		// Drop the sandbox first: its helper dict holds Python objects and a
+		// watchdog thread, neither of which may outlive the interpreter.
+		if (m_sandbox)
+		{
+			m_sandbox->Reset();
+			m_sandbox.reset();
+		}
 		// Drop the module handle before finalizing: its destructor decrefs, which
 		// must not happen after the interpreter is gone.
 		m_neuru = pybind11::module_();
@@ -166,42 +185,74 @@ struct ScriptEngine::Impl
 	/**
 	 * @brief Evaluate one expression, buffer its repr and return it.
 	 *
-	 * Shares the run boundary, context and stream capture with RunSource so an
-	 * expression with side effects is one undo entry and its prints are visible.
+	 * Shares the run boundary, context, policy and stream capture with
+	 * RunSource so an expression with side effects is one undo entry and its
+	 * prints are visible.
 	 */
 	std::optional<std::string> EvalStringChecked(const std::string& expression,
-	                                             const ScriptContext* ctx)
+	                                             const ScriptContext* ctx,
+	                                             const ScriptPolicy* policy)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
+			RecordNotReady(policy);
 			return std::nullopt;
 		}
 
-		pybind11::gil_scoped_acquire gil;
-		ContextScope scope(m_current, ctx);
-		RunScope runScope(m_dispatch.EventQueue(), {});
+		std::optional<std::string> result;
+		// Declared before the GIL scope so its destructor runs after the GIL is
+		// released, including when an unexpected exception skips the return.
+		WatchdogJoin joinGuard(m_sandbox.get());
+		{
+			pybind11::gil_scoped_acquire gil;
+			ContextScope scope(m_current, ctx);
+			RunScope runScope(m_dispatch.EventQueue(), {});
 
-		try
-		{
-			StreamRedirect redirect(m_console);
-			pybind11::object value =
-				pybind11::eval(expression, pybind11::globals(), pybind11::globals());
-			const std::string result = pybind11::repr(value).cast<std::string>();
-			m_console.Append(ScriptLineKind::Result, result + "\n");
-			return result;
+			try
+			{
+				// Built while the run is still trusted: the redirect imports
+				// `types`, which the policy may not allow it to read.
+				StreamRedirect redirect(m_console);
+				SandboxScope sandboxScope(m_sandbox.get(), policy,
+				                          m_memoryLimitUnsupportedLogged);
+				m_lastPolicy = PolicyOrDefault(policy);
+
+				if (sandboxScope.ApplyFailed())
+				{
+					m_lastStatus = ScriptRunStatus::ScriptError;
+					m_lastMessage = "The sandbox policy could not be applied.";
+				}
+				else
+				{
+					pybind11::object value =
+						pybind11::eval(expression, pybind11::globals(), pybind11::globals());
+					result = pybind11::repr(value).cast<std::string>();
+					m_console.Append(ScriptLineKind::Result, *result + "\n");
+					m_lastStatus = ScriptRunStatus::Ok;
+					m_lastMessage.clear();
+				}
+			}
+			catch (const pybind11::error_already_set& e)
+			{
+				// The SandboxScope destructor cleared the policy during
+				// unwinding, so formatting the traceback is unrestricted.
+				m_lastPolicy = PolicyOrDefault(policy);
+				m_lastStatus = m_sandbox ? m_sandbox->Classify(e)
+				                         : ScriptRunStatus::ScriptError;
+				m_lastMessage = MessageOf(e);
+				ReportError(e, "ScriptEngine::EvalString");
+				result = std::nullopt;
+			}
 		}
-		catch (const pybind11::error_already_set& e)
-		{
-			ReportError(e, "ScriptEngine::EvalString");
-			return std::nullopt;
-		}
+		return result;
 	}
 
 	/// @brief Compatibility wrapper returning an empty string on failure.
-	std::string EvalString(const std::string& expression, const ScriptContext* ctx)
+	std::string EvalString(const std::string& expression, const ScriptContext* ctx,
+	                       const ScriptPolicy* policy)
 	{
-		return EvalStringChecked(expression, ctx).value_or(std::string{});
+		return EvalStringChecked(expression, ctx, policy).value_or(std::string{});
 	}
 
 	/// @brief Attach the queue scripted mutations are dispatched to.
@@ -213,33 +264,40 @@ struct ScriptEngine::Impl
 	/**
 	 * @brief Execute a Python snippet and report whether it raised.
 	 * @param code UTF-8 Python source.
+	 * @param policy Restrictions for this run; null runs trusted.
 	 */
-	bool RunStringChecked(const std::string& code, const ScriptContext* ctx)
+	bool RunStringChecked(const std::string& code, const ScriptContext* ctx,
+	                      const ScriptPolicy* policy)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
+			RecordNotReady(policy);
 			return false;
 		}
 
-		return RunSource(code, "ScriptEngine::RunString", {}, ctx);
+		return RunSource(code, "ScriptEngine::RunString", {}, ctx, policy);
 	}
 
 	/// @brief Execute a snippet; compatibility wrapper that ignores the result.
-	void RunString(const std::string& code, const ScriptContext* ctx)
+	void RunString(const std::string& code, const ScriptContext* ctx,
+	               const ScriptPolicy* policy)
 	{
-		(void)RunStringChecked(code, ctx);
+		(void)RunStringChecked(code, ctx, policy);
 	}
 
 	/**
 	 * @brief Read and execute a Python file, reporting whether it ran.
 	 * @param path Filesystem path to a UTF-8 Python source file.
+	 * @param policy Restrictions for this run; null runs trusted.
 	 */
-	bool RunFileChecked(const std::string& path, const ScriptContext* ctx)
+	bool RunFileChecked(const std::string& path, const ScriptContext* ctx,
+	                    const ScriptPolicy* policy)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
+			RecordNotReady(policy);
 			return false;
 		}
 
@@ -247,6 +305,9 @@ struct ScriptEngine::Impl
 		if (!file)
 		{
 			NEURUS_ERR("ScriptEngine::RunFile: cannot open '" << path << "'");
+			m_lastPolicy = PolicyOrDefault(policy);
+			m_lastStatus = ScriptRunStatus::ScriptError;
+			m_lastMessage = "The script file could not be opened.";
 			return false;
 		}
 
@@ -255,13 +316,13 @@ struct ScriptEngine::Impl
 		const std::string source((std::istreambuf_iterator<char>(file)),
 		                         std::istreambuf_iterator<char>());
 		return RunSource(source, "ScriptEngine::RunFile",
-		                 "Run " + std::filesystem::path(path).filename().string(), ctx);
+		                 "Run " + std::filesystem::path(path).filename().string(), ctx, policy);
 	}
 
 	/// @brief Execute a file; compatibility wrapper that ignores the result.
-	void RunFile(const std::string& path, const ScriptContext* ctx)
+	void RunFile(const std::string& path, const ScriptContext* ctx, const ScriptPolicy* policy)
 	{
-		(void)RunFileChecked(path, ctx);
+		(void)RunFileChecked(path, ctx, policy);
 	}
 
 	/// @brief The buffer captured Python output and errors are written to.
@@ -271,15 +332,31 @@ struct ScriptEngine::Impl
 	}
 
 	/// @brief Queue a snippet for the next ExecutePending().
-	void Submit(const std::string& code)
+	void Submit(const std::string& code, const ScriptPolicy* policy)
 	{
-		m_pending.push_back(PendingRun{false, code});
+		PendingRun run;
+		run.fromFile = false;
+		run.text = code;
+		if (policy != nullptr)
+		{
+			run.policy = *policy;
+			run.hasPolicy = true;
+		}
+		m_pending.push_back(std::move(run));
 	}
 
 	/// @brief Queue a file for the next ExecutePending().
-	void SubmitFile(const std::string& path)
+	void SubmitFile(const std::string& path, const ScriptPolicy* policy)
 	{
-		m_pending.push_back(PendingRun{true, path});
+		PendingRun run;
+		run.fromFile = true;
+		run.text = path;
+		if (policy != nullptr)
+		{
+			run.policy = *policy;
+			run.hasPolicy = true;
+		}
+		m_pending.push_back(std::move(run));
 	}
 
 	/// @brief Run every queued script in order, then clear the queue.
@@ -296,54 +373,128 @@ struct ScriptEngine::Impl
 
 		for (const PendingRun& run : batch)
 		{
+			const ScriptPolicy* policy = run.hasPolicy ? &run.policy : nullptr;
 			if (run.fromFile)
 			{
-				RunFile(run.text, &ctx);
+				RunFile(run.text, &ctx, policy);
 			}
 			else
 			{
-				RunString(run.text, &ctx);
+				RunString(run.text, &ctx, policy);
 			}
 		}
 	}
 
+	/// @return Outcome of the most recent run.
+	ScriptRunStatus LastRunStatus() const
+	{
+		return m_lastStatus;
+	}
+
+	/// @return Human-readable detail for the last run, empty on success.
+	std::string LastRunMessage() const
+	{
+		return m_lastMessage;
+	}
+
+	/// @return The policy the last run executed under.
+	ScriptPolicy LastPolicy() const
+	{
+		return m_lastPolicy;
+	}
+
 private:
-	/// @brief Shared run path: GIL, stdout/stderr capture, error surfacing.
+	/// @brief Shared run path: GIL, stdout/stderr capture, sandbox and errors.
 	/// @param source Python source to execute.
 	/// @param entryName Caller name used in error reporting, not as a label.
 	/// @param runName History label for the run; empty means "Run Script".
 	/// @param ctx Document view to publish for the run.
+	/// @param policy Restrictions for this run; null runs trusted.
 	bool RunSource(const std::string& source, const char* entryName, const std::string& runName,
-	               const ScriptContext* ctx)
+	               const ScriptContext* ctx, const ScriptPolicy* policy)
 	{
-		pybind11::gil_scoped_acquire gil;
+		bool ok = false;
+		// Declared before the GIL scope so its destructor runs after the GIL is
+		// released, including when an unexpected exception skips the return.
+		WatchdogJoin joinGuard(m_sandbox.get());
+		{
+			pybind11::gil_scoped_acquire gil;
 
-		// Publish this run's document view. The scope republishes `m_current`
-		// for the run and clears it on every exit path, so no Python object can
-		// read a finished run's state.
-		ContextScope scope(m_current, ctx);
+			// Publish this run's document view. The scope republishes
+			// `m_current` for the run and clears it on every exit path, so no
+			// Python object can read a finished run's state.
+			ContextScope scope(m_current, ctx);
 
-		// Bracket the run so the operation sink compacts every write it makes
-		// into one undo step. Declared before the exec try-block and after the
-		// document is published, so it closes on every exit path - including a
-		// raising script - and the run's writes are recorded while the context
-		// is still live.
-		RunScope runScope(m_dispatch.EventQueue(), runName);
+			// Bracket the run so the operation sink compacts every write it
+			// makes into one undo step. Declared before the exec try-block and
+			// after the document is published, so it closes on every exit path -
+			// including a raising script - and the run's writes are recorded
+			// while the context is still live.
+			RunScope runScope(m_dispatch.EventQueue(), runName);
 
+			try
+			{
+				// Redirect before running so `print` and tracebacks land in the
+				// buffer, and before the policy activates: installing it imports
+				// `types`, which the policy may not allow.
+				StreamRedirect redirect(m_console);
+				SandboxScope sandboxScope(m_sandbox.get(), policy,
+				                          m_memoryLimitUnsupportedLogged);
+
+				m_lastPolicy = PolicyOrDefault(policy);
+				if (sandboxScope.ApplyFailed())
+				{
+					m_lastStatus = ScriptRunStatus::ScriptError;
+					m_lastMessage = "The sandbox policy could not be applied.";
+				}
+				else
+				{
+					pybind11::exec(source, pybind11::globals(), pybind11::globals());
+					ok = true;
+					m_lastStatus = ScriptRunStatus::Ok;
+					m_lastMessage.clear();
+				}
+			}
+			catch (const pybind11::error_already_set& e)
+			{
+				// The SandboxScope destructor cleared the policy during
+				// unwinding, so formatting the traceback is unrestricted.
+				m_lastPolicy = PolicyOrDefault(policy);
+				m_lastStatus = m_sandbox ? m_sandbox->Classify(e)
+				                         : ScriptRunStatus::ScriptError;
+				m_lastMessage = MessageOf(e);
+				ReportError(e, entryName);
+			}
+		}
+		return ok;
+	}
+
+	/// @brief The policy a run executed under, for the status accessors.
+	static ScriptPolicy PolicyOrDefault(const ScriptPolicy* policy)
+	{
+		return policy != nullptr ? *policy : ScriptPolicy::Trusted();
+	}
+
+	/// @brief Records the "no interpreter" outcome for a rejected run.
+	void RecordNotReady(const ScriptPolicy* policy)
+	{
+		m_lastPolicy = PolicyOrDefault(policy);
+		m_lastStatus = ScriptRunStatus::NotReady;
+		m_lastMessage = "Scripting is not initialized.";
+	}
+
+	/// @brief Extracts the exception's own message, without the traceback.
+	static std::string MessageOf(const pybind11::error_already_set& error)
+	{
 		try
 		{
-			// Redirect before running so `print` and tracebacks land in the
-			// buffer. The guard restores the original streams on both the
-			// normal and the error path; it is destroyed (while the GIL is
-			// still held) as this try scope unwinds.
-			StreamRedirect redirect(m_console);
-			pybind11::exec(source, pybind11::globals(), pybind11::globals());
-			return true;
+			return pybind11::str(error.value()).cast<std::string>();
 		}
-		catch (const pybind11::error_already_set& e)
+		catch (const std::exception& formatError)
 		{
-			ReportError(e, entryName);
-			return false;
+			NEURUS_ERR("ScriptEngine: exception message formatting failed: "
+			           << formatError.what());
+			return error.what();
 		}
 	}
 
@@ -388,6 +539,112 @@ private:
 			return {};
 		}
 	}
+
+	/**
+	 * @brief Applies one run's policy and stops it on every exit path.
+	 *
+	 * Constructed with the GIL held and after the stream redirect, destroyed
+	 * during unwinding or at the end of the try block - always before the GIL
+	 * guard is released, which is what lets `StopWatchdog()` poll a pending
+	 * injection safely. It never joins the watchdog: `RunSource` and
+	 * `EvalStringChecked` do that after releasing the GIL.
+	 */
+	class SandboxScope
+	{
+	public:
+		SandboxScope(ScriptSandbox* sandbox, const ScriptPolicy* policy,
+		             bool& memoryLimitUnsupportedLogged)
+			: m_sandbox(sandbox)
+		{
+			if (m_sandbox == nullptr)
+			{
+				// No helper means no enforceable restriction. Trusted still
+				// runs; a sandboxed request is refused rather than downgraded.
+				m_applyFailed = policy != nullptr && policy->mode == ScriptMode::Sandboxed;
+				return;
+			}
+
+			m_sandbox->ClearPolicy();
+			if (policy == nullptr || policy->mode != ScriptMode::Sandboxed)
+			{
+				return;
+			}
+
+			// Before the policy activates: the probe must not be judged by it.
+			if (policy->memoryLimitBytes > 0
+			    && !m_sandbox->ApplyMemoryLimit(policy->memoryLimitBytes)
+			    && !memoryLimitUnsupportedLogged)
+			{
+				NEURUS_ERR("ScriptEngine: in-process memory limiting is unavailable "
+				           "on this platform; the run continues unbounded");
+				memoryLimitUnsupportedLogged = true;
+			}
+
+			if (!m_sandbox->SetPolicy(*policy))
+			{
+				m_applyFailed = true;
+				return;
+			}
+
+			m_sandbox->BeginWatchdog(policy->wallClockLimit, PyThreadState_Get());
+		}
+
+		~SandboxScope()
+		{
+			if (m_sandbox == nullptr)
+			{
+				return;
+			}
+			// Order matters: the watchdog must not inject while the policy is
+			// still clearing, and the memory limit is restored last.
+			m_sandbox->StopWatchdog();
+			m_sandbox->ClearPolicy();
+			m_sandbox->RestoreMemoryLimit();
+		}
+
+		SandboxScope(const SandboxScope&) = delete;
+		SandboxScope& operator=(const SandboxScope&) = delete;
+
+		/// @return True when a sandboxed policy could not be applied.
+		bool ApplyFailed() const
+		{
+			return m_applyFailed;
+		}
+
+	private:
+		ScriptSandbox* m_sandbox = nullptr;
+		bool           m_applyFailed = false;
+	};
+
+	/**
+	 * @brief Joins the watchdog after the enclosing GIL scope has unwound.
+	 *
+	 * Declared before the GIL guard of a run, so destruction order releases the
+	 * GIL first and a blocking join cannot deadlock against the watchdog's
+	 * `PyGILState_Ensure`.
+	 */
+	class WatchdogJoin
+	{
+	public:
+		explicit WatchdogJoin(ScriptSandbox* sandbox)
+			: m_sandbox(sandbox)
+		{
+		}
+
+		~WatchdogJoin()
+		{
+			if (m_sandbox != nullptr)
+			{
+				m_sandbox->JoinWatchdog();
+			}
+		}
+
+		WatchdogJoin(const WatchdogJoin&) = delete;
+		WatchdogJoin& operator=(const WatchdogJoin&) = delete;
+
+	private:
+		ScriptSandbox* m_sandbox = nullptr;
+	};
 
 	/**
 	 * @brief Publishes one run's document context and clears it on exit.
@@ -600,8 +857,10 @@ private:
 	/// @brief A run queued by Submit()/SubmitFile(), executed by ExecutePending().
 	struct PendingRun
 	{
-		bool        fromFile = false;  ///< true = @ref text is a path; else source.
-		std::string text;
+		bool         fromFile = false;  ///< true = @ref text is a path; else source.
+		bool         hasPolicy = false; ///< true = @ref policy applies; else trusted.
+		std::string  text;
+		ScriptPolicy policy;            ///< Copied at submission time.
 	};
 
 	bool m_ready = false;
@@ -612,6 +871,11 @@ private:
 	ScriptContext m_current;            ///< Document published for the run in progress.
 	script::ScriptView m_view{&m_current, &m_dispatch};  ///< Injected into the module once.
 	std::vector<PendingRun> m_pending;  ///< Runs queued for the next ExecutePending().
+	std::unique_ptr<ScriptSandbox> m_sandbox;  ///< Guardrail helper; installed at Init().
+	ScriptRunStatus m_lastStatus = ScriptRunStatus::NotReady;  ///< Last run outcome.
+	std::string m_lastMessage;          ///< Last run's message, empty on success.
+	ScriptPolicy m_lastPolicy;          ///< Policy the last run executed under.
+	bool m_memoryLimitUnsupportedLogged = false;  ///< Log the memory-limit warning once.
 };
 
 }  // namespace neurus

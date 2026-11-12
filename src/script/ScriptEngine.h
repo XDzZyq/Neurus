@@ -21,11 +21,27 @@
 
 #include "script/ScriptConsole.h"
 #include "script/ScriptContext.h"
+#include "script/ScriptPolicy.h"
 
 namespace neurus
 {
 
 class IEventQueue;
+
+/**
+ * @brief Outcome of the most recent run.
+ *
+ * `NotReady` also covers the state before the first run: the engine has not
+ * executed anything yet.
+ */
+enum class ScriptRunStatus
+{
+	Ok,               ///< The run completed without a Python exception.
+	ScriptError,      ///< Ordinary Python exception (or a host-side failure).
+	SandboxViolation, ///< The policy refused an operation during the run.
+	Timeout,          ///< The wall-clock watchdog interrupted the run.
+	NotReady          ///< No interpreter, or no run yet.
+};
 
 /**
  * @brief Owns the embedded CPython interpreter and executes Python code.
@@ -78,10 +94,13 @@ public:
 	 *
 	 * @param expression Python expression source.
 	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @param policy Restrictions for this run; null and Trusted both run
+	 *               unrestricted.
 	 * @return The expression result as `repr`, or an empty string when the
 	 *         evaluation raised or the engine is not ready.
 	 */
-	std::string EvalString(const std::string& expression, const ScriptContext* ctx = nullptr);
+	std::string EvalString(const std::string& expression, const ScriptContext* ctx = nullptr,
+	                       const ScriptPolicy* policy = nullptr);
 
 	/**
 	 * @brief Execute a Python snippet and report whether it raised.
@@ -91,57 +110,97 @@ public:
 	 *
 	 * @param code UTF-8 Python source.
 	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @param policy Restrictions for this run; null and Trusted both run
+	 *               unrestricted.
 	 * @return True when the snippet completed without a Python exception.
 	 */
-	bool RunStringChecked(const std::string& code, const ScriptContext* ctx = nullptr);
+	bool RunStringChecked(const std::string& code, const ScriptContext* ctx = nullptr,
+	                      const ScriptPolicy* policy = nullptr);
 
 	/**
 	 * @brief Execute a Python file and report whether it raised.
 	 * @param path Filesystem path to a UTF-8 Python source file.
 	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @param policy Restrictions for this run; null and Trusted both run
+	 *               unrestricted.
 	 * @return False when the file cannot be read or the script raised.
 	 */
-	bool RunFileChecked(const std::string& path, const ScriptContext* ctx = nullptr);
+	bool RunFileChecked(const std::string& path, const ScriptContext* ctx = nullptr,
+	                    const ScriptPolicy* policy = nullptr);
 
 	/**
 	 * @brief Evaluate one expression and report failure explicitly.
 	 * @param expression Python expression source.
 	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @param policy Restrictions for this run; null and Trusted both run
+	 *               unrestricted.
 	 * @return The expression result as `repr`, or std::nullopt when it raised.
 	 */
 	std::optional<std::string> EvalStringChecked(const std::string& expression,
-	                                             const ScriptContext* ctx = nullptr);
+	                                             const ScriptContext* ctx = nullptr,
+	                                             const ScriptPolicy* policy = nullptr);
 
 	/**
 	 * @brief Execute a Python snippet on the main thread.
 	 * @param code UTF-8 Python source.
 	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @param policy Restrictions for this run; null and Trusted both run
+	 *               unrestricted.
 	 * @note `stdout`/`stderr` are captured into the console buffer; a Python
 	 *       error is buffered and logged but never propagates to the host.
 	 */
-	void RunString(const std::string& code, const ScriptContext* ctx = nullptr);
+	void RunString(const std::string& code, const ScriptContext* ctx = nullptr,
+	               const ScriptPolicy* policy = nullptr);
 
 	/**
 	 * @brief Execute a Python file on the main thread.
 	 * @param path Filesystem path to a UTF-8 Python source file.
 	 * @param ctx Read-only view for this run (borrowed, may be null).
+	 * @param policy Restrictions for this run; null and Trusted both run
+	 *               unrestricted.
 	 * @note Reads the file, then runs it under the same capture/error path as
 	 *       `RunString`; a missing file or Python error is logged but never
 	 *       propagates to the host.
 	 */
-	void RunFile(const std::string& path, const ScriptContext* ctx = nullptr);
+	void RunFile(const std::string& path, const ScriptContext* ctx = nullptr,
+	             const ScriptPolicy* policy = nullptr);
+
+	/// @return Outcome of the most recent run (NotReady before the first one).
+	ScriptRunStatus LastRunStatus() const;
+
+	/// @return Human-readable detail for the last run, empty on success.
+	std::string LastRunMessage() const;
+
+	/// @return The policy the last run executed under.
+	ScriptPolicy LastPolicy() const;
 
 	/**
 	 * @brief Queue a snippet to run at the next `ExecutePending()`.
 	 * @param code UTF-8 Python source.
+	 * @note This overload runs trusted; use the policy overload to restrict it.
 	 */
 	void Submit(const std::string& code);
 
 	/**
+	 * @brief Queue a snippet under a policy for the next `ExecutePending()`.
+	 * @param code UTF-8 Python source.
+	 * @param policy Restrictions applied when the run executes.
+	 */
+	void Submit(const std::string& code, const ScriptPolicy& policy);
+
+	/**
 	 * @brief Queue a Python file to run at the next `ExecutePending()`.
 	 * @param path Filesystem path to a UTF-8 Python source file.
+	 * @note This overload runs trusted; use the policy overload to restrict it.
 	 */
 	void SubmitFile(const std::string& path);
+
+	/**
+	 * @brief Queue a Python file under a policy for the next `ExecutePending()`.
+	 * @param path Filesystem path to a UTF-8 Python source file.
+	 * @param policy Restrictions applied when the run executes.
+	 */
+	void SubmitFile(const std::string& path, const ScriptPolicy& policy);
 
 	/**
 	 * @brief Run every queued script in submission order, then clear the queue.

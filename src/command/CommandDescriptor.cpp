@@ -52,6 +52,7 @@ CommandCatalog MakeCommandCatalog()
 		CommandDescriptor{"script.info", "Report scripting readiness and versions.", false, false, {}},
 		CommandDescriptor{"script.console", "Report captured script console lines.", false, false, {}},
 		CommandDescriptor{"script.clear", "Clear the script console.", true, false, {}},
+		CommandDescriptor{"script.mode", "Report or pin the session scripting mode.", true, false, {}},
 		CommandDescriptor{"snapshot.capture", "Capture the viewport or all attachments.", true, false, {"path"}},
 	});
 }
