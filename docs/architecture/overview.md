@@ -106,13 +106,17 @@ issued them.
      has not been generated (a plain `mkdocs serve`, or a CI run where the
      non-fatal graphify step failed). Raw hrefs are passed through unvalidated
      AND unrewritten, so this path is URL-relative to /architecture/overview/,
-     not source-relative like a markdown link would be. -->
+     not source-relative like a markdown link would be. That is also why the
+     call to action below is a raw <a class="md-button"> rather than
+     attr_list's [text](url){ .md-button }, which would be validated. -->
 
 The diagrams above are hand-maintained. For a generated counterpart, the
-<a href="../../graphify.html" target="_blank">structure graph</a> maps the
+structure graph maps the
 classes and functions in `src/` and the calls, inheritance and containment
 between them, grouped into communities that track the layer boundaries above. It
 is built from tree-sitter ASTs by
 [graphify](https://github.com/Graphify-Labs/graphify) during the documentation
 build; regenerate it with `make doc`. Shaders do not appear, and the page needs
 network access to load its layout engine.
+
+<a href="../../graphify.html" target="_blank" rel="noopener" class="md-button md-button--primary">Open the structure graph</a>
