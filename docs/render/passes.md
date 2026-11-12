@@ -1,6 +1,6 @@
 # Render Passes
 
-Neurus renders deferred PBR through a fixed chain of compute and raster passes, from shadow depth through lighting and IBL to the scene image, then a separate overlay graph over that image.
+Neurus renders deferred PBR through a fixed chain of compute and raster passes, from shadow depth through lighting to the scene image, then a separate overlay graph over that image.
 
 ## Pipeline order
 
@@ -21,13 +21,12 @@ flowchart TD
         geometry["GeometryPass<br/>G-Buffer MRT: Position, Normal, Albedo,<br/>MetallicRoughness, IDBuffer, Depth"]
         ssao["SSAOPass<br/>compute: reads the G-Buffer, writes AO to an R8 attachment"]
         intensity["ShadowIntensityPass<br/>per-light shadow eval into a layered R8 array<br/>one jittered lookup, EMA over the budget"]
-        lighting["LightingPass<br/>G-Buffer + AO + shadow array -> HDRColor<br/>reads the point, sun and spot SSBOs"]
-        ibl["IBLPass<br/>compute: reads G-Buffer + HDRColor,<br/>applies diffuse + specular IBL, writes HDRColor"]
+        lighting["LightingPass<br/>G-Buffer + AO + shadow array -> HDRColor<br/>point, sun and spot lights plus IBL"]
         compose["ComposePass<br/>compute: tone maps HDRColor, applies gamma,<br/>writes ComposedOutput"]
         fxaa["FXAAPass<br/>luma edge detection plus edge search<br/>only when AA is FXAA"]
         tail["scene tail<br/>ComposedOutput (no FXAA) | FXAAOutput (FXAA)"]
 
-        shadow --> geometry --> ssao --> intensity --> lighting --> ibl --> compose
+        shadow --> geometry --> ssao --> intensity --> lighting --> compose
         compose -->|"no FXAA"| tail
         compose --> fxaa
         fxaa -->|"FXAA"| tail
@@ -100,6 +99,27 @@ The shadow depth pass renders per-light depth into `RenderCache` via `GetShadowM
 - **Output**: `VK_FORMAT_R8_UNORM` attachment (`AttachmentName::SSAO`).
 - **Lighting**: the ambient term is multiplied by `(1.0 - ao)` so occluded areas receive less ambient light.
 - **Radius**: default 0.15 (appropriate for the [-1, 1] scene scale).
+
+## Lighting pass
+
+`LightingPass` is one full-screen compute dispatch that turns the G-Buffer into
+`HDRColor`:
+
+- **Bindings**: 0-3 are the G-Buffer (`Position`, `Normal`, `Albedo`,
+  `MetallicRoughness`), 4 is the `HDRColor` storage image, 7 is `SSAO`, 10 is the
+  shadow intensity array, 8 and 9 are the IBL diffuse and specular cubemaps, and
+  5 / 6 / 11 are the point, sun and spot SSBOs from
+  `RenderCache::GetLightingCache()`. The three SSBO bindings are
+  `PARTIALLY_BOUND`, so an empty light list leaves them unwritten while a zero
+  count keeps the shader from reading them.
+
+- **Push constants**: the three light counts, camera position, the view matrix,
+  inverse view-projection for the skybox ray, and the `iblEnabled` and
+  transparent-background flags.
+- **IBL is sampled here, not in a pass of its own.** `IBLPass::Generate()` builds
+  the diffuse irradiance and specular prefiltered cubemaps once, when an
+  environment is uploaded; its `Record()` is a no-op and the scene graph never
+  contains it. Bindings 8 and 9 are those cubemaps.
 
 ## Selection outline pass
 
