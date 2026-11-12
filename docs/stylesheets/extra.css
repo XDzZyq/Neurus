@@ -1,0 +1,8 @@
+/* Mermaid draws at the width its own layout produced. Without this rule a
+   diagram wider than the article column is clipped at the column edge instead
+   of being scaled down, which is how a node's text ends up cut in half. */
+.md-typeset .mermaid > svg
+{
+	max-width: 100%;
+	height: auto;
+}

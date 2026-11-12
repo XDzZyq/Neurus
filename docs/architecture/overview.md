@@ -33,18 +33,24 @@ flowchart TD
 The remaining layers sit outside that chain:
 
 ```mermaid
+%%{init: {"flowchart": {"rankSpacing": 40}}}%%
 flowchart TB
-    subgraph standalone["process-level layers"]
-        direction LR
-        script["Script Layer - src/script/<br/>embedded CPython and the neurus module<br/>mutates through typed events only"]
-        application["Application Layer - src/app/<br/>composition root: creates every layer<br/>and wires the channels between them"]
-    end
-    subgraph shared["shared, Vulkan-free libraries"]
-        direction LR
+    application["Application Layer - src/app/<br/>composition root: creates every layer<br/>and wires the channels"]
+    script["Script Layer - src/script/<br/>embedded CPython and the neurus module<br/>mutates through typed events only"]
+
+    application ~~~ script
+```
+
+The shared, Vulkan-free libraries:
+
+```mermaid
+%%{init: {"flowchart": {"rankSpacing": 40}}}%%
+flowchart TB
         asset["Asset Layer - src/asset/<br/>CPU data: MeshData, ImageData, PixelFormat"]
         scene["Scene Layer - src/scene/<br/>objects: Camera, Light, Mesh, Transform, UID"]
         core["Core Layer - src/core/<br/>UID, ResourceManager, RenderConfig, Log, Graph"]
-    end
+
+        asset ~~~ scene ~~~ core
 ```
 
 ### The event bus is the pivot
@@ -52,7 +58,7 @@ flowchart TB
 Every editor mutation crosses one node, whichever layer starts it:
 
 ```mermaid
-flowchart LR
+flowchart TD
     ui["UI panels"] --> uiEvents["UIEvents<br/>Qt signals"]
     uiEvents --> onUIEvent["Editor::OnUIEvent"]
     onUIEvent -->|"Enqueue"| bus["EventBus (EventQueue)<br/>owned by the Editor"]

@@ -138,6 +138,11 @@ nav:
       - Namespaces: Neurus/namespaces.md
       - Files: Neurus/files.md
 
+# Mermaid draws at its intrinsic width; this stylesheet makes an over-wide
+# diagram scale to the article column instead of being clipped.
+extra_css:
+  - stylesheets/extra.css
+
 # Sortable data tables. This is Material's documented tablesort integration: the
 # library from the CDN plus the shim in docs/javascripts/. Both are optional at
 # runtime - without them a table still renders, it just does not sort.
