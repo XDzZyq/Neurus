@@ -151,6 +151,14 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 
 	                     // Commands run first: their handlers dispatch events
 	                     // synchronously, so mutations are visible to this tick.
+	                     // The first tick rebases the UI dirty baseline on the
+	                     // layout Qt actually produced; show() and the first
+	                     // layout pass can still move a restored dock layout.
+	                     if (app_uiBaselinePending)
+	                     {
+		                     app_savedUiState = app_mainWindow->ExportLayout();
+		                     app_uiBaselinePending = false;
+	                     }
 	                     if (app_session)
 	                     {
 		                     app_session->DrainOnMainThread();

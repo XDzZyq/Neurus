@@ -167,6 +167,7 @@ private:
 	std::string app_projectPath;    ///< Current project file path ("" = unsaved).
 	std::string app_uiLayout;       ///< Transient UI-state blob for (de)serialization.
 	std::string app_savedUiState;   ///< UI blob as last saved/loaded (dirty baseline).
+	bool        app_uiBaselinePending = true;  ///< Rebase the layout on the first tick.
 	std::unique_ptr<Preferences> app_preferences;  ///< ~/.neurus/preferences.json (loaded before the window).
 
 	// --- Command session state ---

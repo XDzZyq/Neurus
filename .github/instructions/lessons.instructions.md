@@ -139,8 +139,8 @@ the **rule** that prevents it. Design detail behind these lives in
   geometry saved on another screen, and `QMainWindow::statusBar()` creates the
   status bar on first use, so the first error notification shrank the dock area
   and refit every splitter. Rule: rebase `app_savedUiState` on `ExportLayout()`
-  after `ApplyLayout()`, never on the file blob, and create window chrome
-  (status bar, toolbars) up front, not lazily.
+  after `ApplyLayout()` and again on the first frame tick, never on the file
+  blob, and create window chrome (status bar, toolbars) up front, not lazily.
 
 ## Process and environment
 

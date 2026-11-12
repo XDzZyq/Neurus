@@ -268,6 +268,11 @@ int Application::Run()
 	app_mainWindow->show();
 	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight());
 
+	// show() can normalise the window geometry after the load-time rebase (for
+	// example when the saved layout came from another screen). Rebase again on
+	// what Qt now exports, or a freshly opened project reads as dirty.
+	app_savedUiState = app_mainWindow->ExportLayout();
+
 	// Upload scene GPU resources AFTER the window is shown and the surface is
 	// ready: doing it earlier causes "Surface lost during recreation" on the
 	// first frame because the swapchain is not fully ready.
