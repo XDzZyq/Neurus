@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -97,7 +98,8 @@ struct ScriptEngine::Impl
 
 		// An explicit path wins; otherwise the build-time default environment
 		// (the uv-managed lib/.venv) is attached, or skipped when it is absent.
-		AttachEnvironment(envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath);
+		m_envPath = envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath;
+		AttachEnvironment(m_envPath);
 
 		// Keep the module handle: the views were registered once and resolve
 		// through the engine's ScriptView.
@@ -143,6 +145,65 @@ struct ScriptEngine::Impl
 		return m_ready;
 	}
 
+	/// @return Python runtime version, or empty before initialization.
+	std::string PythonVersion() const
+	{
+		if (!m_ready)
+			return {};
+		std::string version(Py_GetVersion());
+		const std::size_t newline = version.find('\n');
+		if (newline != std::string::npos)
+			version.resize(newline);
+		return version;
+	}
+
+	/// @return Managed environment path requested at initialization.
+	std::string EnvironmentPath() const
+	{
+		return m_envPath;
+	}
+
+	/**
+	 * @brief Evaluate one expression, buffer its repr and return it.
+	 *
+	 * Shares the run boundary, context and stream capture with RunSource so an
+	 * expression with side effects is one undo entry and its prints are visible.
+	 */
+	std::optional<std::string> EvalStringChecked(const std::string& expression,
+	                                             const ScriptContext* ctx)
+	{
+		if (!m_ready)
+		{
+			NEURUS_ERR("scripting not initialized");
+			return std::nullopt;
+		}
+
+		pybind11::gil_scoped_acquire gil;
+		ContextScope scope(m_current, ctx);
+		RunScope runScope(m_dispatch.EventQueue(), {});
+
+		try
+		{
+			StreamRedirect redirect(m_console);
+			pybind11::object value =
+				pybind11::eval(expression, pybind11::globals(), pybind11::globals());
+			const std::string result = pybind11::repr(value).cast<std::string>();
+			m_console.Append(ScriptLineKind::Result, result + "\n");
+			return result;
+		}
+		catch (const pybind11::error_already_set& e)
+		{
+			ReportError(e, "ScriptEngine::EvalString");
+			return std::nullopt;
+		}
+	}
+
+	/// @brief Compatibility wrapper returning an empty string on failure.
+	std::string EvalString(const std::string& expression, const ScriptContext* ctx)
+	{
+		return EvalStringChecked(expression, ctx).value_or(std::string{});
+	}
+
 	/// @brief Attach the queue scripted mutations are dispatched to.
 	void SetEventQueue(IEventQueue* queue)
 	{
@@ -150,45 +211,57 @@ struct ScriptEngine::Impl
 	}
 
 	/**
-	 * @brief Execute a Python snippet, buffering output and logging failures.
+	 * @brief Execute a Python snippet and report whether it raised.
 	 * @param code UTF-8 Python source.
 	 */
-	void RunString(const std::string& code, const ScriptContext* ctx)
+	bool RunStringChecked(const std::string& code, const ScriptContext* ctx)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
-			return;
+			return false;
 		}
 
-		RunSource(code, "ScriptEngine::RunString", {}, ctx);
+		return RunSource(code, "ScriptEngine::RunString", {}, ctx);
+	}
+
+	/// @brief Execute a snippet; compatibility wrapper that ignores the result.
+	void RunString(const std::string& code, const ScriptContext* ctx)
+	{
+		(void)RunStringChecked(code, ctx);
 	}
 
 	/**
-	 * @brief Read and execute a Python file, buffering output and logging.
+	 * @brief Read and execute a Python file, reporting whether it ran.
 	 * @param path Filesystem path to a UTF-8 Python source file.
 	 */
-	void RunFile(const std::string& path, const ScriptContext* ctx)
+	bool RunFileChecked(const std::string& path, const ScriptContext* ctx)
 	{
 		if (!m_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
-			return;
+			return false;
 		}
 
 		std::ifstream file(path, std::ios::binary);
 		if (!file)
 		{
 			NEURUS_ERR("ScriptEngine::RunFile: cannot open '" << path << "'");
-			return;
+			return false;
 		}
 
 		// Slurp the whole file: `py::exec` needs a complete source string, and
 		// CPython decodes UTF-8 source itself.
 		const std::string source((std::istreambuf_iterator<char>(file)),
 		                         std::istreambuf_iterator<char>());
-		RunSource(source, "ScriptEngine::RunFile",
-		          "Run " + std::filesystem::path(path).filename().string(), ctx);
+		return RunSource(source, "ScriptEngine::RunFile",
+		                 "Run " + std::filesystem::path(path).filename().string(), ctx);
+	}
+
+	/// @brief Execute a file; compatibility wrapper that ignores the result.
+	void RunFile(const std::string& path, const ScriptContext* ctx)
+	{
+		(void)RunFileChecked(path, ctx);
 	}
 
 	/// @brief The buffer captured Python output and errors are written to.
@@ -240,7 +313,7 @@ private:
 	/// @param entryName Caller name used in error reporting, not as a label.
 	/// @param runName History label for the run; empty means "Run Script".
 	/// @param ctx Document view to publish for the run.
-	void RunSource(const std::string& source, const char* entryName, const std::string& runName,
+	bool RunSource(const std::string& source, const char* entryName, const std::string& runName,
 	               const ScriptContext* ctx)
 	{
 		pybind11::gil_scoped_acquire gil;
@@ -265,10 +338,12 @@ private:
 			// still held) as this try scope unwinds.
 			StreamRedirect redirect(m_console);
 			pybind11::exec(source, pybind11::globals(), pybind11::globals());
+			return true;
 		}
 		catch (const pybind11::error_already_set& e)
 		{
 			ReportError(e, entryName);
+			return false;
 		}
 	}
 
@@ -530,6 +605,7 @@ private:
 	};
 
 	bool m_ready = false;
+	std::string m_envPath;              ///< Environment requested at initialization.
 	pybind11::module_ m_neuru;           ///< Embedded module; views registered once.
 	ScriptConsoleBuffer m_console;
 	ScriptDispatch m_dispatch;          ///< Funnel for scripted mutations; attached by SetEventQueue().

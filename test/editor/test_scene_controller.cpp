@@ -190,13 +190,13 @@ TEST_F(SceneControllerTest, SceneObjectAdd_StaleUid_NoOp)
 	EXPECT_FALSE(m_operations.CanUndo());
 }
 
-TEST_F(SceneControllerTest, DeleteRequested_RemovesSelectionAndRecordsComposite)
+TEST_F(SceneControllerTest, DeleteObjects_RemovesSelectionAndRecordsComposite)
 {
 	const int uid = LoadPooledMesh(m_resources);
 	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 	Process(); // mesh added + selected
 
-	m_eventBus.Enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(DeleteObjectsRequested{{uid}});
 	Process();
 
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
@@ -214,7 +214,7 @@ TEST_F(SceneControllerTest, DeleteRequested_RemovesSelectionAndRecordsComposite)
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0u);
 }
 
-TEST_F(SceneControllerTest, DeleteRequested_MultiSelection_RemovesAllAndRestores)
+TEST_F(SceneControllerTest, DeleteObjects_MultiSelection_RemovesAllAndRestores)
 {
 	const int uidA = LoadPooledMesh(m_resources);
 	const int uidB = LoadPooledMesh(m_resources);
@@ -225,7 +225,7 @@ TEST_F(SceneControllerTest, DeleteRequested_MultiSelection_RemovesAllAndRestores
 	// Multi-select both (shift-add semantics).
 	m_scene.selections.Select(m_scene.GetObjectID(uidA), true);
 
-	m_eventBus.Enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(DeleteObjectsRequested{{uidA, uidB}});
 	Process();
 
 	EXPECT_EQ(m_scene.mesh_list.count(uidA), 0u);
@@ -252,10 +252,10 @@ TEST_F(SceneControllerTest, DeleteRequested_MultiSelection_RemovesAllAndRestores
  *       activated. The deletion is one undoable entry like any other, and the
  *       stale activation resolves to nullptr rather than to a dangling camera.
  */
-TEST_F(SceneControllerTest, DeleteRequested_LastCamera_Allowed)
+TEST_F(SceneControllerTest, DeleteObjects_LastCamera_Allowed)
 {
 	m_scene.selections.Select(m_camera.get(), false);
-	m_eventBus.Enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(DeleteObjectsRequested{{m_camera->GetObjectID()}});
 	Process();
 
 	EXPECT_EQ(m_scene.cam_list.count(m_camera->GetObjectID()), 0u);
@@ -270,9 +270,9 @@ TEST_F(SceneControllerTest, DeleteRequested_LastCamera_Allowed)
 	EXPECT_EQ(m_scene.GetActiveCamera(), m_camera.get());
 }
 
-TEST_F(SceneControllerTest, DeleteRequested_EmptySelection_NoOp)
+TEST_F(SceneControllerTest, DeleteObjects_EmptyList_NoOp)
 {
-	m_eventBus.Enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(DeleteObjectsRequested{});
 	Process();
 	EXPECT_FALSE(m_operations.CanUndo());
 }
@@ -289,7 +289,7 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesLightingRebuild)
 	EXPECT_EQ(m_scene.light_list.count(light->GetObjectID()), 1u);
 }
 
-TEST_F(SceneControllerTest, DeleteRequested_Light_EnqueuesLightingRebuild)
+TEST_F(SceneControllerTest, DeleteObjects_Light_EnqueuesLightingRebuild)
 {
 	auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	m_eventBus.Enqueue(SceneObjectAddRequested{light->GetObjectID()});
@@ -297,7 +297,7 @@ TEST_F(SceneControllerTest, DeleteRequested_Light_EnqueuesLightingRebuild)
 
 	bool rebuilt = false;
 	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
-	m_eventBus.Enqueue(ObjectDeleteRequested{});
+	m_eventBus.Enqueue(DeleteObjectsRequested{{light->GetObjectID()}});
 	Process();
 
 	EXPECT_TRUE(rebuilt);

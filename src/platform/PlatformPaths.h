@@ -2,7 +2,7 @@
 
 /**
  * @file PlatformPaths.h
- * @brief OS-level filesystem path helpers (Qt-free, standard library only).
+ * @brief Per-user filesystem paths (standard library only, no Vulkan).
  */
 
 #include <filesystem>
@@ -17,5 +17,17 @@ namespace neurus {
  * @return The home directory (absolute when the environment variable is set).
  */
 std::filesystem::path HomeDirectory();
+
+/**
+ * @brief The per-user Neurus configuration directory.
+ * @return HomeDirectory() / ".neurus".
+ */
+std::filesystem::path NeurusConfigDirectory();
+
+/**
+ * @brief The directory holding command-session registry entries.
+ * @return NeurusConfigDirectory() / "sessions".
+ */
+std::filesystem::path SessionsDirectory();
 
 } // namespace neurus

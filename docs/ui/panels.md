@@ -18,12 +18,13 @@ The dock title is stored as a translation *key* (`nameKey`, default derived from
 
 ## Viewport
 
-`Viewport` (`src/ui/panels/Viewport.h`) is a `QWidget` that exposes a native window handle for the surface:
+`Viewport` (`src/ui/panels/Viewport.h`) is a `QWidget` that exposes a native window handle, which the Application uses to create the surface:
 
 - Sets `WA_NativeWindow` and `WA_OpaquePaintEvent`, so the widget has a dedicated native handle and Qt does not draw a background behind the Vulkan content.
 - Overrides `paintEvent()` to a no-op - all rendering is handled by Vulkan.
 - Is focusable (`Qt::StrongFocus`) to receive keyboard input.
-- Owns no Vulkan resources; `hwnd()` returns the native handle and surface creation is the renderer's responsibility.
+- Owns no Vulkan resources. `hwnd()` returns the native handle; the Application
+  creates the `VkSurfaceKHR` from it with `platform::CreateSurface()`.
 
 Signals:
 

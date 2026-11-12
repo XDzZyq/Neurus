@@ -9,6 +9,8 @@ Both macros automatically inject `__func__` and `__LINE__` for traceability, and
 - `NEURUS_LOG(msg)` - debug-only info output to `std::cout` (TTY-colored cyan in Debug), and an `Info` `LogEntry` appended to the buffer. Compiled out entirely in Release (no append, no count, no cost).
 - `NEURUS_ERR(msg)` - always-on error output to `std::cerr` (TTY-colored red in terminals), and an `Error` `LogEntry` appended to the buffer. Active in all build configurations so errors are never silently swallowed.
 
+TTY detection is `platform::IsTerminal` (`src/platform/PlatformSystem.h`), so the macros carry no platform `#ifdef` and the debug/release split above stays their only conditional.
+
 Debug detection accepts either MSVC's `_DEBUG` or the standard `NDEBUG`-absent signal, so the log is active in Debug on every supported compiler.
 
 Usage:

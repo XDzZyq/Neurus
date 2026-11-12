@@ -193,4 +193,40 @@ TEST(PreferencesTest, SaveCreatesParentDirectory)
 	EXPECT_TRUE(std::filesystem::exists(path));
 }
 
+// The shutdown save fires only when the live values differ from the loaded
+// snapshot, so equality must track every persisted field: a lossless round-trip
+// compares equal (no rewrite), a changed field does not (a save happens).
+TEST(PreferencesTest, EqualityFollowsEveryPersistedField)
+{
+	TempDir dir;
+	const std::string path = dir.filePath("preferences.json");
+
+	Preferences prefs;
+	prefs.language = "zh_CN";
+	prefs.targetFps = 30;
+	ASSERT_TRUE(prefs.Save(path));
+
+	Preferences loaded;
+	ASSERT_EQ(loaded.Load(path), LoadResult::Ok);
+	EXPECT_EQ(loaded, prefs);
+
+	loaded.language = "en";
+	EXPECT_NE(loaded, prefs);
+	loaded.language = prefs.language;
+	EXPECT_EQ(loaded, prefs);
+
+	loaded.targetFps = 60;
+	EXPECT_NE(loaded, prefs);
+}
+
+TEST(PreferencesTest, MissingFileComparesEqualToDefaults)
+{
+	// A read-only run leaves the file missing: the untouched defaults compare
+	// equal, so Application's shutdown save stays silent.
+	Preferences loaded;
+	EXPECT_EQ(loaded.Load("/nonexistent/path/preferences.json"),
+	          LoadResult::Missing);
+	EXPECT_EQ(loaded, Preferences{});
+}
+
 } // namespace

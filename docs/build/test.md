@@ -972,3 +972,35 @@ acceptable - skip none of these steps.
 7. **Feature workflow** - For new rendering features, follow the four-wave
    implementation pattern (Foundation -> Core -> Integration -> Tests/Docs) with
    per-wave verification.
+
+## Command Session End-to-End
+
+The CPU-only suites under `test/command`, `test/app` and `test/session` cover
+framing, the registry, the protocol, the dispatcher and the close policy. The
+full lifecycle needs the windowed application and a GPU, so verify it manually:
+
+```bash
+make build
+
+# Start a named background session and wait for readiness.
+build/Debug/cli/neurus open res/default.neurus.json --name e2e-check
+
+# The registry entry exists under ~/.neurus/sessions/e2e-check.json.
+build/Debug/cli/neurus list
+build/Debug/cli/neurus status e2e-check
+build/Debug/cli/neurus --format json status e2e-check
+
+# Close it and confirm the entry and process disappear.
+build/Debug/cli/neurus close e2e-check
+```
+
+Additional checks:
+
+- Run `neurus close` with no name while two sessions are live: it must print
+  `AMBIGUOUS_SESSION`, exit 3, and leave both running.
+- `neurus close --all` must close every live session.
+- Edit the scene, then `neurus close <name>`: it must refuse with
+  `DIRTY_PROJECT`. `--save` must persist and close; `--force` must discard.
+- Closing the terminal must leave the session running.
+- Launching `Neurus.exe` directly must create no registry entry and open no
+  listener.

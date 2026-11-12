@@ -3,6 +3,7 @@
 add_executable(neurus_test
 	shared/TestVulkanShared.cpp
 	shared/TestVulkanShared.h
+	shared/TestWindow.h
 	shared/TestMinimalSpv.h
 	shared/test_main.cpp
 	render/test_arraybuffer.cpp
@@ -54,6 +55,7 @@ add_executable(neurus_test
 	editor/test_camera_controller.cpp
 	editor/test_debug_draw_builder.cpp
 	editor/test_editor_scene_lifecycle.cpp
+	editor/test_editor_command_adapter.cpp
 	editor/test_editor_overlay_redraw.cpp
 	editor/test_editor_viewport.cpp
 	editor/test_gizmo_draw_builder.cpp
@@ -105,6 +107,19 @@ add_executable(neurus_test
 	ui/test_run_script_menu.cpp
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
+	platform/test_platform_system.cpp
+	command/test_dependencies.cpp
+	command/test_command_types.cpp
+	command/test_command_json.cpp
+	command/test_dispatcher.cpp
+	command/test_frame.cpp
+	command/test_session_registry.cpp
+	command/test_ipc_roundtrip.cpp
+	command/test_cli_parse.cpp
+	command/test_process_launch.cpp
+	command/test_terminal_binding.cpp
+	app/test_app_args.cpp
+	session/test_session_command.cpp
 )
 
 # Scripting engine unit tests (only when the script layer is enabled).
@@ -123,17 +138,30 @@ target_link_libraries(neurus_test PRIVATE
 	neurus_scene
 	neurus_app
 	neurus_platform
+	neurus_command
+	neurus_ipc
 	neurus_render
 	neurus_editor
 	neurus_ui
 	neurus_asset
 	gtest
+	cli11
+	neurus_cli_core
 	Vulkan::Vulkan
 	Qt6::Core
 	Qt6::Test
 	Qt6::Quick
 	Qt6::Qml
 )
+
+if(WIN32)
+	target_sources(neurus_test PRIVATE shared/win/TestWindowWin32.cpp)
+elseif(APPLE)
+	target_sources(neurus_test PRIVATE
+		shared/mac/TestWindowMacOS.cpp
+		command/test_process_mac.cpp
+	)
+endif()
 
 if(NEURUS_ENABLE_SCRIPTING)
 	target_link_libraries(neurus_test PRIVATE

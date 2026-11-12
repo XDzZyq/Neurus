@@ -1,8 +1,4 @@
-#define VK_USE_PLATFORM_METAL_EXT
-#include <vulkan/vulkan.h>
-
-#include "MacOSSurface.h"
-#include <vulkan/vulkan_raii.hpp>
+#include "platform/PlatformSurface.h"
 
 #import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -117,9 +113,9 @@ void updateMetalLayerSize(void* nativeHandle)
 
 } // anonymous namespace
 
-namespace neurus {
+namespace neurus::platform {
 
-std::vector<const char*> MacOSSurface::requiredInstanceExtensions() const
+std::vector<const char*> RequiredInstanceExtensions()
 {
     return {
         VK_KHR_SURFACE_EXTENSION_NAME,
@@ -128,24 +124,24 @@ std::vector<const char*> MacOSSurface::requiredInstanceExtensions() const
     };
 }
 
-vk::InstanceCreateFlags MacOSSurface::instanceCreateFlags() const
+vk::InstanceCreateFlags InstanceCreateFlags()
 {
     return vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
 }
 
-vk::raii::SurfaceKHR MacOSSurface::createSurface(
+vk::raii::SurfaceKHR CreateSurface(
     const vk::raii::Instance& instance,
-    NativeWindowHandle windowHandle) const
+    NativeWindowHandle windowHandle)
 {
     CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)makeViewMetalCompatible(windowHandle);
     vk::MetalSurfaceCreateInfoEXT createInfo({}, metalLayer);
     return vk::raii::SurfaceKHR(instance, createInfo);
 }
 
-void MacOSSurface::onResize(NativeWindowHandle windowHandle,
-                            uint32_t /*width*/, uint32_t /*height*/) const
+void OnResize(NativeWindowHandle windowHandle,
+              uint32_t /*width*/, uint32_t /*height*/)
 {
     updateMetalLayerSize(windowHandle);
 }
 
-} // namespace neurus
+} // namespace neurus::platform

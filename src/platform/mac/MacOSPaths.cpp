@@ -6,14 +6,20 @@ namespace neurus {
 
 std::filesystem::path HomeDirectory()
 {
-#ifdef _WIN32
-	const char* home = std::getenv("USERPROFILE");
-#else
 	const char* home = std::getenv("HOME");
-#endif
 	if (home && *home)
 		return home;
 	return std::filesystem::current_path();
+}
+
+std::filesystem::path NeurusConfigDirectory()
+{
+	return HomeDirectory() / ".neurus";
+}
+
+std::filesystem::path SessionsDirectory()
+{
+	return NeurusConfigDirectory() / "sessions";
 }
 
 } // namespace neurus

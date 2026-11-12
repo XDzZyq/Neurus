@@ -183,6 +183,22 @@ public:
 	 */
 	void PostScreenshot(bool allAttachments, std::filesystem::path directory);
 
+	/**
+	 * @brief Write a screenshot and complete @p future when the capture is done.
+	 *
+	 * Blocking callers wait on the returned future with their own timeout. The
+	 * renderer runs on its own thread, so waiting here does not need a published
+	 * frame; it reads whatever was drawn last.
+	 *
+	 * @param allAttachments False: the swapchain image. True: every attachment.
+	 * @param directory Destination root, created on demand.
+	 * @return Future carrying true when the renderer returned; false is never
+	 *         produced, and a failed capture is detected by the caller checking
+	 *         the directory.
+	 */
+	std::future<bool> PostScreenshotSync(bool allAttachments,
+	                                     std::filesystem::path directory);
+
 	/** @return A copy of the latest status; callable from any thread. */
 	RendererStatus Status() const;
 

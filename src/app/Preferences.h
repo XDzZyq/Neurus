@@ -31,6 +31,14 @@ struct Preferences
 	/** @brief Render-loop target FPS (0 = unlimited, run as fast as possible). */
 	int targetFps = 60;
 
+	/**
+	 * @brief Value equality over every persisted field.
+	 *
+	 * Defaulted so a new field is never forgotten: the Application saves on
+	 * shutdown only when the live values differ from the loaded ones.
+	 */
+	bool operator==(const Preferences&) const = default;
+
 	/** @brief Absolute path of the preferences file (~/.neurus/preferences.json). */
 	static std::string DefaultPath();
 

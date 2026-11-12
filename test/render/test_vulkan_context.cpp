@@ -21,8 +21,7 @@ protected:
 		// Check Vulkan availability
 		try
 		{
-			m_platform = CreatePlatformSurface();
-			auto instance = VulkanContext::CreateInstance(*m_platform);
+			auto instance = VulkanContext::CreateInstance();
 			auto physicalDevices = vk::raii::PhysicalDevices(instance);
 			m_hasVulkan = !physicalDevices.empty();
 		}
@@ -36,7 +35,6 @@ protected:
 	{
 	}
 
-	std::unique_ptr<PlatformSurface> m_platform;
 	bool m_hasVulkan = false;
 };
 
@@ -48,7 +46,7 @@ TEST_F(VulkanContextTest, CreateInstance_Succeeds)
 	}
 
 	ASSERT_NO_THROW({
-		auto instance = VulkanContext::CreateInstance(*m_platform);
+		auto instance = VulkanContext::CreateInstance();
 		ASSERT_TRUE(*instance);
 	});
 }
@@ -60,14 +58,14 @@ TEST_F(VulkanContextTest, CreateInstance_HasRequiredExtensions)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	auto instance = VulkanContext::CreateInstance(*m_platform);
+	auto instance = VulkanContext::CreateInstance();
 
 	// Verify required extensions are available
 	auto extensions = vk::enumerateInstanceExtensionProperties();
 	bool hasSurface = false;
 	bool hasPlatformSurface = false;
 
-	auto requiredExts = m_platform->requiredInstanceExtensions();
+	auto requiredExts = neurus::platform::RequiredInstanceExtensions();
 
 	for (const auto& ext : extensions)
 	{
@@ -95,7 +93,7 @@ TEST_F(VulkanContextTest, InstanceCleanup_NoCrash)
 
 	// Instance should clean up on destruction without errors
 	{
-		auto instance = VulkanContext::CreateInstance(*m_platform);
+		auto instance = VulkanContext::CreateInstance();
 	}
 	// If we get here without crash, cleanup worked
 	SUCCEED();
@@ -108,7 +106,7 @@ TEST_F(VulkanContextTest, InitDevice_UploadsUseTheGraphicsFamily)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	VulkanContext ctx(VulkanContext::CreateInstance(*m_platform));
+	VulkanContext ctx(VulkanContext::CreateInstance());
 	ctx.InitDevice();
 
 	// Uploads are synchronous on the render thread, so they ride the graphics

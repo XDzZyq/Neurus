@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <utility>
 
 #include "core/IResourceLookup.h"
 #include "editor/events/SceneEvents.h"
@@ -149,9 +150,14 @@ void RegisterObjectBindings(py::module_& data)
 			"uid",
 			[](const ObjectProxy& self) { return self.uid; },
 			"The object's unique ID.")
-		.def_property_readonly(
+		.def_property(
 			"name",
 			[](const ObjectProxy& self) { return self.Resolve()->o_name; },
+			[](const ObjectProxy& self, std::string value)
+			{
+				self.Resolve();
+				EmitEvent(self, RenameObjectRequested{self.uid, std::move(value)});
+			},
 			"The object's display name.")
 		.def_property_readonly(
 			"type",
@@ -165,7 +171,32 @@ void RegisterObjectBindings(py::module_& data)
 				self.Resolve();
 				EmitEvent(self, VisibilityChanged{self.uid, value, value});
 			},
+			"Whether the object is visible in the viewport and renderer.")
+		.def_property(
+			"viewport_visible",
+			[](const ObjectProxy& self) { return self.Resolve()->is_viewport; },
+			[](const ObjectProxy& self, bool value)
+			{
+				const ObjectID* obj = self.Resolve();
+				EmitEvent(self, VisibilityChanged{self.uid, value, obj->is_rendered});
+			},
 			"Whether the object is visible in the viewport.")
+		.def_property(
+			"render_visible",
+			[](const ObjectProxy& self) { return self.Resolve()->is_rendered; },
+			[](const ObjectProxy& self, bool value)
+			{
+				const ObjectID* obj = self.Resolve();
+				EmitEvent(self, VisibilityChanged{self.uid, obj->is_viewport, value});
+			},
+			"Whether the object is included in rendering.")
+		.def("delete",
+		     [](const ObjectProxy& self)
+		     {
+			     self.Resolve();
+			     EmitEvent(self, DeleteObjectsRequested{{self.uid}});
+		     },
+		     "Remove this object from the scene. The pooled resource stays for undo.")
 		.def_property_readonly(
 			"transform",
 			[](const ObjectProxy& self) -> py::object

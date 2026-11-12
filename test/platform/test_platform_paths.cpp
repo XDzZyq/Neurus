@@ -1,20 +1,21 @@
 /**
  * @file test_platform_paths.cpp
- * @brief Unit tests for the Platform layer's HomeDirectory() helper.
+ * @brief Unit tests for the per-user path helpers in the platform layer.
  *
  * Verifies the QDir::homePath()-equivalent contract: a non-empty absolute
  * path that follows $HOME (POSIX) / %USERPROFILE% (Windows), plus the
- * Preferences integration (the ~/.neurus path is built on top of it).
+ * Preferences integration (the ~/.neurus path is built on top of it) and the
+ * session directory used by the command layer.
  */
 
 #include <gtest/gtest.h>
 
-#include <cstdlib>
 #include <filesystem>
 #include <string>
 
 #include "app/Preferences.h"
 #include "platform/PlatformPaths.h"
+#include "platform/PlatformProcess.h"
 
 using namespace neurus;
 
@@ -35,11 +36,21 @@ TEST(PlatformPathsTest, HomeDirectoryIsNonEmptyAndAbsolute)
 
 TEST(PlatformPathsTest, HomeDirectoryFollowsHomeEnvVar)
 {
-	const char* env = std::getenv(kHomeEnv);
-	if (!env || !*env)
-		return;  // Unset env — fallback path, nothing to compare against.
+	const std::string env = neurus::EnvironmentValue(kHomeEnv);
+	if (env.empty())
+		return;  // Unset env: fallback path, nothing to compare against.
 
-	EXPECT_EQ(HomeDirectory().string(), std::string(env));
+	EXPECT_EQ(HomeDirectory().string(), env);
+}
+
+TEST(PlatformPathsTest, ConfigDirectoryIsBuiltOnHomeDirectory)
+{
+	EXPECT_EQ(NeurusConfigDirectory(), HomeDirectory() / ".neurus");
+}
+
+TEST(PlatformPathsTest, SessionsDirectoryIsBuiltOnConfigDirectory)
+{
+	EXPECT_EQ(SessionsDirectory(), NeurusConfigDirectory() / "sessions");
 }
 
 TEST(PlatformPathsTest, PreferencesDefaultPathBuiltOnHomeDirectory)

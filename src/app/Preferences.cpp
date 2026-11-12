@@ -2,6 +2,7 @@
 
 #include "core/Log.h"
 #include "core/Serialize.h"
+#include "platform/PlatformFile.h"
 #include "platform/PlatformPaths.h"
 
 #include <cereal/archives/json.hpp>
@@ -21,7 +22,7 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 {
 	std::ifstream in(path, std::ios::binary);
 	if (!in.is_open())
-		return LoadResult::Missing;  // First run: keep defaults, caller saves.
+		return LoadResult::Missing;  // First run: defaults, the file is not created.
 
 	// Parse into a default-constructed Preferences and adopt it only once the
 	// parse succeeds: a truncated or schema-drifted file cannot half-overwrite
@@ -80,12 +81,27 @@ bool Preferences::Save(const std::string& path) const
 	if (!parent.empty())
 	{
 		std::error_code ec;
+		const bool parentExisted = std::filesystem::exists(parent, ec);
+		ec.clear();
 		std::filesystem::create_directories(parent, ec);
 		if (ec)
 		{
 			NEURUS_ERR("[Preferences] failed to create parent directory for "
 			           << path << ": " << ec.message());
 			return false;
+		}
+		// create_directories creates the per-user root 0755; it also holds the
+		// session registry (tokens), so a root this call creates is owner-only.
+		// A pre-existing root keeps its mode - this is not the place to change it.
+		if (!parentExisted)
+		{
+			std::string permissionError;
+			if (!platform::RestrictToOwner(parent, true, permissionError))
+			{
+				NEURUS_ERR("[Preferences] failed to secure "
+				           << parent.generic_string() << ": " << permissionError);
+				return false;
+			}
 		}
 	}
 

@@ -26,13 +26,7 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include "platform/PlatformSurface.h"
-
-#ifdef _WIN32
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  include <windows.h>
-#endif
+#include "shared/TestWindow.h"
 
 #include <memory>
 #include <string>
@@ -75,9 +69,6 @@ protected:
 	{
 		try
 		{
-			// --- Platform surface abstraction ---
-			m_platform = CreatePlatformSurface();
-
 			// --- Instance ---
 			vk::ApplicationInfo appInfo("NeurusTest_SceneWiring",
 			                            VK_MAKE_VERSION(0, 4, 5),
@@ -85,12 +76,12 @@ protected:
 			                            VK_MAKE_VERSION(0, 4, 5),
 			                            VK_API_VERSION_1_4);
 
-			std::vector<const char*> instanceExts = m_platform->requiredInstanceExtensions();
+			std::vector<const char*> instanceExts = neurus::platform::RequiredInstanceExtensions();
 #ifdef _DEBUG
 			instanceExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
-			vk::InstanceCreateInfo instanceCI(m_platform->instanceCreateFlags(), &appInfo, {}, instanceExts);
+			vk::InstanceCreateInfo instanceCI(neurus::platform::InstanceCreateFlags(), &appInfo, {}, instanceExts);
 			m_instance = std::make_unique<vk::raii::Instance>(m_context, instanceCI);
 
 			// --- Physical device ---
@@ -181,35 +172,14 @@ protected:
 				*m_device, m_device->getQueue(m_graphicsQueueFamily, 0), m_graphicsQueueFamily);
 
 			// --- Native window + surface ---
-#ifdef _WIN32
-			HINSTANCE hInst = GetModuleHandle(nullptr);
-			WNDCLASSEX wc = {};
-			wc.cbSize = sizeof(WNDCLASSEX);
-			wc.lpfnWndProc = DefWindowProc;
-			wc.hInstance = hInst;
-			wc.lpszClassName = L"NeurusTestSceneWiring";
-			RegisterClassEx(&wc);
-
-			m_hwnd = CreateWindowEx(0, L"NeurusTestSceneWiring", L"Test",
-			                        WS_POPUP, 0, 0,
-			                        static_cast<int>(kRenderWidth),
-			                        static_cast<int>(kRenderHeight),
-			                        nullptr, nullptr, hInst, nullptr);
-			if (!m_hwnd)
+			if (!m_window.IsValid())
 			{
 				m_hasVulkan = false;
-				return;
+				GTEST_SKIP() << "SceneWiringTest requires a window surface (not available headless on this platform).";
 			}
 
 			m_surface = std::make_unique<vk::raii::SurfaceKHR>(
-				m_platform->createSurface(*m_instance, m_hwnd));
-#else
-			// macOS: headless surface creation requires a Cocoa event loop.
-			// Without Qt / NSApplication running, we cannot create a hidden
-			// NSWindow+NSView for the presentation surface.
-			m_hasVulkan = false;
-			GTEST_SKIP() << "SceneWiringTest requires a window surface (not available headless on this platform).";
-#endif
+				neurus::platform::CreateSurface(*m_instance, m_window.Handle()));
 
 			m_hasVulkan = true;
 		}
@@ -225,15 +195,6 @@ protected:
 		m_renderer.reset();
 		m_surface.reset();
 
-#ifdef _WIN32
-		if (m_hwnd)
-		{
-			DestroyWindow(m_hwnd);
-			m_hwnd = nullptr;
-		}
-#endif
-
-		m_platform.reset();
 		VulkanTestShared::TearDown();
 	}
 
@@ -270,13 +231,9 @@ protected:
 	static constexpr uint32_t kRenderWidth = 800;
 	static constexpr uint32_t kRenderHeight = 600;
 
-	std::unique_ptr<PlatformSurface> m_platform;
+	neurus::test::TestWindow m_window;
 	std::unique_ptr<vk::raii::SurfaceKHR> m_surface;
 	std::unique_ptr<DeferredRenderer> m_renderer;
-
-#ifdef _WIN32
-	HWND m_hwnd = nullptr;
-#endif
 };
 
 // ---------------------------------------------------------------------------

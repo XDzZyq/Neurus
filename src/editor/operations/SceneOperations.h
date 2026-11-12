@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <cereal/types/vector.hpp>
+#include <cereal/types/string.hpp>
 
 #include "glm/glm.hpp"
 
@@ -128,6 +129,19 @@ public:
 	ScaleChanged MakeEvent(int o, const glm::vec3& v) const
 	{
 		return ScaleChanged{ o, v.x, v.y, v.z };
+	}
+};
+
+/** @brief Absolute display-name edit. */
+class SetNameOp : public TransitionOp<SetNameOp, RenameObjectRequested, std::string>
+{
+public:
+	using TransitionOp::TransitionOp;
+	static constexpr const char* kLabel = "Rename";
+
+	RenameObjectRequested MakeEvent(int o, const std::string& v) const
+	{
+		return RenameObjectRequested{ o, v };
 	}
 };
 

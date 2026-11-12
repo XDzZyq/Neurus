@@ -60,6 +60,26 @@ target_include_directories(stb INTERFACE lib/src/stb)
 add_library(cereal INTERFACE)
 target_include_directories(cereal INTERFACE lib/src/cereal/include)
 
+# Standalone Asio (header-only networking, loopback command transport)
+add_library(asio INTERFACE)
+target_include_directories(asio SYSTEM INTERFACE lib/src/asio/include)
+target_compile_definitions(asio INTERFACE
+	ASIO_STANDALONE
+	ASIO_NO_DEPRECATED
+	WIN32_LEAN_AND_MEAN
+	_WIN32_WINNT=0x0601)
+if(WIN32)
+	target_link_libraries(asio INTERFACE ws2_32 mswsock bcrypt)
+endif()
+
+# CLI11 (header-only command-line parser)
+add_library(cli11 INTERFACE)
+target_include_directories(cli11 SYSTEM INTERFACE lib/src/cli11/include)
+
+# nlohmann/json (header-only JSON used by the command protocol)
+add_library(nlohmann_json INTERFACE)
+target_include_directories(nlohmann_json SYSTEM INTERFACE lib/src/json/include)
+
 # Vulkan (from SDK)
 find_package(Vulkan REQUIRED)
 if(NOT Vulkan_FOUND)

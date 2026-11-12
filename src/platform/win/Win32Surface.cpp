@@ -1,11 +1,11 @@
-#define VK_USE_PLATFORM_WIN32_KHR
-#include "Win32Surface.h"
+#include "platform/PlatformSurface.h"
 
 #include <Windows.h>
 
-namespace neurus {
+namespace neurus::platform
+{
 
-std::vector<const char*> Win32Surface::requiredInstanceExtensions() const
+std::vector<const char*> RequiredInstanceExtensions()
 {
 	return {
 		VK_KHR_SURFACE_EXTENSION_NAME,
@@ -13,13 +13,22 @@ std::vector<const char*> Win32Surface::requiredInstanceExtensions() const
 	};
 }
 
-vk::raii::SurfaceKHR Win32Surface::createSurface(
+vk::InstanceCreateFlags InstanceCreateFlags()
+{
+	return {};
+}
+
+vk::raii::SurfaceKHR CreateSurface(
 	const vk::raii::Instance& instance,
-	NativeWindowHandle windowHandle) const
+	NativeWindowHandle windowHandle)
 {
 	HINSTANCE hinstance = GetModuleHandle(nullptr);
 	vk::Win32SurfaceCreateInfoKHR createInfo({}, hinstance, static_cast<HWND>(windowHandle));
 	return vk::raii::SurfaceKHR(instance, createInfo);
 }
 
-} // namespace neurus
+void OnResize(NativeWindowHandle /*windowHandle*/, uint32_t /*width*/, uint32_t /*height*/)
+{
+}
+
+} // namespace neurus::platform

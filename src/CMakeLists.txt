@@ -7,6 +7,12 @@
 # Core Types (header-only, no dependencies)
 add_subdirectory(core)
 
+# Command core (Qt-free, Vulkan-free typed commands)
+add_subdirectory(command)
+
+# IPC transport (qt-free, Vulkan-free loopback command server/client)
+add_subdirectory(ipc)
+
 # Platform Layer (Vulkan surface abstraction - leaf dependency)
 add_subdirectory(platform)
 
@@ -32,6 +38,9 @@ add_subdirectory(app)
 if(NEURUS_ENABLE_SCRIPTING)
 	add_subdirectory(script)
 endif()
+
+# Standalone command-line client (Qt-free, Vulkan-free)
+add_subdirectory(cli)
 
 # ---------------------------------------------------------------------------
 # Main Executable

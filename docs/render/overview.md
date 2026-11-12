@@ -1,6 +1,8 @@
 # Renderer Overview
 
-The renderer is a pure rendering service that owns every GPU resource in Neurus and turns a read-only per-frame scene snapshot into a presented image.
+The renderer is a pure rendering service. It owns the swapchain and every GPU
+resource below it, and turns a read-only per-frame scene snapshot into a
+presented image.
 
 ## Responsibility
 
@@ -14,13 +16,13 @@ The renderer may:
 
 - Read scene data via const reference
 - Subscribe to UIEvents signals for configuration changes
-- Own GPU resources (device, swapchain, pipeline, command buffers, RenderCache, attachments)
+- Own GPU resources (swapchain, pipeline, command buffers, RenderCache, attachments)
 - Emit performance metrics or warnings via UIEvents
 
 The renderer must not:
 
 - Mutate application state
-- Depend on the Editor or UI layers (except a borrowed `VkSurfaceKHR` reference)
+- Depend on the Editor or UI layers (except a borrowed `VkSurfaceKHR` reference from the Application)
 - Directly call UI or Editor functions
 - Include headers from `src/editor/` or `src/ui/`
 
@@ -28,8 +30,14 @@ Cross-layer communication goes through UIEvents (Qt signals/slots) for UI to Edi
 
 ### Vulkan ownership
 
-- The UI layer owns `VkSurfaceKHR` (created from a `QWindow` and `QVulkanInstance`).
-- The renderer owns everything else: the instance (via `QVulkanInstance` sharing), device, swapchain, pipeline, command pool and all GPU resources.
+- The Application layer owns `VkInstance`, `VkDevice` and `VkQueue`
+  (`VulkanContext`); there is no `QVulkanInstance`.
+- The Application layer owns `VkSurfaceKHR`, created from the viewport's native
+  window handle with `platform::CreateSurface()`.
+- The renderer borrows the surface, device and queue. It owns the swapchain,
+  pipelines, command pool and all GPU resources below the swapchain.
+- The UI layer owns the native window and its handle; it creates no Vulkan
+  object.
 - No GPU resource is shared across layers.
 - Non-copyable GPU resource classes delete copy and assignment.
 
@@ -46,7 +54,7 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 ## Where the code lives
 
 - `src/render/` - the renderer layer sources.
-- `src/render/VulkanContext` - instance, physical device, logical device, queues.
+- `src/app/VulkanContext` - instance, physical device, logical device, queues (Application-owned).
 - `src/render/Swapchain.h` - swapchain creation, image acquisition, presentation, recreation.
 - `src/render/Image.h/cpp` - GPU image with `ImageState` tracking (including `Invalid`) and mipmap generation.
 - `src/render/Barrier.h/cpp` - centralized image barrier management (`ImageState` to Vulkan layout/stage/access).
@@ -75,7 +83,8 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 - `src/render/passes/` - render passes; see [Passes](passes.md).
 - `src/render/overlay/` - overlay graph and its copy pass (`OverlayEngine`), plus the Vulkan-free overlay payloads; see [Passes](passes.md) and [Overlays](../scene/overlays.md).
 
-> Note: the renderer's `VulkanContext` lives under `src/app/`, not `src/render/`.
+> Note: `VulkanContext` lives under `src/app/`, not `src/render/`; the
+> Application owns it and the renderer borrows its device and queue.
 
 `UploadMesh(const Mesh&)` null-checks `o_mesh` and then delegates to `UploadMeshData(const MeshData&)`, which owns the 14-to-8 float vertex stripping. The running application reaches only `UploadMeshData`: `UploadMeshRequest` carries a `MeshData`, so the executor uploads a `Mesh` and a `DebugMesh` through the same call instead of duplicating the stripping. `UploadMesh(const Mesh&)` remains for the GPU test fixture.
 
@@ -83,7 +92,8 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 
 ### Device management (`VulkanContext`)
 
-- Create `VkDevice` from Qt's `QVulkanInstance`
+- Create `VkInstance` and `VkDevice` in `VulkanContext`, without
+  `QVulkanInstance`
 - Select the physical device (prefer a discrete GPU, fall back to the first available)
 - Choose the graphics queue family
 - Choose the queue family uploads use: the graphics family, always. An upload runs synchronously on the render thread and the IBL convolution dispatches need compute, which a graphics family always supports; a second family buys no overlap, and the uploaded images would need queue-family ownership transfers the recorded barriers do not express. One queue family for both roles, and the startup log names it: "uploads use the graphics queue family N".
@@ -92,7 +102,7 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 
 ### Swapchain management (`Swapchain`)
 
-- Create the swapchain from a `VkSurfaceKHR` (borrowed from the UI layer)
+- Create the swapchain from a `VkSurfaceKHR` (borrowed from the Application)
 - Select the surface format (prefer `VK_FORMAT_B8G8R8A8_SRGB`)
 - Select the present mode (prefer `VK_PRESENT_MODE_FIFO_KHR` for VSync)
 - Clamp the extent to surface capabilities

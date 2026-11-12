@@ -11,8 +11,6 @@
 
 namespace neurus {
 
-class PlatformSurface;
-
 /**
  * @brief Manages the Vulkan instance, physical device, and logical device.
  *
@@ -26,7 +24,7 @@ class VulkanContext
 {
 public:
 	/** @brief Creates a Vulkan instance with platform-provided extensions. */
-	static vk::raii::Instance CreateInstance(const PlatformSurface& platform);
+	static vk::raii::Instance CreateInstance();
 
 	/** @brief Takes ownership of the instance (from CreateInstance). */
 	explicit VulkanContext(vk::raii::Instance&& instance);

@@ -1,9 +1,11 @@
 /**
  * @file test_script_isolation.cpp
- * @brief The script layer must not reach into the renderer or UI.
+ * @brief The script layer must not reach into the renderer or UI, nor hold the Editor.
  *
- * `src/script/` sits on the Editor layer: it may include `editor/`, `core/` and
- * `scene/` headers, but never `render/` or `ui/`. This scans the layer's own
+ * `src/script/` sits on the Editor layer: it may include the editor's typed
+ * event headers (`editor/events/`) and `core/` / `scene/` headers, but never
+ * `render/` or `ui/`, and never the Editor orchestrator itself - the script
+ * layer reaches the editor only through typed events. This scans the layer's own
  * sources for a forbidden include so the boundary cannot erode silently.
  */
 
@@ -45,7 +47,8 @@ TEST(ScriptIsolation, NoRendererOrUiIncludes)
 			{
 				continue;
 			}
-			if (line.find("render/") != std::string::npos || line.find("ui/") != std::string::npos)
+			if (line.find("render/") != std::string::npos || line.find("ui/") != std::string::npos
+			    || line.find("editor/Editor.h") != std::string::npos)
 			{
 				violations.push_back(entry.path().filename().string() + ":" + std::to_string(lineNo) + ": " + line);
 			}

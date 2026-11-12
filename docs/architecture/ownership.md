@@ -1,18 +1,19 @@
 # Ownership
 
-Vulkan resources are owned by exactly one layer, with the UI layer contributing
-only the surface that the renderer consumes.
+Vulkan resources are owned by exactly one layer: the Application owns the
+instance, device, queues and surface, the Renderer owns the swapchain and every
+resource below it, and the UI owns only the native window.
 
 ## Vulkan Ownership Graph
 
 ```
-UI Layer owns:
-  QWindow -> VkSurfaceKHR
+Application Layer owns:
+  VkInstance, VkDevice, VkQueue (VulkanContext, no QVulkanInstance)
+  VkSurfaceKHR (created with platform::CreateSurface from the viewport's
+    native window handle)
 
 Renderer Layer owns:
-  VkInstance (shared via QVulkanInstance)
-  VkDevice + VkQueue
-  VkSwapchainKHR (consumes UI's VkSurfaceKHR)
+  VkSwapchainKHR (borrows the Application's VkSurfaceKHR, VkDevice and VkQueue)
   VkPipeline + VkPipelineLayout
   VkCommandPool + VkCommandBuffers
   RenderCache (cross-frame mutable resource pool, lazy GetAttachment /
@@ -60,9 +61,12 @@ been removed.
 
 ## Ownership Rules
 
-- UI Layer owns `VkSurfaceKHR` (created from QWindow + QVulkanInstance)
-- Renderer Layer owns everything else (instance via QVulkanInstance sharing,
-  device, swapchain, pipeline, command pool, all GPU resources)
+- The Application owns `VkInstance`, `VkDevice`, `VkQueue` and
+  `VkSurfaceKHR`; the surface is created from the viewport's native window
+  handle with `platform::CreateSurface()`. There is no `QVulkanInstance`.
+- The Renderer borrows the surface, device and queue, and owns the swapchain,
+  pipelines, command pools and every GPU resource below the swapchain.
+- The UI owns the native window and its handle; it creates no Vulkan object.
 - No shared ownership of GPU resources across layers
 - Non-copyable GPU resource classes (`= delete` copy/assign)
 - Each Vulkan handle has one owning layer

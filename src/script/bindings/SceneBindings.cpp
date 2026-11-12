@@ -19,12 +19,16 @@
 
 #include <pybind11/pybind11.h>
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "core/IResourceLookup.h"
+#include "editor/Input.h"
+#include "editor/events/SceneEvents.h"
 #include "scene/Camera.h"
 #include "scene/Environment.h"
 #include "scene/Light.h"
@@ -189,6 +193,49 @@ void RegisterSceneCollection(py::module_& scene, const char* name, bool resolves
 }
 
 /**
+ * @brief Extracts object UIDs from one proxy or any iterable of proxies.
+ *
+ * A single proxy is not iterable; a list, tuple or generator is. Casting each
+ * item to ObjectProxy accepts every typed proxy through its registered base.
+ */
+std::vector<int> ObjectUids(const py::object& objects)
+{
+	std::vector<int> uids;
+	if (objects.is_none())
+		return uids;
+
+	if (PyObject_HasAttrString(objects.ptr(), "__iter__"))
+	{
+		for (py::handle item : py::reinterpret_borrow<py::iterable>(objects))
+			uids.push_back(py::cast<ObjectProxy>(item).uid);
+	}
+	else
+	{
+		uids.push_back(py::cast<ObjectProxy>(objects).uid);
+	}
+	return uids;
+}
+
+/**
+ * @brief Wraps a newly created pooled object in its typed Python proxy.
+ */
+py::object ProxyForUid(const ScriptView* view, int uid)
+{
+	const IResourceLookup* pool = PoolOf(view);
+	if (pool == nullptr)
+		return py::cast(ObjectProxy{uid, view});
+	if (pool->Get<Mesh>(uid))
+		return py::cast(MeshProxy{uid, view});
+	if (pool->Get<Camera>(uid))
+		return py::cast(CameraProxy{uid, view});
+	if (pool->Get<Light>(uid))
+		return py::cast(LightProxy{uid, view});
+	if (pool->Get<Environment>(uid))
+		return py::cast(EnvironmentProxy{uid, view});
+	return py::cast(ObjectProxy{uid, view});
+}
+
+/**
  * @brief Internal helper behind `neurus.scene.active_camera()` and `.selection()`.
  *
  * Deliberately not a registered Python class: the scene module binds the two
@@ -284,6 +331,89 @@ void InstallSceneViews(py::module_& scene, const ScriptView* view)
 	          "The scene's active camera as a Camera proxy, or None when none is active.");
 	scene.def("selection", [view]() { return ContextProxy{view}.Selection(); },
 	          "The scene's selected objects as a list of Object proxies.");
+
+	scene.def(
+		"select",
+		[view](const py::object& objects, bool additive)
+		{
+			const std::vector<int> uids = ObjectUids(objects);
+			// Reuse the live click event instead of a separate set-write event:
+			// the first UID replaces the selection (or adds, when additive), every
+			// later one adds with Shift, so the last UID becomes active. That is
+			// exactly the set a click gesture builds, and each event records its
+			// own SetSelectionOp - all folded into the run's single undo entry.
+			if (uids.empty())
+			{
+				if (!additive)
+					EmitEvent(ProxyBase{0, view}, ObjectSelected{0, 0}); // clear
+				return;
+			}
+			EmitEvent(ProxyBase{0, view},
+			          ObjectSelected{uids.front(), additive ? Input::Mod_Shift : 0});
+			for (std::size_t i = 1; i < uids.size(); ++i)
+				EmitEvent(ProxyBase{0, view}, ObjectSelected{uids[i], Input::Mod_Shift});
+		},
+		py::arg("objects"), py::arg("additive") = false,
+		"Select one object or an iterable of objects; additive appends to the current set.");
+
+	scene.def(
+		"clear_selection",
+		[view]() { EmitEvent(ProxyBase{0, view}, ObjectSelected{0, 0}); },
+		"Clear the scene selection.");
+
+	scene.def(
+		"delete",
+		[view](const py::object& objects)
+		{
+			const std::vector<int> uids = ObjectUids(objects);
+			if (uids.empty())
+				return;
+			EmitEvent(ProxyBase{0, view}, DeleteObjectsRequested{uids});
+		},
+		py::arg("objects"),
+		"Remove one object or an iterable of objects from the scene as one undo entry.");
+
+	scene.def(
+		"import_mesh",
+		[view](const std::string& path, const std::string& name) -> py::object
+		{
+			// The Editor owns the pool, so creation is requested through a typed
+			// event; the reply slot is borrowed for the synchronous dispatch.
+			ObjectCreateResult result;
+			EmitEvent(ProxyBase{0, view}, MeshImportRequested{path, name, &result});
+			if (result.uid == 0)
+				throw std::runtime_error(result.error.empty() ? "neurus: mesh import failed" : result.error);
+			return ProxyForUid(view, result.uid);
+		},
+		py::arg("path"), py::arg("name") = std::string{},
+		"Load a mesh file, add it to the scene and return its Mesh proxy.");
+
+	scene.def(
+		"add_camera",
+		[view](const std::string& name) -> py::object
+		{
+			ObjectCreateResult result;
+			EmitEvent(ProxyBase{0, view}, CameraAddRequested{name, &result});
+			if (result.uid == 0)
+				throw std::runtime_error(result.error.empty() ? "neurus: camera creation failed" : result.error);
+			return ProxyForUid(view, result.uid);
+		},
+		py::arg("name") = std::string{},
+		"Create a camera, add it to the scene and return its Camera proxy.");
+
+	scene.def(
+		"duplicate",
+		[view](const py::object& object, const std::string& name) -> py::object
+		{
+			const ObjectProxy source = py::cast<ObjectProxy>(object);
+			ObjectCreateResult result;
+			EmitEvent(ProxyBase{0, view}, ObjectDuplicateRequested{source.uid, name, &result});
+			if (result.uid == 0)
+				throw std::runtime_error(result.error.empty() ? "neurus: duplication failed" : result.error);
+			return ProxyForUid(view, result.uid);
+		},
+		py::arg("object"), py::arg("name") = std::string{},
+		"Duplicate a pooled mesh or camera, add it to the scene and return its proxy.");
 }
 
 }  // namespace script

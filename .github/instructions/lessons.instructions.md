@@ -133,6 +133,14 @@ the **rule** that prevents it. Design detail behind these lives in
 - **A cancelled gesture leaves the document needing a save.** Rule: a drag frame
   (and the cancel path) is `ObjectPreviewed` with no `SceneModified`; only a
   confirm is `ObjectMutated`. `SceneModified` is one-way.
+- **A just-opened project reads dirty with no edits.** The layout half of
+  `Application::IsDirty()` compares `ExportLayout()` with the saved blob, and two
+  things move the layout without any edit: `restoreGeometry()` normalises a
+  geometry saved on another screen, and `QMainWindow::statusBar()` creates the
+  status bar on first use, so the first error notification shrank the dock area
+  and refit every splitter. Rule: rebase `app_savedUiState` on `ExportLayout()`
+  after `ApplyLayout()` and again on the first frame tick, never on the file
+  blob, and create window chrome (status bar, toolbars) up front, not lazily.
 
 ## Process and environment
 
@@ -152,6 +160,23 @@ the **rule** that prevents it. Design detail behind these lives in
   Neurus-Lib first, wait for its build/release workflow to succeed, and only then
   push Neurus (see
   [git-workflow.instructions.md](git-workflow.instructions.md)).
+- **`neurus open` on macOS waits for the full timeout on an app that already
+  died.** `kill(pid, 0)` succeeds on an unreaped zombie, and a failed `execv` in
+  the forked child is invisible to the parent. Rule: `IsProcessAlive` reaps its
+  own exited child with `waitpid(WNOHANG)` first, and `SpawnDetached` uses
+  `posix_spawn`, which returns the exec error synchronously, matching
+  `CreateProcess`.
+- **The detached app holds the CLI's files open on macOS.** A plain fork/exec
+  passes every descriptor without `O_CLOEXEC` to the app. Rule: spawn with
+  `POSIX_SPAWN_CLOEXEC_DEFAULT` and open only stdin/stdout/stderr explicitly.
+- **`neurus use` binding is lost under `sh -c` or a script on macOS.** A
+  parent-pid identity changes with every wrapper. Rule: key the macOS fallback
+  identity on the POSIX session and its leader's start time. Each agent shell
+  tool call usually starts a new session, so a binding made in one call is not
+  seen by the next; pass `--session` or `NEURUS_TERMINAL_ID` in harnesses.
+- **An e2e session rewrites the user's `~/.neurus/preferences.json`.**
+  `NEURUS_SESSIONS_DIR` redirects only the registry. Rule: the Application saves
+  preferences at shutdown only when they changed since load.
 
 ## Documentation build
 

@@ -9,7 +9,8 @@ sits, what it exposes, and how to run a script.
 `src/script/` sits on the **Editor** layer and never includes Renderer or UI
 headers. It exposes scene and editor state to Python for reading and writing,
 and routes every mutation through the editor's typed events rather than touching
-state directly. The isolation boundary is enforced by a test
+state directly. It never includes or holds the Editor: content creation is also
+requested through typed events. The isolation boundary is enforced by a test
 (`test/script/test_script_isolation.cpp`).
 
 - **`ScriptEngine`** (`src/script/ScriptEngine.h`) owns the interpreter. Its
@@ -53,6 +54,11 @@ The module is split by subject, not by layer:
   - `.objects` - every object the scene uses, keyed by UID only.
   - `.active_camera()` - the active camera proxy, or `None` when none is active.
   - `.selection()` - the selected objects as a list of `Object` proxies.
+  - `.import_mesh(path, name="")`, `.add_camera(name="")` and
+    `.duplicate(object, name="")` create scene content and return typed proxies,
+    through typed editor events rather than a call into the Editor.
+  - `.select(objects, additive=False)`, `.clear_selection()` and
+    `.delete(objects)` edit selection and scene membership.
 - `neurus.render.config` - the render settings (`gamma`, `pipeline`, ...).
 
 ```python
@@ -124,6 +130,63 @@ mesh.position = (1, 2, 3)
 print(mesh.position)            # (1.0, 2.0, 3.0) - already applied
 ```
 
+Names, visibility, deletion and selection are writable too, each through the
+same typed-event path:
+
+```python
+mesh.name = "Ground A"          # rename, one undo entry
+mesh.viewport_visible = False
+mesh.render_visible = True
+mesh.delete()                   # remove from the scene, one undo entry
+
+neurus.scene.select(mesh)
+neurus.scene.select([mesh], additive=True)
+neurus.scene.clear_selection()
+neurus.scene.delete([mesh, other])
+```
+
+`visible` sets both flags at once; `viewport_visible` and `render_visible` set
+them independently. Deletion removes scene membership only: the pooled object
+stays alive for undo, and a later write through a stale proxy raises.
+
+`select` reuses the live click event rather than a separate set-write event: the
+first UID replaces the selection, every later one adds with Shift, and the last
+UID becomes active - the same set a click gesture builds. `clear_selection()`
+emits the same event with UID 0 (a background click). Each event records its own
+selection entry, and the run's script scope folds them into one undo step.
+
+### Creating content
+
+`neurus.scene` creates meshes and cameras through the same editor path as the
+CLI and the panels. It does so with typed editor events, not a call into the
+Editor: the binding emits `MeshImportRequested` / `CameraAddRequested` /
+`ObjectDuplicateRequested` with a borrowed result slot, the Editor (which owns
+the resource pool) creates the object and fills the slot during the synchronous
+dispatch, and the binding returns the typed proxy:
+
+```python
+import neurus
+
+mesh = neurus.scene.import_mesh("res/obj/plane.obj", "Ground")
+camera = neurus.scene.add_camera("Shot Camera")
+copy = neurus.scene.duplicate(mesh, "Ground Copy")
+
+camera.position = (0, -8, 3)
+camera.is_active = True
+```
+
+A missing or geometry-less mesh file raises `RuntimeError` instead of adding an
+empty object. Light creation remains disabled until issue #60 is fixed.
+`import_mesh`, `add_camera` and `duplicate` land as one undo entry per script run.
+
+### Application-level operations stay out of Python
+
+Project save and snapshot capture are application-layer operations, not
+document mutations, so the module does not expose them. Scripts do not reach the
+Application at all: there is no `neurus.project`, no `neurus.snapshot`, and no
+application host behind the run. Undo, redo, history inspection, save, open and
+snapshot stay application-level operations; use the CLI or the UI for those.
+
 Writability is a property of the resource pool, not of scene membership: a pooled
 object that is not in the scene - an object held by undo history, or the pooled
 viewport camera - is writable too, as long as a setter names it. A target that
@@ -188,3 +251,23 @@ Two surfaces drive the engine:
 
 Output (`print`, tracebacks) appears in the console. Errors also reach the Log
 panel as `NEURUS_ERR`, and never crash the host.
+
+`stdout` is normal output; `stderr` is diagnostic output and does not by itself
+fail a run. A Python exception is different: the engine records it as an error
+and the CLI reports `SCRIPT_ERROR`. The engine's checked run API lets the CLI
+make that distinction, so a script that only logs to `stderr` still exits
+successfully.
+
+The CLI also exposes the same engine as a document driver:
+
+```text
+neurus script run --code "print('hello')"
+neurus script run -f script.py
+neurus script eval "1 + 2"
+neurus script info
+neurus script console --tail 20
+neurus script clear
+```
+
+`script eval` is expression-only; use `script run` for assignments, imports and
+multi-line statements.

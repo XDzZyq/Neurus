@@ -40,6 +40,37 @@ bool ScriptEngine::IsReady() const
 	return m_impl->IsReady();
 }
 
+std::string ScriptEngine::PythonVersion() const
+{
+	return m_impl->PythonVersion();
+}
+
+std::string ScriptEngine::EnvironmentPath() const
+{
+	return m_impl->EnvironmentPath();
+}
+
+std::string ScriptEngine::EvalString(const std::string& expression, const ScriptContext* ctx)
+{
+	return m_impl->EvalString(expression, ctx);
+}
+
+std::optional<std::string> ScriptEngine::EvalStringChecked(const std::string& expression,
+                                                           const ScriptContext* ctx)
+{
+	return m_impl->EvalStringChecked(expression, ctx);
+}
+
+bool ScriptEngine::RunStringChecked(const std::string& code, const ScriptContext* ctx)
+{
+	return m_impl->RunStringChecked(code, ctx);
+}
+
+bool ScriptEngine::RunFileChecked(const std::string& path, const ScriptContext* ctx)
+{
+	return m_impl->RunFileChecked(path, ctx);
+}
+
 void ScriptEngine::SetEventQueue(IEventQueue* queue)
 {
 	m_impl->SetEventQueue(queue);

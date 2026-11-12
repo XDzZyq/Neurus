@@ -105,6 +105,8 @@ nav:
       - Items: ui/items.md
       - Models: ui/models.md
       - Internationalization: ui/i18n.md
+  - Commands:
+      - Overview: command/overview.md
   - Core & Data:
       - UID and Resources: core/uid-and-resources.md
       - Serialization: core/serialization.md

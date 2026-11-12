@@ -53,6 +53,13 @@ Makefile convenience targets:
 - `make build` - full Debug build; `make build app` / `make build test` narrow to
   `Neurus` (`Neurus.exe` on Windows, `Neurus.app` on macOS) / `neurus_test`
 - `make check` - run all tests (or `make check FILTER="-R Pattern"`)
+
+Additional targets:
+
+- `neurus_command` - Qt-free typed command core
+- `neurus_ipc` - Qt-free loopback transport and registry
+- `neurus_cli` - output name `neurus`, written to `<build>/<config>/cli/` so it
+  cannot collide with `Neurus.exe` on a case-insensitive filesystem
 - `make release` - configure + build Release
 - `make nobuild` - generate the VS 2022 solution at `../Neurus_VS2022`
 - `make clean` - clean the Debug build

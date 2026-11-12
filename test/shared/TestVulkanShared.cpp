@@ -12,6 +12,8 @@
 
 #include <iostream>
 
+#include "platform/PlatformSurface.h"
+
 using namespace neurus;
 
 // ===========================================================================
@@ -35,16 +37,15 @@ void VulkanTestShared::SetUp()
 #endif
 		};
 
-		// Add platform-specific extensions via PlatformSurface
-		m_platform = neurus::CreatePlatformSurface();
-		auto platformExts = m_platform->requiredInstanceExtensions();
+		// Add platform-specific extensions.
+		auto platformExts = neurus::platform::RequiredInstanceExtensions();
 		for (const auto* ext : platformExts) {
 			// Skip VK_KHR_SURFACE (already added above)
 			if (std::strcmp(ext, VK_KHR_SURFACE_EXTENSION_NAME) != 0)
 				instanceExts.push_back(ext);
 		}
 
-		vk::InstanceCreateInfo instanceCI(m_platform->instanceCreateFlags(), &appInfo, {}, instanceExts);
+		vk::InstanceCreateInfo instanceCI(neurus::platform::InstanceCreateFlags(), &appInfo, {}, instanceExts);
 		m_instance = std::make_unique<vk::raii::Instance>(m_context, instanceCI);
 
 		// --- Physical device ---

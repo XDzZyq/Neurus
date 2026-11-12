@@ -49,6 +49,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
 
@@ -150,6 +152,22 @@ void Editor::Initialize()
 	});
 	ed_eventBus.Subscribe<SpotLightAddEvent>([this](const SpotLightAddEvent&) {
 		OnSpotLightAdd();
+		neurus::notify::Repaint(ed_eventBus);
+	});
+
+	// Script/command content creation. The Editor owns the ResourceManager, so
+	// these requests land here; the creation itself still forwards the usual
+	// SceneObjectAddRequested, which keeps the undo entry unchanged.
+	ed_eventBus.Subscribe<MeshImportRequested>([this](const MeshImportRequested& e) {
+		OnMeshImportRequested(e);
+		neurus::notify::Repaint(ed_eventBus);
+	});
+	ed_eventBus.Subscribe<CameraAddRequested>([this](const CameraAddRequested& e) {
+		OnCameraAddRequested(e);
+		neurus::notify::Repaint(ed_eventBus);
+	});
+	ed_eventBus.Subscribe<ObjectDuplicateRequested>([this](const ObjectDuplicateRequested& e) {
+		OnObjectDuplicateRequested(e);
 		neurus::notify::Repaint(ed_eventBus);
 	});
 
@@ -300,7 +318,17 @@ void Editor::Initialize()
 		ed_eventBus.Emit(ObjectSelected{ e.objectUid, e.modifiers });
 	});
 	ed_eventBus.Subscribe<DeleteRequested>([this](const DeleteRequested&) {
-		ed_eventBus.Emit(ObjectDeleteRequested{});
+		// Stamp the gesture with the current selection: the controller takes an
+		// explicit UID list, so the Delete key and a command share one handler.
+		// An empty selection does nothing.
+		std::vector<int> selected;
+		for (const ObjectID* obj : GetScene().selections.GetSelectedList())
+		{
+			if (obj != nullptr)
+				selected.push_back(obj->GetObjectID());
+		}
+		if (selected.empty()) return;
+		ed_eventBus.Emit(DeleteObjectsRequested{std::move(selected)});
 	});
 
 	// --- Viewport keystrokes -> modal transform intents ---
@@ -611,11 +639,12 @@ void Editor::UpdateUIContext(UIContext& ctx) const
 	ctx.config = &m_config;
 }
 
-void Editor::UpdateScriptContext(ScriptContext& ctx) const
+void Editor::UpdateScriptContext(ScriptContext& ctx)
 {
 	// Same shape as UpdateUIContext: borrowed pointers, no symbol calls. The pool
 	// is handed over as its read-only interface so a script can resolve names
-	// and ids without reaching the Editor's mutable ResourceManager.
+	// and ids without reaching the Editor's mutable ResourceManager. Content
+	// creation is not exposed here: a script asks for it through typed events.
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 	ctx.resources = m_resources.get();
@@ -810,7 +839,37 @@ void Editor::FinishLoad()
 
 void Editor::OnMeshImport(const std::string& path)
 {
+	std::string error;
+	const int uid = ImportMeshObject(path, {}, error);
+	if (uid == 0)
+		NEURUS_ERR("Failed to import mesh: " << error);
+}
+
+void Editor::OnMeshImportRequested(const MeshImportRequested& e)
+{
+	ObjectCreateResult local;
+	ObjectCreateResult& result = e.result != nullptr ? *e.result : local;
+	result.uid = ImportMeshObject(e.path, e.name, result.error);
+	if (result.uid == 0 && e.result == nullptr)
+		NEURUS_ERR("Failed to import mesh: " << result.error);
+}
+
+int Editor::ImportMeshObject(const std::string& path, const std::string& name,
+                             std::string& error)
+{
 	try {
+		// A missing file is not an empty mesh. Check before the load: the caller
+		// (command / GUI / script) reports the message verbatim, and nothing may
+		// enter the pool for a file we could not even open. ResolveAssetPath
+		// returns the path as given when nothing matches, so this still tests
+		// what the caller named.
+		std::error_code fsError;
+		if (!std::filesystem::is_regular_file(ResolveAssetPath(path), fsError))
+		{
+			error = "Mesh file not found: " + path;
+			return 0;
+		}
+
 		// Import = load the resource into the pool; the Add operation and the
 		// MeshGPU upload happen on demand when the add is processed - no inline
 		// upload here. A portable relative "res/..." path is stored when the file
@@ -822,17 +881,52 @@ void Editor::OnMeshImport(const std::string& path)
 		}
 
 		auto meshData = m_resources->Load<MeshData>(storedPath);
+		if (!meshData || meshData->GetVertexCount() == 0 || meshData->GetIndexCount() == 0)
+		{
+			// Project save serializes the whole pool, so a geometry-less MeshData
+			// would be written out and re-parsed on every later open. Load always
+			// creates a fresh UID, so removing this one cannot evict an earlier
+			// successful load from the same path.
+			if (meshData)
+				m_resources->Remove(meshData->GetObjectID());
+			error = "Mesh file contains no geometry: " + storedPath;
+			return 0;
+		}
 		auto mesh = m_resources->Load<Mesh>(meshData);
 
+		if (!name.empty())
+		{
+			const std::string unique = m_resources->SetName(mesh->GetObjectID(), name);
+			mesh->o_name = unique.empty() ? name : unique;
+		}
+
 		ed_eventBus.Emit(SceneObjectAddRequested{mesh->GetObjectID()});
-		NEURUS_LOG("[Editor] Imported mesh: " << storedPath);
+		NEURUS_LOG("[Editor] Imported mesh: " << storedPath << " as " << mesh->o_name);
+		return mesh->GetObjectID();
 	}
 	catch (const std::exception& e) {
-		NEURUS_ERR("Failed to import mesh: " << e.what());
+		error = e.what();
+		return 0;
 	}
 }
 
 void Editor::OnCameraAdd()
+{
+	std::string error;
+	if (AddCameraObject({}, error) == 0)
+		NEURUS_ERR("Failed to add camera: " << error);
+}
+
+void Editor::OnCameraAddRequested(const CameraAddRequested& e)
+{
+	ObjectCreateResult local;
+	ObjectCreateResult& result = e.result != nullptr ? *e.result : local;
+	result.uid = AddCameraObject(e.name, result.error);
+	if (result.uid == 0 && e.result == nullptr)
+		NEURUS_ERR("Failed to add camera: " << result.error);
+}
+
+int Editor::AddCameraObject(const std::string& name, std::string& error)
 {
 	try {
 		auto camera = m_resources->Load<Camera>();
@@ -840,12 +934,94 @@ void Editor::OnCameraAdd()
 		// SetTarPos, not a raw cam_tar write: the view matrix is cached eagerly, so
 		// assigning the field would leave the cache looking at the old target.
 		camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
+		if (!name.empty())
+		{
+			const std::string unique = m_resources->SetName(camera->GetObjectID(), name);
+			camera->o_name = unique.empty() ? name : unique;
+		}
 		ed_eventBus.Emit(SceneObjectAddRequested{camera->GetObjectID()});
-		NEURUS_LOG("[Editor] Added camera at (0, -5, 2)");
+		NEURUS_LOG("[Editor] Added camera at (0, -5, 2) as " << camera->o_name);
+		return camera->GetObjectID();
 	}
 	catch (const std::exception& e) {
-		NEURUS_ERR("Failed to add camera: " << e.what());
+		error = e.what();
+		return 0;
 	}
+}
+
+int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string& error)
+{
+	try {
+		auto source = m_resources->Get<ObjectID>(sourceUid);
+		if (!source)
+		{
+			error = "No pooled object with uid " + std::to_string(sourceUid) + ".";
+			return 0;
+		}
+		if (source->IsLight())
+		{
+			error = "Duplicating lights is disabled while issue #60 is open.";
+			return 0;
+		}
+
+		int uid = 0;
+		if (auto* camera = dynamic_cast<Camera*>(source.get()))
+		{
+			auto copy = m_resources->Load<Camera>(
+				camera->cam_w, camera->cam_h, camera->cam_pers, camera->cam_near, camera->cam_far);
+			copy->SetPosition(camera->GetPosition());
+			copy->SetRotation(camera->GetRotation());
+			copy->SetScale(camera->GetScale());
+			copy->SetTarPos(camera->cam_tar);
+			uid = copy->GetObjectID();
+		}
+		else if (auto* mesh = dynamic_cast<Mesh*>(source.get()))
+		{
+			auto copy = m_resources->Load<Mesh>(mesh->o_mesh);
+			copy->SetPosition(mesh->GetPosition());
+			copy->SetRotation(mesh->GetRotation());
+			copy->SetScale(mesh->GetScale());
+			copy->using_shadow = mesh->using_shadow;
+			copy->using_material = mesh->using_material;
+			copy->using_sdf = mesh->using_sdf;
+			copy->is_closure = mesh->is_closure;
+			copy->o_material = mesh->o_material;
+			if (mesh->o_shader)
+				copy->SetObjShader(mesh->o_shader);
+			uid = copy->GetObjectID();
+		}
+		else
+		{
+			error = "Duplicating this object type is not supported.";
+			return 0;
+		}
+
+		auto pooled = m_resources->Get<ObjectID>(uid);
+		if (!pooled)
+		{
+			error = "The duplicate resource is missing.";
+			return 0;
+		}
+		const std::string resolvedName = name.empty() ? source->o_name + " Copy" : name;
+		const std::string unique = m_resources->SetName(uid, resolvedName);
+		pooled->o_name = unique.empty() ? resolvedName : unique;
+
+		ed_eventBus.Emit(SceneObjectAddRequested{uid});
+		return uid;
+	}
+	catch (const std::exception& e) {
+		error = e.what();
+		return 0;
+	}
+}
+
+void Editor::OnObjectDuplicateRequested(const ObjectDuplicateRequested& e)
+{
+	ObjectCreateResult local;
+	ObjectCreateResult& result = e.result != nullptr ? *e.result : local;
+	result.uid = DuplicateObject(e.sourceUid, e.name, result.error);
+	if (result.uid == 0 && e.result == nullptr)
+		NEURUS_ERR("Failed to duplicate object: " << result.error);
 }
 
 void Editor::OnLightAdd()

@@ -1,0 +1,337 @@
+#include "platform/PlatformProcess.h"
+
+#include <cstdlib>
+#include <cstdint>
+#include <process.h>
+#include <string>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#include <tlhelp32.h>
+
+namespace neurus
+{
+namespace
+{
+
+bool IsFile(const std::filesystem::path& path)
+{
+	std::error_code error;
+	return std::filesystem::is_regular_file(path, error);
+}
+
+std::wstring QuoteArgument(const std::wstring& argument)
+{
+	if (argument.empty())
+		return L"\"\"";
+
+	if (argument.find_first_of(L" \t\n\v\"") == std::wstring::npos)
+		return argument;
+
+	std::wstring result = L"\"";
+	for (auto it = argument.begin();; ++it)
+	{
+		std::size_t backslashes = 0;
+		while (it != argument.end() && *it == L'\\')
+		{
+			++it;
+			++backslashes;
+		}
+		if (it == argument.end())
+		{
+			result.append(backslashes * 2, L'\\');
+			break;
+		}
+		if (*it == L'"')
+		{
+			result.append(backslashes * 2 + 1, L'\\');
+			result.push_back(*it);
+		}
+		else
+		{
+			result.append(backslashes, L'\\');
+			result.push_back(*it);
+		}
+	}
+	result.push_back(L'"');
+	return result;
+}
+
+} // namespace
+
+std::optional<std::filesystem::path> ResolveAppExecutable(
+	const std::filesystem::path& cliPath,
+	const std::optional<std::filesystem::path>& overridePath,
+	const std::string& envValue)
+{
+	if (overridePath && IsFile(*overridePath))
+		return *overridePath;
+	if (!envValue.empty() && IsFile(envValue))
+		return std::filesystem::path(envValue);
+
+	const std::filesystem::path base = cliPath.empty()
+		? std::filesystem::current_path()
+		: std::filesystem::absolute(cliPath);
+	const auto directory = base.parent_path();
+	const auto parent = directory.parent_path();
+	const auto grandparent = parent.parent_path();
+
+	// The CLI is usually in <build>/<config>/cli, next to the app.
+	for (const auto& candidate : {parent / "Neurus.exe", directory / "Neurus.exe",
+	                              grandparent / "Neurus.exe"})
+	{
+		if (IsFile(candidate))
+			return candidate;
+	}
+	return std::nullopt;
+}
+
+std::optional<std::filesystem::path> InstalledAppExecutable()
+{
+	// No installer location is defined for Windows yet, so only the paths next
+	// to the CLI can be found.
+	return std::nullopt;
+}
+
+std::optional<int> SpawnDetached(const std::filesystem::path& app,
+                                 const std::vector<std::string>& arguments,
+                                 const std::filesystem::path& logPath,
+                                 std::string& error)
+{
+	std::error_code directoryError;
+	std::filesystem::create_directories(logPath.parent_path(), directoryError);
+
+	std::wstring commandLine = QuoteArgument(app.wstring());
+	for (const auto& argument : arguments)
+	{
+		commandLine.push_back(L' ');
+		commandLine += QuoteArgument(std::wstring(argument.begin(), argument.end()));
+	}
+
+	SECURITY_ATTRIBUTES attributes{};
+	attributes.nLength = sizeof(attributes);
+	attributes.bInheritHandle = TRUE;
+
+	const HANDLE log = CreateFileW(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+	                               &attributes, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (log == INVALID_HANDLE_VALUE)
+	{
+		error = "Cannot open the session log.";
+		return std::nullopt;
+	}
+
+	// Inherit only the log handle. Passing TRUE to CreateProcessW without a
+	// handle list would also leak the caller's stdout pipe into the detached
+	// child, which keeps a terminal or test harness waiting for EOF.
+	SIZE_T attributeSize = 0;
+	InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeSize);
+	std::vector<unsigned char> attributeBuffer(attributeSize);
+	auto* attributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeBuffer.data());
+	if (!InitializeProcThreadAttributeList(attributeList, 1, 0, &attributeSize))
+	{
+		CloseHandle(log);
+		error = "Cannot prepare the child process attributes.";
+		return std::nullopt;
+	}
+	HANDLE inheritedHandles[1] = {log};
+	if (!UpdateProcThreadAttribute(attributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+	                               inheritedHandles, sizeof(inheritedHandles), nullptr, nullptr))
+	{
+		DeleteProcThreadAttributeList(attributeList);
+		CloseHandle(log);
+		error = "Cannot restrict the inherited handles.";
+		return std::nullopt;
+	}
+
+	STARTUPINFOEXW startup{};
+	startup.StartupInfo.cb = sizeof(startup);
+	startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+	startup.StartupInfo.hStdOutput = log;
+	startup.StartupInfo.hStdError = log;
+	startup.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
+	startup.lpAttributeList = attributeList;
+
+	PROCESS_INFORMATION process{};
+	const BOOL created = CreateProcessW(
+		app.c_str(), commandLine.data(), nullptr, nullptr, TRUE,
+		EXTENDED_STARTUPINFO_PRESENT | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+		nullptr, nullptr, &startup.StartupInfo, &process);
+	DeleteProcThreadAttributeList(attributeList);
+	CloseHandle(log);
+
+	if (!created)
+	{
+		error = "Cannot launch the Neurus application.";
+		return std::nullopt;
+	}
+
+	const int pid = static_cast<int>(process.dwProcessId);
+	CloseHandle(process.hThread);
+	CloseHandle(process.hProcess);
+	return pid;
+}
+
+std::filesystem::path CurrentExecutablePath()
+{
+	std::wstring buffer;
+	buffer.resize(32768);
+	const DWORD length = GetModuleFileNameW(nullptr, buffer.data(),
+	                                        static_cast<DWORD>(buffer.size()));
+	if (length == 0)
+		return {};
+	buffer.resize(length);
+	return std::filesystem::path(buffer);
+}
+
+std::string AppEnvironmentPath()
+{
+	return EnvironmentValue("NEURUS_APP");
+}
+
+int CurrentProcessId()
+{
+	return _getpid();
+}
+
+bool IsProcessAlive(int pid)
+{
+	if (pid <= 0)
+		return false;
+
+	const HANDLE handle = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+	                                  FALSE, static_cast<DWORD>(pid));
+	if (handle == nullptr)
+		return false;
+	DWORD exitCode = 0;
+	const bool alive = GetExitCodeProcess(handle, &exitCode) != 0 && exitCode == STILL_ACTIVE;
+	CloseHandle(handle);
+	return alive;
+}
+
+std::string EnvironmentValue(const char* name)
+{
+	char* value = nullptr;
+	size_t length = 0;
+	if (_dupenv_s(&value, &length, name) == 0 && value)
+	{
+		std::string result(value);
+		std::free(value);
+		return result;
+	}
+	std::free(value);
+	return {};
+}
+
+bool SetEnvironmentValue(const char* name, const char* value)
+{
+	return _putenv_s(name, value == nullptr ? "" : value) == 0;
+}
+
+std::vector<std::string> CommandLineArguments(int argc, char* argv[])
+{
+	int wideArgc = 0;
+	LPWSTR* wideArgv = CommandLineToArgvW(GetCommandLineW(), &wideArgc);
+	if (wideArgv == nullptr)
+		return std::vector<std::string>(argv, argv + argc);
+
+	std::vector<std::string> arguments;
+	arguments.reserve(static_cast<std::size_t>(wideArgc));
+	for (int i = 0; i < wideArgc; ++i)
+	{
+		const int size = WideCharToMultiByte(CP_UTF8, 0, wideArgv[i], -1,
+		                                     nullptr, 0, nullptr, nullptr);
+		if (size <= 0)
+		{
+			arguments.emplace_back();
+			continue;
+		}
+		std::string value(static_cast<std::size_t>(size - 1), '\0');
+		WideCharToMultiByte(CP_UTF8, 0, wideArgv[i], -1,
+		                    value.data(), size, nullptr, nullptr);
+		arguments.push_back(std::move(value));
+	}
+	LocalFree(wideArgv);
+	return arguments;
+}
+
+std::string TerminalIdentity()
+{
+	const std::string override = EnvironmentValue("NEURUS_TERMINAL_ID");
+	if (!override.empty())
+		return "explicit:" + override;
+
+	std::string hint;
+	for (const char* name : {"WT_SESSION", "TERM_SESSION_ID", "TMUX_PANE", "ConEmuPID"})
+	{
+		const std::string value = EnvironmentValue(name);
+		if (!value.empty())
+		{
+			hint = std::string(name) + ":" + value;
+			break;
+		}
+	}
+
+	DWORD parentPid = 0;
+	const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (snapshot != INVALID_HANDLE_VALUE)
+	{
+		PROCESSENTRY32W entry{};
+		entry.dwSize = sizeof(entry);
+		const DWORD self = GetCurrentProcessId();
+		if (Process32FirstW(snapshot, &entry))
+		{
+			do
+			{
+				if (entry.th32ProcessID == self)
+				{
+					parentPid = entry.th32ParentProcessID;
+					break;
+				}
+			} while (Process32NextW(snapshot, &entry));
+		}
+		CloseHandle(snapshot);
+	}
+
+	unsigned long long creation = 0;
+	if (parentPid != 0)
+	{
+		const HANDLE parent = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, parentPid);
+		if (parent != nullptr)
+		{
+			FILETIME created{};
+			FILETIME exited{};
+			FILETIME kernel{};
+			FILETIME user{};
+			if (GetProcessTimes(parent, &created, &exited, &kernel, &user))
+			{
+				creation = (static_cast<unsigned long long>(created.dwHighDateTime) << 32)
+					| created.dwLowDateTime;
+			}
+			CloseHandle(parent);
+		}
+
+		std::string identity = hint.empty() ? "win" : hint;
+		identity += ":" + std::to_string(parentPid);
+		if (creation != 0)
+			identity += ":" + std::to_string(creation);
+		return identity;
+	}
+
+	if (!hint.empty())
+		return hint;
+
+	if (const HWND console = GetConsoleWindow())
+		return "console:" + std::to_string(reinterpret_cast<std::uintptr_t>(console));
+	return {};
+}
+
+} // namespace neurus

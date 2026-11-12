@@ -22,6 +22,24 @@ UI Layer (Qt6) -> UIEvents (Qt Signals) -> Editor -> EventQueue (typed events) -
 - Each arrow represents a **decoupled interface** (signals, events, contexts).
   No layer knows the internals of the next.
 
+## Command Path
+
+A command reaches the same editor mutation path from outside the UI:
+
+```
+neurus CLI -> loopback IPC (Asio thread) -> CommandDispatcher queue
+           -> main-thread drain in NewFrameSignals -> ICommandExecutor
+           -> typed EventQueue -> Controllers -> Operations
+```
+
+- The IPC thread never touches the editor. It only parses a framed request and
+  queues it.
+- The main thread drains at most 16 commands per tick and answers only after
+  every controller has run, so a response means the change is applied.
+- Query commands read the editor's live state directly; mutations use the same
+  typed events as a panel edit, including undo/redo.
+- `session.close` writes its response before it asks the application to quit.
+
 ## Three Event Paths
 
 Event structs in `src/editor/events/` are split by domain:
@@ -54,15 +72,15 @@ UI boundary is deferred, everything else is synchronous. See
 3. **Editor -> Controller wrapped events**: `ObjectSelected` (the Editor
    subscribes to `ObjectClicked` and forwards
    `ObjectSelected { objectUid, modifiers }`, and the Application emits it for
-   the viewport IDBuffer pick), `ObjectDeleteRequested` (the Editor subscribes
-   to `DeleteRequested` and forwards `ObjectDeleteRequested { }`), the
+   the viewport IDBuffer pick), `DeleteObjectsRequested` (the Editor subscribes
+   to `DeleteRequested` and stamps it with the current selection's UIDs), the
    membership events (`SceneObjectAddRequested` / `SceneObjectDeleteRequested`),
    and the replay / restore events. `CameraEvents` carry `int camId` (resolved
    by the controller).
 
 On the UI->Editor path the UI emits PURE INPUT INTENTS (`InputEvents.h`) that
 carry no scene; the Editor wraps them into dedicated scene events
-(`ObjectSelected`, `ObjectDeleteRequested`), and controllers handle complete
+(`ObjectSelected`, `DeleteObjectsRequested`), and controllers handle complete
 scene mutations carrying `int objectUid`, resolving the UID to the live object
 via their `ControllerContext` (never raw pointers - a UID stays stable after
 deletion while a pointer would dangle). The scene itself is not carried in

@@ -34,6 +34,80 @@ TEST(ScriptEngine, RunStringExecutesWithoutThrowing)
 	engine.Shutdown();
 }
 
+TEST(ScriptEngine, EvalStringReturnsReprAndLogsResult)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.Console().Clear();
+	EXPECT_EQ(engine.EvalString("1 + 2"), "3");
+
+	bool logged = false;
+	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
+	{
+		const neurus::ScriptLine line = engine.Console().At(i);
+		if (line.kind == neurus::ScriptLineKind::Result && line.text.find('3') != std::string::npos)
+			logged = true;
+	}
+	EXPECT_TRUE(logged);
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, EvalStringRaisesWithoutBreakingTheEngine)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
+	EXPECT_EQ(engine.EvalString("1 / 0"), "");
+	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), before);
+	EXPECT_EQ(engine.EvalString("2 + 2"), "4");
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, CheckedRunDistinguishesStderrFromARaise)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.Console().Clear();
+
+	// stderr output alone is not a failed run: a script may log to it.
+	EXPECT_TRUE(engine.RunStringChecked(
+		"import sys; print('out'); print('err', file=sys.stderr)"));
+	EXPECT_FALSE(engine.RunStringChecked("raise RuntimeError('boom')"));
+
+	bool sawOutput = false;
+	bool sawError = false;
+	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
+	{
+		const neurus::ScriptLine line = engine.Console().At(i);
+		sawOutput = sawOutput
+			|| (line.kind == neurus::ScriptLineKind::Output && line.text.find("out") != std::string::npos);
+		sawError = sawError
+			|| (line.kind == neurus::ScriptLineKind::Error && line.text.find("err") != std::string::npos);
+	}
+	EXPECT_TRUE(sawOutput);
+	EXPECT_TRUE(sawError);
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, CheckedEvalReportsFailureAsNullopt)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	EXPECT_EQ(engine.EvalStringChecked("6 * 7").value_or(""), "42");
+	EXPECT_FALSE(engine.EvalStringChecked("1 / 0").has_value());
+	engine.Shutdown();
+}
+
+TEST(ScriptEngine, ReportsPythonVersion)
+{
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	EXPECT_FALSE(engine.PythonVersion().empty());
+	EXPECT_NO_THROW((void)engine.EnvironmentPath());
+	engine.Shutdown();
+	EXPECT_TRUE(engine.PythonVersion().empty());
+}
+
 TEST(ScriptEngine, RaisingScriptLogsErrorAndSurvives)
 {
 	neurus::ScriptEngine engine;
@@ -188,6 +262,18 @@ TEST(ScriptEngine, RunsQueuedScriptsOnExecutePending)
 		<< "queued scripts did not run in order";
 
 	engine.Shutdown();
+}
+
+TEST(ScriptConsoleBuffer, TruncatesHugeLines)
+{
+	neurus::ScriptConsoleBuffer buffer;
+	buffer.Append(neurus::ScriptLineKind::Output,
+	              std::string(neurus::kScriptConsoleMaxLine + 100, 'x'));
+
+	ASSERT_EQ(buffer.Size(), 1u);
+	const neurus::ScriptLine line = buffer.At(0);
+	EXPECT_LT(line.text.size(), neurus::kScriptConsoleMaxLine + 32);
+	EXPECT_NE(line.text.find("[truncated]"), std::string::npos);
 }
 
 TEST(ScriptConsoleBuffer, RingDropsOldestAndAssignsSeq)

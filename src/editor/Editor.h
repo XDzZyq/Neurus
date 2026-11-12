@@ -26,6 +26,9 @@ class MeshData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
+struct MeshImportRequested;
+struct CameraAddRequested;
+struct ObjectDuplicateRequested;
 struct ScriptContext;   // script/ScriptContext.h - Vulkan/Qt-free script view
 struct UIContext;       // ui/UIContext.h         - Qt-free frame view (UI-facing)
 }
@@ -42,8 +45,7 @@ namespace neurus {
  */
 class Editor
 {
-public:
-	/**
+public:	/**
 	 * @brief Builds the editor around the renderer's request sink.
 	 *
 	 * @param renderer  The sink every GPU request is posted to (DeferredRenderer
@@ -182,13 +184,15 @@ public:
 	void UpdateUIContext(UIContext& ctx) const;
 
 	/**
-	 * @brief Fills the script-facing view: the borrowed scene, render config and
-	 *        resource pool.
+	 * @brief Fills the script-facing view: the borrowed scene, render config
+	 *        and resource pool.
 	 *
-	 * Mirrors UpdateUIContext - three field assignments, nothing else. The caller
-	 * builds a ScriptContext for one script run and discards it afterwards.
+	 * Mirrors UpdateUIContext - field assignments, nothing else. Content
+	 * creation is not a borrowed surface here: a script asks for it through
+	 * typed editor events, so this context stays read-only. The caller builds a
+	 * ScriptContext for one script run and discards it afterwards.
 	 */
-	void UpdateScriptContext(ScriptContext& ctx) const;
+	void UpdateScriptContext(ScriptContext& ctx);
 
 	/**
 	 * @brief Returns a read-only snapshot of the undo/redo history.
@@ -253,6 +257,36 @@ public:
 	 */
 	void UploadSceneResources();
 
+	/**
+	 * @brief Loads a mesh file, names the object and adds it to the scene.
+	 *
+	 * Reuses the same import path as File > Import: the pooled MeshData holds
+	 * the source path, the Mesh references it, and SceneObjectAddRequested
+	 * performs the membership change and its undo entry.
+	 *
+	 * @param path Mesh file path, absolute or relative to the process.
+	 * @param name Display name; empty keeps the generated one.
+	 * @param error Receives a reason when the load fails.
+	 * @return New object UID, or 0 on failure.
+	 */
+	int ImportMeshObject(const std::string& path, const std::string& name, std::string& error);
+
+	/// @brief Duplicate a pooled mesh or camera into the scene.
+	int DuplicateObject(int sourceUid, const std::string& name,
+	                    std::string& error);
+
+	/**
+	 * @brief Creates a camera, names it and adds it to the scene.
+	 *
+	 * Uses the same default pose as the Add Camera action. The caller may apply
+	 * further properties through the normal typed events.
+	 *
+	 * @param name Display name; empty keeps the generated one.
+	 * @param error Receives a reason when creation fails.
+	 * @return New object UID, or 0 on failure.
+	 */
+	int AddCameraObject(const std::string& name, std::string& error);
+
 	void UploadLighting();
 
 private:
@@ -282,6 +316,17 @@ private:
 	void OnSpotLightAdd();
 	void OnCreateShader(const ShaderCreateRequested& e);
 	void OnSceneObjectGpuUpload(int objectUid);
+
+	/**
+	 * @brief Script/command content-creation requests: create, then fill the reply.
+	 *
+	 * The reply slot is borrowed from the emitter and is valid only for the
+	 * synchronous dispatch, so the outcome is written before the call returns.
+	 * A null slot means the outcome is only logged.
+	 */
+	void OnMeshImportRequested(const MeshImportRequested& e);
+	void OnCameraAddRequested(const CameraAddRequested& e);
+	void OnObjectDuplicateRequested(const ObjectDuplicateRequested& e);
 
 	/**
 	 * @brief The camera the current frame renders through.

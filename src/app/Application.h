@@ -6,12 +6,18 @@
 #include <vulkan/vulkan_raii.hpp>
 
 #include <cstdint>
+#include <chrono>
 #include <future>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "app/VulkanContext.h"
+#include "app/AppArgs.h"
+#include "command/ISessionState.h"
+#include "command/IScriptCommands.h"
+#include "command/ISnapshotCommands.h"
 #include "editor/Editor.h"
 #include "render/DeferredRenderer.h"
 #include "render/RenderThread.h"
@@ -24,6 +30,8 @@
 namespace neurus {
 
 class UIEvents;
+class SessionServer;
+class EditorCommandAdapter;
 
 /**
  * @brief Application lifecycle manager - fully RAII.
@@ -33,7 +41,9 @@ class UIEvents;
  * declared in teardown order, so reverse-order destruction releases GPU
  * resources in the required sequence.
  */
-class Application
+class Application : public command::ISessionState,
+                    public command::IScriptCommands,
+                    public command::ISnapshotCommands
 {
 public:
 	/**
@@ -54,6 +64,25 @@ public:
 	 * @return Application exit code (0 on success, -1 on fatal error).
 	 */
 	int Run();
+
+	// --- ISessionState (read-only view for command handlers) ---
+	int Pid() const override;
+	std::string SessionName() const override;
+	std::string ProjectPath() const override;
+	bool IsDirty() const override;
+	bool Save(std::string& error) override;
+	bool SaveAs(const std::string& path, std::string& error) override;
+	bool NewProject(bool force, std::string& error) override;
+	bool OpenProject(const std::string& path, bool force, std::string& error) override;
+	int SceneObjectCount() const override;
+	std::int64_t UptimeSeconds() const override;
+	std::string AppVersion() const override;
+
+	// --- IScriptCommands (script.run) ---
+	command::CommandResult Execute(const command::CommandRequest& request) override;
+
+	// --- ISnapshotCommands (snapshot.capture) ---
+	command::CommandResult Capture(const std::string& path, bool all) override;
 
 private:
 	// --- Initialisation helpers (called in order by Run()) ---
@@ -101,16 +130,13 @@ private:
 	void ScreenShotSignals(UIEvents& uiEvents);
 
 	// --- Project lifecycle (the Application owns the project path) ---
-	void OnProjectNew();
-	void OnProjectOpen(const std::string& path);
-	void OnProjectSave(const std::string& path = std::string());
+	bool OnProjectNew(std::string* error = nullptr);
+	bool OnProjectOpen(const std::string& path, std::string* error = nullptr);
+	bool OnProjectSave(const std::string& path = std::string(), std::string* error = nullptr);
 
 	// --- Scripting (Script Console → ScriptEngine) ---
 	void OnRunScript(const std::string& code);
 	void OnRunFile(const std::string& path);
-
-	/** @brief Aggregated document dirtiness: editor scene/config OR UI-state drift. */
-	bool IsDirty() const;
 
 	/**
 	 * @brief Applies the target-FPS preference to the render timer.
@@ -133,9 +159,6 @@ private:
 		);
 	}
 
-	// --- Platform abstraction (destroyed after everything else) ---
-	std::unique_ptr<PlatformSurface>      app_platform;
-
 	// --- Qt infrastructure (destroyed after GPU stack) ---
 	std::unique_ptr<QApplication>         app_qtApp;
 	std::unique_ptr<QTimer>               app_renderTimer;
@@ -144,7 +167,14 @@ private:
 	std::string app_projectPath;    ///< Current project file path ("" = unsaved).
 	std::string app_uiLayout;       ///< Transient UI-state blob for (de)serialization.
 	std::string app_savedUiState;   ///< UI blob as last saved/loaded (dirty baseline).
+	bool        app_uiBaselinePending = true;  ///< Rebase the layout on the first tick.
 	std::unique_ptr<Preferences> app_preferences;  ///< ~/.neurus/preferences.json (loaded before the window).
+
+	// --- Command session state ---
+	AppArgs      app_args;          ///< Parsed --session / --project.
+	std::vector<std::string> app_rawArguments;  ///< argv captured before QApplication parses it.
+	std::string  app_sessionName;   ///< Named session, empty for a normal launch.
+	std::chrono::steady_clock::time_point app_startTime;  ///< Session uptime origin.
 
 	// --- GPU / UI stack (destroyed in REVERSE declaration order) ---
 	// The render thread goes first: its destructor joins the thread and leaves
@@ -153,16 +183,19 @@ private:
 	// the Application forwards to the Editor (the shader editor's highlighter
 	// reports a text change from its destructor), and the Editor never points
 	// into the UI, so the UI must go first.
-	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared -> destroyed 9th (LAST)
-	std::unique_ptr<Editor>               app_editor;          // 2nd declared -> destroyed 8th
+	std::unique_ptr<VulkanContext>        app_vkContext;       // 1st declared -> destroyed 10th (LAST)
+	std::unique_ptr<Editor>               app_editor;          // 2nd declared -> destroyed 9th
+	/// Command-side view of the editor: outlives the session server below.
+	std::unique_ptr<EditorCommandAdapter> app_editorCommands;  // 3rd declared -> destroyed 8th
 	// Declared AFTER app_editor so reverse-order destruction tears the engine
 	// down BEFORE the Editor: the engine may hold a ScriptContext that borrows
 	// the Editor's scene/config/resources, so releasing the engine first avoids
 	// dangling borrows during Python finalization. It still outlives the frame
 	// loop.
-	std::unique_ptr<ScriptEngine>         app_script;          // 3rd declared -> destroyed 7th
-	std::unique_ptr<UIManager>            app_mainWindow;      // 4th declared -> destroyed 6th
-	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 5th declared -> destroyed 5th
+	std::unique_ptr<ScriptEngine>         app_script;          // 3rd declared -> destroyed 8th
+	std::unique_ptr<SessionServer>        app_session;         // 4th declared -> destroyed 7th
+	std::unique_ptr<UIManager>            app_mainWindow;      // 5th declared -> destroyed 6th
+	std::unique_ptr<vk::raii::SurfaceKHR> app_surface;         // 6th declared -> destroyed 5th
 
 	/**
 	 * @brief Surfaces whose swapchain use could not be proven finished.
@@ -172,11 +205,11 @@ private:
 	 * old one stays in app_surface: both live until shutdown, long after the
 	 * render thread joined and the renderer went idle.
 	 */
-	std::vector<std::unique_ptr<vk::raii::SurfaceKHR>> app_retiredSurfaces;  // 6th -> destroyed 4th
+	std::vector<std::unique_ptr<vk::raii::SurfaceKHR>> app_retiredSurfaces;  // 7th -> destroyed 4th
 
-	std::unique_ptr<UploadManager>        app_uploadManager;   // 7th declared -> destroyed 3rd
-	std::unique_ptr<DeferredRenderer>     app_renderer;        // 8th declared -> destroyed 2nd
-	std::unique_ptr<RenderThread>         app_renderThread;    // 9th declared -> destroyed 1st (FIRST)
+	std::unique_ptr<UploadManager>        app_uploadManager;   // 8th declared -> destroyed 3rd
+	std::unique_ptr<DeferredRenderer>     app_renderer;        // 9th declared -> destroyed 2nd
+	std::unique_ptr<RenderThread>         app_renderThread;    // 10th declared -> destroyed 1st (FIRST)
 };
 
 } // namespace neurus

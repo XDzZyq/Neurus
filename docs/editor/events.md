@@ -107,11 +107,13 @@ resolved**, not in when it is dispatched:
    resolve the UID via their `ControllerContext`.
 3. Editor to Controller wrapped events: `ObjectSelected` (the Editor subscribes
    to `ObjectClicked` and forwards `ObjectSelected{ objectUid, modifiers }`, and
-   the Application emits it for the viewport IDBuffer pick), `ObjectDeleteRequested`
-   (the Editor subscribes to `DeleteRequested` and forwards
-   `ObjectDeleteRequested{ }`), the membership events (`SceneObjectAddRequested` /
-   `SceneObjectDeleteRequested`), and the replay/restore events. `CameraEvents`
-   carry `int camId` (resolved by the controller).
+   the Application emits it for the viewport IDBuffer pick), `DeleteObjectsRequested`
+   (the Editor subscribes to `DeleteRequested` and stamps it with the current
+   selection's UIDs), the membership events (`SceneObjectAddRequested` /
+   `SceneObjectDeleteRequested`), the content-creation requests
+   (`MeshImportRequested`, `CameraAddRequested`, `ObjectDuplicateRequested`), and
+   the replay/restore events. `CameraEvents` carry `int camId` (resolved by the
+   controller).
 
 ## Location
 
@@ -222,7 +224,13 @@ struct DebugPositionsChanged { int objectUid; std::vector<float> xyz; };  // who
 // Scene membership (Add / Delete) - UID-carrying (replay-safe; see below)
 struct SceneObjectAddRequested { int objectUid; };                          // forward (Editor import) + replay
 struct SceneObjectDeleteRequested { std::vector<int> uids; };               // single BATCHED removal path (gesture + replay)
-struct ObjectDeleteRequested { };                                           // Editor-wrapped Delete gesture, FORWARD-ONLY
+struct DeleteObjectsRequested { std::vector<int> uids; };                   // Delete key + command/script gesture, FORWARD-ONLY
+
+// Content creation (script / command requests) - Editor fills the reply slot
+struct ObjectCreateResult { int uid; std::string error; };
+struct MeshImportRequested { std::string path, name; ObjectCreateResult* result; };
+struct CameraAddRequested { std::string name; ObjectCreateResult* result; };
+struct ObjectDuplicateRequested { int sourceUid; std::string name; ObjectCreateResult* result; };
 ```
 
 Scene events carry integer UIDs. Scene-domain events follow the system-wide
@@ -262,20 +270,31 @@ live edits; the handler's `Submit` is muted by `OperationManager`'s
 `Phase::Replaying` guard, so playback does not re-record (the expected "Submit
 suppressed during replay" LOG).
 
-`ObjectDeleteRequested` is the Editor-wrapped Delete gesture: the Editor
-subscribes to the pure `DeleteRequested` intent (Delete key in
-Outliner/Viewport) and forwards `ObjectDeleteRequested{}`, so the UI no longer
-stamps the scene. It is forward-only (the recorded composite replays via
-`SceneObjectDeleteRequested`, never this gesture event). The `SceneController`
-snapshots the selection, deselects, emits one batched
-`SceneObjectDeleteRequested` carrying all selected UIDs - the removal runs
-synchronously inside that emit - so the batched handler is the single removal path
-shared by the gesture and by undo/redo replay (no replay-only handling), and
-records one composite
-(`CompositeOp[SetSelectionOp(before->none), SceneObjectAddOp(uids,false)]`: a
-delete of N objects is one op, not N). The forward add path records
+`DeleteObjectsRequested` is the delete gesture for an explicit UID list. It is
+forward-only (the recorded composite replays via `SceneObjectDeleteRequested`,
+never this gesture event). Two producers, one handler: the Editor subscribes to
+the pure `DeleteRequested` intent (Delete key in Outliner/Viewport) and stamps it
+with the current selection's UIDs, and a CLI/script command emits it directly.
+The `SceneController` removes exactly the listed objects through one batched
+`SceneObjectDeleteRequested` - the removal runs synchronously inside that emit -
+so the batched handler is the single removal path shared by the gesture and by
+undo/redo replay (no replay-only handling), and records one composite
+(`CompositeOp[SetSelectionOp(before->after), SceneObjectAddOp(uids,false)]`: a
+delete of N objects is one op, not N; the selection entry is skipped when the
+delete changed nothing, and it comes first so undo restores the exact pre-delete
+selection after the objects are re-added). The forward add path records
 `CompositeOp[SceneObjectAddOp({u},true), SetSelectionOp(before->{u})]`: add and
 select collapse to one undo entry.
+
+Content creation requests (`MeshImportRequested`, `CameraAddRequested`,
+`ObjectDuplicateRequested`) are the one place an event carries a pointer, and it
+is a deliberately non-owning reply slot: the emitter allocates an
+`ObjectCreateResult` on its stack, the Editor (which owns the pool) creates the
+object, fills it, and the emitter reads it after the synchronous dispatch
+returns. It is valid only during that dispatch and may be null, in which case the
+outcome is only logged. Creation still lands as the usual
+`SceneObjectAddRequested`, so the undo entry is unchanged. This is how the script
+layer creates content without including or calling the Editor.
 
 ### EditorEvents.h
 
@@ -589,6 +608,10 @@ ctx.events.Subscribe<ObjectSelected>([ctx](const ObjectSelected& e) {
 });
 ctx.events.Subscribe<SceneObjectDeleteRequested>([ctx](const SceneObjectDeleteRequested& e) {
     OnSceneObjectDeleteRequested(e, ctx);
+});
+// The forward delete gesture: an explicit UID list (Delete key / command / script)
+ctx.events.Subscribe<DeleteObjectsRequested>([ctx](const DeleteObjectsRequested& e) {
+    OnDeleteObjectsRequested(e, ctx);
 });
 
 // ObjectController::Init() - property writes, resolved through the pool

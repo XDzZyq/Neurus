@@ -9,6 +9,7 @@
 
 #include "editor/controllers/ObjectController.h"
 
+#include <string>
 #include <vector>
 
 #include "editor/controllers/MutationNotify.h"
@@ -97,6 +98,23 @@ void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerConte
 	ctx.ops.Submit(std::make_unique<neurus::SetScaleOp>(obj->GetObjectID(), before, after));
 
 	neurus::notify::ObjectMutated(*obj, ctx.events);
+}
+
+void OnRenameObjectRequested(const neurus::RenameObjectRequested& e,
+                             const neurus::ControllerContext& ctx)
+{
+	auto obj = ctx.resources.Get<neurus::ObjectID>(e.objectUid);
+	if (!obj) return;
+
+	const std::string before = obj->o_name;
+	const std::string unique = ctx.resources.SetName(e.objectUid, e.name);
+	const std::string after = unique.empty() ? e.name : unique;
+	if (after == before)
+		return;
+
+	obj->o_name = after;
+	ctx.ops.Submit(std::make_unique<neurus::SetNameOp>(e.objectUid, before, after));
+	neurus::notify::Mutated(ctx.events);
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +471,9 @@ void ObjectController::Init(ControllerContext& ctx)
 	ctx.events.Subscribe<PositionChanged>([ctx](const PositionChanged& e) { OnPositionChanged(e, ctx); });
 	ctx.events.Subscribe<RotationChanged>([ctx](const RotationChanged& e) { OnRotationChanged(e, ctx); });
 	ctx.events.Subscribe<ScaleChanged>([ctx](const ScaleChanged& e) { OnScaleChanged(e, ctx); });
+	ctx.events.Subscribe<RenameObjectRequested>([ctx](const RenameObjectRequested& e) {
+		OnRenameObjectRequested(e, ctx);
+	});
 	ctx.events.Subscribe<CameraTargetChanged>([ctx](const CameraTargetChanged& e) { OnCameraTargetChanged(e, ctx); });
 	ctx.events.Subscribe<CameraFovChanged>([ctx](const CameraFovChanged& e) { OnCameraFovChanged(e, ctx); });
 	ctx.events.Subscribe<CameraPoseChanged>([ctx](const CameraPoseChanged& e) { OnCameraPoseChanged(e, ctx); });
