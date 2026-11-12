@@ -42,12 +42,6 @@ public:
 	/// @brief Re-applies button/tooltip/placeholder texts in the active language.
 	void Retranslate() override;
 
-	/**
-	 * @brief Whether runs requested by this panel use the sandbox policy.
-	 * @return The state of the Sandbox toggle.
-	 */
-	bool IsSandboxed() const;
-
 	bool eventFilter(QObject* watched, QEvent* event) override;
 
 signals:
@@ -65,7 +59,6 @@ private:
 
 	QToolButton*    m_runBtn = nullptr;
 	QToolButton*    m_runFileBtn = nullptr;
-	QToolButton*    m_sandboxBtn = nullptr;
 	QToolButton*    m_clearBtn = nullptr;
 	CodeEditor*     m_output = nullptr;
 	CodeEditor*     m_input = nullptr;

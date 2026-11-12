@@ -65,6 +65,7 @@ add_library(neurus_ui STATIC
 	panels/LogPanel.cpp
 	panels/ScriptConsolePanel.h
 	panels/ScriptConsolePanel.cpp
+	panels/ScriptPreferences.h
 	panels/PreferencesDialog.h
 	panels/PreferencesDialog.cpp
 )

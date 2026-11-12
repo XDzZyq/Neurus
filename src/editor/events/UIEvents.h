@@ -130,6 +130,28 @@ signals:
 	 *  @param fps Frames per second (0 = unlimited). */
 	void targetFpsChangeRequested(int fps);
 
+	/**
+	 * @brief Emitted when the Script Sandbox or Script Preload fields change.
+	 * @param readRoots Semicolon-separated sandbox read roots.
+	 * @param writeRoots Semicolon-separated sandbox write roots.
+	 * @param blockedModules Semicolon-separated module names.
+	 * @param preload Comma- or semicolon-separated startup packages.
+	 * @param allowNetwork Sandboxed runs may open sockets.
+	 * @param allowSubprocess Sandboxed runs may create processes.
+	 * @param allowCtypes Sandboxed runs may use ctypes.
+	 * @param timeLimitSeconds Wall-clock limit; 0 = unlimited.
+	 * @param memoryLimitMb Address-space limit; 0 = unlimited.
+	 */
+	void scriptPreferencesChangeRequested(const QString& readRoots,
+	                                      const QString& writeRoots,
+	                                      const QString& blockedModules,
+	                                      const QString& preload,
+	                                      bool allowNetwork,
+	                                      bool allowSubprocess,
+	                                      bool allowCtypes,
+	                                      int timeLimitSeconds,
+	                                      int memoryLimitMb);
+
 public:
 	/** @brief Convenience emitter for screenshotRequested. */
 	void requestScreenshot() { emit screenshotRequested(); }
@@ -161,6 +183,15 @@ public:
 
 	void requestLanguageChange(const QString& language) { emit languageChangeRequested(language); }
 	void requestTargetFps(int fps) { emit targetFpsChangeRequested(fps); }
+	void requestScriptPreferences(const QString& readRoots, const QString& writeRoots,
+	                              const QString& blockedModules, const QString& preload,
+	                              bool allowNetwork, bool allowSubprocess, bool allowCtypes,
+	                              int timeLimitSeconds, int memoryLimitMb)
+	{
+		emit scriptPreferencesChangeRequested(readRoots, writeRoots, blockedModules, preload,
+		                                      allowNetwork, allowSubprocess, allowCtypes,
+		                                      timeLimitSeconds, memoryLimitMb);
+	}
 
 	void requestUIRecreation(quintptr newHwnd) { emit uiRecreated(newHwnd); }
 

@@ -118,6 +118,33 @@ std::vector<std::string> SplitPackageList(const std::string& value)
 	return items;
 }
 
+/// @brief Joins preference list entries for the Preferences dialog.
+QString JoinPreferenceList(const std::vector<std::string>& values)
+{
+	QStringList parts;
+	for (const std::string& value : values)
+	{
+		parts.append(QString::fromStdString(value));
+	}
+	return parts.join(QStringLiteral("; "));
+}
+
+/// @brief Builds the UI-side script settings from the persisted preferences.
+neurus::ScriptPreferencesUi MakeScriptPreferencesUi(const neurus::Preferences& preferences)
+{
+	neurus::ScriptPreferencesUi script;
+	script.readRoots = JoinPreferenceList(preferences.scriptSandboxReadRoots);
+	script.writeRoots = JoinPreferenceList(preferences.scriptSandboxWriteRoots);
+	script.blockedModules = JoinPreferenceList(preferences.scriptSandboxBlockedModules);
+	script.preload = JoinPreferenceList(preferences.scriptPreload);
+	script.allowNetwork = preferences.scriptSandboxAllowNetwork;
+	script.allowSubprocess = preferences.scriptSandboxAllowSubprocess;
+	script.allowCtypes = preferences.scriptSandboxAllowCtypes;
+	script.timeLimitSeconds = preferences.scriptSandboxTimeLimitSeconds;
+	script.memoryLimitMb = preferences.scriptSandboxMemoryLimitMb;
+	return script;
+}
+
 /// @brief Formats one startup preload result as a Script Console line.
 std::string FormatPreloadLine(const neurus::ScriptPreloadResult& result)
 {
@@ -385,6 +412,7 @@ bool Application::InitVulkan()
 		app_mainWindow = std::make_unique<neurus::UIManager>(
 			QString::fromStdString(app_preferences->language),
 			app_preferences->targetFps,
+			MakeScriptPreferencesUi(*app_preferences),
 			QString::fromStdString(neurus::Preferences::DefaultPath()));
 		app_mainWindow->show();  // Must show before surface creation on macOS
 

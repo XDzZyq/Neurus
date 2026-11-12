@@ -40,6 +40,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -67,21 +68,45 @@ constexpr auto kSurfaceChangeTimeout = std::chrono::seconds(2);
 	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
 }
 
+/// @brief Splits a Preferences text field on commas and semicolons.
+std::vector<std::string> SplitPreferenceList(const std::string& value)
+{
+	std::vector<std::string> items;
+	std::size_t start = 0;
+	while (start <= value.size())
+	{
+		const std::size_t end = value.find_first_of(",;", start);
+		std::string item = value.substr(
+			start, end == std::string::npos ? std::string::npos : end - start);
+		const std::size_t first = item.find_first_not_of(" \t");
+		const std::size_t last = item.find_last_not_of(" \t");
+		if (first != std::string::npos)
+		{
+			items.push_back(item.substr(first, last - first + 1));
+		}
+		if (end == std::string::npos)
+		{
+			break;
+		}
+		start = end + 1;
+	}
+	return items;
+}
+
 } // namespace
 
 namespace neurus {
 
-void Application::OnRunScript(const std::string& code, bool sandboxed)
+void Application::OnRunScript(const std::string& code)
 {
-	// Deferred: the engine queues it and the frame loop runs it. The run
-	// dispatches every event synchronously as it executes, so no later drain is
-	// involved - the mutation is applied before the next Python statement.
-	app_script->Submit(code, SessionScriptPolicy(sandboxed));
+	// Deferred: the engine queues it and the frame loop runs it. UI runs are
+	// trusted; only external CLI/agent commands execute under the host sandbox.
+	app_script->Submit(code);
 }
 
-void Application::OnRunFile(const std::string& path, bool sandboxed)
+void Application::OnRunFile(const std::string& path)
 {
-	app_script->SubmitFile(path, SessionScriptPolicy(sandboxed));
+	app_script->SubmitFile(path);
 }
 
 std::string Application::ScriptProjectRoot() const
@@ -109,12 +134,6 @@ std::string Application::ScriptProjectRoot() const
 	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
 }
 
-ScriptPolicy Application::SessionScriptPolicy(bool sandboxed) const
-{
-	return sandboxed ? ScriptPolicy::Sandboxed(ScriptProjectRoot())
-	                 : ScriptPolicy::Trusted();
-}
-
 // =========================================================================
 // WireSignals – Qt signal/slot connections
 // =========================================================================
@@ -140,6 +159,26 @@ void Application::WireSignals()
 	                     app_preferences->Save(neurus::Preferences::DefaultPath());
 	                     ApplyTargetFps(fps);
 	                 });
+	QObject::connect(
+		&uiEvents, &neurus::UIEvents::scriptPreferencesChangeRequested,
+		[this](const QString& readRoots, const QString& writeRoots,
+		       const QString& blockedModules, const QString& preload,
+		       bool allowNetwork, bool allowSubprocess, bool allowCtypes,
+		       int timeLimitSeconds, int memoryLimitMb) {
+			app_preferences->scriptSandboxReadRoots =
+				SplitPreferenceList(readRoots.toStdString());
+			app_preferences->scriptSandboxWriteRoots =
+				SplitPreferenceList(writeRoots.toStdString());
+			app_preferences->scriptSandboxBlockedModules =
+				SplitPreferenceList(blockedModules.toStdString());
+			app_preferences->scriptPreload = SplitPreferenceList(preload.toStdString());
+			app_preferences->scriptSandboxAllowNetwork = allowNetwork;
+			app_preferences->scriptSandboxAllowSubprocess = allowSubprocess;
+			app_preferences->scriptSandboxAllowCtypes = allowCtypes;
+			app_preferences->scriptSandboxTimeLimitSeconds = timeLimitSeconds;
+			app_preferences->scriptSandboxMemoryLimitMb = memoryLimitMb;
+			app_preferences->Save(neurus::Preferences::DefaultPath());
+		});
 }
 
 void Application::ApplyTargetFps(int fps)
@@ -287,23 +326,21 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	if (auto* console = app_mainWindow->GetPanel<neurus::ScriptConsolePanel>())
 	{
 		QObject::connect(console, &neurus::ScriptConsolePanel::runSnippetRequested,
-		                 [this, console](const QString& code) {
-		                     OnRunScript(code.toStdString(), console->IsSandboxed());
+		                 [this](const QString& code) {
+		                     OnRunScript(code.toStdString());
 		                 });
 		QObject::connect(console, &neurus::ScriptConsolePanel::runFileRequested,
-		                 [this, console](const QString& path) {
-		                     OnRunFile(path.toStdString(), console->IsSandboxed());
+		                 [this](const QString& path) {
+		                     OnRunFile(path.toStdString());
 		                 });
 	}
 	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptRequested,
 	                 [this](const QString& code) {
-	                     OnRunScript(code.toStdString(),
-	                                 app_scriptMode == ScriptMode::Sandboxed);
+	                     OnRunScript(code.toStdString());
 	                 });
 	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptFileRequested,
 	                 [this](const QString& path) {
-	                     OnRunFile(path.toStdString(),
-	                               app_scriptMode == ScriptMode::Sandboxed);
+	                     OnRunFile(path.toStdString());
 	                 });
 
 	// --- Outliner selection → Editor (via ConnectUIEvent → EventQueue) ---

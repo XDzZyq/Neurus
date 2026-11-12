@@ -9,6 +9,8 @@
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <system_error>
@@ -37,9 +39,24 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 		cereal::JSONInputArchive ar(in);
 		// Each key independently: a file missing one of them still yields the
 		// other instead of Corrupt.
-		archive::Optional(ar, cereal::make_nvp("language", fresh.language),
-		                  cereal::make_nvp("target_fps", fresh.targetFps),
-		                  cereal::make_nvp("script_preload", fresh.scriptPreload));
+		archive::Optional(
+			ar, cereal::make_nvp("language", fresh.language),
+			cereal::make_nvp("target_fps", fresh.targetFps),
+			cereal::make_nvp("script_preload", fresh.scriptPreload),
+			cereal::make_nvp("script_sandbox_read_roots", fresh.scriptSandboxReadRoots),
+			cereal::make_nvp("script_sandbox_write_roots", fresh.scriptSandboxWriteRoots),
+			cereal::make_nvp("script_sandbox_blocked_modules",
+			                 fresh.scriptSandboxBlockedModules),
+			cereal::make_nvp("script_sandbox_allow_network",
+			                 fresh.scriptSandboxAllowNetwork),
+			cereal::make_nvp("script_sandbox_allow_subprocess",
+			                 fresh.scriptSandboxAllowSubprocess),
+			cereal::make_nvp("script_sandbox_allow_ctypes",
+			                 fresh.scriptSandboxAllowCtypes),
+			cereal::make_nvp("script_sandbox_time_limit_s",
+			                 fresh.scriptSandboxTimeLimitSeconds),
+			cereal::make_nvp("script_sandbox_memory_limit_mb",
+			                 fresh.scriptSandboxMemoryLimitMb));
 	}
 	catch (const std::exception& e)
 	{
@@ -50,10 +67,45 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 	language  = fresh.language;
 	targetFps = fresh.targetFps;
 	scriptPreload = std::move(fresh.scriptPreload);
+	scriptSandboxReadRoots = std::move(fresh.scriptSandboxReadRoots);
+	scriptSandboxWriteRoots = std::move(fresh.scriptSandboxWriteRoots);
+	scriptSandboxBlockedModules = std::move(fresh.scriptSandboxBlockedModules);
+	scriptSandboxAllowNetwork = fresh.scriptSandboxAllowNetwork;
+	scriptSandboxAllowSubprocess = fresh.scriptSandboxAllowSubprocess;
+	scriptSandboxAllowCtypes = fresh.scriptSandboxAllowCtypes;
+	scriptSandboxTimeLimitSeconds = fresh.scriptSandboxTimeLimitSeconds;
+	scriptSandboxMemoryLimitMb = fresh.scriptSandboxMemoryLimitMb;
 
 	// "auto" is deliberately left as-is: resolving the sentinel is not this
 	// type's job, so the stored value survives the round-trip.
 	return LoadResult::Ok;
+}
+
+ScriptPolicy Preferences::MakeScriptPolicy(const std::string& projectRoot) const
+{
+	ScriptPolicy policy = ScriptPolicy::Sandboxed(projectRoot);
+	if (!scriptSandboxReadRoots.empty())
+	{
+		policy.readRoots = scriptSandboxReadRoots;
+	}
+	if (!scriptSandboxWriteRoots.empty())
+	{
+		policy.writeRoots = scriptSandboxWriteRoots;
+	}
+	policy.blockedModules = scriptSandboxBlockedModules;
+	policy.allowNetwork = scriptSandboxAllowNetwork;
+	policy.allowSubprocess = scriptSandboxAllowSubprocess;
+	policy.allowCtypes = scriptSandboxAllowCtypes;
+	policy.wallClockLimit =
+		std::chrono::seconds(scriptSandboxTimeLimitSeconds > 0
+		                         ? scriptSandboxTimeLimitSeconds
+		                         : 0);
+	policy.memoryLimitBytes =
+		static_cast<std::uint64_t>(scriptSandboxMemoryLimitMb > 0
+		                               ? scriptSandboxMemoryLimitMb
+		                               : 0)
+		* 1024ULL * 1024ULL;
+	return policy;
 }
 
 bool Preferences::Backup(const std::string& path)
@@ -122,7 +174,21 @@ bool Preferences::Save(const std::string& path) const
 		cereal::JSONOutputArchive ar(out);
 		ar(cereal::make_nvp("language", language),
 		   cereal::make_nvp("target_fps", targetFps),
-		   cereal::make_nvp("script_preload", scriptPreload));
+		   cereal::make_nvp("script_preload", scriptPreload),
+		   cereal::make_nvp("script_sandbox_read_roots", scriptSandboxReadRoots),
+		   cereal::make_nvp("script_sandbox_write_roots", scriptSandboxWriteRoots),
+		   cereal::make_nvp("script_sandbox_blocked_modules",
+		                    scriptSandboxBlockedModules),
+		   cereal::make_nvp("script_sandbox_allow_network",
+		                    scriptSandboxAllowNetwork),
+		   cereal::make_nvp("script_sandbox_allow_subprocess",
+		                    scriptSandboxAllowSubprocess),
+		   cereal::make_nvp("script_sandbox_allow_ctypes",
+		                    scriptSandboxAllowCtypes),
+		   cereal::make_nvp("script_sandbox_time_limit_s",
+		                    scriptSandboxTimeLimitSeconds),
+		   cereal::make_nvp("script_sandbox_memory_limit_mb",
+		                    scriptSandboxMemoryLimitMb));
 	}
 	catch (const std::exception& e)
 	{

@@ -42,10 +42,12 @@ namespace neurus {
 // =========================================================================
 
 UIManager::UIManager(const QString& language, int targetFps,
+                       const ScriptPreferencesUi& script,
                        const QString& preferencesPath, QWidget* parent)
 	: QMainWindow(parent)
 	, m_currentLanguage(language)
 	, m_targetFps(targetFps)
+	, m_scriptPreferences(script)
 	, m_preferencesPath(preferencesPath)
 {
 	Icons::Initialize();
@@ -73,6 +75,12 @@ UIManager::UIManager(const QString& language, int targetFps,
 
 	// Apply the startup language (menus were built with English literals).
 	RetranslateAll();
+}
+
+UIManager::UIManager(const QString& language, int targetFps,
+                     const QString& preferencesPath, QWidget* parent)
+	: UIManager(language, targetFps, ScriptPreferencesUi{}, preferencesPath, parent)
+{
 }
 
 UIManager::~UIManager()
@@ -660,7 +668,8 @@ void UIManager::OpenPreferences()
 	if (!m_preferencesDialog)
 	{
 		m_preferencesDialog = new PreferencesDialog(
-			m_currentLanguage, m_targetFps, m_preferencesPath, this);
+			m_currentLanguage, m_targetFps, m_scriptPreferences,
+			m_preferencesPath, this);
 
 		// Dialog changes update the local cache and are routed on the UIEvents
 		// bus so they get applied and persisted.
@@ -674,11 +683,21 @@ void UIManager::OpenPreferences()
 		            m_targetFps = fps;
 		            neurus::UIEvents::instance().requestTargetFps(fps);
 		        });
+		connect(m_preferencesDialog, &PreferencesDialog::scriptPreferencesChanged,
+		        this, [this]() {
+		            m_scriptPreferences = m_preferencesDialog->ScriptPreferences();
+		            neurus::UIEvents::instance().requestScriptPreferences(
+		                m_scriptPreferences.readRoots, m_scriptPreferences.writeRoots,
+		                m_scriptPreferences.blockedModules, m_scriptPreferences.preload,
+		                m_scriptPreferences.allowNetwork, m_scriptPreferences.allowSubprocess,
+		                m_scriptPreferences.allowCtypes, m_scriptPreferences.timeLimitSeconds,
+		                m_scriptPreferences.memoryLimitMb);
+		        });
 	}
 
 	// Re-seed the controls from the cache in case values changed since the
 	// dialog was last shown (e.g. after a Reset to Defaults).
-	m_preferencesDialog->SyncFrom(m_currentLanguage, m_targetFps);
+	m_preferencesDialog->SyncFrom(m_currentLanguage, m_targetFps, m_scriptPreferences);
 
 	m_preferencesDialog->show();
 	m_preferencesDialog->raise();

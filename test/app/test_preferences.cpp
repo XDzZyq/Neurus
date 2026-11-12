@@ -153,6 +153,14 @@ TEST(PreferencesTest, SaveLoadRoundtrip)
 	prefs.language = "zh_CN";
 	prefs.targetFps = 30;
 	prefs.scriptPreload = {"numpy", "json"};
+	prefs.scriptSandboxReadRoots = {"D:/project"};
+	prefs.scriptSandboxWriteRoots = {"D:/project/out"};
+	prefs.scriptSandboxBlockedModules = {"subprocess", "ctypes"};
+	prefs.scriptSandboxAllowNetwork = true;
+	prefs.scriptSandboxAllowSubprocess = true;
+	prefs.scriptSandboxAllowCtypes = true;
+	prefs.scriptSandboxTimeLimitSeconds = 12;
+	prefs.scriptSandboxMemoryLimitMb = 512;
 	EXPECT_TRUE(prefs.Save(path));
 
 	Preferences loaded;
@@ -160,6 +168,42 @@ TEST(PreferencesTest, SaveLoadRoundtrip)
 	EXPECT_EQ(loaded.language, "zh_CN");
 	EXPECT_EQ(loaded.targetFps, 30);
 	EXPECT_EQ(loaded.scriptPreload, prefs.scriptPreload);
+	EXPECT_EQ(loaded.scriptSandboxReadRoots, prefs.scriptSandboxReadRoots);
+	EXPECT_EQ(loaded.scriptSandboxWriteRoots, prefs.scriptSandboxWriteRoots);
+	EXPECT_EQ(loaded.scriptSandboxBlockedModules, prefs.scriptSandboxBlockedModules);
+	EXPECT_EQ(loaded.scriptSandboxAllowNetwork, true);
+	EXPECT_EQ(loaded.scriptSandboxAllowSubprocess, true);
+	EXPECT_EQ(loaded.scriptSandboxAllowCtypes, true);
+	EXPECT_EQ(loaded.scriptSandboxTimeLimitSeconds, 12);
+	EXPECT_EQ(loaded.scriptSandboxMemoryLimitMb, 512);
+}
+
+TEST(PreferencesTest, ScriptSandboxPolicyUsesHostSettings)
+{
+	Preferences prefs;
+	prefs.scriptSandboxBlockedModules = {"subprocess"};
+	prefs.scriptSandboxAllowNetwork = true;
+	prefs.scriptSandboxTimeLimitSeconds = 7;
+	prefs.scriptSandboxMemoryLimitMb = 64;
+
+	const ScriptPolicy policy = prefs.MakeScriptPolicy("D:/project");
+	EXPECT_EQ(policy.mode, ScriptMode::Sandboxed);
+	ASSERT_EQ(policy.readRoots.size(), 1u);
+	EXPECT_EQ(policy.readRoots.front(), "D:/project");
+	ASSERT_EQ(policy.writeRoots.size(), 1u);
+	EXPECT_EQ(policy.writeRoots.front(), "D:/project");
+	EXPECT_EQ(policy.blockedModules, std::vector<std::string>{"subprocess"});
+	EXPECT_TRUE(policy.allowNetwork);
+	EXPECT_FALSE(policy.allowSubprocess);
+	EXPECT_FALSE(policy.allowCtypes);
+	EXPECT_EQ(policy.wallClockLimit, std::chrono::seconds(7));
+	EXPECT_EQ(policy.memoryLimitBytes, 64ULL * 1024ULL * 1024ULL);
+
+	prefs.scriptSandboxReadRoots = {"D:/read"};
+	prefs.scriptSandboxWriteRoots = {"D:/write"};
+	const ScriptPolicy explicitRoots = prefs.MakeScriptPolicy("D:/project");
+	EXPECT_EQ(explicitRoots.readRoots, std::vector<std::string>{"D:/read"});
+	EXPECT_EQ(explicitRoots.writeRoots, std::vector<std::string>{"D:/write"});
 }
 
 TEST(PreferencesTest, MissingScriptPreloadKeepsTheDefault)
@@ -177,6 +221,14 @@ TEST(PreferencesTest, MissingScriptPreloadKeepsTheDefault)
 	prefs.scriptPreload = {"numpy"};
 	EXPECT_EQ(prefs.Load(path), LoadResult::Ok);
 	EXPECT_TRUE(prefs.scriptPreload.empty());
+	EXPECT_TRUE(prefs.scriptSandboxReadRoots.empty());
+	EXPECT_TRUE(prefs.scriptSandboxWriteRoots.empty());
+	EXPECT_TRUE(prefs.scriptSandboxBlockedModules.empty());
+	EXPECT_FALSE(prefs.scriptSandboxAllowNetwork);
+	EXPECT_FALSE(prefs.scriptSandboxAllowSubprocess);
+	EXPECT_FALSE(prefs.scriptSandboxAllowCtypes);
+	EXPECT_EQ(prefs.scriptSandboxTimeLimitSeconds, 30);
+	EXPECT_EQ(prefs.scriptSandboxMemoryLimitMb, 0);
 	EXPECT_EQ(prefs.language, "en");
 	EXPECT_EQ(prefs.targetFps, 30);
 }
@@ -242,6 +294,10 @@ TEST(PreferencesTest, EqualityFollowsEveryPersistedField)
 	EXPECT_EQ(loaded, prefs);
 
 	loaded.scriptPreload = {"numpy"};
+	EXPECT_NE(loaded, prefs);
+	loaded.scriptPreload = prefs.scriptPreload;
+
+	loaded.scriptSandboxTimeLimitSeconds = 1;
 	EXPECT_NE(loaded, prefs);
 }
 

@@ -260,8 +260,10 @@ precedence:
 2. `script_preload` in `~/.neurus/preferences.json` (a JSON array of names).
 3. `NEURUS_SCRIPT_PRELOAD`, comma- or semicolon-separated.
 
-`neurus open --preload NAME` forwards the values to the spawned application as
-repeated `--preload` arguments, so a background session starts warm as well.
+**File -> Preferences -> Script Preload** edits the persisted list. A change is
+saved immediately and applies on the next launch. `neurus open --preload NAME`
+forwards the values to the spawned application as repeated `--preload`
+arguments, so a background session starts warm as well.
 
 Each result is logged and appended to the Script Console:
 
@@ -353,7 +355,6 @@ neurus script eval "1 + 2"
 neurus script info
 neurus script console --tail 20
 neurus script clear
-neurus script mode [trusted|sandboxed]
 ```
 
 `script eval` is expression-only; use `script run` for assignments, imports and
@@ -361,40 +362,39 @@ multi-line statements.
 
 ## Execution policy and the sandbox
 
-A run may execute under one of two modes:
+The host owns exactly one sandbox policy. The two execution paths are:
 
-- **Trusted** - no restriction. This is the historical behaviour and the
-  default for the Script Console toggle, the Tools menu and a raw `script.run`
-  request that names no `sandbox` flag.
-- **Sandboxed** - one in-process guardrail around the embedded interpreter:
-  filesystem roots, module blocks, network/subprocess/ctypes permission flags,
-  an optional wall-clock limit and an optional memory limit.
+- **UI runs are trusted** - the Script Console and Tools -> Run Script execute
+  the user's own source with no restriction. There is no sandbox toggle in the
+  Script Console, because the sandbox exists to contain untrusted source, not to
+  restrict the person editing the project.
+- **External runs are sandboxed** - every `neurus script run` / `script eval`
+  command from the CLI, and any future agent entry point, executes under the
+  host policy. The CLI cannot choose trusted mode and cannot override a policy
+  field.
+
+The policy is persisted in `~/.neurus/preferences.json` and edited in
+**File -> Preferences -> Script Sandbox**:
+
+| Field | Meaning |
+|-------|---------|
+| Read roots | Semicolon-separated directories the run may read. Empty uses the project directory. |
+| Write roots | Semicolon-separated directories the run may write. Empty uses the project directory. |
+| Blocked modules | Semicolon-separated module names the run may not import. |
+| Allow network | Whether a sandboxed run may open sockets. |
+| Allow subprocess | Whether a sandboxed run may create processes. |
+| Allow ctypes | Whether a sandboxed run may use `ctypes`. |
+| Time limit (s) | Wall-clock limit; `0` means unlimited. |
+| Memory limit (MB) | Address-space limit; `0` means unlimited. |
 
 `ScriptPolicy` (`src/script/ScriptPolicy.h`) is the Python-free value that
-describes a run. `ScriptPolicy::Trusted()` is the empty default;
-`ScriptPolicy::Sandboxed(projectRoot)` sets both filesystem roots to the project
-directory, disables network, subprocess and ctypes, caps the wall clock at 30
-seconds and blocks no module. A policy is copied per run: the caller keeps
-ownership of what it passed.
+describes one run. `Preferences::MakeScriptPolicy(projectRoot)` builds the
+external-run policy from the persisted fields; an empty root list falls back to
+the project directory. `ScriptPolicy::Trusted()` is the UI-run default. A policy
+is copied per run: the caller keeps ownership of what it passed.
 
-### Modes and defaults
-
-| Surface | Default | How to change it |
-|---------|---------|------------------|
-| Script Console toggle | Trusted (unchecked) | Check **Sandbox** in the console toolbar |
-| Tools -> Run Script | Session pin | `neurus script mode sandboxed` |
-| `neurus script run` / `eval` | **Sandboxed** | `--trusted` |
-| Raw `script.run` / `script.eval` | Trusted | `"sandbox": true` in the request |
-
-The **Sandbox** tool button in the Script Console is a live, checkable toggle:
-both **Run** and **Run File...** read it at click time. It is presentation only;
-the session pin stays a separate, command-level setting.
-
-`script.mode` reports the session pin and, with a value, sets it. The pin is
-in-memory for the running session and is not persisted across launches. It
-drives the Tools-menu run and the policy summary `script info` reports; the CLI
-sends its sandbox choice explicitly on every run, so a pinned mode never
-silently applies to `neurus script run`.
+`script info` reports the effective host policy in its `sandbox` object. It is
+the same policy every external command uses, not a record of the last run.
 
 ### Enforcement points
 
@@ -438,25 +438,6 @@ Denials raise one of `neurus._SandboxViolation` (a `PermissionError`),
 to `ScriptRunStatus::SandboxViolation` and `ScriptRunStatus::Timeout`; the
 command layer reports `SCRIPT_SANDBOX_VIOLATION` or a `SCRIPT_ERROR` with
 `reason: timeout`; the CLI exits `7` for the former.
-
-### CLI flags
-
-`script run` and `script eval` accept:
-
-```text
---sandbox | --trusted          mutually exclusive; sandboxed is the default
---allow-read PATH              read root (repeatable; replaces the project root)
---allow-write PATH             write root (repeatable; replaces the project root)
---block MODULE                 module the run may not import (repeatable)
---allow-network                permit sockets
---allow-subprocess             permit process creation
---allow-ctypes                 permit ctypes
---time-limit SECONDS           wall-clock limit, fractional
---memory-limit MB              address-space limit
-```
-
-A flag that is not given leaves the sandboxed default in place. `--allow-read`
-and `--allow-write` replace the project root rather than adding to it.
 
 ### Threat model
 

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "panels/ScriptPreferences.h"
 #include "panels/UIPanel.h"
 
 namespace ads {
@@ -33,10 +34,16 @@ public:
 	 *
 	 * @param language        Active language code ("en", "zh_CN").
 	 * @param targetFps       Render-loop target FPS (0 = unlimited).
+	 * @param script          Script sandbox and preload values.
 	 * @param preferencesPath Path of the preferences file, shown in the
 	 *                        Preferences dialog.
 	 * @param parent Parent widget.
 	 */
+	explicit UIManager(const QString& language, int targetFps,
+	                   const ScriptPreferencesUi& script,
+	                   const QString& preferencesPath, QWidget* parent = nullptr);
+
+	/// @brief Convenience overload that starts with the shipped script defaults.
 	explicit UIManager(const QString& language, int targetFps,
 	                   const QString& preferencesPath, QWidget* parent = nullptr);
 	~UIManager() override;
@@ -195,6 +202,7 @@ private:
 	// --- Preferences dialog (lazy, non-dock panel) ---
 	QString            m_currentLanguage;    ///< Cached active language code.
 	int                m_targetFps = 60;     ///< Cached render-loop target FPS.
+	ScriptPreferencesUi m_scriptPreferences; ///< Cached script settings.
 	QString            m_preferencesPath;    ///< ~/.neurus/preferences.json.
 	PreferencesDialog* m_preferencesDialog = nullptr; ///< Lazy-created; Qt parent owns.
 

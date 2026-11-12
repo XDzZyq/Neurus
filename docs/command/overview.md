@@ -171,12 +171,8 @@ neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
                   [--fxaa-edge-threshold-min V]
 neurus history show|undo|redo
 neurus script run --code "PYTHON" | --file FILE
-                   [--sandbox|--trusted] [--allow-read PATH] [--allow-write PATH]
-                   [--block MODULE] [--allow-network] [--allow-subprocess]
-                   [--allow-ctypes] [--time-limit SECONDS] [--memory-limit MB]
-neurus script eval "EXPRESSION" [--sandbox|--trusted] [--allow-read PATH] ...
+neurus script eval "EXPRESSION"
 neurus script info
-neurus script mode [trusted|sandboxed]
 neurus script console [--tail N]
 neurus script clear
 neurus snapshot capture --path PATH [--all]
@@ -234,17 +230,14 @@ sessions from different terminals. Every `script` subcommand accepts
 - `script run` executes Python in the running application and returns the
   captured output. A run is one undo entry, like the Script Console. The script
   family defaults `--timeout` to 300 s so a first cold import does not look like
-  a transport failure; preload is the primary fix. It runs sandboxed by default;
-  `--trusted` removes the restriction and the policy flags override the sandbox
-  defaults. A refusal is `SCRIPT_SANDBOX_VIOLATION`.
+  a transport failure; preload is the primary fix. External runs always use the
+  host's Script Sandbox policy from Preferences; the CLI cannot choose trusted
+  mode or override a policy field. A refusal is `SCRIPT_SANDBOX_VIOLATION`.
 - `script eval` evaluates one expression and returns its `repr`, with the same
-  sandbox flags and error mapping.
+  host policy and error mapping.
 - `script info` reports readiness, the Python version, the managed environment,
-  the resident modules (`modules`, `module_count`, `modules_truncated`), the
-  session mode and the policy summary a run under that mode would use.
-- `script mode` reports the session pin, or sets it to `trusted` or
-  `sandboxed`. The pin drives the Tools-menu run and the `script info`
-  summary; it does not override an explicit CLI choice.
+  the resident modules (`modules`, `module_count`, `modules_truncated`) and the
+  effective `sandbox` policy.
 - `script console` returns recent captured lines; `script clear` empties the
   buffer.
 - `snapshot capture` writes a PNG of the presented viewport, or every render
@@ -321,8 +314,7 @@ runs:
   sandbox policy.
 - `script.eval` - evaluate one Python expression and return its `repr`.
 - `script.info` - readiness, Python version, managed environment, console size,
-  resident modules, session mode and the policy summary.
-- `script.mode` - report or pin the session scripting mode.
+  resident modules and the effective host sandbox policy.
 - `script.console` - recent captured console lines.
 - `script.clear` - clear the console buffer.
 - `snapshot.capture` - write the viewport or all attachments, with the session
