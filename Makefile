@@ -8,17 +8,29 @@
 # ---------------------------------------------------------------------------
 
 # --- Platform detection ---
-UNAME := $(shell uname -s)
-ifeq ($(UNAME),Darwin)
-  PRESET        := macos
-  PRESET_REL    := macos
-  PYTHON        := python3
-  SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
-else
+# $(OS) is set to Windows_NT by Windows itself, so the Windows branch does not
+# depend on finding a shell before it can be configured.
+ifeq ($(OS),Windows_NT)
+  # A PowerShell 7 parent leaks its own module directories into Windows
+  # PowerShell 5.1 through sh, and 5.1 then fails to load
+  # Microsoft.PowerShell.Utility (Get-FileHash disappears). Removing the
+  # variable lets 5.1 rebuild its module path from the registry.
+  unexport PSModulePath
+
   PRESET        := win
   PRESET_REL    := win
   PYTHON        := python
   SETUP_PY_ENV  := powershell -ExecutionPolicy Bypass -File lib/scripts/setup_python_env.ps1
+else
+  UNAME := $(shell uname -s)
+  ifeq ($(UNAME),Darwin)
+    PRESET        := macos
+    PRESET_REL    := macos
+    PYTHON        := python3
+    SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
+  else
+    $(error Unsupported platform '$(UNAME)': Neurus builds on Windows and macOS only)
+  endif
 endif
 
 .PHONY: configure build test clean nobuild release help app check update \
@@ -173,9 +185,9 @@ help:
 
 # --- Dependency Setup ---
 
+# googletest is `update = none` (lazy) in lib/.gitmodules; init it on demand.
 update:
 	git submodule update --init --recursive --depth 1
-	# googletest is `update = none` (lazy) in lib/.gitmodules; init it on demand.
 	git -C lib -c "submodule.src/googletest.update=checkout" submodule update --init --depth 1 src/googletest
 	$(PYTHON) lib/scripts/fetch_prebuilt.py
 	$(SETUP_PY_ENV)
