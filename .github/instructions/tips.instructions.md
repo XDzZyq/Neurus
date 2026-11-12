@@ -25,6 +25,12 @@ cd build && ctest -C Debug --output-on-failure
 `make update` is mandatory after a fresh clone or a submodule bump; it needs
 network access for the prebuilt binaries.
 
+On Windows, `make` uses whatever `sh.exe` is on `PATH`, so that path must not
+contain a space: Git's `usr/bin` normally lives under `Program Files`, so add
+its 8.3 short path, or install MSYS2's `make`. The `Makefile` drops an
+inherited `PSModulePath` before calling Windows PowerShell 5.1, so it also
+works from a PowerShell 7 terminal.
+
 ## Two build trees - and the one that is live
 
 There are two trees, with separate test discovery. Aiming at the wrong one does
