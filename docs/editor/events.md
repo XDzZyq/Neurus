@@ -562,8 +562,7 @@ template helpers in `Application`.
 
 ### Step 1 - Panel defines a Qt signal
 
-```cpp
-// Outliner.h
+```cpp title="Outliner.h"
 signals:
     void objectClicked(const ObjectClicked& e);
     void visibilityChanged(const VisibilityChanged& e);

@@ -38,6 +38,7 @@ theme:
     - search.suggest
     - search.highlight
     - content.code.copy
+    - content.code.annotate
     - content.action.edit
   palette:
     - media: "(prefers-color-scheme: light)"
@@ -73,6 +74,10 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.details
+  # Image captions: `![alt](img)` followed by a `/// caption` block renders as a
+  # figure. attr_list and md_in_html are already on, which is the rest of the
+  # image feature set (alignment, width, lazy loading).
+  - pymdownx.blocks.caption
   - admonition
   - attr_list
   - md_in_html
@@ -134,6 +139,13 @@ nav:
       - Class Hierarchy: Neurus/hierarchy.md
       - Namespaces: Neurus/namespaces.md
       - Files: Neurus/files.md
+
+# Sortable data tables. This is Material's documented tablesort integration: the
+# library from the CDN plus the shim in docs/javascripts/. Both are optional at
+# runtime - without them a table still renders, it just does not sort.
+extra_javascript:
+  - https://unpkg.com/tablesort@5.3.0/dist/tablesort.min.js
+  - javascripts/tablesort.js
 
 plugins:
   - search

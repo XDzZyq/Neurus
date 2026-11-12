@@ -136,8 +136,7 @@ The frame's context is two views over the same document state, each produced by
 the Editor. The renderer's view is an owned copy of the frame; the UI's view is a
 pair of borrowed pointers.
 
-```cpp
-// src/editor/Editor.h
+```cpp title="src/editor/Editor.h"
 RenderFrameSnapshot BuildSnapshot() const;  // the whole renderer-facing frame, by value
 void UpdateUIContext(UIContext& ctx) const; // scene, config
 ```
@@ -150,8 +149,7 @@ include `render/RenderFrameSnapshot.h` for the complete type.
 publishes one owned frame snapshot; `DeferredRenderer::recordFrame()` stamps the
 frame half. Every field carries a banner naming the half that fills it.
 
-```cpp
-// src/render/RenderContext.h - Vulkan-free
+```cpp title="src/render/RenderContext.h"
 struct RenderContext
 {
     // Editor half - the owned frame published by Editor::BuildSnapshot()
@@ -184,8 +182,7 @@ pointer's `Settings()` used to provide, so no pass tests a pointer.
 `UIContext` is the UI's view, two Editor-owned fields wide, plus the
 Application's frame-scoped half:
 
-```cpp
-// src/ui/UIContext.h - Qt-free
+```cpp title="src/ui/UIContext.h"
 struct UIContext
 {
     // Editor half - assigned by Editor::UpdateUIContext()

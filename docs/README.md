@@ -1,6 +1,7 @@
-<p align="center">
-  <img src="assets/neurus.svg" width="112" alt="Neurus logo">
-</p>
+<figure markdown="span">
+  ![Neurus logo](assets/neurus.svg){ width="112" loading=lazy }
+  <figcaption>A C++20 Vulkan-HPP 1.4 real-time renderer built around strict layer isolation.</figcaption>
+</figure>
 
 # Neurus Documentation
 

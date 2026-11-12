@@ -40,7 +40,7 @@ flowchart LR
 ```
 
 | Order | Component | Key | Wraps |
-|---|---|---|---|
+| :-: |---|---|---|
 | 1 | `ResourceComponent` | `m_resources` | The `ResourceManager` UID pool |
 | 2 | `SceneComponent` | `m_scene` | The `Scene` |
 | 3 | `ConfigComponent` | `proj_config` | A `RenderConfig` |

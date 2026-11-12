@@ -64,6 +64,11 @@ NEURUS_ERR("Texture::createFromPixelData failed: " << e.what());
   reserved words a node id must avoid.
 - Keep the prose around the diagram: the diagram shows the shape, the text
   carries the contract.
+- A code block that shows a real file carries `title="<path>"` rather than a
+  `// path` comment line.
+- An image goes in a `<figure markdown="span">` with a `<figcaption>`.
+- Data tables are plain Markdown; `tablesort` makes every table in an article
+  sortable in the browser.
 
 ## Non-ASCII Hygiene
 

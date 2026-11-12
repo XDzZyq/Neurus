@@ -238,7 +238,7 @@ The UI MUST NOT:
 
 ## Build integration
 
-```cmake
+```cmake title="src/ui/CMakeLists.txt"
 # ADS submodule (static build)
 add_subdirectory(lib/src/qtadvanceddocking)
 
