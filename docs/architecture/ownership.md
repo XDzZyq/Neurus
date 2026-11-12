@@ -8,9 +8,9 @@ resource below it, and the UI owns only the native window.
 
 ```mermaid
 flowchart TD
-    app["Application - owns<br/>VkInstance, VkDevice, VkQueue, VkSurfaceKHR<br/>UploadManager"]
-    ui["UI - owns<br/>the native window and its handle<br/>no Vulkan object"]
-    renderer["Renderer - owns<br/>swapchain, pipelines, command pools, RenderCache<br/>borrows surface, device and queues"]
+    app["Application - owns<br/>instance, device, queues, surface"]
+    ui["UI - owns<br/>the native window"]
+    renderer["Renderer - owns<br/>swapchain, cache, passes"]
 
     ui -->|"native window handle"| app
     app -->|"surface, device, queues, uploads"| renderer

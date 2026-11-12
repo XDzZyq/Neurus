@@ -112,13 +112,13 @@ dispatch:
 
 ```mermaid
 flowchart TD
-    setter["mesh.position = (2, 2, 2)"] --> resolve["resolve the UID through IResourceLookup<br/>raises when it is gone"]
+    setter["mesh.position = (2, 2, 2)"] --> resolve["resolve the UID<br/>raises if gone"]
     resolve --> event["PositionChanged(objectUid, posX, posY, posZ)"]
     event --> emit["IEventQueue::Emit"]
     emit --> handler["ObjectController::OnPositionChanged"]
     handler --> mutate["mutates the object's Transform3D"]
     handler --> operation["submits one SetPositionOp to the OperationManager"]
-    handler --> notify["emits SceneModified + RenderResetEvent,<br/>plus LightingRebuild for a light"]
+    handler --> notify["emits SceneModified + RenderReset,<br/>plus LightingRebuild"]
 ```
 
 Dispatch is synchronous and depth-first, so every handler has run before the

@@ -22,12 +22,12 @@ The architecture prioritizes:
 
 ```mermaid
 flowchart TD
-    ui["UI Layer - src/ui/<br/>main window, docks, panels<br/>emits Qt signals, owns no Vulkan object"]
-    editor["Editor Layer - src/editor/<br/>Scene, RenderConfig, ResourceManager,<br/>Controllers, EventBus, Operations"]
-    renderer["Renderer Layer - src/render/<br/>swapchain, RenderCache, passes, OverlayEngine<br/>borrows the surface, device and queues"]
+    ui["UI Layer<br/>src/ui"]
+    editor["Editor Layer<br/>src/editor"]
+    renderer["Renderer Layer<br/>src/render"]
 
-    ui -->|"UIEvents (Qt signals / slots)"| editor
-    editor -->|"RenderFrameSnapshot + RenderRequest"| renderer
+    ui -->|"UIEvents"| editor
+    editor -->|"snapshot + requests"| renderer
 ```
 
 The remaining layers sit outside that chain:
@@ -35,8 +35,8 @@ The remaining layers sit outside that chain:
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 40}}}%%
 flowchart TB
-    application["Application Layer - src/app/<br/>composition root: creates every layer<br/>and wires the channels"]
-    script["Script Layer - src/script/<br/>embedded CPython and the neurus module<br/>mutates through typed events only"]
+    application["Application<br/>src/app - composition root"]
+    script["Script<br/>src/script - embedded CPython"]
 
     application ~~~ script
 ```
@@ -46,9 +46,9 @@ The shared, Vulkan-free libraries:
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 40}}}%%
 flowchart TB
-        asset["Asset Layer - src/asset/<br/>CPU data: MeshData, ImageData, PixelFormat"]
-        scene["Scene Layer - src/scene/<br/>objects: Camera, Light, Mesh, Transform, UID"]
-        core["Core Layer - src/core/<br/>UID, ResourceManager, RenderConfig, Log, Graph"]
+        asset["Asset<br/>src/asset - CPU data"]
+        scene["Scene<br/>src/scene - objects"]
+        core["Core<br/>src/core - utilities"]
 
         asset ~~~ scene ~~~ core
 ```
@@ -59,16 +59,16 @@ Every editor mutation crosses one node, whichever layer starts it:
 
 ```mermaid
 flowchart TD
-    ui["UI panels"] --> uiEvents["UIEvents<br/>Qt signals"]
+    ui["UI panels"] --> uiEvents["UIEvents"]
     uiEvents --> onUIEvent["Editor::OnUIEvent"]
-    onUIEvent -->|"Enqueue"| bus["EventBus (EventQueue)<br/>owned by the Editor"]
-    bus -->|"Process once per Edit()"| controllers["Controllers<br/>owned by the Editor"]
-    controllers -->|"Emit (synchronous)"| bus
-    script["Script Layer<br/>ScriptDispatch"] -->|"Emit (synchronous)"| bus
-    controllers -->|"record"| ops["OperationManager<br/>undo / redo"]
-    ops -->|"replay the inverse event"| bus
-    controllers -->|"mutate"| scene["Scene and ResourceManager<br/>owned by the Editor"]
-    onUIEvent -->|"RenderRequest + frame snapshot"| renderer["Renderer"]
+    onUIEvent -->|"Enqueue"| bus["EventBus"]
+    bus -->|"Process per Edit()"| controllers["Controllers"]
+    controllers -->|"Emit"| bus
+    script["Script"] -->|"Emit"| bus
+    controllers -->|"record"| ops["Operations"]
+    ops -->|"replay"| bus
+    controllers -->|"mutate"| scene["Scene + pool"]
+    onUIEvent -->|"snapshot + requests"| renderer["Renderer"]
 ```
 
 The bus carries four paths, and they differ only in who starts the walk:
@@ -86,8 +86,8 @@ A command arrives from a separate process:
 
 ```mermaid
 flowchart LR
-    cli["CLI process (separate)<br/>neurus CLI, src/cli/<br/>parses arguments, attaches to a named session, formats results"]
-    host["Host application<br/>SessionServer and the Asio loopback listener<br/>main-thread drain -> typed editor events"]
+    cli["neurus CLI<br/>separate process"]
+    host["Host application<br/>SessionServer"]
 
     cli -->|"JSON request"| host
     host -->|"result"| cli

@@ -14,11 +14,11 @@ replay - goes through `Emit`, which runs the handlers before it returns:
 ```mermaid
 flowchart LR
     edit["Editor::Edit()"] --> syncIn["viewport camera sync<br/>before the drain"]
-    syncIn --> process["EventQueue::Process()<br/>one frame's worth of deferred UI events"]
+    syncIn --> process["Process()<br/>deferred UI events"]
     process --> camera["CameraController handles each event"]
     process --> sceneController["SceneController handles each event"]
     process --> others["the other registered controllers"]
-    camera --> syncOut["viewport camera sync again<br/>the drain can change or delete the camera"]
+    camera --> syncOut["camera sync again<br/>the drain may change it"]
     sceneController --> syncOut
     others --> syncOut
 ```

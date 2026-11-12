@@ -45,9 +45,9 @@ The Editor chooses that pointer:
 
 ```mermaid
 flowchart LR
-    sceneCamera["Scene::GetActiveCamera()<br/>the activated scene camera"] --> active
+    sceneCamera["active scene camera"] --> active
     viewportCamera["EditorViewport::ViewportCamera()<br/>the fallback"] --> active
-    active["Editor::ActiveCamera()"] --> publish["Editor::PublishActiveCamera()<br/>viewport.SetCamera(active)"]
+    active["Editor::ActiveCamera()"] --> publish["PublishActiveCamera()"]
     publish --> get["EditorViewport::GetCamera()<br/>the published pointer"]
 ```
 
@@ -137,7 +137,7 @@ The resize reaches a camera through the existing controller path:
 ```mermaid
 flowchart TD
     app["Application::ResizeViewport"] --> handle["Editor::HandleViewportResize(logical, render)"]
-    handle --> cache["EditorViewport::HandleResize(...)<br/>caches the extent, writes no camera"]
+    handle --> cache["HandleResize()<br/>caches the extent"]
     handle --> event["CameraResizeEvent(activeCameraUid, logical)"]
     event --> controller["CameraController::OnCameraResize"]
     controller --> ratio["ChangeCamRatio(...)"]

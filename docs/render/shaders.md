@@ -7,12 +7,12 @@ Per-mesh shaders are editable at runtime through the Shader Editor panel, and th
 ```mermaid
 flowchart TD
     library["ShaderLibrary::LoadRenderShader"]
-    shader["Shader<br/>owns one ShaderUnit per stage:<br/>VERTEX / FRAGMENT / COMPUTE / GEOMETRY"]
-    code["ShaderUnit::code<br/>GLSL source text, edited in Code mode"]
-    parsed["ShaderUnit::parsed<br/>ShaderStruct IR, edited in Structure mode"]
+    shader["Shader<br/>one ShaderUnit per stage"]
+    code["ShaderUnit::code<br/>GLSL source"]
+    parsed["ShaderUnit::parsed<br/>ShaderStruct IR"]
     spv["ShaderUnit::spv<br/>compiled SPIR-V"]
-    version["ShaderUnit::m_version<br/>bumped on a successful compile"]
-    pipeline["GeometryPass pipeline (mesh shader)<br/>rebuilt when Shader::m_version changes"]
+    version["ShaderUnit::m_version<br/>bumped on compile"]
+    pipeline["mesh pipeline<br/>rebuilt on a version bump"]
 
     library --> shader
     shader --> code

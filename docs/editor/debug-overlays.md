@@ -55,10 +55,10 @@ Lifecycle, dirty-flagged, never per-frame polling:
 
 ```mermaid
 flowchart TD
-    reset["RenderResetEvent"] --> mark["viewport.MarkOverlaysDirty()<br/>O(1), the existing something-visible-changed broadcast"]
+    reset["RenderResetEvent"] --> mark["MarkOverlaysDirty()<br/>O(1) broadcast"]
 
     edit["Editor::Edit()"] --> process["EventQueue::Process()"]
-    process --> rebuild["m_viewport.RebuildOverlays(Scene)<br/>after the queue drains, so a scene change and<br/>its overlay consequences land in one frame"]
+    process --> rebuild["RebuildOverlays()<br/>after the drain, once per frame"]
     rebuild --> post["if it rebuilt anything:<br/>Post(RedrawOverlaysRequest)"]
 ```
 

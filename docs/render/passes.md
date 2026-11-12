@@ -17,14 +17,14 @@ Shadow resources are logical `AttachmentName` members resolved by their owning p
 flowchart TD
     subgraph scene["Scene graph - DeferredRenderer::m_mainGraph"]
         direction TD
-        shadow["ShadowDepthPass<br/>per-light depth into RenderCache<br/>point and spot: cubemap, sun: ortho"]
-        geometry["GeometryPass<br/>G-Buffer MRT: Position, Normal, Albedo,<br/>MetallicRoughness, IDBuffer, Depth"]
-        ssao["SSAOPass<br/>compute: reads the G-Buffer, writes AO to an R8 attachment"]
-        intensity["ShadowIntensityPass<br/>per-light shadow eval into a layered R8 array<br/>one jittered lookup, EMA over the budget"]
-        lighting["LightingPass<br/>G-Buffer + AO + shadow array -> HDRColor<br/>point, sun and spot lights plus IBL"]
-        compose["ComposePass<br/>compute: tone maps HDRColor, applies gamma,<br/>writes ComposedOutput"]
-        fxaa["FXAAPass<br/>luma edge detection plus edge search<br/>only when AA is FXAA"]
-        tail["scene tail<br/>ComposedOutput (no FXAA) | FXAAOutput (FXAA)"]
+        shadow["ShadowDepthPass<br/>cubemap (point/spot), ortho (sun)"]
+        geometry["GeometryPass<br/>G-Buffer MRT + IDBuffer + Depth"]
+        ssao["SSAOPass<br/>AO into an R8 attachment"]
+        intensity["ShadowIntensityPass<br/>jittered eval, EMA over the budget"]
+        lighting["LightingPass<br/>G-Buffer + AO + shadows -> HDRColor"]
+        compose["ComposePass<br/>tone map + gamma"]
+        fxaa["FXAAPass<br/>only when AA is FXAA"]
+        tail["scene tail<br/>ComposedOutput | FXAAOutput"]
 
         shadow --> geometry --> ssao --> intensity --> lighting --> compose
         compose -->|"no FXAA"| tail
@@ -37,10 +37,10 @@ flowchart TD
 flowchart TD
     subgraph overlay["Overlay graph - OverlayEngine, its own RenderGraph"]
         direction TD
-        outline["SelectionOutlinePass<br/>3x3 edge detection on IDBuffer<br/>writes an R8 mask"]
-        copy["OverlayCopyPass<br/>seeds OverlayOutput from the scene tail<br/>and blends the selection mask"]
-        debug["DebugPass<br/>DebugDrawList over OverlayOutput<br/>lines, points and wireframes"]
-        gizmo["GizmoPass<br/>GizmoDrawList over OverlayOutput<br/>x-ray, no depth attachment"]
+        outline["SelectionOutlinePass<br/>IDBuffer edges -> R8 mask"]
+        copy["OverlayCopyPass<br/>scene tail + selection mask"]
+        debug["DebugPass<br/>lines, points, wireframes"]
+        gizmo["GizmoPass<br/>x-ray guides"]
         blit["Blit to the swapchain<br/>OverlayOutput -> vkCmdBlitImage"]
 
         outline --> copy --> debug --> gizmo --> blit

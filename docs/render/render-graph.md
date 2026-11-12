@@ -16,10 +16,10 @@ The graph is built on the generic `neurus::Graph<SData, NData>` DAG template (`s
 
 ```mermaid
 flowchart LR
-    add["AddPass(pass)<br/>materializes one socket per declared read/write"] --> connect["Connect(producer, resource, consumer)<br/>rejects self-loops and duplicate edges"]
+    add["AddPass<br/>one socket per declared I/O"] --> connect["Connect<br/>rejects self-loops and duplicates"]
     connect --> compile["Compile()<br/>Kahn topological sort; a cycle throws"]
-    compile --> execute["Execute(cmd, cache, ctx, profiler, profile)<br/>invokes each pass's Record() in compiled order"]
-    execute --> clear["Clear()<br/>drops all nodes so the graph can be rebuilt"]
+    compile --> execute["Execute<br/>Record() per pass, in order"]
+    execute --> clear["Clear()<br/>drops all nodes"]
     clear --> add
 ```
 

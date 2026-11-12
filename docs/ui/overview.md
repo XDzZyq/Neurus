@@ -8,9 +8,9 @@ The UI is the top of the unidirectional isolation chain:
 
 ```mermaid
 flowchart TD
-    ui["UI Layer - Qt6 Widgets and ADS<br/>main window, docks, panels<br/>emits signals, no rendering logic"]
-    editor["Editor Layer<br/>Scene, RenderConfig, ResourceManager, Controllers"]
-    renderer["Renderer Layer - Vulkan-HPP vk::raii<br/>consumes the native window handle"]
+    ui["UI Layer - Qt6<br/>no rendering logic"]
+    editor["Editor Layer<br/>Scene, config, controllers"]
+    renderer["Renderer Layer - Vulkan-HPP<br/>vk::raii"]
 
     ui -->|"Qt signals / slots"| editor
     editor --> renderer

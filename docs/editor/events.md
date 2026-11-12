@@ -13,10 +13,10 @@ zero Qt dependencies, and all cross-layer wiring is auditable in one file.
 
 ```mermaid
 flowchart TD
-    signal["Panel Qt signal<br/>e.g. Outliner::objectClicked - pure input intent"]
+    signal["Panel Qt signal<br/>pure input intent"]
     bridge["Application::ConnectUIEvent(Outliner, ObjectClicked)"]
     onui["Editor::OnUIEvent(e)"]
-    enqueue["EventQueue::Enqueue(ObjectClicked)<br/>the only deferred step"]
+    enqueue["Enqueue<br/>the only deferred step"]
     process["EventQueue::Process() in the next Edit()"]
     handlers["handlers run; every Emit they make runs here too"]
 
@@ -641,11 +641,11 @@ ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
 ```mermaid
 flowchart TD
     input["User input (QML / Qt widgets)"]
-    panel["UI panel Qt signal<br/>e.g. Outliner::objectClicked - pure intent"]
-    bridge["Application::ConnectUIEvent&lt;T&gt;<br/>the single wiring point"]
+    panel["UI panel signal"]
+    bridge["ConnectUIEvent&lt;T&gt;<br/>the wiring point"]
     onui["Editor::OnUIEvent&lt;T&gt;<br/>deferred here"]
-    process["EventQueue::Process()<br/>in Edit(), once per frame"]
-    handlers["SceneController / ObjectController / Editor<br/>the business logic"]
+    process["Process()<br/>once per frame"]
+    handlers["controllers + Editor<br/>the business logic"]
 
     input --> panel --> bridge --> onui --> process --> handlers
 ```
@@ -696,18 +696,18 @@ Scene mutations that affect GPU resources follow a three-tier event pattern:
 
 ```mermaid
 flowchart TD
-    handler["SceneController / ObjectController<br/>resolves the UID, mutates the object"]
+    handler["Controllers<br/>resolve the UID and mutate"]
 
     handler --> modified["SceneModified"]
     handler --> reset["RenderResetEvent"]
-    handler --> upload["SceneObjectGpuUploadRequested<br/>object added, or shadow toggled on"]
+    handler --> upload["GpuUploadRequested<br/>object added / shadow on"]
     handler --> lightGpu["LightGpuChanged<br/>a light property changed"]
-    handler --> rebuild["LightingRebuild<br/>a light's transform or visibility changed"]
+    handler --> rebuild["LightingRebuild<br/>transform or visibility"]
 
     modified --> dirty["Editor marks the project dirty"]
     reset --> accumulation["DeferredRenderer resets temporal accumulation"]
 
-    upload --> uploadHandler["Editor::OnSceneObjectGpuUpload<br/>resolves the pooled object by UID"]
+    upload --> uploadHandler["Editor handler<br/>resolves the object"]
     uploadHandler --> uploadRequest["posts the matching RenderRequest"]
     uploadRequest --> uploadRun["the renderer runs it skip-if-cached at its drain"]
 
@@ -715,7 +715,7 @@ flowchart TD
     lightHandler --> updateRequest["posts UpdateLightRequest(uid, struct)"]
     updateRequest --> ssbo["the renderer rewrites the single SSBO entry"]
 
-    rebuild --> rebuildHandler["Editor::LightingRebuild<br/>converts the full light dict (pure CPU)"]
+    rebuild --> rebuildHandler["LightingRebuild handler<br/>full light dict"]
     rebuildHandler --> rebuildRequest["posts UpdateLightingRequest(full light dict)"]
     rebuildRequest --> ssbos["the renderer rebuilds all light SSBOs"]
 ```
