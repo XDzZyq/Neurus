@@ -2,14 +2,16 @@
  * @file Preferences.h
  * @brief Application-layer user preferences persisted to ~/.neurus/preferences.json.
  *
- * Owned exclusively by the Application: the active UI language and the
- * render-loop target FPS. Pure data + cereal JSON persistence, fully Qt-free
- * (the home directory comes from the platform layer).
+ * Owned exclusively by the Application: the active UI language, the
+ * render-loop target FPS and the startup script preload list. Pure data +
+ * cereal JSON persistence, fully Qt-free (the home directory comes from the
+ * platform layer).
  */
 
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace neurus {
 
@@ -30,6 +32,16 @@ struct Preferences
 
 	/** @brief Render-loop target FPS (0 = unlimited, run as fast as possible). */
 	int targetFps = 60;
+
+	/**
+	 * @brief Packages imported at startup, before the first frame.
+	 *
+	 * A heavy package pays its import cost once here instead of on the first
+	 * script that needs it. `--preload` overrides this list for one launch and
+	 * `NEURUS_SCRIPT_PRELOAD` is the fallback when neither is set; see the
+	 * Scripting documentation.
+	 */
+	std::vector<std::string> scriptPreload;
 
 	/**
 	 * @brief Value equality over every persisted field.

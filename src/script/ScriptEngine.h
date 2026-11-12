@@ -18,6 +18,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "script/ScriptConsole.h"
 #include "script/ScriptContext.h"
@@ -26,6 +27,36 @@ namespace neurus
 {
 
 class IEventQueue;
+
+/**
+ * @brief One module the embedded interpreter has imported.
+ *
+ * Reported by @ref ScriptEngine::LoadedModules, which is the data behind
+ * `script info` and the startup preload report.
+ */
+struct ScriptModuleInfo
+{
+	std::string name;                ///< Dotted module name.
+	std::string origin;              ///< Source path, or a built-in marker such as "built-in".
+	double      loadSeconds = 0.0;   ///< Measured top-level import time; 0 when untracked.
+	bool        projectLocal = false;  ///< True when the origin lives under a reload root.
+	bool        cached = false;        ///< True when no fresh top-level execution was measured.
+};
+
+/**
+ * @brief Outcome of preloading one package before the first frame.
+ *
+ * A failure is data, never an exception: the caller reports it and startup
+ * continues, so a missing optional package cannot keep the editor closed.
+ */
+struct ScriptPreloadResult
+{
+	std::string package;             ///< Package name as requested.
+	bool        ok = false;          ///< False when the import raised.
+	double      loadSeconds = 0.0;   ///< Measured import time; 0 when already loaded.
+	bool        cached = false;      ///< True when the package was already in sys.modules.
+	std::string error;               ///< Readable traceback when @ref ok is false.
+};
 
 /**
  * @brief Owns the embedded CPython interpreter and executes Python code.
@@ -69,6 +100,41 @@ public:
 
 	/// @return Managed environment path requested at initialization, or empty.
 	std::string EnvironmentPath() const;
+
+	/**
+	 * @brief Import packages now, before the first frame, and report the cost.
+	 *
+	 * Each package is imported through the engine's recording finder, so a
+	 * second call reports `cached`; a failure is returned instead of thrown and
+	 * never aborts the host. This is the primary answer to a heavy first
+	 * import: the cost is paid once at startup instead of on the first script.
+	 *
+	 * @param packages Package names, in order.
+	 * @return One result per package, in the same order.
+	 */
+	std::vector<ScriptPreloadResult> Preload(const std::vector<std::string>& packages);
+
+	/**
+	 * @brief Report the modules resident in the interpreter, in load order.
+	 *
+	 * Tracked imports carry their measured time and origin; modules that were
+	 * already resident carry an origin from `__spec__`/`__file__` and zero
+	 * seconds. The list is bounded so `script info` stays small.
+	 */
+	std::vector<ScriptModuleInfo> LoadedModules() const;
+
+	/**
+	 * @brief Set the directories whose modules may be hot-reloaded before a run.
+	 *
+	 * Modules outside these roots (site-packages, the standard library) are
+	 * never reloaded. Paths are normalized once; an empty list disables reload.
+	 *
+	 * @param roots Directories, typically the project directory.
+	 */
+	void SetReloadRoots(std::vector<std::string> roots);
+
+	/// @return The normalized reload roots currently configured.
+	std::vector<std::string> ReloadRoots() const;
 
 	/**
 	 * @brief Evaluate one Python expression and return its `repr`.

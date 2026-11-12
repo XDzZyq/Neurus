@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace neurus::cli
 {
@@ -20,6 +21,7 @@ private:
 	std::optional<std::string> m_project;
 	std::optional<std::string> m_name;
 	std::optional<std::string> m_appPath;
+	std::vector<std::string>   m_preload;  ///< Repeated --preload packages.
 	int                        m_timeoutSeconds = 30;
 	bool                       m_noWait = false;
 	bool                       m_noBind = false;

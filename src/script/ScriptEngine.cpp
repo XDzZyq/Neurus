@@ -50,6 +50,26 @@ std::string ScriptEngine::EnvironmentPath() const
 	return m_impl->EnvironmentPath();
 }
 
+std::vector<ScriptPreloadResult> ScriptEngine::Preload(const std::vector<std::string>& packages)
+{
+	return m_impl->Preload(packages);
+}
+
+std::vector<ScriptModuleInfo> ScriptEngine::LoadedModules() const
+{
+	return m_impl->LoadedModules();
+}
+
+void ScriptEngine::SetReloadRoots(std::vector<std::string> roots)
+{
+	m_impl->SetReloadRoots(roots);
+}
+
+std::vector<std::string> ScriptEngine::ReloadRoots() const
+{
+	return m_impl->ReloadRoots();
+}
+
 std::string ScriptEngine::EvalString(const std::string& expression, const ScriptContext* ctx)
 {
 	return m_impl->EvalString(expression, ctx);

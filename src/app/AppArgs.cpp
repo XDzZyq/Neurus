@@ -1,5 +1,10 @@
 #include "app/AppArgs.h"
 
+#include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
+
 namespace neurus
 {
 namespace
@@ -30,6 +35,69 @@ bool TakeValue(const std::vector<std::string>& arguments, std::size_t& index,
 	return false;
 }
 
+/**
+ * @brief Consumes a repeatable, comma-separated list option.
+ *
+ * Each occurrence appends its items, so `--preload a --preload b,c` yields
+ * `{a, b, c}`. Whitespace around items is trimmed; empty items are skipped.
+ */
+bool TakeListValue(const std::vector<std::string>& arguments, std::size_t& index,
+                   const char* name, std::vector<std::string>& values, std::string& error)
+{
+	const std::string& argument = arguments[index];
+	const std::string option = name;
+	std::string value;
+	if (argument == option)
+	{
+		if (index + 1 >= arguments.size())
+		{
+			error = std::string("Missing value for ") + name + ".";
+			return true;
+		}
+		value = arguments[++index];
+	}
+	else
+	{
+		const std::string prefix = option + "=";
+		if (argument.rfind(prefix, 0) != 0)
+		{
+			return false;
+		}
+		value = argument.substr(prefix.size());
+	}
+
+	std::size_t added = 0;
+	std::size_t start = 0;
+	while (start <= value.size())
+	{
+		const std::size_t comma = value.find(',', start);
+		const std::size_t length =
+			comma == std::string::npos ? std::string::npos : comma - start;
+		std::string item = value.substr(start, length);
+
+		const std::size_t first = item.find_first_not_of(" \t");
+		const std::size_t last = item.find_last_not_of(" \t");
+		if (first != std::string::npos)
+		{
+			item = item.substr(first, last - first + 1);
+			values.push_back(std::move(item));
+			++added;
+		}
+
+		if (comma == std::string::npos)
+		{
+			break;
+		}
+		start = comma + 1;
+	}
+
+	if (added == 0)
+	{
+		error = std::string("Missing value for ") + name + ".";
+	}
+	return true;
+}
+
 } // namespace
 
 AppArgs AppArgs::Parse(const std::vector<std::string>& arguments)
@@ -44,6 +112,12 @@ AppArgs AppArgs::Parse(const std::vector<std::string>& arguments)
 			continue;
 		}
 		if (TakeValue(arguments, index, "--project", result.project, result.error))
+		{
+			if (!result.error.empty())
+				break;
+			continue;
+		}
+		if (TakeListValue(arguments, index, "--preload", result.preload, result.error))
 		{
 			if (!result.error.empty())
 				break;

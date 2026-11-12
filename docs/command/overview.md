@@ -117,8 +117,10 @@ version and unknown fields are ignored. `id` is echoed by the server. The first
 command must be `session.hello`; a wrong token, a non-loopback peer or an
 unsupported version is rejected before any command reaches the executor.
 
-Timeouts: connect 3 s, handshake 3 s, command 10 s, `close --save` 60 s, and a
-5 s idle read on the server.
+Timeouts: connect 3 s, handshake 3 s, command 10 s, `script` commands 300 s,
+`close --save` 60 s, and a 5 s idle read on the server. The longer `script`
+default absorbs a first cold import of a heavy package; preload is the primary
+fix and `--timeout` stays authoritative.
 
 ## Security
 
@@ -133,7 +135,7 @@ Timeouts: connect 3 s, handshake 3 s, command 10 s, `close --save` 60 s, and a
 ## CLI reference
 
 ```
-neurus open [PROJECT] [--name NAME] [--app PATH] [--timeout SECS] [--no-wait] [--no-bind]
+neurus open [PROJECT] [--name NAME] [--app PATH] [--preload NAME]... [--timeout SECS] [--no-wait] [--no-bind]
 neurus close [NAME] [--all] [--save|--force] [--timeout SECS]
 neurus status [NAME]
 neurus list
@@ -179,11 +181,15 @@ neurus --format human|json
 
 `--format` and `--session` are accepted before or after the subcommand. Every
 document command accepts `--session`, so several agents can target different
-sessions from different terminals.
+sessions from different terminals. Every `script` subcommand accepts
+`--timeout SECS` (default 300, see the timeout note above).
 
 - `open` allocates a name when none is given, claims it, spawns the application
   detached with `--session` and optional `--project`, then polls
-  `session.status` until ready. A name whose entry belongs to a live process is
+  `session.status` until ready. `--preload NAME` is forwarded to the application
+  (repeatable, comma-separated) so packages are imported before its first frame;
+  a heavy preload can delay readiness past the default `--timeout`, which is
+  then raised explicitly. A name whose entry belongs to a live process is
   `SESSION_EXISTS`; a stale entry is replaced. Only an entry carrying the pid
   this launch spawned counts as ready. The app is `--app`, then `NEURUS_APP`,
   then the build tree next to the CLI; only when neither override is given does
@@ -222,10 +228,12 @@ sessions from different terminals.
 - `history show` reports the undo/redo stacks; `history undo` and
   `history redo` step them.
 - `script run` executes Python in the running application and returns the
-  captured output. A run is one undo entry, like the Script Console.
+  captured output. A run is one undo entry, like the Script Console. The script
+  family defaults `--timeout` to 300 s so a first cold import does not look like
+  a transport failure; preload is the primary fix.
 - `script eval` evaluates one expression and returns its `repr`.
-- `script info` reports readiness, the Python version and the managed
-  environment.
+- `script info` reports readiness, the Python version, the managed environment
+  and the resident modules (`modules`, `module_count`, `modules_truncated`).
 - `script console` returns recent captured lines; `script clear` empties the
   buffer.
 - `snapshot capture` writes a PNG of the presented viewport, or every render
@@ -298,7 +306,8 @@ runs:
 - `history.redo` - redo the most recently undone edit.
 - `script.run` - run Python and return its captured output.
 - `script.eval` - evaluate one Python expression and return its `repr`.
-- `script.info` - readiness, Python version, managed environment and console size.
+- `script.info` - readiness, Python version, managed environment, console size
+  and resident modules.
 - `script.console` - recent captured console lines.
 - `script.clear` - clear the console buffer.
 - `snapshot.capture` - write the viewport or all attachments, with the session

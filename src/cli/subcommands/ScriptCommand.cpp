@@ -77,6 +77,23 @@ void PrintScriptInfo(const command::Json& info, OutputFormat format)
 	std::cout << "python_version " << info.value("python_version", std::string{}) << '\n';
 	std::cout << "environment " << info.value("environment", std::string{}) << '\n';
 	std::cout << "console_lines " << info.value("console_lines", 0) << '\n';
+	std::cout << "modules " << info.value("module_count", 0) << '\n';
+	if (info.contains("modules"))
+	{
+		for (const auto& module : info["modules"])
+		{
+			std::cout << "  " << module.value("name", std::string{}) << ' '
+			          << module.value("origin", std::string{}) << ' '
+			          << module.value("seconds", 0.0) << "s";
+			if (module.value("project", false))
+				std::cout << " project";
+			if (module.value("cached", false))
+				std::cout << " cached";
+			std::cout << '\n';
+		}
+	}
+	if (info.value("modules_truncated", false))
+		std::cout << "modules_truncated yes\n";
 }
 
 void PrintScriptConsole(const command::Json& result, OutputFormat format)
@@ -120,7 +137,8 @@ void ScriptCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 	{
 		AddSessionOption(app, m_session);
 		AddFormatOption(app, m_format);
-		app.add_option("--timeout", m_timeoutSeconds, "Command timeout in seconds.")
+		app.add_option("--timeout", m_timeoutSeconds,
+		               "Command timeout in seconds (default 300 to absorb a cold import).")
 			->check(CLI::PositiveNumber);
 	};
 

@@ -64,3 +64,26 @@ TEST(AppArgs, ParsesEqualsForm)
 	ASSERT_TRUE(args.project.has_value());
 	EXPECT_EQ(*args.project, "C:/work/p.neurus.json");
 }
+
+TEST(AppArgs, ParsesRepeatedAndCommaSeparatedPreloads)
+{
+	const std::vector<std::string> arguments{
+		"Neurus", "--preload", "json", "--preload=numpy,torch", "--preload=scipy"};
+
+	const auto args = AppArgs::Parse(arguments);
+	EXPECT_TRUE(args.error.empty());
+	ASSERT_EQ(args.preload.size(), 4u);
+	EXPECT_EQ(args.preload[0], "json");
+	EXPECT_EQ(args.preload[1], "numpy");
+	EXPECT_EQ(args.preload[2], "torch");
+	EXPECT_EQ(args.preload[3], "scipy");
+}
+
+TEST(AppArgs, PreloadWithoutAValueIsAnError)
+{
+	const std::vector<std::string> arguments{"Neurus", "--preload"};
+
+	const auto args = AppArgs::Parse(arguments);
+	EXPECT_FALSE(args.error.empty());
+	EXPECT_TRUE(args.preload.empty());
+}

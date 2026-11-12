@@ -17,6 +17,8 @@ add_library(neurus_script STATIC
 	ScriptEngine.h
 	ScriptEngine.cpp
 	ScriptEngineImpl.h
+	ScriptImports.h
+	ScriptImports.cpp
 	ScriptView.h
 	proxies/ProxyBase.h
 	proxies/ObjectProxy.h

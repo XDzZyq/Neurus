@@ -232,7 +232,8 @@ The interpreter is the **base** CPython that the managed environment is built on
 embedded with an isolated `PyConfig` pinned to that base prefix. The virtual
 environment under `lib/.venv` (a `uv` environment owned by the `Neurus-Lib`
 submodule) is attached at runtime so its site-packages are importable; that is
-how a heavier package such as PyTorch would be added later.
+how a heavier package such as PyTorch is added. Preload it so its first import
+does not land inside a frame.
 
 - Provision the environment with `make update`.
 - Override the environment path at configure time with
@@ -240,6 +241,91 @@ how a heavier package such as PyTorch would be added later.
   `neurus_python_config.h`).
 - If the environment is missing, the interpreter still starts isolated against
   its base install.
+
+## Imports, warm starts and hot reload
+
+A heavy package such as PyTorch pays its first import while it runs, and that
+cost lands inside a frame: the viewport stalls until the import returns. Startup
+preload and hot reload remove that stall and make edited project modules
+iterable without restarting the application.
+
+### Startup preload
+
+The Application preloads packages after the interpreter is ready and **before
+the first frame**, so the cost is paid once at launch instead of on the first
+script that needs the package. The list comes from exactly one source, in this
+precedence:
+
+1. `--preload NAME` on the application, repeatable and comma-separated.
+2. `script_preload` in `~/.neurus/preferences.json` (a JSON array of names).
+3. `NEURUS_SCRIPT_PRELOAD`, comma- or semicolon-separated.
+
+`neurus open --preload NAME` forwards the values to the spawned application as
+repeated `--preload` arguments, so a background session starts warm as well.
+
+Each result is logged and appended to the Script Console:
+
+```text
+preload json: 0.012s (loaded)
+preload torch: 0.000s (cached)
+preload missing_pkg failed: Traceback (most recent call last): ...
+```
+
+A failure is reported and never aborts startup: the editor opens with the
+packages it could import.
+
+`script info` reports the resident modules as `modules` (`name`, `origin`,
+`seconds`, `project`, `cached`) plus `module_count` and `modules_truncated`.
+The list is bounded - 200 entries in the command reply, 500 in the engine - so a
+long session cannot inflate the reply.
+
+### Import recording
+
+The engine installs a private `sys.meta_path` finder when the interpreter
+starts. It delegates to the other finders and wraps each module's loader in a
+timing loader, recording the module name, its origin (`spec.origin` or
+`__file__`), the wall-clock import time and the source mtime (`st_mtime_ns`).
+The helper namespace is a dict held by the engine, not a module in `sys.modules`,
+so user code cannot import or patch it.
+
+A spec whose loader has no `exec_module` (a namespace package) is recorded with
+zero seconds. Nested imports are recorded too, in load order.
+
+### Hot reload
+
+Reload roots are the directories whose modules may be re-executed:
+
+- The project directory (parent of the open project file), or the process
+  current directory when no project is open. This is set at startup and again
+  after New/Open.
+- For `RunFile` and `neurus script run --file`, the script's own directory for
+  that run.
+
+A run first walks the recorded modules in load order. A module is reloaded with
+`importlib.reload` only when its origin is under a root, its file exists, and
+its current `st_mtime_ns` is newer than the recorded value. Third-party modules
+and the standard library are never reloaded, even when their files change. A
+module whose mtime is unchanged is not reloaded, so a second run of unchanged
+code does not re-execute its top-level code.
+
+A successful reload is announced on the console and the run that triggered it
+continues:
+
+```text
+reloaded module mymod in 0.004s
+```
+
+A failed reload names the module, is logged as an error and appended to the
+console, and the new source is not executed: a broken module never runs a
+half-stale mix of old and new code. Reloading happens inside the run's script
+scope, so top-level writes it makes fold into the same undo step as the run.
+
+### CLI timeout
+
+`neurus script ...` defaults `--timeout` to 300 seconds, absorbing a first cold
+import of a heavy package. Preload is the primary fix; the longer default is a
+safety margin. An explicit `--timeout` always wins, and other command families
+keep their own default (10 seconds).
 
 ## Running a script
 

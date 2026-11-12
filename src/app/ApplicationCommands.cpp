@@ -123,11 +123,38 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 	if (request.name == command::kScriptInfo)
 	{
 		const bool ready = app_script && app_script->IsReady();
+
+		// Bound the module list so a long session's `script info` stays small;
+		// the truncated flag tells the caller the count is a prefix.
+		constexpr std::size_t kMaxReportedModules = 200;
+		command::Json modules = command::Json::array();
+		std::size_t moduleCount = 0;
+		if (ready)
+		{
+			const std::vector<ScriptModuleInfo> loaded = app_script->LoadedModules();
+			moduleCount = loaded.size();
+			const std::size_t limit = std::min<std::size_t>(loaded.size(), kMaxReportedModules);
+			for (std::size_t i = 0; i < limit; ++i)
+			{
+				const ScriptModuleInfo& module = loaded[i];
+				modules.push_back({
+					{"name", module.name},
+					{"origin", module.origin},
+					{"seconds", module.loadSeconds},
+					{"project", module.projectLocal},
+					{"cached", module.cached},
+				});
+			}
+		}
+
 		return command::CommandResult::Success({
 			{"ready", ready},
 			{"python_version", app_script ? app_script->PythonVersion() : std::string{}},
 			{"environment", app_script ? app_script->EnvironmentPath() : std::string{}},
 			{"console_lines", console ? console->Size() : 0},
+			{"modules", modules},
+			{"module_count", moduleCount},
+			{"modules_truncated", moduleCount > modules.size()},
 		});
 	}
 

@@ -152,12 +152,33 @@ TEST(PreferencesTest, SaveLoadRoundtrip)
 	Preferences prefs;
 	prefs.language = "zh_CN";
 	prefs.targetFps = 30;
+	prefs.scriptPreload = {"numpy", "json"};
 	EXPECT_TRUE(prefs.Save(path));
 
 	Preferences loaded;
 	EXPECT_EQ(loaded.Load(path), LoadResult::Ok);
 	EXPECT_EQ(loaded.language, "zh_CN");
 	EXPECT_EQ(loaded.targetFps, 30);
+	EXPECT_EQ(loaded.scriptPreload, prefs.scriptPreload);
+}
+
+TEST(PreferencesTest, MissingScriptPreloadKeepsTheDefault)
+{
+	// A file written by an older build has no script_preload key: it must load
+	// cleanly with an empty list, not as Corrupt.
+	TempDir dir;
+	const std::string path = dir.filePath("preferences.json");
+	{
+		std::ofstream out(path, std::ios::binary);
+		out << "{ \"language\": \"en\", \"target_fps\": 30 }";
+	}
+
+	Preferences prefs;
+	prefs.scriptPreload = {"numpy"};
+	EXPECT_EQ(prefs.Load(path), LoadResult::Ok);
+	EXPECT_TRUE(prefs.scriptPreload.empty());
+	EXPECT_EQ(prefs.language, "en");
+	EXPECT_EQ(prefs.targetFps, 30);
 }
 
 TEST(PreferencesTest, RoundtripPreservesAutoLanguage)
@@ -216,6 +237,11 @@ TEST(PreferencesTest, EqualityFollowsEveryPersistedField)
 	EXPECT_EQ(loaded, prefs);
 
 	loaded.targetFps = 60;
+	EXPECT_NE(loaded, prefs);
+	loaded.targetFps = prefs.targetFps;
+	EXPECT_EQ(loaded, prefs);
+
+	loaded.scriptPreload = {"numpy"};
 	EXPECT_NE(loaded, prefs);
 }
 

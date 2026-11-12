@@ -29,7 +29,9 @@ private:
 	int         m_tail = 50;
 	std::string m_session;
 	std::string m_format;
-	int         m_timeoutSeconds = 60;
+	/// 300 s absorbs a first cold import; preload is the primary fix and this
+	/// longer default is only a safety margin. `--timeout` stays authoritative.
+	int         m_timeoutSeconds = 300;
 };
 
 } // namespace neurus::cli

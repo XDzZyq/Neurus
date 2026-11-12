@@ -17,9 +17,12 @@
 
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iterator>
 #include <optional>
+#include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "core/Log.h"
@@ -27,6 +30,7 @@
 #include "editor/events/ScriptEvents.h"
 #include "script/ScriptDispatch.h"
 #include "script/ScriptEngine.h"
+#include "script/ScriptImports.h"
 #include "script/bindings/Bindings.h"
 #include "script/ScriptView.h"
 #include "script/neurus_python_config.h"
@@ -118,6 +122,11 @@ struct ScriptEngine::Impl
 		// lifetime; only the document it exposes changes per run.
 		script::InstallNeurusViews(m_neuru, &m_view);
 
+		// Install the import recorder after the embedded module is ready: every
+		// import from here on (including a preload) is timed, and the recorder's
+		// finder wraps the loaders without replacing the import system.
+		m_imports.Install();
+
 		m_ready = true;
 		return true;
 	}
@@ -131,6 +140,10 @@ struct ScriptEngine::Impl
 		}
 
 		m_ready = false;
+		// Drop the recorder's helper namespace and every pybind11 reference
+		// before finalizing: their destructors decref, which must not happen
+		// after the interpreter is gone.
+		m_imports.Release();
 		// Drop the module handle before finalizing: its destructor decrefs, which
 		// must not happen after the interpreter is gone.
 		m_neuru = pybind11::module_();
@@ -164,6 +177,46 @@ struct ScriptEngine::Impl
 	}
 
 	/**
+	 * @brief Import packages now, reporting per package instead of throwing.
+	 * @param packages Package names, in order.
+	 */
+	std::vector<ScriptPreloadResult> Preload(const std::vector<std::string>& packages)
+	{
+		std::vector<ScriptPreloadResult> results;
+		results.reserve(packages.size());
+		for (const std::string& package : packages)
+		{
+			ScriptPreloadResult result = m_imports.Preload(package);
+			if (!result.ok)
+			{
+				// Startup continues on failure, but the reason must not vanish.
+				NEURUS_ERR("[ScriptEngine] preload '" << package << "' failed: "
+				          << result.error);
+			}
+			results.push_back(std::move(result));
+		}
+		return results;
+	}
+
+	/// @brief Report the modules resident in the interpreter, in load order.
+	std::vector<ScriptModuleInfo> LoadedModules()
+	{
+		return m_imports.LoadedModules();
+	}
+
+	/// @brief Replace the directories whose modules may be hot-reloaded.
+	void SetReloadRoots(const std::vector<std::string>& roots)
+	{
+		m_imports.SetReloadRoots(roots);
+	}
+
+	/// @return The normalized reload roots currently configured.
+	std::vector<std::string> ReloadRoots() const
+	{
+		return m_imports.ReloadRoots();
+	}
+
+	/**
 	 * @brief Evaluate one expression, buffer its repr and return it.
 	 *
 	 * Shares the run boundary, context and stream capture with RunSource so an
@@ -185,6 +238,10 @@ struct ScriptEngine::Impl
 		try
 		{
 			StreamRedirect redirect(m_console);
+			if (!PrepareRun({}))
+			{
+				return std::nullopt;
+			}
 			pybind11::object value =
 				pybind11::eval(expression, pybind11::globals(), pybind11::globals());
 			const std::string result = pybind11::repr(value).cast<std::string>();
@@ -254,8 +311,22 @@ struct ScriptEngine::Impl
 		// CPython decodes UTF-8 source itself.
 		const std::string source((std::istreambuf_iterator<char>(file)),
 		                         std::istreambuf_iterator<char>());
+
+		// A file run also treats the script's own directory as a reload root for
+		// this run, so sibling project modules reload without extra setup.
+		std::vector<std::string> extraRoots;
+		std::error_code pathError;
+		const std::filesystem::path requested(path);
+		const std::filesystem::path absolute = std::filesystem::absolute(requested, pathError);
+		const std::filesystem::path directory = (pathError ? requested : absolute).parent_path();
+		if (!directory.empty())
+		{
+			extraRoots.push_back(directory.generic_string());
+		}
+
 		return RunSource(source, "ScriptEngine::RunFile",
-		                 "Run " + std::filesystem::path(path).filename().string(), ctx);
+		                 "Run " + std::filesystem::path(path).filename().string(), ctx,
+		                 extraRoots);
 	}
 
 	/// @brief Execute a file; compatibility wrapper that ignores the result.
@@ -308,13 +379,49 @@ struct ScriptEngine::Impl
 	}
 
 private:
+	/**
+	 * @brief Reloads changed project modules before a run; false aborts the run.
+	 *
+	 * A reload that re-executed top-level code is announced on the console so
+	 * the user sees why a value changed. A failure names the module, is logged
+	 * and is appended as an error line; the new source is never executed.
+	 */
+	bool PrepareRun(const std::vector<std::string>& extraRoots)
+	{
+		if (m_imports.ReloadRoots().empty() && extraRoots.empty())
+		{
+			return true;
+		}
+
+		const ReloadOutcome outcome = m_imports.ReloadChanged(extraRoots);
+		if (!outcome.ok)
+		{
+			const std::string message = outcome.error.empty()
+				? std::string("reloading a changed project module failed")
+				: outcome.error;
+			m_console.Append(ScriptLineKind::Error, message + "\n");
+			NEURUS_ERR("ScriptEngine: " << message);
+			return false;
+		}
+
+		for (const ReloadedModule& module : outcome.reloaded)
+		{
+			std::ostringstream line;
+			line << "reloaded module " << module.name << " in " << std::fixed
+			     << std::setprecision(3) << module.seconds << "s\n";
+			m_console.Append(ScriptLineKind::Output, line.str());
+		}
+		return true;
+	}
+
 	/// @brief Shared run path: GIL, stdout/stderr capture, error surfacing.
 	/// @param source Python source to execute.
 	/// @param entryName Caller name used in error reporting, not as a label.
 	/// @param runName History label for the run; empty means "Run Script".
 	/// @param ctx Document view to publish for the run.
+	/// @param extraReloadRoots Additional roots for this run (the script directory).
 	bool RunSource(const std::string& source, const char* entryName, const std::string& runName,
-	               const ScriptContext* ctx)
+	               const ScriptContext* ctx, const std::vector<std::string>& extraReloadRoots = {})
 	{
 		pybind11::gil_scoped_acquire gil;
 
@@ -337,6 +444,12 @@ private:
 			// normal and the error path; it is destroyed (while the GIL is
 			// still held) as this try scope unwinds.
 			StreamRedirect redirect(m_console);
+			// Reload inside the run boundary: top-level code a reload executes
+			// folds into the same undo step as the run that triggered it.
+			if (!PrepareRun(extraReloadRoots))
+			{
+				return false;
+			}
 			pybind11::exec(source, pybind11::globals(), pybind11::globals());
 			return true;
 		}
@@ -607,6 +720,7 @@ private:
 	bool m_ready = false;
 	std::string m_envPath;              ///< Environment requested at initialization.
 	pybind11::module_ m_neuru;           ///< Embedded module; views registered once.
+	ScriptImportRecorder m_imports;      ///< Import recording, preload and hot reload.
 	ScriptConsoleBuffer m_console;
 	ScriptDispatch m_dispatch;          ///< Funnel for scripted mutations; attached by SetEventQueue().
 	ScriptContext m_current;            ///< Document published for the run in progress.

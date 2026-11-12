@@ -90,6 +90,16 @@ private:
 	bool InitRenderer();
 	void InitEditor();
 	void InitScripting();
+
+	/**
+	 * @brief Points the script engine's reload roots at the project directory.
+	 *
+	 * The project directory (parent of the open project file) is where
+	 * project-local modules live; with no project open the process current
+	 * directory is used. Called at startup and after New/Open.
+	 */
+	void UpdateScriptReloadRoots();
+
 	void ResizeViewport(int width, int height);
 
 	/**
@@ -171,7 +181,7 @@ private:
 	std::unique_ptr<Preferences> app_preferences;  ///< ~/.neurus/preferences.json (loaded before the window).
 
 	// --- Command session state ---
-	AppArgs      app_args;          ///< Parsed --session / --project.
+	AppArgs      app_args;          ///< Parsed --session / --project / --preload.
 	std::vector<std::string> app_rawArguments;  ///< argv captured before QApplication parses it.
 	std::string  app_sessionName;   ///< Named session, empty for a normal launch.
 	std::chrono::steady_clock::time_point app_startTime;  ///< Session uptime origin.

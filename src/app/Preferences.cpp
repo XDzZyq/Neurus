@@ -6,10 +6,13 @@
 #include "platform/PlatformPaths.h"
 
 #include <cereal/archives/json.hpp>
+#include <cereal/types/string.hpp>
+#include <cereal/types/vector.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <system_error>
+#include <utility>
 
 namespace neurus {
 
@@ -35,7 +38,8 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 		// Each key independently: a file missing one of them still yields the
 		// other instead of Corrupt.
 		archive::Optional(ar, cereal::make_nvp("language", fresh.language),
-		                  cereal::make_nvp("target_fps", fresh.targetFps));
+		                  cereal::make_nvp("target_fps", fresh.targetFps),
+		                  cereal::make_nvp("script_preload", fresh.scriptPreload));
 	}
 	catch (const std::exception& e)
 	{
@@ -45,6 +49,7 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 
 	language  = fresh.language;
 	targetFps = fresh.targetFps;
+	scriptPreload = std::move(fresh.scriptPreload);
 
 	// "auto" is deliberately left as-is: resolving the sentinel is not this
 	// type's job, so the stored value survives the round-trip.
@@ -116,7 +121,8 @@ bool Preferences::Save(const std::string& path) const
 	{
 		cereal::JSONOutputArchive ar(out);
 		ar(cereal::make_nvp("language", language),
-		   cereal::make_nvp("target_fps", targetFps));
+		   cereal::make_nvp("target_fps", targetFps),
+		   cereal::make_nvp("script_preload", scriptPreload));
 	}
 	catch (const std::exception& e)
 	{
