@@ -18,6 +18,74 @@
 
 namespace neurus {
 
+namespace {
+
+/**
+ * @brief Nested JSON shape for the script settings.
+ *
+ * The persisted file is tree-like (`script.preload`, `script.sandbox.*`), while
+ * the live Preferences struct keeps flat fields for its callers.
+ */
+struct ScriptSandboxJson
+{
+	std::vector<std::string> readRoots;
+	std::vector<std::string> writeRoots;
+	std::vector<std::string> blockedModules;
+	bool allowNetwork = false;
+	bool allowSubprocess = false;
+	bool allowCtypes = false;
+	int timeLimitSeconds = 30;
+	int memoryLimitMb = 0;
+
+	template<class Archive>
+	void save(Archive& ar) const
+	{
+		ar(cereal::make_nvp("read_roots", readRoots),
+		   cereal::make_nvp("write_roots", writeRoots),
+		   cereal::make_nvp("blocked_modules", blockedModules),
+		   cereal::make_nvp("allow_network", allowNetwork),
+		   cereal::make_nvp("allow_subprocess", allowSubprocess),
+		   cereal::make_nvp("allow_ctypes", allowCtypes),
+		   cereal::make_nvp("time_limit_s", timeLimitSeconds),
+		   cereal::make_nvp("memory_limit_mb", memoryLimitMb));
+	}
+
+	template<class Archive>
+	void load(Archive& ar)
+	{
+		archive::Optional(ar, cereal::make_nvp("read_roots", readRoots),
+		                  cereal::make_nvp("write_roots", writeRoots),
+		                  cereal::make_nvp("blocked_modules", blockedModules),
+		                  cereal::make_nvp("allow_network", allowNetwork),
+		                  cereal::make_nvp("allow_subprocess", allowSubprocess),
+		                  cereal::make_nvp("allow_ctypes", allowCtypes),
+		                  cereal::make_nvp("time_limit_s", timeLimitSeconds),
+		                  cereal::make_nvp("memory_limit_mb", memoryLimitMb));
+	}
+};
+
+struct ScriptJson
+{
+	std::vector<std::string> preload;
+	ScriptSandboxJson sandbox;
+
+	template<class Archive>
+	void save(Archive& ar) const
+	{
+		ar(cereal::make_nvp("preload", preload),
+		   cereal::make_nvp("sandbox", sandbox));
+	}
+
+	template<class Archive>
+	void load(Archive& ar)
+	{
+		archive::Optional(ar, cereal::make_nvp("preload", preload));
+		archive::OptionalField(ar, cereal::make_nvp("sandbox", sandbox));
+	}
+};
+
+} // namespace
+
 std::string Preferences::DefaultPath()
 {
 	return (HomeDirectory() / ".neurus" / "preferences.json").generic_string();
@@ -37,26 +105,23 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 	try
 	{
 		cereal::JSONInputArchive ar(in);
+		ScriptJson script;
+		archive::Optional(ar, cereal::make_nvp("script", script));
+
 		// Each key independently: a file missing one of them still yields the
 		// other instead of Corrupt.
-		archive::Optional(
-			ar, cereal::make_nvp("language", fresh.language),
-			cereal::make_nvp("target_fps", fresh.targetFps),
-			cereal::make_nvp("script_preload", fresh.scriptPreload),
-			cereal::make_nvp("script_sandbox_read_roots", fresh.scriptSandboxReadRoots),
-			cereal::make_nvp("script_sandbox_write_roots", fresh.scriptSandboxWriteRoots),
-			cereal::make_nvp("script_sandbox_blocked_modules",
-			                 fresh.scriptSandboxBlockedModules),
-			cereal::make_nvp("script_sandbox_allow_network",
-			                 fresh.scriptSandboxAllowNetwork),
-			cereal::make_nvp("script_sandbox_allow_subprocess",
-			                 fresh.scriptSandboxAllowSubprocess),
-			cereal::make_nvp("script_sandbox_allow_ctypes",
-			                 fresh.scriptSandboxAllowCtypes),
-			cereal::make_nvp("script_sandbox_time_limit_s",
-			                 fresh.scriptSandboxTimeLimitSeconds),
-			cereal::make_nvp("script_sandbox_memory_limit_mb",
-			                 fresh.scriptSandboxMemoryLimitMb));
+		archive::Optional(ar, cereal::make_nvp("language", fresh.language),
+		                  cereal::make_nvp("target_fps", fresh.targetFps));
+
+		fresh.scriptPreload = std::move(script.preload);
+		fresh.scriptSandboxReadRoots = std::move(script.sandbox.readRoots);
+		fresh.scriptSandboxWriteRoots = std::move(script.sandbox.writeRoots);
+		fresh.scriptSandboxBlockedModules = std::move(script.sandbox.blockedModules);
+		fresh.scriptSandboxAllowNetwork = script.sandbox.allowNetwork;
+		fresh.scriptSandboxAllowSubprocess = script.sandbox.allowSubprocess;
+		fresh.scriptSandboxAllowCtypes = script.sandbox.allowCtypes;
+		fresh.scriptSandboxTimeLimitSeconds = script.sandbox.timeLimitSeconds;
+		fresh.scriptSandboxMemoryLimitMb = script.sandbox.memoryLimitMb;
 	}
 	catch (const std::exception& e)
 	{
@@ -171,24 +236,21 @@ bool Preferences::Save(const std::string& path) const
 
 	try
 	{
+		ScriptJson script;
+		script.preload = scriptPreload;
+		script.sandbox.readRoots = scriptSandboxReadRoots;
+		script.sandbox.writeRoots = scriptSandboxWriteRoots;
+		script.sandbox.blockedModules = scriptSandboxBlockedModules;
+		script.sandbox.allowNetwork = scriptSandboxAllowNetwork;
+		script.sandbox.allowSubprocess = scriptSandboxAllowSubprocess;
+		script.sandbox.allowCtypes = scriptSandboxAllowCtypes;
+		script.sandbox.timeLimitSeconds = scriptSandboxTimeLimitSeconds;
+		script.sandbox.memoryLimitMb = scriptSandboxMemoryLimitMb;
+
 		cereal::JSONOutputArchive ar(out);
 		ar(cereal::make_nvp("language", language),
 		   cereal::make_nvp("target_fps", targetFps),
-		   cereal::make_nvp("script_preload", scriptPreload),
-		   cereal::make_nvp("script_sandbox_read_roots", scriptSandboxReadRoots),
-		   cereal::make_nvp("script_sandbox_write_roots", scriptSandboxWriteRoots),
-		   cereal::make_nvp("script_sandbox_blocked_modules",
-		                    scriptSandboxBlockedModules),
-		   cereal::make_nvp("script_sandbox_allow_network",
-		                    scriptSandboxAllowNetwork),
-		   cereal::make_nvp("script_sandbox_allow_subprocess",
-		                    scriptSandboxAllowSubprocess),
-		   cereal::make_nvp("script_sandbox_allow_ctypes",
-		                    scriptSandboxAllowCtypes),
-		   cereal::make_nvp("script_sandbox_time_limit_s",
-		                    scriptSandboxTimeLimitSeconds),
-		   cereal::make_nvp("script_sandbox_memory_limit_mb",
-		                    scriptSandboxMemoryLimitMb));
+		   cereal::make_nvp("script", script));
 	}
 	catch (const std::exception& e)
 	{

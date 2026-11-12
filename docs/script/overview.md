@@ -257,7 +257,7 @@ script that needs the package. The list comes from exactly one source, in this
 precedence:
 
 1. `--preload NAME` on the application, repeatable and comma-separated.
-2. `script_preload` in `~/.neurus/preferences.json` (a JSON array of names).
+2. `script.preload` in `~/.neurus/preferences.json` (a JSON array of names).
 3. `NEURUS_SCRIPT_PRELOAD`, comma- or semicolon-separated.
 
 **File -> Preferences -> Script Preload** edits the persisted list. A change is

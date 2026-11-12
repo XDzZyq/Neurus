@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 #include "app/Preferences.h"
@@ -178,6 +179,26 @@ TEST(PreferencesTest, SaveLoadRoundtrip)
 	EXPECT_EQ(loaded.scriptSandboxMemoryLimitMb, 512);
 }
 
+TEST(PreferencesTest, SavesNestedScriptObject)
+{
+	TempDir dir;
+	const std::string path = dir.filePath("preferences.json");
+
+	Preferences prefs;
+	prefs.scriptPreload = {"numpy"};
+	prefs.scriptSandboxBlockedModules = {"subprocess"};
+	ASSERT_TRUE(prefs.Save(path));
+
+	std::ifstream in(path, std::ios::binary);
+	const std::string text((std::istreambuf_iterator<char>(in)),
+	                       std::istreambuf_iterator<char>());
+	EXPECT_NE(text.find("\"script\""), std::string::npos);
+	EXPECT_NE(text.find("\"preload\""), std::string::npos);
+	EXPECT_NE(text.find("\"sandbox\""), std::string::npos);
+	EXPECT_NE(text.find("\"blocked_modules\""), std::string::npos);
+	EXPECT_EQ(text.find("\"script_sandbox_blocked_modules\""), std::string::npos);
+}
+
 TEST(PreferencesTest, ScriptSandboxPolicyUsesHostSettings)
 {
 	Preferences prefs;
@@ -208,8 +229,8 @@ TEST(PreferencesTest, ScriptSandboxPolicyUsesHostSettings)
 
 TEST(PreferencesTest, MissingScriptPreloadKeepsTheDefault)
 {
-	// A file written by an older build has no script_preload key: it must load
-	// cleanly with an empty list, not as Corrupt.
+	// A file with no script block must load cleanly with the script defaults,
+	// not as Corrupt.
 	TempDir dir;
 	const std::string path = dir.filePath("preferences.json");
 	{
