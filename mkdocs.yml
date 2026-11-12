@@ -111,6 +111,8 @@ nav:
       - Items: ui/items.md
       - Models: ui/models.md
       - Internationalization: ui/i18n.md
+  - Scripting:
+      - Overview: script/overview.md
   - Commands:
       - Overview: command/overview.md
   - Core & Data:
