@@ -26,7 +26,8 @@ enum class CliExit
 	NoSession = 3,
 	Transport = 4,
 	Rejected = 5,
-	AppMissing = 6
+	AppMissing = 6,
+	SandboxViolation = 7
 };
 
 struct OpenOptions
@@ -34,6 +35,7 @@ struct OpenOptions
 	std::optional<std::string>      project;
 	std::optional<std::string>      name;
 	std::optional<std::filesystem::path> app;
+	std::vector<std::string>        preload;  ///< Packages imported before the first frame.
 	int                             timeoutSeconds = 30;
 	bool                            noWait = false;
 	bool                            noBind = false;

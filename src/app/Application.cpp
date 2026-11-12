@@ -23,6 +23,7 @@
 #include "editor/commands/EditorCommandAdapter.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/events/UIEvents.h"
+#include "platform/PlatformProcess.h"
 #include "platform/PlatformSystem.h"
 #include "ui/UIManager.h"
 #include "ui/panels/Viewport.h"
@@ -41,9 +42,13 @@
 #include <exception>
 #include <filesystem>
 #include <future>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -80,6 +85,80 @@ static void BuildProject(neurus::project::Project& proj,
 	// files that lack them load cleanly (each Load() falls back).
 	proj.Register<neurus::project::HistoryComponent>(editor.GetOperations());
 	proj.Register<neurus::project::EditorComponent>(editor.GetViewport());
+}
+
+/**
+ * @brief Splits a preload list on commas and semicolons, trimming each item.
+ *
+ * Both separators are accepted because the environment variable is written by
+ * hand: a comma-separated list is the documented form and a semicolon works on
+ * shells where the comma is inconvenient.
+ */
+std::vector<std::string> SplitPackageList(const std::string& value)
+{
+	std::vector<std::string> items;
+	std::size_t start = 0;
+	while (start <= value.size())
+	{
+		const std::size_t end = value.find_first_of(",;", start);
+		std::string item = value.substr(
+			start, end == std::string::npos ? std::string::npos : end - start);
+		const std::size_t first = item.find_first_not_of(" \t");
+		const std::size_t last = item.find_last_not_of(" \t");
+		if (first != std::string::npos)
+		{
+			items.push_back(item.substr(first, last - first + 1));
+		}
+		if (end == std::string::npos)
+		{
+			break;
+		}
+		start = end + 1;
+	}
+	return items;
+}
+
+/// @brief Joins preference list entries for the Preferences dialog.
+QString JoinPreferenceList(const std::vector<std::string>& values)
+{
+	QStringList parts;
+	for (const std::string& value : values)
+	{
+		parts.append(QString::fromStdString(value));
+	}
+	return parts.join(QStringLiteral("; "));
+}
+
+/// @brief Builds the UI-side script settings from the persisted preferences.
+neurus::ScriptPreferencesUi MakeScriptPreferencesUi(const neurus::Preferences& preferences)
+{
+	neurus::ScriptPreferencesUi script;
+	script.readRoots = JoinPreferenceList(preferences.scriptSandboxReadRoots);
+	script.writeRoots = JoinPreferenceList(preferences.scriptSandboxWriteRoots);
+	script.blockedModules = JoinPreferenceList(preferences.scriptSandboxBlockedModules);
+	script.preload = JoinPreferenceList(preferences.scriptPreload);
+	script.allowNetwork = preferences.scriptSandboxAllowNetwork;
+	script.allowSubprocess = preferences.scriptSandboxAllowSubprocess;
+	script.allowCtypes = preferences.scriptSandboxAllowCtypes;
+	script.timeLimitSeconds = preferences.scriptSandboxTimeLimitSeconds;
+	script.memoryLimitMb = preferences.scriptSandboxMemoryLimitMb;
+	return script;
+}
+
+/// @brief Formats one startup preload result as a Script Console line.
+std::string FormatPreloadLine(const neurus::ScriptPreloadResult& result)
+{
+	std::ostringstream line;
+	if (!result.ok)
+	{
+		line << "preload " << result.package << " failed: " << result.error;
+	}
+	else
+	{
+		line << "preload " << result.package << ": " << std::fixed << std::setprecision(3)
+		     << result.loadSeconds << "s (" << (result.cached ? "cached" : "loaded") << ")";
+	}
+	return line.str();
 }
 
 } // anonymous namespace
@@ -265,6 +344,10 @@ int Application::Run()
 		OnProjectSave(projectPath);
 	}
 
+	// The project path is now known (or the fallback saved one); project-local
+	// modules live beside it, so they become the session's reload roots.
+	UpdateScriptReloadRoots();
+
 	app_mainWindow->show();
 	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight());
 
@@ -329,6 +412,7 @@ bool Application::InitVulkan()
 		app_mainWindow = std::make_unique<neurus::UIManager>(
 			QString::fromStdString(app_preferences->language),
 			app_preferences->targetFps,
+			MakeScriptPreferencesUi(*app_preferences),
 			QString::fromStdString(neurus::Preferences::DefaultPath()));
 		app_mainWindow->show();  // Must show before surface creation on macOS
 
@@ -528,6 +612,75 @@ void Application::InitScripting()
 	// The engine resolves its own environment (NEURUS_PYTHON_ENV override, else
 	// the build-time lib/.venv default). A failure degrades to a no-op engine.
 	app_script->Initialize();
+
+	// Preload precedence for one launch: CLI --preload, then the persisted
+	// preference, then NEURUS_SCRIPT_PRELOAD. The first non-empty source wins,
+	// so an explicit flag never silently merges with stale preferences.
+	std::vector<std::string> preload;
+	if (!app_args.preload.empty())
+	{
+		preload = app_args.preload;
+	}
+	else if (app_preferences && !app_preferences->scriptPreload.empty())
+	{
+		preload = app_preferences->scriptPreload;
+	}
+	else
+	{
+		preload = SplitPackageList(EnvironmentValue("NEURUS_SCRIPT_PRELOAD"));
+	}
+
+	if (app_script->IsReady() && !preload.empty())
+	{
+		// Before the first frame: a heavy import is paid here, once, instead of
+		// stalling the viewport on the first script that needs it. A failure is
+		// reported and does not abort startup.
+		const std::vector<ScriptPreloadResult> results = app_script->Preload(preload);
+		for (const ScriptPreloadResult& result : results)
+		{
+			const std::string line = FormatPreloadLine(result);
+			app_script->Console().Append(
+				result.ok ? ScriptLineKind::Output : ScriptLineKind::Error, line + "\n");
+			if (result.ok)
+			{
+				NEURUS_LOG("[Application] " << line);
+			}
+			else
+			{
+				NEURUS_ERR("[Application] " << line);
+			}
+		}
+	}
+
+	UpdateScriptReloadRoots();
+}
+
+void Application::UpdateScriptReloadRoots()
+{
+	if (!app_script)
+	{
+		return;
+	}
+
+	std::vector<std::string> roots;
+	std::error_code pathError;
+	std::filesystem::path directory;
+	if (!app_projectPath.empty())
+	{
+		directory = std::filesystem::path(app_projectPath).parent_path();
+	}
+	if (directory.empty())
+	{
+		directory = std::filesystem::current_path(pathError);
+	}
+	if (!directory.empty())
+	{
+		roots.push_back(directory.generic_string());
+	}
+
+	app_script->SetReloadRoots(roots);
+	NEURUS_LOG("[Application] script reload roots: "
+	           << (roots.empty() ? std::string("(none)") : roots.front()));
 }
 
 
@@ -555,6 +708,9 @@ bool Application::OnProjectNew(std::string* error)
 	}
 
 	app_projectPath.clear();
+	// Project-local modules follow the project: with none open, the process
+	// current directory is the reload root.
+	UpdateScriptReloadRoots();
 	// Layout is intentionally left untouched on New; rebase the dirty
 	// baseline so a fresh project isn't reported as having unsaved changes.
 	app_savedUiState = app_mainWindow->ExportLayout();
@@ -581,6 +737,8 @@ bool Application::OnProjectOpen(const std::string& path, std::string* error)
 		app_editor->FinishLoad();
 		app_mainWindow->ApplyLayout(app_uiLayout);
 		app_projectPath = path;
+		// The opened project's directory becomes the reload root for its modules.
+		UpdateScriptReloadRoots();
 		// Same rebase as the startup load: the re-exported layout, not the blob.
 		app_savedUiState = app_mainWindow->ExportLayout();
 	}
@@ -599,6 +757,7 @@ bool Application::OnProjectOpen(const std::string& path, std::string* error)
 			app_editor->ClearDirty();
 			app_editor->UploadSceneResources();
 			app_projectPath.clear();
+			UpdateScriptReloadRoots();
 			app_savedUiState = app_mainWindow->ExportLayout();
 		}
 		catch (const std::exception& resetError)
@@ -629,6 +788,9 @@ bool Application::OnProjectSave(const std::string& path, std::string* error)
 		BuildProject(proj, *app_editor, app_uiLayout);
 		proj.Save(target);
 		app_projectPath = target;
+		// Save As can move the document to another directory; reload roots
+		// follow the project file.
+		UpdateScriptReloadRoots();
 		app_savedUiState = app_uiLayout;
 		app_editor->ClearDirty();
 	}

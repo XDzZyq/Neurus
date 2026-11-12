@@ -2,14 +2,18 @@
  * @file Preferences.h
  * @brief Application-layer user preferences persisted to ~/.neurus/preferences.json.
  *
- * Owned exclusively by the Application: the active UI language and the
- * render-loop target FPS. Pure data + cereal JSON persistence, fully Qt-free
- * (the home directory comes from the platform layer).
+ * Owned exclusively by the Application: the active UI language, the
+ * render-loop target FPS and the startup script preload list. Pure data +
+ * cereal JSON persistence, fully Qt-free (the home directory comes from the
+ * platform layer).
  */
 
 #pragma once
 
 #include <string>
+#include <vector>
+
+#include "script/ScriptPolicy.h"
 
 namespace neurus {
 
@@ -30,6 +34,44 @@ struct Preferences
 
 	/** @brief Render-loop target FPS (0 = unlimited, run as fast as possible). */
 	int targetFps = 60;
+
+	/**
+	 * @brief Packages imported at startup, before the first frame.
+	 *
+	 * A heavy package pays its import cost once here instead of on the first
+	 * script that needs it. `--preload` overrides this list for one launch and
+	 * `NEURUS_SCRIPT_PRELOAD` is the fallback when neither is set; see the
+	 * Scripting documentation.
+	 */
+	std::vector<std::string> scriptPreload;
+
+	// --- Script sandbox: the host's single policy for external runs ----------
+	// UI runs are trusted. CLI/agent script commands always execute under this
+	// policy, and the CLI cannot override it. Empty roots mean the project
+	// directory (the directory of the open project, or the process cwd).
+
+	/** @brief Read roots; empty means the project directory. */
+	std::vector<std::string> scriptSandboxReadRoots;
+	/** @brief Write roots; empty means the project directory. */
+	std::vector<std::string> scriptSandboxWriteRoots;
+	/** @brief Modules an external sandboxed run may not import. */
+	std::vector<std::string> scriptSandboxBlockedModules;
+	/** @brief Whether a sandboxed run may open sockets. */
+	bool scriptSandboxAllowNetwork = false;
+	/** @brief Whether a sandboxed run may create processes. */
+	bool scriptSandboxAllowSubprocess = false;
+	/** @brief Whether a sandboxed run may use ctypes. */
+	bool scriptSandboxAllowCtypes = false;
+	/** @brief Wall-clock limit in seconds; 0 = unlimited. */
+	int scriptSandboxTimeLimitSeconds = 30;
+	/** @brief Address-space limit in MB; 0 = unlimited. */
+	int scriptSandboxMemoryLimitMb = 0;
+
+	/**
+	 * @brief Builds the sandbox policy external script commands execute under.
+	 * @param projectRoot Project directory substituted when a root list is empty.
+	 */
+	ScriptPolicy MakeScriptPolicy(const std::string& projectRoot) const;
 
 	/**
 	 * @brief Value equality over every persisted field.

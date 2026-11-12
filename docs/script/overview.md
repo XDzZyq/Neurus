@@ -232,7 +232,8 @@ The interpreter is the **base** CPython that the managed environment is built on
 embedded with an isolated `PyConfig` pinned to that base prefix. The virtual
 environment under `lib/.venv` (a `uv` environment owned by the `Neurus-Lib`
 submodule) is attached at runtime so its site-packages are importable; that is
-how a heavier package such as PyTorch would be added later.
+how a heavier package such as PyTorch is added. Preload it so its first import
+does not land inside a frame.
 
 - Provision the environment with `make update`.
 - Override the environment path at configure time with
@@ -240,6 +241,93 @@ how a heavier package such as PyTorch would be added later.
   `neurus_python_config.h`).
 - If the environment is missing, the interpreter still starts isolated against
   its base install.
+
+## Imports, warm starts and hot reload
+
+A heavy package such as PyTorch pays its first import while it runs, and that
+cost lands inside a frame: the viewport stalls until the import returns. Startup
+preload and hot reload remove that stall and make edited project modules
+iterable without restarting the application.
+
+### Startup preload
+
+The Application preloads packages after the interpreter is ready and **before
+the first frame**, so the cost is paid once at launch instead of on the first
+script that needs the package. The list comes from exactly one source, in this
+precedence:
+
+1. `--preload NAME` on the application, repeatable and comma-separated.
+2. `script.preload` in `~/.neurus/preferences.json` (a JSON array of names).
+3. `NEURUS_SCRIPT_PRELOAD`, comma- or semicolon-separated.
+
+**File -> Preferences -> Script Preload** edits the persisted list. A change is
+saved immediately and applies on the next launch. `neurus open --preload NAME`
+forwards the values to the spawned application as repeated `--preload`
+arguments, so a background session starts warm as well.
+
+Each result is logged and appended to the Script Console:
+
+```text
+preload json: 0.012s (loaded)
+preload torch: 0.000s (cached)
+preload missing_pkg failed: Traceback (most recent call last): ...
+```
+
+A failure is reported and never aborts startup: the editor opens with the
+packages it could import.
+
+`script info` reports the resident modules as `modules` (`name`, `origin`,
+`seconds`, `project`, `cached`) plus `module_count` and `modules_truncated`.
+The list is bounded - 200 entries in the command reply, 500 in the engine - so a
+long session cannot inflate the reply.
+
+### Import recording
+
+The engine installs a private `sys.meta_path` finder when the interpreter
+starts. It delegates to the other finders and wraps each module's loader in a
+timing loader, recording the module name, its origin (`spec.origin` or
+`__file__`), the wall-clock import time and the source mtime (`st_mtime_ns`).
+The helper namespace is a dict held by the engine, not a module in `sys.modules`,
+so user code cannot import or patch it.
+
+A spec whose loader has no `exec_module` (a namespace package) is recorded with
+zero seconds. Nested imports are recorded too, in load order.
+
+### Hot reload
+
+Reload roots are the directories whose modules may be re-executed:
+
+- The project directory (parent of the open project file), or the process
+  current directory when no project is open. This is set at startup and again
+  after New/Open.
+- For `RunFile` and `neurus script run --file`, the script's own directory for
+  that run.
+
+A run first walks the recorded modules in load order. A module is reloaded with
+`importlib.reload` only when its origin is under a root, its file exists, and
+its current `st_mtime_ns` is newer than the recorded value. Third-party modules
+and the standard library are never reloaded, even when their files change. A
+module whose mtime is unchanged is not reloaded, so a second run of unchanged
+code does not re-execute its top-level code.
+
+A successful reload is announced on the console and the run that triggered it
+continues:
+
+```text
+reloaded module mymod in 0.004s
+```
+
+A failed reload names the module, is logged as an error and appended to the
+console, and the new source is not executed: a broken module never runs a
+half-stale mix of old and new code. Reloading happens inside the run's script
+scope, so top-level writes it makes fold into the same undo step as the run.
+
+### CLI timeout
+
+`neurus script ...` defaults `--timeout` to 300 seconds, absorbing a first cold
+import of a heavy package. Preload is the primary fix; the longer default is a
+safety margin. An explicit `--timeout` always wins, and other command families
+keep their own default (10 seconds).
 
 ## Running a script
 
@@ -271,3 +359,99 @@ neurus script clear
 
 `script eval` is expression-only; use `script run` for assignments, imports and
 multi-line statements.
+
+## Execution policy and the sandbox
+
+The host owns exactly one sandbox policy. The two execution paths are:
+
+- **UI runs are trusted** - the Script Console and Tools -> Run Script execute
+  the user's own source with no restriction. There is no sandbox toggle in the
+  Script Console, because the sandbox exists to contain untrusted source, not to
+  restrict the person editing the project.
+- **External runs are sandboxed** - every `neurus script run` / `script eval`
+  command from the CLI, and any future agent entry point, executes under the
+  host policy. The CLI cannot choose trusted mode and cannot override a policy
+  field.
+
+The policy is persisted in `~/.neurus/preferences.json` and edited in
+**File -> Preferences -> Script Sandbox**:
+
+| Field | Meaning |
+|-------|---------|
+| Read roots | Semicolon-separated directories the run may read. Empty uses the project directory. |
+| Write roots | Semicolon-separated directories the run may write. Empty uses the project directory. |
+| Blocked modules | Semicolon-separated module names the run may not import. |
+| Allow network | Whether a sandboxed run may open sockets. |
+| Allow subprocess | Whether a sandboxed run may create processes. |
+| Allow ctypes | Whether a sandboxed run may use `ctypes`. |
+| Time limit (s) | Wall-clock limit; `0` means unlimited. |
+| Memory limit (MB) | Address-space limit; `0` means unlimited. |
+
+`ScriptPolicy` (`src/script/ScriptPolicy.h`) is the Python-free value that
+describes one run. `Preferences::MakeScriptPolicy(projectRoot)` builds the
+external-run policy from the persisted fields; an empty root list falls back to
+the project directory. `ScriptPolicy::Trusted()` is the UI-run default. A policy
+is copied per run: the caller keeps ownership of what it passed.
+
+`script info` reports the effective host policy in its `sandbox` object. It is
+the same policy every external command uses, not a record of the last run.
+
+### Enforcement points
+
+The sandbox installs one `sys.addaudithook` hook plus an import gate in a
+private dict at engine initialization. It never enters `sys.modules`.
+
+- `open` (path, mode, flags): integer descriptors pass; reads must resolve under
+  a read root, writes under a write root. `os.listdir`, `os.scandir` and
+  `os.chdir` are read checks; `os.mkdir`, `os.rmdir`, `os.remove`,
+  `os.chmod`, `os.chown`, `os.utime` and `os.truncate` are write checks.
+  `os.rename`, `os.replace`, `os.link` and `os.symlink` check both arguments.
+- Path matching uses `os.path.realpath` + `os.path.normcase` +
+  `os.path.commonpath`. Another drive, a relative path with a `dir_fd`, or a
+  path that cannot be normalized is a denial, not a pass.
+- The interpreter's own installation (`sys.prefix`, `sys.base_prefix` and the
+  entries of `sys.path`) is implicitly readable, so importing a stdlib module
+  inside a sandboxed run still works. That widens reads only: writes and the
+  permission flags are never widened.
+- `subprocess.Popen`, `os.system`, `os.exec*`, `os.spawn*`, `os.posix_spawn`,
+  `os.fork`, `os.forkpty` and `pty.spawn` are refused when subprocess creation
+  is off.
+- Socket connect/bind/sendto and name lookups are refused when network access is
+  off; `import socket` itself stays available so a script can be written once
+  and granted network later.
+- Every `ctypes.*` audit event is refused when ctypes is off.
+- A blocked module is refused by both a `sys.meta_path` finder and a
+  `builtins.__import__` wrapper, so an already-cached module is refused too.
+- The wall-clock watchdog runs outside the interpreter, acquires the GIL at the
+  deadline and raises an asynchronous `_SandboxTimeout` in the running thread.
+  The engine clears any pending injection after every run, so a late timeout
+  cannot interrupt the next one.
+- The memory limit uses Python's `resource.setrlimit(RLIMIT_AS)` where the
+  platform provides it and restores the previous limit afterwards. It is
+  process-wide because the interpreter has no per-run allocation cap; where it
+  is unavailable the run continues unbounded and the engine logs that once.
+
+Denials raise one of `neurus._SandboxViolation` (a `PermissionError`),
+`neurus._SandboxImportViolation` (an `ImportError`) or
+`neurus._SandboxTimeout`. Each message names its rule, for example
+`sandbox: write outside allowed roots (rule: write_roots)`. The engine maps them
+to `ScriptRunStatus::SandboxViolation` and `ScriptRunStatus::Timeout`; the
+command layer reports `SCRIPT_SANDBOX_VIOLATION` or a `SCRIPT_ERROR` with
+`reason: timeout`; the CLI exits `7` for the former.
+
+### Threat model
+
+This is a guardrail, not a security boundary. The hook runs in the same
+interpreter and the same process as the code it judges: a determined script can
+walk the interpreter's own objects, reach the policy record through a reference
+it guesses, or block inside a C call that ignores asynchronous exceptions. Only
+Python-level operations are audited; a document operation the editor performs on
+the script's behalf, such as `neurus.scene.import_mesh`, reads the file through
+the editor's C++ path and is not a filesystem check. The sandbox protects
+against an accidental `open` of the wrong path, an accidental `subprocess` or
+socket, and a runaway loop - the mistakes a normal editing session makes.
+
+The hardening milestone is a child-process execution mode: a separate CPython
+process with an OS-level sandbox, where a kill is a kill and a crash cannot take
+the editor down. That mode is not implemented yet; `ScriptPolicy` and the run
+status values are the seam it will plug into.

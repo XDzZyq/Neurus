@@ -151,11 +151,11 @@ See [Models](models.md) for `LogModel`, `LogFilterProxy` and `LogDelegate`.
 
 `PreferencesDialog` (`src/ui/panels/PreferencesDialog.h`) is opened from **File -> Preferences...** (`Ctrl+,`). It is a pure UI widget:
 
-- It is seeded with plain values (language code, target FPS, preferences-file path) and never touches the app-layer `Preferences` type - the Application is its sole manager.
-- It emits `languageChangeRequested(QString)` / `targetFpsChangeRequested(int)`, routed through `UIEvents` so the Application applies the change, persists `~/.neurus/preferences.json`, and (for language) calls `I18n::setLanguage()`, which fans out the live retranslation.
-- All changes apply immediately; the dialog only has Close (no OK/Cancel). `SyncFrom(language, targetFps)` re-seeds the controls without emitting.
+- It is seeded with plain values (language code, target FPS, `ScriptPreferencesUi`, preferences-file path) and never touches the app-layer `Preferences` type - the Application is its sole manager.
+- It emits `languageChangeRequested(QString)` / `targetFpsChangeRequested(int)` / `scriptPreferencesChanged()`, routed through `UIEvents` so the Application applies the change and persists `~/.neurus/preferences.json`. The script values cover the host sandbox policy and the startup preload list.
+- All changes apply immediately; the dialog only has Close (no OK/Cancel). `SyncFrom(language, targetFps, script)` re-seeds the controls without emitting. Script text fields are semicolon-separated; an empty root list uses the project directory.
 - It connects to `I18n::languageChanged()` so it retranslates while open.
 - The language combo's **row 0 is "System default"**, carrying `"auto"` as item data - `I18n::supportedLanguages()` lists catalogs only, so without that row the shipped default would be unreachable from the UI. It is the only row `Retranslate()` touches; the rest name their own language.
-- "Reset to Defaults" resets to `"auto"` + 60 FPS - the shipped defaults, not the currently detected system code.
+- "Reset to Defaults" resets to `"auto"`, 60 FPS, empty script roots/modules/preload, network/subprocess/ctypes off, a 30 s wall clock and no memory limit - the shipped defaults, not the currently detected system code.
 
 See [overview](overview.md#preferences) for the app-level preferences model and [i18n](i18n.md) for language switching.

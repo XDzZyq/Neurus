@@ -106,6 +106,17 @@ TEST_F(ProcessLaunchTest, BuildsSessionArguments)
 
 	const auto withoutProject = BuildAppArguments("build-1", std::nullopt);
 	ASSERT_EQ(withoutProject.size(), 2u);
+
+	// Preloads are forwarded as repeated option/value pairs.
+	const auto withPreload =
+		BuildAppArguments("build-1", std::nullopt, {"json", "numpy"});
+	ASSERT_EQ(withPreload.size(), 6u);
+	EXPECT_EQ(withPreload[0], "--session");
+	EXPECT_EQ(withPreload[1], "build-1");
+	EXPECT_EQ(withPreload[2], "--preload");
+	EXPECT_EQ(withPreload[3], "json");
+	EXPECT_EQ(withPreload[4], "--preload");
+	EXPECT_EQ(withPreload[5], "numpy");
 }
 
 TEST_F(ProcessLaunchTest, SpawningANonExecutableFails)

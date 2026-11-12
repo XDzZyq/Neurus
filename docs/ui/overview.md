@@ -39,7 +39,7 @@ The UI layer owns the main window, the dock layout, and the viewport widget. The
 - the per-frame `Refresh()` pipeline,
 - layout export/apply, retranslation fan-out, and the Preferences dialog.
 
-The Application seeds it with plain values (`UIManager(language, targetFps, prefsPath)`) - the UI never touches the app-layer `Preferences` type.
+The Application seeds it with plain values (`UIManager(language, targetFps, scriptSettings, prefsPath)`) - the UI never touches the app-layer `Preferences` type.
 
 `Refresh(const UIContext& ctx)` iterates every registered panel and calls `Refresh(ctx)` on each; it also caches the undo/redo stack labels for the Edit submenus. It is called from the frame loop after the renderer draws, keeping widgets in sync with Editor/Project state.
 
@@ -143,7 +143,29 @@ Widgets must dirty-check before applying a value, so a per-frame push never figh
 
 App-level settings (distinct from the per-project `.neurus.json` files) live in `~/.neurus/preferences.json`, persisted with cereal JSON by the `Preferences` struct in `src/app/Preferences.h/cpp` - an **Application Layer** concept (future settings: CUDA enablement, theme, shortcut schemes).
 
-- Fields: `language` (`"en"` / `"zh_CN"`, or `"auto"` = follow the system UI language) and `target_fps` (0 = unlimited).
+- Fields: `language` (`"en"` / `"zh_CN"`, or `"auto"` = follow the system UI language), `target_fps` (0 = unlimited) and the nested `script` object (the startup preload list plus the host sandbox policy external script commands run under; see [Scripting](../script/overview.md#startup-preload) and [Scripting](../script/overview.md#execution-policy-and-the-sandbox)). The Preferences dialog edits both script groups.
+- The script part is tree-like rather than a flat set of top-level keys:
+
+  ```json
+  {
+    "language": "en",
+    "target_fps": 60,
+    "script": {
+      "preload": ["numpy"],
+      "sandbox": {
+        "read_roots": [],
+        "write_roots": [],
+        "blocked_modules": [],
+        "allow_network": false,
+        "allow_subprocess": false,
+        "allow_ctypes": false,
+        "time_limit_s": 30,
+        "memory_limit_mb": 0
+      }
+    }
+  }
+  ```
+
 - **`"auto"` is stored verbatim and stays that way.** `I18n::setLanguage()` resolves the sentinel itself, so nothing on the load path rewrites the preference with a concrete code - resolving it in place would turn "follow the system language" into "pin to whatever the system said at first launch" the moment the file was next written.
 - The **Application is the sole manager**: it loads the file before the window is built, applies the saved language and target FPS, saves on every edit, and saves once more on `aboutToQuit` only when the values differ from the loaded ones (`Preferences::operator==`). A run that only reads them, such as a test session, leaves the file untouched.
 - **Loading distinguishes missing from corrupt** (`Preferences::LoadResult`), and never mutates the fields on either failure - parsing goes into a scratch copy, so a truncated or schema-drifted file cannot leave values half-applied:

@@ -54,6 +54,14 @@ void AppendLimited(std::string& target, const std::string& text, std::size_t lim
 	target += "\n[truncated]\n";
 }
 
+neurus::command::Json StringArrayJson(const std::vector<std::string>& values)
+{
+	neurus::command::Json array = neurus::command::Json::array();
+	for (const auto& value : values)
+		array.push_back(value);
+	return array;
+}
+
 } // namespace
 
 namespace neurus {
@@ -123,11 +131,56 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 	if (request.name == command::kScriptInfo)
 	{
 		const bool ready = app_script && app_script->IsReady();
+
+		// Bound the module list so a long session's `script info` stays small;
+		// the truncated flag tells the caller the count is a prefix.
+		constexpr std::size_t kMaxReportedModules = 200;
+		command::Json modules = command::Json::array();
+		std::size_t moduleCount = 0;
+		if (ready)
+		{
+			const std::vector<ScriptModuleInfo> loaded = app_script->LoadedModules();
+			moduleCount = loaded.size();
+			const std::size_t limit = std::min<std::size_t>(loaded.size(), kMaxReportedModules);
+			for (std::size_t i = 0; i < limit; ++i)
+			{
+				const ScriptModuleInfo& module = loaded[i];
+				modules.push_back({
+					{"name", module.name},
+					{"origin", module.origin},
+					{"seconds", module.loadSeconds},
+					{"project", module.projectLocal},
+					{"cached", module.cached},
+				});
+			}
+		}
+
+		// The summary is the host policy every external script command uses, not
+		// a record of the last run. UI runs are trusted and never see this policy.
+		const ScriptPolicy sandboxPolicy =
+			app_preferences ? app_preferences->MakeScriptPolicy(ScriptProjectRoot())
+			                : ScriptPolicy::Sandboxed(ScriptProjectRoot());
+		const std::uint64_t memoryLimitMb =
+			sandboxPolicy.memoryLimitBytes / (1024ULL * 1024ULL);
 		return command::CommandResult::Success({
 			{"ready", ready},
 			{"python_version", app_script ? app_script->PythonVersion() : std::string{}},
 			{"environment", app_script ? app_script->EnvironmentPath() : std::string{}},
 			{"console_lines", console ? console->Size() : 0},
+			{"modules", modules},
+			{"module_count", moduleCount},
+			{"modules_truncated", moduleCount > modules.size()},
+			{"sandbox", {
+				{"read_roots", StringArrayJson(sandboxPolicy.readRoots)},
+				{"write_roots", StringArrayJson(sandboxPolicy.writeRoots)},
+				{"blocked_modules", StringArrayJson(sandboxPolicy.blockedModules)},
+				{"network", sandboxPolicy.allowNetwork},
+				{"subprocess", sandboxPolicy.allowSubprocess},
+				{"ctypes", sandboxPolicy.allowCtypes},
+				{"time_limit_s", std::chrono::duration<double>(
+					sandboxPolicy.wallClockLimit).count()},
+				{"memory_limit_mb", memoryLimitMb},
+			}},
 		});
 	}
 
@@ -228,6 +281,13 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 		                                      "The editor is not available.");
 	}
 
+	// External script commands always execute under the host policy. The CLI
+	// cannot choose trusted mode or override the policy.
+	const ScriptPolicy policy =
+		app_preferences ? app_preferences->MakeScriptPolicy(ScriptProjectRoot())
+		                : ScriptPolicy::Sandboxed(ScriptProjectRoot());
+	const ScriptPolicy* policyPtr = &policy;
+
 	std::string code;
 	std::string path;
 	bool hasPath = false;
@@ -292,17 +352,17 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 	if (isEval)
 	{
 		const std::optional<std::string> evaluated =
-			app_script->EvalStringChecked(code, &context);
+			app_script->EvalStringChecked(code, &context, policyPtr);
 		runOk = evaluated.has_value();
 		result = evaluated.value_or(std::string{});
 	}
 	else if (hasPath)
 	{
-		runOk = app_script->RunFileChecked(path, &context);
+		runOk = app_script->RunFileChecked(path, &context, policyPtr);
 	}
 	else
 	{
-		runOk = app_script->RunStringChecked(code, &context);
+		runOk = app_script->RunStringChecked(code, &context, policyPtr);
 	}
 
 	std::string output;
@@ -328,9 +388,29 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 
 	if (!runOk)
 	{
-		const std::string message = scriptError.empty()
-			? "The script raised an exception."
-			: scriptError;
+		if (app_script->LastRunStatus() == ScriptRunStatus::SandboxViolation)
+		{
+			const std::string message = app_script->LastRunMessage().empty()
+				? "The script was refused by its sandbox policy."
+				: app_script->LastRunMessage();
+			return command::CommandResult::Failure(
+				command::CommandErrorCode::ScriptSandboxViolation, message,
+				{{"output", output}, {"error", scriptError}, {"reason", "sandbox_violation"}});
+		}
+		if (app_script->LastRunStatus() == ScriptRunStatus::Timeout)
+		{
+			return command::CommandResult::Failure(
+				command::CommandErrorCode::ScriptError,
+				"Script exceeded its wall-clock limit.",
+				{{"output", output}, {"error", scriptError}, {"reason", "timeout"}});
+		}
+
+		const std::string message =
+			!scriptError.empty()
+				? scriptError
+				: (!app_script->LastRunMessage().empty()
+				       ? app_script->LastRunMessage()
+				       : std::string("The script raised an exception."));
 		return command::CommandResult::Failure(
 			command::CommandErrorCode::ScriptError, message,
 			{{"output", output}, {"error", scriptError}});

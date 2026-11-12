@@ -117,8 +117,10 @@ version and unknown fields are ignored. `id` is echoed by the server. The first
 command must be `session.hello`; a wrong token, a non-loopback peer or an
 unsupported version is rejected before any command reaches the executor.
 
-Timeouts: connect 3 s, handshake 3 s, command 10 s, `close --save` 60 s, and a
-5 s idle read on the server.
+Timeouts: connect 3 s, handshake 3 s, command 10 s, `script` commands 300 s,
+`close --save` 60 s, and a 5 s idle read on the server. The longer `script`
+default absorbs a first cold import of a heavy package; preload is the primary
+fix and `--timeout` stays authoritative.
 
 ## Security
 
@@ -133,7 +135,7 @@ Timeouts: connect 3 s, handshake 3 s, command 10 s, `close --save` 60 s, and a
 ## CLI reference
 
 ```
-neurus open [PROJECT] [--name NAME] [--app PATH] [--timeout SECS] [--no-wait] [--no-bind]
+neurus open [PROJECT] [--name NAME] [--app PATH] [--preload NAME]... [--timeout SECS] [--no-wait] [--no-bind]
 neurus close [NAME] [--all] [--save|--force] [--timeout SECS]
 neurus status [NAME]
 neurus list
@@ -179,11 +181,15 @@ neurus --format human|json
 
 `--format` and `--session` are accepted before or after the subcommand. Every
 document command accepts `--session`, so several agents can target different
-sessions from different terminals.
+sessions from different terminals. Every `script` subcommand accepts
+`--timeout SECS` (default 300, see the timeout note above).
 
 - `open` allocates a name when none is given, claims it, spawns the application
   detached with `--session` and optional `--project`, then polls
-  `session.status` until ready. A name whose entry belongs to a live process is
+  `session.status` until ready. `--preload NAME` is forwarded to the application
+  (repeatable, comma-separated) so packages are imported before its first frame;
+  a heavy preload can delay readiness past the default `--timeout`, which is
+  then raised explicitly. A name whose entry belongs to a live process is
   `SESSION_EXISTS`; a stale entry is replaced. Only an entry carrying the pid
   this launch spawned counts as ready. The app is `--app`, then `NEURUS_APP`,
   then the build tree next to the CLI; only when neither override is given does
@@ -222,10 +228,16 @@ sessions from different terminals.
 - `history show` reports the undo/redo stacks; `history undo` and
   `history redo` step them.
 - `script run` executes Python in the running application and returns the
-  captured output. A run is one undo entry, like the Script Console.
-- `script eval` evaluates one expression and returns its `repr`.
-- `script info` reports readiness, the Python version and the managed
-  environment.
+  captured output. A run is one undo entry, like the Script Console. The script
+  family defaults `--timeout` to 300 s so a first cold import does not look like
+  a transport failure; preload is the primary fix. External runs always use the
+  host's Script Sandbox policy from Preferences; the CLI cannot choose trusted
+  mode or override a policy field. A refusal is `SCRIPT_SANDBOX_VIOLATION`.
+- `script eval` evaluates one expression and returns its `repr`, with the same
+  host policy and error mapping.
+- `script info` reports readiness, the Python version, the managed environment,
+  the resident modules (`modules`, `module_count`, `modules_truncated`) and the
+  effective `sandbox` policy.
 - `script console` returns recent captured lines; `script clear` empties the
   buffer.
 - `snapshot capture` writes a PNG of the presented viewport, or every render
@@ -244,6 +256,7 @@ Exit codes:
 | 4 | Transport failure or timeout |
 | 5 | Command rejected (dirty project, save/script failure, object lookup) |
 | 6 | Application missing or exited during startup |
+| 7 | A sandbox policy refused an operation during a script run |
 
 ## Error codes
 
@@ -257,7 +270,8 @@ Exit codes:
 | `DIRTY_PROJECT` | `close`, `project.new` or `project.open` refused because of unsaved changes |
 | `SAVE_FAILED` | `project.save` or `close --save` failed to persist |
 | `IO_ERROR` | Project or mesh file could not be read/written |
-| `SCRIPT_ERROR` | Python code raised an exception |
+| `SCRIPT_ERROR` | Python code raised an exception, or a run exceeded its wall-clock limit |
+| `SCRIPT_SANDBOX_VIOLATION` | The script policy refused a filesystem, import, network, subprocess or ctypes operation |
 | `OBJECT_NOT_FOUND` | No scene object matched the name or UID |
 | `AMBIGUOUS_OBJECT` | Several scene objects matched the name; pass `type` or `uid` |
 | `UNAUTHORIZED` | Missing or wrong token, or non-loopback peer |
@@ -296,9 +310,11 @@ runs:
 - `history.get` - undo/redo labels and availability.
 - `history.undo` - undo the most recent edit.
 - `history.redo` - redo the most recently undone edit.
-- `script.run` - run Python and return its captured output.
+- `script.run` - run Python and return its captured output, optionally under a
+  sandbox policy.
 - `script.eval` - evaluate one Python expression and return its `repr`.
-- `script.info` - readiness, Python version, managed environment and console size.
+- `script.info` - readiness, Python version, managed environment, console size,
+  resident modules and the effective host sandbox policy.
 - `script.console` - recent captured console lines.
 - `script.clear` - clear the console buffer.
 - `snapshot.capture` - write the viewport or all attachments, with the session

@@ -40,6 +40,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -67,21 +68,70 @@ constexpr auto kSurfaceChangeTimeout = std::chrono::seconds(2);
 	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
 }
 
+/// @brief Splits a Preferences text field on commas and semicolons.
+std::vector<std::string> SplitPreferenceList(const std::string& value)
+{
+	std::vector<std::string> items;
+	std::size_t start = 0;
+	while (start <= value.size())
+	{
+		const std::size_t end = value.find_first_of(",;", start);
+		std::string item = value.substr(
+			start, end == std::string::npos ? std::string::npos : end - start);
+		const std::size_t first = item.find_first_not_of(" \t");
+		const std::size_t last = item.find_last_not_of(" \t");
+		if (first != std::string::npos)
+		{
+			items.push_back(item.substr(first, last - first + 1));
+		}
+		if (end == std::string::npos)
+		{
+			break;
+		}
+		start = end + 1;
+	}
+	return items;
+}
+
 } // namespace
 
 namespace neurus {
 
 void Application::OnRunScript(const std::string& code)
 {
-	// Deferred: the engine queues it and the frame loop runs it. The run
-	// dispatches every event synchronously as it executes, so no later drain is
-	// involved - the mutation is applied before the next Python statement.
+	// Deferred: the engine queues it and the frame loop runs it. UI runs are
+	// trusted; only external CLI/agent commands execute under the host sandbox.
 	app_script->Submit(code);
 }
 
 void Application::OnRunFile(const std::string& path)
 {
 	app_script->SubmitFile(path);
+}
+
+std::string Application::ScriptProjectRoot() const
+{
+	std::filesystem::path root;
+	if (!app_projectPath.empty())
+	{
+		root = std::filesystem::path(app_projectPath).parent_path();
+	}
+	if (root.empty())
+	{
+		std::error_code error;
+		root = std::filesystem::current_path(error);
+		if (error)
+		{
+			NEURUS_ERR("[Application] cannot resolve the working directory for the "
+			           "script sandbox: " << error.message());
+			return {};
+		}
+	}
+
+	// Python receives UTF-8. path::string() is the ANSI code page on MSVC and
+	// throws for a character outside it, so convert explicitly.
+	const std::u8string utf8 = root.u8string();
+	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
 }
 
 // =========================================================================
@@ -109,6 +159,26 @@ void Application::WireSignals()
 	                     app_preferences->Save(neurus::Preferences::DefaultPath());
 	                     ApplyTargetFps(fps);
 	                 });
+	QObject::connect(
+		&uiEvents, &neurus::UIEvents::scriptPreferencesChangeRequested,
+		[this](const QString& readRoots, const QString& writeRoots,
+		       const QString& blockedModules, const QString& preload,
+		       bool allowNetwork, bool allowSubprocess, bool allowCtypes,
+		       int timeLimitSeconds, int memoryLimitMb) {
+			app_preferences->scriptSandboxReadRoots =
+				SplitPreferenceList(readRoots.toStdString());
+			app_preferences->scriptSandboxWriteRoots =
+				SplitPreferenceList(writeRoots.toStdString());
+			app_preferences->scriptSandboxBlockedModules =
+				SplitPreferenceList(blockedModules.toStdString());
+			app_preferences->scriptPreload = SplitPreferenceList(preload.toStdString());
+			app_preferences->scriptSandboxAllowNetwork = allowNetwork;
+			app_preferences->scriptSandboxAllowSubprocess = allowSubprocess;
+			app_preferences->scriptSandboxAllowCtypes = allowCtypes;
+			app_preferences->scriptSandboxTimeLimitSeconds = timeLimitSeconds;
+			app_preferences->scriptSandboxMemoryLimitMb = memoryLimitMb;
+			app_preferences->Save(neurus::Preferences::DefaultPath());
+		});
 }
 
 void Application::ApplyTargetFps(int fps)
@@ -256,14 +326,22 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	if (auto* console = app_mainWindow->GetPanel<neurus::ScriptConsolePanel>())
 	{
 		QObject::connect(console, &neurus::ScriptConsolePanel::runSnippetRequested,
-		                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+		                 [this](const QString& code) {
+		                     OnRunScript(code.toStdString());
+		                 });
 		QObject::connect(console, &neurus::ScriptConsolePanel::runFileRequested,
-		                 [this](const QString& path) { OnRunFile(path.toStdString()); });
+		                 [this](const QString& path) {
+		                     OnRunFile(path.toStdString());
+		                 });
 	}
 	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptRequested,
-	                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+	                 [this](const QString& code) {
+	                     OnRunScript(code.toStdString());
+	                 });
 	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptFileRequested,
-	                 [this](const QString& path) { OnRunFile(path.toStdString()); });
+	                 [this](const QString& path) {
+	                     OnRunFile(path.toStdString());
+	                 });
 
 	// --- Outliner selection → Editor (via ConnectUIEvent → EventQueue) ---
 	if (auto* outliner = app_mainWindow->GetPanel<neurus::Outliner>())

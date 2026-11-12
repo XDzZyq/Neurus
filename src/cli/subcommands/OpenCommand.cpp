@@ -110,7 +110,8 @@ CliExit ExecuteOpen(const OpenOptions& options)
 
 	const auto logPath = registry.Directory() / (name + ".log");
 	const auto pid = SpawnDetached(*resolvedApp,
-	                               BuildAppArguments(name, resolved.project), logPath, error);
+	                               BuildAppArguments(name, resolved.project, resolved.preload),
+	                               logPath, error);
 	if (!pid)
 	{
 		registry.ReleaseClaim(name);
@@ -186,6 +187,10 @@ void OpenCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 	m_app->add_option("project", m_project, "Project file to open.");
 	m_app->add_option("--name", m_name, "Session name; allocated when omitted.");
 	m_app->add_option("--app", m_appPath, "Path to the Neurus executable.");
+	m_app->add_option("--preload", m_preload,
+	                  "Python package to import before the first frame; repeatable, comma-separated.")
+		->delimiter(',')
+		->allow_extra_args(false);
 	m_app->add_option("--timeout", m_timeoutSeconds, "Readiness timeout in seconds.")
 		->check(CLI::PositiveNumber);
 	m_app->add_flag("--no-wait", m_noWait, "Do not wait for readiness.");
@@ -203,6 +208,7 @@ CliExit OpenCommand::Execute()
 	OpenOptions options;
 	options.project = m_project;
 	options.name = m_name;
+	options.preload = m_preload;
 	if (m_appPath)
 		options.app = std::filesystem::path(*m_appPath);
 	options.timeoutSeconds = m_timeoutSeconds;

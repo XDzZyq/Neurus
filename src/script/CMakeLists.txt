@@ -4,9 +4,10 @@
 # events (it includes the events headers and emits through the queue); it must
 # never include the Editor or Renderer/UI headers. Python/pybind11 headers are
 # confined to implementation sources: the layer headers (ScriptEngine.h,
-# ScriptContext.h, ScriptDispatch.h, ScriptView.h, proxies/) stay Python-free, and
-# bindings/ holds only the pybind11 registration units plus the forward-declaring
-# Bindings.h.
+# ScriptContext.h, ScriptPolicy.h, ScriptDispatch.h, ScriptView.h, proxies/)
+# stay Python-free, ScriptSandbox.h and ScriptImports.h are included only by
+# ScriptEngineImpl.h, and bindings/ holds only the pybind11 registration units
+# plus the forward-declaring Bindings.h.
 #
 # Explicit source list (no glob), matching the other layer libraries.
 
@@ -17,6 +18,12 @@ add_library(neurus_script STATIC
 	ScriptEngine.h
 	ScriptEngine.cpp
 	ScriptEngineImpl.h
+	ScriptImports.h
+	ScriptImports.cpp
+	ScriptPolicy.h
+	ScriptPolicy.cpp
+	ScriptSandbox.h
+	ScriptSandbox.cpp
 	ScriptView.h
 	proxies/ProxyBase.h
 	proxies/ObjectProxy.h

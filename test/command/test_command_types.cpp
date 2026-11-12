@@ -35,6 +35,9 @@ TEST(CommandTypes, EveryErrorCodeHasAStableString)
 	EXPECT_EQ(ParseErrorCode("FRAME_TOO_LARGE"), CommandErrorCode::FrameTooLarge);
 	EXPECT_EQ(ToString(CommandErrorCode::ScriptError), "SCRIPT_ERROR");
 	EXPECT_EQ(ParseErrorCode("SCRIPT_ERROR"), CommandErrorCode::ScriptError);
+	EXPECT_EQ(ToString(CommandErrorCode::ScriptSandboxViolation), "SCRIPT_SANDBOX_VIOLATION");
+	EXPECT_EQ(ParseErrorCode("SCRIPT_SANDBOX_VIOLATION"),
+	          CommandErrorCode::ScriptSandboxViolation);
 	EXPECT_FALSE(ParseErrorCode("NOT_A_CODE").has_value());
 }
 

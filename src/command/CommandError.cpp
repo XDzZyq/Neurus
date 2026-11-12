@@ -27,6 +27,8 @@ std::string_view ToString(CommandErrorCode code)
 		return "IO_ERROR";
 	case CommandErrorCode::ScriptError:
 		return "SCRIPT_ERROR";
+	case CommandErrorCode::ScriptSandboxViolation:
+		return "SCRIPT_SANDBOX_VIOLATION";
 	case CommandErrorCode::ObjectNotFound:
 		return "OBJECT_NOT_FOUND";
 	case CommandErrorCode::AmbiguousObject:
@@ -61,6 +63,7 @@ std::optional<CommandErrorCode> ParseErrorCode(std::string_view text)
 	                  CommandErrorCode::AmbiguousSession, CommandErrorCode::NoSessions,
 	                  CommandErrorCode::DirtyProject, CommandErrorCode::SaveFailed,
 	                  CommandErrorCode::IoError, CommandErrorCode::ScriptError,
+	                  CommandErrorCode::ScriptSandboxViolation,
 	                  CommandErrorCode::ObjectNotFound,
 	                  CommandErrorCode::AmbiguousObject, CommandErrorCode::Unauthorized,
 	                  CommandErrorCode::ProtocolVersionMismatch,

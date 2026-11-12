@@ -124,6 +124,8 @@ TEST(CliParse, ExitCodesMap)
 	          CliExit::Rejected);
 	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::ScriptError),
 	          CliExit::Rejected);
+	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::ScriptSandboxViolation),
+	          CliExit::SandboxViolation);
 	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::AppExited), CliExit::AppMissing);
 	EXPECT_EQ(ExitCodeFor(neurus::command::CommandErrorCode::SessionNotFound),
 	          CliExit::NoSession);

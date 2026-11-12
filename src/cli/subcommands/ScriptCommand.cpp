@@ -64,6 +64,18 @@ void PrintScriptEval(const command::Json& result, OutputFormat format)
 	std::cout << result.value("result", std::string{}) << '\n';
 }
 
+std::string JoinStrings(const command::Json& array)
+{
+	std::string joined;
+	for (const auto& value : array)
+	{
+		if (!joined.empty())
+			joined += ' ';
+		joined += value.get<std::string>();
+	}
+	return joined;
+}
+
 void PrintScriptInfo(const command::Json& info, OutputFormat format)
 {
 	if (format == OutputFormat::Json)
@@ -77,6 +89,36 @@ void PrintScriptInfo(const command::Json& info, OutputFormat format)
 	std::cout << "python_version " << info.value("python_version", std::string{}) << '\n';
 	std::cout << "environment " << info.value("environment", std::string{}) << '\n';
 	std::cout << "console_lines " << info.value("console_lines", 0) << '\n';
+	std::cout << "modules " << info.value("module_count", 0) << '\n';
+	if (info.contains("modules"))
+	{
+		for (const auto& module : info["modules"])
+		{
+			std::cout << "  " << module.value("name", std::string{}) << ' '
+			          << module.value("origin", std::string{}) << ' '
+			          << module.value("seconds", 0.0) << "s";
+			if (module.value("project", false))
+				std::cout << " project";
+			if (module.value("cached", false))
+				std::cout << " cached";
+			std::cout << '\n';
+		}
+	}
+	if (info.value("modules_truncated", false))
+		std::cout << "modules_truncated yes\n";
+
+	const command::Json sandbox = info.value("sandbox", command::Json::object());
+	const std::string readRoots = JoinStrings(sandbox.value("read_roots", command::Json::array()));
+	const std::string writeRoots = JoinStrings(sandbox.value("write_roots", command::Json::array()));
+	const std::string blocked = JoinStrings(sandbox.value("blocked_modules", command::Json::array()));
+	std::cout << "sandbox.read_roots " << (readRoots.empty() ? "(none)" : readRoots) << '\n';
+	std::cout << "sandbox.write_roots " << (writeRoots.empty() ? "(none)" : writeRoots) << '\n';
+	std::cout << "sandbox.blocked_modules " << (blocked.empty() ? "(none)" : blocked) << '\n';
+	std::cout << "sandbox.network " << (sandbox.value("network", true) ? "yes" : "no") << '\n';
+	std::cout << "sandbox.subprocess " << (sandbox.value("subprocess", true) ? "yes" : "no") << '\n';
+	std::cout << "sandbox.ctypes " << (sandbox.value("ctypes", true) ? "yes" : "no") << '\n';
+	std::cout << "sandbox.time_limit_s " << sandbox.value("time_limit_s", 0.0) << '\n';
+	std::cout << "sandbox.memory_limit_mb " << sandbox.value("memory_limit_mb", 0) << '\n';
 }
 
 void PrintScriptConsole(const command::Json& result, OutputFormat format)
@@ -120,7 +162,8 @@ void ScriptCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 	{
 		AddSessionOption(app, m_session);
 		AddFormatOption(app, m_format);
-		app.add_option("--timeout", m_timeoutSeconds, "Command timeout in seconds.")
+		app.add_option("--timeout", m_timeoutSeconds,
+		               "Command timeout in seconds (default 300 to absorb a cold import).")
 			->check(CLI::PositiveNumber);
 	};
 
@@ -190,9 +233,10 @@ CliExit ScriptCommand::Execute()
 
 	if (m_evalApp != nullptr && m_evalApp->parsed())
 	{
-		const auto result = RunSessionCommand(
-			SessionName(m_session), {command::kScriptEval, {{"code", m_evalCode}}}, format,
-			exitCode, m_timeoutSeconds);
+		command::Json args{{"code", m_evalCode}};
+		const auto result = RunSessionCommand(SessionName(m_session),
+		                                      {command::kScriptEval, args}, format, exitCode,
+		                                      m_timeoutSeconds);
 		if (!result)
 			return exitCode;
 		PrintScriptEval(result->details, format);

@@ -106,6 +106,8 @@ CliExit ExitCodeFor(command::CommandErrorCode code)
 	case CommandErrorCode::AmbiguousObject:
 	case CommandErrorCode::Internal:
 		return CliExit::Rejected;
+	case CommandErrorCode::ScriptSandboxViolation:
+		return CliExit::SandboxViolation;
 	case CommandErrorCode::AppExited:
 		return CliExit::AppMissing;
 	case CommandErrorCode::InvalidArgument:

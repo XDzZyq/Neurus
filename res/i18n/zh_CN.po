@@ -79,6 +79,15 @@ msgstr "算法"
 msgid "All"
 msgstr "全部"
 
+msgid "Allow ctypes"
+msgstr "允许 ctypes"
+
+msgid "Allow network"
+msgstr "允许网络"
+
+msgid "Allow subprocess"
+msgstr "允许子进程"
+
 msgid "Ambient Occlusion"
 msgstr "环境光遮蔽"
 
@@ -99,6 +108,9 @@ msgstr "自动滚动"
 
 msgid "Bias"
 msgstr "偏移"
+
+msgid "Blocked modules"
+msgstr "禁止的模块"
 
 msgid "CPU (ms)"
 msgstr "CPU (毫秒)"
@@ -244,6 +256,9 @@ msgstr "MSAA"
 msgid "Map"
 msgstr "贴图"
 
+msgid "Memory limit (MB)"
+msgstr "内存限制 (MB)"
+
 msgid "Mesh"
 msgstr "网格"
 
@@ -310,6 +325,9 @@ msgstr "功率"
 msgid "Preferences file"
 msgstr "首选项文件"
 
+msgid "Preload packages"
+msgstr "预加载包"
+
 msgid "Push Constants"
 msgstr "推送常量"
 
@@ -318,6 +336,9 @@ msgstr "半径"
 
 msgid "Ray Marching"
 msgstr "光线步进"
+
+msgid "Read roots"
+msgstr "读取根目录"
 
 msgid "Remove"
 msgstr "移除"
@@ -391,6 +412,12 @@ msgstr "屏幕空间 (像素)"
 msgid "Screenshot All &Passes"
 msgstr "截取所有通道(&P)"
 
+msgid "Script Preload"
+msgstr "脚本预加载"
+
+msgid "Script Sandbox"
+msgstr "脚本沙盒"
+
 msgid "Shadow Mapping"
 msgstr "阴影映射"
 
@@ -448,6 +475,9 @@ msgstr "截取屏幕(&S)"
 msgid "Target FPS"
 msgstr "目标帧率"
 
+msgid "Time limit (s)"
+msgstr "时间限制 (秒)"
+
 msgid "Transform"
 msgstr "变换"
 
@@ -477,6 +507,9 @@ msgstr "宽度"
 
 msgid "World Space"
 msgstr "世界空间"
+
+msgid "Write roots"
+msgstr "写入根目录"
 
 msgid "X"
 msgstr "X"
@@ -582,12 +615,24 @@ msgid "Viewport"
 msgstr "视口"
 
 msgctxt "Placeholder"
+msgid "Comma- or semicolon-separated package names"
+msgstr "用逗号或分号分隔的包名"
+
+msgctxt "Placeholder"
 msgid "Python snippet"
 msgstr "Python 代码片段"
 
 msgctxt "Placeholder"
 msgid "Search..."
 msgstr "搜索…"
+
+msgctxt "Placeholder"
+msgid "Semicolon-separated module names"
+msgstr "用分号分隔的模块名"
+
+msgctxt "Placeholder"
+msgid "Semicolon-separated; empty uses the project directory"
+msgstr "用分号分隔；留空则使用项目目录"
 
 msgctxt "StatusBar"
 msgid "%1 new error(s): %2"

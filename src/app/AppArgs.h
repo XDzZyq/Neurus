@@ -11,12 +11,15 @@ namespace neurus
  * @brief Command-line arguments understood by the Neurus application.
  *
  * `--session` makes this instance a background command server; `--project`
- * overrides the project opened at startup. Unknown arguments are left to Qt.
+ * overrides the project opened at startup; `--preload` imports a Python
+ * package before the first frame and may be repeated. Unknown arguments are
+ * left to Qt.
  */
 struct AppArgs
 {
 	std::optional<std::string> session;  ///< Named command session.
 	std::optional<std::string> project;  ///< Project file to open.
+	std::vector<std::string>   preload;  ///< Packages imported at startup.
 	std::string                error;    ///< Parse error, empty when valid.
 
 	/**
