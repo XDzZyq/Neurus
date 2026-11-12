@@ -373,6 +373,9 @@ msgstr "采样次数"
 msgid "Sampling Mode"
 msgstr "采样模式"
 
+msgid "Sandbox"
+msgstr "沙盒"
+
 msgid "Save"
 msgstr "保存"
 
@@ -608,6 +611,10 @@ msgstr "渲染可见性"
 msgctxt "Tooltip"
 msgid "Reset position, rotation, and scale to identity values."
 msgstr "将位置、旋转和缩放重置为初始值。"
+
+msgctxt "Tooltip"
+msgid "Run scripts under the in-process sandbox policy"
+msgstr "在进程内沙盒策略下运行脚本"
 
 msgctxt "Tooltip"
 msgid "Run the snippet (Ctrl+Enter)"

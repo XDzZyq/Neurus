@@ -71,17 +71,48 @@ constexpr auto kSurfaceChangeTimeout = std::chrono::seconds(2);
 
 namespace neurus {
 
-void Application::OnRunScript(const std::string& code)
+void Application::OnRunScript(const std::string& code, bool sandboxed)
 {
 	// Deferred: the engine queues it and the frame loop runs it. The run
 	// dispatches every event synchronously as it executes, so no later drain is
 	// involved - the mutation is applied before the next Python statement.
-	app_script->Submit(code);
+	app_script->Submit(code, SessionScriptPolicy(sandboxed));
 }
 
-void Application::OnRunFile(const std::string& path)
+void Application::OnRunFile(const std::string& path, bool sandboxed)
 {
-	app_script->SubmitFile(path);
+	app_script->SubmitFile(path, SessionScriptPolicy(sandboxed));
+}
+
+std::string Application::ScriptProjectRoot() const
+{
+	std::filesystem::path root;
+	if (!app_projectPath.empty())
+	{
+		root = std::filesystem::path(app_projectPath).parent_path();
+	}
+	if (root.empty())
+	{
+		std::error_code error;
+		root = std::filesystem::current_path(error);
+		if (error)
+		{
+			NEURUS_ERR("[Application] cannot resolve the working directory for the "
+			           "script sandbox: " << error.message());
+			return {};
+		}
+	}
+
+	// Python receives UTF-8. path::string() is the ANSI code page on MSVC and
+	// throws for a character outside it, so convert explicitly.
+	const std::u8string utf8 = root.u8string();
+	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+}
+
+ScriptPolicy Application::SessionScriptPolicy(bool sandboxed) const
+{
+	return sandboxed ? ScriptPolicy::Sandboxed(ScriptProjectRoot())
+	                 : ScriptPolicy::Trusted();
 }
 
 // =========================================================================
@@ -256,14 +287,24 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	if (auto* console = app_mainWindow->GetPanel<neurus::ScriptConsolePanel>())
 	{
 		QObject::connect(console, &neurus::ScriptConsolePanel::runSnippetRequested,
-		                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+		                 [this, console](const QString& code) {
+		                     OnRunScript(code.toStdString(), console->IsSandboxed());
+		                 });
 		QObject::connect(console, &neurus::ScriptConsolePanel::runFileRequested,
-		                 [this](const QString& path) { OnRunFile(path.toStdString()); });
+		                 [this, console](const QString& path) {
+		                     OnRunFile(path.toStdString(), console->IsSandboxed());
+		                 });
 	}
 	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptRequested,
-	                 [this](const QString& code) { OnRunScript(code.toStdString()); });
+	                 [this](const QString& code) {
+	                     OnRunScript(code.toStdString(),
+	                                 app_scriptMode == ScriptMode::Sandboxed);
+	                 });
 	QObject::connect(&uiEvents, &neurus::UIEvents::runScriptFileRequested,
-	                 [this](const QString& path) { OnRunFile(path.toStdString()); });
+	                 [this](const QString& path) {
+	                     OnRunFile(path.toStdString(),
+	                               app_scriptMode == ScriptMode::Sandboxed);
+	                 });
 
 	// --- Outliner selection → Editor (via ConnectUIEvent → EventQueue) ---
 	if (auto* outliner = app_mainWindow->GetPanel<neurus::Outliner>())

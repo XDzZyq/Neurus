@@ -145,8 +145,18 @@ private:
 	bool OnProjectSave(const std::string& path = std::string(), std::string* error = nullptr);
 
 	// --- Scripting (Script Console → ScriptEngine) ---
-	void OnRunScript(const std::string& code);
-	void OnRunFile(const std::string& path);
+	void OnRunScript(const std::string& code, bool sandboxed);
+	void OnRunFile(const std::string& path, bool sandboxed);
+
+	/// @return Root a sandboxed run is confined to: the open project's
+	///         directory, else the process working directory.
+	std::string ScriptProjectRoot() const;
+
+	/**
+	 * @brief Builds the policy a session run executes under.
+	 * @param sandboxed True for the sandboxed default policy.
+	 */
+	ScriptPolicy SessionScriptPolicy(bool sandboxed) const;
 
 	/**
 	 * @brief Applies the target-FPS preference to the render timer.
@@ -184,6 +194,7 @@ private:
 	AppArgs      app_args;          ///< Parsed --session / --project / --preload.
 	std::vector<std::string> app_rawArguments;  ///< argv captured before QApplication parses it.
 	std::string  app_sessionName;   ///< Named session, empty for a normal launch.
+	ScriptMode   app_scriptMode = ScriptMode::Trusted;  ///< Pin set by `script.mode`.
 	std::chrono::steady_clock::time_point app_startTime;  ///< Session uptime origin.
 
 	// --- GPU / UI stack (destroyed in REVERSE declaration order) ---

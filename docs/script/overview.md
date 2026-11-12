@@ -353,7 +353,124 @@ neurus script eval "1 + 2"
 neurus script info
 neurus script console --tail 20
 neurus script clear
+neurus script mode [trusted|sandboxed]
 ```
 
 `script eval` is expression-only; use `script run` for assignments, imports and
 multi-line statements.
+
+## Execution policy and the sandbox
+
+A run may execute under one of two modes:
+
+- **Trusted** - no restriction. This is the historical behaviour and the
+  default for the Script Console toggle, the Tools menu and a raw `script.run`
+  request that names no `sandbox` flag.
+- **Sandboxed** - one in-process guardrail around the embedded interpreter:
+  filesystem roots, module blocks, network/subprocess/ctypes permission flags,
+  an optional wall-clock limit and an optional memory limit.
+
+`ScriptPolicy` (`src/script/ScriptPolicy.h`) is the Python-free value that
+describes a run. `ScriptPolicy::Trusted()` is the empty default;
+`ScriptPolicy::Sandboxed(projectRoot)` sets both filesystem roots to the project
+directory, disables network, subprocess and ctypes, caps the wall clock at 30
+seconds and blocks no module. A policy is copied per run: the caller keeps
+ownership of what it passed.
+
+### Modes and defaults
+
+| Surface | Default | How to change it |
+|---------|---------|------------------|
+| Script Console toggle | Trusted (unchecked) | Check **Sandbox** in the console toolbar |
+| Tools -> Run Script | Session pin | `neurus script mode sandboxed` |
+| `neurus script run` / `eval` | **Sandboxed** | `--trusted` |
+| Raw `script.run` / `script.eval` | Trusted | `"sandbox": true` in the request |
+
+The **Sandbox** tool button in the Script Console is a live, checkable toggle:
+both **Run** and **Run File...** read it at click time. It is presentation only;
+the session pin stays a separate, command-level setting.
+
+`script.mode` reports the session pin and, with a value, sets it. The pin is
+in-memory for the running session and is not persisted across launches. It
+drives the Tools-menu run and the policy summary `script info` reports; the CLI
+sends its sandbox choice explicitly on every run, so a pinned mode never
+silently applies to `neurus script run`.
+
+### Enforcement points
+
+The sandbox installs one `sys.addaudithook` hook plus an import gate in a
+private dict at engine initialization. It never enters `sys.modules`.
+
+- `open` (path, mode, flags): integer descriptors pass; reads must resolve under
+  a read root, writes under a write root. `os.listdir`, `os.scandir` and
+  `os.chdir` are read checks; `os.mkdir`, `os.rmdir`, `os.remove`,
+  `os.chmod`, `os.chown`, `os.utime` and `os.truncate` are write checks.
+  `os.rename`, `os.replace`, `os.link` and `os.symlink` check both arguments.
+- Path matching uses `os.path.realpath` + `os.path.normcase` +
+  `os.path.commonpath`. Another drive, a relative path with a `dir_fd`, or a
+  path that cannot be normalized is a denial, not a pass.
+- The interpreter's own installation (`sys.prefix`, `sys.base_prefix` and the
+  entries of `sys.path`) is implicitly readable, so importing a stdlib module
+  inside a sandboxed run still works. That widens reads only: writes and the
+  permission flags are never widened.
+- `subprocess.Popen`, `os.system`, `os.exec*`, `os.spawn*`, `os.posix_spawn`,
+  `os.fork`, `os.forkpty` and `pty.spawn` are refused when subprocess creation
+  is off.
+- Socket connect/bind/sendto and name lookups are refused when network access is
+  off; `import socket` itself stays available so a script can be written once
+  and granted network later.
+- Every `ctypes.*` audit event is refused when ctypes is off.
+- A blocked module is refused by both a `sys.meta_path` finder and a
+  `builtins.__import__` wrapper, so an already-cached module is refused too.
+- The wall-clock watchdog runs outside the interpreter, acquires the GIL at the
+  deadline and raises an asynchronous `_SandboxTimeout` in the running thread.
+  The engine clears any pending injection after every run, so a late timeout
+  cannot interrupt the next one.
+- The memory limit uses Python's `resource.setrlimit(RLIMIT_AS)` where the
+  platform provides it and restores the previous limit afterwards. It is
+  process-wide because the interpreter has no per-run allocation cap; where it
+  is unavailable the run continues unbounded and the engine logs that once.
+
+Denials raise one of `neurus._SandboxViolation` (a `PermissionError`),
+`neurus._SandboxImportViolation` (an `ImportError`) or
+`neurus._SandboxTimeout`. Each message names its rule, for example
+`sandbox: write outside allowed roots (rule: write_roots)`. The engine maps them
+to `ScriptRunStatus::SandboxViolation` and `ScriptRunStatus::Timeout`; the
+command layer reports `SCRIPT_SANDBOX_VIOLATION` or a `SCRIPT_ERROR` with
+`reason: timeout`; the CLI exits `7` for the former.
+
+### CLI flags
+
+`script run` and `script eval` accept:
+
+```text
+--sandbox | --trusted          mutually exclusive; sandboxed is the default
+--allow-read PATH              read root (repeatable; replaces the project root)
+--allow-write PATH             write root (repeatable; replaces the project root)
+--block MODULE                 module the run may not import (repeatable)
+--allow-network                permit sockets
+--allow-subprocess             permit process creation
+--allow-ctypes                 permit ctypes
+--time-limit SECONDS           wall-clock limit, fractional
+--memory-limit MB              address-space limit
+```
+
+A flag that is not given leaves the sandboxed default in place. `--allow-read`
+and `--allow-write` replace the project root rather than adding to it.
+
+### Threat model
+
+This is a guardrail, not a security boundary. The hook runs in the same
+interpreter and the same process as the code it judges: a determined script can
+walk the interpreter's own objects, reach the policy record through a reference
+it guesses, or block inside a C call that ignores asynchronous exceptions. Only
+Python-level operations are audited; a document operation the editor performs on
+the script's behalf, such as `neurus.scene.import_mesh`, reads the file through
+the editor's C++ path and is not a filesystem check. The sandbox protects
+against an accidental `open` of the wrong path, an accidental `subprocess` or
+socket, and a runaway loop - the mistakes a normal editing session makes.
+
+The hardening milestone is a child-process execution mode: a separate CPython
+process with an OS-level sandbox, where a kill is a kill and a crash cannot take
+the editor down. That mode is not implemented yet; `ScriptPolicy` and the run
+status values are the seam it will plug into.

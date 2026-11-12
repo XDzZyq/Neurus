@@ -24,6 +24,7 @@ enum class CommandErrorCode
 	SaveFailed,
 	IoError,
 	ScriptError,
+	ScriptSandboxViolation,
 	ObjectNotFound,
 	AmbiguousObject,
 	Unauthorized,

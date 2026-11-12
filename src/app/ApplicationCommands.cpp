@@ -54,6 +54,122 @@ void AppendLimited(std::string& target, const std::string& text, std::size_t lim
 	target += "\n[truncated]\n";
 }
 
+/// Reads an optional array of non-empty strings from a JSON object.
+bool ParseStringArray(const neurus::command::Json& object, const char* key,
+                      std::vector<std::string>& target, std::string& error)
+{
+	if (!object.contains(key))
+		return true;
+
+	const neurus::command::Json& value = object[key];
+	if (!value.is_array())
+	{
+		error = std::string("'") + key + "' must be an array of strings.";
+		return false;
+	}
+
+	std::vector<std::string> parsed;
+	for (const auto& entry : value)
+	{
+		if (!entry.is_string() || entry.get<std::string>().empty())
+		{
+			error = std::string("'") + key + "' must contain non-empty strings.";
+			return false;
+		}
+		parsed.push_back(entry.get<std::string>());
+	}
+	target = std::move(parsed);
+	return true;
+}
+
+/// Reads an optional boolean member of a JSON object.
+bool ParseBoolMember(const neurus::command::Json& object, const char* key, bool& target,
+                     std::string& error)
+{
+	if (!object.contains(key))
+		return true;
+	if (!object[key].is_boolean())
+	{
+		error = std::string("'") + key + "' must be a boolean.";
+		return false;
+	}
+	target = object[key].get<bool>();
+	return true;
+}
+
+/// Overrides a sandboxed policy from the optional `policy` argument object.
+bool ApplyPolicyOverrides(const neurus::command::Json& args, neurus::ScriptPolicy& policy,
+                          std::string& error)
+{
+	if (!args.contains("policy"))
+		return true;
+
+	const neurus::command::Json& object = args["policy"];
+	if (!object.is_object())
+	{
+		error = "'policy' must be an object.";
+		return false;
+	}
+
+	if (!ParseStringArray(object, "read_roots", policy.readRoots, error)
+	    || !ParseStringArray(object, "write_roots", policy.writeRoots, error)
+	    || !ParseStringArray(object, "blocked_modules", policy.blockedModules, error))
+	{
+		return false;
+	}
+
+	if (!ParseBoolMember(object, "allow_network", policy.allowNetwork, error)
+	    || !ParseBoolMember(object, "allow_subprocess", policy.allowSubprocess, error)
+	    || !ParseBoolMember(object, "allow_ctypes", policy.allowCtypes, error))
+	{
+		return false;
+	}
+
+	if (object.contains("time_limit_s"))
+	{
+		if (!object["time_limit_s"].is_number())
+		{
+			error = "'time_limit_s' must be a non-negative number.";
+			return false;
+		}
+		const double seconds = object["time_limit_s"].get<double>();
+		if (seconds < 0.0)
+		{
+			error = "'time_limit_s' must be a non-negative number.";
+			return false;
+		}
+		policy.wallClockLimit =
+			std::chrono::milliseconds(static_cast<std::int64_t>(seconds * 1000.0));
+	}
+
+	if (object.contains("memory_limit_mb"))
+	{
+		if (!object["memory_limit_mb"].is_number_integer())
+		{
+			error = "'memory_limit_mb' must be a non-negative integer.";
+			return false;
+		}
+		const std::int64_t megabytes = object["memory_limit_mb"].get<std::int64_t>();
+		if (megabytes < 0)
+		{
+			error = "'memory_limit_mb' must be a non-negative integer.";
+			return false;
+		}
+		policy.memoryLimitBytes =
+			static_cast<std::uint64_t>(megabytes) * 1024ULL * 1024ULL;
+	}
+
+	return true;
+}
+
+neurus::command::Json StringArrayJson(const std::vector<std::string>& values)
+{
+	neurus::command::Json array = neurus::command::Json::array();
+	for (const auto& value : values)
+		array.push_back(value);
+	return array;
+}
+
 } // namespace
 
 namespace neurus {
@@ -147,6 +263,12 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 			}
 		}
 
+		// The summary describes what a run under the pinned session mode would
+		// use; it is not a record of the last run.
+		const ScriptPolicy sessionPolicy =
+			SessionScriptPolicy(app_scriptMode == ScriptMode::Sandboxed);
+		const std::uint64_t memoryLimitMb =
+			sessionPolicy.memoryLimitBytes / (1024ULL * 1024ULL);
 		return command::CommandResult::Success({
 			{"ready", ready},
 			{"python_version", app_script ? app_script->PythonVersion() : std::string{}},
@@ -155,7 +277,48 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 			{"modules", modules},
 			{"module_count", moduleCount},
 			{"modules_truncated", moduleCount > modules.size()},
+			{"mode", ScriptPolicy::ModeName(app_scriptMode)},
+			{"sandbox", {
+				{"read_roots", StringArrayJson(sessionPolicy.readRoots)},
+				{"write_roots", StringArrayJson(sessionPolicy.writeRoots)},
+				{"blocked_modules", StringArrayJson(sessionPolicy.blockedModules)},
+				{"network", sessionPolicy.allowNetwork},
+				{"subprocess", sessionPolicy.allowSubprocess},
+				{"ctypes", sessionPolicy.allowCtypes},
+				{"time_limit_s", std::chrono::duration<double>(
+					sessionPolicy.wallClockLimit).count()},
+				{"memory_limit_mb", memoryLimitMb},
+			}},
 		});
+	}
+
+	if (request.name == command::kScriptMode)
+	{
+		if (args.contains("mode"))
+		{
+			if (!args["mode"].is_string())
+			{
+				return command::CommandResult::Failure(
+					command::CommandErrorCode::InvalidArgument,
+					"'mode' must be 'trusted' or 'sandboxed'.");
+			}
+			const std::string mode = args["mode"].get<std::string>();
+			if (mode == "trusted")
+			{
+				app_scriptMode = ScriptMode::Trusted;
+			}
+			else if (mode == "sandboxed")
+			{
+				app_scriptMode = ScriptMode::Sandboxed;
+			}
+			else
+			{
+				return command::CommandResult::Failure(
+					command::CommandErrorCode::InvalidArgument,
+					"'mode' must be 'trusted' or 'sandboxed'.");
+			}
+		}
+		return command::CommandResult::Success({{"mode", ScriptPolicy::ModeName(app_scriptMode)}});
 	}
 
 	if (request.name == command::kScriptConsole)
@@ -255,6 +418,32 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 		                                      "The editor is not available.");
 	}
 
+	bool sandboxed = false;
+	if (args.contains("sandbox"))
+	{
+		if (!args["sandbox"].is_boolean())
+		{
+			return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+			                                      "'sandbox' must be a boolean.");
+		}
+		sandboxed = args["sandbox"].get<bool>();
+	}
+
+	// The session pin is not consulted here: the command layer defaults to
+	// trusted for backward compatibility, and the CLI sends `sandbox` explicitly.
+	ScriptPolicy policy;
+	if (sandboxed)
+	{
+		policy = SessionScriptPolicy(true);
+		std::string policyError;
+		if (!ApplyPolicyOverrides(args, policy, policyError))
+		{
+			return command::CommandResult::Failure(command::CommandErrorCode::InvalidArgument,
+			                                      policyError);
+		}
+	}
+	const ScriptPolicy* policyPtr = sandboxed ? &policy : nullptr;
+
 	std::string code;
 	std::string path;
 	bool hasPath = false;
@@ -319,17 +508,17 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 	if (isEval)
 	{
 		const std::optional<std::string> evaluated =
-			app_script->EvalStringChecked(code, &context);
+			app_script->EvalStringChecked(code, &context, policyPtr);
 		runOk = evaluated.has_value();
 		result = evaluated.value_or(std::string{});
 	}
 	else if (hasPath)
 	{
-		runOk = app_script->RunFileChecked(path, &context);
+		runOk = app_script->RunFileChecked(path, &context, policyPtr);
 	}
 	else
 	{
-		runOk = app_script->RunStringChecked(code, &context);
+		runOk = app_script->RunStringChecked(code, &context, policyPtr);
 	}
 
 	std::string output;
@@ -355,9 +544,29 @@ command::CommandResult Application::Execute(const command::CommandRequest& reque
 
 	if (!runOk)
 	{
-		const std::string message = scriptError.empty()
-			? "The script raised an exception."
-			: scriptError;
+		if (app_script->LastRunStatus() == ScriptRunStatus::SandboxViolation)
+		{
+			const std::string message = app_script->LastRunMessage().empty()
+				? "The script was refused by its sandbox policy."
+				: app_script->LastRunMessage();
+			return command::CommandResult::Failure(
+				command::CommandErrorCode::ScriptSandboxViolation, message,
+				{{"output", output}, {"error", scriptError}, {"reason", "sandbox_violation"}});
+		}
+		if (app_script->LastRunStatus() == ScriptRunStatus::Timeout)
+		{
+			return command::CommandResult::Failure(
+				command::CommandErrorCode::ScriptError,
+				"Script exceeded its wall-clock limit.",
+				{{"output", output}, {"error", scriptError}, {"reason", "timeout"}});
+		}
+
+		const std::string message =
+			!scriptError.empty()
+				? scriptError
+				: (!app_script->LastRunMessage().empty()
+				       ? app_script->LastRunMessage()
+				       : std::string("The script raised an exception."));
 		return command::CommandResult::Failure(
 			command::CommandErrorCode::ScriptError, message,
 			{{"output", output}, {"error", scriptError}});

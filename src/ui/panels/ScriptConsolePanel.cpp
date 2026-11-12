@@ -28,9 +28,17 @@ ScriptConsolePanel::ScriptConsolePanel(QWidget* parent)
 
 	m_runBtn = new QToolButton(this);
 	m_runFileBtn = new QToolButton(this);
+	m_sandboxBtn = new QToolButton(this);
 	m_clearBtn = new QToolButton(this);
+	m_sandboxBtn->setCheckable(true);
+	m_sandboxBtn->setChecked(false);
+	// A non-auto-raised button keeps a frame, so the checked state stays visible
+	// on every platform style instead of only while hovered.
+	m_sandboxBtn->setAutoRaise(false);
+	m_sandboxBtn->setObjectName(QStringLiteral("scriptSandboxToggle"));
 	toolbar->addWidget(m_runBtn);
 	toolbar->addWidget(m_runFileBtn);
+	toolbar->addWidget(m_sandboxBtn);
 	toolbar->addStretch(1);
 	toolbar->addWidget(m_clearBtn);
 	root->addLayout(toolbar);
@@ -97,8 +105,16 @@ void ScriptConsolePanel::Retranslate()
 	m_runBtn->setText(i18n.translate("Run"));
 	m_runBtn->setToolTip(i18n.translateCtx("Run the snippet (Ctrl+Enter)", "Tooltip"));
 	m_runFileBtn->setText(i18n.translate("Run File..."));
+	m_sandboxBtn->setText(i18n.translate("Sandbox"));
+	m_sandboxBtn->setToolTip(
+		i18n.translateCtx("Run scripts under the in-process sandbox policy", "Tooltip"));
 	m_clearBtn->setText(i18n.translate("Clear"));
 	m_input->setPlaceholderText(i18n.translateCtx("Python snippet", "Placeholder"));
+}
+
+bool ScriptConsolePanel::IsSandboxed() const
+{
+	return m_sandboxBtn != nullptr && m_sandboxBtn->isChecked();
 }
 
 bool ScriptConsolePanel::eventFilter(QObject* watched, QEvent* event)
