@@ -6,38 +6,34 @@ resource below it, and the UI owns only the native window.
 
 ## Vulkan Ownership Graph
 
+```mermaid
+flowchart TD
+    app["Application - owns<br/>VkInstance, VkDevice, VkQueue, VkSurfaceKHR<br/>UploadManager"]
+    ui["UI - owns<br/>the native window and its handle<br/>no Vulkan object"]
+    renderer["Renderer - owns<br/>swapchain, pipelines, command pools, RenderCache<br/>borrows surface, device and queues"]
+
+    ui -->|"native window handle"| app
+    app -->|"surface, device, queues, uploads"| renderer
 ```
-Application Layer owns:
-  VkInstance, VkDevice, VkQueue (VulkanContext, no QVulkanInstance)
-  VkSurfaceKHR (created with platform::CreateSurface from the viewport's
-    native window handle)
 
-Renderer Layer owns:
-  VkSwapchainKHR (borrows the Application's VkSurfaceKHR, VkDevice and VkQueue)
-  VkPipeline + VkPipelineLayout
-  VkCommandPool + VkCommandBuffers
-  RenderCache (cross-frame mutable resource pool, lazy GetAttachment /
-    GetShadowMap / GetShadowIntensityArray)
-  All framebuffer attachments (via RenderCache, dynamic rendering)
+The handles, in full:
 
-  Also through src/render/ abstractions:
-  VkBuffer + VkDeviceMemory pairs (Buffer hierarchy: GPUBuffer, StagingBuffer,
-    UniformBuffer<T>)
-  VkImage + VkDeviceMemory + VkImageView triples (Image, Texture)
-  VkDescriptorPool + VkDescriptorSet (DescriptorManager)
-  Barrier::Transition (centralized layout transitions, ImageState -> Vulkan
-    mapping)
-  MeshGPU (GPU-side mesh resources: VertexBuffer + IndexBuffer, held by
-    RenderCache in a refcounted table)
-  EnvironmentGPU (GPU-side IBL resources: diffuse + specular cubemap Textures,
-    held by RenderCache in a refcounted table)
-  LightingCache (GPU-side light SSBOs: point + sun light, owned by RenderCache)
+- **UI**: the native window and its handle; it creates no Vulkan object.
+- **Application**: `VkInstance`, `VkDevice` and `VkQueue` (in `VulkanContext`, no
+  `QVulkanInstance`), `VkSurfaceKHR` from `platform::CreateSurface()`, and the
+  `UploadManager`.
+- **Renderer**: `VkSwapchainKHR` (borrowing the surface, device and queue),
+  pipelines and layouts, command pools and buffers, `RenderCache` with its lazy
+  `GetAttachment` / `GetShadowMap` / `GetShadowIntensityArray`, and every
+  framebuffer attachment.
+- **Through `src/render/` abstractions**: `Buffer` (`GPUBuffer`, `StagingBuffer`,
+  `UniformBuffer<T>`), `Image` / `Texture`, `DescriptorManager`,
+  `Barrier::Transition`, and the `MeshGPU`, `EnvironmentGPU` and `LightingCache`
+  tables `RenderCache` holds.
 
-  Also borrows (owned by the Application, destroyed after the renderer):
-  UploadManager (the CPU-to-GPU upload service; the Application creates it and
-    passes it to the renderer via DeferredRenderer::SetUploadManager(), and the
-    renderer's RenderRequestExecutor drives it)
-```
+- **Borrowed from the Application**: the `UploadManager`, created there, handed
+  over with `DeferredRenderer::SetUploadManager()` and driven by
+  `RenderRequestExecutor`; it outlives the renderer.
 
 The renderer is the **sole GPU submitter**: every `VkQueue` submit, every wait
 on queue work (a frame-fence drain or a graphics-queue idle) and all writes to

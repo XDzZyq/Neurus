@@ -153,7 +153,7 @@ App-level settings (distinct from the per-project `.neurus.json` files) live in 
 
 Stylesheets are stored as `.qss` files in `src/ui/qml/` and embedded via `qt_add_resources`, same as QML. Use `setObjectName()` plus QSS ID selectors instead of per-widget `setStyleSheet()` calls:
 
-```
+```cpp
 // 1. Embed in CMakeLists.txt
 qt_add_resources(neurus_ui "resources" PREFIX "/" FILES qml/outliner.qss)
 
