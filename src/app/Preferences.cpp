@@ -146,6 +146,7 @@ Preferences::LoadResult Preferences::Load(const std::string& path)
 	return LoadResult::Ok;
 }
 
+#ifdef NEURUS_ENABLE_SCRIPTING
 ScriptPolicy Preferences::MakeScriptPolicy(const std::string& projectRoot) const
 {
 	ScriptPolicy policy = ScriptPolicy::Sandboxed(projectRoot);
@@ -172,6 +173,7 @@ ScriptPolicy Preferences::MakeScriptPolicy(const std::string& projectRoot) const
 		* 1024ULL * 1024ULL;
 	return policy;
 }
+#endif
 
 bool Preferences::Backup(const std::string& path)
 {

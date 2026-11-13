@@ -37,7 +37,7 @@ make check
 
 ## CMake Presets
 
-`CMakePresets.json` defines three configure presets and their build presets:
+`CMakePresets.json` defines four configure presets and their build presets:
 
 - `win` - Windows x64 (Visual Studio 17 2022, MSVC), binaryDir `build/`, Debug +
   Release via `--config`; sets `CMAKE_PREFIX_PATH`, `NEURUS_BUILD_TESTS=ON`,
@@ -46,6 +46,9 @@ make check
   `../Neurus_VS2022`.
 - `macos` - macOS arm64 Ninja Multi-Config, binaryDir `build/`, Debug + Release
   in one tree. Build presets: `macos`, `macos-release`.
+- `linux` - Linux x64 headless, Ninja single-config, binaryDir `build/linux`,
+  `NEURUS_BUILD_UI=OFF`, `NEURUS_BUILD_HEADLESS=ON`. Build preset:
+  `linux-debug`.
 
 Makefile convenience targets:
 
@@ -66,6 +69,56 @@ Additional targets:
 - `make doc-deps` - install the pinned MkDocs and graphify Python dependencies
 - `make doc` - build the structure graph and the web documentation into `site/`
 - `make doc-serve` - same, then serve the docs with live reload
+
+## Linux Headless
+
+Linux builds the headless renderer: no Qt, no window system, no swapchain. The
+binary is `neurus_headless`, the CLI is `neurus`, and both land in
+`build/linux/cli/` so `neurus open` finds the app as a sibling with no `--app`.
+
+Toolchain, provisioned without root (paths are examples; anything on
+`PATH`/`LD_LIBRARY_PATH` works):
+
+```bash
+# CMake + Ninja (PyPI wheels), and the LunarG Vulkan SDK extraction
+python3 -m venv ~/.local/neurus-toolchain/pyenv
+~/.local/neurus-toolchain/pyenv/bin/pip install "cmake==3.31.6" ninja
+# LunarG SDK 1.4.x, extracted to ~/.local/neurus-toolchain/vulkansdk
+tar -xJf vulkansdk-linux-x86_64-<version>.tar.xz \
+    -C ~/.local/neurus-toolchain/vulkansdk --strip-components=1
+
+. scripts/linux/Toolchain.sh ~/.local/neurus-toolchain
+make update      # submodules; no Linux prebuilt archive exists yet
+make build
+make check
+```
+
+`scripts/linux/Toolchain.sh` exports `VULKAN_SDK` and puts the SDK's **1.4
+loader** and layer path first. The system loader is often older (Ubuntu 22.04
+ships 1.3.204) and `VulkanContext` requests `VK_API_VERSION_1_4`; the context
+retries at 1.3 only when a loader rejects 1.4 outright.
+
+The Linux build consumes shaderc in this order: `lib/prebuilt/linux/shaderc`,
+then `$VULKAN_SDK/lib/libshaderc_shared.so`, then a source build. Neurus-Lib
+publishes no `linux-x64.tar.gz` yet, so `make update` skips the download and the
+SDK's shaderc is used. `lib/scripts/build_prebuilt_linux.sh` produces the
+archive layout when the release leg is enabled.
+
+**GPU prerequisite.** The NVIDIA kernel module alone is not enough: a container
+image without the graphics userland (no `libGLX_nvidia.so.0`) enumerates only
+lavapipe, and `/etc/vulkan/icd.d/nvidia_icd.json` fails to load. Install the
+driver's graphics libraries matching the loaded module, for example
+
+```bash
+sudo sh NVIDIA-Linux-x86_64-<driver>.run --no-kernel-module --silent
+sudo ldconfig
+vulkaninfo --summary   # must list the physical GPU, not llvmpipe
+```
+
+`NEURUS_ENABLE_SCRIPTING` defaults on for the GUI and off in the `linux` preset:
+scripting needs `lib/.venv` from `make update`, which requires network access to
+PyPI. With scripting off the `script.*` commands report that the sub-executor is
+unavailable; everything else in the CLI works.
 
 ## Web Documentation
 

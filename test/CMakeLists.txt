@@ -1,6 +1,8 @@
 # test/CMakeLists.txt - Unit Tests
 
-add_executable(neurus_test
+# The source list is built first so the headless build can drop the Qt-only
+# tests instead of compiling them against a Qt that is not installed.
+set(NEURUS_TEST_SOURCES
 	shared/TestVulkanShared.cpp
 	shared/TestVulkanShared.h
 	shared/TestWindow.h
@@ -123,6 +125,33 @@ add_executable(neurus_test
 	session/test_session_command.cpp
 )
 
+# Headless build: no Qt, so the UI tests, the QApplication test runner and every
+# test whose subject is a QObject (the UIEvents bus, the Qt input translation,
+# the UI panels) are not built. Everything else runs against the headless
+# renderer and the real GPU.
+if(NOT NEURUS_BUILD_UI)
+	list(FILTER NEURUS_TEST_SOURCES EXCLUDE REGEX "^ui/")
+	list(REMOVE_ITEM NEURUS_TEST_SOURCES
+		shared/test_main.cpp
+		editor/test_event_bus.cpp
+		editor/test_input.cpp
+		editor/test_operation_manager.cpp
+		editor/test_operation_serialization.cpp
+		editor/test_scene_controller.cpp
+		editor/test_shader_editor_panel.cpp
+		editor/test_ui_events_script.cpp
+	)
+	list(APPEND NEURUS_TEST_SOURCES shared/test_main_headless.cpp)
+endif()
+
+# Preferences are only compiled when the script layer is present (see
+# src/app/CMakeLists.txt), so their tests follow the same switch.
+if(NOT NEURUS_ENABLE_SCRIPTING)
+	list(REMOVE_ITEM NEURUS_TEST_SOURCES app/test_preferences.cpp)
+endif()
+
+add_executable(neurus_test ${NEURUS_TEST_SOURCES})
+
 # Scripting engine unit tests (only when the script layer is enabled).
 if(NEURUS_ENABLE_SCRIPTING)
 	target_sources(neurus_test PRIVATE
@@ -139,23 +168,31 @@ endif()
 
 target_link_libraries(neurus_test PRIVATE
 	neurus_scene
-	neurus_app
+	neurus_session
+	neurus_app_core
 	neurus_platform
 	neurus_command
 	neurus_ipc
 	neurus_render
+	neurus_render_passes
 	neurus_editor
-	neurus_ui
 	neurus_asset
 	gtest
 	cli11
 	neurus_cli_core
 	Vulkan::Vulkan
-	Qt6::Core
-	Qt6::Test
-	Qt6::Quick
-	Qt6::Qml
 )
+
+if(NEURUS_BUILD_UI)
+	target_link_libraries(neurus_test PRIVATE
+		neurus_app
+		neurus_ui
+		Qt6::Core
+		Qt6::Test
+		Qt6::Quick
+		Qt6::Qml
+	)
+endif()
 
 if(WIN32)
 	target_sources(neurus_test PRIVATE shared/win/TestWindowWin32.cpp)
@@ -164,6 +201,8 @@ elseif(APPLE)
 		shared/mac/TestWindowMacOS.cpp
 		command/test_process_mac.cpp
 	)
+elseif(UNIX AND NOT APPLE)
+	target_sources(neurus_test PRIVATE shared/linux/TestWindowLinux.cpp)
 endif()
 
 if(NEURUS_ENABLE_SCRIPTING)
@@ -188,7 +227,9 @@ target_compile_definitions(neurus_test PRIVATE
 )
 
 # Enable Qt MOC for test files containing QObject subclasses
-set_target_properties(neurus_test PROPERTIES AUTOMOC ON)
+if(NEURUS_BUILD_UI)
+	set_target_properties(neurus_test PROPERTIES AUTOMOC ON)
+endif()
 
 # MSVC: disable Qt's MOC warnings in test code
 if(MSVC)
@@ -215,7 +256,7 @@ if(WIN32 AND WINDEPLOYQT)
 endif()
 
 # Deploy shaderc_shared.dll alongside the test executable
-if(TARGET shaderc_shared)
+if(WIN32 AND TARGET shaderc_shared)
 	add_custom_command(TARGET neurus_test POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different
 			$<TARGET_FILE:shaderc_shared>

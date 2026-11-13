@@ -25,8 +25,10 @@ add_subdirectory(render)
 # Editor Layer (depends on: nothing from src/)
 add_subdirectory(editor)
 
-# UI Layer (depends on: editor for EventBus)
-add_subdirectory(ui)
+# UI Layer (depends on: editor for EventBus; Qt only)
+if(NEURUS_BUILD_UI)
+	add_subdirectory(ui)
+endif()
 
 # Scene Layer (base types for scene graph - no internal deps)
 add_subdirectory(scene)
@@ -43,8 +45,10 @@ endif()
 add_subdirectory(cli)
 
 # ---------------------------------------------------------------------------
-# Main Executable
+# Main Executable (Qt GUI; skipped by a headless-only build)
 # ---------------------------------------------------------------------------
+
+if(NEURUS_BUILD_UI)
 
 # The executable icon comes from a resource script, which needs the RC
 # language; project() enables CXX only.
@@ -151,3 +155,53 @@ add_custom_command(TARGET Neurus POST_BUILD
 		"$<TARGET_FILE_DIR:Neurus>/res"
 	COMMENT "Copying res/ to output directory"
 )
+
+endif() # NEURUS_BUILD_UI
+
+# ---------------------------------------------------------------------------
+# Headless renderer (no Qt, no window system)
+# ---------------------------------------------------------------------------
+if(NEURUS_BUILD_HEADLESS)
+	add_executable(neurus_headless
+		main_headless.cpp
+		app/HeadlessApplication.cpp
+	)
+
+	target_link_libraries(neurus_headless PRIVATE
+		neurus_app_core
+		neurus_session
+		neurus_render_passes
+		neurus_asset
+		# neurus_asset references the cereal dynamic-init anchor defined in
+		# neurus_editor's registration TU, so the editor archive must come after
+		# it on a single-pass GNU linker.
+		neurus_editor
+		neurus_render
+		neurus_scene
+		neurus_platform_paths
+		neurus_command
+		neurus_ipc
+		neurus_core
+		Vulkan::Vulkan
+	)
+
+	if(NEURUS_ENABLE_SCRIPTING)
+		target_link_libraries(neurus_headless PRIVATE neurus_script)
+	endif()
+
+	target_include_directories(neurus_headless PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+	target_compile_definitions(neurus_headless PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE)
+
+	# The CLI resolves the app as a sibling of its own executable, so both
+	# binaries must land in the same directory.
+	set_target_properties(neurus_headless PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:neurus_cli>"
+	)
+
+	add_custom_command(TARGET neurus_headless POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${CMAKE_SOURCE_DIR}/res"
+			"$<TARGET_FILE_DIR:neurus_headless>/res"
+		COMMENT "Copying res/ to the headless output directory"
+	)
+endif()

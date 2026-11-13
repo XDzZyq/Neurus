@@ -29,6 +29,15 @@ elseif(APPLE)
 		mac/MacOSCrypto.cpp
 		mac/MacOSSystem.cpp
 	)
+elseif(UNIX AND NOT APPLE)
+	# Linux headless: POSIX implementations, no window system.
+	target_sources(neurus_platform_paths PRIVATE
+		linux/LinuxPaths.cpp
+		linux/LinuxProcess.cpp
+		linux/LinuxFile.cpp
+		linux/LinuxCrypto.cpp
+		linux/LinuxSystem.cpp
+	)
 else()
 	message(FATAL_ERROR "Platform helpers have no implementation for this platform.")
 endif()
@@ -59,5 +68,10 @@ elseif(APPLE)
 		"-framework AppKit"
 		"-framework QuartzCore"
 		"-framework Metal"
+	)
+elseif(UNIX AND NOT APPLE)
+	# Headless stub: no surface extension, no window system. See LinuxSurface.cpp.
+	target_sources(neurus_platform PRIVATE
+		linux/LinuxSurface.cpp
 	)
 endif()

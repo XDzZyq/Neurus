@@ -5,6 +5,9 @@
 
 #include "DeferredRenderer.h"
 
+#include "OffscreenTarget.h"
+#include "SwapchainTarget.h"
+
 #include "Barrier.h"
 #include "Image.h"
 #include "RenderCache.h"
@@ -54,12 +57,9 @@ namespace neurus {
 // ---------------------------------------------------------------------------
 
 DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
-                                    const vk::raii::PhysicalDevice& physicalDevice,
-                                    SharedQueue& graphicsQueue,
-                                    uint32_t queueFamilyIndex,
-                                    const vk::raii::SurfaceKHR& surface,
-                                    uint32_t width,
-                                    uint32_t height)
+                                   const vk::raii::PhysicalDevice& physicalDevice,
+                                   SharedQueue& graphicsQueue,
+                                   uint32_t queueFamilyIndex)
 	: r_device(device)
 	, r_physicalDevice(physicalDevice)
 	, r_graphicsQueue(&graphicsQueue)
@@ -67,12 +67,52 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	, r_commandPool(createCommandPool(device, queueFamilyIndex))
 	, r_renderTimeline(device, "DeferredRenderer::RenderTimeline")
 {
+}
+
+DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
+                                    const vk::raii::PhysicalDevice& physicalDevice,
+                                    SharedQueue& graphicsQueue,
+                                    uint32_t queueFamilyIndex,
+                                    const vk::raii::SurfaceKHR& surface,
+                                    uint32_t width,
+                                    uint32_t height)
+	: DeferredRenderer(device, physicalDevice, graphicsQueue, queueFamilyIndex)
+{
+	// --- 1. Window output target ---
+	// The swapchain validates that the surface grants TRANSFER_DST, which the
+	// final HDR composite blit needs.
+	r_target = std::make_unique<SwapchainTarget>(
+		physicalDevice, device, graphicsQueue, surface, width, height);
+	InitializePipeline();
+}
+
+DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
+                                    const vk::raii::PhysicalDevice& physicalDevice,
+                                    SharedQueue& graphicsQueue,
+                                    uint32_t queueFamilyIndex,
+                                    vk::Extent2D extent)
+	: DeferredRenderer(device, physicalDevice, graphicsQueue, queueFamilyIndex)
+{
+	// --- 1. Headless output target ---
+	// No surface, no acquire, no present: the last image of a frame is the
+	// OverlayOutput attachment.
+	r_target = std::make_unique<OffscreenTarget>(extent);
+	InitializePipeline();
+}
+
+void DeferredRenderer::InitializePipeline()
+{
+	// The body below used to live in the constructor. These aliases keep it
+	// reading exactly as before now that both constructors share it.
+	const vk::raii::Device& device = r_device;
+	const vk::raii::PhysicalDevice& physicalDevice = r_physicalDevice;
+	SharedQueue& graphicsQueue = *r_graphicsQueue;
+	const uint32_t queueFamilyIndex = r_queueFamilyIndex;
+
+	const vk::Extent2D extent = r_target->Extent();
+
 	// --- 0. Create the optional GPU timestamp query pool (no-op if unsupported) ---
 	m_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
-
-	// --- 1. Create swapchain ---
-	r_swapchain = std::make_unique<Swapchain>(physicalDevice, device, graphicsQueue, surface, width, height);
-	const auto extent = r_swapchain->extent();
 
 	// --- 2. Create G-Buffer attachment cache (lazy creation on first access) ---
 	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice);
@@ -166,17 +206,8 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	// it whenever the pipeline signature derived from RenderConfig changes.
 	RebuildMainGraph(PipelineSignature{});
 
-	// --- 9. Allocate command buffers (one per swapchain image, reused) ---
-	uint32_t imageCount = r_swapchain->imageCount();
-
-	const bool hasTransferDst = (r_swapchain->actualImageUsage() & vk::ImageUsageFlagBits::eTransferDst) != vk::ImageUsageFlags{};
-	if (!hasTransferDst)
-	{
-		throw std::runtime_error(
-			"Swapchain surface does not support VK_IMAGE_USAGE_TRANSFER_DST_BIT.\n"
-			"DeferredRenderer requires TRANSFER_DST for the HDRColor-to-swapchain blit composite.\n"
-			"Try running on a GPU/driver that supports this usage flag for the surface format.");
-	}
+	// --- 9. Allocate command buffers (one per output image, reused) ---
+	uint32_t imageCount = r_target->ImageCount();
 
 	vk::CommandBufferAllocateInfo cmdBufAlloc(*r_commandPool, vk::CommandBufferLevel::ePrimary, imageCount);
 	r_commandBuffers = vk::raii::CommandBuffers(device, cmdBufAlloc);
@@ -203,16 +234,22 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	for (uint32_t i = 0; i < kMaxFramesInFlight; ++i)
 	{
 		r_inFlightFences.emplace_back(device, vk::FenceCreateInfo(vk::FenceCreateFlagBits::eSignaled));
-		r_imageAvailableSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+		if (r_target->Presents())
+		{
+			r_imageAvailableSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+		}
 	}
-	for (uint32_t i = 0; i < imageCount; ++i)
+	if (r_target->Presents())
 	{
-		r_renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+		for (uint32_t i = 0; i < imageCount; ++i)
+		{
+			r_renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+		}
 	}
 
 	NEURUS_LOG("[DeferredRenderer] " << extent.width << "x" << extent.height
-	          << " swapchainImages=" << imageCount
-	          << " transferDst=" << (hasTransferDst ? "yes" : "no"));
+	          << " outputImages=" << imageCount
+	          << " presents=" << (r_target->Presents() ? "yes" : "no"));
 
 	// --- Request processor ---
 	// Built last: it borrows the geometry pass and the cache, both live by now.
@@ -348,7 +385,10 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	}
 
 	auto& fence = r_inFlightFences[r_currentFrame];
-	auto& imageAvailable = r_imageAvailableSemaphores[r_currentFrame];
+	const bool presents = r_target->Presents();
+	// A headless target acquires nothing, so it owns no acquire semaphore.
+	const vk::raii::Semaphore* imageAvailable =
+		presents ? &r_imageAvailableSemaphores[r_currentFrame] : nullptr;
 
 	// --- Drain Editor-posted GPU requests ---
 	// Placed after the fence wait and before swapchain acquire. The handlers that
@@ -430,8 +470,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	bool skipFrame = false;
 	try
 	{
-		const std::optional<uint32_t> acquired =
-			r_swapchain->AcquireNextImage(imageAvailable);
+		const std::optional<uint32_t> acquired = r_target->Acquire(imageAvailable);
 		if (acquired)
 		{
 			imageIndex = *acquired;
@@ -456,10 +495,10 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		skipFrame = true;
 	}
 
-	// --- Handle swapchain recreation (from out-of-date acquire or external resize) ---
-	if (r_swapchain->generation() != r_swapchainGeneration)
+	// --- Handle target recreation (out-of-date acquire or external resize) ---
+	if (r_target->Generation() != r_targetGeneration)
 	{
-		recreateSwapchain();
+		recreateTarget();
 		skipFrame = true;
 	}
 
@@ -477,7 +516,8 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// --- Record and submit (reuse pre-allocated command buffer) ---
 	vk::CommandBuffer cmdBufRaw = *r_commandBuffers[imageIndex];
 
-	recordFrame(r_commandBuffers[imageIndex], imageIndex, ctx, work);
+	const vk::Extent2D frameExtent = r_target->Extent();
+	recordFrame(r_commandBuffers[imageIndex], imageIndex, frameExtent, ctx, work);
 
 	// --- Profiling: back-fill resolved GPU ms now that passes are repopulated ---
 	// recordFrame just rewrote m_frameProfile.passes with gpuMs=0; match the
@@ -493,36 +533,62 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		m_frameProfile.gpuReady = true;
 	}
 
-	auto& renderFinished = r_renderFinishedSemaphores[imageIndex];
-	// The swapchain image's first use is a layout transition + blit at the transfer
-	// stage, not a color-attachment write, so the acquire semaphore must be waited
-	// on before transfer as well: waiting only at eColorAttachmentOutput lets the
-	// blit overwrite an image the presentation engine is still reading.
-	const vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput |
-	                                         vk::PipelineStageFlagBits::eTransfer;
-
 	// --- Frame timeline signal ---
 	// Each submit signals the next render-timeline value, so the GPU's progress
 	// is one counter the main thread can read (CompletedFrameValue()) instead of
-	// a fence it would have to own. The binary semaphores stay in the same
-	// submission: the timeline rides alongside the present chain, it does not
-	// replace it. VkTimelineSemaphoreSubmitInfo carries one value per semaphore
-	// slot, and 0 is the only legal value for a binary semaphore's slot - only
-	// the timeline entry carries a real value.
+	// a fence it would have to own. On a presenting target the binary semaphores
+	// stay in the same submission: the timeline rides alongside the present
+	// chain, it does not replace it. VkTimelineSemaphoreSubmitInfo carries one
+	// value per semaphore slot, and 0 is the only legal value for a binary
+	// semaphore's slot - only the timeline entry carries a real value.
 	const uint64_t frameValue = ++r_nextFrameValue;
-	const vk::Semaphore imageAvailableHandle = *imageAvailable;
-	const vk::Semaphore renderFinishedHandle = *renderFinished;
-	const vk::Semaphore signalSemaphores[] = { renderFinishedHandle, r_renderTimeline.Handle() };
-	const uint64_t waitValues[] = { 0 };
-	const uint64_t signalValues[] = { 0, frameValue };
-	const vk::TimelineSemaphoreSubmitInfo timelineInfo(1, waitValues, 2, signalValues);
+	vk::Semaphore signalSemaphores[2];
+	uint64_t signalValues[2];
+	uint32_t signalCount = 0;
+	if (presents)
+	{
+		signalSemaphores[signalCount] = *r_renderFinishedSemaphores[imageIndex];
+		signalValues[signalCount] = 0;
+		++signalCount;
+	}
+	signalSemaphores[signalCount] = r_renderTimeline.Handle();
+	signalValues[signalCount] = frameValue;
+	++signalCount;
 
-	const vk::SubmitInfo submitInfo(
-		1, &imageAvailableHandle, &waitStage,
-		1, &cmdBufRaw,
-		2, signalSemaphores,
-		&timelineInfo);
-	r_graphicsQueue->Submit(submitInfo, *fence);
+	if (presents)
+	{
+		// The swapchain image's first use is a layout transition + blit at the
+		// transfer stage, not a color-attachment write, so the acquire semaphore
+		// must be waited on before transfer as well: waiting only at
+		// eColorAttachmentOutput lets the blit overwrite an image the presentation
+		// engine is still reading.
+		const vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput |
+		                                         vk::PipelineStageFlagBits::eTransfer;
+		const vk::Semaphore imageAvailableHandle = *imageAvailable;
+		const uint64_t waitValues[] = { 0 };
+		const vk::TimelineSemaphoreSubmitInfo timelineInfo(1, waitValues, signalCount, signalValues);
+
+		const vk::SubmitInfo submitInfo(
+			1, &imageAvailableHandle, &waitStage,
+			1, &cmdBufRaw,
+			signalCount, signalSemaphores,
+			&timelineInfo);
+		r_graphicsQueue->Submit(submitInfo, *fence);
+	}
+	else
+	{
+		// Nothing to wait on: the slot fence is the only ordering this frame
+		// needs, which holds because kMaxFramesInFlight is 1. If that ever rises,
+		// the second in-flight frame must wait the previous timeline value.
+		const vk::TimelineSemaphoreSubmitInfo timelineInfo(0, nullptr, signalCount, signalValues);
+
+		const vk::SubmitInfo submitInfo(
+			0, nullptr, nullptr,
+			1, &cmdBufRaw,
+			signalCount, signalSemaphores,
+			&timelineInfo);
+		r_graphicsQueue->Submit(submitInfo, *fence);
+	}
 
 	// The tables this frame recorded against are now the GPU's to read: hold
 	// them until this slot's fence is seen signalled, so a request that replaces
@@ -532,23 +598,26 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// this call is what released the previous frame's.
 	r_heldTables[r_currentFrame] = { r_renderCache->Meshes(), r_renderCache->Environments() };
 
-	// --- Present ---
+	// --- Present (window target only) ---
 	bool presentFailed = false;
-	try
+	if (presents)
 	{
-		r_swapchain->Present(renderFinished, imageIndex);
-	}
-	catch (const std::exception& e)
-	{
-		NEURUS_ERR("Present failed: " << e.what());
-		presentFailed = true;
-	}
+		try
+		{
+			r_target->Present(r_renderFinishedSemaphores[imageIndex], imageIndex);
+		}
+		catch (const std::exception& e)
+		{
+			NEURUS_ERR("Present failed: " << e.what());
+			presentFailed = true;
+		}
 
-	// --- Handle swapchain recreation after present ---
-	if (r_swapchain->generation() != r_swapchainGeneration)
-	{
-		recreateSwapchain();
-		presentFailed = true;
+		// --- Handle target recreation after present ---
+		if (r_target->Generation() != r_targetGeneration)
+		{
+			recreateTarget();
+			presentFailed = true;
+		}
 	}
 
 	if (presentFailed)
@@ -597,10 +666,41 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
 		// Screenshot already reported the count and the destination directory.
 		(void)count;
 	}
-	else if (!m_screenshot->TakeScreenshot(GetLastSwapchainImage(), GetSwapchainFormat(),
-	                                      GetExtent(), directory))
+	else if (r_target->Presents())
 	{
-		NEURUS_ERR("[DeferredRenderer] Swapchain screenshot failed; see the [Screenshot] log line above.");
+		if (!m_screenshot->TakeScreenshot(GetLastSwapchainImage(), GetSwapchainFormat(),
+		                                  GetExtent(), directory))
+		{
+			NEURUS_ERR("[DeferredRenderer] Swapchain screenshot failed; see the [Screenshot] log line above.");
+		}
+	}
+	else
+	{
+		// Headless: the frame's last image is OverlayOutput, written by the overlay
+		// graph. A capture before any drawn frame is a loud failure, never a black
+		// PNG (GetAttachment would otherwise create an empty image and read it).
+		const AttachmentName output = OverlayEngine::OutputAttachment();
+		if (!r_renderCache->HasAttachment(output))
+		{
+			NEURUS_ERR("[DeferredRenderer] No frame has been drawn yet - nothing to capture");
+			return;
+		}
+		Image& image = r_renderCache->GetAttachment(output, GetExtent());
+		if (image.State() == ImageState::Undefined)
+		{
+			NEURUS_ERR("[DeferredRenderer] Output image has never been written - nothing to capture");
+			return;
+		}
+
+		std::error_code ec;
+		std::filesystem::create_directories(directory, ec);
+		const std::filesystem::path path =
+			directory / (Screenshot::timestampedFilename("headless", "") + ".png");
+		if (!Screenshot::CaptureAttachment(r_device, r_physicalDevice, *r_graphicsQueue,
+		                                   r_queueFamilyIndex, image, path.string()))
+		{
+			NEURUS_ERR("[DeferredRenderer] Headless screenshot failed; see the [Screenshot] log line above.");
+		}
 	}
 }
 
@@ -734,16 +834,25 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 
 void DeferredRenderer::HandleResize(uint32_t width, uint32_t height)
 {
-	uint32_t oldGen = r_swapchain->generation();
-	r_swapchain->Recreate(width, height);
-	if (r_swapchain->generation() != oldGen)
+	const uint32_t oldGen = r_target->Generation();
+	r_target->Recreate(width, height);
+	if (r_target->Generation() != oldGen)
 	{
-		recreateSwapchain();
+		recreateTarget();
 	}
 }
 
 void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurface)
 {
+	// A headless target has no surface to replace. RenderThread delivers a
+	// handler exception through its promise, so this is a clear failure rather
+	// than a silent no-op.
+	if (!r_target->Presents())
+	{
+		throw std::logic_error(
+			"DeferredRenderer::HandleSurfaceChange: the headless target has no surface");
+	}
+
 	// The old swapchain's images must not be in use while it is destroyed, and
 	// this is a rare event (a window/monitor move), so holding the queue lock
 	// across the wait is accepted. A separate transfer queue is idle here
@@ -751,34 +860,34 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 	r_graphicsQueue->WaitIdle();
 
 	// Preserve current extent to pass to the new swapchain
-	uint32_t width = r_swapchain ? r_swapchain->extent().width : 800;
-	uint32_t height = r_swapchain ? r_swapchain->extent().height : 600;
+	const uint32_t width = r_target->Extent().width;
+	const uint32_t height = r_target->Extent().height;
 
-	// Destroy old swapchain (which held a reference to the old surface)
-	r_swapchain.reset();
+	// Destroy the old target (which held a reference to the old surface)
+	r_target.reset();
 
-	r_swapchain = std::make_unique<Swapchain>(r_physicalDevice, r_device, *r_graphicsQueue, newSurface, width, height);
+	r_target = std::make_unique<SwapchainTarget>(
+		r_physicalDevice, r_device, *r_graphicsQueue, newSurface, width, height);
 
-	recreateSwapchain();
+	recreateTarget();
 
-	NEURUS_LOG("[DeferredRenderer] Surface changed — swapchain rebuilt "
-	           << r_swapchain->extent().width << "x" << r_swapchain->extent().height);
+	NEURUS_LOG("[DeferredRenderer] Surface changed - swapchain rebuilt "
+	           << r_target->Extent().width << "x" << r_target->Extent().height);
 }
 
 // ---------------------------------------------------------------------------
-// Swapchain recreation
+// Output target recreation
 // ---------------------------------------------------------------------------
 
-void DeferredRenderer::recreateSwapchain()
+void DeferredRenderer::recreateTarget()
 {
-	// The swapchain and the screen-space attachments it sizes are about to be
+	// The target and the screen-space attachments it sizes are about to be
 	// replaced; a resize or an out-of-date present is rare, so holding the queue
 	// lock across the wait is accepted. A separate transfer queue is idle here
 	// because every upload waits its own submit.
 	r_graphicsQueue->WaitIdle();
 
-	uint32_t newImageCount = r_swapchain->imageCount();
-	vk::Extent2D newExtent = r_swapchain->extent();
+	const uint32_t newImageCount = r_target->ImageCount();
 	// Clear screen-space attachments (G-Buffer + shadow intensities).
 	// Shadow cubemaps survive resize.  Attachments are re-created lazily
 	// on first GetAttachment() call in the next frame.
@@ -792,15 +901,18 @@ void DeferredRenderer::recreateSwapchain()
 	// fades in slowly with EMA and never recovers in moving-average mode.
 	m_iteration = 0;
 
-	// Rebuild render-finished semaphores (one per swapchain image)
+	// Rebuild render-finished semaphores (one per presented image)
 	r_renderFinishedSemaphores.clear();
-	for (uint32_t i = 0; i < newImageCount; ++i)
+	if (r_target->Presents())
 	{
-		r_renderFinishedSemaphores.emplace_back(r_device, vk::SemaphoreCreateInfo());
+		for (uint32_t i = 0; i < newImageCount; ++i)
+		{
+			r_renderFinishedSemaphores.emplace_back(r_device, vk::SemaphoreCreateInfo());
+		}
 	}
 
-	// Rebuild command buffers if image count changed (swapchain image count
-	// may differ across surfaces/drivers).
+	// Rebuild command buffers if image count changed (the count may differ
+	// across surfaces/drivers).
 	if (r_commandBuffers.size() != newImageCount)
 	{
 		r_commandBuffers.clear();
@@ -826,7 +938,7 @@ void DeferredRenderer::recreateSwapchain()
 #endif
 	}
 
-	r_swapchainGeneration = r_swapchain->generation();
+	r_targetGeneration = r_target->Generation();
 }
 
 // ---------------------------------------------------------------------------
@@ -834,7 +946,7 @@ void DeferredRenderer::recreateSwapchain()
 // ---------------------------------------------------------------------------
 
 void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32_t imageIndex,
-                                   const RenderContext& editorCtx, const FrameWork work)
+                                   vk::Extent2D extent, const RenderContext& editorCtx, const FrameWork work)
 {
 	if (work != FrameWork::Sample && work != FrameWork::Overlay)
 	{
@@ -851,8 +963,6 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		throw std::logic_error(
 			"DeferredRenderer::recordFrame: Overlay frame before any Sample frame");
 	}
-
-	const vk::Extent2D extent = r_swapchain->extent();
 
 	// --- Reset the command buffer, then begin recording ---
 	cmdBuf.reset();
@@ -946,56 +1056,62 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		m_frameProfile = FrameProfile{};  // An overlay frame records only overlay passes.
 	m_overlayEngine->Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
-	// --- Blit the final image to the swapchain ---
+	// --- Blit the final image to the presented image (window target only) ---
 	// The overlay graph's output is always the end of the chain: the scene tail is
 	// copied into OverlayOutput, the overlays draw into it, and nothing presents
 	// the scene image directly. That is also why the copy is mandatory - on an
 	// overlay frame the scene tail must survive so the next overlay redraw can
 	// start from it again.
-	auto& blitSource = r_renderCache->GetAttachment(OverlayEngine::OutputAttachment(), extent);
-	const vk::Image overlayImage = *blitSource.ImageHandle();
-	const vk::Image swapchainImage = r_swapchain->images()[imageIndex];
-
-	// Barrier 1: Blit source -> TRANSFER_SRC_OPTIMAL.
 	//
-	// The transition is issued here, by the consumer, not left to whichever pass
-	// wrote the image last. A producer that pre-transitions its output to the
-	// state it guesses the next consumer wants makes the following consumer's
-	// own barrier a no-op: its src scope becomes the guessed access (TransferRead),
-	// which names no writes, so the real producer writes are never made visible.
-	//
-	// Barrier 2: Swapchain image UNDEFINED -> TRANSFER_DST_OPTIMAL
-	Barrier::Transition(cmdBuf, blitSource, ImageState::TransferSrc);
+	// A headless target presents nothing, so there is no blit: OverlayOutput is
+	// the frame's final image and a capture reads it back from there.
+	if (r_target->Presents())
 	{
+		auto& blitSource = r_renderCache->GetAttachment(OverlayEngine::OutputAttachment(), extent);
+		const vk::Image overlayImage = *blitSource.ImageHandle();
+		const vk::Image swapchainImage = r_target->Image(imageIndex);
+
+		// Barrier 1: Blit source -> TRANSFER_SRC_OPTIMAL.
+		//
+		// The transition is issued here, by the consumer, not left to whichever pass
+		// wrote the image last. A producer that pre-transitions its output to the
+		// state it guesses the next consumer wants makes the following consumer's
+		// own barrier a no-op: its src scope becomes the guessed access (TransferRead),
+		// which names no writes, so the real producer writes are never made visible.
+		//
+		// Barrier 2: Swapchain image UNDEFINED -> TRANSFER_DST_OPTIMAL
+		Barrier::Transition(cmdBuf, blitSource, ImageState::TransferSrc);
+		{
+			Barrier::Transition(*cmdBuf, swapchainImage,
+				ImageState::Undefined, ImageState::TransferDst,
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+		}
+
+		// --- Blit the final image into the swapchain image ---
+		{
+			vk::ImageBlit blitRegion;
+			blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+			blitRegion.srcOffsets[0] = vk::Offset3D(0, 0, 0);
+			blitRegion.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
+			                                         static_cast<int32_t>(extent.height), 1);
+			blitRegion.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+			blitRegion.dstOffsets[0] = vk::Offset3D(0, 0, 0);
+			blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
+			                                         static_cast<int32_t>(extent.height), 1);
+
+			cmdBuf.blitImage(overlayImage,
+			                 vk::ImageLayout::eTransferSrcOptimal,
+			                 swapchainImage,
+			                 vk::ImageLayout::eTransferDstOptimal,
+			                 blitRegion,
+			                 vk::Filter::eLinear);
+		}
+
+		// --- Transition swapchain image to PRESENT_SRC_KHR ---
 		Barrier::Transition(*cmdBuf, swapchainImage,
-			ImageState::Undefined, ImageState::TransferDst,
+			ImageState::TransferDst, ImageState::Present,
 			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 	}
-
-	// --- Blit the final image into the swapchain image ---
-	{
-		vk::ImageBlit blitRegion;
-		blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-		blitRegion.srcOffsets[0] = vk::Offset3D(0, 0, 0);
-		blitRegion.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
-		                                         static_cast<int32_t>(extent.height), 1);
-		blitRegion.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-		blitRegion.dstOffsets[0] = vk::Offset3D(0, 0, 0);
-		blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
-		                                         static_cast<int32_t>(extent.height), 1);
-
-		cmdBuf.blitImage(overlayImage,
-		                 vk::ImageLayout::eTransferSrcOptimal,
-		                 swapchainImage,
-		                 vk::ImageLayout::eTransferDstOptimal,
-		                 blitRegion,
-		                 vk::Filter::eLinear);
-	}
-
-	// --- Transition swapchain image to PRESENT_SRC_KHR ---
-	Barrier::Transition(*cmdBuf, swapchainImage,
-		ImageState::TransferDst, ImageState::Present,
-		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 
 	// --- Profiling: write the GPU frame-end timestamp (covers the final blit) ---
 	// EndFrame also advances the profiler's slot cursor, keeping it in lockstep
@@ -1018,20 +1134,20 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 
 vk::Image DeferredRenderer::GetLastSwapchainImage() const
 {
-	if (!r_swapchain || r_lastImageIndex >= r_swapchain->images().size())
+	if (!r_target || r_lastImageIndex >= r_target->ImageCount())
 	{
 		return vk::Image{};
 	}
-	return r_swapchain->images()[r_lastImageIndex];
+	return r_target->Image(r_lastImageIndex);
 }
 
 vk::Format DeferredRenderer::GetSwapchainFormat() const
 {
-	if (!r_swapchain)
+	if (!r_target)
 	{
 		return vk::Format::eUndefined;
 	}
-	return r_swapchain->format();
+	return r_target->Format();
 }
 
 } // namespace neurus

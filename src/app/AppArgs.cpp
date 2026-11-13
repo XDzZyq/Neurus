@@ -123,6 +123,46 @@ AppArgs AppArgs::Parse(const std::vector<std::string>& arguments)
 				break;
 			continue;
 		}
+		std::optional<std::string> sizeText;
+		if (TakeValue(arguments, index, "--width", sizeText, result.error))
+		{
+			if (result.error.empty())
+			{
+				try
+				{
+					result.width = static_cast<uint32_t>(std::stoul(*sizeText));
+					if (result.width == 0)
+						result.error = "Invalid value for --width.";
+				}
+				catch (const std::exception&)
+				{
+					result.error = "Invalid value for --width.";
+				}
+			}
+			if (!result.error.empty())
+				break;
+			continue;
+		}
+		sizeText.reset();
+		if (TakeValue(arguments, index, "--height", sizeText, result.error))
+		{
+			if (result.error.empty())
+			{
+				try
+				{
+					result.height = static_cast<uint32_t>(std::stoul(*sizeText));
+					if (result.height == 0)
+						result.error = "Invalid value for --height.";
+				}
+				catch (const std::exception&)
+				{
+					result.error = "Invalid value for --height.";
+				}
+			}
+			if (!result.error.empty())
+				break;
+			continue;
+		}
 		// Unknown arguments belong to Qt or to a future option; ignore them.
 	}
 	return result;

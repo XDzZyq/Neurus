@@ -445,6 +445,32 @@ results; resolving `build/debug` first avoids that. CI is unaffected - it
 configures a fresh multi-config tree and still passes `-C` to select a
 configuration.
 
+### Headless Linux
+
+The Linux suite runs without Qt and without a window:
+
+```bash
+. scripts/linux/Toolchain.sh ~/.local/neurus-toolchain
+cmake --preset linux
+cmake --build build/linux -j 8
+cd build/linux && ctest --output-on-failure -j 2
+```
+
+`test/shared/test_main_headless.cpp` replaces the Qt runner, and the UI tests,
+the Qt application tests and every test whose subject is a QObject (the
+`UIEvents` bus, `Input.cpp`, the panels) are not compiled. The GPU tests run
+against the real device; `TestWindow` reports an invalid handle so the tests
+that need a presentation surface skip, exactly as they do on macOS.
+
+Validation layers come from the SDK, so run the binary with the environment
+`Toolchain.sh` exports; run each suite from `build/linux` so `res/` and
+`testdata/` resolve. Reference-image tests still write under
+`test/render/reference/` and are compared the same way.
+
+Headless snapshots are taken from the `OverlayOutput` attachment, not from a
+swapchain image, so the reference images and the headless capture share the same
+source image.
+
 **Filtering test output.** Coupled test output can be hard to parse. Use these
 patterns to pinpoint failures:
 

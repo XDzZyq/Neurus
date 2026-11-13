@@ -109,6 +109,24 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 - Create image views for each swapchain image
 - Recreate on window resize (the old swapchain is destroyed, a new one is created)
 
+### Output target (`OutputTarget`)
+
+`DeferredRenderer` acquires and presents through an `OutputTarget`, not through
+`Swapchain` directly:
+
+- `SwapchainTarget` wraps `Swapchain` unchanged and is what the Qt application
+  constructs. Acquire, present and the out-of-date recovery behave exactly as
+  before.
+- `OffscreenTarget` owns no image: a headless frame's last image is the
+  `OverlayOutput` attachment, so `Acquire` returns index 0, `Present` does
+  nothing and the final blit into a presentation image is skipped.
+
+With one frame in flight the offscreen submit waits no semaphore and signals only
+the render timeline plus the slot fence; the presenting path keeps the
+`imageAvailable` / `renderFinished` pair and its final blit. A capture reads
+`OverlayOutput` through the tracked image state, never
+`Screenshot::CaptureSwapchain` (which assumes `PRESENT_SRC`).
+
 ## Drawing a frame
 
 `DeferredRenderer` owns the command pool and command buffers, an `imageAvailable` + `renderFinished` semaphore pair, and an in-flight fence for CPU-GPU synchronization. The frame is drawn as: wait the frame-slot fence, drain the Editor-posted render-request queue, decide the work (`NextWork()`), acquire, record the graphs that work needs, present. A Sample frame records the scene graph and then the overlay graph; an Overlay frame records the overlay graph alone; an Idle frame returns before acquiring an image at all. `WaitIdle()` idles the graphics queue (`SharedQueue::WaitIdle`) for clean shutdown.
