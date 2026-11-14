@@ -153,13 +153,75 @@ jobs:
         working-directory: build
         run: ctest -C ${{ matrix.configuration }} --output-on-failure
 
+  # Headless Linux: no Qt, no window system, no swapchain. This is the only leg
+  # that compiles the Linux platform layer, the offscreen output target and the
+  # released lib/prebuilt/linux shaderc.
+  #
+  # A hosted runner has no GPU and this leg installs no software Vulkan device on
+  # purpose: the build still needs the Vulkan headers and loader to compile and
+  # link, but every GPU test self-skips for want of a device (VulkanTestShared
+  # reports no Vulkan), so the leg stays fast and reports the non-GPU suite.
+  # Rendering on Linux is verified on a real GPU, not here.
+  build-linux:
+    name: build (ubuntu-22.04, headless)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Setup Vulkan SDK (headers and loader only)
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: 1.4.341.0
+          vulkan-components: Vulkan-Headers, Vulkan-Loader, SPIRV-Tools, Glslang
+          vulkan-use-cache: true
+
+      # `make update` provisions lib/.venv with uv and downloads the linux-x64
+      # prebuilt shaderc published for the pinned lib commit.
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+
+      - name: Update dependencies and configure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          make update 2>&1 | tee "${{ runner.temp }}/configure.log"
+
+      # The SDK in this job ships no shaderc, so the released archive is the only
+      # way to link: this asserts the download really happened.
+      - name: Assert the released Linux prebuilt shaderc was used
+        run: |
+          grep -q "Using shaderc from .*lib/prebuilt/linux/shaderc" "${{ runner.temp }}/configure.log" \
+            || { echo "::error::Linux build did not use the released prebuilt shaderc"; tail -30 "${{ runner.temp }}/configure.log"; exit 1; }
+
+      - name: Build
+        run: cmake --build build/linux --parallel
+
+      - name: Run tests (software Vulkan)
+        working-directory: build/linux
+        run: ctest --output-on-failure --timeout 900
+
   # The single stable status check for branch protection. Reports success when
   # the matrix was skipped for a documentation-only pull request, and fails when
   # a leg actually broke. `always()` is load-bearing: without it a skipped
   # `build` would skip this job too, and the required check would never report.
   ci-gate:
     name: ci-gate
-    needs: [changes, build]
+    needs: [changes, build, build-linux]
     if: always()
 
     runs-on: ubuntu-latest
@@ -172,10 +234,12 @@ jobs:
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           BUILD_RESULT: ${{ needs.build.result }}
+          LINUX_RESULT: ${{ needs.build-linux.result }}
         run: |
           echo "non-documentation changes: ${CODE_CHANGED:-<unset>}"
           echo "changes job:               $CHANGES_RESULT"
           echo "build matrix:              $BUILD_RESULT"
+          echo "linux headless:            $LINUX_RESULT"
 
           # A broken gate must not read as a green build: `build` would be
           # `skipped` and this job would otherwise wave it through.
@@ -191,6 +255,13 @@ jobs:
           case "$BUILD_RESULT" in
             failure | cancelled)
               echo "::error::C++ build matrix reported $BUILD_RESULT"
+              exit 1
+              ;;
+          esac
+
+          case "$LINUX_RESULT" in
+            failure | cancelled)
+              echo "::error::Linux headless leg reported $LINUX_RESULT"
               exit 1
               ;;
           esac

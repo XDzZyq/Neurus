@@ -37,7 +37,7 @@ make check
 
 ## CMake Presets
 
-`CMakePresets.json` defines three configure presets and their build presets:
+`CMakePresets.json` defines four configure presets and their build presets:
 
 - `win` - Windows x64 (Visual Studio 17 2022, MSVC), binaryDir `build/`, Debug +
   Release via `--config`; sets `CMAKE_PREFIX_PATH`, `NEURUS_BUILD_TESTS=ON`,
@@ -46,6 +46,9 @@ make check
   `../Neurus_VS2022`.
 - `macos` - macOS arm64 Ninja Multi-Config, binaryDir `build/`, Debug + Release
   in one tree. Build presets: `macos`, `macos-release`.
+- `linux` - Linux x64 headless, Ninja single-config, binaryDir `build/linux`,
+  `NEURUS_BUILD_UI=OFF`, `NEURUS_BUILD_HEADLESS=ON`. Build preset:
+  `linux-debug`.
 
 Makefile convenience targets:
 
@@ -66,6 +69,78 @@ Additional targets:
 - `make doc-deps` - install the pinned MkDocs and graphify Python dependencies
 - `make doc` - build the structure graph and the web documentation into `site/`
 - `make doc-serve` - same, then serve the docs with live reload
+
+## Linux Headless
+
+Linux builds the headless renderer: no Qt, no window system, no swapchain. The
+binary is `neurus_headless`, the CLI is `neurus`, and both land in
+`build/linux/cli/` so `neurus open` finds the app as a sibling with no `--app`.
+
+Toolchain, provisioned without root (paths are examples; anything on
+`PATH`/`LD_LIBRARY_PATH` works):
+
+```bash
+# CMake + Ninja (PyPI wheels), and the LunarG Vulkan SDK extraction
+python3 -m venv ~/.local/neurus-toolchain/pyenv
+~/.local/neurus-toolchain/pyenv/bin/pip install "cmake==3.31.6" ninja uv
+# LunarG SDK 1.4.x, extracted to ~/.local/neurus-toolchain/vulkansdk
+tar -xJf vulkansdk-linux-x86_64-<version>.tar.xz \
+    -C ~/.local/neurus-toolchain/vulkansdk --strip-components=1
+```
+
+Add the environment to `~/.bashrc` (`uv` and CMake come from the same venv, so
+they land on `PATH` with the rest):
+
+```bash
+export VULKAN_SDK=$HOME/.local/neurus-toolchain/vulkansdk/x86_64
+export PATH=$HOME/.local/neurus-toolchain/pyenv/bin:$VULKAN_SDK/bin:$PATH
+# Loader directory only: the SDK's lib/ also holds libshaderc_shared.so.1, and
+# LD_LIBRARY_PATH outranks a binary's RUNPATH, so adding it would load the SDK
+# copy instead of the released prebuilt in lib/prebuilt/linux.
+export LD_LIBRARY_PATH=$VULKAN_SDK/lib/VulkanLoader/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+# The SDK's validation layers are not in the system layer directories.
+export VK_ADD_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d${VK_ADD_LAYER_PATH:+:$VK_ADD_LAYER_PATH}
+```
+
+Then, in a new shell:
+
+```bash
+make update      # submodules, prebuilt shaderc, lib/.venv, configure
+make build
+make check
+```
+
+The environment above puts the SDK's **1.4 loader** first. The system loader is
+often older (Ubuntu 22.04 ships 1.3.204) and `VulkanContext` requests
+`VK_API_VERSION_1_4`; the context retries at 1.3 only when a loader rejects 1.4
+outright. Validation layers resolve their own libraries relative to their
+manifests, so `VK_ADD_LAYER_PATH` is what makes the SDK's layer discoverable.
+
+The Linux build consumes shaderc from `lib/prebuilt/linux/shaderc`, downloaded
+and verified by `make update` from the `lib-<sha12>` release that Neurus-Lib
+publishes for every commit on `main`. `cmake/Dependencies.cmake` falls back to
+`$VULKAN_SDK/lib/libshaderc_shared.so` only when that archive has not been
+fetched yet, so a fresh checkout still configures. `lib/prebuilt/linux` carries
+shaderc only: `qtadvanceddocking` is a Qt library and the Linux build has no Qt.
+
+**GPU prerequisite.** The NVIDIA kernel module alone is not enough: a container
+image without the graphics userland (no `libGLX_nvidia.so.0`) enumerates only
+lavapipe, and `/etc/vulkan/icd.d/nvidia_icd.json` fails to load. Install the
+driver's graphics libraries matching the loaded module, for example
+
+```bash
+sudo sh NVIDIA-Linux-x86_64-<driver>.run --no-kernel-module --silent
+sudo ldconfig
+vulkaninfo --summary   # must list the physical GPU, not llvmpipe
+```
+
+The script layer is always built: every configuration embeds CPython, so
+`script.info`, `script.run`, `script.eval`, `script.console` and `script.clear`
+behave the same on every platform. `lib/.venv` is therefore a configure
+requirement, and configure fails with an actionable message when it is missing.
+Provision it with `sh lib/scripts/setup_python_env.sh` (run by `make update`),
+which needs `uv` on `PATH` (the toolchain venv above provides it); uv downloads
+the pinned CPython (3.12) on first use.
 
 ## Web Documentation
 

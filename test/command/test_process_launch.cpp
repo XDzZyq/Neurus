@@ -28,6 +28,12 @@ constexpr const char* kAppName = "Neurus.exe";
 constexpr const char* kCliName = "neurus.exe";
 constexpr const char* kExitingProgram = "C:/Windows/System32/cmd.exe";
 const std::vector<std::string> kExitingArguments = {"/c", "exit"};
+#elif defined(__linux__)
+// Linux ships the headless renderer, resolved as a sibling of the CLI.
+constexpr const char* kAppName = "neurus_headless";
+constexpr const char* kCliName = "neurus";
+constexpr const char* kExitingProgram = "/usr/bin/true";
+const std::vector<std::string> kExitingArguments = {};
 #else
 constexpr const char* kAppName = "Neurus";
 constexpr const char* kCliName = "neurus";

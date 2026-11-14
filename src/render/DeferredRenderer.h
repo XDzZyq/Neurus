@@ -38,7 +38,7 @@
 #include "passes/Pass.h"
 #include "core/RenderConfig.h"
 #include "RenderContext.h"
-#include "Swapchain.h"
+#include "OutputTarget.h"
 #include "render_graph/RenderGraph.h"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -101,6 +101,22 @@ public:
 	                 const vk::raii::SurfaceKHR& surface,
 	                 uint32_t width,
 	                 uint32_t height);
+
+	/**
+	 * @brief Creates the pipeline for a windowless (headless) renderer.
+	 *
+	 * Identical to the surface constructor except that nothing is acquired or
+	 * presented: frames are recorded and submitted, and the last image of a
+	 * frame is the OverlayOutput attachment, which a capture reads back. No
+	 * VK_KHR_swapchain extension and no surface are required.
+	 *
+	 * @param extent Initial render extent in pixels.
+	 */
+	DeferredRenderer(const vk::raii::Device& device,
+	                 const vk::raii::PhysicalDevice& physicalDevice,
+	                 SharedQueue& graphicsQueue,
+	                 uint32_t queueFamilyIndex,
+	                 vk::Extent2D extent);
 
 	~DeferredRenderer();
 
@@ -167,8 +183,8 @@ public:
 	/** @brief Returns the graphics queue family index. */
 	uint32_t GetGraphicsQueueFamily() const { return r_queueFamilyIndex; }
 
-	/** @brief Returns the current swapchain extent. */
-	vk::Extent2D GetExtent() const override { return r_swapchain ? r_swapchain->extent() : vk::Extent2D{800, 600}; }
+	/** @brief Returns the current output extent. */
+	vk::Extent2D GetExtent() const override { return r_target ? r_target->Extent() : vk::Extent2D{800, 600}; }
 
 	/**
 	 * @brief Returns the last acquired swapchain image for screenshot capture.
@@ -301,15 +317,30 @@ private:
 	 * swapchain blit, because the scene image is never presented directly.
 	 *
 	 * @param cmdBuf     Command buffer to record into.
-	 * @param imageIndex Swapchain image index being rendered into.
+	 * @param imageIndex Output image index being rendered into.
+	 * @param extent     Extent of this frame, from the acquired target image.
 	 * @param editorCtx  Render context (scene set; width/height/frameIndex blank).
 	 * @param work       Sample or Overlay - never Idle/Retry, which draw nothing.
 	 */
 	void recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32_t imageIndex,
-	                 const RenderContext& editorCtx, FrameWork work);
+	                 vk::Extent2D extent, const RenderContext& editorCtx, FrameWork work);
 
-	/** @brief Destroys and re-creates sync objects after swapchain resize. */
-	void recreateSwapchain();
+	/** @brief Rebuilds sync objects and command buffers after a target resize. */
+	void recreateTarget();
+
+	/**
+	 * @brief Common pipeline construction shared by both constructors.
+	 *
+	 * Requires r_target to be set; allocates the passes, the graph, command
+	 * buffers and the sync objects the target needs.
+	 */
+	void InitializePipeline();
+
+	/** @brief Shared member initialisation; the public constructors delegate. */
+	DeferredRenderer(const vk::raii::Device& device,
+	                 const vk::raii::PhysicalDevice& physicalDevice,
+	                 SharedQueue& graphicsQueue,
+	                 uint32_t queueFamilyIndex);
 
 	/**
 	 * @brief Waits every in-flight frame fence, so no recorded frame is still
@@ -334,8 +365,8 @@ private:
 	SharedQueue* r_graphicsQueue = nullptr;
 	uint32_t r_queueFamilyIndex;
 
-	// --- Swapchain ---
-	std::unique_ptr<Swapchain> r_swapchain;
+	// --- Output target (swapchain or headless) ---
+	std::unique_ptr<OutputTarget> r_target;
 
 	// --- Deferred pipeline ---
 	std::unique_ptr<RenderCache> r_renderCache;
@@ -438,7 +469,7 @@ private:
 	std::vector<vk::raii::Semaphore> r_imageAvailableSemaphores;
 	std::vector<vk::raii::Semaphore> r_renderFinishedSemaphores;
 	uint32_t r_currentFrame = 0;
-	uint32_t r_swapchainGeneration = 0;
+	uint32_t r_targetGeneration = 0;
 
 	/**
 	 * @brief The scene tables one submitted frame drew with.

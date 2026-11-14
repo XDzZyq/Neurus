@@ -10,15 +10,9 @@
 
 #include "app/Application.h"
 
+#include "app/ApplicationCore.h"
 #include "app/Preferences.h"
 #include "app/session/SessionServer.h"
-#include "asset/Project.h"
-#include "asset/components/ConfigComponent.h"
-#include "asset/components/EditorComponent.h"
-#include "asset/components/HistoryComponent.h"
-#include "asset/components/ResourceComponent.h"
-#include "asset/components/SceneComponent.h"
-#include "asset/components/UIComponent.h"
 #include "core/Log.h"
 #include "editor/commands/EditorCommandAdapter.h"
 #include "editor/events/SceneEvents.h"
@@ -40,6 +34,7 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <stdexcept>
 #include <filesystem>
 #include <future>
 #include <iomanip>
@@ -68,24 +63,6 @@ static QString resolveResourcePath(const char* relativePath)
 	return QCoreApplication::applicationDirPath() + "/res/" + relativePath;
 }
 
-
-// Registers the live components on every call. Order matters: the resource
-// pool is registered first, before the scene resolves references against it.
-static void BuildProject(neurus::project::Project& proj,
-                         neurus::Editor& editor,
-                         std::string& uiLayout)
-{
-	// Resource pool first: the Scene's ID references resolve against it.
-	proj.Register<neurus::project::ResourceComponent>(editor.GetResourceManager());
-	proj.Register<neurus::project::SceneComponent>(editor.GetScene(),
-	                                                editor.GetResourceManager());
-	proj.Register<neurus::project::ConfigComponent>(editor.GetRenderConfig());
-	proj.Register<neurus::project::UIComponent>(uiLayout);
-	// History, then editor view state: both are appended-last nodes, so legacy
-	// files that lack them load cleanly (each Load() falls back).
-	proj.Register<neurus::project::HistoryComponent>(editor.GetOperations());
-	proj.Register<neurus::project::EditorComponent>(editor.GetViewport());
-}
 
 /**
  * @brief Splits a preload list on commas and semicolons, trimming each item.
@@ -145,22 +122,6 @@ neurus::ScriptPreferencesUi MakeScriptPreferencesUi(const neurus::Preferences& p
 	return script;
 }
 
-/// @brief Formats one startup preload result as a Script Console line.
-std::string FormatPreloadLine(const neurus::ScriptPreloadResult& result)
-{
-	std::ostringstream line;
-	if (!result.ok)
-	{
-		line << "preload " << result.package << " failed: " << result.error;
-	}
-	else
-	{
-		line << "preload " << result.package << ": " << std::fixed << std::setprecision(3)
-		     << result.loadSeconds << "s (" << (result.cached ? "cached" : "loaded") << ")";
-	}
-	return line.str();
-}
-
 } // anonymous namespace
 
 namespace neurus {
@@ -181,6 +142,11 @@ Application::Application(int argc, char* argv[])
 	app_qtApp = std::make_unique<QApplication>(argc, argv);
 	app_renderTimer = std::make_unique<QTimer>();
 	app_renderTimer->setInterval(16);  // ~60 FPS
+	// The Qt-free core: preferences, the script engine and the open project.
+	// Created after QApplication so anything that ever needs the app object
+	// (nothing in the core does) would still find it, and before Run() loads
+	// preferences for the window.
+	app_core = std::make_unique<neurus::ApplicationCore>();
 	app_qtApp->setApplicationName("Neurus");
 	app_qtApp->setApplicationVersion("0.1.0");
 	app_startTime = std::chrono::steady_clock::now();
@@ -220,40 +186,23 @@ int Application::Run()
 	// window is built so the UI starts in the saved language. Nothing is written
 	// unless a value changes: a run that only reads them (a test session, which
 	// redirects NEURUS_SESSIONS_DIR but shares the real home) must leave the
-	// user's file alone. ---
-	app_preferences = std::make_unique<neurus::Preferences>();
-	const std::string prefsPath = neurus::Preferences::DefaultPath();
-
-	// "auto" stays stored verbatim: nothing here rewrites the preference with
-	// a concrete code, which would erase the "follow the system" choice.
-	switch (app_preferences->Load(prefsPath))
-	{
-	case neurus::Preferences::LoadResult::Ok:
-		break;
-	case neurus::Preferences::LoadResult::Missing:
-		// Stays missing: the first preference edit saves the file eagerly.
-		break;
-	case neurus::Preferences::LoadResult::Corrupt:
-		// Defaults are in effect, but the file is NOT overwritten here: move it
-		// aside first so the aboutToQuit save below cannot clobber the evidence.
-		NEURUS_ERR("[Application] " << prefsPath << " is unreadable; starting "
-		           "with default preferences.");
-		neurus::Preferences::Backup(prefsPath);
-		break;
-	}
+	// user's file alone. ApplicationCore owns the file and the policy built from
+	// it; ApplicationCore::LoadPreferences() moves a corrupt file aside instead of
+	// overwriting the evidence. ---
+	app_core->LoadPreferences();
 
 	neurus::I18n::instance().setLanguage(
-		QString::fromStdString(app_preferences->language));
-	ApplyTargetFps(app_preferences->targetFps);
+		QString::fromStdString(app_core->Prefs().language));
+	ApplyTargetFps(app_core->Prefs().targetFps);
 
 	// Clean-shutdown safety net: edits already save eagerly through
 	// ApplicationSignals, so only a value that differs from the loaded snapshot
 	// is written here.
-	const neurus::Preferences loadedPreferences = *app_preferences;
+	const neurus::Preferences loadedPreferences = app_core->Prefs();
 	QObject::connect(app_qtApp.get(), &QCoreApplication::aboutToQuit,
 	                 [this, loadedPreferences]() {
-		                 if (*app_preferences != loadedPreferences)
-			                 app_preferences->Save(neurus::Preferences::DefaultPath());
+		                 if (app_core->Prefs() != loadedPreferences)
+			                 app_core->Prefs().Save(neurus::Preferences::DefaultPath());
 	                 });
 
 	if (!InitVulkan())
@@ -313,19 +262,16 @@ int Application::Run()
 		projectPath = resolveResourcePath("shadow.neurus.json").toStdString();
 	}
 	const std::string objPath = kDefaultSceneObj;
+	std::string startupError;
 
 	try
 	{
 		// Open the existing project (scene, config and UI layout all live in
-		// it). Inlined rather than OnProjectOpen so a missing file throws
-		// through to the default-project fallback below.
-		app_editor->BeginLoad();
-		neurus::project::Project proj;
-		BuildProject(proj, *app_editor, app_uiLayout);
-		proj.Load(projectPath);
-		app_editor->FinishLoad();
+		// it). Inlined rather than OnProjectOpen so a missing file falls through
+		// to the default-project fallback below.
+		if (!app_core->LoadProject(projectPath, *app_editor, app_uiLayout, startupError))
+			throw std::runtime_error(startupError);
 		app_mainWindow->ApplyLayout(app_uiLayout);
-		app_projectPath = projectPath;
 		// Rebase on what Qt re-exports, not the file blob: restoring a layout
 		// saved on another screen normalises the geometry, so the stored bytes
 		// never compare equal and a just-opened project would read as dirty.
@@ -337,8 +283,9 @@ int Application::Run()
 		NEURUS_LOG("[Application] Project file not found, creating default: " << e.what());
 		// Same two steps as File > New: an empty document, then the default
 		// content. The upload waits until after show(), below.
-		app_editor->NewScene();
-		app_editor->CreateDefaultScene(objPath);
+		std::string defaultError;
+		if (!app_core->CreateDefaultDocument(*app_editor, objPath, defaultError))
+			NEURUS_ERR("[Application] Failed to create the default document: " << defaultError);
 		// Save for future runs (captures the current default UI layout too).
 		// This also rebases the dirty baseline.
 		OnProjectSave(projectPath);
@@ -363,12 +310,12 @@ int Application::Run()
 
 	if (app_args.session)
 	{
-		app_sessionName = *app_args.session;
+		app_core->SetSessionName(*app_args.session);
 		app_session = std::make_unique<SessionServer>(
 			*this, app_qtApp->applicationVersion().toStdString(), app_editorCommands.get(),
 			this, this);
 		std::string sessionError;
-		if (!app_session->Start(app_sessionName, app_projectPath, sessionError))
+		if (!app_session->Start(app_core->SessionName(), app_core->ProjectPath(), sessionError))
 		{
 			NEURUS_ERR("[Application] Cannot start command session: " << sessionError);
 			return -1;
@@ -410,9 +357,9 @@ bool Application::InitVulkan()
 		// The window is seeded with plain preference values (language / FPS /
 		// file path); the UI layer never touches this type.
 		app_mainWindow = std::make_unique<neurus::UIManager>(
-			QString::fromStdString(app_preferences->language),
-			app_preferences->targetFps,
-			MakeScriptPreferencesUi(*app_preferences),
+			QString::fromStdString(app_core->Prefs().language),
+			app_core->Prefs().targetFps,
+			MakeScriptPreferencesUi(app_core->Prefs()),
 			QString::fromStdString(neurus::Preferences::DefaultPath()));
 		app_mainWindow->show();  // Must show before surface creation on macOS
 
@@ -596,23 +543,15 @@ void Application::InitEditor()
 	app_editor = std::make_unique<neurus::Editor>(app_renderThread.get());
 	app_editor->Initialize();
 
-	// Created here with the other subsystems so NewFrameSignals has a stable
-	// Console() buffer; python startup happens in InitScripting().
-	app_script = std::make_unique<neurus::ScriptEngine>();
+	// The script engine lives in app_core, which the constructor created: its
+	// Console() buffer is stable from here on, and python startup still happens
+	// in InitScripting().
 
 	NEURUS_LOG("[Application] Editor initialized, IBL handled by Editor");
 }
 
 void Application::InitScripting()
 {
-	// Scripted writes go through the editor's own dispatch, so a script mutation
-	// is applied by the same controller as the equivalent panel edit.
-	app_script->SetEventQueue(&app_editor->GetEventQueue());
-
-	// The engine resolves its own environment (NEURUS_PYTHON_ENV override, else
-	// the build-time lib/.venv default). A failure degrades to a no-op engine.
-	app_script->Initialize();
-
 	// Preload precedence for one launch: CLI --preload, then the persisted
 	// preference, then NEURUS_SCRIPT_PRELOAD. The first non-empty source wins,
 	// so an explicit flag never silently merges with stale preferences.
@@ -621,53 +560,30 @@ void Application::InitScripting()
 	{
 		preload = app_args.preload;
 	}
-	else if (app_preferences && !app_preferences->scriptPreload.empty())
+	else if (!app_core->Prefs().scriptPreload.empty())
 	{
-		preload = app_preferences->scriptPreload;
+		preload = app_core->Prefs().scriptPreload;
 	}
 	else
 	{
 		preload = SplitPackageList(EnvironmentValue("NEURUS_SCRIPT_PRELOAD"));
 	}
 
-	if (app_script->IsReady() && !preload.empty())
-	{
-		// Before the first frame: a heavy import is paid here, once, instead of
-		// stalling the viewport on the first script that needs it. A failure is
-		// reported and does not abort startup.
-		const std::vector<ScriptPreloadResult> results = app_script->Preload(preload);
-		for (const ScriptPreloadResult& result : results)
-		{
-			const std::string line = FormatPreloadLine(result);
-			app_script->Console().Append(
-				result.ok ? ScriptLineKind::Output : ScriptLineKind::Error, line + "\n");
-			if (result.ok)
-			{
-				NEURUS_LOG("[Application] " << line);
-			}
-			else
-			{
-				NEURUS_ERR("[Application] " << line);
-			}
-		}
-	}
+	// The core wires the engine to the editor's own dispatch, so a script
+	// mutation is applied by the same controller as the equivalent panel edit.
+	app_core->InitializeScripting(*app_editor, preload);
 
 	UpdateScriptReloadRoots();
 }
 
 void Application::UpdateScriptReloadRoots()
 {
-	if (!app_script)
-	{
-		return;
-	}
-
 	std::vector<std::string> roots;
 	std::error_code pathError;
 	std::filesystem::path directory;
-	if (!app_projectPath.empty())
+	if (!app_core->ProjectPath().empty())
 	{
-		directory = std::filesystem::path(app_projectPath).parent_path();
+		directory = std::filesystem::path(app_core->ProjectPath()).parent_path();
 	}
 	if (directory.empty())
 	{
@@ -678,7 +594,7 @@ void Application::UpdateScriptReloadRoots()
 		roots.push_back(directory.generic_string());
 	}
 
-	app_script->SetReloadRoots(roots);
+	app_core->Script().SetReloadRoots(roots);
 	NEURUS_LOG("[Application] script reload roots: "
 	           << (roots.empty() ? std::string("(none)") : roots.front()));
 }
@@ -686,28 +602,17 @@ void Application::UpdateScriptReloadRoots()
 
 bool Application::OnProjectNew(std::string* error)
 {
-	// File > New is two editor steps: reset the document to empty, then fill
-	// it with the same default content a first launch gets. Keeping them apart
-	// is what lets NewScene() mean "empty" while the menu still hands the user
-	// something to look at.
-	try
+	// File > New is the shared default document; the UI keeps its layout.
+	std::string documentError;
+	if (!app_core->CreateDefaultDocument(*app_editor, kDefaultSceneObj, documentError))
 	{
-		app_editor->NewScene();
-		app_editor->CreateDefaultScene(kDefaultSceneObj);
-		// That content IS the new document's baseline, not an unsaved edit.
-		app_editor->ClearDirty();
-		// Safe here: the window is already shown.
-		app_editor->UploadSceneResources();
-	}
-	catch (const std::exception& e)
-	{
-		NEURUS_ERR("Failed to create new project: " << e.what());
+		NEURUS_ERR("Failed to create new project: " << documentError);
 		if (error)
-			*error = e.what();
+			*error = documentError;
 		return false;
 	}
+	app_core->SetProjectPath({});
 
-	app_projectPath.clear();
 	// Project-local modules follow the project: with none open, the process
 	// current directory is the reload root.
 	UpdateScriptReloadRoots();
@@ -728,51 +633,38 @@ bool Application::OnProjectOpen(const std::string& path, std::string* error)
 		return false;
 	}
 
-	try
+	std::string failure;
+	if (!app_core->LoadProject(path, *app_editor, app_uiLayout, failure))
 	{
-		app_editor->BeginLoad();
-		neurus::project::Project proj;
-		BuildProject(proj, *app_editor, app_uiLayout);
-		proj.Load(path);
-		app_editor->FinishLoad();
-		app_mainWindow->ApplyLayout(app_uiLayout);
-		app_projectPath = path;
-		// The opened project's directory becomes the reload root for its modules.
-		UpdateScriptReloadRoots();
-		// Same rebase as the startup load: the re-exported layout, not the blob.
-		app_savedUiState = app_mainWindow->ExportLayout();
-	}
-	catch (const std::exception& e)
-	{
-		NEURUS_ERR("[Application] Failed to open project: " << e.what());
+		NEURUS_ERR("[Application] Failed to open project: " << failure);
 		if (error)
-			*error = e.what();
+			*error = failure;
 
 		// BeginLoad() already dropped the previous document, so a failed read
 		// must leave something valid behind rather than a half-loaded scene.
-		try
-		{
-			app_editor->NewScene();
-			app_editor->CreateDefaultScene(kDefaultSceneObj);
-			app_editor->ClearDirty();
-			app_editor->UploadSceneResources();
-			app_projectPath.clear();
-			UpdateScriptReloadRoots();
-			app_savedUiState = app_mainWindow->ExportLayout();
-		}
-		catch (const std::exception& resetError)
+		std::string resetError;
+		if (!app_core->CreateDefaultDocument(*app_editor, kDefaultSceneObj, resetError))
 		{
 			NEURUS_ERR("[Application] Failed to recover after a project open failure: "
-			           << resetError.what());
+			           << resetError);
 		}
+		app_core->SetProjectPath({});
+		UpdateScriptReloadRoots();
+		app_savedUiState = app_mainWindow->ExportLayout();
 		return false;
 	}
+
+	app_mainWindow->ApplyLayout(app_uiLayout);
+	// The opened project's directory becomes the reload root for its modules.
+	UpdateScriptReloadRoots();
+	// Same rebase as the startup load: the re-exported layout, not the blob.
+	app_savedUiState = app_mainWindow->ExportLayout();
 	return true;
 }
 
 bool Application::OnProjectSave(const std::string& path, std::string* error)
 {
-	const std::string target = path.empty() ? app_projectPath : path;
+	const std::string target = path.empty() ? app_core->ProjectPath() : path;
 	if (target.empty())
 	{
 		NEURUS_ERR("[Application] Save requested but no project path is set.");
@@ -781,26 +673,20 @@ bool Application::OnProjectSave(const std::string& path, std::string* error)
 		return false;
 	}
 
-	try
+	app_uiLayout = app_mainWindow->ExportLayout();
+	std::string failure;
+	if (!app_core->SaveProject(target, *app_editor, app_uiLayout, failure))
 	{
-		app_uiLayout = app_mainWindow->ExportLayout();
-		neurus::project::Project proj;
-		BuildProject(proj, *app_editor, app_uiLayout);
-		proj.Save(target);
-		app_projectPath = target;
-		// Save As can move the document to another directory; reload roots
-		// follow the project file.
-		UpdateScriptReloadRoots();
-		app_savedUiState = app_uiLayout;
-		app_editor->ClearDirty();
-	}
-	catch (const std::exception& e)
-	{
-		NEURUS_ERR("[Application] Failed to save project: " << e.what());
+		NEURUS_ERR("[Application] Failed to save project: " << failure);
 		if (error)
-			*error = e.what();
+			*error = failure;
 		return false;
 	}
+
+	// Save As can move the document to another directory; reload roots follow
+	// the project file.
+	UpdateScriptReloadRoots();
+	app_savedUiState = app_uiLayout;
 	return true;
 }
 

@@ -23,17 +23,40 @@ namespace neurus {
 class VulkanContext
 {
 public:
-	/** @brief Creates a Vulkan instance with platform-provided extensions. */
+	/**
+	 * @brief What the instance and device are created for.
+	 *
+	 * A windowed application needs both platform surface extensions and a
+	 * swapchain-capable device. A headless renderer needs neither: it draws into
+	 * its own attachments, so the instance carries no surface extension and
+	 * VK_KHR_swapchain is not requested.
+	 */
+	struct Options
+	{
+		bool surfaceExtensions = true;
+		bool swapchain = true;
+	};
+
+	/** @brief Creates a Vulkan instance with the platform's surface extensions. */
 	static vk::raii::Instance CreateInstance();
+
+	/** @brief Creates a Vulkan instance with the extensions @p options asks for. */
+	static vk::raii::Instance CreateInstance(const Options& options);
 
 	/** @brief Takes ownership of the instance (from CreateInstance). */
 	explicit VulkanContext(vk::raii::Instance&& instance);
 
-	/** @brief Selects physical device and creates logical device with a graphics queue family. */
+	/** @brief Selects physical device and creates a swapchain-capable logical device. */
 	void InitDevice();
+
+	/** @brief Selects physical device and creates the logical device @p options asks for. */
+	void InitDevice(const Options& options);
 
 	/** @brief Validates queue supports presentation to the surface and gets the queue handle. */
 	void InitQueue(const vk::raii::SurfaceKHR& surface);
+
+	/** @brief Gets the graphics queue without a presentation check (headless). */
+	void InitQueue();
 
 	~VulkanContext();
 

@@ -50,6 +50,20 @@
 				"NEURUS_BUILD_TESTS": "ON",
 				"NEURUS_ENABLE_VALIDATION": "ON"
 			}
+		},
+		{
+			"name": "linux",
+			"displayName": "Linux x64 headless (Ninja)",
+			"description": "Headless Linux: no Qt, no window system. Requires VULKAN_SDK and scripts/linux/Toolchain.sh on PATH.",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build/linux",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug",
+				"NEURUS_BUILD_TESTS": "ON",
+				"NEURUS_ENABLE_VALIDATION": "ON",
+				"NEURUS_BUILD_UI": "OFF",
+				"NEURUS_BUILD_HEADLESS": "ON"
+			}
 		}
 	],
 	"buildPresets": [
@@ -72,6 +86,10 @@
 			"name": "macos-release",
 			"configurePreset": "macos",
 			"configuration": "Release"
+		},
+		{
+			"name": "linux-debug",
+			"configurePreset": "linux"
 		}
 	]
 }

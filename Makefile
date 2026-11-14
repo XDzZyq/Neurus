@@ -9,7 +9,12 @@
 
 # --- Platform detection ---
 # $(OS) is set to Windows_NT by Windows itself, so the Windows branch does not
-# depend on finding a shell before it can be configured.
+# depend on finding a shell before it can be configured. uname is only asked for
+# when that variable is absent, so a Windows machine without it still parses.
+ifneq ($(OS),Windows_NT)
+  UNAME := $(shell uname -s)
+endif
+
 ifeq ($(OS),Windows_NT)
   # A PowerShell 7 parent leaks its own module directories into Windows
   # PowerShell 5.1 through sh, and 5.1 then fails to load
@@ -21,16 +26,29 @@ ifeq ($(OS),Windows_NT)
   PRESET_REL    := win
   PYTHON        := python
   SETUP_PY_ENV  := powershell -ExecutionPolicy Bypass -File lib/scripts/setup_python_env.ps1
+  FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
+  BUILD_DIR     := build
+else ifeq ($(UNAME),Darwin)
+  PRESET        := macos
+  PRESET_REL    := macos
+  PYTHON        := python3
+  SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
+  FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
+  BUILD_DIR     := build
+else ifeq ($(UNAME),Linux)
+  # Headless Linux: no Qt, no window system. CMake, Ninja, the Vulkan SDK and uv
+  # must already be on PATH/LD_LIBRARY_PATH (see docs/build/build.md).
+  PRESET        := linux
+  PRESET_REL    := linux
+  PYTHON        := python3
+  # The script layer is always built, so lib/.venv is provisioned here; uv must
+  # be on PATH (it ships with the toolchain venv, see docs/build/build.md).
+  SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
+  # Downloads and verifies the linux-x64 archive published for this commit.
+  FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
+  BUILD_DIR     := build/linux
 else
-  UNAME := $(shell uname -s)
-  ifeq ($(UNAME),Darwin)
-    PRESET        := macos
-    PRESET_REL    := macos
-    PYTHON        := python3
-    SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
-  else
-    $(error Unsupported platform '$(UNAME)': Neurus builds on Windows and macOS only)
-  endif
+  $(error Unsupported platform '$(UNAME)': Neurus builds on Windows, macOS and headless Linux)
 endif
 
 .PHONY: configure build test clean nobuild release help app check update \
@@ -47,16 +65,16 @@ configure:
 #   make build test  → neurus_test only
 build:
 ifeq ($(filter app test,$(MAKECMDGOALS)),)
-	cmake --build build --config Debug
+	cmake --build $(BUILD_DIR) --config Debug
 endif
 
 # Build Neurus.exe only (make app  or  make build app)
 app:
-	cmake --build build --target Neurus --config Debug
+	cmake --build $(BUILD_DIR) --target Neurus --config Debug
 
 # Build neurus_test only (make test  or  make build test)
 test:
-	cmake --build build --target neurus_test --config Debug
+	cmake --build $(BUILD_DIR) --target neurus_test --config Debug
 
 # Run tests. Pass FILTER for specific tests.
 #   make check                          → all tests
@@ -72,19 +90,19 @@ test:
 # instead of the live suite (959), which is a green that silently skipped 118.
 # Prefer build/debug whenever it exists; Windows has no such alias, so it falls
 # back to the multi-config tree.
-CHECK_DIR := $(if $(wildcard build/debug/CMakeCache.txt),build/debug,build)
-CHECK_CONFIG := $(if $(filter build/debug,$(CHECK_DIR)),,-C Debug)
+CHECK_DIR := $(if $(wildcard build/debug/CMakeCache.txt),build/debug,$(if $(wildcard build/linux/CMakeCache.txt),build/linux,build))
+CHECK_CONFIG := $(if $(filter build/debug build/linux,$(CHECK_DIR)),,-C Debug)
 
 check:
 	cd $(CHECK_DIR) && ctest $(CHECK_CONFIG) --output-on-failure $(FILTER)
 
 clean:
-	cmake --build build --target clean
+	cmake --build $(BUILD_DIR) --target clean
 
 # --- Release ---
 
 release:
-	cmake --preset $(PRESET_REL) && cmake --build build --config Release
+	cmake --preset $(PRESET_REL) && cmake --build $(BUILD_DIR) --config Release
 
 # --- Visual Studio 2022 (outside source tree) ---
 
@@ -189,6 +207,6 @@ help:
 update:
 	git submodule update --init --recursive --depth 1
 	git -C lib -c "submodule.src/googletest.update=checkout" submodule update --init --depth 1 src/googletest
-	$(PYTHON) lib/scripts/fetch_prebuilt.py
+	$(FETCH_PREBUILT)
 	$(SETUP_PY_ENV)
 	cmake --preset $(PRESET) $(if $(BINARY_DIR),-B $(BINARY_DIR),)

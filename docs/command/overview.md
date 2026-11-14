@@ -194,7 +194,10 @@ sessions from different terminals. Every `script` subcommand accepts
   this launch spawned counts as ready. The app is `--app`, then `NEURUS_APP`,
   then the build tree next to the CLI; only when neither override is given does
   it fall back to the installed bundle (`/Applications`, then
-  `~/Applications` on macOS). A launch that cannot start (for example a
+  `~/Applications` on macOS). On Linux the sibling it looks for is
+  `neurus_headless` (the headless renderer, built into the same directory as the
+  CLI), then `$HOME/.local/bin/neurus_headless`, so `neurus open` needs no
+  `--app`. A launch that cannot start (for example a
   non-executable `--app`) fails at once with `APP_EXITED`, and an app that exits
   during startup is reported as soon as it is gone. It binds the session to the
   current terminal unless `--no-bind` is given. `--no-wait` prints the pid

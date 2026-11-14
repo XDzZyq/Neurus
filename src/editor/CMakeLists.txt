@@ -4,7 +4,6 @@ add_library(neurus_editor STATIC
 	Editor.h
 	Editor.cpp
 	Input.h
-	Input.cpp
 	commands/EditorCommandAdapter.h
 	commands/EditorCommandAdapter.cpp
 	viewport/DebugDrawBuilder.h
@@ -43,14 +42,14 @@ add_library(neurus_editor STATIC
 	operations/ScriptOperations.h
 	operations/registrations/OperationRegistration.h
 	operations/registrations/OperationRegistration.cpp
-	events/UIEvents.h
-	events/UIEvents.cpp
 	events/GizmoEvents.h
 	events/ScriptEvents.h
 )
 
+# Qt lives in the UI layer. UIEvents (the Qt signal bus) and Input.cpp (the
+# Qt-enum translations) are compiled into neurus_ui; the editor itself is
+# Qt-free so the headless renderer can link it.
 target_link_libraries(neurus_editor PUBLIC
-	Qt6::Core
 	neurus_command
 	neurus_scene
 	stb
@@ -64,6 +63,3 @@ target_include_directories(neurus_editor PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/..
 	${Vulkan_INCLUDE_DIRS}
 )
-
-# Enable Qt MOC for QObject subclasses (UIEvents)
-set_target_properties(neurus_editor PROPERTIES AUTOMOC ON)

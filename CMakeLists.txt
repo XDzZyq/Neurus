@@ -34,7 +34,17 @@ endif()
 # ---------------------------------------------------------------------------
 option(NEURUS_BUILD_TESTS "Build unit tests" ON)
 option(NEURUS_ENABLE_VALIDATION "Enable Vulkan validation layers" OFF)
-option(NEURUS_ENABLE_SCRIPTING "Embed CPython scripting" ON)
+option(NEURUS_BUILD_UI "Build the Qt6 UI and the GUI executable" ON)
+
+# The headless renderer is the Linux build of Neurus: no Qt, no window system.
+# Windows and macOS keep the GUI as their product, so it defaults on only for
+# the platforms that have no GUI surface implementation.
+if(WIN32 OR APPLE)
+	set(NEURUS_HEADLESS_DEFAULT OFF)
+else()
+	set(NEURUS_HEADLESS_DEFAULT ON)
+endif()
+option(NEURUS_BUILD_HEADLESS "Build the headless (windowless) renderer" ${NEURUS_HEADLESS_DEFAULT})
 
 # ---------------------------------------------------------------------------
 # Debug macro (uniform across compilers)
@@ -81,21 +91,35 @@ add_library(nlohmann_json INTERFACE)
 target_include_directories(nlohmann_json SYSTEM INTERFACE lib/src/json/include)
 
 # Vulkan (from SDK)
+# The LunarG Linux SDK keeps its loader under lib/VulkanLoader/lib rather than
+# lib/, which FindVulkan does not probe; point it at the loader explicitly.
+if(UNIX AND NOT APPLE AND DEFINED ENV{VULKAN_SDK}
+   AND EXISTS "$ENV{VULKAN_SDK}/lib/VulkanLoader/lib/libvulkan.so"
+   AND NOT Vulkan_LIBRARY)
+	set(Vulkan_LIBRARY "$ENV{VULKAN_SDK}/lib/VulkanLoader/lib/libvulkan.so" CACHE FILEPATH
+		"Vulkan loader library" FORCE)
+endif()
 find_package(Vulkan REQUIRED)
 if(NOT Vulkan_FOUND)
 	message(FATAL_ERROR "Vulkan SDK not found. Set VULKAN_SDK environment variable.")
 endif()
 
-# Qt6 (window, QML, EventBus)
-find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick Qml Widgets Test)
+# Qt6 (window, QML, EventBus). Optional: the headless renderer is Qt-free, so a
+# Linux server needs no Qt install at all.
+if(NEURUS_BUILD_UI)
+	find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick Qml Widgets Test)
+else()
+	message(STATUS "Neurus UI disabled (NEURUS_BUILD_UI=OFF): Qt is not required")
+endif()
 
 # ---------------------------------------------------------------------------
-# Scripting (embedded CPython + pybind11)
+# Scripting (embedded CPython + pybind11) - always on
 # ---------------------------------------------------------------------------
 # The uv-managed environment under lib/ (owned by Neurus-Lib) reuses the base
 # interpreter's DLL and headers (PEP 405), so we link the base CPython and
 # attach the environment at runtime (script-system design, sections 8 and 9).
-if(NEURUS_ENABLE_SCRIPTING)
+# There is no switch: every build embeds the script engine, so the `script.*`
+# command family behaves identically on every platform.
 	# Managed environment. Overridable for release bundling or another env.
 	set(NEURUS_PYTHON_ENV "${CMAKE_SOURCE_DIR}/lib/.venv" CACHE PATH
 		"Path to the Neurus-managed Python environment (uv venv)")
@@ -117,7 +141,7 @@ if(NEURUS_ENABLE_SCRIPTING)
 	)
 	if(NOT NEURUS_PYTHON_HOME_RESULT EQUAL 0 OR NEURUS_PYTHON_HOME STREQUAL "")
 		message(FATAL_ERROR
-			"NEURUS_ENABLE_SCRIPTING is ON but '${Python_EXECUTABLE}' could not be run. "
+			"'${Python_EXECUTABLE}' could not be run. "
 			"Run 'make update' to provision lib/.venv, or set -DNEURUS_PYTHON_ENV=<path>.")
 	endif()
 	# Normalize to forward slashes so the value is a valid C string literal.
@@ -165,9 +189,6 @@ if(NEURUS_ENABLE_SCRIPTING)
 		"${CMAKE_BINARY_DIR}/generated/script/neurus_python_config.h"
 		@ONLY
 	)
-else()
-	message(STATUS "Neurus scripting disabled (NEURUS_ENABLE_SCRIPTING=OFF)")
-endif()
 
 
 # ---------------------------------------------------------------------------
@@ -180,11 +201,14 @@ endif()
 include(cmake/Dependencies.cmake)
 neurus_detect_platform()
 
-neurus_find_dependency(qtadvanceddocking)
+# Qt-Advanced-Docking is a Qt C++ library: only a build with a UI can use it.
+if(NEURUS_BUILD_UI)
+	neurus_find_dependency(qtadvanceddocking)
+endif()
 neurus_find_dependency(shaderc)
 
-# Locate windeployqt for DLL deployment (Windows only)
-if(WIN32)
+# Locate windeployqt for DLL deployment (Windows UI only)
+if(WIN32 AND NEURUS_BUILD_UI)
 	find_program(WINDEPLOYQT windeployqt
 		HINTS "${Qt6_DIR}/../../../bin"  # e.g. D:/Qt/6.11.1/msvc2022_64/bin
 		DOC "Path to windeployqt executable"
