@@ -72,11 +72,11 @@ public:
 	bool CompileToSpv();
 
 	/**
-	 * @brief Cereal serialization - name (via Shader) + both source paths.
+	 * @brief Cereal serialization - base content + both source paths.
 	 *
-	 * On load, ReloadContent() re-parses the stages from disk and
-	 * CompileToSpv() regenerates the derived SPIR-V, so pipelines are ready
-	 * immediately after a project load.
+	 * On load, a restored stage with code keeps it; a legacy path-only shader
+	 * reloads from disk. CompileToSpv() then rebuilds the runtime SPIR-V, so
+	 * pipelines are ready immediately after a project load.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -87,7 +87,13 @@ public:
 		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_vertPath), CEREAL_NVP(m_fragPath));
 		if constexpr (Archive::is_loading::value)
 		{
-			ReloadContent();
+			const bool hasContent =
+				!m_stages[ShaderType::VERTEX].code.empty() ||
+				!m_stages[ShaderType::FRAGMENT].code.empty();
+			if (!hasContent)
+			{
+				ReloadContent();
+			}
 			CompileToSpv();
 		}
 	}

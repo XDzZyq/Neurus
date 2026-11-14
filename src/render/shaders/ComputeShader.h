@@ -35,6 +35,8 @@
 
 #include "asset/data/shader/ShaderData.h"
 
+#include <cereal/types/vector.hpp>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -59,6 +61,15 @@ public:
 		std::string name;  ///< Uniform parameter name
 		std::string type;  ///< GLSL type: "int", "float", or "bool"
 		std::string value; ///< String representation of the default value
+
+		/** @brief Serializes the default's name, type and value. */
+		template<class Archive>
+		void serialize(Archive& ar)
+		{
+			ar(cereal::make_nvp("name", name),
+			   cereal::make_nvp("type", type),
+			   cereal::make_nvp("value", value));
+		}
 	};
 
 	/**
@@ -112,6 +123,40 @@ public:
 	 * @return true if re-parse and re-generation succeeded.
 	 */
 	bool Recompile();
+
+	/**
+	 * @brief Reloads the compute stage from its source path.
+	 *
+	 * No-op for an empty path (cereal's identity shell); otherwise re-parses
+	 * and regenerates the stage.
+	 */
+	void ReloadContent();
+
+	/**
+	 * @brief Compiles the compute stage's generated GLSL to SPIR-V in place.
+	 * @return true when the stage holds non-empty SPIR-V.
+	 */
+	bool CompileToSpv();
+
+	/**
+	 * @brief Cereal serialization - base content + source path + defaults.
+	 *
+	 * On load, a restored stage with code keeps it; a legacy path-only shader
+	 * reloads from disk. CompileToSpv() then rebuilds the runtime SPIR-V.
+	 */
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_compPath), CEREAL_NVP(m_defaults));
+		if constexpr (Archive::is_loading::value)
+		{
+			if (m_stages[ShaderType::COMPUTE].code.empty())
+			{
+				ReloadContent();
+			}
+			CompileToSpv();
+		}
+	}
 
 	// ----------------------------------
 	// Default uniform configurations (ported from OpenGL ComputeShader)

@@ -5,7 +5,9 @@
 
 #include <cereal/types/base_class.hpp>
 #include <cereal/types/string.hpp>
+#include <cereal/types/unordered_map.hpp>
 
+#include "core/Serialize.h"
 #include "core/UID.h"
 
 #include <string>
@@ -49,10 +51,11 @@ public:
 	virtual ShaderType GetType() const = 0;
 
 	/**
-	 * @brief Cereal serialization - identity plus the human-readable name.
+	 * @brief Cereal serialization - identity, name and every stage's content.
 	 *
 	 * Concrete leaves forward this base and serialize their own source paths.
-	 * Stage content serialization is added by the persistence change.
+	 * A missing stage map is a legacy path-only shader: it leaves the
+	 * constructor-built stages in place so the leaf can reload from disk.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -61,6 +64,19 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<UID>(this), CEREAL_NVP(m_name));
+
+		if constexpr (Archive::is_saving::value)
+		{
+			ar(cereal::make_nvp("stages", m_stages));
+		}
+		else
+		{
+			std::unordered_map<ShaderType, ShaderUnit> stages;
+			if (archive::OptionalField(ar, cereal::make_nvp("stages", stages)))
+			{
+				m_stages = std::move(stages);
+			}
+		}
 	}
 
 	/** @brief Returns true if the bundle has the given stage. */

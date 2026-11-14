@@ -88,6 +88,7 @@ add_executable(neurus_test
 	asset/test_project_roundtrip.cpp
 	asset/test_default_project.cpp
 	asset/test_serialize_optional.cpp
+	asset/test_shader_data.cpp
 	asset/test_ui_component.cpp
 	core/test_graph.cpp
 	core/test_selections.cpp

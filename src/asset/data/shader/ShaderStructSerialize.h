@@ -83,4 +83,60 @@ void serialize(Archive& ar, S_StructDef& v)
 	   cereal::make_nvp("varName", v.varName));
 }
 
+/** @brief Serializes an S_Glob (global variable with a scalar default). */
+template<class Archive>
+void serialize(Archive& ar, S_Glob& v)
+{
+	ar(cereal::make_nvp("name", v.name),
+	   cereal::make_nvp("type", v.type),
+	   cereal::make_nvp("defaultVal", v.defaultVal));
+}
+
+/** @brief Serializes an S_Var (variable with a string type name). */
+template<class Archive>
+void serialize(Archive& ar, S_Var& v)
+{
+	ar(cereal::make_nvp("typeName", v.typeName),
+	   cereal::make_nvp("name", v.name),
+	   cereal::make_nvp("count", v.count));
+}
+
+/** @brief Serializes an S_SpecConstant (specialisation constant). */
+template<class Archive>
+void serialize(Archive& ar, S_SpecConstant& v)
+{
+	ar(cereal::make_nvp("binding", v.binding),
+	   cereal::make_nvp("name", v.name),
+	   cereal::make_nvp("type", v.type),
+	   cereal::make_nvp("defaultVal", v.defaultVal));
+}
+
+/** @brief Serializes the whole ShaderStruct IR (all containers + scalars). */
+template<class Archive>
+void serialize(Archive& ar, ShaderStruct& v)
+{
+	ar(cereal::make_nvp("AB_list", v.AB_list),
+	   cereal::make_nvp("pass_list", v.pass_list),
+	   cereal::make_nvp("SB_list", v.SB_list),
+	   cereal::make_nvp("ubuffer_list", v.ubuffer_list),
+	   cereal::make_nvp("struct_def_list", v.struct_def_list),
+	   cereal::make_nvp("uniform_list", v.uniform_list),
+	   cereal::make_nvp("input_list", v.input_list),
+	   cereal::make_nvp("output_list", v.output_list),
+	   cereal::make_nvp("const_list", v.const_list),
+	   cereal::make_nvp("glob_list", v.glob_list),
+	   cereal::make_nvp("vari_list", v.vari_list),
+	   cereal::make_nvp("func_list", v.func_list),
+	   cereal::make_nvp("Main", v.Main),
+	   cereal::make_nvp("push_constants", v.push_constants),
+	   cereal::make_nvp("push_constants_var", v.push_constants_var),
+	   cereal::make_nvp("spec_constants", v.spec_constants),
+	   cereal::make_nvp("local_size_x", v.local_size_x),
+	   cereal::make_nvp("local_size_y", v.local_size_y),
+	   cereal::make_nvp("local_size_z", v.local_size_z),
+	   cereal::make_nvp("extensions", v.extensions),
+	   cereal::make_nvp("define_directives", v.define_directives),
+	   cereal::make_nvp("version", v.version));
+}
+
 } // namespace neurus
