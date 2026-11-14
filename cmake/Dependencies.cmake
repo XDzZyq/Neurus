@@ -158,10 +158,9 @@ function(neurus_find_dependency name)
 			set(NEURUS_DEP_${name}_FROM_LIB TRUE PARENT_SCOPE)
 
 		elseif(UNIX AND NOT APPLE)
-			# Linux has no published prebuilt archive yet. Prefer one when it
-			# exists (the producer script writes the same layout), otherwise use
-			# the shaderc the Vulkan SDK already ships, and only fall back to a
-			# source build when neither is present.
+			# Linux archives are published for every Neurus-Lib commit; prefer the
+			# downloaded one. The SDK's own shaderc is the fallback for a checkout
+			# that has not run `make update` yet.
 			set(_shaderc_lib "${LIB_DIR}/lib/libshaderc_shared.so")
 			set(_shaderc_inc "${SHADERC_INCLUDE_DIR}")
 			if(NOT EXISTS "${_shaderc_lib}"

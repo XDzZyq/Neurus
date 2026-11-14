@@ -98,11 +98,12 @@ loader** and layer path first. The system loader is often older (Ubuntu 22.04
 ships 1.3.204) and `VulkanContext` requests `VK_API_VERSION_1_4`; the context
 retries at 1.3 only when a loader rejects 1.4 outright.
 
-The Linux build consumes shaderc in this order: `lib/prebuilt/linux/shaderc`,
-then `$VULKAN_SDK/lib/libshaderc_shared.so`, then a source build. Neurus-Lib
-publishes no `linux-x64.tar.gz` yet, so `make update` skips the download and the
-SDK's shaderc is used. `lib/scripts/build_prebuilt_linux.sh` produces the
-archive layout when the release leg is enabled.
+The Linux build consumes shaderc from `lib/prebuilt/linux/shaderc`, downloaded
+and verified by `make update` from the `lib-<sha12>` release that Neurus-Lib
+publishes for every commit on `main`. `cmake/Dependencies.cmake` falls back to
+`$VULKAN_SDK/lib/libshaderc_shared.so` only when that archive has not been
+fetched yet, so a fresh checkout still configures. `lib/prebuilt/linux` carries
+shaderc only: `qtadvanceddocking` is a Qt library and the Linux build has no Qt.
 
 **GPU prerequisite.** The NVIDIA kernel module alone is not enough: a container
 image without the graphics userland (no `libGLX_nvidia.so.0`) enumerates only

@@ -41,9 +41,8 @@ else
     # The script layer is always built, so lib/.venv is provisioned here; uv is
     # part of the toolchain (scripts/linux/Toolchain.sh puts it on PATH).
     SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
-    # Neurus-Lib publishes no Linux archive yet; cmake/Dependencies.cmake
-    # falls back to the Vulkan SDK's shaderc.
-    FETCH_PREBUILT := @echo "[linux] No Linux prebuilt archive published yet - using the Vulkan SDK's shaderc"
+    # Downloads and verifies the linux-x64 archive published for this commit.
+    FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
     BUILD_DIR     := build/linux
   else
     $(error Unsupported platform '$(UNAME)': Neurus builds on Windows, macOS and headless Linux)
