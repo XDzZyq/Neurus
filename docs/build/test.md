@@ -557,7 +557,8 @@ How to capture validation errors reliably:
      Start-Sleep -Milliseconds 500
    }
    & build/Debug/cli/neurus.exe project new --force --session verify
-   & build/Debug/cli/neurus.exe object set --name Ground --position 1,2,3 --session verify
+   & build/Debug/cli/neurus.exe object add --type camera --name VerifyCam --session verify
+   & build/Debug/cli/neurus.exe object set --name VerifyCam --position 1,2,3 --session verify
    & build/Debug/cli/neurus.exe snapshot capture --path build/verify.png --session verify
    & build/Debug/cli/neurus.exe close verify --force
    Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-|NEURUS_ERR"
