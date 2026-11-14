@@ -115,10 +115,13 @@ sudo ldconfig
 vulkaninfo --summary   # must list the physical GPU, not llvmpipe
 ```
 
-`NEURUS_ENABLE_SCRIPTING` defaults on for the GUI and off in the `linux` preset:
-scripting needs `lib/.venv` from `make update`, which requires network access to
-PyPI. With scripting off the `script.*` commands report that the sub-executor is
-unavailable; everything else in the CLI works.
+The script layer is always built: every configuration embeds CPython, so
+`script.info`, `script.run`, `script.eval`, `script.console` and `script.clear`
+behave the same on every platform. `lib/.venv` is therefore a configure
+requirement, and configure fails with an actionable message when it is missing.
+Provision it with `sh lib/scripts/setup_python_env.sh` (run by `make update`),
+which needs `uv`; `scripts/linux/Toolchain.sh` puts the toolchain's `uv` on
+`PATH`, and uv downloads the pinned CPython (3.12) on first use.
 
 ## Web Documentation
 

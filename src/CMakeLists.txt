@@ -37,9 +37,7 @@ add_subdirectory(scene)
 add_subdirectory(app)
 
 # Script Layer (embedded CPython + pybind11; depends on: editor, core, scene)
-if(NEURUS_ENABLE_SCRIPTING)
-	add_subdirectory(script)
-endif()
+add_subdirectory(script)
 
 # Standalone command-line client (Qt-free, Vulkan-free)
 add_subdirectory(cli)
@@ -72,11 +70,8 @@ target_link_libraries(Neurus PRIVATE
 	Qt6::Quick
 	Qt6::Qml
 	Qt6::Widgets
+	neurus_script
 )
-
-if(NEURUS_ENABLE_SCRIPTING)
-	target_link_libraries(Neurus PRIVATE neurus_script)
-endif()
 
 target_include_directories(Neurus PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}
@@ -115,14 +110,12 @@ if(WIN32)
 
 	# Deploy the CPython runtime DLL next to the executable. Windows never
 	# searches the managed environment directory (script-system design, 9).
-	if(NEURUS_ENABLE_SCRIPTING)
-		add_custom_command(TARGET Neurus POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different
-				"${NEURUS_PYTHON_DLL}"
-				"$<TARGET_FILE_DIR:Neurus>"
-			COMMENT "Copying the CPython runtime DLL"
-		)
-	endif()
+	add_custom_command(TARGET Neurus POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${NEURUS_PYTHON_DLL}"
+			"$<TARGET_FILE_DIR:Neurus>"
+		COMMENT "Copying the CPython runtime DLL"
+	)
 endif()
 
 # macOS: build a real application bundle so Finder, the Dock and Cmd-Tab show
@@ -183,11 +176,8 @@ if(NEURUS_BUILD_HEADLESS)
 		neurus_ipc
 		neurus_core
 		Vulkan::Vulkan
+		neurus_script
 	)
-
-	if(NEURUS_ENABLE_SCRIPTING)
-		target_link_libraries(neurus_headless PRIVATE neurus_script)
-	endif()
 
 	target_include_directories(neurus_headless PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 	target_compile_definitions(neurus_headless PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE)

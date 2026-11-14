@@ -13,9 +13,7 @@
 #include <string>
 #include <vector>
 
-#ifdef NEURUS_ENABLE_SCRIPTING
 #include "script/ScriptPolicy.h"
-#endif
 
 namespace neurus {
 
@@ -69,13 +67,11 @@ struct Preferences
 	/** @brief Address-space limit in MB; 0 = unlimited. */
 	int scriptSandboxMemoryLimitMb = 0;
 
-#ifdef NEURUS_ENABLE_SCRIPTING
 	/**
 	 * @brief Builds the sandbox policy external script commands execute under.
 	 * @param projectRoot Project directory substituted when a root list is empty.
 	 */
 	ScriptPolicy MakeScriptPolicy(const std::string& projectRoot) const;
-#endif
 
 	/**
 	 * @brief Value equality over every persisted field.

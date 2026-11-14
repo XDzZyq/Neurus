@@ -2,6 +2,7 @@
 
 #include "app/Preferences.h"
 #include "app/ProjectIo.h"
+#include "app/ScriptCommands.h"
 #include "app/VulkanContext.h"
 #include "app/session/SessionServer.h"
 
@@ -16,6 +17,9 @@
 #include "render/UploadManager.h"
 #include "render/resources/LightingCache.h"
 #include "scene/Scene.h"
+#include "script/ScriptConsole.h"
+#include "script/ScriptContext.h"
+#include "script/ScriptEngine.h"
 
 #include <algorithm>
 #include <atomic>
@@ -64,6 +68,35 @@ std::vector<std::filesystem::path> ListFiles(const std::filesystem::path& direct
 	}
 	std::sort(files.begin(), files.end());
 	return files;
+}
+
+/**
+ * @brief Splits a preload list on commas and semicolons, trimming each item.
+ *
+ * Same rule as the GUI: the environment variable is written by hand, so a comma
+ * is the documented separator and a semicolon works where a comma is awkward.
+ */
+std::vector<std::string> SplitPackageList(const std::string& value)
+{
+	std::vector<std::string> items;
+	std::string current;
+	auto flush = [&]()
+	{
+		const std::size_t first = current.find_first_not_of(" \t");
+		const std::size_t last = current.find_last_not_of(" \t");
+		if (first != std::string::npos)
+			items.push_back(current.substr(first, last - first + 1));
+		current.clear();
+	};
+	for (const char ch : value)
+	{
+		if (ch == ',' || ch == ';')
+			flush();
+		else
+			current.push_back(ch);
+	}
+	flush();
+	return items;
 }
 
 } // namespace
@@ -139,6 +172,39 @@ int HeadlessApplication::Run()
 		                               glm::uvec2(m_args.width, m_args.height));
 		m_commands = std::make_unique<EditorCommandAdapter>(*m_editor);
 
+		// --- Script layer: the same engine the GUI runs, always present ---
+		m_script = std::make_unique<ScriptEngine>();
+		m_script->SetEventQueue(&m_editor->GetEventQueue());
+		if (!m_script->Initialize())
+		{
+			NEURUS_ERR("[neurus_headless] Script engine failed to initialize; "
+			          "script.* commands will report it as unavailable");
+		}
+		if (m_script->IsReady())
+		{
+			// Preload precedence matches the GUI: --preload, then the persisted
+			// preference, then NEURUS_SCRIPT_PRELOAD.
+			std::vector<std::string> preload;
+			if (!m_args.preload.empty())
+				preload = m_args.preload;
+			else if (m_preferences && !m_preferences->scriptPreload.empty())
+				preload = m_preferences->scriptPreload;
+			else
+				preload = SplitPackageList(EnvironmentValue("NEURUS_SCRIPT_PRELOAD"));
+
+			if (!preload.empty())
+			{
+				for (const ScriptPreloadResult& result : m_script->Preload(preload))
+				{
+					if (result.ok)
+						NEURUS_LOG("[neurus_headless] preloaded " << result.package);
+					else
+						NEURUS_ERR("[neurus_headless] preload failed: " << result.package
+						          << ": " << result.error);
+				}
+			}
+		}
+
 		// --- Document ---
 		std::string loadError;
 		const std::filesystem::path defaultProject =
@@ -175,7 +241,7 @@ int HeadlessApplication::Run()
 		{
 			m_sessionName = *m_args.session;
 			m_session = std::make_unique<SessionServer>(
-				*this, kAppVersion, m_commands.get(), nullptr, this);
+				*this, kAppVersion, m_commands.get(), this, this);
 			std::string sessionError;
 			if (!m_session->Start(m_sessionName, m_projectPath, sessionError))
 			{
@@ -211,6 +277,14 @@ int HeadlessApplication::Run()
 			}
 
 			m_editor->Edit();
+
+			// Scripts run before the snapshot is built, so a script mutation is in
+			// the frame the renderer receives.
+			{
+				ScriptContext scriptContext;
+				m_editor->UpdateScriptContext(scriptContext);
+				m_script->ExecutePending(scriptContext);
+			}
 
 			RenderFrameSnapshot snapshot;
 			m_editor->BuildSnapshot(snapshot);
@@ -353,6 +427,45 @@ std::int64_t HeadlessApplication::UptimeSeconds() const
 std::string HeadlessApplication::AppVersion() const
 {
 	return kAppVersion;
+}
+
+// ---------------------------------------------------------------------------
+// command::IScriptCommands
+// ---------------------------------------------------------------------------
+
+command::CommandResult HeadlessApplication::Execute(const command::CommandRequest& request)
+{
+	if (!m_script || !m_editor || !m_preferences)
+	{
+		return command::CommandResult::Failure(command::CommandErrorCode::Internal,
+		                                      "Scripting is not initialized.");
+	}
+	return ExecuteScriptCommand(request, *m_script, *m_editor, *m_preferences,
+	                            ScriptProjectRoot());
+}
+
+std::string HeadlessApplication::ScriptProjectRoot() const
+{
+	std::filesystem::path root;
+	if (!m_projectPath.empty())
+	{
+		root = std::filesystem::path(m_projectPath).parent_path();
+	}
+	if (root.empty())
+	{
+		std::error_code error;
+		root = std::filesystem::current_path(error);
+		if (error)
+		{
+			NEURUS_ERR("[neurus_headless] cannot resolve the working directory for the "
+			           "script sandbox: " << error.message());
+			return {};
+		}
+	}
+
+	// Python receives UTF-8; do not rely on path::string() (ANSI on MSVC).
+	const std::u8string utf8 = root.u8string();
+	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
 }
 
 // ---------------------------------------------------------------------------

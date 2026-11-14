@@ -34,7 +34,6 @@ endif()
 # ---------------------------------------------------------------------------
 option(NEURUS_BUILD_TESTS "Build unit tests" ON)
 option(NEURUS_ENABLE_VALIDATION "Enable Vulkan validation layers" OFF)
-option(NEURUS_ENABLE_SCRIPTING "Embed CPython scripting" ON)
 option(NEURUS_BUILD_UI "Build the Qt6 UI and the GUI executable" ON)
 
 # The headless renderer is the Linux build of Neurus: no Qt, no window system.
@@ -114,12 +113,13 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Scripting (embedded CPython + pybind11)
+# Scripting (embedded CPython + pybind11) - always on
 # ---------------------------------------------------------------------------
 # The uv-managed environment under lib/ (owned by Neurus-Lib) reuses the base
 # interpreter's DLL and headers (PEP 405), so we link the base CPython and
 # attach the environment at runtime (script-system design, sections 8 and 9).
-if(NEURUS_ENABLE_SCRIPTING)
+# There is no switch: every build embeds the script engine, so the `script.*`
+# command family behaves identically on every platform.
 	# Managed environment. Overridable for release bundling or another env.
 	set(NEURUS_PYTHON_ENV "${CMAKE_SOURCE_DIR}/lib/.venv" CACHE PATH
 		"Path to the Neurus-managed Python environment (uv venv)")
@@ -141,7 +141,7 @@ if(NEURUS_ENABLE_SCRIPTING)
 	)
 	if(NOT NEURUS_PYTHON_HOME_RESULT EQUAL 0 OR NEURUS_PYTHON_HOME STREQUAL "")
 		message(FATAL_ERROR
-			"NEURUS_ENABLE_SCRIPTING is ON but '${Python_EXECUTABLE}' could not be run. "
+			"'${Python_EXECUTABLE}' could not be run. "
 			"Run 'make update' to provision lib/.venv, or set -DNEURUS_PYTHON_ENV=<path>.")
 	endif()
 	# Normalize to forward slashes so the value is a valid C string literal.
@@ -189,9 +189,6 @@ if(NEURUS_ENABLE_SCRIPTING)
 		"${CMAKE_BINARY_DIR}/generated/script/neurus_python_config.h"
 		@ONLY
 	)
-else()
-	message(STATUS "Neurus scripting disabled (NEURUS_ENABLE_SCRIPTING=OFF)")
-endif()
 
 
 # ---------------------------------------------------------------------------

@@ -12,15 +12,11 @@ add_library(neurus_app_core STATIC
 	Preferences.cpp
 	ProjectIo.h
 	ProjectIo.cpp
+	ScriptCommands.h
+	ScriptCommands.cpp
 	VulkanContext.h
 	VulkanContext.cpp
 )
-
-# Preferences::MakeScriptPolicy() is only meaningful with the script layer; the
-# definition is compiled out when scripting is off.
-if(NEURUS_ENABLE_SCRIPTING)
-	target_compile_definitions(neurus_app_core PUBLIC NEURUS_ENABLE_SCRIPTING=1)
-endif()
 
 target_include_directories(neurus_app_core PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -33,6 +29,7 @@ target_link_libraries(neurus_app_core PUBLIC
 	neurus_editor
 	neurus_asset
 	neurus_scene
+	neurus_script
 	cereal
 )
 
@@ -63,13 +60,6 @@ target_link_libraries(neurus_session PUBLIC
 # GUI application (Qt)
 # ---------------------------------------------------------------------------
 if(NEURUS_BUILD_UI)
-	if(NOT NEURUS_ENABLE_SCRIPTING)
-		message(FATAL_ERROR
-			"The Qt application requires NEURUS_ENABLE_SCRIPTING=ON: its preferences "
-			"and command handlers depend on the script policy. Build with "
-			"-DNEURUS_BUILD_UI=OFF for a Qt-free headless binary.")
-	endif()
-
 	add_library(neurus_app STATIC
 		Application.h
 		Application.cpp
@@ -98,7 +88,5 @@ if(NEURUS_BUILD_UI)
 	# Application.cpp references ScriptEngine (owned script console buffer), so
 	# the dependency is declared here rather than relying on the final
 	# executables to list neurus_script after neurus_app.
-	if(NEURUS_ENABLE_SCRIPTING)
-		target_link_libraries(neurus_app PRIVATE neurus_script)
-	endif()
+	target_link_libraries(neurus_app PRIVATE neurus_script)
 endif()

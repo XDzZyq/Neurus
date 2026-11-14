@@ -144,27 +144,19 @@ if(NOT NEURUS_BUILD_UI)
 	list(APPEND NEURUS_TEST_SOURCES shared/test_main_headless.cpp)
 endif()
 
-# Preferences are only compiled when the script layer is present (see
-# src/app/CMakeLists.txt), so their tests follow the same switch.
-if(NOT NEURUS_ENABLE_SCRIPTING)
-	list(REMOVE_ITEM NEURUS_TEST_SOURCES app/test_preferences.cpp)
-endif()
-
 add_executable(neurus_test ${NEURUS_TEST_SOURCES})
 
-# Scripting engine unit tests (only when the script layer is enabled).
-if(NEURUS_ENABLE_SCRIPTING)
-	target_sources(neurus_test PRIVATE
-		script/test_script_engine.cpp
-		script/test_script_context.cpp
-		script/test_script_bindings.cpp
-		script/test_script_writes.cpp
-		script/test_script_file_roundtrip.cpp
-		script/test_script_preload.cpp
+# Scripting engine unit tests. The script layer is always built.
+target_sources(neurus_test PRIVATE
+	script/test_script_engine.cpp
+	script/test_script_context.cpp
+	script/test_script_bindings.cpp
+	script/test_script_writes.cpp
+	script/test_script_file_roundtrip.cpp
+	script/test_script_preload.cpp
 	script/test_script_isolation.cpp
-		script/test_script_sandbox.cpp
-	)
-endif()
+	script/test_script_sandbox.cpp
+)
 
 target_link_libraries(neurus_test PRIVATE
 	neurus_scene
@@ -205,11 +197,9 @@ elseif(UNIX AND NOT APPLE)
 	target_sources(neurus_test PRIVATE shared/linux/TestWindowLinux.cpp)
 endif()
 
-if(NEURUS_ENABLE_SCRIPTING)
-	target_link_libraries(neurus_test PRIVATE
-		neurus_script
-	)
-endif()
+target_link_libraries(neurus_test PRIVATE
+	neurus_script
+)
 
 target_include_directories(neurus_test PRIVATE
 	${CMAKE_SOURCE_DIR}/src
@@ -266,7 +256,7 @@ if(WIN32 AND TARGET shaderc_shared)
 endif()
 
 # Deploy the CPython runtime DLL so the ScriptEngine tests can load Python.
-if(WIN32 AND NEURUS_ENABLE_SCRIPTING)
+if(WIN32)
 	add_custom_command(TARGET neurus_test POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different
 			"${NEURUS_PYTHON_DLL}"
