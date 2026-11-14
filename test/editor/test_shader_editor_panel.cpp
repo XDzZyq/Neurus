@@ -31,7 +31,7 @@
 #include "core/RenderConfig.h"
 #include "render/shaders/RenderShader.h"
 #include "asset/data/ShaderData.h"
-#include "asset/data/ShaderUnit.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 #include "ui/UIContext.h"

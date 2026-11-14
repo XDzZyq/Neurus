@@ -8,11 +8,12 @@ parse/generate/compile pipeline and every GPU resource below it.
 
 ```
 src/asset/data/
-    ShaderStage.h             ShaderType + ShaderTypeFromPath + default paths
-    ShaderStruct.h/.cpp       parsed GLSL IR
-    ShaderStructSerialize.h   cereal overloads for the IR
-    ShaderUnit.h              path, code, parsed IR, SPIR-V, version
     ShaderData.h/.cpp         UID bundle: name + one ShaderUnit per stage
+    shader/
+        ShaderStage.h         ShaderType + ShaderTypeFromPath + default paths
+        ShaderStruct.h/.cpp   parsed GLSL IR
+        ShaderStructSerialize.h  cereal overloads for the IR
+        ShaderUnit.h          path, code, parsed IR, SPIR-V, version
 
 src/render/shaders/
     RenderShader.h/.cpp       ShaderData + vertex/fragment parse/generate
@@ -41,9 +42,11 @@ flowchart TD
 
 The panel path is mesh-keyed: the ShaderEditorPanel emits `ShaderEvents`
 (`ShaderCodeEdited`, `ShaderStructEdited`, `ShaderFieldAdded`), and the
-`ShaderController` mutates the mesh's shader data. Shader creation is
-Editor-owned; compilation is handled by `ShaderController`. Create and compile
-bump the version, while code and struct edits wait for an explicit Compile.
+`ShaderController` mutates the mesh's shader data. Creation, loading/removal and
+compilation are handled by `ShaderController`; the Editor owns the resource
+pool and supplies the mutable pool through `ControllerContext`. Create and
+compile bump the version, while code and struct edits wait for an explicit
+Compile.
 
 The script path is shader-keyed, so it also reaches a pooled `ComputeShader`:
 

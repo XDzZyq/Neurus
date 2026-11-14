@@ -13,7 +13,7 @@
 #include <string>
 #include <variant>
 
-#include "asset/data/ShaderStruct.h"
+#include "asset/data/shader/ShaderStruct.h"
 
 namespace neurus {
 

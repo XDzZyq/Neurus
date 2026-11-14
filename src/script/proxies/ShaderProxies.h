@@ -14,7 +14,7 @@
 #include <string>
 
 #include "asset/data/ShaderData.h"
-#include "asset/data/ShaderUnit.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "core/IResourceLookup.h"
 #include "scene/Mesh.h"
 #include "script/ScriptContext.h"

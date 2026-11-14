@@ -41,7 +41,10 @@ Like `MeshData`, the source path lives in the data layer.
 ## ShaderData (`asset/data/ShaderData.h`)
 
 `ShaderData` is the pooled CPU-side shader bundle and the UID a script
-addresses:
+addresses. Its supporting IR/unit headers live under `asset/data/shader/`
+(`ShaderStage.h`, `ShaderStruct.h/.cpp`, `ShaderUnit.h`,
+`ShaderStructSerialize.h`); the pooled class itself sits beside `MeshData` and
+`ImageData`:
 
 - Holds a name, one `ShaderUnit` per `ShaderType`, the last error message and a
   monotonic version. `FindStage` returns `nullptr` when a stage is absent;

@@ -20,8 +20,8 @@
 #include "scene/ObjectID.h"
 
 #include "asset/data/ShaderData.h"
-#include "asset/data/ShaderStage.h"
-#include "asset/data/ShaderUnit.h"
+#include "asset/data/shader/ShaderStage.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "core/ResourceManager.h"
 #include "render/shaders/ComputeShader.h"
 #include "render/shaders/RenderShader.h"
@@ -744,13 +744,10 @@ void OnFieldRemoved(const neurus::ShaderFieldRemoved& e, const neurus::Controlle
 
 namespace neurus {
 
-// ---------------------------------------------------------------------------
-// Pooled shader asset loading and mesh shader creation
-// ---------------------------------------------------------------------------
+namespace {
 
-ShaderRequestResult ShaderController::LoadShaderAsset(ResourceManager& resources,
-                                                      const std::string& path,
-                                                      const std::string& name)
+ShaderRequestResult LoadShaderAsset(ResourceManager& resources, const std::string& path,
+                                    const std::string& name)
 {
 	ShaderRequestResult result;
 
@@ -809,9 +806,9 @@ ShaderRequestResult ShaderController::LoadShaderAsset(ResourceManager& resources
 	return result;
 }
 
-ShaderRequestResult ShaderController::CreateShader(ResourceManager& resources, Mesh& mesh,
-                                                   const ShaderCreateRequested& input,
-                                                   IEventQueue& events, IOperationSink& ops)
+ShaderRequestResult CreateShader(ResourceManager& resources, Mesh& mesh,
+                                 const ShaderCreateRequested& input,
+                                 IEventQueue& events, IOperationSink& ops)
 {
 	ShaderRequestResult result;
 	const int oldShaderId = mesh.o_shaderId;
@@ -870,14 +867,99 @@ ShaderRequestResult ShaderController::CreateShader(ResourceManager& resources, M
 	return result;
 }
 
+/**
+ * @brief Handles ShaderCreateRequested: create/replace a mesh shader.
+ *
+ * Runs in the controller, so the Editor only supplies the mutable pool through
+ * ControllerContext and never calls the creation helper.
+ */
+void OnCreateShader(const ShaderCreateRequested& e, const ControllerContext& ctx)
+{
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+
+	if (ctx.pool == nullptr)
+	{
+		result.error = "shader creation is not attached to a resource pool";
+		if (e.result == nullptr) NEURUS_ERR("[ShaderController] " << result.error);
+		notify::Repaint(ctx.events);
+		return;
+	}
+
+	auto mesh = ctx.pool->Get<Mesh>(e.objectUid);
+	if (!mesh)
+	{
+		result.error = "shader target is not a mesh";
+		if (e.result == nullptr) NEURUS_ERR("[ShaderController] " << result.error);
+		notify::Repaint(ctx.events);
+		return;
+	}
+
+	result = CreateShader(*ctx.pool, *mesh, e, ctx.events, ctx.ops);
+	if (e.result == nullptr && result.shaderUid == 0)
+	{
+		NEURUS_ERR("[ShaderController] Shader create failed: " << result.error);
+	}
+	if (result.shaderUid != 0) notify::Mutated(ctx.events);
+	else notify::Repaint(ctx.events);
+}
+
+/** @brief Handles ShaderLoadRequested: pool a RenderShader or ComputeShader asset. */
+void OnShaderLoad(const ShaderLoadRequested& e, const ControllerContext& ctx)
+{
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+
+	if (ctx.pool == nullptr)
+	{
+		result.error = "shader loading is not attached to a resource pool";
+		if (e.result == nullptr) NEURUS_ERR("[ShaderController] " << result.error);
+		notify::Repaint(ctx.events);
+		return;
+	}
+
+	result = LoadShaderAsset(*ctx.pool, e.path, e.name);
+	if (e.result == nullptr && result.shaderUid == 0)
+	{
+		NEURUS_ERR("[ShaderController] Shader load failed: " << result.error);
+	}
+	if (result.shaderUid != 0) notify::Mutated(ctx.events);
+	else notify::Repaint(ctx.events);
+}
+
+/** @brief Handles ShaderRemoveRequested: drop the mesh reference, keep the pool entry. */
+void OnRemoveShader(const ShaderRemoveRequested& e, const ControllerContext& ctx)
+{
+	if (ctx.pool == nullptr) return;
+
+	auto mesh = ctx.pool->Get<Mesh>(e.objectUid);
+	if (!mesh || !mesh->o_shader) return;
+
+	const int oldShaderId = mesh->o_shaderId;
+	mesh->SetObjShader(nullptr);
+	ctx.ops.Submit(std::make_unique<ShaderReplaceOp>(
+		mesh->GetObjectID(), oldShaderId, 0));
+	notify::Mutated(ctx.events);
+}
+
+} // anonymous namespace
+
 // ---------------------------------------------------------------------------
 // Init - register the shader event handlers
 // ---------------------------------------------------------------------------
 
 void ShaderController::Init(ControllerContext& ctx)
 {
-	// Shader CREATE is handled by the Editor (it constructs the pooled
-	// RenderShader); this controller keeps only pool-free lifecycle handlers.
+	// Shader asset lifecycle: creation/loading/removal live in this controller.
+	// The Editor supplies the mutable pool through ControllerContext::pool; it
+	// never calls the creation helpers directly.
+	ctx.events.Subscribe<ShaderCreateRequested>(
+		[ctx](const ShaderCreateRequested& e) { OnCreateShader(e, ctx); });
+	ctx.events.Subscribe<ShaderLoadRequested>(
+		[ctx](const ShaderLoadRequested& e) { OnShaderLoad(e, ctx); });
+	ctx.events.Subscribe<ShaderRemoveRequested>(
+		[ctx](const ShaderRemoveRequested& e) { OnRemoveShader(e, ctx); });
+
 	// Compile bumps the shader version, so the pipeline rebuilds and temporal
 	// accumulation must reset. These stay non-undoable.
 	ctx.events.Subscribe<ShaderCompileRequested>(

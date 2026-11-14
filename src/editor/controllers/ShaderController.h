@@ -24,11 +24,6 @@
 
 namespace neurus {
 
-class Mesh;
-class ResourceManager;
-class IEventQueue;
-class IOperationSink;
-
 class ShaderController : public Controllers
 {
 public:
@@ -40,35 +35,9 @@ public:
 	 * Registers lambda handlers that forward each event to the corresponding
 	 * free-function handler.
 	 *
-	 * @param ctx Controller context (events, resources, ops, scene).
+	 * @param ctx Controller context (events, resources, ops, scene, pool).
 	 */
 	void Init(ControllerContext& ctx) override;
-
-	/**
-	 * @brief Loads one shader source file into the pool.
-	 *
-	 * `.vert` and `.frag` build a RenderShader whose missing side is the default
-	 * G-buffer source; `.comp` builds a ComputeShader. The shader is parsed and
-	 * generated before it is returned; on failure it is removed from the pool.
-	 *
-	 * Static because the Editor owns the pool and calls this from its request
-	 * handler; the controller owns the shader creation logic.
-	 */
-	static ShaderRequestResult LoadShaderAsset(ResourceManager& resources,
-	                                           const std::string& path,
-	                                           const std::string& name);
-
-	/**
-	 * @brief Creates or replaces a mesh's RenderShader atomically.
-	 *
-	 * Each side is a source path or a pooled ShaderData UID whose matching stage
-	 * is copied; empty sides use the default G-buffer pair. The new shader is
-	 * pooled and compiled before the old reference is dropped, so a failure
-	 * leaves the mesh untouched. One ShaderReplaceOp records the link.
-	 */
-	static ShaderRequestResult CreateShader(ResourceManager& resources, Mesh& mesh,
-	                                        const ShaderCreateRequested& input,
-	                                        IEventQueue& events, IOperationSink& ops);
 
 private:
 	// --- Code-edit gesture state (ShaderEditBegin -> ShaderEditEnd) ---

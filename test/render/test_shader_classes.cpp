@@ -33,7 +33,7 @@
 #include "render/shaders/ComputeShader.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderCompiler.h"
-#include "asset/data/ShaderStruct.h"
+#include "asset/data/shader/ShaderStruct.h"
 #include "render/shaders/ShaderModule.h"
 #include "asset/data/ShaderData.h"
 

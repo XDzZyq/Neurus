@@ -18,7 +18,6 @@
 #include "editor/controllers/ShaderController.h"
 #include "editor/controllers/SceneController.h"
 #include "editor/controllers/TransformGizmoController.h"
-#include "editor/operations/ShaderOperations.h"
 #include "editor/events/EventBus.h"
 
 #include "render/requests/RenderRequestSink.h"
@@ -27,7 +26,6 @@
 
 #include "render/RenderFrameSnapshot.h"
 #include "render/shaders/RenderShader.h"
-#include "render/shaders/ShaderLibrary.h"
 #include "ui/UIContext.h"
 #include "script/ScriptContext.h"
 
@@ -171,22 +169,8 @@ void Editor::Initialize()
 		neurus::notify::Repaint(ed_eventBus);
 	});
 
-	// Shader creation constructs a pooled RenderShader, so it is Editor-owned
-	// (like mesh/light/camera adds); ShaderController keeps only pool-free
-	// handlers.
-	ed_eventBus.Subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
-		OnCreateShader(e);
-	});
-
-	// Pooled shader assets (load_shader): the Editor owns the pool, so the
-	// source is parsed and registered here before the proxy sees the result.
-	ed_eventBus.Subscribe<ShaderLoadRequested>([this](const ShaderLoadRequested& e) {
-		OnShaderLoad(e);
-	});
-
-	ed_eventBus.Subscribe<ShaderRemoveRequested>([this](const ShaderRemoveRequested& e) {
-		OnRemoveShader(e);
-	});
+	// Shader creation, loading and removal are handled by ShaderController via
+	// the event bus; the Editor supplies the mutable pool in ControllerContext.
 
 	// Undo/redo of Create Shader: redo relinks the pooled RenderShader by UID;
 	// undo drops the reference (the pool keeps the shader). No version bump: the
@@ -1088,53 +1072,6 @@ void Editor::OnSpotLightAdd()
 	catch (const std::exception& e) {
 		NEURUS_ERR("Failed to add spot light: " << e.what());
 	}
-}
-
-void Editor::OnCreateShader(const ShaderCreateRequested& e)
-{
-	ShaderRequestResult local;
-	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
-
-	auto mesh = m_resources->Get<Mesh>(e.objectUid);
-	if (!mesh)
-	{
-		result.error = "not a mesh";
-		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader create failed: " << result.error);
-		return;
-	}
-
-	result = ShaderController::CreateShader(*m_resources, *mesh, e, ed_eventBus, ed_operations);
-	if (e.result == nullptr && result.shaderUid == 0)
-	{
-		NEURUS_ERR("[Editor] Shader create failed: " << result.error);
-	}
-	if (result.shaderUid != 0) neurus::notify::Mutated(ed_eventBus);
-	else neurus::notify::Repaint(ed_eventBus);
-}
-
-void Editor::OnRemoveShader(const ShaderRemoveRequested& e)
-{
-	auto mesh = m_resources->Get<Mesh>(e.objectUid);
-	if (!mesh || !mesh->o_shader) return;
-
-	const int oldShaderId = mesh->o_shaderId;
-	mesh->SetObjShader(nullptr);
-	ed_operations.Submit(std::make_unique<ShaderReplaceOp>(
-		mesh->GetObjectID(), oldShaderId, 0));
-	neurus::notify::Mutated(ed_eventBus);
-}
-
-void Editor::OnShaderLoad(const ShaderLoadRequested& e)
-{
-	ShaderRequestResult local;
-	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
-	result = ShaderController::LoadShaderAsset(*m_resources, e.path, e.name);
-	if (e.result == nullptr && result.shaderUid == 0)
-	{
-		NEURUS_ERR("[Editor] Shader load failed: " << result.error);
-	}
-	if (result.shaderUid != 0) neurus::notify::Mutated(ed_eventBus);
-	else neurus::notify::Repaint(ed_eventBus);
 }
 
 /**

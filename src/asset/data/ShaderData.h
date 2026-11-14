@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ShaderStage.h"
-#include "ShaderUnit.h"
+#include "asset/data/shader/ShaderStage.h"
+#include "asset/data/shader/ShaderUnit.h"
 
 #include <cereal/types/base_class.hpp>
 #include <cereal/types/string.hpp>

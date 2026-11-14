@@ -51,7 +51,7 @@
 #include "asset/data/ShaderData.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderParser.h"
-#include "asset/data/ShaderUnit.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 #include "core/ResourceManager.h"
@@ -90,6 +90,7 @@ protected:
 
 	void SetUp() override
 	{
+		m_ctx.pool = &m_resources;
 		m_controller.Init(m_ctx);
 
 		// Build a mesh with a CPU-only shader carrying seeded vertex+fragment
@@ -760,8 +761,8 @@ TEST_F(ShaderControllerTest, UnitCompileSucceedsAndEmitsShaderCompiled)
 
 TEST_F(ShaderControllerTest, ComputeShaderUnitCompilesWithoutShaderCompiled)
 {
-	ShaderRequestResult loaded =
-		ShaderController::LoadShaderAsset(m_resources, "res/shaders/compute/dummy.comp", "TestCompute");
+	ShaderRequestResult loaded;
+	m_eventBus.Emit(ShaderLoadRequested{ "res/shaders/compute/dummy.comp", "TestCompute", &loaded });
 	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
 	auto compute = m_resources.Get<ComputeShader>(loaded.shaderUid);
 	ASSERT_TRUE(compute);

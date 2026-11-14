@@ -25,9 +25,6 @@ class Camera;
 class MeshData;
 class RenderRequestSink;
 class Scene;
-struct ShaderCreateRequested;
-struct ShaderLoadRequested;
-struct ShaderRemoveRequested;
 struct MeshImportRequested;
 struct CameraAddRequested;
 struct ObjectDuplicateRequested;
@@ -316,9 +313,8 @@ private:
 	void OnLightAdd();
 	void OnSunLightAdd();
 	void OnSpotLightAdd();
-	void OnCreateShader(const ShaderCreateRequested& e);
-	void OnShaderLoad(const ShaderLoadRequested& e);
-	void OnRemoveShader(const ShaderRemoveRequested& e);
+	// --- Shader lifecycle ---
+	// Creation/loading/removal are handled by ShaderController via the event bus.
 	void OnSceneObjectGpuUpload(int objectUid);
 
 	/**
@@ -390,7 +386,8 @@ private:
 	ControllerContext m_ctx{ ed_eventBus, *m_resources, ed_operations,
 	                         [this]() { return m_scene.get(); },
 	                         [this]() { return &m_config; },
-	                         [this]() { return &m_viewport; } };
+	                         [this]() { return &m_viewport; },
+	                         m_resources.get() };
 
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;
 
