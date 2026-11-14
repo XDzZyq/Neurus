@@ -155,9 +155,13 @@ jobs:
 
   # Headless Linux: no Qt, no window system, no swapchain. This is the only leg
   # that compiles the Linux platform layer, the offscreen output target and the
-  # released lib/prebuilt/linux shaderc. A hosted runner has no GPU, so the suite
-  # runs against Mesa's lavapipe (software Vulkan 1.3), which also exercises the
-  # 1.4 -> 1.3 instance fallback.
+  # released lib/prebuilt/linux shaderc.
+  #
+  # A hosted runner has no GPU and this leg installs no software Vulkan device on
+  # purpose: the build still needs the Vulkan headers and loader to compile and
+  # link, but every GPU test self-skips for want of a device (VulkanTestShared
+  # reports no Vulkan), so the leg stays fast and reports the non-GPU suite.
+  # Rendering on Linux is verified on a real GPU, not here.
   build-linux:
     name: build (ubuntu-22.04, headless)
     needs: changes
@@ -171,14 +175,12 @@ jobs:
         with:
           submodules: recursive
 
-      # Ninja for the `linux` preset; lavapipe so the GPU tests actually run
-      # instead of skipping for want of a device.
-      - name: Install build tools and a software Vulkan device
+      - name: Install Ninja
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build mesa-vulkan-drivers
+          sudo apt-get install -y ninja-build
 
-      - name: Setup Vulkan SDK
+      - name: Setup Vulkan SDK (headers and loader only)
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
           vulkan-query-version: 1.4.341.0
