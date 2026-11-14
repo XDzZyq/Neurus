@@ -544,14 +544,20 @@ Why validation errors can be invisible:
 
 How to capture validation errors reliably:
 
-1. **Use `2>&1` always** - this merges stdout and stderr, capturing both
-   `std::cout` and `std::cerr` from any debug callback:
+1. **Capture the app's output, then drive it through the CLI** - redirect both
+   streams when the session starts, and exercise the commands the change touches:
 
-   ```
-   $output = & "build/Debug/Neurus.exe" 2>&1
+   ```powershell
+   $app = Start-Process "build/Debug/Neurus.exe" -ArgumentList "--session","verify" `
+     -RedirectStandardOutput build/verify.out -RedirectStandardError build/verify.err -PassThru
+   & build/Debug/cli/neurus.exe project new --force --session verify
+   & build/Debug/cli/neurus.exe scene list --session verify
+   & build/Debug/cli/neurus.exe close verify --force
+   Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-"
    ```
 
-   Then grep for `VUID-` to detect any validation violations.
+   The redirect captures both `std::cout` and `std::cerr` from any debug callback,
+   and the commands give the renderer real work instead of an idle window.
 
 2. **Verify the debug callback implementation** in `VulkanContext.cpp` or
    `TestVulkanShared.cpp`. The callback should write to `std::cerr`, not
@@ -568,12 +574,13 @@ How to capture validation errors reliably:
    }
    ```
 
-3. **Explicitly verify after fixing** suspected validation issues by running the
-   application and checking for remaining VUIDs:
+3. **Explicitly verify after fixing** suspected validation issues by replaying
+   the same CLI commands against a fresh session and re-reading its log:
 
-   ```
-   $output = & "build/Debug/Neurus.exe" 2>&1
-   if ($output -match "VUID-") { Write-Host "VALIDATION ERROR STILL PRESENT" }
+   ```powershell
+   if (Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-") {
+       Write-Host "VALIDATION ERROR STILL PRESENT"
+   }
    ```
 
 4. **Be aware of the IDE pitfall**: Visual Studio's Debug Output window
