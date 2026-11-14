@@ -20,7 +20,7 @@ class QStackedWidget;
 class QTreeView;
 class QWidget;
 
-namespace neurus { class CodeEditor; class ObjectID; class ShaderFieldDelegate; class ShaderStructModel; }
+namespace neurus { class CodeEditor; class ObjectID; class ShaderFieldDelegate; class ShaderStructModel; struct ShaderUnit; }
 
 namespace neurus
 {
@@ -54,7 +54,7 @@ signals:
 
 private:
 	/** @brief Populates the struct tree model and code editor from a ShaderUnit. */
-	void populateSections(const void* shaderUnitPtr, bool objectChanged);
+	void populateSections(const ShaderUnit* shaderUnit, bool objectChanged);
 
 	/** @brief Emits fieldAdded for the section/struct-def row whose "+" was clicked. */
 	void handleAddClick(const QModelIndex& index);
