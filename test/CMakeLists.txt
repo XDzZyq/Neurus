@@ -33,6 +33,7 @@ set(NEURUS_TEST_SOURCES
 	render/test_ssao.cpp
 	render/test_screenshot.cpp
 	render/test_scene_wiring.cpp
+	render/test_offscreen_render.cpp
 	render/test_shadow_cubemap.cpp
 	render/test_shadow_intensity.cpp
 	render/test_sun_shadow_intensity.cpp

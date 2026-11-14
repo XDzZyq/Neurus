@@ -584,8 +584,26 @@ TEST_F(DebugPassTest, TenThousandSegments_StayWithinBudget)
 	// is a pass, not an anomaly. The budget is 1.0 ms rather than 0.5 ms because
 	// 10,000 extra segments measured 0.55 ms on the Linux/RTX 4090 headless leg;
 	// it still fails a super-linear regression, which is all this guards.
-	EXPECT_LT(marginalMs, 1.0)
-		<< "9,999 extra segments cost " << marginalMs << " ms (budget 1.0 ms)";
+	//
+	// A software rasterizer has no comparable cost profile (llvmpipe takes
+	// hundreds of milliseconds for the same work), so the number is meaningless
+	// there: the structural assertions above still run, and CI's lavapipe leg is
+	// the reason this guard exists.
+	const std::string deviceName =
+		m_physicalDevices[m_selectedPdIndex].getProperties().deviceName.data();
+	const bool softwareDevice = deviceName.find("llvmpipe") != std::string::npos
+	                         || deviceName.find("lavapipe") != std::string::npos
+	                         || deviceName.find("SwiftShader") != std::string::npos;
+	if (softwareDevice)
+	{
+		std::cout << "[DebugPass] timing budget not asserted on a software rasterizer ("
+		          << deviceName << ")" << std::endl;
+	}
+	else
+	{
+		EXPECT_LT(marginalMs, 1.0)
+			<< "9,999 extra segments cost " << marginalMs << " ms (budget 1.0 ms)";
+	}
 
 	// It has to actually be on screen, or the timing is measuring nothing.
 	const LitStats lit = Measure();
