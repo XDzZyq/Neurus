@@ -79,7 +79,7 @@ ir = frag.parsed
 ir.functions.append(neurus.shader.Function(name="helper", return_type="float", body="return 1.0;"))
 frag.parsed = ir
 assert any(f.name == "helper" for f in frag.parsed.functions)
-frag.compile(from_code=False)
+frag.compile(by="struct")
 )");
 }
 
@@ -101,7 +101,7 @@ import neurus
 compute = neurus.shader.load_shader("res/shaders/compute/dummy.comp")
 unit = compute.compute
 unit.code = unit.code
-unit.compile(from_code=True)
+unit.compile(by="code")
 )");
 }
 
@@ -127,7 +127,7 @@ ir = frag.parsed
 ir.attributes.append(neurus.shader.Attribute(location=0, name="bad", type="not_a_glsl_type"))
 frag.parsed = ir
 try:
-    frag.compile(from_code=False)
+    frag.compile(by="struct")
     raise AssertionError("compile should have failed")
 except RuntimeError as e:
     assert "error" in str(e).lower()

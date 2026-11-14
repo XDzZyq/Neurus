@@ -256,7 +256,7 @@ ir = frag.parsed                                          # ShaderStruct copy
 ir.functions.append(neurus.shader.Function(name="helper", return_type="float",
                                            body="return 1.0;"))
 frag.parsed = ir                                          # one undo op
-frag.compile(from_code=False)                             # regenerate + compile
+frag.compile(by="struct")                             # regenerate + compile
 mesh.shader.remove()
 ```
 
@@ -271,8 +271,9 @@ mesh.shader.remove()
   uses the default fragment. The default name is the path as given.
 - `neurus.data.shaders` lists pooled shaders by UID or registered name.
 - A `ShaderUnit` exposes `.stage`, `.code`, `.parsed` and
-  `.compile(from_code=True)`. `.parsed` returns a copy; assign it back to write
-  the whole IR. No version or SPIR-V is exposed.
+  `.compile(by="code")`. `by="code"` parses the text into the IR before
+  compiling; `by="struct"` regenerates GLSL from the IR. `.parsed` returns a
+  copy; assign it back to write the whole IR. No version or SPIR-V is exposed.
 - A pooled shader is copied stage-by-stage at `create`; editing the source
   later does not change a mesh shader that was already created from it.
 - All writes go through typed events, so a script run is one undo entry.

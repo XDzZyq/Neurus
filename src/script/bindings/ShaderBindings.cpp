@@ -118,11 +118,19 @@ py::object UnitOrNone(const ShaderProxy& shader, ShaderType type)
 }
 
 /// @brief Compiles a stage and raises the shaderc message on failure.
-void CompileUnit(const ShaderUnitProxy& unit, bool fromCode)
+void CompileUnit(const ShaderUnitProxy& unit, const std::string& by)
 {
+	int unitType = 0;
+	if (by == "code") unitType = 0;
+	else if (by == "struct") unitType = 1;
+	else
+	{
+		throw py::value_error("compile by must be 'code' or 'struct'");
+	}
+
 	ShaderCompileResult result;
 	EmitEvent(unit, ShaderUnitCompileRequested{
-		unit.uid, unit.stage, fromCode ? 0 : 1, &result });
+		unit.uid, unit.stage, unitType, &result });
 	if (!result.ok)
 	{
 		throw std::runtime_error(result.error.empty() ? "shader compile failed" : result.error);
@@ -537,8 +545,8 @@ void RegisterShaderBindings(py::module_& shader)
 			{
 				EmitEvent(s, ShaderUnitStructSet{s.uid, s.stage, parsed});
 			})
-		.def("compile", &CompileUnit, py::arg("from_code") = true,
-		     "Compile the stage; raises RuntimeError with the shaderc message on failure.");
+		.def("compile", &CompileUnit, py::arg("by") = "code",
+		     "Compile the stage by 'code' or 'struct'; raises RuntimeError with the shaderc message on failure.");
 
 	py::class_<ShaderProxy>(shader, "Shader", "A pooled RenderShader or ComputeShader bundle.")
 		.def_property_readonly("name", [](const ShaderProxy& s) { return s.Resolve()->GetName(); })
