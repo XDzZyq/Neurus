@@ -2,16 +2,15 @@
  * @file ShaderStructSerialize.h
  * @brief Non-intrusive cereal serialization for the ShaderStruct sub-structs.
  *
- * Lives next to the structs it serializes (renderer shader sub-layer) so the
- * future shader-IR serialization can reuse these exact overloads. They are
- * free functions declared in namespace neurus alongside the struct types, so
- * cereal finds them via ADL — ShaderStruct.h itself stays a pure data model
- * with no cereal members. cereal is already a renderer dependency
- * (RenderConfig.h serializes through it), so no new dependency is introduced.
+ * Lives next to the structs it serializes (asset shader data) so the shader-IR
+ * serializer can reuse these exact overloads. They are free functions declared
+ * in namespace neurus alongside the struct types, so cereal finds them via ADL
+ * - ShaderStruct.h itself stays a pure data model with no cereal members.
+ * cereal is already an asset dependency (RenderConfig.h serializes through it),
+ * so no new dependency is introduced.
  *
- * They currently exist so SetShaderFieldOp can round-trip a ShaderFieldValue
- * element (a std::variant over these five payload types) through the operation
- * history.
+ * They exist so the shader stage map and SetShaderFieldOp can round-trip the IA
+ * element types through project history.
  *
  * @note enum members (ParaType, Interp) serialize natively via cereal's built-in
  *       enum support (same as ShaderSection in the operation payloads).

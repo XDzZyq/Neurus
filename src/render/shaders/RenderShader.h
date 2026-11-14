@@ -13,7 +13,7 @@
  * Lifecycle:
  *   1. Construct: RenderShader(name, vertPath, fragPath)
  *   2. ParseAndGenerate: parse -> generate GLSL for both stages
- *   3. Access: GetStage(), GetParsedStruct(), GetGeneratedCode()
+ *   3. Access: GetStage(), parsed IR and generated code
  *   4. Recompile: Recompile(type) -> re-parse single stage, re-generate
  */
 #pragma once
@@ -85,8 +85,13 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_vertPath), CEREAL_NVP(m_fragPath));
-		if constexpr (Archive::is_loading::value)
+		if constexpr (Archive::is_saving::value)
 		{
+			SerializeStages(ar);
+		}
+		else
+		{
+			DeserializeStages(ar);
 			const bool hasContent =
 				!m_stages[ShaderType::VERTEX].code.empty() ||
 				!m_stages[ShaderType::FRAGMENT].code.empty();

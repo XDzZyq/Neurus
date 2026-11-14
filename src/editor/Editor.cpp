@@ -177,19 +177,16 @@ void Editor::Initialize()
 	// handlers.
 	ed_eventBus.Subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
 		OnCreateShader(e);
-		neurus::notify::Repaint(ed_eventBus);
 	});
 
 	// Pooled shader assets (load_shader): the Editor owns the pool, so the
 	// source is parsed and registered here before the proxy sees the result.
 	ed_eventBus.Subscribe<ShaderLoadRequested>([this](const ShaderLoadRequested& e) {
 		OnShaderLoad(e);
-		neurus::notify::Repaint(ed_eventBus);
 	});
 
 	ed_eventBus.Subscribe<ShaderRemoveRequested>([this](const ShaderRemoveRequested& e) {
 		OnRemoveShader(e);
-		neurus::notify::Repaint(ed_eventBus);
 	});
 
 	// Undo/redo of Create Shader: redo relinks the pooled RenderShader by UID;
@@ -205,13 +202,13 @@ void Editor::Initialize()
 			return;
 		}
 		mesh->SetObjShader(shader);
-		neurus::notify::Repaint(ed_eventBus);
+		neurus::notify::Mutated(ed_eventBus);
 	});
 	ed_eventBus.Subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
 		auto mesh = m_resources->Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(nullptr);
-		neurus::notify::Repaint(ed_eventBus);
+		neurus::notify::Mutated(ed_eventBus);
 	});
 
 	// Undo/redo replay their inverse events synchronously (never queued), so
@@ -1112,6 +1109,8 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 	{
 		NEURUS_ERR("[Editor] Shader create failed: " << result.error);
 	}
+	if (result.shaderUid != 0) neurus::notify::Mutated(ed_eventBus);
+	else neurus::notify::Repaint(ed_eventBus);
 }
 
 void Editor::OnRemoveShader(const ShaderRemoveRequested& e)
@@ -1123,6 +1122,7 @@ void Editor::OnRemoveShader(const ShaderRemoveRequested& e)
 	mesh->SetObjShader(nullptr);
 	ed_operations.Submit(std::make_unique<ShaderReplaceOp>(
 		mesh->GetObjectID(), oldShaderId, 0));
+	neurus::notify::Mutated(ed_eventBus);
 }
 
 void Editor::OnShaderLoad(const ShaderLoadRequested& e)
@@ -1134,6 +1134,8 @@ void Editor::OnShaderLoad(const ShaderLoadRequested& e)
 	{
 		NEURUS_ERR("[Editor] Shader load failed: " << result.error);
 	}
+	if (result.shaderUid != 0) neurus::notify::Mutated(ed_eventBus);
+	else neurus::notify::Repaint(ed_eventBus);
 }
 
 /**

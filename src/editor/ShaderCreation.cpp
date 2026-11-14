@@ -1,13 +1,12 @@
 /**
  * @file ShaderCreation.cpp
- * @brief Editor-side shader asset loading and (later) mesh shader creation.
+ * @brief Editor-side shader asset loading and mesh shader creation.
  */
 
 #include "editor/ShaderCreation.h"
 
 #include "asset/data/shader/ShaderData.h"
 #include "asset/data/shader/ShaderStage.h"
-#include "core/Log.h"
 #include "core/ResourceManager.h"
 #include "editor/events/IEventQueue.h"
 #include "editor/operations/IOperationSink.h"

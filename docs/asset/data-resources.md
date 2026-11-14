@@ -49,7 +49,8 @@ addresses:
 - The concrete leaves are `RenderShader` (vertex + fragment) and
   `ComputeShader` (compute), both in `src/render/shaders/`. They add
   `ParseAndGenerate()` and serialize their source paths (and compute defaults);
-  `ShaderData` serializes the name and every stage's `path`/`code`/`parsed`.
+  each leaf then serializes the stage map (`path`/`code`/`parsed`) through the
+  `ShaderData` helpers.
 - SPIR-V and the version are runtime state: they are never serialized and are
   rebuilt on load. A stage with restored code keeps it; a path-only legacy
   shader re-parses from disk.

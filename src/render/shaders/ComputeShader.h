@@ -24,10 +24,10 @@
  *   cs.SetDefault("radius", 0.5f);
  *   cs.SetDefault("samples", 32);
  *   cs.ParseAndGenerate();
- *   auto& code = cs.GetGeneratedCode(ShaderType::COMPUTE);
+ *   auto& code = cs.GetStage(ShaderType::COMPUTE).code;
  * @endcode
  *
- * @note Non-copyable (inherited from Shader). Movable.
+ * @note Non-copyable, non-movable (inherited from ShaderData).
  * @note Thread-safety: Not thread-safe. Must be used from the main thread.
  */
 
@@ -148,8 +148,13 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_compPath), CEREAL_NVP(m_defaults));
-		if constexpr (Archive::is_loading::value)
+		if constexpr (Archive::is_saving::value)
 		{
+			SerializeStages(ar);
+		}
+		else
+		{
+			DeserializeStages(ar);
 			if (m_stages[ShaderType::COMPUTE].code.empty())
 			{
 				ReloadContent();

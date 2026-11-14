@@ -47,21 +47,6 @@ const ShaderUnit& ShaderData::GetStage(ShaderType type) const
 	return m_stages.at(type);
 }
 
-ShaderStruct& ShaderData::GetParsedStruct(ShaderType type)
-{
-	return m_stages[type].parsed;
-}
-
-const ShaderStruct& ShaderData::GetParsedStruct(ShaderType type) const
-{
-	return m_stages.at(type).parsed;
-}
-
-const std::string& ShaderData::GetGeneratedCode(ShaderType type) const
-{
-	return m_stages.at(type).code;
-}
-
 // --------------------------------------
 // Type -> string conversion
 // --------------------------------------

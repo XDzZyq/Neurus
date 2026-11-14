@@ -114,3 +114,44 @@ assert "MyFrag" in neurus.data.shaders
 assert neurus.data.shaders["MyFrag"].name == "MyFrag"
 )");
 }
+
+TEST_F(ScriptShader, CompileFailureRaisesTheCompilerMessage)
+{
+	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
+	Run(R"(
+import neurus
+mesh = neurus.scene.meshes["Ground"]
+mesh.shader.create()
+frag = mesh.shader.fragment
+ir = frag.parsed
+ir.attributes.append(neurus.shader.Attribute(location=0, name="bad", type="not_a_glsl_type"))
+frag.parsed = ir
+try:
+    frag.compile(from_code=False)
+    raise AssertionError("compile should have failed")
+except RuntimeError as e:
+    assert "error" in str(e).lower()
+)");
+	// The shaderc failure logs two NEURUS_ERR lines (message + GLSL source);
+	// a failed Python assertion inside the catch would add one more.
+	EXPECT_EQ(neurus::LogBuffer::instance().ErrorCount() - before, 2);
+}
+
+TEST_F(ScriptShader, CodeEditMarksProjectDirty)
+{
+	RunCleanly(R"(
+import neurus
+mesh = neurus.scene.meshes["Ground"]
+mesh.shader.create()
+)");
+	EXPECT_TRUE(m_editor.IsDirty());
+
+	m_editor.ClearDirty();
+	RunCleanly(R"(
+import neurus
+mesh = neurus.scene.meshes["Ground"]
+frag = mesh.shader.fragment
+frag.code = frag.code + "\n// dirty"
+)");
+	EXPECT_TRUE(m_editor.IsDirty());
+}

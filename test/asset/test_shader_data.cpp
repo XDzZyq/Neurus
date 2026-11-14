@@ -11,6 +11,8 @@
 
 #include <cereal/archives/json.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <sstream>
 #include <string>
 
@@ -140,6 +142,64 @@ TEST(ShaderDataPersistence, RenderShaderLegacyPathsReloadFromDisk)
 	}
 	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::VERTEX).code.empty());
 	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::VERTEX).spv.empty());
+}
+
+TEST(ShaderDataPersistence, LegacyMissingStagesReloadsFromPaths)
+{
+	neurus::RenderShader src("Legacy", "res/shaders/render/gbuffer.vert",
+	                         "res/shaders/render/gbuffer.frag");
+
+	std::stringstream saved;
+	{
+		cereal::JSONOutputArchive out(saved);
+		out(cereal::make_nvp("shader", src));
+	}
+
+	// Strip the "stages" node to reproduce a project saved before shader
+	// content was serialized. The absent key must fall back to the paths.
+	auto doc = nlohmann::ordered_json::parse(saved.str());
+	ASSERT_TRUE(doc["shader"].contains("stages"));
+	doc["shader"].erase("stages");
+
+	std::stringstream legacy(doc.dump());
+	neurus::RenderShader dst("", "", "");
+	{
+		cereal::JSONInputArchive in(legacy);
+		in(cereal::make_nvp("shader", dst));
+	}
+
+	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::VERTEX).code.empty());
+	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::VERTEX).spv.empty());
+	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::FRAGMENT).code.empty());
+}
+
+TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
+{
+	neurus::ResourceManager resources;
+	auto compute = resources.Load<neurus::ComputeShader>(
+		"Comp", "res/shaders/compute/dummy.comp");
+	ASSERT_TRUE(compute->ParseAndGenerate());
+	resources.SetName(compute->GetObjectID(), "Comp");
+	compute->SetName("Comp");
+
+	std::stringstream ss;
+	{
+		cereal::JSONOutputArchive out(ss);
+		neurus::project::ResourceComponent save(resources);
+		save.Save(out);
+	}
+	neurus::ResourceManager restored;
+	{
+		cereal::JSONInputArchive in(ss);
+		neurus::project::ResourceComponent load(restored);
+		load.Load(in);
+	}
+
+	auto loaded = restored.GetByName<neurus::ComputeShader>("Comp");
+	ASSERT_TRUE(loaded);
+	EXPECT_EQ(loaded->GetType(), neurus::ShaderType::COMPUTE);
+	EXPECT_FALSE(loaded->GetStage(neurus::ShaderType::COMPUTE).code.empty());
+	EXPECT_FALSE(loaded->GetStage(neurus::ShaderType::COMPUTE).spv.empty());
 }
 
 TEST(ShaderDataPersistence, ComputeShaderRoundTripsContentAndDefaults)

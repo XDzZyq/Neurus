@@ -250,7 +250,7 @@ neurus.shader.load_shader("res/shaders/render/gbuffer.frag", name="MyFrag")
 mesh.shader.create(fragment=neurus.data.shaders["MyFrag"])
 
 frag = mesh.shader.fragment
-frag.code = frag.code                                     # one undo op, no compile
+frag.code = frag.code                                     # unchanged: no op recorded
 ir = frag.parsed                                          # ShaderStruct copy
 ir.functions.append(neurus.shader.Function(name="helper", return_type="float",
                                            body="return 1.0;"))

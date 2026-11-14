@@ -229,3 +229,53 @@ TEST_F(ShaderCreateTest, RemoveDropsTheReferenceAndUndoRelinks)
 	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shaderId,
 	          created.shaderUid);
 }
+
+TEST_F(ShaderCreateTest, CompileFailureDuringCreateLeavesPoolAndMeshUntouched)
+{
+	neurus::ShaderRequestResult loaded;
+	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+		"res/shaders/render/gbuffer.frag", "BadFrag", &loaded});
+	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
+	auto source = m_editor.GetResourceManager().Get<neurus::RenderShader>(loaded.shaderUid);
+	ASSERT_TRUE(source);
+	source->GetStage(neurus::ShaderType::FRAGMENT).code = "not glsl";
+
+	std::size_t before = 0;
+	m_editor.GetResourceManager().ForEachUID(
+		[&](const std::shared_ptr<neurus::UID>&) { ++before; });
+
+	neurus::ShaderRequestResult result;
+	m_editor.GetEventQueue().Emit(neurus::ShaderCreateRequested{
+		GroundUid(), "", "", 0, loaded.shaderUid, &result});
+
+	EXPECT_EQ(result.shaderUid, 0);
+	EXPECT_FALSE(result.error.empty());
+	EXPECT_FALSE(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shader);
+
+	std::size_t after = 0;
+	m_editor.GetResourceManager().ForEachUID(
+		[&](const std::shared_ptr<neurus::UID>&) { ++after; });
+	EXPECT_EQ(after, before);
+}
+
+TEST_F(ShaderCreateTest, CreateAndLoadMarkProjectDirty)
+{
+	EXPECT_FALSE(m_editor.IsDirty());
+
+	neurus::ShaderRequestResult created;
+	m_editor.GetEventQueue().Emit(neurus::ShaderCreateRequested{
+		GroundUid(), "", "", 0, 0, &created});
+	ASSERT_NE(created.shaderUid, 0) << created.error;
+	EXPECT_TRUE(m_editor.IsDirty());
+
+	m_editor.ClearDirty();
+	neurus::ShaderRequestResult loaded;
+	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+		"res/shaders/render/gbuffer.frag", "DirtyFrag", &loaded});
+	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
+	EXPECT_TRUE(m_editor.IsDirty());
+
+	m_editor.ClearDirty();
+	m_editor.GetEventQueue().Emit(neurus::ShaderRemoveRequested{GroundUid()});
+	EXPECT_TRUE(m_editor.IsDirty());
+}

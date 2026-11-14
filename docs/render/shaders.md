@@ -41,9 +41,9 @@ flowchart TD
 
 The panel path is mesh-keyed: the ShaderEditorPanel emits `ShaderEvents`
 (`ShaderCodeEdited`, `ShaderStructEdited`, `ShaderFieldAdded`), and the
-`ShaderController` mutates the mesh's shader data. `ShaderCreateRequested` /
-`ShaderCompileRequested` are Editor-owned; create and compile bump the version,
-while code and struct edits wait for an explicit Compile.
+`ShaderController` mutates the mesh's shader data. Shader creation is
+Editor-owned; compilation is handled by `ShaderController`. Create and compile
+bump the version, while code and struct edits wait for an explicit Compile.
 
 The script path is shader-keyed, so it also reaches a pooled `ComputeShader`:
 
@@ -60,20 +60,27 @@ The script path is shader-keyed, so it also reaches a pooled `ComputeShader`:
   are resolved by `ShaderData` UID in `ShaderController`. A script run remains
   one undo entry.
 
-Compile resets temporal shadow accumulation. A mesh shader also emits
-`ShaderCompiled`, so the Editor warms its pipeline; a standalone compute shader
-does not.
+Compile resets temporal shadow accumulation. Both compile paths emit
+`RenderResetEvent`: the panel handler does it in its subscription wrapper after
+`OnCompileShader`, and the shader-keyed handler emits it on success. A mesh
+shader also emits `ShaderCompiled`, so the Editor warms its pipeline; a
+standalone compute shader does not.
 
 ## Persistence
 
-`ShaderData` serializes its name and every stage's `path`, `code` and `parsed`.
-`RenderShader` adds its two source paths; `ComputeShader` adds its source path
-and default-uniform entries. SPIR-V and versions are runtime state and are
-rebuilt on load.
+`ShaderData` serializes its name; the concrete leaf serializes the stage map
+(`path`/`code`/`parsed` per stage) after its own paths. `RenderShader` adds its
+two source paths; `ComputeShader` adds its source path and default-uniform
+entries. SPIR-V and versions are runtime state and are rebuilt on load.
 
-A stage with restored code keeps it; a legacy path-only shader re-parses from
-disk. Pooled shader names are re-seeded after a project load, so
-`neurus.data.shaders["Name"]` still resolves.
+A stage with restored code keeps it; a legacy path-only shader (no `stages`
+key) re-parses from disk. Pooled shader names are re-seeded after a project
+load, so `neurus.data.shaders["Name"]` still resolves.
+
+Replacing a mesh shader keeps the previous pooled shader so its
+`ShaderReplaceOp` can undo the relink. The pool is cleared on project new/open;
+a history-aware prune for long live-coding sessions is tracked separately
+(issue #72).
 
 ## Overlay shaders
 

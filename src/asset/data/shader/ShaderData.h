@@ -51,11 +51,10 @@ public:
 	virtual ShaderType GetType() const = 0;
 
 	/**
-	 * @brief Cereal serialization - identity, name and every stage's content.
+	 * @brief Cereal serialization - identity plus the human-readable name.
 	 *
-	 * Concrete leaves forward this base and serialize their own source paths.
-	 * A missing stage map is a legacy path-only shader: it leaves the
-	 * constructor-built stages in place so the leaf can reload from disk.
+	 * Concrete leaves forward this base, serialize their own source paths, then
+	 * call SerializeStages/DeserializeStages for the per-stage content.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -64,19 +63,6 @@ public:
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<UID>(this), CEREAL_NVP(m_name));
-
-		if constexpr (Archive::is_saving::value)
-		{
-			ar(cereal::make_nvp("stages", m_stages));
-		}
-		else
-		{
-			std::unordered_map<ShaderType, ShaderUnit> stages;
-			if (archive::OptionalField(ar, cereal::make_nvp("stages", stages)))
-			{
-				m_stages = std::move(stages);
-			}
-		}
 	}
 
 	/** @brief Returns true if the bundle has the given stage. */
@@ -94,13 +80,6 @@ public:
 	ShaderUnit& GetStage(ShaderType type);
 	/** @brief Const overload of GetStage; throws if the stage is absent. */
 	const ShaderUnit& GetStage(ShaderType type) const;
-
-	/** @brief Returns the stage's parsed IR, default-inserting the stage. */
-	ShaderStruct& GetParsedStruct(ShaderType type);
-	const ShaderStruct& GetParsedStruct(ShaderType type) const;
-
-	/** @brief Returns the stage's generated GLSL; throws if absent. */
-	const std::string& GetGeneratedCode(ShaderType type) const;
 
 	/**
 	 * @brief Converts a ShaderType to its string representation.
@@ -123,6 +102,34 @@ public:
 	void BumpVersion() { m_version++; }
 
 protected:
+	/**
+	 * @brief Writes the per-stage content map (leaf save path).
+	 * @param ar Output archive.
+	 */
+	template<class Archive>
+	void SerializeStages(Archive& ar)
+	{
+		ar(cereal::make_nvp("stages", m_stages));
+	}
+
+	/**
+	 * @brief Reads the per-stage content map, keeping the constructor stages
+	 *        when the key is absent (legacy path-only project).
+	 * @param ar Input archive.
+	 * @return true when the map was present and restored.
+	 */
+	template<class Archive>
+	bool DeserializeStages(Archive& ar)
+	{
+		std::unordered_map<ShaderType, ShaderUnit> stages;
+		if (archive::OptionalField(ar, cereal::make_nvp("stages", stages)))
+		{
+			m_stages = std::move(stages);
+			return true;
+		}
+		return false;
+	}
+
 	std::string m_name;          ///< Human-readable shader name
 	std::string m_errorMessage;  ///< Last error message
 	int         m_version = 0;   ///< Version counter for pipeline invalidation

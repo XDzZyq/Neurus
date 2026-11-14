@@ -20,7 +20,6 @@ class ImageData;         // asset/data/ImageData.h
 class Environment;       // scene/Environment.h
 class Light;             // scene/Light.h
 class Scene;             // scene/Scene.h
-class ShaderData;         // asset/data/shader/ShaderData.h
 class SharedQueue;        // render/SharedQueue.h
 class BufferLayout;      // render/buffers/BufferLayout.h
 class RenderCache;       // render/RenderCache.h

@@ -8,6 +8,7 @@
  */
 
 #include "editor/controllers/ShaderController.h"
+#include "editor/controllers/MutationNotify.h"
 #include "editor/events/ShaderEvents.h"
 #include "editor/events/EditorEvents.h"
 #include "editor/events/EventBus.h"
@@ -274,6 +275,9 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 
 		NEURUS_LOG("[ShaderController] Compiled shader for mesh " << mesh->GetObjectID()
 		           << " (unitType=" << e.unitType << ")");
+		// Compiling from code/IR regenerates the persisted source, and from
+		// struct regenerates the code: the document changed even without an op.
+		neurus::notify::Mutated(ctx.events);
 	}
 	catch (const std::exception& ex)
 	{
@@ -303,6 +307,7 @@ void OnUnitCodeSet(const neurus::ShaderUnitCodeSet& e, const neurus::ControllerC
 	unit->BumpVersion();
 	ctx.ops.Submit(std::make_unique<neurus::SetShaderUnitCodeOp>(
 		e.shaderUid, e.stage, std::move(before), e.code));
+	neurus::notify::Mutated(ctx.events);
 }
 
 /**
@@ -320,6 +325,7 @@ void OnUnitStructSet(const neurus::ShaderUnitStructSet& e, const neurus::Control
 	unit->BumpVersion();
 	ctx.ops.Submit(std::make_unique<neurus::SetShaderUnitStructOp>(
 		e.shaderUid, e.stage, std::move(before), e.parsed));
+	neurus::notify::Mutated(ctx.events);
 }
 
 /**
@@ -370,7 +376,7 @@ void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
 		}
 
 		unit->BumpVersion();
-		ctx.events.Emit(neurus::RenderResetEvent{});
+		neurus::notify::Mutated(ctx.events);
 
 		if (shader->HasStage(neurus::ShaderType::VERTEX))
 		{
@@ -398,6 +404,7 @@ void OnUnitCodeRestored(const neurus::ShaderUnitCodeRestored& e,
 	if (!unit) return;
 	unit->code = e.code;
 	unit->BumpVersion();
+	neurus::notify::Mutated(ctx.events);
 }
 
 /** @brief Restores a stage's whole IR (undo/redo replay) and bumps its version. */
@@ -410,6 +417,7 @@ void OnUnitStructRestored(const neurus::ShaderUnitStructRestored& e,
 	if (!unit) return;
 	unit->parsed = e.parsed;
 	unit->BumpVersion();
+	neurus::notify::Mutated(ctx.events);
 }
 
 /**
@@ -589,6 +597,7 @@ void OnCodeRestored(const neurus::ShaderCodeRestored& e, const neurus::Controlle
 	if (!unit) return; // Stale identity: shader gone, safe no-op.
 	unit->code = e.code;
 	unit->BumpVersion();
+	neurus::notify::Mutated(ctx.events);
 
 	NEURUS_LOG("[ShaderController] Code restored (undo/redo) for stage " << e.stage
 	           << " (" << unit->code.size() << " bytes)");
@@ -630,6 +639,7 @@ void OnFieldRestored(const neurus::ShaderFieldRestored& e, const neurus::Control
 	}
 	if (!applied) return;
 	unit->BumpVersion();
+	neurus::notify::Mutated(ctx.events);
 
 	NEURUS_LOG("[ShaderController] Field restored (undo/redo): section="
 	           << static_cast<int>(e.section) << " idx=" << e.fieldIndex);
@@ -651,6 +661,7 @@ void OnFieldAddRestored(const neurus::ShaderFieldAddRestored& e, const neurus::C
 		return;
 	}
 	unit->BumpVersion();
+	neurus::notify::Mutated(ctx.events);
 }
 
 /**
@@ -670,6 +681,7 @@ void OnFieldRemoved(const neurus::ShaderFieldRemoved& e, const neurus::Controlle
 		return;
 	}
 	unit->BumpVersion();
+	neurus::notify::Mutated(ctx.events);
 }
 
 } // anonymous namespace
@@ -736,6 +748,7 @@ void ShaderController::Init(ControllerContext& ctx)
 
 			ctx.ops.Submit(std::make_unique<SetShaderCodeOp>(
 				mesh->GetObjectID(), stage, std::move(m_beforeCode), std::move(after)));
+			neurus::notify::Mutated(ctx.events);
 		});
 
 	// Discrete struct edits: snapshot the element, apply the edit, diff, record.
@@ -763,6 +776,7 @@ void ShaderController::Init(ControllerContext& ctx)
 			ctx.ops.Submit(std::make_unique<SetShaderFieldOp>(
 				mesh->GetObjectID(), e.stage, e.section, e.fieldIndex,
 				std::move(before), std::move(after)));
+			neurus::notify::Mutated(ctx.events);
 		});
 	ctx.events.Subscribe<ShaderFieldAdded>(
 		[ctx](const ShaderFieldAdded& e) {
@@ -774,6 +788,7 @@ void ShaderController::Init(ControllerContext& ctx)
 			if (!mesh) return;
 			ctx.ops.Submit(std::make_unique<AddShaderFieldOp>(
 				mesh->GetObjectID(), e.stage, e.section, e.subFieldIndex, /*add=*/true));
+			neurus::notify::Mutated(ctx.events);
 		});
 
 	// Replay: re-apply one edit dimension + bump version so the panel refreshes.
