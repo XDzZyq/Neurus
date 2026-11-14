@@ -146,8 +146,8 @@ the **rule** that prevents it. Design detail behind these lives in
 
 - **"Access denied" / file-in-use when launching `Neurus.exe` or a test.** Two
   agents built or ran at once. Rule: only the master builds, and only one agent
-  runs `ctest`/`Neurus.exe` at a time; subagents compile-check only and never
-  invoke the build system.
+  runs `ctest` or a Neurus session at a time; subagents compile-check only and
+  never invoke the build system.
 - **Another agent's in-progress edits vanish.** Rule: never use `git stash` while
   others are editing.
 - **Replacement characters appear where non-ASCII used to be in source.** Rule:

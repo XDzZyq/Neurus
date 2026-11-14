@@ -7,22 +7,22 @@ mechanical commands live in [tips.instructions.md](tips.instructions.md).
 ## Master vs. subagents
 
 - **The master agent owns the build, the tests and the commit.** It runs the
-  final `cmake --build` and the one full `ctest`/`Neurus.exe` pass, and it is the
+  final `cmake --build` and the one full `ctest`/CLI-session pass, and it is the
   only one that commits or merges.
 - **Subagents edit only.** They may compile-check individual files (for example
   via diagnostics) but must **not** invoke the build system, run `ctest`, or
-  launch `Neurus.exe`.
+  start a Neurus session.
 - **Never `git stash` while others are editing** - it reverts another agent's
   in-progress work.
 
 ## Subagent racing prevention
 
-A single `Neurus.exe`/`neurus_test` binary and a single build directory are
-shared resources. Concurrent access fails with "Access denied" or file-in-use,
-or produces false test failures.
+A single `Neurus.exe`/`neurus`/`neurus_test` binary, one session registry and one
+build directory are shared resources. Concurrent access fails with "Access
+denied" or file-in-use, or produces false test failures.
 
 1. Only the master runs the build for final verification.
-2. Only one agent runs `ctest` or `Neurus.exe` at a time.
+2. Only one agent runs `ctest` or a Neurus session at a time.
 3. Subagents compile-check only; they never call the build system.
 4. Subagents never run the test binary or the app.
 
