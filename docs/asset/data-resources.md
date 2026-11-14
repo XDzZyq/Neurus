@@ -38,6 +38,33 @@ The source path lives here, in the data layer - scene objects wrap a `MeshData` 
 
 Like `MeshData`, the source path lives in the data layer.
 
+## ShaderData (`asset/data/shader/ShaderData.h`)
+
+`ShaderData` is the pooled CPU-side shader bundle and the UID a script
+addresses:
+
+- Holds a name, one `ShaderUnit` per `ShaderType`, the last error message and a
+  monotonic version. `FindStage` returns `nullptr` when a stage is absent;
+  `GetStage` default-inserts.
+- The concrete leaves are `RenderShader` (vertex + fragment) and
+  `ComputeShader` (compute), both in `src/render/shaders/`. They add
+  `ParseAndGenerate()` and serialize their source paths (and compute defaults);
+  `ShaderData` serializes the name and every stage's `path`/`code`/`parsed`.
+- SPIR-V and the version are runtime state: they are never serialized and are
+  rebuilt on load. A stage with restored code keeps it; a path-only legacy
+  shader re-parses from disk.
+- `ShaderUnit` is a stage value, not a pooled resource. `ShaderStruct` is the
+  parsed GLSL IR; `ShaderStructSerialize.h` provides its cereal overloads.
+- `ShaderStage.h` holds `ShaderType`, `ShaderTypeFromPath` and the default
+  G-buffer source paths.
+- Pooled shader names are addressed by name (`neurus.data.shaders["Name"]`),
+  so `ResourceComponent::Load` re-seeds the registry from `ShaderData::GetName`
+  after loading the pool.
+
+The Script Console exposes the data as `neurus.shader` (stage constants,
+`load_shader`, IR classes), `neurus.data.shaders` (pooled shaders by UID/name)
+and `mesh.shader` (the per-mesh slot). See [Scripting](../script/overview.md#shaders).
+
 ## PixelFormat (`asset/PixelFormat.h`)
 
 `PixelFormat` is a Vulkan-free enum for CPU-side format queries. Its numeric values deliberately differ from Vulkan's, so do not cast between them; the mapping is by convention:

@@ -226,6 +226,60 @@ Scripts run on the GUI thread inside the frame loop, before `Editor::Edit()`, an
 a write triggers therefore execute under the GIL as well: the model is
 single-threaded, and a script's cost is frame time like any other editor work.
 
+## Shaders
+
+`mesh.shader` is a stable slot, and the Python binding unit is a `ShaderUnit`
+view into a pooled `ShaderData`:
+
+```python
+import neurus
+
+mesh = neurus.scene.meshes["Ground"]
+
+mesh.shader.create()                                      # default G-buffer pair
+mesh.shader.create("res/shaders/render/gbuffer.vert",
+                   "res/shaders/render/gbuffer.frag")
+mesh.shader.create(fragment="res/shaders/render/gbuffer.frag")
+
+shader = neurus.shader.load_shader("res/shaders/render/gbuffer.frag")
+shader.fragment.code = open("my.frag").read()
+shader.fragment.compile()
+mesh.shader.create(fragment=shader)
+
+neurus.shader.load_shader("res/shaders/render/gbuffer.frag", name="MyFrag")
+mesh.shader.create(fragment=neurus.data.shaders["MyFrag"])
+
+frag = mesh.shader.fragment
+frag.code = frag.code                                     # one undo op, no compile
+ir = frag.parsed                                          # ShaderStruct copy
+ir.functions.append(neurus.shader.Function(name="helper", return_type="float",
+                                           body="return 1.0;"))
+frag.parsed = ir                                          # one undo op
+frag.compile(from_code=False)                             # regenerate + compile
+mesh.shader.remove()
+```
+
+- `mesh.shader` exposes `.attached`, `.create(...)`, `.remove()`, `.vertex`
+  and `.fragment`.
+- `create()` forms: no argument (default pair), one path (stage inferred from
+  the extension), two positional `(vertex, fragment)`, or `vertex=` /
+  `fragment=`. Each side is a path or a pooled `Shader`; a pooled shader
+  contributes its matching stage. A `.comp` source cannot attach to a mesh.
+- `load_shader` pools a `RenderShader` (`.vert` / `.frag`) or a `ComputeShader`
+  (`.comp`). A `.frag` load uses the default G-buffer vertex; a `.vert` load
+  uses the default fragment. The default name is the path as given.
+- `neurus.data.shaders` lists pooled shaders by UID or registered name.
+- A `ShaderUnit` exposes `.stage`, `.code`, `.parsed` and
+  `.compile(from_code=True)`. `.parsed` returns a copy; assign it back to write
+  the whole IR. No version or SPIR-V is exposed.
+- A pooled shader is copied stage-by-stage at `create`; editing the source
+  later does not change a mesh shader that was already created from it.
+- All writes go through typed events, so a script run is one undo entry.
+  Creation/replacement is one `ShaderReplaceOp`; compile is non-undoable.
+- A standalone `ComputeShader` can be loaded, edited and compiled, but nothing
+  dispatches it yet.
+- Shader code, IR and pooled names survive project save/reload.
+
 ## Environment
 
 The interpreter is the **base** CPython that the managed environment is built on,
