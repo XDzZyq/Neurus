@@ -287,6 +287,59 @@ private:
 };
 
 /**
+ * @brief Undoable shader link toggle - create, replace or remove in one op.
+ *
+ * `oldShaderId` is unlinked (when non-zero) and `newShaderId` is linked (when
+ * non-zero). Create is old=0, remove is new=0, replace is both; Inverse swaps
+ * the ids, so a replacement is always one undo entry. The pooled shaders stay
+ * alive either way.
+ */
+class ShaderReplaceOp : public Operation
+{
+public:
+	ShaderReplaceOp() = default;
+
+	ShaderReplaceOp(int uid, int oldShaderId, int newShaderId)
+		: m_uid(uid)
+		, m_oldShaderId(oldShaderId)
+		, m_newShaderId(newShaderId)
+	{}
+
+	void Apply(OperationContext& ctx) override
+	{
+		if (m_oldShaderId != 0)
+			ctx.events.Emit(ShaderUnlinkRestored{ m_uid });
+		if (m_newShaderId != 0)
+			ctx.events.Emit(ShaderLinkRestored{ m_uid, m_newShaderId });
+	}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<ShaderReplaceOp>(m_uid, m_newShaderId, m_oldShaderId);
+	}
+
+	std::string Label() const override
+	{
+		if (m_oldShaderId == 0) return "Create Shader";
+		if (m_newShaderId == 0) return "Remove Shader";
+		return "Replace Shader";
+	}
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::make_nvp("uid", m_uid),
+		   cereal::make_nvp("oldShaderId", m_oldShaderId),
+		   cereal::make_nvp("newShaderId", m_newShaderId));
+	}
+
+private:
+	int m_uid = 0;
+	int m_oldShaderId = 0;
+	int m_newShaderId = 0;
+};
+
+/**
  * @brief Undoable Create Shader - a pool-preserving membership toggle.
  *
  * Stores the target mesh UID + the pooled RenderShader UID + a direction flag.

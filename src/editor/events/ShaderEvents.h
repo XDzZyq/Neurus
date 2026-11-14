@@ -43,16 +43,32 @@ enum class ShaderSection : int
 	PushConstants = 7,  ///< push_constants   (S_PushConstant)- push-constant members
 };
 
+struct ShaderRequestResult;
+
 /**
- * @brief Emitted when the user clicks "Create Shader" for a mesh with no shader.
+ * @brief Requests creation (or replacement) of a mesh's shader.
  *
- * Handled by the Editor (which owns the pool): it loads and links a pooled
- * RenderShader, compiles it, and records a ShaderLinkOp so the create is
- * undoable. The ShaderController does NOT handle this event.
+ * Handled by the Editor (which owns the pool): each side is a source path or a
+ * pooled ShaderData UID whose matching stage is copied; empty sides use the
+ * default G-buffer pair. The new RenderShader is compiled before the old
+ * reference is dropped, and one ShaderReplaceOp records the link.
+ *
+ * @p result is non-owning and valid only during the synchronous dispatch.
  */
 struct ShaderCreateRequested
 {
-	int objectUid = 0;
+	int                 objectUid = 0;       ///< Target mesh UID.
+	std::string         vertexPath;          ///< Vertex file; empty = default.
+	std::string         fragmentPath;        ///< Fragment file; empty = default.
+	int                 vertexShaderUid = 0; ///< Pooled source for the vertex side (0 = none).
+	int                 fragmentShaderUid = 0; ///< Pooled source for the fragment side (0 = none).
+	ShaderRequestResult* result = nullptr;   ///< Optional reply slot, borrowed.
+};
+
+/** @brief Drops a mesh's shader reference; the pooled shader stays for undo. */
+struct ShaderRemoveRequested
+{
+	int objectUid = 0;  ///< Target mesh UID.
 };
 
 /**

@@ -56,6 +56,7 @@ CEREAL_REGISTER_TYPE(neurus::SetShaderFieldOp)
 CEREAL_REGISTER_TYPE(neurus::AddShaderFieldOp)
 CEREAL_REGISTER_TYPE(neurus::SetShaderUnitCodeOp)
 CEREAL_REGISTER_TYPE(neurus::SetShaderUnitStructOp)
+CEREAL_REGISTER_TYPE(neurus::ShaderReplaceOp)
 CEREAL_REGISTER_TYPE(neurus::ShaderLinkOp)
 
 // --- Polymorphic relations (Operation base -> concrete derived) ---
@@ -97,6 +98,7 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetShaderFieldOp
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::AddShaderFieldOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetShaderUnitCodeOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetShaderUnitStructOp)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::ShaderReplaceOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::ShaderLinkOp)
 
 // Forces this TU's registration to link when built into a static library.

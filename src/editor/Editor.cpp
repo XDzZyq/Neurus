@@ -187,6 +187,11 @@ void Editor::Initialize()
 		neurus::notify::Repaint(ed_eventBus);
 	});
 
+	ed_eventBus.Subscribe<ShaderRemoveRequested>([this](const ShaderRemoveRequested& e) {
+		OnRemoveShader(e);
+		neurus::notify::Repaint(ed_eventBus);
+	});
+
 	// Undo/redo of Create Shader: redo relinks the pooled RenderShader by UID;
 	// undo drops the reference (the pool keeps the shader). No version bump: the
 	// per-mesh (objectId, version) pipeline cache handles the relink.
@@ -1091,71 +1096,33 @@ void Editor::OnSpotLightAdd()
 
 void Editor::OnCreateShader(const ShaderCreateRequested& e)
 {
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+
 	auto mesh = m_resources->Get<Mesh>(e.objectUid);
 	if (!mesh)
 	{
-		NEURUS_ERR("[Editor] OnCreateShader: not a mesh");
-		return;
-	}
-	if (mesh->o_shader)
-	{
-		NEURUS_LOG("[Editor] Mesh already has a shader");
+		result.error = "not a mesh";
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader create failed: " << result.error);
 		return;
 	}
 
-	const int objectId = mesh->GetObjectID();
-	const std::string shaderName = "MeshShader_" + std::to_string(objectId);
-
-	try
+	result = CreateShader(*m_resources, *mesh, e, ed_eventBus, ed_operations);
+	if (e.result == nullptr && result.shaderUid == 0)
 	{
-		// Load<T> constructs + registers the pooled RenderShader; parse explicitly
-		// here. Paths keep the "res/..." prefix: the shader parser resolves them
-		// against the shader directory, so the stored path stays portable.
-		auto shader = m_resources->Load<RenderShader>(
-			shaderName, "res/shaders/render/gbuffer.vert", "res/shaders/render/gbuffer.frag");
-		if (!shader->ParseAndGenerate())
-		{
-			NEURUS_ERR("[Editor] Failed to create default shader for mesh " << objectId);
-			m_resources->Remove(shader->GetObjectID());
-			return;
-		}
-
-		mesh->SetObjShader(shader); // o_shader + o_shaderId (pooled reference)
-
-		// The link is the undoable fact: a pool-preserving membership toggle -
-		// undo drops the reference (the pool keeps the shader), redo relinks it.
-		ed_operations.Submit(std::make_unique<ShaderLinkOp>(
-			mesh->GetObjectID(), shader->GetObjectID(), true));
-
-		// Compile both stages to SPIR-V and bump version on success.
-		auto& s = *mesh->o_shader;
-		bool allOk = true;
-		if (s.HasStage(ShaderType::VERTEX))
-		{
-			auto& unit = s.GetStage(ShaderType::VERTEX);
-			unit.spv = ShaderLibrary::Compile(unit, ShaderType::VERTEX, s.GetName());
-			if (unit.spv.empty()) { allOk = false; }
-			else { unit.BumpVersion(); }
-		}
-		if (s.HasStage(ShaderType::FRAGMENT))
-		{
-			auto& unit = s.GetStage(ShaderType::FRAGMENT);
-			unit.spv = ShaderLibrary::Compile(unit, ShaderType::FRAGMENT, s.GetName());
-			if (unit.spv.empty()) { allOk = false; }
-			else { unit.BumpVersion(); }
-		}
-		if (allOk)
-		{
-			s.BumpVersion();
-			ed_eventBus.Emit(ShaderCompiled{ s.GetObjectID() });
-		}
-
-		NEURUS_LOG("[Editor] Created shader for mesh " << objectId << ": " << shaderName);
+		NEURUS_ERR("[Editor] Shader create failed: " << result.error);
 	}
-	catch (const std::exception& ex)
-	{
-		NEURUS_ERR("[Editor] Exception creating shader: " << ex.what());
-	}
+}
+
+void Editor::OnRemoveShader(const ShaderRemoveRequested& e)
+{
+	auto mesh = m_resources->Get<Mesh>(e.objectUid);
+	if (!mesh || !mesh->o_shader) return;
+
+	const int oldShaderId = mesh->o_shaderId;
+	mesh->SetObjShader(nullptr);
+	ed_operations.Submit(std::make_unique<ShaderReplaceOp>(
+		mesh->GetObjectID(), oldShaderId, 0));
 }
 
 void Editor::OnShaderLoad(const ShaderLoadRequested& e)
