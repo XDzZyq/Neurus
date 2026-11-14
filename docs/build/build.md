@@ -82,21 +82,39 @@ Toolchain, provisioned without root (paths are examples; anything on
 ```bash
 # CMake + Ninja (PyPI wheels), and the LunarG Vulkan SDK extraction
 python3 -m venv ~/.local/neurus-toolchain/pyenv
-~/.local/neurus-toolchain/pyenv/bin/pip install "cmake==3.31.6" ninja
+~/.local/neurus-toolchain/pyenv/bin/pip install "cmake==3.31.6" ninja uv
 # LunarG SDK 1.4.x, extracted to ~/.local/neurus-toolchain/vulkansdk
 tar -xJf vulkansdk-linux-x86_64-<version>.tar.xz \
     -C ~/.local/neurus-toolchain/vulkansdk --strip-components=1
+```
 
-. scripts/linux/Toolchain.sh ~/.local/neurus-toolchain
-make update      # submodules; no Linux prebuilt archive exists yet
+Add the environment to `~/.bashrc` (`uv` and CMake come from the same venv, so
+they land on `PATH` with the rest):
+
+```bash
+export VULKAN_SDK=$HOME/.local/neurus-toolchain/vulkansdk/x86_64
+export PATH=$HOME/.local/neurus-toolchain/pyenv/bin:$VULKAN_SDK/bin:$PATH
+# Loader directory only: the SDK's lib/ also holds libshaderc_shared.so.1, and
+# LD_LIBRARY_PATH outranks a binary's RUNPATH, so adding it would load the SDK
+# copy instead of the released prebuilt in lib/prebuilt/linux.
+export LD_LIBRARY_PATH=$VULKAN_SDK/lib/VulkanLoader/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+# The SDK's validation layers are not in the system layer directories.
+export VK_ADD_LAYER_PATH=$VULKAN_SDK/share/vulkan/explicit_layer.d${VK_ADD_LAYER_PATH:+:$VK_ADD_LAYER_PATH}
+```
+
+Then, in a new shell:
+
+```bash
+make update      # submodules, prebuilt shaderc, lib/.venv, configure
 make build
 make check
 ```
 
-`scripts/linux/Toolchain.sh` exports `VULKAN_SDK` and puts the SDK's **1.4
-loader** and layer path first. The system loader is often older (Ubuntu 22.04
-ships 1.3.204) and `VulkanContext` requests `VK_API_VERSION_1_4`; the context
-retries at 1.3 only when a loader rejects 1.4 outright.
+The environment above puts the SDK's **1.4 loader** first. The system loader is
+often older (Ubuntu 22.04 ships 1.3.204) and `VulkanContext` requests
+`VK_API_VERSION_1_4`; the context retries at 1.3 only when a loader rejects 1.4
+outright. Validation layers resolve their own libraries relative to their
+manifests, so `VK_ADD_LAYER_PATH` is what makes the SDK's layer discoverable.
 
 The Linux build consumes shaderc from `lib/prebuilt/linux/shaderc`, downloaded
 and verified by `make update` from the `lib-<sha12>` release that Neurus-Lib
@@ -121,8 +139,8 @@ The script layer is always built: every configuration embeds CPython, so
 behave the same on every platform. `lib/.venv` is therefore a configure
 requirement, and configure fails with an actionable message when it is missing.
 Provision it with `sh lib/scripts/setup_python_env.sh` (run by `make update`),
-which needs `uv`; `scripts/linux/Toolchain.sh` puts the toolchain's `uv` on
-`PATH`, and uv downloads the pinned CPython (3.12) on first use.
+which needs `uv` on `PATH` (the toolchain venv above provides it); uv downloads
+the pinned CPython (3.12) on first use.
 
 ## Web Documentation
 

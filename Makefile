@@ -9,7 +9,12 @@
 
 # --- Platform detection ---
 # $(OS) is set to Windows_NT by Windows itself, so the Windows branch does not
-# depend on finding a shell before it can be configured.
+# depend on finding a shell before it can be configured. uname is only asked for
+# when that variable is absent, so a Windows machine without it still parses.
+ifneq ($(OS),Windows_NT)
+  UNAME := $(shell uname -s)
+endif
+
 ifeq ($(OS),Windows_NT)
   # A PowerShell 7 parent leaks its own module directories into Windows
   # PowerShell 5.1 through sh, and 5.1 then fails to load
@@ -23,30 +28,27 @@ ifeq ($(OS),Windows_NT)
   SETUP_PY_ENV  := powershell -ExecutionPolicy Bypass -File lib/scripts/setup_python_env.ps1
   FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
   BUILD_DIR     := build
+else ifeq ($(UNAME),Darwin)
+  PRESET        := macos
+  PRESET_REL    := macos
+  PYTHON        := python3
+  SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
+  FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
+  BUILD_DIR     := build
+else ifeq ($(UNAME),Linux)
+  # Headless Linux: no Qt, no window system. CMake, Ninja, the Vulkan SDK and uv
+  # must already be on PATH/LD_LIBRARY_PATH (see docs/build/build.md).
+  PRESET        := linux
+  PRESET_REL    := linux
+  PYTHON        := python3
+  # The script layer is always built, so lib/.venv is provisioned here; uv must
+  # be on PATH (it ships with the toolchain venv, see docs/build/build.md).
+  SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
+  # Downloads and verifies the linux-x64 archive published for this commit.
+  FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
+  BUILD_DIR     := build/linux
 else
-  UNAME := $(shell uname -s)
-  ifeq ($(UNAME),Darwin)
-    PRESET        := macos
-    PRESET_REL    := macos
-    PYTHON        := python3
-    SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
-    FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
-    BUILD_DIR     := build
-  else ifeq ($(UNAME),Linux)
-    # Headless Linux: no Qt, no window system. CMake, Ninja and the Vulkan SDK
-    # come from scripts/linux/Toolchain.sh; see docs/build/build.md.
-    PRESET        := linux
-    PRESET_REL    := linux
-    PYTHON        := python3
-    # The script layer is always built, so lib/.venv is provisioned here; uv is
-    # part of the toolchain (scripts/linux/Toolchain.sh puts it on PATH).
-    SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
-    # Downloads and verifies the linux-x64 archive published for this commit.
-    FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
-    BUILD_DIR     := build/linux
-  else
-    $(error Unsupported platform '$(UNAME)': Neurus builds on Windows, macOS and headless Linux)
-  endif
+  $(error Unsupported platform '$(UNAME)': Neurus builds on Windows, macOS and headless Linux)
 endif
 
 .PHONY: configure build test clean nobuild release help app check update \

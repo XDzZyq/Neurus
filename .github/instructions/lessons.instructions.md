@@ -60,9 +60,11 @@ the **rule** that prevents it. Design detail behind these lives in
   cannot work.
 - **`vkCreateInstance` returns `VK_ERROR_INCOMPATIBLE_DRIVER` on a server whose
   GPU is fine.** The loader is older than the requested `VK_API_VERSION_1_4`
-  (Ubuntu 22.04 ships 1.3.204). Rule: put the SDK's 1.4 loader on
-  `LD_LIBRARY_PATH` (`scripts/linux/Toolchain.sh`), and keep the 1.3 retry in
-  `VulkanContext::CreateInstance`.
+  (Ubuntu 22.04 ships 1.3.204). Rule: put the SDK's 1.4 loader directory
+  (`$VULKAN_SDK/lib/VulkanLoader/lib`) on `LD_LIBRARY_PATH` - and nothing else
+  from the SDK's `lib/`, or its shaderc shadows the released prebuilt - and keep
+  the 1.3 retry in `VulkanContext::CreateInstance`. See
+  [docs/build/build.md](../../docs/build/build.md#linux-headless).
 - **A headless capture writes a black PNG, or validation reports a layout
   mismatch inside `Screenshot`.** `Screenshot::CaptureSwapchain` hardcodes
   `PRESENT_SRC` in both barriers, and a headless frame never presented anything.

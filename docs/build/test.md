@@ -447,10 +447,10 @@ configuration.
 
 ### Headless Linux
 
-The Linux suite runs without Qt and without a window:
+The Linux suite runs without Qt and without a window (the environment comes from
+`~/.bashrc` as described in [build.md](build.md#linux-headless)):
 
 ```bash
-. scripts/linux/Toolchain.sh ~/.local/neurus-toolchain
 cmake --preset linux
 cmake --build build/linux -j 8
 cd build/linux && ctest --output-on-failure -j 2
@@ -462,9 +462,9 @@ the Qt application tests and every test whose subject is a QObject (the
 against the real device; `TestWindow` reports an invalid handle so the tests
 that need a presentation surface skip, exactly as they do on macOS.
 
-Validation layers come from the SDK, so run the binary with the environment
-`Toolchain.sh` exports; run each suite from `build/linux` so `res/` and
-`testdata/` resolve. Reference-image tests still write under
+Validation layers come from the SDK, so `VK_ADD_LAYER_PATH` must point at
+`$VULKAN_SDK/share/vulkan/explicit_layer.d`; run each suite from `build/linux` so
+`res/` and `testdata/` resolve. Reference-image tests still write under
 `test/render/reference/` and are compared the same way.
 
 Headless snapshots are taken from the `OverlayOutput` attachment, not from a
