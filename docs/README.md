@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/neurus.svg" width="112" alt="Neurus logo">
+  <img src="assets/neurus.svg" width="112" alt="Neurus logo" loading="lazy">
 </p>
 
 # Neurus Documentation

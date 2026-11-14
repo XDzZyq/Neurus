@@ -13,7 +13,35 @@
 - `GetObjectID()` returns the unique integer; `GetTotalAllocated()` returns the total allocation count, including destroyed objects.
 - `serialize(ar)` writes `o_id`, and on load bumps `s_count` ahead of the loaded id so newly created objects do not collide with restored ones.
 
-`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. ShaderData's concrete leaves are the renderer's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
+```mermaid
+classDiagram
+    class UID {
+        +GetObjectID() int
+        +GetTotalAllocated() int
+        +serialize(ar)
+    }
+    class ObjectID {
+        +string o_name
+        +GOType o_type
+        +bool is_viewport
+        +bool is_rendered
+        +IsLight() bool
+    }
+    class MeshData
+    class ImageData
+    class ShaderData
+    class RenderShader
+    class ComputeShader
+
+    UID <|-- ObjectID
+    UID <|-- MeshData
+    UID <|-- ImageData
+    UID <|-- ShaderData
+    ShaderData <|-- RenderShader
+    ShaderData <|-- ComputeShader
+```
+
+`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. `ShaderData`'s concrete leaves are the renderer's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
 
 ## ObjectID as identity (`scene/ObjectID.h`)
 
