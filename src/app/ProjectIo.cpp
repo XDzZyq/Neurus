@@ -15,6 +15,23 @@
 
 namespace neurus
 {
+namespace
+{
+
+/**
+ * @brief Converts a path to the UTF-8 string Project::Load/Save take.
+ *
+ * std::filesystem::path converts implicitly to std::string only where its native
+ * string type is char; on MSVC it is std::wstring, so an implicit conversion does
+ * not compile (and path::string() is the ANSI code page, which throws beyond it).
+ */
+std::string Utf8Path(const std::filesystem::path& path)
+{
+	const std::u8string utf8 = path.u8string();
+	return std::string(utf8.begin(), utf8.end());
+}
+
+} // namespace
 
 void RegisterProjectComponents(project::Project& proj, Editor& editor, std::string& uiLayout)
 {
@@ -35,7 +52,7 @@ bool LoadProject(const std::filesystem::path& path, Editor& editor,
 	std::error_code fileError;
 	if (!std::filesystem::is_regular_file(path, fileError))
 	{
-		error = "Project file not found: " + path.string();
+		error = "Project file not found: " + Utf8Path(path);
 		NEURUS_ERR("[ProjectIo] " << error);
 		return false;
 	}
@@ -45,7 +62,7 @@ bool LoadProject(const std::filesystem::path& path, Editor& editor,
 		editor.BeginLoad();
 		project::Project proj;
 		RegisterProjectComponents(proj, editor, uiLayout);
-		proj.Load(path);
+		proj.Load(Utf8Path(path));
 		editor.FinishLoad();
 	}
 	catch (const std::exception& e)
@@ -72,7 +89,7 @@ bool SaveProject(const std::filesystem::path& path, Editor& editor,
 		std::string layout = uiLayout;
 		project::Project proj;
 		RegisterProjectComponents(proj, editor, layout);
-		proj.Save(path);
+		proj.Save(Utf8Path(path));
 		editor.ClearDirty();
 	}
 	catch (const std::exception& e)
