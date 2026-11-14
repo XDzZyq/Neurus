@@ -33,6 +33,12 @@
 #include "asset/data/ImageData.h"
 #include "asset/data/AssetPath.h"
 #include "asset/data/MeshData.h"
+#include "asset/data/ShaderData.h"
+#include "asset/data/shader/ShaderStage.h"
+#include "render/shaders/ComputeShader.h"
+#include "render/shaders/ShaderGenerator.h"
+#include "render/shaders/ShaderLibrary.h"
+#include "render/shaders/ShaderParser.h"
 #include "scene/Camera.h"
 #include "scene/DebugLine.h"
 #include "scene/DebugMesh.h"
@@ -113,6 +119,58 @@ int ActiveUid(const Scene& scene)
 	return active ? active->GetObjectID() : 0;
 }
 
+/**
+ * @brief Resolves one shader stage from a pooled source or a source path.
+ *
+ * Editor-owned import helper: the pool write follows this resolution. A pooled
+ * source contributes the stage matching @p type; a path must carry the matching
+ * extension; an empty path uses @p defaultPath.
+ */
+bool ResolveShaderStage(neurus::ResourceManager& resources, int sourceUid,
+                        const std::string& path, neurus::ShaderType type,
+                        const std::string& defaultPath, neurus::ShaderUnit& out,
+                        std::string& error)
+{
+	if (sourceUid != 0)
+	{
+		auto source = resources.Get<neurus::ShaderData>(sourceUid);
+		if (!source)
+		{
+			error = "shader source not found: " + std::to_string(sourceUid);
+			return false;
+		}
+		const neurus::ShaderUnit* unit = source->FindStage(type);
+		if (!unit)
+		{
+			error = "shader source has no " + neurus::ShaderData::TypeToString(type) + " stage";
+			return false;
+		}
+		out = *unit;
+		return true;
+	}
+
+	const std::string sourcePath = path.empty() ? defaultPath : path;
+	if (!path.empty())
+	{
+		const auto inferred = neurus::ShaderTypeFromPath(path);
+		if (!inferred || *inferred != type)
+		{
+			error = "shader path is not a " + neurus::ShaderData::TypeToString(type) + " file: " + path;
+			return false;
+		}
+	}
+
+	out.path = sourcePath;
+	out.parsed = neurus::ShaderParser::ParseShaderFile(sourcePath, type);
+	if (out.parsed.IsEmpty())
+	{
+		error = "failed to parse shader: " + sourcePath;
+		return false;
+	}
+	out.code = neurus::ShaderGenerator::Generate(out.parsed);
+	return true;
+}
+
 } // anonymous namespace
 
 Editor::Editor(RenderRequestSink* renderer)
@@ -135,6 +193,19 @@ void Editor::Initialize()
 	ed_eventBus.Subscribe<MeshImportEvent>([this](const MeshImportEvent& e) {
 		OnMeshImport(e.path);
 		neurus::notify::Repaint(ed_eventBus);
+	});
+
+	// Shader import: the Editor owns the pool, so it imports/compiles the
+	// shader asset here and emits ObjectShaderAddRequested for SceneController
+	// to link. UI uses ShaderImportEvent; scripts use ShaderCreateRequested.
+	ed_eventBus.Subscribe<ShaderImportEvent>([this](const ShaderImportEvent& e) {
+		OnShaderImport(e);
+	});
+	ed_eventBus.Subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
+		OnShaderCreate(e);
+	});
+	ed_eventBus.Subscribe<ShaderLoadRequested>([this](const ShaderLoadRequested& e) {
+		OnShaderLoad(e);
 	});
 	ed_eventBus.Subscribe<CameraAddEvent>([this](const CameraAddEvent&) {
 		OnCameraAdd();
@@ -901,6 +972,164 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 		error = e.what();
 		return 0;
 	}
+}
+
+int Editor::ImportShaderAsset(const std::string& path, const std::string& name,
+                              std::string& error)
+{
+	try
+	{
+		const auto stage = ShaderTypeFromPath(path);
+		if (!stage)
+		{
+			error = "unsupported shader extension: " + path;
+			return 0;
+		}
+		if (*stage == ShaderType::GEOMETRY)
+		{
+			error = "geometry shaders are not supported: " + path;
+			return 0;
+		}
+
+		const std::string shaderName = name.empty() ? path : name;
+		std::shared_ptr<ShaderData> shader;
+
+		if (*stage == ShaderType::COMPUTE)
+		{
+			auto compute = m_resources->Load<ComputeShader>(shaderName, path);
+			if (!compute->ParseAndGenerate())
+			{
+				m_resources->Remove(compute->GetObjectID());
+				error = "failed to parse shader: " + path;
+				return 0;
+			}
+			shader = compute;
+		}
+		else
+		{
+			const std::string vertPath = *stage == ShaderType::VERTEX ? path : kDefaultVertexPath;
+			const std::string fragPath = *stage == ShaderType::FRAGMENT ? path : kDefaultFragmentPath;
+			auto render = m_resources->Load<RenderShader>(shaderName, vertPath, fragPath);
+			if (!render->ParseAndGenerate())
+			{
+				m_resources->Remove(render->GetObjectID());
+				error = "failed to parse shader: " + path;
+				return 0;
+			}
+			shader = render;
+		}
+
+		const std::string unique = m_resources->SetName(shader->GetObjectID(), shaderName);
+		shader->SetName(unique.empty() ? shaderName : unique);
+		return shader->GetObjectID();
+	}
+	catch (const std::exception& e)
+	{
+		error = e.what();
+		return 0;
+	}
+}
+
+int Editor::ImportMeshShader(const Mesh& mesh, const ShaderCreateRequested& input,
+                             std::string& error)
+{
+	ShaderUnit vert;
+	ShaderUnit frag;
+	if (!ResolveShaderStage(*m_resources, input.vertexShaderUid, input.vertexPath,
+	                        ShaderType::VERTEX, kDefaultVertexPath, vert, error))
+	{
+		return 0;
+	}
+	if (!ResolveShaderStage(*m_resources, input.fragmentShaderUid, input.fragmentPath,
+	                        ShaderType::FRAGMENT, kDefaultFragmentPath, frag, error))
+	{
+		return 0;
+	}
+
+	const std::string shaderName = "MeshShader_" + std::to_string(mesh.GetObjectID());
+	auto shader = m_resources->Load<RenderShader>(shaderName, vert.path, frag.path);
+	shader->GetStage(ShaderType::VERTEX) = std::move(vert);
+	shader->GetStage(ShaderType::FRAGMENT) = std::move(frag);
+
+	// Compile before the caller links it: a failure removes the new pooled
+	// shader and leaves the mesh untouched.
+	std::string compileError;
+	for (const ShaderType type : { ShaderType::VERTEX, ShaderType::FRAGMENT })
+	{
+		auto& unit = shader->GetStage(type);
+		unit.spv = ShaderLibrary::Compile(unit, type, shaderName, &compileError);
+		if (unit.spv.empty())
+		{
+			m_resources->Remove(shader->GetObjectID());
+			error = compileError.empty() ? "shader compile failed" : compileError;
+			return 0;
+		}
+		unit.BumpVersion();
+	}
+
+	shader->BumpVersion();
+	const std::string unique = m_resources->SetName(shader->GetObjectID(), shaderName);
+	shader->SetName(unique.empty() ? shaderName : unique);
+	return shader->GetObjectID();
+}
+
+void Editor::OnShaderCreate(const ShaderCreateRequested& e)
+{
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+
+	auto mesh = m_resources->Get<Mesh>(e.objectUid);
+	if (!mesh)
+	{
+		result.error = "shader target is not a mesh";
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader create failed: " << result.error);
+		neurus::notify::Repaint(ed_eventBus);
+		return;
+	}
+
+	std::string error;
+	const int shaderUid = ImportMeshShader(*mesh, e, error);
+	if (shaderUid == 0)
+	{
+		result.error = error.empty() ? "shader creation failed" : error;
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader create failed: " << result.error);
+		neurus::notify::Repaint(ed_eventBus);
+		return;
+	}
+
+	result.shaderUid = shaderUid;
+	ed_eventBus.Emit(ObjectShaderAddRequested{ e.objectUid, shaderUid });
+
+	// The Editor imported the asset; SceneController links it and records the
+	// replace. Warm the pipeline only after the compile above succeeded.
+	ed_eventBus.Emit(ShaderCompiled{ shaderUid });
+	neurus::notify::Mutated(ed_eventBus);
+}
+
+void Editor::OnShaderImport(const ShaderImportEvent& e)
+{
+	ShaderCreateRequested request;
+	request.objectUid = e.objectUid;
+	OnShaderCreate(request);
+}
+
+void Editor::OnShaderLoad(const ShaderLoadRequested& e)
+{
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+
+	std::string error;
+	const int shaderUid = ImportShaderAsset(e.path, e.name, error);
+	if (shaderUid == 0)
+	{
+		result.error = error.empty() ? "shader load failed" : error;
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader load failed: " << result.error);
+		neurus::notify::Repaint(ed_eventBus);
+		return;
+	}
+
+	result.shaderUid = shaderUid;
+	neurus::notify::Mutated(ed_eventBus);
 }
 
 void Editor::OnCameraAdd()

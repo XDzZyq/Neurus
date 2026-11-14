@@ -7,6 +7,9 @@ namespace neurus {
 /** @brief Emitted when a mesh file is selected for import (Edit -> Add -> Mesh...). */
 struct MeshImportEvent { std::string path; };
 
+/** @brief Emitted when the Shader Editor asks to create the default shader for a mesh. */
+struct ShaderImportEvent { int objectUid = 0; };
+
 /** @brief Emitted when a new camera should be added to the scene (Edit -> Add -> Camera). */
 struct CameraAddEvent {};
 

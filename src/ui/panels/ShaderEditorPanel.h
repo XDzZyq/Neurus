@@ -8,6 +8,7 @@
 #pragma once
 
 #include "UIPanel.h"
+#include "editor/events/AssetEvents.h"
 #include "editor/events/ShaderEvents.h"
 
 #include <string>
@@ -44,7 +45,7 @@ public:
 	void Retranslate() override;
 
 signals:
-	void createShaderRequested(const ShaderCreateRequested& e);
+	void shaderImportRequested(const ShaderImportEvent& e);
 	void compileRequested(const ShaderCompileRequested& e);
 	void codeEdited(const ShaderCodeEdited& e);
 	void structEdited(const ShaderStructEdited& e);

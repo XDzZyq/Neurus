@@ -40,13 +40,19 @@ flowchart TD
 
 ## Edit flow
 
-The panel path is mesh-keyed: the ShaderEditorPanel emits `ShaderEvents`
-(`ShaderCodeEdited`, `ShaderStructEdited`, `ShaderFieldAdded`), and the
-`ShaderController` mutates the mesh's shader data. Creation, loading/removal and
-compilation are handled by `ShaderController`; the Editor owns the resource
-pool and supplies the mutable pool through `ControllerContext`. Create and
+Creation follows the mesh-import split. The UI emits `ShaderImportEvent` (from
+the Create Shader button) or a script emits `ShaderCreateRequested`; the
+**Editor** imports/compiles the shader into the pool, then emits
+`ObjectShaderAddRequested{mesh, shader}`. **SceneController** resolves both
+through the read-only pool, links the mesh and records one `ShaderReplaceOp`.
+`load_shader` is pool-only and stays in the Editor; remove is a SceneController
+unlink. `ShaderController` owns content edits and compilation. Create and
 compile bump the version, while code and struct edits wait for an explicit
 Compile.
+
+The panel path is mesh-keyed: the ShaderEditorPanel emits `ShaderEvents`
+(`ShaderCodeEdited`, `ShaderStructEdited`, `ShaderFieldAdded`), and
+`ShaderController` mutates the mesh's shader data.
 
 The script path is shader-keyed, so it also reaches a pooled `ComputeShader`:
 

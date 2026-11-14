@@ -22,9 +22,13 @@
 // Forward declarations (no render headers!)
 namespace neurus {
 class Camera;
+class Mesh;
 class MeshData;
 class RenderRequestSink;
 class Scene;
+struct ShaderCreateRequested;
+struct ShaderImportEvent;
+struct ShaderLoadRequested;
 struct MeshImportRequested;
 struct CameraAddRequested;
 struct ObjectDuplicateRequested;
@@ -314,7 +318,16 @@ private:
 	void OnSunLightAdd();
 	void OnSpotLightAdd();
 	// --- Shader lifecycle ---
-	// Creation/loading/removal are handled by ShaderController via the event bus.
+	// The Editor owns the pool: it imports shaders here and emits
+	// ObjectShaderAddRequested for SceneController to link. Content edits and
+	// compilation stay in ShaderController.
+	void OnShaderImport(const ShaderImportEvent& e);
+	void OnShaderCreate(const ShaderCreateRequested& e);
+	void OnShaderLoad(const ShaderLoadRequested& e);
+	int  ImportMeshShader(const Mesh& mesh, const ShaderCreateRequested& input,
+	                      std::string& error);
+	int  ImportShaderAsset(const std::string& path, const std::string& name,
+	                       std::string& error);
 	void OnSceneObjectGpuUpload(int objectUid);
 
 	/**
@@ -386,8 +399,7 @@ private:
 	ControllerContext m_ctx{ ed_eventBus, *m_resources, ed_operations,
 	                         [this]() { return m_scene.get(); },
 	                         [this]() { return &m_config; },
-	                         [this]() { return &m_viewport; },
-	                         m_resources.get() };
+	                         [this]() { return &m_viewport; } };
 
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;
 

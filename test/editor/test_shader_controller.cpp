@@ -90,7 +90,6 @@ protected:
 
 	void SetUp() override
 	{
-		m_ctx.pool = &m_resources;
 		m_controller.Init(m_ctx);
 
 		// Build a mesh with a CPU-only shader carrying seeded vertex+fragment
@@ -761,23 +760,23 @@ TEST_F(ShaderControllerTest, UnitCompileSucceedsAndEmitsShaderCompiled)
 
 TEST_F(ShaderControllerTest, ComputeShaderUnitCompilesWithoutShaderCompiled)
 {
-	ShaderRequestResult loaded;
-	m_eventBus.Emit(ShaderLoadRequested{ "res/shaders/compute/dummy.comp", "TestCompute", &loaded });
-	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
-	auto compute = m_resources.Get<ComputeShader>(loaded.shaderUid);
+	auto compute = m_resources.Load<ComputeShader>(
+		"TestCompute", "res/shaders/compute/dummy.comp");
 	ASSERT_TRUE(compute);
+	ASSERT_TRUE(compute->ParseAndGenerate());
+	const int shaderUid = compute->GetObjectID();
 
 	const int stage = static_cast<int>(ShaderType::COMPUTE);
 	const std::string edited =
 		compute->GetStage(ShaderType::COMPUTE).code + "\n// edited";
-	m_eventBus.Emit(ShaderUnitCodeSet{ loaded.shaderUid, stage, edited });
+	m_eventBus.Emit(ShaderUnitCodeSet{ shaderUid, stage, edited });
 	EXPECT_EQ(compute->GetStage(ShaderType::COMPUTE).code, edited);
 
 	bool fired = false;
 	m_eventBus.Subscribe<ShaderCompiled>([&](const ShaderCompiled&) { fired = true; });
 
 	ShaderCompileResult result;
-	m_eventBus.Emit(ShaderUnitCompileRequested{ loaded.shaderUid, stage, 0, &result });
+	m_eventBus.Emit(ShaderUnitCompileRequested{ shaderUid, stage, 0, &result });
 	EXPECT_TRUE(result.ok) << result.error;
 	EXPECT_FALSE(fired);
 	EXPECT_FALSE(compute->GetStage(ShaderType::COMPUTE).spv.empty());

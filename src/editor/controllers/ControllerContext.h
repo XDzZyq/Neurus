@@ -4,9 +4,9 @@
  *
  * Controllers depend ONLY on this context: events through IEventQueue, pooled
  * objects through IResourceLookup, undoable operations through IOperationSink -
- * never on the concrete EventQueue, ResourceManager or OperationManager. The
- * one explicit exception is `pool`, the mutable resource pool that shader-asset
- * creation needs; every other controller uses the read-only `resources`.
+ * never on the concrete EventQueue, ResourceManager or OperationManager. Pool
+ * writes stay in the Editor, which emits a typed event for the controller-side
+ * document mutation.
  *
  * It additionally carries providers for the Editor-owned singletons that are not
  * pooled objects: the current Scene (re-queried per use, because New/Load swaps
@@ -34,7 +34,6 @@ namespace neurus {
 class Scene;
 class RenderConfig;
 class EditorViewport;
-class ResourceManager;
 
 /**
  * @brief The three controller-facing interfaces plus editor singleton access.
@@ -65,15 +64,6 @@ struct ControllerContext
 	 * Mutable only so that `Gizmo()` is reachable - see the file comment.
 	 */
 	std::function<EditorViewport*()> viewport;
-
-	/**
-	 * @brief Mutable pool for shader-asset creation; null outside an editor.
-	 *
-	 * The Editor owns the pool and supplies it explicitly. Other controllers use
-	 * the read-only `resources`; shader loading/creation is the one operation
-	 * that must add and remove pooled objects.
-	 */
-	ResourceManager* pool = nullptr;
 };
 
 } // namespace neurus

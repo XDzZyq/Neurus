@@ -16,6 +16,7 @@
 #include "asset/components/ResourceComponent.h"
 #include "asset/data/ShaderData.h"
 #include "editor/Editor.h"
+#include "editor/events/AssetEvents.h"
 #include "editor/events/OperationEvents.h"
 #include "editor/events/ShaderEvents.h"
 #include "render/shaders/ComputeShader.h"
@@ -113,6 +114,19 @@ TEST_F(ShaderCreateTest, LoadedNameSurvivesResourceComponentRoundTrip)
 	}
 
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));
+}
+
+TEST_F(ShaderCreateTest, ShaderImportEventCreatesAndLinksDefaultShader)
+{
+	EXPECT_FALSE(m_editor.IsDirty());
+
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportEvent{ GroundUid() });
+
+	auto mesh = m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid());
+	ASSERT_TRUE(mesh->o_shader);
+	EXPECT_FALSE(mesh->o_shader->GetStage(neurus::ShaderType::VERTEX).spv.empty());
+	EXPECT_FALSE(mesh->o_shader->GetStage(neurus::ShaderType::FRAGMENT).spv.empty());
+	EXPECT_TRUE(m_editor.IsDirty());
 }
 
 TEST_F(ShaderCreateTest, CreateDefaultBuildsAndCompilesBothStages)

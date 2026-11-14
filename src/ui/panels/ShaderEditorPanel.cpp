@@ -230,11 +230,11 @@ ShaderEditorPanel::ShaderEditorPanel(QWidget* parent)
 			emit editEnd({m_activeObjectId, m_cachedStageType});
 	});
 
-	// --- Create Shader button -> event signal ---
+	// --- Create Shader button -> UI import event ---
 	QObject::connect(m_createBtn, &QPushButton::clicked, [this]()
 	{
 		if (m_activeObjectId != 0)
-			emit createShaderRequested({m_activeObjectId});
+			emit shaderImportRequested({m_activeObjectId});
 	});
 
 	// --- Stage combo change -> invalidate cache ---

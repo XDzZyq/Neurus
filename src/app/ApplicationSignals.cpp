@@ -311,6 +311,7 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	QObject::connect(&uiEvents, &neurus::UIEvents::projectSaveAsRequested,
 	                 [this](const neurus::ProjectSaveAsEvent& e) { OnProjectSave(e.path); });
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::meshImportRequested);
+	ConnectUIEvent(&uiEvents, &neurus::UIEvents::shaderImportRequested);
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::cameraAddRequested);
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::lightAddRequested);
 	ConnectUIEvent(&uiEvents, &neurus::UIEvents::sunLightAddRequested);
@@ -443,8 +444,9 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	// --- Shader Editor signals → Editor ---
 	if (auto* shaderPanel = app_mainWindow->GetPanel<neurus::ShaderEditorPanel>())
 	{
+		QObject::connect(shaderPanel, &neurus::ShaderEditorPanel::shaderImportRequested,
+		                 &uiEvents, &neurus::UIEvents::shaderImportRequested);
 		ConnectUIEvent(shaderPanel, &neurus::ShaderEditorPanel::compileRequested);
-		ConnectUIEvent(shaderPanel, &neurus::ShaderEditorPanel::createShaderRequested);
 		ConnectUIEvent(shaderPanel, &neurus::ShaderEditorPanel::codeEdited);
 		ConnectUIEvent(shaderPanel, &neurus::ShaderEditorPanel::structEdited);
 		ConnectUIEvent(shaderPanel, &neurus::ShaderEditorPanel::fieldAdded);

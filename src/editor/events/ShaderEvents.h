@@ -72,6 +72,19 @@ struct ShaderRemoveRequested
 };
 
 /**
+ * @brief Links a pooled shader to a mesh as the document-side half of creation.
+ *
+ * The Editor imports/compiles the shader into the pool, then emits this event.
+ * SceneController resolves both UIDs through the read-only pool, links the
+ * mesh, and records one ShaderReplaceOp; it never writes the pool.
+ */
+struct ObjectShaderAddRequested
+{
+	int objectUid = 0;  ///< Target mesh UID.
+	int shaderId = 0;   ///< Pooled RenderShader UID produced by the Editor.
+};
+
+/**
  * @brief Emitted when the user edits the GLSL code text for a stage.
  *
  * Updates the unit's code in-place and does NOT bump the version.
