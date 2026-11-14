@@ -17,7 +17,7 @@ namespace neurus
 class DeferredRenderer;
 class Editor;
 class EditorCommandAdapter;
-class Preferences;
+struct Preferences;
 class RenderThread;
 class ScriptEngine;
 class SessionServer;
