@@ -8,6 +8,8 @@
 
 #include "app/Application.h"
 
+#include "app/ApplicationCore.h"
+
 #include "app/Preferences.h"
 #include "app/ScriptCommands.h"
 #include "command/Commands.h"
@@ -40,12 +42,12 @@ int Application::Pid() const
 
 std::string Application::SessionName() const
 {
-	return app_sessionName;
+	return app_core->SessionName();
 }
 
 std::string Application::ProjectPath() const
 {
-	return app_projectPath;
+	return app_core->ProjectPath();
 }
 
 bool Application::Save(std::string& error)
@@ -85,16 +87,15 @@ int Application::SceneObjectCount() const
 
 command::CommandResult Application::Execute(const command::CommandRequest& request)
 {
-	// One implementation, shared with the headless renderer (app/ScriptCommands.h),
-	// so the CLI sees the same script behaviour on every platform.
-	if (!app_script || !app_editor)
+	// One implementation, shared with the headless renderer (ApplicationCore ->
+	// app/ScriptCommands.h), so the CLI sees the same script behaviour on every
+	// platform. The core owns the engine and the host sandbox policy.
+	if (!app_editor)
 	{
 		return command::CommandResult::Failure(command::CommandErrorCode::Internal,
-		                                      "Scripting is not initialized.");
+		                                      "The editor is not available.");
 	}
-	const Preferences preferences = app_preferences ? *app_preferences : Preferences{};
-	return ExecuteScriptCommand(request, *app_script, *app_editor, preferences,
-	                            ScriptProjectRoot());
+	return app_core->ExecuteScript(request, *app_editor);
 }
 
 command::CommandResult Application::Capture(const std::string& path, bool all)
@@ -108,7 +109,7 @@ command::CommandResult Application::Capture(const std::string& path, bool all)
 	std::error_code pathError;
 	const std::filesystem::path requested = std::filesystem::absolute(path, pathError);
 	const std::filesystem::path base = pathError ? std::filesystem::path(path) : requested;
-	const std::string session = app_sessionName.empty() ? "session" : app_sessionName;
+	const std::string session = app_core->SessionName().empty() ? "session" : app_core->SessionName();
 
 	auto listFiles = [](const std::filesystem::path& directory)
 	{

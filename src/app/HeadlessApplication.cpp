@@ -1,8 +1,8 @@
 #include "app/HeadlessApplication.h"
 
+#include "app/ApplicationCore.h"
 #include "app/Preferences.h"
 #include "app/ProjectIo.h"
-#include "app/ScriptCommands.h"
 #include "app/VulkanContext.h"
 #include "app/session/SessionServer.h"
 
@@ -17,7 +17,6 @@
 #include "render/UploadManager.h"
 #include "render/resources/LightingCache.h"
 #include "scene/Scene.h"
-#include "script/ScriptConsole.h"
 #include "script/ScriptContext.h"
 #include "script/ScriptEngine.h"
 
@@ -125,17 +124,10 @@ int HeadlessApplication::Run()
 	std::signal(SIGINT, OnTerminationSignal);
 	std::signal(SIGTERM, OnTerminationSignal);
 
-	// --- Preferences: shared with the Qt application ---
-	m_preferences = std::make_unique<Preferences>();
-	const std::string preferencesPath = Preferences::DefaultPath();
-	const Preferences::LoadResult preferencesResult = m_preferences->Load(preferencesPath);
-	if (preferencesResult == Preferences::LoadResult::Corrupt)
-	{
-		NEURUS_ERR("[neurus_headless] Preferences at " << preferencesPath
-		          << " are corrupt; moving them aside and using defaults");
-		Preferences::Backup(preferencesPath);
-	}
-	const int targetFps = m_preferences->targetFps;
+	// --- Preferences and the script engine: shared with the Qt application ---
+	m_core = std::make_unique<ApplicationCore>();
+	m_core->LoadPreferences();
+	const int targetFps = m_core->Prefs().targetFps;
 
 	try
 	{
@@ -173,37 +165,17 @@ int HeadlessApplication::Run()
 		m_commands = std::make_unique<EditorCommandAdapter>(*m_editor);
 
 		// --- Script layer: the same engine the GUI runs, always present ---
-		m_script = std::make_unique<ScriptEngine>();
-		m_script->SetEventQueue(&m_editor->GetEventQueue());
-		if (!m_script->Initialize())
-		{
-			NEURUS_ERR("[neurus_headless] Script engine failed to initialize; "
-			          "script.* commands will report it as unavailable");
-		}
-		if (m_script->IsReady())
-		{
-			// Preload precedence matches the GUI: --preload, then the persisted
-			// preference, then NEURUS_SCRIPT_PRELOAD.
-			std::vector<std::string> preload;
-			if (!m_args.preload.empty())
-				preload = m_args.preload;
-			else if (m_preferences && !m_preferences->scriptPreload.empty())
-				preload = m_preferences->scriptPreload;
-			else
-				preload = SplitPackageList(EnvironmentValue("NEURUS_SCRIPT_PRELOAD"));
+		// Preload precedence matches the GUI: --preload, then the persisted
+		// preference, then NEURUS_SCRIPT_PRELOAD.
+		std::vector<std::string> preload;
+		if (!m_args.preload.empty())
+			preload = m_args.preload;
+		else if (!m_core->Prefs().scriptPreload.empty())
+			preload = m_core->Prefs().scriptPreload;
+		else
+			preload = SplitPackageList(EnvironmentValue("NEURUS_SCRIPT_PRELOAD"));
 
-			if (!preload.empty())
-			{
-				for (const ScriptPreloadResult& result : m_script->Preload(preload))
-				{
-					if (result.ok)
-						NEURUS_LOG("[neurus_headless] preloaded " << result.package);
-					else
-						NEURUS_ERR("[neurus_headless] preload failed: " << result.package
-						          << ": " << result.error);
-				}
-			}
-		}
+		m_core->InitializeScripting(*m_editor, preload);
 
 		// --- Document ---
 		std::string loadError;
@@ -215,10 +187,9 @@ int HeadlessApplication::Run()
 
 		std::string uiLayout;
 		if (std::filesystem::is_regular_file(project) &&
-		    LoadProject(project, *m_editor, uiLayout, loadError))
+		    m_core->LoadProject(project, *m_editor, uiLayout, loadError))
 		{
-			m_projectPath = project.string();
-			NEURUS_LOG("[neurus_headless] Loaded project " << m_projectPath);
+			NEURUS_LOG("[neurus_headless] Loaded project " << m_core->ProjectPath());
 		}
 		else
 		{
@@ -226,12 +197,13 @@ int HeadlessApplication::Run()
 				NEURUS_ERR("[neurus_headless] " << loadError);
 
 			std::string defaultError;
-			if (!CreateDefaultDocument(defaultError))
+			if (!m_core->CreateDefaultDocument(*m_editor,
+			                                   ExecutableDirectory() / kDefaultSceneObj,
+			                                   defaultError))
 			{
 				NEURUS_ERR("[neurus_headless] Failed to create the default document: " << defaultError);
 				return 1;
 			}
-			m_projectPath.clear();
 		}
 
 		m_editor->UploadSceneResources();
@@ -239,16 +211,16 @@ int HeadlessApplication::Run()
 		// --- Session server (the CLI's entry point) ---
 		if (m_args.session)
 		{
-			m_sessionName = *m_args.session;
+			m_core->SetSessionName(*m_args.session);
 			m_session = std::make_unique<SessionServer>(
 				*this, kAppVersion, m_commands.get(), this, this);
 			std::string sessionError;
-			if (!m_session->Start(m_sessionName, m_projectPath, sessionError))
+			if (!m_session->Start(m_core->SessionName(), m_core->ProjectPath(), sessionError))
 			{
 				NEURUS_ERR("[neurus_headless] Failed to start the session: " << sessionError);
 				return 1;
 			}
-			NEURUS_LOG("[neurus_headless] Session '" << m_sessionName
+			NEURUS_LOG("[neurus_headless] Session '" << m_core->SessionName()
 			          << "' listening on port " << m_session->Port());
 		}
 
@@ -283,7 +255,7 @@ int HeadlessApplication::Run()
 			{
 				ScriptContext scriptContext;
 				m_editor->UpdateScriptContext(scriptContext);
-				m_script->ExecutePending(scriptContext);
+				m_core->Script().ExecutePending(scriptContext);
 			}
 
 			RenderFrameSnapshot snapshot;
@@ -317,24 +289,6 @@ int HeadlessApplication::Run()
 	return 0;
 }
 
-bool HeadlessApplication::CreateDefaultDocument(std::string& error)
-{
-	try
-	{
-		m_editor->NewScene();
-		const std::filesystem::path obj = ExecutableDirectory() / kDefaultSceneObj;
-		m_editor->CreateDefaultScene(obj.string());
-		m_editor->ClearDirty();
-		m_editor->UploadSceneResources();
-	}
-	catch (const std::exception& e)
-	{
-		error = e.what();
-		return false;
-	}
-	return true;
-}
-
 // ---------------------------------------------------------------------------
 // command::ISessionState
 // ---------------------------------------------------------------------------
@@ -346,12 +300,12 @@ int HeadlessApplication::Pid() const
 
 std::string HeadlessApplication::SessionName() const
 {
-	return m_sessionName;
+	return m_core->SessionName();
 }
 
 std::string HeadlessApplication::ProjectPath() const
 {
-	return m_projectPath;
+	return m_core->ProjectPath();
 }
 
 bool HeadlessApplication::IsDirty() const
@@ -361,20 +315,17 @@ bool HeadlessApplication::IsDirty() const
 
 bool HeadlessApplication::Save(std::string& error)
 {
-	if (m_projectPath.empty())
+	if (m_core->ProjectPath().empty())
 	{
 		error = "No project path is set.";
 		return false;
 	}
-	return SaveProject(m_projectPath, *m_editor, {}, error);
+	return m_core->SaveProject(m_core->ProjectPath(), *m_editor, {}, error);
 }
 
 bool HeadlessApplication::SaveAs(const std::string& path, std::string& error)
 {
-	if (!SaveProject(path, *m_editor, {}, error))
-		return false;
-	m_projectPath = path;
-	return true;
+	return m_core->SaveProject(path, *m_editor, {}, error);
 }
 
 bool HeadlessApplication::NewProject(bool force, std::string& error)
@@ -384,9 +335,9 @@ bool HeadlessApplication::NewProject(bool force, std::string& error)
 		error = "The project has unsaved changes; pass force to discard them.";
 		return false;
 	}
-	if (!CreateDefaultDocument(error))
+	if (!m_core->CreateDefaultDocument(*m_editor, ExecutableDirectory() / kDefaultSceneObj, error))
 		return false;
-	m_projectPath.clear();
+	m_core->SetProjectPath({});
 	return true;
 }
 
@@ -399,16 +350,16 @@ bool HeadlessApplication::OpenProject(const std::string& path, bool force, std::
 	}
 
 	std::string uiLayout;
-	if (!LoadProject(path, *m_editor, uiLayout, error))
+	if (!m_core->LoadProject(path, *m_editor, uiLayout, error))
 	{
 		// A failed load dropped the previous document; leave a valid one behind.
 		std::string resetError;
-		if (!CreateDefaultDocument(resetError))
+		if (!m_core->CreateDefaultDocument(*m_editor, ExecutableDirectory() / kDefaultSceneObj,
+		                                   resetError))
 			NEURUS_ERR("[neurus_headless] Recovery after a failed open failed: " << resetError);
 		return false;
 	}
 
-	m_projectPath = path;
 	m_editor->UploadSceneResources();
 	return true;
 }
@@ -435,37 +386,12 @@ std::string HeadlessApplication::AppVersion() const
 
 command::CommandResult HeadlessApplication::Execute(const command::CommandRequest& request)
 {
-	if (!m_script || !m_editor || !m_preferences)
+	if (!m_editor)
 	{
 		return command::CommandResult::Failure(command::CommandErrorCode::Internal,
-		                                      "Scripting is not initialized.");
+		                                      "The editor is not available.");
 	}
-	return ExecuteScriptCommand(request, *m_script, *m_editor, *m_preferences,
-	                            ScriptProjectRoot());
-}
-
-std::string HeadlessApplication::ScriptProjectRoot() const
-{
-	std::filesystem::path root;
-	if (!m_projectPath.empty())
-	{
-		root = std::filesystem::path(m_projectPath).parent_path();
-	}
-	if (root.empty())
-	{
-		std::error_code error;
-		root = std::filesystem::current_path(error);
-		if (error)
-		{
-			NEURUS_ERR("[neurus_headless] cannot resolve the working directory for the "
-			           "script sandbox: " << error.message());
-			return {};
-		}
-	}
-
-	// Python receives UTF-8; do not rely on path::string() (ANSI on MSVC).
-	const std::u8string utf8 = root.u8string();
-	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+	return m_core->ExecuteScript(request, *m_editor);
 }
 
 // ---------------------------------------------------------------------------
@@ -483,7 +409,7 @@ command::CommandResult HeadlessApplication::Capture(const std::string& path, boo
 	std::error_code pathError;
 	const std::filesystem::path requested = std::filesystem::absolute(path, pathError);
 	const std::filesystem::path base = pathError ? std::filesystem::path(path) : requested;
-	const std::string session = m_sessionName.empty() ? "session" : m_sessionName;
+	const std::string session = m_core->SessionName().empty() ? "session" : m_core->SessionName();
 
 	auto waitForCapture = [](std::future<bool>& future)
 	{

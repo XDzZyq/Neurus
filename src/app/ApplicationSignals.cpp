@@ -10,6 +10,8 @@
 
 #include "app/Application.h"
 
+#include "app/ApplicationCore.h"
+
 #include "app/Preferences.h"
 #include "app/session/SessionServer.h"
 #include "core/Log.h"
@@ -101,37 +103,12 @@ void Application::OnRunScript(const std::string& code)
 {
 	// Deferred: the engine queues it and the frame loop runs it. UI runs are
 	// trusted; only external CLI/agent commands execute under the host sandbox.
-	app_script->Submit(code);
+	app_core->Script().Submit(code);
 }
 
 void Application::OnRunFile(const std::string& path)
 {
-	app_script->SubmitFile(path);
-}
-
-std::string Application::ScriptProjectRoot() const
-{
-	std::filesystem::path root;
-	if (!app_projectPath.empty())
-	{
-		root = std::filesystem::path(app_projectPath).parent_path();
-	}
-	if (root.empty())
-	{
-		std::error_code error;
-		root = std::filesystem::current_path(error);
-		if (error)
-		{
-			NEURUS_ERR("[Application] cannot resolve the working directory for the "
-			           "script sandbox: " << error.message());
-			return {};
-		}
-	}
-
-	// Python receives UTF-8. path::string() is the ANSI code page on MSVC and
-	// throws for a character outside it, so convert explicitly.
-	const std::u8string utf8 = root.u8string();
-	return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+	app_core->Script().SubmitFile(path);
 }
 
 // =========================================================================
@@ -150,13 +127,13 @@ void Application::WireSignals()
 	QObject::connect(&uiEvents, &neurus::UIEvents::languageChangeRequested,
 	                 [this](const QString& language) {
 	                     neurus::I18n::instance().setLanguage(language);
-	                     app_preferences->language = language.toStdString();
-	                     app_preferences->Save(neurus::Preferences::DefaultPath());
+	                     app_core->Prefs().language = language.toStdString();
+	                     app_core->Prefs().Save(neurus::Preferences::DefaultPath());
 	                 });
 	QObject::connect(&uiEvents, &neurus::UIEvents::targetFpsChangeRequested,
 	                 [this](int fps) {
-	                     app_preferences->targetFps = fps;
-	                     app_preferences->Save(neurus::Preferences::DefaultPath());
+	                     app_core->Prefs().targetFps = fps;
+	                     app_core->Prefs().Save(neurus::Preferences::DefaultPath());
 	                     ApplyTargetFps(fps);
 	                 });
 	QObject::connect(
@@ -165,19 +142,19 @@ void Application::WireSignals()
 		       const QString& blockedModules, const QString& preload,
 		       bool allowNetwork, bool allowSubprocess, bool allowCtypes,
 		       int timeLimitSeconds, int memoryLimitMb) {
-			app_preferences->scriptSandboxReadRoots =
+			app_core->Prefs().scriptSandboxReadRoots =
 				SplitPreferenceList(readRoots.toStdString());
-			app_preferences->scriptSandboxWriteRoots =
+			app_core->Prefs().scriptSandboxWriteRoots =
 				SplitPreferenceList(writeRoots.toStdString());
-			app_preferences->scriptSandboxBlockedModules =
+			app_core->Prefs().scriptSandboxBlockedModules =
 				SplitPreferenceList(blockedModules.toStdString());
-			app_preferences->scriptPreload = SplitPreferenceList(preload.toStdString());
-			app_preferences->scriptSandboxAllowNetwork = allowNetwork;
-			app_preferences->scriptSandboxAllowSubprocess = allowSubprocess;
-			app_preferences->scriptSandboxAllowCtypes = allowCtypes;
-			app_preferences->scriptSandboxTimeLimitSeconds = timeLimitSeconds;
-			app_preferences->scriptSandboxMemoryLimitMb = memoryLimitMb;
-			app_preferences->Save(neurus::Preferences::DefaultPath());
+			app_core->Prefs().scriptPreload = SplitPreferenceList(preload.toStdString());
+			app_core->Prefs().scriptSandboxAllowNetwork = allowNetwork;
+			app_core->Prefs().scriptSandboxAllowSubprocess = allowSubprocess;
+			app_core->Prefs().scriptSandboxAllowCtypes = allowCtypes;
+			app_core->Prefs().scriptSandboxTimeLimitSeconds = timeLimitSeconds;
+			app_core->Prefs().scriptSandboxMemoryLimitMb = memoryLimitMb;
+			app_core->Prefs().Save(neurus::Preferences::DefaultPath());
 		});
 }
 
@@ -214,7 +191,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     // exit that skips the measurement without hiding cost.
 	                     const auto tickStart = std::chrono::steady_clock::now();
 
-	                     if (!app_renderThread || !app_editor || !app_script)
+	                     if (!app_renderThread || !app_editor)
 	                     {
 	                         return;
 	                     }
@@ -246,7 +223,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     // The context is generated fresh for this batch.
 	                     neurus::ScriptContext scriptCtx;
 	                     app_editor->UpdateScriptContext(scriptCtx);
-	                     app_script->ExecutePending(scriptCtx);
+	                     app_core->Script().ExecutePending(scriptCtx);
 
 	                     // A finished pick enters as a selection event, so this
 	                     // tick's Edit() handles it like any other UI event.
@@ -277,7 +254,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     ctx.profile = &status.profile;
 	                     ctx.log = &neurus::LogBuffer::instance();
 	                     ctx.history = &history;
-	                     ctx.scriptConsole = &app_script->Console();
+	                     ctx.scriptConsole = &app_core->Script().Console();
 	                     app_mainWindow->Refresh(ctx);
 
 	                     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(

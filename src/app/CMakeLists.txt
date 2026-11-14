@@ -8,6 +8,8 @@
 add_library(neurus_app_core STATIC
 	AppArgs.h
 	AppArgs.cpp
+	ApplicationCore.h
+	ApplicationCore.cpp
 	Preferences.h
 	Preferences.cpp
 	ProjectIo.h

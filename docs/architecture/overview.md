@@ -102,6 +102,15 @@ builds the frame snapshot, publishes it and refreshes the UI from `UIContext`.
 Commands and scripts therefore see their mutations applied in the tick that
 issued them.
 
+Two composition roots exist and share one service. `ApplicationCore`
+(`src/app/ApplicationCore.h`) is Qt-free and owns the preferences file, the
+script engine and the open project; it exposes document I/O, the `script.*`
+commands and the sandbox project root. The Qt application owns one and adds the
+window, UI, surface and Qt signal wiring; the headless application owns one and
+adds the offscreen target and its own loop. The dependency is one-way - the core
+knows nothing of Qt, the UI or Vulkan - which is what lets `neurus_headless`
+link no Qt at all while the CLI sees identical behaviour on every platform.
+
 ### Generated Structure Graph
 
 <!-- The link below is raw HTML on purpose. graphify.html is generated build
