@@ -57,7 +57,8 @@ public:
 	static std::vector<uint32_t> Compile(
 		const ShaderUnit& stage,
 		ShaderType type,
-		const std::string& debugName);
+		const std::string& debugName,
+		std::string* outError = nullptr);
 
 	static std::unordered_map<ShaderType, std::vector<uint32_t>> CompileAll(
 		const ShaderData& shader);

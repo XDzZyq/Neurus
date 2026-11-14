@@ -241,6 +241,67 @@ struct ShaderUnlinkRestored
 };
 
 // ---------------------------------------------------------------------------
+// Shader-keyed unit edits (script path)
+//
+// These address a pooled ShaderData directly, so they work for a mesh shader
+// and for a pooled ComputeShader. The panel keeps its mesh-keyed delta events.
+// ---------------------------------------------------------------------------
+
+/** @brief Result of an explicit compile request, filled synchronously. */
+struct ShaderCompileResult
+{
+	bool        ok = false;  ///< True when SPIR-V was produced.
+	std::string error;       ///< Compiler message on failure.
+};
+
+/** @brief Replaces one stage's GLSL code and records one undo op. */
+struct ShaderUnitCodeSet
+{
+	int         shaderUid = 0;  ///< Pooled ShaderData UID.
+	int         stage = 0;      ///< ShaderType as int.
+	std::string code;           ///< New GLSL source text.
+};
+
+/** @brief Replaces one stage's parsed IR and records one undo op. */
+struct ShaderUnitStructSet
+{
+	int           shaderUid = 0;  ///< Pooled ShaderData UID.
+	int           stage = 0;      ///< ShaderType as int.
+	ShaderStruct  parsed;         ///< New IR for the stage.
+};
+
+/**
+ * @brief Compiles one stage of a pooled shader.
+ *
+ * unitType 0 parses `code` into the IR and regenerates it before compiling;
+ * unitType 1 regenerates from the current IR. The reply slot is borrowed for
+ * the synchronous dispatch.
+ */
+struct ShaderUnitCompileRequested
+{
+	int                 shaderUid = 0;  ///< Pooled ShaderData UID.
+	int                 stage = 0;      ///< ShaderType as int.
+	int                 unitType = 0;   ///< 0 = code path, 1 = struct path.
+	ShaderCompileResult* result = nullptr;  ///< Optional reply slot, borrowed.
+};
+
+/** @brief Restores a stage's GLSL code (undo/redo replay). */
+struct ShaderUnitCodeRestored
+{
+	int         shaderUid = 0;
+	int         stage = 0;
+	std::string code;
+};
+
+/** @brief Restores a stage's parsed IR (undo/redo replay). */
+struct ShaderUnitStructRestored
+{
+	int          shaderUid = 0;
+	int          stage = 0;
+	ShaderStruct parsed;
+};
+
+// ---------------------------------------------------------------------------
 // Pooled shader asset loading
 // ---------------------------------------------------------------------------
 

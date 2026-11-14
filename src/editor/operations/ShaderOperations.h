@@ -191,6 +191,102 @@ private:
 };
 
 /**
+ * @brief Undoable replace of one shader unit's GLSL code (shader-keyed).
+ *
+ * Addresses the pooled ShaderData UID, so it works for a mesh shader and for a
+ * standalone ComputeShader. Replays by dispatching ShaderUnitCodeRestored.
+ */
+class SetShaderUnitCodeOp : public Operation
+{
+public:
+	SetShaderUnitCodeOp() = default;
+
+	SetShaderUnitCodeOp(int shaderUid, int stage, std::string beforeCode,
+	                    std::string afterCode)
+		: m_shaderUid(shaderUid)
+		, m_stage(stage)
+		, m_before(std::move(beforeCode))
+		, m_after(std::move(afterCode))
+	{}
+
+	void Apply(OperationContext& ctx) override
+	{
+		ctx.events.Emit(ShaderUnitCodeRestored{ m_shaderUid, m_stage, m_after });
+	}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<SetShaderUnitCodeOp>(
+			m_shaderUid, m_stage, m_after, m_before);
+	}
+
+	std::string Label() const override { return "Edit Shader Unit Code"; }
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::make_nvp("shaderUid", m_shaderUid),
+		   cereal::make_nvp("stage", m_stage),
+		   cereal::make_nvp("beforeCode", m_before),
+		   cereal::make_nvp("afterCode", m_after));
+	}
+
+private:
+	int         m_shaderUid = 0;
+	int         m_stage = 0;
+	std::string m_before;
+	std::string m_after;
+};
+
+/**
+ * @brief Undoable replace of one shader unit's parsed IR (shader-keyed).
+ *
+ * Carries the whole ShaderStruct before and after. Replays by dispatching
+ * ShaderUnitStructRestored, and inverts by swapping the endpoints.
+ */
+class SetShaderUnitStructOp : public Operation
+{
+public:
+	SetShaderUnitStructOp() = default;
+
+	SetShaderUnitStructOp(int shaderUid, int stage, ShaderStruct before,
+	                      ShaderStruct after)
+		: m_shaderUid(shaderUid)
+		, m_stage(stage)
+		, m_before(std::move(before))
+		, m_after(std::move(after))
+	{}
+
+	void Apply(OperationContext& ctx) override
+	{
+		ctx.events.Emit(ShaderUnitStructRestored{ m_shaderUid, m_stage, m_after });
+	}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<SetShaderUnitStructOp>(
+			m_shaderUid, m_stage, m_after, m_before);
+	}
+
+	std::string Label() const override { return "Edit Shader Unit IR"; }
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::make_nvp("shaderUid", m_shaderUid),
+		   cereal::make_nvp("stage", m_stage),
+		   cereal::make_nvp("before", m_before),
+		   cereal::make_nvp("after", m_after));
+	}
+
+private:
+	int          m_shaderUid = 0;
+	int          m_stage = 0;
+	ShaderStruct m_before;
+	ShaderStruct m_after;
+};
+
+/**
  * @brief Undoable Create Shader - a pool-preserving membership toggle.
  *
  * Stores the target mesh UID + the pooled RenderShader UID + a direction flag.

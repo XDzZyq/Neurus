@@ -23,7 +23,6 @@
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderGenerator.h"
 #include "render/shaders/ShaderParser.h"
-#include "render/shaders/RenderShader.h"
 
 #include "core/Log.h"
 
@@ -61,6 +60,16 @@ neurus::ShaderUnit* GetStageUnit(neurus::Mesh* mesh, int stage)
 	auto type = static_cast<neurus::ShaderType>(stage);
 	if (!mesh->o_shader->HasStage(type)) return nullptr;
 	return &mesh->o_shader->GetStage(type);
+}
+
+/**
+ * @brief Resolves a pooled shader by UID for the shader-keyed event family.
+ * @return Non-owning ShaderData*, or nullptr if the id is stale or not a shader.
+ */
+neurus::ShaderData* ResolveShaderData(const neurus::ControllerContext& ctx, int shaderUid)
+{
+	auto shader = ctx.resources.Get<neurus::ShaderData>(shaderUid);
+	return shader.get();
 }
 
 /**
@@ -192,76 +201,6 @@ void ApplyFieldEdit(neurus::S_StructDef& sd, int subFieldIndex,
 // ---------------------------------------------------------------------------
 
 /**
- * @brief Handles ShaderCreateRequested: loads default gbuffer shaders for a mesh.
- *
- * Loads, parses/generates, assigns to the mesh, compiles both stages to SPIR-V
- * and bumps the version on success.
- */
-void OnCreateShader(const neurus::ShaderCreateRequested& e, const neurus::ControllerContext& ctx)
-{
-	auto* mesh = ResolveMesh(ctx, e.objectUid);
-	if (!mesh)
-	{
-		NEURUS_ERR("[ShaderController] OnCreateShader: not a mesh");
-		return;
-	}
-
-	if (mesh->o_shader)
-	{
-		NEURUS_LOG("[ShaderController] Mesh already has a shader");
-		return;
-	}
-
-	const int objectId = mesh->GetObjectID();
-	const std::string shaderName = "MeshShader_" + std::to_string(objectId);
-	const std::string vertPath = "res/shaders/render/gbuffer.vert";
-	const std::string fragPath = "res/shaders/render/gbuffer.frag";
-
-	try
-	{
-		auto shader = neurus::ShaderLibrary::LoadRenderShader(shaderName, vertPath, fragPath);
-		if (!shader || !shader->ParseAndGenerate())
-		{
-			NEURUS_ERR("[ShaderController] Failed to load/parse default shader for mesh " << objectId);
-			return;
-		}
-
-		mesh->o_shader = std::move(shader);
-
-		// Compile both stages to SPIR-V and bump version on success
-		auto& s = *mesh->o_shader;
-		bool allOk = true;
-
-		if (s.HasStage(neurus::ShaderType::VERTEX))
-		{
-			auto& unit = s.GetStage(neurus::ShaderType::VERTEX);
-			unit.spv = neurus::ShaderLibrary::Compile(unit, neurus::ShaderType::VERTEX, s.GetName());
-			if (unit.spv.empty()) { allOk = false; }
-			else { unit.BumpVersion(); }
-		}
-		if (s.HasStage(neurus::ShaderType::FRAGMENT))
-		{
-			auto& unit = s.GetStage(neurus::ShaderType::FRAGMENT);
-			unit.spv = neurus::ShaderLibrary::Compile(unit, neurus::ShaderType::FRAGMENT, s.GetName());
-			if (unit.spv.empty()) { allOk = false; }
-			else { unit.BumpVersion(); }
-		}
-
-		if (allOk)
-		{
-			s.BumpVersion();
-			ctx.events.Emit(neurus::ShaderCompiled{ s.GetObjectID() });
-		}
-
-		NEURUS_LOG("[ShaderController] Created shader for mesh " << objectId << ": " << shaderName);
-	}
-	catch (const std::exception& ex)
-	{
-		NEURUS_ERR("[ShaderController] Exception creating shader: " << ex.what());
-	}
-}
-
-/**
  * @brief Handles ShaderCodeEdited: updates the stage's code in-place.
  *
  * Does NOT bump version: the user must press Compile to apply the change.
@@ -340,6 +279,137 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 	{
 		NEURUS_ERR("[ShaderController] Compile failed: " << ex.what());
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Shader-keyed unit handlers (script path)
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Handles ShaderUnitCodeSet: assigns a stage's code and records one op.
+ *
+ * Addresses the pooled ShaderData UID, so it works for a mesh shader and for a
+ * standalone ComputeShader. The unit version bumps so the panel refreshes.
+ */
+void OnUnitCodeSet(const neurus::ShaderUnitCodeSet& e, const neurus::ControllerContext& ctx)
+{
+	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
+	neurus::ShaderUnit* unit =
+		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
+	if (!unit || unit->code == e.code) return;
+
+	std::string before = unit->code;
+	unit->code = e.code;
+	unit->BumpVersion();
+	ctx.ops.Submit(std::make_unique<neurus::SetShaderUnitCodeOp>(
+		e.shaderUid, e.stage, std::move(before), e.code));
+}
+
+/**
+ * @brief Handles ShaderUnitStructSet: assigns a stage's whole IR and records one op.
+ */
+void OnUnitStructSet(const neurus::ShaderUnitStructSet& e, const neurus::ControllerContext& ctx)
+{
+	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
+	neurus::ShaderUnit* unit =
+		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
+	if (!unit) return;
+
+	neurus::ShaderStruct before = unit->parsed;
+	unit->parsed = e.parsed;
+	unit->BumpVersion();
+	ctx.ops.Submit(std::make_unique<neurus::SetShaderUnitStructOp>(
+		e.shaderUid, e.stage, std::move(before), e.parsed));
+}
+
+/**
+ * @brief Handles ShaderUnitCompileRequested: parses/generates and compiles a stage.
+ *
+ * Fills the reply slot with the shaderc message on failure. On success it
+ * resets temporal accumulation and, for a mesh shader, emits ShaderCompiled so
+ * the Editor warms the pipeline; a ComputeShader does neither.
+ */
+void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
+                   const neurus::ControllerContext& ctx)
+{
+	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
+	neurus::ShaderUnit* unit =
+		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
+	if (!unit)
+	{
+		if (e.result != nullptr) e.result->error = "shader stage not found";
+		return;
+	}
+
+	const auto type = static_cast<neurus::ShaderType>(e.stage);
+
+	try
+	{
+		if (e.unitType == 0)
+		{
+			unit->parsed = neurus::ShaderParser::ParseShaderCode(unit->code, type);
+			if (unit->parsed.IsEmpty())
+			{
+				if (e.result != nullptr) e.result->error = "failed to parse shader code";
+				return;
+			}
+			unit->code = neurus::ShaderGenerator::Generate(unit->parsed);
+		}
+		else
+		{
+			unit->code = neurus::ShaderGenerator::Generate(unit->parsed);
+		}
+
+		std::string compileError;
+		unit->spv = neurus::ShaderLibrary::Compile(*unit, type, shader->GetName(), &compileError);
+		if (unit->spv.empty())
+		{
+			if (e.result != nullptr)
+				e.result->error = compileError.empty() ? "shader compile failed" : compileError;
+			return;
+		}
+
+		unit->BumpVersion();
+		ctx.events.Emit(neurus::RenderResetEvent{});
+
+		if (shader->HasStage(neurus::ShaderType::VERTEX))
+		{
+			shader->BumpVersion();
+			ctx.events.Emit(neurus::ShaderCompiled{ shader->GetObjectID() });
+		}
+
+		if (e.result != nullptr) e.result->ok = true;
+		NEURUS_LOG("[ShaderController] Unit compiled: shader=" << e.shaderUid
+		           << " stage=" << e.stage << " (unitType=" << e.unitType << ")");
+	}
+	catch (const std::exception& ex)
+	{
+		if (e.result != nullptr) e.result->error = ex.what();
+	}
+}
+
+/** @brief Restores a stage's code (undo/redo replay) and bumps its version. */
+void OnUnitCodeRestored(const neurus::ShaderUnitCodeRestored& e,
+                        const neurus::ControllerContext& ctx)
+{
+	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
+	neurus::ShaderUnit* unit =
+		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
+	if (!unit) return;
+	unit->code = e.code;
+	unit->BumpVersion();
+}
+
+/** @brief Restores a stage's whole IR (undo/redo replay) and bumps its version. */
+void OnUnitStructRestored(const neurus::ShaderUnitStructRestored& e,
+                          const neurus::ControllerContext& ctx)
+{
+	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
+	neurus::ShaderUnit* unit =
+		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
+	if (!unit) return;
+	unit->parsed = e.parsed;
+	unit->BumpVersion();
 }
 
 /**
@@ -621,6 +691,19 @@ void ShaderController::Init(ControllerContext& ctx)
 			OnCompileShader(e, ctx);
 			ctx.events.Emit(RenderResetEvent{});
 		});
+
+	// Shader-keyed unit edits (script path): address the pooled ShaderData UID,
+	// so they work for a mesh shader and for a standalone ComputeShader.
+	ctx.events.Subscribe<ShaderUnitCodeSet>(
+		[ctx](const ShaderUnitCodeSet& e) { OnUnitCodeSet(e, ctx); });
+	ctx.events.Subscribe<ShaderUnitStructSet>(
+		[ctx](const ShaderUnitStructSet& e) { OnUnitStructSet(e, ctx); });
+	ctx.events.Subscribe<ShaderUnitCompileRequested>(
+		[ctx](const ShaderUnitCompileRequested& e) { OnUnitCompile(e, ctx); });
+	ctx.events.Subscribe<ShaderUnitCodeRestored>(
+		[ctx](const ShaderUnitCodeRestored& e) { OnUnitCodeRestored(e, ctx); });
+	ctx.events.Subscribe<ShaderUnitStructRestored>(
+		[ctx](const ShaderUnitStructRestored& e) { OnUnitStructRestored(e, ctx); });
 
 	// Code edits apply live; recording is bracketed by the ShaderEditBegin/End
 	// gesture so a keystroke burst collapses to one SetShaderCodeOp on focus-out.
