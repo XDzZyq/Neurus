@@ -3,6 +3,8 @@
 add_library(neurus_editor STATIC
 	Editor.h
 	Editor.cpp
+	ShaderCreation.h
+	ShaderCreation.cpp
 	Input.h
 	Input.cpp
 	commands/EditorCommandAdapter.h

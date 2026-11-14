@@ -240,4 +240,33 @@ struct ShaderUnlinkRestored
 	int objectUid = 0;   ///< Mesh UID whose shader reference is dropped.
 };
 
+// ---------------------------------------------------------------------------
+// Pooled shader asset loading
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Reply slot for a shader request; filled by the Editor synchronously.
+ *
+ * A zero @p shaderUid means failure and carries the reason in @p error.
+ */
+struct ShaderRequestResult
+{
+	int         shaderUid = 0;  ///< Pooled shader UID; 0 on failure.
+	std::string error;          ///< Reason on failure.
+};
+
+/**
+ * @brief Loads a shader source file into the pool as a RenderShader or ComputeShader.
+ *
+ * `.vert` and `.frag` build a RenderShader whose missing side is the default
+ * G-buffer source; `.comp` builds a ComputeShader. `.geom` and unknown
+ * extensions are rejected. @p result is borrowed for the synchronous dispatch.
+ */
+struct ShaderLoadRequested
+{
+	std::string          path;              ///< Shader source path, absolute or relative.
+	std::string          name;              ///< Registered name; empty uses the path.
+	ShaderRequestResult* result = nullptr;  ///< Optional reply slot, borrowed.
+};
+
 } // namespace neurus

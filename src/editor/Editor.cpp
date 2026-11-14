@@ -20,6 +20,7 @@
 #include "editor/controllers/TransformGizmoController.h"
 #include "editor/operations/ShaderOperations.h"
 #include "editor/events/EventBus.h"
+#include "editor/ShaderCreation.h"
 
 #include "render/requests/RenderRequestSink.h"
 #include "render/requests/RenderRequests.h"
@@ -176,6 +177,13 @@ void Editor::Initialize()
 	// handlers.
 	ed_eventBus.Subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
 		OnCreateShader(e);
+		neurus::notify::Repaint(ed_eventBus);
+	});
+
+	// Pooled shader assets (load_shader): the Editor owns the pool, so the
+	// source is parsed and registered here before the proxy sees the result.
+	ed_eventBus.Subscribe<ShaderLoadRequested>([this](const ShaderLoadRequested& e) {
+		OnShaderLoad(e);
 		neurus::notify::Repaint(ed_eventBus);
 	});
 
@@ -1147,6 +1155,17 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 	catch (const std::exception& ex)
 	{
 		NEURUS_ERR("[Editor] Exception creating shader: " << ex.what());
+	}
+}
+
+void Editor::OnShaderLoad(const ShaderLoadRequested& e)
+{
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+	result = LoadShaderAsset(*m_resources, e.path, e.name);
+	if (e.result == nullptr && result.shaderUid == 0)
+	{
+		NEURUS_ERR("[Editor] Shader load failed: " << result.error);
 	}
 }
 
