@@ -29,11 +29,14 @@ add_library(neurus_script STATIC
 	proxies/ObjectProxy.h
 	proxies/Transform3DProxy.h
 	proxies/SceneProxies.h
+	proxies/ShaderProxies.h
 	bindings/Bindings.h
 	bindings/ObjectBindings.cpp
 	bindings/DataBindings.cpp
 	bindings/SceneBindings.cpp
 	bindings/ConfigBindings.cpp
+	bindings/ShaderBindings.h
+	bindings/ShaderBindings.cpp
 	bindings/Module.cpp
 )
 

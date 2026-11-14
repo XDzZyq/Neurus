@@ -32,6 +32,7 @@
 #include "scene/Scene.h"
 #include "script/ScriptContext.h"
 #include "script/bindings/Bindings.h"
+#include "script/bindings/ShaderBindings.h"
 #include "script/proxies/ObjectProxy.h"
 #include "script/proxies/ProxyBase.h"
 #include "script/proxies/SceneProxies.h"
@@ -247,7 +248,9 @@ void RegisterDataBindings(py::module_& data)
 				EmitEvent(s, LightOuterCutoffChanged{s.uid, value});
 			});
 
-	py::class_<MeshProxy, ObjectProxy, Transform3DProxy>(data, "Mesh", "Proxy over a scene mesh.")
+	py::class_<MeshProxy, ObjectProxy, Transform3DProxy> meshClass(
+		data, "Mesh", "Proxy over a scene mesh.");
+	meshClass
 		.def_property(
 			"shadow",
 			[](const MeshProxy& s) { return s.Resolve()->using_shadow; },
@@ -274,6 +277,7 @@ void RegisterDataBindings(py::module_& data)
 			     }
 			     return py::str(mat->mat_name);
 		     });
+	RegisterMeshShaderBindings(meshClass);
 
 	py::class_<EnvironmentProxy, ObjectProxy, Transform3DProxy>(data, "Environment", "Proxy over the scene environment.")
 		.def_property(

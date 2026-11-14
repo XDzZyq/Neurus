@@ -132,6 +132,7 @@ if(NEURUS_ENABLE_SCRIPTING)
 		script/test_script_context.cpp
 		script/test_script_bindings.cpp
 		script/test_script_writes.cpp
+		script/test_script_shader.cpp
 		script/test_script_file_roundtrip.cpp
 		script/test_script_preload.cpp
 	script/test_script_isolation.cpp
