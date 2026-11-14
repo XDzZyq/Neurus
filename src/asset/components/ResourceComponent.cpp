@@ -15,7 +15,7 @@
 #include "scene/DebugMesh.h"
 #include "scene/Mesh.h"
 #include "scene/ObjectID.h"
-#include "asset/data/shader/ShaderData.h"
+#include "asset/data/ShaderData.h"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
 // UID-derived types are registered before serialization runs.

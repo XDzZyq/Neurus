@@ -17,8 +17,8 @@
 #include <string>
 
 #include "asset/components/ResourceComponent.h"
-#include "asset/data/shader/ShaderData.h"
-#include "asset/data/shader/ShaderStruct.h"
+#include "asset/data/ShaderData.h"
+#include "asset/data/ShaderStruct.h"
 #include "core/ResourceManager.h"
 #include "render/shaders/ComputeShader.h"
 #include "render/shaders/RenderShader.h"

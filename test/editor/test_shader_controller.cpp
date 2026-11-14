@@ -38,7 +38,6 @@
 #include <cereal/types/polymorphic.hpp>
 
 #include "editor/controllers/ShaderController.h"
-#include "editor/ShaderCreation.h"
 #include "editor/events/EventBus.h"
 #include "editor/events/ShaderEvents.h"
 #include "editor/operations/OperationContext.h"
@@ -49,10 +48,10 @@
 #include "core/RenderConfig.h"
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/ComputeShader.h"
-#include "asset/data/shader/ShaderData.h"
+#include "asset/data/ShaderData.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderParser.h"
-#include "asset/data/shader/ShaderUnit.h"
+#include "asset/data/ShaderUnit.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 #include "core/ResourceManager.h"
@@ -762,7 +761,7 @@ TEST_F(ShaderControllerTest, UnitCompileSucceedsAndEmitsShaderCompiled)
 TEST_F(ShaderControllerTest, ComputeShaderUnitCompilesWithoutShaderCompiled)
 {
 	ShaderRequestResult loaded =
-		LoadShaderAsset(m_resources, "res/shaders/compute/dummy.comp", "TestCompute");
+		ShaderController::LoadShaderAsset(m_resources, "res/shaders/compute/dummy.comp", "TestCompute");
 	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
 	auto compute = m_resources.Get<ComputeShader>(loaded.shaderUid);
 	ASSERT_TRUE(compute);

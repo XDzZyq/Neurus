@@ -24,7 +24,7 @@
 
 #include "editor/events/ShaderEvents.h"
 #include "editor/operations/Operation.h"
-#include "asset/data/shader/ShaderStructSerialize.h"
+#include "asset/data/ShaderStructSerialize.h"
 
 namespace neurus {
 

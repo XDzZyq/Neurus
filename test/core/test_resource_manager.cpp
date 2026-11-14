@@ -34,8 +34,8 @@
 #include "scene/Mesh.h"
 #include "asset/data/MeshData.h"
 #include "render/shaders/RenderShader.h"
-#include "asset/data/shader/ShaderData.h"
-#include "asset/data/shader/ShaderUnit.h"
+#include "asset/data/ShaderData.h"
+#include "asset/data/ShaderUnit.h"
 
 // Force-link the polymorphic registration TUs (static libs) so the pool's
 // UID-derived types are registered for the JSON round-trip below.

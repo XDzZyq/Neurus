@@ -1,7 +1,7 @@
 #pragma once
 
-#include "asset/data/shader/ShaderData.h"
-#include "asset/data/shader/ShaderStruct.h"
+#include "asset/data/ShaderData.h"
+#include "asset/data/ShaderStruct.h"
 
 #include <cstdint>
 #include <memory>

@@ -1,7 +1,7 @@
-﻿#include "scene/Mesh.h"
+#include "scene/Mesh.h"
 #include "core/Log.h"
 #include "asset/data/MeshData.h"
-#include "asset/data/shader/ShaderData.h"
+#include "asset/data/ShaderData.h"
 
 namespace neurus
 {

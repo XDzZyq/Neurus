@@ -7,7 +7,7 @@ parse/generate/compile pipeline and every GPU resource below it.
 ## Data model
 
 ```
-src/asset/data/shader/
+src/asset/data/
     ShaderStage.h             ShaderType + ShaderTypeFromPath + default paths
     ShaderStruct.h/.cpp       parsed GLSL IR
     ShaderStructSerialize.h   cereal overloads for the IR

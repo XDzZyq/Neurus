@@ -148,7 +148,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - PNG/HDR image decoding into ImageData (pure CPU struct, owning pixel vector)
 - `PixelFormat` enum for CPU-side format queries (maps to `vk::Format` by
   convention, not by cast)
-- CPU-side shader data under `data/shader/`: `ShaderData` (UID bundle),
+- CPU-side shader data under `data/`: `ShaderData` (UID bundle),
   `ShaderStruct` (parsed IR), `ShaderUnit` (one stage) and `ShaderStage`; the
   renderer's `RenderShader` / `ComputeShader` derive from `ShaderData`
 - CPU-side data representation only; GPU upload handled by Renderer via

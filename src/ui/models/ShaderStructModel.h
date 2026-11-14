@@ -1,7 +1,7 @@
 #pragma once
 
 #include "editor/events/ShaderEvents.h"
-#include "asset/data/shader/ShaderStruct.h"
+#include "asset/data/ShaderStruct.h"
 
 #include <QAbstractItemModel>
 #include <memory>

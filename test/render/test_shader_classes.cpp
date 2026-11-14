@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file test_shader_classes.cpp
  * @brief TDD unit tests for RenderShader, ComputeShader, and ShaderLibrary (Task 14).
  *
@@ -33,9 +33,9 @@
 #include "render/shaders/ComputeShader.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderCompiler.h"
-#include "asset/data/shader/ShaderStruct.h"
+#include "asset/data/ShaderStruct.h"
 #include "render/shaders/ShaderModule.h"
-#include "asset/data/shader/ShaderData.h"
+#include "asset/data/ShaderData.h"
 
 #include <thread>
 

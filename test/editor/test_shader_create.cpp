@@ -14,7 +14,7 @@
 #include <string>
 
 #include "asset/components/ResourceComponent.h"
-#include "asset/data/shader/ShaderData.h"
+#include "asset/data/ShaderData.h"
 #include "editor/Editor.h"
 #include "editor/events/OperationEvents.h"
 #include "editor/events/ShaderEvents.h"

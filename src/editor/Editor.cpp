@@ -20,7 +20,6 @@
 #include "editor/controllers/TransformGizmoController.h"
 #include "editor/operations/ShaderOperations.h"
 #include "editor/events/EventBus.h"
-#include "editor/ShaderCreation.h"
 
 #include "render/requests/RenderRequestSink.h"
 #include "render/requests/RenderRequests.h"
@@ -1104,7 +1103,7 @@ void Editor::OnCreateShader(const ShaderCreateRequested& e)
 		return;
 	}
 
-	result = CreateShader(*m_resources, *mesh, e, ed_eventBus, ed_operations);
+	result = ShaderController::CreateShader(*m_resources, *mesh, e, ed_eventBus, ed_operations);
 	if (e.result == nullptr && result.shaderUid == 0)
 	{
 		NEURUS_ERR("[Editor] Shader create failed: " << result.error);
@@ -1129,7 +1128,7 @@ void Editor::OnShaderLoad(const ShaderLoadRequested& e)
 {
 	ShaderRequestResult local;
 	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
-	result = LoadShaderAsset(*m_resources, e.path, e.name);
+	result = ShaderController::LoadShaderAsset(*m_resources, e.path, e.name);
 	if (e.result == nullptr && result.shaderUid == 0)
 	{
 		NEURUS_ERR("[Editor] Shader load failed: " << result.error);

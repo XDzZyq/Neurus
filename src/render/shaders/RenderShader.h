@@ -18,7 +18,7 @@
  */
 #pragma once
 
-#include "asset/data/shader/ShaderData.h"
+#include "asset/data/ShaderData.h"
 
 namespace neurus {
 

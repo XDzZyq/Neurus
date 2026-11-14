@@ -17,10 +17,10 @@
 #include <tuple>
 #include <vector>
 
-#include "asset/data/shader/ShaderData.h"
-#include "asset/data/shader/ShaderStage.h"
-#include "asset/data/shader/ShaderStruct.h"
-#include "asset/data/shader/ShaderUnit.h"
+#include "asset/data/ShaderData.h"
+#include "asset/data/ShaderStage.h"
+#include "asset/data/ShaderStruct.h"
+#include "asset/data/ShaderUnit.h"
 #include "core/IResourceLookup.h"
 #include "editor/events/ShaderEvents.h"
 #include "script/ScriptContext.h"

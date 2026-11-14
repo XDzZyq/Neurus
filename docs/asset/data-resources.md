@@ -38,7 +38,7 @@ The source path lives here, in the data layer - scene objects wrap a `MeshData` 
 
 Like `MeshData`, the source path lives in the data layer.
 
-## ShaderData (`asset/data/shader/ShaderData.h`)
+## ShaderData (`asset/data/ShaderData.h`)
 
 `ShaderData` is the pooled CPU-side shader bundle and the UID a script
 addresses:

@@ -11,7 +11,7 @@
 #include <glm/glm.hpp>
 
 #include "scene/Mesh.h"
-#include "asset/data/shader/ShaderData.h"
+#include "asset/data/ShaderData.h"
 #include "scene/Transform.h"
 #include "scene/ObjectID.h"
 #include "asset/data/MeshData.h"
