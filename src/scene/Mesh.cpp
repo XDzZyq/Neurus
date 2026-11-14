@@ -1,7 +1,7 @@
 ﻿#include "scene/Mesh.h"
 #include "core/Log.h"
 #include "asset/data/MeshData.h"
-#include "render/shaders/Shader.h"
+#include "asset/data/shader/ShaderData.h"
 
 namespace neurus
 {
@@ -24,7 +24,7 @@ Mesh::~Mesh()
 {
 }
 
-void Mesh::SetObjShader(std::shared_ptr<Shader> shader)
+void Mesh::SetObjShader(std::shared_ptr<ShaderData> shader)
 {
 	o_shader = std::move(shader);
 	o_shaderId = o_shader ? o_shader->GetObjectID() : 0;

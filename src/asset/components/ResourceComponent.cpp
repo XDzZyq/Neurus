@@ -15,7 +15,7 @@
 #include "scene/DebugMesh.h"
 #include "scene/Mesh.h"
 #include "scene/ObjectID.h"
-#include "render/shaders/Shader.h"
+#include "asset/data/shader/ShaderData.h"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
 // UID-derived types are registered before serialization runs.
@@ -71,7 +71,7 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		}
 		if (mesh->o_shaderId != 0)
 		{
-			auto shader = m_resources->Get<Shader>(mesh->o_shaderId);
+			auto shader = m_resources->Get<ShaderData>(mesh->o_shaderId);
 			if (shader)
 				mesh->o_shader = shader;
 			else

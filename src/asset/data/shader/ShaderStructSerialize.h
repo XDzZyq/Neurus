@@ -25,7 +25,7 @@
 #include <cereal/types/variant.hpp>
 #include <cereal/types/vector.hpp>
 
-#include "render/shaders/ShaderStruct.h"
+#include "ShaderStruct.h"
 
 namespace neurus {
 

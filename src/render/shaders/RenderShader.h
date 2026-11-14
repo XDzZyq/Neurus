@@ -18,7 +18,7 @@
  */
 #pragma once
 
-#include "Shader.h"
+#include "asset/data/shader/ShaderData.h"
 
 namespace neurus {
 
@@ -30,7 +30,7 @@ namespace neurus {
  *
  * @note Non-copyable, non-movable (UID semantics). Not thread-safe.
  */
-class RenderShader : public Shader
+class RenderShader : public ShaderData
 {
 public:
 	/**
@@ -84,7 +84,7 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<Shader>(this), CEREAL_NVP(m_vertPath), CEREAL_NVP(m_fragPath));
+		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_vertPath), CEREAL_NVP(m_fragPath));
 		if constexpr (Archive::is_loading::value)
 		{
 			ReloadContent();
@@ -101,7 +101,7 @@ public:
 	 *
 	 * @return true if both stages parsed and generated successfully.
 	 */
-	bool ParseAndGenerate() override;
+	bool ParseAndGenerate();
 
 	/**
 	 * @brief Returns the primary shader type (VERTEX).

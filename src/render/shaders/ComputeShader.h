@@ -33,7 +33,7 @@
 
 #pragma once
 
-#include "Shader.h"
+#include "asset/data/shader/ShaderData.h"
 
 #include <cstdint>
 #include <string>
@@ -46,7 +46,7 @@ namespace neurus {
  *
  * Manages a single compute-stage ShaderUnit.
  */
-class ComputeShader : public Shader
+class ComputeShader : public ShaderData
 {
 public:
 	/**
@@ -66,7 +66,7 @@ public:
 	 * @param name     Human-readable shader name (for logging and debugging).
 	 * @param compPath Path to the compute shader GLSL source file (.comp).
 	 */
-	ComputeShader(std::string name, std::string compPath);
+	ComputeShader(std::string name = "", std::string compPath = "");
 
 	~ComputeShader() override = default;
 
@@ -85,7 +85,7 @@ public:
 	 *
 	 * @return true if all steps succeeded, false on parse/generation error.
 	 */
-	bool ParseAndGenerate() override;
+	bool ParseAndGenerate();
 
 	/**
 	 * @brief Returns the shader type.

@@ -1,6 +1,6 @@
 #include "ShaderLibrary.h"
 
-#include "Shader.h"
+#include "asset/data/shader/ShaderData.h"
 #include "ShaderCompiler.h"
 #include "RenderShader.h"
 #include "ComputeShader.h"
@@ -195,7 +195,7 @@ std::vector<uint32_t> ShaderLibrary::Compile(
 }
 
 std::unordered_map<ShaderType, std::vector<uint32_t>> ShaderLibrary::CompileAll(
-	const Shader& shader)
+	const ShaderData& shader)
 {
 	std::unordered_map<ShaderType, std::vector<uint32_t>> results;
 

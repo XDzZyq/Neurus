@@ -96,7 +96,7 @@ protected:
 	}
 
 	// A sphere mesh carrying @p shader as its per-mesh Shader.
-	std::shared_ptr<Mesh> MakeMesh(std::shared_ptr<Shader> shader)
+	std::shared_ptr<Mesh> MakeMesh(std::shared_ptr<ShaderData> shader)
 	{
 		auto meshData = std::make_shared<MeshData>();
 		meshData->LoadObj(ResolveAssetPath("res/obj/sphere.obj"));

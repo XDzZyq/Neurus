@@ -28,7 +28,7 @@ namespace neurus
 
 class Material;
 class MeshData;
-class Shader;
+class ShaderData;
 /**
  * @brief 3D mesh object representing renderable geometry with material and transform.
  *
@@ -49,7 +49,7 @@ public:
 	std::shared_ptr<MeshData> o_mesh;
 
 	/// CPU-side shader for rendering this mesh (null = use default pass shader)
-	std::shared_ptr<Shader> o_shader;
+	std::shared_ptr<ShaderData> o_shader;
 
 	bool using_shadow   = true;
 	bool using_material = true;
@@ -89,7 +89,7 @@ public:
 	Mesh(Mesh&&) = delete;
 	Mesh& operator=(Mesh&&) = delete;
 
-	void SetObjShader(std::shared_ptr<Shader> shader);
+	void SetObjShader(std::shared_ptr<ShaderData> shader);
 	void SetTex(int _type, const std::string& _name);
 	void SetMatColor(int _type, float _val);
 	void SetMatColor(int _type, const glm::vec3& _col);

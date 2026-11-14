@@ -380,7 +380,7 @@ void Editor::Initialize()
 	// and no frame draws with the pass default. Keyed on the shader's object id.
 	ed_eventBus.Subscribe<ShaderCompiled>([this](const ShaderCompiled& e) {
 		if (!ed_renderer) return;
-		auto shader = m_resources->Get<Shader>(e.shaderObjectId);
+		auto shader = m_resources->Get<ShaderData>(e.shaderObjectId);
 		if (!shader) return;
 		ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
 	});

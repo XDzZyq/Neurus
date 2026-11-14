@@ -19,7 +19,7 @@ namespace neurus {
 // =========================================================================
 
 ComputeShader::ComputeShader(std::string name, std::string compPath)
-	: Shader(std::move(name))
+	: ShaderData(std::move(name))
 	, m_compPath(std::move(compPath))
 {
 	m_stages[ShaderType::COMPUTE] = ShaderUnit{m_compPath, {}, {}};

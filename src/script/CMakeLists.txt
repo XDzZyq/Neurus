@@ -41,6 +41,7 @@ target_link_libraries(neurus_script PUBLIC
 	neurus_editor
 	neurus_core
 	neurus_scene
+	neurus_asset
 	pybind11::embed
 	Python::Python
 )

@@ -33,9 +33,9 @@
 #include "render/shaders/ComputeShader.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderCompiler.h"
-#include "render/shaders/ShaderStruct.h"
+#include "asset/data/shader/ShaderStruct.h"
 #include "render/shaders/ShaderModule.h"
-#include "render/shaders/Shader.h"
+#include "asset/data/shader/ShaderData.h"
 
 #include <thread>
 
@@ -675,8 +675,8 @@ TEST_F(ShaderClassesTest, ShaderLibrary_ThreadSafety_DifferentNames)
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
-	std::shared_ptr<Shader> result1;
-	std::shared_ptr<Shader> result2;
+	std::shared_ptr<ShaderData> result1;
+	std::shared_ptr<ShaderData> result2;
 
 	// Two threads loading different shader names concurrently
 	std::thread t1([&]() {

@@ -21,7 +21,7 @@ namespace neurus {
 // =========================================================================
 
 RenderShader::RenderShader(std::string name, std::string vertPath, std::string fragPath)
-	: Shader(std::move(name))
+	: ShaderData(std::move(name))
 	, m_vertPath(std::move(vertPath))
 	, m_fragPath(std::move(fragPath))
 {

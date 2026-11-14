@@ -70,7 +70,7 @@ class ComposePass;
 class FXAAPass;
 class OverlayEngine;
 struct CameraUBOData;
-class Shader;
+class ShaderData;
 class UploadManager;
 class RenderRequestProcessor;
 class Screenshot;

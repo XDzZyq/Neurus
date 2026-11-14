@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Shader.h"
-#include "ShaderStruct.h"
+#include "asset/data/shader/ShaderData.h"
+#include "asset/data/shader/ShaderStruct.h"
 
 #include <cstdint>
 #include <memory>
@@ -11,7 +11,6 @@
 
 namespace neurus {
 
-class Shader;
 class RenderShader;
 class ComputeShader;
 struct ShaderUnit;
@@ -61,7 +60,7 @@ public:
 		const std::string& debugName);
 
 	static std::unordered_map<ShaderType, std::vector<uint32_t>> CompileAll(
-		const Shader& shader);
+		const ShaderData& shader);
 
 	// --- Build-in constants ---
 	static const S_Const* GetBuildInConstant(const std::string& name);

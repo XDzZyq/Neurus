@@ -18,8 +18,8 @@
 #include "scene/Scene.h"
 #include "scene/ObjectID.h"
 
-#include "render/shaders/Shader.h"
-#include "render/shaders/ShaderUnit.h"
+#include "asset/data/shader/ShaderData.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderGenerator.h"
 #include "render/shaders/ShaderParser.h"

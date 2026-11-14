@@ -6,8 +6,8 @@
 #include "UIContext.h"
 #include "ui/utils/I18n.h"
 #include "scene/Scene.h"
-#include "render/shaders/ShaderUnit.h"
-#include "render/shaders/ShaderStruct.h"
+#include "asset/data/shader/ShaderUnit.h"
+#include "asset/data/shader/ShaderStruct.h"
 
 #include <QAbstractItemView>
 #include <QComboBox>
