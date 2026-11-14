@@ -51,6 +51,28 @@ NEURUS_ERR("Texture::createFromPixelData failed: " << e.what());
 - Non-trivial sections get `// --- Section Name ---` separators
 - Use a normal hyphen (`-`) instead of an em dash or en dash.
 
+## Documentation Diagrams
+
+- A diagram in `docs/` is a fenced `mermaid` code block, never a box-drawing
+  block. MkDocs renders it as an SVG through the `mermaid` custom fence in
+  `mkdocs.yml`, and GitHub renders the same fence in the repository view.
+- Pick the diagram for the question: `flowchart` for a pipeline or an ownership
+  chain, `stateDiagram-v2` for a state machine, `classDiagram` for type
+  relationships.
+- Quote every node label (`id["text"]`) and use `<br/>` for a line break. An
+  unquoted label breaks on parentheses, and `end`, `scale` and `graph` are
+  reserved words a node id must avoid.
+- Keep the prose around the diagram: the diagram shows the shape, the text
+  carries the contract.
+- A code block that shows a real file carries `title="<path>"` rather than a
+  `// path` comment line.
+- A node label is a title plus at most two short lines. Long labels widen the
+  node past the article column, so the detail belongs in the prose.
+- An image is a Markdown image with `width` and `align` attributes, not a
+  figure: captions live in the prose.
+- Data tables are plain Markdown; `tablesort` makes every table in an article
+  sortable in the browser.
+
 ## Non-ASCII Hygiene
 
 - Never use PowerShell `Set-Content -Force` on source files. On Windows

@@ -43,11 +43,12 @@ Every view-projection pass reads the frame's camera (`ctx.Frame().camera`)
 `GeometryPass` through the shared `CameraGPU`), and no pass reads the Scene.
 The Editor chooses that pointer:
 
-```
-Editor::ActiveCamera()       = scene.GetActiveCamera()  // activated scene camera
-                               ?: viewport.ViewportCamera()
-Editor::PublishActiveCamera() -> viewport.SetCamera(active)
-EditorViewport::GetCamera()  = published pointer
+```mermaid
+flowchart LR
+    sceneCamera["active scene camera"] --> active
+    viewportCamera["EditorViewport::ViewportCamera()<br/>the fallback"] --> active
+    active["Editor::ActiveCamera()"] --> publish["PublishActiveCamera()"]
+    publish --> get["EditorViewport::GetCamera()<br/>the published pointer"]
 ```
 
 This is selection, not synchronization. The viewport camera and an activated
@@ -133,13 +134,13 @@ none.
 
 The resize reaches a camera through the existing controller path:
 
-```
-Application::ResizeViewport
-  -> Editor::HandleViewportResize(logical, render)
-       -> EditorViewport::HandleResize(...)          // cache extent, no camera write
-       -> CameraResizeEvent{ activeCameraUid, logical }
-  -> CameraController::OnCameraResize
-       -> ChangeCamRatio(...)
+```mermaid
+flowchart TD
+    app["Application::ResizeViewport"] --> handle["Editor::HandleViewportResize(logical, render)"]
+    handle --> cache["HandleResize()<br/>caches the extent"]
+    handle --> event["CameraResizeEvent(activeCameraUid, logical)"]
+    event --> controller["CameraController::OnCameraResize"]
+    controller --> ratio["ChangeCamRatio(...)"]
 ```
 
 `PublishActiveCamera()` emits the same `CameraResizeEvent` whenever the active

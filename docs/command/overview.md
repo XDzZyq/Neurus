@@ -37,10 +37,12 @@ With several live sessions and no explicit target, the command fails as
 
 ## Architecture
 
-```
-neurus (CLI) -> neurus_ipc -> neurus_command -> neurus_core
-                   |
-                   +-> Asio loopback TCP
+```mermaid
+flowchart LR
+    cli["neurus (CLI)"] --> ipc["neurus_ipc"]
+    ipc --> command["neurus_command"]
+    command --> core["neurus_core"]
+    ipc --> asio["Asio loopback TCP"]
 ```
 
 - `src/command/` (`neurus_command`) holds request/result values, the stable

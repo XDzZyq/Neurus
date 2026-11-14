@@ -75,8 +75,13 @@ Editor MUST NOT:
 Across the whole program, data and control follow one unidirectional isolation
 chain:
 
-```
-UI Layer (Qt6) -> UIEvents (Qt signals) -> Editor -> EventQueue (typed events) -> Controllers -> Context -> Renderer
+```mermaid
+flowchart LR
+    ui["UI Layer (Qt6)"] -->|"UIEvents (Qt signals)"| editor[Editor]
+    editor -->|typed events| queue[EventQueue]
+    queue --> controllers[Controllers]
+    controllers -->|read-only| context[Context]
+    context --> renderer[Renderer]
 ```
 
 Each arrow is a decoupled interface (signals, events, contexts); no layer knows
@@ -131,8 +136,7 @@ The frame's context is two views over the same document state, each produced by
 the Editor. The renderer's view is an owned copy of the frame; the UI's view is a
 pair of borrowed pointers.
 
-```cpp
-// src/editor/Editor.h
+```cpp title="src/editor/Editor.h"
 RenderFrameSnapshot BuildSnapshot() const;  // the whole renderer-facing frame, by value
 void UpdateUIContext(UIContext& ctx) const; // scene, config
 ```
@@ -145,8 +149,7 @@ include `render/RenderFrameSnapshot.h` for the complete type.
 publishes one owned frame snapshot; `DeferredRenderer::recordFrame()` stamps the
 frame half. Every field carries a banner naming the half that fills it.
 
-```cpp
-// src/render/RenderContext.h - Vulkan-free
+```cpp title="src/render/RenderContext.h"
 struct RenderContext
 {
     // Editor half - the owned frame published by Editor::BuildSnapshot()
@@ -179,8 +182,7 @@ pointer's `Settings()` used to provide, so no pass tests a pointer.
 `UIContext` is the UI's view, two Editor-owned fields wide, plus the
 Application's frame-scoped half:
 
-```cpp
-// src/ui/UIContext.h - Qt-free
+```cpp title="src/ui/UIContext.h"
 struct UIContext
 {
     // Editor half - assigned by Editor::UpdateUIContext()
@@ -351,22 +353,34 @@ each `RenderShader` re-parses and recompiles inside its own `serialize`.
 
 ## Data flow
 
-```
-User Input (QML) -> UIEvents Signal -> Editor Subscriber -> State Update
-                                                              |
-                                                       EventQueue.enqueue
-                                                              |
-                                                       EventQueue.Process()
-                                                              |
-                                                       UI Refresh
+```mermaid
+flowchart TD
+    input["User input (QML)"] --> signal["UIEvents signal"]
+    signal --> subscriber["Editor subscriber"]
+    subscriber --> enqueue["EventQueue::Enqueue<br/>the only deferred step"]
+    enqueue --> process["EventQueue::Process()<br/>once per Edit()"]
+    process --> update["State update<br/>controllers and operations"]
+    update --> refresh["UI refresh from UIContext"]
 ```
 
 The frame loop, main thread then render thread:
 
-```
-UIEvents::newFrame() -> Editor::Edit(input) -> Editor::BuildSnapshot()
-                     -> RenderThread::Publish(snapshot)        (never blocks)
-render thread:          fence -> controls -> NextWork -> Acquire -> hand over requests -> DrawFrame
+```mermaid
+flowchart LR
+    subgraph main["main thread"]
+        direction LR
+        newFrame["UIEvents::newFrame()"] --> edit["Editor::Edit(input)"]
+        edit --> snapshot["Editor::BuildSnapshot()"]
+        snapshot --> publish["RenderThread::Publish(snapshot)<br/>never blocks"]
+    end
+
+    subgraph render["render thread"]
+        direction LR
+        fence["fence"] --> controls["controls"] --> work["NextWork"] --> acquire["Acquire"]
+        acquire --> handover["hand over requests"] --> draw["DrawFrame"]
+    end
+
+    publish -->|PublishedFrame| fence
 ```
 
 `NextWork()` decides how much the next draw is worth, and therefore how long the

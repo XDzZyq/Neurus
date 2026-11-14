@@ -27,8 +27,20 @@ The Application owns the project path and builds a transient `Project` per save/
 
 Registration order **is** archive read order, so a new component belongs at the end.
 
+```mermaid
+flowchart LR
+    resources["1 - ResourceComponent<br/>the UID pool"]
+    scene["2 - SceneComponent<br/>the Scene"]
+    config["3 - ConfigComponent<br/>a RenderConfig"]
+    ui["4 - UIComponent<br/>layout blob"]
+    history["5 - HistoryComponent<br/>undo/redo stacks"]
+    editor["6 - EditorComponent<br/>viewport camera UID"]
+
+    resources -->|"the pool must be restored first"| scene --> config --> ui --> history --> editor
+```
+
 | Order | Component | Key | Wraps |
-|---|---|---|---|
+| :-: |---|---|---|
 | 1 | `ResourceComponent` | `m_resources` | The `ResourceManager` UID pool |
 | 2 | `SceneComponent` | `m_scene` | The `Scene` |
 | 3 | `ConfigComponent` | `proj_config` | A `RenderConfig` |

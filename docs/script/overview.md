@@ -110,14 +110,15 @@ resource pool, builds the exact typed editor event for the property, and emits i
 through `ScriptDispatch::Emit`, the single funnel into the editor's synchronous
 dispatch:
 
-```
-mesh.position = (2, 2, 2)
-  |-- resolve the UID through IResourceLookup (raises when it is gone)
-  |-- PositionChanged { objectUid, posX, posY, posZ }
-  |-- IEventQueue::Emit -> ObjectController::OnPositionChanged
-        |-- mutates the object's Transform3D
-        |-- submits one SetPositionOp to the OperationManager
-        |-- emits SceneModified + RenderResetEvent, plus LightingRebuild for a light
+```mermaid
+flowchart TD
+    setter["mesh.position = (2, 2, 2)"] --> resolve["resolve the UID<br/>raises if gone"]
+    resolve --> event["PositionChanged(objectUid, posX, posY, posZ)"]
+    event --> emit["IEventQueue::Emit"]
+    emit --> handler["ObjectController::OnPositionChanged"]
+    handler --> mutate["mutates the object's Transform3D"]
+    handler --> operation["submits one SetPositionOp to the OperationManager"]
+    handler --> notify["emits SceneModified + RenderReset,<br/>plus LightingRebuild"]
 ```
 
 Dispatch is synchronous and depth-first, so every handler has run before the

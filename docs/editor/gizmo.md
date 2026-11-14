@@ -15,6 +15,33 @@ Blender-style modal transform: `G` / `R` / `S` arm a gesture on the active
 object, `X` / `Y` / `Z` constrain it, `W` drops back to screen space, LMB or
 Return confirms, and Esc / RMB / viewport focus loss cancels.
 
+```mermaid
+stateDiagram-v2
+    state "Move" as MoveMode
+    state "Rotate" as RotateMode
+    state "Scale" as ScaleMode
+
+    [*] --> Idle
+    Idle --> MoveMode : G
+    Idle --> RotateMode : R
+    Idle --> ScaleMode : S
+
+    MoveMode --> MoveMode : X / Y / Z constrain, W releases
+    RotateMode --> RotateMode : X / Y / Z constrain
+    ScaleMode --> ScaleMode : X / Y / Z constrain, W releases
+
+    MoveMode --> Confirmed : LMB or Return
+    RotateMode --> Confirmed : LMB or Return
+    ScaleMode --> Confirmed : LMB or Return
+
+    MoveMode --> Cancelled : Esc / RMB / focus loss
+    RotateMode --> Cancelled : Esc / RMB / focus loss
+    ScaleMode --> Cancelled : Esc / RMB / focus loss
+
+    Confirmed --> [*]
+    Cancelled --> [*]
+```
+
 ## Two members, one seam
 
 Two `EditorViewport`-owned members, split by responsibility and both Qt-free and

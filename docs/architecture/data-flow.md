@@ -7,8 +7,13 @@ signals, typed events and read-only context objects.
 
 Data and control flow follow this strict unidirectional chain:
 
-```
-UI Layer (Qt6) -> UIEvents (Qt Signals) -> Editor -> EventQueue (typed events) -> Controllers -> Context -> Renderer
+```mermaid
+flowchart LR
+    ui["UI Layer (Qt6)"] -->|"UIEvents (Qt Signals)"| editor[Editor]
+    editor -->|typed events| queue["EventQueue"]
+    queue --> controllers[Controllers]
+    controllers -->|read-only| context[Context]
+    context --> renderer[Renderer]
 ```
 
 - UI emits signals via UIEvents. It NEVER calls the Editor or Renderer directly.
@@ -26,10 +31,13 @@ UI Layer (Qt6) -> UIEvents (Qt Signals) -> Editor -> EventQueue (typed events) -
 
 A command reaches the same editor mutation path from outside the UI:
 
-```
-neurus CLI -> loopback IPC (Asio thread) -> CommandDispatcher queue
-           -> main-thread drain in NewFrameSignals -> ICommandExecutor
-           -> typed EventQueue -> Controllers -> Operations
+```mermaid
+flowchart LR
+    cli["neurus CLI"] -->|loopback IPC<br/>Asio thread| dispatcher["CommandDispatcher queue"]
+    dispatcher -->|main-thread drain<br/>NewFrameSignals| executor[ICommandExecutor]
+    executor -->|typed events| queue[EventQueue]
+    queue --> controllers[Controllers]
+    controllers --> operations[Operations]
 ```
 
 - The IPC thread never touches the editor. It only parses a framed request and
@@ -118,22 +126,16 @@ pipeline, drop the outgoing scene's resources, reset accumulation, redraw the
 overlays - is posted as a typed `RenderRequest` value and executed by the
 renderer on the thread that submits:
 
-```
-Editor::Edit() -> RenderRequestSink::Post(RenderRequest&&)
-                  (RenderThread: append to the posting queue for the next
-                  Publish - no wake, no invalidate)
-   -> RenderThread::Publish(RenderFrameSnapshot&&) moves the posting queue into a
-      PublishedFrame {snapshot, requests} and hands it to the FrameMailbox
-   -> FrameMailbox: one slot, latest-wins for snapshots only; a frame displaced
-      before the render thread took it, or dropped by Invalidate(), leaves its
-      requests behind for the next publish
-   -> the render thread hands the frame's requests to the renderer, then draws it
-   -> DeferredRenderer::DrawFrame calls RenderRequestProcessor::Drain() after the
-      frame fence wait, before it acquires the swapchain image; Drain takes the
-      whole batch (BatchQueue<RenderRequest>) and applies the two renderer-state
-      requests itself
-   -> RenderRequestExecutor runs every GPU request against the device,
-      RenderCache, UploadManager and GeometryPass
+```mermaid
+flowchart TD
+    edit["Editor::Edit()<br/>Post, no wake"]
+    publish["Publish<br/>queue joins the frame"]
+    mailbox["FrameMailbox<br/>one slot, latest wins"]
+    handoff["requests handed over,<br/>then the frame is drawn"]
+    drain["Drain<br/>after the fence wait"]
+    execute["Executor<br/>applies each request"]
+
+    edit --> publish --> mailbox --> handoff --> drain --> execute
 ```
 
 Requests posted inside one `Edit()` are executed for the frame that tick
