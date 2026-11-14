@@ -57,9 +57,10 @@ theme:
         name: Switch to light mode
 
 markdown_extensions:
-  # Every diagram in `docs/` is a ```mermaid fence. Material bundles the Mermaid
-  # runtime and initialises it per page, so the custom fence is the whole
-  # integration - no extra_javascript entry is needed.
+  # Every diagram in `docs/` is a fenced mermaid block. The custom fence is the
+  # whole integration: Material initialises Mermaid itself when a page contains
+  # one. 9.6.x loads the runtime from unpkg at page view time, so a reader
+  # without network access sees the diagram source.
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

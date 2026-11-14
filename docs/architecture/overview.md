@@ -68,7 +68,7 @@ flowchart TD
     controllers -->|"record"| ops["Operations"]
     ops -->|"replay"| bus
     controllers -->|"mutate"| scene["Scene + pool"]
-    onUIEvent -->|"snapshot + requests"| renderer["Renderer"]
+    scene -->|"snapshot + requests"| renderer["Renderer"]
 ```
 
 The bus carries four paths, and they differ only in who starts the walk:

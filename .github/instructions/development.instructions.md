@@ -60,10 +60,18 @@ make check                                        # all pass   - push gate
 # push gate - start a session, drive what the change touches, then sweep its output
 $app = Start-Process "build/Debug/Neurus.exe" -ArgumentList "--session","verify" `
   -RedirectStandardOutput build/verify.out -RedirectStandardError build/verify.err -PassThru
+while (-not $app.HasExited) {                      # wait for the session server, not just the process
+  & build/Debug/cli/neurus.exe status verify *> $null
+  if ($LASTEXITCODE -eq 0) { break }
+  Start-Sleep -Milliseconds 500
+}
 & build/Debug/cli/neurus.exe project new --force --session verify
+& build/Debug/cli/neurus.exe object add --type camera --name VerifyCam --session verify
+& build/Debug/cli/neurus.exe object set --name VerifyCam --position 1,2,3 --session verify
 & build/Debug/cli/neurus.exe scene list --session verify
 & build/Debug/cli/neurus.exe render set --aa fxaa --session verify
 & build/Debug/cli/neurus.exe history undo --session verify
+& build/Debug/cli/neurus.exe snapshot capture --path build/verify.png --session verify
 & build/Debug/cli/neurus.exe close verify --force
 Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-|NEURUS_ERR"   # zero
 ```

@@ -77,11 +77,11 @@ chain:
 
 ```mermaid
 flowchart LR
-    ui["UI Layer (Qt6)"] -->|"UIEvents (Qt signals)"| editor[Editor]
-    editor -->|typed events| queue[EventQueue]
-    queue --> controllers[Controllers]
-    controllers -->|read-only| context[Context]
-    context --> renderer[Renderer]
+    ui["UI Layer (Qt6)"] -->|"UIEvents (Qt signals)"| editor["Editor"]
+    editor -->|"typed events"| queue["EventQueue"]
+    queue --> controllers["Controllers"]
+    controllers -->|"read-only"| context["Context"]
+    context --> renderer["Renderer"]
 ```
 
 Each arrow is a decoupled interface (signals, events, contexts); no layer knows

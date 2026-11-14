@@ -241,17 +241,18 @@ shadow map depth buffer, verify that occluder pixels have the expected depth and
 background pixels have the clear value (1.0).
 
 **Sun shadow intensity eval (`test_sun_shadow_intensity.cpp`).** Validates that
-the `SunShadowIntensityEval` compute shader correctly samples a
-`sampler2DShadow` and writes per-pixel shadow intensity to the `ShadowIntensity`
-layered array.
+the `SunShadowIntensityEval` compute shader samples the sun depth map and writes
+per-pixel shadow intensity to the `ShadowIntensity` layered array.
 
-- **Descriptor binding**: `sampler2DShadow` at binding 0, storage image
-  (`image2D`, `r8`) at binding 1. Separate descriptor set layout from the point
-  light cubemap pipeline within `ShadowIntensityPass`.
-- **PCF sampling**: Percentage-closer filtering with UV offset kernel. Supports
-  `HARD`, `SOFT_PCF_16`, and `SOFT_PCF_64` shadow modes.
-- **Shadow comparison**: Uses `texture(sampler2DShadow, ...)` with orthographic
-  depth, no cubemap-specific direction logic.
+- **Descriptor binding**: non-compare `sampler2D` at binding 0, storage image
+  (`image2DArray`, `r8`) at binding 1. Separate descriptor set layout from the
+  point/spot cubemap pipeline within `ShadowIntensityPass`.
+- **Sampling**: one depth lookup at the UV produced by the light's
+  view-projection, offset by `vec2(jitter.xy) * uvRadius`; softness comes from
+  accumulating that jittered sample over `r_sampling_count` frames, not from a
+  PCF kernel.
+- **Shadow comparison**: `ndc.z - bias > shadowDepth`, using orthographic depth
+  with no cubemap direction logic; a fragment outside the shadow frustum is lit.
 - **Output**: Single `R8_UNORM` value per pixel written to the light's assigned
   layer in the `ShadowIntensity` 2D array.
 
@@ -550,10 +551,16 @@ How to capture validation errors reliably:
    ```powershell
    $app = Start-Process "build/Debug/Neurus.exe" -ArgumentList "--session","verify" `
      -RedirectStandardOutput build/verify.out -RedirectStandardError build/verify.err -PassThru
+   while (-not $app.HasExited) {
+     & build/Debug/cli/neurus.exe status verify *> $null
+     if ($LASTEXITCODE -eq 0) { break }
+     Start-Sleep -Milliseconds 500
+   }
    & build/Debug/cli/neurus.exe project new --force --session verify
-   & build/Debug/cli/neurus.exe scene list --session verify
+   & build/Debug/cli/neurus.exe object set --name Ground --position 1,2,3 --session verify
+   & build/Debug/cli/neurus.exe snapshot capture --path build/verify.png --session verify
    & build/Debug/cli/neurus.exe close verify --force
-   Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-"
+   Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-|NEURUS_ERR"
    ```
 
    The redirect captures both `std::cout` and `std::cerr` from any debug callback,
@@ -578,7 +585,7 @@ How to capture validation errors reliably:
    the same CLI commands against a fresh session and re-reading its log:
 
    ```powershell
-   if (Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-") {
+   if (Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-|NEURUS_ERR") {
        Write-Host "VALIDATION ERROR STILL PRESENT"
    }
    ```
