@@ -104,9 +104,11 @@ variable name.
    - **Before every commit:** build the live tree, 0 errors. A commit that does
      not build is never acceptable.
    - **Before every push:** `make check` all green, including reference-image
-     regression, and launch `Neurus.exe` - zero `VUID-` validation errors, no
-     crashes/unexpected logs, viewport looks correct, resize/interaction stays
-     responsive.
+     regression, then start a session and drive it through the CLI over what the
+     change touches (`neurus project new`, `scene list`, `object set`,
+     `render set`, `history undo`, `snapshot capture`) - zero `VUID-` validation
+     errors in the captured app output, no crashes or unexpected logs, and the
+     viewport still correct and responsive after a resize.
    - **Mid-stream:** the suite is not required per commit, but run it after a
      large modification - a cross-system refactor, a new feature, anything
      crossing layers - rather than meeting the breakage at the push gate.
@@ -153,8 +155,9 @@ Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
 ## Working Agreements
 
 - Only the **master** agent builds, runs tests and commits. Subagents edit only -
-  they never invoke the build system, run `ctest` or launch `Neurus.exe`.
-- Only **one** agent runs `ctest`/`Neurus.exe` at a time - the binary is locked.
+  they never invoke the build system, run `ctest` or start a Neurus session.
+- Only **one** agent runs `ctest` or a Neurus session (the app plus its CLI) at a
+  time - the binary and the session registry are shared.
 - Never `git stash` while others are editing.
 - **Push Neurus-Lib before Neurus.** If the `lib` submodule is modified (or its
   pointer moved), push Neurus-Lib and wait for its build/release workflow to
