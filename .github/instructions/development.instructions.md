@@ -50,13 +50,22 @@ apply depends on what you are about to do:
 |------|--------|
 | Before every commit | build 0 errors; i18n `--check` if any user-visible string changed; PIL sweep if any reference image changed |
 | After a large modification | the full suite, even mid-wave - cross-system refactor, new feature, anything crossing layers |
-| Before every push | `make check` all green; launch `Neurus.exe` with zero `VUID-` |
+| Before every push | `make check` all green; a CLI-driven session with zero `VUID-` |
 
 ```
 cmake --build build --config Debug                # 0 errors   - commit gate
 python scripts/extract_i18n.py --check            # 100% translated, not stale
 make check                                        # all pass   - push gate
-& "build/Debug/Neurus.exe" 2>&1 | Select-String "VUID-"   # zero matches - push gate
+
+# push gate - start a session, drive what the change touches, then sweep its output
+$app = Start-Process "build/Debug/Neurus.exe" -ArgumentList "--session","verify" `
+  -RedirectStandardOutput build/verify.out -RedirectStandardError build/verify.err -PassThru
+& build/Debug/cli/neurus.exe project new --force --session verify
+& build/Debug/cli/neurus.exe scene list --session verify
+& build/Debug/cli/neurus.exe render set --aa fxaa --session verify
+& build/Debug/cli/neurus.exe history undo --session verify
+& build/Debug/cli/neurus.exe close verify --force
+Select-String -Path build/verify.out,build/verify.err -Pattern "VUID-|NEURUS_ERR"   # zero
 ```
 
 A commit that does not build is never acceptable. Running the suite per commit
@@ -67,9 +76,11 @@ work is how a bisect lands on a 20-file commit.
   `scripts/extract_i18n.py` only extracts; a new key lands with an empty
   `msgstr`, which counts as *missing*, not pending. Fill the translation for every
   shipped catalog until `--check` prints `OK`.
-- **Always launch `Neurus.exe`** and check the terminal for `VUID-` validation
-  errors, crashes and unexpected `NEURUS_ERR` lines; then check the viewport
-  visually and exercise resize/interaction for deadlocks.
+- **Always start a session and drive it through the CLI.** Start the app with a
+  named session, exercise the commands the change touches (a new scene, an object
+  edit, a render-config change, undo/redo, a snapshot), close it, then sweep the
+  captured stdout/stderr for `VUID-`, crashes and unexpected `NEURUS_ERR` lines.
+  Watch the viewport while it is up and resize it to catch deadlocks.
 - **Verify every reference image with Python PIL** before committing a change
   that touches one: not empty, not uniform, not all-black or all-white. The
   exact checks are in [docs/build/test.md](../../docs/build/test.md).
@@ -96,7 +107,7 @@ Check there first when a wave misbehaves.
 - [ ] All four waves complete
 - [ ] Build: 0 errors, 0 warnings (every commit)
 - [ ] All tests pass (`make check`) - before pushing, and after any large change
-- [ ] Zero `VUID-` validation errors from `Neurus.exe` and the test binary
+- [ ] Zero `VUID-` validation errors from a CLI-driven session and the test binary
 - [ ] No untranslated or stale catalogs (`python scripts/extract_i18n.py --check`)
 - [ ] Every reference image verified with Python PIL
 - [ ] No stubs, TODOs or placeholders left behind
