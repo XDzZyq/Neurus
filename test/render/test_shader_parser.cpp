@@ -10,7 +10,7 @@
  * and WILL fail at runtime until the parser is fully implemented (RED).
  *
  * @note Test fixture: ShaderParserTest (no GPU needed).
- * @note ShaderStruct IR: src/render/shaders/ShaderStruct.h (Task 3).
+ * @note ShaderStruct IR: src/asset/data/ShaderStruct.h (Task 3).
  * @note ParaType enum: src/core/Parameters.h (Task 2).
  */
 
@@ -19,7 +19,7 @@
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/ShaderGenerator.h"
 #include "render/shaders/ShaderParser.h"
-#include "render/shaders/ShaderStruct.h"
+#include "asset/data/ShaderStruct.h"
 #include "core/Log.h"
 #include "core/Parameters.h"
 

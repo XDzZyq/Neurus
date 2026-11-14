@@ -17,8 +17,8 @@
 
 #pragma once
 
-#include "ShaderStruct.h"
-#include "Shader.h"
+#include "asset/data/ShaderStruct.h"
+#include "asset/data/ShaderStage.h"
 
 #include <string>
 

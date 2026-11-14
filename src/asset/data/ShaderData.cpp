@@ -1,9 +1,9 @@
 /**
- * @file Shader.cpp
- * @brief Base-class implementations for Shader (constructor, stage accessors, TypeToString).
+ * @file ShaderData.cpp
+ * @brief Base-class implementations for ShaderData (constructor, stage accessors, TypeToString).
  */
 
-#include "Shader.h"
+#include "ShaderData.h"
 
 namespace neurus {
 
@@ -11,7 +11,7 @@ namespace neurus {
 // Constructor - initialises name only; m_stages starts empty
 // --------------------------------------
 
-Shader::Shader(std::string name)
+ShaderData::ShaderData(std::string name)
 	: m_name(std::move(name))
 {
 }
@@ -20,41 +20,38 @@ Shader::Shader(std::string name)
 // Stage accessors
 // --------------------------------------
 
-bool Shader::HasStage(ShaderType type) const
+bool ShaderData::HasStage(ShaderType type) const
 {
 	return m_stages.count(type) > 0;
 }
 
-ShaderUnit& Shader::GetStage(ShaderType type)
+ShaderUnit* ShaderData::FindStage(ShaderType type)
+{
+	auto it = m_stages.find(type);
+	return it == m_stages.end() ? nullptr : &it->second;
+}
+
+const ShaderUnit* ShaderData::FindStage(ShaderType type) const
+{
+	auto it = m_stages.find(type);
+	return it == m_stages.end() ? nullptr : &it->second;
+}
+
+ShaderUnit& ShaderData::GetStage(ShaderType type)
 {
 	return m_stages[type];
 }
 
-const ShaderUnit& Shader::GetStage(ShaderType type) const
+const ShaderUnit& ShaderData::GetStage(ShaderType type) const
 {
 	return m_stages.at(type);
-}
-
-ShaderStruct& Shader::GetParsedStruct(ShaderType type)
-{
-	return m_stages[type].parsed;
-}
-
-const ShaderStruct& Shader::GetParsedStruct(ShaderType type) const
-{
-	return m_stages.at(type).parsed;
-}
-
-const std::string& Shader::GetGeneratedCode(ShaderType type) const
-{
-	return m_stages.at(type).code;
 }
 
 // --------------------------------------
 // Type -> string conversion
 // --------------------------------------
 
-std::string Shader::TypeToString(ShaderType type)
+std::string ShaderData::TypeToString(ShaderType type)
 {
 	switch (type)
 	{

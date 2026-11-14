@@ -13,7 +13,7 @@
 - `GetObjectID()` returns the unique integer; `GetTotalAllocated()` returns the total allocation count, including destroyed objects.
 - `serialize(ar)` writes `o_id`, and on load bumps `s_count` ahead of the loaded id so newly created objects do not collide with restored ones.
 
-`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `Shader` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. See [Scene Objects](../scene/objects.md).
+`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. ShaderData's concrete leaves are the renderer's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
 
 ## ObjectID as identity (`scene/ObjectID.h`)
 
@@ -23,13 +23,13 @@
 - `o_type` - a `GOType` tag used for runtime type identification without RTTI; see [Scene Objects](../scene/objects.md).
 - `is_viewport` / `is_rendered` - visibility flags for editor display and the render pipeline, set together by `SetVisible(v, r)`.
 - `IsLight()` - true for `GO_LIGHT` and `GO_POLYLIGHT`, the two types that project into the light SSBO. It is a member rather than a predicate repeated in each caller, so the second answer is never forgotten.
-- Polymorphic accessors `GetShader()`, `GetShaderUnit(int)`, `GetTransform()` and `GetMaterial()`, all returning `nullptr` by default and overridden by the classes that own those components.
+- Polymorphic accessors `GetShader()`, `GetShaderUnit(int)`, `GetTransform()` and `GetMaterial()`, all returning `nullptr` by default and overridden by the classes that own those components. `GetShader()` returns the typed `ShaderData*` and `GetShaderUnit(int)` returns `const ShaderUnit*`; a `Mesh` overrides both.
 
 `ObjectID::serialize` keeps the `base_class<UID>` hook strict but reads its own metadata fields through `archive::Optional` - the concrete default constructor already sets `o_type` and `o_name`, so a field a file lacks keeps the right value.
 
 ## ResourceManager (`core/ResourceManager.h`)
 
-`ResourceManager` is the single factory and registry for UID-derived objects (scene objects via `ObjectID`, data resources such as `MeshData` / `ImageData` / `Shader`). It is:
+`ResourceManager` is the single factory and registry for UID-derived objects (scene objects via `ObjectID`, data resources such as `MeshData` / `ImageData` / `ShaderData`). It is:
 
 - App-scoped: owned by the Editor, and cleared on project new/open so no stale object leaks into a save.
 - Type-erased: it holds `shared_ptr<UID>` and knows no concrete type.
@@ -44,7 +44,7 @@ Design:
 - `ForEach<T>(fn)` visits every pooled object whose **exact dynamic type** is `T`; this is how UID-keyed GPU caches follow the pool rather than the scene (pooled objects stay referenced by undo history after deletion). It is not a base-class walk: once a base instance (`ObjectID`, `UID`) is itself pooled, the per-type index holds only that instance and derived types are skipped. Base-class enumeration uses `ForEachUID(fn)` plus a cast. Neither callback may `Load` / `Register` / `Remove` / `Clear`, because mutating the pool during iteration invalidates the walk.
 - `Remove(int)` and `Clear()` mutate the pool; `Size()` reports its size.
 - `SetName(id, name)` / `GetByName(...)` own the display-name registry; names are unique per concrete dynamic type and are derived state, never serialized (see [Resource names](#resource-names)).
-- `serialize(ar)` writes every pooled object polymorphically (which is what makes the type registrations load-bearing); on load, each object's own `serialize(load)` restores its content. A load replaces the pool, so it also drops the previous name registry and rebuilds the type index from the restored objects; names are then re-seeded by the caller.
+- `serialize(ar)` writes every pooled object polymorphically (which is what makes the type registrations load-bearing); on load, each object's own `serialize(load)` restores its content. A load replaces the pool, so it also drops the previous name registry and rebuilds the type index from the restored objects; names are then re-seeded by the caller. `ResourceComponent` seeds `ObjectID` names from `o_name` and `ShaderData` names from `GetName`, because pooled shaders are addressed by name.
 - Not thread-safe: main thread only.
 
 Two rules keep the pool decoupled:

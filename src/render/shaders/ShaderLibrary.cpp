@@ -1,6 +1,6 @@
 #include "ShaderLibrary.h"
 
-#include "Shader.h"
+#include "asset/data/ShaderData.h"
 #include "ShaderCompiler.h"
 #include "RenderShader.h"
 #include "ComputeShader.h"
@@ -178,7 +178,8 @@ std::unique_ptr<ComputeShader> ShaderLibrary::LoadComputeShader(
 std::vector<uint32_t> ShaderLibrary::Compile(
 	const ShaderUnit& stage,
 	ShaderType type,
-	const std::string& debugName)
+	const std::string& debugName,
+	std::string* outError)
 {
 	auto& compiler = GetCompiler();
 	shaderc_shader_kind kind;
@@ -191,11 +192,16 @@ std::vector<uint32_t> ShaderLibrary::Compile(
 		default:                   kind = shaderc_glsl_vertex_shader;
 	}
 
-	return compiler.CompileGlslToSpv(stage.code, kind, "main", debugName);
+	auto spv = compiler.CompileGlslToSpv(stage.code, kind, "main", debugName);
+	if (spv.empty() && outError != nullptr)
+	{
+		*outError = compiler.GetErrorMessage();
+	}
+	return spv;
 }
 
 std::unordered_map<ShaderType, std::vector<uint32_t>> ShaderLibrary::CompileAll(
-	const Shader& shader)
+	const ShaderData& shader)
 {
 	std::unordered_map<ShaderType, std::vector<uint32_t>> results;
 

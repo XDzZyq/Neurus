@@ -22,6 +22,9 @@
 namespace neurus
 {
 
+class ShaderData;
+struct ShaderUnit;
+
 /**
  * @brief Base class for all scene graph objects with type and component access.
  *
@@ -80,9 +83,9 @@ public:
 
 	/**
 	 * @brief Returns pointer to object's shader, or nullptr if it has none.
-	 * @return Void pointer cast to Shader*.
+	 * @return The object's ShaderData, or nullptr.
 	 */
-	virtual void* GetShader()
+	virtual ShaderData* GetShader()
 	{
 		return nullptr;
 	}
@@ -90,9 +93,9 @@ public:
 	/**
 	 * @brief Returns pointer to the ShaderUnit for a shader stage, or nullptr.
 	 * @param shaderType Integer representing the ShaderType to query.
-	 * @return Void pointer cast to ShaderUnit*.
+	 * @return The stage's ShaderUnit, or nullptr.
 	 */
-	virtual void* GetShaderUnit(int /*shaderType*/) const
+	virtual const ShaderUnit* GetShaderUnit(int /*shaderType*/) const
 	{
 		return nullptr;
 	}

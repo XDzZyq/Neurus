@@ -25,6 +25,13 @@ add_library(neurus_asset STATIC
 	data/MeshData.cpp
 	data/AssetPath.h
 	data/AssetPath.cpp
+	data/ShaderStage.h
+	data/ShaderStruct.h
+	data/ShaderStruct.cpp
+	data/ShaderStructSerialize.h
+	data/ShaderUnit.h
+	data/ShaderData.h
+	data/ShaderData.cpp
 )
 
 target_link_libraries(neurus_asset PUBLIC

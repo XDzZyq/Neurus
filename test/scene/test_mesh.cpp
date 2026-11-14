@@ -11,7 +11,7 @@
 #include <glm/glm.hpp>
 
 #include "scene/Mesh.h"
-#include "render/shaders/Shader.h"
+#include "asset/data/ShaderData.h"
 #include "scene/Transform.h"
 #include "scene/ObjectID.h"
 #include "asset/data/MeshData.h"
@@ -22,12 +22,11 @@ using namespace neurus;
 namespace
 {
 
-/** @brief Minimal test Shader subclass for verifying typed SetObjShader. */
-class TestShader : public Shader
+/** @brief Minimal test ShaderData subclass for verifying typed SetObjShader. */
+class TestShader : public ShaderData
 {
 public:
-	TestShader() : Shader("test") {}
-	bool ParseAndGenerate() override { return true; }
+	TestShader() : ShaderData("test") {}
 	ShaderType GetType() const override { return ShaderType::COMPUTE; }
 };
 

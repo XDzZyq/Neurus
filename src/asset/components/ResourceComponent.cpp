@@ -15,7 +15,7 @@
 #include "scene/DebugMesh.h"
 #include "scene/Mesh.h"
 #include "scene/ObjectID.h"
-#include "render/shaders/Shader.h"
+#include "asset/data/ShaderData.h"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
 // UID-derived types are registered before serialization runs.
@@ -71,7 +71,7 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		}
 		if (mesh->o_shaderId != 0)
 		{
-			auto shader = m_resources->Get<Shader>(mesh->o_shaderId);
+			auto shader = m_resources->Get<ShaderData>(mesh->o_shaderId);
 			if (shader)
 				mesh->o_shader = shader;
 			else
@@ -122,6 +122,26 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		const std::string unique = m_resources->SetName(id, name);
 		if (auto obj = m_resources->Get<ObjectID>(id))
 			obj->o_name = unique.empty() ? name : unique;
+	}
+
+	// Pooled shaders are data resources addressed by name
+	// (neurus.data.shaders["Name"]), so re-seed their registry entries from the
+	// serialized ShaderData name. Sorting by UID keeps duplicate suffixing
+	// deterministic, like the object seed above.
+	std::vector<std::pair<int, std::string>> shaderNames;
+	m_resources->ForEachUID([&](const std::shared_ptr<UID>& resource)
+	{
+		auto shader = std::dynamic_pointer_cast<ShaderData>(resource);
+		if (shader && !shader->GetName().empty())
+			shaderNames.emplace_back(shader->GetObjectID(), shader->GetName());
+	});
+	std::sort(shaderNames.begin(), shaderNames.end(),
+	          [](const auto& l, const auto& r) { return l.first < r.first; });
+	for (const auto& [id, name] : shaderNames)
+	{
+		const std::string unique = m_resources->SetName(id, name);
+		if (auto shader = m_resources->Get<ShaderData>(id))
+			shader->SetName(unique.empty() ? name : unique);
 	}
 }
 

@@ -26,6 +26,8 @@ class MeshData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
+struct ShaderLoadRequested;
+struct ShaderRemoveRequested;
 struct MeshImportRequested;
 struct CameraAddRequested;
 struct ObjectDuplicateRequested;
@@ -315,6 +317,8 @@ private:
 	void OnSunLightAdd();
 	void OnSpotLightAdd();
 	void OnCreateShader(const ShaderCreateRequested& e);
+	void OnShaderLoad(const ShaderLoadRequested& e);
+	void OnRemoveShader(const ShaderRemoveRequested& e);
 	void OnSceneObjectGpuUpload(int objectUid);
 
 	/**

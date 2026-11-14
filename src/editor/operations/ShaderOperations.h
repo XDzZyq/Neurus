@@ -24,7 +24,7 @@
 
 #include "editor/events/ShaderEvents.h"
 #include "editor/operations/Operation.h"
-#include "render/shaders/ShaderStructSerialize.h"
+#include "asset/data/ShaderStructSerialize.h"
 
 namespace neurus {
 
@@ -188,6 +188,155 @@ private:
 	ShaderSection m_section{};           ///< Which ShaderStruct container (serialized).
 	int           m_subFieldIndex = -1;  ///< StructDefs target struct-def index (-1 = top-level) (serialized).
 	bool          m_add = true;          ///< true = append default, false = remove last (serialized).
+};
+
+/**
+ * @brief Undoable replace of one shader unit's GLSL code (shader-keyed).
+ *
+ * Addresses the pooled ShaderData UID, so it works for a mesh shader and for a
+ * standalone ComputeShader. Replays by dispatching ShaderUnitCodeRestored.
+ */
+class SetShaderUnitCodeOp : public Operation
+{
+public:
+	SetShaderUnitCodeOp() = default;
+
+	SetShaderUnitCodeOp(int shaderUid, int stage, std::string beforeCode,
+	                    std::string afterCode)
+		: m_shaderUid(shaderUid)
+		, m_stage(stage)
+		, m_before(std::move(beforeCode))
+		, m_after(std::move(afterCode))
+	{}
+
+	void Apply(OperationContext& ctx) override
+	{
+		ctx.events.Emit(ShaderUnitCodeRestored{ m_shaderUid, m_stage, m_after });
+	}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<SetShaderUnitCodeOp>(
+			m_shaderUid, m_stage, m_after, m_before);
+	}
+
+	std::string Label() const override { return "Edit Shader Unit Code"; }
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::make_nvp("shaderUid", m_shaderUid),
+		   cereal::make_nvp("stage", m_stage),
+		   cereal::make_nvp("beforeCode", m_before),
+		   cereal::make_nvp("afterCode", m_after));
+	}
+
+private:
+	int         m_shaderUid = 0;
+	int         m_stage = 0;
+	std::string m_before;
+	std::string m_after;
+};
+
+/**
+ * @brief Undoable replace of one shader unit's parsed IR (shader-keyed).
+ *
+ * Carries the whole ShaderStruct before and after. Replays by dispatching
+ * ShaderUnitStructRestored, and inverts by swapping the endpoints.
+ */
+class SetShaderUnitStructOp : public Operation
+{
+public:
+	SetShaderUnitStructOp() = default;
+
+	SetShaderUnitStructOp(int shaderUid, int stage, ShaderStruct before,
+	                      ShaderStruct after)
+		: m_shaderUid(shaderUid)
+		, m_stage(stage)
+		, m_before(std::move(before))
+		, m_after(std::move(after))
+	{}
+
+	void Apply(OperationContext& ctx) override
+	{
+		ctx.events.Emit(ShaderUnitStructRestored{ m_shaderUid, m_stage, m_after });
+	}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<SetShaderUnitStructOp>(
+			m_shaderUid, m_stage, m_after, m_before);
+	}
+
+	std::string Label() const override { return "Edit Shader Unit IR"; }
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::make_nvp("shaderUid", m_shaderUid),
+		   cereal::make_nvp("stage", m_stage),
+		   cereal::make_nvp("before", m_before),
+		   cereal::make_nvp("after", m_after));
+	}
+
+private:
+	int          m_shaderUid = 0;
+	int          m_stage = 0;
+	ShaderStruct m_before;
+	ShaderStruct m_after;
+};
+
+/**
+ * @brief Undoable shader link toggle - create, replace or remove in one op.
+ *
+ * `oldShaderId` is unlinked (when non-zero) and `newShaderId` is linked (when
+ * non-zero). Create is old=0, remove is new=0, replace is both; Inverse swaps
+ * the ids, so a replacement is always one undo entry. The pooled shaders stay
+ * alive either way.
+ */
+class ShaderReplaceOp : public Operation
+{
+public:
+	ShaderReplaceOp() = default;
+
+	ShaderReplaceOp(int uid, int oldShaderId, int newShaderId)
+		: m_uid(uid)
+		, m_oldShaderId(oldShaderId)
+		, m_newShaderId(newShaderId)
+	{}
+
+	void Apply(OperationContext& ctx) override
+	{
+		if (m_oldShaderId != 0)
+			ctx.events.Emit(ShaderUnlinkRestored{ m_uid });
+		if (m_newShaderId != 0)
+			ctx.events.Emit(ShaderLinkRestored{ m_uid, m_newShaderId });
+	}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<ShaderReplaceOp>(m_uid, m_newShaderId, m_oldShaderId);
+	}
+
+	std::string Label() const override
+	{
+		if (m_oldShaderId == 0) return "Create Shader";
+		if (m_newShaderId == 0) return "Remove Shader";
+		return "Replace Shader";
+	}
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::make_nvp("uid", m_uid),
+		   cereal::make_nvp("oldShaderId", m_oldShaderId),
+		   cereal::make_nvp("newShaderId", m_newShaderId));
+	}
+
+private:
+	int m_uid = 0;
+	int m_oldShaderId = 0;
+	int m_newShaderId = 0;
 };
 
 /**

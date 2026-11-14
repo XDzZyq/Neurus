@@ -53,6 +53,7 @@ target_link_libraries(neurus_editor PUBLIC
 	Qt6::Core
 	neurus_command
 	neurus_scene
+	neurus_asset
 	stb
 )
 

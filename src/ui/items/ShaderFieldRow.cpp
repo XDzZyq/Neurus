@@ -1,6 +1,6 @@
 #include "ShaderFieldRow.h"
 
-#include "render/shaders/ShaderStruct.h"
+#include "asset/data/ShaderStruct.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>

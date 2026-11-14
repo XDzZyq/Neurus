@@ -5,7 +5,7 @@
 
 #include "ShaderGenerator.h"
 
-#include "ShaderStruct.h"
+#include "asset/data/ShaderStruct.h"
 
 #include <sstream>
 

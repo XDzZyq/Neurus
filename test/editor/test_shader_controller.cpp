@@ -47,10 +47,11 @@
 #include "core/ResourceManager.h"
 #include "core/RenderConfig.h"
 #include "render/shaders/RenderShader.h"
-#include "render/shaders/Shader.h"
+#include "render/shaders/ComputeShader.h"
+#include "asset/data/ShaderData.h"
 #include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderParser.h"
-#include "render/shaders/ShaderUnit.h"
+#include "asset/data/ShaderUnit.h"
 #include "scene/Mesh.h"
 #include "scene/Scene.h"
 #include "core/ResourceManager.h"
@@ -97,6 +98,7 @@ protected:
 		auto shader = std::make_shared<RenderShader>("TestShader", "v.vert", "f.frag");
 		shader->GetStage(ShaderType::VERTEX).code = "VERT_V0";
 		shader->GetStage(ShaderType::FRAGMENT).code = "FRAG_V0";
+		m_resources.Register(shader); // the shader-keyed events resolve it by UID
 		m_mesh->o_shader = shader;
 		m_scene.UseMesh(m_mesh);
 	}
@@ -108,6 +110,9 @@ protected:
 
 	/** @brief The mesh's UID, used as the event payload. */
 	int MeshObj() const { return m_mesh->GetObjectID(); }
+
+	/** @brief The mesh shader's pooled UID, used by the shader-keyed events. */
+	int ShaderUid() const { return m_mesh->o_shader->GetObjectID(); }
 
 	EventQueue m_eventBus;
 	Scene m_scene; // real scene so event UIDs resolve at dispatch/replay
@@ -705,4 +710,74 @@ TEST_F(ShaderControllerTest, Compile_Failure_DoesNotEmitShaderCompiled)
 	Process();
 
 	EXPECT_FALSE(fired);
+}
+
+// --- Shader-keyed unit edits (script path) ---------------------------------
+
+TEST_F(ShaderControllerTest, UnitCodeSetRecordsOneOpAndUndoRestores)
+{
+	m_eventBus.Emit(ShaderUnitCodeSet{ ShaderUid(), kVertex, "VERT_V1" });
+	EXPECT_EQ(VertexUnit().code, "VERT_V1");
+	const int version = VertexUnit().GetVersion();
+
+	m_operations.Undo();
+	EXPECT_EQ(VertexUnit().code, "VERT_V0");
+	EXPECT_EQ(VertexUnit().GetVersion(), version + 1);
+}
+
+TEST_F(ShaderControllerTest, UnitStructSetReplacesTheWholeIr)
+{
+	ShaderStruct ir = VertexUnit().parsed;
+	ir.SetUni(ParaType::FLOAT, 1, "u_time", 2);
+	m_eventBus.Emit(ShaderUnitStructSet{ ShaderUid(), kVertex, ir });
+	ASSERT_EQ(VertexUnit().parsed.uniform_list.size(), 1u);
+	EXPECT_EQ(VertexUnit().parsed.uniform_list[0].name, "u_time");
+}
+
+TEST_F(ShaderControllerTest, UnitCompileReportsTheCompilerError)
+{
+	m_eventBus.Emit(ShaderUnitCodeSet{ ShaderUid(), kVertex, "this is not glsl" });
+	ShaderCompileResult result;
+	m_eventBus.Emit(ShaderUnitCompileRequested{ ShaderUid(), kVertex, 0, &result });
+	EXPECT_FALSE(result.ok);
+	EXPECT_FALSE(result.error.empty());
+}
+
+TEST_F(ShaderControllerTest, UnitCompileSucceedsAndEmitsShaderCompiled)
+{
+	m_eventBus.Emit(ShaderUnitCodeSet{ ShaderUid(), kVertex,
+		"#version 450\nvoid main() { gl_Position = vec4(0.0); }\n" });
+
+	bool fired = false;
+	m_eventBus.Subscribe<ShaderCompiled>([&](const ShaderCompiled&) { fired = true; });
+
+	ShaderCompileResult result;
+	m_eventBus.Emit(ShaderUnitCompileRequested{ ShaderUid(), kVertex, 0, &result });
+	EXPECT_TRUE(result.ok) << result.error;
+	EXPECT_TRUE(fired);
+	EXPECT_FALSE(VertexUnit().spv.empty());
+}
+
+TEST_F(ShaderControllerTest, ComputeShaderUnitCompilesWithoutShaderCompiled)
+{
+	ShaderRequestResult loaded =
+		ShaderController::LoadShaderAsset(m_resources, "res/shaders/compute/dummy.comp", "TestCompute");
+	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
+	auto compute = m_resources.Get<ComputeShader>(loaded.shaderUid);
+	ASSERT_TRUE(compute);
+
+	const int stage = static_cast<int>(ShaderType::COMPUTE);
+	const std::string edited =
+		compute->GetStage(ShaderType::COMPUTE).code + "\n// edited";
+	m_eventBus.Emit(ShaderUnitCodeSet{ loaded.shaderUid, stage, edited });
+	EXPECT_EQ(compute->GetStage(ShaderType::COMPUTE).code, edited);
+
+	bool fired = false;
+	m_eventBus.Subscribe<ShaderCompiled>([&](const ShaderCompiled&) { fired = true; });
+
+	ShaderCompileResult result;
+	m_eventBus.Emit(ShaderUnitCompileRequested{ loaded.shaderUid, stage, 0, &result });
+	EXPECT_TRUE(result.ok) << result.error;
+	EXPECT_FALSE(fired);
+	EXPECT_FALSE(compute->GetStage(ShaderType::COMPUTE).spv.empty());
 }

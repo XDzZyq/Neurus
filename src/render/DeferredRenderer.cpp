@@ -15,8 +15,6 @@
 #include "resources/LightingCache.h"
 #include "resources/PipelineCache.h"
 
-#include "shaders/Shader.h"
-
 #include "requests/RenderRequestProcessor.h"
 #include "Screenshot.h"
 #include "SharedQueue.h"

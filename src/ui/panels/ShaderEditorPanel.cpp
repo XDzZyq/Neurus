@@ -6,8 +6,8 @@
 #include "UIContext.h"
 #include "ui/utils/I18n.h"
 #include "scene/Scene.h"
-#include "render/shaders/ShaderUnit.h"
-#include "render/shaders/ShaderStruct.h"
+#include "asset/data/ShaderUnit.h"
+#include "asset/data/ShaderStruct.h"
 
 #include <QAbstractItemView>
 #include <QComboBox>
@@ -323,9 +323,9 @@ void ShaderEditorPanel::Refresh(const UIContext& ctx)
 
 	// Get shader unit and its version (-1 if no shader)
 	int unitVersion = -1;
-	void* unitPtr = activeObj->GetShaderUnit(m_cachedStageType);
+	const ShaderUnit* unitPtr = activeObj->GetShaderUnit(m_cachedStageType);
 	if (unitPtr)
-		unitVersion = static_cast<const ShaderUnit*>(unitPtr)->GetVersion();
+		unitVersion = unitPtr->GetVersion();
 
 	// Dirty-check: same object UID AND same version = nothing changed
 	if (objectId == m_activeObjectId && unitVersion == m_cachedShaderVersion)
@@ -361,9 +361,8 @@ void ShaderEditorPanel::Refresh(const UIContext& ctx)
 // populateSections
 // =========================================================================
 
-void ShaderEditorPanel::populateSections(const void* shaderUnitPtr, bool objectChanged)
+void ShaderEditorPanel::populateSections(const ShaderUnit* unit, bool objectChanged)
 {
-	auto* unit = static_cast<const ShaderUnit*>(shaderUnitPtr);
 	const auto& parsed = unit->parsed;
 
 	// Populate code editor with generated source.

@@ -13,7 +13,6 @@
 #include "resources/EnvironmentGPU.h"
 #include "resources/LightGPU.h"
 #include "resources/LightingCache.h"
-#include "shaders/Shader.h"
 #include "shaders/ShaderLibrary.h"
 
 #include "asset/data/ImageData.h"

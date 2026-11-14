@@ -197,7 +197,7 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const std::vector<uint32_t>& vertex
 // Per-mesh pipeline warm (Editor thread, off the frame path)
 // ---------------------------------------------------------------------------
 
-bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const Shader& shader)
+bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const ShaderData& shader)
 {
 	// One build path: snapshot the live Shader into a request and warm from it,
 	// the same code the renderer's request drain runs.
