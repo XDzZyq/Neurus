@@ -2,7 +2,6 @@
 
 #include "app/ApplicationCore.h"
 #include "app/Preferences.h"
-#include "app/ProjectIo.h"
 #include "app/VulkanContext.h"
 #include "app/session/SessionServer.h"
 

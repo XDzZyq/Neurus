@@ -11,7 +11,6 @@
 #include "app/ApplicationCore.h"
 
 #include "app/Preferences.h"
-#include "app/ScriptCommands.h"
 #include "command/Commands.h"
 #include "platform/PlatformProcess.h"
 #include "scene/Scene.h"
@@ -88,8 +87,8 @@ int Application::SceneObjectCount() const
 command::CommandResult Application::Execute(const command::CommandRequest& request)
 {
 	// One implementation, shared with the headless renderer (ApplicationCore ->
-	// app/ScriptCommands.h), so the CLI sees the same script behaviour on every
-	// platform. The core owns the engine and the host sandbox policy.
+	// ApplicationCore::ExecuteScript), so the CLI sees the same script behaviour
+	// on every platform. The core owns the engine and the host sandbox policy.
 	if (!app_editor)
 	{
 		return command::CommandResult::Failure(command::CommandErrorCode::Internal,

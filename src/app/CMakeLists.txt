@@ -12,10 +12,6 @@ add_library(neurus_app_core STATIC
 	ApplicationCore.cpp
 	Preferences.h
 	Preferences.cpp
-	ProjectIo.h
-	ProjectIo.cpp
-	ScriptCommands.h
-	ScriptCommands.cpp
 	VulkanContext.h
 	VulkanContext.cpp
 )

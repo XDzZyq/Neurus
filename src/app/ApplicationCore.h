@@ -11,7 +11,7 @@ namespace neurus
 {
 
 class Editor;
-class Preferences;
+struct Preferences;
 class ScriptEngine;
 
 /**
