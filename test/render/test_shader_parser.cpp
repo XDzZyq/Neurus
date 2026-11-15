@@ -10,7 +10,7 @@
  * and WILL fail at runtime until the parser is fully implemented (RED).
  *
  * @note Test fixture: ShaderParserTest (no GPU needed).
- * @note ShaderStruct IR: src/render/shaders/ShaderStruct.h (Task 3).
+ * @note ShaderStruct IR: src/asset/data/shader/ShaderStruct.h (Task 3).
  * @note ParaType enum: src/core/Parameters.h (Task 2).
  */
 
@@ -18,8 +18,10 @@
 
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/ShaderGenerator.h"
+#include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderParser.h"
-#include "render/shaders/ShaderStruct.h"
+#include "asset/data/shader/ShaderStruct.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "core/Log.h"
 #include "core/Parameters.h"
 
@@ -1148,4 +1150,51 @@ TEST_F(ShaderParserTest, RenderShaderParseAndGenerate_RelativePaths_IndependentO
     // portable, so parsing must resolve without rewriting them.
     EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert");
     EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag");
+}
+
+// --- Import helpers used by the Editor when it pools a new shader ---
+
+TEST(ShaderUnitImport, LoadStageUnitParsesAndGenerates)
+{
+    std::string error;
+    auto unit = ShaderLibrary::LoadStageUnit(
+        "res/shaders/render/gbuffer.vert", ShaderType::VERTEX, &error);
+    ASSERT_TRUE(unit) << error;
+    EXPECT_FALSE(unit->parsed.IsEmpty());
+    EXPECT_FALSE(unit->code.empty());
+    EXPECT_EQ(unit->path, "res/shaders/render/gbuffer.vert");
+}
+
+TEST(ShaderUnitImport, LoadStageUnitRejectsWrongExtension)
+{
+    std::string error;
+    auto unit = ShaderLibrary::LoadStageUnit(
+        "res/shaders/render/gbuffer.frag", ShaderType::VERTEX, &error);
+    EXPECT_FALSE(unit);
+    EXPECT_FALSE(error.empty());
+}
+
+TEST(ShaderUnitImport, StageUnitConstructorThenCompileToSpvReportsStageErrors)
+{
+    ShaderUnit vert;
+    ShaderUnit frag;
+    vert.path = "res/shaders/render/gbuffer.vert";
+    frag.path = "res/shaders/render/gbuffer.frag";
+    vert.code = "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n";
+    frag.code = "#version 450\nlayout(location=0) out vec4 o;\nvoid main() { o = vec4(1.0); }\n";
+    RenderShader shader("ImportFixture", std::move(vert), std::move(frag));
+
+    // The stage paths become the shader's source paths, so a save/reload keeps them.
+    EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert");
+    EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag");
+
+    std::string error;
+    EXPECT_TRUE(shader.CompileToSpv(&error)) << error;
+    EXPECT_TRUE(error.empty());
+
+    ShaderUnit brokenVert;
+    brokenVert.code = "this is not glsl";
+    RenderShader broken("BrokenFixture", std::move(brokenVert), {});
+    EXPECT_FALSE(broken.CompileToSpv(&error));
+    EXPECT_FALSE(error.empty());
 }

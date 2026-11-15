@@ -11,18 +11,21 @@ deferred: `Editor::Edit()` drains the events a panel signal queued in the previo
 frame. Everything else - a controller reaction, a script write, an operation
 replay - goes through `Emit`, which runs the handlers before it returns:
 
+```mermaid
+flowchart LR
+    edit["Editor::Edit()"] --> syncIn["viewport camera sync<br/>before the drain"]
+    syncIn --> process["Process()<br/>deferred UI events"]
+    process --> camera["CameraController handles each event"]
+    process --> sceneController["SceneController handles each event"]
+    process --> others["the other registered controllers"]
+    camera --> syncOut["camera sync again<br/>the drain may change it"]
+    sceneController --> syncOut
+    others --> syncOut
 ```
-Editor::Edit()
-  |-- viewport camera sync (before the drain)
-  |-- EventQueue::Process()        <- the deferred UI events, one frame's worth
-        |-- CameraController handles each event
-        |-- SceneController handles each event
-        |-- etc.
-  |-- viewport camera sync again (the drain can change or delete the camera)
 
-ctx.events.Emit(PositionChanged{...})   <- synchronous, anywhere in the editor
-  |-- ObjectController::OnPositionChanged runs before Emit returns
-```
+Outside the drain, `ctx.events.Emit(PositionChanged{...})` is synchronous and may be
+called anywhere in the editor: `ObjectController::OnPositionChanged` runs before
+`Emit` returns.
 
 Input translation (mouse events to camera events) is handled in
 `Editor::Initialize()` via `MouseMoveEvent`/`MouseScrollEvent` subscriptions, so

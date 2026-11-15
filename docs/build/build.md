@@ -13,7 +13,7 @@ pre-compiled dependencies fetched by the `lib/` submodule.
 
 ## Quick Start
 
-```
+```bash title="Quick start"
 # Clone with submodules
 git clone --recurse-submodules https://github.com/XDzZyq/Neurus.git
 cd Neurus

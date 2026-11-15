@@ -96,7 +96,7 @@ protected:
 	}
 
 	// A sphere mesh carrying @p shader as its per-mesh Shader.
-	std::shared_ptr<Mesh> MakeMesh(std::shared_ptr<Shader> shader)
+	std::shared_ptr<Mesh> MakeMesh(std::shared_ptr<ShaderData> shader)
 	{
 		auto meshData = std::make_shared<MeshData>();
 		meshData->LoadObj(ResolveAssetPath("res/obj/sphere.obj"));
@@ -308,6 +308,35 @@ TEST_F(GeometryPipelineWarmTest, NoUsableSpirv_WarmReturnsFalse_CacheStaysEmpty)
 	EXPECT_EQ(pipelines.Get(shaderId), nullptr);
 
 	// The mesh still draws, with the pass default.
+	PassStats stats = RecordFrame(scene);
+	EXPECT_EQ(stats.drawCalls, 1u);
+}
+
+// ---------------------------------------------------------------------------
+//    Compile lands one stage at a time: a fragment-only set is not a pipeline.
+//    EnsureMeshPipeline returns false, caches nothing, and the next compile
+//    that completes the pair warms normally.
+// ---------------------------------------------------------------------------
+
+TEST_F(GeometryPipelineWarmTest, FragmentOnlySpirv_DoesNotBuildPipeline)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = MakeShader("FragmentOnlyShader");
+	shader->GetStage(ShaderType::VERTEX).spv.clear(); // mid-compile state
+	shader->BumpVersion();
+	const int shaderId = shader->GetObjectID();
+	const int version  = shader->GetVersion();
+
+	Scene scene;
+	BuildScene(scene, {MakeMesh(shader)});
+
+	EXPECT_FALSE(m_geometryPass->EnsureMeshPipeline(*m_renderCache, *shader));
+
+	PipelineCache& pipelines = m_renderCache->GetPipelineCache();
+	EXPECT_EQ(pipelines.GetPipeline(shaderId, version), nullptr);
+	EXPECT_EQ(pipelines.Get(shaderId), nullptr);
+
 	PassStats stats = RecordFrame(scene);
 	EXPECT_EQ(stats.drawCalls, 1u);
 }

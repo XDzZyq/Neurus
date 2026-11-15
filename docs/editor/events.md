@@ -11,13 +11,16 @@ typed event structs; the Editor subscribes and handles them through an internal
 `EventQueue`. The result: panels never include Editor headers, the Editor has
 zero Qt dependencies, and all cross-layer wiring is auditable in one file.
 
-```
-Panel Qt signal (e.g. Outliner::objectClicked - pure input intent)
-  |-- Application::ConnectUIEvent<Outliner, ObjectClicked>
-        |-- [lambda calls Editor::OnUIEvent(e)]
-              |-- EventQueue::Enqueue<ObjectClicked>   (the only deferred step)
-                    |-- EventQueue::Process() in the next Edit()
-                          |-- handlers run; every Emit they make runs here too
+```mermaid
+flowchart TD
+    signal["Panel Qt signal<br/>pure input intent"]
+    bridge["Application::ConnectUIEvent(Outliner, ObjectClicked)"]
+    onui["Editor::OnUIEvent(e)"]
+    enqueue["Enqueue<br/>the only deferred step"]
+    process["EventQueue::Process() in the next Edit()"]
+    handlers["handlers run; every Emit they make runs here too"]
+
+    signal --> bridge --> onui --> enqueue --> process --> handlers
 ```
 
 The deferral exists only at the UI boundary. Everything the Editor or a
@@ -126,7 +129,7 @@ resolved**, not in when it is dispatched:
 | `src/editor/events/CameraEvents.h` | Camera input events (rotate, push, slide, zoom, resize) |
 | `src/editor/events/InputEvents.h` | Viewport raw input events (mouse move, press, release, scroll) |
 | `src/editor/events/ProjectEvents.h` | Project lifecycle events (new, open, save, saveAs) |
-| `src/editor/events/AssetEvents.h` | Asset import events (mesh, camera, light add) |
+| `src/editor/events/AssetEvents.h` | Asset import events (mesh import, shader import, camera/light add) |
 | `src/editor/events/OperationEvents.h` | Undo/redo request events (`UndoRequested`, `RedoRequested`) |
 | `src/editor/events/ConfigEvents.h` | Render config change events |
 | `src/editor/events/ShaderEvents.h` | Shader editor events (create, compile, code/struct edit, field add) |
@@ -197,6 +200,9 @@ struct ActiveCameraChanged { int camUid; };
 // Mesh properties
 struct MeshShadowChanged  { int objectUid; bool enabled; };
 struct MeshMaterialChanged { int objectUid; bool enabled; };
+
+// Mesh shader (UI intent: the Editor supplies the default G-buffer pair)
+struct ShaderCreateEvent { int objectUid; };
 
 // Light properties
 struct LightPowerChanged      { int objectUid; float power; };
@@ -383,7 +389,9 @@ struct ConfigEditEnd   {};
 Events for the shader editor pipeline (UI to Editor to ShaderController). All
 events carry an `int objectUid` (the target mesh's UID, resolved once by the
 `ShaderEditorPanel` from the active scene selection). `ShaderSection` identifies
-which `ShaderStruct` container is edited.
+which `ShaderStruct` container is edited. `ShaderImportRequested` is the one
+exception and lives in `AssetEvents.h`, because importing an asset never names a
+mesh.
 
 ```cpp
 enum class ShaderSection : int {
@@ -391,7 +399,9 @@ enum class ShaderSection : int {
     Uniforms = 4, StructDefs = 5, Functions = 6, PushConstants = 7
 };
 
-struct ShaderCreateRequested  { int objectUid; };
+struct ShaderCreateRequested  { int objectUid;
+                                std::string vertexPath, fragmentPath;      // empty = default G-buffer source
+                                int vertexSourceUid, fragmentSourceUid; };  // 0 = use the path
 struct ShaderCompileRequested { int objectUid; int stage; int unitType; };  // 0=Code path, 1=Struct path
 struct ShaderCodeEdited       { int objectUid; int stage; std::string code; };
 struct ShaderStructEdited     { int objectUid; int stage; ShaderSection section;
@@ -407,7 +417,7 @@ struct ShaderFieldRestored    { int objectUid; int stage; ShaderSection section;
                                 int fieldIndex; ShaderFieldValue value; };  // whole element to assign back
 struct ShaderFieldAddRestored { int objectUid; int stage; ShaderSection section; int subFieldIndex; };  // redo of an add
 struct ShaderFieldRemoved     { int objectUid; int stage; ShaderSection section; int subFieldIndex; };  // undo of an add
-// Undo/redo of Create Shader (replayed by ShaderLinkOp; Editor-handled)
+// Undo/redo of Create Shader (replayed by ShaderReplaceOp; Editor-handled)
 struct ShaderLinkRestored   { int objectUid; int shaderId; };  // redo: relink pooled shader
 struct ShaderUnlinkRestored { int objectUid; };                // undo: drop the reference
 ```
@@ -431,7 +441,7 @@ edits record one op each. Undo/redo replays a dedicated restore event
 (`ShaderCodeRestored`/`ShaderFieldRestored`/`ShaderFieldAddRestored`/
 `ShaderFieldRemoved`) that re-applies one edit dimension and bumps
 `ShaderUnit::m_version` (panel refresh), CPU-only, no recompile to SPIR-V. Create
-Shader is undoable via `ShaderLinkOp` (pool-preserving membership toggle: undo
+Shader is undoable via `ShaderReplaceOp` (pool-preserving membership toggle: undo
 drops the reference, redo relinks the pooled shader by UID, via
 `ShaderLinkRestored`/`ShaderUnlinkRestored`); Compile stays non-undoable. See
 [Operations](operations.md).
@@ -559,8 +569,7 @@ template helpers in `Application`.
 
 ### Step 1 - Panel defines a Qt signal
 
-```cpp
-// Outliner.h
+```cpp title="Outliner.h"
 signals:
     void objectClicked(const ObjectClicked& e);
     void visibilityChanged(const VisibilityChanged& e);
@@ -636,26 +645,16 @@ ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
 
 ## Data flow summary
 
-```
-User Input (QML / Qt widgets)
-    |
-    v
-UI Panel (Qt signal, e.g. Outliner::objectClicked - pure intent)
-    |
-    v
-Application::ConnectUIEvent<T>   <- single wiring point
-    |  [lambda calls editor->OnUIEvent(e)]
-    v
-Editor::OnUIEvent<T>             <- generic template, DEFERRED here
-    |  eventBus.Enqueue<T>(e)
-    v
-EventQueue::Process()            <- in Edit(), once per frame
-    |
-    v
-SceneController / ObjectController / Editor handlers   <- business logic
-    |- Select / Deselect, add / delete (SceneController)
-    |- property writes, resolved through the pool (ObjectController)
-    |- GPU uploads, render config, project state (Editor)
+```mermaid
+flowchart TD
+    input["User input (QML / Qt widgets)"]
+    panel["UI panel signal"]
+    bridge["ConnectUIEvent&lt;T&gt;<br/>the wiring point"]
+    onui["Editor::OnUIEvent&lt;T&gt;<br/>deferred here"]
+    process["Process()<br/>once per frame"]
+    handlers["controllers + Editor<br/>the business logic"]
+
+    input --> panel --> bridge --> onui --> process --> handlers
 ```
 
 Everything below `OnUIEvent` is synchronous: a handler that emits another event
@@ -702,32 +701,30 @@ Subscribers listen for this event to reset per-frame history:
 
 Scene mutations that affect GPU resources follow a three-tier event pattern:
 
-```
-SceneController / ObjectController mutation handler
-  |- Resolves the object UID - against the pool (ObjectController) or the
-  |   current Scene (SceneController) - and mutates the object
-  |- Emits one or more EditorEvents, synchronously:
-        |- SceneModified{} -> Editor marks project dirty
-        |- RenderResetEvent{} -> DeferredRenderer resets temporal accumulation
-        |
-        |- Scene object enters scene (add / undo-redo re-add) or light
-        |   shadow toggled ON -> SceneObjectGpuUploadRequested{objectUid}
-        |     |- Editor::OnSceneObjectGpuUpload handler:
-        |         resolves the pooled object by UID and posts the upload
-        |         (UploadMeshRequest / CreateLightGpuRequest / UploadEnvironmentRequest),
-        |         which the renderer runs skip-if-cached at its drain
-        |
-        |- Light property change -> LightGpuChanged{objectUid}
-        |     |- Editor::LightGpuChanged handler:
-        |         resolves the pooled Light*, converts it with
-        |         UploadManager::UploadLighting(*light) (pure CPU),
-        |         posts UpdateLightRequest{uid, struct}
-        |         -> renderer rewrites the single SSBO entry
-        |
-        |- Light transform/visibility/shadow toggle -> LightingRebuild{}
-              |- Editor::LightingRebuild handler:
-                  posts UpdateLightingRequest{full light dict} (pure CPU convert)
-                  -> renderer rebuilds all light SSBOs
+```mermaid
+flowchart TD
+    handler["Controllers<br/>resolve the UID and mutate"]
+
+    handler --> modified["SceneModified"]
+    handler --> reset["RenderResetEvent"]
+    handler --> upload["GpuUploadRequested<br/>object added / shadow on"]
+    handler --> lightGpu["LightGpuChanged<br/>a light property changed"]
+    handler --> rebuild["LightingRebuild<br/>transform or visibility"]
+
+    modified --> dirty["Editor marks the project dirty"]
+    reset --> accumulation["DeferredRenderer resets temporal accumulation"]
+
+    upload --> uploadHandler["Editor handler<br/>resolves the object"]
+    uploadHandler --> uploadRequest["posts the matching RenderRequest"]
+    uploadRequest --> uploadRun["the renderer runs it skip-if-cached at its drain"]
+
+    lightGpu --> lightHandler["Editor::LightGpuChanged<br/>converts the light, pure CPU"]
+    lightHandler --> updateRequest["posts UpdateLightRequest(uid, struct)"]
+    updateRequest --> ssbo["the renderer rewrites the single SSBO entry"]
+
+    rebuild --> rebuildHandler["LightingRebuild handler<br/>full light dict"]
+    rebuildHandler --> rebuildRequest["posts UpdateLightingRequest(full light dict)"]
+    rebuildRequest --> ssbos["the renderer rebuilds all light SSBOs"]
 ```
 
 The key invariant: controllers never touch GPU resources. They mutate scene

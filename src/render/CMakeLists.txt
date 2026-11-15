@@ -30,16 +30,10 @@ add_library(neurus_render STATIC
 	SwapchainTarget.cpp
 	OffscreenTarget.h
 	OffscreenTarget.cpp
-	shaders/Shader.h
-	shaders/Shader.cpp
 	shaders/RenderShader.h
 	shaders/RenderShader.cpp
 	shaders/ComputeShader.h
 	shaders/ComputeShader.cpp
-	shaders/ShaderStruct.h
-	shaders/ShaderStruct.cpp
-	shaders/ShaderStructSerialize.h
-	shaders/ShaderUnit.h
 	shaders/ShaderGenerator.h
 	shaders/ShaderGenerator.cpp
 	shaders/ShaderParser.h

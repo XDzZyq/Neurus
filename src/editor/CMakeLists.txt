@@ -52,6 +52,7 @@ add_library(neurus_editor STATIC
 target_link_libraries(neurus_editor PUBLIC
 	neurus_command
 	neurus_scene
+	neurus_asset
 	stb
 )
 

@@ -82,7 +82,7 @@ public:
 	 *         false if the shader carries no usable SPIR-V yet - not an error,
 	 *         Record() draws such a mesh with the pass default.
 	 */
-	bool EnsureMeshPipeline(RenderCache& cache, const Shader& shader);
+	bool EnsureMeshPipeline(RenderCache& cache, const ShaderData& shader);
 
 	/**
 	 * @brief Compiles the per-mesh G-Buffer pipeline from a request's SPIR-V.

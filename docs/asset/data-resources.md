@@ -38,6 +38,37 @@ The source path lives here, in the data layer - scene objects wrap a `MeshData` 
 
 Like `MeshData`, the source path lives in the data layer.
 
+## ShaderData (`asset/data/ShaderData.h`)
+
+`ShaderData` is the pooled CPU-side shader bundle and the UID a script
+addresses. Its supporting IR/unit headers live under `asset/data/shader/`
+(`ShaderStage.h`, `ShaderStruct.h/.cpp`, `ShaderUnit.h`,
+`ShaderStructSerialize.h`); the pooled class itself sits beside `MeshData` and
+`ImageData`:
+
+- Holds a name, one `ShaderUnit` per `ShaderType`, the last error message and a
+  monotonic version. `FindStage` returns `nullptr` when a stage is absent;
+  `GetStage` default-inserts.
+- The concrete leaves are `RenderShader` (vertex + fragment) and
+  `ComputeShader` (compute), both in `src/render/shaders/`. They add
+  `ParseAndGenerate()` and serialize their source paths (and compute defaults);
+  each leaf then serializes the stage map (`path`/`code`/`parsed`) through the
+  `ShaderData` helpers.
+- SPIR-V and the version are runtime state: they are never serialized and are
+  rebuilt on load. A stage with restored code keeps it; a path-only legacy
+  shader re-parses from disk.
+- `ShaderUnit` is a stage value, not a pooled resource. `ShaderStruct` is the
+  parsed GLSL IR; `ShaderStructSerialize.h` provides its cereal overloads.
+- `ShaderStage.h` holds `ShaderType`, `ShaderTypeFromPath` and the default
+  G-buffer source paths.
+- Pooled shader names are addressed by name (`neurus.data.shaders["Name"]`),
+  so `ResourceComponent::Load` re-seeds the registry from `ShaderData::GetName`
+  after loading the pool.
+
+The Script Console exposes the data as `neurus.shader` (stage constants,
+`load_shader`, IR classes), `neurus.data.shaders` (pooled shaders by UID/name)
+and `mesh.shader` (the per-mesh slot). See [Scripting](../script/overview.md#shaders).
+
 ## PixelFormat (`asset/PixelFormat.h`)
 
 `PixelFormat` is a Vulkan-free enum for CPU-side format queries. Its numeric values deliberately differ from Vulkan's, so do not cast between them; the mapping is by convention:
@@ -70,21 +101,13 @@ Asset path resolution keeps project files portable:
 
 ## Data flow
 
-```
-File System (OBJ, PNG)
-    |
-    v
-asset/data: MeshData / ImageData (CPU-side loading)
-    |                              ^
-    |  Image::FromImageData()      |  Image::ReadImageData()
-    v                              |
-render: Image (GPU) ---------------+
-    |
-    v
-render/buffers: Buffer / StagingBuffer / GPUBuffer / UniformBuffer
-    |
-    v
-Renderer passes (GeometryPass, LightingPass): consume GPU resources
+```mermaid
+flowchart TD
+    fileSystem["File system (OBJ, PNG)"] --> load["asset/data: MeshData / ImageData<br/>CPU-side loading"]
+    load -->|"Image::FromImageData()"| image["render: Image (GPU)"]
+    image -->|"Image::ReadImageData()"| load
+    image --> buffers["buffers: Buffer, Staging, GPUBuffer"]
+    buffers --> passes["passes consume GPU resources"]
 ```
 
 All image layout transitions go through `Barrier::Transition()`. See [Buffers](../render/buffers.md) and [Data Flow](../architecture/data-flow.md).

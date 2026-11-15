@@ -25,7 +25,7 @@
 namespace neurus {
 
 class RenderShader;
-class Shader;
+class ShaderData;
 class SharedQueue;
 
 class ShadowDepthPass : public Pass

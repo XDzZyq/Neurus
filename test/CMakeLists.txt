@@ -72,6 +72,7 @@ set(NEURUS_TEST_SOURCES
 	editor/test_render_config_controller.cpp
 	editor/test_script_controller.cpp
 	editor/test_shader_controller.cpp
+	editor/test_shader_create.cpp
 	editor/test_shader_editor_panel.cpp
 	editor/test_ui_events_script.cpp
 	editor/test_transform_gizmo.cpp
@@ -91,6 +92,7 @@ set(NEURUS_TEST_SOURCES
 	asset/test_project_roundtrip.cpp
 	asset/test_default_project.cpp
 	asset/test_serialize_optional.cpp
+	asset/test_shader_data.cpp
 	asset/test_ui_component.cpp
 	core/test_graph.cpp
 	core/test_selections.cpp
@@ -153,6 +155,7 @@ target_sources(neurus_test PRIVATE
 	script/test_script_context.cpp
 	script/test_script_bindings.cpp
 	script/test_script_writes.cpp
+	script/test_script_shader.cpp
 	script/test_script_file_roundtrip.cpp
 	script/test_script_preload.cpp
 	script/test_script_isolation.cpp

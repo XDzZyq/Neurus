@@ -18,7 +18,6 @@
 #include "editor/controllers/ShaderController.h"
 #include "editor/controllers/SceneController.h"
 #include "editor/controllers/TransformGizmoController.h"
-#include "editor/operations/ShaderOperations.h"
 #include "editor/events/EventBus.h"
 
 #include "render/requests/RenderRequestSink.h"
@@ -27,7 +26,6 @@
 
 #include "render/RenderFrameSnapshot.h"
 #include "render/shaders/RenderShader.h"
-#include "render/shaders/ShaderLibrary.h"
 #include "ui/UIContext.h"
 #include "script/ScriptContext.h"
 
@@ -35,6 +33,11 @@
 #include "asset/data/ImageData.h"
 #include "asset/data/AssetPath.h"
 #include "asset/data/MeshData.h"
+#include "asset/data/ShaderData.h"
+#include "asset/data/shader/ShaderStage.h"
+#include "asset/data/shader/ShaderUnit.h"
+#include "render/shaders/ComputeShader.h"
+#include "render/shaders/ShaderLibrary.h"
 #include "scene/Camera.h"
 #include "scene/DebugLine.h"
 #include "scene/DebugMesh.h"
@@ -50,6 +53,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <system_error>
 #include <unordered_map>
 #include <vector>
@@ -115,6 +119,71 @@ int ActiveUid(const Scene& scene)
 	return active ? active->GetObjectID() : 0;
 }
 
+/**
+ * @brief Resolves one shader stage from a pooled source or a source path.
+ *
+ * Editor-owned import helper: it reads the pool and the pool write follows this
+ * resolution. A pooled source contributes the stage matching @p type; a path
+ * must carry the matching extension; an empty path uses @p defaultPath.
+ *
+ * @param resources Editor-owned pool.
+ * @param sourceUid Pooled shader supplying the stage, or 0 to use @p path.
+ * @param path Source path; empty uses @p defaultPath.
+ * @param type Stage to resolve.
+ * @param defaultPath Fallback when @p path is empty.
+ * @param error Reason on failure.
+ * @return The resolved stage, or std::nullopt on failure.
+ */
+std::optional<neurus::ShaderUnit> ResolveShaderStage(neurus::ResourceManager& resources,
+                                                     int sourceUid, const std::string& path,
+                                                     neurus::ShaderType type,
+                                                     const std::string& defaultPath,
+                                                     std::string& error)
+{
+	if (sourceUid != 0)
+	{
+		auto source = resources.Get<neurus::ShaderData>(sourceUid);
+		if (!source)
+		{
+			error = "shader source not found: " + std::to_string(sourceUid);
+			return std::nullopt;
+		}
+		const neurus::ShaderUnit* unit = source->FindStage(type);
+		if (!unit)
+		{
+			error = "shader source has no " +
+			        neurus::ShaderData::TypeToString(type) + " stage";
+			return std::nullopt;
+		}
+		return *unit;
+	}
+
+	return neurus::ShaderLibrary::LoadStageUnit(path.empty() ? defaultPath : path, type,
+	                                            &error);
+}
+
+/**
+ * @brief Registers a constructed shader in the pool under a unique name.
+ *
+ * A shader is built and compiled off-pool, so a failure never leaves a
+ * half-made entry behind; the pool owns it from this call on. The unique name
+ * is mirrored into the shader, the same way Load<T> does for a scene object.
+ *
+ * @param resources Editor-owned pool.
+ * @param shader Constructed, compiled shader.
+ * @param name Requested name; a collision gains the usual ".001" suffix.
+ * @return The pooled uid carried by the link request and the undo operation.
+ */
+int PoolShader(neurus::ResourceManager& resources,
+               const std::shared_ptr<neurus::ShaderData>& shader,
+               const std::string& name)
+{
+	const int uid = resources.Register(shader);
+	const std::string unique = resources.SetName(uid, name);
+	shader->SetName(unique.empty() ? name : unique);
+	return uid;
+}
+
 } // anonymous namespace
 
 Editor::Editor(RenderRequestSink* renderer)
@@ -137,6 +206,21 @@ void Editor::Initialize()
 	ed_eventBus.Subscribe<MeshImportEvent>([this](const MeshImportEvent& e) {
 		OnMeshImport(e.path);
 		neurus::notify::Repaint(ed_eventBus);
+	});
+
+	// Shader lifecycle: the Editor owns the pool, so it creates/imports shader
+	// assets here and emits ObjectShaderAddRequested for SceneController to
+	// link. The UI asks for the default pair (ShaderCreateEvent), a script
+	// composes a new bundle (ShaderCreateRequested), and load_shader imports an
+	// asset with no mesh (ShaderImportRequested).
+	ed_eventBus.Subscribe<ShaderCreateEvent>([this](const ShaderCreateEvent& e) {
+		OnShaderCreateEvent(e);
+	});
+	ed_eventBus.Subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
+		OnShaderCreate(e);
+	});
+	ed_eventBus.Subscribe<ShaderImportRequested>([this](const ShaderImportRequested& e) {
+		OnShaderImportRequested(e);
 	});
 	ed_eventBus.Subscribe<CameraAddEvent>([this](const CameraAddEvent&) {
 		OnCameraAdd();
@@ -171,13 +255,8 @@ void Editor::Initialize()
 		neurus::notify::Repaint(ed_eventBus);
 	});
 
-	// Shader creation constructs a pooled RenderShader, so it is Editor-owned
-	// (like mesh/light/camera adds); ShaderController keeps only pool-free
-	// handlers.
-	ed_eventBus.Subscribe<ShaderCreateRequested>([this](const ShaderCreateRequested& e) {
-		OnCreateShader(e);
-		neurus::notify::Repaint(ed_eventBus);
-	});
+	// Shader creation, loading and removal are handled by ShaderController via
+	// the event bus; the Editor supplies the mutable pool in ControllerContext.
 
 	// Undo/redo of Create Shader: redo relinks the pooled RenderShader by UID;
 	// undo drops the reference (the pool keeps the shader). No version bump: the
@@ -192,13 +271,13 @@ void Editor::Initialize()
 			return;
 		}
 		mesh->SetObjShader(shader);
-		neurus::notify::Repaint(ed_eventBus);
+		neurus::notify::Mutated(ed_eventBus);
 	});
 	ed_eventBus.Subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
 		auto mesh = m_resources->Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(nullptr);
-		neurus::notify::Repaint(ed_eventBus);
+		neurus::notify::Mutated(ed_eventBus);
 	});
 
 	// Undo/redo replay their inverse events synchronously (never queued), so
@@ -380,7 +459,7 @@ void Editor::Initialize()
 	// and no frame draws with the pass default. Keyed on the shader's object id.
 	ed_eventBus.Subscribe<ShaderCompiled>([this](const ShaderCompiled& e) {
 		if (!ed_renderer) return;
-		auto shader = m_resources->Get<Shader>(e.shaderObjectId);
+		auto shader = m_resources->Get<ShaderData>(e.shaderObjectId);
 		if (!shader) return;
 		ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
 	});
@@ -910,6 +989,127 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 	}
 }
 
+void Editor::OnShaderCreate(const ShaderCreateRequested& e)
+{
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+
+	auto fail = [&](std::string message) {
+		result.error = std::move(message);
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader create failed: " << result.error);
+		neurus::notify::Repaint(ed_eventBus);
+	};
+
+	auto mesh = m_resources->Get<Mesh>(e.objectUid);
+	if (!mesh)
+	{
+		fail("shader target is not a mesh");
+		return;
+	}
+
+	// Stage resolution/parsing lives in ShaderLibrary (via ShaderData for a
+	// pooled source); the pool write stays here, where the Editor owns it.
+	std::string error;
+	auto vert = ResolveShaderStage(*m_resources, e.vertexSourceUid, e.vertexPath,
+	                               ShaderType::VERTEX, kDefaultVertexPath, error);
+	if (!vert)
+	{
+		fail(error);
+		return;
+	}
+	auto frag = ResolveShaderStage(*m_resources, e.fragmentSourceUid, e.fragmentPath,
+	                               ShaderType::FRAGMENT, kDefaultFragmentPath, error);
+	if (!frag)
+	{
+		fail(error);
+		return;
+	}
+
+	// Both stages are resolved first, so a shader is only pooled once it has
+	// compiled: a failure leaves no half-made entry and nothing to undo.
+	const std::string shaderName = "MeshShader_" + std::to_string(mesh->GetObjectID());
+	auto shader = std::make_shared<RenderShader>(shaderName, std::move(*vert), std::move(*frag));
+
+	std::string compileError;
+	if (!shader->CompileToSpv(&compileError))
+	{
+		fail(compileError.empty() ? "shader compile failed" : compileError);
+		return;
+	}
+
+	const int shaderUid = PoolShader(*m_resources, shader, shaderName);
+	result.shaderUid = shaderUid;
+
+	ed_eventBus.Emit(ObjectShaderAddRequested{ e.objectUid, shaderUid });
+	ed_eventBus.Emit(ShaderCompiled{ shaderUid });
+	neurus::notify::Mutated(ed_eventBus);
+}
+
+void Editor::OnShaderCreateEvent(const ShaderCreateEvent& e)
+{
+	ShaderCreateRequested request;
+	request.objectUid = e.objectUid;
+	OnShaderCreate(request);
+}
+
+void Editor::OnShaderImportRequested(const ShaderImportRequested& e)
+{
+	ShaderRequestResult local;
+	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
+
+	auto fail = [&](std::string message) {
+		result.error = std::move(message);
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader load failed: " << result.error);
+		neurus::notify::Repaint(ed_eventBus);
+	};
+
+	const auto stage = ShaderTypeFromPath(e.path);
+	if (!stage || *stage == ShaderType::GEOMETRY)
+	{
+		fail(!stage ? "unsupported shader extension: " + e.path
+		            : "geometry shaders are not supported: " + e.path);
+		return;
+	}
+
+	const std::string shaderName = e.name.empty() ? e.path : e.name;
+	try
+	{
+		// Parsed off-pool, then registered: a parse failure pools nothing, so
+		// there is no entry to roll back and no half-made resource in a save.
+		std::shared_ptr<ShaderData> shader;
+
+		if (*stage == ShaderType::COMPUTE)
+		{
+			auto compute = std::make_shared<ComputeShader>(shaderName, e.path);
+			shader = compute->ParseAndGenerate() ? compute : nullptr;
+		}
+		else
+		{
+			const std::string vertPath =
+				*stage == ShaderType::VERTEX ? e.path : kDefaultVertexPath;
+			const std::string fragPath =
+				*stage == ShaderType::FRAGMENT ? e.path : kDefaultFragmentPath;
+			auto render = std::make_shared<RenderShader>(shaderName, vertPath, fragPath);
+			shader = render->ParseAndGenerate() ? render : nullptr;
+		}
+
+		if (!shader)
+		{
+			fail("failed to parse shader: " + e.path);
+			return;
+		}
+
+		result.shaderUid = PoolShader(*m_resources, shader, shaderName);
+	}
+	catch (const std::exception& ex)
+	{
+		fail(ex.what());
+		return;
+	}
+
+	neurus::notify::Mutated(ed_eventBus);
+}
+
 void Editor::OnCameraAdd()
 {
 	std::string error;
@@ -1078,75 +1278,6 @@ void Editor::OnSpotLightAdd()
 	}
 	catch (const std::exception& e) {
 		NEURUS_ERR("Failed to add spot light: " << e.what());
-	}
-}
-
-void Editor::OnCreateShader(const ShaderCreateRequested& e)
-{
-	auto mesh = m_resources->Get<Mesh>(e.objectUid);
-	if (!mesh)
-	{
-		NEURUS_ERR("[Editor] OnCreateShader: not a mesh");
-		return;
-	}
-	if (mesh->o_shader)
-	{
-		NEURUS_LOG("[Editor] Mesh already has a shader");
-		return;
-	}
-
-	const int objectId = mesh->GetObjectID();
-	const std::string shaderName = "MeshShader_" + std::to_string(objectId);
-
-	try
-	{
-		// Load<T> constructs + registers the pooled RenderShader; parse explicitly
-		// here. Paths keep the "res/..." prefix: the shader parser resolves them
-		// against the shader directory, so the stored path stays portable.
-		auto shader = m_resources->Load<RenderShader>(
-			shaderName, "res/shaders/render/gbuffer.vert", "res/shaders/render/gbuffer.frag");
-		if (!shader->ParseAndGenerate())
-		{
-			NEURUS_ERR("[Editor] Failed to create default shader for mesh " << objectId);
-			m_resources->Remove(shader->GetObjectID());
-			return;
-		}
-
-		mesh->SetObjShader(shader); // o_shader + o_shaderId (pooled reference)
-
-		// The link is the undoable fact: a pool-preserving membership toggle -
-		// undo drops the reference (the pool keeps the shader), redo relinks it.
-		ed_operations.Submit(std::make_unique<ShaderLinkOp>(
-			mesh->GetObjectID(), shader->GetObjectID(), true));
-
-		// Compile both stages to SPIR-V and bump version on success.
-		auto& s = *mesh->o_shader;
-		bool allOk = true;
-		if (s.HasStage(ShaderType::VERTEX))
-		{
-			auto& unit = s.GetStage(ShaderType::VERTEX);
-			unit.spv = ShaderLibrary::Compile(unit, ShaderType::VERTEX, s.GetName());
-			if (unit.spv.empty()) { allOk = false; }
-			else { unit.BumpVersion(); }
-		}
-		if (s.HasStage(ShaderType::FRAGMENT))
-		{
-			auto& unit = s.GetStage(ShaderType::FRAGMENT);
-			unit.spv = ShaderLibrary::Compile(unit, ShaderType::FRAGMENT, s.GetName());
-			if (unit.spv.empty()) { allOk = false; }
-			else { unit.BumpVersion(); }
-		}
-		if (allOk)
-		{
-			s.BumpVersion();
-			ed_eventBus.Emit(ShaderCompiled{ s.GetObjectID() });
-		}
-
-		NEURUS_LOG("[Editor] Created shader for mesh " << objectId << ": " << shaderName);
-	}
-	catch (const std::exception& ex)
-	{
-		NEURUS_ERR("[Editor] Exception creating shader: " << ex.what());
 	}
 }
 
