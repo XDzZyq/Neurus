@@ -5,8 +5,8 @@
 
 #include "DeferredRenderer.h"
 
-#include "OffscreenTarget.h"
-#include "SwapchainTarget.h"
+#include "targets/OffscreenTarget.h"
+#include "targets/SwapchainTarget.h"
 
 #include "Barrier.h"
 #include "Image.h"

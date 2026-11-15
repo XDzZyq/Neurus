@@ -112,7 +112,7 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 ### Output target (`OutputTarget`)
 
 `DeferredRenderer` acquires and presents through an `OutputTarget`, not through
-`Swapchain` directly:
+`Swapchain` directly. The concrete targets live in `src/render/targets/`:
 
 - `SwapchainTarget` wraps `Swapchain` unchanged and is what the Qt application
   constructs. Acquire, present and the out-of-date recovery behave exactly as
