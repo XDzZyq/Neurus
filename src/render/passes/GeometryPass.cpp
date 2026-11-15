@@ -215,6 +215,13 @@ bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRe
 
 	if (pipelines.GetPipeline(shaderId, version)) return true;
 
+	// A G-buffer pipeline needs both a pre-raster and a fragment stage. A shader
+	// compiles one unit at a time, so an in-between state carries SPIR-V for the
+	// fragment only; building from it creates an invalid pipeline
+	// (VUID-VkGraphicsPipelineCreateInfo-pStages-06896). Wait for the compile
+	// that completes the set - Record() draws the pass default until then.
+	if (request.vertexSpv.empty() || request.fragmentSpv.empty()) return false;
+
 	Pipeline pipeline = CreatePerMeshPipeline(request.vertexSpv, request.fragmentSpv);
 
 	// No SPIR-V for any supported stage is an ordinary state while a shader is
