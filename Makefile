@@ -28,6 +28,7 @@ ifeq ($(OS),Windows_NT)
   SETUP_PY_ENV  := powershell -ExecutionPolicy Bypass -File lib/scripts/setup_python_env.ps1
   FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
   BUILD_DIR     := build
+  APP_TARGET    := Neurus
 else ifeq ($(UNAME),Darwin)
   PRESET        := macos
   PRESET_REL    := macos
@@ -35,6 +36,7 @@ else ifeq ($(UNAME),Darwin)
   SETUP_PY_ENV  := sh lib/scripts/setup_python_env.sh
   FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
   BUILD_DIR     := build
+  APP_TARGET    := Neurus
 else ifeq ($(UNAME),Linux)
   # Headless Linux: no Qt, no window system. CMake, Ninja, the Vulkan SDK and uv
   # must already be on PATH/LD_LIBRARY_PATH (see docs/build/build.md).
@@ -47,6 +49,8 @@ else ifeq ($(UNAME),Linux)
   # Downloads and verifies the linux-x64 archive published for this commit.
   FETCH_PREBUILT := $(PYTHON) lib/scripts/fetch_prebuilt.py
   BUILD_DIR     := build/linux
+  # Linux's product executable is the headless renderer, not the Qt app.
+  APP_TARGET    := neurus_headless
 else
   $(error Unsupported platform '$(UNAME)': Neurus builds on Windows, macOS and headless Linux)
 endif
@@ -68,9 +72,10 @@ ifeq ($(filter app test,$(MAKECMDGOALS)),)
 	cmake --build $(BUILD_DIR) --config Debug
 endif
 
-# Build Neurus.exe only (make app  or  make build app)
+# Build the platform's product executable: Neurus on Windows/macOS, and the
+# headless renderer on Linux (there is no Qt application there).
 app:
-	cmake --build $(BUILD_DIR) --target Neurus --config Debug
+	cmake --build $(BUILD_DIR) --target $(APP_TARGET) --config Debug
 
 # Build neurus_test only (make test  or  make build test)
 test:

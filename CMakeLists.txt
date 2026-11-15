@@ -34,7 +34,17 @@ endif()
 # ---------------------------------------------------------------------------
 option(NEURUS_BUILD_TESTS "Build unit tests" ON)
 option(NEURUS_ENABLE_VALIDATION "Enable Vulkan validation layers" OFF)
-option(NEURUS_BUILD_UI "Build the Qt6 UI and the GUI executable" ON)
+
+# The Qt UI is a Windows/macOS product. Linux has no window-system surface
+# implementation (src/platform/linux/LinuxSurface.cpp is a headless stub), so the
+# platform default there is off: a plain `cmake -B build` on a server must not
+# require Qt.
+if(WIN32 OR APPLE)
+	set(NEURUS_UI_DEFAULT ON)
+else()
+	set(NEURUS_UI_DEFAULT OFF)
+endif()
+option(NEURUS_BUILD_UI "Build the Qt6 UI and the GUI executable" ${NEURUS_UI_DEFAULT})
 
 # The headless renderer is the Linux build of Neurus: no Qt, no window system.
 # Windows and macOS keep the GUI as their product, so it defaults on only for

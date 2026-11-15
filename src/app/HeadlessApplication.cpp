@@ -348,10 +348,23 @@ bool HeadlessApplication::OpenProject(const std::string& path, bool force, std::
 		return false;
 	}
 
+	// A missing file is a pre-load failure: the document was never dropped, so
+	// keep it, exactly as the GUI does. ApplicationCore::LoadProject returns
+	// before BeginLoad in that case.
+	std::error_code fileError;
+	if (!std::filesystem::is_regular_file(path, fileError))
+	{
+		error = "Project file not found: " + path;
+		NEURUS_ERR("[neurus_headless] " << error);
+		return false;
+	}
+
 	std::string uiLayout;
 	if (!m_core->LoadProject(path, *m_editor, uiLayout, error))
 	{
-		// A failed load dropped the previous document; leave a valid one behind.
+		// BeginLoad already dropped the previous document, so leave a valid one
+		// behind. Creating the default document also clears the project path, so
+		// no later save can write over the project that failed to open.
 		std::string resetError;
 		if (!m_core->CreateDefaultDocument(*m_editor, ExecutableDirectory() / kDefaultSceneObj,
 		                                   resetError))

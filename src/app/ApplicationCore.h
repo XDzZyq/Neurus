@@ -93,6 +93,15 @@ public:
 	 */
 	command::CommandResult ExecuteScript(const command::CommandRequest& request, Editor& editor);
 
+	/**
+	 * @brief Points the engine's reload watcher at the open project's directory.
+	 *
+	 * Called after every document transition (load, new, save-as) and once the
+	 * interpreter is ready, so project-local modules are reload roots in both
+	 * composition roots. A no-op when the interpreter is not initialized.
+	 */
+	void UpdateScriptReloadRoots();
+
 	const std::string& ProjectPath() const { return m_projectPath; }
 	void SetProjectPath(std::string path) { m_projectPath = std::move(path); }
 

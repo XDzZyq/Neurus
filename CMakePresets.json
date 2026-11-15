@@ -54,7 +54,7 @@
 		{
 			"name": "linux",
 			"displayName": "Linux x64 headless (Ninja)",
-			"description": "Headless Linux: no Qt, no window system. Requires VULKAN_SDK and scripts/linux/Toolchain.sh on PATH.",
+			"description": "Headless Linux: no Qt, no window system. CMake, Ninja, uv and VULKAN_SDK must be on PATH; see docs/build/build.md.",
 			"generator": "Ninja",
 			"binaryDir": "${sourceDir}/build/linux",
 			"cacheVariables": {

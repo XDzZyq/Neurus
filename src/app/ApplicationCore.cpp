@@ -167,6 +167,7 @@ bool ApplicationCore::InitializeScripting(Editor& editor, const std::vector<std:
 			}
 		}
 	}
+	UpdateScriptReloadRoots();
 	return true;
 }
 
@@ -186,6 +187,11 @@ bool ApplicationCore::CreateDefaultDocument(Editor& editor, const std::filesyste
 		NEURUS_ERR("[ApplicationCore] Failed to create the default document: " << e.what());
 		return false;
 	}
+
+	// A new document has no file yet: clearing the path here is what stops a
+	// failed project.open from leaving a later save pointed at the old project.
+	m_projectPath.clear();
+	UpdateScriptReloadRoots();
 	return true;
 }
 
@@ -216,6 +222,7 @@ bool ApplicationCore::LoadProject(const std::filesystem::path& path, Editor& edi
 	}
 
 	m_projectPath = Utf8Path(path);
+	UpdateScriptReloadRoots();
 	return true;
 }
 
@@ -245,6 +252,7 @@ bool ApplicationCore::SaveProject(const std::filesystem::path& path, Editor& edi
 	}
 
 	m_projectPath = Utf8Path(path);
+	UpdateScriptReloadRoots();
 	return true;
 }
 
@@ -540,9 +548,42 @@ command::CommandResult ApplicationCore::ExecuteScript(const command::CommandRequ
 	return command::CommandResult::Success({{"output", output}, {"stderr", scriptError}});
 }
 
-std::string ApplicationCore::ScriptProjectRoot() const
+void ApplicationCore::UpdateScriptReloadRoots()
 {
-	std::filesystem::path root;
+	if (!m_script->IsReady())
+	{
+		// Startup order: both roots load the project before Python starts, so the
+		// document operations above cannot set roots yet. InitializeScripting()
+		// calls this again once the interpreter is ready.
+		return;
+	}
+
+	std::vector<std::string> roots;
+	std::error_code error;
+	std::filesystem::path directory;
+	if (!m_projectPath.empty())
+	{
+		directory = std::filesystem::path(m_projectPath).parent_path();
+	}
+	if (directory.empty())
+	{
+		directory = std::filesystem::current_path(error);
+	}
+	if (!directory.empty())
+	{
+		// Python receives UTF-8; generic separators keep the root comparable on
+		// Windows, where path::string() would be the ANSI code page.
+		const std::u8string utf8 = directory.generic_u8string();
+		roots.emplace_back(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+	}
+
+	m_script->SetReloadRoots(roots);
+	NEURUS_LOG("[ApplicationCore] script reload roots: "
+	           << (roots.empty() ? std::string("(none)") : roots.front()));
+}
+
+std::string ApplicationCore::ScriptProjectRoot() const
+{	std::filesystem::path root;
 	if (!m_projectPath.empty())
 	{
 		root = std::filesystem::path(m_projectPath).parent_path();

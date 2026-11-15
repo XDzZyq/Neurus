@@ -143,5 +143,14 @@ TEST_F(OffscreenRenderTest, DrawsAndCapturesWithoutASurface)
 	EXPECT_EQ(m_renderer->GetExtent().height, 48);
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 
+	const std::filesystem::path resized =
+		std::filesystem::temp_directory_path() / "neurus-offscreen-resized";
+	std::filesystem::remove_all(resized);
+	m_renderer->CaptureScreenshot(false, resized);
+	EXPECT_EQ(CountPngs(resized), 1u)
+		<< "the resized frame must still produce a capture (stale attachments or a "
+		   "broken readback would otherwise pass)";
+
+	std::filesystem::remove_all(resized);
 	std::filesystem::remove_all(directory);
 }

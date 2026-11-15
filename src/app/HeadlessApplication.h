@@ -78,12 +78,13 @@ private:
 
 	// Declared so destruction runs in dependency order (reverse of this list):
 	// the render thread joins before the renderer, the renderer before the
-	// upload manager; the core (script engine) outlives the editor it writes to,
-	// and the Vulkan context goes last.
-	std::unique_ptr<ApplicationCore>      m_core;
+	// upload manager. m_core comes after the editor because it owns the script
+	// engine, which borrows the editor's event queue and script context: the
+	// engine must be finalized before the editor, so it must be declared later.
 	std::unique_ptr<VulkanContext>        m_vkContext;
 	std::unique_ptr<Editor>               m_editor;
 	std::unique_ptr<EditorCommandAdapter> m_commands;
+	std::unique_ptr<ApplicationCore>      m_core;
 	std::unique_ptr<SessionServer>        m_session;
 	std::unique_ptr<UploadManager>        m_uploader;
 	std::unique_ptr<DeferredRenderer>     m_renderer;

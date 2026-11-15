@@ -63,7 +63,6 @@ static QString resolveResourcePath(const char* relativePath)
 	return QCoreApplication::applicationDirPath() + "/res/" + relativePath;
 }
 
-
 /**
  * @brief Splits a preload list on commas and semicolons, trimming each item.
  *
@@ -290,10 +289,6 @@ int Application::Run()
 		// This also rebases the dirty baseline.
 		OnProjectSave(projectPath);
 	}
-
-	// The project path is now known (or the fallback saved one); project-local
-	// modules live beside it, so they become the session's reload roots.
-	UpdateScriptReloadRoots();
 
 	app_mainWindow->show();
 	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight());
@@ -572,33 +567,7 @@ void Application::InitScripting()
 	// The core wires the engine to the editor's own dispatch, so a script
 	// mutation is applied by the same controller as the equivalent panel edit.
 	app_core->InitializeScripting(*app_editor, preload);
-
-	UpdateScriptReloadRoots();
 }
-
-void Application::UpdateScriptReloadRoots()
-{
-	std::vector<std::string> roots;
-	std::error_code pathError;
-	std::filesystem::path directory;
-	if (!app_core->ProjectPath().empty())
-	{
-		directory = std::filesystem::path(app_core->ProjectPath()).parent_path();
-	}
-	if (directory.empty())
-	{
-		directory = std::filesystem::current_path(pathError);
-	}
-	if (!directory.empty())
-	{
-		roots.push_back(directory.generic_string());
-	}
-
-	app_core->Script().SetReloadRoots(roots);
-	NEURUS_LOG("[Application] script reload roots: "
-	           << (roots.empty() ? std::string("(none)") : roots.front()));
-}
-
 
 bool Application::OnProjectNew(std::string* error)
 {
@@ -611,11 +580,7 @@ bool Application::OnProjectNew(std::string* error)
 			*error = documentError;
 		return false;
 	}
-	app_core->SetProjectPath({});
 
-	// Project-local modules follow the project: with none open, the process
-	// current directory is the reload root.
-	UpdateScriptReloadRoots();
 	// Layout is intentionally left untouched on New; rebase the dirty
 	// baseline so a fresh project isn't reported as having unsaved changes.
 	app_savedUiState = app_mainWindow->ExportLayout();
@@ -648,15 +613,11 @@ bool Application::OnProjectOpen(const std::string& path, std::string* error)
 			NEURUS_ERR("[Application] Failed to recover after a project open failure: "
 			           << resetError);
 		}
-		app_core->SetProjectPath({});
-		UpdateScriptReloadRoots();
 		app_savedUiState = app_mainWindow->ExportLayout();
 		return false;
 	}
 
 	app_mainWindow->ApplyLayout(app_uiLayout);
-	// The opened project's directory becomes the reload root for its modules.
-	UpdateScriptReloadRoots();
 	// Same rebase as the startup load: the re-exported layout, not the blob.
 	app_savedUiState = app_mainWindow->ExportLayout();
 	return true;
@@ -683,9 +644,6 @@ bool Application::OnProjectSave(const std::string& path, std::string* error)
 		return false;
 	}
 
-	// Save As can move the document to another directory; reload roots follow
-	// the project file.
-	UpdateScriptReloadRoots();
 	app_savedUiState = app_uiLayout;
 	return true;
 }

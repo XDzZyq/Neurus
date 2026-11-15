@@ -30,20 +30,15 @@ void VulkanTestShared::SetUp()
 		                            "NeurusTest",
 		                            VK_MAKE_VERSION(0, 5, 0),
 		                            VK_API_VERSION_1_4);
-		std::vector<const char*> instanceExts = {
-			VK_KHR_SURFACE_EXTENSION_NAME,
+		// Only what the platform itself requires. A windowed platform asks for
+		// VK_KHR_surface plus its own surface extension; the headless Linux
+		// platform asks for none. Adding VK_KHR_surface unconditionally would
+		// fail instance creation on a server Vulkan implementation without WSI -
+		// exactly the environment the offscreen tests must run in.
+		std::vector<const char*> instanceExts = neurus::platform::RequiredInstanceExtensions();
 #ifdef _DEBUG
-			VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+		instanceExts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
-		};
-
-		// Add platform-specific extensions.
-		auto platformExts = neurus::platform::RequiredInstanceExtensions();
-		for (const auto* ext : platformExts) {
-			// Skip VK_KHR_SURFACE (already added above)
-			if (std::strcmp(ext, VK_KHR_SURFACE_EXTENSION_NAME) != 0)
-				instanceExts.push_back(ext);
-		}
 
 		vk::InstanceCreateInfo instanceCI(neurus::platform::InstanceCreateFlags(), &appInfo, {}, instanceExts);
 		m_instance = std::make_unique<vk::raii::Instance>(m_context, instanceCI);

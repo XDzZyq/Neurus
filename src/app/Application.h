@@ -92,15 +92,6 @@ private:
 	void InitEditor();
 	void InitScripting();
 
-	/**
-	 * @brief Points the script engine's reload roots at the project directory.
-	 *
-	 * The project directory (parent of the open project file) is where
-	 * project-local modules live; with no project open the process current
-	 * directory is used. Called at startup and after New/Open.
-	 */
-	void UpdateScriptReloadRoots();
-
 	void ResizeViewport(int width, int height);
 
 	/**
