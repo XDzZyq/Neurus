@@ -44,7 +44,11 @@ void RegisterNeurusModule(py::module_& m)
 	py::module_ data = m.def_submodule("data", "Resource pool access.");
 	py::module_ scene = m.def_submodule("scene", "Current scene access.");
 	py::module_ render = m.def_submodule("render", "Render settings.");
+	py::module_ shader = m.def_submodule("shader", "Shader assets and units.");
 
+	// Shader classes first: DataBindings adds the Mesh.shader slot, which
+	// returns a registered ShaderSlot class.
+	RegisterShaderBindings(shader);
 	RegisterObjectBindings(data);
 	RegisterDataBindings(data);
 	RegisterSceneBindings(scene);
@@ -59,10 +63,12 @@ void InstallNeurusViews(py::module_& m, const ScriptView* view)
 	py::module_ data = m.attr("data");
 	py::module_ scene = m.attr("scene");
 	py::module_ render = m.attr("render");
+	py::module_ shader = m.attr("shader");
 	InstallObjectViews(data, view);
 	InstallDataViews(data, view);
 	InstallSceneViews(scene, view);
 	InstallConfigProxies(render, view);
+	InstallShaderViews(shader, data, view);
 }
 
 }  // namespace script

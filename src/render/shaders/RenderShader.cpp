@@ -21,13 +21,23 @@ namespace neurus {
 // =========================================================================
 
 RenderShader::RenderShader(std::string name, std::string vertPath, std::string fragPath)
-	: Shader(std::move(name))
+	: ShaderData(std::move(name))
 	, m_vertPath(std::move(vertPath))
 	, m_fragPath(std::move(fragPath))
 {
 	m_stages[ShaderType::VERTEX]   = ShaderUnit{m_vertPath, {}, {}};
 	m_stages[ShaderType::FRAGMENT] = ShaderUnit{m_fragPath, {}, {}};
 	NEURUS_LOG("[RenderShader] Created '" << m_name << "'");
+}
+
+RenderShader::RenderShader(std::string name, ShaderUnit vert, ShaderUnit frag)
+	: ShaderData(std::move(name))
+	, m_vertPath(vert.path)
+	, m_fragPath(frag.path)
+{
+	m_stages[ShaderType::VERTEX]   = std::move(vert);
+	m_stages[ShaderType::FRAGMENT] = std::move(frag);
+	NEURUS_LOG("[RenderShader] Created '" << m_name << "' from resolved stages");
 }
 
 void RenderShader::ReloadContent()
@@ -40,7 +50,7 @@ void RenderShader::ReloadContent()
 	ParseAndGenerate();
 }
 
-bool RenderShader::CompileToSpv()
+bool RenderShader::CompileToSpv(std::string* outError)
 {
 	bool allOk = true;
 	for (auto type : {ShaderType::VERTEX, ShaderType::FRAGMENT})
@@ -50,11 +60,16 @@ bool RenderShader::CompileToSpv()
 		if (!unit.spv.empty()) continue; // idempotent: stage already compiled
 		if (unit.code.empty()) continue; // identity shell (no content to compile)
 
-		unit.spv = ShaderLibrary::Compile(unit, type, m_name);
+		std::string stageError;
+		unit.spv = ShaderLibrary::Compile(unit, type, m_name, &stageError);
 		if (unit.spv.empty())
 		{
 			NEURUS_ERR("[RenderShader] CompileToSpv failed for '" << m_name
 			           << "' stage " << TypeToString(type));
+			if (outError != nullptr && outError->empty())
+			{
+				*outError = stageError.empty() ? "shader compile failed" : stageError;
+			}
 			allOk = false;
 			continue;
 		}

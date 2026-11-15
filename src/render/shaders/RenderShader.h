@@ -13,12 +13,12 @@
  * Lifecycle:
  *   1. Construct: RenderShader(name, vertPath, fragPath)
  *   2. ParseAndGenerate: parse -> generate GLSL for both stages
- *   3. Access: GetStage(), GetParsedStruct(), GetGeneratedCode()
+ *   3. Access: GetStage(), parsed IR and generated code
  *   4. Recompile: Recompile(type) -> re-parse single stage, re-generate
  */
 #pragma once
 
-#include "Shader.h"
+#include "asset/data/ShaderData.h"
 
 namespace neurus {
 
@@ -30,7 +30,7 @@ namespace neurus {
  *
  * @note Non-copyable, non-movable (UID semantics). Not thread-safe.
  */
-class RenderShader : public Shader
+class RenderShader : public ShaderData
 {
 public:
 	/**
@@ -44,6 +44,20 @@ public:
 	 * @param fragPath Path to the fragment shader GLSL source file.
 	 */
 	RenderShader(std::string name = "", std::string vertPath = "", std::string fragPath = "");
+
+	/**
+	 * @brief Constructs a render shader from already resolved stage units.
+	 *
+	 * Used when the source stages are pooled copies rather than files: the
+	 * units carry their own path, IR and generated code, so nothing is re-read
+	 * from disk. The stage paths become the shader's source paths, which is
+	 * what a later ReloadContent() and a project save use.
+	 *
+	 * @param name Human-readable shader name (for logging and cache keys).
+	 * @param vert Fully resolved vertex stage.
+	 * @param frag Fully resolved fragment stage.
+	 */
+	RenderShader(std::string name, ShaderUnit vert, ShaderUnit frag);
 
 	~RenderShader() override = default;
 
@@ -61,22 +75,19 @@ public:
 	void ReloadContent();
 
 	/**
-	 * @brief Compiles every stage's GLSL to SPIR-V in place and bumps versions.
+	 * @brief Compiles the stages' generated GLSL to SPIR-V in place.
 	 *
-	 * Each stage's spv is built from its generated code; stages that already
-	 * hold SPIR-V are skipped. Used after load, since serialization restores
-	 * source paths and re-parses content but never recompiles.
-	 *
-	 * @return true if every present stage compiled to non-empty SPIR-V.
+	 * @param outError Optional compiler message when a stage fails.
+	 * @return true when every present stage holds non-empty SPIR-V.
 	 */
-	bool CompileToSpv();
+	bool CompileToSpv(std::string* outError = nullptr);
 
 	/**
-	 * @brief Cereal serialization - name (via Shader) + both source paths.
+	 * @brief Cereal serialization - base content + both source paths.
 	 *
-	 * On load, ReloadContent() re-parses the stages from disk and
-	 * CompileToSpv() regenerates the derived SPIR-V, so pipelines are ready
-	 * immediately after a project load.
+	 * On load, a restored stage with code keeps it; a legacy path-only shader
+	 * reloads from disk. CompileToSpv() then rebuilds the runtime SPIR-V, so
+	 * pipelines are ready immediately after a project load.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -84,10 +95,21 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<Shader>(this), CEREAL_NVP(m_vertPath), CEREAL_NVP(m_fragPath));
-		if constexpr (Archive::is_loading::value)
+		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_vertPath), CEREAL_NVP(m_fragPath));
+		if constexpr (Archive::is_saving::value)
 		{
-			ReloadContent();
+			SerializeStages(ar);
+		}
+		else
+		{
+			DeserializeStages(ar);
+			const bool hasContent =
+				!m_stages[ShaderType::VERTEX].code.empty() ||
+				!m_stages[ShaderType::FRAGMENT].code.empty();
+			if (!hasContent)
+			{
+				ReloadContent();
+			}
 			CompileToSpv();
 		}
 	}
@@ -101,7 +123,7 @@ public:
 	 *
 	 * @return true if both stages parsed and generated successfully.
 	 */
-	bool ParseAndGenerate() override;
+	bool ParseAndGenerate();
 
 	/**
 	 * @brief Returns the primary shader type (VERTEX).

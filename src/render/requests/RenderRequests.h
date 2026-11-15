@@ -43,7 +43,7 @@ namespace neurus
 
 class ImageData;
 class MeshData;
-class Shader;
+class ShaderData;
 
 /// @brief One light's GPU-side struct, as LightingCache stores it.
 using LightStructVariant = std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>;
@@ -183,6 +183,6 @@ using RenderRequest = std::variant<UploadMeshRequest,
  * Copies the id, the version and the vertex/fragment SPIR-V at the moment of
  * the call, so the request stays correct however the Shader changes later.
  */
-EnsurePipelineRequest MakeEnsurePipelineRequest(const Shader& shader);
+EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader);
 
 } // namespace neurus

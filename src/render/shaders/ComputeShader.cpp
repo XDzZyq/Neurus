@@ -6,6 +6,7 @@
 #include "ComputeShader.h"
 
 #include "ShaderGenerator.h"
+#include "ShaderLibrary.h"
 #include "ShaderParser.h"
 
 #include "core/Log.h"
@@ -19,7 +20,7 @@ namespace neurus {
 // =========================================================================
 
 ComputeShader::ComputeShader(std::string name, std::string compPath)
-	: Shader(std::move(name))
+	: ShaderData(std::move(name))
 	, m_compPath(std::move(compPath))
 {
 	m_stages[ShaderType::COMPUTE] = ShaderUnit{m_compPath, {}, {}};
@@ -45,6 +46,31 @@ bool ComputeShader::ParseAndGenerate()
 	unit.code = ShaderGenerator::Generate(unit.parsed);
 
 	NEURUS_LOG("[ComputeShader] '" << m_name << "' parsed and generated");
+	return true;
+}
+
+void ComputeShader::ReloadContent()
+{
+	if (m_compPath.empty()) return;
+
+	m_stages[ShaderType::COMPUTE].path = m_compPath;
+	ParseAndGenerate();
+}
+
+bool ComputeShader::CompileToSpv()
+{
+	auto& unit = m_stages[ShaderType::COMPUTE];
+	if (!unit.spv.empty()) return true;
+	if (unit.code.empty()) return false;
+
+	unit.spv = ShaderLibrary::Compile(unit, ShaderType::COMPUTE, m_name);
+	if (unit.spv.empty())
+	{
+		NEURUS_ERR("[ComputeShader] CompileToSpv failed for '" << m_name << "'");
+		return false;
+	}
+	unit.BumpVersion();
+	BumpVersion();
 	return true;
 }
 

@@ -1,9 +1,11 @@
 #include "ShaderLibrary.h"
 
-#include "Shader.h"
+#include "asset/data/ShaderData.h"
 #include "ShaderCompiler.h"
 #include "RenderShader.h"
 #include "ComputeShader.h"
+#include "ShaderGenerator.h"
+#include "ShaderParser.h"
 
 #include "core/Log.h"
 
@@ -175,10 +177,36 @@ std::unique_ptr<ComputeShader> ShaderLibrary::LoadComputeShader(
 	return shader;
 }
 
+std::optional<ShaderUnit> ShaderLibrary::LoadStageUnit(const std::string& path, ShaderType type,
+                                                       std::string* outError)
+{
+	const auto inferred = ShaderTypeFromPath(path);
+	if (!inferred || *inferred != type)
+	{
+		if (outError != nullptr)
+		{
+			*outError = "shader path is not a " + ShaderData::TypeToString(type) + " file: " + path;
+		}
+		return std::nullopt;
+	}
+
+	ShaderUnit unit;
+	unit.path = path;
+	unit.parsed = ShaderParser::ParseShaderFile(path, type);
+	if (unit.parsed.IsEmpty())
+	{
+		if (outError != nullptr) *outError = "failed to parse shader: " + path;
+		return std::nullopt;
+	}
+	unit.code = ShaderGenerator::Generate(unit.parsed);
+	return unit;
+}
+
 std::vector<uint32_t> ShaderLibrary::Compile(
 	const ShaderUnit& stage,
 	ShaderType type,
-	const std::string& debugName)
+	const std::string& debugName,
+	std::string* outError)
 {
 	auto& compiler = GetCompiler();
 	shaderc_shader_kind kind;
@@ -191,11 +219,16 @@ std::vector<uint32_t> ShaderLibrary::Compile(
 		default:                   kind = shaderc_glsl_vertex_shader;
 	}
 
-	return compiler.CompileGlslToSpv(stage.code, kind, "main", debugName);
+	auto spv = compiler.CompileGlslToSpv(stage.code, kind, "main", debugName);
+	if (spv.empty() && outError != nullptr)
+	{
+		*outError = compiler.GetErrorMessage();
+	}
+	return spv;
 }
 
 std::unordered_map<ShaderType, std::vector<uint32_t>> ShaderLibrary::CompileAll(
-	const Shader& shader)
+	const ShaderData& shader)
 {
 	std::unordered_map<ShaderType, std::vector<uint32_t>> results;
 

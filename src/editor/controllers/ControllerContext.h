@@ -4,7 +4,9 @@
  *
  * Controllers depend ONLY on this context: events through IEventQueue, pooled
  * objects through IResourceLookup, undoable operations through IOperationSink -
- * never on the concrete EventQueue, ResourceManager or OperationManager.
+ * never on the concrete EventQueue, ResourceManager or OperationManager. Pool
+ * writes stay in the Editor, which emits a typed event for the controller-side
+ * document mutation.
  *
  * It additionally carries providers for the Editor-owned singletons that are not
  * pooled objects: the current Scene (re-queried per use, because New/Load swaps

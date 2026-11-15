@@ -5,11 +5,11 @@
 
 #include "RenderRequests.h"
 
-#include "shaders/Shader.h"
+#include "asset/data/ShaderData.h"
 
 namespace neurus {
 
-EnsurePipelineRequest MakeEnsurePipelineRequest(const Shader& shader)
+EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader)
 {
 	// Id and version must come from the same Shader, the same reasoning as
 	// GeometryPass::EnsureMeshPipeline: keying the mesh's id with a shader's

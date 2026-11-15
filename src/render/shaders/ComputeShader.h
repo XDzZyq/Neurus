@@ -24,16 +24,18 @@
  *   cs.SetDefault("radius", 0.5f);
  *   cs.SetDefault("samples", 32);
  *   cs.ParseAndGenerate();
- *   auto& code = cs.GetGeneratedCode(ShaderType::COMPUTE);
+ *   auto& code = cs.GetStage(ShaderType::COMPUTE).code;
  * @endcode
  *
- * @note Non-copyable (inherited from Shader). Movable.
+ * @note Non-copyable, non-movable (inherited from ShaderData).
  * @note Thread-safety: Not thread-safe. Must be used from the main thread.
  */
 
 #pragma once
 
-#include "Shader.h"
+#include "asset/data/ShaderData.h"
+
+#include <cereal/types/vector.hpp>
 
 #include <cstdint>
 #include <string>
@@ -46,7 +48,7 @@ namespace neurus {
  *
  * Manages a single compute-stage ShaderUnit.
  */
-class ComputeShader : public Shader
+class ComputeShader : public ShaderData
 {
 public:
 	/**
@@ -59,6 +61,15 @@ public:
 		std::string name;  ///< Uniform parameter name
 		std::string type;  ///< GLSL type: "int", "float", or "bool"
 		std::string value; ///< String representation of the default value
+
+		/** @brief Serializes the default's name, type and value. */
+		template<class Archive>
+		void serialize(Archive& ar)
+		{
+			ar(cereal::make_nvp("name", name),
+			   cereal::make_nvp("type", type),
+			   cereal::make_nvp("value", value));
+		}
 	};
 
 	/**
@@ -66,7 +77,7 @@ public:
 	 * @param name     Human-readable shader name (for logging and debugging).
 	 * @param compPath Path to the compute shader GLSL source file (.comp).
 	 */
-	ComputeShader(std::string name, std::string compPath);
+	ComputeShader(std::string name = "", std::string compPath = "");
 
 	~ComputeShader() override = default;
 
@@ -85,7 +96,7 @@ public:
 	 *
 	 * @return true if all steps succeeded, false on parse/generation error.
 	 */
-	bool ParseAndGenerate() override;
+	bool ParseAndGenerate();
 
 	/**
 	 * @brief Returns the shader type.
@@ -112,6 +123,45 @@ public:
 	 * @return true if re-parse and re-generation succeeded.
 	 */
 	bool Recompile();
+
+	/**
+	 * @brief Reloads the compute stage from its source path.
+	 *
+	 * No-op for an empty path (cereal's identity shell); otherwise re-parses
+	 * and regenerates the stage.
+	 */
+	void ReloadContent();
+
+	/**
+	 * @brief Compiles the compute stage's generated GLSL to SPIR-V in place.
+	 * @return true when the stage holds non-empty SPIR-V.
+	 */
+	bool CompileToSpv();
+
+	/**
+	 * @brief Cereal serialization - base content + source path + defaults.
+	 *
+	 * On load, a restored stage with code keeps it; a legacy path-only shader
+	 * reloads from disk. CompileToSpv() then rebuilds the runtime SPIR-V.
+	 */
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_compPath), CEREAL_NVP(m_defaults));
+		if constexpr (Archive::is_saving::value)
+		{
+			SerializeStages(ar);
+		}
+		else
+		{
+			DeserializeStages(ar);
+			if (m_stages[ShaderType::COMPUTE].code.empty())
+			{
+				ReloadContent();
+			}
+			CompileToSpv();
+		}
+	}
 
 	// ----------------------------------
 	// Default uniform configurations (ported from OpenGL ComputeShader)

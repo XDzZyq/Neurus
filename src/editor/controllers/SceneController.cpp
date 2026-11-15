@@ -16,13 +16,17 @@
 #include "editor/controllers/SceneController.h"
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
+#include "asset/data/ShaderData.h"
 #include "editor/controllers/MutationNotify.h"
 #include "editor/events/CameraEvents.h"
 #include "editor/events/SceneEvents.h"
 #include "editor/events/EditorEvents.h"
+#include "editor/events/ShaderEvents.h"
 #include "editor/operations/SceneOperations.h"
+#include "editor/operations/ShaderOperations.h"
 #include "editor/Input.h"
 
 #include "scene/Camera.h"
@@ -210,6 +214,41 @@ void OnSceneObjectAddRequested(const neurus::SceneObjectAddRequested& e,
 }
 
 /**
+ * @brief Links a shader the Editor already imported into the pool.
+ *
+ * The pool write happened in the Editor (like MeshImport); this handler only
+ * resolves the pooled shader through the read-only lookup, links the mesh and
+ * records the replace. It never calls Load/Remove/SetName.
+ */
+void OnObjectShaderAddRequested(const neurus::ObjectShaderAddRequested& e,
+                                const neurus::ControllerContext& ctx)
+{
+	auto mesh = ctx.resources.Get<neurus::Mesh>(e.objectUid);
+	auto shader = ctx.resources.Get<neurus::ShaderData>(e.shaderId);
+	if (!mesh || !shader) return;
+
+	const int oldShaderId = mesh->o_shaderId;
+	mesh->SetObjShader(shader);
+	ctx.ops.Submit(std::make_unique<neurus::ShaderReplaceOp>(
+		e.objectUid, oldShaderId, e.shaderId));
+	neurus::notify::Mutated(ctx.events);
+}
+
+/** @brief Drops a mesh's shader reference; the pooled shader stays for undo. */
+void OnShaderRemoveRequested(const neurus::ShaderRemoveRequested& e,
+                             const neurus::ControllerContext& ctx)
+{
+	auto mesh = ctx.resources.Get<neurus::Mesh>(e.objectUid);
+	if (!mesh || !mesh->o_shader) return;
+
+	const int oldShaderId = mesh->o_shaderId;
+	mesh->SetObjShader(nullptr);
+	ctx.ops.Submit(std::make_unique<neurus::ShaderReplaceOp>(
+		e.objectUid, oldShaderId, 0));
+	neurus::notify::Mutated(ctx.events);
+}
+
+/**
  * @brief Explicit-UID delete gesture: remove the listed scene objects as ONE undo entry.
  *
  * FORWARD-ONLY. The removal itself runs through the shared batched handler
@@ -305,6 +344,14 @@ void SceneController::Init(ControllerContext& ctx)
 	});
 	ctx.events.Subscribe<DeleteObjectsRequested>([ctx](const DeleteObjectsRequested& e) {
 		OnDeleteObjectsRequested(e, ctx);
+	});
+
+	// --- Mesh shader link/remove (Editor imports the pool asset first) ---
+	ctx.events.Subscribe<ObjectShaderAddRequested>([ctx](const ObjectShaderAddRequested& e) {
+		OnObjectShaderAddRequested(e, ctx);
+	});
+	ctx.events.Subscribe<ShaderRemoveRequested>([ctx](const ShaderRemoveRequested& e) {
+		OnShaderRemoveRequested(e, ctx);
 	});
 }
 

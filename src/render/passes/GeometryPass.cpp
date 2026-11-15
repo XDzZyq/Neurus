@@ -197,7 +197,7 @@ Pipeline GeometryPass::CreatePerMeshPipeline(const std::vector<uint32_t>& vertex
 // Per-mesh pipeline warm (Editor thread, off the frame path)
 // ---------------------------------------------------------------------------
 
-bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const Shader& shader)
+bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const ShaderData& shader)
 {
 	// One build path: snapshot the live Shader into a request and warm from it,
 	// the same code the renderer's request drain runs.
@@ -214,6 +214,13 @@ bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRe
 	PipelineCache& pipelines = cache.GetPipelineCache();
 
 	if (pipelines.GetPipeline(shaderId, version)) return true;
+
+	// A G-buffer pipeline needs both a pre-raster and a fragment stage. A shader
+	// compiles one unit at a time, so an in-between state carries SPIR-V for the
+	// fragment only; building from it creates an invalid pipeline
+	// (VUID-VkGraphicsPipelineCreateInfo-pStages-06896). Wait for the compile
+	// that completes the set - Record() draws the pass default until then.
+	if (request.vertexSpv.empty() || request.fragmentSpv.empty()) return false;
 
 	Pipeline pipeline = CreatePerMeshPipeline(request.vertexSpv, request.fragmentSpv);
 

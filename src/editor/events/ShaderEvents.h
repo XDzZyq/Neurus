@@ -13,7 +13,8 @@
 #include <string>
 #include <variant>
 
-#include "render/shaders/ShaderStruct.h"
+#include "asset/data/shader/ShaderStruct.h"
+#include "editor/events/AssetEvents.h"
 
 namespace neurus {
 
@@ -44,15 +45,42 @@ enum class ShaderSection : int
 };
 
 /**
- * @brief Emitted when the user clicks "Create Shader" for a mesh with no shader.
+ * @brief Requests creation (or replacement) of a mesh's shader.
  *
- * Handled by the Editor (which owns the pool): it loads and links a pooled
- * RenderShader, compiles it, and records a ShaderLinkOp so the create is
- * undoable. The ShaderController does NOT handle this event.
+ * Handled by the Editor (which owns the pool): each side is a source path or a
+ * pooled ShaderData UID whose matching stage is copied; empty sides use the
+ * default G-buffer pair. The new RenderShader is compiled before the old
+ * reference is dropped, and one ShaderReplaceOp records the link.
+ *
+ * @p result is non-owning and valid only during the synchronous dispatch.
  */
 struct ShaderCreateRequested
 {
-	int objectUid = 0;
+	int                 objectUid = 0;       ///< Target mesh UID.
+	std::string         vertexPath;          ///< Vertex file; empty = default.
+	std::string         fragmentPath;        ///< Fragment file; empty = default.
+	int                 vertexSourceUid = 0;   ///< Pooled shader supplying the vertex stage (0 = use vertexPath).
+	int                 fragmentSourceUid = 0; ///< Pooled shader supplying the fragment stage (0 = use fragmentPath).
+	ShaderRequestResult* result = nullptr;   ///< Optional reply slot, borrowed.
+};
+
+/** @brief Drops a mesh's shader reference; the pooled shader stays for undo. */
+struct ShaderRemoveRequested
+{
+	int objectUid = 0;  ///< Target mesh UID.
+};
+
+/**
+ * @brief Links a pooled shader to a mesh as the document-side half of creation.
+ *
+ * The Editor imports/compiles the shader into the pool, then emits this event.
+ * SceneController resolves both UIDs through the read-only pool, links the
+ * mesh, and records one ShaderReplaceOp; it never writes the pool.
+ */
+struct ObjectShaderAddRequested
+{
+	int objectUid = 0;  ///< Target mesh UID.
+	int shaderId = 0;   ///< Pooled RenderShader UID produced by the Editor.
 };
 
 /**
@@ -239,5 +267,72 @@ struct ShaderUnlinkRestored
 {
 	int objectUid = 0;   ///< Mesh UID whose shader reference is dropped.
 };
+
+// ---------------------------------------------------------------------------
+// Shader-keyed unit edits (script path)
+//
+// These address a pooled ShaderData directly, so they work for a mesh shader
+// and for a pooled ComputeShader. The panel keeps its mesh-keyed delta events.
+// ---------------------------------------------------------------------------
+
+/** @brief Result of an explicit compile request, filled synchronously. */
+struct ShaderCompileResult
+{
+	bool        ok = false;  ///< True when SPIR-V was produced.
+	std::string error;       ///< Compiler message on failure.
+};
+
+/** @brief Replaces one stage's GLSL code and records one undo op. */
+struct ShaderUnitCodeSet
+{
+	int         shaderUid = 0;  ///< Pooled ShaderData UID.
+	int         stage = 0;      ///< ShaderType as int.
+	std::string code;           ///< New GLSL source text.
+};
+
+/** @brief Replaces one stage's parsed IR and records one undo op. */
+struct ShaderUnitStructSet
+{
+	int           shaderUid = 0;  ///< Pooled ShaderData UID.
+	int           stage = 0;      ///< ShaderType as int.
+	ShaderStruct  parsed;         ///< New IR for the stage.
+};
+
+/**
+ * @brief Compiles one stage of a pooled shader.
+ *
+ * unitType 0 parses `code` into the IR and regenerates it before compiling;
+ * unitType 1 regenerates from the current IR. The reply slot is borrowed for
+ * the synchronous dispatch.
+ */
+struct ShaderUnitCompileRequested
+{
+	int                 shaderUid = 0;  ///< Pooled ShaderData UID.
+	int                 stage = 0;      ///< ShaderType as int.
+	int                 unitType = 0;   ///< 0 = code path, 1 = struct path.
+	ShaderCompileResult* result = nullptr;  ///< Optional reply slot, borrowed.
+};
+
+/** @brief Restores a stage's GLSL code (undo/redo replay). */
+struct ShaderUnitCodeRestored
+{
+	int         shaderUid = 0;
+	int         stage = 0;
+	std::string code;
+};
+
+/** @brief Restores a stage's parsed IR (undo/redo replay). */
+struct ShaderUnitStructRestored
+{
+	int          shaderUid = 0;
+	int          stage = 0;
+	ShaderStruct parsed;
+};
+
+// ---------------------------------------------------------------------------
+// Pooled shader asset loading
+// ---------------------------------------------------------------------------
+// ShaderImportRequested and its reply slot (ShaderRequestResult) live in
+// AssetEvents.h: they are asset-pool events, not scene events.
 
 } // namespace neurus

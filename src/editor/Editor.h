@@ -22,10 +22,13 @@
 // Forward declarations (no render headers!)
 namespace neurus {
 class Camera;
+class Mesh;
 class MeshData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
+struct ShaderCreateEvent;
+struct ShaderImportRequested;
 struct MeshImportRequested;
 struct CameraAddRequested;
 struct ObjectDuplicateRequested;
@@ -314,7 +317,13 @@ private:
 	void OnLightAdd();
 	void OnSunLightAdd();
 	void OnSpotLightAdd();
-	void OnCreateShader(const ShaderCreateRequested& e);
+	// --- Shader lifecycle ---
+	// The Editor owns the pool: it creates/imports shaders here and emits
+	// ObjectShaderAddRequested for SceneController to link. Stage resolution
+	// and content edits live on the shader classes and ShaderController.
+	void OnShaderCreateEvent(const ShaderCreateEvent& e);   // UI: default pair
+	void OnShaderCreate(const ShaderCreateRequested& e);    // script: compose + link
+	void OnShaderImportRequested(const ShaderImportRequested& e); // pool only
 	void OnSceneObjectGpuUpload(int objectUid);
 
 	/**

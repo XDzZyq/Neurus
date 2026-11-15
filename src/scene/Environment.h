@@ -126,7 +126,7 @@ public:
 	 * @brief Environment does not own a shader.
 	 * @return nullptr always.
 	 */
-	void* GetShader() override
+	ShaderData* GetShader() override
 	{
 		return nullptr;
 	}
