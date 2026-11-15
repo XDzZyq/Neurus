@@ -53,6 +53,21 @@ public:
 		const std::string& name,
 		const std::string& compPath);
 
+	/**
+	 * @brief Parses and generates one shader stage from a source file.
+	 *
+	 * Validates the extension against @p type, parses the file, and stores the
+	 * parsed IR plus generated GLSL in @p out. The path stays portable as given.
+	 *
+	 * @param path Source path (relative or absolute).
+	 * @param type Expected stage; a mismatched extension is an error.
+	 * @param out Destination unit.
+	 * @param error Reason on extension mismatch or parse failure.
+	 * @return true when the stage was loaded and generated.
+	 */
+	static bool LoadStageUnit(const std::string& path, ShaderType type,
+	                          ShaderUnit& out, std::string& error);
+
 	// --- Compile (GLSL -> SPIR-V) ---
 	static std::vector<uint32_t> Compile(
 		const ShaderUnit& stage,

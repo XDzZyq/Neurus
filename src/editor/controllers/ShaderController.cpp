@@ -688,7 +688,6 @@ void OnFieldRemoved(const neurus::ShaderFieldRemoved& e, const neurus::Controlle
 
 namespace neurus {
 
-
 // ---------------------------------------------------------------------------
 // Init - register the shader event handlers
 // ---------------------------------------------------------------------------

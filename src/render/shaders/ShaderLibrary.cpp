@@ -4,6 +4,8 @@
 #include "ShaderCompiler.h"
 #include "RenderShader.h"
 #include "ComputeShader.h"
+#include "ShaderGenerator.h"
+#include "ShaderParser.h"
 
 #include "core/Log.h"
 
@@ -173,6 +175,27 @@ std::unique_ptr<ComputeShader> ShaderLibrary::LoadComputeShader(
 	}
 	NEURUS_LOG("[ShaderLibrary] Parsed compute shader '" << name << "'");
 	return shader;
+}
+
+bool ShaderLibrary::LoadStageUnit(const std::string& path, ShaderType type,
+                                  ShaderUnit& out, std::string& error)
+{
+	const auto inferred = ShaderTypeFromPath(path);
+	if (!inferred || *inferred != type)
+	{
+		error = "shader path is not a " + ShaderData::TypeToString(type) + " file: " + path;
+		return false;
+	}
+
+	out.path = path;
+	out.parsed = ShaderParser::ParseShaderFile(path, type);
+	if (out.parsed.IsEmpty())
+	{
+		error = "failed to parse shader: " + path;
+		return false;
+	}
+	out.code = ShaderGenerator::Generate(out.parsed);
+	return true;
 }
 
 std::vector<uint32_t> ShaderLibrary::Compile(

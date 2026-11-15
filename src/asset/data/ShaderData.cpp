@@ -37,6 +37,18 @@ const ShaderUnit* ShaderData::FindStage(ShaderType type) const
 	return it == m_stages.end() ? nullptr : &it->second;
 }
 
+bool ShaderData::CopyStage(ShaderType type, ShaderUnit& out, std::string& error) const
+{
+	const ShaderUnit* unit = FindStage(type);
+	if (!unit)
+	{
+		error = "shader source has no " + TypeToString(type) + " stage";
+		return false;
+	}
+	out = *unit;
+	return true;
+}
+
 ShaderUnit& ShaderData::GetStage(ShaderType type)
 {
 	return m_stages[type];

@@ -247,3 +247,19 @@ TEST(ShaderDataPersistence, ShaderNamesSurviveResourceComponentRoundTrip)
 	}
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));
 }
+
+TEST(ShaderDataPersistence, CopyStageCopiesContentAndReportsMissingStage)
+{
+	neurus::RenderShader source("Source", "res/shaders/render/gbuffer.vert",
+	                            "res/shaders/render/gbuffer.frag");
+	source.GetStage(neurus::ShaderType::VERTEX).code = "VERT";
+	source.GetStage(neurus::ShaderType::FRAGMENT).code = "FRAG";
+
+	neurus::ShaderUnit copied;
+	std::string error;
+	ASSERT_TRUE(source.CopyStage(neurus::ShaderType::FRAGMENT, copied, error));
+	EXPECT_EQ(copied.code, "FRAG");
+
+	EXPECT_FALSE(source.CopyStage(neurus::ShaderType::COMPUTE, copied, error));
+	EXPECT_FALSE(error.empty());
+}

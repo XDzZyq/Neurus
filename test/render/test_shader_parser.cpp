@@ -18,8 +18,10 @@
 
 #include "render/shaders/RenderShader.h"
 #include "render/shaders/ShaderGenerator.h"
+#include "render/shaders/ShaderLibrary.h"
 #include "render/shaders/ShaderParser.h"
 #include "asset/data/shader/ShaderStruct.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "core/Log.h"
 #include "core/Parameters.h"
 
@@ -1148,4 +1150,50 @@ TEST_F(ShaderParserTest, RenderShaderParseAndGenerate_RelativePaths_IndependentO
     // portable, so parsing must resolve without rewriting them.
     EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert");
     EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag");
+}
+
+// --- Import helpers used by the Editor when it pools a new shader ---
+
+TEST(ShaderUnitImport, LoadStageUnitParsesAndGenerates)
+{
+    ShaderUnit unit;
+    std::string error;
+    ASSERT_TRUE(ShaderLibrary::LoadStageUnit(
+        "res/shaders/render/gbuffer.vert", ShaderType::VERTEX, unit, error))
+        << error;
+    EXPECT_FALSE(unit.parsed.IsEmpty());
+    EXPECT_FALSE(unit.code.empty());
+    EXPECT_EQ(unit.path, "res/shaders/render/gbuffer.vert");
+}
+
+TEST(ShaderUnitImport, LoadStageUnitRejectsWrongExtension)
+{
+    ShaderUnit unit;
+    std::string error;
+    EXPECT_FALSE(ShaderLibrary::LoadStageUnit(
+        "res/shaders/render/gbuffer.frag", ShaderType::VERTEX, unit, error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST(ShaderUnitImport, SetStagesThenCompileToSpvReportsStageErrors)
+{
+    RenderShader shader("ImportFixture", "res/shaders/render/gbuffer.vert",
+                        "res/shaders/render/gbuffer.frag");
+    ShaderUnit vert;
+    ShaderUnit frag;
+    vert.code = "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n";
+    frag.code = "#version 450\nlayout(location=0) out vec4 o;\nvoid main() { o = vec4(1.0); }\n";
+    shader.SetStages(std::move(vert), std::move(frag));
+
+    std::string error;
+    EXPECT_TRUE(shader.CompileToSpv(&error)) << error;
+    EXPECT_TRUE(error.empty());
+
+    RenderShader broken("BrokenFixture", "res/shaders/render/gbuffer.vert",
+                        "res/shaders/render/gbuffer.frag");
+    ShaderUnit brokenVert;
+    brokenVert.code = "this is not glsl";
+    broken.SetStages(std::move(brokenVert), {});
+    EXPECT_FALSE(broken.CompileToSpv(&error));
+    EXPECT_FALSE(error.empty());
 }

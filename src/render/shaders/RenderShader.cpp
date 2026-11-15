@@ -40,7 +40,13 @@ void RenderShader::ReloadContent()
 	ParseAndGenerate();
 }
 
-bool RenderShader::CompileToSpv()
+void RenderShader::SetStages(ShaderUnit vert, ShaderUnit frag)
+{
+	m_stages[ShaderType::VERTEX] = std::move(vert);
+	m_stages[ShaderType::FRAGMENT] = std::move(frag);
+}
+
+bool RenderShader::CompileToSpv(std::string* outError)
 {
 	bool allOk = true;
 	for (auto type : {ShaderType::VERTEX, ShaderType::FRAGMENT})
@@ -50,11 +56,16 @@ bool RenderShader::CompileToSpv()
 		if (!unit.spv.empty()) continue; // idempotent: stage already compiled
 		if (unit.code.empty()) continue; // identity shell (no content to compile)
 
-		unit.spv = ShaderLibrary::Compile(unit, type, m_name);
+		std::string stageError;
+		unit.spv = ShaderLibrary::Compile(unit, type, m_name, &stageError);
 		if (unit.spv.empty())
 		{
 			NEURUS_ERR("[RenderShader] CompileToSpv failed for '" << m_name
 			           << "' stage " << TypeToString(type));
+			if (outError != nullptr && outError->empty())
+			{
+				*outError = stageError.empty() ? "shader compile failed" : stageError;
+			}
 			allOk = false;
 			continue;
 		}

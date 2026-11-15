@@ -61,15 +61,19 @@ public:
 	void ReloadContent();
 
 	/**
-	 * @brief Compiles every stage's GLSL to SPIR-V in place and bumps versions.
+	 * @brief Installs fully resolved stage units on the bundle.
 	 *
-	 * Each stage's spv is built from its generated code; stages that already
-	 * hold SPIR-V are skipped. Used after load, since serialization restores
-	 * source paths and re-parses content but never recompiles.
-	 *
-	 * @return true if every present stage compiled to non-empty SPIR-V.
+	 * Used by the Editor-side importer after it resolves/copies the two stages.
 	 */
-	bool CompileToSpv();
+	void SetStages(ShaderUnit vert, ShaderUnit frag);
+
+	/**
+	 * @brief Compiles the stages' generated GLSL to SPIR-V in place.
+	 *
+	 * @param outError Optional compiler message when a stage fails.
+	 * @return true when every present stage holds non-empty SPIR-V.
+	 */
+	bool CompileToSpv(std::string* outError = nullptr);
 
 	/**
 	 * @brief Cereal serialization - base content + both source paths.

@@ -35,10 +35,9 @@
 #include "asset/data/MeshData.h"
 #include "asset/data/ShaderData.h"
 #include "asset/data/shader/ShaderStage.h"
+#include "asset/data/shader/ShaderUnit.h"
 #include "render/shaders/ComputeShader.h"
-#include "render/shaders/ShaderGenerator.h"
 #include "render/shaders/ShaderLibrary.h"
-#include "render/shaders/ShaderParser.h"
 #include "scene/Camera.h"
 #include "scene/DebugLine.h"
 #include "scene/DebugMesh.h"
@@ -122,9 +121,9 @@ int ActiveUid(const Scene& scene)
 /**
  * @brief Resolves one shader stage from a pooled source or a source path.
  *
- * Editor-owned import helper: the pool write follows this resolution. A pooled
- * source contributes the stage matching @p type; a path must carry the matching
- * extension; an empty path uses @p defaultPath.
+ * Editor-owned import helper: it reads the pool and the pool write follows this
+ * resolution. A pooled source contributes the stage matching @p type; a path
+ * must carry the matching extension; an empty path uses @p defaultPath.
  */
 bool ResolveShaderStage(neurus::ResourceManager& resources, int sourceUid,
                         const std::string& path, neurus::ShaderType type,
@@ -139,36 +138,11 @@ bool ResolveShaderStage(neurus::ResourceManager& resources, int sourceUid,
 			error = "shader source not found: " + std::to_string(sourceUid);
 			return false;
 		}
-		const neurus::ShaderUnit* unit = source->FindStage(type);
-		if (!unit)
-		{
-			error = "shader source has no " + neurus::ShaderData::TypeToString(type) + " stage";
-			return false;
-		}
-		out = *unit;
-		return true;
+		return source->CopyStage(type, out, error);
 	}
 
-	const std::string sourcePath = path.empty() ? defaultPath : path;
-	if (!path.empty())
-	{
-		const auto inferred = neurus::ShaderTypeFromPath(path);
-		if (!inferred || *inferred != type)
-		{
-			error = "shader path is not a " + neurus::ShaderData::TypeToString(type) + " file: " + path;
-			return false;
-		}
-	}
-
-	out.path = sourcePath;
-	out.parsed = neurus::ShaderParser::ParseShaderFile(sourcePath, type);
-	if (out.parsed.IsEmpty())
-	{
-		error = "failed to parse shader: " + sourcePath;
-		return false;
-	}
-	out.code = neurus::ShaderGenerator::Generate(out.parsed);
-	return true;
+	return neurus::ShaderLibrary::LoadStageUnit(path.empty() ? defaultPath : path,
+	                                            type, out, error);
 }
 
 } // anonymous namespace
@@ -974,105 +948,6 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 	}
 }
 
-int Editor::ImportShaderAsset(const std::string& path, const std::string& name,
-                              std::string& error)
-{
-	try
-	{
-		const auto stage = ShaderTypeFromPath(path);
-		if (!stage)
-		{
-			error = "unsupported shader extension: " + path;
-			return 0;
-		}
-		if (*stage == ShaderType::GEOMETRY)
-		{
-			error = "geometry shaders are not supported: " + path;
-			return 0;
-		}
-
-		const std::string shaderName = name.empty() ? path : name;
-		std::shared_ptr<ShaderData> shader;
-
-		if (*stage == ShaderType::COMPUTE)
-		{
-			auto compute = m_resources->Load<ComputeShader>(shaderName, path);
-			if (!compute->ParseAndGenerate())
-			{
-				m_resources->Remove(compute->GetObjectID());
-				error = "failed to parse shader: " + path;
-				return 0;
-			}
-			shader = compute;
-		}
-		else
-		{
-			const std::string vertPath = *stage == ShaderType::VERTEX ? path : kDefaultVertexPath;
-			const std::string fragPath = *stage == ShaderType::FRAGMENT ? path : kDefaultFragmentPath;
-			auto render = m_resources->Load<RenderShader>(shaderName, vertPath, fragPath);
-			if (!render->ParseAndGenerate())
-			{
-				m_resources->Remove(render->GetObjectID());
-				error = "failed to parse shader: " + path;
-				return 0;
-			}
-			shader = render;
-		}
-
-		const std::string unique = m_resources->SetName(shader->GetObjectID(), shaderName);
-		shader->SetName(unique.empty() ? shaderName : unique);
-		return shader->GetObjectID();
-	}
-	catch (const std::exception& e)
-	{
-		error = e.what();
-		return 0;
-	}
-}
-
-int Editor::ImportMeshShader(const Mesh& mesh, const ShaderCreateRequested& input,
-                             std::string& error)
-{
-	ShaderUnit vert;
-	ShaderUnit frag;
-	if (!ResolveShaderStage(*m_resources, input.vertexShaderUid, input.vertexPath,
-	                        ShaderType::VERTEX, kDefaultVertexPath, vert, error))
-	{
-		return 0;
-	}
-	if (!ResolveShaderStage(*m_resources, input.fragmentShaderUid, input.fragmentPath,
-	                        ShaderType::FRAGMENT, kDefaultFragmentPath, frag, error))
-	{
-		return 0;
-	}
-
-	const std::string shaderName = "MeshShader_" + std::to_string(mesh.GetObjectID());
-	auto shader = m_resources->Load<RenderShader>(shaderName, vert.path, frag.path);
-	shader->GetStage(ShaderType::VERTEX) = std::move(vert);
-	shader->GetStage(ShaderType::FRAGMENT) = std::move(frag);
-
-	// Compile before the caller links it: a failure removes the new pooled
-	// shader and leaves the mesh untouched.
-	std::string compileError;
-	for (const ShaderType type : { ShaderType::VERTEX, ShaderType::FRAGMENT })
-	{
-		auto& unit = shader->GetStage(type);
-		unit.spv = ShaderLibrary::Compile(unit, type, shaderName, &compileError);
-		if (unit.spv.empty())
-		{
-			m_resources->Remove(shader->GetObjectID());
-			error = compileError.empty() ? "shader compile failed" : compileError;
-			return 0;
-		}
-		unit.BumpVersion();
-	}
-
-	shader->BumpVersion();
-	const std::string unique = m_resources->SetName(shader->GetObjectID(), shaderName);
-	shader->SetName(unique.empty() ? shaderName : unique);
-	return shader->GetObjectID();
-}
-
 void Editor::OnShaderCreate(const ShaderCreateRequested& e)
 {
 	ShaderRequestResult local;
@@ -1087,22 +962,43 @@ void Editor::OnShaderCreate(const ShaderCreateRequested& e)
 		return;
 	}
 
-	std::string error;
-	const int shaderUid = ImportMeshShader(*mesh, e, error);
-	if (shaderUid == 0)
+	// Stage resolution/parsing lives in ShaderLibrary (via ShaderData for a
+	// pooled source); the pool write stays here, where the Editor owns it.
+	ShaderUnit vert;
+	ShaderUnit frag;
+	if (!ResolveShaderStage(*m_resources, e.vertexShaderUid, e.vertexPath,
+	                        ShaderType::VERTEX, kDefaultVertexPath, vert,
+	                        result.error)
+	    || !ResolveShaderStage(*m_resources, e.fragmentShaderUid, e.fragmentPath,
+	                           ShaderType::FRAGMENT, kDefaultFragmentPath, frag,
+	                           result.error))
 	{
-		result.error = error.empty() ? "shader creation failed" : error;
 		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader create failed: " << result.error);
 		neurus::notify::Repaint(ed_eventBus);
 		return;
 	}
 
-	result.shaderUid = shaderUid;
-	ed_eventBus.Emit(ObjectShaderAddRequested{ e.objectUid, shaderUid });
+	const std::string shaderName = "MeshShader_" + std::to_string(mesh->GetObjectID());
+	auto shader = m_resources->Load<RenderShader>(shaderName, vert.path, frag.path);
+	shader->SetStages(std::move(vert), std::move(frag));
 
-	// The Editor imported the asset; SceneController links it and records the
-	// replace. Warm the pipeline only after the compile above succeeded.
-	ed_eventBus.Emit(ShaderCompiled{ shaderUid });
+	std::string compileError;
+	if (!shader->CompileToSpv(&compileError))
+	{
+		m_resources->Remove(shader->GetObjectID());
+		result.error = compileError.empty() ? "shader compile failed" : compileError;
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader create failed: " << result.error);
+		neurus::notify::Repaint(ed_eventBus);
+		return;
+	}
+
+	shader->BumpVersion();
+	const std::string unique = m_resources->SetName(shader->GetObjectID(), shaderName);
+	shader->SetName(unique.empty() ? shaderName : unique);
+	result.shaderUid = shader->GetObjectID();
+
+	ed_eventBus.Emit(ObjectShaderAddRequested{ e.objectUid, shader->GetObjectID() });
+	ed_eventBus.Emit(ShaderCompiled{ shader->GetObjectID() });
 	neurus::notify::Mutated(ed_eventBus);
 }
 
@@ -1118,17 +1014,73 @@ void Editor::OnShaderLoad(const ShaderLoadRequested& e)
 	ShaderRequestResult local;
 	ShaderRequestResult& result = e.result != nullptr ? *e.result : local;
 
-	std::string error;
-	const int shaderUid = ImportShaderAsset(e.path, e.name, error);
-	if (shaderUid == 0)
+	const auto stage = ShaderTypeFromPath(e.path);
+	if (!stage || *stage == ShaderType::GEOMETRY)
 	{
-		result.error = error.empty() ? "shader load failed" : error;
+		result.error = !stage ? "unsupported shader extension: " + e.path
+		                      : "geometry shaders are not supported: " + e.path;
 		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader load failed: " << result.error);
 		neurus::notify::Repaint(ed_eventBus);
 		return;
 	}
 
-	result.shaderUid = shaderUid;
+	const std::string shaderName = e.name.empty() ? e.path : e.name;
+	try
+	{
+		std::shared_ptr<ShaderData> shader;
+		std::string error;
+
+		if (*stage == ShaderType::COMPUTE)
+		{
+			auto compute = m_resources->Load<ComputeShader>(shaderName, e.path);
+			if (!compute->ParseAndGenerate())
+			{
+				m_resources->Remove(compute->GetObjectID());
+				error = "failed to parse shader: " + e.path;
+			}
+			else
+			{
+				shader = compute;
+			}
+		}
+		else
+		{
+			const std::string vertPath =
+				*stage == ShaderType::VERTEX ? e.path : kDefaultVertexPath;
+			const std::string fragPath =
+				*stage == ShaderType::FRAGMENT ? e.path : kDefaultFragmentPath;
+			auto render = m_resources->Load<RenderShader>(shaderName, vertPath, fragPath);
+			if (!render->ParseAndGenerate())
+			{
+				m_resources->Remove(render->GetObjectID());
+				error = "failed to parse shader: " + e.path;
+			}
+			else
+			{
+				shader = render;
+			}
+		}
+
+		if (!shader)
+		{
+			result.error = error;
+			if (e.result == nullptr) NEURUS_ERR("[Editor] Shader load failed: " << result.error);
+			neurus::notify::Repaint(ed_eventBus);
+			return;
+		}
+
+		const std::string unique = m_resources->SetName(shader->GetObjectID(), shaderName);
+		shader->SetName(unique.empty() ? shaderName : unique);
+		result.shaderUid = shader->GetObjectID();
+	}
+	catch (const std::exception& ex)
+	{
+		result.error = ex.what();
+		if (e.result == nullptr) NEURUS_ERR("[Editor] Shader load failed: " << result.error);
+		neurus::notify::Repaint(ed_eventBus);
+		return;
+	}
+
 	neurus::notify::Mutated(ed_eventBus);
 }
 

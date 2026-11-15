@@ -319,15 +319,11 @@ private:
 	void OnSpotLightAdd();
 	// --- Shader lifecycle ---
 	// The Editor owns the pool: it imports shaders here and emits
-	// ObjectShaderAddRequested for SceneController to link. Content edits and
-	// compilation stay in ShaderController.
+	// ObjectShaderAddRequested for SceneController to link. Stage resolution
+	// lives in ShaderController; content edits and compilation stay there too.
 	void OnShaderImport(const ShaderImportEvent& e);
 	void OnShaderCreate(const ShaderCreateRequested& e);
 	void OnShaderLoad(const ShaderLoadRequested& e);
-	int  ImportMeshShader(const Mesh& mesh, const ShaderCreateRequested& input,
-	                      std::string& error);
-	int  ImportShaderAsset(const std::string& path, const std::string& name,
-	                       std::string& error);
 	void OnSceneObjectGpuUpload(int objectUid);
 
 	/**

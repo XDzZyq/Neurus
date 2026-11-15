@@ -2,7 +2,7 @@
  * @file ShaderController.h
  * @brief Shader lifecycle controller - event-driven, no per-frame polling.
  *
- * Translates shader editor events (create, compile, code edit, struct edit) into
+ * Translates shader content events (compile, code edit, struct edit) into
  * shader data mutations. Stateless: all handler logic lives as free functions in
  * the .cpp. The target is resolved by integer UID from the scene on every event,
  * so the controller never holds a raw pointer.
@@ -11,7 +11,8 @@
  * ShaderEditBegin/End and records one op on focus-out, discrete struct edits
  * record one op each, and replay uses dedicated restore events that re-apply one
  * edit dimension and bump the version without recompiling. Compile stays a
- * non-undoable lifecycle action; create is recorded by the Editor.
+ * non-undoable lifecycle action; create/link are handled by the Editor and
+ * SceneController.
  */
 
 #pragma once
@@ -35,7 +36,7 @@ public:
 	 * Registers lambda handlers that forward each event to the corresponding
 	 * free-function handler.
 	 *
-	 * @param ctx Controller context (events, resources, ops, scene, pool).
+	 * @param ctx Controller context (events, resources, ops, scene).
 	 */
 	void Init(ControllerContext& ctx) override;
 

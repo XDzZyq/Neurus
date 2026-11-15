@@ -76,6 +76,19 @@ public:
 	ShaderUnit* FindStage(ShaderType type);
 	const ShaderUnit* FindStage(ShaderType type) const;
 
+	/**
+	 * @brief Copies one stage from this bundle into @p out.
+	 *
+	 * Used by the Editor when a script composes a mesh shader from a pooled
+	 * source shader. The source is read-only; the copy owns its content.
+	 *
+	 * @param type Stage to copy.
+	 * @param out Destination unit.
+	 * @param error Reason when the stage is absent.
+	 * @return true when the stage exists and was copied.
+	 */
+	bool CopyStage(ShaderType type, ShaderUnit& out, std::string& error) const;
+
 	/** @brief Returns a mutable reference to a stage, default-inserting it. */
 	ShaderUnit& GetStage(ShaderType type);
 	/** @brief Const overload of GetStage; throws if the stage is absent. */
