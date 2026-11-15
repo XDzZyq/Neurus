@@ -14,6 +14,7 @@
 #include <variant>
 
 #include "asset/data/shader/ShaderStruct.h"
+#include "editor/events/AssetEvents.h"
 
 namespace neurus {
 
@@ -43,8 +44,6 @@ enum class ShaderSection : int
 	PushConstants = 7,  ///< push_constants   (S_PushConstant)- push-constant members
 };
 
-struct ShaderRequestResult;
-
 /**
  * @brief Requests creation (or replacement) of a mesh's shader.
  *
@@ -60,8 +59,8 @@ struct ShaderCreateRequested
 	int                 objectUid = 0;       ///< Target mesh UID.
 	std::string         vertexPath;          ///< Vertex file; empty = default.
 	std::string         fragmentPath;        ///< Fragment file; empty = default.
-	int                 vertexShaderUid = 0; ///< Pooled source for the vertex side (0 = none).
-	int                 fragmentShaderUid = 0; ///< Pooled source for the fragment side (0 = none).
+	int                 vertexSourceUid = 0;   ///< Pooled shader supplying the vertex stage (0 = use vertexPath).
+	int                 fragmentSourceUid = 0; ///< Pooled shader supplying the fragment stage (0 = use fragmentPath).
 	ShaderRequestResult* result = nullptr;   ///< Optional reply slot, borrowed.
 };
 
@@ -333,30 +332,7 @@ struct ShaderUnitStructRestored
 // ---------------------------------------------------------------------------
 // Pooled shader asset loading
 // ---------------------------------------------------------------------------
-
-/**
- * @brief Reply slot for a shader request; filled by the Editor synchronously.
- *
- * A zero @p shaderUid means failure and carries the reason in @p error.
- */
-struct ShaderRequestResult
-{
-	int         shaderUid = 0;  ///< Pooled shader UID; 0 on failure.
-	std::string error;          ///< Reason on failure.
-};
-
-/**
- * @brief Loads a shader source file into the pool as a RenderShader or ComputeShader.
- *
- * `.vert` and `.frag` build a RenderShader whose missing side is the default
- * G-buffer source; `.comp` builds a ComputeShader. `.geom` and unknown
- * extensions are rejected. @p result is borrowed for the synchronous dispatch.
- */
-struct ShaderLoadRequested
-{
-	std::string          path;              ///< Shader source path, absolute or relative.
-	std::string          name;              ///< Registered name; empty uses the path.
-	ShaderRequestResult* result = nullptr;  ///< Optional reply slot, borrowed.
-};
+// ShaderImportRequested and its reply slot (ShaderRequestResult) live in
+// AssetEvents.h: they are asset-pool events, not scene events.
 
 } // namespace neurus

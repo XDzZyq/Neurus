@@ -22,6 +22,8 @@
 #include "asset/data/shader/ShaderStruct.h"
 #include "asset/data/shader/ShaderUnit.h"
 #include "core/IResourceLookup.h"
+#include "editor/events/AssetEvents.h"
+#include "editor/events/SceneEvents.h"
 #include "editor/events/ShaderEvents.h"
 #include "script/ScriptContext.h"
 #include "script/ScriptView.h"
@@ -154,8 +156,8 @@ ShaderSlotProxy CreateShaderFromPython(const ShaderSlotProxy& slot, const py::ar
 
 	std::string vertexPath;
 	std::string fragmentPath;
-	int vertexShaderUid = 0;
-	int fragmentShaderUid = 0;
+	int vertexSourceUid = 0;
+	int fragmentSourceUid = 0;
 	bool vertexSet = false;
 	bool fragmentSet = false;
 
@@ -189,7 +191,7 @@ ShaderSlotProxy CreateShaderFromPython(const ShaderSlotProxy& slot, const py::ar
 			{
 				throw py::value_error(std::string("shader has no ") + sideName + " stage");
 			}
-			(isVertex ? vertexShaderUid : fragmentShaderUid) = source.uid;
+			(isVertex ? vertexSourceUid : fragmentSourceUid) = source.uid;
 			return;
 		}
 
@@ -230,7 +232,7 @@ ShaderSlotProxy CreateShaderFromPython(const ShaderSlotProxy& slot, const py::ar
 
 	ShaderRequestResult result;
 	EmitEvent(slot, ShaderCreateRequested{
-		slot.uid, vertexPath, fragmentPath, vertexShaderUid, fragmentShaderUid, &result });
+		slot.uid, vertexPath, fragmentPath, vertexSourceUid, fragmentSourceUid, &result });
 	if (result.shaderUid == 0)
 	{
 		throw std::runtime_error(result.error.empty() ? "shader creation failed" : result.error);
@@ -613,7 +615,7 @@ void InstallShaderViews(py::module_& shader, py::module_& data, const ScriptView
 			}
 
 			ShaderRequestResult result;
-			EmitEvent(ProxyBase{0, view}, ShaderLoadRequested{path, name, &result});
+			EmitEvent(ProxyBase{0, view}, ShaderImportRequested{path, name, &result});
 			if (result.shaderUid == 0)
 			{
 				throw std::runtime_error(result.error.empty() ? "shader load failed" : result.error);

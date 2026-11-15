@@ -30,6 +30,16 @@ RenderShader::RenderShader(std::string name, std::string vertPath, std::string f
 	NEURUS_LOG("[RenderShader] Created '" << m_name << "'");
 }
 
+RenderShader::RenderShader(std::string name, ShaderUnit vert, ShaderUnit frag)
+	: ShaderData(std::move(name))
+	, m_vertPath(vert.path)
+	, m_fragPath(frag.path)
+{
+	m_stages[ShaderType::VERTEX]   = std::move(vert);
+	m_stages[ShaderType::FRAGMENT] = std::move(frag);
+	NEURUS_LOG("[RenderShader] Created '" << m_name << "' from resolved stages");
+}
+
 void RenderShader::ReloadContent()
 {
 	if (m_vertPath.empty() && m_fragPath.empty())
@@ -38,12 +48,6 @@ void RenderShader::ReloadContent()
 	m_stages[ShaderType::VERTEX].path   = m_vertPath;
 	m_stages[ShaderType::FRAGMENT].path = m_fragPath;
 	ParseAndGenerate();
-}
-
-void RenderShader::SetStages(ShaderUnit vert, ShaderUnit frag)
-{
-	m_stages[ShaderType::VERTEX] = std::move(vert);
-	m_stages[ShaderType::FRAGMENT] = std::move(frag);
 }
 
 bool RenderShader::CompileToSpv(std::string* outError)

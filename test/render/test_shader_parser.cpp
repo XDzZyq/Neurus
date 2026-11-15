@@ -1175,25 +1175,27 @@ TEST(ShaderUnitImport, LoadStageUnitRejectsWrongExtension)
     EXPECT_FALSE(error.empty());
 }
 
-TEST(ShaderUnitImport, SetStagesThenCompileToSpvReportsStageErrors)
+TEST(ShaderUnitImport, StageUnitConstructorThenCompileToSpvReportsStageErrors)
 {
-    RenderShader shader("ImportFixture", "res/shaders/render/gbuffer.vert",
-                        "res/shaders/render/gbuffer.frag");
     ShaderUnit vert;
     ShaderUnit frag;
+    vert.path = "res/shaders/render/gbuffer.vert";
+    frag.path = "res/shaders/render/gbuffer.frag";
     vert.code = "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n";
     frag.code = "#version 450\nlayout(location=0) out vec4 o;\nvoid main() { o = vec4(1.0); }\n";
-    shader.SetStages(std::move(vert), std::move(frag));
+    RenderShader shader("ImportFixture", std::move(vert), std::move(frag));
+
+    // The stage paths become the shader's source paths, so a save/reload keeps them.
+    EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert");
+    EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag");
 
     std::string error;
     EXPECT_TRUE(shader.CompileToSpv(&error)) << error;
     EXPECT_TRUE(error.empty());
 
-    RenderShader broken("BrokenFixture", "res/shaders/render/gbuffer.vert",
-                        "res/shaders/render/gbuffer.frag");
     ShaderUnit brokenVert;
     brokenVert.code = "this is not glsl";
-    broken.SetStages(std::move(brokenVert), {});
+    RenderShader broken("BrokenFixture", std::move(brokenVert), {});
     EXPECT_FALSE(broken.CompileToSpv(&error));
     EXPECT_FALSE(error.empty());
 }

@@ -234,7 +234,7 @@ ShaderEditorPanel::ShaderEditorPanel(QWidget* parent)
 	QObject::connect(m_createBtn, &QPushButton::clicked, [this]()
 	{
 		if (m_activeObjectId != 0)
-			emit shaderImportRequested({m_activeObjectId});
+			emit shaderCreateRequested({m_activeObjectId});
 	});
 
 	// --- Stage combo change -> invalidate cache ---

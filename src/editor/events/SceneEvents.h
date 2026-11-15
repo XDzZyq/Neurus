@@ -164,6 +164,21 @@ struct MeshMaterialChanged
 };
 
 // ---------------------------------------------------------------------------
+// Mesh shader
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Emitted when the Shader Editor asks for the default shader of a mesh.
+ *
+ * UI intent for create: the Editor resolves the default G-buffer pair, compiles
+ * and pools a new RenderShader, then asks SceneController to link it.
+ */
+struct ShaderCreateEvent
+{
+	int objectUid = 0;  ///< Target mesh UID.
+};
+
+// ---------------------------------------------------------------------------
 // Light property events
 // ---------------------------------------------------------------------------
 

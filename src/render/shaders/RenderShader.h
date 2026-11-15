@@ -45,6 +45,20 @@ public:
 	 */
 	RenderShader(std::string name = "", std::string vertPath = "", std::string fragPath = "");
 
+	/**
+	 * @brief Constructs a render shader from already resolved stage units.
+	 *
+	 * Used when the source stages are pooled copies rather than files: the
+	 * units carry their own path, IR and generated code, so nothing is re-read
+	 * from disk. The stage paths become the shader's source paths, which is
+	 * what a later ReloadContent() and a project save use.
+	 *
+	 * @param name Human-readable shader name (for logging and cache keys).
+	 * @param vert Fully resolved vertex stage.
+	 * @param frag Fully resolved fragment stage.
+	 */
+	RenderShader(std::string name, ShaderUnit vert, ShaderUnit frag);
+
 	~RenderShader() override = default;
 
 	// Non-copyable / non-movable (inherits UID semantics).
@@ -59,13 +73,6 @@ public:
 	 * Called at the end of serialize(load); no-op for empty paths.
 	 */
 	void ReloadContent();
-
-	/**
-	 * @brief Installs fully resolved stage units on the bundle.
-	 *
-	 * Used by the Editor-side importer after it resolves/copies the two stages.
-	 */
-	void SetStages(ShaderUnit vert, ShaderUnit frag);
 
 	/**
 	 * @brief Compiles the stages' generated GLSL to SPIR-V in place.

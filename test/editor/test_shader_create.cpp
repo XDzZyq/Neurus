@@ -18,6 +18,7 @@
 #include "editor/Editor.h"
 #include "editor/events/AssetEvents.h"
 #include "editor/events/OperationEvents.h"
+#include "editor/events/SceneEvents.h"
 #include "editor/events/ShaderEvents.h"
 #include "render/shaders/ComputeShader.h"
 #include "render/shaders/RenderShader.h"
@@ -46,7 +47,7 @@ protected:
 TEST_F(ShaderCreateTest, LoadFragmentBuildsRenderBundleWithDefaultVertex)
 {
 	neurus::ShaderRequestResult result;
-	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
 		"res/shaders/render/gbuffer.frag", "", &result});
 	ASSERT_NE(result.shaderUid, 0) << result.error;
 	auto shader = m_editor.GetResourceManager().Get<neurus::RenderShader>(result.shaderUid);
@@ -60,7 +61,7 @@ TEST_F(ShaderCreateTest, LoadFragmentBuildsRenderBundleWithDefaultVertex)
 TEST_F(ShaderCreateTest, LoadVertexUsesDefaultFragment)
 {
 	neurus::ShaderRequestResult result;
-	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
 		"res/shaders/render/gbuffer.vert", "MyVert", &result});
 	ASSERT_NE(result.shaderUid, 0) << result.error;
 	auto shader = m_editor.GetResourceManager().Get<neurus::RenderShader>(result.shaderUid);
@@ -72,7 +73,7 @@ TEST_F(ShaderCreateTest, LoadVertexUsesDefaultFragment)
 TEST_F(ShaderCreateTest, LoadComputePoolsAComputeShader)
 {
 	neurus::ShaderRequestResult result;
-	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
 		"res/shaders/compute/dummy.comp", "MyCompute", &result});
 	ASSERT_NE(result.shaderUid, 0) << result.error;
 	auto shader = m_editor.GetResourceManager().Get<neurus::ComputeShader>(result.shaderUid);
@@ -87,7 +88,7 @@ TEST_F(ShaderCreateTest, LoadRejectsUnknownExtensionAndGeometry)
 	                               "res/shaders/render/gbuffer.geom"})
 	{
 		neurus::ShaderRequestResult result;
-		m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{path, "", &result});
+		m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{path, "", &result});
 		EXPECT_EQ(result.shaderUid, 0) << path;
 		EXPECT_FALSE(result.error.empty()) << path;
 	}
@@ -96,7 +97,7 @@ TEST_F(ShaderCreateTest, LoadRejectsUnknownExtensionAndGeometry)
 TEST_F(ShaderCreateTest, LoadedNameSurvivesResourceComponentRoundTrip)
 {
 	neurus::ShaderRequestResult loaded;
-	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
 		"res/shaders/render/gbuffer.frag", "MyFrag", &loaded});
 	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
 
@@ -116,11 +117,11 @@ TEST_F(ShaderCreateTest, LoadedNameSurvivesResourceComponentRoundTrip)
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));
 }
 
-TEST_F(ShaderCreateTest, ShaderImportEventCreatesAndLinksDefaultShader)
+TEST_F(ShaderCreateTest, ShaderCreateEventCreatesAndLinksDefaultShader)
 {
 	EXPECT_FALSE(m_editor.IsDirty());
 
-	m_editor.GetEventQueue().Emit(neurus::ShaderImportEvent{ GroundUid() });
+	m_editor.GetEventQueue().Emit(neurus::ShaderCreateEvent{ GroundUid() });
 
 	auto mesh = m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid());
 	ASSERT_TRUE(mesh->o_shader);
@@ -161,7 +162,7 @@ TEST_F(ShaderCreateTest, CreateFromPathsUsesTheGivenSources)
 TEST_F(ShaderCreateTest, CreateFromPooledShaderCopiesTheMatchingStage)
 {
 	neurus::ShaderRequestResult loaded;
-	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
 		"res/shaders/render/gbuffer.frag", "MyFrag", &loaded});
 	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
 	auto source = m_editor.GetResourceManager().Get<neurus::RenderShader>(loaded.shaderUid);
@@ -247,7 +248,7 @@ TEST_F(ShaderCreateTest, RemoveDropsTheReferenceAndUndoRelinks)
 TEST_F(ShaderCreateTest, CompileFailureDuringCreateLeavesPoolAndMeshUntouched)
 {
 	neurus::ShaderRequestResult loaded;
-	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
 		"res/shaders/render/gbuffer.frag", "BadFrag", &loaded});
 	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
 	auto source = m_editor.GetResourceManager().Get<neurus::RenderShader>(loaded.shaderUid);
@@ -284,7 +285,7 @@ TEST_F(ShaderCreateTest, CreateAndLoadMarkProjectDirty)
 
 	m_editor.ClearDirty();
 	neurus::ShaderRequestResult loaded;
-	m_editor.GetEventQueue().Emit(neurus::ShaderLoadRequested{
+	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
 		"res/shaders/render/gbuffer.frag", "DirtyFrag", &loaded});
 	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
 	EXPECT_TRUE(m_editor.IsDirty());

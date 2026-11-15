@@ -129,7 +129,7 @@ resolved**, not in when it is dispatched:
 | `src/editor/events/CameraEvents.h` | Camera input events (rotate, push, slide, zoom, resize) |
 | `src/editor/events/InputEvents.h` | Viewport raw input events (mouse move, press, release, scroll) |
 | `src/editor/events/ProjectEvents.h` | Project lifecycle events (new, open, save, saveAs) |
-| `src/editor/events/AssetEvents.h` | Asset import events (mesh, camera, light add) |
+| `src/editor/events/AssetEvents.h` | Asset import events (mesh import, shader import, camera/light add) |
 | `src/editor/events/OperationEvents.h` | Undo/redo request events (`UndoRequested`, `RedoRequested`) |
 | `src/editor/events/ConfigEvents.h` | Render config change events |
 | `src/editor/events/ShaderEvents.h` | Shader editor events (create, compile, code/struct edit, field add) |
@@ -200,6 +200,9 @@ struct ActiveCameraChanged { int camUid; };
 // Mesh properties
 struct MeshShadowChanged  { int objectUid; bool enabled; };
 struct MeshMaterialChanged { int objectUid; bool enabled; };
+
+// Mesh shader (UI intent: the Editor supplies the default G-buffer pair)
+struct ShaderCreateEvent { int objectUid; };
 
 // Light properties
 struct LightPowerChanged      { int objectUid; float power; };
@@ -386,7 +389,9 @@ struct ConfigEditEnd   {};
 Events for the shader editor pipeline (UI to Editor to ShaderController). All
 events carry an `int objectUid` (the target mesh's UID, resolved once by the
 `ShaderEditorPanel` from the active scene selection). `ShaderSection` identifies
-which `ShaderStruct` container is edited.
+which `ShaderStruct` container is edited. `ShaderImportRequested` is the one
+exception and lives in `AssetEvents.h`, because importing an asset never names a
+mesh.
 
 ```cpp
 enum class ShaderSection : int {
@@ -394,7 +399,9 @@ enum class ShaderSection : int {
     Uniforms = 4, StructDefs = 5, Functions = 6, PushConstants = 7
 };
 
-struct ShaderCreateRequested  { int objectUid; };
+struct ShaderCreateRequested  { int objectUid;
+                                std::string vertexPath, fragmentPath;      // empty = default G-buffer source
+                                int vertexSourceUid, fragmentSourceUid; };  // 0 = use the path
 struct ShaderCompileRequested { int objectUid; int stage; int unitType; };  // 0=Code path, 1=Struct path
 struct ShaderCodeEdited       { int objectUid; int stage; std::string code; };
 struct ShaderStructEdited     { int objectUid; int stage; ShaderSection section;
@@ -410,7 +417,7 @@ struct ShaderFieldRestored    { int objectUid; int stage; ShaderSection section;
                                 int fieldIndex; ShaderFieldValue value; };  // whole element to assign back
 struct ShaderFieldAddRestored { int objectUid; int stage; ShaderSection section; int subFieldIndex; };  // redo of an add
 struct ShaderFieldRemoved     { int objectUid; int stage; ShaderSection section; int subFieldIndex; };  // undo of an add
-// Undo/redo of Create Shader (replayed by ShaderLinkOp; Editor-handled)
+// Undo/redo of Create Shader (replayed by ShaderReplaceOp; Editor-handled)
 struct ShaderLinkRestored   { int objectUid; int shaderId; };  // redo: relink pooled shader
 struct ShaderUnlinkRestored { int objectUid; };                // undo: drop the reference
 ```
@@ -434,7 +441,7 @@ edits record one op each. Undo/redo replays a dedicated restore event
 (`ShaderCodeRestored`/`ShaderFieldRestored`/`ShaderFieldAddRestored`/
 `ShaderFieldRemoved`) that re-applies one edit dimension and bumps
 `ShaderUnit::m_version` (panel refresh), CPU-only, no recompile to SPIR-V. Create
-Shader is undoable via `ShaderLinkOp` (pool-preserving membership toggle: undo
+Shader is undoable via `ShaderReplaceOp` (pool-preserving membership toggle: undo
 drops the reference, redo relinks the pooled shader by UID, via
 `ShaderLinkRestored`/`ShaderUnlinkRestored`); Compile stays non-undoable. See
 [Operations](operations.md).

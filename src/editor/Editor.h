@@ -27,8 +27,8 @@ class MeshData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
-struct ShaderImportEvent;
-struct ShaderLoadRequested;
+struct ShaderCreateEvent;
+struct ShaderImportRequested;
 struct MeshImportRequested;
 struct CameraAddRequested;
 struct ObjectDuplicateRequested;
@@ -318,12 +318,12 @@ private:
 	void OnSunLightAdd();
 	void OnSpotLightAdd();
 	// --- Shader lifecycle ---
-	// The Editor owns the pool: it imports shaders here and emits
+	// The Editor owns the pool: it creates/imports shaders here and emits
 	// ObjectShaderAddRequested for SceneController to link. Stage resolution
-	// lives in ShaderController; content edits and compilation stay there too.
-	void OnShaderImport(const ShaderImportEvent& e);
-	void OnShaderCreate(const ShaderCreateRequested& e);
-	void OnShaderLoad(const ShaderLoadRequested& e);
+	// and content edits live on the shader classes and ShaderController.
+	void OnShaderCreateEvent(const ShaderCreateEvent& e);   // UI: default pair
+	void OnShaderCreate(const ShaderCreateRequested& e);    // script: compose + link
+	void OnShaderImportRequested(const ShaderImportRequested& e); // pool only
 	void OnSceneObjectGpuUpload(int objectUid);
 
 	/**

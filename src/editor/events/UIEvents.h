@@ -93,7 +93,7 @@ signals:
 	void meshImportRequested(const MeshImportEvent& e);
 
 	/** @brief Emitted when the Shader Editor requests the default shader for a mesh. */
-	void shaderImportRequested(const ShaderImportEvent& e);
+	void shaderCreateRequested(const ShaderCreateEvent& e);
 
 	/** @brief Emitted when a new camera should be added to the scene (Edit -> Add -> Camera). */
 	void cameraAddRequested(const CameraAddEvent& e);
@@ -172,7 +172,7 @@ public:
 	// --- Mesh import convenience method ---
 
 	void requestMeshImport(const QString& path) { emit meshImportRequested(MeshImportEvent{path.toStdString()}); }
-	void requestShaderImport(int objectUid) { emit shaderImportRequested(ShaderImportEvent{objectUid}); }
+	void requestShaderCreate(int objectUid) { emit shaderCreateRequested(ShaderCreateEvent{objectUid}); }
 
 	void requestCameraAdd() { emit cameraAddRequested(CameraAddEvent{}); }
 	void requestLightAdd() { emit lightAddRequested(LightAddEvent{}); }

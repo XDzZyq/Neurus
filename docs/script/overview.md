@@ -237,15 +237,21 @@ import neurus
 
 mesh = neurus.scene.meshes["Ground"]
 
-mesh.shader.create()                                      # default G-buffer pair
-mesh.shader.create("res/shaders/render/gbuffer.vert",
-                   "res/shaders/render/gbuffer.frag")
+# Main form: import the stage you care about, then create the mesh shader.
+frag = neurus.shader.load_shader("res/shaders/render/gbuffer.frag")
+mesh.shader.create(fragment=frag)       # vertex comes from the default G-buffer vertex
+
+# A source path is the same shader content, imported inline.
 mesh.shader.create(fragment="res/shaders/render/gbuffer.frag")
 
-shader = neurus.shader.load_shader("res/shaders/render/gbuffer.frag")
-shader.fragment.code = open("my.frag").read()
-shader.fragment.compile()
-mesh.shader.create(fragment=shader)
+# Both sides explicitly, or the default pair.
+mesh.shader.create("res/shaders/render/gbuffer.vert",
+                   "res/shaders/render/gbuffer.frag")
+mesh.shader.create()                    # default G-buffer pair
+
+frag.code = open("my.frag").read()      # edit before creating from it
+frag.compile()
+mesh.shader.create(fragment=frag)
 
 neurus.shader.load_shader("res/shaders/render/gbuffer.frag", name="MyFrag")
 mesh.shader.create(fragment=neurus.data.shaders["MyFrag"])
@@ -266,6 +272,11 @@ mesh.shader.remove()
   the extension), two positional `(vertex, fragment)`, or `vertex=` /
   `fragment=`. Each side is a path or a pooled `Shader`; a pooled shader
   contributes its matching stage. A `.comp` source cannot attach to a mesh.
+- A side given as a path is shorthand for `load_shader(path)` followed by
+  `create(...=<pooled>)`: the produced shader has the same stage content either
+  way, but the path form does not leave the imported shader in the pool.
+- A side `create()` does not name uses the default G-buffer source for that
+  stage (`neurus.shader.DEFAULT_VERTEX` / `DEFAULT_FRAGMENT`).
 - `load_shader` pools a `RenderShader` (`.vert` / `.frag`) or a `ComputeShader`
   (`.comp`). A `.frag` load uses the default G-buffer vertex; a `.vert` load
   uses the default fragment. The default name is the path as given.

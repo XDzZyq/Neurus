@@ -40,15 +40,19 @@ flowchart TD
 
 ## Edit flow
 
-Creation follows the mesh-import split. The UI emits `ShaderImportEvent` (from
-the Create Shader button) or a script emits `ShaderCreateRequested`; the
-**Editor** imports/compiles the shader into the pool, then emits
-`ObjectShaderAddRequested{mesh, shader}`. **SceneController** resolves both
-through the read-only pool, links the mesh and records one `ShaderReplaceOp`.
-`load_shader` is pool-only and stays in the Editor; remove is a SceneController
-unlink. `ShaderController` owns content edits and compilation. Create and
-compile bump the version, while code and struct edits wait for an explicit
-Compile.
+Creation follows the mesh-import split. The UI emits `ShaderCreateEvent` (from
+the Create Shader button) and a script emits `ShaderCreateRequested`; both name
+a mesh, and each stage side is a source path or a pooled `ShaderData` whose
+matching stage is copied; an omitted side uses the default G-buffer source
+(`kDefaultVertexPath` / `kDefaultFragmentPath`). The **Editor** creates and
+compiles the shader into the pool, then emits
+`ObjectShaderAddRequested{mesh, shader}`.
+**SceneController** resolves both through the read-only pool, links the mesh
+and records one `ShaderReplaceOp`. `ShaderImportRequested` (the script's
+`load_shader`) is the pool-only verb: it imports a shader asset and never
+touches a mesh. Remove is a SceneController unlink. `ShaderController` owns
+content edits and compilation. Create and compile bump the version, while code
+and struct edits wait for an explicit Compile.
 
 The panel path is mesh-keyed: the ShaderEditorPanel emits `ShaderEvents`
 (`ShaderCodeEdited`, `ShaderStructEdited`, `ShaderFieldAdded`), and
