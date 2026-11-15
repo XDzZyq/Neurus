@@ -248,18 +248,17 @@ TEST(ShaderDataPersistence, ShaderNamesSurviveResourceComponentRoundTrip)
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));
 }
 
-TEST(ShaderDataPersistence, CopyStageCopiesContentAndReportsMissingStage)
+TEST(ShaderDataPersistence, FindStageReturnsNullptrWhenStageIsAbsent)
 {
 	neurus::RenderShader source("Source", "res/shaders/render/gbuffer.vert",
 	                            "res/shaders/render/gbuffer.frag");
 	source.GetStage(neurus::ShaderType::VERTEX).code = "VERT";
 	source.GetStage(neurus::ShaderType::FRAGMENT).code = "FRAG";
 
-	neurus::ShaderUnit copied;
-	std::string error;
-	ASSERT_TRUE(source.CopyStage(neurus::ShaderType::FRAGMENT, copied, error));
-	EXPECT_EQ(copied.code, "FRAG");
+	const neurus::ShaderUnit* frag = source.FindStage(neurus::ShaderType::FRAGMENT);
+	ASSERT_NE(frag, nullptr);
+	EXPECT_EQ(frag->code, "FRAG");
 
-	EXPECT_FALSE(source.CopyStage(neurus::ShaderType::COMPUTE, copied, error));
-	EXPECT_FALSE(error.empty());
+	// A compute bundle has no vertex stage: FindStage never default-inserts.
+	EXPECT_EQ(source.FindStage(neurus::ShaderType::COMPUTE), nullptr);
 }

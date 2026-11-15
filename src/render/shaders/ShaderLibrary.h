@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -56,17 +57,16 @@ public:
 	/**
 	 * @brief Parses and generates one shader stage from a source file.
 	 *
-	 * Validates the extension against @p type, parses the file, and stores the
-	 * parsed IR plus generated GLSL in @p out. The path stays portable as given.
+	 * Validates the extension against @p type, parses the file, and generates
+	 * the GLSL for the returned unit. The path stays portable as given.
 	 *
 	 * @param path Source path (relative or absolute).
 	 * @param type Expected stage; a mismatched extension is an error.
-	 * @param out Destination unit.
-	 * @param error Reason on extension mismatch or parse failure.
-	 * @return true when the stage was loaded and generated.
+	 * @param outError Optional reason on extension mismatch or parse failure.
+	 * @return The resolved stage, or std::nullopt on failure.
 	 */
-	static bool LoadStageUnit(const std::string& path, ShaderType type,
-	                          ShaderUnit& out, std::string& error);
+	static std::optional<ShaderUnit> LoadStageUnit(const std::string& path, ShaderType type,
+	                                               std::string* outError = nullptr);
 
 	// --- Compile (GLSL -> SPIR-V) ---
 	static std::vector<uint32_t> Compile(

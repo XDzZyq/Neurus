@@ -53,6 +53,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <system_error>
 #include <unordered_map>
 #include <vector>
@@ -124,11 +125,20 @@ int ActiveUid(const Scene& scene)
  * Editor-owned import helper: it reads the pool and the pool write follows this
  * resolution. A pooled source contributes the stage matching @p type; a path
  * must carry the matching extension; an empty path uses @p defaultPath.
+ *
+ * @param resources Editor-owned pool.
+ * @param sourceUid Pooled shader supplying the stage, or 0 to use @p path.
+ * @param path Source path; empty uses @p defaultPath.
+ * @param type Stage to resolve.
+ * @param defaultPath Fallback when @p path is empty.
+ * @param error Reason on failure.
+ * @return The resolved stage, or std::nullopt on failure.
  */
-bool ResolveShaderStage(neurus::ResourceManager& resources, int sourceUid,
-                        const std::string& path, neurus::ShaderType type,
-                        const std::string& defaultPath, neurus::ShaderUnit& out,
-                        std::string& error)
+std::optional<neurus::ShaderUnit> ResolveShaderStage(neurus::ResourceManager& resources,
+                                                     int sourceUid, const std::string& path,
+                                                     neurus::ShaderType type,
+                                                     const std::string& defaultPath,
+                                                     std::string& error)
 {
 	if (sourceUid != 0)
 	{
@@ -136,13 +146,20 @@ bool ResolveShaderStage(neurus::ResourceManager& resources, int sourceUid,
 		if (!source)
 		{
 			error = "shader source not found: " + std::to_string(sourceUid);
-			return false;
+			return std::nullopt;
 		}
-		return source->CopyStage(type, out, error);
+		const neurus::ShaderUnit* unit = source->FindStage(type);
+		if (!unit)
+		{
+			error = "shader source has no " +
+			        neurus::ShaderData::TypeToString(type) + " stage";
+			return std::nullopt;
+		}
+		return *unit;
 	}
 
-	return neurus::ShaderLibrary::LoadStageUnit(path.empty() ? defaultPath : path,
-	                                            type, out, error);
+	return neurus::ShaderLibrary::LoadStageUnit(path.empty() ? defaultPath : path, type,
+	                                            &error);
 }
 
 /**
@@ -992,23 +1009,26 @@ void Editor::OnShaderCreate(const ShaderCreateRequested& e)
 
 	// Stage resolution/parsing lives in ShaderLibrary (via ShaderData for a
 	// pooled source); the pool write stays here, where the Editor owns it.
-	ShaderUnit vert;
-	ShaderUnit frag;
-	if (!ResolveShaderStage(*m_resources, e.vertexSourceUid, e.vertexPath,
-	                        ShaderType::VERTEX, kDefaultVertexPath, vert,
-	                        result.error)
-	    || !ResolveShaderStage(*m_resources, e.fragmentSourceUid, e.fragmentPath,
-	                           ShaderType::FRAGMENT, kDefaultFragmentPath, frag,
-	                           result.error))
+	std::string error;
+	auto vert = ResolveShaderStage(*m_resources, e.vertexSourceUid, e.vertexPath,
+	                               ShaderType::VERTEX, kDefaultVertexPath, error);
+	if (!vert)
 	{
-		fail(result.error);
+		fail(error);
+		return;
+	}
+	auto frag = ResolveShaderStage(*m_resources, e.fragmentSourceUid, e.fragmentPath,
+	                               ShaderType::FRAGMENT, kDefaultFragmentPath, error);
+	if (!frag)
+	{
+		fail(error);
 		return;
 	}
 
 	// Both stages are resolved first, so a shader is only pooled once it has
 	// compiled: a failure leaves no half-made entry and nothing to undo.
 	const std::string shaderName = "MeshShader_" + std::to_string(mesh->GetObjectID());
-	auto shader = std::make_shared<RenderShader>(shaderName, std::move(vert), std::move(frag));
+	auto shader = std::make_shared<RenderShader>(shaderName, std::move(*vert), std::move(*frag));
 
 	std::string compileError;
 	if (!shader->CompileToSpv(&compileError))

@@ -1156,22 +1156,21 @@ TEST_F(ShaderParserTest, RenderShaderParseAndGenerate_RelativePaths_IndependentO
 
 TEST(ShaderUnitImport, LoadStageUnitParsesAndGenerates)
 {
-    ShaderUnit unit;
     std::string error;
-    ASSERT_TRUE(ShaderLibrary::LoadStageUnit(
-        "res/shaders/render/gbuffer.vert", ShaderType::VERTEX, unit, error))
-        << error;
-    EXPECT_FALSE(unit.parsed.IsEmpty());
-    EXPECT_FALSE(unit.code.empty());
-    EXPECT_EQ(unit.path, "res/shaders/render/gbuffer.vert");
+    auto unit = ShaderLibrary::LoadStageUnit(
+        "res/shaders/render/gbuffer.vert", ShaderType::VERTEX, &error);
+    ASSERT_TRUE(unit) << error;
+    EXPECT_FALSE(unit->parsed.IsEmpty());
+    EXPECT_FALSE(unit->code.empty());
+    EXPECT_EQ(unit->path, "res/shaders/render/gbuffer.vert");
 }
 
 TEST(ShaderUnitImport, LoadStageUnitRejectsWrongExtension)
 {
-    ShaderUnit unit;
     std::string error;
-    EXPECT_FALSE(ShaderLibrary::LoadStageUnit(
-        "res/shaders/render/gbuffer.frag", ShaderType::VERTEX, unit, error));
+    auto unit = ShaderLibrary::LoadStageUnit(
+        "res/shaders/render/gbuffer.frag", ShaderType::VERTEX, &error);
+    EXPECT_FALSE(unit);
     EXPECT_FALSE(error.empty());
 }
 

@@ -177,25 +177,29 @@ std::unique_ptr<ComputeShader> ShaderLibrary::LoadComputeShader(
 	return shader;
 }
 
-bool ShaderLibrary::LoadStageUnit(const std::string& path, ShaderType type,
-                                  ShaderUnit& out, std::string& error)
+std::optional<ShaderUnit> ShaderLibrary::LoadStageUnit(const std::string& path, ShaderType type,
+                                                       std::string* outError)
 {
 	const auto inferred = ShaderTypeFromPath(path);
 	if (!inferred || *inferred != type)
 	{
-		error = "shader path is not a " + ShaderData::TypeToString(type) + " file: " + path;
-		return false;
+		if (outError != nullptr)
+		{
+			*outError = "shader path is not a " + ShaderData::TypeToString(type) + " file: " + path;
+		}
+		return std::nullopt;
 	}
 
-	out.path = path;
-	out.parsed = ShaderParser::ParseShaderFile(path, type);
-	if (out.parsed.IsEmpty())
+	ShaderUnit unit;
+	unit.path = path;
+	unit.parsed = ShaderParser::ParseShaderFile(path, type);
+	if (unit.parsed.IsEmpty())
 	{
-		error = "failed to parse shader: " + path;
-		return false;
+		if (outError != nullptr) *outError = "failed to parse shader: " + path;
+		return std::nullopt;
 	}
-	out.code = ShaderGenerator::Generate(out.parsed);
-	return true;
+	unit.code = ShaderGenerator::Generate(unit.parsed);
+	return unit;
 }
 
 std::vector<uint32_t> ShaderLibrary::Compile(
