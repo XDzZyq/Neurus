@@ -1,6 +1,7 @@
 #include "RenderCache.hpp"
 #include "passes/FXAAPass.hpp"
 #include "../PipelineBuilder.hpp"
+#include "render_graph/DescriptorLayout.hpp"
 #include "core/RenderConfig.hpp"
 #include "Barrier.hpp"
 #include "Image.hpp"
@@ -16,8 +17,18 @@ namespace neurus {
 FXAAPass::FXAAPass(const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets)
-	: ComputePass(device, physicalDevice, CreateLayout(device), numSets)
-	, p_shader(ShaderLibrary::LoadComputeShader("fxaa", NEURUS_SHADER_DIR "compute/fxaa.comp.glsl"))
+	: FXAAPass(device, physicalDevice, numSets,
+	           ShaderLibrary::LoadComputeShader(
+	               "fxaa", NEURUS_SHADER_DIR "compute/fxaa.comp.glsl"))
+{
+}
+
+FXAAPass::FXAAPass(const vk::raii::Device& device,
+                   const vk::raii::PhysicalDevice& physicalDevice,
+                   uint32_t numSets,
+                   std::unique_ptr<ComputeShader> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
+	, p_shader(std::move(shader))
 {
 	// Check format features: linear filtering required for sub-pixel texture() resample
 	auto fmtProps = physicalDevice.getFormatProperties(vk::Format::eR16G16B16A16Sfloat);
@@ -54,14 +65,6 @@ vk::raii::Sampler FXAAPass::CreateBilinearSampler(const vk::raii::Device& device
 	return vk::raii::Sampler(device, ci);
 }
 
-DescriptorSetLayout FXAAPass::CreateLayout(const vk::raii::Device& d)
-{
-	return BuildLayout()
-		.AddBinding(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute)
-		.AddBinding(1, vk::DescriptorType::eStorageImage,         vk::ShaderStageFlagBits::eCompute)
-		.Build(d);
-}
-
 void FXAAPass::BuildPipeline(const vk::raii::Device& device, const std::string& debugName)
 {
 	if (!p_shader)
@@ -71,7 +74,8 @@ void FXAAPass::BuildPipeline(const vk::raii::Device& device, const std::string& 
 	vk::ShaderModuleCreateInfo smCI({}, spv);
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
-	vk::PushConstantRange pc(vk::ShaderStageFlagBits::eCompute, 0, sizeof(FXAAPushConstants));
+	vk::PushConstantRange pc = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eCompute);
 	p_pipelines.push_back(
 		PipelineBuilder()
 			.AddShaderStage(stageCI)

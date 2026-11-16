@@ -6,6 +6,7 @@
 #include "passes/LightingPass.hpp"
 
 #include "../PipelineBuilder.hpp"
+#include "render_graph/DescriptorLayout.hpp"
 #include "RenderCache.hpp"
 #include "RenderContext.hpp"
 #include "RenderFrameSnapshot.hpp"
@@ -38,12 +39,19 @@ namespace neurus {
 LightingPass::LightingPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
                            uint32_t numSets)
+	: LightingPass(device, physicalDevice, numSets,
+	               ShaderLibrary::LoadComputeShader(
+	                   "pbr_lighting", "res/shaders/compute/pbr_lighting.comp.glsl"))
+{
+}
+
+LightingPass::LightingPass(const vk::raii::Device& device,
+                           const vk::raii::PhysicalDevice& physicalDevice,
+                           uint32_t numSets,
+                           std::unique_ptr<ComputeShader> shader)
 	: ComputePass(device, physicalDevice,
-	              LightingPass::CreateDescriptorSetLayout(device), numSets)
-	// --- Self-load compute shader via ShaderLibrary ---
-	, p_shader(
-		ShaderLibrary::LoadComputeShader("pbr_lighting",
-		                                  "res/shaders/compute/pbr_lighting.comp.glsl"))
+	              MakeDescriptorLayout(device, *shader, {5, 6, 11}), numSets)
+	, p_shader(std::move(shader))
 {
 	BuildPipeline(device, "LightingPass");
 
@@ -74,64 +82,6 @@ LightingPass::LightingPass(const vk::raii::Device& device,
 LightingPass::~LightingPass() = default;
 
 // ---------------------------------------------------------------------------
-// Descriptor set layout
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout LightingPass::CreateDescriptorSetLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		// G-Buffer inputs (combined image samplers)
-		.AddBinding(0,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		.AddBinding(1,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		.AddBinding(2,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		.AddBinding(3,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Output HDR colour (storage image)
-		.AddBinding(4,
-		            vk::DescriptorType::eStorageImage,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Light SSBO (PARTIALLY_BOUND - valid to skip update when no lights)
-		.AddBindingWithFlags(5,
-		                     vk::DescriptorType::eStorageBuffer,
-		                     vk::ShaderStageFlagBits::eCompute,
-		                     vk::DescriptorBindingFlagBits::ePartiallyBound)
-		// SunLight SSBO (PARTIALLY_BOUND - valid to skip update when no sun lights)
-		.AddBindingWithFlags(6,
-		                     vk::DescriptorType::eStorageBuffer,
-		                     vk::ShaderStageFlagBits::eCompute,
-		                     vk::DescriptorBindingFlagBits::ePartiallyBound)
-		// SSAO occlusion input (combined image sampler)
-		.AddBinding(7,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// IBL diffuse irradiance cubemap (combined image sampler)
-		.AddBinding(8,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// IBL specular prefiltered cubemap (combined image sampler)
-		.AddBinding(9,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Shadow array (sampler2DArray, single layered image)
-		.AddBinding(10,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// SpotLight SSBO (PARTIALLY_BOUND - valid to skip update when no spot lights)
-		.AddBindingWithFlags(11,
-		                     vk::DescriptorType::eStorageBuffer,
-		                     vk::ShaderStageFlagBits::eCompute,
-		                     vk::DescriptorBindingFlagBits::ePartiallyBound)
-		.Build(device);
-}
-
-// ---------------------------------------------------------------------------
 // Pipeline creation
 // ---------------------------------------------------------------------------
 
@@ -149,10 +99,8 @@ void LightingPass::BuildPipeline(const vk::raii::Device& device,
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
 
-	vk::PushConstantRange pushRange(
-		vk::ShaderStageFlagBits::eCompute,
-		0,
-		sizeof(LightingPushConstants));  // 176 bytes
+	vk::PushConstantRange pushRange = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eCompute);  // 176 bytes
 
 	PipelineBuilder builder;
 	p_pipelines.push_back(

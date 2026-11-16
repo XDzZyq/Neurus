@@ -27,7 +27,12 @@ public:
 	std::vector<const ShaderData*> GetShaders() const override;
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 private:
-	static DescriptorSetLayout CreateLayout(const vk::raii::Device& d);
+	/// @brief Delegating constructor that receives the already-loaded shader.
+	FXAAPass(const vk::raii::Device& device,
+	         const vk::raii::PhysicalDevice& physicalDevice,
+	         uint32_t numSets,
+	         std::unique_ptr<ComputeShader> shader);
+
 	void BuildPipeline(const vk::raii::Device& device, const std::string& name) override;
 	static vk::raii::Sampler CreateBilinearSampler(const vk::raii::Device& device);
 

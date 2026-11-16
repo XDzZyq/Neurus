@@ -116,10 +116,10 @@ public:
 	const DescriptorSetLayout& GetCameraLayout() const { return p_cameraLayout; }
 
 private:
-	/**
-	 * @brief Creates the camera descriptor set layout (set 0, binding 0: CameraUBO).
-	 */
-	static DescriptorSetLayout CreateCameraLayout(const vk::raii::Device& device);
+	/// @brief Delegating constructor that receives the already-loaded shader.
+	GeometryPass(const vk::raii::Device& device,
+	             const vk::raii::PhysicalDevice& physicalDevice,
+	             std::unique_ptr<RenderShader> shader);
 
 	/**
 	 * @brief Creates the graphics pipeline using PipelineBuilder.

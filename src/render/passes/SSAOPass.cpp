@@ -7,6 +7,7 @@
 #include "passes/SSAOPass.hpp"
 
 #include "../PipelineBuilder.hpp"
+#include "render_graph/DescriptorLayout.hpp"
 #include "Image.hpp"
 #include "render/Barrier.hpp"
 #include "RenderContext.hpp"
@@ -85,12 +86,20 @@ SSAOPass::SSAOPass(const vk::raii::Device& device,
                    uint32_t numSets,
                    SharedQueue& graphicsQueue,
                    uint32_t queueFamilyIndex)
-	: ComputePass(device, physicalDevice,
-	              SSAOPass::CreateDescriptorSetLayout(device), numSets)
-	// --- Self-load compute shader via ShaderLibrary ---
-	, p_shader(
-		ShaderLibrary::LoadComputeShader("ssao",
-		                                  "res/shaders/compute/ssao.comp.glsl"))
+	: SSAOPass(device, physicalDevice, numSets, graphicsQueue, queueFamilyIndex,
+	           ShaderLibrary::LoadComputeShader(
+	               "ssao", "res/shaders/compute/ssao.comp.glsl"))
+{
+}
+
+SSAOPass::SSAOPass(const vk::raii::Device& device,
+                   const vk::raii::PhysicalDevice& physicalDevice,
+                   uint32_t numSets,
+                   SharedQueue& graphicsQueue,
+                   uint32_t queueFamilyIndex,
+                   std::unique_ptr<ComputeShader> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
+	, p_shader(std::move(shader))
 {
 	BuildPipeline(device, "SSAOPass");
 
@@ -192,38 +201,6 @@ std::array<NoiseEntryGpu, SSAOPass::kNoiseEntryCount> SSAOPass::GenerateNoise()
 }
 
 // ---------------------------------------------------------------------------
-// Descriptor set layout
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout SSAOPass::CreateDescriptorSetLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		// G-Buffer inputs (combined image samplers)
-		.AddBinding(0,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		.AddBinding(1,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		.AddBinding(2,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// SSAO output (storage image)
-		.AddBinding(3,
-		            vk::DescriptorType::eStorageImage,
-		            vk::ShaderStageFlagBits::eCompute)
-		// SSAO params UBO (camera + kernel)
-		.AddBinding(4,
-		            vk::DescriptorType::eUniformBuffer,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Noise UBO
-		.AddBinding(5,
-		            vk::DescriptorType::eUniformBuffer,
-		            vk::ShaderStageFlagBits::eCompute)
-		.Build(device);
-}
-
-// ---------------------------------------------------------------------------
 // Pipeline creation
 // ---------------------------------------------------------------------------
 
@@ -241,10 +218,8 @@ void SSAOPass::BuildPipeline(const vk::raii::Device& device,
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
 
-	vk::PushConstantRange pushRange(
-		vk::ShaderStageFlagBits::eCompute,
-		0,
-		4 * sizeof(int32_t));  // kernelLength, radius (float), noiseSize, frameIndex
+	vk::PushConstantRange pushRange = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eCompute);
 
 	PipelineBuilder builder;
 	p_pipelines.push_back(

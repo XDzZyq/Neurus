@@ -8,6 +8,7 @@
 #include "core/RenderConfig.hpp"
 
 #include "../PipelineBuilder.hpp"
+#include "render_graph/DescriptorLayout.hpp"
 #include "Image.hpp"
 #include "render/Barrier.hpp"
 #include "RenderContext.hpp"
@@ -99,12 +100,26 @@ static_assert(offsetof(SunShadowEvalPushConstants, frameCount) == 92,
 ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
                                          const vk::raii::PhysicalDevice& physicalDevice,
                                          uint32_t numSets)
+	: ShadowIntensityPass(device, physicalDevice, numSets,
+	                      ShaderLibrary::LoadComputeShader(
+	                          "shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl"),
+	                      ShaderLibrary::LoadComputeShader(
+	                          "sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl"))
+{
+}
+
+ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
+                                         const vk::raii::PhysicalDevice& physicalDevice,
+                                         uint32_t numSets,
+                                         std::unique_ptr<ComputeShader> pointLightShader,
+                                         std::unique_ptr<ComputeShader> sunLightShader)
 	: ComputePass(device, physicalDevice,
 	              // One set per shadow-casting light per frame slot, so the
 	              // per-light loop never updates a set that is still bound.
-	              ShadowIntensityPass::CreateDescriptorSetLayout(device),
+	              MakeDescriptorLayout(device, *pointLightShader),
 	              numSets * kSetsPerFrameSlot)
-	, p_sunDescSetLayout(CreateSunDescriptorSetLayout(device))
+	, p_pointLightShader(std::move(pointLightShader))
+	, p_sunLightShader(std::move(sunLightShader))
 {
 	// Every shadow-casting light needs its own descriptor set per frame; the
 	// per-light loop selects (frameIndex * kSetsPerFrameSlot + lightIndex).
@@ -112,23 +127,13 @@ ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
 	// descriptors and drop one light's shadow.
 	static_assert(kSetsPerFrameSlot == RenderCache::MAX_SHADOW_LAYERS,
 	              "kSetsPerFrameSlot must match RenderCache::MAX_SHADOW_LAYERS");
-	// --- Load point-light cubemap eval shader ---
-	p_pointLightShader = ShaderLibrary::LoadComputeShader(
-		"shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl");
 
 	if (!p_pointLightShader)
-	{
 		throw std::runtime_error("[ShadowIntensityPass] Failed to load 'shadow_eval' compute shader");
-	}
-
-	// --- Load sun-light 2D eval shader ---
-	p_sunLightShader = ShaderLibrary::LoadComputeShader(
-		"sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl");
-
 	if (!p_sunLightShader)
-	{
 		throw std::runtime_error("[ShadowIntensityPass] Failed to load 'sun_shadow_eval' compute shader");
-	}
+
+	p_sunDescSetLayout = MakeDescriptorLayout(device, *p_sunLightShader);
 
 	NEURUS_LOG("[ShadowIntensityPass] numSets=" << numSets
 	           << " farPlane=" << Light::point_shadow_far);
@@ -165,50 +170,6 @@ ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
 }
 
 // ---------------------------------------------------------------------------
-// Descriptor set layout
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout ShadowIntensityPass::CreateDescriptorSetLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		// Binding 0: G-Buffer world-space position (combined image sampler)
-		.AddBinding(0,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Binding 1: Shadow depth cubemap (combined image sampler, samplerCube)
-		.AddBinding(1,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Binding 2: Shadow intensity output (storage image, R8)
-		.AddBinding(2,
-		            vk::DescriptorType::eStorageImage,
-		            vk::ShaderStageFlagBits::eCompute)
-		.Build(device);
-}
-
-// ---------------------------------------------------------------------------
-// Sun descriptor set layout (identical bindings types, but for sun 2D path)
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout ShadowIntensityPass::CreateSunDescriptorSetLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		// Binding 0: G-Buffer world-space position (combined image sampler)
-		.AddBinding(0,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Binding 1: Sun shadow depth map 2D (combined image sampler, sampler2D)
-		.AddBinding(1,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// Binding 2: Shadow intensity output (storage image, R8)
-		.AddBinding(2,
-		            vk::DescriptorType::eStorageImage,
-		            vk::ShaderStageFlagBits::eCompute)
-		.Build(device);
-}
-
-// ---------------------------------------------------------------------------
 // Pipeline creation
 // ---------------------------------------------------------------------------
 
@@ -228,10 +189,8 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 		vk::raii::ShaderModule module(device, smCI);
 		vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
 
-		vk::PushConstantRange pushRange(
-			vk::ShaderStageFlagBits::eCompute,
-			0,
-			sizeof(ShadowEvalPushConstants));   // 40 bytes
+		vk::PushConstantRange pushRange = MakePushConstantRange(
+			*p_pointLightShader, vk::ShaderStageFlagBits::eCompute);  // 48 bytes
 
 		PipelineBuilder builder;
 		p_pipelines.push_back(
@@ -255,10 +214,8 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 		vk::raii::ShaderModule module2(device, smCI2);
 		vk::PipelineShaderStageCreateInfo stageCI2({}, vk::ShaderStageFlagBits::eCompute, *module2, "main");
 
-		vk::PushConstantRange pushRange(
-			vk::ShaderStageFlagBits::eCompute,
-			0,
-			sizeof(SunShadowEvalPushConstants));   // 96 bytes
+		vk::PushConstantRange pushRange = MakePushConstantRange(
+			*p_sunLightShader, vk::ShaderStageFlagBits::eCompute);  // 96 bytes
 
 		PipelineBuilder sunBuilder;
 		p_pipelines.push_back(

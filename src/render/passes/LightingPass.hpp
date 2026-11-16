@@ -99,10 +99,12 @@ public:
 	/// @brief IBL cubemaps, which are produced outside this graph.
 	std::vector<std::string> ExternalInputPorts() const override;
 
-	/** @brief Creates the descriptor set layout (12 bindings). */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
-
 private:
+	/// @brief Delegating constructor that receives the already-loaded shader.
+	LightingPass(const vk::raii::Device& device,
+	             const vk::raii::PhysicalDevice& physicalDevice,
+	             uint32_t numSets,
+	             std::unique_ptr<ComputeShader> shader);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,

@@ -7,6 +7,7 @@
 #include "passes/ComposePass.hpp"
 
 #include "../PipelineBuilder.hpp"
+#include "render_graph/DescriptorLayout.hpp"
 #include "core/RenderConfig.hpp"
 #include "Image.hpp"
 #include "render/Barrier.hpp"
@@ -28,12 +29,18 @@ namespace neurus {
 ComposePass::ComposePass(const vk::raii::Device& device,
                          const vk::raii::PhysicalDevice& physicalDevice,
                          uint32_t numSets)
-	: ComputePass(device, physicalDevice,
-	              ComposePass::CreateDescriptorSetLayout(device), numSets)
-	// --- Self-load compute shader via ShaderLibrary ---
-	, p_shader(
-		ShaderLibrary::LoadComputeShader("compose",
-		                                  NEURUS_SHADER_DIR "compute/compose.comp.glsl"))
+	: ComposePass(device, physicalDevice, numSets,
+	              ShaderLibrary::LoadComputeShader(
+	                  "compose", NEURUS_SHADER_DIR "compute/compose.comp.glsl"))
+{
+}
+
+ComposePass::ComposePass(const vk::raii::Device& device,
+                         const vk::raii::PhysicalDevice& physicalDevice,
+                         uint32_t numSets,
+                         std::unique_ptr<ComputeShader> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
+	, p_shader(std::move(shader))
 {
 	BuildPipeline(device, "ComposePass");
 
@@ -47,24 +54,6 @@ ComposePass::ComposePass(const vk::raii::Device& device,
 		p_descriptorSets[i].SetDebugName(dsName.c_str());
 	}
 #endif
-}
-
-// ---------------------------------------------------------------------------
-// Descriptor set layout
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout ComposePass::CreateDescriptorSetLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		// HDRColor input (combined image sampler)
-		.AddBinding(0,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// ComposedOutput (storage image, RGBA16F)
-		.AddBinding(1,
-		            vk::DescriptorType::eStorageImage,
-		            vk::ShaderStageFlagBits::eCompute)
-		.Build(device);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,10 +74,8 @@ void ComposePass::BuildPipeline(const vk::raii::Device& device,
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
 
-	vk::PushConstantRange pushRange(
-		vk::ShaderStageFlagBits::eCompute,
-		0,
-		sizeof(float));  // gamma
+	vk::PushConstantRange pushRange = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eCompute);
 
 	PipelineBuilder builder;
 	p_pipelines.push_back(

@@ -14,6 +14,7 @@
 #include "RenderCache.hpp"
 #include "../resources/MeshGPU.hpp"
 #include "../PipelineBuilder.hpp"
+#include "render_graph/DescriptorLayout.hpp"
 #include "render/Barrier.hpp"
 #include "../shaders/ShaderLibrary.hpp"
 #include "../shaders/RenderShader.hpp"
@@ -59,19 +60,6 @@ std::array<glm::mat4, 6> MakeFaceVPs(const glm::mat4& proj)
 }
 
 } // anon
-
-// ===========================================================================
-// Descriptor set layout (SSBO for face VP matrices)
-// ===========================================================================
-
-DescriptorSetLayout ShadowDepthPass::CreateSSBOLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		.AddBinding(0, vk::DescriptorType::eStorageBuffer,
-		            vk::ShaderStageFlagBits::eVertex |
-		                vk::ShaderStageFlagBits::eFragment)
-		.Build(device);
-}
 
 // ===========================================================================
 // Constructor
@@ -135,7 +123,7 @@ void ShadowDepthPass::createSSBOResources(const vk::raii::Device& device,
 	p_faceVPs->Upload(faceVPs.data(), kFaceVPSize);
 
 	// --- Descriptor layout, pool, and set ---
-	p_ssboLayout = CreateSSBOLayout(device);
+	p_ssboLayout = MakeDescriptorLayout(device, *p_multiviewShader);
 	p_ssboPool = DescriptorPool(device, 1,
 	                            DescriptorPool::CalculatePoolSizes({&p_ssboLayout}, 1));
 	p_ssboSet = std::make_unique<DescriptorSet>(
@@ -175,9 +163,9 @@ void ShadowDepthPass::BuildPipeline(const vk::raii::Device& device,
 		vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, *fragModule, "main");
 
 		std::vector<vk::PushConstantRange> pushRanges = {
-			vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex |
-			                      vk::ShaderStageFlagBits::eFragment,
-			                      0, kTotalPushSize)
+			MakePushConstantRange(*p_multiviewShader,
+			                      vk::ShaderStageFlagBits::eVertex |
+			                          vk::ShaderStageFlagBits::eFragment),
 		};
 
 		std::vector<vk::DescriptorSetLayout> dslayouts = { *p_ssboLayout.layout() };
@@ -230,8 +218,7 @@ void ShadowDepthPass::BuildPipeline(const vk::raii::Device& device,
 		vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, *fragModule, "main");
 
 		std::vector<vk::PushConstantRange> pushRanges = {
-			vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex,
-			                      0, sizeof(glm::mat4))
+			MakePushConstantRange(*p_sunShader, vk::ShaderStageFlagBits::eVertex),
 		};
 
 		PipelineBuilder builder;

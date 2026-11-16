@@ -87,8 +87,11 @@ public:
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
 private:
-	/** @brief Creates the descriptor set layout (2 bindings). */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
+	/// @brief Delegating constructor that receives the already-loaded shader.
+	ComposePass(const vk::raii::Device& device,
+	            const vk::raii::PhysicalDevice& physicalDevice,
+	            uint32_t numSets,
+	            std::unique_ptr<ComputeShader> shader);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,

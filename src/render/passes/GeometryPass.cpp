@@ -10,6 +10,7 @@
 #include "RenderContext.hpp"
 #include "render/Barrier.hpp"
 #include "PipelineBuilder.hpp"
+#include "render_graph/DescriptorLayout.hpp"
 #include "shaders/ShaderLibrary.hpp"
 #include "shaders/RenderShader.hpp"
 #include "core/Log.hpp"
@@ -32,8 +33,19 @@ namespace neurus {
 
 GeometryPass::GeometryPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice)
+	: GeometryPass(device, physicalDevice,
+	               ShaderLibrary::LoadRenderShader(
+	                   "GeometryPass",
+	                   "res/shaders/render/gbuffer.vert.glsl",
+	                   "res/shaders/render/gbuffer.frag.glsl"))
+{
+}
+
+GeometryPass::GeometryPass(const vk::raii::Device& device,
+                           const vk::raii::PhysicalDevice& physicalDevice,
+                           std::unique_ptr<RenderShader> shader)
 	// --- Descriptor set layout ---
-	: p_cameraLayout(CreateCameraLayout(device))
+	: p_cameraLayout(MakeDescriptorLayout(device, *shader))
 	// --- Descriptor pool (1 set, 1 UBO) ---
 	, p_descriptorPool(device,
 	                   1,
@@ -42,10 +54,7 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
 	, p_cameraDescriptorSet(std::move(
 	      p_descriptorPool.Allocate(p_cameraLayout, 1).front()))
 	// --- Self-load shaders via ShaderLibrary ---
-	, p_shader(
-		ShaderLibrary::LoadRenderShader("GeometryPass",
-		                                 "res/shaders/render/gbuffer.vert.glsl",
-		                                 "res/shaders/render/gbuffer.frag.glsl"))
+	, p_shader(std::move(shader))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;
@@ -69,19 +78,6 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
 	          << " colorAttachments=5"
 	          << " depthAttachments=1"
 	          << " vertexStride=" << p_vertexLayout.GetStride());
-}
-
-// ---------------------------------------------------------------------------
-// Descriptor set layout factory
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout GeometryPass::CreateCameraLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		.AddBinding(0,
-		            vk::DescriptorType::eUniformBuffer,
-		            vk::ShaderStageFlagBits::eVertex)
-		.Build(device);
 }
 
 // ---------------------------------------------------------------------------
@@ -139,8 +135,8 @@ void GeometryPass::ConfigureGBufferPipeline(PipelineBuilder& builder)
 	builder.SetVertexInput(p_vertexLayout);
 	builder.AddDescriptorSetLayout(*p_cameraLayout.layout());
 
-	vk::PushConstantRange pushRange(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-	                                0, sizeof(MeshPushConstants));
+	vk::PushConstantRange pushRange = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 	builder.SetPushConstantRanges({pushRange});
 
 	builder.SetInputAssembly(vk::PrimitiveTopology::eTriangleList);

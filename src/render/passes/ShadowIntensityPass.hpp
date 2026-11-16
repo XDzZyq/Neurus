@@ -86,27 +86,16 @@ public:
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
 private:
-	/**
-	 * @brief Creates the descriptor set layout (3 bindings).
-	 *
-	 * 0: gPosition (combined image sampler), 1: u_ShadowCube (combined image
-	 * sampler), 2: outputShadow (storage image, R8).
-	 */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
+	/// @brief Delegating constructor that receives the already-loaded shaders.
+	ShadowIntensityPass(const vk::raii::Device& device,
+	                    const vk::raii::PhysicalDevice& physicalDevice,
+	                    uint32_t numSets,
+	                    std::unique_ptr<ComputeShader> pointLightShader,
+	                    std::unique_ptr<ComputeShader> sunLightShader);
 
 	/** @brief Builds both the point-light cubemap and sun-light 2D pipelines. */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
-
-	// -------------------------------------------------------------------
-	// Sun (directional) shadow evaluation - second descriptor set + pipeline
-	// -------------------------------------------------------------------
-
-	/**
-	 * @brief Creates the sun-light descriptor set layout (3 bindings; sampler2D
-	 *        at binding 1).
-	 */
-	static DescriptorSetLayout CreateSunDescriptorSetLayout(const vk::raii::Device& device);
 
 	/**
 	 * @brief Creates a clamp-to-border sampler for sun shadow map reads.

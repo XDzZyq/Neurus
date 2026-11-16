@@ -150,13 +150,13 @@ public:
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
 private:
-	/**
-	 * @brief Creates the descriptor set layout (6 bindings).
-	 *
-	 * 0-2: G-Buffer Position/Normal/Albedo (combined image samplers),
-	 * 3: outputSSAO (storage image, R8), 4: SSAOParams UBO, 5: NoiseBuffer UBO.
-	 */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
+	/// @brief Delegating constructor that receives the already-loaded shader.
+	SSAOPass(const vk::raii::Device& device,
+	         const vk::raii::PhysicalDevice& physicalDevice,
+	         uint32_t numSets,
+	         SharedQueue& graphicsQueue,
+	         uint32_t queueFamilyIndex,
+	         std::unique_ptr<ComputeShader> shader);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,

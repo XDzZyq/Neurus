@@ -83,8 +83,6 @@ public:
 	uint32_t Resolution() const { return p_resolution; }
 
 private:
-	static DescriptorSetLayout CreateSSBOLayout(const vk::raii::Device& device);
-
 	void createSSBOResources(const vk::raii::Device& device,
 	                         const vk::raii::PhysicalDevice& physicalDevice,
 	                         SharedQueue& queue, uint32_t qfi);
