@@ -5,6 +5,7 @@
 #include "asset/Project.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/components/EditorComponent.hpp"
+#include "asset/components/GraphComponent.hpp"
 #include "asset/components/HistoryComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
@@ -57,6 +58,7 @@ void RegisterProjectComponents(project::Project& proj, Editor& editor, std::stri
 	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::ConfigComponent>(editor.GetRenderConfig());
+	proj.Register<project::GraphComponent>(editor.GetRenderGraphSpec());
 	proj.Register<project::UIComponent>(uiLayout);
 	// History, then editor view state: both are appended-last nodes, so legacy
 	// files that lack them load cleanly (each Load() falls back).

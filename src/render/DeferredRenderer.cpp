@@ -248,7 +248,12 @@ void DeferredRenderer::InitializePipeline()
 	// processor applies them in the same order the old per-frame drain did.
 	m_requests = std::make_unique<RenderRequestProcessor>(
 		[this] { DrainInFlightFrames(); }, *r_renderCache, r_geometryPass,
-		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; });
+		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; },
+		[this](const RenderGraphSpec& spec)
+		{
+			DrainInFlightFrames();
+			return CompileMainGraph(spec, m_builtSignature.fxaa);
+		});
 }
 
 DeferredRenderer::~DeferredRenderer()

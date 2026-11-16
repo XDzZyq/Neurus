@@ -7,6 +7,8 @@ add_library(neurus_asset STATIC
 	PixelFormat.hpp
 	components/ConfigComponent.hpp
 	components/ConfigComponent.cpp
+	components/GraphComponent.hpp
+	components/GraphComponent.cpp
 	components/SceneComponent.hpp
 	components/SceneComponent.cpp
 	components/UIComponent.hpp

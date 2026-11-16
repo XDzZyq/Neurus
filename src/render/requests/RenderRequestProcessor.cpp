@@ -11,10 +11,12 @@ RenderRequestProcessor::RenderRequestProcessor(std::function<void()> drainFrames
                                                RenderCache& cache,
                                                GeometryPass* geometryPass,
                                                std::function<void()> restartAccumulation,
-                                               std::function<void()> markOverlaysDirty)
+                                               std::function<void()> markOverlaysDirty,
+                                               std::function<bool(const RenderGraphSpec&)> compileGraph)
 	: m_executor(std::move(drainFrames), cache, /*uploader=*/nullptr, geometryPass)
 	, m_restartAccumulation(std::move(restartAccumulation))
 	, m_markOverlaysDirty(std::move(markOverlaysDirty))
+	, m_compileGraph(std::move(compileGraph))
 {
 }
 
@@ -50,9 +52,16 @@ void RenderRequestProcessor::Drain()
 					// restart happens before the handler runs, as it always has.
 					if (m_restartAccumulation) m_restartAccumulation();
 
-					// ResetAccumulationRequest exists to ask for exactly that, so
-					// it stops here instead of reaching the executor.
-					if constexpr (!std::is_same_v<T, ResetAccumulationRequest>)
+					// A graph document replaces the topology. The renderer keeps
+					// the previous graph when compilation fails; the request still
+					// counts as a restart.
+					if constexpr (std::is_same_v<T, CompileRenderGraphRequest>)
+					{
+						if (m_compileGraph) m_compileGraph(typed.spec);
+					}
+					// ResetAccumulationRequest exists to ask for exactly the restart
+					// above, so it stops here instead of reaching the executor.
+					else if constexpr (!std::is_same_v<T, ResetAccumulationRequest>)
 					{
 						m_executor.Execute(typed);
 					}

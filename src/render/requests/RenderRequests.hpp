@@ -37,6 +37,7 @@
 
 #include "render/resources/LightingCache.hpp"
 #include "scene/Light.hpp"
+#include "core/RenderGraphSpec.hpp"
 
 namespace neurus
 {
@@ -166,6 +167,18 @@ struct RedrawOverlaysRequest
 {
 };
 
+/**
+ * @brief Replace the scene graph document and compile it.
+ *
+ * Posted by the Editor when a project loads or the document changes. The
+ * renderer keeps its previous graph when compilation fails and reports the
+ * diagnostics; the request still restarts accumulation.
+ */
+struct CompileRenderGraphRequest
+{
+	RenderGraphSpec spec;
+};
+
 /// @brief Any request the renderer executes on the Editor's behalf.
 using RenderRequest = std::variant<UploadMeshRequest,
                                    CreateLightGpuRequest,
@@ -175,7 +188,8 @@ using RenderRequest = std::variant<UploadMeshRequest,
                                    EnsurePipelineRequest,
                                    DropSceneResourcesRequest,
                                    ResetAccumulationRequest,
-                                   RedrawOverlaysRequest>;
+                                   RedrawOverlaysRequest,
+                                   CompileRenderGraphRequest>;
 
 /**
  * @brief Snapshot what a per-mesh pipeline build needs out of a live Shader.

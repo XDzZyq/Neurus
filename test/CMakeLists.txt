@@ -16,6 +16,7 @@ set(NEURUS_TEST_SOURCES
 	asset/test_imagedata.cpp
 	asset/test_pass_ports.cpp
 	asset/test_render_graph_compile.cpp
+	asset/test_graph_component.cpp
 	render/test_shader_parser.cpp
 	render/test_syncobjects.cpp
 	render/test_image.cpp
@@ -78,6 +79,7 @@ set(NEURUS_TEST_SOURCES
 	editor/test_operation_manager.cpp
 	editor/test_operation_serialization.cpp
 	editor/test_render_config_controller.cpp
+	editor/test_editor_render_graph.cpp
 	editor/test_script_controller.cpp
 	editor/test_shader_controller.cpp
 	editor/test_shader_create.cpp

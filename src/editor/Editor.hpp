@@ -12,6 +12,7 @@
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
+#include "core/RenderGraphSpec.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a
 // RenderFrameSnapshot by value, so the complete type is required here. It is
@@ -97,6 +98,18 @@ public:	/**
 	// --- Accessors ---
 	Scene& GetScene();
 	RenderConfig& GetRenderConfig() { return m_config; }
+
+	/// @brief The scene render graph document.
+	RenderGraphSpec& GetRenderGraphSpec() { return m_renderGraphSpec; }
+
+	/**
+	 * @brief Replaces the render graph document and asks the renderer to compile it.
+	 *
+	 * Marks the document dirty; the renderer keeps drawing its previous graph
+	 * when the new one fails to compile and reports the diagnostics.
+	 */
+	void SetRenderGraphSpec(RenderGraphSpec spec);
+
 	bool IsDirty() const { return m_dirty; }
 	void MarkDirty() { m_dirty = true; }
 	void ClearDirty() { m_dirty = false; }
@@ -358,6 +371,9 @@ private:
 	 */
 	void PublishActiveCamera(bool extentChanged = false);
 
+	/// @brief Posts the current document as a compile request.
+	void PublishRenderGraphSpec();
+
 	/**
 	 * @brief Adds the default scene's demo debug objects.
 	 * @param meshData The demo mesh's geometry, reused for the DebugMesh wireframe
@@ -369,6 +385,7 @@ private:
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
 	RenderConfig          m_config;
+	RenderGraphSpec       m_renderGraphSpec = MakeDefaultRenderGraphSpec();
 	bool                  m_dirty = false;
 
 	/**

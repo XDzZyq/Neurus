@@ -68,7 +68,8 @@ public:
 	                       RenderCache& cache,
 	                       GeometryPass* geometryPass,
 	                       std::function<void()> restartAccumulation,
-	                       std::function<void()> markOverlaysDirty);
+	                       std::function<void()> markOverlaysDirty,
+	                       std::function<bool(const RenderGraphSpec&)> compileGraph = {});
 
 	~RenderRequestProcessor() = default;
 
@@ -98,6 +99,7 @@ private:
 	/// @brief Renderer state a request can change; see the file comment.
 	std::function<void()> m_restartAccumulation;
 	std::function<void()> m_markOverlaysDirty;
+	std::function<bool(const RenderGraphSpec&)> m_compileGraph;
 };
 
 } // namespace neurus

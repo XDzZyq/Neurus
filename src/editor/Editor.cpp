@@ -56,6 +56,7 @@
 #include <optional>
 #include <system_error>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace neurus {
@@ -744,6 +745,7 @@ void Editor::NewScene()
 		m_scene = std::make_unique<Scene>();
 		m_resources->Clear();
 		m_config = RenderConfig{};
+		m_renderGraphSpec = MakeDefaultRenderGraphSpec();
 		ed_operations.Clear(); // History does not span scenes.
 
 		// The pool just lost the old viewport camera; a new document gets a new one
@@ -761,6 +763,8 @@ void Editor::NewScene()
 		// is anchored on the outgoing document's selection, and the builder only
 		// clears its list inside a dirty Rebuild().
 		m_viewport.MarkOverlaysDirty();
+
+		PublishRenderGraphSpec();
 
 		NEURUS_LOG("[Editor] Created new scene.");
 	}
@@ -913,8 +917,24 @@ void Editor::FinishLoad()
 	// anchors a new handle.
 	m_viewport.MarkOverlaysDirty();
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
+	PublishRenderGraphSpec();
 }
 
+
+void Editor::PublishRenderGraphSpec()
+{
+	if (!ed_renderer)
+		return;
+
+	ed_renderer->Post(CompileRenderGraphRequest{m_renderGraphSpec});
+}
+
+void Editor::SetRenderGraphSpec(RenderGraphSpec spec)
+{
+	m_renderGraphSpec = std::move(spec);
+	MarkDirty();
+	PublishRenderGraphSpec();
+}
 
 void Editor::OnMeshImport(const std::string& path)
 {
