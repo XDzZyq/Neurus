@@ -15,6 +15,7 @@ set(NEURUS_TEST_SOURCES
 	asset/test_meshdata.cpp
 	asset/test_imagedata.cpp
 	asset/test_pass_ports.cpp
+	asset/test_render_graph_compile.cpp
 	render/test_shader_parser.cpp
 	render/test_syncobjects.cpp
 	render/test_image.cpp
