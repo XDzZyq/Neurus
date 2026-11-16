@@ -30,6 +30,17 @@ if(MSVC)
 endif()
 
 # ---------------------------------------------------------------------------
+# Apple Linker Settings
+# ---------------------------------------------------------------------------
+if(APPLE)
+	# CMake repeats static archives on purpose to resolve cyclic dependencies
+	# between the layer libraries. ld64 since Xcode 15 reports every repeat as
+	# "ignoring duplicate libraries"; the repetition is intentional, so the
+	# warning is turned off rather than the link order reworked.
+	add_link_options(-Wl,-no_warn_duplicate_libraries)
+endif()
+
+# ---------------------------------------------------------------------------
 # Project Options
 # ---------------------------------------------------------------------------
 option(NEURUS_BUILD_TESTS "Build unit tests" ON)
