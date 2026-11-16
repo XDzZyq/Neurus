@@ -46,7 +46,15 @@ inline vk::PushConstantRange MakePushConstantRange(
 	const vk::ShaderStageFlags stages)
 {
 	const std::array<const ShaderData*, 1> shaders = {&shader};
-	return PushConstantRangeFromShaders(shaders, stages);
+	vk::PushConstantRange range = PushConstantRangeFromShaders(shaders, stages);
+
+	// The IR size is the last declared member's end. Vulkan push-constant
+	// ranges and the C++ blocks that feed them are 16-byte aligned
+	// (MeshPushConstants is alignas(16)), so round the range up. Pushing a
+	// block smaller than the rounded range is valid; pushing a block larger
+	// than the range is VUID-vkCmdPushConstants-offset-01795.
+	range.size = (range.size + 15u) & ~15u;
+	return range;
 }
 
 } // namespace neurus

@@ -10,8 +10,10 @@ class RenderCache;
 
 struct FXAAPushConstants {
 	float rcpWidth, rcpHeight, pad0, pad1;
-	float qualitySubpix, edgeThreshold, edgeThresholdMin, pad2;
+	float qualitySubpix, edgeThreshold, edgeThresholdMin;
 };
+static_assert(sizeof(FXAAPushConstants) == 28,
+              "FXAAPushConstants must match the GLSL push_constant block");
 
 class FXAAPass : public ComputePass {
 public:
