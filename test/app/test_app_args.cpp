@@ -87,3 +87,35 @@ TEST(AppArgs, PreloadWithoutAValueIsAnError)
 	EXPECT_FALSE(args.error.empty());
 	EXPECT_TRUE(args.preload.empty());
 }
+
+TEST(AppArgs, ParsesWidthAndHeight)
+{
+	const std::vector<std::string> arguments{
+		"Neurus", "--width", "1920", "--height=1080"};
+
+	const auto args = AppArgs::Parse(arguments);
+	EXPECT_TRUE(args.error.empty());
+	EXPECT_EQ(args.width, 1920u);
+	EXPECT_EQ(args.height, 1080u);
+}
+
+TEST(AppArgs, DefaultExtentIs720p)
+{
+	const auto args = AppArgs::Parse(std::vector<std::string>{"Neurus"});
+	EXPECT_EQ(args.width, 1280u);
+	EXPECT_EQ(args.height, 720u);
+}
+
+TEST(AppArgs, RejectsMalformedExtents)
+{
+	// A numeric prefix, a negative value, zero, an out-of-range value and an
+	// empty token must all be rejected: std::stoul accepted the first, wrapped
+	// the second, and the renderer would have used the result as its extent.
+	for (const char* bad : {"1280px", "-1", "0", "99999", ""})
+	{
+		const std::vector<std::string> arguments{"Neurus", "--width", bad};
+		const auto args = AppArgs::Parse(arguments);
+		EXPECT_FALSE(args.error.empty()) << "accepted --width '" << bad << "'";
+		EXPECT_EQ(args.width, 1280u) << "a rejected token must not change the value";
+	}
+}

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -20,6 +21,8 @@ struct AppArgs
 	std::optional<std::string> session;  ///< Named command session.
 	std::optional<std::string> project;  ///< Project file to open.
 	std::vector<std::string>   preload;  ///< Packages imported at startup.
+	uint32_t                   width = 1280;   ///< Headless render width (GUI ignores it).
+	uint32_t                   height = 720;   ///< Headless render height (GUI ignores it).
 	std::string                error;    ///< Parse error, empty when valid.
 
 	/**

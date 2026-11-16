@@ -60,28 +60,26 @@ TEST_F(VulkanContextTest, CreateInstance_HasRequiredExtensions)
 
 	auto instance = VulkanContext::CreateInstance();
 
-	// Verify required extensions are available
+	// Verify every instance extension the platform requires is advertised. A
+	// windowed platform requires VK_KHR_surface plus its own surface extension;
+	// the headless platform requires none, so there is nothing to demand there.
 	auto extensions = vk::enumerateInstanceExtensionProperties();
-	bool hasSurface = false;
-	bool hasPlatformSurface = false;
 
 	auto requiredExts = neurus::platform::RequiredInstanceExtensions();
 
-	for (const auto& ext : extensions)
+	for (const char* required : requiredExts)
 	{
-		if (strcmp(ext.extensionName, VK_KHR_SURFACE_EXTENSION_NAME) == 0)
+		bool found = false;
+		for (const auto& ext : extensions)
 		{
-			hasSurface = true;
+			if (strcmp(ext.extensionName, required) == 0)
+			{
+				found = true;
+				break;
+			}
 		}
-		// Check the platform-specific surface extension (second in the list)
-		if (requiredExts.size() > 1 && strcmp(ext.extensionName, requiredExts[1]) == 0)
-		{
-			hasPlatformSurface = true;
-		}
+		EXPECT_TRUE(found) << "Required instance extension not supported: " << required;
 	}
-
-	EXPECT_TRUE(hasSurface) << "VK_KHR_surface not supported";
-	EXPECT_TRUE(hasPlatformSurface) << "Platform surface extension not supported";
 }
 
 TEST_F(VulkanContextTest, InstanceCleanup_NoCrash)

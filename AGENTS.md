@@ -75,12 +75,18 @@ events - never poll per frame. Renderer never calls back into Editor.
 
 ### Platform-specific code is isolated
 
-OS-specific code lives under `src/platform/win/` or `src/platform/mac/`, selected
-by `src/platform/CMakeLists.txt`. App, editor, UI, CLI, script and test code call
-the platform free functions; do not add `#ifdef _WIN32` or `#ifdef __APPLE__`
-outside those implementations. A test may keep an ifdef only when the defended
-value is itself platform-specific, such as an executable name or environment
-variable name.
+OS-specific code lives under `src/platform/win/`, `src/platform/mac/` or
+`src/platform/linux/`, selected by `src/platform/CMakeLists.txt`. App, editor, UI,
+CLI, script and test code call the platform free functions; do not add
+`#ifdef _WIN32`, `#ifdef __APPLE__` or `#ifdef __linux__` outside those
+implementations. A test may keep an ifdef only when the defended value is itself
+platform-specific, such as an executable name or environment variable name.
+
+Linux is a headless platform: `src/platform/linux/LinuxSurface.cpp` is a stub
+whose `CreateSurface` throws, because there is no window system and no
+swapchain. The Linux product binary is `neurus_headless` (no Qt, driven by the
+`neurus` CLI); the Qt application is Windows and macOS only. See
+[docs/build/build.md](docs/build/build.md#linux-headless).
 
 ### Coordinate system (Z-up, +Y forward, right-hand)
 

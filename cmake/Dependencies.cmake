@@ -157,6 +157,40 @@ function(neurus_find_dependency name)
 			)
 			set(NEURUS_DEP_${name}_FROM_LIB TRUE PARENT_SCOPE)
 
+		elseif(UNIX AND NOT APPLE)
+			# Linux archives are published for every Neurus-Lib commit; prefer the
+			# downloaded one. The SDK's own shaderc is the fallback for a checkout
+			# that has not run `make update` yet.
+			set(_shaderc_lib "${LIB_DIR}/lib/libshaderc_shared.so")
+			set(_shaderc_inc "${SHADERC_INCLUDE_DIR}")
+			if(NOT EXISTS "${_shaderc_lib}"
+			   AND DEFINED ENV{VULKAN_SDK}
+			   AND EXISTS "$ENV{VULKAN_SDK}/lib/libshaderc_shared.so")
+				set(_shaderc_lib "$ENV{VULKAN_SDK}/lib/libshaderc_shared.so")
+				set(_shaderc_inc "$ENV{VULKAN_SDK}/include")
+			endif()
+
+			if(EXISTS "${_shaderc_lib}")
+				message(STATUS "Using shaderc from ${_shaderc_lib}")
+				add_library(shaderc_shared SHARED IMPORTED)
+				set_target_properties(shaderc_shared PROPERTIES
+					IMPORTED_LOCATION "${_shaderc_lib}"
+				)
+				set_property(TARGET shaderc_shared PROPERTY
+					INTERFACE_INCLUDE_DIRECTORIES "${_shaderc_inc}"
+				)
+				set(NEURUS_DEP_${name}_FROM_LIB TRUE PARENT_SCOPE)
+			else()
+				message(STATUS "No shaderc in lib/ or VULKAN_SDK, building from source")
+				set(SHADERC_SKIP_TESTS ON CACHE BOOL "" FORCE)
+				set(SHADERC_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+				set(SHADERC_SKIP_INSTALL ON CACHE BOOL "" FORCE)
+				set(SHADERC_ENABLE_HLSL OFF CACHE BOOL "" FORCE)
+				set(ENABLE_OPT OFF CACHE BOOL "Enable spirv-opt capability" FORCE)
+				add_subdirectory("${DEP_DIR}")
+				set(NEURUS_DEP_${name}_FROM_LIB FALSE PARENT_SCOPE)
+			endif()
+
 		else()
 			message(STATUS "Pre-compiled shaderc not found in ${LIB_DIR}, building from source")
 

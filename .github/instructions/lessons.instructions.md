@@ -48,6 +48,44 @@ the **rule** that prevents it. Design detail behind these lives in
 - **A discard transition hazards against the previous reader.**
   `Undefined`/`Invalid` must use `eAllCommands`, never `eTopOfPipe`, as a source
   stage.
+- **`vulkaninfo` lists only `llvmpipe` on a machine with a working NVIDIA GPU.**
+  The image has the compute userland but not the graphics userland:
+  `/etc/vulkan/icd.d/nvidia_icd.json` points at `libGLX_nvidia.so.0`, which is
+  absent, so that ICD cannot initialize
+  (`vk_icdNegotiateLoaderICDInterfaceVersion` returns
+  `VK_ERROR_INITIALIZATION_FAILED`). Rule: install the driver's graphics
+  libraries **matching the loaded kernel module**
+  (`NVIDIA-Linux-x86_64-<same-version>.run --no-kernel-module`); a newer
+  userspace than the module, or Ubuntu's transitional `libnvidia-gl-*` stubs,
+  cannot work.
+- **`vkCreateInstance` returns `VK_ERROR_INCOMPATIBLE_DRIVER` on a server whose
+  GPU is fine.** The loader is older than the requested `VK_API_VERSION_1_4`
+  (Ubuntu 22.04 ships 1.3.204). Rule: put the SDK's 1.4 loader directory
+  (`$VULKAN_SDK/lib/VulkanLoader/lib`) on `LD_LIBRARY_PATH` - and nothing else
+  from the SDK's `lib/`, or its shaderc shadows the released prebuilt - and keep
+  the 1.3 retry in `VulkanContext::CreateInstance`. See
+  [docs/build/build.md](../../docs/build/build.md#linux-headless).
+- **A headless capture writes a black PNG, or validation reports a layout
+  mismatch inside `Screenshot`.** `Screenshot::CaptureSwapchain` hardcodes
+  `PRESENT_SRC` in both barriers, and a headless frame never presented anything.
+  Rule: offscreen captures read `OverlayOutput` through the tracked image state
+  (`Screenshot::CaptureAttachment` / `Image::ReadImageData`), and a capture
+  before any drawn frame fails loudly instead of reading an empty attachment.
+- **`VK_EXT_headless_surface` is not a portability answer.** NVIDIA 550 does not
+  advertise it, so a "keep the swapchain, drop the window" design does not run
+  without an X server. Rule: the presentation seam is `OutputTarget`
+  (`SwapchainTarget` / `OffscreenTarget`), and the headless path acquires
+  nothing.
+- **`cereal` dynamic-init anchor link errors when adding an executable.**
+  `neurus_asset` includes the registration header for the `neurus_operations`
+  anchor, whose definition lives in `neurus_editor`; a single-pass GNU linker
+  that sees the editor archive before the asset archive leaves the symbol
+  undefined. Rule: order `neurus_asset` before `neurus_editor` on the link line,
+  as `neurus_headless` does.
+- **A Vulkan test asserts a platform surface extension exists.** The headless
+  platform requires none, so the assertion fails on a correct build. Rule: assert
+  that every `platform::RequiredInstanceExtensions()` entry is advertised, not
+  that a named surface extension is there.
 
 ## Renderer threading and resource lifetime
 

@@ -34,36 +34,64 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 
 vk::raii::Instance VulkanContext::CreateInstance()
 {
-	vk::ApplicationInfo appInfo("Neurus", VK_MAKE_VERSION(0,1,0), "NeurusRenderer", VK_MAKE_VERSION(0,1,0), VK_API_VERSION_1_4);
-	auto extensions = platform::RequiredInstanceExtensions();
-	if constexpr (kEnableValidation)
-		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+	return CreateInstance(Options{});
+}
 
-	vk::InstanceCreateInfo createInfo(platform::InstanceCreateFlags(), &appInfo, {}, extensions);
-
-	if constexpr (kEnableValidation)
-	{
-		auto layers = vk::enumerateInstanceLayerProperties();
-		bool ok = true;
-		for (auto* name : kValidationLayers) {
-			bool found = false;
-			for (auto& l : layers) { if (!strcmp(name, l.layerName)) { found = true; break; } }
-			if (!found) { ok = false; break; }
-		}
-		if (ok) {
-			createInfo.setPEnabledLayerNames(kValidationLayers);
-			vk::DebugUtilsMessengerCreateInfoEXT dbg({},
-				vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-				vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-				debugCallback);
-			createInfo.setPNext(&dbg);
-		} else {
-			std::cerr << "[Neurus] Validation layers not available.\n";
-		}
-	}
-
+vk::raii::Instance VulkanContext::CreateInstance(const Options& options)
+{
+	// The instance is the only place the API version is requested. 1.4 is what
+	// this codebase targets; a loader older than that answers
+	// VK_ERROR_INCOMPATIBLE_DRIVER, so fall back to 1.3 rather than fail.
 	vk::raii::Context context;
-	return vk::raii::Instance(context, createInfo);
+
+	auto makeInstance = [&](uint32_t apiVersion)
+	{
+		vk::ApplicationInfo appInfo("Neurus", VK_MAKE_VERSION(0,1,0), "NeurusRenderer",
+		                            VK_MAKE_VERSION(0,1,0), apiVersion);
+		std::vector<const char*> extensions =
+			options.surfaceExtensions ? platform::RequiredInstanceExtensions()
+			                          : std::vector<const char*>{};
+		if constexpr (kEnableValidation)
+			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+		const vk::InstanceCreateFlags flags =
+			options.surfaceExtensions ? platform::InstanceCreateFlags() : vk::InstanceCreateFlags{};
+		vk::InstanceCreateInfo createInfo(flags, &appInfo, {}, extensions);
+
+		vk::DebugUtilsMessengerCreateInfoEXT dbg;
+		if constexpr (kEnableValidation)
+		{
+			auto layers = vk::enumerateInstanceLayerProperties();
+			bool ok = true;
+			for (auto* name : kValidationLayers) {
+				bool found = false;
+				for (auto& l : layers) { if (!strcmp(name, l.layerName)) { found = true; break; } }
+				if (!found) { ok = false; break; }
+			}
+			if (ok) {
+				createInfo.setPEnabledLayerNames(kValidationLayers);
+				dbg = vk::DebugUtilsMessengerCreateInfoEXT({},
+					vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+					vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+					debugCallback);
+				createInfo.setPNext(&dbg);
+			} else {
+				std::cerr << "[Neurus] Validation layers not available.\n";
+			}
+		}
+
+		return vk::raii::Instance(context, createInfo);
+	};
+
+	try
+	{
+		return makeInstance(VK_API_VERSION_1_4);
+	}
+	catch (const vk::IncompatibleDriverError&)
+	{
+		NEURUS_ERR("[VulkanContext] Loader rejects Vulkan 1.4; retrying with 1.3");
+		return makeInstance(VK_API_VERSION_1_3);
+	}
 }
 
 VulkanContext::VulkanContext(vk::raii::Instance&& instance)
@@ -96,6 +124,11 @@ static vk::PhysicalDeviceFeatures selectOptionalFeatures(const vk::raii::Physica
 }
 
 void VulkanContext::InitDevice()
+{
+	InitDevice(Options{});
+}
+
+void VulkanContext::InitDevice(const Options& options)
 {
 	ctx_physicalDevices = vk::raii::PhysicalDevices(*ctx_instance);
 	ctx_selectedDeviceIndex = selectPhysicalDeviceIndex();
@@ -153,7 +186,13 @@ void VulkanContext::InitDevice()
 	descriptorIndexing.pNext = &timelineSemaphore;
 
 	ctx_enabledFeatures = selectOptionalFeatures(pd);
-	std::vector<const char*> devExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+	// A headless device presents nothing, so it must not ask for the swapchain
+	// extension (and a server driver need not offer it).
+	std::vector<const char*> devExts;
+	if (options.swapchain)
+	{
+		devExts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+	}
 
 	// VK_KHR_portability_subset is required when a profile layer simulates
 	// portability (e.g. VP_LUNARG_desktop_baseline): add it when advertised.
@@ -176,6 +215,25 @@ void VulkanContext::InitDevice()
 		*ctx_device, ctx_device->getQueue(ctx_transferQueueFamily, 0),
 		ctx_transferQueueFamily);
 	ctx_transferQueue = ctx_transferQueueOwned.get();
+}
+
+void VulkanContext::InitQueue()
+{
+	// Headless: InitDevice() already selected the graphics family, and there is
+	// no surface to check presentation support against.
+	const vk::Queue graphicsHandle = ctx_device->getQueue(ctx_graphicsQueueFamily, 0);
+
+	if (graphicsHandle == ctx_transferQueue->Handle())
+	{
+		ctx_graphicsQueue = ctx_transferQueue;
+		NEURUS_LOG("[VulkanContext] graphics and transfer share one VkQueue (one lock)");
+		return;
+	}
+
+	ctx_graphicsQueueOwned = std::make_unique<SharedQueue>(
+		*ctx_device, graphicsHandle, ctx_graphicsQueueFamily);
+	ctx_graphicsQueue = ctx_graphicsQueueOwned.get();
+	NEURUS_LOG("[VulkanContext] graphics and transfer use separate VkQueues (two locks)");
 }
 
 void VulkanContext::InitQueue(const vk::raii::SurfaceKHR& surface)

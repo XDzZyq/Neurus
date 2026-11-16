@@ -25,6 +25,11 @@ add_library(neurus_render STATIC
 	DescriptorManager.cpp
 	Swapchain.h
 	Swapchain.cpp
+	OutputTarget.h
+	targets/SwapchainTarget.h
+	targets/SwapchainTarget.cpp
+	targets/OffscreenTarget.h
+	targets/OffscreenTarget.cpp
 	shaders/RenderShader.h
 	shaders/RenderShader.cpp
 	shaders/ComputeShader.h
@@ -104,7 +109,6 @@ add_subdirectory(passes)
 
 target_link_libraries(neurus_render PUBLIC
 	Vulkan::Vulkan
-	Qt6::Gui
 	glm
 	stb
 	neurus_core

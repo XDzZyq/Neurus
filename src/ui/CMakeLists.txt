@@ -3,6 +3,11 @@
 add_library(neurus_ui STATIC
 	UIManager.h
 	UIManager.cpp
+	# Qt boundary of the editor layer: the signal bus and the Qt-enum input
+	# translations. They live in the UI target because it is the only consumer.
+	../editor/events/UIEvents.h
+	../editor/events/UIEvents.cpp
+	../editor/Input.cpp
 	UIContext.h
 	UIContext.cpp
 	Icons.h

@@ -1,7 +1,10 @@
 #include "app/AppArgs.h"
 
+#include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -98,6 +101,39 @@ bool TakeListValue(const std::vector<std::string>& arguments, std::size_t& index
 	return true;
 }
 
+/**
+ * @brief Parses a `--width`/`--height` token strictly.
+ *
+ * Digits only, then a full-token `std::from_chars` and a range check. `std::stoul`
+ * would accept a numeric prefix ("1280px") and wrap "-1" into ULONG_MAX, either
+ * of which would reach the renderer as an unintended extent.
+ *
+ * @return True when @p text is a plain positive integer within the 32-bit bound.
+ */
+bool ParseExtent(const std::string& text, uint32_t& value)
+{
+	if (text.empty())
+		return false;
+	for (const char ch : text)
+	{
+		if (ch < '0' || ch > '9')
+			return false;
+	}
+
+	uint32_t parsed = 0;
+	const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
+	if (result.ec != std::errc{} || result.ptr != text.data() + text.size())
+		return false;
+
+	// 16384 is beyond any current display and still allocatable; the bound exists
+	// to reject a nonsense token, not to describe a device.
+	if (parsed == 0 || parsed > 16384)
+		return false;
+
+	value = parsed;
+	return true;
+}
+
 } // namespace
 
 AppArgs AppArgs::Parse(const std::vector<std::string>& arguments)
@@ -119,6 +155,24 @@ AppArgs AppArgs::Parse(const std::vector<std::string>& arguments)
 		}
 		if (TakeListValue(arguments, index, "--preload", result.preload, result.error))
 		{
+			if (!result.error.empty())
+				break;
+			continue;
+		}
+		std::optional<std::string> sizeText;
+		if (TakeValue(arguments, index, "--width", sizeText, result.error))
+		{
+			if (result.error.empty() && !ParseExtent(*sizeText, result.width))
+				result.error = "Invalid value for --width.";
+			if (!result.error.empty())
+				break;
+			continue;
+		}
+		sizeText.reset();
+		if (TakeValue(arguments, index, "--height", sizeText, result.error))
+		{
+			if (result.error.empty() && !ParseExtent(*sizeText, result.height))
+				result.error = "Invalid value for --height.";
 			if (!result.error.empty())
 				break;
 			continue;

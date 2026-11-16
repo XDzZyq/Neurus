@@ -31,7 +31,6 @@ add_library(neurus_render_passes STATIC
 
 target_link_libraries(neurus_render_passes PUBLIC
 	Vulkan::Vulkan
-	Qt6::Gui
 	glm
 	stb
 	neurus_core
