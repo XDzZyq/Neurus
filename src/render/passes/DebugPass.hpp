@@ -122,6 +122,7 @@ public:
 	 * wireframes with a depth-test toggle per x-ray range. Leaves the target in
 	 * ColorAttachment.
 	 */
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
 	/**

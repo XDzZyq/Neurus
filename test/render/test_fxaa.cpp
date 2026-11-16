@@ -134,7 +134,7 @@ TEST_F(FXAATest, StairPattern_MatchesAnalyticalGradient)
 	PublishFrame(*m_cache, ctx, snapStorage, nullptr, &cfg);
 
 	auto& c = BeginCmd();
-	m_fxaaPass->Record(*c, *m_cache, ctx);
+	RecordPass(*m_fxaaPass, *c, *m_cache, ctx);
 	EndSubmitWait(c);
 
 	auto& out = m_cache->GetAttachment(AttachmentName::FXAAOutput, e);

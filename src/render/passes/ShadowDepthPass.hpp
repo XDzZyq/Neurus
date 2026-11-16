@@ -67,6 +67,7 @@ public:
 	ShadowDepthPass(ShadowDepthPass&&) noexcept = default;
 	ShadowDepthPass& operator=(ShadowDepthPass&&) noexcept = default;
 
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& /*cache*/, const RenderContext& ctx) override;
 
 	/// Declares the ShadowDepth bundle write; the per-light maps are addressed
@@ -78,6 +79,17 @@ public:
 
 	/// @brief The per-light shadow bundle, a logical ordering token.
 	std::vector<ShaderPort> DeclaredOutputs() const override;
+
+	/// @brief The face VP SSBO set, written by the graph.
+	DescriptorSet* GraphDescriptorSet(uint32_t frameIndex) override
+	{
+		(void)frameIndex;
+		return p_ssboSet.get();
+	}
+
+	/// @brief The face VP matrices at binding 0.
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
 
 	// --- Accessors ---
 	uint32_t Resolution() const { return p_resolution; }

@@ -67,7 +67,18 @@ public:
 	 * @param cache           Render cache for MeshGPU and attachment lookups.
 	 * @param ctx             Per-frame context (scene, camera, extent).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
+
+	/// @brief The camera set 0, written by the graph with the shared camera UBO.
+	DescriptorSet* GraphDescriptorSet(uint32_t frameIndex) override
+	{
+		(void)frameIndex;
+		return &p_cameraDescriptorSet;
+	}
+
+	/// @brief The shared camera UBO at binding 0.
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
 
 	/**
 	 * @brief Compiles the per-mesh G-Buffer pipeline for @p shader if it is missing.

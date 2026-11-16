@@ -60,6 +60,7 @@ public:
 	~IBLPass();
 
 	/** @brief No-op: IBL generation is one-shot via Generate(), not per-frame. */
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmd, RenderCache& cache, const RenderContext& ctx) override
 	{
 		(void)cmd;

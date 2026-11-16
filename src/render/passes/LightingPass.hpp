@@ -87,7 +87,7 @@ public:
 	 * @param ctx             Per-frame context (camera position, view matrix,
 	 *                        invProjView, render extent, frame index).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the G-Buffer, SSAO and ShadowIntensity reads and the HDRColor
 	/// write. (IBL cubemaps are not modeled as bindings here.)
@@ -99,6 +99,14 @@ public:
 	/// @brief IBL cubemaps, which are produced outside this graph.
 	std::vector<std::string> ExternalInputPorts() const override;
 
+	/// @brief Light SSBOs, written by the graph into bindings 5, 6 and 11.
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
+
+	/// @brief IBL cubemaps (bindings 8 and 9), resolved from the environment.
+	void CollectGraphExternalImages(RenderCache& cache, const RenderContext& ctx,
+	                                std::vector<GraphExternalImage>& out) const override;
+
 private:
 	/// @brief Delegating constructor that receives the already-loaded shader.
 	LightingPass(const vk::raii::Device& device,
@@ -109,15 +117,6 @@ private:
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
-
-	/**
-	 * @brief Writes all descriptors (image + buffer) into the specified set.
-	 *
-	 * Light SSBOs are read from the cache at binding time, not stored locally.
-	 *
-	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
-	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
 	// (Pipelines inherited from Pass - p_pipelines[0])
 

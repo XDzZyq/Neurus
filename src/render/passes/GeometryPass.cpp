@@ -236,45 +236,53 @@ bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRe
 // Record
 // ---------------------------------------------------------------------------
 
-PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 {
 	PassStats stats{};
 
-	const RenderFrameSnapshot& frame = ctx.Frame();
+	const RenderFrameSnapshot& snapshot = frame.ctx.Frame();
 
-	const vk::Extent2D renderExtent{ctx.width, ctx.height};
+	const vk::Extent2D renderExtent{frame.ctx.width, frame.ctx.height};
 
-	// Point set 0 at the cache's shared camera UBO. Bailing out when no frame
-	// has published a camera yet keeps the descriptor from naming an unwritten
-	// UBO.
-	const CameraGPU& camera = cache.GetCameraGPU();
+	Image* gPosition          = frame.resources.Output("gPosition");
+	Image* gNormal            = frame.resources.Output("gNormal");
+	Image* gAlbedo            = frame.resources.Output("gAlbedo");
+	Image* gMetallicRoughness = frame.resources.Output("gMetallicRoughness");
+	Image* gObjectID          = frame.resources.Output("gObjectID");
+	Image* depth              = frame.resources.Output("depth");
+	if (!gPosition || !gNormal || !gAlbedo || !gMetallicRoughness || !gObjectID || !depth)
+	{
+		NEURUS_ERR("[GeometryPass] graph did not provide the G-Buffer output set");
+		return stats;
+	}
+
+	// The graph writes the camera UBO into set 0 before this call. Bailing out
+	// when no frame has published a camera keeps a draw from reading an
+	// unwritten buffer.
+	const CameraGPU& camera = frame.cache.GetCameraGPU();
 	if (!camera.IsValid())
 	{
 		return stats;
 	}
-	p_cameraDescriptorSet.WriteBuffer(0, camera.GetDescriptorInfo(),
-	                                  vk::DescriptorType::eUniformBuffer);
 
-	const std::array<AttachmentName, 5> gBufferColorAttachments = {
-		AttachmentName::Position,
-		AttachmentName::Normal,
-		AttachmentName::Albedo,
-		AttachmentName::MetallicRoughness,
-		AttachmentName::IDBuffer,
+	const std::array<Image*, 5> gBufferColorAttachments = {
+		gPosition,
+		gNormal,
+		gAlbedo,
+		gMetallicRoughness,
+		gObjectID,
 	};
 
 	std::vector<vk::ImageView> colorViews;
 	colorViews.reserve(5);
-	for (const auto& attName : gBufferColorAttachments)
+	for (Image* attachment : gBufferColorAttachments)
 	{
-		auto& att = cache.GetAttachment(attName, renderExtent);
-		Barrier::Transition(cmdBuf, att, ImageState::ColorAttachment);
-		colorViews.push_back(*att.ImageViewHandle());
+		Barrier::Transition(cmdBuf, *attachment, ImageState::ColorAttachment);
+		colorViews.push_back(*attachment->ImageViewHandle());
 	}
 
-	auto& depthAtt = cache.GetAttachment(AttachmentName::Depth, renderExtent);
-	Barrier::Transition(cmdBuf, depthAtt, ImageState::DepthAttachment);
-	vk::ImageView depthView = *depthAtt.ImageViewHandle();
+	Barrier::Transition(cmdBuf, *depth, ImageState::DepthAttachment);
+	vk::ImageView depthView = *depth->ImageViewHandle();
 
 	const auto clearValues = Pass::PresetClearValues(Pass::PassType::G_BUFFER);
 
@@ -289,14 +297,14 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	const vk::Rect2D scissor({0, 0}, renderExtent);
 	cmdBuf.setScissor(0, scissor);
 
-	if (frame.HasScene())
+	if (snapshot.HasScene())
 	{
-		for (const auto& inst : frame.meshes)
+		for (const auto& inst : snapshot.meshes)
 		{
 			if (!inst.hasGeometry) continue;
 			if (!inst.visibleInViewport || !inst.rendered) continue;
 
-			const MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
+			const MeshGPU* gpuPtr = frame.cache.GetMeshGPU(inst.objectId);
 			if (!gpuPtr)
 			{
 				NEURUS_ERR("[GeometryPass] GetMeshGPU returned nullptr for objectId=" << inst.objectId);
@@ -316,7 +324,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 				// Editor may be mutating. A miss means the shader has not
 				// compiled, and the mesh draws with the pass default.
 				Pipeline* customPipeline =
-				    cache.GetPipelineCache().GetPipeline(shaderId, version);
+				    frame.cache.GetPipelineCache().GetPipeline(shaderId, version);
 				if (!customPipeline)
 				{
 					if (p_reportedMissingPipelines.insert(shaderId).second)
@@ -456,26 +464,26 @@ void GeometryPass::EndPass(vk::CommandBuffer cmdBuf)
 
 PassIO GeometryPass::GetIO() const
 {
-	// GeometryPass is a rasterization pass writing the G-Buffer MRT + depth.
-	// It has no image reads, and binding metadata is unused because the pass
-	// self-manages its attachments; only the resource identities drive the
-	// RenderGraph edges.
 	PassIO io;
-	io.name  = "GeometryPass";
-	io.writes = {
-		{AttachmentName::Position},
-		{AttachmentName::Normal},
-		{AttachmentName::Albedo},
-		{AttachmentName::MetallicRoughness},
-		{AttachmentName::IDBuffer},
-		{AttachmentName::Depth},
-	};
+	io.name = "GeometryPass";
 	return io;
 }
 
 std::vector<const ShaderData*> GeometryPass::GetShaders() const
 {
 	return {p_shader.get()};
+}
+
+void GeometryPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+                                        std::vector<GraphBufferBinding>& out) const
+{
+	(void)frameIndex;
+	const CameraGPU& camera = cache.GetCameraGPU();
+	if (camera.IsValid())
+	{
+		out.push_back({0, camera.GetDescriptorInfo(),
+		               vk::DescriptorType::eUniformBuffer});
+	}
 }
 
 std::vector<ShaderPort> GeometryPass::DeclaredOutputs() const

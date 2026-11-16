@@ -101,6 +101,7 @@ public:
 	 * rendering with LOAD_OP_LOAD and no depth attachment, draws segments then
 	 * points, and leaves the target in ColorAttachment.
 	 */
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
 	/**

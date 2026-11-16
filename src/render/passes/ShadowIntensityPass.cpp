@@ -261,16 +261,15 @@ vk::raii::Sampler ShadowIntensityPass::CreateSunShadowSampler(
 // Descriptor writes
 // ---------------------------------------------------------------------------
 
-void ShadowIntensityPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
+void ShadowIntensityPass::WriteDescriptors(uint32_t setIndex, RenderCache& cache,
+                                          Image& position, Image& shadowIntensity)
 {
 	DescriptorSet& dstSet = p_descriptorSets[setIndex];
 
 	{
-		const auto& posAtt = cache.GetAttachment(AttachmentName::Position, extent);
-
 		vk::DescriptorImageInfo imageInfo(
 			*p_sampler,                              // sampler
-			*posAtt.ImageViewHandle(),               // imageView
+			*position.ImageViewHandle(),             // imageView
 			vk::ImageLayout::eShaderReadOnlyOptimal  // imageLayout
 		);
 
@@ -294,8 +293,6 @@ void ShadowIntensityPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D exten
 	}
 
 	{
-		auto& shadowIntensity = cache.GetShadowIntensityArray(extent);
-
 		vk::DescriptorImageInfo imageInfo(
 			nullptr,                               // sampler (not used for storage images)
 			*shadowIntensity.ImageViewHandle(),    // imageView (2D_ARRAY)
@@ -311,16 +308,15 @@ void ShadowIntensityPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D exten
 // Sun descriptor writes (2D shadow map at binding 1)
 // ---------------------------------------------------------------------------
 
-void ShadowIntensityPass::WriteSunDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
+void ShadowIntensityPass::WriteSunDescriptors(uint32_t setIndex, RenderCache& cache,
+                                             Image& position, Image& shadowIntensity)
 {
 	DescriptorSet& dstSet = p_sunDescSets[setIndex];
 
 	{
-		const auto& posAtt = cache.GetAttachment(AttachmentName::Position, extent);
-
 		vk::DescriptorImageInfo imageInfo(
 			*p_sampler,                              // sampler (nearest, clamp-to-edge)
-			*posAtt.ImageViewHandle(),               // imageView
+			*position.ImageViewHandle(),             // imageView
 			vk::ImageLayout::eShaderReadOnlyOptimal  // imageLayout
 		);
 
@@ -344,8 +340,6 @@ void ShadowIntensityPass::WriteSunDescriptors(uint32_t setIndex, vk::Extent2D ex
 	}
 
 	{
-		auto& shadowIntensity = cache.GetShadowIntensityArray(extent);
-
 		vk::DescriptorImageInfo imageInfo(
 			nullptr,                               // sampler (not used for storage images)
 			*shadowIntensity.ImageViewHandle(),    // imageView (2D_ARRAY)
@@ -361,17 +355,17 @@ void ShadowIntensityPass::WriteSunDescriptors(uint32_t setIndex, vk::Extent2D ex
 // Record
 // ---------------------------------------------------------------------------
 
-PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 {
 	PassStats stats{};
 
-	const vk::Extent2D renderExtent{ctx.width, ctx.height};
-	const uint32_t    frameIndex   = ctx.frameIndex;
+	const vk::Extent2D renderExtent{frame.ctx.width, frame.ctx.height};
+	const uint32_t    frameIndex   = frame.frameIndex;
 
-	const RenderFrameSnapshot& frame = ctx.Frame();
+	const RenderFrameSnapshot& snapshot = frame.ctx.Frame();
 
 	// A frame recorded before a scene exists is legal.
-	if (!frame.HasScene())
+	if (!snapshot.HasScene())
 	{
 		NEURUS_LOG("[ShadowIntensityPass] No scene, skipping");
 		return stats;
@@ -379,21 +373,22 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 	// Settings() is never null and falls back to RenderConfig's own in-class
 	// defaults, so there is no literal here to drift from the declaration.
-	const RenderConfig& settings = frame.Settings();
+	const RenderConfig& settings = snapshot.Settings();
 	const float shadowBias = settings.r_shadow_bias;
 
 	// One alpha mode for both the point and the sun path below.
 	const ShadowAlphaMode alphaMode = static_cast<ShadowAlphaMode>(settings.r_sampling_mode);
 
+	Image* position        = frame.resources.Input("gPosition");
+	Image* shadowIntensity = frame.resources.Output("outputShadow");
+	if (!position || !shadowIntensity)
 	{
-		auto& posAtt = cache.GetAttachment(AttachmentName::Position, renderExtent);
-		Barrier::Transition(cmdBuf, posAtt, ImageState::ColorShaderRead);
+		NEURUS_ERR("[ShadowIntensityPass] graph did not provide gPosition/outputShadow");
+		return stats;
 	}
 
-	{
-		auto& shadowArray = cache.GetShadowIntensityArray(renderExtent);
-		Barrier::Transition(cmdBuf, shadowArray, ImageState::ShaderWrite);
-	}
+	Barrier::Transition(cmdBuf, *position,        ImageState::ColorShaderRead);
+	Barrier::Transition(cmdBuf, *shadowIntensity, ImageState::ShaderWrite);
 
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 
@@ -402,7 +397,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	// from light N-1. Otherwise the update would invalidate the command buffer
 	// (VUID-00059 chain).
 	uint32_t lightIndex = 0;
-	for (const LightSnapshot& ls : frame.lights)
+	for (const LightSnapshot& ls : snapshot.lights)
 	{
 		const int uid = ls.objectId;
 
@@ -415,7 +410,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		p_currentLightUID = uid;
 
 		{
-			LightGPU* lgpu = cache.GetLightGPU(uid);
+			LightGPU* lgpu = frame.cache.GetLightGPU(uid);
 			if (!lgpu || !lgpu->shadowDepthMap) continue;
 			auto& shadowCube = *lgpu->shadowDepthMap;
 			Barrier::Transition(cmdBuf, shadowCube, ImageState::DepthShaderRead);
@@ -424,12 +419,12 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		// Lights past MAX_SHADOW_LAYERS have no layer (UpdateLighting stamps their
 		// shadowMapIndex = -1). Record nothing for them; lightIndex must not
 		// advance, so the next recorded light reuses the free descriptor slot.
-		const std::optional<uint32_t> layer = cache.GetShadowIntensityLayer(uid, renderExtent);
+		const std::optional<uint32_t> layer = frame.cache.GetShadowIntensityLayer(uid, renderExtent);
 		if (!layer) continue;
 
 		const uint32_t setIdx = frameIndex * kSetsPerFrameSlot + (lightIndex % kSetsPerFrameSlot);
 
-		WriteDescriptors(setIdx, renderExtent, cache);
+		WriteDescriptors(setIdx, frame.cache, *position, *shadowIntensity);
 
 		cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
 		                          *p_pipelines[0].pipelineLayout,
@@ -449,12 +444,12 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 				: Light::point_shadow_far;
 			pc.bias        = shadowBias;
 			pc.layerIndex  = static_cast<int32_t>(*layer);
-			pc.jitterX     = ctx.jitter.x;
-			pc.jitterY     = ctx.jitter.y;
-			pc.jitterZ     = ctx.jitter.z;
+			pc.jitterX     = frame.ctx.jitter.x;
+			pc.jitterY     = frame.ctx.jitter.y;
+			pc.jitterZ     = frame.ctx.jitter.z;
 			pc.lightRadius = ls.radius;
-			pc.alpha       = ComputeShadowAlpha(alphaMode, ctx.iteration);
-			pc.frameCount  = static_cast<int32_t>(ctx.iteration);
+			pc.alpha       = ComputeShadowAlpha(alphaMode, frame.ctx.iteration);
+			pc.frameCount  = static_cast<int32_t>(frame.ctx.iteration);
 
 			cmdBuf.pushConstants<ShadowEvalPushConstants>(
 				*p_pipelines[0].pipelineLayout,
@@ -473,7 +468,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 	// Sun (directional) lights use the second pipeline and its own sets.
 	uint32_t sunLightIndex = 0;
-	for (const LightSnapshot& ls : frame.lights)
+	for (const LightSnapshot& ls : snapshot.lights)
 	{
 		const int uid = ls.objectId;
 		if (!ls.useShadow) continue;
@@ -483,7 +478,7 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 		p_currentLightUID = uid;
 
 		{
-			LightGPU* slgpu = cache.GetLightGPU(uid);
+			LightGPU* slgpu = frame.cache.GetLightGPU(uid);
 			if (!slgpu || !slgpu->shadowDepthMap) continue;
 			auto& sunShadowMap = *slgpu->shadowDepthMap;
 			Barrier::Transition(cmdBuf, sunShadowMap, ImageState::DepthShaderRead);
@@ -491,12 +486,12 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 		// Same overflow rule as the point loop: a sun past MAX_SHADOW_LAYERS has
 		// no layer, so nothing is recorded and sunLightIndex stays put.
-		const std::optional<uint32_t> layer = cache.GetShadowIntensityLayer(uid, renderExtent);
+		const std::optional<uint32_t> layer = frame.cache.GetShadowIntensityLayer(uid, renderExtent);
 		if (!layer) continue;
 
 		const uint32_t setIdx = frameIndex * kSetsPerFrameSlot + (sunLightIndex % kSetsPerFrameSlot);
 
-		WriteSunDescriptors(setIdx, renderExtent, cache);
+		WriteSunDescriptors(setIdx, frame.cache, *position, *shadowIntensity);
 
 		cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[1].pipeline);
 		cmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute,
@@ -522,12 +517,12 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 
 			// Centre the ortho projection on the camera target, using the camera
 			// the frame renders through (the editor injects it into the frame).
-			if (!frame.HasCamera())
+			if (!snapshot.HasCamera())
 			{
 				NEURUS_LOG("[ShadowIntensityPass] No camera in RenderContext, skipping sun light");
 				continue;
 			}
-			const glm::vec3 center = frame.camera.target;
+			const glm::vec3 center = snapshot.camera.target;
 			const glm::vec3 lightEye = center - lightDir * Light::sun_depth_range;
 			const glm::mat4 lightView = glm::lookAt(lightEye, center, up);
 			const glm::mat4 lightViewProj = lightProj * lightView;
@@ -536,12 +531,12 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 			pc.lightViewProj = lightViewProj;
 			pc.bias          = shadowBias;
 			pc.layerIndex    = static_cast<int32_t>(*layer);
-			pc.jitterX       = ctx.jitter.x;
-			pc.jitterY       = ctx.jitter.y;
-			pc.jitterZ       = ctx.jitter.z;
+			pc.jitterX       = frame.ctx.jitter.x;
+			pc.jitterY       = frame.ctx.jitter.y;
+			pc.jitterZ       = frame.ctx.jitter.z;
 			pc.lightRadius   = ls.radius / (2.0f * Light::sun_shadow_field);
-			pc.alpha         = ComputeShadowAlpha(alphaMode, ctx.iteration);
-			pc.frameCount    = static_cast<int32_t>(ctx.iteration);
+			pc.alpha         = ComputeShadowAlpha(alphaMode, frame.ctx.iteration);
+			pc.frameCount    = static_cast<int32_t>(frame.ctx.iteration);
 
 			cmdBuf.pushConstants<SunShadowEvalPushConstants>(
 				*p_pipelines[1].pipelineLayout,
@@ -560,28 +555,15 @@ PassStats ShadowIntensityPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cac
 	}
 
 	// ShadowIntensity is left in ColorShaderRead for the lighting pass.
-	{
-		auto& shadowArray = cache.GetShadowIntensityArray(renderExtent);
-		Barrier::Transition(cmdBuf, shadowArray, ImageState::ColorShaderRead);
-	}
+	Barrier::Transition(cmdBuf, *shadowIntensity, ImageState::ColorShaderRead);
 
 	return stats;
 }
 
 PassIO ShadowIntensityPass::GetIO() const
 {
-	// Reads the G-Buffer Position and the shadow depth bundle; writes the
-	// unified shadow-intensity array. Per-light maps and layers are addressed
-	// internally, so binding metadata is indicative.
 	PassIO io;
-	io.name  = "ShadowIntensityPass";
-	io.reads = {
-		{ AttachmentName::Position },
-		{ AttachmentName::ShadowDepth },
-	};
-	io.writes = {
-		{ AttachmentName::ShadowIntensity },
-	};
+	io.name = "ShadowIntensityPass";
 	return io;
 }
 

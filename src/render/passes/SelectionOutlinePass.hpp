@@ -65,6 +65,7 @@ public:
 	 * @param cache   Render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index, activeObjectId).
 	 */
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
 	/**

@@ -124,7 +124,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, frameSnapshot, cb.scene.get());
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -133,7 +133,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		m_ssaoPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_ssaoPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

@@ -69,22 +69,13 @@ public:
 	 * @param cache   Mutable render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index, config).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the HDRColor read and the ComposedOutput write.
 	PassIO GetIO() const override;
 
 	/// @brief The tone-map and gamma compute shader.
 	std::vector<const ShaderData*> GetShaders() const override;
-
-	/**
-	 * @brief Writes both descriptors (HDRColor, ComposedOutput) into the
-	 *        specified set.
-	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
-	 * @param extent    Render area dimensions.
-	 * @param cache     Mutable render cache for attachment access.
-	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 
 private:
 	/// @brief Delegating constructor that receives the already-loaded shader.

@@ -266,7 +266,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snapshot, &scene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -280,7 +280,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 
 	{
 		auto& cmd = BeginCmd();
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

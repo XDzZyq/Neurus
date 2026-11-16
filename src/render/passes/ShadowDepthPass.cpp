@@ -496,17 +496,26 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 
 PassIO ShadowDepthPass::GetIO() const
 {
-	// The per-light depth maps are addressed internally; the graph models the
-	// whole set as one ShadowDepth write token. No image reads.
 	PassIO io;
-	io.name   = "ShadowDepthPass";
-	io.writes = { { AttachmentName::ShadowDepth } };
+	io.name = "ShadowDepthPass";
 	return io;
 }
 
 std::vector<const ShaderData*> ShadowDepthPass::GetShaders() const
 {
 	return {p_multiviewShader.get(), p_sunShader.get()};
+}
+
+void ShadowDepthPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+                                          std::vector<GraphBufferBinding>& out) const
+{
+	(void)cache;
+	(void)frameIndex;
+	if (p_faceVPs)
+	{
+		out.push_back({0, p_faceVPs->GetDescriptorInfo(),
+		               vk::DescriptorType::eStorageBuffer});
+	}
 }
 
 std::vector<ShaderPort> ShadowDepthPass::DeclaredOutputs() const

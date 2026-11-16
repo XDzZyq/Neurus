@@ -104,6 +104,10 @@ add_library(neurus_render STATIC
 	render_graph/DescriptorLayout.hpp
 	render_graph/ResourceTag.hpp
 	render_graph/ResourceTag.cpp
+	render_graph/PassResources.hpp
+	render_graph/PassResources.cpp
+	render_graph/PassBindings.hpp
+	render_graph/PassBindings.cpp
 	render_graph/PassRegistry.hpp
 	render_graph/PassRegistry.cpp
 	render_graph/RenderGraph.hpp

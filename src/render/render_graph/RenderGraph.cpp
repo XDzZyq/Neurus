@@ -5,7 +5,10 @@
 
 #include "RenderGraph.hpp"
 
+#include "../DescriptorManager.hpp"
+#include "../Image.hpp"
 #include "../RenderContext.hpp"
+#include "ResourceTag.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -55,7 +58,8 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 }
 
 RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
-                                         std::vector<std::string> externalInputs)
+                                         std::vector<std::string> externalInputs,
+                                         std::string id)
 {
 	if (!pass)
 		throw std::runtime_error("RenderGraph::AddPass: pass must be non-null");
@@ -65,9 +69,10 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
 	entry.io             = pass->GetIO();
 	entry.ports          = std::move(ports);
 	entry.externalInputs = std::move(externalInputs);
-	entry.legacyExternal = entry.ports.ports.empty();
 
 	std::string nodeName = entry.io.name.empty() ? std::string("Pass") : entry.io.name;
+	entry.id             = id.empty() ? nodeName : std::move(id);
+	entry.legacyExternal = entry.ports.ports.empty();
 	auto* node = m_graph.AddNode(std::move(nodeName), std::move(entry));
 
 	if (node->data.legacyExternal)
@@ -160,6 +165,27 @@ void RenderGraph::Compile()
 		}
 	}
 
+	// --- Binding plan: one image descriptor per connected input and per image output ---
+	for (const auto& node : m_graph.nodes)
+	{
+		node->data.imageBindings.clear();
+		if (node->data.legacyExternal)
+			continue;
+
+		const auto connected = [&node](const std::string_view port)
+		{
+			for (const auto& input : node->inputs)
+			{
+				if (input->name == port && input->source)
+					return true;
+			}
+			return false;
+		};
+
+		node->data.imageBindings =
+			BuildImageBindings(node->data.ports, *node->data.pass, connected);
+	}
+
 	m_compiled   = m_graph.TopologicalSort();
 	m_isCompiled = true;
 }
@@ -185,10 +211,56 @@ void RenderGraph::Execute(vk::CommandBuffer cmd,
 	{
 		const std::string& name = node->data.io.name;
 
+		// --- Resolve this node's images from the planned resource cache ---
+		const vk::Extent2D renderExtent{ctx.width, ctx.height};
+		PassResources resources;
+
+		for (const auto& input : node->inputs)
+		{
+			if (node->data.legacyExternal || !input->source)
+				continue;
+
+			const std::string key =
+				ResourceKey(input->source->owner->data.id, input->source->name);
+			Image* image = cache.FindPlannedResource(key);
+			if (!image)
+			{
+				const GraphOutputTag* tag = cache.GetResourceTag(key);
+				if (tag && IsLogicalTag(*tag))
+					continue;
+				throw std::runtime_error(
+					"RenderGraph::Execute: missing resource '" + key + "'");
+			}
+			resources.SetInput(input->name, image);
+		}
+
+		for (const auto& output : node->outputs)
+		{
+			if (node->data.legacyExternal)
+				continue;
+
+			const std::string key = ResourceKey(node->data.id, output->name);
+			const GraphOutputTag* tag = cache.GetResourceTag(key);
+			if (!tag)
+				continue;  // An untagged output is unused and carries no image.
+
+			if (IsLogicalTag(*tag))
+				continue;
+
+			resources.SetOutput(output->name, &cache.GetResource(key, renderExtent));
+		}
+
+		if (!node->data.legacyExternal)
+		{
+			WritePassBindings(*node->data.pass, cache, ctx, resources,
+			                  node->data.imageBindings);
+		}
+
 		profiler.BeginPass(cmd, name);
 		const auto cpuBegin = std::chrono::steady_clock::now();
 
-		const PassStats stats = node->data.pass->Record(cmd, cache, ctx);
+		const PassFrame frame{cache, ctx, std::move(resources), ctx.frameIndex};
+		const PassStats stats = node->data.pass->Record(cmd, frame);
 
 		const auto cpuEnd = std::chrono::steady_clock::now();
 		profiler.EndPass(cmd);

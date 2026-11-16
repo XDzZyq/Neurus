@@ -59,11 +59,27 @@ public:
 	 * @brief Writes all descriptor bindings into the specified set.
 	 *
 	 * Called every frame before dispatch; one set per in-flight frame avoids
-	 * updating a set while the GPU is still reading it.
+	 * updating a set while the GPU is still reading it. Scene passes leave this
+	 * empty and let the graph write their bindings; overlay passes still
+	 * implement it.
 	 *
 	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 */
-	virtual void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) = 0;
+	virtual void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
+	{
+		(void)setIndex;
+		(void)extent;
+		(void)cache;
+	}
+
+	/// @brief Descriptor set for this frame, written by the graph.
+	DescriptorSet* GraphDescriptorSet(uint32_t frameIndex) override
+	{
+		return &p_descriptorSets[frameIndex % p_descriptorSets.size()];
+	}
+
+	/// @brief The shared sampler used by combined-image-sampler bindings.
+	vk::Sampler GraphSampler() const override { return *p_sampler; }
 
 protected:
 	// -------------------------------------------------------------------

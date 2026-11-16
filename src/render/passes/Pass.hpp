@@ -13,6 +13,7 @@
 #include "../RenderCache.hpp"
 #include "../RenderContext.hpp"
 #include "asset/graph/PassPorts.hpp"
+#include "render_graph/PassResources.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -23,7 +24,39 @@
 
 namespace neurus {
 
+class DescriptorSet;
 class ShaderData;
+
+/**
+ * @brief One buffer descriptor the graph writes for a pass.
+ */
+struct GraphBufferBinding
+{
+	uint32_t                 binding = 0;
+	vk::DescriptorBufferInfo info;
+	vk::DescriptorType       type = vk::DescriptorType::eUniformBuffer;
+};
+
+/**
+ * @brief One image descriptor the pass resolves outside the graph (IBL cubemaps).
+ */
+struct GraphExternalImage
+{
+	uint32_t                binding = 0;
+	vk::DescriptorImageInfo info;
+	vk::DescriptorType      type = vk::DescriptorType::eCombinedImageSampler;
+};
+
+/**
+ * @brief Everything one node's Record() needs from the graph.
+ */
+struct PassFrame
+{
+	RenderCache&         cache;
+	const RenderContext& ctx;
+	PassResources        resources;
+	uint32_t             frameIndex = 0;
+};
 
 /**
  * @brief One declared image resource used by a pass, plus its optional
@@ -116,7 +149,58 @@ public:
 	 * @param ctx      Per-frame context (attachments, viewport, frame index, etc.).
 	 * @return Draw/dispatch counts recorded by this pass (for profiling).
 	 */
-	virtual PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) = 0;
+	virtual PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+	{
+		(void)cmdBuf;
+		(void)cache;
+		(void)ctx;
+		return {};
+	}
+
+	/**
+	 * @brief Records with the graph-resolved resources for this node.
+	 *
+	 * The default forwards to the legacy signature, which is what the overlay
+	 * passes still implement. A scene pass overrides this form and reads its
+	 * images from @c frame.resources.
+	 */
+	virtual PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
+	{
+		return Record(cmdBuf, frame.cache, frame.ctx);
+	}
+
+	// --- Graph binding participation ---
+
+	/// @brief Descriptor set the graph writes this node's bindings into.
+	virtual DescriptorSet* GraphDescriptorSet(uint32_t frameIndex)
+	{
+		(void)frameIndex;
+		return nullptr;
+	}
+
+	/// @brief Sampler the graph uses for combined-image-sampler bindings.
+	virtual vk::Sampler GraphSampler() const { return {}; }
+
+	/// @brief Bindings this pass writes itself (the per-light shadow sets).
+	virtual std::vector<uint32_t> SelfManagedBindings() const { return {}; }
+
+	/// @brief Buffers the graph writes into this pass's descriptor set.
+	virtual void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                                 std::vector<GraphBufferBinding>& out) const
+	{
+		(void)cache;
+		(void)frameIndex;
+		(void)out;
+	}
+
+	/// @brief Images the pass resolves outside the graph (IBL cubemaps).
+	virtual void CollectGraphExternalImages(RenderCache& cache, const RenderContext& ctx,
+	                                        std::vector<GraphExternalImage>& out) const
+	{
+		(void)cache;
+		(void)ctx;
+		(void)out;
+	}
 
 	/**
 	 * @brief Declares this pass's read/write attachment dependencies.

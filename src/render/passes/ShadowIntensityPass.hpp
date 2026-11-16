@@ -25,6 +25,7 @@ namespace neurus {
 // --- Forward declarations ---
 class RenderCache;
 class ComputeShader;
+class Image;
 
 /**
  * @brief Per-pixel shadow intensity compute pass.
@@ -69,7 +70,7 @@ public:
 	 * @param cache   Render cache for attachment/shadow map access.
 	 * @param ctx     Per-frame context (render extent, frame index, scene).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the Position + ShadowDepth reads and the ShadowIntensity write;
 	/// per-light layers are addressed internally.
@@ -83,7 +84,8 @@ public:
 	 *
 	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
+	void WriteDescriptors(uint32_t setIndex, RenderCache& cache,
+	                      Image& position, Image& shadowIntensity);
 
 private:
 	/// @brief Delegating constructor that receives the already-loaded shaders.
@@ -92,6 +94,9 @@ private:
 	                    uint32_t numSets,
 	                    std::unique_ptr<ComputeShader> pointLightShader,
 	                    std::unique_ptr<ComputeShader> sunLightShader);
+
+	/// @brief Bindings written by the per-light sets, not by the graph.
+	std::vector<uint32_t> SelfManagedBindings() const override { return {0, 1, 2}; }
 
 	/** @brief Builds both the point-light cubemap and sun-light 2D pipelines. */
 	void BuildPipeline(const vk::raii::Device& device,
@@ -114,7 +119,8 @@ private:
 	 * @param extent    Render extent for attachment lookup.
 	 * @param cache     Render cache for shadow map / output access.
 	 */
-	void WriteSunDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache);
+	void WriteSunDescriptors(uint32_t setIndex, RenderCache& cache,
+	                         Image& position, Image& shadowIntensity);
 
 	// (Pipelines inherited from Pass - p_pipelines[0]=cubemap, p_pipelines[1]=sun)
 

@@ -16,6 +16,8 @@
 #include "../passes/Pass.hpp"
 #include "asset/graph/PassPorts.hpp"
 #include "core/Graph.hpp"
+#include "PassBindings.hpp"
+#include "PassResources.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -42,11 +44,15 @@ public:
 	 */
 	struct PassEntry
 	{
+		std::string              id;               ///< Document node id, for resource keys.
 		Pass*                    pass = nullptr;   ///< Provides Record().
 		PassIO                   io;               ///< Cached I/O declaration.
 		PassPorts                ports;            ///< Ports from the shader.
 		std::vector<std::string> externalInputs;   ///< Declared out-of-graph inputs.
 		bool                     legacyExternal = false; ///< PassIO-only overlay node.
+
+		/// @brief Image descriptors the graph writes before Record().
+		std::vector<GraphImageBinding> imageBindings;
 	};
 
 	using GraphT      = Graph<ShaderPort, PassEntry>;
@@ -84,7 +90,8 @@ public:
 	 * @param externalInputs  Inputs the pass resolves outside the graph.
 	 */
 	NodeT* AddPass(Pass* pass, PassPorts ports,
-	               std::vector<std::string> externalInputs = {});
+	               std::vector<std::string> externalInputs = {},
+	               std::string id = {});
 
 	/**
 	 * @brief Wires one named producer port to one named consumer port.

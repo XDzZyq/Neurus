@@ -736,7 +736,8 @@ bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool 
 		}
 
 		auto* node = candidate.AddPass(pass, m_passRegistry->Ports(nodeSpec.pass),
-		                               m_passRegistry->ExternalInputs(nodeSpec.pass));
+		                               m_passRegistry->ExternalInputs(nodeSpec.pass),
+		                               nodeSpec.id);
 		nodes.emplace(nodeSpec.id, node);
 	}
 

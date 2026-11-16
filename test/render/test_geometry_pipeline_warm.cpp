@@ -129,7 +129,7 @@ protected:
 
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, frame, &scene);
-		PassStats stats = m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		PassStats stats = RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 		return stats;
 	}

@@ -85,42 +85,28 @@ void FXAAPass::BuildPipeline(const vk::raii::Device& device, const std::string& 
 			.BuildComputePipeline(device));
 }
 
-void FXAAPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
-{
-	DescriptorSet& ds = p_descriptorSets[setIndex];
 
-	// Use bilinear sampler for sub-pixel texture() resample (fallback to nearest if unsupported)
-	const auto& in = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
-	vk::DescriptorImageInfo ii(
-		p_hasBilinear ? *p_bilinearSampler : *p_sampler,
-		*in.ImageViewHandle(),
-		vk::ImageLayout::eShaderReadOnlyOptimal);
-	ds.WriteImage(0, ii, vk::DescriptorType::eCombinedImageSampler);
-
-	const auto& out = cache.GetAttachment(AttachmentName::FXAAOutput, extent);
-	vk::DescriptorImageInfo oi(nullptr, *out.ImageViewHandle(), vk::ImageLayout::eGeneral);
-	ds.WriteImage(1, oi, vk::DescriptorType::eStorageImage);
-}
-
-PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 {
 	PassStats stats{};
 
-	const vk::Extent2D extent{ctx.width, ctx.height};
-	const uint32_t fi = ctx.frameIndex;
+	const vk::Extent2D extent{frame.ctx.width, frame.ctx.height};
+	const uint32_t fi = frame.frameIndex;
 
 	// Settings() is never null and resolves to RenderConfig's own in-class
 	// defaults, so the three tuning values below carry no literal of their own.
-	const RenderConfig& cfg = ctx.Frame().Settings();
+	const RenderConfig& cfg = frame.ctx.Frame().Settings();
 
-	WriteDescriptors(fi, extent, cache);
-
+	Image* input  = frame.resources.Input("gInput");
+	Image* output = frame.resources.Output("outputFXAA");
+	if (!input || !output)
 	{
-		auto& in = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
-		Barrier::Transition(cmdBuf, in, ImageState::ColorShaderRead);
-		auto& out = cache.GetAttachment(AttachmentName::FXAAOutput, extent);
-		Barrier::Transition(cmdBuf, out, ImageState::ShaderWrite);
+		NEURUS_ERR("[FXAAPass] graph did not provide gInput/outputFXAA");
+		return stats;
 	}
+
+	Barrier::Transition(cmdBuf, *input, ImageState::ColorShaderRead);
+	Barrier::Transition(cmdBuf, *output, ImageState::ShaderWrite);
 
 	FXAAPushConstants pc = {};
 	pc.rcpWidth       = 1.0f / float(extent.width);
@@ -150,16 +136,8 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 
 PassIO FXAAPass::GetIO() const
 {
-	// Binding metadata is indicative only: FXAAPass still writes its own
-	// descriptors.
 	PassIO io;
-	io.name  = "FXAAPass";
-	io.reads = {
-		{AttachmentName::ComposedOutput, 0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-	};
-	io.writes = {
-		{AttachmentName::FXAAOutput, 1, vk::DescriptorType::eStorageImage, vk::ImageLayout::eGeneral},
-	};
+	io.name = "FXAAPass";
 	return io;
 }
 

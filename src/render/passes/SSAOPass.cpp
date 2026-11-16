@@ -234,80 +234,42 @@ void SSAOPass::BuildPipeline(const vk::raii::Device& device,
 // Descriptor writes
 // ---------------------------------------------------------------------------
 
-void SSAOPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
+void SSAOPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+                                   std::vector<GraphBufferBinding>& out) const
 {
-	DescriptorSet& dstSet = p_descriptorSets[setIndex];
+	(void)cache;
+	(void)frameIndex;
 
-	{
-		const std::array<AttachmentName, 3> gBufferInputs = {
-			AttachmentName::Position,
-			AttachmentName::Normal,
-			AttachmentName::Albedo,
-		};
-
-		for (uint32_t i = 0; i < 3; ++i)
-		{
-			const auto& attachment = cache.GetAttachment(gBufferInputs[i], extent);
-
-			vk::DescriptorImageInfo imageInfo(
-				*p_sampler,                              // sampler
-				*attachment.ImageViewHandle(),           // imageView
-				vk::ImageLayout::eShaderReadOnlyOptimal  // imageLayout
-			);
-
-			dstSet.WriteImage(i, imageInfo,
-			                  vk::DescriptorType::eCombinedImageSampler);
-		}
-	}
-
-	{
-		const auto& ssaoAtt = cache.GetAttachment(AttachmentName::SSAO, extent);
-
-		vk::DescriptorImageInfo imageInfo(
-			nullptr,                              // sampler (not used for storage images)
-			*ssaoAtt.ImageViewHandle(),           // imageView
-			vk::ImageLayout::eGeneral             // imageLayout
-		);
-
-		dstSet.WriteImage(3, imageInfo,
-		                  vk::DescriptorType::eStorageImage);
-	}
-
-	{
-		dstSet.WriteBuffer(4, p_paramsUBO->GetDescriptorInfo(),
-		                   vk::DescriptorType::eUniformBuffer);
-	}
-
-	{
-		dstSet.WriteBuffer(5, p_noiseUBO->GetDescriptorInfo(),
-		                   vk::DescriptorType::eUniformBuffer);
-	}
+	out.push_back({4, p_paramsUBO->GetDescriptorInfo(),
+	               vk::DescriptorType::eUniformBuffer});
+	out.push_back({5, p_noiseUBO->GetDescriptorInfo(),
+	               vk::DescriptorType::eUniformBuffer});
 }
 
 // ---------------------------------------------------------------------------
 // Record
 // ---------------------------------------------------------------------------
 
-PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 {
 	PassStats stats{};
 
-	const vk::Extent2D renderExtent{ctx.width, ctx.height};
-	const uint32_t    frameIndex   = ctx.frameIndex;
+	const vk::Extent2D renderExtent{frame.ctx.width, frame.ctx.height};
+	const uint32_t    frameIndex   = frame.frameIndex;
 
 	{
 		SSAOParamsGpu params{};
 		// The camera comes from the frame snapshot, not the Scene: the editor
 		// publishes whichever camera the frame is rendered through.
-		const RenderFrameSnapshot& frame = ctx.Frame();
-		if (!frame.HasCamera())
+		const RenderFrameSnapshot& snapshot = frame.ctx.Frame();
+		if (!snapshot.HasCamera())
 		{
 			NEURUS_LOG("[SSAOPass] No camera in RenderContext, skipping");
 			return stats;
 		}
-		const glm::mat4 viewProj = frame.camera.projection * frame.camera.view;
-		const glm::mat4 view = frame.camera.view;
-		const glm::vec3 cameraPos = frame.camera.position;
+		const glm::mat4 viewProj = snapshot.camera.projection * snapshot.camera.view;
+		const glm::mat4 view = snapshot.camera.view;
+		const glm::vec3 cameraPos = snapshot.camera.position;
 
 		const float* vp = &viewProj[0][0];
 		for (int i = 0; i < 16; ++i) params.viewProj[i] = vp[i];
@@ -323,24 +285,20 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 		p_paramsUBO->Upload(params);
 	}
 
-	WriteDescriptors(frameIndex, renderExtent, cache);
-
+	Image* gPosition = frame.resources.Input("gPosition");
+	Image* gNormal   = frame.resources.Input("gNormal");
+	Image* gAlpha    = frame.resources.Input("gAlpha");
+	Image* output    = frame.resources.Output("outputSSAO");
+	if (!gPosition || !gNormal || !gAlpha || !output)
 	{
-		const std::array<AttachmentName, 3> gBufferInputs = {
-			AttachmentName::Position,
-			AttachmentName::Normal,
-			AttachmentName::Albedo,
-		};
-
-		for (size_t i = 0; i < 3; ++i)
-		{
-			auto& attachment = cache.GetAttachment(gBufferInputs[i], renderExtent);
-			Barrier::Transition(cmdBuf, attachment, ImageState::ColorShaderRead);
-		}
-
-		auto& ssaoAtt = cache.GetAttachment(AttachmentName::SSAO, renderExtent);
-		Barrier::Transition(cmdBuf, ssaoAtt, ImageState::ShaderWrite);
+		NEURUS_ERR("[SSAOPass] graph did not provide gPosition/gNormal/gAlpha/outputSSAO");
+		return stats;
 	}
+
+	Barrier::Transition(cmdBuf, *gPosition, ImageState::ColorShaderRead);
+	Barrier::Transition(cmdBuf, *gNormal,   ImageState::ColorShaderRead);
+	Barrier::Transition(cmdBuf, *gAlpha,    ImageState::ColorShaderRead);
+	Barrier::Transition(cmdBuf, *output,    ImageState::ShaderWrite);
 
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 
@@ -378,28 +336,15 @@ PassStats SSAOPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 	cmdBuf.dispatch(groupCountX, groupCountY, 1);
 
 	// Return SSAO to ColorShaderRead for the lighting pass.
-	{
-		auto& ssaoAtt = cache.GetAttachment(AttachmentName::SSAO, renderExtent);
-		Barrier::Transition(cmdBuf, ssaoAtt, ImageState::ColorShaderRead);
-	}
+	Barrier::Transition(cmdBuf, *output, ImageState::ColorShaderRead);
 
 	return stats;
 }
 
 PassIO SSAOPass::GetIO() const
 {
-	// Binding metadata is indicative only: SSAOPass still writes its own
-	// descriptors, and the resource names drive the RenderGraph edges.
 	PassIO io;
-	io.name  = "SSAOPass";
-	io.reads = {
-		{AttachmentName::Position, 0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-		{AttachmentName::Normal,   1, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-		{AttachmentName::Albedo,   2, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-	};
-	io.writes = {
-		{AttachmentName::SSAO, 3, vk::DescriptorType::eStorageImage, vk::ImageLayout::eGeneral},
-	};
+	io.name = "SSAOPass";
 	return io;
 }
 

@@ -135,7 +135,7 @@ public:
 	 * @param cache   Render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the G-Buffer reads (Position/Normal/Albedo) and the SSAO write.
 	PassIO GetIO() const override;
@@ -144,10 +144,12 @@ public:
 	std::vector<const ShaderData*> GetShaders() const override;
 
 	/**
-	 * @brief Writes all descriptors (image + buffer) into the specified set.
-	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
+	 * @brief Buffers the graph writes into the descriptor set.
+	 *
+	 * Binding 4 is the params UBO, binding 5 the noise UBO.
 	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
 
 private:
 	/// @brief Delegating constructor that receives the already-loaded shader.

@@ -132,7 +132,7 @@ protected:
 				.width = kRenderWidth, .height = kRenderHeight,
 			};
 			PublishFrame(*m_renderCache, ctx, frameSnapshot, &testScene);
-			m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+			RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 			EndSubmitWait(cmd);
 		}
 	}
@@ -249,7 +249,7 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 			.frameIndex = 0,
 		};
 		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);
 	}
@@ -328,7 +328,7 @@ TEST_F(LightingPassTest, ZeroLights_PartiallyBoundDescriptor)
 			.frameIndex = 0,
 		};
 		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

@@ -18,14 +18,13 @@ public:
 	FXAAPass(const vk::raii::Device& device,
 	         const vk::raii::PhysicalDevice& physicalDevice,
 	         uint32_t numSets);
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the ComposedOutput read and FXAAOutput write.
 	PassIO GetIO() const override;
 
 	/// @brief The FXAA compute shader.
 	std::vector<const ShaderData*> GetShaders() const override;
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 private:
 	/// @brief Delegating constructor that receives the already-loaded shader.
 	FXAAPass(const vk::raii::Device& device,

@@ -172,9 +172,9 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

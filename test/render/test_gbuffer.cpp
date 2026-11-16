@@ -179,7 +179,7 @@ TEST_F(GeometryPassTest, Record_SingleTriangle_NoValidationError)
 			.width = kRenderWidth, .height = kRenderHeight,
 		};
 		PublishFrame(*m_renderCache, ctx, frame, &testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);
 	}
@@ -231,7 +231,7 @@ TEST_F(GeometryPassTest, Record_MultipleItems_NoValidationError)
 			.width = kRenderWidth, .height = kRenderHeight,
 		};
 		PublishFrame(*m_renderCache, ctx, frame, &testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -265,7 +265,7 @@ TEST_F(GeometryPassTest, Record_EmptyRenderItems_NoCrash)
 			.width = kRenderWidth, .height = kRenderHeight,
 		};
 		PublishFrame(*m_renderCache, ctx, frame, &testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
