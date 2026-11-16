@@ -74,6 +74,9 @@ public:
 	/// Declares the HDRColor read and the ComposedOutput write.
 	PassIO GetIO() const override;
 
+	/// @brief The tone-map and gamma compute shader.
+	std::vector<const ShaderData*> GetShaders() const override;
+
 	/**
 	 * @brief Writes both descriptors (HDRColor, ComposedOutput) into the
 	 *        specified set.

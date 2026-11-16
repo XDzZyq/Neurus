@@ -159,4 +159,9 @@ PassIO FXAAPass::GetIO() const
 	return io;
 }
 
+std::vector<const ShaderData*> FXAAPass::GetShaders() const
+{
+	return {p_shader.get()};
+}
+
 } // namespace neurus

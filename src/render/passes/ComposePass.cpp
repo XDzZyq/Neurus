@@ -202,4 +202,9 @@ PassIO ComposePass::GetIO() const
 	return io;
 }
 
+std::vector<const ShaderData*> ComposePass::GetShaders() const
+{
+	return {p_shader.get()};
+}
+
 } // namespace neurus

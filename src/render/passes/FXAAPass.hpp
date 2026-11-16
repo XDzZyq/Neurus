@@ -22,6 +22,9 @@ public:
 
 	/// Declares the ComposedOutput read and FXAAOutput write.
 	PassIO GetIO() const override;
+
+	/// @brief The FXAA compute shader.
+	std::vector<const ShaderData*> GetShaders() const override;
 	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
 private:
 	static DescriptorSetLayout CreateLayout(const vk::raii::Device& d);

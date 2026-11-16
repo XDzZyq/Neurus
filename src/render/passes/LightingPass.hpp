@@ -93,6 +93,12 @@ public:
 	/// write. (IBL cubemaps are not modeled as bindings here.)
 	PassIO GetIO() const override;
 
+	/// @brief The PBR lighting compute shader.
+	std::vector<const ShaderData*> GetShaders() const override;
+
+	/// @brief IBL cubemaps, which are produced outside this graph.
+	std::vector<std::string> ExternalInputPorts() const override;
+
 	/** @brief Creates the descriptor set layout (12 bindings). */
 	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
 

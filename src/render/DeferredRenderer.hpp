@@ -36,7 +36,9 @@
 #include "RenderCache.hpp"
 #include "TimelineSemaphore.hpp"
 #include "passes/Pass.hpp"
+#include "asset/graph/RenderGraphCompile.hpp"
 #include "core/RenderConfig.hpp"
+#include "core/RenderGraphSpec.hpp"
 #include "RenderContext.hpp"
 #include "OutputTarget.hpp"
 #include "render_graph/RenderGraph.hpp"
@@ -69,6 +71,7 @@ class ShadowIntensityPass;
 class ComposePass;
 class FXAAPass;
 class OverlayEngine;
+class PassRegistry;
 struct CameraUBOData;
 class UploadManager;
 class RenderRequestProcessor;
@@ -373,7 +376,7 @@ private:
 	// destroyed BEFORE the cache it reads during an all-attachments capture.
 	std::unique_ptr<Screenshot> m_screenshot;
 	// --- Polymorphic pass container (owning) ---
-	std::vector<std::unique_ptr<Pass>> r_passes;
+	std::unique_ptr<PassRegistry> m_passRegistry;
 
 	// --- Cached raw pointers for zero-cost access (non-owning) ---
 	GeometryPass* r_geometryPass = nullptr;
@@ -393,25 +396,27 @@ private:
 
 	// --- RenderGraph (the active pipeline) ---
 	// Compile-once-per-topology DAG holding the whole deferred pipeline; recordFrame
-	// dispatches it and rebuilds it (RebuildMainGraph) only when the pipeline
-	// signature derived from RenderConfig changes.
+	// dispatches it and recompiles it (CompileMainGraph) only when the document or
+	// the FXAA flag changes.
 	RenderGraph m_mainGraph;
 
+	/// Document the current m_mainGraph was compiled from.
+	RenderGraphSpec m_mainSpec = MakeDefaultRenderGraphSpec();
+
 	/**
-	 * @brief Topology-affecting projection of RenderConfig.
+	 * @brief Topology-affecting projection of RenderConfig and the document.
 	 *
-	 * The graph is a derived view of RenderConfig: this signature captures
-	 * exactly the config choices that change which passes are in the graph,
-	 * so the graph is rebuilt only when they differ - there is no independent
-	 * per-node "enabled" state to fall out of sync with RenderConfig.
+	 * The graph is derived from the document plus the FXAA condition; this
+	 * signature captures both, so the graph is rebuilt only when they differ.
 	 */
 	struct PipelineSignature
 	{
-		bool fxaa = false; ///< FXAAPass present (RenderConfig::RequiresFXAA()).
+		std::uint64_t specHash = 0;     ///< RenderGraphSpecHash of the document.
+		bool          fxaa     = false; ///< RenderConfig::RequiresFXAA().
 
-		static PipelineSignature From(const RenderConfig& cfg)
+		static PipelineSignature From(const RenderConfig& cfg, std::uint64_t specHash)
 		{
-			return PipelineSignature{ cfg.RequiresFXAA() };
+			return PipelineSignature{specHash, cfg.RequiresFXAA()};
 		}
 
 		bool operator==(const PipelineSignature&) const = default;
@@ -420,11 +425,37 @@ private:
 	/// Signature the current m_mainGraph was built for (dirty-key, not truth).
 	PipelineSignature m_builtSignature;
 
+public:
+	/// @brief Last compile verdict, including the diagnostics the caller reports.
+	struct GraphCompileReport
+	{
+		bool                         compiled = false;
+		std::uint64_t                specHash = 0;
+		size_t                       scenePasses = 0;
+		std::vector<GraphDiagnostic> diagnostics;
+	};
+
 	/**
-	 * @brief Rebuild m_mainGraph to match a pipeline signature.
-	 * @param sig  Projection of RenderConfig deciding which passes participate.
+	 * @brief Compiles a document into the live scene graph.
+	 *
+	 * On failure the previous graph keeps drawing and the diagnostics are stored
+	 * in LastGraphReport(). On success the document is stored, so a later FXAA
+	 * toggle recompiles the same topology.
+	 *
+	 * @param spec  Document to compile.
+	 * @param fxaa  Whether the hard-coded FXAA condition is on.
+	 * @return true when the document compiled and the graph was replaced.
 	 */
-	void RebuildMainGraph(const PipelineSignature& sig);
+	bool CompileMainGraph(const RenderGraphSpec& spec, bool fxaa);
+
+	/// @brief Last compile verdict, for tests and the command layer.
+	const GraphCompileReport& LastGraphReport() const { return m_graphReport; }
+
+	/// @brief Number of passes in the live scene graph.
+	size_t ScenePassCount() const { return m_mainGraph.PassCount(); }
+
+private:
+	GraphCompileReport m_graphReport;
 
 	// --- Command pool ---
 	vk::raii::CommandPool r_commandPool;

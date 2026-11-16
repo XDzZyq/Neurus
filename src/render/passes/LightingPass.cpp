@@ -510,4 +510,14 @@ PassIO LightingPass::GetIO() const
 	return io;
 }
 
+std::vector<const ShaderData*> LightingPass::GetShaders() const
+{
+	return {p_shader.get()};
+}
+
+std::vector<std::string> LightingPass::ExternalInputPorts() const
+{
+	return {"U_Irradiance", "U_Prefiltered"};
+}
+
 } // namespace neurus

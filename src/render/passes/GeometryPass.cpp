@@ -477,4 +477,14 @@ PassIO GeometryPass::GetIO() const
 	return io;
 }
 
+std::vector<const ShaderData*> GeometryPass::GetShaders() const
+{
+	return {p_shader.get()};
+}
+
+std::vector<ShaderPort> GeometryPass::DeclaredOutputs() const
+{
+	return {ShaderPort{"depth", PortDirection::Output, "d32_sfloat", 0, 0}};
+}
+
 } // namespace neurus

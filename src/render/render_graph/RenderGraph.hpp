@@ -1,11 +1,11 @@
 /**
  * @file RenderGraph.hpp
- * @brief DAG orchestrator that owns render-pass nodes and their image edges.
+ * @brief DAG orchestrator that owns render-pass nodes and their port edges.
  *
- * Nodes are built on top of the template `Graph<AttachmentName, PassEntry>`
- * from `core/Graph.hpp`, with one named socket per resource declared in the
- * pass's `PassIO`. The graph consumes passes through that plain POD only, so
- * passes stay unaware of the RenderGraph type.
+ * Nodes are built on top of the template `Graph<ShaderPort, PassEntry>` from
+ * `core/Graph.hpp`. A scene pass declares ports from its shader; an overlay
+ * pass keeps its historical PassIO names and is treated as a legacy node whose
+ * unconnected inputs are external.
  */
 
 #pragma once
@@ -14,10 +14,13 @@
 #include "../ProfilingData.hpp"
 #include "../RenderCache.hpp"
 #include "../passes/Pass.hpp"
+#include "asset/graph/PassPorts.hpp"
 #include "core/Graph.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace neurus {
@@ -25,7 +28,7 @@ namespace neurus {
 /**
  * @brief Owns render-graph nodes + wires them into an execution DAG.
  *
- * Non-copyable. AddPass and Connect return non-owning pointers whose
+ * Non-copyable, movable. AddPass and Connect return non-owning pointers whose
  * lifetime matches the RenderGraph itself.
  */
 class RenderGraph
@@ -34,26 +37,36 @@ public:
 	/**
 	 * @brief Payload stored on each node in the underlying core Graph<>.
 	 *
-	 * The graph caches the pass's `PassIO` at registration time so
-	 * Compile() and Connect() do not need to re-invoke `Pass::GetIO()`.
+	 * The graph caches the pass's `PassIO` and port table at registration time
+	 * so Compile() and Connect() do not re-invoke `Pass::GetIO()`.
 	 */
 	struct PassEntry
 	{
-		Pass*  pass = nullptr; ///< Provides Record().
-		PassIO io;             ///< Cached I/O declaration returned by pass->GetIO().
+		Pass*                    pass = nullptr;   ///< Provides Record().
+		PassIO                   io;               ///< Cached I/O declaration.
+		PassPorts                ports;            ///< Ports from the shader.
+		std::vector<std::string> externalInputs;   ///< Declared out-of-graph inputs.
+		bool                     legacyExternal = false; ///< PassIO-only overlay node.
 	};
 
-	using GraphT = Graph<AttachmentName, PassEntry>;
-	using NodeT  = typename GraphT::NodeType;
+	using GraphT      = Graph<ShaderPort, PassEntry>;
+	using NodeT       = typename GraphT::NodeType;
+	using SocketInT   = typename GraphT::SocketInT;
+	using SocketOutT  = typename GraphT::SocketOutT;
 
 	RenderGraph() = default;
 	~RenderGraph() = default;
 	RenderGraph(const RenderGraph&)            = delete;
 	RenderGraph& operator=(const RenderGraph&) = delete;
+	RenderGraph(RenderGraph&&) noexcept        = default;
+	RenderGraph& operator=(RenderGraph&&) noexcept = default;
 
 	/**
-	 * @brief Register a pass with the graph and materialize its sockets
-	 *        from `pass->GetIO()`.
+	 * @brief Registers a pass and materializes its sockets.
+	 *
+	 * A pass with shaders (or declared outputs) gets port sockets; a pass with
+	 * neither falls back to its PassIO names and allows external inputs.
+	 *
 	 * @param pass  Non-null pointer to the pass instance.
 	 * @return Non-owning node handle; ownership stays with the RenderGraph.
 	 * @throws std::runtime_error if `pass` is null.
@@ -61,19 +74,37 @@ public:
 	NodeT* AddPass(Pass* pass);
 
 	/**
-	 * @brief Wire `producer`'s output for `resource` into `consumer`'s
-	 *        matching input.
-	 * @return false if either endpoint has not declared that resource.
-	 * @note   Self-loops and duplicate edges are rejected by the underlying
-	 *         core Graph<> and surface here as `false`.
+	 * @brief Registers a pass with a precomputed port table.
+	 *
+	 * The compile path already holds the table the validator used, so passing it
+	 * here keeps the graph and the validator on exactly the same ports.
+	 *
+	 * @param pass            Non-null pointer to the pass instance.
+	 * @param ports           Ports the compiler validated.
+	 * @param externalInputs  Inputs the pass resolves outside the graph.
+	 */
+	NodeT* AddPass(Pass* pass, PassPorts ports,
+	               std::vector<std::string> externalInputs = {});
+
+	/**
+	 * @brief Wires one named producer port to one named consumer port.
+	 * @return false if either endpoint does not declare that port.
+	 */
+	bool Connect(NodeT* producer, std::string_view fromPort,
+	             NodeT* consumer, std::string_view toPort);
+
+	/**
+	 * @brief Stage 1 compatibility overload for the overlay graph.
+	 *
+	 * Delegates to the port overload with `AttachmentNameToString(resource)`.
 	 */
 	bool Connect(NodeT* producer, AttachmentName resource, NodeT* consumer);
 
 	/**
-	 * @brief Validate connectivity and cache the topological execution order.
+	 * @brief Validates that every input is connected or external, then caches
+	 *        the topological execution order.
 	 *
-	 * Inputs without an in-graph producer are treated as external and are not
-	 * an error; cycles surface as `std::runtime_error`.
+	 * @throws std::runtime_error naming the node and port on an unconnected input.
 	 */
 	void Compile();
 

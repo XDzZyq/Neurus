@@ -47,6 +47,8 @@ set(NEURUS_TEST_SOURCES
 	render/test_gizmo_pass.cpp
 	render/test_pickpixel.cpp
 	render/test_render_graph.cpp
+	render/test_render_graph_pipeline.cpp
+	render/test_pass_registry.cpp
 	render/test_shader_reflection.cpp
 	render/test_resource_tag.cpp
 	render/test_render_cache_resources.cpp

@@ -1,0 +1,97 @@
+/**
+ * @file PassRegistry.hpp
+ * @brief Pass kind to instance registry and port source for the graph compiler.
+ *
+ * The registry owns one instance of every built-in scene pass. The renderer
+ * compiles a RenderGraphSpec through it, so a spec's `pass` string resolves to a
+ * live pass and the compiler can ask for the ports that pass's shader declares.
+ */
+
+#pragma once
+
+#include "asset/graph/RenderGraphCompile.hpp"
+
+#include <vulkan/vulkan_raii.hpp>
+
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+namespace neurus {
+
+class Pass;
+class GeometryPass;
+class LightingPass;
+class SSAOPass;
+class ShadowDepthPass;
+class ShadowIntensityPass;
+class ComposePass;
+class FXAAPass;
+class SharedQueue;
+
+/**
+ * @brief Owns the built-in scene passes and answers pass-kind queries.
+ *
+ * Non-copyable, non-movable (owns GPU resources).
+ */
+class PassRegistry : public IPortSource
+{
+public:
+	/**
+	 * @brief Constructs every built-in pass.
+	 *
+	 * @param device            Logical device (borrowed).
+	 * @param physicalDevice    Physical device (borrowed).
+	 * @param numSets           Descriptor sets per pass, one per in-flight frame.
+	 * @param graphicsQueue     Serialised graphics queue (borrowed).
+	 * @param queueFamilyIndex  Queue family for staging work.
+	 */
+	PassRegistry(const vk::raii::Device& device,
+	             const vk::raii::PhysicalDevice& physicalDevice,
+	             uint32_t numSets,
+	             SharedQueue& graphicsQueue,
+	             uint32_t queueFamilyIndex);
+
+	~PassRegistry();
+
+	PassRegistry(const PassRegistry&)            = delete;
+	PassRegistry& operator=(const PassRegistry&) = delete;
+	PassRegistry(PassRegistry&&)                 = delete;
+	PassRegistry& operator=(PassRegistry&&)      = delete;
+
+	/**
+	 * @brief Returns the pass for a kind, or nullptr when the kind is unknown.
+	 * @param kind  Pass kind the document names ("GeometryPass", ...).
+	 */
+	Pass* Find(std::string_view kind);
+
+	/// @brief Returns the cached ports for a kind, or nullptr when unknown.
+	const PassPorts* FindPassPorts(std::string_view passKind) const override;
+
+	/// @brief Returns the pass's declared out-of-graph inputs.
+	std::vector<std::string> ExternalInputs(std::string_view passKind) const override;
+
+	/// @brief Returns the cached ports for a kind.
+	/// @throws std::invalid_argument when the kind is unknown.
+	const PassPorts& Ports(std::string_view passKind) const;
+
+	// --- Typed accessors for the renderer's request path ---
+	GeometryPass* Geometry();
+	LightingPass* Lighting();
+	SSAOPass* SSAO();
+	ShadowDepthPass* ShadowDepth();
+	ShadowIntensityPass* ShadowIntensity();
+	ComposePass* Compose();
+	FXAAPass* FXAA();
+
+private:
+	void Add(std::string kind, std::unique_ptr<Pass> pass);
+
+	std::unordered_map<std::string, std::unique_ptr<Pass>> m_passes;
+	std::unordered_map<std::string, PassPorts>             m_ports;
+	std::unordered_map<std::string, std::vector<std::string>> m_externals;
+};
+
+} // namespace neurus

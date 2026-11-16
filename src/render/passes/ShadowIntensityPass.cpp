@@ -628,4 +628,9 @@ PassIO ShadowIntensityPass::GetIO() const
 	return io;
 }
 
+std::vector<const ShaderData*> ShadowIntensityPass::GetShaders() const
+{
+	return {p_pointLightShader.get(), p_sunLightShader.get()};
+}
+
 } // namespace neurus

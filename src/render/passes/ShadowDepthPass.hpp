@@ -73,6 +73,12 @@ public:
 	/// internally and appear as a single ordering token.
 	PassIO GetIO() const override;
 
+	/// @brief The multiview cubemap and sun 2D depth shaders.
+	std::vector<const ShaderData*> GetShaders() const override;
+
+	/// @brief The per-light shadow bundle, a logical ordering token.
+	std::vector<ShaderPort> DeclaredOutputs() const override;
+
 	// --- Accessors ---
 	uint32_t Resolution() const { return p_resolution; }
 

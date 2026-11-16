@@ -454,3 +454,102 @@ TEST_F(PassCountersTest, RecordReturnsStats)
 	EXPECT_EQ(stats2.drawCalls, 2u);
 	EXPECT_EQ(stats2.dispatches, 1u);
 }
+
+// ---------------------------------------------------------------------------
+// Port-based sockets (Stage 1)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+PassPorts MakePorts(std::vector<ShaderPort> ports)
+{
+	PassPorts result;
+	result.kind  = "PortPass";
+	result.ports = std::move(ports);
+	return result;
+}
+
+} // anonymous namespace
+
+TEST(RenderGraphTest, AddPassDeclaresPortSockets)
+{
+	MockPass pass("PortPass", {}, {});
+	RenderGraph g;
+
+	const PassPorts ports = MakePorts({
+		{"gWorld", PortDirection::Input, "sampler2D", 0, 0},
+		{"gOut",   PortDirection::Output, "image2D", 1, 0},
+	});
+	auto* node = g.AddPass(&pass, ports);
+
+	ASSERT_NE(node, nullptr);
+	ASSERT_EQ(node->inputs.size(), 1u);
+	ASSERT_EQ(node->outputs.size(), 1u);
+	EXPECT_EQ(node->inputs[0]->name, "gWorld");
+	EXPECT_EQ(node->outputs[0]->name, "gOut");
+	EXPECT_EQ(node->inputs[0]->data.binding, 0u);
+	EXPECT_EQ(node->outputs[0]->data.binding, 1u);
+}
+
+TEST(RenderGraphTest, ConnectByPortName)
+{
+	MockPass producer("Producer", {}, {});
+	MockPass consumer("Consumer", {}, {});
+	RenderGraph g;
+
+	auto* pn = g.AddPass(&producer, MakePorts({
+		{"gWorld", PortDirection::Output, "image2D", 0, 0},
+	}));
+	auto* cn = g.AddPass(&consumer, MakePorts({
+		{"gWorld", PortDirection::Input, "sampler2D", 0, 0},
+	}));
+
+	EXPECT_TRUE(g.Connect(pn, "gWorld", cn, "gWorld"));
+	EXPECT_FALSE(g.Connect(pn, "nope", cn, "gWorld"));
+	EXPECT_FALSE(g.Connect(pn, "gWorld", cn, "nope"));
+
+	g.Compile();
+	ASSERT_EQ(g.CompiledOrder().size(), 2u);
+	EXPECT_EQ(g.CompiledOrder()[0], pn);
+	EXPECT_EQ(g.CompiledOrder()[1], cn);
+}
+
+TEST(RenderGraphTest, CompileRejectsUnconnectedInput)
+{
+	MockPass consumer("Consumer", {}, {});
+	RenderGraph g;
+
+	auto* cn = g.AddPass(&consumer, MakePorts({
+		{"gWorld", PortDirection::Input, "sampler2D", 0, 0},
+	}));
+	ASSERT_NE(cn, nullptr);
+
+	try
+	{
+		g.Compile();
+		FAIL() << "expected an unconnected-input exception";
+	}
+	catch (const std::runtime_error& error)
+	{
+		const std::string message = error.what();
+		EXPECT_NE(message.find("Consumer"), std::string::npos);
+		EXPECT_NE(message.find("gWorld"), std::string::npos);
+	}
+}
+
+TEST(RenderGraphTest, CompileAllowsDeclaredExternalInput)
+{
+	MockPass consumer("Consumer", {}, {});
+	RenderGraph g;
+
+	auto* cn = g.AddPass(&consumer,
+	                      MakePorts({
+	                          {"gWorld", PortDirection::Input, "sampler2D", 0, 0},
+	                      }),
+	                      {"gWorld"});
+	ASSERT_NE(cn, nullptr);
+
+	EXPECT_NO_THROW(g.Compile());
+	EXPECT_EQ(g.CompiledOrder().size(), 1u);
+}
+

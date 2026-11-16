@@ -517,4 +517,14 @@ PassIO ShadowDepthPass::GetIO() const
 	return io;
 }
 
+std::vector<const ShaderData*> ShadowDepthPass::GetShaders() const
+{
+	return {p_multiviewShader.get(), p_sunShader.get()};
+}
+
+std::vector<ShaderPort> ShadowDepthPass::DeclaredOutputs() const
+{
+	return {ShaderPort{"shadow_depth", PortDirection::Output, "logical", 0, 0}};
+}
+
 } // namespace neurus

@@ -33,6 +33,9 @@
 #include "passes/ComposePass.hpp"
 #include "passes/FXAAPass.hpp"
 
+#include "render_graph/PassRegistry.hpp"
+#include "render_graph/ResourceTag.hpp"
+
 #include "render/HaltonSequence.hpp"
 
 #include "scene/Light.hpp"
@@ -49,6 +52,39 @@
 #include <vector>
 
 namespace neurus {
+
+namespace {
+
+/**
+ * @brief Stage 1 bridge from a default document resource key to its legacy attachment.
+ *
+ * The overlay graph and the existing attachment accessors still name
+ * AttachmentName, so the default scene resources are physically the same images
+ * under both identities. A custom node id has no legacy name and gets its own
+ * image. Removed when Stage 3 replaces the overlay's sockets.
+ */
+std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
+{
+	static const std::unordered_map<std::string, AttachmentName> kAliases = {
+		{"geometry/gPosition",         AttachmentName::Position},
+		{"geometry/gNormal",           AttachmentName::Normal},
+		{"geometry/gAlbedo",           AttachmentName::Albedo},
+		{"geometry/gMetallicRoughness", AttachmentName::MetallicRoughness},
+		{"geometry/gObjectID",         AttachmentName::IDBuffer},
+		{"geometry/depth",             AttachmentName::Depth},
+		{"shadow_intensity/outputShadow", AttachmentName::ShadowIntensity},
+		{"ssao/outputSSAO",            AttachmentName::SSAO},
+		{"lighting/outputImage",       AttachmentName::HDRColor},
+		{"compose/outputComposed",     AttachmentName::ComposedOutput},
+		{"fxaa/outputFXAA",            AttachmentName::FXAAOutput},
+	};
+
+	const auto it = kAliases.find(key);
+	return it == kAliases.end() ? std::nullopt
+	                            : std::optional<AttachmentName>(it->second);
+}
+
+} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -122,87 +158,40 @@ void DeferredRenderer::InitializePipeline()
 	m_screenshot = std::make_unique<Screenshot>(
 		r_device, r_physicalDevice, graphicsQueue, r_queueFamilyIndex);
 
-	// --- 3. Create geometry pass ---
-	{
-		auto geoPass = std::make_unique<GeometryPass>(
-			device, physicalDevice);
-		r_geometryPass = geoPass.get();
-		r_passes.push_back(std::move(geoPass));
-	}
+	// --- 3. Create the built-in passes ---
+	// The registry owns one instance of each scene pass and caches the ports its
+	// shader declares; the compiler and the graph both read them.
+	m_passRegistry = std::make_unique<PassRegistry>(
+		device, physicalDevice, kMaxFramesInFlight, graphicsQueue, queueFamilyIndex);
 
-	// --- 5. Create lighting pass ---
-	{
-		auto lightPass = std::make_unique<LightingPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_lightingPass = lightPass.get();
-		r_passes.push_back(std::move(lightPass));
-	}
+	r_geometryPass        = m_passRegistry->Geometry();
+	r_lightingPass        = m_passRegistry->Lighting();
+	r_ssaoPass            = m_passRegistry->SSAO();
+	r_shadowDepthPass     = m_passRegistry->ShadowDepth();
+	r_shadowIntensityPass = m_passRegistry->ShadowIntensity();
+	r_composePass         = m_passRegistry->Compose();
+	r_fxaaPass            = m_passRegistry->FXAA();
 
-	// --- 6. Create SSAO pass ---
-	{
-		auto ssaoPass = std::make_unique<SSAOPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight,
-			graphicsQueue, queueFamilyIndex);
-		r_ssaoPass = ssaoPass.get();
-		r_passes.push_back(std::move(ssaoPass));
-	}
+	NEURUS_LOG("[DeferredRenderer] Scene passes created; GeometryPass declares "
+	           << m_passRegistry->Ports("GeometryPass").ports.size() << " ports");
 
-	// --- 7. Create shadow depth pass (cubemap depth from light's POV) ---
-	{
-		auto shadowDepth = std::make_unique<ShadowDepthPass>(
-			device, physicalDevice,
-			graphicsQueue, queueFamilyIndex,
-			ShadowDepthPass::kDefaultResolution);
-		r_shadowDepthPass = shadowDepth.get();
-		r_passes.push_back(std::move(shadowDepth));
-		NEURUS_LOG("[DeferredRenderer] ShadowDepthPass created");
-	}
-
-	// --- 8b. Create shadow intensity pass (per-pixel shadow evaluation from cubemap) ---
-	{
-		auto shadowIntensity = std::make_unique<ShadowIntensityPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_shadowIntensityPass = shadowIntensity.get();
-		r_passes.push_back(std::move(shadowIntensity));
-		NEURUS_LOG("[DeferredRenderer] ShadowIntensityPass created");
-	}
-
-	// --- 8c. Build the overlay graph (selection outline, debug overlay, gizmo) ---
+	// --- 4. Build the overlay graph (selection outline, debug overlay, gizmo) ---
 	// Separate from the scene graph so overlays can be redrawn over a converged
-	// scene image without re-running a single scene pass. RebuildMainGraph below
+	// scene image without re-running a single scene pass. CompileMainGraph below
 	// tells it which scene image to draw over.
 	m_overlayEngine = std::make_unique<OverlayEngine>(
 		device, physicalDevice, kMaxFramesInFlight);
 	NEURUS_LOG("[DeferredRenderer] OverlayEngine created ("
 	           << m_overlayEngine->PassCount() << " overlay passes)");
 
-	// --- 8d. Create compose pass (tone map + gamma correction) ---
+	// --- 5. Compile the default scene graph ---
+	// The document is the source of truth for topology; recordFrame recompiles it
+	// only when the document or the FXAA flag changes.
+	if (!CompileMainGraph(m_mainSpec, false))
 	{
-		auto composePass = std::make_unique<ComposePass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_composePass = composePass.get();
-		r_passes.push_back(std::move(composePass));
-		NEURUS_LOG("[DeferredRenderer] ComposePass created");
+		NEURUS_ERR("[DeferredRenderer] The default render graph failed to compile; "
+		           "the scene will not draw until a valid document is provided");
 	}
-
-	// --- 8e. Create FXAA pass (luma-based anti-aliasing) ---
-	{
-		auto fxaaPass = std::make_unique<FXAAPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_fxaaPass = fxaaPass.get();
-		r_passes.push_back(std::move(fxaaPass));
-		NEURUS_LOG("[DeferredRenderer] FXAAPass created");
-	}
-
-	// --- 8f. Build the scene RenderGraph ---
-	// Initial build uses a default signature (no FXAA); recordFrame rebuilds
-	// it whenever the pipeline signature derived from RenderConfig changes.
-	RebuildMainGraph(PipelineSignature{});
 
 	// --- 9. Allocate command buffers (one per output image, reused) ---
 	uint32_t imageCount = r_target->ImageCount();
@@ -266,7 +255,7 @@ DeferredRenderer::~DeferredRenderer()
 {
 	WaitIdle();
 	// vk::raii destructors clean up automatically in reverse declaration order;
-	// r_passes destroys all passes before RenderCache. WaitIdle() is what makes
+	// m_passRegistry destroys all passes before RenderCache. WaitIdle() is what makes
 	// the held tables safe to release: with the queue idle no submitted frame is
 	// still reading the meshes and environments they kept alive, and they are
 	// destroyed first (declared after r_renderCache) so nothing outlives the
@@ -707,66 +696,111 @@ void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 	m_requests->SetUploadManager(uploader);
 }
 
-void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
+bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool fxaa)
 {
-	// Rebuild the whole-pipeline DAG so it contains exactly the passes that
-	// will run. Edges follow image data-flow; camera/light SSBOs and the
-	// per-light shadow maps are addressed by the passes internally.
-	//
-	// Overlays are NOT in this graph. They live in OverlayEngine, which draws over
-	// whatever this graph ends with, so the graph stops at the scene image (the
-	// tone mapped/gamma corrected one, optionally FXAA'd). That split is what lets
-	// an overlay-only change redraw without re-running a single pass below.
-	m_mainGraph.Clear();
+	const std::uint64_t specHash = RenderGraphSpecHash(spec);
+	m_builtSignature = PipelineSignature{specHash, fxaa};
 
-	auto* geometryNode  = m_mainGraph.AddPass(r_geometryPass);
-	auto* shadowDepth   = m_mainGraph.AddPass(r_shadowDepthPass);
-	auto* shadowInt     = m_mainGraph.AddPass(r_shadowIntensityPass);
-	auto* ssaoNode      = m_mainGraph.AddPass(r_ssaoPass);
-	auto* lightingNode  = m_mainGraph.AddPass(r_lightingPass);
-	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
+	const CompileResult result = CompileRenderGraphSpec(spec, *m_passRegistry, fxaa);
 
-	// Geometry (G-Buffer) → consumers
-	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          ssaoNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Normal,            ssaoNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Albedo,            ssaoNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          shadowInt);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Normal,            lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Albedo,            lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::MetallicRoughness, lightingNode);
+	m_graphReport = {};
+	m_graphReport.specHash = specHash;
 
-	// Shadow depth bundle → shadow intensity → lighting
-	m_mainGraph.Connect(shadowDepth, AttachmentName::ShadowDepth,     shadowInt);
-	m_mainGraph.Connect(shadowInt,   AttachmentName::ShadowIntensity, lightingNode);
-
-	// SSAO → lighting → compose (tone map + gamma only; the selection highlight is
-	// an overlay and is blended in the overlay graph, after this pass).
-	m_mainGraph.Connect(ssaoNode,     AttachmentName::SSAO,             lightingNode);
-	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,         composeNode);
-
-	// Compose -> [FXAA]. The scene tail is the last image this graph writes, and
-	// the overlay graph copies it - FXAA is the only topology variation, so the
-	// tail choice belongs here, with the config projection that produced it.
-	const AttachmentName tail = sig.fxaa ? AttachmentName::FXAAOutput
-	                                     : AttachmentName::ComposedOutput;
-	if (sig.fxaa)
+	if (!result.ok)
 	{
-		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
-		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, fxaaNode);
+		m_graphReport.diagnostics = result.diagnostics;
+		for (const GraphDiagnostic& diagnostic : result.diagnostics)
+		{
+			NEURUS_ERR("[RenderGraph] "
+			          << (diagnostic.node.empty() ? std::string("<graph>") : diagnostic.node)
+			          << (diagnostic.port.empty() ? std::string{} : "." + diagnostic.port)
+			          << ": " << diagnostic.message);
+		}
+		return false;
 	}
 
-	// Tell the overlay graph which image to copy. Its copy source is part of its
-	// socket names, so it re-wires itself when the tail changes.
+	// Build into a candidate so a failure leaves the last good graph drawing.
+	RenderGraph candidate;
+	std::unordered_map<std::string, RenderGraph::NodeT*> nodes;
+	nodes.reserve(result.order.size());
+
+	for (const size_t index : result.order)
+	{
+		const GraphNodeSpec& nodeSpec = result.spec.nodes[index];
+		Pass* pass = m_passRegistry->Find(nodeSpec.pass);
+		if (!pass)
+		{
+			NEURUS_ERR("[RenderGraph] pass kind '" << nodeSpec.pass
+			          << "' disappeared after validation");
+			return false;
+		}
+
+		auto* node = candidate.AddPass(pass, m_passRegistry->Ports(nodeSpec.pass),
+		                               m_passRegistry->ExternalInputs(nodeSpec.pass));
+		nodes.emplace(nodeSpec.id, node);
+	}
+
+	for (const GraphEdgeSpec& edge : result.spec.edges)
+	{
+		const auto from = nodes.find(edge.from);
+		const auto to   = nodes.find(edge.to);
+		if (from == nodes.end() || to == nodes.end()
+		    || !candidate.Connect(from->second, edge.fromPort, to->second, edge.toPort))
+		{
+			NEURUS_ERR("[RenderGraph] failed to wire " << edge.from << "." << edge.fromPort
+			          << " -> " << edge.to << "." << edge.toPort);
+			return false;
+		}
+	}
+
+	candidate.Compile();
+
+	// Plan the logical cache from the document's tags, then install the legacy
+	// aliases the overlay graph and the existing accessors still use. Images are
+	// created lazily on first use, so an unused output costs nothing.
+	r_renderCache->CleanScreenSpace();
+	r_renderCache->ClearResourcePlans();
+
+	for (const GraphNodeSpec& nodeSpec : result.spec.nodes)
+	{
+		for (const auto& [port, tag] : nodeSpec.outputs)
+			r_renderCache->PlanResource(ResourceKey(nodeSpec.id, port), tag);
+	}
+
+	for (const GraphNodeSpec& nodeSpec : result.spec.nodes)
+	{
+		for (const auto& [port, tag] : nodeSpec.outputs)
+		{
+			(void)tag;
+			const std::string key = ResourceKey(nodeSpec.id, port);
+			if (const std::optional<AttachmentName> legacy = LegacyAttachmentFor(key))
+				r_renderCache->AliasResourceToAttachment(*legacy, key);
+		}
+	}
+
+	m_mainGraph = std::move(candidate);
+	if (&spec != &m_mainSpec)
+		m_mainSpec = spec;
+
+	m_graphReport.compiled    = true;
+	m_graphReport.scenePasses = m_mainGraph.PassCount();
+
+	bool fxaaPresent = false;
+	for (const GraphNodeSpec& nodeSpec : result.spec.nodes)
+	{
+		if (nodeSpec.pass == "FXAAPass")
+			fxaaPresent = true;
+	}
+
+	const AttachmentName tail = fxaaPresent ? AttachmentName::FXAAOutput
+	                                        : AttachmentName::ComposedOutput;
 	m_overlayEngine->SetSceneTail(tail);
 
-	m_mainGraph.Compile();
-	m_builtSignature = sig;
-
-	NEURUS_LOG("[DeferredRenderer] RenderGraph rebuilt ("
-	           << m_mainGraph.PassCount() << " passes, FXAA="
-	           << (sig.fxaa ? "on" : "off") << ", tail="
-	           << AttachmentNameToString(tail) << ")");
+	NEURUS_LOG("[RenderGraph] compiled " << m_mainGraph.PassCount()
+	           << " passes, FXAA=" << (fxaa ? "on" : "off")
+	           << ", tail=" << AttachmentNameToString(tail)
+	           << ", hash=" << std::hex << specHash << std::dec);
+	return true;
 }
 
 void DeferredRenderer::WaitIdle()
@@ -1037,9 +1071,10 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// was already handled by the restart that came with it.
 	if (work == FrameWork::Sample)
 	{
-		const PipelineSignature sig = PipelineSignature::From(frame.Settings());
+		const PipelineSignature sig =
+			PipelineSignature::From(frame.Settings(), RenderGraphSpecHash(m_mainSpec));
 		if (!(sig == m_builtSignature))
-			RebuildMainGraph(sig);
+			CompileMainGraph(m_mainSpec, sig.fxaa);
 	}
 
 	// --- Profiling: bracket the whole pipeline with GPU frame timestamps ---

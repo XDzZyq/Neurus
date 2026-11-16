@@ -104,6 +104,12 @@ public:
 	/// reads (camera data comes via a UBO).
 	PassIO GetIO() const override;
 
+	/// @brief The built-in G-Buffer shader.
+	std::vector<const ShaderData*> GetShaders() const override;
+
+	/// @brief The depth attachment, which has no fragment output declaration.
+	std::vector<ShaderPort> DeclaredOutputs() const override;
+
 	/**
 	 * @brief Returns the camera descriptor set layout (set 0).
 	 */

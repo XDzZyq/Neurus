@@ -7,6 +7,7 @@
 
 #include "../RenderContext.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <stdexcept>
 #include <string>
@@ -15,10 +16,26 @@ namespace neurus {
 
 namespace {
 
-/** @brief Stable, human-readable per-socket key derived from the attachment enum. */
-std::string ResourceKey(AttachmentName name)
+/// @brief Finds an output socket by port name.
+RenderGraph::SocketOutT* FindOutput(RenderGraph::NodeT* node, const std::string_view name)
 {
-	return AttachmentNameToString(name);
+	for (const auto& output : node->outputs)
+	{
+		if (output->name == name)
+			return output.get();
+	}
+	return nullptr;
+}
+
+/// @brief Finds an input socket by port name.
+RenderGraph::SocketInT* FindInput(RenderGraph::NodeT* node, const std::string_view name)
+{
+	for (const auto& input : node->inputs)
+	{
+		if (input->name == name)
+			return input.get();
+	}
+	return nullptr;
 }
 
 } // anonymous namespace
@@ -28,25 +45,63 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 	if (!pass)
 		throw std::runtime_error("RenderGraph::AddPass: pass must be non-null");
 
-	PassEntry entry;
-	entry.pass = pass;
-	// Ask the pass to describe its image I/O once, up-front, so subsequent
-	// Compile() can validate connectivity without re-invoking user code.
-	entry.io = pass->GetIO();
+	const PassIO io = pass->GetIO();
+	const std::vector<const ShaderData*> shaders = pass->GetShaders();
+	const std::vector<ShaderPort> declared = pass->DeclaredOutputs();
 
-	std::string nodeName = entry.io.name;
+	PassPorts ports = ExtractPassPorts(io.name.empty() ? "Pass" : io.name,
+	                                   shaders, declared);
+	return AddPass(pass, std::move(ports), pass->ExternalInputPorts());
+}
+
+RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
+                                         std::vector<std::string> externalInputs)
+{
+	if (!pass)
+		throw std::runtime_error("RenderGraph::AddPass: pass must be non-null");
+
+	PassEntry entry;
+	entry.pass           = pass;
+	entry.io             = pass->GetIO();
+	entry.ports          = std::move(ports);
+	entry.externalInputs = std::move(externalInputs);
+	entry.legacyExternal = entry.ports.ports.empty();
+
+	std::string nodeName = entry.io.name.empty() ? std::string("Pass") : entry.io.name;
 	auto* node = m_graph.AddNode(std::move(nodeName), std::move(entry));
 
-	for (const auto& b : node->data.io.reads)
+	if (node->data.legacyExternal)
 	{
-		auto* in = node->AddInput(ResourceKey(b.resource));
-		in->data = b.resource;
+		// Overlay passes still declare image I/O through PassIO. Their socket
+		// names are the attachment names and any unconnected input is external.
+		for (const auto& binding : node->data.io.reads)
+		{
+			auto* input = node->AddInput(AttachmentNameToString(binding.resource));
+			input->data = ShaderPort{input->name, PortDirection::Input, "",
+			                         binding.binding, 0};
+		}
+		for (const auto& binding : node->data.io.writes)
+		{
+			auto* output = node->AddOutput(AttachmentNameToString(binding.resource));
+			output->data = ShaderPort{output->name, PortDirection::Output, "",
+			                          binding.binding, 0};
+		}
 	}
-
-	for (const auto& b : node->data.io.writes)
+	else
 	{
-		auto* out = node->AddOutput(ResourceKey(b.resource));
-		out->data = b.resource;
+		for (const ShaderPort& port : node->data.ports.ports)
+		{
+			if (port.direction == PortDirection::Input)
+			{
+				auto* input = node->AddInput(port.name);
+				input->data = port;
+			}
+			else
+			{
+				auto* output = node->AddOutput(port.name);
+				output->data = port;
+			}
+		}
 	}
 
 	m_isCompiled = false;
@@ -54,21 +109,19 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 	return node;
 }
 
-bool RenderGraph::Connect(NodeT* producer, AttachmentName resource, NodeT* consumer)
+bool RenderGraph::Connect(NodeT* producer, const std::string_view fromPort,
+                          NodeT* consumer, const std::string_view toPort)
 {
-	if (!producer || !consumer) return false;
+	if (!producer || !consumer)
+		return false;
 
-	const std::string key = ResourceKey(resource);
+	SocketOutT* out = FindOutput(producer, fromPort);
+	if (!out)
+		return false;
 
-	GraphT::SocketOutT* out = nullptr;
-	for (const auto& o : producer->outputs)
-		if (o->name == key) { out = o.get(); break; }
-	if (!out) return false;
-
-	GraphT::SocketInT* in = nullptr;
-	for (const auto& i : consumer->inputs)
-		if (i->name == key) { in = i.get(); break; }
-	if (!in) return false;
+	SocketInT* in = FindInput(consumer, toPort);
+	if (!in)
+		return false;
 
 	const bool ok = m_graph.Connect(out, in);
 	if (ok)
@@ -79,11 +132,34 @@ bool RenderGraph::Connect(NodeT* producer, AttachmentName resource, NodeT* consu
 	return ok;
 }
 
+bool RenderGraph::Connect(NodeT* producer, const AttachmentName resource, NodeT* consumer)
+{
+	const char* name = AttachmentNameToString(resource);
+	return Connect(producer, name, consumer, name);
+}
+
 void RenderGraph::Compile()
 {
-	// Inputs with no in-graph producer are "external": they are produced by
-	// a resource outside this graph and simply do not contribute an ordering
-	// edge. Only cycles are rejected.
+	for (const auto& node : m_graph.nodes)
+	{
+		if (node->data.legacyExternal)
+			continue;
+
+		for (const auto& input : node->inputs)
+		{
+			if (input->source)
+				continue;
+
+			const auto& external = node->data.externalInputs;
+			if (std::find(external.begin(), external.end(), input->name) != external.end())
+				continue;
+
+			throw std::runtime_error(
+				"RenderGraph::Compile: node '" + node->name + "' input '"
+				+ input->name + "' is not connected and is not external");
+		}
+	}
+
 	m_compiled   = m_graph.TopologicalSort();
 	m_isCompiled = true;
 }

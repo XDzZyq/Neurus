@@ -140,6 +140,9 @@ public:
 	/// Declares the G-Buffer reads (Position/Normal/Albedo) and the SSAO write.
 	PassIO GetIO() const override;
 
+	/// @brief The SSAO compute shader.
+	std::vector<const ShaderData*> GetShaders() const override;
+
 	/**
 	 * @brief Writes all descriptors (image + buffer) into the specified set.
 	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).

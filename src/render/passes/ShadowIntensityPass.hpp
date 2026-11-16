@@ -75,6 +75,9 @@ public:
 	/// per-light layers are addressed internally.
 	PassIO GetIO() const override;
 
+	/// @brief Both the point-light cubemap and sun-light 2D eval shaders.
+	std::vector<const ShaderData*> GetShaders() const override;
+
 	/**
 	 * @brief Writes all descriptors (image) into the specified set.
 	 *
