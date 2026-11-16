@@ -9,7 +9,8 @@
 - IDs are sequential and allocated from a static counter (`s_count`).
 - Not thread-safe: IDs should be allocated on the main thread.
 - IDs are never reused, even after object destruction.
-- Value semantics are deleted - `UID` is non-copyable and non-movable, because identity must not be duplicated or transferred. Objects are held via `shared_ptr`.
+- Value semantics are deleted - `UID` is non-copyable and non-movable, because identity must not be duplicated or transferred. Objects are held via `shared_ptr`, and every UID-derived type (`ObjectID`, `Camera`, `Mesh`, `Light`, `Environment`, `Sprite`, the debug objects, `Scene`, `MeshData`, `ImageData`, `ShaderData`) repeats the ban so the contract is visible where it is inherited.
+- The only duplication path is the pool: `ResourceManager::Load<T>` constructs a fresh object with a new id and the caller copies the fields it wants (`Editor::DuplicateObject`). A copy or move constructor is never the answer, because every id already handed out - scene references, undo records, GPU caches, the pool's own indexes - would silently name a different object.
 - `GetObjectID()` returns the unique integer; `GetTotalAllocated()` returns the total allocation count, including destroyed objects.
 - `serialize(ar)` writes `o_id`, and on load bumps `s_count` ahead of the loaded id so newly created objects do not collide with restored ones.
 

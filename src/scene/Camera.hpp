@@ -86,14 +86,19 @@ public:
 	Camera& operator=(const Camera&) = delete;
 
 	/**
-	 * @brief Default move constructor.
+	 * @brief Deleted move constructor - identity belongs to the resource pool.
+	 * @note Duplication goes through ResourceManager::Load plus an explicit
+	 *       field copy (Editor::DuplicateObject), which allocates a new id.
+	 *       A move could only transfer or re-issue that id, and every id
+	 *       already handed out (scene references, undo records, GPU caches)
+	 *       would silently name a different object.
 	 */
-	Camera(Camera&&) = default;
+	Camera(Camera&&) = delete;
 
 	/**
-	 * @brief Default move assignment.
+	 * @brief Deleted move assignment - identity belongs to the resource pool.
 	 */
-	Camera& operator=(Camera&&) = default;
+	Camera& operator=(Camera&&) = delete;
 
 	/**
 	 * @brief Destroys the camera.

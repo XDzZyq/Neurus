@@ -39,6 +39,16 @@ short working reference.
 - Resource-owning classes initialize fully in the constructor and release in the
   destructor. No separate `Init()`/`Terminate()` two-phase setup.
 - Classes owning GPU or OS resources `= delete` copy constructor and assignment.
+- Identity types - every `UID`-derived class (`ObjectID`, `Camera`, `Mesh`,
+  `Light`, `Environment`, `Sprite`, `DebugLine`/`DebugMesh`/`DebugPoints`,
+  `Scene`, `MeshData`, `ImageData`, `ShaderData`) - `= delete` **all four**
+  special members: copy construction, copy assignment, move construction and
+  move assignment. Never write `= default` on a move operation of one of these:
+  the base is non-movable, so the defaulted function is implicitly deleted and
+  clang reports it under `-Wdefaulted-function-deleted` once per translation
+  unit. Duplicate an object through the pool - `ResourceManager::Load<T>` plus
+  an explicit field copy (`Editor::DuplicateObject`) - so the copy gets its own
+  id. `test/scene/test_uid.cpp` asserts the four traits for every identity type.
 - `std::unique_ptr`/`std::shared_ptr` for explicit ownership; raw pointers for
   non-owning references only.
 
