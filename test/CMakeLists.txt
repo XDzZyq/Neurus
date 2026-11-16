@@ -14,6 +14,7 @@ set(NEURUS_TEST_SOURCES
 	render/test_vulkan_context.cpp
 	asset/test_meshdata.cpp
 	asset/test_imagedata.cpp
+	asset/test_pass_ports.cpp
 	render/test_shader_parser.cpp
 	render/test_syncobjects.cpp
 	render/test_image.cpp
