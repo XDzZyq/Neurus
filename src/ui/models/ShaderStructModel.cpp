@@ -1,6 +1,6 @@
-#include "models/ShaderStructModel.h"
+#include "models/ShaderStructModel.hpp"
 
-#include "ui/utils/I18n.h"
+#include "ui/utils/I18n.hpp"
 
 #include <QFont>
 

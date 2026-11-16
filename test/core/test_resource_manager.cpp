@@ -28,20 +28,20 @@
 #include <sstream>
 #include <vector>
 
-#include "core/ResourceManager.h"
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "asset/data/MeshData.h"
-#include "render/shaders/RenderShader.h"
-#include "asset/data/ShaderData.h"
-#include "asset/data/shader/ShaderUnit.h"
+#include "core/ResourceManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "asset/data/MeshData.hpp"
+#include "render/shaders/RenderShader.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "asset/data/shader/ShaderUnit.hpp"
 
 // Force-link the polymorphic registration TUs (static libs) so the pool's
 // UID-derived types are registered for the JSON round-trip below.
-#include "scene/registrations/TypeRegistration.h"
-#include "asset/registrations/DataRegistration.h"
-#include "render/registrations/ShaderRegistration.h"
+#include "scene/registrations/TypeRegistration.hpp"
+#include "asset/registrations/DataRegistration.hpp"
+#include "render/registrations/ShaderRegistration.hpp"
 
 using namespace neurus;
 
@@ -325,7 +325,7 @@ TEST(ResourceManagerTest, PooledShaderRecompilesAfterLoad)
 
 	// Mirrors Editor::OnCreateShader: pooled RenderShader + parse + compile.
 	auto shader = pool.Load<RenderShader>(
-		"MeshShader_10", "res/shaders/render/gbuffer.vert", "res/shaders/render/gbuffer.frag");
+		"MeshShader_10", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_NE(shader, nullptr);
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());

@@ -20,7 +20,7 @@
 #include <iterator>
 #include <string>
 
-#include "app/Preferences.h"
+#include "app/Preferences.hpp"
 
 using namespace neurus;
 

@@ -3,9 +3,9 @@
  * @brief Revision-gated upload of the debug overlay's geometry into per-frame SSBOs.
  */
 
-#include "DebugCache.h"
+#include "DebugCache.hpp"
 
-#include "render/overlay/DebugDrawList.h"
+#include "render/overlay/DebugDrawList.hpp"
 
 #include <algorithm>
 

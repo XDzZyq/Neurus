@@ -13,7 +13,7 @@
 #include <cstdio>
 #include <ctime>
 
-#include "platform/PlatformSystem.h"
+#include "platform/PlatformSystem.hpp"
 
 namespace {
 
@@ -29,6 +29,9 @@ TEST(PlatformSystemTest, LocalTimeRoundTripsThroughMktime)
 
 TEST(PlatformSystemTest, TemporaryFileIsNotATerminal)
 {
+	// std::tmpfile is the only portable way to obtain a non-terminal FILE*:
+	// MSVC's safe variant tmpfile_s exists only on Windows. The CRT deprecation
+	// warning is therefore suppressed for this translation unit in CMake.
 	std::FILE* file = std::tmpfile();
 	ASSERT_NE(file, nullptr);
 	EXPECT_FALSE(neurus::platform::IsTerminal(file));

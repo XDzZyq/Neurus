@@ -11,7 +11,7 @@
  *   - Shift + MMB     = Pan    (CameraSlideEvent)
  *   - Scroll wheel    = Zoom   (CameraZoomEvent)
  *
- * Sensitivity constants (from CameraController.h):
+ * Sensitivity constants (from CameraController.hpp):
  *   - kOrbitSensitivity = 0.005f  (radians per pixel)
  *   - kPanSensitivity   = 0.01f   (world units per pixel)
  *   - kZoomSensitivity  = 1.0f    (factor per scroll notch)
@@ -23,13 +23,13 @@
 #include <cmath>
 #include <memory>
 
-#include "editor/controllers/CameraController.h"
-#include "editor/events/CameraEvents.h"
-#include "editor/operations/OperationManager.h"
-#include "core/ResourceManager.h"
-#include "scene/Camera.h"
-#include "scene/Scene.h"
-#include "core/RenderConfig.h"
+#include "editor/controllers/CameraController.hpp"
+#include "editor/events/CameraEvents.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "core/ResourceManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
+#include "core/RenderConfig.hpp"
 
 using namespace neurus;
 

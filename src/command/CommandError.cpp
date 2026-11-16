@@ -1,4 +1,4 @@
-#include "command/CommandError.h"
+#include "command/CommandError.hpp"
 
 namespace neurus::command
 {

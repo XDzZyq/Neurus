@@ -3,7 +3,7 @@
  * @brief Implementation of ShaderStruct - Reset(), static helpers, and setters.
  */
 
-#include "ShaderStruct.h"
+#include "ShaderStruct.hpp"
 
 #include <sstream>
 
@@ -50,7 +50,7 @@ ParaType ShaderStruct::ParseType(const std::string& type)
 		}
 	}
 
-	// Fall back to Parameters.h for built-in types
+	// Fall back to Parameters.hpp for built-in types
 	ParaType result = neurus::FromString(type);
 	if (result != ParaType::NONE)
 	{

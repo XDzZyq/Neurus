@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "ipc/Frame.h"
+#include "ipc/Frame.hpp"
 
 using namespace neurus::ipc;
 

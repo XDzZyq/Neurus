@@ -1,4 +1,4 @@
-#include "cli/AppArguments.h"
+#include "cli/AppArguments.hpp"
 
 namespace neurus::cli
 {

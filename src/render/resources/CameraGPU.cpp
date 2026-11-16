@@ -3,7 +3,7 @@
  * @brief Shared camera UBO implementation.
  */
 
-#include "CameraGPU.h"
+#include "CameraGPU.hpp"
 
 namespace neurus {
 

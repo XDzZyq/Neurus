@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/RenderCache.h"
-#include "render/Image.h"
+#include "render/RenderCache.hpp"
+#include "render/Image.hpp"
 
 using namespace neurus;
 

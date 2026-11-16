@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include "scene/Camera.h"
+#include "scene/Camera.hpp"
 
 using namespace neurus;
 

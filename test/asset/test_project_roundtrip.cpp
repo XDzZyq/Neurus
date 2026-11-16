@@ -22,17 +22,17 @@
 
 #include <cstdio>   // std::remove
 
-#include "asset/Project.h"
-#include "asset/components/SceneComponent.h"
-#include "asset/components/ResourceComponent.h"
-#include "asset/components/ConfigComponent.h"
-#include "asset/data/MeshData.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "asset/Project.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/ConfigComponent.hpp"
+#include "asset/data/MeshData.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 using namespace neurus;
 

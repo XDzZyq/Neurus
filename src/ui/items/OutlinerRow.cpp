@@ -4,7 +4,7 @@
  *        setSelectionMode + setRowIndex (visual).
  */
 
-#include "items/OutlinerRow.h"
+#include "items/OutlinerRow.hpp"
 
 #include <QFile>
 #include <QGraphicsColorizeEffect>
@@ -17,9 +17,9 @@
 
 #include <QGuiApplication>
 
-#include "Icons.h"
-#include "core/Selections.h"
-#include "editor/Input.h"
+#include "Icons.hpp"
+#include "core/Selections.hpp"
+#include "editor/Input.hpp"
 
 
 namespace neurus

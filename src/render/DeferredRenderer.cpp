@@ -3,42 +3,42 @@
  * @brief Deferred rendering pipeline implementation.
  */
 
-#include "DeferredRenderer.h"
+#include "DeferredRenderer.hpp"
 
-#include "targets/OffscreenTarget.h"
-#include "targets/SwapchainTarget.h"
+#include "targets/OffscreenTarget.hpp"
+#include "targets/SwapchainTarget.hpp"
 
-#include "Barrier.h"
-#include "Image.h"
-#include "RenderCache.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "Swapchain.h"
+#include "Barrier.hpp"
+#include "Image.hpp"
+#include "RenderCache.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "Swapchain.hpp"
 
-#include "resources/LightingCache.h"
-#include "resources/PipelineCache.h"
+#include "resources/LightingCache.hpp"
+#include "resources/PipelineCache.hpp"
 
-#include "requests/RenderRequestProcessor.h"
-#include "Screenshot.h"
-#include "SharedQueue.h"
-#include "UploadManager.h"
+#include "requests/RenderRequestProcessor.hpp"
+#include "Screenshot.hpp"
+#include "SharedQueue.hpp"
+#include "UploadManager.hpp"
 
-#include "overlay/OverlayEngine.h"
+#include "overlay/OverlayEngine.hpp"
 
-#include "passes/GeometryPass.h"
-#include "passes/LightingPass.h"
-#include "passes/SSAOPass.h"
-#include "passes/ShadowDepthPass.h"
-#include "passes/ShadowIntensityPass.h"
-#include "passes/ComposePass.h"
-#include "passes/FXAAPass.h"
+#include "passes/GeometryPass.hpp"
+#include "passes/LightingPass.hpp"
+#include "passes/SSAOPass.hpp"
+#include "passes/ShadowDepthPass.hpp"
+#include "passes/ShadowIntensityPass.hpp"
+#include "passes/ComposePass.hpp"
+#include "passes/FXAAPass.hpp"
 
-#include "render/HaltonSequence.h"
+#include "render/HaltonSequence.hpp"
 
-#include "scene/Light.h"
-#include "scene/Scene.h"
+#include "scene/Light.hpp"
+#include "scene/Scene.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <algorithm>
 #include <cstdint>

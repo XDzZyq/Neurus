@@ -3,7 +3,7 @@
  * @brief Implementation of DebugPoints point management.
  */
 
-#include "DebugPoints.h"
+#include "DebugPoints.hpp"
 
 namespace neurus
 {

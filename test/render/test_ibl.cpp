@@ -16,17 +16,17 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "shared/TestReferenceImage.h"
+#include "shared/TestReferenceImage.hpp"
 
-#include "asset/data/ImageData.h"
-#include "render/Barrier.h"
-#include "render/PipelineBuilder.h"
-#include "render/DescriptorManager.h"
-#include "render/Image.h"
-#include "render/shaders/ShaderLibrary.h"
-#include "render/shaders/ComputeShader.h"
+#include "asset/data/ImageData.hpp"
+#include "render/Barrier.hpp"
+#include "render/PipelineBuilder.hpp"
+#include "render/DescriptorManager.hpp"
+#include "render/Image.hpp"
+#include "render/shaders/ShaderLibrary.hpp"
+#include "render/shaders/ComputeShader.hpp"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -133,7 +133,7 @@ protected:
 		m_e2cSets = m_e2cPool->Allocate(*m_e2cSetLayout, 1);
 
 		auto e2cShader =
-			ShaderLibrary::LoadComputeShader("e2c_test", "res/shaders/convert/e2c.comp");
+			ShaderLibrary::LoadComputeShader("e2c_test", "res/shaders/convert/e2c.comp.glsl");
 		ASSERT_NE(e2cShader, nullptr);
 		auto e2cSpv = ShaderLibrary::Compile(e2cShader->GetStage(ShaderType::COMPUTE),
 		                                     ShaderType::COMPUTE, "e2c_test");
@@ -161,7 +161,7 @@ protected:
 		m_c2eSets = m_c2ePool->Allocate(*m_c2eSetLayout, 1);
 
 		auto c2eShader =
-			ShaderLibrary::LoadComputeShader("c2e_test", "res/shaders/convert/c2e.comp");
+			ShaderLibrary::LoadComputeShader("c2e_test", "res/shaders/convert/c2e.comp.glsl");
 		ASSERT_NE(c2eShader, nullptr);
 		auto c2eSpv = ShaderLibrary::Compile(c2eShader->GetStage(ShaderType::COMPUTE),
 		                                     ShaderType::COMPUTE, "c2e_test");
@@ -239,7 +239,7 @@ protected:
 			                                vk::ImageLayout::eShaderReadOnlyOptimal);
 			m_e2cSets[0].WriteImage(0, srcInfo, vk::DescriptorType::eCombinedImageSampler);
 
-			// e2c.comp declares u_CubeOut as image2DArray, so bind the cube's
+			// e2c.comp.glsl declares u_CubeOut as image2DArray, so bind the cube's
 			// 2D_ARRAY view (ArrayView()), not the default eCube view
 			// (ImageViewHandle()) which is only valid for imageCube bindings.
 			vk::DescriptorImageInfo dstInfo(nullptr, *cubeDst.ArrayView(),

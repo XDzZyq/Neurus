@@ -34,13 +34,13 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/SharedQueue.h"
-#include "render/TimelineSemaphore.h"
-#include "render/buffers/CPUBuffer.h"
+#include "render/SharedQueue.hpp"
+#include "render/TimelineSemaphore.hpp"
+#include "render/buffers/CPUBuffer.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <array>
 #include <chrono>

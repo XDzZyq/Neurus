@@ -137,7 +137,7 @@ The shadow intensity array (R8_UNORM, layered 2D_ARRAY) is created via `RenderCa
 
 ## MeshGPU
 
-`MeshGPU` (`src/render/resources/MeshGPU.h`) holds device-local `VertexBuffer` + `IndexBuffer` for a mesh, plus vertex/index counts.
+`MeshGPU` (`src/render/resources/MeshGPU.hpp`) holds device-local `VertexBuffer` + `IndexBuffer` for a mesh, plus vertex/index counts.
 
 - Uploaded by `UploadManager::UploadMeshData()` and registered with `RenderCache::UseMeshGPU(objectId, std::move(meshGPU))`, which installs a fresh `shared_ptr<const MeshTable>` with the entry added. `UploadMeshRequest` carries the `MeshData`; the request executor is the caller.
 - Read through `RenderCache::GetMeshGPU(objectId)`, a const lookup that returns a borrowed pointer or nullptr from the live table. It stays valid only until the table is next written; the table the frame holds (see `DeferredRenderer::HeldTables`) is what keeps the entry it recorded against alive after a replace.
@@ -146,11 +146,11 @@ The shadow intensity array (R8_UNORM, layered 2D_ARRAY) is created via `RenderCa
 
 ### MeshPushConstants
 
-`MeshPushConstants` (`src/render/resources/MeshGPU.h`) is the per-mesh push-constant block sent to the vertex shader (128 bytes total). It carries two mat4s: `model` (local-to-world transform) and `normalMatrix`.
+`MeshPushConstants` (`src/render/resources/MeshGPU.hpp`) is the per-mesh push-constant block sent to the vertex shader (128 bytes total). It carries two mat4s: `model` (local-to-world transform) and `normalMatrix`.
 
 ## EnvironmentGPU
 
-`EnvironmentGPU` (`src/render/resources/EnvironmentGPU.h`) holds diffuse irradiance and specular prefiltered cubemap `Texture` objects (each wraps `Image` + sampler + descriptor).
+`EnvironmentGPU` (`src/render/resources/EnvironmentGPU.hpp`) holds diffuse irradiance and specular prefiltered cubemap `Texture` objects (each wraps `Image` + sampler + descriptor).
 
 - Uploaded by `UploadManager::UploadEnvironment(std::shared_ptr<const ImageData>)`, which bakes both cubemaps, and registered with `RenderCache::UseEnvironmentGPU(envId, std::move(envGPU))` - a fresh `shared_ptr<const EnvironmentTable>` with the entry added or replaced. No drain is needed for the replace: the frames already submitted keep the old table alive until their fences.
 - Read per-frame by `LightingPass` via `RenderCache::GetEnvironmentGPU(envId)`, which reads the live table at record time; the table the frame holds (see `DeferredRenderer::HeldTables`) is what keeps the entry it recorded against alive after a replace.
@@ -158,7 +158,7 @@ The shadow intensity array (R8_UNORM, layered 2D_ARRAY) is created via `RenderCa
 
 ## LightingCache
 
-`LightingCache` (`src/render/resources/LightingCache.h`) manages point light and sun light SSBOs (device-local `GPUBuffer`s).
+`LightingCache` (`src/render/resources/LightingCache.hpp`) manages point light and sun light SSBOs (device-local `GPUBuffer`s).
 
 - Built by `UploadManager` (it needs a queue) and handed over with `RenderCache::SetLightingCache(std::unique_ptr<LightingCache>)`, so `RenderCache` never has to store a queue/qfi of its own.
 - Updated via `RenderCache::UpdateLighting(variantDict)` - accepts a map of `variant<PointLightStruct, SunLightStruct>` keyed by light UID.
@@ -169,18 +169,18 @@ Per-member std140/std430 offset tables for the light structs were dropped; only 
 
 ## CameraGPU
 
-`CameraGPU` (`src/render/resources/CameraGPU.h`) is the renderer's **single** camera UBO: `CameraUBOData{viewProj, view}` (128 bytes, matching the `CameraUBO` block in `gbuffer.vert` and `debug_*.vert`).
+`CameraGPU` (`src/render/resources/CameraGPU.hpp`) is the renderer's **single** camera UBO: `CameraUBOData{viewProj, view}` (128 bytes, matching the `CameraUBO` block in `gbuffer.vert.glsl` and `debug_*.vert.glsl`).
 
 - Constructed **eagerly** in `RenderCache`'s constructor - it needs no queue - so `GetCameraGPU()` returns a reference and is never null.
 - Written once per frame by `DeferredRenderer::recordFrame()` via `RenderCache::UpdateCamera(proj, view)`, *before* any pass records. Passes only bind it; a pass that wrote it would make the result depend on pass order.
 - Keeps `proj` on the CPU behind `GetProjection()` without uploading it (see the Debug overlay pass in [Passes](passes.md) for why `viewProj[1][1]` is not a substitute).
 - `IsValid()` is false until the first `UpdateCamera()`. `GeometryPass` and `DebugPass` both bail out of `Record()` on a false, which is also why a **test** that drives either pass directly must publish a frame first - use `VulkanTestShared::PublishFrame(cache, ctx, out, scene)`, which writes the camera UBO as part of publishing the frame.
-- `CameraUBOData` must be declared identically in `gbuffer.vert`, `overlay_line.vert`, `overlay_point.vert` and `debug_wire.vert` - they share the one UBO.
+- `CameraUBOData` must be declared identically in `gbuffer.vert.glsl`, `overlay_line.vert.glsl`, `overlay_point.vert.glsl` and `debug_wire.vert.glsl` - they share the one UBO.
 - `Update` keeps `proj` separate from `view` because a consumer needs `proj[1][1]` to convert a world-space size to pixels; that value is unrecoverable from `viewProj`.
 
 ## DebugCache
 
-`DebugCache` (`src/render/resources/DebugCache.h`) is a per-frame-slot `CPUBuffer` pair (segments + point sprites) holding the flattened `DebugDrawList`, plus the partition boundaries and counts `DebugPass` draws from.
+`DebugCache` (`src/render/resources/DebugCache.hpp`) is a per-frame-slot `CPUBuffer` pair (segments + point sprites) holding the flattened `DebugDrawList`, plus the partition boundaries and counts `DebugPass` draws from.
 
 - Also eager in `RenderCache`'s constructor, but allocates nothing until the first `UpdateDebugDraw()`; the slot vector self-sizes on `frameIndex`, so no `framesInFlight` count is threaded through the renderer.
 - Written once per frame by `recordFrame()` via `RenderCache::UpdateDebugDraw(frameIndex, list)`; revision-gated, so an unchanged list copies nothing.
@@ -188,7 +188,7 @@ Per-member std140/std430 offset tables for the light structs were dropped; only 
 
 ## GizmoCache
 
-`GizmoCache` (`src/render/resources/GizmoCache.h`) is a structural sibling of `DebugCache`: the same per-frame-slot `CPUBuffer` pair (segments + point sprites) and the same `EnsureCapacity` with its 4096-byte floor, holding the flattened `GizmoDrawList` that `GizmoPass` draws from. The floor is load-bearing, not incidental - it is what guarantees both buffers are non-null once `Update()` has run, and a null `VkBuffer` is not something a descriptor may name.
+`GizmoCache` (`src/render/resources/GizmoCache.hpp`) is a structural sibling of `DebugCache`: the same per-frame-slot `CPUBuffer` pair (segments + point sprites) and the same `EnsureCapacity` with its 4096-byte floor, holding the flattened `GizmoDrawList` that `GizmoPass` draws from. The floor is load-bearing, not incidental - it is what guarantees both buffers are non-null once `Update()` has run, and a null `VkBuffer` is not something a descriptor may name.
 
 - Written once per frame by `recordFrame()` via `RenderCache::UpdateGizmoDraw(frameIndex, frame.gizmoDraw)`, unconditionally: the snapshot always carries a gizmo list (empty when nothing is armed), so there is no pointer to guard on.
 - **No revision gate** (unlike `DebugCache`): a live gesture rebuilds its guide on every cursor *or camera* move, and when no gesture is live nothing is drawn at all, so `GizmoDrawList` carries no revision counter and `Update()` copies unconditionally - a few dozen arc chords is less than the compare is worth reasoning about.

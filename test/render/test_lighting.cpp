@@ -14,23 +14,23 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/UploadManager.h"
-#include "render/resources/LightingCache.h"
-#include "render/passes/GeometryPass.h"
-#include "render/passes/LightingPass.h"
-#include "render/buffers/GPUBuffer.h"
-#include "render/buffers/IndexBuffer.h"
-#include "render/buffers/VertexBuffer.h"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/UploadManager.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/passes/LightingPass.hpp"
+#include "render/buffers/GPUBuffer.hpp"
+#include "render/buffers/IndexBuffer.hpp"
+#include "render/buffers/VertexBuffer.hpp"
 
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
-#include "asset/data/MeshData.h"
+#include "asset/data/MeshData.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 

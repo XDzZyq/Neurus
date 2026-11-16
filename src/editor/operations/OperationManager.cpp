@@ -3,12 +3,12 @@
  * @brief Undo/redo stack management and synchronous operation replay.
  */
 
-#include "editor/operations/OperationManager.h"
+#include "editor/operations/OperationManager.hpp"
 
-#include "core/Log.h"
-#include "editor/operations/OperationContext.h"
-#include "editor/operations/ScriptOperations.h"
-#include "editor/events/EventBus.h"
+#include "core/Log.hpp"
+#include "editor/operations/OperationContext.hpp"
+#include "editor/operations/ScriptOperations.hpp"
+#include "editor/events/EventBus.hpp"
 
 namespace neurus {
 

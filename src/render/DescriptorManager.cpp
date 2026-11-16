@@ -1,4 +1,4 @@
-#include "DescriptorManager.h"
+#include "DescriptorManager.hpp"
 
 #include <cassert>
 #include <stdexcept>

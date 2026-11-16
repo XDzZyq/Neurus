@@ -1,12 +1,12 @@
 // Must define platform before including Vulkan headers
 
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
 #include <gtest/gtest.h>
 
-#include "render/Image.h"
-#include "render/Barrier.h"
+#include "render/Image.hpp"
+#include "render/Barrier.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 

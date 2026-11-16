@@ -1,8 +1,8 @@
-#include "asset/data/MeshData.h"
-#include "asset/data/AssetPath.h"
+#include "asset/data/MeshData.hpp"
+#include "asset/data/AssetPath.hpp"
 
-#include "core/Log.h"
-#include "core/Timer.h"
+#include "core/Log.hpp"
+#include "core/Timer.hpp"
 
 #include <algorithm>
 #include <cmath>

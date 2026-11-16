@@ -1,7 +1,7 @@
-#include "cli/CommandClient.h"
+#include "cli/CommandClient.hpp"
 
-#include "cli/Output.h"
-#include "cli/SessionClient.h"
+#include "cli/Output.hpp"
+#include "cli/SessionClient.hpp"
 
 #include <vector>
 

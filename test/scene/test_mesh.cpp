@@ -10,12 +10,12 @@
 
 #include <glm/glm.hpp>
 
-#include "scene/Mesh.h"
-#include "asset/data/ShaderData.h"
-#include "scene/Transform.h"
-#include "scene/ObjectID.h"
-#include "asset/data/MeshData.h"
-#include "scene/Material.h"
+#include "scene/Mesh.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "scene/Transform.hpp"
+#include "scene/ObjectID.hpp"
+#include "asset/data/MeshData.hpp"
+#include "scene/Material.hpp"
 
 using namespace neurus;
 

@@ -13,16 +13,16 @@ state directly. It never includes or holds the Editor: content creation is also
 requested through typed events. The isolation boundary is enforced by a test
 (`test/script/test_script_isolation.cpp`).
 
-- **`ScriptEngine`** (`src/script/ScriptEngine.h`) owns the interpreter. Its
+- **`ScriptEngine`** (`src/script/ScriptEngine.hpp`) owns the interpreter. Its
   public header is Python-free (PIMPL), so the rest of the codebase never sees a
   pybind11 or CPython type.
-- **`ScriptContext`** (`src/script/ScriptContext.h`) is the read-only document
+- **`ScriptContext`** (`src/script/ScriptContext.hpp`) is the read-only document
   view: borrowed `const Scene*`, `const RenderConfig*` and
   `const IResourceLookup*` pointers. The active camera and the selection are read
   live from the scene, so neither is snapshotted here; names resolve through the
   resource pool. `Editor::UpdateScriptContext()` fills it per run; the engine
   publishes it for that run and clears it afterwards.
-- **`ScriptView`** (`src/script/ScriptView.h`) is the engine-owned view
+- **`ScriptView`** (`src/script/ScriptView.hpp`) is the engine-owned view
   injected into every collection and proxy when it is constructed. It is a plain
   pair of pointers with no accessors; each proxy resolves its own object through
   `view->ctx` on every access. The view's address is stable for the interpreter's
@@ -238,22 +238,22 @@ import neurus
 mesh = neurus.scene.meshes["Ground"]
 
 # Main form: import the stage you care about, then create the mesh shader.
-frag = neurus.shader.load_shader("res/shaders/render/gbuffer.frag")
+frag = neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl")
 mesh.shader.create(fragment=frag)       # vertex comes from the default G-buffer vertex
 
 # A source path is the same shader content, imported inline.
-mesh.shader.create(fragment="res/shaders/render/gbuffer.frag")
+mesh.shader.create(fragment="res/shaders/render/gbuffer.frag.glsl")
 
 # Both sides explicitly, or the default pair.
-mesh.shader.create("res/shaders/render/gbuffer.vert",
-                   "res/shaders/render/gbuffer.frag")
+mesh.shader.create("res/shaders/render/gbuffer.vert.glsl",
+                   "res/shaders/render/gbuffer.frag.glsl")
 mesh.shader.create()                    # default G-buffer pair
 
-frag.code = open("my.frag").read()      # edit before creating from it
+frag.code = open("my.frag.glsl").read() # edit before creating from it
 frag.compile()
 mesh.shader.create(fragment=frag)
 
-neurus.shader.load_shader("res/shaders/render/gbuffer.frag", name="MyFrag")
+neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl", name="MyFrag")
 mesh.shader.create(fragment=neurus.data.shaders["MyFrag"])
 
 frag = mesh.shader.fragment
@@ -271,14 +271,14 @@ mesh.shader.remove()
 - `create()` forms: no argument (default pair), one path (stage inferred from
   the extension), two positional `(vertex, fragment)`, or `vertex=` /
   `fragment=`. Each side is a path or a pooled `Shader`; a pooled shader
-  contributes its matching stage. A `.comp` source cannot attach to a mesh.
+  contributes its matching stage. A `.comp.glsl` source cannot attach to a mesh.
 - A side given as a path is shorthand for `load_shader(path)` followed by
   `create(...=<pooled>)`: the produced shader has the same stage content either
   way, but the path form does not leave the imported shader in the pool.
 - A side `create()` does not name uses the default G-buffer source for that
   stage (`neurus.shader.DEFAULT_VERTEX` / `DEFAULT_FRAGMENT`).
-- `load_shader` pools a `RenderShader` (`.vert` / `.frag`) or a `ComputeShader`
-  (`.comp`). A `.frag` load uses the default G-buffer vertex; a `.vert` load
+- `load_shader` pools a `RenderShader` (`.vert.glsl` / `.frag.glsl`) or a `ComputeShader`
+  (`.comp.glsl`). A `.frag.glsl` load uses the default G-buffer vertex; a `.vert.glsl` load
   uses the default fragment. The default name is the path as given.
 - `neurus.data.shaders` lists pooled shaders by UID or registered name.
 - A `ShaderUnit` exposes `.stage`, `.code`, `.parsed` and
@@ -305,7 +305,7 @@ does not land inside a frame.
 - Provision the environment with `make update`.
 - Override the environment path at configure time with
   `-DNEURUS_PYTHON_ENV=<path>` (the value is baked into the generated
-  `neurus_python_config.h`).
+  `neurus_python_config.hpp`).
 - If the environment is missing, the interpreter still starts isolated against
   its base install.
 
@@ -454,7 +454,7 @@ The policy is persisted in `~/.neurus/preferences.json` and edited in
 | Time limit (s) | Wall-clock limit; `0` means unlimited. |
 | Memory limit (MB) | Address-space limit; `0` means unlimited. |
 
-`ScriptPolicy` (`src/script/ScriptPolicy.h`) is the Python-free value that
+`ScriptPolicy` (`src/script/ScriptPolicy.hpp`) is the Python-free value that
 describes one run. `Preferences::MakeScriptPolicy(projectRoot)` builds the
 external-run policy from the persisted fields; an empty root list falls back to
 the project directory. `ScriptPolicy::Trusted()` is the UI-run default. A policy

@@ -3,7 +3,7 @@
  * @brief ScalarSlider implementation — bidirectional slider↔spin sync.
  */
 
-#include "items/ScalarSlider.h"
+#include "items/ScalarSlider.hpp"
 
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>

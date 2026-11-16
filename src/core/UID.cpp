@@ -3,7 +3,7 @@
  * @brief Implementation of the UID base class.
  */
 
-#include "core/UID.h"
+#include "core/UID.hpp"
 
 namespace neurus
 {

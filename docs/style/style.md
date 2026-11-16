@@ -27,7 +27,7 @@ RAII throughout.
 - Members: prefixes as needed (`m_` for member variables, or match local style)
 - Functions in .cpp: camelCase if local; match surrounding convention
 - Enums: PascalCase for types, PascalCase or UPPER_CASE for values
-- Files: PascalCase for class files (for example `VulkanContext.h`)
+- Files: PascalCase for class files (for example `VulkanContext.hpp`)
 - Constants: UPPER_SNAKE_CASE
 - Functions: PascalCase for public API; camelCase for internals
 

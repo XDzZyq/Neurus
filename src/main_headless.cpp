@@ -1,6 +1,6 @@
-#include "app/HeadlessApplication.h"
+#include "app/HeadlessApplication.hpp"
 
-#include "platform/PlatformProcess.h"
+#include "platform/PlatformProcess.hpp"
 
 #include <exception>
 #include <iostream>

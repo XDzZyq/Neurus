@@ -34,8 +34,8 @@
 #include <DockWidget.h>
 #include <FloatingDockContainer.h>
 
-#include "ui/UIManager.h"
-#include "ui/panels/UIPanel.h"
+#include "ui/UIManager.hpp"
+#include "ui/panels/UIPanel.hpp"
 
 using namespace neurus;
 

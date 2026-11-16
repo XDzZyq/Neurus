@@ -8,7 +8,7 @@ from the debug overlay: it is transient editor UI, not scene content.
 A gizmo handle must not reuse `DebugLine` / `DebugPoints` / `DebugMesh`. It is not
 pooled, not serialized, not selectable, and never appears in the Outliner.
 `GizmoDrawBuilder` synthesizes a fresh `GizmoDrawList` from `TransformGizmo`
-state; both share `OverlayGeometry.h`'s records with `DebugDrawList` and nothing
+state; both share `OverlayGeometry.hpp`'s records with `DebugDrawList` and nothing
 else.
 
 Blender-style modal transform: `G` / `R` / `S` arm a gesture on the active

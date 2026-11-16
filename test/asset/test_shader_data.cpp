@@ -16,12 +16,12 @@
 #include <sstream>
 #include <string>
 
-#include "asset/components/ResourceComponent.h"
-#include "asset/data/ShaderData.h"
-#include "asset/data/shader/ShaderStruct.h"
-#include "core/ResourceManager.h"
-#include "render/shaders/ComputeShader.h"
-#include "render/shaders/RenderShader.h"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "asset/data/shader/ShaderStruct.hpp"
+#include "core/ResourceManager.hpp"
+#include "render/shaders/ComputeShader.hpp"
+#include "render/shaders/RenderShader.hpp"
 
 namespace
 {
@@ -78,7 +78,7 @@ TEST(ShaderDataPersistence, ShaderStructRoundTripsEveryContainer)
 TEST(ShaderDataPersistence, ShaderUnitDoesNotPersistSpvOrVersion)
 {
 	neurus::ShaderUnit unit;
-	unit.path = "res/x.frag";
+	unit.path = "res/x.frag.glsl";
 	unit.code = "#version 450\nvoid main() {}\n";
 	unit.spv = {0x07230203u};
 	unit.BumpVersion();
@@ -102,7 +102,7 @@ TEST(ShaderDataPersistence, ShaderUnitDoesNotPersistSpvOrVersion)
 
 TEST(ShaderDataPersistence, RenderShaderKeepsEditedContent)
 {
-	neurus::RenderShader src("Edited", "v.vert", "f.frag");
+	neurus::RenderShader src("Edited", "v.vert.glsl", "f.frag.glsl");
 	src.GetStage(neurus::ShaderType::VERTEX).code = kMinimalVertex;
 	src.GetStage(neurus::ShaderType::FRAGMENT).code = kMinimalFragment;
 	src.GetStage(neurus::ShaderType::FRAGMENT).parsed.SetUni(
@@ -127,8 +127,8 @@ TEST(ShaderDataPersistence, RenderShaderKeepsEditedContent)
 
 TEST(ShaderDataPersistence, RenderShaderLegacyPathsReloadFromDisk)
 {
-	neurus::RenderShader src("Legacy", "res/shaders/render/gbuffer.vert",
-	                         "res/shaders/render/gbuffer.frag");
+	neurus::RenderShader src("Legacy", "res/shaders/render/gbuffer.vert.glsl",
+	                         "res/shaders/render/gbuffer.frag.glsl");
 	// No ParseAndGenerate: code is empty, so load must reload from the paths.
 	std::stringstream ss;
 	{
@@ -146,8 +146,8 @@ TEST(ShaderDataPersistence, RenderShaderLegacyPathsReloadFromDisk)
 
 TEST(ShaderDataPersistence, LegacyMissingStagesReloadsFromPaths)
 {
-	neurus::RenderShader src("Legacy", "res/shaders/render/gbuffer.vert",
-	                         "res/shaders/render/gbuffer.frag");
+	neurus::RenderShader src("Legacy", "res/shaders/render/gbuffer.vert.glsl",
+	                         "res/shaders/render/gbuffer.frag.glsl");
 
 	std::stringstream saved;
 	{
@@ -177,7 +177,7 @@ TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
 {
 	neurus::ResourceManager resources;
 	auto compute = resources.Load<neurus::ComputeShader>(
-		"Comp", "res/shaders/compute/dummy.comp");
+		"Comp", "res/shaders/compute/dummy.comp.glsl");
 	ASSERT_TRUE(compute->ParseAndGenerate());
 	resources.SetName(compute->GetObjectID(), "Comp");
 	compute->SetName("Comp");
@@ -204,7 +204,7 @@ TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
 
 TEST(ShaderDataPersistence, ComputeShaderRoundTripsContentAndDefaults)
 {
-	neurus::ComputeShader src("Dummy", "res/shaders/compute/dummy.comp");
+	neurus::ComputeShader src("Dummy", "res/shaders/compute/dummy.comp.glsl");
 	ASSERT_TRUE(src.ParseAndGenerate());
 	src.SetDefault("radius", 0.5f);
 
@@ -229,7 +229,7 @@ TEST(ShaderDataPersistence, ShaderNamesSurviveResourceComponentRoundTrip)
 {
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>(
-		"MyFrag", "res/shaders/render/gbuffer.vert", "res/shaders/render/gbuffer.frag");
+		"MyFrag", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
 	resources.SetName(shader->GetObjectID(), "MyFrag");
 	shader->SetName("MyFrag");
 
@@ -250,8 +250,8 @@ TEST(ShaderDataPersistence, ShaderNamesSurviveResourceComponentRoundTrip)
 
 TEST(ShaderDataPersistence, FindStageReturnsNullptrWhenStageIsAbsent)
 {
-	neurus::RenderShader source("Source", "res/shaders/render/gbuffer.vert",
-	                            "res/shaders/render/gbuffer.frag");
+	neurus::RenderShader source("Source", "res/shaders/render/gbuffer.vert.glsl",
+	                            "res/shaders/render/gbuffer.frag.glsl");
 	source.GetStage(neurus::ShaderType::VERTEX).code = "VERT";
 	source.GetStage(neurus::ShaderType::FRAGMENT).code = "FRAG";
 

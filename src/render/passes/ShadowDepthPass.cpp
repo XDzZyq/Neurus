@@ -8,20 +8,20 @@
  * a single lightViewProj push constant.
  */
 
-#include "passes/ShadowDepthPass.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "RenderCache.h"
-#include "../resources/MeshGPU.h"
-#include "../PipelineBuilder.h"
-#include "render/Barrier.h"
-#include "../shaders/ShaderLibrary.h"
-#include "../shaders/RenderShader.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "passes/ShadowDepthPass.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "RenderCache.hpp"
+#include "../resources/MeshGPU.hpp"
+#include "../PipelineBuilder.hpp"
+#include "render/Barrier.hpp"
+#include "../shaders/ShaderLibrary.hpp"
+#include "../shaders/RenderShader.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -89,12 +89,12 @@ ShadowDepthPass::ShadowDepthPass(const vk::raii::Device& device,
 	// --- Self-load shaders via ShaderLibrary ---
 	, p_multiviewShader(
 		ShaderLibrary::LoadRenderShader("ShadowDepthMultiview",
-		                                 NEURUS_SHADER_DIR "render/shadow_depth_multiview.vert",
-		                                 NEURUS_SHADER_DIR "render/shadow_depth.frag"))
+		                                 NEURUS_SHADER_DIR "render/shadow_depth_multiview.vert.glsl",
+		                                 NEURUS_SHADER_DIR "render/shadow_depth.frag.glsl"))
 	, p_sunShader(
 		ShaderLibrary::LoadRenderShader("ShadowDepthSun",
-		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.vert",
-		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.frag"))
+		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.vert.glsl",
+		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.frag.glsl"))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;

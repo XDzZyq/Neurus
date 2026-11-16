@@ -1,9 +1,9 @@
-#include "app/Preferences.h"
+#include "app/Preferences.hpp"
 
-#include "core/Log.h"
-#include "core/Serialize.h"
-#include "platform/PlatformFile.h"
-#include "platform/PlatformPaths.h"
+#include "core/Log.hpp"
+#include "core/Serialize.hpp"
+#include "platform/PlatformFile.hpp"
+#include "platform/PlatformPaths.hpp"
 
 #include <cereal/archives/json.hpp>
 #include <cereal/types/string.hpp>

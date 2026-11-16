@@ -51,11 +51,11 @@ flowchart LR
 ## Three Event Paths
 
 Event structs in `src/editor/events/` are split by domain:
-`SceneEvents.h` (scene-domain events carrying plain `int objectUid`: selection,
-transform, visibility, camera/mesh/light/env property edits), `EditorEvents.h`
+`SceneEvents.hpp` (scene-domain events carrying plain `int objectUid`: selection,
+transform, visibility, camera/mesh/light/env property edits), `EditorEvents.hpp`
 (cross-component events: RenderResetEvent, EnvironmentChanged, SceneModified,
 LightGpuChanged, LightingRebuild, SceneObjectGpuUploadRequested), and
-`AssetEvents.h` (asset add/import: mesh/camera/light adds). Object property
+`AssetEvents.hpp` (asset add/import: mesh/camera/light adds). Object property
 writes are handled by `ObjectController`, which resolves them through the
 resource pool; shader edits by `ShaderController`; membership and selection by
 `SceneController`, which resolves against the Scene. They emit `EditorEvents` for
@@ -67,11 +67,11 @@ and where it is resolved; **when** it is dispatched is a separate axis - only th
 UI boundary is deferred, everything else is synchronous. See
 [Events](../editor/events.md#dispatch-paths).
 
-1. **UI -> Editor pure intents** (`InputEvents.h`): the raw input stream -
+1. **UI -> Editor pure intents** (`InputEvents.hpp`): the raw input stream -
    mouse move/press/release/scroll plus
    `ObjectClicked { int objectUid; int modifiers; }` and `DeleteRequested { }`.
    These carry no scene; the UI does not hold or stamp the scene.
-2. **UI -> Controller editing events** (`SceneEvents.h`, `ShaderEvents.h`):
+2. **UI -> Controller editing events** (`SceneEvents.hpp`, `ShaderEvents.hpp`):
    complete scene mutations (selection, transform, visibility, property edits,
    shader edits) carrying `int objectUid`. Panels emit these with the active
    object's integer UID; `Editor::OnUIEvent` enqueues them unchanged and
@@ -86,7 +86,7 @@ UI boundary is deferred, everything else is synchronous. See
    and the replay / restore events. `CameraEvents` carry `int camId` (resolved
    by the controller).
 
-On the UI->Editor path the UI emits PURE INPUT INTENTS (`InputEvents.h`) that
+On the UI->Editor path the UI emits PURE INPUT INTENTS (`InputEvents.hpp`) that
 carry no scene; the Editor wraps them into dedicated scene events
 (`ObjectSelected`, `DeleteObjectsRequested`), and controllers handle complete
 scene mutations carrying `int objectUid`, resolving the UID to the live object
@@ -158,7 +158,7 @@ correct however the Editor edits or deletes afterward. See
 Once `RenderThread::Start()` runs, the render thread is the only thread that
 calls into `DeferredRenderer`. The Application never draws or waits the GPU; it
 publishes one `PublishedFrame` per tick and sends control messages
-(`src/render/RenderControl.h`) that the thread executes between frames, after
+(`src/render/RenderControl.hpp`) that the thread executes between frames, after
 the frame fence:
 
 **One publish per tick carries the tick's requests.** `RenderThread::Publish`
@@ -221,7 +221,7 @@ before any GPU member is destroyed.
 Two frame views over the same document state, with the Editor as the single
 pivot, so neither consumer reaches around it for the other's data:
 
-- `RenderContext` (`src/render/RenderContext.h`) - the renderer's view. The
+- `RenderContext` (`src/render/RenderContext.hpp`) - the renderer's view. The
   Editor half is a single owned frame snapshot: the Application publishes one
   `PublishedFrame` per tick (the `Editor::BuildSnapshot()` snapshot plus that
   tick's requests), and the render thread points `ctx.snapshot` at the snapshot
@@ -229,14 +229,14 @@ pivot, so neither consumer reaches around it for the other's data:
   `height`, `frameIndex`, `jitter`, `iteration`) through `recordFrame()`. There
   is no second publication path - a pass reads what is being rendered through
   `ctx.Frame()`.
-- `UIContext` (`src/ui/UIContext.h`) - the UI's view, two fields wide: `scene`
+- `UIContext` (`src/ui/UIContext.hpp`) - the UI's view, two fields wide: `scene`
   and `config` from `Editor::UpdateUIContext()`, plus the Application's typed
   `profile`/`log`/`history`/`scriptConsole` pointers. A panel never names the
   camera or either overlay payload.
 - Read-only access to scene data for Renderer
 - Data flows: Editor mutates, Renderer consumes
 - **`RenderContext` carries the Editor half as one forward-declared
-  `const RenderFrameSnapshot*`** (`src/render/RenderFrameSnapshot.h`) - an owned
+  `const RenderFrameSnapshot*`** (`src/render/RenderFrameSnapshot.hpp`) - an owned
   deep copy with no Scene pointers and no lazy reads, so the renderer reads values
   the Editor is free to keep mutating. `UIContext`'s members stay typed pointers
   declared by forward declaration (`const Scene*`, `const RenderConfig*`,
@@ -245,7 +245,7 @@ pivot, so neither consumer reaches around it for the other's data:
   view owns its source** - never by a `void*` slot. A forward declaration adds no
   include, so the typed pointer costs the layer isolation nothing; the type
   erasure it replaced cost 18 `static_cast` sites and two wrong null policies.
-- `RenderConfig` (`src/core/RenderConfig.h`) is owned by the Editor directly
+- `RenderConfig` (`src/core/RenderConfig.hpp`) is owned by the Editor directly
   (no longer via Project); `BuildSnapshot()` copies it into the snapshot, where a
   pass reads it through `ctx.Frame().Settings()`, and a panel reads the Editor's
   copy through `UIContext::Settings()`. Neither returns null - both fall back to

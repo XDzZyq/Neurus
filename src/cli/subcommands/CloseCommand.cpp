@@ -1,10 +1,10 @@
-#include "cli/subcommands/CloseCommand.h"
+#include "cli/subcommands/CloseCommand.hpp"
 
-#include "cli/Output.h"
-#include "cli/SessionClient.h"
-#include "cli/TerminalBinding.h"
-#include "command/CommandError.h"
-#include "command/Commands.h"
+#include "cli/Output.hpp"
+#include "cli/SessionClient.hpp"
+#include "cli/TerminalBinding.hpp"
+#include "command/CommandError.hpp"
+#include "command/Commands.hpp"
 
 #include <algorithm>
 #include <cstdint>

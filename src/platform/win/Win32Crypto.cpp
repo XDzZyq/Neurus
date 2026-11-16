@@ -1,4 +1,4 @@
-#include "platform/PlatformCrypto.h"
+#include "platform/PlatformCrypto.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN

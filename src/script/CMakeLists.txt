@@ -3,42 +3,49 @@
 # Layer rule: the script layer reaches the editor only through the editor's typed
 # events (it includes the events headers and emits through the queue); it must
 # never include the Editor or Renderer/UI headers. Python/pybind11 headers are
-# confined to implementation sources: the layer headers (ScriptEngine.h,
-# ScriptContext.h, ScriptPolicy.h, ScriptDispatch.h, ScriptView.h, proxies/)
-# stay Python-free, ScriptSandbox.h and ScriptImports.h are included only by
-# ScriptEngineImpl.h, and bindings/ holds only the pybind11 registration units
-# plus the forward-declaring Bindings.h.
+# confined to implementation sources: the layer headers (ScriptEngine.hpp,
+# ScriptContext.hpp, ScriptPolicy.hpp, ScriptDispatch.hpp, ScriptView.hpp, proxies/)
+# stay Python-free, ScriptSandbox.hpp and ScriptImports.hpp are included only by
+# ScriptEngineImpl.hpp, and bindings/ holds only the pybind11 registration units
+# plus the forward-declaring Bindings.hpp.
 #
 # Explicit source list (no glob), matching the other layer libraries.
 
 add_library(neurus_script STATIC
-	ScriptConsole.h
-	ScriptContext.h
-	ScriptDispatch.h
-	ScriptEngine.h
+	ScriptConsole.hpp
+	ScriptContext.hpp
+	ScriptDispatch.hpp
+	ScriptEngine.hpp
 	ScriptEngine.cpp
-	ScriptEngineImpl.h
-	ScriptImports.h
+	ScriptEngineImpl.hpp
+	ScriptImports.hpp
 	ScriptImports.cpp
-	ScriptPolicy.h
+	ScriptPolicy.hpp
 	ScriptPolicy.cpp
-	ScriptSandbox.h
+	ScriptSandbox.hpp
 	ScriptSandbox.cpp
-	ScriptView.h
-	proxies/ProxyBase.h
-	proxies/ObjectProxy.h
-	proxies/Transform3DProxy.h
-	proxies/SceneProxies.h
-	proxies/ShaderProxies.h
-	bindings/Bindings.h
+	ScriptView.hpp
+	proxies/ProxyBase.hpp
+	proxies/ObjectProxy.hpp
+	proxies/Transform3DProxy.hpp
+	proxies/SceneProxies.hpp
+	proxies/ShaderProxies.hpp
+	bindings/Bindings.hpp
 	bindings/ObjectBindings.cpp
 	bindings/DataBindings.cpp
 	bindings/SceneBindings.cpp
 	bindings/ConfigBindings.cpp
-	bindings/ShaderBindings.h
+	bindings/ShaderBindings.hpp
 	bindings/ShaderBindings.cpp
 	bindings/Module.cpp
 )
+
+# pybind11 declares its own namespace with hidden visibility, so a class in this
+# library that holds pybind11 objects must be hidden too, or GCC/Clang report
+# -Wattributes for every such field. The script layer is an internal static
+# library - nothing links it as a shared object - so hidden visibility is the
+# correct default for it.
+set_target_properties(neurus_script PROPERTIES CXX_VISIBILITY_PRESET hidden)
 
 target_link_libraries(neurus_script PUBLIC
 	neurus_editor
@@ -55,7 +62,7 @@ target_include_directories(neurus_script PUBLIC
 )
 
 # The generated NEURUS_PYTHON_HOME header is an implementation detail of this
-# library (only ScriptEngineImpl.h includes it).
+# library (only ScriptEngineImpl.hpp includes it).
 target_include_directories(neurus_script PRIVATE
 	${CMAKE_BINARY_DIR}/generated
 )

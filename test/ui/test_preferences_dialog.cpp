@@ -12,7 +12,7 @@
 #include <QLineEdit>
 #include <QSpinBox>
 
-#include "ui/panels/PreferencesDialog.h"
+#include "ui/panels/PreferencesDialog.hpp"
 
 using namespace neurus;
 

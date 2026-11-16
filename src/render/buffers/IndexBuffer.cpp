@@ -1,6 +1,6 @@
-#include "IndexBuffer.h"
+#include "IndexBuffer.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <stdexcept>
 

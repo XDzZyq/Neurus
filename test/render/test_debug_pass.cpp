@@ -22,22 +22,22 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "shared/TestReferenceImage.h"
+#include "shared/TestVulkanShared.hpp"
+#include "shared/TestReferenceImage.hpp"
 
-#include "asset/data/ImageData.h"
-#include "asset/data/MeshData.h"
-#include "render/Barrier.h"
-#include "render/Image.h"
-#include "render/RenderCache.h"
-#include "core/RenderConfig.h"
-#include "render/RenderContext.h"
-#include "render/UploadManager.h"
-#include "render/passes/DebugPass.h"
-#include "render/resources/MeshGPU.h"
-#include "scene/Camera.h"
-#include "render/overlay/DebugDrawList.h"
-#include "scene/Scene.h"
+#include "asset/data/ImageData.hpp"
+#include "asset/data/MeshData.hpp"
+#include "render/Barrier.hpp"
+#include "render/Image.hpp"
+#include "render/RenderCache.hpp"
+#include "core/RenderConfig.hpp"
+#include "render/RenderContext.hpp"
+#include "render/UploadManager.hpp"
+#include "render/passes/DebugPass.hpp"
+#include "render/resources/MeshGPU.hpp"
+#include "scene/Camera.hpp"
+#include "render/overlay/DebugDrawList.hpp"
+#include "scene/Scene.hpp"
 
 #include <glm/glm.hpp>
 
@@ -442,7 +442,7 @@ TEST_F(DebugPassTest, ScreenSpacePoint_DrawsSquareAtProjectedPosition)
  *
  * Sprites are not multisampled, so the shape mask is a hard discard: unsmoothed,
  * a pixel is either fully inside the circle or gone, and the histogram is binary.
- * The Smooth branch in overlay_point.frag scales alpha by the distance to the
+ * The Smooth branch in overlay_point.frag.glsl scales alpha by the distance to the
  * boundary in pixels, which can only show up as intermediate luma. Counting those
  * intermediate pixels is therefore the exact measurement of "is the branch live",
  * and it is the branch DebugDrawBuilder now sets on every sprite.

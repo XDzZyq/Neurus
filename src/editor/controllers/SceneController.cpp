@@ -13,28 +13,28 @@
  * deciding them locally.
  */
 
-#include "editor/controllers/SceneController.h"
+#include "editor/controllers/SceneController.hpp"
 
 #include <algorithm>
 #include <memory>
 #include <vector>
 
-#include "asset/data/ShaderData.h"
-#include "editor/controllers/MutationNotify.h"
-#include "editor/events/CameraEvents.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/events/EditorEvents.h"
-#include "editor/events/ShaderEvents.h"
-#include "editor/operations/SceneOperations.h"
-#include "editor/operations/ShaderOperations.h"
-#include "editor/Input.h"
+#include "asset/data/ShaderData.hpp"
+#include "editor/controllers/MutationNotify.hpp"
+#include "editor/events/CameraEvents.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/events/EditorEvents.hpp"
+#include "editor/events/ShaderEvents.hpp"
+#include "editor/operations/SceneOperations.hpp"
+#include "editor/operations/ShaderOperations.hpp"
+#include "editor/Input.hpp"
 
-#include "scene/Camera.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "scene/ObjectID.h"
+#include "scene/Camera.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "scene/ObjectID.hpp"
 
 namespace {
 

@@ -3,7 +3,7 @@
  * @brief ColorButton implementation.
  */
 
-#include "items/ColorButton.h"
+#include "items/ColorButton.hpp"
 
 #include <QColorDialog>
 #include <QDialog>

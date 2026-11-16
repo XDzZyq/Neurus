@@ -8,27 +8,27 @@
  * UI events in the one order the renderer depends on.
  */
 
-#include "app/Application.h"
+#include "app/Application.hpp"
 
-#include "app/ApplicationCore.h"
+#include "app/ApplicationCore.hpp"
 
-#include "app/Preferences.h"
-#include "app/session/SessionServer.h"
-#include "core/Log.h"
-#include "editor/events/ConfigEvents.h"
-#include "editor/events/InputEvents.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/events/ShaderEvents.h"
-#include "editor/events/UIEvents.h"
-#include "ui/UIManager.h"
-#include "ui/UIContext.h"
-#include "ui/panels/Outliner.h"
-#include "ui/panels/PropertyPanel.h"
-#include "ui/panels/RenderConfigPanel.h"
-#include "ui/panels/ScriptConsolePanel.h"
-#include "ui/panels/ShaderEditorPanel.h"
-#include "ui/panels/Viewport.h"
-#include "ui/utils/I18n.h"
+#include "app/Preferences.hpp"
+#include "app/session/SessionServer.hpp"
+#include "core/Log.hpp"
+#include "editor/events/ConfigEvents.hpp"
+#include "editor/events/InputEvents.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/events/ShaderEvents.hpp"
+#include "editor/events/UIEvents.hpp"
+#include "ui/UIManager.hpp"
+#include "ui/UIContext.hpp"
+#include "ui/panels/Outliner.hpp"
+#include "ui/panels/PropertyPanel.hpp"
+#include "ui/panels/RenderConfigPanel.hpp"
+#include "ui/panels/ScriptConsolePanel.hpp"
+#include "ui/panels/ShaderEditorPanel.hpp"
+#include "ui/panels/Viewport.hpp"
+#include "ui/utils/I18n.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -232,7 +232,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     // Process all enqueued events (camera, gizmo, ...). Every
 	                     // Post of this tick happens inside Edit(), before the
 	                     // Publish below: the ordering contract in
-	                     // RenderRequestSink.h.
+	                     // RenderRequestSink.hpp.
 	                     app_editor->Edit();
 
 	                     // The frame is built per tick and moved into the

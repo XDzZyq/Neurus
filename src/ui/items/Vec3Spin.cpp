@@ -3,7 +3,7 @@
  * @brief Vec3Spin implementation — three spinboxes in a horizontal row.
  */
 
-#include "items/Vec3Spin.h"
+#include "items/Vec3Spin.hpp"
 
 #include <QDoubleSpinBox>
 #include <QHBoxLayout>

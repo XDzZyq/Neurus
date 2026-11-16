@@ -8,8 +8,8 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/HaltonSequence.h"
-#include "render/TemporalAccumulator.h"
+#include "render/HaltonSequence.hpp"
+#include "render/TemporalAccumulator.hpp"
 
 namespace neurus {
 namespace {

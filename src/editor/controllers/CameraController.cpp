@@ -6,13 +6,13 @@
  * external (the emitting handler normalizes each delta before emitting it).
  */
 
-#include "editor/controllers/CameraController.h"
-#include "editor/events/CameraEvents.h"
-#include "editor/events/EditorEvents.h"
-#include "editor/events/EventBus.h"
-#include "editor/operations/IOperationSink.h"
-#include "editor/operations/SceneOperations.h"
-#include "scene/Camera.h"
+#include "editor/controllers/CameraController.hpp"
+#include "editor/events/CameraEvents.hpp"
+#include "editor/events/EditorEvents.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/operations/IOperationSink.hpp"
+#include "editor/operations/SceneOperations.hpp"
+#include "scene/Camera.hpp"
 
 #include <algorithm>
 #include <cmath>

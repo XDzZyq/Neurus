@@ -1,6 +1,6 @@
-#include "ipc/RandomToken.h"
+#include "ipc/RandomToken.hpp"
 
-#include "platform/PlatformCrypto.h"
+#include "platform/PlatformCrypto.hpp"
 
 #include <array>
 #include <cstddef>

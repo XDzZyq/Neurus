@@ -11,9 +11,9 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/polymorphic.hpp>
 
-#include "core/UID.h"
-#include "render/shaders/ComputeShader.h"
-#include "render/shaders/RenderShader.h"
+#include "core/UID.hpp"
+#include "render/shaders/ComputeShader.hpp"
+#include "render/shaders/RenderShader.hpp"
 
 // --- Derived shader registration (concrete leaves only) ---
 CEREAL_REGISTER_TYPE(neurus::RenderShader)

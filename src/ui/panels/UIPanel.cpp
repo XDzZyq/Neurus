@@ -3,12 +3,12 @@
  * @brief Out-of-line UIPanel definitions that need the complete I18n type.
  *
  * PanelName() resolves the dock-title key through I18n; keeping it here (not
- * in the header) lets every panel header stay free of the I18n.h include.
+ * in the header) lets every panel header stay free of the I18n.hpp include.
  */
 
-#include "panels/UIPanel.h"
+#include "panels/UIPanel.hpp"
 
-#include "ui/utils/I18n.h"
+#include "ui/utils/I18n.hpp"
 
 namespace neurus {
 

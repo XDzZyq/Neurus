@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-#include "editor/events/EventBus.h"
-#include "editor/events/SceneEvents.h"
-#include "scene/ObjectID.h"
+#include "editor/events/EventBus.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "scene/ObjectID.hpp"
 
 using namespace neurus;
 

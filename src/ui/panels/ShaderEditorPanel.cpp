@@ -1,13 +1,13 @@
-#include "ShaderEditorPanel.h"
+#include "ShaderEditorPanel.hpp"
 
-#include "items/CodeEditor.h"
-#include "delegates/ShaderFieldDelegate.h"
-#include "models/ShaderStructModel.h"
-#include "UIContext.h"
-#include "ui/utils/I18n.h"
-#include "scene/Scene.h"
-#include "asset/data/shader/ShaderUnit.h"
-#include "asset/data/shader/ShaderStruct.h"
+#include "items/CodeEditor.hpp"
+#include "delegates/ShaderFieldDelegate.hpp"
+#include "models/ShaderStructModel.hpp"
+#include "UIContext.hpp"
+#include "ui/utils/I18n.hpp"
+#include "scene/Scene.hpp"
+#include "asset/data/shader/ShaderUnit.hpp"
+#include "asset/data/shader/ShaderStruct.hpp"
 
 #include <QAbstractItemView>
 #include <QComboBox>

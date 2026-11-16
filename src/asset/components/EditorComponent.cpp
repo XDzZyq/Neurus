@@ -3,11 +3,11 @@
  * @brief Editor viewport view-state (viewport camera UID) persistence.
  */
 
-#include "asset/components/EditorComponent.h"
+#include "asset/components/EditorComponent.hpp"
 
-#include "core/Log.h"
-#include "core/Serialize.h"
-#include "editor/viewport/EditorViewport.h"
+#include "core/Log.hpp"
+#include "core/Serialize.hpp"
+#include "editor/viewport/EditorViewport.hpp"
 
 namespace neurus::project
 {
@@ -45,7 +45,7 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 
 		ar.finishNode();
 	}
-	catch (const cereal::Exception& e)
+	catch ([[maybe_unused]] const cereal::Exception& e)
 	{
 		// Missing "m_editor" node: a project saved before the viewport camera
 		// was persisted. Expected, so logged at info level.

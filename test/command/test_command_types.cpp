@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
-#include "command/CommandDescriptor.h"
-#include "command/CommandTypes.h"
+#include "command/CommandDescriptor.hpp"
+#include "command/CommandTypes.hpp"
 
 using namespace neurus::command;
 

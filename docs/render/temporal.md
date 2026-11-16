@@ -31,7 +31,7 @@ A **restart** is anything that invalidates the accumulated average: any `RenderR
 
 The shadow intensity pass accumulates per-light shadow samples over time, and the renderer tracks a per-frame jitter direction and an iteration counter that drive it.
 
-- **Jitter**: a per-frame 3D random direction (unit-ball vector from `Halton(2,3,5)`) applied as `pos_jittered = pos + light.radius * jitter` for point lights, and as a UV-space offset `shadowUV + vec2(jitter.x, jitter.y) * uvRadius` for sun lights. The file `src/render/HaltonSequence.h` provides the low-discrepancy sequence. Only a Sample frame advances the Halton index or the iteration; an Overlay frame leaves both alone and reports zero jitter.
+- **Jitter**: a per-frame 3D random direction (unit-ball vector from `Halton(2,3,5)`) applied as `pos_jittered = pos + light.radius * jitter` for point lights, and as a UV-space offset `shadowUV + vec2(jitter.x, jitter.y) * uvRadius` for sun lights. The file `src/render/HaltonSequence.hpp` provides the low-discrepancy sequence. Only a Sample frame advances the Halton index or the iteration; an Overlay frame leaves both alone and reports zero jitter.
 - **Accumulation**: in-place read-modify-write on the `ShadowIntensity` layered array. The compute shader reads the previous accumulated value via `imageLoad`, evaluates a single jittered shadow sample, and blends via EMA (exponential moving average) using `mix(prevAccum, sample, alpha)`, writing back via `imageStore`.
 - **Alpha modes**: two blend modes controlled by `RenderConfig::r_sampling_mode`, read via `ctx.Frame().Settings()` so the declared default (0 = Fixed EMA) is the one a frame with no published config gets:
   - Fixed EMA (0): `alpha = 1/8` - fast convergence

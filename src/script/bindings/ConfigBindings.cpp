@@ -11,11 +11,11 @@
 
 #include <pybind11/pybind11.h>
 
-#include "core/RenderConfig.h"
-#include "editor/events/ConfigEvents.h"
-#include "script/ScriptContext.h"
-#include "script/bindings/Bindings.h"
-#include "script/proxies/ProxyBase.h"
+#include "core/RenderConfig.hpp"
+#include "editor/events/ConfigEvents.hpp"
+#include "script/ScriptContext.hpp"
+#include "script/bindings/Bindings.hpp"
+#include "script/proxies/ProxyBase.hpp"
 
 namespace py = pybind11;
 

@@ -7,31 +7,31 @@
 # Consumed by: editor, render, test
 
 	add_library(neurus_scene STATIC
-	Material.h
+	Material.hpp
 	Material.cpp
 	MeshBindings.cpp
-	Camera.h
+	Camera.hpp
 	Camera.cpp
-	DefaultScene.h
+	DefaultScene.hpp
 	DefaultScene.cpp
-	Mesh.h
+	Mesh.hpp
 	Mesh.cpp
-	ObjectID.h
-	Transform.h
+	ObjectID.hpp
+	Transform.hpp
 	Transform.cpp
-	Light.h
+	Light.hpp
 	Light.cpp
-	Sprite.h
+	Sprite.hpp
 	Sprite.cpp
-	Scene.h
+	Scene.hpp
 	Scene.cpp
-	DebugLine.h
+	DebugLine.hpp
 	DebugLine.cpp
-	DebugPoints.h
+	DebugPoints.hpp
 	DebugPoints.cpp
-	DebugMesh.h
+	DebugMesh.hpp
 	DebugMesh.cpp
-	Environment.h
+	Environment.hpp
 	Environment.cpp
 	registrations/TypeRegistration.cpp
 )

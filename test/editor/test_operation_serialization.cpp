@@ -25,27 +25,27 @@
 
 #include "glm/glm.hpp"
 
-#include "editor/controllers/ObjectController.h"
-#include "editor/controllers/SceneController.h"
-#include "editor/events/EventBus.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/Input.h"
-#include "asset/components/HistoryComponent.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "asset/data/MeshData.h"
-#include "editor/operations/OperationContext.h"
-#include "editor/operations/OperationManager.h"
-#include "editor/operations/registrations/OperationRegistration.h"
-#include "editor/operations/SceneOperations.h"
-#include "editor/operations/ScriptOperations.h"
-#include "editor/events/ShaderEvents.h"
-#include "editor/operations/ShaderOperations.h"
-#include "render/shaders/RenderShader.h"
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "editor/controllers/ObjectController.hpp"
+#include "editor/controllers/SceneController.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/Input.hpp"
+#include "asset/components/HistoryComponent.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "asset/data/MeshData.hpp"
+#include "editor/operations/OperationContext.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "editor/operations/registrations/OperationRegistration.hpp"
+#include "editor/operations/SceneOperations.hpp"
+#include "editor/operations/ScriptOperations.hpp"
+#include "editor/events/ShaderEvents.hpp"
+#include "editor/operations/ShaderOperations.hpp"
+#include "render/shaders/RenderShader.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 using namespace neurus;
 
@@ -252,7 +252,7 @@ TEST_F(OperationSerializationTest, ShaderLinkOp_RoundTrip)
 		mesh->SetObjShader(nullptr);
 	});
 
-	auto shader = m_resources.Load<RenderShader>("MeshShader_2", "v.vert", "f.frag");
+	auto shader = m_resources.Load<RenderShader>("MeshShader_2", "v.vert.glsl", "f.frag.glsl");
 	const int shaderId = shader->GetObjectID();
 	std::unique_ptr<Operation> op =
 		std::make_unique<ShaderLinkOp>(m_mesh->GetObjectID(), shaderId, true);

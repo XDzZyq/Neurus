@@ -3,12 +3,12 @@
  * @brief RenderConfigPanel implementation — hard-coded UI layout for render settings.
  */
 
-#include "panels/RenderConfigPanel.h"
+#include "panels/RenderConfigPanel.hpp"
 
-#include "items/ScalarSlider.h"
-#include "core/RenderConfig.h"
-#include "UIContext.h"
-#include "ui/utils/I18n.h"
+#include "items/ScalarSlider.hpp"
+#include "core/RenderConfig.hpp"
+#include "UIContext.hpp"
+#include "ui/utils/I18n.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>

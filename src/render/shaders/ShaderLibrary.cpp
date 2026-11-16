@@ -1,13 +1,13 @@
-#include "ShaderLibrary.h"
+#include "ShaderLibrary.hpp"
 
-#include "asset/data/ShaderData.h"
-#include "ShaderCompiler.h"
-#include "RenderShader.h"
-#include "ComputeShader.h"
-#include "ShaderGenerator.h"
-#include "ShaderParser.h"
+#include "asset/data/ShaderData.hpp"
+#include "ShaderCompiler.hpp"
+#include "RenderShader.hpp"
+#include "ComputeShader.hpp"
+#include "ShaderGenerator.hpp"
+#include "ShaderParser.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <shaderc/shaderc.hpp>
 
@@ -99,7 +99,7 @@ std::string ShaderLibrary::ResolveShaderPath(const std::string& path)
 	}
 
 	// Strip a leading "res/shaders/" prefix if present, so that paths like
-	// "res/shaders/compute/foo.comp" resolve correctly against NEURUS_SHADER_DIR
+	// "res/shaders/compute/foo.comp.glsl" resolve correctly against NEURUS_SHADER_DIR
 	// (which already points to .../res/shaders/).  Without this, concatenation
 	// produces a doubled ".../res/shaders/res/shaders/..." path.
 	std::string relPath = path;

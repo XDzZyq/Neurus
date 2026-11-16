@@ -1,6 +1,6 @@
-#include "VertexBuffer.h"
+#include "VertexBuffer.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <stdexcept>
 

@@ -2,12 +2,12 @@
  * @file MeshBindings.cpp
  * @brief Render-layer implementation of Mesh material methods.
  *
- * These methods are declared in scene/Mesh.h but defined here so that the
+ * These methods are declared in scene/Mesh.hpp but defined here so that the
  * scene layer does not depend on the render layer.
  */
 
-#include "scene/Mesh.h"
-#include "scene/Material.h"
+#include "scene/Mesh.hpp"
+#include "scene/Material.hpp"
 
 namespace neurus
 {

@@ -3,20 +3,20 @@
  * @brief G-Buffer geometry pass implementation.
  */
 
-#include "passes/GeometryPass.h"
+#include "passes/GeometryPass.hpp"
 
-#include "passes/Pass.h"
-#include "RenderCache.h"
-#include "RenderContext.h"
-#include "render/Barrier.h"
-#include "PipelineBuilder.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/RenderShader.h"
-#include "core/Log.h"
+#include "passes/Pass.hpp"
+#include "RenderCache.hpp"
+#include "RenderContext.hpp"
+#include "render/Barrier.hpp"
+#include "PipelineBuilder.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/RenderShader.hpp"
+#include "core/Log.hpp"
 
-#include "../resources/MeshGPU.h"
-#include "RenderFrameSnapshot.h"
-#include "requests/RenderRequests.h"
+#include "../resources/MeshGPU.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "requests/RenderRequests.hpp"
 
 #include <array>
 #include <cstdint>
@@ -44,8 +44,8 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
 	// --- Self-load shaders via ShaderLibrary ---
 	, p_shader(
 		ShaderLibrary::LoadRenderShader("GeometryPass",
-		                                 "res/shaders/render/gbuffer.vert",
-		                                 "res/shaders/render/gbuffer.frag"))
+		                                 "res/shaders/render/gbuffer.vert.glsl",
+		                                 "res/shaders/render/gbuffer.frag.glsl"))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;

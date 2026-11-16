@@ -16,13 +16,13 @@
 
 #include <gtest/gtest.h>
 
-#include <scene/Camera.h>
-#include <scene/DebugLine.h>
-#include <scene/DebugPoints.h>
-#include <scene/Light.h>
-#include <scene/Mesh.h>
-#include <scene/Scene.h>
-#include <scene/Sprite.h>
+#include <scene/Camera.hpp>
+#include <scene/DebugLine.hpp>
+#include <scene/DebugPoints.hpp>
+#include <scene/Light.hpp>
+#include <scene/Mesh.hpp>
+#include <scene/Scene.hpp>
+#include <scene/Sprite.hpp>
 
 using namespace neurus;
 

@@ -3,9 +3,9 @@
  * @brief Light SSBO storage implementation using ArrayBuffer<T>.
  */
 
-#include "render/resources/LightingCache.h"
+#include "render/resources/LightingCache.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <cstdint>
 #include <vector>

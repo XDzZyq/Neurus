@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include "scene/Light.h"
+#include "scene/Light.hpp"
 
 using namespace neurus;
 

@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
-#include "app/session/SessionCommandExecutor.h"
-#include "command/Commands.h"
+#include "app/session/SessionCommandExecutor.hpp"
+#include "command/Commands.hpp"
 
 using namespace neurus;
 using namespace neurus::command;

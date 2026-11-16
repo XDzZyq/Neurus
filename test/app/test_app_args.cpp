@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "app/AppArgs.h"
+#include "app/AppArgs.hpp"
 
 #include <string>
 #include <vector>

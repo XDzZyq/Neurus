@@ -2,16 +2,16 @@
  * @file RenderThread.cpp
  * @brief RenderThread implementation: the loop, the control queue and shutdown.
  *
- * The design and the loop itself live in RenderThread.h; this file only spells
+ * The design and the loop itself live in RenderThread.hpp; this file only spells
  * out the ordering the header promises - fence-first, resize coalescing, the
  * request-carrying publish, and the broken-promise shutdown path.
  */
 
-#include "RenderThread.h"
+#include "RenderThread.hpp"
 
-#include "RenderContext.h"
+#include "RenderContext.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <algorithm>
 #include <exception>
@@ -383,20 +383,20 @@ void RenderThread::DrainControl()
 				NEURUS_ERR("[RenderThread] screenshot failed: " << e.what());
 			}
 		}
-		else if (auto* screenshot = std::get_if<SyncScreenshotControl>(&message))
+		else if (auto* syncScreenshot = std::get_if<SyncScreenshotControl>(&message))
 		{
-			if (!screenshot->done)
+			if (!syncScreenshot->done)
 				continue;
 			try
 			{
-				m_renderer.CaptureScreenshot(screenshot->allAttachments, screenshot->directory);
-				screenshot->done->set_value(true);
+				m_renderer.CaptureScreenshot(syncScreenshot->allAttachments, syncScreenshot->directory);
+				syncScreenshot->done->set_value(true);
 			}
 			catch (...)
 			{
 				try
 				{
-					screenshot->done->set_exception(std::current_exception());
+					syncScreenshot->done->set_exception(std::current_exception());
 				}
 				catch (...)
 				{

@@ -105,7 +105,7 @@ Commands and scripts therefore see their mutations applied in the tick that
 issued them.
 
 Two composition roots exist and share one service. `ApplicationCore`
-(`src/app/ApplicationCore.h`) is Qt-free and owns the preferences file, the
+(`src/app/ApplicationCore.hpp`) is Qt-free and owns the preferences file, the
 script engine and the open project; it exposes document I/O, the `script.*`
 commands and the sandbox project root. The Qt application owns one and adds the
 window, UI, surface and Qt signal wiring; the headless application owns one and

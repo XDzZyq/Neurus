@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/buffers/StagingBuffer.h"
-#include "render/buffers/GPUBuffer.h"
-#include "render/buffers/UniformBuffer.h"
+#include "render/buffers/StagingBuffer.hpp"
+#include "render/buffers/GPUBuffer.hpp"
+#include "render/buffers/UniformBuffer.hpp"
 
 #include <array>
 #include <cstring>

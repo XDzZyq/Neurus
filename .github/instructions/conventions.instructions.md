@@ -32,13 +32,23 @@ short working reference.
 - Members: `m_` prefix for member variables.
 - Constants: UPPER_SNAKE_CASE. Enums: PascalCase type, PascalCase or UPPER_CASE
   values.
-- Files: PascalCase (`VulkanContext.h`).
+- Files: PascalCase (`VulkanContext.hpp`).
 
 ## RAII (Non-Negotiable)
 
 - Resource-owning classes initialize fully in the constructor and release in the
   destructor. No separate `Init()`/`Terminate()` two-phase setup.
 - Classes owning GPU or OS resources `= delete` copy constructor and assignment.
+- Identity types - every `UID`-derived class (`ObjectID`, `Camera`, `Mesh`,
+  `Light`, `Environment`, `Sprite`, `DebugLine`/`DebugMesh`/`DebugPoints`,
+  `Scene`, `MeshData`, `ImageData`, `ShaderData`) - `= delete` **all four**
+  special members: copy construction, copy assignment, move construction and
+  move assignment. Never write `= default` on a move operation of one of these:
+  the base is non-movable, so the defaulted function is implicitly deleted and
+  clang reports it under `-Wdefaulted-function-deleted` once per translation
+  unit. Duplicate an object through the pool - `ResourceManager::Load<T>` plus
+  an explicit field copy (`Editor::DuplicateObject`) - so the copy gets its own
+  id. `test/scene/test_uid.cpp` asserts the four traits for every identity type.
 - `std::unique_ptr`/`std::shared_ptr` for explicit ownership; raw pointers for
   non-owning references only.
 
@@ -60,7 +70,7 @@ short working reference.
 
 ## Debug Printing
 
-Use the macros from `core/Log.h`; they inject a `[func:line]` prefix.
+Use the macros from `core/Log.hpp`; they inject a `[func:line]` prefix.
 
 ```cpp
 NEURUS_LOG("[Swapchain] " << extent.width << "x" << extent.height);
@@ -98,7 +108,7 @@ NEURUS_ERR("Texture::createFromPixelData failed: " << e.what());
   inside `src/platform/win/`, `src/platform/mac/` and `src/platform/linux/`,
   selected by `src/platform/CMakeLists.txt`.
 - A caller in app, editor, UI, command, IPC, CLI, script or tests uses a free
-  function from a `Platform*.h` header instead of branching on the OS.
+  function from a `Platform*.hpp` header instead of branching on the OS.
 - An ifdef in a test is acceptable only when the expected value itself differs by
   platform (for example the executable name or the home environment variable).
 - When a new platform primitive is needed, add it to the shared header and every

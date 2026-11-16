@@ -3,13 +3,13 @@
  * @brief Implementation of the CreateDefaultScene factory function.
  */
 
-#include "scene/DefaultScene.h"
+#include "scene/DefaultScene.hpp"
 
-#include "asset/data/MeshData.h"
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "core/Log.h"
+#include "asset/data/MeshData.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "core/Log.hpp"
 
 #include <glm/glm.hpp>
 #include <memory>

@@ -23,24 +23,24 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/RenderCache.h"
-#include "render/requests/RenderRequestExecutor.h"
-#include "render/requests/RenderRequests.h"
-#include "render/UploadManager.h"
-#include "render/passes/GeometryPass.h"
-#include "render/resources/EnvironmentGPU.h"
-#include "render/resources/LightGPU.h"
-#include "render/resources/LightingCache.h"
-#include "render/resources/MeshGPU.h"
-#include "render/resources/PipelineCache.h"
-#include "render/shaders/RenderShader.h"
+#include "render/RenderCache.hpp"
+#include "render/requests/RenderRequestExecutor.hpp"
+#include "render/requests/RenderRequests.hpp"
+#include "render/UploadManager.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/resources/EnvironmentGPU.hpp"
+#include "render/resources/LightGPU.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "render/resources/MeshGPU.hpp"
+#include "render/resources/PipelineCache.hpp"
+#include "render/shaders/RenderShader.hpp"
 
-#include "asset/data/ImageData.h"
-#include "asset/PixelFormat.h"
-#include "asset/data/MeshData.h"
-#include "scene/Light.h"
+#include "asset/data/ImageData.hpp"
+#include "asset/PixelFormat.hpp"
+#include "asset/data/MeshData.hpp"
+#include "scene/Light.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -131,8 +131,8 @@ protected:
 	{
 		auto shader = std::make_shared<RenderShader>(
 			name,
-			ResolveAssetPath("res/shaders/render/gbuffer.vert"),
-			ResolveAssetPath("res/shaders/render/gbuffer.frag"));
+			ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl"),
+			ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl"));
 		shader->ParseAndGenerate();
 		shader->CompileToSpv();
 		return shader;

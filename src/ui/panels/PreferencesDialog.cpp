@@ -1,6 +1,6 @@
-#include "panels/PreferencesDialog.h"
+#include "panels/PreferencesDialog.hpp"
 
-#include "ui/utils/I18n.h"
+#include "ui/utils/I18n.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>

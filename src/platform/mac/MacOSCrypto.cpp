@@ -1,4 +1,4 @@
-#include "platform/PlatformCrypto.h"
+#include "platform/PlatformCrypto.hpp"
 
 #include <stdlib.h>
 

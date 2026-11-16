@@ -1,4 +1,4 @@
-#include "ui/panels/ScriptConsolePanel.h"
+#include "ui/panels/ScriptConsolePanel.hpp"
 
 #include <QEvent>
 #include <QFileDialog>
@@ -8,9 +8,9 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include "script/ScriptConsole.h"
-#include "ui/items/CodeEditor.h"
-#include "ui/utils/I18n.h"
+#include "script/ScriptConsole.hpp"
+#include "ui/items/CodeEditor.hpp"
+#include "ui/utils/I18n.hpp"
 
 namespace neurus
 {

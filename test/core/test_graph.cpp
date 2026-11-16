@@ -1,12 +1,12 @@
 /**
  * @file test_graph.cpp
- * @brief Unit tests for the DAG node-graph template classes (Graph.h).
+ * @brief Unit tests for the DAG node-graph template classes (Graph.hpp).
  */
 
 #include <gtest/gtest.h>
 
-#include "core/Graph.h"
-#include "core/ThreadPool.h"
+#include "core/Graph.hpp"
+#include "core/ThreadPool.hpp"
 
 #include <atomic>
 #include <chrono>

@@ -3,20 +3,20 @@
  * @brief Screen-Space Ambient Occlusion compute pass implementation.
  */
 
-#include "RenderCache.h"
-#include "passes/SSAOPass.h"
+#include "RenderCache.hpp"
+#include "passes/SSAOPass.hpp"
 
-#include "../PipelineBuilder.h"
-#include "Image.h"
-#include "render/Barrier.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/ComputeShader.h"
-#include "core/Log.h"
+#include "../PipelineBuilder.hpp"
+#include "Image.hpp"
+#include "render/Barrier.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/ComputeShader.hpp"
+#include "core/Log.hpp"
 
-#include "scene/Camera.h"
-#include "scene/Scene.h"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
 
 #include <array>
 #include <cstring>
@@ -90,7 +90,7 @@ SSAOPass::SSAOPass(const vk::raii::Device& device,
 	// --- Self-load compute shader via ShaderLibrary ---
 	, p_shader(
 		ShaderLibrary::LoadComputeShader("ssao",
-		                                  "res/shaders/compute/ssao.comp"))
+		                                  "res/shaders/compute/ssao.comp.glsl"))
 {
 	BuildPipeline(device, "SSAOPass");
 

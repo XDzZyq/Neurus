@@ -13,18 +13,18 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/passes/GeometryPass.h"
-#include "render/buffers/BufferLayout.h"
-#include "render/buffers/IndexBuffer.h"
-#include "render/buffers/VertexBuffer.h"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/buffers/BufferLayout.hpp"
+#include "render/buffers/IndexBuffer.hpp"
+#include "render/buffers/VertexBuffer.hpp"
 
-#include "asset/data/MeshData.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "asset/data/MeshData.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 

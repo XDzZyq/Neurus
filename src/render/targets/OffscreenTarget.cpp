@@ -1,4 +1,4 @@
-#include "targets/OffscreenTarget.h"
+#include "targets/OffscreenTarget.hpp"
 
 namespace neurus {
 

@@ -21,15 +21,15 @@
 
 #include <memory>
 
-#include "editor/controllers/RenderConfigController.h"
-#include "editor/events/ConfigEvents.h"
-#include "editor/events/EventBus.h"
-#include "editor/operations/ConfigOperations.h"
-#include "editor/operations/OperationContext.h"
-#include "editor/operations/OperationManager.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "scene/Scene.h"
+#include "editor/controllers/RenderConfigController.hpp"
+#include "editor/events/ConfigEvents.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/operations/ConfigOperations.hpp"
+#include "editor/operations/OperationContext.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "scene/Scene.hpp"
 
 using namespace neurus;
 

@@ -9,7 +9,7 @@
  * loader, which also times `importlib.reload` - the same loader path.
  */
 
-#include "script/ScriptImports.h"
+#include "script/ScriptImports.hpp"
 
 // pybind11 first: it configures the Python headers before including them.
 #include <pybind11/embed.h>
@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 namespace neurus
 {

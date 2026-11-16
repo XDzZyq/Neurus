@@ -1,0 +1,31 @@
+#pragma once
+
+#include "cli/SubCommand.hpp"
+
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace neurus::cli
+{
+
+/// `neurus open`: launch a named background session and wait for readiness.
+class OpenCommand final : public SubCommand
+{
+public:
+	void Register(CLI::App& parent, const GlobalOptions& globals) override;
+	bool Selected() const override;
+	CliExit Execute() override;
+
+private:
+	std::optional<std::string> m_project;
+	std::optional<std::string> m_name;
+	std::optional<std::string> m_appPath;
+	std::vector<std::string>   m_preload;  ///< Repeated --preload packages.
+	int                        m_timeoutSeconds = 30;
+	bool                       m_noWait = false;
+	bool                       m_noBind = false;
+	std::string                m_format;
+};
+
+} // namespace neurus::cli

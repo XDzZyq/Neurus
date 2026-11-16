@@ -7,18 +7,18 @@ find_package(Threads REQUIRED)
 # (s_count definition, non-template members). Consumers get the include dirs
 # and glm/cereal transitively via PUBLIC.
 add_library(neurus_core STATIC
-	UID.h
+	UID.hpp
 	UID.cpp
-	ResourceManager.h
+	ResourceManager.hpp
 	ResourceManager.cpp
-	Serialize.h
-	RenderConfig.h
-	ThreadPool.h
+	Serialize.hpp
+	RenderConfig.hpp
+	ThreadPool.hpp
 	ThreadPool.cpp
-	BatchQueue.h
+	BatchQueue.hpp
 )
 
-# src/ (${CMAKE_CURRENT_SOURCE_DIR}/..) exposes headers as "core/X.h".
+# src/ (${CMAKE_CURRENT_SOURCE_DIR}/..) exposes headers as "core/X.hpp".
 target_include_directories(neurus_core PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -28,7 +28,7 @@ target_link_libraries(neurus_core PUBLIC
 	glm
 	cereal
 	Threads::Threads
-	# Log.h's TTY check lives in the platform layer, so every translation unit
+	# Log.hpp's TTY check lives in the platform layer, so every translation unit
 	# that expands NEURUS_LOG/NEURUS_ERR needs its symbols.
 	neurus_platform_paths
 )

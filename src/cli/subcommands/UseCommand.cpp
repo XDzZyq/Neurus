@@ -1,8 +1,8 @@
-#include "cli/subcommands/UseCommand.h"
+#include "cli/subcommands/UseCommand.hpp"
 
-#include "cli/Output.h"
-#include "cli/SessionClient.h"
-#include "cli/TerminalBinding.h"
+#include "cli/Output.hpp"
+#include "cli/SessionClient.hpp"
+#include "cli/TerminalBinding.hpp"
 
 #include <iostream>
 #include <string>

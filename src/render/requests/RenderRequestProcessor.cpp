@@ -1,4 +1,4 @@
-#include "RenderRequestProcessor.h"
+#include "RenderRequestProcessor.hpp"
 
 #include <type_traits>
 #include <utility>

@@ -8,16 +8,16 @@ parse/generate/compile pipeline and every GPU resource below it.
 
 ```
 src/asset/data/
-    ShaderData.h/.cpp         UID bundle: name + one ShaderUnit per stage
+    ShaderData.hpp/.cpp         UID bundle: name + one ShaderUnit per stage
     shader/
-        ShaderStage.h         ShaderType + ShaderTypeFromPath + default paths
-        ShaderStruct.h/.cpp   parsed GLSL IR
-        ShaderStructSerialize.h  cereal overloads for the IR
-        ShaderUnit.h          path, code, parsed IR, SPIR-V, version
+        ShaderStage.hpp         ShaderType + ShaderTypeFromPath + default paths
+        ShaderStruct.hpp/.cpp   parsed GLSL IR
+        ShaderStructSerialize.hpp  cereal overloads for the IR
+        ShaderUnit.hpp          path, code, parsed IR, SPIR-V, version
 
 src/render/shaders/
-    RenderShader.h/.cpp       ShaderData + vertex/fragment parse/generate
-    ComputeShader.h/.cpp      ShaderData + compute parse/generate
+    RenderShader.hpp/.cpp       ShaderData + vertex/fragment parse/generate
+    ComputeShader.hpp/.cpp      ShaderData + compute parse/generate
     ShaderParser, ShaderGenerator, ShaderCompiler, ShaderLibrary
 ```
 
@@ -62,9 +62,9 @@ The script path is shader-keyed, so it also reaches a pooled `ComputeShader`:
 
 - `mesh.shader` is a slot: `create(...)` / `remove()` / `attached`, plus
   `vertex` and `fragment` unit views.
-- `neurus.shader.load_shader(path, name="")` pools a `RenderShader` (`.vert`
-  or `.frag`, with the missing side from the default G-buffer pair) or a
-  `ComputeShader` (`.comp`). `.geom` is rejected.
+- `neurus.shader.load_shader(path, name="")` pools a `RenderShader` (`.vert.glsl`
+  or `.frag.glsl`, with the missing side from the default G-buffer pair) or a
+  `ComputeShader` (`.comp.glsl`). `.geom.glsl` is rejected.
 - `neurus.data.shaders` lists every pooled shader by UID or registered name.
 - A `ShaderUnit` view exposes `code`, `parsed` and `compile()`. Reading
   `parsed` returns a copy; mutating it and assigning it back writes the whole
@@ -98,5 +98,5 @@ a history-aware prune for long live-coding sessions is tracked separately
 ## Overlay shaders
 
 The debug and gizmo overlay passes share the `overlay_line` / `overlay_point`
-shader pair, and the wireframe uses `debug_wire.frag`. Their behavior is
+shader pair, and the wireframe uses `debug_wire.frag.glsl`. Their behavior is
 described in the Debug overlay and Gizmo pass sections of [Passes](passes.md).

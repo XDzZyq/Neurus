@@ -6,14 +6,14 @@
  * Project lifecycle and Qt wiring stay in Application.cpp / ApplicationSignals.cpp.
  */
 
-#include "app/Application.h"
+#include "app/Application.hpp"
 
-#include "app/ApplicationCore.h"
+#include "app/ApplicationCore.hpp"
 
-#include "app/Preferences.h"
-#include "command/Commands.h"
-#include "platform/PlatformProcess.h"
-#include "scene/Scene.h"
+#include "app/Preferences.hpp"
+#include "command/Commands.hpp"
+#include "platform/PlatformProcess.hpp"
+#include "scene/Scene.hpp"
 
 #include <algorithm>
 #include <chrono>

@@ -7,11 +7,11 @@
  * local_size, GLSL extensions, multiview).
  */
 
-#include "ShaderParser.h"
+#include "ShaderParser.hpp"
 
-#include "ShaderLibrary.h"
+#include "ShaderLibrary.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -235,7 +235,7 @@ ShaderStruct ShaderParser::ParseShaderCode(const std::string& source, ShaderType
 
 	std::istringstream stream(source);
 	std::string line;
-	std::string word;      // Temporary word buffer reused across parsing branches
+	std::string word;      // Temporary word buffer reused across parsing branches; clear() before each read
 	std::string cache;     // Accumulates function body text
 	Args argsCache;        // Accumulates (type, name) pairs for block/struct members
 	bool inBlockComment = false;
@@ -335,7 +335,7 @@ ShaderStruct ShaderParser::ParseShaderCode(const std::string& source, ShaderType
 			if (afterLayout.find("buffer") == 0 || (afterLayout.find("readonly") == 0 && afterLayout.find("buffer") != std::string::npos))
 			{
 				std::istringstream iss(afterLayout);
-				std::string word;
+				word.clear();
 
 				// Skip qualifiers (readonly, writeonly) up to the "buffer" keyword.
 				while (iss >> word)
@@ -487,7 +487,7 @@ ShaderStruct ShaderParser::ParseShaderCode(const std::string& source, ShaderType
 					std::istringstream mstr(line);
 					std::string typeName;
 					mstr >> typeName;
-					std::string word;
+					word.clear();
 					mstr >> word;
 
 					if (!word.empty() && word.back() == ';')
@@ -801,7 +801,7 @@ ShaderStruct ShaderParser::ParseShaderCode(const std::string& source, ShaderType
 		if (fullLine.find("out ") != std::string::npos && fullLine.find("layout") == std::string::npos)
 		{
 			std::istringstream iss(fullLine);
-			std::string word;
+			word.clear();
 			iss >> word;
 			iss >> word;
 
@@ -824,7 +824,7 @@ ShaderStruct ShaderParser::ParseShaderCode(const std::string& source, ShaderType
 		{
 			// Parsed for completeness; inputs are normally auto-linked from outputs.
 			std::istringstream iss(fullLine);
-			std::string word;
+			word.clear();
 			iss >> word;
 			iss >> word;
 
@@ -846,7 +846,7 @@ ShaderStruct ShaderParser::ParseShaderCode(const std::string& source, ShaderType
 		if (fullLine.find("uniform") != std::string::npos && fullLine.find("layout") == std::string::npos)
 		{
 			std::istringstream iss(fullLine);
-			std::string word;
+			word.clear();
 			iss >> word;
 
 			if (word != "uniform")
@@ -1014,7 +1014,7 @@ ShaderStruct ShaderParser::ParseShaderCode(const std::string& source, ShaderType
 	if (fullLine.find("const ") == 0)
 	{
 		std::istringstream iss(fullLine);
-		std::string word;
+		word.clear();
 		iss >> word;
 		iss >> word;
 

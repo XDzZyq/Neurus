@@ -27,12 +27,12 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/MeshData.h"
-#include "editor/viewport/DebugDrawBuilder.h"
-#include "scene/DebugLine.h"
-#include "scene/DebugMesh.h"
-#include "scene/DebugPoints.h"
-#include "scene/Scene.h"
+#include "asset/data/MeshData.hpp"
+#include "editor/viewport/DebugDrawBuilder.hpp"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugMesh.hpp"
+#include "scene/DebugPoints.hpp"
+#include "scene/Scene.hpp"
 
 #include <glm/glm.hpp>
 
@@ -504,7 +504,7 @@ TEST(DebugDrawBuilder, Point_BakesModelMatrixIntoWorldSpace)
  * @test Every sprite shape is smoothed, unconditionally and for all projection
  *       modes — DebugPoints has no line style that could turn it off.
  *
- * The shape mask in overlay_point.frag is an analytic distance (Chebyshev,
+ * The shape mask in overlay_point.frag.glsl is an analytic distance (Chebyshev,
  * Manhattan or Euclidean), so a rhombus or circle boundary is visibly stepped
  * without the fade. Nothing authors this, so the assertion is on a plain
  * default-constructed object.
@@ -711,7 +711,7 @@ TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
  * @test A wire mesh carries no Smooth bit, unlike every segment and sprite.
  *
  * Wireframes are rasterized by PolygonMode::eLine, so the fragment stage has no
- * distance-to-edge to fade and debug_wire.frag has no branch on the flag. Pinning
+ * distance-to-edge to fade and debug_wire.frag.glsl has no branch on the flag. Pinning
  * the asymmetry keeps "smooth by default" from being read as "set the bit
  * everywhere", which would advertise a behaviour the shader does not implement.
  */

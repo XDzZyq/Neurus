@@ -99,11 +99,11 @@ backstop rather than a routine outcome.
 The three groups below differ in **who wraps** the event and **where it is
 resolved**, not in when it is dispatched:
 
-1. UI to Editor pure intents (`InputEvents.h`): the raw input stream, mouse
+1. UI to Editor pure intents (`InputEvents.hpp`): the raw input stream, mouse
    move/press/release/scroll plus `ObjectClicked { int objectUid; int modifiers; }`
    and `DeleteRequested { }`. These carry no scene; the UI does not hold or stamp
    the scene (`m_scene` is gone from the panels).
-2. UI to Controller editing events (`SceneEvents.h`, `ShaderEvents.h`): complete
+2. UI to Controller editing events (`SceneEvents.hpp`, `ShaderEvents.hpp`): complete
    scene mutations (selection, transform, visibility, property edits, shader
    edits) carrying `int objectUid`. Panels emit these with the active object's
    integer UID; `Editor::OnUIEvent` enqueues them unchanged and controllers
@@ -122,27 +122,27 @@ resolved**, not in when it is dispatched:
 
 | File | Purpose |
 |------|---------|
-| `src/editor/events/IEventQueue.h` | The only dispatch surface controllers and scripts see: `Subscribe` and synchronous `Emit` - no deferral |
-| `src/editor/events/SceneEvents.h` | Scene-domain events (selection, transform, visibility, camera/mesh/light/env/debug property changes) - ephemeral, carry `int objectUid` |
-| `src/editor/events/EditorEvents.h` | Cross-component events only (`RenderResetEvent`, `EnvironmentChanged`, `SceneModified`, `LightGpuChanged`, `LightingRebuild`, `SceneObjectGpuUploadRequested`) - pure data, no Qt |
-| `src/editor/events/ScriptEvents.h` | Script run boundaries (`ScriptRunStarted`, `ScriptRunFinished`) that bound one run to one undo step |
-| `src/editor/events/CameraEvents.h` | Camera input events (rotate, push, slide, zoom, resize) |
-| `src/editor/events/InputEvents.h` | Viewport raw input events (mouse move, press, release, scroll) |
-| `src/editor/events/ProjectEvents.h` | Project lifecycle events (new, open, save, saveAs) |
-| `src/editor/events/AssetEvents.h` | Asset import events (mesh import, shader import, camera/light add) |
-| `src/editor/events/OperationEvents.h` | Undo/redo request events (`UndoRequested`, `RedoRequested`) |
-| `src/editor/events/ConfigEvents.h` | Render config change events |
-| `src/editor/events/ShaderEvents.h` | Shader editor events (create, compile, code/struct edit, field add) |
-| `src/editor/events/GizmoEvents.h` | Modal transform intents (arm, constrain, confirm, cancel) + the shared `GizmoMode`/`GizmoAxis` enums |
-| `src/editor/events/UIEvents.h` | QObject singleton - Qt signal definitions for UI-to-Editor dispatch |
-| `src/editor/events/EventBus.h` | The concrete `EventQueue`: `IEventQueue` plus the deferred `Enqueue`/`Process` pair the UI boundary uses (zero Qt dependency) |
+| `src/editor/events/IEventQueue.hpp` | The only dispatch surface controllers and scripts see: `Subscribe` and synchronous `Emit` - no deferral |
+| `src/editor/events/SceneEvents.hpp` | Scene-domain events (selection, transform, visibility, camera/mesh/light/env/debug property changes) - ephemeral, carry `int objectUid` |
+| `src/editor/events/EditorEvents.hpp` | Cross-component events only (`RenderResetEvent`, `EnvironmentChanged`, `SceneModified`, `LightGpuChanged`, `LightingRebuild`, `SceneObjectGpuUploadRequested`) - pure data, no Qt |
+| `src/editor/events/ScriptEvents.hpp` | Script run boundaries (`ScriptRunStarted`, `ScriptRunFinished`) that bound one run to one undo step |
+| `src/editor/events/CameraEvents.hpp` | Camera input events (rotate, push, slide, zoom, resize) |
+| `src/editor/events/InputEvents.hpp` | Viewport raw input events (mouse move, press, release, scroll) |
+| `src/editor/events/ProjectEvents.hpp` | Project lifecycle events (new, open, save, saveAs) |
+| `src/editor/events/AssetEvents.hpp` | Asset import events (mesh import, shader import, camera/light add) |
+| `src/editor/events/OperationEvents.hpp` | Undo/redo request events (`UndoRequested`, `RedoRequested`) |
+| `src/editor/events/ConfigEvents.hpp` | Render config change events |
+| `src/editor/events/ShaderEvents.hpp` | Shader editor events (create, compile, code/struct edit, field add) |
+| `src/editor/events/GizmoEvents.hpp` | Modal transform intents (arm, constrain, confirm, cancel) + the shared `GizmoMode`/`GizmoAxis` enums |
+| `src/editor/events/UIEvents.hpp` | QObject singleton - Qt signal definitions for UI-to-Editor dispatch |
+| `src/editor/events/EventBus.hpp` | The concrete `EventQueue`: `IEventQueue` plus the deferred `Enqueue`/`Process` pair the UI boundary uses (zero Qt dependency) |
 
 ## Event structs (pure data)
 
 All event structs live in `src/editor/events/` and carry no Qt headers. They are
 plain C++ structs passed by const reference through the system.
 
-### SceneEvents.h
+### SceneEvents.hpp
 
 Scene-domain events carry plain integer object UIDs (`int objectUid`, 0 = none),
 never raw pointers. `UID` is the common base of `Scene` and `ObjectID`, so the
@@ -302,11 +302,11 @@ outcome is only logged. Creation still lands as the usual
 `SceneObjectAddRequested`, so the undo entry is unchanged. This is how the script
 layer creates content without including or calling the Editor.
 
-### EditorEvents.h
+### EditorEvents.hpp
 
 Cross-component events only, for things that involve a different component than
 the emitter (controller to Editor, Editor to Renderer). Scene-domain events
-live in `SceneEvents.h`.
+live in `SceneEvents.hpp`.
 
 ```cpp
 // Cross-component events (controllers -> Editor, Editor -> Renderer)
@@ -317,7 +317,7 @@ struct SceneObjectGpuUploadRequested { int objectUid; };  // on-demand MeshGPU/L
 struct RenderResetEvent {};                    // temporal accumulation reset
 ```
 
-### CameraEvents.h
+### CameraEvents.hpp
 
 ```cpp
 struct CameraRotateEvent  { int camId; float mouse_delta_x, mouse_delta_y; };
@@ -344,7 +344,7 @@ Scroll zoom has no press/release, so it is not bracketed: `CameraZoomEvent`
 records per-event and relies on `CameraZoomOp::MergeKey()` to coalesce a scroll
 burst into one undo step.
 
-### InputEvents.h
+### InputEvents.hpp
 
 ```cpp
 struct MouseMoveEvent   { glm::vec2 position, delta; Modifiers mods; bool left/middle/rightHeld; };
@@ -360,7 +360,7 @@ struct MouseScrollEvent { float delta; glm::vec2 position; Modifiers mods; bool 
 struct KeyPressEvent    { Input::Key key; Modifiers mods; };
 
 // A raw viewport fact, not a transform intent, which is why it lives here and not in
-// GizmoEvents.h: any controller holding a modal state machine must abandon it when the
+// GizmoEvents.hpp: any controller holding a modal state machine must abandon it when the
 // user clicks into another panel.
 struct ViewportFocusLost { };
 
@@ -369,7 +369,7 @@ struct ObjectClicked    { int objectUid; int modifiers; };  // Outliner row clic
 struct DeleteRequested  { };                                 // Delete key (Outliner/Viewport)
 ```
 
-### ConfigEvents.h
+### ConfigEvents.hpp
 
 ```cpp
 // Whole-config change (UI panel emits it; SetRenderConfigOp replays it).
@@ -384,13 +384,13 @@ struct ConfigEditBegin {};
 struct ConfigEditEnd   {};
 ```
 
-### ShaderEvents.h
+### ShaderEvents.hpp
 
 Events for the shader editor pipeline (UI to Editor to ShaderController). All
 events carry an `int objectUid` (the target mesh's UID, resolved once by the
 `ShaderEditorPanel` from the active scene selection). `ShaderSection` identifies
 which `ShaderStruct` container is edited. `ShaderImportRequested` is the one
-exception and lives in `AssetEvents.h`, because importing an asset never names a
+exception and lives in `AssetEvents.hpp`, because importing an asset never names a
 mesh.
 
 ```cpp
@@ -446,11 +446,11 @@ drops the reference, redo relinks the pooled shader by UID, via
 `ShaderLinkRestored`/`ShaderUnlinkRestored`); Compile stays non-undoable. See
 [Operations](operations.md).
 
-### GizmoEvents.h
+### GizmoEvents.hpp
 
 Intents for the modal transform gesture (Editor keystroke to
 `TransformGizmoController`). `GizmoMode` and `GizmoAxis` live here rather than in
-`TransformGizmo.h`: an event header must not depend on the controller's types, and
+`TransformGizmo.hpp`: an event header must not depend on the controller's types, and
 both enums are shared vocabulary between the events, the state machine and the
 draw builder.
 
@@ -484,7 +484,7 @@ pushes the cursor into the viewport, and dispatch is registration-ordered, so
 reading it back would consume a one-frame-stale cursor if the two subscriptions
 were ever registered the other way round.
 
-Only the gesture-opening event carries a uid, following `CameraEvents.h`. The
+Only the gesture-opening event carries a uid, following `CameraEvents.hpp`. The
 later events need none: the controller already holds the target it latched when
 the gesture began, which is also why changing the Outliner selection mid-gesture
 does not move the gesture. See [Transform gizmo](gizmo.md).
@@ -521,11 +521,11 @@ Header-only, zero Qt dependency, Editor-internal: `src/render/` never includes i
 and the Renderer is reached through `RenderContext` and the Editor's upload calls,
 never through an event. Two surfaces share one implementation:
 
-- `IEventQueue` (`src/editor/events/IEventQueue.h`) is what controllers and
+- `IEventQueue` (`src/editor/events/IEventQueue.hpp`) is what controllers and
   scripts are given: `Subscribe<TEvent>(handler)` and `Emit<TEvent>(event)`. It
   has no way to defer, so anything a controller or a script emits has been applied
   before the emitting call returns.
-- `EventQueue` (`src/editor/events/EventBus.h`) adds `Enqueue<TEvent>(event)`,
+- `EventQueue` (`src/editor/events/EventBus.hpp`) adds `Enqueue<TEvent>(event)`,
   `Process(int maxEvents = 1000)` and `PendingCount()`. `Enqueue` is a property of
   the concrete queue, not of the interface, because deferral exists for exactly
   one caller: `Editor::OnUIEvent`.
@@ -569,7 +569,7 @@ template helpers in `Application`.
 
 ### Step 1 - Panel defines a Qt signal
 
-```cpp title="Outliner.h"
+```cpp title="Outliner.hpp"
 signals:
     void objectClicked(const ObjectClicked& e);
     void visibilityChanged(const VisibilityChanged& e);
@@ -579,7 +579,7 @@ signals:
 ### Step 2 - Application wires via ConnectUIEvent
 
 ```cpp
-// Application.h
+// Application.hpp
 template<typename Panel, typename Event>
 void ConnectUIEvent(QObject* sender, void (Panel::*signal)(const Event&))
 {
@@ -601,7 +601,7 @@ ConnectUIEvent(viewport, &Viewport::mouseScrolled);
 ### Step 3 - Editor::OnUIEvent enqueues
 
 ```cpp
-// Editor.h - the only deferred call site in production
+// Editor.hpp - the only deferred call site in production
 template<typename Event>
 void OnUIEvent(const Event& e) {
     ed_eventBus.Enqueue<Event>(e);
@@ -663,7 +663,7 @@ a second queue.
 
 ## Adding a new event
 
-1. Define the event struct in the appropriate `src/editor/events/*.h` file (pure
+1. Define the event struct in the appropriate `src/editor/events/*.hpp` file (pure
    data, no Qt includes).
 2. Emit it from the panel as a Qt signal.
 3. Wire it in Application with one `ConnectUIEvent` call.

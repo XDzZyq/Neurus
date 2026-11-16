@@ -12,14 +12,14 @@
  * decorated, because a modal constraint is a bidirectional line.
  */
 
-#include "editor/viewport/GizmoDrawBuilder.h"
+#include "editor/viewport/GizmoDrawBuilder.hpp"
 
 #include <cmath>
 
 #include <glm/glm.hpp>
 
-#include "editor/viewport/EditorViewport.h"
-#include "editor/viewport/TransformGizmo.h"
+#include "editor/viewport/EditorViewport.hpp"
+#include "editor/viewport/TransformGizmo.hpp"
 
 namespace neurus
 {
@@ -298,7 +298,7 @@ void GizmoDrawBuilder::Rebuild(const TransformGizmo& gizmo, const EditorViewport
 	}
 
 	// Last of everything: depth testing is off and blending is alpha-over, so draw
-	// order is what decides what lands on top (GizmoDrawList.h records the contract).
+	// order is what decides what lands on top (GizmoDrawList.hpp records the contract).
 	AppendPivot(m_list, pivot);
 }
 

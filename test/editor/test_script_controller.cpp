@@ -16,16 +16,16 @@
 
 #include "glm/glm.hpp"
 
-#include "editor/controllers/ObjectController.h"
-#include "editor/controllers/ScriptController.h"
-#include "editor/events/EventBus.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/events/ScriptEvents.h"
-#include "editor/operations/OperationManager.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "editor/controllers/ObjectController.hpp"
+#include "editor/controllers/ScriptController.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/events/ScriptEvents.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 using namespace neurus;
 

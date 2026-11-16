@@ -1,7 +1,7 @@
-#include "ui/utils/I18n.h"
+#include "ui/utils/I18n.hpp"
 
-#include "core/Log.h"
-#include "ui/utils/POCatalog.h"
+#include "core/Log.hpp"
+#include "ui/utils/POCatalog.hpp"
 
 #include <QDir>
 #include <QFile>

@@ -3,9 +3,9 @@
  * @brief Implementation of RenderGraph.
  */
 
-#include "RenderGraph.h"
+#include "RenderGraph.hpp"
 
-#include "../RenderContext.h"
+#include "../RenderContext.hpp"
 
 #include <chrono>
 #include <stdexcept>

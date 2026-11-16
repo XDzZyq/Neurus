@@ -3,7 +3,7 @@
  * @brief Implementation of Camera scene object.
  */
 
-#include "scene/Camera.h"
+#include "scene/Camera.hpp"
 
 namespace neurus {
 

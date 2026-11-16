@@ -8,9 +8,9 @@
 #include <filesystem>
 #include <string>
 
-#include "cli/SessionClient.h"
-#include "cli/TerminalBinding.h"
-#include "platform/PlatformProcess.h"
+#include "cli/SessionClient.hpp"
+#include "cli/TerminalBinding.hpp"
+#include "platform/PlatformProcess.hpp"
 
 #include <vector>
 

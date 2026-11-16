@@ -26,16 +26,15 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
 // Shader system headers
-#include "render/shaders/RenderShader.h"
-#include "render/shaders/ComputeShader.h"
-#include "render/shaders/ShaderLibrary.h"
-#include "render/shaders/ShaderCompiler.h"
-#include "asset/data/shader/ShaderStruct.h"
-#include "render/shaders/ShaderModule.h"
-#include "asset/data/ShaderData.h"
+#include "render/shaders/RenderShader.hpp"
+#include "render/shaders/ComputeShader.hpp"
+#include "render/shaders/ShaderLibrary.hpp"
+#include "render/shaders/ShaderCompiler.hpp"
+#include "asset/data/shader/ShaderStruct.hpp"
+#include "asset/data/ShaderData.hpp"
 
 #include <thread>
 
@@ -73,8 +72,8 @@ TEST_F(ShaderClassesTest, RenderShader_Construction_SetsNameAndSource)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 
 	ASSERT_FALSE(vertPath.empty()) << "Vertex shader not found";
 	ASSERT_FALSE(fragPath.empty()) << "Fragment shader not found";
@@ -95,8 +94,8 @@ TEST_F(ShaderClassesTest, RenderShader_CompileSucceeds)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -116,8 +115,8 @@ TEST_F(ShaderClassesTest, RenderShader_IsValid_AfterCompile)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -143,8 +142,8 @@ TEST_F(ShaderClassesTest, RenderShader_GetStruct_NonEmpty)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -171,8 +170,8 @@ TEST_F(ShaderClassesTest, RenderShader_GetVertexModule_NonNull)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -201,8 +200,8 @@ TEST_F(ShaderClassesTest, RenderShader_GetFragmentModule_NonNull)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -224,8 +223,8 @@ TEST_F(ShaderClassesTest, RenderShader_GetType_ReturnsVertex)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -244,8 +243,8 @@ TEST_F(ShaderClassesTest, RenderShader_NonexistentFile_CompileReturnsFalse)
 
 	// Use paths that definitely don't exist
 	RenderShader shader("InvalidPass",
-		"nonexistent/vertex.vert",
-		"nonexistent/fragment.frag");
+		"nonexistent/vertex.vert.glsl",
+		"nonexistent/fragment.frag.glsl");
 
 	ShaderCompiler compiler;
 	const bool compileResult = shader.Compile(compiler);
@@ -268,7 +267,7 @@ TEST_F(ShaderClassesTest, ComputeShader_Construction_SetsName)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty()) << "Compute shader not found";
 
 	ComputeShader shader("DummyCompute", compPath);
@@ -284,7 +283,7 @@ TEST_F(ShaderClassesTest, ComputeShader_CompileSucceeds)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("DummyCompute", compPath);
@@ -294,7 +293,7 @@ TEST_F(ShaderClassesTest, ComputeShader_CompileSucceeds)
 
 	ShaderCompiler compiler;
 	EXPECT_TRUE(shader.Compile(compiler))
-		<< "Compile should succeed for valid compute shader (dummy.comp)";
+		<< "Compile should succeed for valid compute shader (dummy.comp.glsl)";
 
 	// After compile (SPIR-V compiled): valid
 	EXPECT_TRUE(shader.IsValid());
@@ -307,7 +306,7 @@ TEST_F(ShaderClassesTest, ComputeShader_GetModule_NonNull)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("DummyCompute", compPath);
@@ -336,8 +335,8 @@ TEST_F(ShaderClassesTest, ComputeShader_GetWorkgroupSize_DummyComp)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	// dummy.comp: layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	// dummy.comp.glsl: layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("DummyCompute", compPath);
@@ -347,9 +346,9 @@ TEST_F(ShaderClassesTest, ComputeShader_GetWorkgroupSize_DummyComp)
 	uint32_t x = 0, y = 0, z = 0;
 	shader.GetWorkgroupSize(x, y, z);
 
-	EXPECT_EQ(x, 1u) << "dummy.comp should have local_size_x = 1";
-	EXPECT_EQ(y, 1u) << "dummy.comp should have local_size_y = 1";
-	EXPECT_EQ(z, 1u) << "dummy.comp should have local_size_z = 1";
+	EXPECT_EQ(x, 1u) << "dummy.comp.glsl should have local_size_x = 1";
+	EXPECT_EQ(y, 1u) << "dummy.comp.glsl should have local_size_y = 1";
+	EXPECT_EQ(z, 1u) << "dummy.comp.glsl should have local_size_z = 1";
 }
 
 TEST_F(ShaderClassesTest, ComputeShader_GetWorkgroupSize_PbrLighting)
@@ -359,8 +358,8 @@ TEST_F(ShaderClassesTest, ComputeShader_GetWorkgroupSize_PbrLighting)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	// pbr_lighting.comp: layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/pbr_lighting.comp");
+	// pbr_lighting.comp.glsl: layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/pbr_lighting.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("PBRLighting", compPath);
@@ -370,9 +369,9 @@ TEST_F(ShaderClassesTest, ComputeShader_GetWorkgroupSize_PbrLighting)
 	uint32_t x = 0, y = 0, z = 0;
 	shader.GetWorkgroupSize(x, y, z);
 
-	EXPECT_EQ(x, 16u) << "pbr_lighting.comp should have local_size_x = 16";
-	EXPECT_EQ(y, 16u) << "pbr_lighting.comp should have local_size_y = 16";
-	EXPECT_EQ(z, 1u)  << "pbr_lighting.comp should have local_size_z = 1";
+	EXPECT_EQ(x, 16u) << "pbr_lighting.comp.glsl should have local_size_x = 16";
+	EXPECT_EQ(y, 16u) << "pbr_lighting.comp.glsl should have local_size_y = 16";
+	EXPECT_EQ(z, 1u)  << "pbr_lighting.comp.glsl should have local_size_z = 1";
 }
 
 TEST_F(ShaderClassesTest, ComputeShader_GetStruct_NonEmpty)
@@ -382,7 +381,7 @@ TEST_F(ShaderClassesTest, ComputeShader_GetStruct_NonEmpty)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("DummyCompute", compPath);
@@ -402,7 +401,7 @@ TEST_F(ShaderClassesTest, ComputeShader_SetDefault_AndGetDefaults)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("DefaultTest", compPath);
@@ -440,7 +439,7 @@ TEST_F(ShaderClassesTest, ComputeShader_SetDefault_OverwritesExisting)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("OverwriteTest", compPath);
@@ -461,7 +460,7 @@ TEST_F(ShaderClassesTest, ComputeShader_NonexistentFile_CompileReturnsFalse)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	ComputeShader shader("InvalidCompute", "nonexistent/compute.comp");
+	ComputeShader shader("InvalidCompute", "nonexistent/compute.comp.glsl");
 	ShaderCompiler compiler;
 	const bool compileResult = shader.Compile(compiler);
 
@@ -478,7 +477,7 @@ TEST_F(ShaderClassesTest, ComputeShader_GetType_ReturnsCompute)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	}
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	ComputeShader shader("DummyCompute", compPath);
@@ -500,8 +499,8 @@ TEST_F(ShaderClassesTest, ShaderLibrary_LoadRenderShader_CacheHit)
 
 	ShaderLibrary::Clear();
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -527,7 +526,7 @@ TEST_F(ShaderClassesTest, ShaderLibrary_LoadComputeShader_CacheHit)
 
 	ShaderLibrary::Clear();
 
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(compPath.empty());
 
 	auto first = ShaderLibrary::LoadComputeShader("CompCacheHit", compPath);
@@ -552,9 +551,9 @@ TEST_F(ShaderClassesTest, ShaderLibrary_RenderAndCompute_CachesAreDistinct)
 
 	ShaderLibrary::Clear();
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
-	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
+	const std::string compPath = ResolveAssetPath("res/shaders/compute/dummy.comp.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 	ASSERT_FALSE(compPath.empty());
@@ -579,8 +578,8 @@ TEST_F(ShaderClassesTest, ShaderLibrary_Clear_FlushesAll)
 
 	ShaderLibrary::Clear();
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -608,8 +607,8 @@ TEST_F(ShaderClassesTest, ShaderLibrary_Reload_ForcesRecompile)
 
 	ShaderLibrary::Clear();
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 
@@ -670,8 +669,8 @@ TEST_F(ShaderClassesTest, ShaderLibrary_ThreadSafety_DifferentNames)
 
 	ShaderLibrary::Clear();
 
-	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert");
-	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag");
+	const std::string vertPath = ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl");
+	const std::string fragPath = ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_FALSE(vertPath.empty());
 	ASSERT_FALSE(fragPath.empty());
 

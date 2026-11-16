@@ -1,5 +1,5 @@
-#include "Icons.h"
-#include "scene/ObjectID.h"
+#include "Icons.hpp"
+#include "scene/ObjectID.hpp"
 
 namespace neurus
 {

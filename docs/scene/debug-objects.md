@@ -7,7 +7,7 @@
 Viewport debug geometry is retained and stateful, matching the Qt widgets it sits next to. Something is drawn because an object exists and says so, never because a function was called this frame.
 
 - Each debug object is a first-class Scene object: it is pooled in the `ResourceManager`, serialized, selectable and undoable like any other object.
-- `DebugDrawBuilder` (owned by `EditorViewport`) is the single flattener: it walks the Scene's three debug pools into a `DebugDrawList` (the transport container in `render/overlay/DebugDrawList.h`) on a dirty flag, never per frame. The pools themselves stay scene data; only the flattened payload lives on the renderer's side of the seam.
+- `DebugDrawBuilder` (owned by `EditorViewport`) is the single flattener: it walks the Scene's three debug pools into a `DebugDrawList` (the transport container in `render/overlay/DebugDrawList.hpp`) on a dirty flag, never per frame. The pools themselves stay scene data; only the flattened payload lives on the renderer's side of the seam.
 - Hiding a debug object means not flattening it. `DebugDrawList` has no per-primitive enable bit, so the builder drops objects whose `is_viewport && is_rendered` is false, before the x-ray partition is computed.
 - Smoothing is derived, never authored, and on by default: nothing stores a smooth bit. The builder decides it per primitive kind - a solid line and every cube edge get `DebugFlag::Smooth`; a stippled line does not (antialiasing would soften the hard ends a dash is made of); point sprites always do; a `DebugMesh` wireframe never does.
 
@@ -15,7 +15,7 @@ See [Overlays](overlays.md) and [Viewport](../editor/viewport.md).
 
 ## DebugLine (`GO_DL`)
 
-`scene/DebugLine.h` stores a collection of vertex positions interpreted as line-segment endpoints, plus rendering properties. It inherits `ObjectID` and `Transform3D`.
+`scene/DebugLine.hpp` stores a collection of vertex positions interpreted as line-segment endpoints, plus rendering properties. It inherits `ObjectID` and `Transform3D`.
 
 - Vertex storage is `std::vector<glm::vec3>` - pure CPU data, no GPU resources or shaders.
 - `PushDebugLine(start, end)`, `PushDebugLines(vertices)` (interpreted in pairs; an odd count leaves an incomplete last segment), `ClearVertices()`, and the absolute setter `SetVertices(vertices)` that the property editor and the undoable op carry.
@@ -26,7 +26,7 @@ See [Overlays](overlays.md) and [Viewport](../editor/viewport.md).
 
 ## DebugPoints (`GO_DP`)
 
-`scene/DebugPoints.h` stores point positions with their rendering attributes. It inherits `ObjectID` and `Transform3D`.
+`scene/DebugPoints.hpp` stores point positions with their rendering attributes. It inherits `ObjectID` and `Transform3D`.
 
 - `PointType` selects the sprite shape: `SQUARE`, `RHOMBUS`, `CIR` (circle), `CUBE` (volumetric). The shape ids are kept numerically in sync with `OverlayPointShape`.
 - `PushDebugPoint(point)`, `PushDebugPoints(points)`, `ClearPoints()` and the absolute setter `SetPoints(points)`; positions are local-space, relative to the transform (baked in by the builder like `DebugLine`).
@@ -36,7 +36,7 @@ See [Overlays](overlays.md) and [Viewport](../editor/viewport.md).
 
 ## DebugMesh (`GO_DM`)
 
-`scene/DebugMesh.h` draws pooled geometry as a wireframe overlay instead of a shaded surface, completing the debug-object family. It inherits `ObjectID` and `Transform3D`.
+`scene/DebugMesh.hpp` draws pooled geometry as a wireframe overlay instead of a shaded surface, completing the debug-object family. It inherits `ObjectID` and `Transform3D`.
 
 - References a pooled `MeshData` exactly like `Mesh` does (`o_mesh` plus `o_meshDataId`), so it reuses the existing `MeshGPU` upload path and the `ResourceComponent` re-wiring on project load.
 - Has no `Material` and no per-object `Shader`; its appearance is fully described by color, opacity and x-ray.

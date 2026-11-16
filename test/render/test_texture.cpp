@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "render/Texture.h"
+#include "shared/TestVulkanShared.hpp"
+#include "render/Texture.hpp"
 
 #include <array>
 #include <cstring>

@@ -1,6 +1,6 @@
-#include "platform/PlatformCrypto.h"
+#include "platform/PlatformCrypto.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <cerrno>
 #include <cstring>

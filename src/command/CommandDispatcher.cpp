@@ -1,4 +1,4 @@
-#include "command/CommandDispatcher.h"
+#include "command/CommandDispatcher.hpp"
 
 #include <exception>
 #include <utility>

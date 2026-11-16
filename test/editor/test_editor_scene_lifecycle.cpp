@@ -36,16 +36,16 @@
 
 #include <gtest/gtest.h>
 
-#include "editor/Editor.h"
-#include "editor/viewport/EditorViewport.h"
-#include "scene/Camera.h"
-#include "scene/DebugLine.h"
-#include "scene/DebugPoints.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "script/ScriptContext.h"
+#include "editor/Editor.hpp"
+#include "editor/viewport/EditorViewport.hpp"
+#include "scene/Camera.hpp"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugPoints.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptContext.hpp"
 
 using namespace neurus;
 

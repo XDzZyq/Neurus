@@ -1,4 +1,4 @@
-#include "ui/panels/LogPanel.h"
+#include "ui/panels/LogPanel.hpp"
 
 #include <fstream>
 
@@ -16,8 +16,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include "core/Log.h"
-#include "ui/utils/I18n.h"
+#include "core/Log.hpp"
+#include "ui/utils/I18n.hpp"
 
 namespace neurus
 {

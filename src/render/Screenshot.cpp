@@ -1,18 +1,18 @@
-#include "Screenshot.h"
-#include "Image.h"
-#include "RenderCache.h"
-#include "SharedQueue.h"
-#include "asset/data/ImageData.h"
-#include "asset/PixelFormat.h"
-#include "Texture.h"
-#include "render/Barrier.h"
-#include "core/Log.h"
-#include "platform/PlatformSystem.h"
+#include "Screenshot.hpp"
+#include "Image.hpp"
+#include "RenderCache.hpp"
+#include "SharedQueue.hpp"
+#include "asset/data/ImageData.hpp"
+#include "asset/PixelFormat.hpp"
+#include "Texture.hpp"
+#include "render/Barrier.hpp"
+#include "core/Log.hpp"
+#include "platform/PlatformSystem.hpp"
 
-#include "PipelineBuilder.h"
-#include "DescriptorManager.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/ComputeShader.h"
+#include "PipelineBuilder.hpp"
+#include "DescriptorManager.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/ComputeShader.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -334,7 +334,7 @@ std::string Screenshot::ExportShadowDepthEquirect(RenderCache& renderCache,
 	// --- 4. Load compute shader via ShaderLibrary ---
 	auto c2eShader =
 		ShaderLibrary::LoadComputeShader("c2e_export",
-		                                  "res/shaders/convert/c2e.comp");
+		                                  "res/shaders/convert/c2e.comp.glsl");
 	if (!c2eShader)
 	{
 		throw std::runtime_error("[Screenshot] Failed to load c2e compute shader");

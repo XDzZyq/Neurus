@@ -37,24 +37,24 @@
 #include <cereal/types/memory.hpp>
 #include <cereal/types/polymorphic.hpp>
 
-#include "editor/controllers/ShaderController.h"
-#include "editor/events/EventBus.h"
-#include "editor/events/ShaderEvents.h"
-#include "editor/operations/OperationContext.h"
-#include "editor/operations/OperationManager.h"
-#include "editor/operations/registrations/OperationRegistration.h"
-#include "editor/operations/ShaderOperations.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "render/shaders/RenderShader.h"
-#include "render/shaders/ComputeShader.h"
-#include "asset/data/ShaderData.h"
-#include "render/shaders/ShaderLibrary.h"
-#include "render/shaders/ShaderParser.h"
-#include "asset/data/shader/ShaderUnit.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "core/ResourceManager.h"
+#include "editor/controllers/ShaderController.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/events/ShaderEvents.hpp"
+#include "editor/operations/OperationContext.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "editor/operations/registrations/OperationRegistration.hpp"
+#include "editor/operations/ShaderOperations.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "render/shaders/RenderShader.hpp"
+#include "render/shaders/ComputeShader.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "render/shaders/ShaderLibrary.hpp"
+#include "render/shaders/ShaderParser.hpp"
+#include "asset/data/shader/ShaderUnit.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "core/ResourceManager.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -95,7 +95,7 @@ protected:
 		// Build a mesh with a CPU-only shader carrying seeded vertex+fragment
 		// stages. GetStage() default-inserts the stage, so HasStage() is true.
 		m_mesh = std::make_shared<Mesh>();
-		auto shader = std::make_shared<RenderShader>("TestShader", "v.vert", "f.frag");
+		auto shader = std::make_shared<RenderShader>("TestShader", "v.vert.glsl", "f.frag.glsl");
 		shader->GetStage(ShaderType::VERTEX).code = "VERT_V0";
 		shader->GetStage(ShaderType::FRAGMENT).code = "FRAG_V0";
 		m_resources.Register(shader); // the shader-keyed events resolve it by UID
@@ -522,13 +522,13 @@ TEST_F(ShaderControllerTest, StructEdit_StructMemberEdit_UndoRestores)
 // --- Real parsed IR (the app's actual shader shape) -------------------------
 
 /**
- * @brief Parses the real gbuffer.vert from the res tree — the exact IR shape
+ * @brief Parses the real gbuffer.vert.glsl from the res tree — the exact IR shape
  * the running app edits — then replays the user's reported scenario.
  */
 TEST_F(ShaderControllerTest, FieldAdd_RealGbufferVert_AttributesAndPassOutputs_UndoRestores)
 {
 	// Load + parse the actual vertex shader the app ships with.
-	const std::string path = std::string(TEST_SOURCE_DIR) + "/res/shaders/render/gbuffer.vert";
+	const std::string path = std::string(TEST_SOURCE_DIR) + "/res/shaders/render/gbuffer.vert.glsl";
 	std::ifstream file(path);
 	ASSERT_TRUE(file.is_open()) << "cannot open " << path;
 	std::stringstream ss;
@@ -581,7 +581,7 @@ protected:
 		// omitted - not needed in a unit test).
 		m_mesh = m_pool.Load<Mesh>();
 		m_scene.UseMesh(m_mesh);
-		m_shader = m_pool.Load<RenderShader>("MeshShader_1", "v.vert", "f.frag");
+		m_shader = m_pool.Load<RenderShader>("MeshShader_1", "v.vert.glsl", "f.frag.glsl");
 
 		m_eventBus.Subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
 			auto mesh = m_pool.Get<Mesh>(e.objectUid);
@@ -667,8 +667,8 @@ TEST_F(ShaderControllerTest, Compile_Success_EmitsShaderCompiledWithShaderId)
 	// Real gbuffer source parses + compiles with shaderc alone (no device).
 	auto shader = ShaderLibrary::LoadRenderShader(
 		"CompileEmitShader",
-		"res/shaders/render/gbuffer.vert",
-		"res/shaders/render/gbuffer.frag");
+		"res/shaders/render/gbuffer.vert.glsl",
+		"res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_NE(shader, nullptr);
 	m_mesh->o_shader = std::move(shader);
 	const int shaderId = m_mesh->o_shader->GetObjectID();
@@ -698,7 +698,7 @@ TEST_F(ShaderControllerTest, Compile_Failure_DoesNotEmitShaderCompiled)
 	// The type must be CUSTOM for the generator to emit `typeName` verbatim -
 	// ShaderGenerator.cpp:64 falls back to ParseType(type) for every builtin,
 	// so a bogus name on a VEC3 would be discarded and the source would compile.
-	auto shader = std::make_shared<RenderShader>("BadCompileShader", "v.vert", "f.frag");
+	auto shader = std::make_shared<RenderShader>("BadCompileShader", "v.vert.glsl", "f.frag.glsl");
 	shader->GetStage(ShaderType::VERTEX).parsed.AB_list.push_back(
 		S_IO{ 0, "bad", ParaType::CUSTOM, "not_a_glsl_type", Interp::Smooth });
 	m_mesh->o_shader = shader;
@@ -761,7 +761,7 @@ TEST_F(ShaderControllerTest, UnitCompileSucceedsAndEmitsShaderCompiled)
 TEST_F(ShaderControllerTest, ComputeShaderUnitCompilesWithoutShaderCompiled)
 {
 	auto compute = m_resources.Load<ComputeShader>(
-		"TestCompute", "res/shaders/compute/dummy.comp");
+		"TestCompute", "res/shaders/compute/dummy.comp.glsl");
 	ASSERT_TRUE(compute);
 	ASSERT_TRUE(compute->ParseAndGenerate());
 	const int shaderUid = compute->GetObjectID();

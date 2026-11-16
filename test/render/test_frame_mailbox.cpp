@@ -56,9 +56,9 @@
 
 #include <gtest/gtest.h>
 
-#include "render/FrameMailbox.h"
-#include "render/PublishedFrame.h"
-#include "render/requests/RenderRequests.h"
+#include "render/FrameMailbox.hpp"
+#include "render/PublishedFrame.hpp"
+#include "render/requests/RenderRequests.hpp"
 
 #include <chrono>
 #include <condition_variable>

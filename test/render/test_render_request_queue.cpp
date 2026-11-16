@@ -9,7 +9,7 @@
  * carry that contract, and each is easy to "pass" by accident unless the
  * assertion names the thing it depends on:
  *
- *   1. **Strict FIFO within a batch.** RenderRequests.h relies on append order
+ *   1. **Strict FIFO within a batch.** RenderRequests.hpp relies on append order
  *      being execution order (an upload posted after DropSceneResourcesRequest
  *      lands in the new scene). Every request below carries a distinguishing
  *      objectId/uid, and the batch is checked index-by-index - a queue that
@@ -30,10 +30,10 @@
 
 #include <gtest/gtest.h>
 
-#include "core/BatchQueue.h"
-#include "render/requests/RenderRequests.h"
-#include "render/resources/LightingCache.h"
-#include "scene/Light.h"
+#include "core/BatchQueue.hpp"
+#include "render/requests/RenderRequests.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "scene/Light.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -90,7 +90,7 @@ TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 
 	// A deliberately interleaved sequence across request kinds: order is the
 	// contract, independent of alternative. DropScene between two uploads is the
-	// exact ordering RenderRequests.h calls out.
+	// exact ordering RenderRequests.hpp calls out.
 	queue.Push(UploadMeshRequest{.objectId = 10});
 	queue.Push(CreateLightGpuRequest{.uid = 20, .type = LightType::SUNLIGHT});
 	queue.Push(DropSceneResourcesRequest{});

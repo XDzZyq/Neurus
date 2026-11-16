@@ -34,7 +34,7 @@
 #include <memory>
 #include <string>
 
-#include "ui/UIManager.h"
+#include "ui/UIManager.hpp"
 
 using namespace neurus;
 

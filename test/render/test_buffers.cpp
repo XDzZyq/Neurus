@@ -1,12 +1,12 @@
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
 #include <array>
 #include <cstring>
 #include <vector>
 
-#include "render/buffers/BufferLayout.h"
-#include "render/buffers/VertexBuffer.h"
-#include "render/buffers/IndexBuffer.h"
+#include "render/buffers/BufferLayout.hpp"
+#include "render/buffers/VertexBuffer.hpp"
+#include "render/buffers/IndexBuffer.hpp"
 
 using namespace neurus;
 

@@ -3,18 +3,18 @@
  * @brief Final scene compositing compute pass implementation.
  */
 
-#include "RenderCache.h"
-#include "passes/ComposePass.h"
+#include "RenderCache.hpp"
+#include "passes/ComposePass.hpp"
 
-#include "../PipelineBuilder.h"
-#include "core/RenderConfig.h"
-#include "Image.h"
-#include "render/Barrier.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/ComputeShader.h"
-#include "core/Log.h"
+#include "../PipelineBuilder.hpp"
+#include "core/RenderConfig.hpp"
+#include "Image.hpp"
+#include "render/Barrier.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/ComputeShader.hpp"
+#include "core/Log.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -33,7 +33,7 @@ ComposePass::ComposePass(const vk::raii::Device& device,
 	// --- Self-load compute shader via ShaderLibrary ---
 	, p_shader(
 		ShaderLibrary::LoadComputeShader("compose",
-		                                  NEURUS_SHADER_DIR "compute/compose.comp"))
+		                                  NEURUS_SHADER_DIR "compute/compose.comp.glsl"))
 {
 	BuildPipeline(device, "ComposePass");
 

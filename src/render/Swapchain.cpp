@@ -1,7 +1,7 @@
-#include "Swapchain.h"
+#include "Swapchain.hpp"
 
-#include "SharedQueue.h"
-#include "core/Log.h"
+#include "SharedQueue.hpp"
+#include "core/Log.hpp"
 
 #include <algorithm>
 #include <stdexcept>

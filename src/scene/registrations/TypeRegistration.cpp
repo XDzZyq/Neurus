@@ -10,16 +10,16 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/polymorphic.hpp>
 
-#include "core/UID.h"
-#include "scene/Camera.h"
-#include "scene/DebugLine.h"
-#include "scene/DebugMesh.h"
-#include "scene/DebugPoints.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/ObjectID.h"
-#include "scene/Sprite.h"
+#include "core/UID.hpp"
+#include "scene/Camera.hpp"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugMesh.hpp"
+#include "scene/DebugPoints.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/ObjectID.hpp"
+#include "scene/Sprite.hpp"
 
 // --- Base type registration ---
 CEREAL_REGISTER_TYPE(neurus::UID)

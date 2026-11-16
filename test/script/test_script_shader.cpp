@@ -11,12 +11,12 @@
 #include <cstddef>
 #include <string>
 
-#include "core/Log.h"
-#include "editor/Editor.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "script/ScriptContext.h"
-#include "script/ScriptEngine.h"
+#include "core/Log.hpp"
+#include "editor/Editor.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptContext.hpp"
+#include "script/ScriptEngine.hpp"
 
 class ScriptShader : public ::testing::Test
 {
@@ -57,12 +57,12 @@ import neurus
 mesh = neurus.scene.meshes["Ground"]
 mesh.shader.create()
 assert mesh.shader.attached
-mesh.shader.create("res/shaders/render/gbuffer.vert", "res/shaders/render/gbuffer.frag")
+mesh.shader.create("res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl")
 assert mesh.shader.attached
-shader = neurus.shader.load_shader("res/shaders/render/gbuffer.frag")
+shader = neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl")
 mesh.shader.create(fragment=shader)
 assert mesh.shader.fragment is not None
-neurus.shader.load_shader("res/shaders/render/gbuffer.frag", name="MyFrag")
+neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl", name="MyFrag")
 mesh.shader.create(fragment=neurus.data.shaders["MyFrag"])
 )");
 }
@@ -88,7 +88,7 @@ TEST_F(ScriptShader, WrongStageIsRejected)
 	Run(R"(
 import neurus
 mesh = neurus.scene.meshes["Ground"]
-compute = neurus.shader.load_shader("res/shaders/compute/dummy.comp")
+compute = neurus.shader.load_shader("res/shaders/compute/dummy.comp.glsl")
 mesh.shader.create(fragment=compute)
 )");
 	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), 0);
@@ -98,7 +98,7 @@ TEST_F(ScriptShader, ComputeIsEditableAndCompilable)
 {
 	RunCleanly(R"(
 import neurus
-compute = neurus.shader.load_shader("res/shaders/compute/dummy.comp")
+compute = neurus.shader.load_shader("res/shaders/compute/dummy.comp.glsl")
 unit = compute.compute
 unit.code = unit.code
 unit.compile(by="code")
@@ -109,7 +109,7 @@ TEST_F(ScriptShader, PooledShaderNamesResolve)
 {
 	RunCleanly(R"(
 import neurus
-neurus.shader.load_shader("res/shaders/render/gbuffer.frag", name="MyFrag")
+neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl", name="MyFrag")
 assert "MyFrag" in neurus.data.shaders
 assert neurus.data.shaders["MyFrag"].name == "MyFrag"
 )");

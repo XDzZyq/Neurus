@@ -24,22 +24,22 @@
 #include <memory>
 #include <string>
 
-#include "core/Log.h"
-#include "core/RenderConfig.h"
-#include "core/ResourceManager.h"
-#include "editor/Editor.h"
-#include "editor/controllers/ObjectController.h"
-#include "editor/controllers/RenderConfigController.h"
-#include "editor/controllers/SceneController.h"
-#include "editor/controllers/ScriptController.h"
-#include "editor/events/EventBus.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/operations/OperationManager.h"
-#include "scene/Camera.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "script/ScriptContext.h"
-#include "script/ScriptEngine.h"
+#include "core/Log.hpp"
+#include "core/RenderConfig.hpp"
+#include "core/ResourceManager.hpp"
+#include "editor/Editor.hpp"
+#include "editor/controllers/ObjectController.hpp"
+#include "editor/controllers/RenderConfigController.hpp"
+#include "editor/controllers/SceneController.hpp"
+#include "editor/controllers/ScriptController.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptContext.hpp"
+#include "script/ScriptEngine.hpp"
 
 namespace
 {

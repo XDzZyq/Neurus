@@ -1,15 +1,15 @@
 # src/ipc/CMakeLists.txt - Loopback command transport (Qt-free, Vulkan-free)
 
 add_library(neurus_ipc STATIC
-	Frame.h
+	Frame.hpp
 	Frame.cpp
-	RandomToken.h
+	RandomToken.hpp
 	RandomToken.cpp
-	SessionRegistry.h
+	SessionRegistry.hpp
 	SessionRegistry.cpp
-	IpcClient.h
+	IpcClient.hpp
 	IpcClient.cpp
-	IpcServer.h
+	IpcServer.hpp
 	IpcServer.cpp
 )
 

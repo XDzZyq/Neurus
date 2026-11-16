@@ -9,7 +9,7 @@
 
 #include <gtest/gtest.h>
 
-#include "render/passes/Pass.h"
+#include "render/passes/Pass.hpp"
 
 using namespace neurus;
 

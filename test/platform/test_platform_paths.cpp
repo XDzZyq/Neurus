@@ -13,9 +13,9 @@
 #include <filesystem>
 #include <string>
 
-#include "app/Preferences.h"
-#include "platform/PlatformPaths.h"
-#include "platform/PlatformProcess.h"
+#include "app/Preferences.hpp"
+#include "platform/PlatformPaths.hpp"
+#include "platform/PlatformProcess.hpp"
 
 using namespace neurus;
 

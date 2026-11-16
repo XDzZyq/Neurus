@@ -10,10 +10,10 @@
 
 #include <gtest/gtest.h>
 
-#include "render/render_graph/RenderGraph.h"
-#include "render/passes/Pass.h"
-#include "render/RenderCache.h"
-#include "shared/TestVulkanShared.h"
+#include "render/render_graph/RenderGraph.hpp"
+#include "render/passes/Pass.hpp"
+#include "render/RenderCache.hpp"
+#include "shared/TestVulkanShared.hpp"
 
 #include <cstdint>
 #include <string>

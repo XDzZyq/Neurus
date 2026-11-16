@@ -1,8 +1,8 @@
-#include "cli/subcommands/StatusCommand.h"
+#include "cli/subcommands/StatusCommand.hpp"
 
-#include "cli/Output.h"
-#include "cli/SessionClient.h"
-#include "command/Commands.h"
+#include "cli/Output.hpp"
+#include "cli/SessionClient.hpp"
+#include "command/Commands.hpp"
 
 #include <vector>
 

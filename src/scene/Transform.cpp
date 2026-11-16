@@ -6,7 +6,7 @@
  * matrix derivation. Model matrix: T * Rz(yaw) * Rx(pitch) * Ry(roll) * S.
  */
 
-#include "scene/Transform.h"
+#include "scene/Transform.hpp"
 
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"

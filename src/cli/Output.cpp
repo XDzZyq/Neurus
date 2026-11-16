@@ -1,4 +1,4 @@
-#include "cli/Output.h"
+#include "cli/Output.hpp"
 
 #include <iostream>
 

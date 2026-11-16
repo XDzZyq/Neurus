@@ -22,7 +22,7 @@
 #include <QByteArray>
 #include <QString>
 
-#include "ui/utils/POCatalog.h"
+#include "ui/utils/POCatalog.hpp"
 
 using namespace neurus;
 

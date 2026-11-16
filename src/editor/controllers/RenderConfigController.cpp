@@ -6,13 +6,13 @@
  * config and request a render reset. Recording is gesture-aware (see the header).
  */
 
-#include "editor/controllers/RenderConfigController.h"
+#include "editor/controllers/RenderConfigController.hpp"
 
 #include <memory>
 
-#include "editor/events/ConfigEvents.h"
-#include "editor/events/EditorEvents.h"
-#include "editor/operations/ConfigOperations.h"
+#include "editor/events/ConfigEvents.hpp"
+#include "editor/events/EditorEvents.hpp"
+#include "editor/operations/ConfigOperations.hpp"
 
 namespace neurus {
 

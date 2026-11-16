@@ -3,7 +3,7 @@
  * @brief Implementation of ThreadPool.
  */
 
-#include "ThreadPool.h"
+#include "ThreadPool.hpp"
 
 #include <algorithm>
 #include <utility>

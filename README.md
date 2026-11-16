@@ -56,21 +56,28 @@ pre-compiled dependency system are covered in the
 
 ```
 src/
-  app/        application lifetime and wiring
+  app/        application lifetime, Vulkan context and wiring
   render/     renderer: passes, pipelines, GPU resources (Vulkan-HPP)
   editor/     application logic: scene mutation, controllers, operations
   ui/         Qt6 Widgets presentation
+  script/     embedded CPython bindings for the `neurus` module
   scene/      Vulkan-free scene objects (camera, light, mesh, transform)
   asset/      Vulkan-free CPU-side asset loading
   core/       UIDs, serialization, logging, render config
+  command/    typed command definitions and the JSON command protocol
+  ipc/        local IPC transport and session registry
+  cli/        headless `neurus` command-line client
   platform/   native window and surface glue
-test/         mirrors src/, plus shared GPU test fixtures
-res/          shaders, meshes, textures, UI assets, translations
+test/         mirrors src/, plus shared GPU fixtures and session tests
+res/          shaders (`<name>.<stage>.glsl`), meshes, textures, UI assets
 docs/         product documentation (published as the site above)
 cmake/        CMake helper modules
 lib/          Neurus-Lib submodule: vendored sources and prebuilt binaries
 scripts/      tooling: translation extraction, knowledge-graph cleanup
 ```
+
+C++ sources use `.cpp` and headers use `.hpp`; GLSL sources are named
+`<name>.<stage>.glsl` (for example `gbuffer.vert.glsl`).
 
 ## Contributing
 

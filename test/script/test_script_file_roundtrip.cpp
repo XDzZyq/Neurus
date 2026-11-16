@@ -22,23 +22,23 @@
 
 #include "glm/glm.hpp"
 
-#include "asset/Project.h"
-#include "asset/components/EditorComponent.h"
-#include "asset/components/HistoryComponent.h"
-#include "asset/components/ResourceComponent.h"
-#include "asset/components/SceneComponent.h"
-#include "core/ResourceManager.h"
-#include "editor/Editor.h"
-#include "editor/operations/ScriptOperations.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "script/ScriptContext.h"
-#include "script/ScriptEngine.h"
+#include "asset/Project.hpp"
+#include "asset/components/EditorComponent.hpp"
+#include "asset/components/HistoryComponent.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "core/ResourceManager.hpp"
+#include "editor/Editor.hpp"
+#include "editor/operations/ScriptOperations.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptContext.hpp"
+#include "script/ScriptEngine.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
-#include "asset/registrations/DataRegistration.h"
-#include "editor/operations/registrations/OperationRegistration.h"
-#include "scene/registrations/TypeRegistration.h"
+#include "asset/registrations/DataRegistration.hpp"
+#include "editor/operations/registrations/OperationRegistration.hpp"
+#include "scene/registrations/TypeRegistration.hpp"
 
 using namespace neurus;
 

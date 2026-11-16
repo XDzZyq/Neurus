@@ -3,11 +3,11 @@
  * @brief Python-side policy hook, import gate and wall-clock watchdog.
  */
 
-#include "script/ScriptSandbox.h"
+#include "script/ScriptSandbox.hpp"
 
 #include <pybind11/stl.h>
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <exception>
 

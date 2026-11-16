@@ -3,9 +3,9 @@
  * @brief Implementation of SharedQueue.
  */
 
-#include "SharedQueue.h"
+#include "SharedQueue.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <cstdint>
 #include <stdexcept>

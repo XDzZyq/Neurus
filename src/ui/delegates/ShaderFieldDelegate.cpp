@@ -1,7 +1,7 @@
-#include "delegates/ShaderFieldDelegate.h"
-#include "models/ShaderStructModel.h"
-#include "asset/data/shader/ShaderStruct.h"
-#include "ui/utils/I18n.h"
+#include "delegates/ShaderFieldDelegate.hpp"
+#include "models/ShaderStructModel.hpp"
+#include "asset/data/shader/ShaderStruct.hpp"
+#include "ui/utils/I18n.hpp"
 
 #include <QComboBox>
 #include <QLineEdit>

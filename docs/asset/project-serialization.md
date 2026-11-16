@@ -4,19 +4,19 @@ Project persistence is a pure registration-based serializer plus a fixed set of 
 
 ## Project
 
-`src/asset/Project.h` defines `project::Project`:
+`src/asset/Project.hpp` defines `project::Project`:
 
 - It owns no data - no project path, no dirty flag, no concrete type knowledge.
 - Callers register `Serializable` components via `Register<T>(args...)`, which constructs each component and stores it as `unique_ptr<Serializable>`, returning a reference.
 - `Save(path)` / `Load(path)` iterate every registered component and call its virtual `Save` / `Load`; the document is written as `.neurus.json` under the `"project"` node.
 - `Clear()` destroys all components.
-- It depends only on cereal and `Serializable.h`.
+- It depends only on cereal and `Serializable.hpp`.
 
 The Application owns the project path and builds a transient `Project` per save/open, registering the components below. The generic helper machinery lives in [Serialization](../core/serialization.md).
 
 ## Serializable
 
-`src/asset/Serializable.h` defines the component interface:
+`src/asset/Serializable.hpp` defines the component interface:
 
 - `Key()` returns the archive node name.
 - `Save(cereal::JSONOutputArchive&)` / `Load(cereal::JSONInputArchive&)` are the persistence hooks.

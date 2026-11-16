@@ -1,0 +1,123 @@
+#pragma once
+
+#include "UIPanel.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include <QGroupBox>
+#include <QLabel>
+#include <QPushButton>
+#include <QVBoxLayout>
+
+namespace neurus {
+
+class Vec3Spin;
+class CameraProperties;
+class MeshProperties;
+class LightProperties;
+class EnvironmentProperties;
+class DebugProperties;
+
+/**
+ * @brief Property Panel displaying type/name header, editable transform, and
+ *        type-specific property subpanels for the active scene object.
+ *
+ * Refresh() reads the active object's integer UID, updates the header, the
+ * transform spins and the subpanel matching its GOType. Editing any field
+ * emits a granular signal; the panel never mutates the scene itself.
+ */
+class PropertyPanel : public UIPanel
+{
+	Q_OBJECT
+
+public:
+	static constexpr PanelType kType = PanelType::PropertyPanel;
+
+	explicit PropertyPanel(QWidget* parent = nullptr);
+	~PropertyPanel() override = default;
+
+	PropertyPanel(const PropertyPanel&) = delete;
+	PropertyPanel& operator=(const PropertyPanel&) = delete;
+
+	/** @brief Reads active object from UIContext, updates header + transform + type subpanel. */
+	void Refresh(const UIContext& ctx) override;
+
+	/** @brief Re-applies transform labels / empty-state text in the active language. */
+	void Retranslate() override;
+
+signals:
+	// --- Transform ---
+	void positionChanged(const PositionChanged& e);
+	void rotationChanged(const RotationChanged& e);
+	void scaleChanged(const ScaleChanged& e);
+
+	// --- Camera ---
+	void cameraTargetChanged(const CameraTargetChanged& e);
+	void cameraFovChanged(const CameraFovChanged& e);
+
+	/// Camera *activation* (which camera the viewport uses); 0 = the viewport camera.
+	void activeCameraChanged(const ActiveCameraChanged& e);
+
+	// --- Mesh ---
+	void meshShadowChanged(const MeshShadowChanged& e);
+	void meshMaterialChanged(const MeshMaterialChanged& e);
+
+	// --- Light ---
+	void lightPowerChanged(const LightPowerChanged& e);
+	void lightRadiusChanged(const LightRadiusChanged& e);
+	void lightShadowChanged(const LightShadowChanged& e);
+	void lightCutoffChanged(const LightCutoffChanged& e);
+	void lightOuterCutoffChanged(const LightOuterCutoffChanged& e);
+
+	// --- Environment ---
+	void envIntensityChanged(const EnvironmentIntensityChanged& e);
+	void envRotationChanged(const EnvironmentRotationChanged& e);
+
+	// --- Debug objects (DebugLine / DebugPoints / DebugMesh) ---
+	void debugColorChanged(const DebugColorChanged& e);
+	void debugOpacityChanged(const DebugOpacityChanged& e);
+	void debugXRayChanged(const DebugXRayChanged& e);
+	void debugLineWidthChanged(const DebugLineWidthChanged& e);
+	void debugStippleChanged(const DebugLineStippleChanged& e);
+	void debugPointTypeChanged(const DebugPointTypeChanged& e);
+	void debugPointScaleChanged(const DebugPointScaleChanged& e);
+	void debugProjectionModeChanged(const DebugProjectionModeChanged& e);
+	void debugPositionsChanged(const DebugPositionsChanged& e);
+
+private:
+	void BuildHeader();
+	void BuildTransformEditor();
+	void BuildTypeSubpanels();
+
+	/** @brief Shows only the subpanel matching the given GOType, hides all others. */
+	void ShowTypeSubpanel(int goType);
+
+	/** @brief Enables or disables header + transform group. */
+	void SetEnabled(bool enabled);
+
+	// --- State ---
+	int m_activeObjectId = 0;  ///< Active object UID (0 = none); compared for lazy updates.
+
+	// --- Header ---
+	QWidget* m_headerWidget = nullptr;
+	QLabel*  m_iconLabel    = nullptr;
+	QLabel*  m_nameLabel    = nullptr;
+	QLabel*  m_emptyLabel   = nullptr;
+
+	// --- Transform editor ---
+	QGroupBox*  m_transformGroup = nullptr;
+	QLabel*     m_posLabel       = nullptr;
+	QLabel*     m_rotLabel       = nullptr;
+	QLabel*     m_sclLabel       = nullptr;
+	QPushButton* m_resetBtn      = nullptr;
+	Vec3Spin*   m_posSpin        = nullptr;
+	Vec3Spin*   m_rotSpin        = nullptr;
+	Vec3Spin*   m_sclSpin        = nullptr;
+
+	// --- Type-specific subpanels (each owns its own QGroupBox) ---
+	CameraProperties*      m_cameraProps = nullptr;
+	MeshProperties*        m_meshProps   = nullptr;
+	LightProperties*       m_lightProps  = nullptr;
+	EnvironmentProperties* m_envProps    = nullptr;
+	DebugProperties*       m_debugProps  = nullptr;  ///< Serves GO_DL, GO_DP and GO_DM.
+};
+
+} // namespace neurus

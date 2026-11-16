@@ -20,7 +20,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "platform/PlatformProcess.h"
+#include "platform/PlatformProcess.hpp"
 
 using namespace neurus;
 

@@ -1,7 +1,7 @@
-#include "ui/models/LogFilterProxy.h"
+#include "ui/models/LogFilterProxy.hpp"
 
-#include "core/Log.h"
-#include "ui/models/LogModel.h"
+#include "core/Log.hpp"
+#include "ui/models/LogModel.hpp"
 
 namespace neurus
 {
@@ -13,14 +13,16 @@ LogFilterProxy::LogFilterProxy(QObject* parent)
 
 void LogFilterProxy::setLevelFilter(LevelFilter filter)
 {
+	beginFilterChange();
 	m_levelFilter = filter;
-	invalidateFilter();
+	endFilterChange();
 }
 
 void LogFilterProxy::setSearchText(const QString& text)
 {
+	beginFilterChange();
 	m_searchText = text;
-	invalidateFilter();
+	endFilterChange();
 }
 
 bool LogFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const

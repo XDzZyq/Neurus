@@ -3,10 +3,10 @@
  * @brief Scene container implementation - status tracking and object lookup.
  */
 
-#include "Scene.h"
+#include "Scene.hpp"
 
-#include "core/Log.h"
-#include "core/ResourceManager.h"
+#include "core/Log.hpp"
+#include "core/ResourceManager.hpp"
 
 namespace neurus
 {

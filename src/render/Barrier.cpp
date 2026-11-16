@@ -1,4 +1,4 @@
-#include "Barrier.h"
+#include "Barrier.hpp"
 
 namespace neurus {
 

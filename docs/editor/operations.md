@@ -93,7 +93,7 @@ document is already partially rewound. See also the write path in
   selection is also persisted independently of history by `Scene::serialize` (as
   UIDs), so a reopened project restores its selection even with an empty
   undo/redo history.
-- `SetActiveCameraOp` (`SceneOperations.h`) makes "look through this camera"
+- `SetActiveCameraOp` (`SceneOperations.hpp`) makes "look through this camera"
   undoable. Like `SetSelectionOp` it is scene-level (not per-object) state, so it
   derives from `Operation` directly rather than from `TransitionOp`, stores the
   before/after camera UIDs (`0` = no scene camera, which hands the view back to
@@ -106,7 +106,7 @@ document is already partially rewound. See also the write path in
   holds is not an undo entry. The activation UID itself is persisted independently
   of history by `Scene::serialize`, so a reopened project looks through the camera
   it was saved with even with an empty undo stack.
-- `CompositeOp` (in `Operation.h`, a general-purpose core op) composes any
+- `CompositeOp` (in `Operation.hpp`, a general-purpose core op) composes any
   sequence of `Operation`s into one undo entry. Group-theoretic inverse: it replays
   the sequence in forward order, and `Inverse()` returns a composite of the
   reversed, individually-inverted operations (`o = h*g*f` implies
@@ -127,7 +127,7 @@ document is already partially rewound. See also the write path in
     that must not re-run on replay, give it a dedicated restore event (the
     `ShaderCodeRestored` convention) instead of the forward event, but keep ops
     minimal by default.
-- Debug object ops (`SceneOperations.h`): nine `TransitionOp`s covering the debug
+- Debug object ops (`SceneOperations.hpp`): nine `TransitionOp`s covering the debug
   property events: `SetDebugColorOp` (`glm::vec4`), `SetDebugOpacityOp`,
   `SetDebugXRayOp`, `SetDebugLineWidthOp`, `SetDebugStippleOp`,
   `SetDebugPointTypeOp`, `SetDebugPointScaleOp`, `SetDebugProjectionModeOp` and
@@ -191,7 +191,7 @@ light, whose GPU position lives in an SSBO the transform write does not touch.
 `SetShaderCodeOp` (before/after GLSL text), `SetShaderFieldOp` (before/after of
 one whole `ShaderStruct` element, a `ShaderFieldValue` variant over
 `S_IO`/`S_Uniform`/`S_Func`/`S_PushConstant`/`S_StructDef`, serialized via the
-non-intrusive functions in `render/shaders/ShaderStructSerialize.h`) and
+non-intrusive functions in `render/shaders/ShaderStructSerialize.hpp`) and
 `AddShaderFieldOp` (append vs remove one default entry, keyed by a `bool add` flag
 it flips in `Inverse`). All are keyed by mesh UID + stage. Code edits use the
 explicit begin/end gesture (`ShaderEditBegin`/`ShaderEditEnd`), while discrete
@@ -213,7 +213,7 @@ duplicate pooled shader). Compile stays non-undoable.
 ## Persisting the history stacks
 
 The undo/redo stacks are saved into the project file via `HistoryComponent`
-(`src/asset/components/HistoryComponent.h/cpp`), a `project::Serializable` adapter
+(`src/asset/components/HistoryComponent.hpp/cpp`), a `project::Serializable` adapter
 keyed `"m_history"` that wraps `OperationManager`. `Save` writes the `undo`/`redo`
 vectors of `std::unique_ptr<Operation>`; `Load` decodes them and calls
 `OperationManager::RestoreHistory`. `Application::BuildProject` registers it last,
@@ -234,7 +234,7 @@ Two non-obvious requirements when adding a new op to that file:
 - Ops live in a static lib, so the registration TU is dead-stripped unless
   force-linked: `CEREAL_REGISTER_DYNAMIC_INIT(neurus_operations)` in the `.cpp`
   plus `CEREAL_FORCE_DYNAMIC_INIT(neurus_operations)` (in
-  `operations/registrations/OperationRegistration.h`) included at every
+  `operations/registrations/OperationRegistration.hpp`) included at every
   serialization site.
 
 Why no `polymorphic_name` on scene objects but yes on ops? cereal only writes a

@@ -13,13 +13,13 @@
 #include <vector>
 #include <numeric>
 
-#include "shared/TestVulkanShared.h"
-#include "render/Barrier.h"
-#include "render/Image.h"
-#include "render/RenderCache.h"
-#include "core/RenderConfig.h"
-#include "render/RenderContext.h"
-#include "render/passes/FXAAPass.h"
+#include "shared/TestVulkanShared.hpp"
+#include "render/Barrier.hpp"
+#include "render/Image.hpp"
+#include "render/RenderCache.hpp"
+#include "core/RenderConfig.hpp"
+#include "render/RenderContext.hpp"
+#include "render/passes/FXAAPass.hpp"
 
 using namespace neurus;
 

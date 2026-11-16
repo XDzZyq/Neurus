@@ -4,19 +4,19 @@ The renderer has a small buffer class hierarchy that maps a memory-locality choi
 
 ## Buffer classes
 
-- `Buffer.h/cpp` - virtual base class (`Buffer`).
-- `StagingBuffer.h/cpp` - host-visible staging (upload/download ONLY).
-- `CPUBuffer.h/cpp` - permanent host-visible mapped buffer.
-- `GPUBuffer.h/cpp` - device-local with staging.
-- `ArrayBuffer.h` - growable typed device buffer (`ArrayBuffer<T>`).
-- `UniformBuffer.h` - template uniform (`UniformBuffer<T>`).
-- `VertexBuffer.h/cpp` - vertex buffer (inherits `GPUBuffer`).
-- `IndexBuffer.h/cpp` - index buffer (inherits `GPUBuffer`).
-- `BufferLayout.h/cpp` - vertex input layout description.
+- `Buffer.hpp/cpp` - virtual base class (`Buffer`).
+- `StagingBuffer.hpp/cpp` - host-visible staging (upload/download ONLY).
+- `CPUBuffer.hpp/cpp` - permanent host-visible mapped buffer.
+- `GPUBuffer.hpp/cpp` - device-local with staging.
+- `ArrayBuffer.hpp` - growable typed device buffer (`ArrayBuffer<T>`).
+- `UniformBuffer.hpp` - template uniform (`UniformBuffer<T>`).
+- `VertexBuffer.hpp/cpp` - vertex buffer (inherits `GPUBuffer`).
+- `IndexBuffer.hpp/cpp` - index buffer (inherits `GPUBuffer`).
+- `BufferLayout.hpp/cpp` - vertex input layout description.
 
 ## Choosing a buffer type
 
-`CPUBuffer` (`src/render/buffers/CPUBuffer.h`) is the **permanent** host-visible, device-accessible buffer: mapped once at creation and written directly by the CPU. It is named for the mirror image of `GPUBuffer`, which is device-local.
+`CPUBuffer` (`src/render/buffers/CPUBuffer.hpp`) is the **permanent** host-visible, device-accessible buffer: mapped once at creation and written directly by the CPU. It is named for the mirror image of `GPUBuffer`, which is device-local.
 
 - Use it for data the CPU rewrites and the GPU reads in place - `DebugCache`'s segment/point SSBOs are the reference case.
 - **`StagingBuffer` is for uploads and downloads only.** Do not retain one as a permanent buffer object; that is what `CPUBuffer` exists for.

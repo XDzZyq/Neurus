@@ -1,4 +1,4 @@
-#include "platform/PlatformSystem.h"
+#include "platform/PlatformSystem.hpp"
 
 #include <io.h>
 

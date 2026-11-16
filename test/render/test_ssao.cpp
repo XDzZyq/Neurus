@@ -13,17 +13,17 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "shared/TestCornellBox.h"
+#include "shared/TestVulkanShared.hpp"
+#include "shared/TestCornellBox.hpp"
 
 // --- Render layer ---
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/passes/GeometryPass.h"
-#include "render/passes/SSAOPass.h"
-#include "render/Screenshot.h"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/passes/SSAOPass.hpp"
+#include "render/Screenshot.hpp"
 
-#include "shared/TestReferenceImage.h"
+#include "shared/TestReferenceImage.hpp"
 
 #include <algorithm>
 #include <array>
@@ -152,7 +152,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 
 	// SSAO is under-sampled (16 hemisphere samples) and its per-sample
 	// occlusion test hinges on a hard `delta <= 0` branch fed by a dependent
-	// texture fetch at a projected UV (see ssao.comp). Sub-ULP float
+	// texture fetch at a projected UV (see ssao.comp.glsl). Sub-ULP float
 	// differences between MoltenVK/Metal and native Vulkan flip individual
 	// samples across that threshold, so ~1-4% of pixels — concentrated on AO
 	// edges — differ by a few U8 levels across platforms. The CPU RNG is a

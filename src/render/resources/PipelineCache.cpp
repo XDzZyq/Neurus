@@ -1,5 +1,5 @@
-#include "PipelineCache.h"
-#include "core/Log.h"
+#include "PipelineCache.hpp"
+#include "core/Log.hpp"
 
 namespace neurus {
 

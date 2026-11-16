@@ -4,7 +4,7 @@ The deferred pipeline is orchestrated by a compile-once DAG that orders passes b
 
 ## Model
 
-The graph is built on the generic `neurus::Graph<SData, NData>` DAG template (`src/core/Graph.h`).
+The graph is built on the generic `neurus::Graph<SData, NData>` DAG template (`src/core/Graph.hpp`).
 
 - `RenderGraph` = `Graph<AttachmentName, PassEntry>`. One node per pass; a node's `PassEntry` holds the `Pass*` and its cached `PassIO`.
 - Each pass declares its image I/O via `Pass::GetIO()` returning a `PassIO` (name + read/write `AttachmentBinding`s: resource, binding slot, descriptor type, image layout). This is the single declaration the graph consumes.
@@ -41,7 +41,7 @@ For the pass-by-pass chain this graph orders, see [Passes](passes.md).
 
 ## Resources and descriptors
 
-- `DescriptorBinder` (`render_graph/DescriptorBinder.h`) translates a pass's `PassIO` image bindings into descriptor-set writes.
+- `DescriptorBinder` (`render_graph/DescriptorBinder.hpp`) translates a pass's `PassIO` image bindings into descriptor-set writes.
 - Shadow resources are logical `AttachmentName` members resolved by their owning pass, **not** `GetAttachment`: `ShadowDepth` (per-light bundle in `LightGPU`) and `ShadowIntensity` (2D array via `GetShadowIntensityArray`). `ConfigFor` throws for them to catch accidental single-attachment fetches.
 
 ## Ownership boundary
@@ -58,7 +58,7 @@ Per-frame profiling answers whether the renderer is **CPU-bound** (command recor
 
 **Always on**: profiling is unconditional. `DeferredRenderer` owns a `GPUProfiler` and a `FrameProfile` and populates them every frame - there is no enable/disable toggle. `Application::InitRenderer()` needs no profiling call; `DrawFrame()` always returns a live `FrameProfile`.
 
-**What is measured** (`FrameProfile` in `ProfilingData.h`):
+**What is measured** (`FrameProfile` in `ProfilingData.hpp`):
 
 - `cpuRecordMs` - total command-recording wall time across both graphs (scene, then overlay).
 - Per pass: `cpuMs` (around each `Record()` in `RenderGraph::Execute`), `gpuMs` (timestamp queries), `drawCalls`, `dispatches`.
@@ -72,4 +72,4 @@ Per-frame profiling answers whether the renderer is **CPU-bound** (command recor
 
 **Counters**: each pass reports its own draw/dispatch counts by returning a `PassStats { drawCalls, dispatches }` from `Record()` - passes are stateless with respect to profiling (no members, no reset). `RenderContext` carries no profiling data - it stays an immutable per-frame snapshot. `RenderGraph::Execute` aggregates the returned `PassStats` into each `PassProfile` and sums them into the frame totals.
 
-**Surface**: `DeferredRenderer::DrawFrame()` returns the `FrameProfile`; the Application layer assembles the `UIContext` each frame (the Editor never produces it) and sets `UIContext::profile` to the returned profile (a typed `const FrameProfile*`, forward-declared in `UIContext.h`). The ProfilingPanel reads it directly and renders the per-pass timings as a tree (frame totals + per-pass rows).
+**Surface**: `DeferredRenderer::DrawFrame()` returns the `FrameProfile`; the Application layer assembles the `UIContext` each frame (the Editor never produces it) and sets `UIContext::profile` to the returned profile (a typed `const FrameProfile*`, forward-declared in `UIContext.hpp`). The ProfilingPanel reads it directly and renders the per-pass timings as a tree (frame totals + per-pass rows).

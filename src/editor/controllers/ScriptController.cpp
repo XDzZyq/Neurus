@@ -3,9 +3,9 @@
  * @brief Run-boundary handlers that open and close the one-step script scope.
  */
 
-#include "editor/controllers/ScriptController.h"
+#include "editor/controllers/ScriptController.hpp"
 
-#include "editor/events/ScriptEvents.h"
+#include "editor/events/ScriptEvents.hpp"
 
 namespace {
 

@@ -1,27 +1,27 @@
 /**
  * @file ResourceComponent.cpp
- * @brief ResourceManager pool persistence (see ResourceComponent.h).
+ * @brief ResourceManager pool persistence (see ResourceComponent.hpp).
  */
 
-#include "asset/components/ResourceComponent.h"
+#include "asset/components/ResourceComponent.hpp"
 
-#include "core/Log.h"
-#include "core/ResourceManager.h"
+#include "core/Log.hpp"
+#include "core/ResourceManager.hpp"
 
 // Types needed for the pooled data-reference wiring in Load().
-#include "asset/data/ImageData.h"
-#include "asset/data/MeshData.h"
-#include "scene/Environment.h"
-#include "scene/DebugMesh.h"
-#include "scene/Mesh.h"
-#include "scene/ObjectID.h"
-#include "asset/data/ShaderData.h"
+#include "asset/data/ImageData.hpp"
+#include "asset/data/MeshData.hpp"
+#include "scene/Environment.hpp"
+#include "scene/DebugMesh.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/ObjectID.hpp"
+#include "asset/data/ShaderData.hpp"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
 // UID-derived types are registered before serialization runs.
-#include "scene/registrations/TypeRegistration.h"
-#include "asset/registrations/DataRegistration.h"
-#include "render/registrations/ShaderRegistration.h"
+#include "scene/registrations/TypeRegistration.hpp"
+#include "asset/registrations/DataRegistration.hpp"
+#include "render/registrations/ShaderRegistration.hpp"
 
 #include <algorithm>
 #include <string>

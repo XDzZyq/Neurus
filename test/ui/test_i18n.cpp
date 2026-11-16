@@ -16,7 +16,7 @@
 
 #include <algorithm>
 
-#include "ui/utils/I18n.h"
+#include "ui/utils/I18n.hpp"
 
 using namespace neurus;
 

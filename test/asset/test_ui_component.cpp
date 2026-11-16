@@ -14,14 +14,14 @@
 
 #include <cstdio>   // std::remove
 
-#include "asset/Project.h"
-#include "asset/components/UIComponent.h"
-#include "asset/components/SceneComponent.h"
-#include "asset/components/ResourceComponent.h"
-#include "asset/components/ConfigComponent.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "scene/Scene.h"
+#include "asset/Project.hpp"
+#include "asset/components/UIComponent.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/ConfigComponent.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "scene/Scene.hpp"
 
 using namespace neurus;
 

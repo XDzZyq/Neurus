@@ -16,34 +16,34 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
 // --- Render layer ---
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/UploadManager.h"
-#include "render/resources/LightingCache.h"
-#include "render/passes/GeometryPass.h"
-#include "render/passes/IBLPass.h"
-#include "render/passes/LightingPass.h"
-#include "render/Image.h"
-#include "scene/Material.h"
-#include "render/Screenshot.h"
-#include "render/buffers/IndexBuffer.h"
-#include "render/buffers/VertexBuffer.h"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/UploadManager.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/passes/IBLPass.hpp"
+#include "render/passes/LightingPass.hpp"
+#include "render/Image.hpp"
+#include "scene/Material.hpp"
+#include "render/Screenshot.hpp"
+#include "render/buffers/IndexBuffer.hpp"
+#include "render/buffers/VertexBuffer.hpp"
 
 // --- Asset layer ---
-#include "asset/data/MeshData.h"
-#include "asset/data/ImageData.h"
+#include "asset/data/MeshData.hpp"
+#include "asset/data/ImageData.hpp"
 
 // --- Scene layer ---
-#include "scene/Camera.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "scene/Camera.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
-#include "shared/TestReferenceImage.h"
+#include "shared/TestReferenceImage.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -185,8 +185,6 @@ protected:
 
 	// Inline EnvironmentGPU creation (was RenderCache::CreateEnvironmentGPU)
 	{
-		auto& dev = *m_device;
-		auto& pd = PhysicalDevice();
 		const int envId = m_env->GetObjectID();
 
 		// 1. Upload equirect to GPU

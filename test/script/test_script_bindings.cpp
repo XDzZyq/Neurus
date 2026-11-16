@@ -23,19 +23,19 @@
 #include <stdexcept>
 #include <string>
 
-#include "core/Log.h"
-#include "core/RenderConfig.h"
-#include "core/ResourceManager.h"
-#include "scene/Camera.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "script/ScriptContext.h"
-#include "script/ScriptEngine.h"
-#include "script/ScriptView.h"
-#include "script/proxies/ObjectProxy.h"
-#include "script/proxies/Transform3DProxy.h"
+#include "core/Log.hpp"
+#include "core/RenderConfig.hpp"
+#include "core/ResourceManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptContext.hpp"
+#include "script/ScriptEngine.hpp"
+#include "script/ScriptView.hpp"
+#include "script/proxies/ObjectProxy.hpp"
+#include "script/proxies/Transform3DProxy.hpp"
 
 namespace
 {

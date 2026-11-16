@@ -1,6 +1,6 @@
-#include "platform/PlatformProcess.h"
+#include "platform/PlatformProcess.hpp"
 
-#include "platform/PlatformPaths.h"
+#include "platform/PlatformPaths.hpp"
 
 #include <cstdint>
 #include <cstdlib>

@@ -8,7 +8,7 @@ right-hand).
 
 ## The composition root
 
-`src/editor/viewport/EditorViewport.h/cpp` is the viewport composition root. It
+`src/editor/viewport/EditorViewport.hpp/cpp` is the viewport composition root. It
 owns:
 
 - the viewport camera
@@ -111,7 +111,7 @@ serialization. `project::EditorComponent` (key `"m_editor"`, field
 registration order is archive read order) records only which pooled camera the
 viewport claims as its own. It binds to the `EditorViewport`, not to the Editor,
 the Editor has no camera API left to ask, which also narrows the sanctioned
-reverse asset-to-editor dependency to `editor/viewport/EditorViewport.h`. Without
+reverse asset-to-editor dependency to `editor/viewport/EditorViewport.hpp`. Without
 that uid, `FinishLoad()` would mint a fresh camera at the default framing and the
 view would snap back on every open. A project written before the component
 existed simply lacks the node; `Load()` falls back rather than throwing, and a

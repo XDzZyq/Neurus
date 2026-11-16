@@ -7,12 +7,12 @@
  * by ShaderLibrary.
  */
 
-#include "RenderShader.h"
+#include "RenderShader.hpp"
 
-#include "ShaderLibrary.h"
-#include "ShaderParser.h"
-#include "ShaderGenerator.h"
-#include "core/Log.h"
+#include "ShaderLibrary.hpp"
+#include "ShaderParser.hpp"
+#include "ShaderGenerator.hpp"
+#include "core/Log.hpp"
 
 namespace neurus {
 

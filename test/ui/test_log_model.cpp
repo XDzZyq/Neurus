@@ -5,9 +5,9 @@
 #include <atomic>
 #include <thread>
 
-#include "core/Log.h"
-#include "ui/models/LogModel.h"
-#include "ui/models/LogFilterProxy.h"
+#include "core/Log.hpp"
+#include "ui/models/LogModel.hpp"
+#include "ui/models/LogFilterProxy.hpp"
 
 namespace neurus
 {

@@ -1,14 +1,14 @@
-#include "RenderCache.h"
-#include "passes/FXAAPass.h"
-#include "../PipelineBuilder.h"
-#include "core/RenderConfig.h"
-#include "Barrier.h"
-#include "Image.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/ComputeShader.h"
-#include "core/Log.h"
+#include "RenderCache.hpp"
+#include "passes/FXAAPass.hpp"
+#include "../PipelineBuilder.hpp"
+#include "core/RenderConfig.hpp"
+#include "Barrier.hpp"
+#include "Image.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/ComputeShader.hpp"
+#include "core/Log.hpp"
 #include <stdexcept>
 
 namespace neurus {
@@ -17,7 +17,7 @@ FXAAPass::FXAAPass(const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets)
 	: ComputePass(device, physicalDevice, CreateLayout(device), numSets)
-	, p_shader(ShaderLibrary::LoadComputeShader("fxaa", NEURUS_SHADER_DIR "compute/fxaa.comp"))
+	, p_shader(ShaderLibrary::LoadComputeShader("fxaa", NEURUS_SHADER_DIR "compute/fxaa.comp.glsl"))
 {
 	// Check format features: linear filtering required for sub-pixel texture() resample
 	auto fmtProps = physicalDevice.getFormatProperties(vk::Format::eR16G16B16A16Sfloat);

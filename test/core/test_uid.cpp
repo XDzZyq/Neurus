@@ -10,7 +10,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <core/UID.h>
+#include <core/UID.hpp>
 
 // --- UID Tests -----------------------------------------------------------
 

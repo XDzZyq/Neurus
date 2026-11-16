@@ -1,9 +1,9 @@
 /**
  * @file AssetPath.cpp
- * @brief Asset path resolution (see AssetPath.h).
+ * @brief Asset path resolution (see AssetPath.hpp).
  */
 
-#include "asset/data/AssetPath.h"
+#include "asset/data/AssetPath.hpp"
 
 #include <filesystem>
 

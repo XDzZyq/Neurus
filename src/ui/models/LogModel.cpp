@@ -1,4 +1,4 @@
-#include "ui/models/LogModel.h"
+#include "ui/models/LogModel.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -6,8 +6,8 @@
 
 #include <QString>
 
-#include "core/Log.h"
-#include "platform/PlatformSystem.h"
+#include "core/Log.hpp"
+#include "platform/PlatformSystem.hpp"
 
 namespace neurus
 {

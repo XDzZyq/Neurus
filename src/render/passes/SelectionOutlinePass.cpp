@@ -3,21 +3,21 @@
  * @brief Selected-object edge highlight compute pass implementation.
  */
 
-#include "RenderCache.h"
-#include "passes/SelectionOutlinePass.h"
+#include "RenderCache.hpp"
+#include "passes/SelectionOutlinePass.hpp"
 
-#include "../PipelineBuilder.h"
-#include "Image.h"
-#include "render/Barrier.h"
-#include "render/render_graph/DescriptorBinder.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/ComputeShader.h"
+#include "../PipelineBuilder.hpp"
+#include "Image.hpp"
+#include "render/Barrier.hpp"
+#include "render/render_graph/DescriptorBinder.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/ComputeShader.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
-#include "scene/Scene.h"
+#include "scene/Scene.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -36,7 +36,7 @@ SelectionOutlinePass::SelectionOutlinePass(const vk::raii::Device& device,
 	// --- Self-load compute shader via ShaderLibrary ---
 	, p_shader(
 		ShaderLibrary::LoadComputeShader("selection_outline",
-		                                  "res/shaders/compute/selection_outline.comp"))
+		                                  "res/shaders/compute/selection_outline.comp.glsl"))
 {
 	BuildPipeline(device, "SelectionOutlinePass");
 

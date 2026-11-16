@@ -35,18 +35,18 @@
 #include <sstream>
 #include <string>
 
-#include "asset/Project.h"
-#include "asset/components/ResourceComponent.h"
-#include "asset/components/SceneComponent.h"
-#include "asset/data/MeshData.h"
-#include "core/ResourceManager.h"
-#include "scene/Camera.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "asset/Project.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "asset/data/MeshData.hpp"
+#include "core/ResourceManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
-#include "asset/registrations/DataRegistration.h"
-#include "scene/registrations/TypeRegistration.h"
+#include "asset/registrations/DataRegistration.hpp"
+#include "scene/registrations/TypeRegistration.hpp"
 
 using namespace neurus;
 

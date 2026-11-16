@@ -3,7 +3,7 @@
  * @brief Implementation of DebugLine vertex management.
  */
 
-#include "DebugLine.h"
+#include "DebugLine.hpp"
 
 namespace neurus
 {

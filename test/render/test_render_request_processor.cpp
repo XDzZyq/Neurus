@@ -14,17 +14,17 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/RenderCache.h"
-#include "render/requests/RenderRequestProcessor.h"
-#include "render/requests/RenderRequests.h"
-#include "render/UploadManager.h"
-#include "render/passes/GeometryPass.h"
-#include "render/resources/LightingCache.h"
-#include "render/resources/MeshGPU.h"
+#include "render/RenderCache.hpp"
+#include "render/requests/RenderRequestProcessor.hpp"
+#include "render/requests/RenderRequests.hpp"
+#include "render/UploadManager.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "render/resources/MeshGPU.hpp"
 
-#include "asset/data/MeshData.h"
+#include "asset/data/MeshData.hpp"
 
 #include <cstdint>
 #include <functional>

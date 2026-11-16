@@ -3,25 +3,25 @@
  * @brief Per-pixel point-light shadow intensity compute pass implementation.
  */
 
-#include "RenderCache.h"
-#include "passes/ShadowIntensityPass.h"
-#include "core/RenderConfig.h"
+#include "RenderCache.hpp"
+#include "passes/ShadowIntensityPass.hpp"
+#include "core/RenderConfig.hpp"
 
-#include "../PipelineBuilder.h"
-#include "Image.h"
-#include "render/Barrier.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "core/Log.h"
+#include "../PipelineBuilder.hpp"
+#include "Image.hpp"
+#include "render/Barrier.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "core/Log.hpp"
 
-#include "scene/Light.h"
-#include "scene/Scene.h"
+#include "scene/Light.hpp"
+#include "scene/Scene.hpp"
 
-#include "render/TemporalAccumulator.h"
-#include "render/HaltonSequence.h"
+#include "render/TemporalAccumulator.hpp"
+#include "render/HaltonSequence.hpp"
 
-#include "shaders/ComputeShader.h"
-#include "shaders/ShaderLibrary.h"
+#include "shaders/ComputeShader.hpp"
+#include "shaders/ShaderLibrary.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -38,7 +38,7 @@ namespace neurus {
 namespace {
 
 // Point light shadow eval push constants (48 bytes).
-// Must match shadow_eval.comp layout exactly.
+// Must match shadow_eval.comp.glsl layout exactly.
 struct ShadowEvalPushConstants
 {
     float lightPosX, lightPosY, lightPosZ;  // 12 bytes
@@ -114,7 +114,7 @@ ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
 	              "kSetsPerFrameSlot must match RenderCache::MAX_SHADOW_LAYERS");
 	// --- Load point-light cubemap eval shader ---
 	p_pointLightShader = ShaderLibrary::LoadComputeShader(
-		"shadow_eval", "res/shaders/compute/shadow_eval.comp");
+		"shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl");
 
 	if (!p_pointLightShader)
 	{
@@ -123,7 +123,7 @@ ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
 
 	// --- Load sun-light 2D eval shader ---
 	p_sunLightShader = ShaderLibrary::LoadComputeShader(
-		"sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp");
+		"sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl");
 
 	if (!p_sunLightShader)
 	{

@@ -3,20 +3,20 @@
  * @brief RenderRequestExecutor implementation.
  */
 
-#include "RenderRequestExecutor.h"
+#include "RenderRequestExecutor.hpp"
 
-#include "RenderCache.h"
-#include "UploadManager.h"
+#include "RenderCache.hpp"
+#include "UploadManager.hpp"
 
-#include "resources/EnvironmentGPU.h"
-#include "resources/LightGPU.h"
-#include "resources/MeshGPU.h"
-#include "resources/PipelineCache.h"
+#include "resources/EnvironmentGPU.hpp"
+#include "resources/LightGPU.hpp"
+#include "resources/MeshGPU.hpp"
+#include "resources/PipelineCache.hpp"
 
-#include "passes/GeometryPass.h"
+#include "passes/GeometryPass.hpp"
 
-#include "asset/data/MeshData.h"
-#include "core/Log.h"
+#include "asset/data/MeshData.hpp"
+#include "core/Log.hpp"
 
 #include <chrono>
 #include <utility>

@@ -1,12 +1,12 @@
-#include "cli/subcommands/OpenCommand.h"
+#include "cli/subcommands/OpenCommand.hpp"
 
-#include "cli/AppArguments.h"
-#include "cli/Output.h"
-#include "cli/SessionClient.h"
-#include "cli/TerminalBinding.h"
-#include "command/Commands.h"
-#include "ipc/SessionRegistry.h"
-#include "platform/PlatformProcess.h"
+#include "cli/AppArguments.hpp"
+#include "cli/Output.hpp"
+#include "cli/SessionClient.hpp"
+#include "cli/TerminalBinding.hpp"
+#include "command/Commands.hpp"
+#include "ipc/SessionRegistry.hpp"
+#include "platform/PlatformProcess.hpp"
 
 #include <chrono>
 #include <cstddef>

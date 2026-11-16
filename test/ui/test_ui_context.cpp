@@ -27,11 +27,11 @@
 
 #include <gtest/gtest.h>
 
-#include "core/RenderConfig.h"
-#include "render/RenderContext.h"
-#include "render/RenderFrameSnapshot.h"
-#include "scene/Scene.h"
-#include "ui/UIContext.h"
+#include "core/RenderConfig.hpp"
+#include "render/RenderContext.hpp"
+#include "render/RenderFrameSnapshot.hpp"
+#include "scene/Scene.hpp"
+#include "ui/UIContext.hpp"
 
 using namespace neurus;
 

@@ -9,10 +9,10 @@
 #include <fstream>
 #include <string>
 
-#include "ipc/RandomToken.h"
-#include "ipc/SessionRegistry.h"
-#include "platform/PlatformFile.h"
-#include "platform/PlatformProcess.h"
+#include "ipc/RandomToken.hpp"
+#include "ipc/SessionRegistry.hpp"
+#include "platform/PlatformFile.hpp"
+#include "platform/PlatformProcess.hpp"
 
 using namespace neurus::ipc;
 

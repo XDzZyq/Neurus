@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
-#include "command/CommandJson.h"
-#include "command/Commands.h"
+#include "command/CommandJson.hpp"
+#include "command/Commands.hpp"
 
 using namespace neurus::command;
 
