@@ -13,14 +13,16 @@ LogFilterProxy::LogFilterProxy(QObject* parent)
 
 void LogFilterProxy::setLevelFilter(LevelFilter filter)
 {
+	beginFilterChange();
 	m_levelFilter = filter;
-	invalidateFilter();
+	endFilterChange();
 }
 
 void LogFilterProxy::setSearchText(const QString& text)
 {
+	beginFilterChange();
 	m_searchText = text;
-	invalidateFilter();
+	endFilterChange();
 }
 
 bool LogFilterProxy::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const

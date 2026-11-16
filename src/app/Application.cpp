@@ -277,7 +277,7 @@ int Application::Run()
 		app_savedUiState = app_mainWindow->ExportLayout();
 		NEURUS_LOG("[Application] Loaded project: " << projectPath);
 	}
-	catch (const std::exception& e)
+	catch ([[maybe_unused]] const std::exception& e)
 	{
 		NEURUS_LOG("[Application] Project file not found, creating default: " << e.what());
 		// Same two steps as File > New: an empty document, then the default

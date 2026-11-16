@@ -20,7 +20,9 @@ const std::vector<const char*> kValidationLayers = {
 	"VK_LAYER_KHRONOS_validation",
 };
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
+// The validation branch that installs this callback is `if constexpr`, so a
+// build with validation disabled never references it.
+[[maybe_unused]] static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 	VkDebugUtilsMessageTypeFlagsEXT,
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
@@ -70,10 +72,13 @@ vk::raii::Instance VulkanContext::CreateInstance(const Options& options)
 			}
 			if (ok) {
 				createInfo.setPEnabledLayerNames(kValidationLayers);
+				// The vkhpp overload taking the C typedef is deprecated; the replacement
+				// takes the vk-namespace counterpart, which is the same function pointer
+				// underneath, so the callback is cast rather than rewritten.
 				dbg = vk::DebugUtilsMessengerCreateInfoEXT({},
 					vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
 					vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-					debugCallback);
+					reinterpret_cast<vk::PFN_DebugUtilsMessengerCallbackEXT>(debugCallback));
 				createInfo.setPNext(&dbg);
 			} else {
 				std::cerr << "[Neurus] Validation layers not available.\n";

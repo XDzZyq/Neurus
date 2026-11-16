@@ -41,9 +41,10 @@ public:
 	Swapchain(const Swapchain&) = delete;
 	Swapchain& operator=(const Swapchain&) = delete;
 
-	// Movable
+	// Move-constructible but not move-assignable: the borrowed device, surface
+	// and physical-device references cannot be reseated.
 	Swapchain(Swapchain&&) noexcept = default;
-	Swapchain& operator=(Swapchain&&) noexcept = default;
+	Swapchain& operator=(Swapchain&&) noexcept = delete;
 
 	/**
 	 * @brief Recreates the swapchain with new dimensions.

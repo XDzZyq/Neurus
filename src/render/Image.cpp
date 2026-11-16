@@ -695,6 +695,7 @@ vk::Format Image::ToVkFormat(const PixelFormat fmt)
 	case PixelFormat::RGBA32F:      return vk::Format::eR32G32B32A32Sfloat;
 	case PixelFormat::RGBA16F:      return vk::Format::eR16G16B16A16Sfloat;
 	case PixelFormat::R8U:          return vk::Format::eR8Unorm;
+	case PixelFormat::R32U:         return vk::Format::eR32Uint;
 	case PixelFormat::D32F:         return vk::Format::eD32Sfloat;
 	case PixelFormat::BGRA8U:       return vk::Format::eB8G8R8A8Unorm;
 	case PixelFormat::BGRA8S:       return vk::Format::eB8G8R8A8Srgb;

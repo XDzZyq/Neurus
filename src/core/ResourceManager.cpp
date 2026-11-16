@@ -45,7 +45,11 @@ std::string ResourceManager::SetName(int id, const std::string& name)
 	// owns then finds it free and stays a no-op instead of gaining a suffix.
 	EraseName(id);
 
-	const std::type_index type(typeid(*resource->second));
+	// Bind the object first: `typeid` on a dereferenced shared_ptr operand is a
+	// potentially evaluated expression, and GCC/Clang warn about one written
+	// inline. A named reference makes the evaluation explicit.
+	const UID& pooled = *resource->second;
+	const std::type_index type(typeid(pooled));
 	const std::string unique = UniqueName(type, name);
 	m_names[type][unique] = id;
 	m_nameOf.insert_or_assign(id, NameEntry{type, unique});

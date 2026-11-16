@@ -192,6 +192,11 @@ endif()
 
 if(WIN32)
 	target_sources(neurus_test PRIVATE shared/win/TestWindowWin32.cpp)
+
+	# The prebuilt qtadvanceddocking archive ships without its PDB, so linking it
+	# reports one LNK4099 per object file. The GUI target suppresses the same
+	# warning; the test binary links the same archive and needs the same switch.
+	target_link_options(neurus_test PRIVATE /ignore:4099)
 elseif(APPLE)
 	target_sources(neurus_test PRIVATE
 		shared/mac/TestWindowMacOS.cpp
@@ -199,6 +204,13 @@ elseif(APPLE)
 	)
 elseif(UNIX AND NOT APPLE)
 	target_sources(neurus_test PRIVATE shared/linux/TestWindowLinux.cpp)
+endif()
+
+if(MSVC)
+	# std::tmpfile has no portable safe replacement - tmpfile_s is Windows-only -
+	# so the CRT deprecation warning is suppressed for this one test file.
+	set_source_files_properties(platform/test_platform_system.cpp
+		PROPERTIES COMPILE_DEFINITIONS "_CRT_SECURE_NO_WARNINGS")
 endif()
 
 target_link_libraries(neurus_test PRIVATE

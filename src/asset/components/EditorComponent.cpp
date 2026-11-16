@@ -45,7 +45,7 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 
 		ar.finishNode();
 	}
-	catch (const cereal::Exception& e)
+	catch ([[maybe_unused]] const cereal::Exception& e)
 	{
 		// Missing "m_editor" node: a project saved before the viewport camera
 		// was persisted. Expected, so logged at info level.

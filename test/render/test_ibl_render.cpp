@@ -185,8 +185,6 @@ protected:
 
 	// Inline EnvironmentGPU creation (was RenderCache::CreateEnvironmentGPU)
 	{
-		auto& dev = *m_device;
-		auto& pd = PhysicalDevice();
 		const int envId = m_env->GetObjectID();
 
 		// 1. Upload equirect to GPU

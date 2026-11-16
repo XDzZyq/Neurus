@@ -702,6 +702,10 @@ RenderCache::AttachmentConfig RenderCache::ConfigFor(const AttachmentName name)
 		return { vk::Format::eR16G16B16A16Sfloat,
 		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage |
 		             vk::ImageUsageFlagBits::eTransferDst, e2D };
+
+	// A sentinel, never a real attachment; falls through to the throw below.
+	case AttachmentName::Count:
+		break;
 	}
 
 	throw std::invalid_argument("RenderCache::ConfigFor: unknown attachment name");
@@ -731,6 +735,10 @@ const char* AttachmentNameToString(const AttachmentName name)
 	case AttachmentName::FXAAOutput:        return "FXAAOutput";
 	case AttachmentName::FXAAOffsets:       return "FXAAOffsets";
 	case AttachmentName::OverlayOutput:     return "OverlayOutput";
+
+	// A sentinel, never a real attachment; reported as unknown below.
+	case AttachmentName::Count:
+		break;
 	}
 	return "Unknown";
 }

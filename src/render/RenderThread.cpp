@@ -383,20 +383,20 @@ void RenderThread::DrainControl()
 				NEURUS_ERR("[RenderThread] screenshot failed: " << e.what());
 			}
 		}
-		else if (auto* screenshot = std::get_if<SyncScreenshotControl>(&message))
+		else if (auto* syncScreenshot = std::get_if<SyncScreenshotControl>(&message))
 		{
-			if (!screenshot->done)
+			if (!syncScreenshot->done)
 				continue;
 			try
 			{
-				m_renderer.CaptureScreenshot(screenshot->allAttachments, screenshot->directory);
-				screenshot->done->set_value(true);
+				m_renderer.CaptureScreenshot(syncScreenshot->allAttachments, syncScreenshot->directory);
+				syncScreenshot->done->set_value(true);
 			}
 			catch (...)
 			{
 				try
 				{
-					screenshot->done->set_exception(std::current_exception());
+					syncScreenshot->done->set_exception(std::current_exception());
 				}
 				catch (...)
 				{

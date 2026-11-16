@@ -33,9 +33,10 @@ public:
 	ShaderCompiler(const ShaderCompiler&) = delete;
 	ShaderCompiler& operator=(const ShaderCompiler&) = delete;
 
-	// Movable
+	// Move-constructible but not move-assignable: shaderc's compiler handle has
+	// no move assignment.
 	ShaderCompiler(ShaderCompiler&&) noexcept = default;
-	ShaderCompiler& operator=(ShaderCompiler&&) noexcept = default;
+	ShaderCompiler& operator=(ShaderCompiler&&) noexcept = delete;
 
 	/**
 	 * @brief Compiles a GLSL source string to SPIR-V bytecode.

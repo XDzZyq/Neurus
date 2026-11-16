@@ -23,6 +23,17 @@ the **rule** that prevents it. Design detail behind these lives in
   Rule: the prebuilt ADS archive is used only when its `build_info.txt`
   `qt_version` and `cxx_standard` match this build exactly; rebuild (re-stamp) the
   archive whenever Qt changes.
+- **Warnings that appear only on the Release leg.** `NEURUS_LOG` compiles to
+  nothing in Release, and the validation messenger is built in
+  `if constexpr (kEnableValidation)`, so a catch variable or the debug callback
+  used only there becomes unused (MSVC C4101 on the variable, C4505 on the
+  function). Rule: mark the variable or function `[[maybe_unused]]` rather than
+  restructuring the code, and build Release as well as Debug before calling a
+  leg warning-free.
+- **MSVC C4456 on a parser branch that redeclares the shared `word` buffer.**
+  `ShaderParser::ParseShaderCode` keeps one `std::string word` for every branch,
+  and an inner `std::string word;` shadows it. Rule: `word.clear()` before the
+  branch reads, so the buffer starts empty exactly as a fresh string would.
 
 ## Validation and synchronization
 

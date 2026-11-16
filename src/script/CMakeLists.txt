@@ -40,6 +40,13 @@ add_library(neurus_script STATIC
 	bindings/Module.cpp
 )
 
+# pybind11 declares its own namespace with hidden visibility, so a class in this
+# library that holds pybind11 objects must be hidden too, or GCC/Clang report
+# -Wattributes for every such field. The script layer is an internal static
+# library - nothing links it as a shared object - so hidden visibility is the
+# correct default for it.
+set_target_properties(neurus_script PROPERTIES CXX_VISIBILITY_PRESET hidden)
+
 target_link_libraries(neurus_script PUBLIC
 	neurus_editor
 	neurus_core

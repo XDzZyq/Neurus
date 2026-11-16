@@ -47,7 +47,7 @@ void HistoryComponent::Load(cereal::JSONInputArchive& ar)
 		ar.finishNode();
 		m_operations->RestoreHistory(std::move(undo), std::move(redo));
 	}
-	catch (const cereal::Exception& e)
+	catch ([[maybe_unused]] const cereal::Exception& e)
 	{
 		// Missing/legacy "m_history" node: start with a clean history rather
 		// than aborting the whole load. Expected for older files, so logged
