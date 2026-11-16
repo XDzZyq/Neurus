@@ -1,8 +1,8 @@
-#include "RenderCache.h"
+#include "RenderCache.hpp"
 
-#include "core/Log.h"
-#include "render/overlay/DebugDrawList.h"
-#include "render/overlay/GizmoDrawList.h"
+#include "core/Log.hpp"
+#include "render/overlay/DebugDrawList.hpp"
+#include "render/overlay/GizmoDrawList.hpp"
 
 #include <algorithm>
 #include <cassert>

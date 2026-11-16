@@ -8,20 +8,20 @@
  * order.
  */
 
-#include "app/Application.h"
+#include "app/Application.hpp"
 
-#include "app/ApplicationCore.h"
-#include "app/Preferences.h"
-#include "app/session/SessionServer.h"
-#include "core/Log.h"
-#include "editor/commands/EditorCommandAdapter.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/events/UIEvents.h"
-#include "platform/PlatformProcess.h"
-#include "platform/PlatformSystem.h"
-#include "ui/UIManager.h"
-#include "ui/panels/Viewport.h"
-#include "ui/utils/I18n.h"
+#include "app/ApplicationCore.hpp"
+#include "app/Preferences.hpp"
+#include "app/session/SessionServer.hpp"
+#include "core/Log.hpp"
+#include "editor/commands/EditorCommandAdapter.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/events/UIEvents.hpp"
+#include "platform/PlatformProcess.hpp"
+#include "platform/PlatformSystem.hpp"
+#include "ui/UIManager.hpp"
+#include "ui/panels/Viewport.hpp"
+#include "ui/utils/I18n.hpp"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -236,7 +236,7 @@ int Application::Run()
 
 	// The renderer executes every Editor-posted GPU request itself and needs the
 	// upload service to do it. Non-owning: the renderer is destroyed before the
-	// UploadManager (see Application.h teardown order), so the pointer stays
+	// UploadManager (see Application.hpp teardown order), so the pointer stays
 	// valid for the renderer's whole lifetime.
 	app_renderer->SetUploadManager(app_uploadManager.get());
 

@@ -40,14 +40,14 @@
 
 #include <gtest/gtest.h>
 
-#include "render/RenderThread.h"
+#include "render/RenderThread.hpp"
 
-#include "render/IFrameRenderer.h"
-#include "render/RenderContext.h"
-#include "render/RenderFrameSnapshot.h"
-#include "render/requests/RenderRequests.h"
+#include "render/IFrameRenderer.hpp"
+#include "render/RenderContext.hpp"
+#include "render/RenderFrameSnapshot.hpp"
+#include "render/requests/RenderRequests.hpp"
 
-#include "core/BatchQueue.h"
+#include "core/BatchQueue.hpp"
 
 #include <atomic>
 #include <chrono>

@@ -1,4 +1,4 @@
-#include "command/CommandDescriptor.h"
+#include "command/CommandDescriptor.hpp"
 
 #include <utility>
 

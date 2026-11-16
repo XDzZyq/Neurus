@@ -20,25 +20,25 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "shared/TestSimpleShadow.h"
+#include "shared/TestVulkanShared.hpp"
+#include "shared/TestSimpleShadow.hpp"
 
-#include "render/shaders/ComputeShader.h"
-#include "render/shaders/RenderShader.h"
+#include "render/shaders/ComputeShader.hpp"
+#include "render/shaders/RenderShader.hpp"
 
-#include "render/passes/ShadowDepthPass.h"
-#include "render/passes/ShadowIntensityPass.h"
-#include "render/passes/GeometryPass.h"
-#include "render/RenderContext.h"
-#include "render/Image.h"
-#include "render/Barrier.h"
-#include "render/RenderCache.h"
-#include "asset/data/ImageData.h"
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Scene.h"
+#include "render/passes/ShadowDepthPass.hpp"
+#include "render/passes/ShadowIntensityPass.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/RenderContext.hpp"
+#include "render/Image.hpp"
+#include "render/Barrier.hpp"
+#include "render/RenderCache.hpp"
+#include "asset/data/ImageData.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Scene.hpp"
 
-#include "shared/TestReferenceImage.h"
+#include "shared/TestReferenceImage.hpp"
 
 
 

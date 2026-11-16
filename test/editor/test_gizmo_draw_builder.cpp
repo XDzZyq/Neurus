@@ -30,11 +30,11 @@
 
 #include <gtest/gtest.h>
 
-#include "editor/viewport/GizmoDrawBuilder.h"
-#include "editor/viewport/EditorViewport.h"
-#include "editor/viewport/TransformGizmo.h"
-#include "scene/Camera.h"
-#include "scene/Transform.h"
+#include "editor/viewport/GizmoDrawBuilder.hpp"
+#include "editor/viewport/EditorViewport.hpp"
+#include "editor/viewport/TransformGizmo.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Transform.hpp"
 
 #include <glm/glm.hpp>
 

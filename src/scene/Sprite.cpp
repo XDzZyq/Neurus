@@ -3,7 +3,7 @@
  * @brief Implementation of Sprite - billboard icon data object.
  */
 
-#include "scene/Sprite.h"
+#include "scene/Sprite.hpp"
 
 namespace neurus
 {

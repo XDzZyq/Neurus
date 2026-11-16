@@ -1,21 +1,21 @@
 # src/command/CMakeLists.txt - Generic command core (Qt-free, Vulkan-free)
 
 add_library(neurus_command STATIC
-	CommandError.h
+	CommandError.hpp
 	CommandError.cpp
-	CommandTypes.h
-	CommandDescriptor.h
+	CommandTypes.hpp
+	CommandDescriptor.hpp
 	CommandDescriptor.cpp
-	CommandDispatcher.h
+	CommandDispatcher.hpp
 	CommandDispatcher.cpp
-	CommandJson.h
+	CommandJson.hpp
 	CommandJson.cpp
-	ICommandExecutor.h
-	IEditorCommands.h
-	IScriptCommands.h
-	ISnapshotCommands.h
-	Commands.h
-	ISessionState.h
+	ICommandExecutor.hpp
+	IEditorCommands.hpp
+	IScriptCommands.hpp
+	ISnapshotCommands.hpp
+	Commands.hpp
+	ISessionState.hpp
 )
 
 target_include_directories(neurus_command PUBLIC

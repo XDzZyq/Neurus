@@ -1,4 +1,4 @@
-#include "app/AppArgs.h"
+#include "app/AppArgs.hpp"
 
 #include <charconv>
 #include <cstddef>

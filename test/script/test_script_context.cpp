@@ -16,11 +16,11 @@
 
 #include <vector>
 
-#include "core/RenderConfig.h"
-#include "core/ResourceManager.h"
-#include "scene/Camera.h"
-#include "scene/Scene.h"
-#include "script/ScriptContext.h"
+#include "core/RenderConfig.hpp"
+#include "core/ResourceManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptContext.hpp"
 
 using namespace neurus;
 

@@ -2,7 +2,7 @@
 
 `UID` is the generic unique-identifier primitive at the base of every identity-tracked object, and `ResourceManager` is the single factory and registry that owns every persistent UID object.
 
-## UID (`core/UID.h`)
+## UID (`core/UID.hpp`)
 
 `UID` provides globally unique integer IDs:
 
@@ -43,7 +43,7 @@ classDiagram
 
 `ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. `ShaderData`'s concrete leaves are the renderer's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
 
-## ObjectID as identity (`scene/ObjectID.h`)
+## ObjectID as identity (`scene/ObjectID.hpp`)
 
 `ObjectID : public UID` adds scene-specific metadata:
 
@@ -55,7 +55,7 @@ classDiagram
 
 `ObjectID::serialize` keeps the `base_class<UID>` hook strict but reads its own metadata fields through `archive::Optional` - the concrete default constructor already sets `o_type` and `o_name`, so a field a file lacks keeps the right value.
 
-## ResourceManager (`core/ResourceManager.h`)
+## ResourceManager (`core/ResourceManager.hpp`)
 
 `ResourceManager` is the single factory and registry for UID-derived objects (scene objects via `ObjectID`, data resources such as `MeshData` / `ImageData` / `ShaderData`). It is:
 
@@ -98,7 +98,7 @@ string that the editor mirrors from it.
 
 `Scene` keeps no name index: registration, removal and `RebuildObjList` only maintain the typed pools and `obj_list`. See [Scene Objects](../scene/objects.md).
 
-## Resource<T> and ResPool (`scene/Scene.h`)
+## Resource<T> and ResPool (`scene/Scene.hpp`)
 
 The Scene's typed containers are defined in the scene layer:
 
@@ -107,7 +107,7 @@ The Scene's typed containers are defined in the scene layer:
 
 Each object category has a dedicated `ResPool` (`cam_list`, `mesh_list`, and so on), and a master `obj_list` holds all `ObjectID` instances for global lookup. Objects are owned via `shared_ptr`, so removing from a map destroys an object only when no other reference exists. See [Scene Objects](../scene/objects.md).
 
-## IResourceLookup (`core/IResourceLookup.h`)
+## IResourceLookup (`core/IResourceLookup.hpp`)
 
 `IResourceLookup` is the fetch/lookup plus name-registry surface over a UID-keyed pool:
 
@@ -121,7 +121,7 @@ Each object category has a dedicated `ResPool` (`cam_list`, `mesh_list`, and so 
 
 ## Identity across save and load
 
-Selection is held at runtime as `const ObjectID*` pointers but written as UIDs (`selectedUids` plus `activeUid`), mirroring `SelectionState`. The pointer-to-UID conversion lives in the scene-layer free functions `neurus::SnapshotSelectionUids` / `RestoreSelectionUids` (in `Scene.h`), shared by `Scene::serialize` and the editor's selection snapshot/restore. On load the UIDs are resolved back to pointers via `Scene::GetObjectID()` after `RebuildObjList()`. Keeping this in the scene layer (which owns the pointer-to-UID mapping) means the editor depends downward only.
+Selection is held at runtime as `const ObjectID*` pointers but written as UIDs (`selectedUids` plus `activeUid`), mirroring `SelectionState`. The pointer-to-UID conversion lives in the scene-layer free functions `neurus::SnapshotSelectionUids` / `RestoreSelectionUids` (in `Scene.hpp`), shared by `Scene::serialize` and the editor's selection snapshot/restore. On load the UIDs are resolved back to pointers via `Scene::GetObjectID()` after `RebuildObjList()`. Keeping this in the scene layer (which owns the pointer-to-UID mapping) means the editor depends downward only.
 
 ## Cereal registration
 
@@ -130,4 +130,4 @@ The pool stores `shared_ptr<UID>`, so every reachable type must be registered wi
 - Scene types: `scene/registrations/TypeRegistration.cpp` registers the `UID` and `ObjectID` bases and every derived scene type, plus the `UID`-level and `ObjectID`-level polymorphic relations that make pool serialization load-bearing.
 - Data resources: `asset/registrations/DataRegistration.cpp` registers `MeshData` and `ImageData` as polymorphic leaves of `UID`.
 
-The registrations live in `.cpp` translation units, so static-library builds would dead-strip them unless a symbol is odr-used. The force-init headers `scene/registrations/TypeRegistration.h` and `asset/registrations/DataRegistration.h` (each a `CEREAL_FORCE_DYNAMIC_INIT`) must be included at every serialization site that touches the pool. See [Serialization](serialization.md).
+The registrations live in `.cpp` translation units, so static-library builds would dead-strip them unless a symbol is odr-used. The force-init headers `scene/registrations/TypeRegistration.hpp` and `asset/registrations/DataRegistration.hpp` (each a `CEREAL_FORCE_DYNAMIC_INIT`) must be included at every serialization site that touches the pool. See [Serialization](serialization.md).

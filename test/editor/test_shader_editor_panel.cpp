@@ -23,20 +23,20 @@
 #include <QTest>
 #include <QTreeView>
 
-#include "editor/controllers/ShaderController.h"
-#include "editor/events/EventBus.h"
-#include "editor/events/ShaderEvents.h"
-#include "editor/operations/OperationManager.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "render/shaders/RenderShader.h"
-#include "asset/data/ShaderData.h"
-#include "asset/data/shader/ShaderUnit.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "ui/UIContext.h"
-#include "ui/models/ShaderStructModel.h"
-#include "ui/panels/ShaderEditorPanel.h"
+#include "editor/controllers/ShaderController.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/events/ShaderEvents.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "render/shaders/RenderShader.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "asset/data/shader/ShaderUnit.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "ui/UIContext.hpp"
+#include "ui/models/ShaderStructModel.hpp"
+#include "ui/panels/ShaderEditorPanel.hpp"
 
 using namespace neurus;
 
@@ -110,7 +110,7 @@ protected:
 		m_controller.Init(m_ctx);
 
 		m_mesh = std::make_shared<Mesh>();
-		auto shader = std::make_shared<RenderShader>("TestShader", "v.vert", "f.frag");
+		auto shader = std::make_shared<RenderShader>("TestShader", "v.vert.glsl", "f.frag.glsl");
 		shader->GetStage(ShaderType::VERTEX).code = "VERT_V0";
 		shader->GetStage(ShaderType::FRAGMENT).code = "FRAG_V0";
 		SeedRealisticIR(shader->GetStage(ShaderType::VERTEX).parsed);

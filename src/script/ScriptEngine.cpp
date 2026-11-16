@@ -1,11 +1,11 @@
 /**
  * @file ScriptEngine.cpp
- * @brief Thin forwarding layer over the PIMPL body in `ScriptEngineImpl.h`.
+ * @brief Thin forwarding layer over the PIMPL body in `ScriptEngineImpl.hpp`.
  */
 
-#include "script/ScriptEngine.h"
+#include "script/ScriptEngine.hpp"
 
-#include "script/ScriptEngineImpl.h"
+#include "script/ScriptEngineImpl.hpp"
 
 namespace neurus
 {

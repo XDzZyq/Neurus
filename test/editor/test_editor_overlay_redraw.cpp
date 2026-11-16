@@ -30,13 +30,13 @@
 #include <variant>
 #include <vector>
 
-#include "editor/Editor.h"
-#include "editor/events/GizmoEvents.h"
-#include "editor/events/SceneEvents.h"
-#include "render/requests/RenderRequestSink.h"
-#include "render/requests/RenderRequests.h"
-#include "scene/Camera.h"
-#include "scene/Scene.h"
+#include "editor/Editor.hpp"
+#include "editor/events/GizmoEvents.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "render/requests/RenderRequestSink.hpp"
+#include "render/requests/RenderRequests.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
 
 using namespace neurus;
 

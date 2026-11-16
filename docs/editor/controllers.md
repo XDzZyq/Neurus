@@ -56,7 +56,7 @@ Design:
 
 ## ControllerContext
 
-`ControllerContext` (`src/editor/controllers/ControllerContext.h`) is the only
+`ControllerContext` (`src/editor/controllers/ControllerContext.hpp`) is the only
 thing a controller depends on. It bundles the three controller-facing interfaces:
 
 - `IEventQueue& events` for `Subscribe` and synchronous `Emit`
@@ -121,7 +121,7 @@ takes the `Camera*` events the Editor derives from it.
 
 ## Mutation notification
 
-`neurus::notify` (`src/editor/controllers/MutationNotify.h`) is the single answer
+`neurus::notify` (`src/editor/controllers/MutationNotify.hpp`) is the single answer
 to "what does a scene mutation imply?", shared by every controller. Mutating a
 scene object is never just the write: something has to reset temporal
 accumulation, something has to refresh the light SSBO the write did not touch,
@@ -157,7 +157,7 @@ render-setting change mutate no scene object and have no tier, so they emit
 
 ## CameraController
 
-`src/editor/controllers/CameraController.h/cpp` owns event-driven camera
+`src/editor/controllers/CameraController.hpp/cpp` owns event-driven camera
 manipulation (orbit/zoom/dolly/pan) via `CameraEvents`.
 
 ```cpp
@@ -194,7 +194,7 @@ that UID is a scene camera or the viewport camera.
 
 ## SceneController
 
-`src/editor/controllers/SceneController.h/cpp` owns the scene **document**:
+`src/editor/controllers/SceneController.hpp/cpp` owns the scene **document**:
 selection, scene membership (add/delete) and camera activation. Object property
 writes belong to `ObjectController`.
 
@@ -280,9 +280,9 @@ and `DeleteObjectsRequested{ uids }` (the two wrap subscriptions in
 
 ## ObjectController
 
-`src/editor/controllers/ObjectController.h/cpp` owns **every object property
+`src/editor/controllers/ObjectController.hpp/cpp` owns **every object property
 write**: visibility, transforms, and the camera / mesh / light / environment /
-debug knobs. That is 26 subscriptions; see `SceneEvents.h` for the structs.
+debug knobs. That is 26 subscriptions; see `SceneEvents.hpp` for the structs.
 
 ```cpp
 void ObjectController::Init(ControllerContext& ctx)
@@ -326,7 +326,7 @@ Design:
 
 ## ShaderController
 
-`src/editor/controllers/ShaderController.h/cpp` owns event-driven shader
+`src/editor/controllers/ShaderController.hpp/cpp` owns event-driven shader
 lifecycle (create, compile, code/struct edit, field add) via `ShaderEvents`.
 
 ```cpp

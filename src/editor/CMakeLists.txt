@@ -1,49 +1,49 @@
 # src/editor/CMakeLists.txt - Editor Layer
 
 add_library(neurus_editor STATIC
-	Editor.h
+	Editor.hpp
 	Editor.cpp
-	Input.h
-	commands/EditorCommandAdapter.h
+	Input.hpp
+	commands/EditorCommandAdapter.hpp
 	commands/EditorCommandAdapter.cpp
-	viewport/DebugDrawBuilder.h
+	viewport/DebugDrawBuilder.hpp
 	viewport/DebugDrawBuilder.cpp
-	viewport/EditorViewport.h
+	viewport/EditorViewport.hpp
 	viewport/EditorViewport.cpp
-	viewport/TransformGizmo.h
+	viewport/TransformGizmo.hpp
 	viewport/TransformGizmo.cpp
-	viewport/GizmoDrawBuilder.h
+	viewport/GizmoDrawBuilder.hpp
 	viewport/GizmoDrawBuilder.cpp
-	controllers/SceneController.h
+	controllers/SceneController.hpp
 	controllers/SceneController.cpp
-	controllers/ObjectController.h
+	controllers/ObjectController.hpp
 	controllers/ObjectController.cpp
-	controllers/Controllers.h
-	controllers/ControllerContext.h
-	controllers/MutationNotify.h
-	controllers/CameraController.h
+	controllers/Controllers.hpp
+	controllers/ControllerContext.hpp
+	controllers/MutationNotify.hpp
+	controllers/CameraController.hpp
 	controllers/CameraController.cpp
-	controllers/RenderConfigController.h
+	controllers/RenderConfigController.hpp
 	controllers/RenderConfigController.cpp
-	controllers/ScriptController.h
+	controllers/ScriptController.hpp
 	controllers/ScriptController.cpp
-	controllers/ShaderController.h
+	controllers/ShaderController.hpp
 	controllers/ShaderController.cpp
-	controllers/TransformGizmoController.h
+	controllers/TransformGizmoController.hpp
 	controllers/TransformGizmoController.cpp
-	operations/IOperationSink.h
-	operations/Operation.h
-	operations/OperationContext.h
-	operations/OperationManager.h
+	operations/IOperationSink.hpp
+	operations/Operation.hpp
+	operations/OperationContext.hpp
+	operations/OperationManager.hpp
 	operations/OperationManager.cpp
-	operations/SceneOperations.h
-	operations/ConfigOperations.h
-	operations/ShaderOperations.h
-	operations/ScriptOperations.h
-	operations/registrations/OperationRegistration.h
+	operations/SceneOperations.hpp
+	operations/ConfigOperations.hpp
+	operations/ShaderOperations.hpp
+	operations/ScriptOperations.hpp
+	operations/registrations/OperationRegistration.hpp
 	operations/registrations/OperationRegistration.cpp
-	events/GizmoEvents.h
-	events/ScriptEvents.h
+	events/GizmoEvents.hpp
+	events/ScriptEvents.hpp
 )
 
 # Qt lives in the UI layer. UIEvents (the Qt signal bus) and Input.cpp (the

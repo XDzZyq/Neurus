@@ -1,7 +1,7 @@
-#include "StagingBuffer.h"
+#include "StagingBuffer.hpp"
 
-#include "core/Log.h"
-#include "render/SharedQueue.h"
+#include "core/Log.hpp"
+#include "render/SharedQueue.hpp"
 
 #include <stdexcept>
 #include <cstring>

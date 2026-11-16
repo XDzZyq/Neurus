@@ -11,11 +11,11 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/polymorphic.hpp>
 
-#include "editor/operations/ConfigOperations.h"
-#include "editor/operations/Operation.h"
-#include "editor/operations/SceneOperations.h"
-#include "editor/operations/ScriptOperations.h"
-#include "editor/operations/ShaderOperations.h"
+#include "editor/operations/ConfigOperations.hpp"
+#include "editor/operations/Operation.hpp"
+#include "editor/operations/SceneOperations.hpp"
+#include "editor/operations/ScriptOperations.hpp"
+#include "editor/operations/ShaderOperations.hpp"
 
 // --- Concrete type registration (stable, stringized token names) ---
 CEREAL_REGISTER_TYPE(neurus::SetLightPowerOp)
@@ -102,6 +102,6 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::ShaderReplaceOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::ShaderLinkOp)
 
 // Forces this TU's registration to link when built into a static library.
-// Serialization sites include OperationRegistration.h (CEREAL_FORCE_DYNAMIC_INIT)
+// Serialization sites include OperationRegistration.hpp (CEREAL_FORCE_DYNAMIC_INIT)
 // to odr-use this symbol so the registrations above are never dead-stripped.
 CEREAL_REGISTER_DYNAMIC_INIT(neurus_operations)

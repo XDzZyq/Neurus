@@ -1,6 +1,6 @@
-#include "scene/DebugMesh.h"
+#include "scene/DebugMesh.hpp"
 
-#include "asset/data/MeshData.h"
+#include "asset/data/MeshData.hpp"
 
 namespace neurus
 {

@@ -42,21 +42,21 @@
 #include <sstream>
 #include <string>
 
-#include "asset/Project.h"
-#include "asset/components/EditorComponent.h"
-#include "asset/components/ResourceComponent.h"
-#include "asset/components/SceneComponent.h"
-#include "core/ResourceManager.h"
-#include "editor/Editor.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/viewport/EditorViewport.h"
-#include "render/RenderFrameSnapshot.h"
-#include "scene/Camera.h"
-#include "scene/Scene.h"
+#include "asset/Project.hpp"
+#include "asset/components/EditorComponent.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "core/ResourceManager.hpp"
+#include "editor/Editor.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/viewport/EditorViewport.hpp"
+#include "render/RenderFrameSnapshot.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
-#include "asset/registrations/DataRegistration.h"
-#include "scene/registrations/TypeRegistration.h"
+#include "asset/registrations/DataRegistration.hpp"
+#include "scene/registrations/TypeRegistration.hpp"
 
 using namespace neurus;
 

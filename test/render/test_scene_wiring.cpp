@@ -13,20 +13,20 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "asset/data/MeshData.h"
-#include "render/DeferredRenderer.h"
-#include "render/SharedQueue.h"
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "asset/data/MeshData.hpp"
+#include "render/DeferredRenderer.hpp"
+#include "render/SharedQueue.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
-#include "platform/PlatformSurface.h"
-#include "shared/TestWindow.h"
+#include "platform/PlatformSurface.hpp"
+#include "shared/TestWindow.hpp"
 
 #include <memory>
 #include <string>

@@ -14,24 +14,24 @@
  */
 
 #include <gtest/gtest.h>
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/shaders/RenderShader.h"
-#include "render/passes/ShadowDepthPass.h"
-#include "render/RenderContext.h"
-#include "render/RenderCache.h"
-#include "render/Image.h"
-#include "render/Barrier.h"
-#include "scene/Camera.h"
-#include "scene/Scene.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "asset/data/MeshData.h"
-#include "render/buffers/VertexBuffer.h"
-#include "render/buffers/IndexBuffer.h"
-#include "render/passes/GeometryPass.h"
-#include "shared/TestReferenceImage.h"
-#include "core/Log.h"
+#include "render/shaders/RenderShader.hpp"
+#include "render/passes/ShadowDepthPass.hpp"
+#include "render/RenderContext.hpp"
+#include "render/RenderCache.hpp"
+#include "render/Image.hpp"
+#include "render/Barrier.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "asset/data/MeshData.hpp"
+#include "render/buffers/VertexBuffer.hpp"
+#include "render/buffers/IndexBuffer.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "shared/TestReferenceImage.hpp"
+#include "core/Log.hpp"
 #include <glm/glm.hpp>
 #include <cmath>
 #include <iostream>

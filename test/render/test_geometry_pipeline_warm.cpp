@@ -15,19 +15,19 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/passes/GeometryPass.h"
-#include "render/resources/LightingCache.h"
-#include "render/resources/PipelineCache.h"
-#include "render/shaders/RenderShader.h"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "render/resources/PipelineCache.hpp"
+#include "render/shaders/RenderShader.hpp"
 
-#include "asset/data/MeshData.h"
-#include "scene/Camera.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "asset/data/MeshData.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 #include <memory>
 
@@ -85,8 +85,8 @@ protected:
 	{
 		auto shader = std::make_shared<RenderShader>(
 			name,
-			ResolveAssetPath("res/shaders/render/gbuffer.vert"),
-			ResolveAssetPath("res/shaders/render/gbuffer.frag"));
+			ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl"),
+			ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl"));
 		if (compile)
 		{
 			shader->ParseAndGenerate();

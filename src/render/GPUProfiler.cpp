@@ -3,9 +3,9 @@
  * @brief Implementation of the section-based GPU timestamp profiler.
  */
 
-#include "GPUProfiler.h"
+#include "GPUProfiler.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <algorithm>
 

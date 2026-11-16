@@ -6,24 +6,24 @@
  * These tests are PURE C++ - no GPU, no Vulkan, no Qt dependencies.
  *
  * The ShaderParser may not exist yet (Task 7 runs in parallel).
- * These tests WILL fail compilation until ShaderParser.h is created
+ * These tests WILL fail compilation until ShaderParser.hpp is created
  * and WILL fail at runtime until the parser is fully implemented (RED).
  *
  * @note Test fixture: ShaderParserTest (no GPU needed).
- * @note ShaderStruct IR: src/asset/data/shader/ShaderStruct.h (Task 3).
- * @note ParaType enum: src/core/Parameters.h (Task 2).
+ * @note ShaderStruct IR: src/asset/data/shader/ShaderStruct.hpp (Task 3).
+ * @note ParaType enum: src/core/Parameters.hpp (Task 2).
  */
 
 #include <gtest/gtest.h>
 
-#include "render/shaders/RenderShader.h"
-#include "render/shaders/ShaderGenerator.h"
-#include "render/shaders/ShaderLibrary.h"
-#include "render/shaders/ShaderParser.h"
-#include "asset/data/shader/ShaderStruct.h"
-#include "asset/data/shader/ShaderUnit.h"
-#include "core/Log.h"
-#include "core/Parameters.h"
+#include "render/shaders/RenderShader.hpp"
+#include "render/shaders/ShaderGenerator.hpp"
+#include "render/shaders/ShaderLibrary.hpp"
+#include "render/shaders/ShaderParser.hpp"
+#include "asset/data/shader/ShaderStruct.hpp"
+#include "asset/data/shader/ShaderUnit.hpp"
+#include "core/Log.hpp"
+#include "core/Parameters.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -45,7 +45,7 @@ namespace {
  * res/ is copied to the build directory by a POST_BUILD step on neurus_test.
  * CTest runs from CMAKE_BINARY_DIR, so assets resolve directly.
  *
- * @param relativePath Path relative to project root (e.g. "res/shaders/render/gbuffer.vert")
+ * @param relativePath Path relative to project root (e.g. "res/shaders/render/gbuffer.vert.glsl")
  * @return Resolved path string, or empty if not found.
  */
 std::string ResolveShaderPath(const char* relativePath)
@@ -72,25 +72,25 @@ ShaderType ShaderTypeFromExtension(const std::string& path)
 std::vector<const char*> AllShaderPaths()
 {
     return {
-        "res/shaders/render/gbuffer.vert",
-        "res/shaders/render/sun_shadow_depth.vert",
-        "res/shaders/render/shadow_depth_multiview.vert",
-        "res/shaders/render/triangle.vert",
-        "res/shaders/render/skybox.vert",
-        "res/shaders/render/sun_shadow_depth.frag",
-        "res/shaders/render/shadow_depth.frag",
-        "res/shaders/render/triangle.frag",
-        "res/shaders/render/skybox.frag",
-        "res/shaders/render/gbuffer.frag",
-        "res/shaders/compute/ssao.comp",
-        "res/shaders/compute/pbr_lighting.comp",
-        "res/shaders/compute/sun_shadow_eval.comp",
-        "res/shaders/compute/shadow_eval.comp",
-        "res/shaders/compute/irradiance_conv.comp",
-        "res/shaders/compute/importance_samp.comp",
-        "res/shaders/compute/dummy.comp",
-        "res/shaders/convert/c2e.comp",
-        "res/shaders/convert/e2c.comp",
+        "res/shaders/render/gbuffer.vert.glsl",
+        "res/shaders/render/sun_shadow_depth.vert.glsl",
+        "res/shaders/render/shadow_depth_multiview.vert.glsl",
+        "res/shaders/render/triangle.vert.glsl",
+        "res/shaders/render/skybox.vert.glsl",
+        "res/shaders/render/sun_shadow_depth.frag.glsl",
+        "res/shaders/render/shadow_depth.frag.glsl",
+        "res/shaders/render/triangle.frag.glsl",
+        "res/shaders/render/skybox.frag.glsl",
+        "res/shaders/render/gbuffer.frag.glsl",
+        "res/shaders/compute/ssao.comp.glsl",
+        "res/shaders/compute/pbr_lighting.comp.glsl",
+        "res/shaders/compute/sun_shadow_eval.comp.glsl",
+        "res/shaders/compute/shadow_eval.comp.glsl",
+        "res/shaders/compute/irradiance_conv.comp.glsl",
+        "res/shaders/compute/importance_samp.comp.glsl",
+        "res/shaders/compute/dummy.comp.glsl",
+        "res/shaders/convert/c2e.comp.glsl",
+        "res/shaders/convert/e2c.comp.glsl",
     };
 }
 
@@ -231,7 +231,7 @@ protected:
 
     /**
      * @brief Helper: parse a shader file and expect success.
-     * @param relativePath Path relative to project root (e.g. "res/shaders/render/gbuffer.vert")
+     * @param relativePath Path relative to project root (e.g. "res/shaders/render/gbuffer.vert.glsl")
      * @return Reference to the parsed ShaderStruct (valid only if ASSERT succeeded).
      */
     const ShaderStruct& ParseSuccessfully(const char* relativePath)
@@ -262,61 +262,61 @@ protected:
 
 TEST_F(ShaderParserTest, ParseFile_GbufferVert_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_GbufferVert_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_SunShadowDepthVert_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.vert.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_SunShadowDepthVert_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.vert.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_ShadowDepthMultiviewVert_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth_multiview.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth_multiview.vert.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_ShadowDepthMultiviewVert_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth_multiview.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth_multiview.vert.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_TriangleVert_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/triangle.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/triangle.vert.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_TriangleVert_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/triangle.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/triangle.vert.glsl");
     EXPECT_EQ(s.version, 460);
 }
 
 TEST_F(ShaderParserTest, ParseFile_SkyboxVert_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/skybox.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/skybox.vert.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_SkyboxVert_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/skybox.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/skybox.vert.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
@@ -324,61 +324,61 @@ TEST_F(ShaderParserTest, ParseFile_SkyboxVert_HasCorrectVersion)
 
 TEST_F(ShaderParserTest, ParseFile_SunShadowDepthFrag_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.frag.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_SunShadowDepthFrag_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/sun_shadow_depth.frag.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_ShadowDepthFrag_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth.frag.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_ShadowDepthFrag_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth.frag.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_TriangleFrag_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/triangle.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/triangle.frag.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_TriangleFrag_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/triangle.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/triangle.frag.glsl");
     EXPECT_EQ(s.version, 460);
 }
 
 TEST_F(ShaderParserTest, ParseFile_SkyboxFrag_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/skybox.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/skybox.frag.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_SkyboxFrag_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/skybox.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/skybox.frag.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_GbufferFrag_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_GbufferFrag_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
@@ -386,85 +386,85 @@ TEST_F(ShaderParserTest, ParseFile_GbufferFrag_HasCorrectVersion)
 
 TEST_F(ShaderParserTest, ParseFile_Ssao_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_Ssao_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_PbrLighting_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_PbrLighting_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_SunShadowEval_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/sun_shadow_eval.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/sun_shadow_eval.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_SunShadowEval_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/sun_shadow_eval.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/sun_shadow_eval.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_ShadowEval_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/shadow_eval.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/shadow_eval.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_ShadowEval_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/shadow_eval.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/shadow_eval.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_IrradianceConv_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/irradiance_conv.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/irradiance_conv.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_IrradianceConv_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/irradiance_conv.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/irradiance_conv.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_ImportanceSamp_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/importance_samp.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/importance_samp.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_ImportanceSamp_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/importance_samp.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/importance_samp.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_Dummy_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_Dummy_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
@@ -472,25 +472,25 @@ TEST_F(ShaderParserTest, ParseFile_Dummy_HasCorrectVersion)
 
 TEST_F(ShaderParserTest, ParseFile_C2e_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/convert/c2e.comp");
+    const auto& s = ParseSuccessfully("res/shaders/convert/c2e.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_C2e_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/convert/c2e.comp");
+    const auto& s = ParseSuccessfully("res/shaders/convert/c2e.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
 TEST_F(ShaderParserTest, ParseFile_E2c_Succeeds)
 {
-    const auto& s = ParseSuccessfully("res/shaders/convert/e2c.comp");
+    const auto& s = ParseSuccessfully("res/shaders/convert/e2c.comp.glsl");
     EXPECT_FALSE(s.IsEmpty());
 }
 
 TEST_F(ShaderParserTest, ParseFile_E2c_HasCorrectVersion)
 {
-    const auto& s = ParseSuccessfully("res/shaders/convert/e2c.comp");
+    const auto& s = ParseSuccessfully("res/shaders/convert/e2c.comp.glsl");
     EXPECT_EQ(s.version, 450);
 }
 
@@ -500,7 +500,7 @@ TEST_F(ShaderParserTest, ParseFile_E2c_HasCorrectVersion)
 
 TEST_F(ShaderParserTest, ParseFile_PbrLighting_HasLocalSize)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp.glsl");
     EXPECT_EQ(s.local_size_x, 16u);
     EXPECT_EQ(s.local_size_y, 16u);
     EXPECT_EQ(s.local_size_z, 1u);
@@ -508,21 +508,21 @@ TEST_F(ShaderParserTest, ParseFile_PbrLighting_HasLocalSize)
 
 TEST_F(ShaderParserTest, ParseFile_PbrLighting_HasPushConstants)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp.glsl");
     EXPECT_FALSE(s.push_constants.empty())
-        << "pbr_lighting.comp should have push constants (lightCount, cameraPos, view, etc.)";
+        << "pbr_lighting.comp.glsl should have push constants (lightCount, cameraPos, view, etc.)";
 }
 
 TEST_F(ShaderParserTest, ParseFile_PbrLighting_HasStorageBuffers)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/pbr_lighting.comp.glsl");
     EXPECT_FALSE(s.SB_list.empty())
-        << "pbr_lighting.comp should have storage buffers (LightBuffer, SunLightBuffer)";
+        << "pbr_lighting.comp.glsl should have storage buffers (LightBuffer, SunLightBuffer)";
 }
 
 TEST_F(ShaderParserTest, ParseFile_Ssao_HasLocalSize)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp.glsl");
     EXPECT_EQ(s.local_size_x, 16u);
     EXPECT_EQ(s.local_size_y, 16u);
     EXPECT_EQ(s.local_size_z, 1u);
@@ -530,14 +530,14 @@ TEST_F(ShaderParserTest, ParseFile_Ssao_HasLocalSize)
 
 TEST_F(ShaderParserTest, ParseFile_Ssao_HasPushConstants)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/ssao.comp.glsl");
     EXPECT_FALSE(s.push_constants.empty())
-        << "ssao.comp should have push constants (kernelLength, radius, noiseSize, frameIndex)";
+        << "ssao.comp.glsl should have push constants (kernelLength, radius, noiseSize, frameIndex)";
 }
 
 TEST_F(ShaderParserTest, ParseFile_Dummy_HasLocalSizeOne)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp.glsl");
     EXPECT_EQ(s.local_size_x, 1u);
     EXPECT_EQ(s.local_size_y, 1u);
     EXPECT_EQ(s.local_size_z, 1u);
@@ -545,7 +545,7 @@ TEST_F(ShaderParserTest, ParseFile_Dummy_HasLocalSizeOne)
 
 TEST_F(ShaderParserTest, ParseFile_SunShadowEval_HasLocalSize)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/sun_shadow_eval.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/sun_shadow_eval.comp.glsl");
     EXPECT_EQ(s.local_size_x, 16u);
     EXPECT_EQ(s.local_size_y, 16u);
     EXPECT_EQ(s.local_size_z, 1u);
@@ -553,7 +553,7 @@ TEST_F(ShaderParserTest, ParseFile_SunShadowEval_HasLocalSize)
 
 TEST_F(ShaderParserTest, ParseFile_ShadowEval_HasLocalSize)
 {
-    const auto& s = ParseSuccessfully("res/shaders/compute/shadow_eval.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/shadow_eval.comp.glsl");
     EXPECT_GT(s.local_size_x, 0u)
         << "Any compute shader should have non-zero local_size_x";
     EXPECT_GT(s.local_size_y, 0u)
@@ -566,9 +566,9 @@ TEST_F(ShaderParserTest, ParseFile_ShadowEval_HasLocalSize)
 
 TEST_F(ShaderParserTest, ParseFile_GbufferVert_HasAttributes)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert.glsl");
     EXPECT_EQ(s.AB_list.size(), 3u)
-        << "gbuffer.vert should have 3 vertex attributes (position, normal, uv)";
+        << "gbuffer.vert.glsl should have 3 vertex attributes (position, normal, uv)";
 
     if (s.AB_list.size() >= 3)
     {
@@ -586,7 +586,7 @@ TEST_F(ShaderParserTest, ParseFile_GbufferVert_HasAttributes)
 
 TEST_F(ShaderParserTest, ParseFile_GbufferVert_HasUniforms)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert.glsl");
 
     // Check ubuffer_list for CameraUBO (set=0, binding=0)
     bool hasCameraUBO = false;
@@ -599,19 +599,19 @@ TEST_F(ShaderParserTest, ParseFile_GbufferVert_HasUniforms)
         }
     }
     EXPECT_TRUE(hasCameraUBO)
-        << "gbuffer.vert should have a CameraUBO uniform block";
+        << "gbuffer.vert.glsl should have a CameraUBO uniform block";
 }
 
 TEST_F(ShaderParserTest, ParseFile_GbufferVert_HasMainBody)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.vert.glsl");
     EXPECT_FALSE(s.Main.empty())
-        << "gbuffer.vert main() body should not be empty";
+        << "gbuffer.vert.glsl main() body should not be empty";
 }
 
 TEST_F(ShaderParserTest, ParseFile_ShadowDepthMultiview_HasExtension)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth_multiview.vert");
+    const auto& s = ParseSuccessfully("res/shaders/render/shadow_depth_multiview.vert.glsl");
 
     bool hasMultiview = false;
     for (const auto& ext : s.extensions)
@@ -623,26 +623,26 @@ TEST_F(ShaderParserTest, ParseFile_ShadowDepthMultiview_HasExtension)
         }
     }
     EXPECT_TRUE(hasMultiview)
-        << "shadow_depth_multiview.vert should require GL_EXT_multiview";
+        << "shadow_depth_multiview.vert.glsl should require GL_EXT_multiview";
 }
 
 TEST_F(ShaderParserTest, ParseFile_GbufferFrag_HasPassList)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag.glsl");
 
-    // gbuffer.frag has 5 MRT outputs: gPosition(0), gNormal(1), gAlbedo(2), gMetallicRoughness(3), gObjectID(4)
+    // gbuffer.frag.glsl has 5 MRT outputs: gPosition(0), gNormal(1), gAlbedo(2), gMetallicRoughness(3), gObjectID(4)
     EXPECT_EQ(s.pass_list.size(), 5u)
-        << "gbuffer.frag should have 5 render-pass outputs (MRT)";
+        << "gbuffer.frag.glsl should have 5 render-pass outputs (MRT)";
 }
 
 TEST_F(ShaderParserTest, ParseFile_GbufferFrag_HasInputList)
 {
-    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag");
+    const auto& s = ParseSuccessfully("res/shaders/render/gbuffer.frag.glsl");
 
-    // gbuffer.frag has 4 inputs: fragWorldPos(0), fragNormalVS(1), fragUV(2), fragObjectID(3)
+    // gbuffer.frag.glsl has 4 inputs: fragWorldPos(0), fragNormalVS(1), fragUV(2), fragObjectID(3)
     // layout(location=N) in - stored in AB_list (not input_list)
     EXPECT_EQ(s.AB_list.size(), 4u)
-        << "gbuffer.frag should have 4 inter-stage inputs in AB_list";
+        << "gbuffer.frag.glsl should have 4 inter-stage inputs in AB_list";
 }
 
 // ===========================================================================
@@ -657,7 +657,7 @@ TEST_F(ShaderParserTest, ParseFile_EmptySource_ReturnsFalse)
 TEST_F(ShaderParserTest, ParseFile_MissingFile_ReturnsFalse)
 {
     // Use a path that definitely doesn't exist
-    EXPECT_FALSE(ShaderParser::ParseShaderFile("nonexistent/shader.vert", ShaderType::VERTEX, m_shaderStruct));
+    EXPECT_FALSE(ShaderParser::ParseShaderFile("nonexistent/shader.vert.glsl", ShaderType::VERTEX, m_shaderStruct));
 }
 
 TEST_F(ShaderParserTest, ParseFile_SyntaxError_ReturnsFalse)
@@ -817,7 +817,7 @@ TEST_F(ShaderParserTest, ParseFile_ResetBeforeParse_ProducesCleanStruct)
     m_shaderStruct.Reset();
     EXPECT_TRUE(m_shaderStruct.IsEmpty());
 
-    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp");
+    const auto& s = ParseSuccessfully("res/shaders/compute/dummy.comp.glsl");
     // After successful parse, the struct should NOT be empty
     EXPECT_FALSE(s.IsEmpty());
     EXPECT_EQ(s.version, 450);
@@ -955,7 +955,7 @@ TEST_F(ShaderParserTest, GenerateShader_EmptyStruct)
 TEST_F(ShaderParserTest, GenerateShader_IncludesLocalSize)
 {
     // Parse a compute shader and verify generated output includes local_size layout
-    const std::string path = ResolveShaderPath("res/shaders/compute/ssao.comp");
+    const std::string path = ResolveShaderPath("res/shaders/compute/ssao.comp.glsl");
     ASSERT_FALSE(path.empty());
 
     ASSERT_TRUE(ShaderParser::ParseShaderFile(path, ShaderType::COMPUTE, m_shaderStruct));
@@ -972,7 +972,7 @@ TEST_F(ShaderParserTest, GenerateShader_IncludesLocalSize)
 TEST_F(ShaderParserTest, GenerateShader_IncludesExtensions)
 {
     // Parse a shader with GL_EXT_multiview and verify generated output has #extension
-    const std::string path = ResolveShaderPath("res/shaders/render/shadow_depth_multiview.vert");
+    const std::string path = ResolveShaderPath("res/shaders/render/shadow_depth_multiview.vert.glsl");
     ASSERT_FALSE(path.empty());
 
     ASSERT_TRUE(ShaderParser::ParseShaderFile(path, ShaderType::VERTEX, m_shaderStruct));
@@ -988,7 +988,7 @@ TEST_F(ShaderParserTest, GenerateShader_IncludesExtensions)
 
 TEST_F(ShaderParserTest, GenerateShader_RoundTrip_GbufferVert)
 {
-    const char* relPath = "res/shaders/render/gbuffer.vert";
+    const char* relPath = "res/shaders/render/gbuffer.vert.glsl";
     const std::string path = ResolveShaderPath(relPath);
     ASSERT_FALSE(path.empty());
 
@@ -1002,7 +1002,7 @@ TEST_F(ShaderParserTest, GenerateShader_RoundTrip_GbufferVert)
 
     ShaderStruct regenerated;
     ASSERT_TRUE(ShaderParser::ParseShaderCode(generated, ShaderType::VERTEX, regenerated))
-        << "Failed to re-parse generated gbuffer.vert GLSL:\n" << generated;
+        << "Failed to re-parse generated gbuffer.vert.glsl GLSL:\n" << generated;
 
     // Verify AB_list (3 vertex attributes)
     EXPECT_EQ(regenerated.AB_list.size(), 3u);
@@ -1026,7 +1026,7 @@ TEST_F(ShaderParserTest, GenerateShader_RoundTrip_GbufferVert)
 
 TEST_F(ShaderParserTest, GenerateShader_RoundTrip_PbrLighting)
 {
-    const char* relPath = "res/shaders/compute/pbr_lighting.comp";
+    const char* relPath = "res/shaders/compute/pbr_lighting.comp.glsl";
     const std::string path = ResolveShaderPath(relPath);
     ASSERT_FALSE(path.empty());
 
@@ -1040,7 +1040,7 @@ TEST_F(ShaderParserTest, GenerateShader_RoundTrip_PbrLighting)
 
     ShaderStruct regenerated;
     ASSERT_TRUE(ShaderParser::ParseShaderCode(generated, ShaderType::COMPUTE, regenerated))
-        << "Failed to re-parse generated pbr_lighting.comp GLSL:\n" << generated;
+        << "Failed to re-parse generated pbr_lighting.comp.glsl GLSL:\n" << generated;
 
     // Verify local size
     EXPECT_EQ(regenerated.local_size_x, 16u);
@@ -1129,7 +1129,7 @@ TEST_F(ShaderParserTest, ParseFile_RelativePath_IndependentOfWorkingDirectory)
     ScopedEmptyWorkingDirectory cwd;
 
     const ShaderStruct parsed = ShaderParser::ParseShaderFile(
-        "res/shaders/render/gbuffer.vert", ShaderType::VERTEX);
+        "res/shaders/render/gbuffer.vert.glsl", ShaderType::VERTEX);
 
     EXPECT_FALSE(parsed.IsEmpty())
         << "Parsing must not depend on the process working directory";
@@ -1141,15 +1141,15 @@ TEST_F(ShaderParserTest, RenderShaderParseAndGenerate_RelativePaths_IndependentO
     ScopedEmptyWorkingDirectory cwd;
 
     RenderShader shader("CwdIndependent",
-                        "res/shaders/render/gbuffer.vert",
-                        "res/shaders/render/gbuffer.frag");
+                        "res/shaders/render/gbuffer.vert.glsl",
+                        "res/shaders/render/gbuffer.frag.glsl");
 
     ASSERT_TRUE(shader.ParseAndGenerate());
 
     // The stored paths are serialized into project files - they must stay
     // portable, so parsing must resolve without rewriting them.
-    EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert");
-    EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag");
+    EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert.glsl");
+    EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag.glsl");
 }
 
 // --- Import helpers used by the Editor when it pools a new shader ---
@@ -1158,18 +1158,18 @@ TEST(ShaderUnitImport, LoadStageUnitParsesAndGenerates)
 {
     std::string error;
     auto unit = ShaderLibrary::LoadStageUnit(
-        "res/shaders/render/gbuffer.vert", ShaderType::VERTEX, &error);
+        "res/shaders/render/gbuffer.vert.glsl", ShaderType::VERTEX, &error);
     ASSERT_TRUE(unit) << error;
     EXPECT_FALSE(unit->parsed.IsEmpty());
     EXPECT_FALSE(unit->code.empty());
-    EXPECT_EQ(unit->path, "res/shaders/render/gbuffer.vert");
+    EXPECT_EQ(unit->path, "res/shaders/render/gbuffer.vert.glsl");
 }
 
 TEST(ShaderUnitImport, LoadStageUnitRejectsWrongExtension)
 {
     std::string error;
     auto unit = ShaderLibrary::LoadStageUnit(
-        "res/shaders/render/gbuffer.frag", ShaderType::VERTEX, &error);
+        "res/shaders/render/gbuffer.frag.glsl", ShaderType::VERTEX, &error);
     EXPECT_FALSE(unit);
     EXPECT_FALSE(error.empty());
 }
@@ -1178,15 +1178,15 @@ TEST(ShaderUnitImport, StageUnitConstructorThenCompileToSpvReportsStageErrors)
 {
     ShaderUnit vert;
     ShaderUnit frag;
-    vert.path = "res/shaders/render/gbuffer.vert";
-    frag.path = "res/shaders/render/gbuffer.frag";
+    vert.path = "res/shaders/render/gbuffer.vert.glsl";
+    frag.path = "res/shaders/render/gbuffer.frag.glsl";
     vert.code = "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n";
     frag.code = "#version 450\nlayout(location=0) out vec4 o;\nvoid main() { o = vec4(1.0); }\n";
     RenderShader shader("ImportFixture", std::move(vert), std::move(frag));
 
     // The stage paths become the shader's source paths, so a save/reload keeps them.
-    EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert");
-    EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag");
+    EXPECT_EQ(shader.GetVertPath(), "res/shaders/render/gbuffer.vert.glsl");
+    EXPECT_EQ(shader.GetFragPath(), "res/shaders/render/gbuffer.frag.glsl");
 
     std::string error;
     EXPECT_TRUE(shader.CompileToSpv(&error)) << error;

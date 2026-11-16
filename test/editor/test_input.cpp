@@ -4,7 +4,7 @@
  *
  * Verifies GetMousePos, GetModifiers, GetMouseButton and GetKey convert raw
  * values to engine types correctly. Qt types are unwrapped by the test code;
- * Input.h itself has zero Qt dependencies.
+ * Input.hpp itself has zero Qt dependencies.
  *
  * GetKey is the narrowest of the four and the one with teeth: it is the only
  * place a Qt key code exists in the entire editor. Everything downstream — the
@@ -18,7 +18,7 @@
 #include <QObject>   // Qt::KeyboardModifiers, Qt::MouseButton
 #include <QPoint>    // QPointF
 
-#include "editor/Input.h"
+#include "editor/Input.hpp"
 
 using namespace neurus;
 

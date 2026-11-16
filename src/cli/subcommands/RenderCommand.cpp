@@ -1,8 +1,8 @@
-#include "cli/subcommands/RenderCommand.h"
+#include "cli/subcommands/RenderCommand.hpp"
 
-#include "cli/CommandClient.h"
-#include "cli/Output.h"
-#include "command/Commands.h"
+#include "cli/CommandClient.hpp"
+#include "cli/Output.hpp"
+#include "command/Commands.hpp"
 
 #include <cmath>
 #include <iostream>

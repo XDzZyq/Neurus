@@ -26,7 +26,7 @@ The UI layer owns the main window, the dock layout, and the viewport widget. The
 
 ## UIManager
 
-`UIManager` (`src/ui/UIManager.h/cpp`) is the `QMainWindow` subclass at the center of the layer. It owns:
+`UIManager` (`src/ui/UIManager.hpp/cpp`) is the `QMainWindow` subclass at the center of the layer. It owns:
 
 - the ADS dock manager (`ads::CDockManager`),
 - the menu bar and its translation registry,
@@ -113,7 +113,7 @@ Each menu action is registered as an `(QAction*, key)` pair so `RetranslateAll()
 
 ## Panel system
 
-All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
+All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.hpp`):
 
 - `PanelType` enum identifies each panel (`Viewport`, `Outliner`, `PropertyPanel`, `RenderConfig`, `ShaderEditor`, `Profiling`, `Log`).
 - `virtual void Refresh(const UIContext& ctx)` - called per-frame to sync panel UI with application state.
@@ -122,9 +122,9 @@ All dock panels inherit from `UIPanel` (`src/ui/panels/UIPanel.h`):
 
 See [Panels](panels.md) for each panel, and [Items](items.md), [Models](models.md) and [i18n](i18n.md) for the shared building blocks.
 
-`UIContext` is the UI's view of the frame, two fields wide: `scene` (`const Scene*`) and `config` (`const RenderConfig*`), both filled by `Editor::UpdateUIContext()` and both plain forward-declared pointers. It deliberately carries no camera and no overlay draw list - a panel has no business naming either - so the UI's view is a property of the type rather than a convention. The render settings are read through `Settings()`, which never returns null: it falls back to `core/RenderConfig.h`'s `DefaultRenderConfig()`, the same single default a pass resolves to through `ctx.Frame().Settings()`, so a panel and a pass cannot disagree about an unset value. `scene` must still be checked - `HasScene()` - before dereferencing.
+`UIContext` is the UI's view of the frame, two fields wide: `scene` (`const Scene*`) and `config` (`const RenderConfig*`), both filled by `Editor::UpdateUIContext()` and both plain forward-declared pointers. It deliberately carries no camera and no overlay draw list - a panel has no business naming either - so the UI's view is a property of the type rather than a convention. The render settings are read through `Settings()`, which never returns null: it falls back to `core/RenderConfig.hpp`'s `DefaultRenderConfig()`, the same single default a pass resolves to through `ctx.Frame().Settings()`, so a panel and a pass cannot disagree about an unset value. `scene` must still be checked - `HasScene()` - before dereferencing.
 
-`UIContext` also carries four typed pointers, each forward-declared in `UIContext.h`, as the Application's half: `const FrameProfile* profile` (the profile returned by `DeferredRenderer::DrawFrame()`), `const LogBuffer* log`, `const HistoryView* history` and `const ScriptConsoleBuffer* scriptConsole` (the script engine's console buffer). The Editor fills `scene` and `config` through `Editor::UpdateUIContext()`; the Application adds these four each frame, and the `ProfilingPanel` reads `profile` directly to render a real-time per-pass tree. All four are null in a default-constructed `UIContext` - what a widget test builds - so a panel checks before dereferencing.
+`UIContext` also carries four typed pointers, each forward-declared in `UIContext.hpp`, as the Application's half: `const FrameProfile* profile` (the profile returned by `DeferredRenderer::DrawFrame()`), `const LogBuffer* log`, `const HistoryView* history` and `const ScriptConsoleBuffer* scriptConsole` (the script engine's console buffer). The Editor fills `scene` and `config` through `Editor::UpdateUIContext()`; the Application adds these four each frame, and the `ProfilingPanel` reads `profile` directly to render a real-time per-pass tree. All four are null in a default-constructed `UIContext` - what a widget test builds - so a panel checks before dereferencing.
 
 ## Refresh pipeline
 
@@ -136,7 +136,7 @@ Widgets must dirty-check before applying a value, so a per-frame push never figh
 
 ## Preferences
 
-App-level settings (distinct from the per-project `.neurus.json` files) live in `~/.neurus/preferences.json`, persisted with cereal JSON by the `Preferences` struct in `src/app/Preferences.h/cpp` - an **Application Layer** concept (future settings: CUDA enablement, theme, shortcut schemes).
+App-level settings (distinct from the per-project `.neurus.json` files) live in `~/.neurus/preferences.json`, persisted with cereal JSON by the `Preferences` struct in `src/app/Preferences.hpp/cpp` - an **Application Layer** concept (future settings: CUDA enablement, theme, shortcut schemes).
 
 - Fields: `language` (`"en"` / `"zh_CN"`, or `"auto"` = follow the system UI language), `target_fps` (0 = unlimited) and the nested `script` object (the startup preload list plus the host sandbox policy external script commands run under; see [Scripting](../script/overview.md#startup-preload) and [Scripting](../script/overview.md#execution-policy-and-the-sandbox)). The Preferences dialog edits both script groups.
 - The script part is tree-like rather than a flat set of top-level keys:

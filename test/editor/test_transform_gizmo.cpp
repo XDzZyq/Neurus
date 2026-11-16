@@ -31,10 +31,10 @@
 
 #include <gtest/gtest.h>
 
-#include "editor/viewport/TransformGizmo.h"
-#include "editor/viewport/EditorViewport.h"
-#include "scene/Camera.h"
-#include "scene/Transform.h"
+#include "editor/viewport/TransformGizmo.hpp"
+#include "editor/viewport/EditorViewport.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Transform.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

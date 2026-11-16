@@ -1,6 +1,6 @@
-#include "cli/Cli.h"
+#include "cli/CliMain.hpp"
 
-#include "platform/PlatformProcess.h"
+#include "platform/PlatformProcess.hpp"
 
 int main(int argc, char* argv[])
 {

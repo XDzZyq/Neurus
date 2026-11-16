@@ -7,25 +7,25 @@
  * upload dependency.
  */
 
-#include "editor/controllers/ShaderController.h"
-#include "editor/controllers/MutationNotify.h"
-#include "editor/events/ShaderEvents.h"
-#include "editor/events/EditorEvents.h"
-#include "editor/events/EventBus.h"
-#include "editor/operations/IOperationSink.h"
-#include "editor/operations/ShaderOperations.h"
+#include "editor/controllers/ShaderController.hpp"
+#include "editor/controllers/MutationNotify.hpp"
+#include "editor/events/ShaderEvents.hpp"
+#include "editor/events/EditorEvents.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/operations/IOperationSink.hpp"
+#include "editor/operations/ShaderOperations.hpp"
 
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "scene/ObjectID.h"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "scene/ObjectID.hpp"
 
-#include "asset/data/ShaderData.h"
-#include "asset/data/shader/ShaderUnit.h"
-#include "render/shaders/ShaderLibrary.h"
-#include "render/shaders/ShaderGenerator.h"
-#include "render/shaders/ShaderParser.h"
+#include "asset/data/ShaderData.hpp"
+#include "asset/data/shader/ShaderUnit.hpp"
+#include "render/shaders/ShaderLibrary.hpp"
+#include "render/shaders/ShaderGenerator.hpp"
+#include "render/shaders/ShaderParser.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <algorithm>
 #include <memory>

@@ -20,7 +20,7 @@
 
 #include <cereal/archives/json.hpp>
 
-#include "core/Selections.h"
+#include "core/Selections.hpp"
 
 using namespace neurus;
 

@@ -4,7 +4,7 @@ Dock panels are the widgets hosted inside ADS docks; every scene-facing panel in
 
 ## UIPanel base
 
-`UIPanel` (`src/ui/panels/UIPanel.h`) is the common `QWidget` base for all dockable panels, so the dock system can treat them uniformly:
+`UIPanel` (`src/ui/panels/UIPanel.hpp`) is the common `QWidget` base for all dockable panels, so the dock system can treat them uniformly:
 
 - `PanelType` enum identifies each panel: `Viewport`, `Outliner`, `PropertyPanel`, `RenderConfig`, `ShaderEditor`, `Profiling`, `Log` (plus a `Count` sentinel that is never a panel's type).
 - `GetPanelType()` returns the enum for O(1) lookup in the panel registry.
@@ -18,7 +18,7 @@ The dock title is stored as a translation *key* (`nameKey`, default derived from
 
 ## Viewport
 
-`Viewport` (`src/ui/panels/Viewport.h`) is a `QWidget` that exposes a native window handle, which the Application uses to create the surface:
+`Viewport` (`src/ui/panels/Viewport.hpp`) is a `QWidget` that exposes a native window handle, which the Application uses to create the surface:
 
 - Sets `WA_NativeWindow` and `WA_OpaquePaintEvent`, so the widget has a dedicated native handle and Qt does not draw a background behind the Vulkan content.
 - Overrides `paintEvent()` to a no-op - all rendering is handled by Vulkan.
@@ -39,7 +39,7 @@ Signals:
 
 ## Outliner
 
-`Outliner` (`src/ui/panels/Outliner.h`) is a Blender-style vertical list of scene objects; each row shows the object type icon, name, and two visibility toggles (viewport / render). It reads scene data via `UIContext` with no Renderer or Vulkan headers.
+`Outliner` (`src/ui/panels/Outliner.hpp`) is a Blender-style vertical list of scene objects; each row shows the object type icon, name, and two visibility toggles (viewport / render). It reads scene data via `UIContext` with no Renderer or Vulkan headers.
 
 - `Refresh()` reads the object UID list from `UIContext` and reconfigures pooled `OutlinerRow`s via `setObject()` / `setVisibilities()` / `setSelectionMode()`. The row pool grows when scene objects exceed pool size and recycles existing rows otherwise; extra rows are hidden, never destroyed.
 - `OutlinerRow` emits `ObjectClicked{m_objectUid, mods}`; signal lambdas read the row's `m_objectUid` at emission time, so pooled rows stay correct when recycled to a different object.
@@ -50,12 +50,12 @@ See [Items](items.md) for `OutlinerRow`.
 
 ## PropertyPanel
 
-`PropertyPanel` (`src/ui/panels/PropertyPanel.h`) shows a type/name header, an editable transform, and a type-specific subpanel for the active scene object.
+`PropertyPanel` (`src/ui/panels/PropertyPanel.hpp`) shows a type/name header, an editable transform, and a type-specific subpanel for the active scene object.
 
 - `Refresh()` reads `scene->selections.GetActiveObject()`, stores its integer UID (lazy header update), and displays its name with type icon and populates the Position / Rotation / Scale `Vec3Spin` widgets from its `Transform3D`. The header shows an empty state when nothing is selected.
 - It emits granular transform events (`PositionChanged`, `RotationChanged`, `ScaleChanged`) plus camera/mesh/light/environment/debug property events, all carrying the active object's `int objectUid`; it resolves per-id data via `Scene::GetObjectID`.
 - It owns one instance of each property preset (camera, mesh, light, environment, debug), shows exactly one per selection (`ShowTypeSubpanel`), and forwards their signals as typed scene events.
-- The debug subpanel is shared by `GO_DL` / `GO_DP` / `GO_DM`: `Refresh()` calls `setObjectId()` **before** the setters (it invalidates the caches) and `setDebugType()` to pick the visible rows. The position list is flattened to xyz triples in the forwarding lambda, since `SceneEvents.h` stays glm-free.
+- The debug subpanel is shared by `GO_DL` / `GO_DP` / `GO_DM`: `Refresh()` calls `setObjectId()` **before** the setters (it invalidates the caches) and `setDebugType()` to pick the visible rows. The position list is flattened to xyz triples in the forwarding lambda, since `SceneEvents.hpp` stays glm-free.
 
 **`SetEnabled(false)` must not hide the type subpanels - `ShowTypeSubpanel()` alone decides which one is visible.** `Refresh()` runs every frame and calls `SetEnabled()` *before* `ShowTypeSubpanel()`, so hiding the subpanels inside `SetEnabled(false)` hid the visible one and the next line re-showed it. For an object whose `GetTransform()` is null that hide/show pair fired **every frame**; the transient hide stripped focus from any control in the panel and Qt re-homed it on the `Viewport`, so the color swatch flickered between hoverable and not and the picker never kept focus. Hiding all subpanels when nothing is selected is instead done explicitly on `Refresh()`'s two early-return paths.
 
@@ -91,7 +91,7 @@ Its **position table** is the only place in the panel that edits a *list* rather
 
 ## RenderConfigPanel
 
-`RenderConfigPanel` (`src/ui/panels/RenderConfigPanel.h`) provides live-adjustable render settings organized in collapsible `QGroupBox` sections:
+`RenderConfigPanel` (`src/ui/panels/RenderConfigPanel.hpp`) provides live-adjustable render settings organized in collapsible `QGroupBox` sections:
 
 - **Shadows**: Algorithm (None / ShadowMapping / SDFSoftShadow / VSSM), PCF filter mode, bias `ScalarSlider` (0.0-0.1, derived step 0.0001, 4 decimals), temporal sampling mode.
 - **Ambient Occlusion**: Algorithm (None / SSAO), kernel size spinbox, radius `ScalarSlider` (0.0-5.0).
@@ -105,7 +105,7 @@ Each control change emits `configValueChanged(RenderConfigChangedEvent)`, wired 
 
 ## ProfilingPanel
 
-`ProfilingPanel` (`src/ui/panels/ProfilingPanel.h`) shows the per-frame GPU/CPU profile returned by the renderer as a `QTreeWidget` (columns: Pass, CPU (ms), GPU (ms), Draws, Dispatches):
+`ProfilingPanel` (`src/ui/panels/ProfilingPanel.hpp`) shows the per-frame GPU/CPU profile returned by the renderer as a `QTreeWidget` (columns: Pass, CPU (ms), GPU (ms), Draws, Dispatches):
 
 - A bold **Frame** root row summarizes the whole frame (CPU record ms, GPU frame ms, total draws/dispatches).
 - One child row per pass shows that pass's CPU/GPU ms and draw/dispatch counts.
@@ -118,7 +118,7 @@ See [Items](items.md) for `ProfilingRow` / `ProfilingHead`.
 
 ## ShaderEditorPanel
 
-`ShaderEditorPanel` (`src/ui/panels/ShaderEditorPanel.h`) edits the GLSL shader of the active mesh in two modes selected by a `QComboBox` in a `QStackedWidget`:
+`ShaderEditorPanel` (`src/ui/panels/ShaderEditorPanel.hpp`) edits the GLSL shader of the active mesh in two modes selected by a `QComboBox` in a `QStackedWidget`:
 
 - **Code mode**: raw GLSL in a `CodeEditor` widget (line numbers, GLSL syntax highlighting). Text changes emit `codeEdited`.
 - **Structure mode**: a `QTreeView` (`ShaderStructModel` + `ShaderFieldDelegate`) showing the parsed `ShaderStruct` IR as a 3-level tree (sections -> fields/structs -> members). Type/name cells are edited inline via `QComboBox` / `QLineEdit` editors and emit `structEdited`.
@@ -137,7 +137,7 @@ See [Models](models.md) for `ShaderStructModel` and `ShaderFieldDelegate`.
 
 ## LogPanel
 
-`LogPanel` (`src/ui/panels/LogPanel.h`) is a realtime log viewer reading the core `LogBuffer` via `UIContext::log` (a typed `const LogBuffer*`, polled in `Refresh()`):
+`LogPanel` (`src/ui/panels/LogPanel.hpp`) is a realtime log viewer reading the core `LogBuffer` via `UIContext::log` (a typed `const LogBuffer*`, polled in `Refresh()`):
 
 - **Row rendering**: `QListView` + `LogModel` (custom `QAbstractListModel` over the buffer) + `LogFilterProxy` (level filter + case-insensitive search) + `LogDelegate` (severity coloring: red Error, dark gray Info). Virtualized - only visible rows are queried.
 - **Counts**: a `QLabel` header "INFO n / ERROR m", dirty-checked in `Refresh()`.
@@ -149,7 +149,7 @@ See [Models](models.md) for `LogModel`, `LogFilterProxy` and `LogDelegate`.
 
 ## PreferencesDialog
 
-`PreferencesDialog` (`src/ui/panels/PreferencesDialog.h`) is opened from **File -> Preferences...** (`Ctrl+,`). It is a pure UI widget:
+`PreferencesDialog` (`src/ui/panels/PreferencesDialog.hpp`) is opened from **File -> Preferences...** (`Ctrl+,`). It is a pure UI widget:
 
 - It is seeded with plain values (language code, target FPS, `ScriptPreferencesUi`, preferences-file path) and never touches the app-layer `Preferences` type - the Application is its sole manager.
 - It emits `languageChangeRequested(QString)` / `targetFpsChangeRequested(int)` / `scriptPreferencesChanged()`, routed through `UIEvents` so the Application applies the change and persists `~/.neurus/preferences.json`. The script values cover the host sandbox policy and the startup preload list.

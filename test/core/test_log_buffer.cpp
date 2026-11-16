@@ -3,7 +3,7 @@
 #include <thread>
 #include <vector>
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 namespace neurus
 {

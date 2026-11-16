@@ -1,7 +1,7 @@
-#include "cli/SessionClient.h"
+#include "cli/SessionClient.hpp"
 
-#include "cli/TerminalBinding.h"
-#include "ipc/IpcClient.h"
+#include "cli/TerminalBinding.hpp"
+#include "ipc/IpcClient.hpp"
 
 #include <chrono>
 #include <utility>

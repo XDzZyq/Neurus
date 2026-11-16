@@ -50,7 +50,7 @@ _N_KEY_RE = re.compile(r'N_\(\s*"((?:[^"\\]|\\.)*)"\s*\)')
 # Dock titles are stored as translation keys in UIPanel::DefaultNameKey:
 #   case PanelType::Viewport: return "Viewport";
 # The scrape is confined to that one function's body (see _function_body):
-# UIPanel.h has a second switch of exactly this shape, PanelIdFor(), whose
+# UIPanel.hpp has a second switch of exactly this shape, PanelIdFor(), whose
 # returns are serialization ids and must NEVER become translation keys.
 _DOCK_KEY_RE = re.compile(r'case\s+PanelType::\w+:\s*return\s*"([^"]+)";')
 
@@ -154,7 +154,7 @@ def find_translation_keys() -> list:
     keys = set()
     for dirpath, _dirs, files in os.walk(UI_DIR):
         for name in files:
-            if not name.endswith((".h", ".cpp")):
+            if not name.endswith((".hpp", ".cpp")):
                 continue
             with open(os.path.join(dirpath, name), encoding="utf-8") as f:
                 src = f.read()
@@ -167,10 +167,10 @@ def find_translation_keys() -> list:
                 msgid = decode_c_literal(m.group(1))
                 if msgid:
                     keys.add(("", msgid))
-            # Dock-title keys live in UIPanel.h (PanelName translates them).
+            # Dock-title keys live in UIPanel.hpp (PanelName translates them).
             # Scoped to DefaultNameKey's body: PanelIdFor() right above it has
             # the same switch shape but returns identity ids, not display text.
-            if name == "UIPanel.h":
+            if name == "UIPanel.hpp":
                 body = _function_body(src, _DOCK_KEY_FUNC)
                 for m in _DOCK_KEY_RE.finditer(body):
                     keys.add(("Dock", decode_c_literal(m.group(1))))

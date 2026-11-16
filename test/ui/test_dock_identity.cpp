@@ -22,9 +22,9 @@
 #include <DockManager.h>
 #include <DockWidget.h>
 
-#include "ui/UIManager.h"
-#include "ui/panels/UIPanel.h"
-#include "ui/utils/I18n.h"
+#include "ui/UIManager.hpp"
+#include "ui/panels/UIPanel.hpp"
+#include "ui/utils/I18n.hpp"
 
 using namespace neurus;
 

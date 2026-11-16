@@ -3,15 +3,15 @@
  * @brief Outliner implementation - pool-managed row list from UIContext scene data.
  */
 
-#include "Outliner.h"
+#include "Outliner.hpp"
 
-#include "Icons.h"
-#include "UIContext.h"
-#include "ui/utils/I18n.h"
-#include "items/OutlinerRow.h"
+#include "Icons.hpp"
+#include "UIContext.hpp"
+#include "ui/utils/I18n.hpp"
+#include "items/OutlinerRow.hpp"
 
-#include "scene/Scene.h"
-#include "scene/ObjectID.h"  // ObjectID, GOType
+#include "scene/Scene.hpp"
+#include "scene/ObjectID.hpp"  // ObjectID, GOType
 
 #include <QGroupBox>
 #include <QKeyEvent>

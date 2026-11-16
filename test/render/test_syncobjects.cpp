@@ -3,10 +3,10 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "render/passes/SyncObjects.h"
-#include "render/Barrier.h"
-#include "render/Image.h"
+#include "shared/TestVulkanShared.hpp"
+#include "render/passes/SyncObjects.hpp"
+#include "render/Barrier.hpp"
+#include "render/Image.hpp"
 
 #include <chrono>
 #include <memory>

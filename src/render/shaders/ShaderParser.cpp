@@ -7,11 +7,11 @@
  * local_size, GLSL extensions, multiview).
  */
 
-#include "ShaderParser.h"
+#include "ShaderParser.hpp"
 
-#include "ShaderLibrary.h"
+#include "ShaderLibrary.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <algorithm>
 #include <cctype>

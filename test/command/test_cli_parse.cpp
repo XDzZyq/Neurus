@@ -8,9 +8,9 @@
 #include <filesystem>
 #include <string>
 
-#include "cli/Cli.h"
-#include "cli/CliParse.h"
-#include "platform/PlatformProcess.h"
+#include "cli/CliMain.hpp"
+#include "cli/CliParse.hpp"
+#include "platform/PlatformProcess.hpp"
 
 using namespace neurus::cli;
 using namespace neurus::ipc;

@@ -1,8 +1,8 @@
-#include "cli/TerminalBinding.h"
+#include "cli/TerminalBinding.hpp"
 
-#include "ipc/SessionRegistry.h"
-#include "platform/PlatformFile.h"
-#include "platform/PlatformProcess.h"
+#include "ipc/SessionRegistry.hpp"
+#include "platform/PlatformFile.hpp"
+#include "platform/PlatformProcess.hpp"
 
 #include <nlohmann/json.hpp>
 

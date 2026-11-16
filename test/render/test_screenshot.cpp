@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "render/Screenshot.h"
-#include "render/Image.h"
-#include "render/Barrier.h"
-#include "render/RenderCache.h"
-#include "asset/data/ImageData.h"
+#include "shared/TestVulkanShared.hpp"
+#include "render/Screenshot.hpp"
+#include "render/Image.hpp"
+#include "render/Barrier.hpp"
+#include "render/RenderCache.hpp"
+#include "asset/data/ImageData.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 

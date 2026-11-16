@@ -17,7 +17,7 @@
 #include <QTextLayout>
 #include <QVector>
 
-#include "ui/utils/CodeHighlighter.h"
+#include "ui/utils/CodeHighlighter.hpp"
 
 namespace neurus
 {

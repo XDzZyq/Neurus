@@ -6,13 +6,13 @@
 # Used by both the Qt GUI application and the headless renderer: argument
 # parsing, preferences, project persistence and Vulkan context creation.
 add_library(neurus_app_core STATIC
-	AppArgs.h
+	AppArgs.hpp
 	AppArgs.cpp
-	ApplicationCore.h
+	ApplicationCore.hpp
 	ApplicationCore.cpp
-	Preferences.h
+	Preferences.hpp
 	Preferences.cpp
-	VulkanContext.h
+	VulkanContext.hpp
 	VulkanContext.cpp
 )
 
@@ -37,9 +37,9 @@ target_link_libraries(neurus_app_core PUBLIC
 # The loopback command server and its command policy. Split out so the
 # headless application can host the same session protocol without the GUI.
 add_library(neurus_session STATIC
-	session/SessionCommandExecutor.h
+	session/SessionCommandExecutor.hpp
 	session/SessionCommandExecutor.cpp
-	session/SessionServer.h
+	session/SessionServer.hpp
 	session/SessionServer.cpp
 )
 
@@ -59,7 +59,7 @@ target_link_libraries(neurus_session PUBLIC
 # ---------------------------------------------------------------------------
 if(NEURUS_BUILD_UI)
 	add_library(neurus_app STATIC
-		Application.h
+		Application.hpp
 		Application.cpp
 		ApplicationCommands.cpp
 		ApplicationSignals.cpp
@@ -79,7 +79,7 @@ if(NEURUS_BUILD_UI)
 		cereal
 	)
 
-	# Application.h exposes command::ISessionState, so the command include dirs
+	# Application.hpp exposes command::ISessionState, so the command include dirs
 	# must propagate to the executables and tests that include it.
 	target_link_libraries(neurus_app PUBLIC neurus_ipc)
 

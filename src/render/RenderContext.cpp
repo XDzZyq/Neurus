@@ -2,7 +2,7 @@
  * @file RenderContext.cpp
  * @brief The one place an unpublished context is turned into an empty frame.
  *
- * Exists so RenderContext.h can forward-declare RenderFrameSnapshot while
+ * Exists so RenderContext.hpp can forward-declare RenderFrameSnapshot while
  * Frame() still needs the complete type: a context that published no snapshot
  * reads as a single shared empty frame, written once here, rather than as a
  * pointer every pass tests.
@@ -10,9 +10,9 @@
  * Vulkan-free, and must stay so: RenderContext describes the frame, not the GPU.
  */
 
-#include "RenderContext.h"
+#include "RenderContext.hpp"
 
-#include "render/RenderFrameSnapshot.h"
+#include "render/RenderFrameSnapshot.hpp"
 
 namespace neurus
 {

@@ -1,8 +1,8 @@
-#include "ProfilingPanel.h"
+#include "ProfilingPanel.hpp"
 
-#include "UIContext.h"
-#include "render/ProfilingData.h"
-#include "ui/utils/I18n.h"
+#include "UIContext.hpp"
+#include "render/ProfilingData.hpp"
+#include "ui/utils/I18n.hpp"
 
 #include <QAbstractItemView>
 #include <QHeaderView>

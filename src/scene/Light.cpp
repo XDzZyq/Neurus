@@ -3,7 +3,7 @@
  * @brief Implementation of Light class.
  */
 
-#include "scene/Light.h"
+#include "scene/Light.hpp"
 
 namespace neurus
 {

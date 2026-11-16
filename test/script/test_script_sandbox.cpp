@@ -12,7 +12,7 @@
 #include <filesystem>
 #include <string>
 
-#include "script/ScriptEngine.h"
+#include "script/ScriptEngine.hpp"
 
 namespace
 {

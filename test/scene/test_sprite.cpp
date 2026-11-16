@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include "scene/Sprite.h"
+#include "scene/Sprite.hpp"
 
 using namespace neurus;
 

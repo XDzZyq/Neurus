@@ -32,7 +32,7 @@ short working reference.
 - Members: `m_` prefix for member variables.
 - Constants: UPPER_SNAKE_CASE. Enums: PascalCase type, PascalCase or UPPER_CASE
   values.
-- Files: PascalCase (`VulkanContext.h`).
+- Files: PascalCase (`VulkanContext.hpp`).
 
 ## RAII (Non-Negotiable)
 
@@ -60,7 +60,7 @@ short working reference.
 
 ## Debug Printing
 
-Use the macros from `core/Log.h`; they inject a `[func:line]` prefix.
+Use the macros from `core/Log.hpp`; they inject a `[func:line]` prefix.
 
 ```cpp
 NEURUS_LOG("[Swapchain] " << extent.width << "x" << extent.height);
@@ -98,7 +98,7 @@ NEURUS_ERR("Texture::createFromPixelData failed: " << e.what());
   inside `src/platform/win/`, `src/platform/mac/` and `src/platform/linux/`,
   selected by `src/platform/CMakeLists.txt`.
 - A caller in app, editor, UI, command, IPC, CLI, script or tests uses a free
-  function from a `Platform*.h` header instead of branching on the OS.
+  function from a `Platform*.hpp` header instead of branching on the OS.
 - An ifdef in a test is acceptable only when the expected value itself differs by
   platform (for example the executable name or the home environment variable).
 - When a new platform primitive is needed, add it to the shared header and every

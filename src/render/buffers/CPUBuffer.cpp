@@ -1,4 +1,4 @@
-#include "CPUBuffer.h"
+#include "CPUBuffer.hpp"
 
 #include <cstring>
 #include <stdexcept>

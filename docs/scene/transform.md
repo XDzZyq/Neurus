@@ -4,7 +4,7 @@
 
 ## Transform base
 
-`Transform` (`scene/Transform.h`) is the abstract polymorphic interface:
+`Transform` (`scene/Transform.hpp`) is the abstract polymorphic interface:
 
 - `GetTransformPtr()` returns a non-owning pointer to the transform; `Transform3D` narrows the return type.
 - Non-copyable, movable, with a protected constructor. All spatially placed scene objects inherit `Transform3D`.

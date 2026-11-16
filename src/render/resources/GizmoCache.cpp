@@ -3,12 +3,12 @@
  * @brief Unconditional upload of the gizmo's guide geometry into per-frame SSBOs.
  *
  * DebugCache.cpp's body with the revision gate and the x-ray clamps removed; see
- * GizmoCache.h for why both are absent rather than merely unused.
+ * GizmoCache.hpp for why both are absent rather than merely unused.
  */
 
-#include "GizmoCache.h"
+#include "GizmoCache.hpp"
 
-#include "render/overlay/GizmoDrawList.h"
+#include "render/overlay/GizmoDrawList.hpp"
 
 namespace neurus {
 

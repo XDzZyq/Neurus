@@ -5,17 +5,17 @@
 #include <fstream>
 #include <string>
 
-#include "core/Log.h"
-#include "core/RenderConfig.h"
-#include "core/ResourceManager.h"
-#include "editor/controllers/ObjectController.h"
-#include "editor/controllers/ScriptController.h"
-#include "editor/events/EventBus.h"
-#include "editor/operations/OperationManager.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "script/ScriptConsole.h"
-#include "script/ScriptEngine.h"
+#include "core/Log.hpp"
+#include "core/RenderConfig.hpp"
+#include "core/ResourceManager.hpp"
+#include "editor/controllers/ObjectController.hpp"
+#include "editor/controllers/ScriptController.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptConsole.hpp"
+#include "script/ScriptEngine.hpp"
 
 TEST(ScriptEngine, InitializesAndShutsDown)
 {

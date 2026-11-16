@@ -18,8 +18,8 @@
 #include <system_error>
 #include <vector>
 
-#include "script/ScriptConsole.h"
-#include "script/ScriptEngine.h"
+#include "script/ScriptConsole.hpp"
+#include "script/ScriptEngine.hpp"
 
 namespace fs = std::filesystem;
 

@@ -1,6 +1,6 @@
 # Serialization
 
-Neurus persists projects with cereal, and `core/Serialize.h` provides the version-tolerant helpers that let a field be absent from a file without discarding the whole component around it.
+Neurus persists projects with cereal, and `core/Serialize.hpp` provides the version-tolerant helpers that let a field be absent from a file without discarding the whole component around it.
 
 ## The version-drift problem
 
@@ -8,7 +8,7 @@ Two builds of the app rarely agree on a field list. An older build opening a new
 
 Because the catch blocks are deliberately coarse - `ResourceComponent::Load` calls `ResourceManager::Clear()`, `ConfigComponent::Load` assigns a fresh `RenderConfig` - one unknown field can discard an entire scene or every render setting around it. The cure is to read such a field on its own and let it keep its default when the file has nothing to say about it.
 
-## The three helpers (`core/Serialize.h`)
+## The three helpers (`core/Serialize.hpp`)
 
 The namespace is `archive`, not `serialize`: several headers declare free `neurus::serialize(Archive&, T&)` overloads for cereal to find by ADL, and a namespace of that name inside `neurus` would redefine them.
 
@@ -72,14 +72,14 @@ Order on disk does not matter on load because the lookup is name-keyed.
 
 ## Project and Serializable
 
-`src/asset/Project.h` defines `project::Project`, a pure registration-based serializer that owns no data - no project path, no dirty flag, no concrete type knowledge:
+`src/asset/Project.hpp` defines `project::Project`, a pure registration-based serializer that owns no data - no project path, no dirty flag, no concrete type knowledge:
 
 - Components are registered via `Register<T>(args...)`, which constructs the component and stores it as `unique_ptr<Serializable>`, returning a reference.
 - `Save(path)` / `Load(path)` iterate every registered component and call its virtual `Save` / `Load`. `Project::Save` writes `cereal::make_nvp("project", *this)` into a `.neurus.json` file.
 - `Clear()` destroys all components.
-- It depends only on cereal and `Serializable.h` - no scene or render headers.
+- It depends only on cereal and `Serializable.hpp` - no scene or render headers.
 
-`src/asset/Serializable.h` defines the component interface `project::Serializable`:
+`src/asset/Serializable.hpp` defines the component interface `project::Serializable`:
 
 - `Key()` returns the archive node name.
 - `Save(cereal::JSONOutputArchive&)` / `Load(cereal::JSONInputArchive&)` are the persistence hooks.

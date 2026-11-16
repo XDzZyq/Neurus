@@ -2,8 +2,8 @@
 
 #include <gtest/gtest.h>
 
-#include "app/VulkanContext.h"
-#include "platform/PlatformSurface.h"
+#include "app/VulkanContext.hpp"
+#include "platform/PlatformSurface.hpp"
 
 using namespace neurus;
 

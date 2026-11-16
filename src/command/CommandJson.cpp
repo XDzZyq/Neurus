@@ -1,4 +1,4 @@
-#include "command/CommandJson.h"
+#include "command/CommandJson.hpp"
 
 #include <nlohmann/json.hpp>
 

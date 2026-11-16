@@ -3,7 +3,7 @@
  * @brief Value constructors for the Python-free script policy.
  */
 
-#include "script/ScriptPolicy.h"
+#include "script/ScriptPolicy.hpp"
 
 namespace neurus
 {

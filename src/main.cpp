@@ -3,7 +3,7 @@
  * @brief Application entry point.
  */
 
-#include "app/Application.h"
+#include "app/Application.hpp"
 
 int main(int argc, char* argv[])
 {

@@ -5,7 +5,7 @@
  * Qt types are unwrapped by callers; only raw C++ types are translated here.
  */
 
-#include "editor/Input.h"
+#include "editor/Input.hpp"
 
 #include <QObject>   // Qt::KeyboardModifier, Qt::MouseButton
 

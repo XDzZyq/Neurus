@@ -1,7 +1,7 @@
-#include "targets/SwapchainTarget.h"
+#include "targets/SwapchainTarget.hpp"
 
-#include "SharedQueue.h"
-#include "Swapchain.h"
+#include "SharedQueue.hpp"
+#include "Swapchain.hpp"
 
 #include <stdexcept>
 

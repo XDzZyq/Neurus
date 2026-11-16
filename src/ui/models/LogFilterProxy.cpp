@@ -1,7 +1,7 @@
-#include "ui/models/LogFilterProxy.h"
+#include "ui/models/LogFilterProxy.hpp"
 
-#include "core/Log.h"
-#include "ui/models/LogModel.h"
+#include "core/Log.hpp"
+#include "ui/models/LogModel.hpp"
 
 namespace neurus
 {

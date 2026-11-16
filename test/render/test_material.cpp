@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "scene/Material.h"
-#include "render/Texture.h"
+#include "scene/Material.hpp"
+#include "render/Texture.hpp"
 
 #include <glm/glm.hpp>
 

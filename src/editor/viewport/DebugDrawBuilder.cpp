@@ -3,13 +3,13 @@
  * @brief Scene debug objects -> DebugDrawList flattening.
  */
 
-#include "editor/viewport/DebugDrawBuilder.h"
+#include "editor/viewport/DebugDrawBuilder.hpp"
 
-#include "scene/DebugLine.h"
-#include "scene/DebugMesh.h"
-#include "scene/DebugPoints.h"
-#include "scene/ObjectID.h"
-#include "scene/Scene.h"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugMesh.hpp"
+#include "scene/DebugPoints.hpp"
+#include "scene/ObjectID.hpp"
+#include "scene/Scene.hpp"
 
 namespace neurus
 {

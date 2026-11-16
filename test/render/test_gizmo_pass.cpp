@@ -24,21 +24,21 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "shared/TestReferenceImage.h"
+#include "shared/TestVulkanShared.hpp"
+#include "shared/TestReferenceImage.hpp"
 
-#include "asset/data/ImageData.h"
-#include "render/Barrier.h"
-#include "render/Image.h"
-#include "render/RenderCache.h"
-#include "core/RenderConfig.h"
-#include "render/RenderContext.h"
-#include "render/passes/GizmoPass.h"
-#include "render/resources/GizmoCache.h"
-#include "scene/Camera.h"
-#include "render/overlay/GizmoDrawList.h"
-#include "render/overlay/OverlayGeometry.h"
-#include "scene/Scene.h"
+#include "asset/data/ImageData.hpp"
+#include "render/Barrier.hpp"
+#include "render/Image.hpp"
+#include "render/RenderCache.hpp"
+#include "core/RenderConfig.hpp"
+#include "render/RenderContext.hpp"
+#include "render/passes/GizmoPass.hpp"
+#include "render/resources/GizmoCache.hpp"
+#include "scene/Camera.hpp"
+#include "render/overlay/GizmoDrawList.hpp"
+#include "render/overlay/OverlayGeometry.hpp"
+#include "scene/Scene.hpp"
 
 #include <glm/glm.hpp>
 
@@ -139,7 +139,7 @@ protected:
 	 * @brief Records the pass over the primed attachments and waits for it.
 	 *
 	 * Takes the payload by *pointer* on purpose: a null pointer is the real signal
-	 * for "no gesture in progress" (GizmoDrawList.h), and it is a distinct code path
+	 * for "no gesture in progress" (GizmoDrawList.hpp), and it is a distinct code path
 	 * from an empty list. The cache update is guarded the same way
 	 * DeferredRenderer::recordFrame() guards it, so a null payload leaves GizmoCache
 	 * untouched — which is what lets a test prove the early-out happens before the

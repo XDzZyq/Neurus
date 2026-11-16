@@ -1,8 +1,8 @@
-#include "GPUBuffer.h"
+#include "GPUBuffer.hpp"
 
-#include "render/Barrier.h"
-#include "render/SharedQueue.h"
-#include "core/Log.h"
+#include "render/Barrier.hpp"
+#include "render/SharedQueue.hpp"
+#include "core/Log.hpp"
 
 #include <stdexcept>
 #include <cstring>

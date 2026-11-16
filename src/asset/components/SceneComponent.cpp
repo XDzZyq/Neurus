@@ -1,8 +1,8 @@
-#include "asset/components/SceneComponent.h"
-#include "core/Log.h"
-#include "core/ResourceManager.h"
-#include "scene/Camera.h"
-#include "scene/Scene.h"
+#include "asset/components/SceneComponent.hpp"
+#include "core/Log.hpp"
+#include "core/ResourceManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
 
 namespace neurus::project
 {

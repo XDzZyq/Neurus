@@ -1,6 +1,6 @@
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/buffers/ArrayBuffer.h"
+#include "render/buffers/ArrayBuffer.hpp"
 
 #include <cstring>
 #include <stdexcept>

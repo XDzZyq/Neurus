@@ -4,7 +4,7 @@ Scene objects are Vulkan-free logical objects that carry identity through `Objec
 
 ## ObjectID base
 
-`ObjectID` (`scene/ObjectID.h`) extends the core `UID` with the metadata every scene object shares:
+`ObjectID` (`scene/ObjectID.hpp`) extends the core `UID` with the metadata every scene object shares:
 
 - `o_name` - display name in the editor UI.
 - `o_type` - a `GOType` tag for runtime type identification; the concrete class fixes it in its constructor.
@@ -40,18 +40,18 @@ Every scene object inherits `ObjectID`, and every spatially placed one also inhe
 
 | Class | GOType | Source | Notes |
 |---|---|---|---|
-| `Camera` | `GO_CAM` | `scene/Camera.h` | View and projection matrices; perspective only for now; `cam_tar` look-at target |
-| `Mesh` | `GO_MESH` | `scene/Mesh.h` | Renderable geometry referencing pooled `MeshData` and a `Shader`; owns a `Material` |
-| `Light` | `GO_LIGHT` | `scene/Light.h` | Point/sun/spot/area via `LightType` (`NONELIGHT` default) |
-| `Environment` | `GO_ENVIR` | `scene/Environment.h` | IBL environment wrapping pooled `ImageData`; intensity and Y-axis rotation |
-| `Sprite` | `GO_SPRITE` | `scene/Sprite.h` | Billboard icon marker; type-to-path resolution; holds a `Texture` reference |
-| `DebugLine` | `GO_DL` | `scene/DebugLine.h` | Retained segment list; see [Debug Objects](debug-objects.md) |
-| `DebugPoints` | `GO_DP` | `scene/DebugPoints.h` | Retained point list; see [Debug Objects](debug-objects.md) |
-| `DebugMesh` | `GO_DM` | `scene/DebugMesh.h` | Retained wireframe over pooled geometry; see [Debug Objects](debug-objects.md) |
+| `Camera` | `GO_CAM` | `scene/Camera.hpp` | View and projection matrices; perspective only for now; `cam_tar` look-at target |
+| `Mesh` | `GO_MESH` | `scene/Mesh.hpp` | Renderable geometry referencing pooled `MeshData` and a `Shader`; owns a `Material` |
+| `Light` | `GO_LIGHT` | `scene/Light.hpp` | Point/sun/spot/area via `LightType` (`NONELIGHT` default) |
+| `Environment` | `GO_ENVIR` | `scene/Environment.hpp` | IBL environment wrapping pooled `ImageData`; intensity and Y-axis rotation |
+| `Sprite` | `GO_SPRITE` | `scene/Sprite.hpp` | Billboard icon marker; type-to-path resolution; holds a `Texture` reference |
+| `DebugLine` | `GO_DL` | `scene/DebugLine.hpp` | Retained segment list; see [Debug Objects](debug-objects.md) |
+| `DebugPoints` | `GO_DP` | `scene/DebugPoints.hpp` | Retained point list; see [Debug Objects](debug-objects.md) |
+| `DebugMesh` | `GO_DM` | `scene/DebugMesh.hpp` | Retained wireframe over pooled geometry; see [Debug Objects](debug-objects.md) |
 
 `Light` uses the `LightType` enum (`NONELIGHT`, `POINTLIGHT`, `SUNLIGHT`, `SPOTLIGHT`, `AREALIGHT`) and also carries static `constexpr` shadow parameters (near/far planes, blur ranges, sun field size) that are compile-time constants and are not serialized.
 
-`Material` (`scene/Material.h`) is not an `ObjectID`; it is a surface descriptor referenced by `Mesh`, holding PBR parameters (`MAT_ALBEDO`, `MAT_METAL`, `MAT_ROUGH`, and so on) each of which may be a float, a color or a `Texture`.
+`Material` (`scene/Material.hpp`) is not an `ObjectID`; it is a surface descriptor referenced by `Mesh`, holding PBR parameters (`MAT_ALBEDO`, `MAT_METAL`, `MAT_ROUGH`, and so on) each of which may be a float, a color or a `Texture`.
 
 `Sprite` is the only scene object whose `GetTransform()` returns null; it is the case that exercises `PropertyPanel`'s null-transform path.
 
@@ -59,7 +59,7 @@ Conventionally only one `Environment` is active per scene.
 
 ## Scene container
 
-`Scene` (`scene/Scene.h`) inherits `UID` and aggregates every object:
+`Scene` (`scene/Scene.hpp`) inherits `UID` and aggregates every object:
 
 - Each category has a typed `ResPool` (`cam_list`, `mesh_list`, ...) and a master `obj_list` holds all `ObjectID` instances for global lookup. `Resource<T>` and `ResPool<T>` are defined in [UID and Resources](../core/uid-and-resources.md).
 - Active objects (camera, environment) are cached for fast access during rendering.

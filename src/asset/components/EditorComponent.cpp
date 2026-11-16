@@ -3,11 +3,11 @@
  * @brief Editor viewport view-state (viewport camera UID) persistence.
  */
 
-#include "asset/components/EditorComponent.h"
+#include "asset/components/EditorComponent.hpp"
 
-#include "core/Log.h"
-#include "core/Serialize.h"
-#include "editor/viewport/EditorViewport.h"
+#include "core/Log.hpp"
+#include "core/Serialize.hpp"
+#include "editor/viewport/EditorViewport.hpp"
 
 namespace neurus::project
 {

@@ -32,7 +32,7 @@ TEST(ScriptIsolation, NoRendererOrUiIncludes)
 		}
 
 		const std::string ext = entry.path().extension().string();
-		if (ext != ".h" && ext != ".cpp")
+		if (ext != ".hpp" && ext != ".cpp")
 		{
 			continue;
 		}
@@ -48,7 +48,7 @@ TEST(ScriptIsolation, NoRendererOrUiIncludes)
 				continue;
 			}
 			if (line.find("render/") != std::string::npos || line.find("ui/") != std::string::npos
-			    || line.find("editor/Editor.h") != std::string::npos)
+			    || line.find("editor/Editor.hpp") != std::string::npos)
 			{
 				violations.push_back(entry.path().filename().string() + ":" + std::to_string(lineNo) + ": " + line);
 			}

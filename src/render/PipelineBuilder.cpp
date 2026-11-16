@@ -1,6 +1,6 @@
-#include "PipelineBuilder.h"
+#include "PipelineBuilder.hpp"
 
-#include "buffers/BufferLayout.h"
+#include "buffers/BufferLayout.hpp"
 
 #include <stdexcept>
 

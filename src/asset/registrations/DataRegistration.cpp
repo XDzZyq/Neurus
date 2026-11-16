@@ -9,9 +9,9 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/polymorphic.hpp>
 
-#include "asset/data/ImageData.h"
-#include "asset/data/MeshData.h"
-#include "core/UID.h"
+#include "asset/data/ImageData.hpp"
+#include "asset/data/MeshData.hpp"
+#include "core/UID.hpp"
 
 // --- Derived data-resource registration ---
 CEREAL_REGISTER_TYPE(neurus::MeshData)

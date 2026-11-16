@@ -3,9 +3,9 @@
  * @brief Implementation of TimelineSemaphore.
  */
 
-#include "TimelineSemaphore.h"
+#include "TimelineSemaphore.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <cstdint>
 #include <stdexcept>

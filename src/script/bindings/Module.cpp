@@ -20,8 +20,8 @@
 
 #include <pybind11/embed.h>
 
-#include "script/ScriptView.h"
-#include "script/bindings/Bindings.h"
+#include "script/ScriptView.hpp"
+#include "script/bindings/Bindings.hpp"
 
 namespace py = pybind11;
 

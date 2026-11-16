@@ -1,32 +1,32 @@
 # src/render/passes/CMakeLists.txt - Render Pass Library
 
 add_library(neurus_render_passes STATIC
-	ComposePass.h
+	ComposePass.hpp
 	ComposePass.cpp
-	ComputePass.h
-	DebugPass.h
+	ComputePass.hpp
+	DebugPass.hpp
 	DebugPass.cpp
-	FXAAPass.h
+	FXAAPass.hpp
 	FXAAPass.cpp
-	GeometryPass.h
+	GeometryPass.hpp
 	GeometryPass.cpp
-	GizmoPass.h
+	GizmoPass.hpp
 	GizmoPass.cpp
-	IBLPass.h
+	IBLPass.hpp
 	IBLPass.cpp
-	LightingPass.h
+	LightingPass.hpp
 	LightingPass.cpp
-	Pass.h
+	Pass.hpp
 	Pass.cpp
-	SelectionOutlinePass.h
+	SelectionOutlinePass.hpp
 	SelectionOutlinePass.cpp
-	ShadowDepthPass.h
+	ShadowDepthPass.hpp
 	ShadowDepthPass.cpp
-	ShadowIntensityPass.h
+	ShadowIntensityPass.hpp
 	ShadowIntensityPass.cpp
-	SSAOPass.h
+	SSAOPass.hpp
 	SSAOPass.cpp
-	SyncObjects.h
+	SyncObjects.hpp
 )
 
 target_link_libraries(neurus_render_passes PUBLIC

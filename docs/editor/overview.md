@@ -21,8 +21,8 @@ enum value is added only together with its consumer.
 ### Context provisioning
 
 The frame's context is two views over the same document state - `RenderContext`
-(`src/render/RenderContext.h`) for the Renderer and `UIContext`
-(`src/ui/UIContext.h`) for the UI - and the Editor is the single producer of
+(`src/render/RenderContext.hpp`) for the Renderer and `UIContext`
+(`src/ui/UIContext.hpp`) for the UI - and the Editor is the single producer of
 both. It fills them and the other layers read. See
 [RenderContext and UIContext](#rendercontext-and-uicontext).
 
@@ -136,20 +136,20 @@ The frame's context is two views over the same document state, each produced by
 the Editor. The renderer's view is an owned copy of the frame; the UI's view is a
 pair of borrowed pointers.
 
-```cpp title="src/editor/Editor.h"
+```cpp title="src/editor/Editor.hpp"
 RenderFrameSnapshot BuildSnapshot() const;  // the whole renderer-facing frame, by value
 void UpdateUIContext(UIContext& ctx) const; // scene, config
 ```
 
 `UIContext` is forward-declared, so that half of the header pulls in nothing; but
-`BuildSnapshot()` returns a `RenderFrameSnapshot` by value, so `Editor.h` does
-include `render/RenderFrameSnapshot.h` for the complete type.
+`BuildSnapshot()` returns a `RenderFrameSnapshot` by value, so `Editor.hpp` does
+include `render/RenderFrameSnapshot.hpp` for the complete type.
 
 `RenderContext` is the renderer's view, and it has two writers. The Editor
 publishes one owned frame snapshot; `DeferredRenderer::recordFrame()` stamps the
 frame half. Every field carries a banner naming the half that fills it.
 
-```cpp title="src/render/RenderContext.h"
+```cpp title="src/render/RenderContext.hpp"
 struct RenderContext
 {
     // Editor half - the owned frame published by Editor::BuildSnapshot()
@@ -167,7 +167,7 @@ struct RenderContext
 };
 ```
 
-`RenderFrameSnapshot` (`src/render/RenderFrameSnapshot.h`) is an owned deep copy
+`RenderFrameSnapshot` (`src/render/RenderFrameSnapshot.hpp`) is an owned deep copy
 of the frame - values only, no Scene pointers and no lazy reads. It carries
 `config`, a `CameraSnapshot camera` (`view`/`projection`/`position`/`target`),
 `meshes` and `lights` ordered by UID, `environmentId`, `activeObjectId`, and the
@@ -182,7 +182,7 @@ pointer's `Settings()` used to provide, so no pass tests a pointer.
 `UIContext` is the UI's view, two Editor-owned fields wide, plus the
 Application's frame-scoped half:
 
-```cpp title="src/ui/UIContext.h"
+```cpp title="src/ui/UIContext.hpp"
 struct UIContext
 {
     // Editor half - assigned by Editor::UpdateUIContext()
@@ -226,7 +226,7 @@ Design:
   an owned copy can. `BuildSnapshot()` resolves every scene object to the stable
   UID the renderer's caches are keyed by and copies every matrix and parameter by
   value, so nothing in the frame dereferences the Scene after it is built (see
-  `render/RenderFrameSnapshot.h`).
+  `render/RenderFrameSnapshot.hpp`).
 - `UpdateUIContext()` assigns fields only and must never call a `UIContext`
   method: it runs in `neurus_editor`, which does not link `neurus_ui` (that
   library links this one), so a symbol defined there would not resolve. The
@@ -236,7 +236,7 @@ Design:
   not scene data" a property of the type rather than a convention.
 - **The fallback is one value, reached two ways.** `UIContext::Settings()` is
   never null: with no published config it returns `DefaultRenderConfig()`
-  (`src/core/RenderConfig.h`), which *is* `RenderConfig`'s in-class member
+  (`src/core/RenderConfig.hpp`), which *is* `RenderConfig`'s in-class member
   initializers rather than a second copy of them. On the render side the frame's
   `config` is a value, default-constructed when nothing was published - and a
   default-constructed `RenderConfig` *is* that same `DefaultRenderConfig()` value

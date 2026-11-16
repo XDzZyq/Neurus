@@ -1,6 +1,6 @@
-#include "Buffer.h"
+#include "Buffer.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <stdexcept>
 #include <cstring>

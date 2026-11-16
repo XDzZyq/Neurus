@@ -1,4 +1,4 @@
-#include "utils/CodeHighlighter.h"
+#include "utils/CodeHighlighter.hpp"
 
 namespace neurus {
 

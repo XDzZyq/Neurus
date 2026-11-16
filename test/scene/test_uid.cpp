@@ -11,8 +11,8 @@
  */
 
 #include <gtest/gtest.h>
-#include <core/UID.h>
-#include <scene/ObjectID.h>
+#include <core/UID.hpp>
+#include <scene/ObjectID.hpp>
 
 // --- ObjectID Tests ------------------------------------------------------
 

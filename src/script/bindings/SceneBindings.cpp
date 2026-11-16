@@ -26,21 +26,21 @@
 #include <utility>
 #include <vector>
 
-#include "core/IResourceLookup.h"
-#include "editor/Input.h"
-#include "editor/events/SceneEvents.h"
-#include "scene/Camera.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/ObjectID.h"
-#include "scene/Scene.h"
-#include "script/ScriptContext.h"
-#include "script/bindings/Bindings.h"
-#include "script/proxies/ObjectProxy.h"
-#include "script/proxies/ProxyBase.h"
-#include "script/proxies/SceneProxies.h"
-#include "script/proxies/Transform3DProxy.h"
+#include "core/IResourceLookup.hpp"
+#include "editor/Input.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/ObjectID.hpp"
+#include "scene/Scene.hpp"
+#include "script/ScriptContext.hpp"
+#include "script/bindings/Bindings.hpp"
+#include "script/proxies/ObjectProxy.hpp"
+#include "script/proxies/ProxyBase.hpp"
+#include "script/proxies/SceneProxies.hpp"
+#include "script/proxies/Transform3DProxy.hpp"
 
 namespace py = pybind11;
 

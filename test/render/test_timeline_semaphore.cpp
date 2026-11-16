@@ -24,9 +24,9 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/TimelineSemaphore.h"
+#include "render/TimelineSemaphore.hpp"
 
 #include <cstdint>
 

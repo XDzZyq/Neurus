@@ -190,13 +190,13 @@ endif()
 
 	message(STATUS "Neurus scripting: Python ${Python_VERSION} (base: ${NEURUS_PYTHON_HOME})")
 
-	# Generated home for the embedded interpreter (see ScriptEngineImpl.h).
+	# Generated home for the embedded interpreter (see ScriptEngineImpl.hpp).
 	file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated/script")
 	# Normalize the environment path so it is a valid C string literal.
 	file(TO_CMAKE_PATH "${NEURUS_PYTHON_ENV}" NEURUS_PYTHON_ENV_STR)
 	configure_file(
-		"${CMAKE_SOURCE_DIR}/src/script/neurus_python_config.h.in"
-		"${CMAKE_BINARY_DIR}/generated/script/neurus_python_config.h"
+		"${CMAKE_SOURCE_DIR}/src/script/neurus_python_config.hpp.in"
+		"${CMAKE_BINARY_DIR}/generated/script/neurus_python_config.hpp"
 		@ONLY
 	)
 

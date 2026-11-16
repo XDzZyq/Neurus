@@ -21,26 +21,26 @@
 #include <sstream>
 #include <string>
 
-#include "asset/Project.h"
-#include "asset/components/SceneComponent.h"
-#include "asset/components/ResourceComponent.h"
-#include "asset/components/ConfigComponent.h"
-#include "core/ResourceManager.h"
-#include "core/RenderConfig.h"
-#include "scene/Camera.h"
-#include "scene/DebugLine.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "asset/data/ImageData.h"
-#include "asset/data/MeshData.h"
-#include "render/shaders/RenderShader.h"
+#include "asset/Project.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/ConfigComponent.hpp"
+#include "core/ResourceManager.hpp"
+#include "core/RenderConfig.hpp"
+#include "scene/Camera.hpp"
+#include "scene/DebugLine.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "asset/data/ImageData.hpp"
+#include "asset/data/MeshData.hpp"
+#include "render/shaders/RenderShader.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
-#include "scene/registrations/TypeRegistration.h"
-#include "asset/registrations/DataRegistration.h"
-#include "render/registrations/ShaderRegistration.h"
+#include "scene/registrations/TypeRegistration.hpp"
+#include "asset/registrations/DataRegistration.hpp"
+#include "render/registrations/ShaderRegistration.hpp"
 
 using namespace neurus;
 

@@ -23,10 +23,10 @@
 
 #include <vector>
 
-#include "scene/ObjectID.h"
-#include "ui/items/ColorButton.h"
-#include "ui/items/ScalarSlider.h"
-#include "ui/presets/DebugProperties.h"
+#include "scene/ObjectID.hpp"
+#include "ui/items/ColorButton.hpp"
+#include "ui/items/ScalarSlider.hpp"
+#include "ui/presets/DebugProperties.hpp"
 
 // QSignalSpy stores each argument as a QVariant, so the two non-Qt payload types
 // the preset emits need a metatype before a spy can read them back.

@@ -25,31 +25,31 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
-#include "shared/TestMultiShadow.h"
+#include "shared/TestVulkanShared.hpp"
+#include "shared/TestMultiShadow.hpp"
 
-#include "render/shaders/ComputeShader.h"
-#include "render/shaders/RenderShader.h"
+#include "render/shaders/ComputeShader.hpp"
+#include "render/shaders/RenderShader.hpp"
 
 // --- Render layer ---
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/passes/ShadowDepthPass.h"
-#include "render/passes/ShadowIntensityPass.h"
-#include "render/passes/GeometryPass.h"
-#include "render/Image.h"
-#include "render/Barrier.h"
-#include "asset/data/ImageData.h"
-#include "core/Log.h"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/passes/ShadowDepthPass.hpp"
+#include "render/passes/ShadowIntensityPass.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/Image.hpp"
+#include "render/Barrier.hpp"
+#include "asset/data/ImageData.hpp"
+#include "core/Log.hpp"
 
 // --- Scene layer ---
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Scene.h"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Scene.hpp"
 
 
 
-#include "shared/TestReferenceImage.h"
+#include "shared/TestReferenceImage.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

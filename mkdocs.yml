@@ -159,7 +159,7 @@ plugins:
           src-dirs: src/
           full-doc: True
           doxy-cfg:
-            FILE_PATTERNS: "*.cpp *.h*"
+            FILE_PATTERNS: "*.cpp *.hpp"
             RECURSIVE: True
             GENERATE_XML: True
             EXTRACT_ALL: True

@@ -10,14 +10,14 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/DeferredRenderer.h"
-#include "render/SharedQueue.h"
-#include "render/UploadManager.h"
-#include "render/resources/LightingCache.h"
-#include "scene/Camera.h"
-#include "scene/Scene.h"
+#include "render/DeferredRenderer.hpp"
+#include "render/SharedQueue.hpp"
+#include "render/UploadManager.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Scene.hpp"
 
 #include <cstdint>
 #include <filesystem>

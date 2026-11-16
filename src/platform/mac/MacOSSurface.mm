@@ -1,4 +1,4 @@
-#include "platform/PlatformSurface.h"
+#include "platform/PlatformSurface.hpp"
 
 #import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>

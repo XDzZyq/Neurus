@@ -3,7 +3,7 @@
  * @brief A frame recorded before a scene exists must record nothing, not crash.
  *
  * RenderContext's null policy says `scene` must be checked (see
- * render/RenderContext.h). Two passes used to ignore that: LightingPass read
+ * render/RenderContext.hpp). Two passes used to ignore that: LightingPass read
  * `scene->light_list` / `env_list` and SelectionOutlinePass read
  * `scene->selections` with no guard at all, so any frame recorded before the
  * Editor published a scene dereferenced null. This file pins the fix.
@@ -28,19 +28,19 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/RenderFrameSnapshot.h"
-#include "render/resources/LightingCache.h"
-#include "render/passes/GeometryPass.h"
-#include "render/passes/LightingPass.h"
-#include "render/passes/SelectionOutlinePass.h"
-#include "render/passes/ShadowDepthPass.h"
-#include "render/passes/ShadowIntensityPass.h"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/RenderFrameSnapshot.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/passes/LightingPass.hpp"
+#include "render/passes/SelectionOutlinePass.hpp"
+#include "render/passes/ShadowDepthPass.hpp"
+#include "render/passes/ShadowIntensityPass.hpp"
 
-#include "core/RenderConfig.h"
+#include "core/RenderConfig.hpp"
 
 
 #include <memory>
@@ -192,7 +192,7 @@ TEST_F(NullScenePassTest, ShadowIntensityPassRecordsNothingWithoutAScene)
 // Frame().Settings(): the null-config half of the same policy
 // ---------------------------------------------------------------------------
 
-// The fallback now lives once, in core/RenderConfig.h's DefaultRenderConfig(),
+// The fallback now lives once, in core/RenderConfig.hpp's DefaultRenderConfig(),
 // reached through RenderContext::Frame(): an unpublished context reads the empty
 // frame, whose Settings() is a default-constructed RenderConfig. This is the
 // pass-side half of the guard; test_ui_context.cpp pins the panel side and the

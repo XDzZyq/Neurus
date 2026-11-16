@@ -3,23 +3,23 @@
  * @brief PBR lighting pass implementation.
  */
 
-#include "passes/LightingPass.h"
+#include "passes/LightingPass.hpp"
 
-#include "../PipelineBuilder.h"
-#include "RenderCache.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "Image.h"
-#include "render/Barrier.h"
-#include "core/RenderConfig.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/ComputeShader.h"
-#include "Texture.h"
+#include "../PipelineBuilder.hpp"
+#include "RenderCache.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "Image.hpp"
+#include "render/Barrier.hpp"
+#include "core/RenderConfig.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/ComputeShader.hpp"
+#include "Texture.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
-#include "scene/Light.h"
-#include "scene/Scene.h"
+#include "scene/Light.hpp"
+#include "scene/Scene.hpp"
 
 #include <array>
 #include <cstdint>
@@ -43,7 +43,7 @@ LightingPass::LightingPass(const vk::raii::Device& device,
 	// --- Self-load compute shader via ShaderLibrary ---
 	, p_shader(
 		ShaderLibrary::LoadComputeShader("pbr_lighting",
-		                                  "res/shaders/compute/pbr_lighting.comp"))
+		                                  "res/shaders/compute/pbr_lighting.comp.glsl"))
 {
 	BuildPipeline(device, "LightingPass");
 

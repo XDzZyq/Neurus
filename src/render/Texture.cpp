@@ -1,10 +1,10 @@
-#include "Texture.h"
-#include "buffers/StagingBuffer.h"
-#include "asset/data/ImageData.h"
-#include "render/Barrier.h"
-#include "render/SharedQueue.h"
+#include "Texture.hpp"
+#include "buffers/StagingBuffer.hpp"
+#include "asset/data/ImageData.hpp"
+#include "render/Barrier.hpp"
+#include "render/SharedQueue.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <stb_image.h>
 

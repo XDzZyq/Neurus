@@ -12,21 +12,21 @@
  * also what makes the guide geometry appear, follow the cursor and disappear.
  */
 
-#include "editor/controllers/TransformGizmoController.h"
+#include "editor/controllers/TransformGizmoController.hpp"
 
 #include <memory>
 
-#include "editor/controllers/MutationNotify.h"
-#include "editor/events/EditorEvents.h"
-#include "editor/events/GizmoEvents.h"
-#include "editor/events/InputEvents.h"
-#include "editor/operations/SceneOperations.h"
-#include "editor/viewport/EditorViewport.h"
-#include "editor/viewport/TransformGizmo.h"
+#include "editor/controllers/MutationNotify.hpp"
+#include "editor/events/EditorEvents.hpp"
+#include "editor/events/GizmoEvents.hpp"
+#include "editor/events/InputEvents.hpp"
+#include "editor/operations/SceneOperations.hpp"
+#include "editor/viewport/EditorViewport.hpp"
+#include "editor/viewport/TransformGizmo.hpp"
 
-#include "scene/ObjectID.h"
-#include "scene/Scene.h"
-#include "scene/Transform.h"
+#include "scene/ObjectID.hpp"
+#include "scene/Scene.hpp"
+#include "scene/Transform.hpp"
 
 namespace {
 

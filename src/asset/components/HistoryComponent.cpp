@@ -3,7 +3,7 @@
  * @brief Undo/redo stack (de)serialization for project persistence.
  */
 
-#include "asset/components/HistoryComponent.h"
+#include "asset/components/HistoryComponent.hpp"
 
 #include <memory>
 #include <vector>
@@ -12,10 +12,10 @@
 #include <cereal/types/polymorphic.hpp>
 #include <cereal/types/vector.hpp>
 
-#include "core/Log.h"
-#include "editor/operations/Operation.h"
-#include "editor/operations/OperationManager.h"
-#include "editor/operations/registrations/OperationRegistration.h"
+#include "core/Log.hpp"
+#include "editor/operations/Operation.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "editor/operations/registrations/OperationRegistration.hpp"
 
 namespace neurus::project
 {

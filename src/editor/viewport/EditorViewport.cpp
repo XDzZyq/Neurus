@@ -6,18 +6,18 @@
  * wrong silently - see ClipBoxEdges below.
  */
 
-#include "editor/viewport/EditorViewport.h"
+#include "editor/viewport/EditorViewport.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 
-#include "core/Log.h"
-#include "core/ResourceManager.h"
-#include "scene/Camera.h"
-#include "scene/ObjectID.h"
-#include "scene/Scene.h"
-#include "scene/Transform.h"
+#include "core/Log.hpp"
+#include "core/ResourceManager.hpp"
+#include "scene/Camera.hpp"
+#include "scene/ObjectID.hpp"
+#include "scene/Scene.hpp"
+#include "scene/Transform.hpp"
 
 namespace neurus
 {

@@ -1,4 +1,4 @@
-#include "ui/utils/POCatalog.h"
+#include "ui/utils/POCatalog.hpp"
 
 #include <QStringList>
 

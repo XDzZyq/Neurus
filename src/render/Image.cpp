@@ -1,9 +1,9 @@
-#include "Image.h"
-#include "Barrier.h"
-#include "buffers/StagingBuffer.h"
-#include "asset/PixelFormat.h"
+#include "Image.hpp"
+#include "Barrier.hpp"
+#include "buffers/StagingBuffer.hpp"
+#include "asset/PixelFormat.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <stdexcept>
 #include <algorithm>

@@ -19,7 +19,7 @@ source-file encoding and shader assets.
 
 ## Debug Printing (Karpathy Guidelines)
 
-Use the `NEURUS_LOG` / `NEURUS_ERR` macros from `core/Log.h` - they
+Use the `NEURUS_LOG` / `NEURUS_ERR` macros from `core/Log.hpp` - they
 automatically inject a `[func:line]` prefix for traceability:
 
 ```cpp

@@ -3,17 +3,17 @@
  * @brief Debug overlay raster pass implementation.
  */
 
-#include "passes/DebugPass.h"
+#include "passes/DebugPass.hpp"
 
-#include "RenderCache.h"
-#include "RenderContext.h"
-#include "render/Barrier.h"
-#include "shaders/ShaderLibrary.h"
-#include "core/Log.h"
+#include "RenderCache.hpp"
+#include "RenderContext.hpp"
+#include "render/Barrier.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "core/Log.hpp"
 
-#include "../resources/MeshGPU.h"
-#include "RenderFrameSnapshot.h"
-#include "render/overlay/DebugDrawList.h"
+#include "../resources/MeshGPU.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "render/overlay/DebugDrawList.hpp"
 
 #include <algorithm>
 #include <array>
@@ -24,7 +24,7 @@ namespace neurus {
 
 namespace {
 
-/// @brief Vertices emitted per segment by overlay_line.vert (two triangles).
+/// @brief Vertices emitted per segment by overlay_line.vert.glsl (two triangles).
 constexpr uint32_t kVerticesPerSegment = 6;
 
 } // namespace
@@ -44,14 +44,14 @@ DebugPass::DebugPass(const vk::raii::Device& device,
 	// The label is only a log tag - ShaderLibrary does not cache by it - so it
 	// names the consumer, not the file.
 	, p_lineShader(ShaderLibrary::LoadRenderShader("DebugLine",
-	                                               NEURUS_SHADER_DIR "render/overlay_line.vert",
-	                                               NEURUS_SHADER_DIR "render/overlay_line.frag"))
+	                                               NEURUS_SHADER_DIR "render/overlay_line.vert.glsl",
+	                                               NEURUS_SHADER_DIR "render/overlay_line.frag.glsl"))
 	, p_pointShader(ShaderLibrary::LoadRenderShader("DebugPoint",
-	                                                NEURUS_SHADER_DIR "render/overlay_point.vert",
-	                                                NEURUS_SHADER_DIR "render/overlay_point.frag"))
+	                                                NEURUS_SHADER_DIR "render/overlay_point.vert.glsl",
+	                                                NEURUS_SHADER_DIR "render/overlay_point.frag.glsl"))
 	, p_wireShader(ShaderLibrary::LoadRenderShader("DebugWire",
-	                                               NEURUS_SHADER_DIR "render/debug_wire.vert",
-	                                               NEURUS_SHADER_DIR "render/debug_wire.frag"))
+	                                               NEURUS_SHADER_DIR "render/debug_wire.vert.glsl",
+	                                               NEURUS_SHADER_DIR "render/debug_wire.frag.glsl"))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;

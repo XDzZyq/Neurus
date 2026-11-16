@@ -3,9 +3,9 @@
  * @brief Implementation of Environment - CPU-only IBL environment map source.
  */
 
-#include "scene/Environment.h"
-#include "asset/data/ImageData.h"
-#include "core/Log.h"
+#include "scene/Environment.hpp"
+#include "asset/data/ImageData.hpp"
+#include "core/Log.hpp"
 
 namespace neurus
 {

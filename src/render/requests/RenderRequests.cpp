@@ -3,9 +3,9 @@
  * @brief Snapshot helpers for the render-request value types.
  */
 
-#include "RenderRequests.h"
+#include "RenderRequests.hpp"
 
-#include "asset/data/ShaderData.h"
+#include "asset/data/ShaderData.hpp"
 
 namespace neurus {
 

@@ -1,6 +1,6 @@
-#include "ShaderCompiler.h"
+#include "ShaderCompiler.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 namespace neurus {
 

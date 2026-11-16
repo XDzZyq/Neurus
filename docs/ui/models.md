@@ -4,7 +4,7 @@ Qt model/view helpers live in `src/ui/models/` (`QAbstractItemModel` subclasses)
 
 ## ShaderStructModel
 
-`ShaderStructModel` (`src/ui/models/ShaderStructModel.h`) is a `QAbstractItemModel` tree for the `ShaderStruct` IR, with a 3-level structure: section headers -> field/struct nodes -> struct members.
+`ShaderStructModel` (`src/ui/models/ShaderStructModel.hpp`) is a `QAbstractItemModel` tree for the `ShaderStruct` IR, with a 3-level structure: section headers -> field/struct nodes -> struct members.
 
 - The model is read-only; `setData()` edits emit a `fieldEdited(section, fieldIndex, subFieldIndex, field, value)` signal so the editor controller can mutate the underlying `ShaderStruct` and refresh.
 - `setShaderStruct(const ShaderStruct*)` rebuilds the entire tree.
@@ -15,7 +15,7 @@ Used by the `ShaderEditorPanel` structure mode. See [Panels](panels.md#shaderedi
 
 ## LogModel
 
-`LogModel` (`src/ui/models/LogModel.h`) is a read-only `QAbstractListModel` over the core `LogBuffer`, feeding the virtualized `QListView` in the `LogPanel`. Row `r` is the entry with seq `firstSeq + r`, read through `LogBuffer::BySeq`. `Refresh(buffer)` takes one `Snapshot()` and resyncs the model:
+`LogModel` (`src/ui/models/LogModel.hpp`) is a read-only `QAbstractListModel` over the core `LogBuffer`, feeding the virtualized `QListView` in the `LogPanel`. Row `r` is the entry with seq `firstSeq + r`, read through `LogBuffer::BySeq`. `Refresh(buffer)` takes one `Snapshot()` and resyncs the model:
 
 - Entries the ring evicted -> `beginRemoveRows` from the front, preserving scroll position.
 - New entries -> `beginInsertRows` at the end.
@@ -27,7 +27,7 @@ Qt only calls `data()` for visible rows, so a 10k-entry buffer costs roughly 50 
 
 ## LogFilterProxy
 
-`LogFilterProxy` (`src/ui/models/LogFilterProxy.h`) is a `QSortFilterProxyModel` between `LogModel` and the `LogPanel`'s `QListView`:
+`LogFilterProxy` (`src/ui/models/LogFilterProxy.hpp`) is a `QSortFilterProxyModel` between `LogModel` and the `LogPanel`'s `QListView`:
 
 - `setLevelFilter(LevelFilter)` selects `All`, `InfoOnly` or `ErrorsOnly`.
 - `setSearchText(QString)` sets a case-insensitive substring search (empty = off).
@@ -35,7 +35,7 @@ Qt only calls `data()` for visible rows, so a 10k-entry buffer costs roughly 50 
 
 ## ShaderFieldDelegate
 
-`ShaderFieldDelegate` (`src/ui/delegates/ShaderFieldDelegate.h`) is a `QStyledItemDelegate` for editing shader struct fields in the tree:
+`ShaderFieldDelegate` (`src/ui/delegates/ShaderFieldDelegate.hpp`) is a `QStyledItemDelegate` for editing shader struct fields in the tree:
 
 - `createEditor()` renders a `QComboBox` for type columns and a `QLineEdit` for name columns; section headers are not editable.
 - Section header and struct-definition rows are first-column spanned; the delegate paints a "+" button at the right edge of that spanned cell and emits `addClicked(index)` on a left click there - a plain-delegate control, so the tree keeps **no** per-row index widgets (those fought with the frequent model resets and macOS accessibility, causing input loss after clicking "+").
@@ -43,7 +43,7 @@ Qt only calls `data()` for visible rows, so a 10k-entry buffer costs roughly 50 
 
 ## LogDelegate
 
-`LogDelegate` (`src/ui/delegates/LogDelegate.h`) is the `QStyledItemDelegate` for the `LogPanel`'s `QListView`. It paints each row as `HH:MM:SS.mmm  [func:line]  message` in a fixed-width font, colored by severity (red `#d32f2f` for errors, dark gray `#303030` for info) while keeping selection and hover backgrounds. `setSourcePad(chars)` sets the monospace column width used to right-justify the `[func:line]` source field so message text starts at the same X on every row.
+`LogDelegate` (`src/ui/delegates/LogDelegate.hpp`) is the `QStyledItemDelegate` for the `LogPanel`'s `QListView`. It paints each row as `HH:MM:SS.mmm  [func:line]  message` in a fixed-width font, colored by severity (red `#d32f2f` for errors, dark gray `#303030` for info) while keeping selection and hover backgrounds. `setSourcePad(chars)` sets the monospace column width used to right-justify the `[func:line]` source field so message text starts at the same X on every row.
 
 ## Retranslation
 

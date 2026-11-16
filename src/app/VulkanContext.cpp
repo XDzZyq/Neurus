@@ -1,7 +1,7 @@
-#include "VulkanContext.h"
+#include "VulkanContext.hpp"
 
-#include "core/Log.h"
-#include "platform/PlatformSurface.h"
+#include "core/Log.hpp"
+#include "platform/PlatformSurface.hpp"
 
 #include <stdexcept>
 #include <set>

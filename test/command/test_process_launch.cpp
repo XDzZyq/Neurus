@@ -14,8 +14,8 @@
 #include <thread>
 #include <vector>
 
-#include "cli/AppArguments.h"
-#include "platform/PlatformProcess.h"
+#include "cli/AppArguments.hpp"
+#include "platform/PlatformProcess.hpp"
 
 using namespace neurus;
 using namespace neurus::cli;

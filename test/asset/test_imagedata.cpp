@@ -2,8 +2,8 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
-#include "asset/data/ImageData.h"
-#include "asset/PixelFormat.h"
+#include "asset/data/ImageData.hpp"
+#include "asset/PixelFormat.hpp"
 
 #include <vector>
 

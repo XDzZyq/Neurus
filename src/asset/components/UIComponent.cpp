@@ -1,5 +1,5 @@
-#include "asset/components/UIComponent.h"
-#include "core/Log.h"
+#include "asset/components/UIComponent.hpp"
+#include "core/Log.hpp"
 
 namespace neurus::project
 {

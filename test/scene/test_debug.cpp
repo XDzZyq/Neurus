@@ -8,8 +8,8 @@
 
 #include <gtest/gtest.h>
 
-#include "scene/DebugLine.h"
-#include "scene/DebugPoints.h"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugPoints.hpp"
 
 using namespace neurus;
 

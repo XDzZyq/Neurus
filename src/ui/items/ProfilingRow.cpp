@@ -4,7 +4,7 @@
  *        column updates for the Profiling panel.
  */
 
-#include "items/ProfilingRow.h"
+#include "items/ProfilingRow.hpp"
 
 #include <QFont>
 #include <QString>

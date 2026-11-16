@@ -8,11 +8,11 @@
 #include <memory>
 #include <vector>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/DescriptorManager.h"
-#include "render/buffers/StagingBuffer.h"
-#include "app/VulkanContext.h"
+#include "render/DescriptorManager.hpp"
+#include "render/buffers/StagingBuffer.hpp"
+#include "app/VulkanContext.hpp"
 
 using namespace neurus;
 

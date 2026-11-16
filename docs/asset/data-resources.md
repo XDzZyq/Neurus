@@ -8,7 +8,7 @@ The asset layer (`src/asset/`) manages the loading, storing and provision of ext
 
 See [Layers](../architecture/layers.md) and [Ownership](../architecture/ownership.md).
 
-## MeshData (`asset/data/MeshData.h`)
+## MeshData (`asset/data/MeshData.hpp`)
 
 `MeshData` is a pooled resource (`UID` base) holding CPU-side mesh geometry parsed from OBJ files:
 
@@ -22,7 +22,7 @@ See [Layers](../architecture/layers.md) and [Ownership](../architecture/ownershi
 
 The source path lives here, in the data layer - scene objects wrap a `MeshData` and never hold the path themselves.
 
-## ImageData (`asset/data/ImageData.h`)
+## ImageData (`asset/data/ImageData.hpp`)
 
 `ImageData` is a pooled resource (`UID` base) owning raw CPU-side pixels:
 
@@ -38,12 +38,12 @@ The source path lives here, in the data layer - scene objects wrap a `MeshData` 
 
 Like `MeshData`, the source path lives in the data layer.
 
-## ShaderData (`asset/data/ShaderData.h`)
+## ShaderData (`asset/data/ShaderData.hpp`)
 
 `ShaderData` is the pooled CPU-side shader bundle and the UID a script
 addresses. Its supporting IR/unit headers live under `asset/data/shader/`
-(`ShaderStage.h`, `ShaderStruct.h/.cpp`, `ShaderUnit.h`,
-`ShaderStructSerialize.h`); the pooled class itself sits beside `MeshData` and
+(`ShaderStage.hpp`, `ShaderStruct.hpp/.cpp`, `ShaderUnit.hpp`,
+`ShaderStructSerialize.hpp`); the pooled class itself sits beside `MeshData` and
 `ImageData`:
 
 - Holds a name, one `ShaderUnit` per `ShaderType`, the last error message and a
@@ -58,8 +58,8 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
   rebuilt on load. A stage with restored code keeps it; a path-only legacy
   shader re-parses from disk.
 - `ShaderUnit` is a stage value, not a pooled resource. `ShaderStruct` is the
-  parsed GLSL IR; `ShaderStructSerialize.h` provides its cereal overloads.
-- `ShaderStage.h` holds `ShaderType`, `ShaderTypeFromPath` and the default
+  parsed GLSL IR; `ShaderStructSerialize.hpp` provides its cereal overloads.
+- `ShaderStage.hpp` holds `ShaderType`, `ShaderTypeFromPath` and the default
   G-buffer source paths.
 - Pooled shader names are addressed by name (`neurus.data.shaders["Name"]`),
   so `ResourceComponent::Load` re-seeds the registry from `ShaderData::GetName`
@@ -69,7 +69,7 @@ The Script Console exposes the data as `neurus.shader` (stage constants,
 `load_shader`, IR classes), `neurus.data.shaders` (pooled shaders by UID/name)
 and `mesh.shader` (the per-mesh slot). See [Scripting](../script/overview.md#shaders).
 
-## PixelFormat (`asset/PixelFormat.h`)
+## PixelFormat (`asset/PixelFormat.hpp`)
 
 `PixelFormat` is a Vulkan-free enum for CPU-side format queries. Its numeric values deliberately differ from Vulkan's, so do not cast between them; the mapping is by convention:
 
@@ -91,7 +91,7 @@ and `mesh.shader` (the per-mesh slot). See [Scripting](../script/overview.md#sha
 
 Helpers: `PixelByteSize(fmt)`, `ChannelCount(fmt)`, `IsSRGB(fmt)` (`RGBA8S`, `BGRA8S`, `R8S`), `IsHDR(fmt)` (`RGBA32F`, `RGBA16F`; `D32F` is depth, not color HDR), and `IsBGRFormat(fmt)` (`BGRA8U`, `BGRA8S`).
 
-## AssetPath (`asset/data/AssetPath.h`)
+## AssetPath (`asset/data/AssetPath.hpp`)
 
 Asset path resolution keeps project files portable:
 

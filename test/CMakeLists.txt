@@ -4,9 +4,9 @@
 # tests instead of compiling them against a Qt that is not installed.
 set(NEURUS_TEST_SOURCES
 	shared/TestVulkanShared.cpp
-	shared/TestVulkanShared.h
-	shared/TestWindow.h
-	shared/TestMinimalSpv.h
+	shared/TestVulkanShared.hpp
+	shared/TestWindow.hpp
+	shared/TestMinimalSpv.hpp
 	shared/test_main.cpp
 	render/test_arraybuffer.cpp
 	render/test_buffers.cpp

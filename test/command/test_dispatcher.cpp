@@ -8,8 +8,8 @@
 #include <atomic>
 #include <thread>
 
-#include "command/CommandDispatcher.h"
-#include "command/Commands.h"
+#include "command/CommandDispatcher.hpp"
+#include "command/Commands.hpp"
 
 using namespace neurus::command;
 

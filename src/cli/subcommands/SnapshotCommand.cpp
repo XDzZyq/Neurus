@@ -1,8 +1,8 @@
-#include "cli/subcommands/SnapshotCommand.h"
+#include "cli/subcommands/SnapshotCommand.hpp"
 
-#include "cli/CommandClient.h"
-#include "cli/Output.h"
-#include "command/Commands.h"
+#include "cli/CommandClient.hpp"
+#include "cli/Output.hpp"
+#include "command/Commands.hpp"
 
 #include <filesystem>
 #include <iostream>

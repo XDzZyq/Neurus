@@ -1,77 +1,77 @@
 # src/ui/CMakeLists.txt - UI Layer (Qt6 QML)
 
 add_library(neurus_ui STATIC
-	UIManager.h
+	UIManager.hpp
 	UIManager.cpp
 	# Qt boundary of the editor layer: the signal bus and the Qt-enum input
 	# translations. They live in the UI target because it is the only consumer.
-	../editor/events/UIEvents.h
+	../editor/events/UIEvents.hpp
 	../editor/events/UIEvents.cpp
 	../editor/Input.cpp
-	UIContext.h
+	UIContext.hpp
 	UIContext.cpp
-	Icons.h
+	Icons.hpp
 	Icons.cpp
-	items/ScalarSlider.h
+	items/ScalarSlider.hpp
 	items/ScalarSlider.cpp
-	items/OutlinerRow.h
+	items/OutlinerRow.hpp
 	items/OutlinerRow.cpp
-	items/ProfilingRow.h
+	items/ProfilingRow.hpp
 	items/ProfilingRow.cpp
-	items/Vec3Spin.h
+	items/Vec3Spin.hpp
 	items/Vec3Spin.cpp
-	items/ShaderFieldRow.h
+	items/ShaderFieldRow.hpp
 	items/ShaderFieldRow.cpp
-	items/CodeEditor.h
+	items/CodeEditor.hpp
 	items/CodeEditor.cpp
-	items/ColorButton.h
+	items/ColorButton.hpp
 	items/ColorButton.cpp
-	models/LogModel.h
+	models/LogModel.hpp
 	models/LogModel.cpp
-	models/LogFilterProxy.h
+	models/LogFilterProxy.hpp
 	models/LogFilterProxy.cpp
-	models/ShaderStructModel.h
+	models/ShaderStructModel.hpp
 	models/ShaderStructModel.cpp
-	delegates/LogDelegate.h
+	delegates/LogDelegate.hpp
 	delegates/LogDelegate.cpp
-	delegates/ShaderFieldDelegate.h
+	delegates/ShaderFieldDelegate.hpp
 	delegates/ShaderFieldDelegate.cpp
-	utils/CodeHighlighter.h
+	utils/CodeHighlighter.hpp
 	utils/CodeHighlighter.cpp
-	utils/I18n.h
+	utils/I18n.hpp
 	utils/I18n.cpp
-	utils/POCatalog.h
+	utils/POCatalog.hpp
 	utils/POCatalog.cpp
-	presets/CameraProperties.h
+	presets/CameraProperties.hpp
 	presets/CameraProperties.cpp
-	presets/MeshProperties.h
+	presets/MeshProperties.hpp
 	presets/MeshProperties.cpp
-	presets/LightProperties.h
+	presets/LightProperties.hpp
 	presets/LightProperties.cpp
-	presets/EnvironmentProperties.h
+	presets/EnvironmentProperties.hpp
 	presets/EnvironmentProperties.cpp
-	presets/DebugProperties.h
+	presets/DebugProperties.hpp
 	presets/DebugProperties.cpp
-	panels/UIPanel.h
+	panels/UIPanel.hpp
 	panels/UIPanel.cpp
-	panels/Outliner.h
+	panels/Outliner.hpp
 	panels/Outliner.cpp
-	panels/PropertyPanel.h
+	panels/PropertyPanel.hpp
 	panels/PropertyPanel.cpp
-	panels/ProfilingPanel.h
+	panels/ProfilingPanel.hpp
 	panels/ProfilingPanel.cpp
-	panels/RenderConfigPanel.h
+	panels/RenderConfigPanel.hpp
 	panels/RenderConfigPanel.cpp
-	panels/Viewport.h
+	panels/Viewport.hpp
 	panels/Viewport.cpp
-	panels/ShaderEditorPanel.h
+	panels/ShaderEditorPanel.hpp
 	panels/ShaderEditorPanel.cpp
-	panels/LogPanel.h
+	panels/LogPanel.hpp
 	panels/LogPanel.cpp
-	panels/ScriptConsolePanel.h
+	panels/ScriptConsolePanel.hpp
 	panels/ScriptConsolePanel.cpp
-	panels/ScriptPreferences.h
-	panels/PreferencesDialog.h
+	panels/ScriptPreferences.hpp
+	panels/PreferencesDialog.hpp
 	panels/PreferencesDialog.cpp
 )
 

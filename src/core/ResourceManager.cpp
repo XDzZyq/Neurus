@@ -3,7 +3,7 @@
  * @brief Implementation of ResourceManager non-template members.
  */
 
-#include "core/ResourceManager.h"
+#include "core/ResourceManager.hpp"
 
 namespace neurus
 {

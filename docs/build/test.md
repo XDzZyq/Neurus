@@ -12,7 +12,7 @@ tests require a Vulkan 1.4-capable device and are excluded from CI; non-GPU test
 ## Test Fixture Hierarchy
 
 **VulkanTestShared (base class for ALL GPU tests).** Location:
-`test/shared/TestVulkanShared.h`.
+`test/shared/TestVulkanShared.hpp`.
 
 Responsibilities:
 
@@ -84,7 +84,7 @@ code across test files:
 | `ReadbackHdrOutput(device, pd, queue, qfi, am, w, h)` | `static vector<float>` | Reads back HDRColor RGBA16F attachment to CPU; handles layout transition, staging copy, and half->float conversion |
 | `PublishFrame(cache, ctx, out, scene, config?, debugDraw?, gizmoDraw?)` | `static void` | Stands in for both the Editor's per-frame publication and `DeferredRenderer::recordFrame()`: writes the scene's active camera into `RenderCache`'s shared `CameraGPU`, builds the frame through `Editor::BuildSnapshot()` - the same producer production uses - into caller-owned `out`, and points `ctx.snapshot` at it. `out` must outlive `ctx`. The camera is a no-op when no scene camera is activated - which is the default, so activate one (see below) |
 
-All helpers are defined in `test/shared/TestVulkanShared.h`. Tests that need a
+All helpers are defined in `test/shared/TestVulkanShared.hpp`. Tests that need a
 helper not yet available should add it to the shared header rather than
 duplicating it in the local test file.
 
@@ -130,7 +130,7 @@ and stops there publishes a frame with no camera, and
 `ctx.Frame().HasCamera()` false and skip their work: a blank or shadowless
 reference image, not a crash. So pair every `UseCamera()` in a render test with
 `scene.ActivateCamera(cam->GetObjectID())` (the shared shadow builders in
-`test/shared/TestSimpleShadow.h` and `TestMultiShadow.h` already do).
+`test/shared/TestSimpleShadow.hpp` and `TestMultiShadow.hpp` already do).
 
 Usage example - replace 15+ lines of manual G-Buffer transitions with one call:
 
@@ -157,9 +157,9 @@ Pattern:
 
 ```cpp
 #include <gtest/gtest.h>
-#include "shared/TestVulkanShared.h"
-#include "render/passes/RenderCache.h"
-#include "render/GeometryPass.h"
+#include "shared/TestVulkanShared.hpp"
+#include "render/passes/RenderCache.hpp"
+#include "render/GeometryPass.hpp"
 // ... other includes ...
 
 class MyFeatureTest : public VulkanTestShared { /* ... */ };
@@ -409,7 +409,7 @@ Key things to check:
 - **`reference/gizmo/GizmoAxisLine.png`** (64x64, GizmoPass): the same two-color
   image, and **byte-identical** to `DebugLine_Visible.png` - verified with numpy,
   not assumed. That is the expected result, not a copy-paste accident: the two
-  overlay passes share `overlay_line.vert/frag` and the same 16-byte push block,
+  overlay passes share `overlay_line.vert.glsl` / `overlay_line.frag.glsl` and the same 16-byte push block,
   and the test submits the same segment against the same camera. The difference
   lives in the depth buffer, which is primed to *near* here, so an identical
   image is the proof that GizmoPass has no depth attachment. Verify the same way
@@ -644,7 +644,7 @@ How to capture validation errors reliably:
 These patterns were established during deferred PBR development and apply to all
 GPU tests:
 
-- **Inherit `VulkanTestShared`** (`test/shared/TestVulkanShared.h`). The base
+- **Inherit `VulkanTestShared`** (`test/shared/TestVulkanShared.hpp`). The base
   class bootstraps Instance -> PhysicalDevice -> Device -> Queue -> CommandPool.
 - **Use `BeginCmd()` and `EndSubmitWait(cmd)`** for every GPU command sequence.
   `BeginCmd()` returns a one-shot command buffer; `EndSubmitWait(cmd)` submits
@@ -702,7 +702,7 @@ GPU tests:
 - **"Extract, Don't Duplicate"**: Before writing a helper function in a test
   file, check if `VulkanTestShared` already provides it (see Shared Static
   Helpers above). If a helper is needed across 2+ test files, extract it to
-  `TestVulkanShared.h` as a static method. Do **not** duplicate vertex structs,
+  `TestVulkanShared.hpp` as a static method. Do **not** duplicate vertex structs,
   half-float converters, G-Buffer transition logic, or camera UBO computation -
   they are already centralized.
 
@@ -944,7 +944,7 @@ GPU tests:
 | No `VK_EXT_DEBUG_UTILS` | Deferred validation errors | Include in Debug builds |
 | Manual Vulkan bootstrap | Test file has its own Instance/Device/Queue/CommandPool setup (~70 lines) | Inherit `VulkanTestShared` base class |
 | Raw VBO/IBO in rendering test | Test creates `VertexBuffer`/`IndexBuffer` directly | Use `UploadManager::UploadMeshData()` + `RenderCache::UseMeshGPU()` (or `EnsureMeshesUploaded` for a scene) |
-| Duplicated `TestVertex` struct | `struct TestVertex { ... }` defined locally in test file | Use `TestVertex` from `TestVulkanShared.h` |
+| Duplicated `TestVertex` struct | `struct TestVertex { ... }` defined locally in test file | Use `TestVertex` from `TestVulkanShared.hpp` |
 | Duplicated helper functions | `HalfToFloat`, `TransitionGbufferToColorAttachment`, `FindMemoryType` repeated across files | Use static helpers from `VulkanTestShared` |
 | Placeholder/stub test file | File with single `GTEST_SKIP` test | Delete from CMakeLists.txt; do NOT write new test logic unless planned |
 | **Stale reference from wrong cwd** | Reference images appear at `D:\Projects\test\render\reference\` instead of `test/render/reference/` | Running the test binary directly from outside the CTest working directory causes resource path resolution to differ (resources are copied to `CMAKE_BINARY_DIR/res/`) - always use `ctest -C Debug` from `build/`; if running the test binary directly, `cd build` first. Clean stale directories with `Remove-Item -Recurse -Force test/` at the project root. |

@@ -35,15 +35,15 @@
 
 #include <gtest/gtest.h>
 
-#include "editor/Editor.h"
-#include "editor/viewport/EditorViewport.h"
-#include "render/RenderFrameSnapshot.h"
-#include "scene/Camera.h"
-#include "scene/DebugLine.h"
-#include "scene/DebugPoints.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "editor/Editor.hpp"
+#include "editor/viewport/EditorViewport.hpp"
+#include "render/RenderFrameSnapshot.hpp"
+#include "scene/Camera.hpp"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugPoints.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 #include <glm/glm.hpp>
 

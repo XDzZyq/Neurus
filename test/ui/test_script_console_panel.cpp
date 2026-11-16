@@ -13,10 +13,10 @@
 
 #include <QString>
 
-#include "script/ScriptConsole.h"
-#include "ui/UIContext.h"
-#include "ui/items/CodeEditor.h"
-#include "ui/panels/ScriptConsolePanel.h"
+#include "script/ScriptConsole.hpp"
+#include "ui/UIContext.hpp"
+#include "ui/items/CodeEditor.hpp"
+#include "ui/panels/ScriptConsolePanel.hpp"
 
 using namespace neurus;
 

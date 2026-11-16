@@ -5,11 +5,11 @@
 # Vulkan-free command transport and CLI can use them without inheriting the
 # surface layer's Vulkan dependency.
 add_library(neurus_platform_paths STATIC
-	PlatformPaths.h
-	PlatformProcess.h
-	PlatformFile.h
-	PlatformCrypto.h
-	PlatformSystem.h
+	PlatformPaths.hpp
+	PlatformProcess.hpp
+	PlatformFile.hpp
+	PlatformCrypto.hpp
+	PlatformSystem.hpp
 )
 
 if(WIN32)
@@ -45,7 +45,7 @@ endif()
 target_include_directories(neurus_platform_paths PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
 add_library(neurus_platform STATIC
-	PlatformSurface.h
+	PlatformSurface.hpp
 )
 
 target_link_libraries(neurus_platform PUBLIC

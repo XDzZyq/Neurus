@@ -3,14 +3,14 @@
  * @brief Registration-based serializer implementation.
  */
 
-#include "asset/Project.h"
+#include "asset/Project.hpp"
 
 #include <fstream>
 #include <stdexcept>
 
 #include <cereal/archives/json.hpp>
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 namespace neurus::project
 {

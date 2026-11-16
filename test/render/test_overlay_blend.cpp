@@ -16,13 +16,13 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "render/Barrier.h"
-#include "render/Image.h"
-#include "render/RenderCache.h"
-#include "render/RenderContext.h"
-#include "render/overlay/OverlayEngine.h"
+#include "render/Barrier.hpp"
+#include "render/Image.hpp"
+#include "render/RenderCache.hpp"
+#include "render/RenderContext.hpp"
+#include "render/overlay/OverlayEngine.hpp"
 
 #include <array>
 #include <cstdint>
@@ -47,7 +47,7 @@ constexpr float kSceneG = 0.50f;
 constexpr float kSceneB = 0.75f;
 constexpr float kSceneA = 1.00f;
 
-/// Values the shader blends toward (overlay_copy.comp), at half intensity.
+/// Values the shader blends toward (overlay_copy.comp.glsl), at half intensity.
 constexpr float kHighlightR = 1.0f;
 constexpr float kHighlightG = 0.55f;
 constexpr float kHighlightB = 0.0f;

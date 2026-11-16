@@ -13,7 +13,7 @@
 #include <cstdio>
 #include <ctime>
 
-#include "platform/PlatformSystem.h"
+#include "platform/PlatformSystem.hpp"
 
 namespace {
 

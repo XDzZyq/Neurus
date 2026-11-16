@@ -3,7 +3,7 @@
  * @brief Base-class implementations for ShaderData (constructor, stage accessors, TypeToString).
  */
 
-#include "ShaderData.h"
+#include "ShaderData.hpp"
 
 namespace neurus {
 

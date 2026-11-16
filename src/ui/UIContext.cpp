@@ -3,10 +3,10 @@
  * @brief UIContext implementation - the settings fallback and scene object enumeration.
  */
 
-#include "UIContext.h"
+#include "UIContext.hpp"
 
-#include "core/RenderConfig.h"
-#include "scene/Scene.h"
+#include "core/RenderConfig.hpp"
+#include "scene/Scene.hpp"
 
 namespace neurus
 {

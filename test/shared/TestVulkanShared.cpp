@@ -3,16 +3,16 @@
  * @brief Implementation of the shared GPU test fixture base class.
  */
 
-#include "TestVulkanShared.h"
+#include "TestVulkanShared.hpp"
 
-#include "render/Image.h"
-#include "render/Barrier.h"
-#include "render/SharedQueue.h"
-#include "render/shaders/ShaderLibrary.h"
+#include "render/Image.hpp"
+#include "render/Barrier.hpp"
+#include "render/SharedQueue.hpp"
+#include "render/shaders/ShaderLibrary.hpp"
 
 #include <iostream>
 
-#include "platform/PlatformSurface.h"
+#include "platform/PlatformSurface.hpp"
 
 using namespace neurus;
 

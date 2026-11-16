@@ -3,13 +3,13 @@
  * @brief DebugProperties implementation.
  */
 
-#include "presets/DebugProperties.h"
+#include "presets/DebugProperties.hpp"
 
-#include "items/ColorButton.h"
-#include "items/ScalarSlider.h"
-#include "ui/utils/I18n.h"
+#include "items/ColorButton.hpp"
+#include "items/ScalarSlider.hpp"
+#include "ui/utils/I18n.hpp"
 
-#include "scene/ObjectID.h"
+#include "scene/ObjectID.hpp"
 
 #include <QAbstractItemView>
 #include <QCheckBox>

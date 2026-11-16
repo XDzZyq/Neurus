@@ -1,4 +1,4 @@
-#include "shared/TestWindow.h"
+#include "shared/TestWindow.hpp"
 
 namespace neurus::test
 {

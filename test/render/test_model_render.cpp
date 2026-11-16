@@ -18,31 +18,31 @@
 
 #include <gtest/gtest.h>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
 // Render layer
-#include "render/RenderCache.h"
-#include "render/UploadManager.h"
-#include "render/resources/LightingCache.h"
-#include "scene/Material.h"
-#include "render/passes/GeometryPass.h"
-#include "render/passes/LightingPass.h"
-#include "render/RenderContext.h"
-#include "render/Texture.h"
-#include "asset/data/ImageData.h"
-#include "render/Texture.h"
-#include "render/buffers/BufferLayout.h"
-#include "render/buffers/IndexBuffer.h"
-#include "render/buffers/VertexBuffer.h"
+#include "render/RenderCache.hpp"
+#include "render/UploadManager.hpp"
+#include "render/resources/LightingCache.hpp"
+#include "scene/Material.hpp"
+#include "render/passes/GeometryPass.hpp"
+#include "render/passes/LightingPass.hpp"
+#include "render/RenderContext.hpp"
+#include "render/Texture.hpp"
+#include "asset/data/ImageData.hpp"
+#include "render/Texture.hpp"
+#include "render/buffers/BufferLayout.hpp"
+#include "render/buffers/IndexBuffer.hpp"
+#include "render/buffers/VertexBuffer.hpp"
 
 // Data layer
-#include "asset/data/MeshData.h"
+#include "asset/data/MeshData.hpp"
 
 // Scene layer
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 

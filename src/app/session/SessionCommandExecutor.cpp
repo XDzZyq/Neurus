@@ -1,7 +1,7 @@
-#include "app/session/SessionCommandExecutor.h"
+#include "app/session/SessionCommandExecutor.hpp"
 
-#include "command/CommandJson.h"
-#include "command/Commands.h"
+#include "command/CommandJson.hpp"
+#include "command/Commands.hpp"
 
 #include <string>
 #include <utility>

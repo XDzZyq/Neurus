@@ -1,4 +1,4 @@
-#include "shared/TestWindow.h"
+#include "shared/TestWindow.hpp"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN

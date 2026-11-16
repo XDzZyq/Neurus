@@ -1,11 +1,11 @@
-#include "ipc/IpcServer.h"
+#include "ipc/IpcServer.hpp"
 
-#include "command/CommandDispatcher.h"
-#include "command/CommandJson.h"
-#include "command/CommandTypes.h"
-#include "command/Commands.h"
-#include "ipc/Frame.h"
-#include "ipc/RandomToken.h"
+#include "command/CommandDispatcher.hpp"
+#include "command/CommandJson.hpp"
+#include "command/CommandTypes.hpp"
+#include "command/Commands.hpp"
+#include "ipc/Frame.hpp"
+#include "ipc/RandomToken.hpp"
 
 #include <asio.hpp>
 

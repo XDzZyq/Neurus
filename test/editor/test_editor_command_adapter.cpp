@@ -10,14 +10,14 @@
 
 #include <gtest/gtest.h>
 
-#include "command/Commands.h"
-#include "core/ResourceManager.h"
-#include "editor/Editor.h"
-#include "editor/commands/EditorCommandAdapter.h"
-#include "scene/Camera.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
+#include "command/Commands.hpp"
+#include "core/ResourceManager.hpp"
+#include "editor/Editor.hpp"
+#include "editor/commands/EditorCommandAdapter.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
 
 #include <filesystem>
 #include <fstream>

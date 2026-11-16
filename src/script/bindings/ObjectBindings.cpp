@@ -19,14 +19,14 @@
 #include <tuple>
 #include <utility>
 
-#include "core/IResourceLookup.h"
-#include "editor/events/SceneEvents.h"
-#include "scene/ObjectID.h"
-#include "scene/Transform.h"
-#include "script/bindings/Bindings.h"
-#include "script/proxies/ObjectProxy.h"
-#include "script/proxies/ProxyBase.h"
-#include "script/proxies/Transform3DProxy.h"
+#include "core/IResourceLookup.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "scene/ObjectID.hpp"
+#include "scene/Transform.hpp"
+#include "script/bindings/Bindings.hpp"
+#include "script/proxies/ObjectProxy.hpp"
+#include "script/proxies/ProxyBase.hpp"
+#include "script/proxies/Transform3DProxy.hpp"
 
 namespace py = pybind11;
 

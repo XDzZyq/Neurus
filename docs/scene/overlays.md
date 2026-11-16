@@ -2,9 +2,9 @@
 
 Screen-space overlays share one set of vertex records but travel in two separate payload containers, because the debug overlay and the transform gizmo have opposite lifetimes and authoring rules.
 
-## Shared records (`render/overlay/OverlayGeometry.h`)
+## Shared records (`render/overlay/OverlayGeometry.hpp`)
 
-`OverlayGeometry.h` defines the primitives consumed verbatim by the overlay shaders as std430 SSBO arrays. It lives in the Vulkan-free `render/overlay/` tier, beside the payload containers and the passes that read them; the editor *authors* the records (it may include render, never the reverse) and hands the containers to the renderer through the context, so neither side includes the other.
+`OverlayGeometry.hpp` defines the primitives consumed verbatim by the overlay shaders as std430 SSBO arrays. It lives in the Vulkan-free `render/overlay/` tier, beside the payload containers and the passes that read them; the editor *authors* the records (it may include render, never the reverse) and hands the containers to the renderer through the context, so neither side includes the other.
 
 - `OverlaySegment` - one line segment, expanded into a screen-space quad by the vertex shader. Fields: `a` and `b` (world-space endpoints), `width` (pixels), `rgba` (packed color), `flags`, and `_pad[3]`. 48 bytes, std430-aligned. Thick lines are quads rather than wide lines because Metal/MoltenVK caps `lineWidth` at 1.0 and exposes none of `VK_KHR_line_rasterization`'s modes; quad expansion gives arbitrary width plus shader-side smoothing and stipple on every platform.
 - `OverlayPointSprite` - one point drawn as a native point-list primitive. Fields: `p` (world-space position), `size` (sprite diameter), `rgba`, `shape`, `flags`, `_pad`. 32 bytes. `size` becomes `gl_PointSize` (requires the largePoints feature) and `shape` masks `gl_PointCoord`. A cube has no sprite form and is decomposed by the producer into 12 segments.
@@ -12,9 +12,9 @@ Screen-space overlays share one set of vertex records but travel in two separate
 - `OverlayPointShape` - sprite shape ids (`Square = 0`, `Rhombus = 1`, `Circle = 2`), kept numerically in sync with `DebugPoints::PointType`.
 - `PackOverlayColor(color)` - packs a linear RGBA color into `0xAABBGGRR` (matching GLSL `unpackUnorm4x8`). Overlay geometry is authored display-referred and drawn after tonemapping, so no gamma conversion happens here.
 
-Positions are always world-space: producers bake their object's transform in while flattening, rather than passing a matrix index the shader would dereference. Field order and padding must stay in sync with `overlay_line.vert` and `overlay_point.vert`; the `static_assert`s guard sizes, not field order.
+Positions are always world-space: producers bake their object's transform in while flattening, rather than passing a matrix index the shader would dereference. Field order and padding must stay in sync with `overlay_line.vert.glsl` and `overlay_point.vert.glsl`; the `static_assert`s guard sizes, not field order.
 
-## DebugDrawList (`render/overlay/DebugDrawList.h`)
+## DebugDrawList (`render/overlay/DebugDrawList.hpp`)
 
 `DebugDrawList` is the single transport for all viewport debug geometry, and there is no immediate-mode API behind it: everything is a retained, stateful object that lives as long as what it visualizes.
 
@@ -29,7 +29,7 @@ The debug-domain names `DebugFlag`, `DebugSegment`, `DebugPointSprite` and `Debu
 
 `DebugDrawBuilder` (owned by the viewport) is the single flattener; see [Viewport](../editor/viewport.md) and [Debug Objects](debug-objects.md).
 
-## GizmoDrawList (`render/overlay/GizmoDrawList.h`)
+## GizmoDrawList (`render/overlay/GizmoDrawList.hpp`)
 
 `GizmoDrawList` is the interaction counterpart to `DebugDrawList`: transient feedback for a modal transform gesture, published while a gesture is active and rebuilt on every cursor move and camera change.
 
@@ -46,7 +46,7 @@ The two have opposite lifetimes (scene-object lifetime versus one gesture) and o
 
 ## Publication and null policy
 
-Both lists travel as values on `RenderFrameSnapshot` (`render/RenderFrameSnapshot.h`), copied once per frame by `Editor::BuildSnapshot()` rather than borrowed through a pointer. A pass reads them as `ctx.Frame().debugDraw` and `ctx.Frame().gizmoDraw`:
+Both lists travel as values on `RenderFrameSnapshot` (`render/RenderFrameSnapshot.hpp`), copied once per frame by `Editor::BuildSnapshot()` rather than borrowed through a pointer. A pass reads them as `ctx.Frame().debugDraw` and `ctx.Frame().gizmoDraw`:
 
 - The debug list is gated by `r_debug_draw`: when the toggle is off (or no scene is published) the producer leaves `hasDebugDraw` false and the list empty, so `ctx.Frame().HasDebugDraw()` is false and `DebugPass` draws nothing. The gate decides whether the overlay is published at all, never the RenderGraph topology - the pass stays in the graph unconditionally. See [Render Config](../core/render-config.md).
 - The gizmo list is published unconditionally - interaction feedback is not a hideable debug visualization - so it is always present and empty when nothing is armed; the pass early-outs on `Empty()`.

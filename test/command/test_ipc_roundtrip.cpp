@@ -14,12 +14,12 @@
 #include <string>
 #include <thread>
 
-#include "command/CommandTypes.h"
-#include "command/Commands.h"
-#include "ipc/Frame.h"
-#include "ipc/IpcClient.h"
-#include "ipc/IpcServer.h"
-#include "ipc/RandomToken.h"
+#include "command/CommandTypes.hpp"
+#include "command/Commands.hpp"
+#include "ipc/Frame.hpp"
+#include "ipc/IpcClient.hpp"
+#include "ipc/IpcServer.hpp"
+#include "ipc/RandomToken.hpp"
 
 using namespace neurus::command;
 using namespace neurus::ipc;

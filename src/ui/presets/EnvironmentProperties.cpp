@@ -1,6 +1,6 @@
-#include "presets/EnvironmentProperties.h"
-#include "items/ScalarSlider.h"
-#include "ui/utils/I18n.h"
+#include "presets/EnvironmentProperties.hpp"
+#include "items/ScalarSlider.hpp"
+#include "ui/utils/I18n.hpp"
 
 #include <QGroupBox>
 #include <QHBoxLayout>

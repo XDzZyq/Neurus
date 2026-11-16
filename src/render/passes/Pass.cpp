@@ -3,7 +3,7 @@
  * @brief Pass type query helpers implementation.
  */
 
-#include "passes/Pass.h"
+#include "passes/Pass.hpp"
 
 #include <cassert>
 #include <stdexcept>

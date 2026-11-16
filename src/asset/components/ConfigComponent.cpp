@@ -1,7 +1,7 @@
-#include "asset/components/ConfigComponent.h"
-#include "core/RenderConfig.h"
-#include "core/Log.h"
-#include "core/Serialize.h"
+#include "asset/components/ConfigComponent.hpp"
+#include "core/RenderConfig.hpp"
+#include "core/Log.hpp"
+#include "core/Serialize.hpp"
 
 namespace neurus::project
 {

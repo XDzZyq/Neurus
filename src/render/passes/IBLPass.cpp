@@ -3,15 +3,15 @@
  * @brief Image-Based Lighting generation pass implementation - pure compute service.
  */
 
-#include "passes/IBLPass.h"
+#include "passes/IBLPass.hpp"
 
-#include "../PipelineBuilder.h"
-#include "Image.h"
-#include "render/Barrier.h"
-#include "render/SharedQueue.h"
-#include "shaders/ShaderLibrary.h"
-#include "shaders/ComputeShader.h"
-#include "core/Log.h"
+#include "../PipelineBuilder.hpp"
+#include "Image.hpp"
+#include "render/Barrier.hpp"
+#include "render/SharedQueue.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "shaders/ComputeShader.hpp"
+#include "core/Log.hpp"
 
 #include <cstring>
 #include <stdexcept>
@@ -42,10 +42,10 @@ IBLPass::IBLPass(const vk::raii::Device& device,
 	// --- Self-load compute shaders via ShaderLibrary ---
 	, p_irradianceShader(
 		ShaderLibrary::LoadComputeShader("irradiance",
-		                                  "res/shaders/compute/irradiance_conv.comp"))
+		                                  "res/shaders/compute/irradiance_conv.comp.glsl"))
 	, p_specularShader(
 		ShaderLibrary::LoadComputeShader("importance_samp",
-		                                  "res/shaders/compute/importance_samp.comp"))
+		                                  "res/shaders/compute/importance_samp.comp.glsl"))
 {
 	BuildPipeline(device, "IBLPass");
 

@@ -11,7 +11,7 @@
 
 #include <QString>
 
-#include "editor/events/UIEvents.h"
+#include "editor/events/UIEvents.hpp"
 
 using namespace neurus;
 

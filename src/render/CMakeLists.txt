@@ -1,107 +1,107 @@
 # src/render/CMakeLists.txt - Renderer Layer
 
 add_library(neurus_render STATIC
-	buffers/ArrayBuffer.h
-	buffers/Buffer.h
+	buffers/ArrayBuffer.hpp
+	buffers/Buffer.hpp
 	buffers/Buffer.cpp
-	buffers/BufferLayout.h
+	buffers/BufferLayout.hpp
 	buffers/BufferLayout.cpp
-	buffers/CPUBuffer.h
+	buffers/CPUBuffer.hpp
 	buffers/CPUBuffer.cpp
-	buffers/GPUBuffer.h
+	buffers/GPUBuffer.hpp
 	buffers/GPUBuffer.cpp
-	buffers/IndexBuffer.h
+	buffers/IndexBuffer.hpp
 	buffers/IndexBuffer.cpp
-	buffers/StagingBuffer.h
+	buffers/StagingBuffer.hpp
 	buffers/StagingBuffer.cpp
-	buffers/UniformBuffer.h
-	buffers/VertexBuffer.h
+	buffers/UniformBuffer.hpp
+	buffers/VertexBuffer.hpp
 	buffers/VertexBuffer.cpp
-	Barrier.h
+	Barrier.hpp
 	Barrier.cpp
-	Image.h
+	Image.hpp
 	Image.cpp
-	DescriptorManager.h
+	DescriptorManager.hpp
 	DescriptorManager.cpp
-	Swapchain.h
+	Swapchain.hpp
 	Swapchain.cpp
-	OutputTarget.h
-	targets/SwapchainTarget.h
+	OutputTarget.hpp
+	targets/SwapchainTarget.hpp
 	targets/SwapchainTarget.cpp
-	targets/OffscreenTarget.h
+	targets/OffscreenTarget.hpp
 	targets/OffscreenTarget.cpp
-	shaders/RenderShader.h
+	shaders/RenderShader.hpp
 	shaders/RenderShader.cpp
-	shaders/ComputeShader.h
+	shaders/ComputeShader.hpp
 	shaders/ComputeShader.cpp
-	shaders/ShaderGenerator.h
+	shaders/ShaderGenerator.hpp
 	shaders/ShaderGenerator.cpp
-	shaders/ShaderParser.h
+	shaders/ShaderParser.hpp
 	shaders/ShaderParser.cpp
-	shaders/ShaderCompiler.h
+	shaders/ShaderCompiler.hpp
 	shaders/ShaderCompiler.cpp
-	shaders/ShaderLibrary.h
+	shaders/ShaderLibrary.hpp
 	shaders/ShaderLibrary.cpp
-	resources/MeshGPU.h
-	resources/EnvironmentGPU.h
-	resources/LightGPU.h
-	resources/LightingCache.h
+	resources/MeshGPU.hpp
+	resources/EnvironmentGPU.hpp
+	resources/LightGPU.hpp
+	resources/LightingCache.hpp
 	resources/LightingCache.cpp
-	resources/CameraGPU.h
+	resources/CameraGPU.hpp
 	resources/CameraGPU.cpp
-	resources/DebugCache.h
+	resources/DebugCache.hpp
 	resources/DebugCache.cpp
-	resources/GizmoCache.h
+	resources/GizmoCache.hpp
 	resources/GizmoCache.cpp
-	resources/PipelineCache.h
+	resources/PipelineCache.hpp
 	resources/PipelineCache.cpp
-	Texture.h
+	Texture.hpp
 	Texture.cpp
-	PipelineBuilder.h
+	PipelineBuilder.hpp
 	PipelineBuilder.cpp
-	RenderCache.h
+	RenderCache.hpp
 	RenderCache.cpp
-	RenderContext.h
+	RenderContext.hpp
 	RenderContext.cpp
-	RenderFrameSnapshot.h
+	RenderFrameSnapshot.hpp
 	RenderFrameSnapshot.cpp
-	FrameMailbox.h
+	FrameMailbox.hpp
 	FrameMailbox.cpp
-	PublishedFrame.h
-	SharedQueue.h
+	PublishedFrame.hpp
+	SharedQueue.hpp
 	SharedQueue.cpp
-	FramesInFlight.h
-	TimelineSemaphore.h
+	FramesInFlight.hpp
+	TimelineSemaphore.hpp
 	TimelineSemaphore.cpp
-	requests/RenderRequests.h
+	requests/RenderRequests.hpp
 	requests/RenderRequests.cpp
-	requests/RenderRequestSink.h
-	requests/RenderRequestExecutor.h
+	requests/RenderRequestSink.hpp
+	requests/RenderRequestExecutor.hpp
 	requests/RenderRequestExecutor.cpp
-	requests/RenderRequestProcessor.h
+	requests/RenderRequestProcessor.hpp
 	requests/RenderRequestProcessor.cpp
-	RenderControl.h
-	IFrameRenderer.h
-	RenderThread.h
+	RenderControl.hpp
+	IFrameRenderer.hpp
+	RenderThread.hpp
 	RenderThread.cpp
-	overlay/OverlayGeometry.h
-	overlay/DebugDrawList.h
-	overlay/GizmoDrawList.h
-	overlay/OverlayEngine.h
+	overlay/OverlayGeometry.hpp
+	overlay/DebugDrawList.hpp
+	overlay/GizmoDrawList.hpp
+	overlay/OverlayEngine.hpp
 	overlay/OverlayEngine.cpp
-	ProfilingData.h
-	GPUProfiler.h
+	ProfilingData.hpp
+	GPUProfiler.hpp
 	GPUProfiler.cpp
-	DeferredRenderer.h
+	DeferredRenderer.hpp
 	DeferredRenderer.cpp
-	Screenshot.h
+	Screenshot.hpp
 	Screenshot.cpp
-	UploadManager.h
+	UploadManager.hpp
 	UploadManager.cpp
-	render_graph/DescriptorBinder.h
-	render_graph/RenderGraph.h
+	render_graph/DescriptorBinder.hpp
+	render_graph/RenderGraph.hpp
 	render_graph/RenderGraph.cpp
-	registrations/ShaderRegistration.h
+	registrations/ShaderRegistration.hpp
 	registrations/ShaderRegistration.cpp
 )
 

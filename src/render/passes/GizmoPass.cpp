@@ -3,16 +3,16 @@
  * @brief Transform-gizmo overlay raster pass implementation.
  */
 
-#include "passes/GizmoPass.h"
+#include "passes/GizmoPass.hpp"
 
-#include "RenderCache.h"
-#include "RenderContext.h"
-#include "RenderFrameSnapshot.h"
-#include "render/Barrier.h"
-#include "shaders/ShaderLibrary.h"
-#include "core/Log.h"
+#include "RenderCache.hpp"
+#include "RenderContext.hpp"
+#include "RenderFrameSnapshot.hpp"
+#include "render/Barrier.hpp"
+#include "shaders/ShaderLibrary.hpp"
+#include "core/Log.hpp"
 
-#include "render/overlay/GizmoDrawList.h"
+#include "render/overlay/GizmoDrawList.hpp"
 
 #include <array>
 #include <cmath>
@@ -22,7 +22,7 @@ namespace neurus {
 
 namespace {
 
-/// @brief Vertices emitted per segment by overlay_line.vert (two triangles).
+/// @brief Vertices emitted per segment by overlay_line.vert.glsl (two triangles).
 constexpr uint32_t kVerticesPerSegment = 6;
 
 } // namespace
@@ -42,11 +42,11 @@ GizmoPass::GizmoPass(const vk::raii::Device& device,
 	// ShaderLibrary's first argument is a log tag, not a cache key, so distinct
 	// tags may name the same files and a compile error points at the consumer.
 	, p_lineShader(ShaderLibrary::LoadRenderShader("GizmoLine",
-	                                               NEURUS_SHADER_DIR "render/overlay_line.vert",
-	                                               NEURUS_SHADER_DIR "render/overlay_line.frag"))
+	                                               NEURUS_SHADER_DIR "render/overlay_line.vert.glsl",
+	                                               NEURUS_SHADER_DIR "render/overlay_line.frag.glsl"))
 	, p_pointShader(ShaderLibrary::LoadRenderShader("GizmoPoint",
-	                                                NEURUS_SHADER_DIR "render/overlay_point.vert",
-	                                                NEURUS_SHADER_DIR "render/overlay_point.frag"))
+	                                                NEURUS_SHADER_DIR "render/overlay_point.vert.glsl",
+	                                                NEURUS_SHADER_DIR "render/overlay_point.frag.glsl"))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;

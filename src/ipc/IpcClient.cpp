@@ -1,7 +1,7 @@
-#include "ipc/IpcClient.h"
+#include "ipc/IpcClient.hpp"
 
-#include "command/Commands.h"
-#include "ipc/Frame.h"
+#include "command/Commands.hpp"
+#include "ipc/Frame.hpp"
 
 #include <asio.hpp>
 

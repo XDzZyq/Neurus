@@ -7,25 +7,25 @@
  * the shared mutation policy - rather than deciding them locally.
  */
 
-#include "editor/controllers/ObjectController.h"
+#include "editor/controllers/ObjectController.hpp"
 
 #include <string>
 #include <vector>
 
-#include "editor/controllers/MutationNotify.h"
-#include "editor/events/EditorEvents.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/operations/SceneOperations.h"
+#include "editor/controllers/MutationNotify.hpp"
+#include "editor/events/EditorEvents.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/operations/SceneOperations.hpp"
 
-#include "scene/Camera.h"
-#include "scene/DebugLine.h"
-#include "scene/DebugMesh.h"
-#include "scene/DebugPoints.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/ObjectID.h"
-#include "scene/Transform.h"
+#include "scene/Camera.hpp"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugMesh.hpp"
+#include "scene/DebugPoints.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/ObjectID.hpp"
+#include "scene/Transform.hpp"
 
 namespace {
 

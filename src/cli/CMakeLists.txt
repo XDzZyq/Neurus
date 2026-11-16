@@ -3,45 +3,45 @@
 # Parsing, output and command implementations live in a library so the CPU-only
 # test target can exercise them without linking an executable.
 add_library(neurus_cli_core STATIC
-	Cli.h
+	CliMain.hpp
 	Cli.cpp
-	CliParse.h
+	CliParse.hpp
 	CliParse.cpp
-	Output.h
+	Output.hpp
 	Output.cpp
-	AppArguments.h
+	AppArguments.hpp
 	AppArguments.cpp
-	SessionClient.h
+	SessionClient.hpp
 	SessionClient.cpp
-	TerminalBinding.h
+	TerminalBinding.hpp
 	TerminalBinding.cpp
-	CommandClient.h
+	CommandClient.hpp
 	CommandClient.cpp
-	SubCommand.h
+	SubCommand.hpp
 	SubCommand.cpp
-	subcommands/OpenCommand.h
+	subcommands/OpenCommand.hpp
 	subcommands/OpenCommand.cpp
-	subcommands/CloseCommand.h
+	subcommands/CloseCommand.hpp
 	subcommands/CloseCommand.cpp
-	subcommands/StatusCommand.h
+	subcommands/StatusCommand.hpp
 	subcommands/StatusCommand.cpp
-	subcommands/ListCommand.h
+	subcommands/ListCommand.hpp
 	subcommands/ListCommand.cpp
-	subcommands/ProjectCommand.h
+	subcommands/ProjectCommand.hpp
 	subcommands/ProjectCommand.cpp
-	subcommands/SceneCommand.h
+	subcommands/SceneCommand.hpp
 	subcommands/SceneCommand.cpp
-	subcommands/ObjectCommand.h
+	subcommands/ObjectCommand.hpp
 	subcommands/ObjectCommand.cpp
-	subcommands/RenderCommand.h
+	subcommands/RenderCommand.hpp
 	subcommands/RenderCommand.cpp
-	subcommands/HistoryCommand.h
+	subcommands/HistoryCommand.hpp
 	subcommands/HistoryCommand.cpp
-	subcommands/ScriptCommand.h
+	subcommands/ScriptCommand.hpp
 	subcommands/ScriptCommand.cpp
-	subcommands/SnapshotCommand.h
+	subcommands/SnapshotCommand.hpp
 	subcommands/SnapshotCommand.cpp
-	subcommands/UseCommand.h
+	subcommands/UseCommand.hpp
 	subcommands/UseCommand.cpp
 )
 

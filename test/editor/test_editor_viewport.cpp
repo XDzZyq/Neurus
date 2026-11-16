@@ -27,9 +27,9 @@
 
 #include <gtest/gtest.h>
 
-#include "editor/viewport/EditorViewport.h"
-#include "scene/Camera.h"
-#include "scene/Sprite.h"
+#include "editor/viewport/EditorViewport.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Sprite.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>

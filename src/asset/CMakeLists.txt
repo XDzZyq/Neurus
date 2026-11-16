@@ -1,36 +1,36 @@
 # src/asset/CMakeLists.txt - Asset Layer (CPU-side data + project persistence)
 
 add_library(neurus_asset STATIC
-	Project.h
+	Project.hpp
 	Project.cpp
-	Serializable.h
-	PixelFormat.h
-	components/ConfigComponent.h
+	Serializable.hpp
+	PixelFormat.hpp
+	components/ConfigComponent.hpp
 	components/ConfigComponent.cpp
-	components/SceneComponent.h
+	components/SceneComponent.hpp
 	components/SceneComponent.cpp
-	components/UIComponent.h
+	components/UIComponent.hpp
 	components/UIComponent.cpp
-	components/HistoryComponent.h
+	components/HistoryComponent.hpp
 	components/HistoryComponent.cpp
-	components/EditorComponent.h
+	components/EditorComponent.hpp
 	components/EditorComponent.cpp
-	components/ResourceComponent.h
+	components/ResourceComponent.hpp
 	components/ResourceComponent.cpp
-	registrations/DataRegistration.h
+	registrations/DataRegistration.hpp
 	registrations/DataRegistration.cpp
-	data/ImageData.h
+	data/ImageData.hpp
 	data/ImageData.cpp
-	data/MeshData.h
+	data/MeshData.hpp
 	data/MeshData.cpp
-	data/AssetPath.h
+	data/AssetPath.hpp
 	data/AssetPath.cpp
-	data/shader/ShaderStage.h
-	data/shader/ShaderStruct.h
+	data/shader/ShaderStage.hpp
+	data/shader/ShaderStruct.hpp
 	data/shader/ShaderStruct.cpp
-	data/shader/ShaderStructSerialize.h
-	data/shader/ShaderUnit.h
-	data/ShaderData.h
+	data/shader/ShaderStructSerialize.hpp
+	data/shader/ShaderUnit.hpp
+	data/ShaderData.hpp
 	data/ShaderData.cpp
 )
 
@@ -60,5 +60,5 @@ target_compile_features(neurus_asset PUBLIC cxx_std_20)
 # through the project file. That is a reverse asset->editor dependency, confined
 # to that one .cpp; every final binary links neurus_editor alongside neurus_asset,
 # so no extra link target is declared here.
-# components/EditorComponent.cpp does the same for editor/viewport/EditorViewport.h
+# components/EditorComponent.cpp does the same for editor/viewport/EditorViewport.hpp
 # (the viewport camera's pool UID).

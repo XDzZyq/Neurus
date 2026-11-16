@@ -11,22 +11,22 @@
 #include <memory>
 #include <string>
 
-#include "editor/controllers/SceneController.h"
-#include "editor/events/EventBus.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/events/EditorEvents.h"
-#include "editor/operations/OperationManager.h"
-#include "editor/Input.h"
-#include "core/ResourceManager.h"
-#include "asset/data/ImageData.h"
-#include "asset/data/MeshData.h"
-#include "scene/Camera.h"
-#include "scene/Environment.h"
-#include "scene/Light.h"
-#include "scene/Mesh.h"
-#include "scene/Scene.h"
-#include "scene/ObjectID.h"
-#include "core/RenderConfig.h"
+#include "editor/controllers/SceneController.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/events/EditorEvents.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "editor/Input.hpp"
+#include "core/ResourceManager.hpp"
+#include "asset/data/ImageData.hpp"
+#include "asset/data/MeshData.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
+#include "scene/Scene.hpp"
+#include "scene/ObjectID.hpp"
+#include "core/RenderConfig.hpp"
 
 using namespace neurus;
 

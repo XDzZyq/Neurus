@@ -17,20 +17,20 @@
 #include <tuple>
 #include <vector>
 
-#include "asset/data/ShaderData.h"
-#include "asset/data/shader/ShaderStage.h"
-#include "asset/data/shader/ShaderStruct.h"
-#include "asset/data/shader/ShaderUnit.h"
-#include "core/IResourceLookup.h"
-#include "editor/events/AssetEvents.h"
-#include "editor/events/SceneEvents.h"
-#include "editor/events/ShaderEvents.h"
-#include "script/ScriptContext.h"
-#include "script/ScriptView.h"
-#include "script/bindings/Bindings.h"
-#include "script/bindings/ShaderBindings.h"
-#include "script/proxies/ProxyBase.h"
-#include "script/proxies/ShaderProxies.h"
+#include "asset/data/ShaderData.hpp"
+#include "asset/data/shader/ShaderStage.hpp"
+#include "asset/data/shader/ShaderStruct.hpp"
+#include "asset/data/shader/ShaderUnit.hpp"
+#include "core/IResourceLookup.hpp"
+#include "editor/events/AssetEvents.hpp"
+#include "editor/events/SceneEvents.hpp"
+#include "editor/events/ShaderEvents.hpp"
+#include "script/ScriptContext.hpp"
+#include "script/ScriptView.hpp"
+#include "script/bindings/Bindings.hpp"
+#include "script/bindings/ShaderBindings.hpp"
+#include "script/proxies/ProxyBase.hpp"
+#include "script/proxies/ShaderProxies.hpp"
 
 namespace py = pybind11;
 
@@ -623,7 +623,7 @@ void InstallShaderViews(py::module_& shader, py::module_& data, const ScriptView
 			return ShaderProxy{result.shaderUid, view};
 		},
 		py::arg("path"), py::arg("name") = std::string{},
-		"Load a .vert/.frag/.comp source into the pool; empty name uses the path.");
+		"Load a .vert.glsl/.frag.glsl/.comp.glsl source into the pool; empty name uses the path.");
 
 	py::class_<ShaderCollection>(data, "_Shaders", "Pool-wide shader collection.")
 		.def("__iter__", [](const ShaderCollection& s) { return py::iter(s.Snapshot()); })

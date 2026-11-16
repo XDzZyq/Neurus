@@ -1,6 +1,6 @@
-#include "presets/MeshProperties.h"
+#include "presets/MeshProperties.hpp"
 
-#include "ui/utils/I18n.h"
+#include "ui/utils/I18n.hpp"
 
 #include <QCheckBox>
 #include <QGroupBox>

@@ -126,13 +126,13 @@ for a debug row than for a mesh row. Nothing extra is needed to notice a toggle:
     Antialiasing fades alpha towards the quad edge, which would soften the hard
     ends a dash is made of.
   - point sprites always get `Smooth`, in both projection modes. `DebugPoints` has
-    no line style to protect, and `overlay_point.frag`'s shape mask is an analytic
+    no line style to protect, and `overlay_point.frag.glsl`'s shape mask is an analytic
     distance (Chebyshev / Manhattan / Euclidean), so a rhombus or circle boundary
     is visibly stepped without the fade.
   - CUBE edges get `Smooth`, like any solid segment.
   - `DebugMesh` wireframes never get `Smooth`. They rasterize through
     `PolygonMode::eLine`, which hands the fragment stage no distance-to-edge, so
-    `debug_wire.frag` has no branch on the flag; setting it would advertise a
+    `debug_wire.frag.glsl` has no branch on the flag; setting it would advertise a
     behaviour no consumer implements.
 - Opacity is folded into the packed alpha (`PackTinted`), because the GPU only
   ever sees one alpha; opacity is an authoring convenience, not a second channel.

@@ -20,14 +20,14 @@
 #include <memory>
 #include <string>
 
-#include "shared/TestVulkanShared.h"
+#include "shared/TestVulkanShared.hpp"
 
-#include "scene/Mesh.h"
-#include "asset/data/MeshData.h"
-#include "render/RenderCache.h"
-#include "render/resources/MeshGPU.h"
-#include "render/buffers/VertexBuffer.h"
-#include "render/buffers/IndexBuffer.h"
+#include "scene/Mesh.hpp"
+#include "asset/data/MeshData.hpp"
+#include "render/RenderCache.hpp"
+#include "render/resources/MeshGPU.hpp"
+#include "render/buffers/VertexBuffer.hpp"
+#include "render/buffers/IndexBuffer.hpp"
 
 using namespace neurus;
 

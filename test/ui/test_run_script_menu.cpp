@@ -13,7 +13,7 @@
 #include <QAction>
 #include <QString>
 
-#include "ui/UIManager.h"
+#include "ui/UIManager.hpp"
 
 using namespace neurus;
 

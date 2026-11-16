@@ -3,7 +3,7 @@
  * @brief Implementation of FrameMailbox.
  */
 
-#include "FrameMailbox.h"
+#include "FrameMailbox.hpp"
 
 #include <iterator>
 #include <utility>

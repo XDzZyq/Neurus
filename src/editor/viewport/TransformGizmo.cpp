@@ -9,16 +9,16 @@
  * whenever the axis passes edge-on.
  */
 
-#include "editor/viewport/TransformGizmo.h"
+#include "editor/viewport/TransformGizmo.hpp"
 
 #include <algorithm>
 #include <cmath>
 
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "editor/viewport/EditorViewport.h"
-#include "scene/Camera.h"
-#include "scene/Transform.h"
+#include "editor/viewport/EditorViewport.hpp"
+#include "scene/Camera.hpp"
+#include "scene/Transform.hpp"
 
 namespace neurus
 {

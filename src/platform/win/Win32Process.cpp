@@ -1,4 +1,4 @@
-#include "platform/PlatformProcess.h"
+#include "platform/PlatformProcess.hpp"
 
 #include <cstdlib>
 #include <cstdint>

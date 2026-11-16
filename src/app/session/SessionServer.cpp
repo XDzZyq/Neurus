@@ -1,11 +1,11 @@
-#include "app/session/SessionServer.h"
+#include "app/session/SessionServer.hpp"
 
-#include "app/session/SessionCommandExecutor.h"
-#include "command/CommandDescriptor.h"
-#include "command/CommandJson.h"
-#include "ipc/IpcServer.h"
-#include "ipc/RandomToken.h"
-#include "ipc/SessionRegistry.h"
+#include "app/session/SessionCommandExecutor.hpp"
+#include "command/CommandDescriptor.hpp"
+#include "command/CommandJson.hpp"
+#include "ipc/IpcServer.hpp"
+#include "ipc/RandomToken.hpp"
+#include "ipc/SessionRegistry.hpp"
 
 #include <chrono>
 #include <cstdio>

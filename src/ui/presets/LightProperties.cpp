@@ -1,6 +1,6 @@
-#include "presets/LightProperties.h"
-#include "items/ScalarSlider.h"
-#include "ui/utils/I18n.h"
+#include "presets/LightProperties.hpp"
+#include "items/ScalarSlider.hpp"
+#include "ui/utils/I18n.hpp"
 
 #include <QCheckBox>
 #include <QFont>

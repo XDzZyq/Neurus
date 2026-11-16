@@ -253,7 +253,7 @@ class RoundTripTest(unittest.TestCase):
 
 
 class DockKeyScrapeTest(unittest.TestCase):
-    """Covers _function_body(), which scopes the UIPanel.h dock-title scrape."""
+    """Covers _function_body(), which scopes the UIPanel.hpp dock-title scrape."""
 
     # PanelIdFor() sits right above DefaultNameKey() and has an identical switch
     # shape, but returns serialization ids. Scraping both would put "dock.*"

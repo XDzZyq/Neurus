@@ -1,4 +1,4 @@
-#include "platform/PlatformPaths.h"
+#include "platform/PlatformPaths.hpp"
 
 #include <cstdlib>
 

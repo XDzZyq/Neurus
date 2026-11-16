@@ -3,23 +3,23 @@
  * @brief The overlay graph and the copy pass that seeds it.
  */
 
-#include "overlay/OverlayEngine.h"
+#include "overlay/OverlayEngine.hpp"
 
-#include "Barrier.h"
-#include "GPUProfiler.h"
-#include "Image.h"
-#include "PipelineBuilder.h"
-#include "ProfilingData.h"
-#include "RenderContext.h"
+#include "Barrier.hpp"
+#include "GPUProfiler.hpp"
+#include "Image.hpp"
+#include "PipelineBuilder.hpp"
+#include "ProfilingData.hpp"
+#include "RenderContext.hpp"
 
-#include "passes/DebugPass.h"
-#include "passes/GizmoPass.h"
-#include "passes/SelectionOutlinePass.h"
+#include "passes/DebugPass.hpp"
+#include "passes/GizmoPass.hpp"
+#include "passes/SelectionOutlinePass.hpp"
 
-#include "shaders/ComputeShader.h"
-#include "shaders/ShaderLibrary.h"
+#include "shaders/ComputeShader.hpp"
+#include "shaders/ShaderLibrary.hpp"
 
-#include "core/Log.h"
+#include "core/Log.hpp"
 
 #include <iterator>
 #include <stdexcept>
@@ -63,7 +63,7 @@ OverlayCopyPass::OverlayCopyPass(const vk::raii::Device& device,
 	              OverlayCopyPass::CreateDescriptorSetLayout(device), numSets)
 	, p_shader(
 		ShaderLibrary::LoadComputeShader("overlay_copy",
-		                                  NEURUS_SHADER_DIR "compute/overlay_copy.comp"))
+		                                  NEURUS_SHADER_DIR "compute/overlay_copy.comp.glsl"))
 {
 	BuildPipeline(device, "OverlayCopyPass");
 
