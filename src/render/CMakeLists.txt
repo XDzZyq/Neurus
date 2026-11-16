@@ -101,6 +101,8 @@ add_library(neurus_render STATIC
 	render_graph/DescriptorBinder.hpp
 	render_graph/ShaderReflection.hpp
 	render_graph/ShaderReflection.cpp
+	render_graph/ResourceTag.hpp
+	render_graph/ResourceTag.cpp
 	render_graph/RenderGraph.hpp
 	render_graph/RenderGraph.cpp
 	registrations/ShaderRegistration.hpp

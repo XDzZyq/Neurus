@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Image.hpp"
+#include "core/RenderGraphSpec.hpp"
 #include "resources/MeshGPU.hpp"
 #include "resources/EnvironmentGPU.hpp"
 #include "resources/LightGPU.hpp"
@@ -14,6 +15,8 @@
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -143,6 +146,53 @@ public:
 	 * @return Non-owning reference to the attachment image.
 	 */
 	Image& GetAttachment(AttachmentName name, vk::Extent2D extent);
+
+	// --- Planned graph resources (Stage 1) ---
+
+	/**
+	 * @brief Records one output port's resource plan.
+	 *
+	 * The tag is the only source of format, usage, extent policy and layer
+	 * policy; `ConfigFor` is not consulted for a planned resource. Planning does
+	 * not allocate: the image is created on the first GetResource() at the
+	 * current extent, so a resize does not recompile the graph.
+	 *
+	 * @param key  "node/port" identity, see ResourceKey().
+	 * @param tag  Output tag the port was declared with.
+	 */
+	void PlanResource(std::string key, GraphOutputTag tag);
+
+	/**
+	 * @brief Drops every plan and legacy alias. Created images are not destroyed.
+	 *
+	 * The caller drops the physical images first (CleanScreenSpace or a full
+	 * Clean) when a topology change invalidates them.
+	 */
+	void ClearResourcePlans();
+
+	/// @brief True when a resource with this key has been planned.
+	bool HasResource(std::string_view key) const;
+
+	/// @brief Returns the created image for a key, or nullptr when not created yet.
+	Image* FindPlannedResource(std::string_view key);
+
+	/**
+	 * @brief Returns (or lazily creates) the image for a planned key.
+	 * @throws std::invalid_argument when the key is unplanned or logical.
+	 */
+	Image& GetResource(std::string_view key, vk::Extent2D extent);
+
+	/// @brief Returns the tag a key was planned with, or nullptr when absent.
+	const GraphOutputTag* GetResourceTag(std::string_view key) const;
+
+	/**
+	 * @brief Stage 1 bridge: make an AttachmentName return this planned resource.
+	 *
+	 * The overlay graph and the legacy attachment accessors keep working while
+	 * the scene graph is port-keyed. Removed when Stage 3 replaces the overlay's
+	 * AttachmentName sockets.
+	 */
+	void AliasResourceToAttachment(AttachmentName name, std::string key);
 
 	// --- Per-light shadow resources (lazily created) ---
 
@@ -591,6 +641,9 @@ private:
 	/** @brief Creates a single attachment at the given extent and inserts it into the map. */
 	void createAttachment(AttachmentName name, vk::Extent2D extent);
 
+	/** @brief Creates a planned resource image at the given extent and inserts it. */
+	Image& createResource(const std::string& key, vk::Extent2D extent);
+
 	// --- References (non-owning) ---
 	const vk::raii::Device* rc_device;
 	const vk::raii::PhysicalDevice* rc_physicalDevice;
@@ -599,6 +652,12 @@ private:
 	std::unordered_map<AttachmentName, Image> rc_attachments;
 
 	std::unique_ptr<Image> rc_shadowIntensityArray;
+
+	// --- Planned graph resources (stage 1) ---
+	std::unordered_map<std::string, GraphOutputTag> rc_resourceTags;
+	std::unordered_map<std::string, Image>          rc_resources;
+	std::unordered_map<std::string, AttachmentName> rc_resourceAliases;      // key -> legacy name
+	std::unordered_map<AttachmentName, std::string> rc_attachmentResources;  // legacy name -> key
 
 	// --- Per-mesh GPU resources (key = object UID as int) ---
 	// Copy on write: a write installs a new table instead of mutating this one,

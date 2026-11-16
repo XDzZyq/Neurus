@@ -48,6 +48,8 @@ set(NEURUS_TEST_SOURCES
 	render/test_pickpixel.cpp
 	render/test_render_graph.cpp
 	render/test_shader_reflection.cpp
+	render/test_resource_tag.cpp
+	render/test_render_cache_resources.cpp
 	render/test_null_scene_passes.cpp
 	render/test_overlay_blend.cpp
 	render/test_render_frame_snapshot.cpp
