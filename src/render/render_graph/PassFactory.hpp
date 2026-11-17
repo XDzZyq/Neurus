@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "asset/graph/RenderGraphCompile.hpp"
+#include "asset/graph/PortSource.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 

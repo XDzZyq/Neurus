@@ -39,6 +39,7 @@
 #include "asset/graph/CpuGraphValidation.hpp"
 #include "asset/graph/PassKinds.hpp"
 #include "asset/graph/PassShaders.hpp"
+#include "asset/graph/ShaderSnapshot.hpp"
 #include "render/shaders/ComputeShader.hpp"
 #include "render/shaders/ShaderLibrary.hpp"
 #include "scene/Camera.hpp"
@@ -57,6 +58,7 @@
 #include <cstring>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
@@ -959,6 +961,7 @@ void Editor::FinishLoad()
 void Editor::ResetRenderGraph()
 {
 	m_graphProblems.clear();
+	m_passShaders.reset();  // the pool was cleared; the old identities are stale
 	m_passShaders = std::make_unique<PassShaders>(
 		*m_resources, &LoadPassKindShader, m_graphProblems);
 
@@ -980,6 +983,7 @@ void Editor::AssignNodeShaders()
 void Editor::ReplaceRenderGraph(const CpuGraphRecord& record)
 {
 	m_graphProblems.clear();
+	m_passShaders.reset();  // adopt the restored shaders by name
 	m_passShaders = std::make_unique<PassShaders>(
 		*m_resources, &LoadPassKindShader, m_graphProblems);
 
@@ -993,6 +997,12 @@ void Editor::ReplaceRenderGraph(const CpuGraphRecord& record)
 
 void Editor::SetRenderGraph(CpuRenderGraph graph)
 {
+	if (!m_passShaders)
+	{
+		m_passShaders = std::make_unique<PassShaders>(
+			*m_resources, &LoadPassKindShader, m_graphProblems);
+	}
+
 	m_renderGraph = std::move(graph);
 	AssignNodeShaders();
 	MarkDirty();
@@ -1010,8 +1020,42 @@ void Editor::PublishRenderGraph()
 		           << ": " << diagnostic.message);
 	}
 
-	// Bridge until the uploader consumes the CPU document directly.
-	ed_renderer->Post(CompileRenderGraphRequest{ToSpec(m_renderGraph)});
+	// Snapshot every shader the document names, including the second shader of
+	// the shadow passes, so the renderer never reads the Editor's pool. A shader
+	// that fails to snapshot is reported and left out; the renderer then rejects
+	// the node by name instead of drawing against a stale shader.
+	std::vector<ShaderSnapshot> snapshots;
+	std::unordered_map<int, bool> seen;
+	for (const auto& node : m_renderGraph.nodes)
+	{
+		const PassKindInfo* kind = FindPassKind(node->data.pass);
+		const std::span<const uint32_t> optional =
+			kind ? kind->optionalBindings : std::span<const uint32_t>{};
+
+		for (const int uid : m_passShaders->ShaderUids(node->data.pass))
+		{
+			if (!seen.emplace(uid, true).second)
+				continue;
+
+			const auto shader = m_resources->Get<ShaderData>(uid);
+			if (!shader)
+				continue;
+
+			try
+			{
+				snapshots.push_back(MakeShaderSnapshot(*shader, optional));
+			}
+			catch (const std::exception& error)
+			{
+				NEURUS_ERR("[Editor] render graph: cannot snapshot shader " << uid
+				           << " for node '" << node->name << "': " << error.what());
+			}
+		}
+	}
+
+	ed_renderer->Post(CompileRenderGraphRequest{
+		std::make_shared<const CpuRenderGraph>(CloneGraph(m_renderGraph)),
+		std::move(snapshots)});
 }
 
 void Editor::OnMeshImport(const std::string& path)

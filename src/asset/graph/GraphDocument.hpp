@@ -29,8 +29,6 @@
 
 namespace neurus {
 
-struct RenderGraphSpec;
-
 /**
  * @brief One saved output socket.
  */
@@ -187,13 +185,14 @@ CpuRenderGraph MakeDefaultCpuGraph(const IPortSource& ports);
 void ApplyConditions(CpuRenderGraph& graph, bool fxaa);
 
 /**
- * @brief Projects the document onto the flat spec the renderer still compiles.
+ * @brief Stable hash of the topology-affecting document content.
  *
- * Temporary bridge: the runtime graph consumes the CPU document directly once
- * the uploader lands, and this function is deleted with `RenderGraphSpec`.
+ * Covers node names, pass kinds, shader identities, output tags and every
+ * connection. Editor layout (`x`, `y`) is excluded: moving a node must not
+ * recompile the graph.
  *
- * @param graph  Document to project; it is not modified.
+ * @param graph  Document to hash.
  */
-RenderGraphSpec ToSpec(const CpuRenderGraph& graph);
+std::uint64_t CpuGraphHash(const CpuRenderGraph& graph);
 
 } // namespace neurus

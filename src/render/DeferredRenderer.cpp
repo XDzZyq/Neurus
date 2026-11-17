@@ -34,7 +34,10 @@
 #include "passes/FXAAPass.hpp"
 
 #include "render_graph/PassFactory.hpp"
+#include "render_graph/GraphUploader.hpp"
 #include "render_graph/ResourceTag.hpp"
+
+#include "asset/graph/GraphDocument.hpp"
 
 #include "render/HaltonSequence.hpp"
 
@@ -82,6 +85,33 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 	const auto it = kAliases.find(key);
 	return it == kAliases.end() ? std::nullopt
 	                            : std::optional<AttachmentName>(it->second);
+}
+
+/**
+ * @brief Dirty key over the published shader snapshots.
+ *
+ * A shader edit keeps the node's shader UID but bumps the snapshot's version, so
+ * the identity alone is not enough to notice it.
+ */
+std::uint64_t ShaderSnapshotsHash(const std::vector<ShaderSnapshot>& shaders)
+{
+	constexpr std::uint64_t kOffset = 14695981039346656037ull;
+	constexpr std::uint64_t kPrime  = 1099511628211ull;
+
+	std::uint64_t hash = kOffset;
+	const auto mix = [&hash](const std::uint64_t value)
+	{
+		hash ^= value;
+		hash *= kPrime;
+	};
+
+	for (const ShaderSnapshot& snapshot : shaders)
+	{
+		mix(static_cast<std::uint64_t>(snapshot.shaderUid));
+		mix(static_cast<std::uint64_t>(snapshot.version));
+	}
+	mix(shaders.size());
+	return hash;
 }
 
 } // anonymous namespace
@@ -177,21 +207,19 @@ void DeferredRenderer::InitializePipeline()
 
 	// --- 4. Build the overlay graph (selection outline, debug overlay, gizmo) ---
 	// Separate from the scene graph so overlays can be redrawn over a converged
-	// scene image without re-running a single scene pass. CompileMainGraph below
-	// tells it which scene image to draw over.
+	// scene image without re-running a single scene pass. The scene graph tells
+	// it which image to draw over once the Editor's document is compiled.
 	m_overlayEngine = std::make_unique<OverlayEngine>(
 		device, physicalDevice, kMaxFramesInFlight);
 	NEURUS_LOG("[DeferredRenderer] OverlayEngine created ("
 	           << m_overlayEngine->PassCount() << " overlay passes)");
 
-	// --- 5. Compile the default scene graph ---
-	// The document is the source of truth for topology; recordFrame recompiles it
-	// only when the document or the FXAA flag changes.
-	if (!CompileMainGraph(m_mainSpec, false))
-	{
-		NEURUS_ERR("[DeferredRenderer] The default render graph failed to compile; "
-		           "the scene will not draw until a valid document is provided");
-	}
+	// --- 5. Wait for the Editor's document ---
+	// The renderer owns no default topology: the Editor publishes the document
+	// and its shader snapshots as a request, and the first sample frame after
+	// that compiles it. Until then the scene graph has no passes and only the
+	// overlays draw.
+	NEURUS_LOG("[DeferredRenderer] Waiting for the Editor's render graph document");
 
 	// --- 9. Allocate command buffers (one per output image, reused) ---
 	uint32_t imageCount = r_target->ImageCount();
@@ -249,10 +277,9 @@ void DeferredRenderer::InitializePipeline()
 	m_requests = std::make_unique<RenderRequestProcessor>(
 		[this] { DrainInFlightFrames(); }, *r_renderCache, r_geometryPass,
 		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; },
-		[this](const RenderGraphSpec& spec)
+		[this](const CompileRenderGraphRequest& request)
 		{
-			DrainInFlightFrames();
-			return CompileMainGraph(spec, m_builtSignature.fxaa);
+			SetPendingGraph(request);
 		});
 }
 
@@ -701,20 +728,33 @@ void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 	m_requests->SetUploadManager(uploader);
 }
 
-bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool fxaa)
+void DeferredRenderer::SetPendingGraph(const CompileRenderGraphRequest& request)
 {
-	const std::uint64_t specHash = RenderGraphSpecHash(spec);
-	m_builtSignature = PipelineSignature{specHash, fxaa};
+	// The swap replans the cache's images, so no submitted frame may still read
+	// the old plans.
+	DrainInFlightFrames();
+	m_pendingGraph = request;
+}
 
-	const CompileResult result = CompileRenderGraphSpec(spec, *m_passFactory, fxaa);
+bool DeferredRenderer::CompileDocument(const CpuRenderGraph& document, const bool fxaa,
+                                       const std::span<const ShaderSnapshot> shaders)
+{
+	const std::uint64_t graphHash = CpuGraphHash(document);
 
 	m_graphReport = {};
-	m_graphReport.specHash = specHash;
+	m_graphReport.graphHash = graphHash;
 
-	if (!result.ok)
+	// The renderer applies the conditional nodes, so an FXAA toggle neither
+	// edits nor republishes the Editor's document.
+	CpuRenderGraph pruned = CloneGraph(document);
+	ApplyConditions(pruned, fxaa);
+
+	UploadResult upload = UploadCpuGraph(pruned, *m_passFactory, shaders);
+
+	if (!upload.graph)
 	{
-		m_graphReport.diagnostics = result.diagnostics;
-		for (const GraphDiagnostic& diagnostic : result.diagnostics)
+		m_graphReport.diagnostics = upload.errors;
+		for (const CpuGraphDiagnostic& diagnostic : upload.errors)
 		{
 			NEURUS_ERR("[RenderGraph] "
 			          << (diagnostic.node.empty() ? std::string("<graph>") : diagnostic.node)
@@ -724,77 +764,41 @@ bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool 
 		return false;
 	}
 
-	// Build into a candidate so a failure leaves the last good graph drawing.
-	RenderGraph candidate;
-	std::unordered_map<std::string, RenderGraph::NodeT*> nodes;
-	nodes.reserve(result.order.size());
-
-	for (const size_t index : result.order)
-	{
-		const GraphNodeSpec& nodeSpec = result.spec.nodes[index];
-		Pass* pass = m_passFactory->Find(nodeSpec.pass);
-		if (!pass)
-		{
-			NEURUS_ERR("[RenderGraph] pass kind '" << nodeSpec.pass
-			          << "' disappeared after validation");
-			return false;
-		}
-
-		auto* node = candidate.AddPass(pass, m_passFactory->Ports(nodeSpec.pass),
-		                               m_passFactory->ExternalInputs(nodeSpec.pass),
-		                               nodeSpec.id);
-		nodes.emplace(nodeSpec.id, node);
-	}
-
-	for (const GraphEdgeSpec& edge : result.spec.edges)
-	{
-		const auto from = nodes.find(edge.from);
-		const auto to   = nodes.find(edge.to);
-		if (from == nodes.end() || to == nodes.end()
-		    || !candidate.Connect(from->second, edge.fromPort, to->second, edge.toPort))
-		{
-			NEURUS_ERR("[RenderGraph] failed to wire " << edge.from << "." << edge.fromPort
-			          << " -> " << edge.to << "." << edge.toPort);
-			return false;
-		}
-	}
-
-	candidate.Compile();
-
 	// Plan the logical cache from the document's tags, then install the legacy
 	// aliases the overlay graph and the existing accessors still use. Images are
 	// created lazily on first use, so an unused output costs nothing.
 	r_renderCache->CleanScreenSpace();
 	r_renderCache->ClearResourcePlans();
 
-	for (const GraphNodeSpec& nodeSpec : result.spec.nodes)
+	for (const auto& node : pruned.nodes)
 	{
-		for (const auto& [port, tag] : nodeSpec.outputs)
-			r_renderCache->PlanResource(ResourceKey(nodeSpec.id, port), tag);
+		for (const auto& output : node->outputs)
+		{
+			if (!output->data.tag)
+				continue;
+			r_renderCache->PlanResource(ResourceKey(node->name, output->name),
+			                            *output->data.tag);
+		}
 	}
 
-	for (const GraphNodeSpec& nodeSpec : result.spec.nodes)
+	for (const auto& node : pruned.nodes)
 	{
-		for (const auto& [port, tag] : nodeSpec.outputs)
+		for (const auto& output : node->outputs)
 		{
-			(void)tag;
-			const std::string key = ResourceKey(nodeSpec.id, port);
+			if (!output->data.tag)
+				continue;
+			const std::string key = ResourceKey(node->name, output->name);
 			if (const std::optional<AttachmentName> legacy = LegacyAttachmentFor(key))
 				r_renderCache->AliasResourceToAttachment(*legacy, key);
 		}
 	}
 
-	m_mainGraph = std::move(candidate);
-	if (&spec != &m_mainSpec)
-		m_mainSpec = spec;
-
-	m_graphReport.compiled    = true;
-	m_graphReport.scenePasses = m_mainGraph.PassCount();
+	m_mainGraph = std::move(*upload.graph);
 
 	bool fxaaPresent = false;
-	for (const GraphNodeSpec& nodeSpec : result.spec.nodes)
+	for (const auto& node : pruned.nodes)
 	{
-		if (nodeSpec.pass == "FXAAPass")
+		if (node->data.pass == "FXAAPass")
 			fxaaPresent = true;
 	}
 
@@ -802,10 +806,13 @@ bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool 
 	                                        : AttachmentName::ComposedOutput;
 	m_overlayEngine->SetSceneTail(tail);
 
+	m_graphReport.compiled    = true;
+	m_graphReport.scenePasses = m_mainGraph.PassCount();
+
 	NEURUS_LOG("[RenderGraph] compiled " << m_mainGraph.PassCount()
 	           << " passes, FXAA=" << (fxaa ? "on" : "off")
 	           << ", tail=" << AttachmentNameToString(tail)
-	           << ", hash=" << std::hex << specHash << std::dec);
+	           << ", hash=" << std::hex << graphHash << std::dec);
 	return true;
 }
 
@@ -1077,10 +1084,28 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// was already handled by the restart that came with it.
 	if (work == FrameWork::Sample)
 	{
-		const PipelineSignature sig =
-			PipelineSignature::From(frame.Settings(), RenderGraphSpecHash(m_mainSpec));
-		if (!(sig == m_builtSignature))
-			CompileMainGraph(m_mainSpec, sig.fxaa);
+		// Consume a published document first: a request and the frame that
+		// carries it compile together.
+		if (m_pendingGraph)
+		{
+			m_mainDocument   = m_pendingGraph->graph;
+			m_documentShaders = std::move(m_pendingGraph->shaders);
+			m_pendingGraph.reset();
+			m_graphDirty = true;
+		}
+
+		if (m_mainDocument)
+		{
+			const PipelineSignature sig = PipelineSignature::From(
+				frame.Settings(), CpuGraphHash(*m_mainDocument),
+				ShaderSnapshotsHash(m_documentShaders));
+			if (m_graphDirty || !(sig == m_builtSignature))
+			{
+				CompileDocument(*m_mainDocument, sig.fxaa, m_documentShaders);
+				m_builtSignature = sig;
+				m_graphDirty     = false;
+			}
+		}
 	}
 
 	// --- Profiling: bracket the whole pipeline with GPU frame timestamps ---
@@ -1089,10 +1114,10 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// profile order (OverlayEngine appends them to m_frameProfile). GPU per-pass
 	// ms are back-filled in DrawFrame after Resolve().
 	m_profiler.BeginFrame(cmdBuf);
-	if (work == FrameWork::Sample)
+	if (work == FrameWork::Sample && m_mainGraph.PassCount() > 0)
 		m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 	else
-		m_frameProfile = FrameProfile{};  // An overlay frame records only overlay passes.
+		m_frameProfile = FrameProfile{};  // Overlay-only, or no document yet.
 	m_overlayEngine->Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
 	// --- Blit the final image to the presented image (window target only) ---

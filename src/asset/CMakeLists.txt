@@ -29,8 +29,6 @@ add_library(neurus_asset STATIC
 	data/AssetPath.cpp
 	data/render_graph/GraphOutputTag.hpp
 	data/render_graph/CpuRenderGraph.hpp
-	data/render_graph/RenderGraphSpec.hpp
-	data/render_graph/RenderGraphSpec.cpp
 	graph/PortSource.hpp
 	graph/PassShaders.hpp
 	graph/PassShaders.cpp
@@ -43,8 +41,6 @@ add_library(neurus_asset STATIC
 	graph/PassKinds.hpp
 	graph/ShaderSnapshot.hpp
 	graph/ShaderSnapshot.cpp
-	graph/RenderGraphCompile.hpp
-	graph/RenderGraphCompile.cpp
 	data/shader/ShaderStage.hpp
 	data/shader/ShaderStruct.hpp
 	data/shader/ShaderStruct.cpp

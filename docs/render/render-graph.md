@@ -1,16 +1,20 @@
 # Render Graph
 
-The deferred pipeline is described by a serialized document and compiled into a runtime DAG. A scene pass declares its ports from its shader; the compiler validates port-to-port edges, plans the logical cache from output tags, and the renderer writes the descriptor bindings the graph owns.
+The deferred pipeline is a document the Editor owns and the renderer uploads onto a runtime DAG. A node is a pass instance, its sockets are the ports its shader declares, and an output socket carries the resource tag the renderer plans its image from. The uploader maps the document onto the GPU graph through a `GraphMorphism`, so a node or edge the renderer cannot reproduce is reported instead of silently dropped.
 
 ## The document
 
-`RenderGraphSpec` (`src/asset/data/render_graph/RenderGraphSpec.hpp`) is Vulkan-free:
+`CpuRenderGraph` (`src/asset/data/render_graph/CpuRenderGraph.hpp`) is a `core::Graph`, which makes the document the same shape as the runtime graph:
 
-- `GraphNodeSpec` - a node id, a pass kind and a map of output-port tags.
-- `GraphEdgeSpec` - `from`/`fromPort` to `to`/`toPort`, name to name.
-- `GraphOutputTag` - `format`, `usage`, `extent` and `layers`, the closed set described in [Resources](#resources).
+- a node payload, `CpuNode`, holds the pass kind, the pooled shader uid and the graph-editor position; `Graph::Node::name` is the document id;
+- a socket payload, `CpuPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
+- an edge is an ordinary `Graph` connection, so there is no string reference between nodes. The saved form keys each edge by node name and port.
 
-The Editor owns the live document. `project::GraphComponent` stores it under `proj_render_graph`, and a project written before the document existed loads `MakeDefaultRenderGraphSpec()`. The default is today's scene graph: geometry, shadow depth, shadow intensity, SSAO, lighting, compose and FXAA, with the same edges the old hard-coded graph wired.
+`GraphOutputTag` (`src/asset/data/render_graph/GraphOutputTag.hpp`) is the closed set described in [Resources](#resources).
+
+The Editor owns the live document. `project::GraphComponent` persists it as a flat `CpuGraphRecord`: node fields and output sockets with their tags are saved, input sockets are re-derived from each node's shader on load. A project without the record, or a corrupt node, leaves no pending record and the Editor builds `MakeDefaultCpuGraph()`. The default is today's scene graph - geometry, shadow depth, shadow intensity, SSAO, lighting, compose and FXAA - and, like `CreateDefaultScene`, it is only the built-in fallback.
+
+The Editor pools one shader per built-in source through `PassShaders` (`src/asset/graph/PassShaders.hpp`). A restored project adopts its own shaders by name instead of duplicating them, and every publish carries a `ShaderSnapshot` per shader the document names, so the renderer never reads the Editor's pool.
 
 ## Ports from the shader
 
@@ -21,41 +25,48 @@ The Editor owns the live document. `project::GraphComponent` stores it under `pr
 - UBOs, SSBOs, plain uniforms and non-image arrays are not ports;
 - vertex attributes and inter-stage varyings are never ports.
 
-`Pass::DeclaredOutputs()` adds outputs a pass writes without a shader binding: the G-Buffer depth and the per-light shadow bundle. `Pass::ExternalInputPorts()` names inputs the pass resolves outside the graph, which today is only the two IBL cubemaps.
+`Pass::DeclaredOutputs()` adds outputs a pass writes without a shader binding: the G-Buffer depth and the per-light shadow bundle. `Pass::ExternalInputPorts()` names inputs the pass resolves outside the graph, which today is only the two IBL cubemaps. Both now read the built-in table (`src/asset/graph/PassKinds.hpp`), so the pass does not repeat them and the Editor can resolve ports without a pass instance.
 
-## Compile
+## Validation and upload
 
-`CompileRenderGraphSpec(spec, ports, fxaa)` (`src/asset/graph/RenderGraphCompile.hpp`) is Vulkan-free and never throws for a bad document. It:
+`ValidateCpuGraph(document, ports)` (`src/asset/graph/CpuGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CpuGraphDiagnostic` naming the node and, when it has one, the port.
 
-1. prunes `FXAAPass` when the FXAA condition is off;
-2. checks unique node ids and known pass kinds;
-3. checks every edge endpoint, direction, duplicate and second producer;
-4. checks that every used output has a tag, every tag names a declared output, and every tag value is in the closed set;
-5. checks that every live input is connected or declared external;
-6. runs Kahn's algorithm and reports the nodes left on a cycle.
+The renderer uploads the document with `UploadCpuGraph(document, factory, snapshots)` (`src/render/render_graph/GraphUploader.hpp`):
 
-Every failure is a `GraphDiagnostic` naming the node, the port and the reason. The renderer logs all of them, keeps its previous graph and still draws. `PipelineSignature` is the document hash plus the FXAA flag, so a compile happens only when the document or the condition changes.
+1. the document is validated against the factory's port tables, so the renderer and the Editor agree on what a valid edge is;
+2. every node whose shader uid names no snapshot is rejected by name;
+3. each node becomes a pass instance from `PassFactory`, with sockets materialized from the pass's ports;
+4. `MapGraph` maps every node and connection and returns a `RenderGraphMorphism`;
+5. the morphism must be total and incidence-preserving, then `Compile()` caches the order and the binding plan.
+
+A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. `PipelineSignature` is the document hash, the shader-snapshot versions and the FXAA flag, so a rebuild happens only when one of them changes.
+
+The FXAA condition is applied by the renderer (`ApplyConditions`) on a clone of the document, not by the Editor: the document keeps the FXAA node, and a config toggle neither edits nor republishes it.
 
 ## The runtime graph
 
 `RenderGraph` is `Graph<ShaderPort, PassEntry>` (`src/render/render_graph/RenderGraph.hpp`):
 
-- `PassFactory` owns one instance of every built-in pass and answers `pass kind -> PassPorts`; `DeferredRenderer::CompileMainGraph` maps the compiled order onto those instances.
-- `AddPass(pass, ports, externals, id)` materializes one socket per port. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
+- `PassFactory` owns one instance of every built-in pass and answers `pass kind -> PassPorts`; `UploadCpuGraph` maps the document's nodes onto those instances.
+- `AddPass(pass, ports, externals, id)` materializes one socket per port and keeps the document id in `PassEntry::id` for resource keys. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
 - `Connect(producer, fromPort, consumer, toPort)` is port to port. The overlay compatibility overload forwards to the same call with `AttachmentNameToString()`.
 - `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order.
 
 ```mermaid
 flowchart LR
-    doc["RenderGraphSpec<br/>nodes, ports, tags"] --> compile["CompileRenderGraphSpec<br/>validate, prune, sort"]
-    compile --> registry["PassFactory<br/>pass kind -> instance"]
-    registry --> graph["RenderGraph<br/>ShaderPort sockets"]
+    doc["CpuRenderGraph<br/>nodes, ports, tags"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
+    validate --> upload["UploadCpuGraph<br/>MapGraph + GraphMorphism"]
+    factory["PassFactory<br/>pass kind -> instance"] --> upload
+    snapshots["ShaderSnapshot<br/>per shader"] --> upload
+    upload --> graph["RenderGraph<br/>ShaderPort sockets"]
     graph --> plan["BuildImageBindings<br/>image binding plan"]
     plan --> execute["Execute<br/>write descriptors, Record()"]
     execute --> frame["FrameProfile"]
 ```
 
-`OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph over the scene tail and is not part of the document in Stage 1.
+The upload also plans the cache: one logical resource per tagged output, keyed by `ResourceKey(node, port)`.
+
+`OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph over the scene tail and is not part of the document yet.
 
 ## Resources
 
@@ -72,7 +83,7 @@ The four fields are closed sets, so they are enums (`GraphFormat`, `GraphUsage`,
 
 `RenderCache::PlanResource` records the tag; `GetResource(key, extent)` creates the image lazily at the live extent, so a resize does not recompile. `layers: lights` creates a 4-layer array, and `usage: logical` creates nothing: the shadow depth bundle is an ordering token for per-light maps owned by `LightGPU`, not a cache image.
 
-`AttachmentName` remains for the overlay graph and for the existing accessors. The default document's resources are aliased to the legacy names (`geometry/gPosition` to `Position`, `lighting/outputImage` to `HDRColor`, and so on) by `RenderCache::AliasResourceToAttachment`, so the overlay and the tests read the same physical image under both identities. A node id that is not part of the default document gets its own image. This bridge is removed in Stage 3.
+`AttachmentName` remains for the overlay graph and for the existing accessors. The document's resources are aliased to the legacy names (`geometry/gPosition` to `Position`, `lighting/outputImage` to `HDRColor`, and so on) by `RenderCache::AliasResourceToAttachment`, so the overlay and the tests read the same physical image under both identities. A node id outside that map gets its own image. The bridge goes away when the overlay graph moves to ports.
 
 ## Descriptors and push constants
 
@@ -80,31 +91,33 @@ A pass no longer hand-writes its set layout. `ReflectDescriptorLayout` (`src/ren
 
 The graph writes the descriptors. `BuildImageBindings` turns the node's connected input ports and storage-image output ports into `GraphImageBinding`s; `WritePassBindings` resolves each one through `PassResources`, then adds the pass's buffers (`CollectGraphBuffers`) and external images (`CollectGraphExternalImages`). A pass reads its images by port name from `PassFrame::resources`, never by `AttachmentName`.
 
-Two Stage 1 exceptions are explicit:
+Two exceptions are explicit:
 
 - `ShadowIntensityPass` allocates one set per shadow-casting light and writes it inside the light loop. The topology sees one output port; `SelfManagedBindings()` keeps the graph away from bindings 0, 1 and 2.
 - `GeometryPass` builds per-mesh pipelines from user shaders with their own layouts; the graph still writes its camera UBO.
 
-Barriers remain pass-owned: a pass transitions the resources it is about to use and leaves its outputs in its own write state. Graph-owned barriers are out of scope for Stage 1.
+Barriers remain pass-owned: a pass transitions the resources it is about to use and leaves its outputs in its own write state. Graph-owned barriers are out of scope.
 
 ## Ownership boundary
 
-- Editor: owns the document, validates nothing about the GPU, and posts `CompileRenderGraphRequest` when the document or project changes.
-- Renderer: owns `PassFactory`, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor.
+- Editor: owns the document, the pooled pass shaders and their snapshots, and posts `CompileRenderGraphRequest{graph, shaders}` when the document or project changes. It never touches a GPU object.
+- Renderer: owns `PassFactory`, the uploader and its morphism, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
 - `RenderConfig` is copied into every published frame and still decides the FXAA condition; the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
 
 ## Tests
 
-- `test/core/test_render_graph_spec.cpp` - default document, round trip, FXAA pruning, hash.
-- `test/asset/test_pass_ports.cpp` - ports from the real shaders, declared outputs, conflicting duplicates.
-- `test/asset/test_render_graph_compile.cpp` - every named compile failure, external inputs, cycles, deterministic order.
+- `test/asset/test_cpu_render_graph.cpp`, `test/core/test_graph_clone.cpp` - the document type and the deep copy undo and publishing rely on.
+- `test/core/test_graph_morphism.cpp` - totality, incidence preservation and the mapping policy.
+- `test/asset/test_graph_document.cpp` - the default document, round trip, input derivation, condition pruning and every named validation failure.
+- `test/asset/test_pass_ports.cpp`, `test/asset/test_shader_snapshot.cpp` - ports from the real shaders, the pass-kind table, and the snapshot boundary.
 - `test/render/test_shader_reflection.cpp` - binding and push-range reflection from every main shader.
 - `test/render/test_render_cache_resources.cpp` - tag-planned images, logical resources, legacy aliases.
+- `test/render/test_graph_uploader.cpp` - a total upload, node and order agreement, and a named failure for an unknown pass, a missing snapshot and a stale socket.
 - `test/render/test_render_graph.cpp`, `test_pass_factory.cpp`, `test_pass_bindings.cpp` - port sockets, factory, binding plan.
-- `test/render/test_render_graph_pipeline.cpp` - the production renderer compiles, draws, changes topology and keeps the last good graph on a bad document.
+- `test/render/test_render_graph_pipeline.cpp` - the production renderer draws before a document arrives, compiles it, follows an FXAA toggle and an edited topology, and keeps the last good graph on a bad document.
 - `test/render/test_pass_*` - direct pass tests now use `RecordPass`, which writes the same graph-owned bindings production writes.
-- `test/asset/test_graph_component.cpp`, `test/editor/test_editor_render_graph.cpp` - persistence and the Editor's publish path.
+- `test/asset/test_graph_component.cpp`, `test/editor/test_editor_render_graph.cpp` - persistence and the Editor's publish path, snapshots included.
 
 ## Profiling
 

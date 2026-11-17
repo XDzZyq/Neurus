@@ -36,9 +36,9 @@
 #include "RenderCache.hpp"
 #include "TimelineSemaphore.hpp"
 #include "passes/Pass.hpp"
-#include "asset/graph/RenderGraphCompile.hpp"
+#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/graph/CpuGraphValidation.hpp"
 #include "core/RenderConfig.hpp"
-#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "RenderContext.hpp"
 #include "OutputTarget.hpp"
 #include "render_graph/RenderGraph.hpp"
@@ -47,7 +47,10 @@
 
 #include <glm/glm.hpp>
 #include <array>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -395,28 +398,41 @@ private:
 	std::unique_ptr<OverlayEngine> m_overlayEngine;
 
 	// --- RenderGraph (the active pipeline) ---
-	// Compile-once-per-topology DAG holding the whole deferred pipeline; recordFrame
-	// dispatches it and recompiles it (CompileMainGraph) only when the document or
-	// the FXAA flag changes.
+	// Compile-once-per-document DAG holding the whole deferred pipeline; recordFrame
+	// dispatches it and compiles it only when the document, its shaders or the
+	// FXAA flag change.
 	RenderGraph m_mainGraph;
 
-	/// Document the current m_mainGraph was compiled from.
-	RenderGraphSpec m_mainSpec = MakeDefaultRenderGraphSpec();
+	/// Document the current m_mainGraph was compiled from; null until published.
+	std::shared_ptr<const CpuRenderGraph> m_mainDocument;
+
+	/// Shader snapshots that came with m_mainDocument.
+	std::vector<ShaderSnapshot> m_documentShaders;
+
+	/// Latest request waiting for the next sample frame.
+	std::optional<CompileRenderGraphRequest> m_pendingGraph;
+
+	/// Set when a request replaced the document, so the next sample compiles it.
+	bool m_graphDirty = false;
 
 	/**
 	 * @brief Topology-affecting projection of RenderConfig and the document.
 	 *
-	 * The graph is derived from the document plus the FXAA condition; this
-	 * signature captures both, so the graph is rebuilt only when they differ.
+	 * The graph is derived from the document, its shader snapshots and the FXAA
+	 * condition; this signature captures all three, so a sample rebuilds the
+	 * graph only when one of them changed.
 	 */
 	struct PipelineSignature
 	{
-		std::uint64_t specHash = 0;     ///< RenderGraphSpecHash of the document.
-		bool          fxaa     = false; ///< RenderConfig::RequiresFXAA().
+		std::uint64_t graphHash  = 0;     ///< CpuGraphHash of the document.
+		std::uint64_t shaderHash = 0;     ///< Snapshot identities and versions.
+		bool          fxaa       = false; ///< RenderConfig::RequiresFXAA().
 
-		static PipelineSignature From(const RenderConfig& cfg, std::uint64_t specHash)
+		static PipelineSignature From(const RenderConfig& cfg,
+		                              std::uint64_t graphHash,
+		                              std::uint64_t shaderHash)
 		{
-			return PipelineSignature{specHash, cfg.RequiresFXAA()};
+			return PipelineSignature{graphHash, shaderHash, cfg.RequiresFXAA()};
 		}
 
 		bool operator==(const PipelineSignature&) const = default;
@@ -429,24 +445,33 @@ public:
 	/// @brief Last compile verdict, including the diagnostics the caller reports.
 	struct GraphCompileReport
 	{
-		bool                         compiled = false;
-		std::uint64_t                specHash = 0;
-		size_t                       scenePasses = 0;
-		std::vector<GraphDiagnostic> diagnostics;
+		bool                            compiled = false;
+		std::uint64_t                   graphHash = 0;
+		size_t                          scenePasses = 0;
+		std::vector<CpuGraphDiagnostic> diagnostics;
 	};
 
 	/**
-	 * @brief Compiles a document into the live scene graph.
+	 * @brief Holds a published document until the next sample frame compiles it.
+	 *
+	 * Called from the request drain, which runs before the frame records, so the
+	 * document is compiled in the same frame that carries the request.
+	 */
+	void SetPendingGraph(const CompileRenderGraphRequest& request);
+
+	/**
+	 * @brief Uploads and compiles one document into the live scene graph.
 	 *
 	 * On failure the previous graph keeps drawing and the diagnostics are stored
-	 * in LastGraphReport(). On success the document is stored, so a later FXAA
-	 * toggle recompiles the same topology.
+	 * in LastGraphReport().
 	 *
-	 * @param spec  Document to compile.
-	 * @param fxaa  Whether the hard-coded FXAA condition is on.
+	 * @param document  CPU document to compile.
+	 * @param fxaa      Whether the hard-coded FXAA condition is on.
+	 * @param shaders   Shader snapshots that came with the document.
 	 * @return true when the document compiled and the graph was replaced.
 	 */
-	bool CompileMainGraph(const RenderGraphSpec& spec, bool fxaa);
+	bool CompileDocument(const CpuRenderGraph& document, bool fxaa,
+	                     std::span<const ShaderSnapshot> shaders);
 
 	/// @brief Last compile verdict, for tests and the command layer.
 	const GraphCompileReport& LastGraphReport() const { return m_graphReport; }

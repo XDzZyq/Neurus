@@ -10,7 +10,7 @@
 
 #include "../Image.hpp"
 
-#include "asset/data/render_graph/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/GraphOutputTag.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 

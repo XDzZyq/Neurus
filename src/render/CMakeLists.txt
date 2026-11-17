@@ -110,6 +110,8 @@ add_library(neurus_render STATIC
 	render_graph/PassBindings.cpp
 	render_graph/PassFactory.hpp
 	render_graph/PassFactory.cpp
+	render_graph/GraphUploader.hpp
+	render_graph/GraphUploader.cpp
 	render_graph/RenderGraph.hpp
 	render_graph/RenderGraph.cpp
 	registrations/ShaderRegistration.hpp

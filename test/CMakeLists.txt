@@ -16,7 +16,6 @@ set(NEURUS_TEST_SOURCES
 	asset/test_imagedata.cpp
 	asset/test_pass_ports.cpp
 	asset/test_shader_snapshot.cpp
-	asset/test_render_graph_compile.cpp
 	asset/test_graph_component.cpp
 	render/test_shader_parser.cpp
 	render/test_syncobjects.cpp
@@ -51,6 +50,7 @@ set(NEURUS_TEST_SOURCES
 	render/test_render_graph.cpp
 	render/test_render_graph_pipeline.cpp
 	render/test_pass_factory.cpp
+	render/test_graph_uploader.cpp
 	render/test_pass_bindings.cpp
 	render/test_shader_reflection.cpp
 	render/test_resource_tag.cpp
@@ -107,7 +107,6 @@ set(NEURUS_TEST_SOURCES
 	asset/test_ui_component.cpp
 	asset/test_cpu_render_graph.cpp
 	asset/test_graph_document.cpp
-	asset/test_render_graph_spec.cpp
 	core/test_graph.cpp
 	core/test_graph_clone.cpp
 	core/test_graph_morphism.cpp

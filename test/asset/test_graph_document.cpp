@@ -7,7 +7,6 @@
 
 #include "shared/TestPassPorts.hpp"
 
-#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "asset/graph/CpuGraphValidation.hpp"
 #include "asset/graph/GraphDocument.hpp"
 
@@ -44,18 +43,6 @@ CpuRenderGraph::NodeType* FindNode(CpuRenderGraph& graph, const std::string& nam
 			return node.get();
 	}
 	return nullptr;
-}
-
-std::vector<std::string> EdgeKeys(const CpuGraphRecord& record)
-{
-	std::vector<std::string> keys;
-	for (const neurus::CpuEdgeRecord& edge : record.edges)
-	{
-		keys.push_back(edge.from + "|" + edge.fromPort + "|"
-		               + edge.to + "|" + edge.toPort);
-	}
-	std::sort(keys.begin(), keys.end());
-	return keys;
 }
 
 std::string Serialize(const CpuGraphRecord& record)
@@ -133,49 +120,6 @@ TEST(GraphDocument, DefaultGraph)
 	}
 
 	EXPECT_TRUE(neurus::ValidateCpuGraph(graph, ports).empty());
-}
-
-TEST(GraphDocument, DefaultMatchesTodaySpec)
-{
-	// Temporary bridge: the flat spec and the CPU document must describe the
-	// same topology until the spec is deleted with the renderer uploader.
-	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	const CpuRenderGraph graph = neurus::MakeDefaultCpuGraph(ports);
-	const CpuGraphRecord record = neurus::ToRecord(graph);
-	const neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
-
-	ASSERT_EQ(record.nodes.size(), spec.nodes.size());
-	for (size_t i = 0; i < record.nodes.size(); ++i)
-	{
-		EXPECT_EQ(record.nodes[i].name, spec.nodes[i].id);
-		EXPECT_EQ(record.nodes[i].pass, spec.nodes[i].pass);
-	}
-
-	std::vector<std::string> specEdges;
-	for (const neurus::GraphEdgeSpec& edge : spec.edges)
-	{
-		specEdges.push_back(edge.from + "|" + edge.fromPort + "|"
-		                    + edge.to + "|" + edge.toPort);
-	}
-	std::sort(specEdges.begin(), specEdges.end());
-	EXPECT_EQ(EdgeKeys(record), specEdges);
-
-	for (const neurus::GraphNodeSpec& specNode : spec.nodes)
-	{
-		const CpuRenderGraph::NodeType* node = FindNode(graph, specNode.id);
-		ASSERT_NE(node, nullptr);
-		for (const auto& [portName, tag] : specNode.outputs)
-		{
-			std::optional<neurus::GraphOutputTag> actual;
-			for (const auto& output : node->outputs)
-			{
-				if (output->name == portName)
-					actual = output->data.tag;
-			}
-			ASSERT_TRUE(actual.has_value()) << specNode.id << "." << portName;
-			EXPECT_EQ(*actual, tag) << specNode.id << "." << portName;
-		}
-	}
 }
 
 TEST(GraphDocument, RoundTripPreservesTopology)

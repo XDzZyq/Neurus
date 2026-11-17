@@ -5,11 +5,10 @@
 
 #include "asset/graph/GraphDocument.hpp"
 
-#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "asset/graph/PassKinds.hpp"
 
-#include <map>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -340,40 +339,76 @@ void ApplyConditions(CpuRenderGraph& graph, const bool fxaa)
 		graph.RemoveNode(node);
 }
 
-RenderGraphSpec ToSpec(const CpuRenderGraph& graph)
+std::uint64_t CpuGraphHash(const CpuRenderGraph& graph)
 {
-	RenderGraphSpec spec;
-	spec.nodes.reserve(graph.nodes.size());
+	constexpr std::uint64_t kOffset = 14695981039346656037ull;
+	constexpr std::uint64_t kPrime  = 1099511628211ull;
 
+	std::uint64_t hash = kOffset;
+
+	const auto hashString = [&hash](const std::string_view text)
+	{
+		for (const char ch : text)
+		{
+			hash ^= static_cast<unsigned char>(ch);
+			hash *= kPrime;
+		}
+		// A separator keeps "ab" + "c" distinct from "a" + "bc".
+		hash ^= 0xFFu;
+		hash *= kPrime;
+	};
+
+	const auto hashByte = [&hash](const unsigned char value)
+	{
+		hash ^= value;
+		hash *= kPrime;
+	};
+
+	hashByte(0x01);
+	hashString(std::to_string(graph.nodes.size()));
 	for (const auto& node : graph.nodes)
 	{
-		GraphNodeSpec saved;
-		saved.id   = node->name;
-		saved.pass = node->data.pass;
+		hashByte(0x02);
+		hashString(node->name);
+		hashString(node->data.pass);
+		hashString(std::to_string(node->data.shaderUid));
+		hashString(std::to_string(node->outputs.size()));
 		for (const auto& output : node->outputs)
 		{
+			hashByte(0x03);
+			hashString(output->name);
+			hashString(output->data.type);
 			if (output->data.tag)
-				saved.outputs.emplace(output->name, *output->data.tag);
+			{
+				hashByte(0x04);
+				hashByte(static_cast<unsigned char>(output->data.tag->format));
+				hashByte(static_cast<unsigned char>(output->data.tag->usage));
+				hashByte(static_cast<unsigned char>(output->data.tag->extent));
+				hashByte(static_cast<unsigned char>(output->data.tag->layers));
+			}
+			else
+			{
+				hashByte(0x05);
+			}
 		}
-		spec.nodes.push_back(std::move(saved));
 	}
 
+	hashByte(0x06);
 	for (const auto& node : graph.nodes)
 	{
 		for (const auto& input : node->inputs)
 		{
 			if (!input->source)
 				continue;
-			spec.edges.push_back({
-				input->source->owner->name,
-				input->source->name,
-				node->name,
-				input->name,
-			});
+			hashByte(0x07);
+			hashString(input->source->owner->name);
+			hashString(input->source->name);
+			hashString(node->name);
+			hashString(input->name);
 		}
 	}
 
-	return spec;
+	return hash;
 }
 
 } // namespace neurus

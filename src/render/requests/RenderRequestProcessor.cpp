@@ -12,11 +12,11 @@ RenderRequestProcessor::RenderRequestProcessor(std::function<void()> drainFrames
                                                GeometryPass* geometryPass,
                                                std::function<void()> restartAccumulation,
                                                std::function<void()> markOverlaysDirty,
-                                               std::function<bool(const RenderGraphSpec&)> compileGraph)
+                                               std::function<void(const CompileRenderGraphRequest&)> setPendingGraph)
 	: m_executor(std::move(drainFrames), cache, /*uploader=*/nullptr, geometryPass)
 	, m_restartAccumulation(std::move(restartAccumulation))
 	, m_markOverlaysDirty(std::move(markOverlaysDirty))
-	, m_compileGraph(std::move(compileGraph))
+	, m_setPendingGraph(std::move(setPendingGraph))
 {
 }
 
@@ -57,7 +57,7 @@ void RenderRequestProcessor::Drain()
 					// counts as a restart.
 					if constexpr (std::is_same_v<T, CompileRenderGraphRequest>)
 					{
-						if (m_compileGraph) m_compileGraph(typed.spec);
+						if (m_setPendingGraph) m_setPendingGraph(typed);
 					}
 					// ResetAccumulationRequest exists to ask for exactly the restart
 					// above, so it stops here instead of reaching the executor.
