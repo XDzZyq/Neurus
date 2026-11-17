@@ -39,7 +39,7 @@ void Load(neurus::RenderGraphSpec& spec, const std::string& text)
 TEST(GraphComponent, RoundTrip)
 {
 	neurus::RenderGraphSpec original = neurus::MakeDefaultRenderGraphSpec();
-	original.FindNode("geometry")->outputs["gPosition"].format = "rgba32f";
+	original.FindNode("geometry")->outputs["gPosition"].format = neurus::GraphFormat::Rgba8Unorm;
 	original.edges.pop_back();
 
 	neurus::RenderGraphSpec restored = neurus::MakeDefaultRenderGraphSpec();

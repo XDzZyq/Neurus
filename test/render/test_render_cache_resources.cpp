@@ -18,14 +18,15 @@ using namespace neurus;
 
 namespace {
 
-GraphOutputTag Tag(std::string format, std::string usage,
-                   std::string extent = "render", std::string layers = "single")
+GraphOutputTag Tag(const GraphFormat format, const GraphUsage usage,
+                   const GraphExtent extent = GraphExtent::Render,
+                   const GraphLayers layers = GraphLayers::Single)
 {
 	GraphOutputTag tag;
-	tag.format = std::move(format);
-	tag.usage  = std::move(usage);
-	tag.extent = std::move(extent);
-	tag.layers = std::move(layers);
+	tag.format = format;
+	tag.usage  = usage;
+	tag.extent = extent;
+	tag.layers = layers;
 	return tag;
 }
 
@@ -57,7 +58,7 @@ TEST_F(RenderCacheResourcesTest, PlanAndCreate)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	const vk::Extent2D extent(320, 200);
-	m_cache->PlanResource("geometry/gPosition", Tag("rgba16f", "color+sampled"));
+	m_cache->PlanResource("geometry/gPosition", Tag(GraphFormat::Rgba16f, GraphUsage::ColorSampled));
 
 	EXPECT_TRUE(m_cache->HasResource("geometry/gPosition"));
 	EXPECT_EQ(m_cache->FindPlannedResource("geometry/gPosition"), nullptr);
@@ -77,7 +78,8 @@ TEST_F(RenderCacheResourcesTest, LayersCreateArray)
 
 	const vk::Extent2D extent(320, 200);
 	m_cache->PlanResource("shadow_intensity/outputShadow",
-	                      Tag("r8_unorm", "storage+sampled", "render", "lights"));
+	                      Tag(GraphFormat::R8Unorm, GraphUsage::StorageSampled,
+	                          GraphExtent::Render, GraphLayers::Lights));
 
 	Image& image = m_cache->GetResource("shadow_intensity/outputShadow", extent);
 	EXPECT_EQ(image.Format(), vk::Format::eR8Unorm);
@@ -91,7 +93,7 @@ TEST_F(RenderCacheResourcesTest, DepthCreatesDepthStencil)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	const vk::Extent2D extent(320, 200);
-	m_cache->PlanResource("geometry/depth", Tag("d32_sfloat", "depth+sampled"));
+	m_cache->PlanResource("geometry/depth", Tag(GraphFormat::D32Sfloat, GraphUsage::DepthSampled));
 
 	Image& image = m_cache->GetResource("geometry/depth", extent);
 	EXPECT_EQ(image.Format(), vk::Format::eD32Sfloat);
@@ -104,7 +106,7 @@ TEST_F(RenderCacheResourcesTest, LogicalIsNotAllocated)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	const vk::Extent2D extent(320, 200);
-	m_cache->PlanResource("shadow_depth/shadow_depth", Tag("", "logical"));
+	m_cache->PlanResource("shadow_depth/shadow_depth", Tag(GraphFormat::None, GraphUsage::Logical));
 
 	EXPECT_TRUE(m_cache->HasResource("shadow_depth/shadow_depth"));
 	EXPECT_EQ(m_cache->FindPlannedResource("shadow_depth/shadow_depth"), nullptr);
@@ -127,7 +129,7 @@ TEST_F(RenderCacheResourcesTest, CleanScreenSpaceRecreates)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	m_cache->PlanResource("ssao/outputSSAO", Tag("r8_unorm", "storage+sampled"));
+	m_cache->PlanResource("ssao/outputSSAO", Tag(GraphFormat::R8Unorm, GraphUsage::StorageSampled));
 	m_cache->GetResource("ssao/outputSSAO", vk::Extent2D(320, 200));
 
 	m_cache->CleanScreenSpace();
@@ -144,7 +146,7 @@ TEST_F(RenderCacheResourcesTest, LegacyAliasSharesTheImage)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	const vk::Extent2D extent(320, 200);
-	m_cache->PlanResource("compose/outputComposed", Tag("rgba16f", "storage+sampled"));
+	m_cache->PlanResource("compose/outputComposed", Tag(GraphFormat::Rgba16f, GraphUsage::StorageSampled));
 	m_cache->AliasResourceToAttachment(AttachmentName::ComposedOutput,
 	                                   "compose/outputComposed");
 
@@ -162,7 +164,7 @@ TEST_F(RenderCacheResourcesTest, TagConfigWinsOverConfigFor)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	const vk::Extent2D extent(320, 200);
-	m_cache->PlanResource("fxaa/outputFXAA", Tag("r8_unorm", "storage+sampled"));
+	m_cache->PlanResource("fxaa/outputFXAA", Tag(GraphFormat::R8Unorm, GraphUsage::StorageSampled));
 	m_cache->AliasResourceToAttachment(AttachmentName::FXAAOutput, "fxaa/outputFXAA");
 
 	Image& attachment = m_cache->GetAttachment(AttachmentName::FXAAOutput, extent);
@@ -176,7 +178,8 @@ TEST_F(RenderCacheResourcesTest, ShadowIntensityDelegates)
 
 	const vk::Extent2D extent(320, 200);
 	m_cache->PlanResource("shadow_intensity/outputShadow",
-	                      Tag("r8_unorm", "storage+sampled", "render", "lights"));
+	                      Tag(GraphFormat::R8Unorm, GraphUsage::StorageSampled,
+	                          GraphExtent::Render, GraphLayers::Lights));
 	m_cache->AliasResourceToAttachment(AttachmentName::ShadowIntensity,
 	                                   "shadow_intensity/outputShadow");
 

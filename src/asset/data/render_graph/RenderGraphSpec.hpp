@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include "asset/data/render_graph/GraphOutputTag.hpp"
+
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -27,37 +29,6 @@
 #include <cereal/types/vector.hpp>
 
 namespace neurus {
-
-/**
- * @brief One output socket's resource declaration.
- *
- * @c format and @c usage are empty only for a logical resource, which exists as
- * an ordering token and is never allocated as an image. @c extent is "render"
- * or "shadow"; @c layers is "single" or "lights".
- */
-struct GraphOutputTag
-{
-	std::string format;              ///< "rgba16f", "r8_unorm", "d32_sfloat"; empty for logical
-	std::string usage;               ///< "color+sampled", "storage+sampled", "depth+sampled", "logical"
-	std::string extent = "render";   ///< "render" or "shadow"
-	std::string layers = "single";   ///< "single" or "lights"
-
-	bool operator==(const GraphOutputTag&) const = default;
-
-	/**
-	 * @brief Serializes the four tag fields.
-	 * @tparam Archive Cereal archive type.
-	 * @param ar Archive to read or write.
-	 */
-	template<class Archive>
-	void serialize(Archive& ar)
-	{
-		ar(cereal::make_nvp("format", format),
-		   cereal::make_nvp("usage", usage),
-		   cereal::make_nvp("extent", extent),
-		   cereal::make_nvp("layers", layers));
-	}
-};
 
 /**
  * @brief One pass instance in the document.

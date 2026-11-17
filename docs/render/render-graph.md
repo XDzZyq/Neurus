@@ -63,10 +63,12 @@ The graph plans one logical resource per used output tag, keyed by `ResourceKey(
 
 | Field | Values |
 |---|---|
-| `format` | `rgba16f`, `rgba8_srgb`, `rgba8_unorm`, `r8_unorm`, `r32_uint`, `d32_sfloat`, or empty for `logical` |
-| `usage` | `color+sampled`, `storage+sampled`, `depth+sampled`, `logical` |
+| `format` | `none` (`logical`), `rgba16f`, `rgba8_srgb`, `rgba8_unorm`, `r8_unorm`, `r32_uint`, `d32_sfloat` |
+| `usage` | `color_sampled`, `storage_sampled`, `depth_sampled`, `logical` |
 | `extent` | `render` or `shadow` |
 | `layers` | `single` or `lights` |
+
+The four fields are closed sets, so they are enums (`GraphFormat`, `GraphUsage`, `GraphExtent`, `GraphLayers` in `src/asset/data/render_graph/GraphOutputTag.hpp`). `ResourceTag.cpp` is the only place that turns them into Vulkan values.
 
 `RenderCache::PlanResource` records the tag; `GetResource(key, extent)` creates the image lazily at the live extent, so a resize does not recompile. `layers: lights` creates a 4-layer array, and `usage: logical` creates nothing: the shadow depth bundle is an ordering token for per-light maps owned by `LightGPU`, not a cache image.
 

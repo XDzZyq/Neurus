@@ -1,6 +1,6 @@
 /**
  * @file ResourceTag.cpp
- * @brief Tag string to Vulkan image configuration.
+ * @brief Tag enums to Vulkan image configuration.
  */
 
 #include "render/render_graph/ResourceTag.hpp"
@@ -19,42 +19,43 @@ std::string ResourceKey(const std::string_view node, const std::string_view port
 
 vk::Format FormatFromTag(const GraphOutputTag& tag)
 {
-	if (tag.format == "rgba16f")    return vk::Format::eR16G16B16A16Sfloat;
-	if (tag.format == "rgba8_srgb") return vk::Format::eR8G8B8A8Srgb;
-	if (tag.format == "rgba8_unorm") return vk::Format::eR8G8B8A8Unorm;
-	if (tag.format == "r8_unorm")   return vk::Format::eR8Unorm;
-	if (tag.format == "r32_uint")   return vk::Format::eR32Uint;
-	if (tag.format == "d32_sfloat") return vk::Format::eD32Sfloat;
+	switch (tag.format)
+	{
+	case GraphFormat::Rgba16f:    return vk::Format::eR16G16B16A16Sfloat;
+	case GraphFormat::Rgba8Srgb:  return vk::Format::eR8G8B8A8Srgb;
+	case GraphFormat::Rgba8Unorm: return vk::Format::eR8G8B8A8Unorm;
+	case GraphFormat::R8Unorm:    return vk::Format::eR8Unorm;
+	case GraphFormat::R32Uint:    return vk::Format::eR32Uint;
+	case GraphFormat::D32Sfloat:  return vk::Format::eD32Sfloat;
+	case GraphFormat::None:
+		break;
+	}
 
 	throw std::invalid_argument(
-		"ResourceTag: unknown output format '" + tag.format + "'");
+		"ResourceTag: a logical output tag declares no image format");
 }
 
 vk::ImageUsageFlags UsageFromTag(const GraphOutputTag& tag)
 {
-	if (tag.usage == "color+sampled")
+	switch (tag.usage)
 	{
+	case GraphUsage::ColorSampled:
 		return vk::ImageUsageFlagBits::eColorAttachment
 		     | vk::ImageUsageFlagBits::eSampled
 		     | vk::ImageUsageFlagBits::eTransferSrc;
-	}
-	if (tag.usage == "storage+sampled")
-	{
+	case GraphUsage::StorageSampled:
 		return vk::ImageUsageFlagBits::eStorage
 		     | vk::ImageUsageFlagBits::eSampled
 		     | vk::ImageUsageFlagBits::eTransferSrc;
-	}
-	if (tag.usage == "depth+sampled")
-	{
+	case GraphUsage::DepthSampled:
 		return vk::ImageUsageFlagBits::eDepthStencilAttachment
 		     | vk::ImageUsageFlagBits::eSampled
 		     | vk::ImageUsageFlagBits::eTransferSrc;
-	}
-	if (tag.usage == "logical")
+	case GraphUsage::Logical:
 		return {};
+	}
 
-	throw std::invalid_argument(
-		"ResourceTag: unknown output usage '" + tag.usage + "'");
+	throw std::invalid_argument("ResourceTag: unknown output usage");
 }
 
 Image::ImageType ImageTypeFromTag(const GraphOutputTag& tag)
@@ -68,18 +69,20 @@ Image::ImageType ImageTypeFromTag(const GraphOutputTag& tag)
 
 uint32_t LayerCountFromTag(const GraphOutputTag& tag)
 {
-	if (tag.layers == "lights")
+	switch (tag.layers)
+	{
+	case GraphLayers::Lights:
 		return RenderCache::MAX_SHADOW_LAYERS;
-	if (tag.layers == "single")
+	case GraphLayers::Single:
 		return 1;
+	}
 
-	throw std::invalid_argument(
-		"ResourceTag: unknown layer policy '" + tag.layers + "'");
+	throw std::invalid_argument("ResourceTag: unknown layer policy");
 }
 
 bool IsLogicalTag(const GraphOutputTag& tag)
 {
-	return tag.usage == "logical";
+	return tag.usage == GraphUsage::Logical;
 }
 
 } // namespace neurus

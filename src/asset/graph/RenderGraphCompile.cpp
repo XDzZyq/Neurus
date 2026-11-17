@@ -30,22 +30,15 @@ void AddDiagnostic(CompileResult& result,
  */
 std::string TagProblem(const GraphOutputTag& tag)
 {
-	if (tag.extent != "render" && tag.extent != "shadow")
-		return "unknown extent '" + tag.extent + "'";
-
-	if (tag.layers != "single" && tag.layers != "lights")
-		return "unknown layer policy '" + tag.layers + "'";
-
-	if (tag.usage == "logical")
+	if (tag.usage == GraphUsage::Logical)
+	{
+		if (tag.format != GraphFormat::None)
+			return "logical output tag must not name a format";
 		return {};
+	}
 
-	if (tag.format.empty())
+	if (tag.format == GraphFormat::None)
 		return "output tag has no format";
-
-	if (tag.usage != "color+sampled"
-	    && tag.usage != "storage+sampled"
-	    && tag.usage != "depth+sampled")
-		return "unknown usage '" + tag.usage + "'";
 
 	return {};
 }

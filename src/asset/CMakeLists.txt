@@ -27,6 +27,7 @@ add_library(neurus_asset STATIC
 	data/MeshData.cpp
 	data/AssetPath.hpp
 	data/AssetPath.cpp
+	data/render_graph/GraphOutputTag.hpp
 	data/render_graph/RenderGraphSpec.hpp
 	data/render_graph/RenderGraphSpec.cpp
 	graph/PassPorts.hpp

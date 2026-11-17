@@ -77,27 +77,27 @@ TEST(RenderGraphSpec, DefaultGeometryTags)
 {
 	const neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
 
-	EXPECT_EQ(TagOf(spec, "geometry", "gPosition").format, "rgba16f");
-	EXPECT_EQ(TagOf(spec, "geometry", "gPosition").usage, "color+sampled");
-	EXPECT_EQ(TagOf(spec, "geometry", "gNormal").format, "rgba16f");
-	EXPECT_EQ(TagOf(spec, "geometry", "gAlbedo").format, "rgba8_srgb");
-	EXPECT_EQ(TagOf(spec, "geometry", "gMetallicRoughness").format, "rgba8_unorm");
-	EXPECT_EQ(TagOf(spec, "geometry", "gObjectID").format, "r32_uint");
-	EXPECT_EQ(TagOf(spec, "geometry", "depth").format, "d32_sfloat");
-	EXPECT_EQ(TagOf(spec, "geometry", "depth").usage, "depth+sampled");
+	EXPECT_EQ(TagOf(spec, "geometry", "gPosition").format, neurus::GraphFormat::Rgba16f);
+	EXPECT_EQ(TagOf(spec, "geometry", "gPosition").usage, neurus::GraphUsage::ColorSampled);
+	EXPECT_EQ(TagOf(spec, "geometry", "gNormal").format, neurus::GraphFormat::Rgba16f);
+	EXPECT_EQ(TagOf(spec, "geometry", "gAlbedo").format, neurus::GraphFormat::Rgba8Srgb);
+	EXPECT_EQ(TagOf(spec, "geometry", "gMetallicRoughness").format, neurus::GraphFormat::Rgba8Unorm);
+	EXPECT_EQ(TagOf(spec, "geometry", "gObjectID").format, neurus::GraphFormat::R32Uint);
+	EXPECT_EQ(TagOf(spec, "geometry", "depth").format, neurus::GraphFormat::D32Sfloat);
+	EXPECT_EQ(TagOf(spec, "geometry", "depth").usage, neurus::GraphUsage::DepthSampled);
 }
 
 TEST(RenderGraphSpec, DefaultShadowTags)
 {
 	const neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
 
-	EXPECT_EQ(TagOf(spec, "shadow_depth", "shadow_depth").usage, "logical");
+	EXPECT_EQ(TagOf(spec, "shadow_depth", "shadow_depth").usage, neurus::GraphUsage::Logical);
 
 	const neurus::GraphOutputTag& intensity = TagOf(spec, "shadow_intensity", "outputShadow");
-	EXPECT_EQ(intensity.format, "r8_unorm");
-	EXPECT_EQ(intensity.usage, "storage+sampled");
-	EXPECT_EQ(intensity.extent, "render");
-	EXPECT_EQ(intensity.layers, "lights");
+	EXPECT_EQ(intensity.format, neurus::GraphFormat::R8Unorm);
+	EXPECT_EQ(intensity.usage, neurus::GraphUsage::StorageSampled);
+	EXPECT_EQ(intensity.extent, neurus::GraphExtent::Render);
+	EXPECT_EQ(intensity.layers, neurus::GraphLayers::Lights);
 }
 
 TEST(RenderGraphSpec, DefaultEdgesAreUnique)
@@ -161,7 +161,7 @@ TEST(RenderGraphSpec, HashChangesWithTopology)
 	EXPECT_NE(neurus::RenderGraphSpecHash(removed), original);
 
 	neurus::RenderGraphSpec retagged = spec;
-	retagged.FindNode("geometry")->outputs["gPosition"].format = "rgba32f";
+	retagged.FindNode("geometry")->outputs["gPosition"].format = neurus::GraphFormat::Rgba8Unorm;
 	EXPECT_NE(neurus::RenderGraphSpecHash(retagged), original);
 
 	neurus::RenderGraphSpec rewired = spec;

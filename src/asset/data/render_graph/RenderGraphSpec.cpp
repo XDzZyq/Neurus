@@ -38,14 +38,15 @@ void HashTag(std::uint64_t& hash, unsigned char tag)
 	hash *= kFnvPrime;
 }
 
-GraphOutputTag MakeTag(std::string format, std::string usage,
-                       std::string extent = "render", std::string layers = "single")
+GraphOutputTag MakeTag(const GraphFormat format, const GraphUsage usage,
+                       const GraphExtent extent = GraphExtent::Render,
+                       const GraphLayers layers = GraphLayers::Single)
 {
 	GraphOutputTag tag;
-	tag.format = std::move(format);
-	tag.usage  = std::move(usage);
-	tag.extent = std::move(extent);
-	tag.layers = std::move(layers);
+	tag.format = format;
+	tag.usage  = usage;
+	tag.extent = extent;
+	tag.layers = layers;
 	return tag;
 }
 
@@ -92,44 +93,45 @@ RenderGraphSpec MakeDefaultRenderGraphSpec()
 
 	addNode("geometry", "GeometryPass",
 	        {
-	            {"gPosition",         MakeTag("rgba16f",    "color+sampled")},
-	            {"gNormal",           MakeTag("rgba16f",    "color+sampled")},
-	            {"gAlbedo",           MakeTag("rgba8_srgb", "color+sampled")},
-	            {"gMetallicRoughness", MakeTag("rgba8_unorm", "color+sampled")},
-	            {"gObjectID",         MakeTag("r32_uint",   "color+sampled")},
-	            {"depth",             MakeTag("d32_sfloat", "depth+sampled")},
+	            {"gPosition",         MakeTag(GraphFormat::Rgba16f,    GraphUsage::ColorSampled)},
+	            {"gNormal",           MakeTag(GraphFormat::Rgba16f,    GraphUsage::ColorSampled)},
+	            {"gAlbedo",           MakeTag(GraphFormat::Rgba8Srgb,  GraphUsage::ColorSampled)},
+	            {"gMetallicRoughness", MakeTag(GraphFormat::Rgba8Unorm, GraphUsage::ColorSampled)},
+	            {"gObjectID",         MakeTag(GraphFormat::R32Uint,    GraphUsage::ColorSampled)},
+	            {"depth",             MakeTag(GraphFormat::D32Sfloat,  GraphUsage::DepthSampled)},
 	        });
 
 	addNode("shadow_depth", "ShadowDepthPass",
 	        {
 	            // Per-light cubemaps and sun maps are owned by LightGPU; the
 	            // graph carries the dependency as a logical token.
-	            {"shadow_depth", MakeTag("", "logical")},
+	            {"shadow_depth", MakeTag(GraphFormat::None, GraphUsage::Logical)},
 	        });
 
 	addNode("shadow_intensity", "ShadowIntensityPass",
 	        {
-	            {"outputShadow", MakeTag("r8_unorm", "storage+sampled", "render", "lights")},
+	            {"outputShadow", MakeTag(GraphFormat::R8Unorm, GraphUsage::StorageSampled,
+	                                     GraphExtent::Render, GraphLayers::Lights)},
 	        });
 
 	addNode("ssao", "SSAOPass",
 	        {
-	            {"outputSSAO", MakeTag("r8_unorm", "storage+sampled")},
+	            {"outputSSAO", MakeTag(GraphFormat::R8Unorm, GraphUsage::StorageSampled)},
 	        });
 
 	addNode("lighting", "LightingPass",
 	        {
-	            {"outputImage", MakeTag("rgba16f", "storage+sampled")},
+	            {"outputImage", MakeTag(GraphFormat::Rgba16f, GraphUsage::StorageSampled)},
 	        });
 
 	addNode("compose", "ComposePass",
 	        {
-	            {"outputComposed", MakeTag("rgba16f", "storage+sampled")},
+	            {"outputComposed", MakeTag(GraphFormat::Rgba16f, GraphUsage::StorageSampled)},
 	        });
 
 	addNode("fxaa", "FXAAPass",
 	        {
-	            {"outputFXAA", MakeTag("rgba16f", "storage+sampled")},
+	            {"outputFXAA", MakeTag(GraphFormat::Rgba16f, GraphUsage::StorageSampled)},
 	        });
 
 	// Geometry fans out to SSAO, shadow intensity and lighting.
@@ -196,10 +198,10 @@ std::uint64_t RenderGraphSpecHash(const RenderGraphSpec& spec)
 		{
 			HashTag(hash, 0x03);
 			HashString(hash, port);
-			HashString(hash, tag.format);
-			HashString(hash, tag.usage);
-			HashString(hash, tag.extent);
-			HashString(hash, tag.layers);
+			HashTag(hash, static_cast<unsigned char>(tag.format));
+			HashTag(hash, static_cast<unsigned char>(tag.usage));
+			HashTag(hash, static_cast<unsigned char>(tag.extent));
+			HashTag(hash, static_cast<unsigned char>(tag.layers));
 		}
 	}
 

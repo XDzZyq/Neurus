@@ -246,7 +246,8 @@ TEST(RenderGraphCompile, MissingTagIsNamed)
 TEST(RenderGraphCompile, TagForUnknownPortIsNamed)
 {
 	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
-	spec.FindNode("geometry")->outputs["nope"] = {"rgba16f", "color+sampled"};
+	spec.FindNode("geometry")->outputs["nope"] =
+		{neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled};
 
 	const FakePortSource source = MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
