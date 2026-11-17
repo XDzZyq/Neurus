@@ -1,14 +1,16 @@
 /**
  * @file test_editor_render_graph.cpp
- * @brief The Editor owns the document and publishes it as a compile request.
+ * @brief The Editor owns the document, seeds its shaders and publishes it.
  */
 
 #include <gtest/gtest.h>
 
 #include "editor/Editor.hpp"
+#include "asset/data/ShaderData.hpp"
 #include "render/requests/RenderRequestSink.hpp"
 #include "render/requests/RenderRequests.hpp"
 
+#include <algorithm>
 #include <variant>
 #include <utility>
 #include <vector>
@@ -35,48 +37,74 @@ public:
 
 } // anonymous namespace
 
-TEST(EditorRenderGraph, FinishLoadPostsTheDocument)
+TEST(EditorRenderGraph, NewSceneSeedsShadersAndPostsTheDocument)
 {
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
-
-	editor.GetRenderGraphSpec().nodes.pop_back();
-	editor.FinishLoad();
-
-	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
-	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(request->spec, editor.GetRenderGraphSpec());
-}
-
-TEST(EditorRenderGraph, NewSceneResetsAndPostsTheDefault)
-{
-	RecordingSink sink;
-	neurus::Editor editor(&sink);
-
-	editor.GetRenderGraphSpec().nodes.pop_back();
 	editor.NewScene();
 
-	EXPECT_EQ(editor.GetRenderGraphSpec(), neurus::MakeDefaultRenderGraphSpec());
+	const neurus::CpuRenderGraph& graph = editor.GetRenderGraph();
+	ASSERT_EQ(graph.nodes.size(), 7u);
+
+	for (const auto& node : graph.nodes)
+	{
+		EXPECT_NE(node->data.shaderUid, 0) << node->name;
+		EXPECT_NE(editor.GetResourceManager().Get<neurus::ShaderData>(
+			node->data.shaderUid), nullptr) << node->name;
+	}
+
+	EXPECT_TRUE(editor.GetGraphProblems().empty());
+	EXPECT_FALSE(editor.IsDirty());
 
 	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
 	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(request->spec, neurus::MakeDefaultRenderGraphSpec());
+	EXPECT_EQ(request->spec, neurus::ToSpec(graph));
+}
+
+TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.NewScene();
+
+	neurus::CpuGraphRecord record = neurus::ToRecord(editor.GetRenderGraph());
+	record.nodes.pop_back();
+	record.edges.erase(
+		std::remove_if(record.edges.begin(), record.edges.end(),
+			[](const neurus::CpuEdgeRecord& edge)
+			{
+				return edge.from == "fxaa" || edge.to == "fxaa";
+			}),
+		record.edges.end());
+	editor.GetPendingRenderGraph() = record;
+
+	editor.FinishLoad();
+
+	EXPECT_EQ(editor.GetRenderGraph().nodes.size(), 6u);
+	EXPECT_EQ(editor.GetRenderGraph().nodes[5]->name, "compose");
+	EXPECT_FALSE(editor.IsDirty());
+
+	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
+	ASSERT_NE(request, nullptr);
+	EXPECT_EQ(request->spec, neurus::ToSpec(editor.GetRenderGraph()));
 }
 
 TEST(EditorRenderGraph, SetPostsAndMarksDirty)
 {
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
+	editor.NewScene();
 	editor.ClearDirty();
 
-	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
-	spec.nodes.pop_back();
-	editor.SetRenderGraphSpec(spec);
+	neurus::CpuRenderGraph graph = neurus::CloneGraph(editor.GetRenderGraph());
+	graph.RemoveNode(graph.nodes.back().get());
+	editor.SetRenderGraph(std::move(graph));
 
 	EXPECT_TRUE(editor.IsDirty());
-	EXPECT_EQ(editor.GetRenderGraphSpec(), spec);
+	EXPECT_EQ(editor.GetRenderGraph().nodes.size(), 6u);
+	EXPECT_EQ(editor.GetRenderGraph().nodes.back()->name, "compose");
 
 	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
 	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(request->spec, spec);
+	EXPECT_EQ(request->spec, neurus::ToSpec(editor.GetRenderGraph()));
 }

@@ -1,46 +1,53 @@
 #include "asset/components/GraphComponent.hpp"
 
 #include "core/Log.hpp"
-#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "core/Serialize.hpp"
 
 #include <cereal/cereal.hpp>
 
+#include <optional>
 #include <utility>
 
 namespace neurus::project
 {
 
-GraphComponent::GraphComponent(RenderGraphSpec& spec) : m_spec(&spec) {}
+GraphComponent::GraphComponent(std::optional<CpuGraphRecord>& pending,
+                               const CpuRenderGraph& graph)
+	: m_pending(&pending)
+	, m_graph(&graph)
+{
+}
 
 void GraphComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	ar(cereal::make_nvp("proj_render_graph", *m_spec));
+	const CpuGraphRecord record = ToRecord(*m_graph);
+	ar(cereal::make_nvp("proj_render_graph", record));
 }
 
 void GraphComponent::Load(cereal::JSONInputArchive& ar)
 {
-	// Read into a default document: every node and edge is optional at the
-	// field level, and an absent node means "the built-in default", never the
-	// previous session's graph.
-	RenderGraphSpec fresh = MakeDefaultRenderGraphSpec();
+	// Every field is optional at the archive level; an absent key means "no
+	// saved document", never the previous session's graph.
+	CpuGraphRecord loaded;
 	try
 	{
-		if (!archive::LoadFresh(ar, "proj_render_graph", fresh))
+		if (!archive::LoadFresh(ar, "proj_render_graph", loaded))
 		{
 			NEURUS_LOG("GraphComponent::Load: no proj_render_graph node"
-			           " - defaulted (old project format).");
-			fresh = MakeDefaultRenderGraphSpec();
+			           " - the Editor will build the default graph.");
+			m_pending->reset();
+			return;
 		}
 	}
 	catch (const cereal::Exception& e)
 	{
 		NEURUS_ERR("GraphComponent::Load: " << e.what()
 		           << " - proj_render_graph defaulted (corrupt node).");
-		fresh = MakeDefaultRenderGraphSpec();
+		m_pending->reset();
+		return;
 	}
 
-	*m_spec = std::move(fresh);
+	*m_pending = std::move(loaded);
 }
 
 } // namespace neurus::project

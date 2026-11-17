@@ -5,8 +5,10 @@
 
 #include "asset/graph/GraphDocument.hpp"
 
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "asset/graph/PassKinds.hpp"
 
+#include <map>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -336,6 +338,42 @@ void ApplyConditions(CpuRenderGraph& graph, const bool fxaa)
 
 	for (NodeType* node : dropped)
 		graph.RemoveNode(node);
+}
+
+RenderGraphSpec ToSpec(const CpuRenderGraph& graph)
+{
+	RenderGraphSpec spec;
+	spec.nodes.reserve(graph.nodes.size());
+
+	for (const auto& node : graph.nodes)
+	{
+		GraphNodeSpec saved;
+		saved.id   = node->name;
+		saved.pass = node->data.pass;
+		for (const auto& output : node->outputs)
+		{
+			if (output->data.tag)
+				saved.outputs.emplace(output->name, *output->data.tag);
+		}
+		spec.nodes.push_back(std::move(saved));
+	}
+
+	for (const auto& node : graph.nodes)
+	{
+		for (const auto& input : node->inputs)
+		{
+			if (!input->source)
+				continue;
+			spec.edges.push_back({
+				input->source->owner->name,
+				input->source->name,
+				node->name,
+				input->name,
+			});
+		}
+	}
+
+	return spec;
 }
 
 } // namespace neurus

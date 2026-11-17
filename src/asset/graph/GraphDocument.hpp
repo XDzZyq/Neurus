@@ -29,6 +29,8 @@
 
 namespace neurus {
 
+struct RenderGraphSpec;
+
 /**
  * @brief One saved output socket.
  */
@@ -183,5 +185,15 @@ CpuRenderGraph MakeDefaultCpuGraph(const IPortSource& ports);
  * @param fxaa   Whether the FXAA condition is on.
  */
 void ApplyConditions(CpuRenderGraph& graph, bool fxaa);
+
+/**
+ * @brief Projects the document onto the flat spec the renderer still compiles.
+ *
+ * Temporary bridge: the runtime graph consumes the CPU document directly once
+ * the uploader lands, and this function is deleted with `RenderGraphSpec`.
+ *
+ * @param graph  Document to project; it is not modified.
+ */
+RenderGraphSpec ToSpec(const CpuRenderGraph& graph);
 
 } // namespace neurus

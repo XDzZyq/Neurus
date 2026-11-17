@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -12,7 +13,8 @@
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
-#include "asset/data/render_graph/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/graph/GraphDocument.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a
 // RenderFrameSnapshot by value, so the complete type is required here. It is
@@ -25,6 +27,7 @@ namespace neurus {
 class Camera;
 class Mesh;
 class MeshData;
+class PassShaders;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
@@ -100,15 +103,32 @@ public:	/**
 	RenderConfig& GetRenderConfig() { return m_config; }
 
 	/// @brief The scene render graph document.
-	RenderGraphSpec& GetRenderGraphSpec() { return m_renderGraphSpec; }
+	const CpuRenderGraph& GetRenderGraph() const { return m_renderGraph; }
+
+	/// @brief The document as read from a project, applied by FinishLoad().
+	std::optional<CpuGraphRecord>& GetPendingRenderGraph() { return m_pendingGraph; }
 
 	/**
-	 * @brief Replaces the render graph document and asks the renderer to compile it.
+	 * @brief Replaces the document and asks the renderer to compile it.
 	 *
 	 * Marks the document dirty; the renderer keeps drawing its previous graph
 	 * when the new one fails to compile and reports the diagnostics.
+	 *
+	 * @param graph  New document; its sockets are expected to match the pooled
+	 *               shaders, which validation checks and reports.
 	 */
-	void SetRenderGraphSpec(RenderGraphSpec spec);
+	void SetRenderGraph(CpuRenderGraph graph);
+
+	/**
+	 * @brief Applies a saved document, re-deriving its input sockets.
+	 *
+	 * Used by FinishLoad and by undo. Seeds the shader pool first, so a restored
+	 * project adopts its own shaders instead of creating duplicates.
+	 */
+	void ReplaceRenderGraph(const CpuGraphRecord& record);
+
+	/// @brief Problems from the last seed, load and validation pass.
+	const std::vector<std::string>& GetGraphProblems() const { return m_graphProblems; }
 
 	bool IsDirty() const { return m_dirty; }
 	void MarkDirty() { m_dirty = true; }
@@ -372,7 +392,17 @@ private:
 	void PublishActiveCamera(bool extentChanged = false);
 
 	/// @brief Posts the current document as a compile request.
-	void PublishRenderGraphSpec();
+	void PublishRenderGraph();
+
+	/**
+	 * @brief Seeds the pooled pass shaders and rebuilds a default document.
+	 *
+	 * Called after the pool is cleared (NewScene) or restored (FinishLoad).
+	 */
+	void ResetRenderGraph();
+
+	/// @brief Gives every node whose shader is unset or stale its kind's shader.
+	void AssignNodeShaders();
 
 	/**
 	 * @brief Adds the default scene's demo debug objects.
@@ -385,7 +415,12 @@ private:
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
 	RenderConfig          m_config;
-	RenderGraphSpec       m_renderGraphSpec = MakeDefaultRenderGraphSpec();
+
+	/// @brief The live graph document; empty until ResetRenderGraph().
+	CpuRenderGraph            m_renderGraph;
+	std::optional<CpuGraphRecord> m_pendingGraph;   ///< Read from the project, applied on FinishLoad.
+	std::unique_ptr<PassShaders>  m_passShaders;    ///< Pooled shaders, one per built-in kind.
+	std::vector<std::string>      m_graphProblems;  ///< Seed, load and validation reports.
 	bool                  m_dirty = false;
 
 	/**

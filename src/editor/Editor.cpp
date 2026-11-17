@@ -36,6 +36,9 @@
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStage.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
+#include "asset/graph/CpuGraphValidation.hpp"
+#include "asset/graph/PassKinds.hpp"
+#include "asset/graph/PassShaders.hpp"
 #include "render/shaders/ComputeShader.hpp"
 #include "render/shaders/ShaderLibrary.hpp"
 #include "scene/Camera.hpp"
@@ -183,6 +186,25 @@ int PoolShader(neurus::ResourceManager& resources,
 	const std::string unique = resources.SetName(uid, name);
 	shader->SetName(unique.empty() ? name : unique);
 	return uid;
+}
+
+/**
+ * @brief Creates the default shader for one source of a built-in pass kind.
+ *
+ * @param source  Shader source row.
+ * @return Parsed shader, or nullptr when loading failed.
+ */
+std::shared_ptr<neurus::ShaderData> LoadPassKindShader(const neurus::PassShaderSource& source)
+{
+	if (!source.computePath.empty())
+	{
+		return neurus::ShaderLibrary::LoadComputeShader(
+			std::string(source.name), std::string(source.computePath));
+	}
+
+	return neurus::ShaderLibrary::LoadRenderShader(
+		std::string(source.name), std::string(source.vertexPath),
+		std::string(source.fragmentPath));
 }
 
 } // anonymous namespace
@@ -728,6 +750,7 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	ctx.scene = m_scene.get();
 	ctx.config = &m_config;
 	ctx.resources = m_resources.get();
+	ctx.graph = &m_renderGraph;
 }
 
 // =========================================================================
@@ -745,7 +768,6 @@ void Editor::NewScene()
 		m_scene = std::make_unique<Scene>();
 		m_resources->Clear();
 		m_config = RenderConfig{};
-		m_renderGraphSpec = MakeDefaultRenderGraphSpec();
 		ed_operations.Clear(); // History does not span scenes.
 
 		// The pool just lost the old viewport camera; a new document gets a new one
@@ -764,7 +786,7 @@ void Editor::NewScene()
 		// clears its list inside a dirty Rebuild().
 		m_viewport.MarkOverlaysDirty();
 
-		PublishRenderGraphSpec();
+		ResetRenderGraph();
 
 		NEURUS_LOG("[Editor] Created new scene.");
 	}
@@ -917,23 +939,79 @@ void Editor::FinishLoad()
 	// anchors a new handle.
 	m_viewport.MarkOverlaysDirty();
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
-	PublishRenderGraphSpec();
+
+	// The graph record was read before the pool and the scene were restored, so
+	// it is applied last, when its shaders can be resolved.
+	if (m_pendingGraph)
+	{
+		ReplaceRenderGraph(*m_pendingGraph);
+		m_pendingGraph.reset();
+	}
+	else
+	{
+		ResetRenderGraph();
+	}
+
+	// A loaded document is the saved baseline, not an unsaved edit.
+	m_dirty = false;
 }
 
+void Editor::ResetRenderGraph()
+{
+	m_graphProblems.clear();
+	m_passShaders = std::make_unique<PassShaders>(
+		*m_resources, &LoadPassKindShader, m_graphProblems);
 
-void Editor::PublishRenderGraphSpec()
+	m_renderGraph = MakeDefaultCpuGraph(*m_passShaders);
+	AssignNodeShaders();
+	PublishRenderGraph();
+}
+
+void Editor::AssignNodeShaders()
+{
+	for (const auto& node : m_renderGraph.nodes)
+	{
+		if (node->data.shaderUid != 0 && m_resources->Contains(node->data.shaderUid))
+			continue;
+		node->data.shaderUid = m_passShaders->ShaderUid(node->data.pass);
+	}
+}
+
+void Editor::ReplaceRenderGraph(const CpuGraphRecord& record)
+{
+	m_graphProblems.clear();
+	m_passShaders = std::make_unique<PassShaders>(
+		*m_resources, &LoadPassKindShader, m_graphProblems);
+
+	std::vector<std::string> loadProblems;
+	m_renderGraph = FromRecord(record, *m_passShaders, loadProblems);
+	m_graphProblems.insert(m_graphProblems.end(), loadProblems.begin(), loadProblems.end());
+
+	AssignNodeShaders();
+	PublishRenderGraph();
+}
+
+void Editor::SetRenderGraph(CpuRenderGraph graph)
+{
+	m_renderGraph = std::move(graph);
+	AssignNodeShaders();
+	MarkDirty();
+	PublishRenderGraph();
+}
+
+void Editor::PublishRenderGraph()
 {
 	if (!ed_renderer)
 		return;
 
-	ed_renderer->Post(CompileRenderGraphRequest{m_renderGraphSpec});
-}
+	for (const CpuGraphDiagnostic& diagnostic : ValidateCpuGraph(m_renderGraph, *m_passShaders))
+	{
+		NEURUS_ERR("[Editor] render graph: " << diagnostic.node << "." << diagnostic.port
+		           << ": " << diagnostic.message);
+	}
 
-void Editor::SetRenderGraphSpec(RenderGraphSpec spec)
-{
-	m_renderGraphSpec = std::move(spec);
-	MarkDirty();
-	PublishRenderGraphSpec();
+	// Bridge until the uploader consumes the CPU document directly.
+	ed_renderer->Post(CompileRenderGraphRequest{ToSpec(m_renderGraph)});
 }
 
 void Editor::OnMeshImport(const std::string& path)

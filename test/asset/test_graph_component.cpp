@@ -5,65 +5,68 @@
 
 #include <gtest/gtest.h>
 
+#include "shared/TestPassPorts.hpp"
+
 #include "asset/components/GraphComponent.hpp"
-#include "asset/data/render_graph/RenderGraphSpec.hpp"
+#include "asset/graph/GraphDocument.hpp"
 
 #include <cereal/archives/json.hpp>
 
+#include <optional>
 #include <sstream>
 #include <string>
 
 namespace {
 
-std::string Save(neurus::RenderGraphSpec& spec)
+std::string Save(const neurus::CpuRenderGraph& graph)
 {
 	std::ostringstream stream;
 	{
 		cereal::JSONOutputArchive archive(stream);
-		neurus::project::GraphComponent component(spec);
+		std::optional<neurus::CpuGraphRecord> pending;
+		neurus::project::GraphComponent component(pending, graph);
 		component.Save(archive);
 	}
 	return stream.str();
 }
 
-void Load(neurus::RenderGraphSpec& spec, const std::string& text)
+std::optional<neurus::CpuGraphRecord> Load(const std::string& text)
 {
+	std::optional<neurus::CpuGraphRecord> pending;
 	std::istringstream stream(text);
 	cereal::JSONInputArchive archive(stream);
-	neurus::project::GraphComponent component(spec);
+	const neurus::CpuRenderGraph empty;
+	neurus::project::GraphComponent component(pending, empty);
 	component.Load(archive);
+	return pending;
 }
 
 } // anonymous namespace
 
 TEST(GraphComponent, RoundTrip)
 {
-	neurus::RenderGraphSpec original = neurus::MakeDefaultRenderGraphSpec();
-	original.FindNode("geometry")->outputs["gPosition"].format = neurus::GraphFormat::Rgba8Unorm;
-	original.edges.pop_back();
+	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
+	neurus::CpuRenderGraph graph = neurus::MakeDefaultCpuGraph(ports);
 
-	neurus::RenderGraphSpec restored = neurus::MakeDefaultRenderGraphSpec();
-	Load(restored, Save(original));
+	// A non-default tag and a removed edge must both survive the round trip.
+	graph.nodes[0]->outputs[0]->data.tag->format = neurus::GraphFormat::Rgba8Unorm;
+	neurus::CpuRenderGraph::NodeType* compose = graph.nodes[5].get();
+	neurus::CpuRenderGraph::NodeType* fxaa = graph.nodes[6].get();
+	graph.Disconnect(compose->outputs[0].get(), fxaa->inputs[0].get());
 
-	EXPECT_EQ(restored, original);
+	const neurus::CpuGraphRecord expected = neurus::ToRecord(graph);
+	const std::optional<neurus::CpuGraphRecord> restored = Load(Save(graph));
+
+	ASSERT_TRUE(restored.has_value());
+	EXPECT_EQ(*restored, expected);
 }
 
-TEST(GraphComponent, MissingNodeFallsBack)
+TEST(GraphComponent, MissingNodeLeavesNoPendingRecord)
 {
-	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
-	spec.nodes.pop_back();
-
-	Load(spec, "{}");
-
-	EXPECT_EQ(spec, neurus::MakeDefaultRenderGraphSpec());
+	EXPECT_FALSE(Load("{}").has_value());
 }
 
-TEST(GraphComponent, CorruptNodeFallsBack)
+TEST(GraphComponent, CorruptNodeLeavesNoPendingRecord)
 {
-	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
-	spec.nodes.pop_back();
-
-	Load(spec, "{\"proj_render_graph\": 42}");
-
-	EXPECT_EQ(spec, neurus::MakeDefaultRenderGraphSpec());
+	EXPECT_FALSE(Load("{\"proj_render_graph\": 42}").has_value());
 }
