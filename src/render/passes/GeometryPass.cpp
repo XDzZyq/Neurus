@@ -10,7 +10,7 @@
 #include "RenderContext.hpp"
 #include "render/Barrier.hpp"
 #include "PipelineBuilder.hpp"
-#include "render_graph/DescriptorLayout.hpp"
+#include "DescriptorLayout.hpp"
 #include "shaders/ShaderLibrary.hpp"
 #include "shaders/RenderShader.hpp"
 #include "core/Log.hpp"

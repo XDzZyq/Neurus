@@ -1,10 +1,10 @@
 /**
- * @file PassRegistry.hpp
- * @brief Pass kind to instance registry and port source for the graph compiler.
+ * @file PassFactory.hpp
+ * @brief Pass kind to live instance, and the port source for the graph compiler.
  *
- * The registry owns one instance of every built-in scene pass. The renderer
- * compiles a RenderGraphSpec through it, so a spec's `pass` string resolves to a
- * live pass and the compiler can ask for the ports that pass's shader declares.
+ * The factory owns one instance of every built-in scene pass. The renderer
+ * compiles a document through it, so a node's `pass` string resolves to a live
+ * pass and the compiler can ask for the ports that pass's shader declares.
  */
 
 #pragma once
@@ -36,7 +36,7 @@ class SharedQueue;
  *
  * Non-copyable, non-movable (owns GPU resources).
  */
-class PassRegistry : public IPortSource
+class PassFactory : public IPortSource
 {
 public:
 	/**
@@ -48,18 +48,18 @@ public:
 	 * @param graphicsQueue     Serialised graphics queue (borrowed).
 	 * @param queueFamilyIndex  Queue family for staging work.
 	 */
-	PassRegistry(const vk::raii::Device& device,
+	PassFactory(const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice,
 	             uint32_t numSets,
 	             SharedQueue& graphicsQueue,
 	             uint32_t queueFamilyIndex);
 
-	~PassRegistry();
+	~PassFactory();
 
-	PassRegistry(const PassRegistry&)            = delete;
-	PassRegistry& operator=(const PassRegistry&) = delete;
-	PassRegistry(PassRegistry&&)                 = delete;
-	PassRegistry& operator=(PassRegistry&&)      = delete;
+	PassFactory(const PassFactory&)            = delete;
+	PassFactory& operator=(const PassFactory&) = delete;
+	PassFactory(PassFactory&&)                 = delete;
+	PassFactory& operator=(PassFactory&&)      = delete;
 
 	/**
 	 * @brief Returns the pass for a kind, or nullptr when the kind is unknown.

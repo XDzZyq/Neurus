@@ -7,7 +7,7 @@
 #include "passes/ComposePass.hpp"
 
 #include "../PipelineBuilder.hpp"
-#include "render_graph/DescriptorLayout.hpp"
+#include "DescriptorLayout.hpp"
 #include "core/RenderConfig.hpp"
 #include "Image.hpp"
 #include "render/Barrier.hpp"

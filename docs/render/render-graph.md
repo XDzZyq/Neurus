@@ -40,7 +40,7 @@ Every failure is a `GraphDiagnostic` naming the node, the port and the reason. T
 
 `RenderGraph` is `Graph<ShaderPort, PassEntry>` (`src/render/render_graph/RenderGraph.hpp`):
 
-- `PassRegistry` owns one instance of every built-in pass and answers `pass kind -> PassPorts`; `DeferredRenderer::CompileMainGraph` maps the compiled order onto those instances.
+- `PassFactory` owns one instance of every built-in pass and answers `pass kind -> PassPorts`; `DeferredRenderer::CompileMainGraph` maps the compiled order onto those instances.
 - `AddPass(pass, ports, externals, id)` materializes one socket per port. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
 - `Connect(producer, fromPort, consumer, toPort)` is port to port. The overlay compatibility overload forwards to the same call with `AttachmentNameToString()`.
 - `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order.
@@ -48,7 +48,7 @@ Every failure is a `GraphDiagnostic` naming the node, the port and the reason. T
 ```mermaid
 flowchart LR
     doc["RenderGraphSpec<br/>nodes, ports, tags"] --> compile["CompileRenderGraphSpec<br/>validate, prune, sort"]
-    compile --> registry["PassRegistry<br/>pass kind -> instance"]
+    compile --> registry["PassFactory<br/>pass kind -> instance"]
     registry --> graph["RenderGraph<br/>ShaderPort sockets"]
     graph --> plan["BuildImageBindings<br/>image binding plan"]
     plan --> execute["Execute<br/>write descriptors, Record()"]
@@ -88,7 +88,7 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 ## Ownership boundary
 
 - Editor: owns the document, validates nothing about the GPU, and posts `CompileRenderGraphRequest` when the document or project changes.
-- Renderer: owns `PassRegistry`, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor.
+- Renderer: owns `PassFactory`, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
 - `RenderConfig` is copied into every published frame and still decides the FXAA condition; the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
 
@@ -99,7 +99,7 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 - `test/asset/test_render_graph_compile.cpp` - every named compile failure, external inputs, cycles, deterministic order.
 - `test/render/test_shader_reflection.cpp` - binding and push-range reflection from every main shader.
 - `test/render/test_render_cache_resources.cpp` - tag-planned images, logical resources, legacy aliases.
-- `test/render/test_render_graph.cpp`, `test_pass_registry.cpp`, `test_pass_bindings.cpp` - port sockets, registry, binding plan.
+- `test/render/test_render_graph.cpp`, `test_pass_factory.cpp`, `test_pass_bindings.cpp` - port sockets, factory, binding plan.
 - `test/render/test_render_graph_pipeline.cpp` - the production renderer compiles, draws, changes topology and keeps the last good graph on a bad document.
 - `test/render/test_pass_*` - direct pass tests now use `RecordPass`, which writes the same graph-owned bindings production writes.
 - `test/asset/test_graph_component.cpp`, `test/editor/test_editor_render_graph.cpp` - persistence and the Editor's publish path.

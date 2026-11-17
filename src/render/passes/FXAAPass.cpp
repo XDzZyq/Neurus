@@ -1,7 +1,7 @@
 #include "RenderCache.hpp"
 #include "passes/FXAAPass.hpp"
 #include "../PipelineBuilder.hpp"
-#include "render_graph/DescriptorLayout.hpp"
+#include "DescriptorLayout.hpp"
 #include "core/RenderConfig.hpp"
 #include "Barrier.hpp"
 #include "Image.hpp"

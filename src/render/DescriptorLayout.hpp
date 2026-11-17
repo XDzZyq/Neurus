@@ -10,7 +10,7 @@
 #pragma once
 
 #include "DescriptorManager.hpp"
-#include "ShaderReflection.hpp"
+#include "render_graph/ShaderReflection.hpp"
 
 #include <array>
 #include <initializer_list>

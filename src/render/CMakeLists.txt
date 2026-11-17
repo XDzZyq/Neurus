@@ -23,6 +23,7 @@ add_library(neurus_render STATIC
 	Image.cpp
 	DescriptorManager.hpp
 	DescriptorManager.cpp
+	DescriptorLayout.hpp
 	Swapchain.hpp
 	Swapchain.cpp
 	OutputTarget.hpp
@@ -101,15 +102,14 @@ add_library(neurus_render STATIC
 	render_graph/DescriptorBinder.hpp
 	render_graph/ShaderReflection.hpp
 	render_graph/ShaderReflection.cpp
-	render_graph/DescriptorLayout.hpp
 	render_graph/ResourceTag.hpp
 	render_graph/ResourceTag.cpp
 	render_graph/PassResources.hpp
 	render_graph/PassResources.cpp
 	render_graph/PassBindings.hpp
 	render_graph/PassBindings.cpp
-	render_graph/PassRegistry.hpp
-	render_graph/PassRegistry.cpp
+	render_graph/PassFactory.hpp
+	render_graph/PassFactory.cpp
 	render_graph/RenderGraph.hpp
 	render_graph/RenderGraph.cpp
 	registrations/ShaderRegistration.hpp

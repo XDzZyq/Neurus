@@ -71,7 +71,7 @@ class ShadowIntensityPass;
 class ComposePass;
 class FXAAPass;
 class OverlayEngine;
-class PassRegistry;
+class PassFactory;
 struct CameraUBOData;
 class UploadManager;
 class RenderRequestProcessor;
@@ -376,7 +376,7 @@ private:
 	// destroyed BEFORE the cache it reads during an all-attachments capture.
 	std::unique_ptr<Screenshot> m_screenshot;
 	// --- Polymorphic pass container (owning) ---
-	std::unique_ptr<PassRegistry> m_passRegistry;
+	std::unique_ptr<PassFactory> m_passFactory;
 
 	// --- Cached raw pointers for zero-cost access (non-owning) ---
 	GeometryPass* r_geometryPass = nullptr;

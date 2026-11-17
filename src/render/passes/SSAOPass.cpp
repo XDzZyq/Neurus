@@ -7,7 +7,7 @@
 #include "passes/SSAOPass.hpp"
 
 #include "../PipelineBuilder.hpp"
-#include "render_graph/DescriptorLayout.hpp"
+#include "DescriptorLayout.hpp"
 #include "Image.hpp"
 #include "render/Barrier.hpp"
 #include "RenderContext.hpp"

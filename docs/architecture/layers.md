@@ -24,7 +24,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   swapchain. The scene image is never presented directly, so an overlay-only
   change redraws without re-running a scene pass
 - Builds the runtime scene graph from the Editor's `RenderGraphSpec` document:
-  the document's pass kinds resolve through `PassRegistry`, its port edges
+  the document's pass kinds resolve through `PassFactory`, its port edges
   through `RenderGraph`, and its output tags plan the `RenderCache` resources.
   `RenderConfig` still supplies the FXAA condition only
 - Consumes the per-frame RenderContext (the renderer's view of the frame: the

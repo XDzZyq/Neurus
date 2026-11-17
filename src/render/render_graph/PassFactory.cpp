@@ -1,9 +1,9 @@
 /**
- * @file PassRegistry.cpp
+ * @file PassFactory.cpp
  * @brief Built-in pass construction and port cache.
  */
 
-#include "PassRegistry.hpp"
+#include "PassFactory.hpp"
 
 #include "../passes/ComposePass.hpp"
 #include "../passes/FXAAPass.hpp"
@@ -20,13 +20,13 @@
 
 namespace neurus {
 
-PassRegistry::PassRegistry(const vk::raii::Device& device,
+PassFactory::PassFactory(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
                            const uint32_t numSets,
                            SharedQueue& graphicsQueue,
                            const uint32_t queueFamilyIndex)
 {
-	// Same construction order the renderer used before the registry existed.
+	// Same construction order the renderer used before the factory existed.
 	Add("GeometryPass", std::make_unique<GeometryPass>(device, physicalDevice));
 	Add("LightingPass", std::make_unique<LightingPass>(device, physicalDevice, numSets));
 	Add("SSAOPass",
@@ -42,9 +42,9 @@ PassRegistry::PassRegistry(const vk::raii::Device& device,
 	Add("FXAAPass", std::make_unique<FXAAPass>(device, physicalDevice, numSets));
 }
 
-PassRegistry::~PassRegistry() = default;
+PassFactory::~PassFactory() = default;
 
-void PassRegistry::Add(std::string kind, std::unique_ptr<Pass> pass)
+void PassFactory::Add(std::string kind, std::unique_ptr<Pass> pass)
 {
 	Pass* raw = pass.get();
 
@@ -56,66 +56,66 @@ void PassRegistry::Add(std::string kind, std::unique_ptr<Pass> pass)
 	m_externals.emplace(kind, raw->ExternalInputPorts());
 }
 
-Pass* PassRegistry::Find(const std::string_view kind)
+Pass* PassFactory::Find(const std::string_view kind)
 {
 	const auto it = m_passes.find(std::string(kind));
 	return it == m_passes.end() ? nullptr : it->second.get();
 }
 
-const PassPorts* PassRegistry::FindPassPorts(const std::string_view passKind) const
+const PassPorts* PassFactory::FindPassPorts(const std::string_view passKind) const
 {
 	const auto it = m_ports.find(std::string(passKind));
 	return it == m_ports.end() ? nullptr : &it->second;
 }
 
-std::vector<std::string> PassRegistry::ExternalInputs(const std::string_view passKind) const
+std::vector<std::string> PassFactory::ExternalInputs(const std::string_view passKind) const
 {
 	const auto it = m_externals.find(std::string(passKind));
 	return it == m_externals.end() ? std::vector<std::string>{} : it->second;
 }
 
-const PassPorts& PassRegistry::Ports(const std::string_view passKind) const
+const PassPorts& PassFactory::Ports(const std::string_view passKind) const
 {
 	const auto it = m_ports.find(std::string(passKind));
 	if (it == m_ports.end())
 	{
 		throw std::invalid_argument(
-			"PassRegistry::Ports: unknown pass kind '" + std::string(passKind) + "'");
+			"PassFactory::Ports: unknown pass kind '" + std::string(passKind) + "'");
 	}
 	return it->second;
 }
 
-GeometryPass* PassRegistry::Geometry()
+GeometryPass* PassFactory::Geometry()
 {
 	return static_cast<GeometryPass*>(Find("GeometryPass"));
 }
 
-LightingPass* PassRegistry::Lighting()
+LightingPass* PassFactory::Lighting()
 {
 	return static_cast<LightingPass*>(Find("LightingPass"));
 }
 
-SSAOPass* PassRegistry::SSAO()
+SSAOPass* PassFactory::SSAO()
 {
 	return static_cast<SSAOPass*>(Find("SSAOPass"));
 }
 
-ShadowDepthPass* PassRegistry::ShadowDepth()
+ShadowDepthPass* PassFactory::ShadowDepth()
 {
 	return static_cast<ShadowDepthPass*>(Find("ShadowDepthPass"));
 }
 
-ShadowIntensityPass* PassRegistry::ShadowIntensity()
+ShadowIntensityPass* PassFactory::ShadowIntensity()
 {
 	return static_cast<ShadowIntensityPass*>(Find("ShadowIntensityPass"));
 }
 
-ComposePass* PassRegistry::Compose()
+ComposePass* PassFactory::Compose()
 {
 	return static_cast<ComposePass*>(Find("ComposePass"));
 }
 
-FXAAPass* PassRegistry::FXAA()
+FXAAPass* PassFactory::FXAA()
 {
 	return static_cast<FXAAPass*>(Find("FXAAPass"));
 }

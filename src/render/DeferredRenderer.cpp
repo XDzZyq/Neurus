@@ -33,7 +33,7 @@
 #include "passes/ComposePass.hpp"
 #include "passes/FXAAPass.hpp"
 
-#include "render_graph/PassRegistry.hpp"
+#include "render_graph/PassFactory.hpp"
 #include "render_graph/ResourceTag.hpp"
 
 #include "render/HaltonSequence.hpp"
@@ -159,21 +159,21 @@ void DeferredRenderer::InitializePipeline()
 		r_device, r_physicalDevice, graphicsQueue, r_queueFamilyIndex);
 
 	// --- 3. Create the built-in passes ---
-	// The registry owns one instance of each scene pass and caches the ports its
+	// The factory owns one instance of each scene pass and caches the ports its
 	// shader declares; the compiler and the graph both read them.
-	m_passRegistry = std::make_unique<PassRegistry>(
+	m_passFactory = std::make_unique<PassFactory>(
 		device, physicalDevice, kMaxFramesInFlight, graphicsQueue, queueFamilyIndex);
 
-	r_geometryPass        = m_passRegistry->Geometry();
-	r_lightingPass        = m_passRegistry->Lighting();
-	r_ssaoPass            = m_passRegistry->SSAO();
-	r_shadowDepthPass     = m_passRegistry->ShadowDepth();
-	r_shadowIntensityPass = m_passRegistry->ShadowIntensity();
-	r_composePass         = m_passRegistry->Compose();
-	r_fxaaPass            = m_passRegistry->FXAA();
+	r_geometryPass        = m_passFactory->Geometry();
+	r_lightingPass        = m_passFactory->Lighting();
+	r_ssaoPass            = m_passFactory->SSAO();
+	r_shadowDepthPass     = m_passFactory->ShadowDepth();
+	r_shadowIntensityPass = m_passFactory->ShadowIntensity();
+	r_composePass         = m_passFactory->Compose();
+	r_fxaaPass            = m_passFactory->FXAA();
 
 	NEURUS_LOG("[DeferredRenderer] Scene passes created; GeometryPass declares "
-	           << m_passRegistry->Ports("GeometryPass").ports.size() << " ports");
+	           << m_passFactory->Ports("GeometryPass").ports.size() << " ports");
 
 	// --- 4. Build the overlay graph (selection outline, debug overlay, gizmo) ---
 	// Separate from the scene graph so overlays can be redrawn over a converged
@@ -260,7 +260,7 @@ DeferredRenderer::~DeferredRenderer()
 {
 	WaitIdle();
 	// vk::raii destructors clean up automatically in reverse declaration order;
-	// m_passRegistry destroys all passes before RenderCache. WaitIdle() is what makes
+	// m_passFactory destroys all passes before RenderCache. WaitIdle() is what makes
 	// the held tables safe to release: with the queue idle no submitted frame is
 	// still reading the meshes and environments they kept alive, and they are
 	// destroyed first (declared after r_renderCache) so nothing outlives the
@@ -706,7 +706,7 @@ bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool 
 	const std::uint64_t specHash = RenderGraphSpecHash(spec);
 	m_builtSignature = PipelineSignature{specHash, fxaa};
 
-	const CompileResult result = CompileRenderGraphSpec(spec, *m_passRegistry, fxaa);
+	const CompileResult result = CompileRenderGraphSpec(spec, *m_passFactory, fxaa);
 
 	m_graphReport = {};
 	m_graphReport.specHash = specHash;
@@ -732,7 +732,7 @@ bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool 
 	for (const size_t index : result.order)
 	{
 		const GraphNodeSpec& nodeSpec = result.spec.nodes[index];
-		Pass* pass = m_passRegistry->Find(nodeSpec.pass);
+		Pass* pass = m_passFactory->Find(nodeSpec.pass);
 		if (!pass)
 		{
 			NEURUS_ERR("[RenderGraph] pass kind '" << nodeSpec.pass
@@ -740,8 +740,8 @@ bool DeferredRenderer::CompileMainGraph(const RenderGraphSpec& spec, const bool 
 			return false;
 		}
 
-		auto* node = candidate.AddPass(pass, m_passRegistry->Ports(nodeSpec.pass),
-		                               m_passRegistry->ExternalInputs(nodeSpec.pass),
+		auto* node = candidate.AddPass(pass, m_passFactory->Ports(nodeSpec.pass),
+		                               m_passFactory->ExternalInputs(nodeSpec.pass),
 		                               nodeSpec.id);
 		nodes.emplace(nodeSpec.id, node);
 	}

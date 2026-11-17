@@ -6,7 +6,7 @@
 #include "passes/LightingPass.hpp"
 
 #include "../PipelineBuilder.hpp"
-#include "render_graph/DescriptorLayout.hpp"
+#include "DescriptorLayout.hpp"
 #include "RenderCache.hpp"
 #include "RenderContext.hpp"
 #include "RenderFrameSnapshot.hpp"

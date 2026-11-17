@@ -14,7 +14,7 @@
 #include "RenderCache.hpp"
 #include "../resources/MeshGPU.hpp"
 #include "../PipelineBuilder.hpp"
-#include "render_graph/DescriptorLayout.hpp"
+#include "DescriptorLayout.hpp"
 #include "render/Barrier.hpp"
 #include "../shaders/ShaderLibrary.hpp"
 #include "../shaders/RenderShader.hpp"
