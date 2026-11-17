@@ -5,114 +5,14 @@
 
 #include <gtest/gtest.h>
 
+#include "shared/TestPassPorts.hpp"
+
 #include "asset/graph/PassPorts.hpp"
 #include "asset/graph/RenderGraphCompile.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
 
-#include <algorithm>
-#include <array>
-#include <memory>
-#include <span>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace {
-
-class FakePortSource : public neurus::IPortSource
-{
-public:
-	void Set(std::string kind, neurus::PassPorts ports)
-	{
-		m_ports[std::move(kind)] = std::move(ports);
-	}
-
-	void SetExternal(std::string kind, std::vector<std::string> names)
-	{
-		m_externals[std::move(kind)] = std::move(names);
-	}
-
-	const neurus::PassPorts* FindPassPorts(const std::string_view kind) const override
-	{
-		const auto it = m_ports.find(std::string(kind));
-		return it == m_ports.end() ? nullptr : &it->second;
-	}
-
-	std::vector<std::string> ExternalInputs(const std::string_view kind) const override
-	{
-		const auto it = m_externals.find(std::string(kind));
-		return it == m_externals.end() ? std::vector<std::string>{} : it->second;
-	}
-
-private:
-	std::unordered_map<std::string, neurus::PassPorts>            m_ports;
-	std::unordered_map<std::string, std::vector<std::string>>     m_externals;
-};
-
-FakePortSource MakeRealPortSource()
-{
-	FakePortSource source;
-
-	auto geometry = neurus::ShaderLibrary::LoadRenderShader(
-		"GeometryPass",
-		"res/shaders/render/gbuffer.vert.glsl",
-		"res/shaders/render/gbuffer.frag.glsl");
-	EXPECT_NE(geometry, nullptr);
-
-	const std::array<const neurus::ShaderData*, 1> geometryShaders = {geometry.get()};
-	const std::array<neurus::ShaderPort, 1> geometryDeclared = {
-		neurus::ShaderPort{"depth", neurus::PortDirection::Output, "d32_sfloat", 0, 0},
-	};
-	source.Set("GeometryPass",
-	           neurus::ExtractPassPorts("GeometryPass", geometryShaders, geometryDeclared));
-
-	const std::array<neurus::ShaderPort, 1> shadowDeclared = {
-		neurus::ShaderPort{"shadow_depth", neurus::PortDirection::Output, "logical", 0, 0},
-	};
-	const std::span<const neurus::ShaderData* const> noShaders;
-	source.Set("ShadowDepthPass",
-	           neurus::ExtractPassPorts("ShadowDepthPass", noShaders, shadowDeclared));
-
-	auto pointShadow = neurus::ShaderLibrary::LoadComputeShader(
-		"shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl");
-	auto sunShadow = neurus::ShaderLibrary::LoadComputeShader(
-		"sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl");
-	EXPECT_NE(pointShadow, nullptr);
-	EXPECT_NE(sunShadow, nullptr);
-	const std::array<const neurus::ShaderData*, 2> shadowIntensityShaders = {
-		pointShadow.get(), sunShadow.get(),
-	};
-	source.Set("ShadowIntensityPass",
-	           neurus::ExtractPassPorts("ShadowIntensityPass", shadowIntensityShaders));
-
-	auto ssao = neurus::ShaderLibrary::LoadComputeShader(
-		"ssao", "res/shaders/compute/ssao.comp.glsl");
-	auto lighting = neurus::ShaderLibrary::LoadComputeShader(
-		"lighting", "res/shaders/compute/pbr_lighting.comp.glsl");
-	auto compose = neurus::ShaderLibrary::LoadComputeShader(
-		"compose", "res/shaders/compute/compose.comp.glsl");
-	auto fxaa = neurus::ShaderLibrary::LoadComputeShader(
-		"fxaa", "res/shaders/compute/fxaa.comp.glsl");
-	EXPECT_NE(ssao, nullptr);
-	EXPECT_NE(lighting, nullptr);
-	EXPECT_NE(compose, nullptr);
-	EXPECT_NE(fxaa, nullptr);
-
-	const std::array<const neurus::ShaderData*, 1> ssaoShaders = {ssao.get()};
-	const std::array<const neurus::ShaderData*, 1> lightingShaders = {lighting.get()};
-	const std::array<const neurus::ShaderData*, 1> composeShaders = {compose.get()};
-	const std::array<const neurus::ShaderData*, 1> fxaaShaders = {fxaa.get()};
-
-	source.Set("SSAOPass", neurus::ExtractPassPorts("SSAOPass", ssaoShaders));
-	source.Set("LightingPass", neurus::ExtractPassPorts("LightingPass", lightingShaders));
-	source.Set("ComposePass", neurus::ExtractPassPorts("ComposePass", composeShaders));
-	source.Set("FXAAPass", neurus::ExtractPassPorts("FXAAPass", fxaaShaders));
-
-	source.SetExternal("LightingPass", {"U_Irradiance", "U_Prefiltered"});
-	return source;
-}
 
 std::string DiagnosticsText(const neurus::CompileResult& result)
 {
@@ -154,7 +54,7 @@ size_t PositionOf(const neurus::CompileResult& result, const std::string& id)
 
 TEST(RenderGraphCompile, DefaultSpecCompiles)
 {
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(
 		neurus::MakeDefaultRenderGraphSpec(), source, true);
 
@@ -172,7 +72,7 @@ TEST(RenderGraphCompile, DefaultSpecCompiles)
 
 TEST(RenderGraphCompile, DefaultWithoutFxaaCompiles)
 {
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(
 		neurus::MakeDefaultRenderGraphSpec(), source, false);
 
@@ -187,7 +87,7 @@ TEST(RenderGraphCompile, UnknownPassIsNamed)
 	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
 	spec.nodes[0].pass = "NopePass";
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
 
 	EXPECT_FALSE(result.ok);
@@ -199,7 +99,7 @@ TEST(RenderGraphCompile, UnknownPortIsNamed)
 	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
 	spec.edges[0].toPort = "bogus";
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
 
 	EXPECT_FALSE(result.ok);
@@ -212,7 +112,7 @@ TEST(RenderGraphCompile, WrongDirectionIsNamed)
 	spec.edges[0].from = "ssao";
 	spec.edges[0].fromPort = "gPosition";
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
 
 	EXPECT_FALSE(result.ok);
@@ -224,7 +124,7 @@ TEST(RenderGraphCompile, DoubleProducerIsNamed)
 	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
 	spec.edges.push_back({"geometry", "gNormal", "lighting", "gPosition"});
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
 
 	EXPECT_FALSE(result.ok);
@@ -236,7 +136,7 @@ TEST(RenderGraphCompile, MissingTagIsNamed)
 	neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
 	spec.FindNode("geometry")->outputs.erase("gPosition");
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
 
 	EXPECT_FALSE(result.ok);
@@ -249,7 +149,7 @@ TEST(RenderGraphCompile, TagForUnknownPortIsNamed)
 	spec.FindNode("geometry")->outputs["nope"] =
 		{neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled};
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
 
 	EXPECT_FALSE(result.ok);
@@ -265,7 +165,7 @@ TEST(RenderGraphCompile, UnconnectedInputIsNamed)
 		    && edge.to == "lighting" && edge.toPort == "U_AO";
 	});
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, true);
 
 	EXPECT_FALSE(result.ok);
@@ -274,7 +174,7 @@ TEST(RenderGraphCompile, UnconnectedInputIsNamed)
 
 TEST(RenderGraphCompile, ExternalInputIsAccepted)
 {
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(
 		neurus::MakeDefaultRenderGraphSpec(), source, true);
 
@@ -293,7 +193,7 @@ TEST(RenderGraphCompile, CycleIsNamed)
 	});
 	spec.edges.push_back({"compose", "outputComposed", "ssao", "gPosition"});
 
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::CompileResult result = neurus::CompileRenderGraphSpec(spec, source, false);
 
 	EXPECT_FALSE(result.ok);
@@ -304,7 +204,7 @@ TEST(RenderGraphCompile, CycleIsNamed)
 
 TEST(RenderGraphCompile, OrderIsDeterministic)
 {
-	const FakePortSource source = MakeRealPortSource();
+	const neurus::test::FakePortSource source = neurus::test::MakeRealPortSource();
 	const neurus::RenderGraphSpec spec = neurus::MakeDefaultRenderGraphSpec();
 
 	const neurus::CompileResult first = neurus::CompileRenderGraphSpec(spec, source, true);

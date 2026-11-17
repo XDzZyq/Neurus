@@ -25,6 +25,7 @@ struct PassKindInfo
 	std::string_view          fragmentPath;  ///< Empty for a compute pass.
 	std::string_view          computePath;   ///< Empty for a graphics pass.
 	std::span<const uint32_t> optionalBindings;  ///< PARTIALLY_BOUND bindings.
+	std::string_view          condition;     ///< "fxaa" when the node is conditional.
 };
 
 inline constexpr uint32_t kLightingOptionalBindings[] = {5, 6, 11};
@@ -79,6 +80,7 @@ inline constexpr PassKindInfo kPassKinds[] = {
 		"",
 		"res/shaders/compute/fxaa.comp.glsl",
 		{},
+		"fxaa",
 	},
 };
 

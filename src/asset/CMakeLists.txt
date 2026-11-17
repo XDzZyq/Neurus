@@ -31,6 +31,11 @@ add_library(neurus_asset STATIC
 	data/render_graph/CpuRenderGraph.hpp
 	data/render_graph/RenderGraphSpec.hpp
 	data/render_graph/RenderGraphSpec.cpp
+	graph/PortSource.hpp
+	graph/GraphDocument.hpp
+	graph/GraphDocument.cpp
+	graph/CpuGraphValidation.hpp
+	graph/CpuGraphValidation.cpp
 	graph/PassPorts.hpp
 	graph/PassPorts.cpp
 	graph/PassKinds.hpp

@@ -11,6 +11,7 @@
 #pragma once
 
 #include "asset/graph/PassPorts.hpp"
+#include "asset/graph/PortSource.hpp"
 #include "asset/data/render_graph/RenderGraphSpec.hpp"
 
 #include <cstddef>
@@ -19,24 +20,6 @@
 #include <vector>
 
 namespace neurus {
-
-/**
- * @brief Resolves a pass kind to the ports and externals its shader declares.
- */
-class IPortSource
-{
-public:
-	virtual ~IPortSource() = default;
-
-	/// @brief Returns the pass's ports, or nullptr when the kind is unknown.
-	virtual const PassPorts* FindPassPorts(std::string_view passKind) const = 0;
-
-	/// @brief Input ports the pass resolves outside the graph (IBL cubemaps).
-	virtual std::vector<std::string> ExternalInputs(std::string_view passKind) const
-	{
-		return {};
-	}
-};
 
 /**
  * @brief One named compile failure.
