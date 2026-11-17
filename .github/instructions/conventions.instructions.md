@@ -52,6 +52,17 @@ short working reference.
 - `std::unique_ptr`/`std::shared_ptr` for explicit ownership; raw pointers for
   non-owning references only.
 
+## Core Layer
+
+- `src/core/` holds generic, layer-agnostic primitives only: identity (`UID`),
+  pools (`ResourceManager`), traversal (`Graph`, `GraphMorphism`), logging,
+  serialization helpers, `RenderConfig`.
+- A concrete document or data type that names this product's features belongs
+  to the layer that owns it. A render graph document lives in `asset/data/`,
+  not in `core/`: if a type mentions a pass kind, an output tag or a scene
+  concept, it is not core.
+- `core/` never includes asset, scene, editor, render or UI headers.
+
 ## Const Correctness
 
 - Mark non-mutating methods and references `const`.
