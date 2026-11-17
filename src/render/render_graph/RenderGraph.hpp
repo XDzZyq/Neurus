@@ -140,8 +140,8 @@ public:
 	 * Exposed so the uploader can map a CPU document onto it and so tests can
 	 * inspect sockets without going through Compile()/Execute().
 	 */
-	GraphT& Graph() { return m_graph; }
-	const GraphT& Graph() const { return m_graph; }
+	GraphT& GraphData() { return m_graph; }
+	const GraphT& GraphData() const { return m_graph; }
 
 	/** @return Cached execution order; empty if Compile() has not yet run. */
 	const std::vector<NodeT*>& CompiledOrder() const { return m_compiled; }

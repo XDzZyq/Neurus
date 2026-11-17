@@ -138,7 +138,7 @@ UploadResult UploadCpuGraph(const CpuRenderGraph& cpu, PassFactory& factory,
 		return FindInput(*it->second, port.name);
 	};
 
-	result.morphism = MapGraph(cpu, graph->Graph(), policy);
+	result.morphism = MapGraph(cpu, graph->GraphData(), policy);
 
 	for (const std::string& problem : result.morphism.Validate().problems)
 		result.errors.push_back({{}, {}, problem});
