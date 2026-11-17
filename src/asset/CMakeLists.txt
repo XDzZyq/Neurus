@@ -29,6 +29,9 @@ add_library(neurus_asset STATIC
 	data/AssetPath.cpp
 	graph/PassPorts.hpp
 	graph/PassPorts.cpp
+	graph/PassKinds.hpp
+	graph/ShaderSnapshot.hpp
+	graph/ShaderSnapshot.cpp
 	graph/RenderGraphCompile.hpp
 	graph/RenderGraphCompile.cpp
 	data/shader/ShaderStage.hpp
