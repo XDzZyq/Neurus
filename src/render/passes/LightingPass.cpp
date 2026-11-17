@@ -6,6 +6,7 @@
 #include "passes/LightingPass.hpp"
 
 #include "../PipelineBuilder.hpp"
+#include "asset/graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "RenderCache.hpp"
 #include "RenderContext.hpp"
@@ -346,7 +347,10 @@ std::vector<const ShaderData*> LightingPass::GetShaders() const
 
 std::vector<std::string> LightingPass::ExternalInputPorts() const
 {
-	return {"U_Irradiance", "U_Prefiltered"};
+	std::vector<std::string> names;
+	for (const std::string_view name : FindPassKind("LightingPass")->externalInputs)
+		names.emplace_back(name);
+	return names;
 }
 
 } // namespace neurus

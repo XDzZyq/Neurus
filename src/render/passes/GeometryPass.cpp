@@ -10,6 +10,7 @@
 #include "RenderContext.hpp"
 #include "render/Barrier.hpp"
 #include "PipelineBuilder.hpp"
+#include "asset/graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "shaders/ShaderLibrary.hpp"
 #include "shaders/RenderShader.hpp"
@@ -488,7 +489,13 @@ void GeometryPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
 
 std::vector<ShaderPort> GeometryPass::DeclaredOutputs() const
 {
-	return {ShaderPort{"depth", PortDirection::Output, "d32_sfloat", 0, 0}};
+	std::vector<ShaderPort> ports;
+	for (const DeclaredPort& port : FindPassKind("GeometryPass")->declaredOutputs)
+	{
+		ports.push_back({std::string(port.name), PortDirection::Output,
+		                 std::string(port.type), 0, 0});
+	}
+	return ports;
 }
 
 } // namespace neurus

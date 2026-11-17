@@ -14,6 +14,7 @@
 #include "RenderCache.hpp"
 #include "../resources/MeshGPU.hpp"
 #include "../PipelineBuilder.hpp"
+#include "asset/graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "render/Barrier.hpp"
 #include "../shaders/ShaderLibrary.hpp"
@@ -520,7 +521,13 @@ void ShadowDepthPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameInde
 
 std::vector<ShaderPort> ShadowDepthPass::DeclaredOutputs() const
 {
-	return {ShaderPort{"shadow_depth", PortDirection::Output, "logical", 0, 0}};
+	std::vector<ShaderPort> ports;
+	for (const DeclaredPort& port : FindPassKind("ShadowDepthPass")->declaredOutputs)
+	{
+		ports.push_back({std::string(port.name), PortDirection::Output,
+		                 std::string(port.type), 0, 0});
+	}
+	return ports;
 }
 
 } // namespace neurus

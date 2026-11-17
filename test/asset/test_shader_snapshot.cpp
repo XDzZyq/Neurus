@@ -151,12 +151,21 @@ TEST(ShaderSnapshot, PassKindTable)
 {
 	const neurus::PassKindInfo* lighting = neurus::FindPassKind("LightingPass");
 	ASSERT_NE(lighting, nullptr);
-	EXPECT_EQ(lighting->computePath, "res/shaders/compute/pbr_lighting.comp.glsl");
+	ASSERT_EQ(lighting->shaders.size(), 1u);
+	EXPECT_EQ(lighting->shaders[0].computePath, "res/shaders/compute/pbr_lighting.comp.glsl");
 	EXPECT_EQ(lighting->optionalBindings.size(), 3u);
 
+	const neurus::PassKindInfo* shadowDepth = neurus::FindPassKind("ShadowDepthPass");
+	ASSERT_NE(shadowDepth, nullptr);
+	ASSERT_EQ(shadowDepth->shaders.size(), 2u);  // multiview cubemap and sun 2D
+	EXPECT_EQ(shadowDepth->shaders[0].name, "ShadowDepthMultiview");
+	EXPECT_EQ(shadowDepth->shaders[1].name, "ShadowDepthSun");
+
+	const neurus::PassKindInfo* shadowIntensity = neurus::FindPassKind("ShadowIntensityPass");
+	ASSERT_NE(shadowIntensity, nullptr);
+	EXPECT_EQ(shadowIntensity->shaders.size(), 2u);
+
 	EXPECT_NE(neurus::FindPassKind("GeometryPass"), nullptr);
-	EXPECT_NE(neurus::FindPassKind("ShadowDepthPass"), nullptr);
-	EXPECT_NE(neurus::FindPassKind("ShadowIntensityPass"), nullptr);
 	EXPECT_NE(neurus::FindPassKind("SSAOPass"), nullptr);
 	EXPECT_NE(neurus::FindPassKind("ComposePass"), nullptr);
 	EXPECT_NE(neurus::FindPassKind("FXAAPass"), nullptr);
