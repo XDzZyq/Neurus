@@ -4,7 +4,7 @@ The deferred pipeline is described by a serialized document and compiled into a 
 
 ## The document
 
-`RenderGraphSpec` (`src/core/RenderGraphSpec.hpp`) is Vulkan-free:
+`RenderGraphSpec` (`src/asset/data/render_graph/RenderGraphSpec.hpp`) is Vulkan-free:
 
 - `GraphNodeSpec` - a node id, a pass kind and a map of output-port tags.
 - `GraphEdgeSpec` - `from`/`fromPort` to `to`/`toPort`, name to name.

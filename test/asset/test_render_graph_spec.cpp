@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 
 #include <cereal/archives/json.hpp>
 

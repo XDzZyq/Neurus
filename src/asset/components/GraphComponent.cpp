@@ -1,7 +1,7 @@
 #include "asset/components/GraphComponent.hpp"
 
 #include "core/Log.hpp"
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "core/Serialize.hpp"
 
 #include <cereal/cereal.hpp>

@@ -38,7 +38,7 @@
 #include "passes/Pass.hpp"
 #include "asset/graph/RenderGraphCompile.hpp"
 #include "core/RenderConfig.hpp"
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "RenderContext.hpp"
 #include "OutputTarget.hpp"
 #include "render_graph/RenderGraph.hpp"

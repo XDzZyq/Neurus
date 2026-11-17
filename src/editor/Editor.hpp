@@ -12,7 +12,7 @@
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a
 // RenderFrameSnapshot by value, so the complete type is required here. It is

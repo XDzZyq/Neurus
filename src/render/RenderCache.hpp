@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Image.hpp"
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "resources/MeshGPU.hpp"
 #include "resources/EnvironmentGPU.hpp"
 #include "resources/LightGPU.hpp"

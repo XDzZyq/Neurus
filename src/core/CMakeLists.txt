@@ -14,8 +14,6 @@ add_library(neurus_core STATIC
 	Serialize.hpp
 	RenderConfig.hpp
 	GraphMorphism.hpp
-	RenderGraphSpec.hpp
-	RenderGraphSpec.cpp
 	ThreadPool.hpp
 	ThreadPool.cpp
 	BatchQueue.hpp

@@ -8,7 +8,7 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "core/RenderConfig.hpp"
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 #include "render/DeferredRenderer.hpp"
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"

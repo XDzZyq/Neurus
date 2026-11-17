@@ -3,7 +3,7 @@
  * @brief Default graph, FXAA pruning and stable hashing for RenderGraphSpec.
  */
 
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 
 #include <algorithm>
 #include <utility>

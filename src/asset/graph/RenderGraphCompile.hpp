@@ -11,7 +11,7 @@
 #pragma once
 
 #include "asset/graph/PassPorts.hpp"
-#include "core/RenderGraphSpec.hpp"
+#include "asset/data/render_graph/RenderGraphSpec.hpp"
 
 #include <cstddef>
 #include <string>
