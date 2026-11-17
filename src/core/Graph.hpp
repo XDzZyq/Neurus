@@ -23,6 +23,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace neurus {
@@ -622,5 +623,83 @@ private:
 		return nodes.size();
 	}
 };
+
+/**
+ * @brief Deep copy of a graph: node order, socket order, payloads and connections.
+ *
+ * `Graph` owns its nodes through `unique_ptr`, so it is movable but not copyable.
+ * The copy is what undo stores and what the Editor publishes to the renderer: it
+ * keeps identities as they are (node name, socket names and order) so a copy can
+ * be compared, serialized and re-uploaded without rewriting anything.
+ *
+ * @param graph  Graph to copy; it is not modified.
+ * @return A graph with an independent node and socket pool.
+ * @throws std::runtime_error when a connection cannot be reproduced, which means
+ *         the source graph's sockets were wired outside `Connect`.
+ */
+template<typename SData, typename NData>
+Graph<SData, NData> CloneGraph(const Graph<SData, NData>& graph)
+{
+	using GraphT     = Graph<SData, NData>;
+	using NodeT      = Node<SData, NData>;
+	using SocketOutT = SocketOut<SData, NData>;
+
+	GraphT copy;
+	copy.nodes.reserve(graph.nodes.size());
+
+	// Image of every source output socket, so the second pass can reconnect by
+	// pointer instead of searching the copy.
+	std::unordered_map<const SocketOutT*, SocketOutT*> outputImages;
+	outputImages.reserve(graph.nodes.size() * 2);
+
+	for (const auto& node : graph.nodes)
+	{
+		NodeT* copied = copy.AddNode(node->name, node->data);
+		for (const auto& input : node->inputs)
+		{
+			SocketIn<SData, NData>* socket = copied->AddInput(input->name);
+			socket->data = input->data;
+		}
+		for (const auto& output : node->outputs)
+		{
+			SocketOutT* socket = copied->AddOutput(output->name);
+			socket->data = output->data;
+			outputImages.emplace(output.get(), socket);
+		}
+	}
+
+	// Node and socket order match by construction, so an input maps by index.
+	for (size_t n = 0; n < graph.nodes.size(); ++n)
+	{
+		const NodeT& source = *graph.nodes[n];
+		NodeT* target = copy.nodes[n].get();
+
+		for (size_t i = 0; i < source.inputs.size(); ++i)
+		{
+			const SocketOutT* upstream = source.inputs[i]->source;
+			if (!upstream)
+				continue;
+
+			const auto it = outputImages.find(upstream);
+			if (it == outputImages.end())
+			{
+				throw std::runtime_error(
+					"CloneGraph: node '" + source.name + "' input '"
+					+ source.inputs[i]->name + "' is fed from outside the graph");
+			}
+
+			SocketIn<SData, NData>* copiedInput = target->inputs[i].get();
+			if (!copy.Connect(it->second, copiedInput))
+			{
+				throw std::runtime_error(
+					"CloneGraph: could not reconnect '" + upstream->owner->name + "."
+					+ upstream->name + "' -> '" + source.name + "."
+					+ source.inputs[i]->name + "'");
+			}
+		}
+	}
+
+	return copy;
+}
 
 } // namespace neurus
