@@ -36,7 +36,7 @@
 #include "RenderCache.hpp"
 #include "TimelineSemaphore.hpp"
 #include "passes/Pass.hpp"
-#include "asset/data/render_graph/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "core/RenderConfig.hpp"
 #include "RenderContext.hpp"

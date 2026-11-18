@@ -1,5 +1,6 @@
 #include "asset/components/GraphComponent.hpp"
 
+#include "asset/data/RenderGraphData.hpp"
 #include "core/Log.hpp"
 #include "core/Serialize.hpp"
 
@@ -11,7 +12,7 @@
 namespace neurus::project
 {
 
-GraphComponent::GraphComponent(std::optional<CpuGraphRecord>& pending,
+GraphComponent::GraphComponent(std::optional<RenderGraphRecord>& pending,
                                const RenderGraphData& graph)
 	: m_pending(&pending)
 	, m_graph(&graph)
@@ -20,7 +21,7 @@ GraphComponent::GraphComponent(std::optional<CpuGraphRecord>& pending,
 
 void GraphComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	const CpuGraphRecord record = ToRecord(*m_graph);
+	const RenderGraphRecord record = m_graph->ToRecord();
 	ar(cereal::make_nvp("proj_render_graph", record));
 }
 
@@ -28,7 +29,7 @@ void GraphComponent::Load(cereal::JSONInputArchive& ar)
 {
 	// Every field is optional at the archive level; an absent key means "no
 	// saved document", never the previous session's graph.
-	CpuGraphRecord loaded;
+	RenderGraphRecord loaded;
 	try
 	{
 		if (!archive::LoadFresh(ar, "proj_render_graph", loaded))

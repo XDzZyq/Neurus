@@ -37,7 +37,7 @@
 #include "render_graph/GraphUploader.hpp"
 #include "render_graph/ResourceTag.hpp"
 
-#include "asset/data/render_graph/GraphDocument.hpp"
+#include "asset/data/RenderGraphData.hpp"
 
 #include "render/HaltonSequence.hpp"
 
@@ -739,7 +739,7 @@ void DeferredRenderer::SetPendingGraph(const CompileRenderGraphRequest& request)
 bool DeferredRenderer::CompileDocument(const RenderGraphData& document, const bool fxaa,
                                        const std::span<const ShaderSnapshot> shaders)
 {
-	const std::uint64_t graphHash = CpuGraphHash(document);
+	const std::uint64_t graphHash = document.Hash();
 
 	m_graphReport = {};
 	m_graphReport.graphHash = graphHash;
@@ -747,7 +747,7 @@ bool DeferredRenderer::CompileDocument(const RenderGraphData& document, const bo
 	// The renderer applies the conditional nodes, so an FXAA toggle neither
 	// edits nor republishes the Editor's document.
 	RenderGraphData pruned = CloneGraph(document);
-	ApplyConditions(pruned, fxaa);
+	pruned.ApplyConditions(fxaa);
 
 	UploadResult upload = UploadCpuGraph(pruned, *m_passFactory, shaders);
 
@@ -1097,7 +1097,7 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		if (m_mainDocument)
 		{
 			const PipelineSignature sig = PipelineSignature::From(
-				frame.Settings(), CpuGraphHash(*m_mainDocument),
+				frame.Settings(), m_mainDocument->Hash(),
 				ShaderSnapshotsHash(m_documentShaders));
 			if (m_graphDirty || !(sig == m_builtSignature))
 			{

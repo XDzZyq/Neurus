@@ -4,7 +4,7 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 ## The document
 
-`RenderGraphData` (`src/asset/data/render_graph/RenderGraphData.hpp`) derives from `core::Graph`, which keeps the document the same shape as the runtime graph:
+`RenderGraphData` (`src/asset/data/RenderGraphData.hpp`) derives from `core::Graph`, which keeps the document the same shape as the runtime graph:
 
 - a node payload, `CpuNode`, holds the pass kind, the pooled shader uid and the graph-editor position; `Graph::Node::name` is the document id;
 - a socket payload, `CpuPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
@@ -12,7 +12,7 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 `GraphOutputTag` (`src/asset/data/render_graph/GraphOutputTag.hpp`) is the closed set described in [Resources](#resources).
 
-The Editor owns the live document. `project::GraphComponent` persists it as a flat `CpuGraphRecord`: node fields and output sockets with their tags are saved, input sockets are re-derived from each node's shader on load. A project without the record, or a corrupt node, leaves no pending record and the Editor builds `MakeDefaultCpuGraph()`. The default is today's scene graph - geometry, shadow depth, shadow intensity, SSAO, lighting, compose and FXAA - and, like `CreateDefaultScene`, it is only the built-in fallback.
+The Editor owns the live document. `GraphComponent` persists it as a flat `RenderGraphRecord`, and `RenderGraphData::ToRecord()` / `FromRecord()` are the only crossing between the live graph and the archive. Node fields and output sockets with their tags are saved; input sockets are re-derived from each node's shader on load. A project without the record, or a corrupt node, leaves no pending record and the Editor builds `RenderGraphData::Default()`. The default is today's scene graph - geometry, shadow depth, shadow intensity, SSAO, lighting, compose and FXAA - and, like `CreateDefaultScene`, it is only the built-in fallback.
 
 The Editor pools one shader per built-in source through `PassShaders` (`src/asset/data/render_graph/PassShaders.hpp`). A restored project adopts its own shaders by name instead of duplicating them, and every publish carries a `ShaderSnapshot` per shader the document names, so the renderer never reads the Editor's pool.
 

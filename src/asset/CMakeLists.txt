@@ -27,13 +27,12 @@ add_library(neurus_asset STATIC
 	data/MeshData.cpp
 	data/AssetPath.hpp
 	data/AssetPath.cpp
+	data/RenderGraphData.hpp
+	data/RenderGraphData.cpp
 	data/render_graph/GraphOutputTag.hpp
-	data/render_graph/RenderGraphData.hpp
 	data/render_graph/PortSource.hpp
 	data/render_graph/PassShaders.hpp
 	data/render_graph/PassShaders.cpp
-	data/render_graph/GraphDocument.hpp
-	data/render_graph/GraphDocument.cpp
 	data/render_graph/CpuGraphValidation.hpp
 	data/render_graph/CpuGraphValidation.cpp
 	data/render_graph/PassPorts.hpp

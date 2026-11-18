@@ -8,8 +8,8 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "core/RenderConfig.hpp"
-#include "asset/data/render_graph/RenderGraphData.hpp"
-#include "asset/data/render_graph/GraphDocument.hpp"
+#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "render/DeferredRenderer.hpp"
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"
@@ -96,7 +96,7 @@ protected:
 
 	neurus::RenderGraphData DefaultDocument() const
 	{
-		return neurus::MakeDefaultCpuGraph(*m_documentFactory);
+		return neurus::RenderGraphData::Default(*m_documentFactory);
 	}
 
 	void PostDocument(neurus::RenderGraphData graph)

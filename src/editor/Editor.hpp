@@ -13,8 +13,8 @@
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
-#include "asset/data/render_graph/RenderGraphData.hpp"
-#include "asset/data/render_graph/GraphDocument.hpp"
+#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a
 // RenderFrameSnapshot by value, so the complete type is required here. It is
@@ -106,7 +106,7 @@ public:	/**
 	const RenderGraphData& GetRenderGraph() const { return m_renderGraph; }
 
 	/// @brief The document as read from a project, applied by FinishLoad().
-	std::optional<CpuGraphRecord>& GetPendingRenderGraph() { return m_pendingGraph; }
+	std::optional<RenderGraphRecord>& GetPendingRenderGraph() { return m_pendingGraph; }
 
 	/**
 	 * @brief Replaces the document and asks the renderer to compile it.
@@ -125,7 +125,7 @@ public:	/**
 	 * Used by FinishLoad and by undo. Seeds the shader pool first, so a restored
 	 * project adopts its own shaders instead of creating duplicates.
 	 */
-	void ReplaceRenderGraph(const CpuGraphRecord& record);
+	void ReplaceRenderGraph(const RenderGraphRecord& record);
 
 	/// @brief Problems from the last seed, load and validation pass.
 	const std::vector<std::string>& GetGraphProblems() const { return m_graphProblems; }
@@ -418,7 +418,7 @@ private:
 
 	/// @brief The live graph document; empty until ResetRenderGraph().
 	RenderGraphData            m_renderGraph;
-	std::optional<CpuGraphRecord> m_pendingGraph;   ///< Read from the project, applied on FinishLoad.
+	std::optional<RenderGraphRecord> m_pendingGraph;   ///< Read from the project, applied on FinishLoad.
 	std::unique_ptr<PassShaders>  m_passShaders;    ///< Pooled shaders, one per built-in kind.
 	std::vector<std::string>      m_graphProblems;  ///< Seed, load and validation reports.
 	bool                  m_dirty = false;

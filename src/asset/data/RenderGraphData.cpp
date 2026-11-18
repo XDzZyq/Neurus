@@ -1,11 +1,12 @@
 /**
- * @file GraphDocument.cpp
- * @brief Record conversion and the built-in default document.
+ * @file RenderGraphData.cpp
+ * @brief Saved form, default document, conditions and hash.
  */
 
-#include "asset/data/render_graph/GraphDocument.hpp"
+#include "asset/data/RenderGraphData.hpp"
 
 #include "asset/data/render_graph/PassKinds.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -64,14 +65,14 @@ CpuPort MakePort(const ShaderPort& port, std::optional<GraphOutputTag> tag = {})
 
 } // anonymous namespace
 
-CpuGraphRecord ToRecord(const RenderGraphData& graph)
+RenderGraphRecord RenderGraphData::ToRecord() const
 {
-	CpuGraphRecord record;
-	record.nodes.reserve(graph.nodes.size());
+	RenderGraphRecord record;
+	record.nodes.reserve(nodes.size());
 
-	for (const auto& node : graph.nodes)
+	for (const auto& node : nodes)
 	{
-		CpuNodeRecord saved;
+		RenderGraphNodeRecord saved;
 		saved.name      = node->name;
 		saved.pass      = node->data.pass;
 		saved.shaderUid = node->data.shaderUid;
@@ -81,7 +82,7 @@ CpuGraphRecord ToRecord(const RenderGraphData& graph)
 		saved.outputs.reserve(node->outputs.size());
 		for (const auto& output : node->outputs)
 		{
-			CpuPortRecord port;
+			RenderGraphPortRecord port;
 			port.name     = output->name;
 			port.type     = output->data.type;
 			port.binding  = output->data.binding;
@@ -93,7 +94,7 @@ CpuGraphRecord ToRecord(const RenderGraphData& graph)
 		record.nodes.push_back(std::move(saved));
 	}
 
-	for (const auto& node : graph.nodes)
+	for (const auto& node : nodes)
 	{
 		for (const auto& input : node->inputs)
 		{
@@ -111,8 +112,9 @@ CpuGraphRecord ToRecord(const RenderGraphData& graph)
 	return record;
 }
 
-RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& ports,
-                          std::vector<std::string>& problems)
+RenderGraphData RenderGraphData::FromRecord(const RenderGraphRecord& record,
+                                            const IPortSource& ports,
+                                            std::vector<std::string>& problems)
 {
 	RenderGraphData graph;
 	graph.nodes.reserve(record.nodes.size());
@@ -120,7 +122,7 @@ RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& port
 	std::vector<NodeType*> created;
 	created.reserve(record.nodes.size());
 
-	for (const CpuNodeRecord& saved : record.nodes)
+	for (const RenderGraphNodeRecord& saved : record.nodes)
 	{
 		CpuNode data;
 		data.pass      = saved.pass;
@@ -134,7 +136,7 @@ RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& port
 		NodeType* node = graph.AddNode(saved.name, data);
 		created.push_back(node);
 
-		for (const CpuPortRecord& savedPort : saved.outputs)
+		for (const RenderGraphPortRecord& savedPort : saved.outputs)
 		{
 			OutSocket* output = node->AddOutput(savedPort.name);
 			output->data.name      = savedPort.name;
@@ -148,7 +150,7 @@ RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& port
 
 	for (size_t i = 0; i < created.size(); ++i)
 	{
-		const CpuNodeRecord& saved = record.nodes[i];
+		const RenderGraphNodeRecord& saved = record.nodes[i];
 		const PassPorts* passPorts = ports.FindPassPorts(saved.pass);
 		if (!passPorts)
 		{
@@ -164,7 +166,7 @@ RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& port
 		}
 	}
 
-	for (const CpuEdgeRecord& edge : record.edges)
+	for (const RenderGraphEdgeRecord& edge : record.edges)
 	{
 		NodeType* from = FindNode(graph, edge.from);
 		NodeType* to   = FindNode(graph, edge.to);
@@ -210,7 +212,7 @@ RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& port
 	return graph;
 }
 
-RenderGraphData MakeDefaultCpuGraph(const IPortSource& ports)
+RenderGraphData RenderGraphData::Default(const IPortSource& ports)
 {
 	RenderGraphData graph;
 
@@ -222,7 +224,7 @@ RenderGraphData MakeDefaultCpuGraph(const IPortSource& ports)
 		if (!passPorts)
 		{
 			throw std::runtime_error(
-				"MakeDefaultCpuGraph: no ports for built-in pass '" + pass + "'");
+				"RenderGraphData::Default: no ports for built-in pass '" + pass + "'");
 		}
 
 		CpuNode data;
@@ -257,8 +259,8 @@ RenderGraphData MakeDefaultCpuGraph(const IPortSource& ports)
 		if (!output || !input || !graph.Connect(output, input))
 		{
 			throw std::runtime_error(
-				"MakeDefaultCpuGraph: bad default edge '" + from.name + "." + fromPort
-				+ " -> " + to.name + "." + toPort + "'");
+				"RenderGraphData::Default: bad default edge '" + from.name + "."
+				+ fromPort + " -> " + to.name + "." + toPort + "'");
 		}
 	};
 
@@ -321,10 +323,10 @@ RenderGraphData MakeDefaultCpuGraph(const IPortSource& ports)
 	return graph;
 }
 
-void ApplyConditions(RenderGraphData& graph, const bool fxaa)
+void RenderGraphData::ApplyConditions(const bool fxaa)
 {
 	std::vector<NodeType*> dropped;
-	for (const auto& node : graph.nodes)
+	for (const auto& node : nodes)
 	{
 		const PassKindInfo* kind = FindPassKind(node->data.pass);
 		if (!kind || kind->condition.empty())
@@ -336,10 +338,10 @@ void ApplyConditions(RenderGraphData& graph, const bool fxaa)
 	}
 
 	for (NodeType* node : dropped)
-		graph.RemoveNode(node);
+		RemoveNode(node);
 }
 
-std::uint64_t CpuGraphHash(const RenderGraphData& graph)
+std::uint64_t RenderGraphData::Hash() const
 {
 	constexpr std::uint64_t kOffset = 14695981039346656037ull;
 	constexpr std::uint64_t kPrime  = 1099511628211ull;
@@ -365,8 +367,8 @@ std::uint64_t CpuGraphHash(const RenderGraphData& graph)
 	};
 
 	hashByte(0x01);
-	hashString(std::to_string(graph.nodes.size()));
-	for (const auto& node : graph.nodes)
+	hashString(std::to_string(nodes.size()));
+	for (const auto& node : nodes)
 	{
 		hashByte(0x02);
 		hashString(node->name);
@@ -394,7 +396,7 @@ std::uint64_t CpuGraphHash(const RenderGraphData& graph)
 	}
 
 	hashByte(0x06);
-	for (const auto& node : graph.nodes)
+	for (const auto& node : nodes)
 	{
 		for (const auto& input : node->inputs)
 		{

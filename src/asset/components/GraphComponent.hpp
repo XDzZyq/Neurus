@@ -6,9 +6,14 @@
 #pragma once
 
 #include "asset/Serializable.hpp"
-#include "asset/data/render_graph/GraphDocument.hpp"
 
 #include <optional>
+
+namespace neurus
+{
+struct RenderGraphRecord;
+class RenderGraphData;
+}
 
 namespace neurus::project
 {
@@ -30,14 +35,14 @@ public:
 	 * @param pending  Receives the record read from the file.
 	 * @param graph    Live document, read on save.
 	 */
-	GraphComponent(std::optional<CpuGraphRecord>& pending, const RenderGraphData& graph);
+	GraphComponent(std::optional<RenderGraphRecord>& pending, const RenderGraphData& graph);
 
 	const char* Key() const noexcept override { return "proj_render_graph"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
 	void Load(cereal::JSONInputArchive& ar) override;
 
 private:
-	std::optional<CpuGraphRecord>* m_pending;
+	std::optional<RenderGraphRecord>* m_pending;
 	const RenderGraphData*          m_graph;
 };
 

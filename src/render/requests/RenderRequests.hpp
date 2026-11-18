@@ -37,7 +37,7 @@
 
 #include "render/resources/LightingCache.hpp"
 #include "scene/Light.hpp"
-#include "asset/data/render_graph/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "render/RenderFrameSnapshot.hpp"
 
 namespace neurus

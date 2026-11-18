@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/render_graph/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 
 #include <cstdint>
 #include <optional>

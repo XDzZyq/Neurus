@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "asset/data/render_graph/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
 #include <string>

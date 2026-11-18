@@ -8,7 +8,7 @@
 #include "shared/TestPassPorts.hpp"
 
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
-#include "asset/data/render_graph/GraphDocument.hpp"
+#include "asset/data/RenderGraphData.hpp"
 
 #include <cereal/archives/json.hpp>
 
@@ -20,7 +20,7 @@
 
 namespace {
 
-using neurus::CpuGraphRecord;
+using neurus::RenderGraphRecord;
 using neurus::CpuGraphDiagnostic;
 using neurus::RenderGraphData;
 
@@ -45,7 +45,7 @@ RenderGraphData::NodeType* FindNode(RenderGraphData& graph, const std::string& n
 	return nullptr;
 }
 
-std::string Serialize(const CpuGraphRecord& record)
+std::string Serialize(const RenderGraphRecord& record)
 {
 	std::ostringstream out;
 	{
@@ -55,11 +55,11 @@ std::string Serialize(const CpuGraphRecord& record)
 	return out.str();
 }
 
-CpuGraphRecord Deserialize(const std::string& text)
+RenderGraphRecord Deserialize(const std::string& text)
 {
 	std::istringstream in(text);
 	cereal::JSONInputArchive ar(in);
-	CpuGraphRecord record;
+	RenderGraphRecord record;
 	ar(cereal::make_nvp("graph", record));
 	return record;
 }
@@ -86,10 +86,10 @@ bool HasProblem(const std::vector<std::string>& problems, const std::string& fra
 
 } // anonymous namespace
 
-TEST(GraphDocument, DefaultGraph)
+TEST(RenderGraphDocument, DefaultGraph)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	const RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
+	const RenderGraphData graph = neurus::RenderGraphData::Default(ports);
 
 	ASSERT_EQ(graph.nodes.size(), 7u);
 	const std::vector<std::string> expected = {
@@ -122,19 +122,19 @@ TEST(GraphDocument, DefaultGraph)
 	EXPECT_TRUE(neurus::ValidateCpuGraph(graph, ports).empty());
 }
 
-TEST(GraphDocument, RoundTripPreservesTopology)
+TEST(RenderGraphDocument, RoundTripPreservesTopology)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	const RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
-	const CpuGraphRecord original = neurus::ToRecord(graph);
+	const RenderGraphData graph = neurus::RenderGraphData::Default(ports);
+	const RenderGraphRecord original = graph.ToRecord();
 
-	const CpuGraphRecord restored = Deserialize(Serialize(original));
+	const RenderGraphRecord restored = Deserialize(Serialize(original));
 	EXPECT_EQ(restored, original);
 
 	std::vector<std::string> problems;
-	const RenderGraphData copy = neurus::FromRecord(restored, ports, problems);
+	const RenderGraphData copy = neurus::RenderGraphData::FromRecord(restored, ports, problems);
 	EXPECT_TRUE(problems.empty());
-	EXPECT_EQ(neurus::ToRecord(copy), original);
+	EXPECT_EQ(copy.ToRecord(), original);
 
 	EXPECT_EQ(copy.nodes.size(), graph.nodes.size());
 	for (size_t i = 0; i < copy.nodes.size(); ++i)
@@ -150,18 +150,18 @@ TEST(GraphDocument, RoundTripPreservesTopology)
 	}
 }
 
-TEST(GraphDocument, InputsComeFromShaders)
+TEST(RenderGraphDocument, InputsComeFromShaders)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
 
-	CpuGraphRecord record;
-	neurus::CpuNodeRecord node;
+	RenderGraphRecord record;
+	neurus::RenderGraphNodeRecord node;
 	node.name = "lighting";
 	node.pass = "LightingPass";
 	record.nodes.push_back(node);
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::FromRecord(record, ports, problems);
+	const RenderGraphData graph = neurus::RenderGraphData::FromRecord(record, ports, problems);
 	EXPECT_TRUE(problems.empty());
 
 	ASSERT_EQ(graph.nodes.size(), 1u);
@@ -170,27 +170,27 @@ TEST(GraphDocument, InputsComeFromShaders)
 	EXPECT_TRUE(graph.nodes[0]->outputs.empty());
 }
 
-TEST(GraphDocument, ConditionPruning)
+TEST(RenderGraphDocument, ConditionPruning)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
+	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
 
-	neurus::ApplyConditions(graph, false);
+	graph.ApplyConditions(false);
 	ASSERT_EQ(graph.nodes.size(), 6u);
 	EXPECT_EQ(FindNode(graph, "fxaa"), nullptr);
 	EXPECT_TRUE(neurus::ValidateCpuGraph(graph, ports).empty());
 
-	neurus::ApplyConditions(graph, true);
+	graph.ApplyConditions(true);
 	EXPECT_EQ(graph.nodes.size(), 6u);
 }
 
-TEST(GraphDocument, DoubleProducerIsReportedAtLoad)
+TEST(RenderGraphDocument, DoubleProducerIsReportedAtLoad)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
 
-	CpuGraphRecord record;
+	RenderGraphRecord record;
 
-	neurus::CpuNodeRecord geometry;
+	neurus::RenderGraphNodeRecord geometry;
 	geometry.name = "geometry";
 	geometry.pass = "GeometryPass";
 	geometry.outputs = {
@@ -201,7 +201,7 @@ TEST(GraphDocument, DoubleProducerIsReportedAtLoad)
 	};
 	record.nodes.push_back(geometry);
 
-	neurus::CpuNodeRecord ssao;
+	neurus::RenderGraphNodeRecord ssao;
 	ssao.name = "ssao";
 	ssao.pass = "SSAOPass";
 	record.nodes.push_back(ssao);
@@ -212,24 +212,24 @@ TEST(GraphDocument, DoubleProducerIsReportedAtLoad)
 	};
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::FromRecord(record, ports, problems);
+	const RenderGraphData graph = neurus::RenderGraphData::FromRecord(record, ports, problems);
 	EXPECT_EQ(graph.nodes.size(), 2u);
 	ASSERT_EQ(problems.size(), 1u);
 	EXPECT_NE(problems[0].find("more than one producer"), std::string::npos);
 }
 
-TEST(GraphDocument, UnknownPassIsNamed)
+TEST(RenderGraphDocument, UnknownPassIsNamed)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
 
-	CpuGraphRecord record;
-	neurus::CpuNodeRecord node;
+	RenderGraphRecord record;
+	neurus::RenderGraphNodeRecord node;
 	node.name = "bogus";
 	node.pass = "NopePass";
 	record.nodes.push_back(node);
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::FromRecord(record, ports, problems);
+	const RenderGraphData graph = neurus::RenderGraphData::FromRecord(record, ports, problems);
 	EXPECT_TRUE(HasProblem(problems, "unknown pass kind"));
 
 	const std::vector<CpuGraphDiagnostic> diagnostics =
@@ -240,7 +240,7 @@ TEST(GraphDocument, UnknownPassIsNamed)
 TEST(CpuGraphValidation, MissingTagIsNamed)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
+	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
 
 	RenderGraphData::NodeType* geometry = FindNode(graph, "geometry");
 	ASSERT_NE(geometry, nullptr);
@@ -254,7 +254,7 @@ TEST(CpuGraphValidation, MissingTagIsNamed)
 TEST(CpuGraphValidation, StaleOutputPortIsReported)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
+	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
 
 	RenderGraphData::NodeType* geometry = FindNode(graph, "geometry");
 	ASSERT_NE(geometry, nullptr);
@@ -271,7 +271,7 @@ TEST(CpuGraphValidation, StaleOutputPortIsReported)
 TEST(CpuGraphValidation, CycleIsNamed)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
+	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
 
 	// Wire a back edge by hand: Connect refuses a cycle, the public sockets do
 	// not, and validation must still name it.

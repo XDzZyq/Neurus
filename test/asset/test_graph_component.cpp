@@ -8,7 +8,7 @@
 #include "shared/TestPassPorts.hpp"
 
 #include "asset/components/GraphComponent.hpp"
-#include "asset/data/render_graph/GraphDocument.hpp"
+#include "asset/data/RenderGraphData.hpp"
 
 #include <cereal/archives/json.hpp>
 
@@ -23,16 +23,16 @@ std::string Save(const neurus::RenderGraphData& graph)
 	std::ostringstream stream;
 	{
 		cereal::JSONOutputArchive archive(stream);
-		std::optional<neurus::CpuGraphRecord> pending;
+		std::optional<neurus::RenderGraphRecord> pending;
 		neurus::project::GraphComponent component(pending, graph);
 		component.Save(archive);
 	}
 	return stream.str();
 }
 
-std::optional<neurus::CpuGraphRecord> Load(const std::string& text)
+std::optional<neurus::RenderGraphRecord> Load(const std::string& text)
 {
-	std::optional<neurus::CpuGraphRecord> pending;
+	std::optional<neurus::RenderGraphRecord> pending;
 	std::istringstream stream(text);
 	cereal::JSONInputArchive archive(stream);
 	const neurus::RenderGraphData empty;
@@ -46,7 +46,7 @@ std::optional<neurus::CpuGraphRecord> Load(const std::string& text)
 TEST(GraphComponent, RoundTrip)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	neurus::RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
+	neurus::RenderGraphData graph = neurus::RenderGraphData::Default(ports);
 
 	// A non-default tag and a removed edge must both survive the round trip.
 	graph.nodes[0]->outputs[0]->data.tag->format = neurus::GraphFormat::Rgba8Unorm;
@@ -54,8 +54,8 @@ TEST(GraphComponent, RoundTrip)
 	neurus::RenderGraphData::NodeType* fxaa = graph.nodes[6].get();
 	graph.Disconnect(compose->outputs[0].get(), fxaa->inputs[0].get());
 
-	const neurus::CpuGraphRecord expected = neurus::ToRecord(graph);
-	const std::optional<neurus::CpuGraphRecord> restored = Load(Save(graph));
+	const neurus::RenderGraphRecord expected = graph.ToRecord();
+	const std::optional<neurus::RenderGraphRecord> restored = Load(Save(graph));
 
 	ASSERT_TRUE(restored.has_value());
 	EXPECT_EQ(*restored, expected);

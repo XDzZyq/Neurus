@@ -7,8 +7,8 @@
 
 #include "shared/TestVulkanShared.hpp"
 
-#include "asset/data/render_graph/RenderGraphData.hpp"
-#include "asset/data/render_graph/GraphDocument.hpp"
+#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "render/render_graph/GraphUploader.hpp"
 #include "render/render_graph/PassFactory.hpp"
 
@@ -64,7 +64,7 @@ protected:
 
 	neurus::RenderGraphData DefaultDocument() const
 	{
-		return neurus::MakeDefaultCpuGraph(*m_factory);
+		return neurus::RenderGraphData::Default(*m_factory);
 	}
 
 	std::unique_ptr<neurus::PassFactory> m_factory;

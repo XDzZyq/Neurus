@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "asset/data/render_graph/RenderGraphData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "render/RenderFrameSnapshot.hpp"
 #include "core/GraphMorphism.hpp"
