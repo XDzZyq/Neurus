@@ -7,7 +7,7 @@
 
 #include "shared/TestVulkanShared.hpp"
 
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 #include "asset/data/render_graph/GraphDocument.hpp"
 #include "render/render_graph/GraphUploader.hpp"
 #include "render/render_graph/PassFactory.hpp"
@@ -19,7 +19,7 @@
 
 namespace {
 
-neurus::CpuRenderGraph::NodeType* FindNode(neurus::CpuRenderGraph& graph,
+neurus::RenderGraphData::NodeType* FindNode(neurus::RenderGraphData& graph,
                                            const std::string& name)
 {
 	for (const auto& node : graph.nodes)
@@ -62,7 +62,7 @@ protected:
 		VulkanTestShared::TearDown();
 	}
 
-	neurus::CpuRenderGraph DefaultDocument() const
+	neurus::RenderGraphData DefaultDocument() const
 	{
 		return neurus::MakeDefaultCpuGraph(*m_factory);
 	}
@@ -75,7 +75,7 @@ TEST_F(GraphUploaderTest, DefaultDocumentIsTotal)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	const neurus::CpuRenderGraph document = DefaultDocument();
+	const neurus::RenderGraphData document = DefaultDocument();
 	const neurus::UploadResult upload = neurus::UploadCpuGraph(
 		document, *m_factory, std::span<const neurus::ShaderSnapshot>{});
 
@@ -96,13 +96,13 @@ TEST_F(GraphUploaderTest, NodeAndOrderMatch)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	const neurus::CpuRenderGraph document = DefaultDocument();
+	const neurus::RenderGraphData document = DefaultDocument();
 	const neurus::UploadResult upload = neurus::UploadCpuGraph(
 		document, *m_factory, std::span<const neurus::ShaderSnapshot>{});
 	ASSERT_NE(upload.graph, nullptr);
 	ASSERT_TRUE(upload.errors.empty());
 
-	const std::vector<neurus::CpuRenderGraph::NodeType*> cpuOrder =
+	const std::vector<neurus::RenderGraphData::NodeType*> cpuOrder =
 		document.TopologicalSort();
 	ASSERT_EQ(upload.graph->CompiledOrder().size(), cpuOrder.size());
 	for (size_t i = 0; i < cpuOrder.size(); ++i)
@@ -117,7 +117,7 @@ TEST_F(GraphUploaderTest, UnknownPassIsNamed)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::CpuRenderGraph document = DefaultDocument();
+	neurus::RenderGraphData document = DefaultDocument();
 	FindNode(document, "ssao")->data.pass = "NopePass";
 
 	const neurus::UploadResult upload = neurus::UploadCpuGraph(
@@ -132,7 +132,7 @@ TEST_F(GraphUploaderTest, MissingShaderSnapshotIsNamed)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::CpuRenderGraph document = DefaultDocument();
+	neurus::RenderGraphData document = DefaultDocument();
 	FindNode(document, "lighting")->data.shaderUid = 4242;
 
 	const neurus::UploadResult upload = neurus::UploadCpuGraph(
@@ -147,8 +147,8 @@ TEST_F(GraphUploaderTest, StaleSocketIsNamed)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::CpuRenderGraph document = DefaultDocument();
-	neurus::CpuRenderGraph::NodeType* geometry = FindNode(document, "geometry");
+	neurus::RenderGraphData document = DefaultDocument();
+	neurus::RenderGraphData::NodeType* geometry = FindNode(document, "geometry");
 	ASSERT_NE(geometry, nullptr);
 	geometry->AddOutput("ghost")->data =
 		neurus::CpuPort{"ghost", neurus::PortDirection::Output, "vec4", 0, 0,
@@ -167,7 +167,7 @@ TEST_F(GraphUploaderTest, EmptyDocumentUploads)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	const neurus::CpuRenderGraph empty;
+	const neurus::RenderGraphData empty;
 	const neurus::UploadResult upload = neurus::UploadCpuGraph(
 		empty, *m_factory, std::span<const neurus::ShaderSnapshot>{});
 

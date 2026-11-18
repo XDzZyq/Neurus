@@ -633,16 +633,18 @@ private:
  * be compared, serialized and re-uploaded without rewriting anything.
  *
  * @param graph  Graph to copy; it is not modified.
- * @return A graph with an independent node and socket pool.
+ * @return A graph of the same type with an independent node and socket pool.
  * @throws std::runtime_error when a connection cannot be reproduced, which means
  *         the source graph's sockets were wired outside `Connect`.
+ *
+ * @tparam GraphT  A `Graph` or a type derived from one, such as the document.
  */
-template<typename SData, typename NData>
-Graph<SData, NData> CloneGraph(const Graph<SData, NData>& graph)
+template<typename GraphT>
+GraphT CloneGraph(const GraphT& graph)
 {
-	using GraphT     = Graph<SData, NData>;
-	using NodeT      = Node<SData, NData>;
-	using SocketOutT = SocketOut<SData, NData>;
+	using NodeT      = typename GraphT::NodeType;
+	using SocketInT  = typename GraphT::SocketInT;
+	using SocketOutT = typename GraphT::SocketOutT;
 
 	GraphT copy;
 	copy.nodes.reserve(graph.nodes.size());
@@ -657,7 +659,7 @@ Graph<SData, NData> CloneGraph(const Graph<SData, NData>& graph)
 		NodeT* copied = copy.AddNode(node->name, node->data);
 		for (const auto& input : node->inputs)
 		{
-			SocketIn<SData, NData>* socket = copied->AddInput(input->name);
+			SocketInT* socket = copied->AddInput(input->name);
 			socket->data = input->data;
 		}
 		for (const auto& output : node->outputs)
@@ -688,7 +690,7 @@ Graph<SData, NData> CloneGraph(const Graph<SData, NData>& graph)
 					+ source.inputs[i]->name + "' is fed from outside the graph");
 			}
 
-			SocketIn<SData, NData>* copiedInput = target->inputs[i].get();
+			SocketInT* copiedInput = target->inputs[i].get();
 			if (!copy.Connect(it->second, copiedInput))
 			{
 				throw std::runtime_error(

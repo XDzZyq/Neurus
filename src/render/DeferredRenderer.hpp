@@ -36,7 +36,7 @@
 #include "RenderCache.hpp"
 #include "TimelineSemaphore.hpp"
 #include "passes/Pass.hpp"
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "core/RenderConfig.hpp"
 #include "RenderContext.hpp"
@@ -404,7 +404,7 @@ private:
 	RenderGraph m_mainGraph;
 
 	/// Document the current m_mainGraph was compiled from; null until published.
-	std::shared_ptr<const CpuRenderGraph> m_mainDocument;
+	std::shared_ptr<const RenderGraphData> m_mainDocument;
 
 	/// Shader snapshots that came with m_mainDocument.
 	std::vector<ShaderSnapshot> m_documentShaders;
@@ -470,7 +470,7 @@ public:
 	 * @param shaders   Shader snapshots that came with the document.
 	 * @return true when the document compiled and the graph was replaced.
 	 */
-	bool CompileDocument(const CpuRenderGraph& document, bool fxaa,
+	bool CompileDocument(const RenderGraphData& document, bool fxaa,
 	                     std::span<const ShaderSnapshot> shaders);
 
 	/// @brief Last compile verdict, for tests and the command layer.

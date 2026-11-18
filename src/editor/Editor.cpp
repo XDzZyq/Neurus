@@ -995,7 +995,7 @@ void Editor::ReplaceRenderGraph(const CpuGraphRecord& record)
 	PublishRenderGraph();
 }
 
-void Editor::SetRenderGraph(CpuRenderGraph graph)
+void Editor::SetRenderGraph(RenderGraphData graph)
 {
 	if (!m_passShaders)
 	{
@@ -1054,7 +1054,7 @@ void Editor::PublishRenderGraph()
 	}
 
 	ed_renderer->Post(CompileRenderGraphRequest{
-		std::make_shared<const CpuRenderGraph>(CloneGraph(m_renderGraph)),
+		std::make_shared<const RenderGraphData>(CloneGraph(m_renderGraph)),
 		std::move(snapshots)});
 }
 

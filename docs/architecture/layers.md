@@ -23,7 +23,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   GizmoPass into `OverlayOutput`, which the renderer then blits to the
   swapchain. The scene image is never presented directly, so an overlay-only
   change redraws without re-running a scene pass
-- Builds the runtime scene graph from the Editor's `CpuRenderGraph` document:
+- Builds the runtime scene graph from the Editor's `RenderGraphData` document:
   `UploadCpuGraph` instantiates its pass kinds through `PassFactory`, maps every
   node and connection through a `GraphMorphism`, and its output tags plan the
   `RenderCache` resources. `RenderConfig` still supplies the FXAA condition only
@@ -58,7 +58,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - Produces the two frame views: the renderer's view as an owned
   `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
   via `UpdateUIContext()`
-- Owns the scene render graph document (`CpuRenderGraph`), the pooled pass
+- Owns the scene render graph document (`RenderGraphData`), the pooled pass
   shaders and the `ShaderSnapshot`s it publishes in a `CompileRenderGraphRequest`
   when the project loads or the document changes; the runtime graph, descriptor
   writes and GPU resources stay in the Renderer
@@ -200,7 +200,7 @@ Vulkan-free utilities shared across the other layers:
 - `Log` - `NEURUS_LOG` / `NEURUS_ERR` macros
 - `RenderConfig` - user-settable pipeline options (Vulkan-free; read by four
   layers)
-- `CpuRenderGraph` - the Vulkan-free scene render graph document (nodes, shader
+- `RenderGraphData` - the Vulkan-free scene render graph document (nodes, shader
   port sockets, output tags); serialized by `project::GraphComponent`
 - `Serialize` - `archive::Optional` / `LoadFresh` / `OptionalBlock`
   (version-tolerant fields)

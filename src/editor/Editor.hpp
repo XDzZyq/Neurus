@@ -13,7 +13,7 @@
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 #include "asset/data/render_graph/GraphDocument.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a
@@ -103,7 +103,7 @@ public:	/**
 	RenderConfig& GetRenderConfig() { return m_config; }
 
 	/// @brief The scene render graph document.
-	const CpuRenderGraph& GetRenderGraph() const { return m_renderGraph; }
+	const RenderGraphData& GetRenderGraph() const { return m_renderGraph; }
 
 	/// @brief The document as read from a project, applied by FinishLoad().
 	std::optional<CpuGraphRecord>& GetPendingRenderGraph() { return m_pendingGraph; }
@@ -117,7 +117,7 @@ public:	/**
 	 * @param graph  New document; its sockets are expected to match the pooled
 	 *               shaders, which validation checks and reports.
 	 */
-	void SetRenderGraph(CpuRenderGraph graph);
+	void SetRenderGraph(RenderGraphData graph);
 
 	/**
 	 * @brief Applies a saved document, re-deriving its input sockets.
@@ -417,7 +417,7 @@ private:
 	RenderConfig          m_config;
 
 	/// @brief The live graph document; empty until ResetRenderGraph().
-	CpuRenderGraph            m_renderGraph;
+	RenderGraphData            m_renderGraph;
 	std::optional<CpuGraphRecord> m_pendingGraph;   ///< Read from the project, applied on FinishLoad.
 	std::unique_ptr<PassShaders>  m_passShaders;    ///< Pooled shaders, one per built-in kind.
 	std::vector<std::string>      m_graphProblems;  ///< Seed, load and validation reports.

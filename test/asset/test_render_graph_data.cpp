@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -37,34 +37,34 @@ neurus::CpuPort InputPort(const std::string& name, const std::uint32_t binding)
 	return port;
 }
 
-void SetInput(neurus::CpuRenderGraph::SocketInT* socket, const neurus::CpuPort& port)
+void SetInput(neurus::RenderGraphData::SocketInT* socket, const neurus::CpuPort& port)
 {
 	socket->data = port;
 }
 
-void SetOutput(neurus::CpuRenderGraph::SocketOutT* socket, const neurus::CpuPort& port)
+void SetOutput(neurus::RenderGraphData::SocketOutT* socket, const neurus::CpuPort& port)
 {
 	socket->data = port;
 }
 
 } // anonymous namespace
 
-TEST(CpuRenderGraph, SocketsCarryShaderPorts)
+TEST(RenderGraphData, SocketsCarryShaderPorts)
 {
-	neurus::CpuRenderGraph graph;
+	neurus::RenderGraphData graph;
 	neurus::CpuNode pass;
 	pass.pass = "GeometryPass";
 	pass.shaderUid = 12;
 	pass.x = 40.0f;
 	pass.y = 60.0f;
 
-	neurus::CpuRenderGraph::NodeType* node = graph.AddNode("geometry", pass);
+	neurus::RenderGraphData::NodeType* node = graph.AddNode("geometry", pass);
 	SetOutput(node->AddOutput("gPosition"),
 	          OutputPort("gPosition", "vec4",
 	                     neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled));
 	SetInput(node->AddInput("gPrevious"), InputPort("gPrevious", 3));
 
-	const neurus::CpuRenderGraph::NodeType& stored = *graph.nodes[0];
+	const neurus::RenderGraphData::NodeType& stored = *graph.nodes[0];
 	EXPECT_EQ(stored.name, "geometry");
 	EXPECT_EQ(stored.data.pass, "GeometryPass");
 	EXPECT_EQ(stored.data.shaderUid, 12);
@@ -82,13 +82,13 @@ TEST(CpuRenderGraph, SocketsCarryShaderPorts)
 	EXPECT_FALSE(stored.inputs[0]->data.tag.has_value());
 }
 
-TEST(CpuRenderGraph, ClonePreservesPortsAndTags)
+TEST(RenderGraphData, ClonePreservesPortsAndTags)
 {
-	neurus::CpuRenderGraph graph;
+	neurus::RenderGraphData graph;
 
 	neurus::CpuNode geometry;
 	geometry.pass = "GeometryPass";
-	neurus::CpuRenderGraph::NodeType* source = graph.AddNode("geometry", geometry);
+	neurus::RenderGraphData::NodeType* source = graph.AddNode("geometry", geometry);
 	SetOutput(source->AddOutput("gPosition"),
 	          OutputPort("gPosition", "vec4",
 	                     neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled));
@@ -96,7 +96,7 @@ TEST(CpuRenderGraph, ClonePreservesPortsAndTags)
 	neurus::CpuNode ssao;
 	ssao.pass = "SSAOPass";
 	ssao.shaderUid = 27;
-	neurus::CpuRenderGraph::NodeType* consumer = graph.AddNode("ssao", ssao);
+	neurus::RenderGraphData::NodeType* consumer = graph.AddNode("ssao", ssao);
 	SetInput(consumer->AddInput("gPosition"), InputPort("gPosition", 0));
 	SetOutput(consumer->AddOutput("outputSSAO"),
 	          OutputPort("outputSSAO", "image2D",
@@ -104,7 +104,7 @@ TEST(CpuRenderGraph, ClonePreservesPortsAndTags)
 
 	ASSERT_TRUE(graph.Connect(source->outputs[0].get(), consumer->inputs[0].get()));
 
-	const neurus::CpuRenderGraph copy = neurus::CloneGraph(graph);
+	const neurus::RenderGraphData copy = neurus::CloneGraph(graph);
 
 	ASSERT_EQ(copy.nodes.size(), 2u);
 	EXPECT_EQ(copy.nodes[0]->name, "geometry");

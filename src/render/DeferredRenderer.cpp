@@ -736,7 +736,7 @@ void DeferredRenderer::SetPendingGraph(const CompileRenderGraphRequest& request)
 	m_pendingGraph = request;
 }
 
-bool DeferredRenderer::CompileDocument(const CpuRenderGraph& document, const bool fxaa,
+bool DeferredRenderer::CompileDocument(const RenderGraphData& document, const bool fxaa,
                                        const std::span<const ShaderSnapshot> shaders)
 {
 	const std::uint64_t graphHash = CpuGraphHash(document);
@@ -746,7 +746,7 @@ bool DeferredRenderer::CompileDocument(const CpuRenderGraph& document, const boo
 
 	// The renderer applies the conditional nodes, so an FXAA toggle neither
 	// edits nor republishes the Editor's document.
-	CpuRenderGraph pruned = CloneGraph(document);
+	RenderGraphData pruned = CloneGraph(document);
 	ApplyConditions(pruned, fxaa);
 
 	UploadResult upload = UploadCpuGraph(pruned, *m_passFactory, shaders);

@@ -4,7 +4,7 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 ## The document
 
-`CpuRenderGraph` (`src/asset/data/render_graph/CpuRenderGraph.hpp`) is a `core::Graph`, which makes the document the same shape as the runtime graph:
+`RenderGraphData` (`src/asset/data/render_graph/RenderGraphData.hpp`) derives from `core::Graph`, which keeps the document the same shape as the runtime graph:
 
 - a node payload, `CpuNode`, holds the pass kind, the pooled shader uid and the graph-editor position; `Graph::Node::name` is the document id;
 - a socket payload, `CpuPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
@@ -54,7 +54,7 @@ The FXAA condition is applied by the renderer (`ApplyConditions`) on a clone of 
 
 ```mermaid
 flowchart LR
-    doc["CpuRenderGraph<br/>nodes, ports, tags"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
+    doc["RenderGraphData<br/>nodes, ports, tags"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
     validate --> upload["UploadCpuGraph<br/>MapGraph + GraphMorphism"]
     factory["PassFactory<br/>pass kind -> instance"] --> upload
     snapshots["ShaderSnapshot<br/>per shader"] --> upload

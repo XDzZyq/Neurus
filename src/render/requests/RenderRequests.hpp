@@ -37,7 +37,7 @@
 
 #include "render/resources/LightingCache.hpp"
 #include "scene/Light.hpp"
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 #include "render/RenderFrameSnapshot.hpp"
 
 namespace neurus
@@ -175,13 +175,13 @@ struct RedrawOverlaysRequest
  * renderer keeps its previous graph when compilation fails and reports the
  * diagnostics; the request still restarts accumulation.
  *
- * The document is immutable once posted (`shared_ptr<const CpuRenderGraph>`),
+ * The document is immutable once posted (`shared_ptr<const RenderGraphData>`),
  * and @c shaders carries a `ShaderSnapshot` for every node shader it names, so
  * the renderer never reads the Editor's pool.
  */
 struct CompileRenderGraphRequest
 {
-	std::shared_ptr<const CpuRenderGraph> graph;
+	std::shared_ptr<const RenderGraphData> graph;
 	std::vector<ShaderSnapshot>           shaders;
 };
 

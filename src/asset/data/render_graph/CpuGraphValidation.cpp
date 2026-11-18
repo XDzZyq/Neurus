@@ -40,7 +40,7 @@ const ShaderPort* FindDeclared(const PassPorts& ports, const std::string& name,
 
 } // anonymous namespace
 
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const CpuRenderGraph& graph,
+std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports)
 {
 	std::vector<CpuGraphDiagnostic> diagnostics;

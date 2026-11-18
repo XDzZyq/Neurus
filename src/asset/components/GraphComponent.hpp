@@ -30,7 +30,7 @@ public:
 	 * @param pending  Receives the record read from the file.
 	 * @param graph    Live document, read on save.
 	 */
-	GraphComponent(std::optional<CpuGraphRecord>& pending, const CpuRenderGraph& graph);
+	GraphComponent(std::optional<CpuGraphRecord>& pending, const RenderGraphData& graph);
 
 	const char* Key() const noexcept override { return "proj_render_graph"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
@@ -38,7 +38,7 @@ public:
 
 private:
 	std::optional<CpuGraphRecord>* m_pending;
-	const CpuRenderGraph*          m_graph;
+	const RenderGraphData*          m_graph;
 };
 
 } // namespace neurus::project

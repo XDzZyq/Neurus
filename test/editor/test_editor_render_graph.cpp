@@ -43,7 +43,7 @@ TEST(EditorRenderGraph, NewSceneSeedsShadersAndPostsTheDocument)
 	neurus::Editor editor(&sink);
 	editor.NewScene();
 
-	const neurus::CpuRenderGraph& graph = editor.GetRenderGraph();
+	const neurus::RenderGraphData& graph = editor.GetRenderGraph();
 	ASSERT_EQ(graph.nodes.size(), 7u);
 
 	for (const auto& node : graph.nodes)
@@ -107,7 +107,7 @@ TEST(EditorRenderGraph, SetPostsAndMarksDirty)
 	editor.NewScene();
 	editor.ClearDirty();
 
-	neurus::CpuRenderGraph graph = neurus::CloneGraph(editor.GetRenderGraph());
+	neurus::RenderGraphData graph = neurus::CloneGraph(editor.GetRenderGraph());
 	graph.RemoveNode(graph.nodes.back().get());
 	editor.SetRenderGraph(std::move(graph));
 

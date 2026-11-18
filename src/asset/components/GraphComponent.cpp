@@ -12,7 +12,7 @@ namespace neurus::project
 {
 
 GraphComponent::GraphComponent(std::optional<CpuGraphRecord>& pending,
-                               const CpuRenderGraph& graph)
+                               const RenderGraphData& graph)
 	: m_pending(&pending)
 	, m_graph(&graph)
 {

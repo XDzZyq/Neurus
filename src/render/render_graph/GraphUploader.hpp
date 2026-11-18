@@ -17,7 +17,7 @@
 
 #pragma once
 
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "render/RenderFrameSnapshot.hpp"
 #include "core/GraphMorphism.hpp"
@@ -31,7 +31,7 @@
 namespace neurus {
 
 /// @brief Functor from the CPU document to the runtime graph.
-using RenderGraphMorphism = GraphMorphism<CpuRenderGraph, RenderGraph::GraphT>;
+using RenderGraphMorphism = GraphMorphism<RenderGraphData, RenderGraph::GraphT>;
 
 /**
  * @brief Outcome of one upload.
@@ -54,7 +54,7 @@ struct UploadResult
  * @param shaders  Snapshots the Editor sent with the document.
  * @return The runtime graph plus its morphism, or null plus the diagnostics.
  */
-UploadResult UploadCpuGraph(const CpuRenderGraph& cpu,
+UploadResult UploadCpuGraph(const RenderGraphData& cpu,
                             PassFactory& factory,
                             std::span<const ShaderSnapshot> shaders);
 

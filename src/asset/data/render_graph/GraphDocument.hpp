@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
 #include <cstdint>
@@ -143,7 +143,7 @@ struct CpuGraphRecord
  * @brief Flattens a live document into its saved form.
  * @param graph  Document to read; it is not modified.
  */
-CpuGraphRecord ToRecord(const CpuRenderGraph& graph);
+CpuGraphRecord ToRecord(const RenderGraphData& graph);
 
 /**
  * @brief Rebuilds a document from its saved form.
@@ -157,7 +157,7 @@ CpuGraphRecord ToRecord(const CpuRenderGraph& graph);
  * @param ports     Pass-kind port source.
  * @param problems  Receives one message per recoverable inconsistency.
  */
-CpuRenderGraph FromRecord(const CpuGraphRecord& record, const IPortSource& ports,
+RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& ports,
                           std::vector<std::string>& problems);
 
 /**
@@ -170,7 +170,7 @@ CpuRenderGraph FromRecord(const CpuGraphRecord& record, const IPortSource& ports
  * @param ports  Pass-kind port source.
  * @throws std::runtime_error when a built-in pass kind has no ports.
  */
-CpuRenderGraph MakeDefaultCpuGraph(const IPortSource& ports);
+RenderGraphData MakeDefaultCpuGraph(const IPortSource& ports);
 
 /**
  * @brief Drops conditional nodes whose condition is off, with their connections.
@@ -182,7 +182,7 @@ CpuRenderGraph MakeDefaultCpuGraph(const IPortSource& ports);
  * @param graph  Document to prune in place.
  * @param fxaa   Whether the FXAA condition is on.
  */
-void ApplyConditions(CpuRenderGraph& graph, bool fxaa);
+void ApplyConditions(RenderGraphData& graph, bool fxaa);
 
 /**
  * @brief Stable hash of the topology-affecting document content.
@@ -193,6 +193,6 @@ void ApplyConditions(CpuRenderGraph& graph, bool fxaa);
  *
  * @param graph  Document to hash.
  */
-std::uint64_t CpuGraphHash(const CpuRenderGraph& graph);
+std::uint64_t CpuGraphHash(const RenderGraphData& graph);
 
 } // namespace neurus

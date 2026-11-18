@@ -105,7 +105,7 @@ set(NEURUS_TEST_SOURCES
 	asset/test_serialize_optional.cpp
 	asset/test_shader_data.cpp
 	asset/test_ui_component.cpp
-	asset/test_cpu_render_graph.cpp
+	asset/test_render_graph_data.cpp
 	asset/test_graph_document.cpp
 	core/test_graph.cpp
 	core/test_graph_clone.cpp

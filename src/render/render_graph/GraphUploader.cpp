@@ -39,7 +39,7 @@ GpuInput* FindInput(GpuNode& node, const std::string_view name)
 
 } // anonymous namespace
 
-UploadResult UploadCpuGraph(const CpuRenderGraph& cpu, PassFactory& factory,
+UploadResult UploadCpuGraph(const RenderGraphData& cpu, PassFactory& factory,
                             const std::span<const ShaderSnapshot> shaders)
 {
 	UploadResult result;
@@ -113,15 +113,15 @@ UploadResult UploadCpuGraph(const CpuRenderGraph& cpu, PassFactory& factory,
 	if (!result.errors.empty())
 		return result;
 
-	GraphMapPolicy<CpuRenderGraph, RenderGraph::GraphT> policy;
-	policy.mapNode = [&nodeImages](const CpuRenderGraph::NodeType& node) -> GpuNode*
+	GraphMapPolicy<RenderGraphData, RenderGraph::GraphT> policy;
+	policy.mapNode = [&nodeImages](const RenderGraphData::NodeType& node) -> GpuNode*
 	{
 		const auto it = nodeImages.find(&node.data);
 		return it == nodeImages.end() ? nullptr : it->second;
 	};
 
-	policy.mapOutput = [&nodeImages](const CpuRenderGraph::NodeType& node,
-	                                 const CpuRenderGraph::SocketOutT& port) -> GpuOutput*
+	policy.mapOutput = [&nodeImages](const RenderGraphData::NodeType& node,
+	                                 const RenderGraphData::SocketOutT& port) -> GpuOutput*
 	{
 		const auto it = nodeImages.find(&node.data);
 		if (it == nodeImages.end() || !it->second)
@@ -129,8 +129,8 @@ UploadResult UploadCpuGraph(const CpuRenderGraph& cpu, PassFactory& factory,
 		return FindOutput(*it->second, port.name);
 	};
 
-	policy.mapInput = [&nodeImages](const CpuRenderGraph::NodeType& node,
-	                                const CpuRenderGraph::SocketInT& port) -> GpuInput*
+	policy.mapInput = [&nodeImages](const RenderGraphData::NodeType& node,
+	                                const RenderGraphData::SocketInT& port) -> GpuInput*
 	{
 		const auto it = nodeImages.find(&node.data);
 		if (it == nodeImages.end() || !it->second)

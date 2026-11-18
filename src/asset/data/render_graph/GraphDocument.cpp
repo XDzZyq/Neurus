@@ -16,11 +16,11 @@ namespace neurus {
 
 namespace {
 
-using NodeType  = CpuRenderGraph::NodeType;
-using InSocket  = CpuRenderGraph::SocketInT;
-using OutSocket = CpuRenderGraph::SocketOutT;
+using NodeType  = RenderGraphData::NodeType;
+using InSocket  = RenderGraphData::SocketInT;
+using OutSocket = RenderGraphData::SocketOutT;
 
-NodeType* FindNode(CpuRenderGraph& graph, const std::string_view name)
+NodeType* FindNode(RenderGraphData& graph, const std::string_view name)
 {
 	for (const auto& node : graph.nodes)
 	{
@@ -64,7 +64,7 @@ CpuPort MakePort(const ShaderPort& port, std::optional<GraphOutputTag> tag = {})
 
 } // anonymous namespace
 
-CpuGraphRecord ToRecord(const CpuRenderGraph& graph)
+CpuGraphRecord ToRecord(const RenderGraphData& graph)
 {
 	CpuGraphRecord record;
 	record.nodes.reserve(graph.nodes.size());
@@ -111,10 +111,10 @@ CpuGraphRecord ToRecord(const CpuRenderGraph& graph)
 	return record;
 }
 
-CpuRenderGraph FromRecord(const CpuGraphRecord& record, const IPortSource& ports,
+RenderGraphData FromRecord(const CpuGraphRecord& record, const IPortSource& ports,
                           std::vector<std::string>& problems)
 {
-	CpuRenderGraph graph;
+	RenderGraphData graph;
 	graph.nodes.reserve(record.nodes.size());
 
 	std::vector<NodeType*> created;
@@ -210,9 +210,9 @@ CpuRenderGraph FromRecord(const CpuGraphRecord& record, const IPortSource& ports
 	return graph;
 }
 
-CpuRenderGraph MakeDefaultCpuGraph(const IPortSource& ports)
+RenderGraphData MakeDefaultCpuGraph(const IPortSource& ports)
 {
-	CpuRenderGraph graph;
+	RenderGraphData graph;
 
 	const auto addNode = [&graph, &ports](
 		const std::string& name, const std::string& pass,
@@ -321,7 +321,7 @@ CpuRenderGraph MakeDefaultCpuGraph(const IPortSource& ports)
 	return graph;
 }
 
-void ApplyConditions(CpuRenderGraph& graph, const bool fxaa)
+void ApplyConditions(RenderGraphData& graph, const bool fxaa)
 {
 	std::vector<NodeType*> dropped;
 	for (const auto& node : graph.nodes)
@@ -339,7 +339,7 @@ void ApplyConditions(CpuRenderGraph& graph, const bool fxaa)
 		graph.RemoveNode(node);
 }
 
-std::uint64_t CpuGraphHash(const CpuRenderGraph& graph)
+std::uint64_t CpuGraphHash(const RenderGraphData& graph)
 {
 	constexpr std::uint64_t kOffset = 14695981039346656037ull;
 	constexpr std::uint64_t kPrime  = 1099511628211ull;

@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "asset/data/render_graph/CpuRenderGraph.hpp"
+#include "asset/data/render_graph/RenderGraphData.hpp"
 
 namespace neurus
 {
@@ -35,7 +35,7 @@ struct ScriptContext
 	const Scene* scene = nullptr;                ///< Borrowed scene being read.
 	const RenderConfig* config = nullptr;        ///< Borrowed render configuration.
 	const IResourceLookup* resources = nullptr;  ///< Borrowed pool for name/UID lookup.
-	const CpuRenderGraph* graph = nullptr;       ///< Borrowed render graph document.
+	const RenderGraphData* graph = nullptr;       ///< Borrowed render graph document.
 };
 
 }  // namespace neurus

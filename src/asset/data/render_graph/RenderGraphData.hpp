@@ -1,6 +1,6 @@
 /**
- * @file CpuRenderGraph.hpp
- * @brief The render graph document: a generic graph whose sockets are shader ports.
+ * @file RenderGraphData.hpp
+ * @brief The render graph document: a graph whose sockets are shader ports.
  *
  * This is the CPU-side document the Editor owns and edits. Nodes are pass
  * instances; their input and output sockets mirror the ports the node's shader
@@ -12,6 +12,11 @@
  * The type is Vulkan-free and carries no renderer state. The render request
  * hands the renderer a copy, and its uploader maps every node and connection onto
  * a live GPU graph.
+ *
+ * @note Unlike `MeshData`, `ImageData` and `ShaderData`, this document is not a
+ *       pooled resource: the Editor owns exactly one and its identity is the
+ *       Editor's, so it does not derive from `UID`. It is still a data type in
+ *       the same sense - plain state plus serialization, no policy.
  */
 
 #pragma once
@@ -63,7 +68,18 @@ struct CpuNode
 	bool operator==(const CpuNode&) const = default;
 };
 
-/// @brief The render graph document: sockets are shader ports, nodes are passes.
-using CpuRenderGraph = Graph<CpuPort, CpuNode>;
+/**
+ * @brief The render graph document: sockets are shader ports, nodes are passes.
+ *
+ * The document is the graph. Deriving rather than wrapping keeps the generic
+ * `Graph` API (`nodes`, `AddNode`, `Connect`, `TopologicalSort`) and the
+ * `CloneGraph`/`GraphMorphism` templates usable unchanged, while the type name
+ * says what the data is.
+ */
+class RenderGraphData : public Graph<CpuPort, CpuNode>
+{
+public:
+	using GraphT = Graph<CpuPort, CpuNode>;
+};
 
 } // namespace neurus

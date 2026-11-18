@@ -18,7 +18,7 @@
 
 namespace {
 
-std::string Save(const neurus::CpuRenderGraph& graph)
+std::string Save(const neurus::RenderGraphData& graph)
 {
 	std::ostringstream stream;
 	{
@@ -35,7 +35,7 @@ std::optional<neurus::CpuGraphRecord> Load(const std::string& text)
 	std::optional<neurus::CpuGraphRecord> pending;
 	std::istringstream stream(text);
 	cereal::JSONInputArchive archive(stream);
-	const neurus::CpuRenderGraph empty;
+	const neurus::RenderGraphData empty;
 	neurus::project::GraphComponent component(pending, empty);
 	component.Load(archive);
 	return pending;
@@ -46,12 +46,12 @@ std::optional<neurus::CpuGraphRecord> Load(const std::string& text)
 TEST(GraphComponent, RoundTrip)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	neurus::CpuRenderGraph graph = neurus::MakeDefaultCpuGraph(ports);
+	neurus::RenderGraphData graph = neurus::MakeDefaultCpuGraph(ports);
 
 	// A non-default tag and a removed edge must both survive the round trip.
 	graph.nodes[0]->outputs[0]->data.tag->format = neurus::GraphFormat::Rgba8Unorm;
-	neurus::CpuRenderGraph::NodeType* compose = graph.nodes[5].get();
-	neurus::CpuRenderGraph::NodeType* fxaa = graph.nodes[6].get();
+	neurus::RenderGraphData::NodeType* compose = graph.nodes[5].get();
+	neurus::RenderGraphData::NodeType* fxaa = graph.nodes[6].get();
 	graph.Disconnect(compose->outputs[0].get(), fxaa->inputs[0].get());
 
 	const neurus::CpuGraphRecord expected = neurus::ToRecord(graph);
