@@ -32,35 +32,6 @@
 
 namespace neurus {
 
-/// @brief One connection of a graph: producer socket and consumer socket.
-template<typename GraphT>
-struct ConnectionRef
-{
-	typename GraphT::SocketOutT* from = nullptr;
-	typename GraphT::SocketInT*  to   = nullptr;
-};
-
-/**
- * @brief Every connection in the graph, one entry per connected input socket.
- *
- * Iterating inputs, not outputs, makes a fan-out produce one entry per consumer.
- */
-template<typename GraphT>
-std::vector<ConnectionRef<GraphT>> EnumerateConnections(const GraphT& graph)
-{
-	std::vector<ConnectionRef<GraphT>> connections;
-	for (const auto& node : graph.nodes)
-	{
-		for (const auto& input : node->inputs)
-		{
-			if (!input->IsConnected())
-				continue;
-			connections.push_back({input->source, input.get()});
-		}
-	}
-	return connections;
-}
-
 /**
  * @brief Functor from one graph to another.
  *

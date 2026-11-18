@@ -92,19 +92,14 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph)
 		record.nodes.push_back(std::move(saved));
 	}
 
-	for (const auto& node : graph.nodes)
+	for (const auto& connection : graph.Connections())
 	{
-		for (const auto& input : node->inputs)
-		{
-			if (!input->source)
-				continue;
-			record.edges.push_back({
-				input->source->owner->name,
-				input->source->name,
-				node->name,
-				input->name,
-			});
-		}
+		record.edges.push_back({
+			connection.from->owner->name,
+			connection.from->name,
+			connection.to->owner->name,
+			connection.to->name,
+		});
 	}
 
 	return record;

@@ -7,8 +7,8 @@
 
 #include <algorithm>
 #include <set>
-#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace neurus {
 
@@ -114,13 +114,17 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 		}
 	}
 
-	try
+	const std::vector<RenderGraphData::NodeType*> cyclic = graph.CyclicNodes();
+	if (!cyclic.empty())
 	{
-		graph.TopologicalSort();
-	}
-	catch (const std::runtime_error& error)
-	{
-		diagnostics.push_back({{}, {}, error.what()});
+		std::string names;
+		for (const RenderGraphData::NodeType* node : cyclic)
+		{
+			if (!names.empty())
+				names += ", ";
+			names += node->name;
+		}
+		diagnostics.push_back({{}, {}, "cycle detected involving: " + names});
 	}
 
 	return diagnostics;

@@ -148,6 +148,43 @@ public:
 };
 
 // ================================================================================
+// ConnectionRef — one edge of a graph
+// ================================================================================
+
+/**
+ * @brief One connection of a graph: producer socket and consumer socket.
+ *
+ * @tparam GraphT  A `Graph` or a type derived from one.
+ */
+template<typename GraphT>
+struct ConnectionRef
+{
+	typename GraphT::SocketOutT* from = nullptr;
+	typename GraphT::SocketInT*  to   = nullptr;
+};
+
+/**
+ * @brief Every connection in the graph, one entry per connected input socket.
+ *
+ * Iterating inputs, not outputs, makes a fan-out produce one entry per consumer.
+ */
+template<typename GraphT>
+std::vector<ConnectionRef<GraphT>> EnumerateConnections(const GraphT& graph)
+{
+	std::vector<ConnectionRef<GraphT>> connections;
+	for (const auto& node : graph.nodes)
+	{
+		for (const auto& input : node->inputs)
+		{
+			if (!input->IsConnected())
+				continue;
+			connections.push_back({input->source, input.get()});
+		}
+	}
+	return connections;
+}
+
+// ================================================================================
 // Graph<SData, NData> — DAG pool + Kahn topological sort
 // ================================================================================
 
@@ -287,6 +324,12 @@ public:
 
 	/** @brief Number of nodes in the graph. */
 	size_t NodeCount() const { return nodes.size(); }
+
+	/// @brief Every connection, one entry per connected input socket.
+	std::vector<ConnectionRef<Graph<SData, NData>>> Connections() const
+	{
+		return EnumerateConnections(*this);
+	}
 
 	// --- Topological sort ---
 
@@ -487,6 +530,33 @@ public:
 	bool HasCycle() const
 	{
 		return !BuildTopology().acyclic;
+	}
+
+	/**
+	 * @brief Nodes the topological order leaves out: those on or downstream of a cycle.
+	 *
+	 * Never throws. A validator can report the names without using the
+	 * `TopologicalSort` exception as control flow.
+	 *
+	 * @return The cyclic nodes; empty when the graph is acyclic.
+	 */
+	std::vector<NodeType*> CyclicNodes() const
+	{
+		const Topology topo = BuildTopology();
+		if (topo.acyclic)
+			return {};
+
+		std::vector<bool> ordered(nodes.size(), false);
+		for (const size_t index : topo.order)
+			ordered[index] = true;
+
+		std::vector<NodeType*> cyclic;
+		for (size_t i = 0; i < nodes.size(); ++i)
+		{
+			if (!ordered[i])
+				cyclic.push_back(nodes[i].get());
+		}
+		return cyclic;
 	}
 
 private:

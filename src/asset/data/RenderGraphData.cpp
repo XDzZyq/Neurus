@@ -221,18 +221,13 @@ std::uint64_t RenderGraphData::Hash() const
 	}
 
 	hashByte(0x06);
-	for (const auto& node : nodes)
+	for (const auto& connection : Connections())
 	{
-		for (const auto& input : node->inputs)
-		{
-			if (!input->source)
-				continue;
-			hashByte(0x07);
-			hashString(input->source->owner->name);
-			hashString(input->source->name);
-			hashString(node->name);
-			hashString(input->name);
-		}
+		hashByte(0x07);
+		hashString(connection.from->owner->name);
+		hashString(connection.from->name);
+		hashString(connection.to->owner->name);
+		hashString(connection.to->name);
 	}
 
 	return hash;
