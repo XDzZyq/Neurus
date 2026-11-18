@@ -23,16 +23,16 @@ std::string Save(const neurus::RenderGraphData& graph)
 	std::ostringstream stream;
 	{
 		cereal::JSONOutputArchive archive(stream);
-		std::optional<neurus::RenderGraphRecord> pending;
+		std::optional<neurus::project::RenderGraphRecord> pending;
 		neurus::project::GraphComponent component(pending, graph);
 		component.Save(archive);
 	}
 	return stream.str();
 }
 
-std::optional<neurus::RenderGraphRecord> Load(const std::string& text)
+std::optional<neurus::project::RenderGraphRecord> Load(const std::string& text)
 {
-	std::optional<neurus::RenderGraphRecord> pending;
+	std::optional<neurus::project::RenderGraphRecord> pending;
 	std::istringstream stream(text);
 	cereal::JSONInputArchive archive(stream);
 	const neurus::RenderGraphData empty;
@@ -54,8 +54,8 @@ TEST(GraphComponent, RoundTrip)
 	neurus::RenderGraphData::NodeType* fxaa = graph.nodes[6].get();
 	graph.Disconnect(compose->outputs[0].get(), fxaa->inputs[0].get());
 
-	const neurus::RenderGraphRecord expected = graph.ToRecord();
-	const std::optional<neurus::RenderGraphRecord> restored = Load(Save(graph));
+	const neurus::project::RenderGraphRecord expected = neurus::project::ToRecord(graph);
+	const std::optional<neurus::project::RenderGraphRecord> restored = Load(Save(graph));
 
 	ASSERT_TRUE(restored.has_value());
 	EXPECT_EQ(*restored, expected);

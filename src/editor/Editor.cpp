@@ -980,7 +980,7 @@ void Editor::AssignNodeShaders()
 	}
 }
 
-void Editor::ReplaceRenderGraph(const RenderGraphRecord& record)
+void Editor::ReplaceRenderGraph(const project::RenderGraphRecord& record)
 {
 	m_graphProblems.clear();
 	m_passShaders.reset();  // adopt the restored shaders by name
@@ -988,7 +988,7 @@ void Editor::ReplaceRenderGraph(const RenderGraphRecord& record)
 		*m_resources, &LoadPassKindShader, m_graphProblems);
 
 	std::vector<std::string> loadProblems;
-	m_renderGraph = RenderGraphData::FromRecord(record, *m_passShaders, loadProblems);
+	m_renderGraph = project::FromRecord(record, *m_passShaders, loadProblems);
 	m_graphProblems.insert(m_graphProblems.end(), loadProblems.begin(), loadProblems.end());
 
 	AssignNodeShaders();

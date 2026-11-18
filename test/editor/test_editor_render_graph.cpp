@@ -58,7 +58,7 @@ TEST(EditorRenderGraph, NewSceneSeedsShadersAndPostsTheDocument)
 
 	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
 	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(request->graph->ToRecord(), graph.ToRecord());
+	EXPECT_EQ(neurus::project::ToRecord(*request->graph), neurus::project::ToRecord(graph));
 
 	for (const auto& node : graph.nodes)
 	{
@@ -78,11 +78,11 @@ TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
 	neurus::Editor editor(&sink);
 	editor.NewScene();
 
-	neurus::RenderGraphRecord record = editor.GetRenderGraph().ToRecord();
+	neurus::project::RenderGraphRecord record = neurus::project::ToRecord(editor.GetRenderGraph());
 	record.nodes.pop_back();
 	record.edges.erase(
 		std::remove_if(record.edges.begin(), record.edges.end(),
-			[](const neurus::RenderGraphEdgeRecord& edge)
+			[](const neurus::project::RenderGraphEdgeRecord& edge)
 			{
 				return edge.from == "fxaa" || edge.to == "fxaa";
 			}),
@@ -97,7 +97,7 @@ TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
 
 	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
 	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(request->graph->ToRecord(), editor.GetRenderGraph().ToRecord());
+	EXPECT_EQ(neurus::project::ToRecord(*request->graph), neurus::project::ToRecord(editor.GetRenderGraph()));
 }
 
 TEST(EditorRenderGraph, SetPostsAndMarksDirty)
@@ -117,5 +117,5 @@ TEST(EditorRenderGraph, SetPostsAndMarksDirty)
 
 	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
 	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(request->graph->ToRecord(), editor.GetRenderGraph().ToRecord());
+	EXPECT_EQ(neurus::project::ToRecord(*request->graph), neurus::project::ToRecord(editor.GetRenderGraph()));
 }

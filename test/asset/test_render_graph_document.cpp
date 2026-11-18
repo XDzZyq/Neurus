@@ -1,5 +1,5 @@
 /**
- * @file test_graph_document.cpp
+ * @file test_render_graph_document.cpp
  * @brief The CPU graph as a saved document, and its validation.
  */
 
@@ -7,8 +7,9 @@
 
 #include "shared/TestPassPorts.hpp"
 
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/components/GraphComponent.hpp"
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 
 #include <cereal/archives/json.hpp>
 
@@ -20,7 +21,9 @@
 
 namespace {
 
-using neurus::RenderGraphRecord;
+using neurus::project::RenderGraphEdgeRecord;
+using neurus::project::RenderGraphNodeRecord;
+using neurus::project::RenderGraphRecord;
 using neurus::CpuGraphDiagnostic;
 using neurus::RenderGraphData;
 
@@ -126,15 +129,15 @@ TEST(RenderGraphDocument, RoundTripPreservesTopology)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
 	const RenderGraphData graph = neurus::RenderGraphData::Default(ports);
-	const RenderGraphRecord original = graph.ToRecord();
+	const RenderGraphRecord original = neurus::project::ToRecord(graph);
 
 	const RenderGraphRecord restored = Deserialize(Serialize(original));
 	EXPECT_EQ(restored, original);
 
 	std::vector<std::string> problems;
-	const RenderGraphData copy = neurus::RenderGraphData::FromRecord(restored, ports, problems);
+	const RenderGraphData copy = neurus::project::FromRecord(restored, ports, problems);
 	EXPECT_TRUE(problems.empty());
-	EXPECT_EQ(copy.ToRecord(), original);
+	EXPECT_EQ(neurus::project::ToRecord(copy), original);
 
 	EXPECT_EQ(copy.nodes.size(), graph.nodes.size());
 	for (size_t i = 0; i < copy.nodes.size(); ++i)
@@ -155,13 +158,13 @@ TEST(RenderGraphDocument, InputsComeFromShaders)
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
 
 	RenderGraphRecord record;
-	neurus::RenderGraphNodeRecord node;
+	neurus::project::RenderGraphNodeRecord node;
 	node.name = "lighting";
 	node.pass = "LightingPass";
 	record.nodes.push_back(node);
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::RenderGraphData::FromRecord(record, ports, problems);
+	const RenderGraphData graph = neurus::project::FromRecord(record, ports, problems);
 	EXPECT_TRUE(problems.empty());
 
 	ASSERT_EQ(graph.nodes.size(), 1u);
@@ -190,7 +193,7 @@ TEST(RenderGraphDocument, DoubleProducerIsReportedAtLoad)
 
 	RenderGraphRecord record;
 
-	neurus::RenderGraphNodeRecord geometry;
+	neurus::project::RenderGraphNodeRecord geometry;
 	geometry.name = "geometry";
 	geometry.pass = "GeometryPass";
 	geometry.outputs = {
@@ -201,7 +204,7 @@ TEST(RenderGraphDocument, DoubleProducerIsReportedAtLoad)
 	};
 	record.nodes.push_back(geometry);
 
-	neurus::RenderGraphNodeRecord ssao;
+	neurus::project::RenderGraphNodeRecord ssao;
 	ssao.name = "ssao";
 	ssao.pass = "SSAOPass";
 	record.nodes.push_back(ssao);
@@ -212,7 +215,7 @@ TEST(RenderGraphDocument, DoubleProducerIsReportedAtLoad)
 	};
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::RenderGraphData::FromRecord(record, ports, problems);
+	const RenderGraphData graph = neurus::project::FromRecord(record, ports, problems);
 	EXPECT_EQ(graph.nodes.size(), 2u);
 	ASSERT_EQ(problems.size(), 1u);
 	EXPECT_NE(problems[0].find("more than one producer"), std::string::npos);
@@ -223,13 +226,13 @@ TEST(RenderGraphDocument, UnknownPassIsNamed)
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
 
 	RenderGraphRecord record;
-	neurus::RenderGraphNodeRecord node;
+	neurus::project::RenderGraphNodeRecord node;
 	node.name = "bogus";
 	node.pass = "NopePass";
 	record.nodes.push_back(node);
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::RenderGraphData::FromRecord(record, ports, problems);
+	const RenderGraphData graph = neurus::project::FromRecord(record, ports, problems);
 	EXPECT_TRUE(HasProblem(problems, "unknown pass kind"));
 
 	const std::vector<CpuGraphDiagnostic> diagnostics =
