@@ -61,18 +61,6 @@ GraphI MakeChain()
 	return graph;
 }
 
-GraphI MakeNodesOnly()
-{
-	GraphI graph;
-	for (const char* name : {"A", "B", "C"})
-	{
-		GraphI::NodeType* node = graph.AddNode(name, 1);
-		node->AddInput("in");
-		node->AddOutput("out");
-	}
-	return graph;
-}
-
 GraphI MakeFanOut()
 {
 	GraphI graph;
@@ -91,24 +79,31 @@ GraphI MakeFanOut()
 	return graph;
 }
 
-neurus::GraphMapPolicy<GraphI, GraphI> PolicyFor(GraphI& target)
+/// @brief Creates a target node with the same name, payload and sockets.
+GraphI::NodeType* CopyNode(GraphI& target, const GraphI::NodeType& source)
 {
-	neurus::GraphMapPolicy<GraphI, GraphI> policy;
-	policy.mapNode = [&target](const GraphI::NodeType& source)
+	GraphI::NodeType* node = target.AddNode(source.name, source.data);
+	for (const auto& input : source.inputs)
+		node->AddInput(input->name)->data = input->data;
+	for (const auto& output : source.outputs)
+		node->AddOutput(output->name)->data = output->data;
+	return node;
+}
+
+neurus::GraphMorphism<GraphI, GraphI>::Policy CopyPolicy()
+{
+	neurus::GraphMorphism<GraphI, GraphI>::Policy policy;
+	policy.createNode = [](GraphI& target, const GraphI::NodeType& node)
 	{
-		return FindNode(target, source.name);
+		return CopyNode(target, node);
 	};
-	policy.mapOutput = [&target](const GraphI::NodeType& sourceNode,
-	                             const GraphI::SocketOutT& sourcePort)
+	policy.createOutput = [](GraphI::NodeType& node, const GraphI::SocketOutT& port)
 	{
-		GraphI::NodeType* node = FindNode(target, sourceNode.name);
-		return node ? FindOutput(node, sourcePort.name) : nullptr;
+		return FindOutput(&node, port.name);
 	};
-	policy.mapInput = [&target](const GraphI::NodeType& sourceNode,
-	                            const GraphI::SocketInT& sourcePort)
+	policy.createInput = [](GraphI::NodeType& node, const GraphI::SocketInT& port)
 	{
-		GraphI::NodeType* node = FindNode(target, sourceNode.name);
-		return node ? FindInput(node, sourcePort.name) : nullptr;
+		return FindInput(&node, port.name);
 	};
 	return policy;
 }
@@ -127,14 +122,52 @@ TEST(GraphMorphism, IdentityIsTotalAndPreservesIncidence)
 	EXPECT_EQ(morphism.MappedConnectionCount(), 2u);
 }
 
+TEST(GraphMorphism, MapBuildsTheTarget)
+{
+	GraphI source = MakeChain();
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source, CopyPolicy());
+
+	GraphI target = morphism.Map(source);
+
+	EXPECT_TRUE(morphism.IsTotal());
+	EXPECT_TRUE(morphism.PreservesIncidence());
+	EXPECT_TRUE(morphism.Validate().Ok());
+	EXPECT_EQ(morphism.MappedNodeCount(), 3u);
+	EXPECT_EQ(morphism.MappedConnectionCount(), 2u);
+
+	ASSERT_EQ(target.nodes.size(), source.nodes.size());
+	EXPECT_EQ(morphism.ImageOf(FindNode(source, "B"))->name, "B");
+	EXPECT_EQ(FindNode(target, "B")->data, 2);
+}
+
+TEST(GraphMorphism, MapReportsNullFactory)
+{
+	const GraphI source = MakeChain();
+	auto policy = CopyPolicy();
+	policy.createNode = [](GraphI& target, const GraphI::NodeType& node)
+	{
+		if (node.name == "C")
+			return static_cast<GraphI::NodeType*>(nullptr);
+		return CopyNode(target, node);
+	};
+
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source, std::move(policy));
+	const GraphI target = morphism.Map(source);
+	(void)target;
+
+	EXPECT_FALSE(morphism.IsTotal());
+	const auto report = morphism.Validate();
+	ASSERT_FALSE(report.Ok());
+	EXPECT_NE(report.problems[0].find("C"), std::string::npos);
+}
+
 TEST(GraphMorphism, TotalRejectsUnmappedNode)
 {
 	GraphI source = MakeChain();
-	GraphI target = MakeChain();
-	neurus::GraphMorphism<GraphI, GraphI> morphism(source, target);
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source);
 
-	EXPECT_TRUE(morphism.MapNode(FindNode(source, "A"), FindNode(target, "A")));
-	EXPECT_TRUE(morphism.MapNode(FindNode(source, "B"), FindNode(target, "B")));
+	EXPECT_TRUE(morphism.MapNode(*FindNode(source, "A"), *FindNode(source, "A")));
+	EXPECT_TRUE(morphism.MapNode(*FindNode(source, "B"), *FindNode(source, "B")));
 
 	EXPECT_FALSE(morphism.IsTotal());
 	const auto report = morphism.Validate();
@@ -145,43 +178,38 @@ TEST(GraphMorphism, TotalRejectsUnmappedNode)
 TEST(GraphMorphism, TotalRejectsUnmappedConnection)
 {
 	GraphI source = MakeChain();
-	GraphI target = MakeChain();
-	neurus::GraphMorphism<GraphI, GraphI> morphism(source, target);
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source, CopyPolicy());
 
-	for (const char* name : {"A", "B", "C"})
-		EXPECT_TRUE(morphism.MapNode(FindNode(source, name), FindNode(target, name)));
+	GraphI target = morphism.Map(source);
 
-	GraphI::NodeType* a = FindNode(source, "A");
-	GraphI::NodeType* b = FindNode(source, "B");
-	GraphI::NodeType* ta = FindNode(target, "A");
-	GraphI::NodeType* tb = FindNode(target, "B");
+	// A fresh morphism records nodes only, so its connections are unmapped.
+	neurus::GraphMorphism<GraphI, GraphI> nodesOnly(source);
+	for (const auto& node : source.nodes)
+		EXPECT_TRUE(nodesOnly.MapNode(*node, *FindNode(target, node->name)));
 
-	EXPECT_TRUE(morphism.MapConnection(FindOutput(a, "out"), FindInput(b, "in"),
-	                                   FindOutput(ta, "out"), FindInput(tb, "in")));
-
-	EXPECT_FALSE(morphism.IsTotal());
-	const auto report = morphism.Validate();
+	EXPECT_FALSE(nodesOnly.IsTotal());
+	const auto report = nodesOnly.Validate();
 	ASSERT_FALSE(report.Ok());
-	EXPECT_NE(report.problems[0].find("B.out"), std::string::npos);
-	EXPECT_NE(report.problems[0].find("C.in"), std::string::npos);
+	EXPECT_NE(report.problems[0].find("A.out"), std::string::npos);
+	EXPECT_NE(report.problems[0].find("B.in"), std::string::npos);
 }
 
 TEST(GraphMorphism, IncidenceRejectsReversedEdge)
 {
 	GraphI source = MakeChain();
 	GraphI target = MakeChain();
-	neurus::GraphMorphism<GraphI, GraphI> morphism(source, target);
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source);
 
 	for (const char* name : {"A", "B", "C"})
-		EXPECT_TRUE(morphism.MapNode(FindNode(source, name), FindNode(target, name)));
+		EXPECT_TRUE(morphism.MapNode(*FindNode(source, name), *FindNode(target, name)));
 
 	GraphI::NodeType* a = FindNode(source, "A");
 	GraphI::NodeType* b = FindNode(source, "B");
 	GraphI::NodeType* ta = FindNode(target, "A");
 	GraphI::NodeType* tb = FindNode(target, "B");
 
-	EXPECT_TRUE(morphism.MapConnection(FindOutput(a, "out"), FindInput(b, "in"),
-	                                   FindOutput(tb, "out"), FindInput(ta, "in")));
+	EXPECT_TRUE(morphism.MapConnect(*FindOutput(a, "out"), *FindInput(b, "in"),
+	                                *FindOutput(tb, "out"), *FindInput(ta, "in")));
 
 	EXPECT_FALSE(morphism.PreservesIncidence());
 	EXPECT_FALSE(morphism.Validate().Ok());
@@ -191,18 +219,18 @@ TEST(GraphMorphism, IncidenceRejectsCrossedEdge)
 {
 	GraphI source = MakeChain();
 	GraphI target = MakeChain();
-	neurus::GraphMorphism<GraphI, GraphI> morphism(source, target);
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source);
 
 	for (const char* name : {"A", "B", "C"})
-		EXPECT_TRUE(morphism.MapNode(FindNode(source, name), FindNode(target, name)));
+		EXPECT_TRUE(morphism.MapNode(*FindNode(source, name), *FindNode(target, name)));
 
 	GraphI::NodeType* a = FindNode(source, "A");
 	GraphI::NodeType* b = FindNode(source, "B");
 	GraphI::NodeType* ta = FindNode(target, "A");
 	GraphI::NodeType* tc = FindNode(target, "C");
 
-	EXPECT_TRUE(morphism.MapConnection(FindOutput(a, "out"), FindInput(b, "in"),
-	                                   FindOutput(ta, "out"), FindInput(tc, "in")));
+	EXPECT_TRUE(morphism.MapConnect(*FindOutput(a, "out"), *FindInput(b, "in"),
+	                                *FindOutput(ta, "out"), *FindInput(tc, "in")));
 
 	EXPECT_FALSE(morphism.PreservesIncidence());
 }
@@ -218,60 +246,42 @@ TEST(GraphMorphism, EnumerateConnectionsSeesEveryEdge)
 	EXPECT_EQ(connections[1].to->owner->name, "C");
 }
 
-TEST(GraphMorphism, MapGraphBuildsFromPolicy)
+TEST(GraphMorphism, MapNodeMapsOneElement)
 {
 	GraphI source = MakeChain();
-	GraphI target = MakeNodesOnly();
+	GraphI target;
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source, CopyPolicy());
 
-	const auto morphism = neurus::MapGraph(source, target, PolicyFor(target));
+	GraphI::NodeType* image = morphism.MapNode(target, *FindNode(source, "A"));
+	ASSERT_NE(image, nullptr);
+	EXPECT_EQ(morphism.ImageOf(FindNode(source, "A")), image);
 
-	EXPECT_TRUE(morphism.IsTotal());
-	EXPECT_TRUE(morphism.PreservesIncidence());
-	EXPECT_TRUE(morphism.Validate().Ok());
-	EXPECT_EQ(morphism.MappedNodeCount(), 3u);
-	EXPECT_EQ(morphism.MappedConnectionCount(), 2u);
-	EXPECT_EQ(morphism.ImageOf(FindNode(source, "B")), FindNode(target, "B"));
+	// A source node maps once; a second call declines instead of duplicating it.
+	EXPECT_EQ(morphism.MapNode(target, *FindNode(source, "A")), nullptr);
 }
 
-TEST(GraphMorphism, MapGraphReportsNullFactory)
+TEST(GraphMorphism, MapConnectCreatesAndWires)
 {
 	GraphI source = MakeChain();
-	GraphI target = MakeNodesOnly();
+	GraphI target;
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source, CopyPolicy());
 
-	auto policy = PolicyFor(target);
-	policy.mapNode = [&target](const GraphI::NodeType& node)
-	{
-		if (node.name == "C")
-			return static_cast<GraphI::NodeType*>(nullptr);
-		return FindNode(target, node.name);
-	};
+	morphism.MapNode(target, *FindNode(source, "A"));
+	morphism.MapNode(target, *FindNode(source, "B"));
+	EXPECT_EQ(morphism.MapConnect(target, *FindOutput(FindNode(source, "A"), "out"),
+	                              *FindInput(FindNode(source, "B"), "in")), true);
 
-	const auto morphism = neurus::MapGraph(source, target, policy);
-
-	EXPECT_FALSE(morphism.IsTotal());
-	const auto report = morphism.Validate();
-	ASSERT_FALSE(report.Ok());
-	EXPECT_NE(report.problems[0].find("C"), std::string::npos);
-}
-
-TEST(GraphMorphism, ForeignPointerIsRefused)
-{
-	GraphI source = MakeChain();
-	GraphI target = MakeChain();
-	GraphI other = MakeChain();
-	neurus::GraphMorphism<GraphI, GraphI> morphism(source, target);
-
-	EXPECT_FALSE(morphism.MapNode(FindNode(other, "A"), FindNode(target, "A")));
-	EXPECT_FALSE(morphism.MapNode(nullptr, FindNode(target, "A")));
+	EXPECT_TRUE(FindInput(FindNode(target, "B"), "in")->IsConnected());
+	EXPECT_EQ(FindInput(FindNode(target, "B"), "in")->source->owner->name, "A");
 }
 
 TEST(GraphMorphism, SharedTargetIsAccepted)
 {
 	GraphI source = MakeChain();
 	GraphI target = MakeChain();
-	neurus::GraphMorphism<GraphI, GraphI> morphism(source, target);
+	neurus::GraphMorphism<GraphI, GraphI> morphism(source);
 
-	EXPECT_TRUE(morphism.MapNode(FindNode(source, "A"), FindNode(target, "A")));
-	EXPECT_TRUE(morphism.MapNode(FindNode(source, "B"), FindNode(target, "A")));
+	EXPECT_TRUE(morphism.MapNode(*FindNode(source, "A"), *FindNode(target, "A")));
+	EXPECT_TRUE(morphism.MapNode(*FindNode(source, "B"), *FindNode(target, "A")));
 	EXPECT_EQ(morphism.ImageOf(FindNode(source, "B")), FindNode(target, "A"));
 }

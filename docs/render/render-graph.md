@@ -36,7 +36,7 @@ The renderer uploads the document with `UploadCpuGraph(document, factory, snapsh
 1. the document is validated against the factory's port tables, so the renderer and the Editor agree on what a valid edge is;
 2. every node whose shader uid names no snapshot is rejected by name;
 3. each node becomes a pass instance from `PassFactory`, with sockets materialized from the pass's ports;
-4. `MapGraph` maps every node and connection and returns a `RenderGraphMorphism`;
+4. the morphism (`GraphMorphism::Map`) builds the runtime nodes and connections and records every image;
 5. the morphism must be total and incidence-preserving, then `Compile()` caches the order and the binding plan.
 
 A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. `PipelineSignature` is the document hash, the shader-snapshot versions and the FXAA flag, so a rebuild happens only when one of them changes.
@@ -55,7 +55,7 @@ The FXAA condition is applied by the renderer (`ApplyConditions`) on a clone of 
 ```mermaid
 flowchart LR
     doc["RenderGraphData<br/>nodes, ports, tags"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
-    validate --> upload["UploadCpuGraph<br/>MapGraph + GraphMorphism"]
+    validate --> upload["UploadCpuGraph<br/>GraphMorphism::Map"]
     factory["PassFactory<br/>pass kind -> instance"] --> upload
     snapshots["ShaderSnapshot<br/>per shader"] --> upload
     upload --> graph["RenderGraph<br/>ShaderPort sockets"]

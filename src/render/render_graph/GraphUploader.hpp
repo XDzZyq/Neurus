@@ -38,6 +38,10 @@ using RenderGraphMorphism = GraphMorphism<RenderGraphData, RenderGraph::GraphT>;
  *
  * @c graph is null when any diagnostic was produced; the caller keeps drawing
  * the previous graph.
+ *
+ * @note @c morphism records images into the request's document and into
+ *       @c graph, so it may only be queried while both are alive. The renderer
+ *       reads its verdict and discards it.
  */
 struct UploadResult
 {

@@ -7,7 +7,6 @@
 
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 
 namespace neurus {
 
@@ -79,72 +78,52 @@ UploadResult UploadCpuGraph(const RenderGraphData& cpu, PassFactory& factory,
 		return result;
 	}
 
-	auto graph = std::make_unique<RenderGraph>();
-	std::unordered_map<const CpuNode*, GpuNode*> nodeImages;
-
-	// Instantiate every node first: the morphism's target set is fixed when it
-	// is constructed, so the nodes must exist before MapGraph maps them.
-	for (const auto& node : cpu.nodes)
+	// The morphism's policy creates the target objects. A null factory result
+	// leaves the node unmapped, and Validate() names it.
+	RenderGraphMorphism::Policy policy;
+	policy.createNode = [&factory](RenderGraph::GraphT& target,
+	                               const RenderGraphData::NodeType& node) -> GpuNode*
 	{
-		Pass* pass = factory.Find(node->data.pass);
-		const PassPorts* ports = factory.FindPassPorts(node->data.pass);
+		Pass* pass = factory.Find(node.data.pass);
+		const PassPorts* ports = factory.FindPassPorts(node.data.pass);
 		if (!pass || !ports)
-		{
-			result.errors.push_back({node->name, {}, "no pass instance or ports for kind '"
-			                                        + node->data.pass + "'"});
-			continue;
-		}
-
-		GpuNode* gpu = graph->AddPass(pass, *ports,
-		                              factory.ExternalInputs(node->data.pass),
-		                              node->name);
-		if (!gpu)
-		{
-			result.errors.push_back({node->name, {}, "the runtime graph rejected the node"});
-			continue;
-		}
-
-		// The runtime node keeps the document id so diagnostics and the
-		// resource keys name the graph the user edited.
-		gpu->name = node->name;
-		nodeImages.emplace(&node->data, gpu);
-	}
-
-	if (!result.errors.empty())
-		return result;
-
-	GraphMapPolicy<RenderGraphData, RenderGraph::GraphT> policy;
-	policy.mapNode = [&nodeImages](const RenderGraphData::NodeType& node) -> GpuNode*
-	{
-		const auto it = nodeImages.find(&node.data);
-		return it == nodeImages.end() ? nullptr : it->second;
-	};
-
-	policy.mapOutput = [&nodeImages](const RenderGraphData::NodeType& node,
-	                                 const RenderGraphData::SocketOutT& port) -> GpuOutput*
-	{
-		const auto it = nodeImages.find(&node.data);
-		if (it == nodeImages.end() || !it->second)
 			return nullptr;
-		return FindOutput(*it->second, port.name);
+
+		GpuNode* gpu = RenderGraph::MakePassNode(
+			target, pass, *ports, factory.ExternalInputs(node.data.pass), node.name);
+		if (gpu)
+		{
+			// The runtime node keeps the document id so diagnostics and the
+			// resource keys name the graph the user edited.
+			gpu->name = node.name;
+		}
+		return gpu;
 	};
 
-	policy.mapInput = [&nodeImages](const RenderGraphData::NodeType& node,
-	                                const RenderGraphData::SocketInT& port) -> GpuInput*
+	policy.createOutput = [](GpuNode& node, const RenderGraphData::SocketOutT& port)
+		-> GpuOutput*
 	{
-		const auto it = nodeImages.find(&node.data);
-		if (it == nodeImages.end() || !it->second)
-			return nullptr;
-		return FindInput(*it->second, port.name);
+		return FindOutput(node, port.name);
 	};
 
-	result.morphism = MapGraph(cpu, graph->GraphData(), policy);
+	policy.createInput = [](GpuNode& node, const RenderGraphData::SocketInT& port)
+		-> GpuInput*
+	{
+		return FindInput(node, port.name);
+	};
+
+	RenderGraphMorphism morphism(cpu, std::move(policy));
+	RenderGraph::GraphT target = morphism.Map(cpu);
+	result.morphism = std::move(morphism);
 
 	for (const std::string& problem : result.morphism.Validate().problems)
 		result.errors.push_back({{}, {}, problem});
 
 	if (!result.errors.empty())
 		return result;
+
+	auto graph = std::make_unique<RenderGraph>();
+	graph->Adopt(std::move(target));
 
 	try
 	{

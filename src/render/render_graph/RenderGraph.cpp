@@ -61,8 +61,19 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
                                          std::vector<std::string> externalInputs,
                                          std::string id)
 {
+	NodeT* node = MakePassNode(m_graph, pass, std::move(ports),
+	                           std::move(externalInputs), std::move(id));
+	m_isCompiled = false;
+	m_compiled.clear();
+	return node;
+}
+
+RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, PassPorts ports,
+                                              std::vector<std::string> externalInputs,
+                                              std::string id)
+{
 	if (!pass)
-		throw std::runtime_error("RenderGraph::AddPass: pass must be non-null");
+		throw std::runtime_error("RenderGraph::MakePassNode: pass must be non-null");
 
 	PassEntry entry;
 	entry.pass           = pass;
@@ -73,7 +84,7 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
 	std::string nodeName = entry.io.name.empty() ? std::string("Pass") : entry.io.name;
 	entry.id             = id.empty() ? nodeName : std::move(id);
 	entry.legacyExternal = entry.ports.ports.empty();
-	auto* node = m_graph.AddNode(std::move(nodeName), std::move(entry));
+	auto* node = graph.AddNode(std::move(nodeName), std::move(entry));
 
 	if (node->data.legacyExternal)
 	{
@@ -109,9 +120,14 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
 		}
 	}
 
-	m_isCompiled = false;
-	m_compiled.clear();
 	return node;
+}
+
+void RenderGraph::Adopt(GraphT graph)
+{
+	m_graph = std::move(graph);
+	m_compiled.clear();
+	m_isCompiled = false;
 }
 
 bool RenderGraph::Connect(NodeT* producer, const std::string_view fromPort,

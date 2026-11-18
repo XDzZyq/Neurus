@@ -88,10 +88,34 @@ public:
 	 * @param pass            Non-null pointer to the pass instance.
 	 * @param ports           Ports the compiler validated.
 	 * @param externalInputs  Inputs the pass resolves outside the graph.
+	 * @param id              Document node id for resource keys.
 	 */
 	NodeT* AddPass(Pass* pass, PassPorts ports,
 	               std::vector<std::string> externalInputs = {},
 	               std::string id = {});
+
+	/**
+	 * @brief Creates one pass node in a graph, with its sockets materialized.
+	 *
+	 * `Map()` builds its target with this, so a node created by the uploader is
+	 * identical to one created by AddPass().
+	 *
+	 * @param graph           Target graph.
+	 * @param pass            Non-null pointer to the pass instance.
+	 * @param ports           Ports to materialize.
+	 * @param externalInputs  Inputs the pass resolves outside the graph.
+	 * @param id              Document node id for resource keys.
+	 */
+	static NodeT* MakePassNode(GraphT& graph, Pass* pass, PassPorts ports,
+	                           std::vector<std::string> externalInputs = {},
+	                           std::string id = {});
+
+	/**
+	 * @brief Adopts a graph built elsewhere, such as the uploader's target.
+	 *
+	 * The compiled order is dropped: the caller compiles the adopted graph.
+	 */
+	void Adopt(GraphT graph);
 
 	/**
 	 * @brief Wires one named producer port to one named consumer port.
