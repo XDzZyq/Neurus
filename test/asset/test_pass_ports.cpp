@@ -79,8 +79,8 @@ TEST(PassPorts, GeometryDeclaredDepth)
 	ASSERT_TRUE(shader);
 
 	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const std::array<neurus::ShaderPort, 1> declared = {
-		neurus::ShaderPort{"depth", neurus::PortDirection::Output, "d32_sfloat", 0, 0},
+	const std::array<neurus::PassPort, 1> declared = {
+		neurus::PassPort{"depth", neurus::PortDirection::Output, "d32_sfloat", 0, 0},
 	};
 	const neurus::PassPorts ports =
 		neurus::ExtractPassPorts("GeometryPass", shaders, declared);
@@ -88,7 +88,7 @@ TEST(PassPorts, GeometryDeclaredDepth)
 	EXPECT_TRUE(ports.problems.empty());
 	ASSERT_EQ(ports.Outputs().size(), 6u);
 
-	const neurus::ShaderPort* depth =
+	const neurus::PassPort* depth =
 		ports.Find("depth", neurus::PortDirection::Output);
 	ASSERT_NE(depth, nullptr);
 	EXPECT_EQ(depth->type, "d32_sfloat");

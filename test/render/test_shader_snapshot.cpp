@@ -82,13 +82,13 @@ TEST(ShaderSnapshot, LightingPortsBindingsAndPushConstants)
 	const neurus::ShaderSnapshot snapshot = neurus::MakeShaderSnapshot(*shader, optional);
 
 	const auto inputs = std::count_if(snapshot.ports.begin(), snapshot.ports.end(),
-		[](const neurus::ShaderPort& port)
+		[](const neurus::PassPort& port)
 		{
 			return port.direction == neurus::PortDirection::Input;
 		});
 	EXPECT_EQ(inputs, 8);
 	const auto output = std::find_if(snapshot.ports.begin(), snapshot.ports.end(),
-		[](const neurus::ShaderPort& port)
+		[](const neurus::PassPort& port)
 		{
 			return port.name == "outputImage";
 		});
@@ -183,6 +183,6 @@ TEST(ShaderSnapshot, PortRenameBreaksEdge)
 		output.name = "renamed_" + output.name;
 
 	const neurus::ShaderSnapshot snapshot = neurus::MakeShaderSnapshot(*shader);
-	for (const neurus::ShaderPort& port : snapshot.ports)
+	for (const neurus::PassPort& port : snapshot.ports)
 		EXPECT_EQ(port.name.rfind("renamed_", 0), 0u) << port.name;
 }

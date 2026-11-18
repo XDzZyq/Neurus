@@ -487,9 +487,9 @@ void GeometryPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
 	}
 }
 
-std::vector<ShaderPort> GeometryPass::DeclaredOutputs() const
+std::vector<PassPort> GeometryPass::DeclaredOutputs() const
 {
-	std::vector<ShaderPort> ports;
+	std::vector<PassPort> ports;
 	for (const DeclaredPort& port : FindPassKind("GeometryPass")->declaredOutputs)
 	{
 		ports.push_back({std::string(port.name), PortDirection::Output,

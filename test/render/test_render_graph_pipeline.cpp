@@ -141,11 +141,11 @@ TEST_F(RenderGraphPipelineTest, DefaultDocumentCompilesAndDraws)
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 
 	EXPECT_TRUE(m_renderer->LastGraphReport().compiled);
-	EXPECT_EQ(m_renderer->ScenePassCount(), 6u);  // FXAA off
+	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);  // the document always has FXAA
 	EXPECT_TRUE(m_renderer->LastGraphReport().diagnostics.empty());
 }
 
-TEST_F(RenderGraphPipelineTest, FxaaFlagAddsThePass)
+TEST_F(RenderGraphPipelineTest, FxaaStaysInTheDocumentWhateverTheConfig)
 {
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
@@ -153,7 +153,7 @@ TEST_F(RenderGraphPipelineTest, FxaaFlagAddsThePass)
 	ASSERT_NO_FATAL_FAILURE(CreateRenderer());
 	ASSERT_NO_FATAL_FAILURE(PostDocument(DefaultDocument()));
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
-	ASSERT_EQ(m_renderer->ScenePassCount(), 6u);
+	ASSERT_EQ(m_renderer->ScenePassCount(), 7u);
 
 	neurus::RenderConfig config{};
 	config.r_aa = neurus::AAAlg::FXAA;
@@ -186,7 +186,7 @@ TEST_F(RenderGraphPipelineTest, EditedDocumentChangesTopology)
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 
 	EXPECT_TRUE(m_renderer->LastGraphReport().compiled);
-	EXPECT_EQ(m_renderer->ScenePassCount(), 5u);
+	EXPECT_EQ(m_renderer->ScenePassCount(), 6u);
 }
 
 TEST_F(RenderGraphPipelineTest, BadDocumentKeepsPreviousGraph)
@@ -198,7 +198,7 @@ TEST_F(RenderGraphPipelineTest, BadDocumentKeepsPreviousGraph)
 	ASSERT_NO_FATAL_FAILURE(PostDocument(DefaultDocument()));
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 	const size_t previousPasses = m_renderer->ScenePassCount();
-	ASSERT_EQ(previousPasses, 6u);
+	ASSERT_EQ(previousPasses, 7u);
 
 	neurus::RenderGraphData bad = DefaultDocument();
 	bad.nodes[0]->outputs[0]->data.tag.reset();

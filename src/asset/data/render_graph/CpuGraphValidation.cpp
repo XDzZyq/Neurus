@@ -32,7 +32,7 @@ std::string TagProblem(const GraphOutputTag& tag)
 	return {};
 }
 
-const ShaderPort* FindDeclared(const PassPorts& ports, const std::string& name,
+const PassPort* FindDeclared(const PassPorts& ports, const std::string& name,
                                const PortDirection direction)
 {
 	return ports.Find(name, direction);
@@ -101,7 +101,7 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 			}
 		}
 
-		for (const ShaderPort& declared : passPorts->Inputs())
+		for (const PassPort& declared : passPorts->Inputs())
 		{
 			const bool present = std::any_of(
 				node->inputs.begin(), node->inputs.end(),

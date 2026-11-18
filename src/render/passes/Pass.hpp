@@ -225,7 +225,7 @@ public:
 	 *
 	 * Examples: the G-Buffer depth attachment and the per-light shadow bundle.
 	 */
-	virtual std::vector<ShaderPort> DeclaredOutputs() const { return {}; }
+	virtual std::vector<PassPort> DeclaredOutputs() const { return {}; }
 
 	/**
 	 * @brief Input ports the pass resolves outside the graph (IBL cubemaps).

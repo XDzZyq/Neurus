@@ -49,7 +49,7 @@ InSocket* FindInput(NodeType& node, const std::string_view name)
 	return nullptr;
 }
 
-CpuPort MakePort(const ShaderPort& port, std::optional<GraphOutputTag> tag = {})
+CpuPort MakePort(const PassPort& port, std::optional<GraphOutputTag> tag = {})
 {
 	CpuPort payload;
 	payload.name      = port.name;
@@ -156,7 +156,7 @@ RenderGraphData FromRecord(const RenderGraphRecord& record, const IPortSource& p
 			continue;
 		}
 
-		for (const ShaderPort& input : passPorts->Inputs())
+		for (const PassPort& input : passPorts->Inputs())
 		{
 			InSocket* socket = created[i]->AddInput(input.name);
 			socket->data = MakePort(input);

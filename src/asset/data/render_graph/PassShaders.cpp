@@ -65,7 +65,7 @@ PassShaders::PassShaders(ResourceManager& resources, const PassShaderFactory& fa
 		if (shaders.empty())
 			continue;
 
-		std::vector<ShaderPort> declared;
+		std::vector<PassPort> declared;
 		declared.reserve(kind.declaredOutputs.size());
 		for (const DeclaredPort& port : kind.declaredOutputs)
 		{

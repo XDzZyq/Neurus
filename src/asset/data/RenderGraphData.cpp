@@ -1,6 +1,6 @@
 /**
  * @file RenderGraphData.cpp
- * @brief Default document, conditions and hash.
+ * @brief Default document and hash.
  */
 
 #include "asset/data/RenderGraphData.hpp"
@@ -41,7 +41,7 @@ InSocket* FindInput(NodeType& node, const std::string_view name)
 	return nullptr;
 }
 
-CpuPort MakePort(const ShaderPort& port, std::optional<GraphOutputTag> tag = {})
+CpuPort MakePort(const PassPort& port, std::optional<GraphOutputTag> tag = {})
 {
 	CpuPort payload;
 	payload.name      = port.name;
@@ -74,10 +74,10 @@ RenderGraphData RenderGraphData::Default(const IPortSource& ports)
 		data.pass = pass;
 		NodeType* node = graph.AddNode(name, data);
 
-		for (const ShaderPort& input : passPorts->Inputs())
+		for (const PassPort& input : passPorts->Inputs())
 			node->AddInput(input.name)->data = MakePort(input);
 
-		for (const ShaderPort& output : passPorts->Outputs())
+		for (const PassPort& output : passPorts->Outputs())
 		{
 			std::optional<GraphOutputTag> tag;
 			for (const auto& [portName, declared] : tags)
@@ -164,24 +164,6 @@ RenderGraphData RenderGraphData::Default(const IPortSource& ports)
 	connect(*compose, "outputComposed", *fxaa, "gInput");
 
 	return graph;
-}
-
-void RenderGraphData::ApplyConditions(const bool fxaa)
-{
-	std::vector<NodeType*> dropped;
-	for (const auto& node : nodes)
-	{
-		const PassKindInfo* kind = FindPassKind(node->data.pass);
-		if (!kind || kind->condition.empty())
-			continue;
-
-		const bool enabled = (kind->condition == "fxaa") ? fxaa : true;
-		if (!enabled)
-			dropped.push_back(node.get());
-	}
-
-	for (NodeType* node : dropped)
-		RemoveNode(node);
 }
 
 std::uint64_t RenderGraphData::Hash() const

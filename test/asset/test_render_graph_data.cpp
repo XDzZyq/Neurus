@@ -49,7 +49,7 @@ void SetOutput(neurus::RenderGraphData::SocketOutT* socket, const neurus::CpuPor
 
 } // anonymous namespace
 
-TEST(RenderGraphData, SocketsCarryShaderPorts)
+TEST(RenderGraphData, SocketsCarryPassPorts)
 {
 	neurus::RenderGraphData graph;
 	neurus::CpuNode pass;

@@ -69,14 +69,14 @@ inline FakePortSource MakeRealPortSource()
 	EXPECT_NE(geometry, nullptr);
 
 	const std::array<const ShaderData*, 1> geometryShaders = {geometry.get()};
-	const std::array<ShaderPort, 1> geometryDeclared = {
-		ShaderPort{"depth", PortDirection::Output, "d32_sfloat", 0, 0},
+	const std::array<PassPort, 1> geometryDeclared = {
+		PassPort{"depth", PortDirection::Output, "d32_sfloat", 0, 0},
 	};
 	source.Set("GeometryPass",
 	           ExtractPassPorts("GeometryPass", geometryShaders, geometryDeclared));
 
-	const std::array<ShaderPort, 1> shadowDeclared = {
-		ShaderPort{"shadow_depth", PortDirection::Output, "logical", 0, 0},
+	const std::array<PassPort, 1> shadowDeclared = {
+		PassPort{"shadow_depth", PortDirection::Output, "logical", 0, 0},
 	};
 	const std::span<const ShaderData* const> noShaders;
 	source.Set("ShadowDepthPass",

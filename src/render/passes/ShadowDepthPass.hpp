@@ -78,7 +78,7 @@ public:
 	std::vector<const ShaderData*> GetShaders() const override;
 
 	/// @brief The per-light shadow bundle, a logical ordering token.
-	std::vector<ShaderPort> DeclaredOutputs() const override;
+	std::vector<PassPort> DeclaredOutputs() const override;
 
 	/// @brief The face VP SSBO set, written by the graph.
 	DescriptorSet* GraphDescriptorSet(uint32_t frameIndex) override

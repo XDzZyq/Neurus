@@ -25,7 +25,7 @@ std::vector<GraphImageBinding> BuildImageBindings(
 		return std::find(selfManaged.begin(), selfManaged.end(), binding) != selfManaged.end();
 	};
 
-	for (const ShaderPort& input : ports.Inputs())
+	for (const PassPort& input : ports.Inputs())
 	{
 		if (!IsSamplerPortType(input.type))
 			continue;
@@ -43,7 +43,7 @@ std::vector<GraphImageBinding> BuildImageBindings(
 		});
 	}
 
-	for (const ShaderPort& output : ports.Outputs())
+	for (const PassPort& output : ports.Outputs())
 	{
 		if (!IsStorageImagePortType(output.type))
 			continue;

@@ -54,7 +54,6 @@ struct PassKindInfo
 {
 	std::string_view                  name;
 	std::span<const PassShaderSource> shaders;    ///< First source is the primary shader.
-	std::string_view                  condition;  ///< "fxaa" when the node is conditional.
 	std::span<const DeclaredPort>     declaredOutputs;  ///< Outputs with no shader binding.
 	std::span<const std::string_view> externalInputs;   ///< Inputs resolved outside the graph.
 	std::span<const uint32_t>         optionalBindings; ///< PARTIALLY_BOUND bindings.
@@ -125,7 +124,6 @@ inline constexpr PassKindInfo kPassKinds[] = {
 	{
 		"GeometryPass",
 		kGeometryShaders,
-		{},
 		kGeometryDeclaredOutputs,
 		{},
 		{},
@@ -133,7 +131,6 @@ inline constexpr PassKindInfo kPassKinds[] = {
 	{
 		"ShadowDepthPass",
 		kShadowDepthShaders,
-		{},
 		kShadowDepthDeclaredOutputs,
 		{},
 		{},
@@ -144,7 +141,6 @@ inline constexpr PassKindInfo kPassKinds[] = {
 		{},
 		{},
 		{},
-		{},
 	},
 	{
 		"SSAOPass",
@@ -152,12 +148,10 @@ inline constexpr PassKindInfo kPassKinds[] = {
 		{},
 		{},
 		{},
-		{},
 	},
 	{
 		"LightingPass",
 		kLightingShaders,
-		{},
 		{},
 		kLightingExternalInputs,
 		kLightingOptionalBindings,
@@ -168,12 +162,10 @@ inline constexpr PassKindInfo kPassKinds[] = {
 		{},
 		{},
 		{},
-		{},
 	},
 	{
 		"FXAAPass",
 		kFxaaShaders,
-		"fxaa",
 		{},
 		{},
 		{},

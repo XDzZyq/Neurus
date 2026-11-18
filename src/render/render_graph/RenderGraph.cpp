@@ -50,7 +50,7 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 
 	const PassIO io = pass->GetIO();
 	const std::vector<const ShaderData*> shaders = pass->GetShaders();
-	const std::vector<ShaderPort> declared = pass->DeclaredOutputs();
+	const std::vector<PassPort> declared = pass->DeclaredOutputs();
 
 	PassPorts ports = ExtractPassPorts(io.name.empty() ? "Pass" : io.name,
 	                                   shaders, declared);
@@ -75,7 +75,7 @@ RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, PassPor
 	if (!pass)
 		throw std::runtime_error("RenderGraph::MakePassNode: pass must be non-null");
 
-	PassEntry entry;
+	PassBody entry;
 	entry.pass           = pass;
 	entry.io             = pass->GetIO();
 	entry.ports          = std::move(ports);
@@ -93,19 +93,19 @@ RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, PassPor
 		for (const auto& binding : node->data.io.reads)
 		{
 			auto* input = node->AddInput(AttachmentNameToString(binding.resource));
-			input->data = ShaderPort{input->name, PortDirection::Input, "",
+			input->data = PassPort{input->name, PortDirection::Input, "",
 			                         binding.binding, 0};
 		}
 		for (const auto& binding : node->data.io.writes)
 		{
 			auto* output = node->AddOutput(AttachmentNameToString(binding.resource));
-			output->data = ShaderPort{output->name, PortDirection::Output, "",
+			output->data = PassPort{output->name, PortDirection::Output, "",
 			                          binding.binding, 0};
 		}
 	}
 	else
 	{
-		for (const ShaderPort& port : node->data.ports.ports)
+		for (const PassPort& port : node->data.ports.ports)
 		{
 			if (port.direction == PortDirection::Input)
 			{

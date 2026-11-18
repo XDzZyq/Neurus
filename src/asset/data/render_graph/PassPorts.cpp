@@ -16,10 +16,10 @@ namespace neurus {
 namespace {
 
 /// @brief Adds a port unless an identical declaration already exists.
-void AddPort(PassPorts& result, const ShaderPort& port)
+void AddPort(PassPorts& result, const PassPort& port)
 {
 	auto it = std::find_if(result.ports.begin(), result.ports.end(),
-		[&port](const ShaderPort& existing)
+		[&port](const PassPort& existing)
 		{
 			return existing.direction == port.direction && existing.name == port.name;
 		});
@@ -56,7 +56,7 @@ void AddUniformPorts(PassPorts& result, const ShaderStruct& shader)
 
 		const std::string type = UniformType(uniform);
 
-		ShaderPort port;
+		PassPort port;
 		port.name      = uniform.name;
 		port.type      = type;
 		port.binding   = static_cast<uint32_t>(uniform.binding);
@@ -80,7 +80,7 @@ void AddFragmentOutputs(PassPorts& result, const ShaderStruct& shader)
 {
 	for (const S_IO& output : shader.pass_list)
 	{
-		ShaderPort port;
+		PassPort port;
 		port.name      = output.name;
 		port.direction = PortDirection::Output;
 		port.type      = output.typeName.empty() ? ShaderStruct::ParseType(output.type)
@@ -93,10 +93,10 @@ void AddFragmentOutputs(PassPorts& result, const ShaderStruct& shader)
 
 } // anonymous namespace
 
-const ShaderPort* PassPorts::Find(const std::string_view name,
+const PassPort* PassPorts::Find(const std::string_view name,
                                   const PortDirection direction) const
 {
-	for (const ShaderPort& port : ports)
+	for (const PassPort& port : ports)
 	{
 		if (port.direction == direction && port.name == name)
 			return &port;
@@ -104,10 +104,10 @@ const ShaderPort* PassPorts::Find(const std::string_view name,
 	return nullptr;
 }
 
-std::vector<ShaderPort> PassPorts::Inputs() const
+std::vector<PassPort> PassPorts::Inputs() const
 {
-	std::vector<ShaderPort> inputs;
-	for (const ShaderPort& port : ports)
+	std::vector<PassPort> inputs;
+	for (const PassPort& port : ports)
 	{
 		if (port.direction == PortDirection::Input)
 			inputs.push_back(port);
@@ -115,10 +115,10 @@ std::vector<ShaderPort> PassPorts::Inputs() const
 	return inputs;
 }
 
-std::vector<ShaderPort> PassPorts::Outputs() const
+std::vector<PassPort> PassPorts::Outputs() const
 {
-	std::vector<ShaderPort> outputs;
-	for (const ShaderPort& port : ports)
+	std::vector<PassPort> outputs;
+	for (const PassPort& port : ports)
 	{
 		if (port.direction == PortDirection::Output)
 			outputs.push_back(port);
@@ -138,7 +138,7 @@ bool IsStorageImagePortType(const std::string_view type)
 
 PassPorts ExtractPassPorts(std::string kind,
                            const std::span<const ShaderData* const> shaders,
-                           const std::span<const ShaderPort> declaredOutputs)
+                           const std::span<const PassPort> declaredOutputs)
 {
 	PassPorts result;
 	result.kind = std::move(kind);
@@ -171,7 +171,7 @@ PassPorts ExtractPassPorts(std::string kind,
 		}
 	}
 
-	for (const ShaderPort& declared : declaredOutputs)
+	for (const PassPort& declared : declaredOutputs)
 		AddPort(result, declared);
 
 	return result;

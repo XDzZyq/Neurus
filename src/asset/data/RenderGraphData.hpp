@@ -35,7 +35,7 @@ class IPortSource;
 /**
  * @brief Socket payload of the CPU graph: one shader port.
  *
- * Mirrors @ref ShaderPort, plus the resource declaration an output owns. The
+ * Mirrors @ref PassPort, plus the resource declaration an output owns. The
  * declaration is user data: a shader names a GLSL type, never an image format.
  * An input never carries one; @c tag is only meaningful for an output.
  */
@@ -93,17 +93,6 @@ public:
 	 * @throws std::runtime_error when a built-in pass kind has no ports.
 	 */
 	static RenderGraphData Default(const IPortSource& ports);
-
-	/**
-	 * @brief Drops conditional nodes whose condition is off, with their edges.
-	 *
-	 * A pass kind declares its condition in `PassKindInfo`; `FXAAPass` is off
-	 * when FXAA is disabled. Nodes of unknown kinds are left in place so
-	 * validation can report them.
-	 *
-	 * @param fxaa  Whether the FXAA condition is on.
-	 */
-	void ApplyConditions(bool fxaa);
 
 	/**
 	 * @brief Stable hash of the topology-affecting content.

@@ -402,28 +402,25 @@ private:
 
 	// --- RenderGraph (the active pipeline) ---
 	// Compile-once-per-document DAG holding the whole deferred pipeline; recordFrame
-	// dispatches it and compiles it only when the document, its shaders or the
-	// FXAA flag change.
+	// dispatches it and compiles it only when the document or its shaders change.
 	RenderGraph m_mainGraph;
 
 	/**
-	 * @brief Topology-affecting projection of RenderConfig and the document.
+	 * @brief Topology-affecting projection of the document and its shaders.
 	 *
-	 * The graph is derived from the document, its shader snapshots and the FXAA
-	 * condition; this signature captures all three, so a sample rebuilds the
-	 * graph only when one of them changed.
+	 * The graph is derived from the document and the shader snapshots; this
+	 * signature captures both, so a sample rebuilds the graph only when one of
+	 * them changed. FXAA is part of the document's topology, so the render config
+	 * no longer participates.
 	 */
 	struct PipelineSignature
 	{
 		std::uint64_t graphHash  = 0;     ///< Uploader's document hash.
 		std::uint64_t shaderHash = 0;     ///< Snapshot identities and versions.
-		bool          fxaa       = false; ///< RenderConfig::RequiresFXAA().
 
-		static PipelineSignature From(const RenderConfig& cfg,
-		                              std::uint64_t graphHash,
-		                              std::uint64_t shaderHash)
+		static PipelineSignature From(std::uint64_t graphHash, std::uint64_t shaderHash)
 		{
-			return PipelineSignature{graphHash, shaderHash, cfg.RequiresFXAA()};
+			return PipelineSignature{graphHash, shaderHash};
 		}
 
 		bool operator==(const PipelineSignature&) const = default;
@@ -448,10 +445,9 @@ public:
 	 * On failure the previous graph keeps drawing and the diagnostics are stored
 	 * in LastGraphReport().
 	 *
-	 * @param fxaa  Whether the hard-coded FXAA condition is on.
 	 * @return true when the document compiled and the graph was replaced.
 	 */
-	bool CompileDocument(bool fxaa);
+	bool CompileDocument();
 
 	/// @brief Last compile verdict, for tests and the command layer.
 	const GraphCompileReport& LastGraphReport() const { return m_graphReport; }

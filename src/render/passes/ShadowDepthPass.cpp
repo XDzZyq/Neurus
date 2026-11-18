@@ -519,9 +519,9 @@ void ShadowDepthPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameInde
 	}
 }
 
-std::vector<ShaderPort> ShadowDepthPass::DeclaredOutputs() const
+std::vector<PassPort> ShadowDepthPass::DeclaredOutputs() const
 {
-	std::vector<ShaderPort> ports;
+	std::vector<PassPort> ports;
 	for (const DeclaredPort& port : FindPassKind("ShadowDepthPass")->declaredOutputs)
 	{
 		ports.push_back({std::string(port.name), PortDirection::Output,

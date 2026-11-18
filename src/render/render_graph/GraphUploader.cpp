@@ -197,7 +197,7 @@ std::uint64_t GraphUploader::ShaderHash() const
 	return ShaderSnapshotsHash(m_impl->shaders);
 }
 
-GraphUploadResult GraphUploader::Compile(const bool fxaa, RenderCache& cache)
+GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 {
 	GraphUploadResult result;
 
@@ -207,11 +207,9 @@ GraphUploadResult GraphUploader::Compile(const bool fxaa, RenderCache& cache)
 		return result;
 	}
 
-	// The renderer applies the conditional nodes, so an FXAA toggle neither
-	// edits nor republishes the Editor's document.
-	RenderGraphData pruned = CloneGraph(*m_impl->document);
-	pruned.ApplyConditions(fxaa);
-	m_impl->source = std::move(pruned);
+	// The morphism maps an owned copy: its images point into the source, which
+	// must outlive the mapping, while the Editor's request stays immutable.
+	m_impl->source = CloneGraph(*m_impl->document);
 
 	for (const auto& node : m_impl->source.nodes)
 	{

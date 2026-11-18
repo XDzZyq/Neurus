@@ -26,8 +26,8 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - Builds the runtime scene graph from the Editor's `RenderGraphData` document:
   the `GraphUploader` service instantiates its pass kinds through `PassFactory`,
   maps every node and connection through a permanent `GraphMorphism`, and its
-  output tags plan the `RenderCache` resources. `RenderConfig` still supplies
-  the FXAA condition only
+  output tags plan the `RenderCache` resources. `RenderConfig` supplies
+  per-frame pass parameters only
 - Consumes the per-frame RenderContext (the renderer's view of the frame: the
   Editor's owned frame snapshot plus the frame half `recordFrame()` stamps) for
   pass dispatch

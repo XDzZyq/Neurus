@@ -324,7 +324,7 @@ struct ShaderSnapshot
 {
 	int                             shaderUid = 0;
 	int                             version = 0;
-	std::vector<ShaderPort>         ports;
+	std::vector<PassPort>         ports;
 	std::vector<DescriptorBinding>  bindings;
 	std::vector<PushConstantMember> pushConstants;
 	std::vector<uint32_t>           vertexSpv;

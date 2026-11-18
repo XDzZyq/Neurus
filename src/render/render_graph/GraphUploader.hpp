@@ -106,10 +106,9 @@ public:
 	 * adopts and compiles the runtime graph. On failure the result names every
 	 * problem and carries no graph.
 	 *
-	 * @param fxaa   Whether the FXAA condition is on; the node is pruned otherwise.
 	 * @param cache  Resource cache whose plans follow the document.
 	 */
-	GraphUploadResult Compile(bool fxaa, RenderCache& cache);
+	GraphUploadResult Compile(RenderCache& cache);
 
 private:
 	struct Impl;

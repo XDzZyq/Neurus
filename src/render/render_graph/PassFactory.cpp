@@ -49,7 +49,7 @@ void PassFactory::Add(std::string kind, std::unique_ptr<Pass> pass)
 	Pass* raw = pass.get();
 
 	const std::vector<const ShaderData*> shaders = raw->GetShaders();
-	const std::vector<ShaderPort> declared = raw->DeclaredOutputs();
+	const std::vector<PassPort> declared = raw->DeclaredOutputs();
 
 	m_passes.emplace(kind, std::move(pass));
 	m_ports.emplace(kind, ExtractPassPorts(kind, shaders, declared));

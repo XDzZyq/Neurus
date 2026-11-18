@@ -2,7 +2,7 @@
  * @file RenderGraph.hpp
  * @brief DAG orchestrator that owns render-pass nodes and their port edges.
  *
- * Nodes are built on top of the template `Graph<ShaderPort, PassEntry>` from
+ * Nodes are built on top of the template `Graph<PassPort, PassBody>` from
  * `core/Graph.hpp`. A scene pass declares ports from its shader; an overlay
  * pass keeps its historical PassIO names and is treated as a legacy node whose
  * unconnected inputs are external.
@@ -42,7 +42,7 @@ public:
 	 * The graph caches the pass's `PassIO` and port table at registration time
 	 * so Compile() and Connect() do not re-invoke `Pass::GetIO()`.
 	 */
-	struct PassEntry
+	struct PassBody
 	{
 		std::string              id;               ///< Document node id, for resource keys.
 		Pass*                    pass = nullptr;   ///< Provides Record().
@@ -55,7 +55,7 @@ public:
 		std::vector<GraphImageBinding> imageBindings;
 	};
 
-	using GraphT      = Graph<ShaderPort, PassEntry>;
+	using GraphT      = Graph<PassPort, PassBody>;
 	using NodeT       = typename GraphT::NodeType;
 	using SocketInT   = typename GraphT::SocketInT;
 	using SocketOutT  = typename GraphT::SocketOutT;

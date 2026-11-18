@@ -35,7 +35,7 @@ enum class PortDirection
  * has a @c binding and location 0. @c type is the GLSL type string, so the
  * renderer can choose a descriptor type without re-reading the shader.
  */
-struct ShaderPort
+struct PassPort
 {
 	std::string   name;
 	PortDirection direction = PortDirection::Input;
@@ -43,7 +43,7 @@ struct ShaderPort
 	uint32_t      binding = 0;   ///< set-0 binding; 0 for a fragment output
 	uint32_t      location = 0;  ///< fragment output location; 0 otherwise
 
-	bool operator==(const ShaderPort&) const = default;
+	bool operator==(const PassPort&) const = default;
 };
 
 /**
@@ -52,20 +52,20 @@ struct ShaderPort
 struct PassPorts
 {
 	std::string             kind;
-	std::vector<ShaderPort> ports;
+	std::vector<PassPort> ports;
 	std::vector<std::string> problems;  ///< conflicting duplicate declarations
 
 	/**
 	 * @brief Finds a port by name and direction.
 	 * @return Non-owning pointer, or nullptr when absent.
 	 */
-	const ShaderPort* Find(std::string_view name, PortDirection direction) const;
+	const PassPort* Find(std::string_view name, PortDirection direction) const;
 
 	/// @brief Every input port, in declaration order.
-	std::vector<ShaderPort> Inputs() const;
+	std::vector<PassPort> Inputs() const;
 
 	/// @brief Every output port, in declaration order.
-	std::vector<ShaderPort> Outputs() const;
+	std::vector<PassPort> Outputs() const;
 };
 
 /// @brief True for a GLSL type that binds as a combined image sampler.
@@ -92,6 +92,6 @@ bool IsStorageImagePortType(std::string_view type);
  */
 PassPorts ExtractPassPorts(std::string kind,
                            std::span<const ShaderData* const> shaders,
-                           std::span<const ShaderPort> declaredOutputs = {});
+                           std::span<const PassPort> declaredOutputs = {});
 
 } // namespace neurus

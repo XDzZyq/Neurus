@@ -337,7 +337,7 @@ protected:
 		resources.SetOutput("outputShadow", &intensity);
 
 		const std::vector<const neurus::ShaderData*> shaders = pass.GetShaders();
-		const std::vector<neurus::ShaderPort> declared = pass.DeclaredOutputs();
+		const std::vector<neurus::PassPort> declared = pass.DeclaredOutputs();
 		const neurus::PassPorts ports = neurus::ExtractPassPorts(
 			pass.GetIO().name, shaders, declared);
 		const std::vector<neurus::GraphImageBinding> bindings =

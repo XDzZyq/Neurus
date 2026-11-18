@@ -173,20 +173,6 @@ TEST(RenderGraphDocument, InputsComeFromShaders)
 	EXPECT_TRUE(graph.nodes[0]->outputs.empty());
 }
 
-TEST(RenderGraphDocument, ConditionPruning)
-{
-	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
-
-	graph.ApplyConditions(false);
-	ASSERT_EQ(graph.nodes.size(), 6u);
-	EXPECT_EQ(FindNode(graph, "fxaa"), nullptr);
-	EXPECT_TRUE(neurus::ValidateCpuGraph(graph, ports).empty());
-
-	graph.ApplyConditions(true);
-	EXPECT_EQ(graph.nodes.size(), 6u);
-}
-
 TEST(RenderGraphDocument, DoubleProducerIsReportedAtLoad)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();

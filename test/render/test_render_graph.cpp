@@ -461,7 +461,7 @@ TEST_F(PassCountersTest, RecordReturnsStats)
 
 namespace {
 
-PassPorts MakePorts(std::vector<ShaderPort> ports)
+PassPorts MakePorts(std::vector<PassPort> ports)
 {
 	PassPorts result;
 	result.kind  = "PortPass";

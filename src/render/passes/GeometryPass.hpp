@@ -119,7 +119,7 @@ public:
 	std::vector<const ShaderData*> GetShaders() const override;
 
 	/// @brief The depth attachment, which has no fragment output declaration.
-	std::vector<ShaderPort> DeclaredOutputs() const override;
+	std::vector<PassPort> DeclaredOutputs() const override;
 
 	/**
 	 * @brief Returns the camera descriptor set layout (set 0).

@@ -58,7 +58,6 @@ Both the temporal sampling mode (`r_sampling_mode`) and the shadow bias (`r_shad
 - `RequiresShadow()` - true when any shadow algorithm is active.
 - `RequiresSSR()` - true when screen-space reflections are enabled.
 - `RequiresSDF()` - true when SDF construction is needed for shadows or SSR.
-- `RequiresFXAA()` - true when `r_aa == AAAlg::FXAA`.
 - `RequiresDebugDraw()` - true when the viewport debug/gizmo overlay should be drawn.
 - `operator==` is defaulted for value equality across all settings, used to skip no-op undo entries.
 

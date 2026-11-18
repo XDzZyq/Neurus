@@ -675,9 +675,9 @@ void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 	m_requests->SetUploadManager(uploader);
 }
 
-bool DeferredRenderer::CompileDocument(const bool fxaa)
+bool DeferredRenderer::CompileDocument()
 {
-	GraphUploadResult upload = m_graphUploader->Compile(fxaa, *r_renderCache);
+	GraphUploadResult upload = m_graphUploader->Compile(*r_renderCache);
 
 	const std::uint64_t graphHash = m_graphUploader->DocumentHash();
 
@@ -707,8 +707,7 @@ bool DeferredRenderer::CompileDocument(const bool fxaa)
 	m_graphReport.scenePasses = m_mainGraph.PassCount();
 
 	NEURUS_LOG("[RenderGraph] compiled " << m_mainGraph.PassCount()
-	           << " passes, FXAA=" << (fxaa ? "on" : "off")
-	           << ", tail=" << AttachmentNameToString(tail)
+	           << " passes, tail=" << AttachmentNameToString(tail)
 	           << ", hash=" << std::hex << graphHash << std::dec);
 	return true;
 }
@@ -987,11 +986,10 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		if (m_graphUploader->HasDocument())
 		{
 			const PipelineSignature sig = PipelineSignature::From(
-				frame.Settings(), m_graphUploader->DocumentHash(),
-				m_graphUploader->ShaderHash());
+				m_graphUploader->DocumentHash(), m_graphUploader->ShaderHash());
 			if (newDocument || !(sig == m_builtSignature))
 			{
-				CompileDocument(sig.fxaa);
+				CompileDocument();
 				m_builtSignature = sig;
 			}
 		}

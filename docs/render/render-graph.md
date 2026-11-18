@@ -31,7 +31,7 @@ The Editor pools one shader per built-in source through `PassShaders` (`src/asse
 
 `ValidateCpuGraph(document, ports)` (`src/asset/data/render_graph/CpuGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CpuGraphDiagnostic` naming the node and, when it has one, the port.
 
-The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`), a service that owns the document, its snapshots and the permanent morphism; `Compile(fxaa, cache)` is the whole upload:
+The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`), a service that owns the document, its snapshots and the permanent morphism; `Compile(cache)` is the whole upload:
 
 1. the document is validated against the factory's port tables, so the renderer and the Editor agree on what a valid edge is;
 2. every node whose shader uid names no snapshot is rejected by name;
@@ -39,16 +39,14 @@ The renderer uploads the document through `GraphUploader` (`src/render/render_gr
 4. the morphism (`GraphMorphism::Map`) builds the runtime nodes and connections and records every image;
 5. the morphism must be total and incidence-preserving, then `Compile()` caches the order and the binding plan.
 
-A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. `PipelineSignature` is the document hash, the shader-snapshot versions and the FXAA flag, so a rebuild happens only when one of them changes.
-
-The FXAA condition is applied by the renderer (`ApplyConditions`) on a clone of the document, not by the Editor: the document keeps the FXAA node, and a config toggle neither edits nor republishes it.
+A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. `PipelineSignature` is the document hash plus the shader-snapshot versions, so a rebuild happens only when the document or a shader changed. FXAA is a normal node in the document and always runs, so a render-config change never rebuilds the graph.
 
 ## The runtime graph
 
-`RenderGraph` is `Graph<ShaderPort, PassEntry>` (`src/render/render_graph/RenderGraph.hpp`):
+`RenderGraph` is `Graph<PassPort, PassBody>` (`src/render/render_graph/RenderGraph.hpp`):
 
 - `PassFactory` owns one instance of every built-in pass and answers `pass kind -> PassPorts`; `GraphUploader` maps the document's nodes onto those instances.
-- `AddPass(pass, ports, externals, id)` materializes one socket per port and keeps the document id in `PassEntry::id` for resource keys. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
+- `AddPass(pass, ports, externals, id)` materializes one socket per port and keeps the document id in `PassBody::id` for resource keys. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
 - `Connect(producer, fromPort, consumer, toPort)` is port to port. The overlay compatibility overload forwards to the same call with `AttachmentNameToString()`.
 - `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order.
 
@@ -58,7 +56,7 @@ flowchart LR
     validate --> upload["GraphUploader::Compile<br/>GraphMorphism::Map"]
     factory["PassFactory<br/>pass kind -> instance"] --> upload
     snapshots["ShaderSnapshot<br/>per shader"] --> upload
-    upload --> graph["RenderGraph<br/>ShaderPort sockets"]
+    upload --> graph["RenderGraph<br/>PassPort sockets"]
     graph --> plan["BuildImageBindings<br/>image binding plan"]
     plan --> execute["Execute<br/>write descriptors, Record()"]
     execute --> frame["FrameProfile"]
@@ -103,19 +101,19 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 - Editor: owns the document, the pooled pass shaders and their snapshots, and posts `CompileRenderGraphRequest{graph, shaders}` when the document or project changes. It never touches a GPU object.
 - Renderer: owns `PassFactory`, the uploader and its morphism, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
-- `RenderConfig` is copied into every published frame and still decides the FXAA condition; the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
+- `RenderConfig` is copied into every published frame and supplies per-frame pass parameters; it no longer decides the graph topology, and the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
 
 ## Tests
 
-- `test/asset/test_cpu_render_graph.cpp`, `test/core/test_graph_clone.cpp` - the document type and the deep copy undo and publishing rely on.
+- `test/asset/test_render_graph_data.cpp`, `test/core/test_graph_clone.cpp` - the document type and the deep copy undo and publishing rely on.
 - `test/core/test_graph_morphism.cpp` - totality, incidence preservation and the mapping policy.
-- `test/asset/test_graph_document.cpp` - the default document, round trip, input derivation, condition pruning and every named validation failure.
+- `test/asset/test_render_graph_document.cpp` - the default document, round trip, input derivation and every named validation failure.
 - `test/asset/test_pass_ports.cpp`, `test/asset/test_shader_snapshot.cpp` - ports from the real shaders, the pass-kind table, and the snapshot boundary.
 - `test/render/test_shader_reflection.cpp` - binding and push-range reflection from every main shader.
 - `test/render/test_render_cache_resources.cpp` - tag-planned images, logical resources, legacy aliases.
 - `test/render/test_graph_uploader.cpp` - a total upload, node and order agreement, and a named failure for an unknown pass, a missing snapshot and a stale socket.
 - `test/render/test_render_graph.cpp`, `test_pass_factory.cpp`, `test_pass_bindings.cpp` - port sockets, factory, binding plan.
-- `test/render/test_render_graph_pipeline.cpp` - the production renderer draws before a document arrives, compiles it, follows an FXAA toggle and an edited topology, and keeps the last good graph on a bad document.
+- `test/render/test_render_graph_pipeline.cpp` - the production renderer draws before a document arrives, compiles it, follows an edited topology, and keeps the last good graph on a bad document.
 - `test/render/test_pass_*` - direct pass tests now use `RecordPass`, which writes the same graph-owned bindings production writes.
 - `test/asset/test_graph_component.cpp`, `test/editor/test_editor_render_graph.cpp` - persistence and the Editor's publish path, snapshots included.
 
