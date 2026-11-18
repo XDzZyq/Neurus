@@ -31,7 +31,7 @@ The Editor pools one shader per built-in source through `PassShaders` (`src/asse
 
 `ValidateCpuGraph(document, ports)` (`src/asset/data/render_graph/CpuGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CpuGraphDiagnostic` naming the node and, when it has one, the port.
 
-The renderer uploads the document with `UploadCpuGraph(document, factory, snapshots)` (`src/render/render_graph/GraphUploader.hpp`):
+The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`), a service that owns the document, its snapshots and the permanent morphism; `Compile(fxaa, cache)` is the whole upload:
 
 1. the document is validated against the factory's port tables, so the renderer and the Editor agree on what a valid edge is;
 2. every node whose shader uid names no snapshot is rejected by name;
@@ -47,7 +47,7 @@ The FXAA condition is applied by the renderer (`ApplyConditions`) on a clone of 
 
 `RenderGraph` is `Graph<ShaderPort, PassEntry>` (`src/render/render_graph/RenderGraph.hpp`):
 
-- `PassFactory` owns one instance of every built-in pass and answers `pass kind -> PassPorts`; `UploadCpuGraph` maps the document's nodes onto those instances.
+- `PassFactory` owns one instance of every built-in pass and answers `pass kind -> PassPorts`; `GraphUploader` maps the document's nodes onto those instances.
 - `AddPass(pass, ports, externals, id)` materializes one socket per port and keeps the document id in `PassEntry::id` for resource keys. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
 - `Connect(producer, fromPort, consumer, toPort)` is port to port. The overlay compatibility overload forwards to the same call with `AttachmentNameToString()`.
 - `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order.
@@ -55,7 +55,7 @@ The FXAA condition is applied by the renderer (`ApplyConditions`) on a clone of 
 ```mermaid
 flowchart LR
     doc["RenderGraphData<br/>nodes, ports, tags"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
-    validate --> upload["UploadCpuGraph<br/>GraphMorphism::Map"]
+    validate --> upload["GraphUploader::Compile<br/>GraphMorphism::Map"]
     factory["PassFactory<br/>pass kind -> instance"] --> upload
     snapshots["ShaderSnapshot<br/>per shader"] --> upload
     upload --> graph["RenderGraph<br/>ShaderPort sockets"]

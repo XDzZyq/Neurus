@@ -1,26 +1,30 @@
 /**
  * @file test_graph_uploader.cpp
- * @brief The CPU document uploads onto the runtime graph through the morphism.
+ * @brief The upload service maps a document onto the runtime graph.
  */
 
 #include <gtest/gtest.h>
 
 #include "shared/TestVulkanShared.hpp"
 
-#include "asset/data/RenderGraphData.hpp"
-#include "asset/data/RenderGraphData.hpp"
+#include "render/RenderCache.hpp"
 #include "render/render_graph/GraphUploader.hpp"
 #include "render/render_graph/PassFactory.hpp"
+#include "render/render_graph/RenderGraph.hpp"
+#include "render/requests/RenderRequests.hpp"
+
+#include "asset/data/RenderGraphData.hpp"
 
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
 
 neurus::RenderGraphData::NodeType* FindNode(neurus::RenderGraphData& graph,
-                                           const std::string& name)
+                                            const std::string& name)
 {
 	for (const auto& node : graph.nodes)
 	{
@@ -30,11 +34,11 @@ neurus::RenderGraphData::NodeType* FindNode(neurus::RenderGraphData& graph,
 	return nullptr;
 }
 
-bool HasError(const std::vector<neurus::CpuGraphDiagnostic>& errors,
+bool HasError(const std::vector<neurus::GraphDiagnostic>& errors,
               const std::string& node, const std::string& fragment)
 {
 	return std::any_of(errors.begin(), errors.end(),
-		[&](const neurus::CpuGraphDiagnostic& error)
+		[&](const neurus::GraphDiagnostic& error)
 		{
 			return error.node == node
 			    && error.message.find(fragment) != std::string::npos;
@@ -51,13 +55,19 @@ protected:
 		VulkanTestShared::SetUp();
 		if (!HasVulkan())
 			return;
+
 		m_factory = std::make_unique<neurus::PassFactory>(
 			*m_device, m_physicalDevices[m_selectedPdIndex], 2,
 			*m_queue, m_graphicsQueueFamily);
+		m_cache = std::make_unique<neurus::RenderCache>(
+			*m_device, m_physicalDevices[m_selectedPdIndex]);
+		m_uploader = std::make_unique<neurus::GraphUploader>(*m_factory);
 	}
 
 	void TearDown() override
 	{
+		m_uploader.reset();
+		m_cache.reset();
 		m_factory.reset();
 		VulkanTestShared::TearDown();
 	}
@@ -67,28 +77,53 @@ protected:
 		return neurus::RenderGraphData::Default(*m_factory);
 	}
 
+	void SetPending(neurus::RenderGraphData document)
+	{
+		neurus::CompileRenderGraphRequest request;
+		request.graph = std::make_shared<const neurus::RenderGraphData>(std::move(document));
+		m_uploader->SetPending(request);
+		m_uploader->ConsumeNewDocument();
+	}
+
+	neurus::GraphUploadResult Compile(neurus::RenderGraphData document, const bool fxaa)
+	{
+		SetPending(std::move(document));
+		return m_uploader->Compile(fxaa, *m_cache);
+	}
+
 	std::unique_ptr<neurus::PassFactory> m_factory;
+	std::unique_ptr<neurus::RenderCache> m_cache;
+	std::unique_ptr<neurus::GraphUploader> m_uploader;
 };
 
-TEST_F(GraphUploaderTest, DefaultDocumentIsTotal)
+TEST_F(GraphUploaderTest, DefaultDocumentCompiles)
 {
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	const neurus::RenderGraphData document = DefaultDocument();
-	const neurus::UploadResult upload = neurus::UploadCpuGraph(
-		document, *m_factory, std::span<const neurus::ShaderSnapshot>{});
+	neurus::GraphUploadResult upload = Compile(DefaultDocument(), true);
 
 	std::string problems;
-	for (const neurus::CpuGraphDiagnostic& error : upload.errors)
+	for (const neurus::GraphDiagnostic& error : upload.errors)
 		problems += error.node + "." + error.port + ": " + error.message + "\n";
 
 	ASSERT_TRUE(upload.errors.empty()) << problems;
 	ASSERT_NE(upload.graph, nullptr);
-	EXPECT_TRUE(upload.morphism.IsTotal());
-	EXPECT_TRUE(upload.morphism.PreservesIncidence());
-	EXPECT_TRUE(upload.morphism.Validate().Ok());
+	EXPECT_TRUE(upload.fxaaPresent);
 	EXPECT_EQ(upload.graph->PassCount(), 7u);
+}
+
+TEST_F(GraphUploaderTest, FxaaConditionPrunesTheNode)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	neurus::GraphUploadResult upload = Compile(DefaultDocument(), false);
+
+	ASSERT_TRUE(upload.errors.empty());
+	ASSERT_NE(upload.graph, nullptr);
+	EXPECT_FALSE(upload.fxaaPresent);
+	EXPECT_EQ(upload.graph->PassCount(), 6u);
 }
 
 TEST_F(GraphUploaderTest, NodeAndOrderMatch)
@@ -96,14 +131,14 @@ TEST_F(GraphUploaderTest, NodeAndOrderMatch)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	const neurus::RenderGraphData document = DefaultDocument();
-	const neurus::UploadResult upload = neurus::UploadCpuGraph(
-		document, *m_factory, std::span<const neurus::ShaderSnapshot>{});
+	neurus::RenderGraphData document = DefaultDocument();
+	const std::vector<neurus::RenderGraphData::NodeType*> cpuOrder =
+		document.TopologicalSort();
+
+	neurus::GraphUploadResult upload = Compile(std::move(document), true);
 	ASSERT_NE(upload.graph, nullptr);
 	ASSERT_TRUE(upload.errors.empty());
 
-	const std::vector<neurus::RenderGraphData::NodeType*> cpuOrder =
-		document.TopologicalSort();
 	ASSERT_EQ(upload.graph->CompiledOrder().size(), cpuOrder.size());
 	for (size_t i = 0; i < cpuOrder.size(); ++i)
 	{
@@ -120,8 +155,7 @@ TEST_F(GraphUploaderTest, UnknownPassIsNamed)
 	neurus::RenderGraphData document = DefaultDocument();
 	FindNode(document, "ssao")->data.pass = "NopePass";
 
-	const neurus::UploadResult upload = neurus::UploadCpuGraph(
-		document, *m_factory, std::span<const neurus::ShaderSnapshot>{});
+	neurus::GraphUploadResult upload = Compile(std::move(document), true);
 
 	EXPECT_EQ(upload.graph, nullptr);
 	EXPECT_TRUE(HasError(upload.errors, "ssao", "unknown pass kind"));
@@ -135,8 +169,7 @@ TEST_F(GraphUploaderTest, MissingShaderSnapshotIsNamed)
 	neurus::RenderGraphData document = DefaultDocument();
 	FindNode(document, "lighting")->data.shaderUid = 4242;
 
-	const neurus::UploadResult upload = neurus::UploadCpuGraph(
-		document, *m_factory, std::span<const neurus::ShaderSnapshot>{});
+	neurus::GraphUploadResult upload = Compile(std::move(document), true);
 
 	EXPECT_EQ(upload.graph, nullptr);
 	EXPECT_TRUE(HasError(upload.errors, "lighting", "no shader snapshot"));
@@ -155,24 +188,33 @@ TEST_F(GraphUploaderTest, StaleSocketIsNamed)
 		                neurus::GraphOutputTag{neurus::GraphFormat::Rgba16f,
 		                                       neurus::GraphUsage::ColorSampled}};
 
-	const neurus::UploadResult upload = neurus::UploadCpuGraph(
-		document, *m_factory, std::span<const neurus::ShaderSnapshot>{});
+	neurus::GraphUploadResult upload = Compile(std::move(document), true);
 
 	EXPECT_EQ(upload.graph, nullptr);
 	EXPECT_TRUE(HasError(upload.errors, "geometry", "no longer declared"));
 }
 
-TEST_F(GraphUploaderTest, EmptyDocumentUploads)
+TEST_F(GraphUploaderTest, EmptyDocumentCompiles)
 {
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	const neurus::RenderGraphData empty;
-	const neurus::UploadResult upload = neurus::UploadCpuGraph(
-		empty, *m_factory, std::span<const neurus::ShaderSnapshot>{});
+	neurus::GraphUploadResult upload = Compile(neurus::RenderGraphData{}, true);
 
 	EXPECT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
 	EXPECT_EQ(upload.graph->PassCount(), 0u);
-	EXPECT_TRUE(upload.morphism.IsTotal());
+	EXPECT_FALSE(upload.fxaaPresent);
+}
+
+TEST_F(GraphUploaderTest, RejectsBeforeAnyDocument)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	neurus::GraphUploadResult upload = m_uploader->Compile(true, *m_cache);
+
+	EXPECT_EQ(upload.graph, nullptr);
+	ASSERT_EQ(upload.errors.size(), 1u);
+	EXPECT_NE(upload.errors[0].message.find("no render graph document"), std::string::npos);
 }

@@ -37,7 +37,6 @@
 #include "render_graph/GraphUploader.hpp"
 #include "render_graph/ResourceTag.hpp"
 
-#include "asset/data/RenderGraphData.hpp"
 
 #include "render/HaltonSequence.hpp"
 
@@ -56,65 +55,6 @@
 
 namespace neurus {
 
-namespace {
-
-/**
- * @brief Stage 1 bridge from a default document resource key to its legacy attachment.
- *
- * The overlay graph and the existing attachment accessors still name
- * AttachmentName, so the default scene resources are physically the same images
- * under both identities. A custom node id has no legacy name and gets its own
- * image. Removed when Stage 3 replaces the overlay's sockets.
- */
-std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
-{
-	static const std::unordered_map<std::string, AttachmentName> kAliases = {
-		{"geometry/gPosition",         AttachmentName::Position},
-		{"geometry/gNormal",           AttachmentName::Normal},
-		{"geometry/gAlbedo",           AttachmentName::Albedo},
-		{"geometry/gMetallicRoughness", AttachmentName::MetallicRoughness},
-		{"geometry/gObjectID",         AttachmentName::IDBuffer},
-		{"geometry/depth",             AttachmentName::Depth},
-		{"shadow_intensity/outputShadow", AttachmentName::ShadowIntensity},
-		{"ssao/outputSSAO",            AttachmentName::SSAO},
-		{"lighting/outputImage",       AttachmentName::HDRColor},
-		{"compose/outputComposed",     AttachmentName::ComposedOutput},
-		{"fxaa/outputFXAA",            AttachmentName::FXAAOutput},
-	};
-
-	const auto it = kAliases.find(key);
-	return it == kAliases.end() ? std::nullopt
-	                            : std::optional<AttachmentName>(it->second);
-}
-
-/**
- * @brief Dirty key over the published shader snapshots.
- *
- * A shader edit keeps the node's shader UID but bumps the snapshot's version, so
- * the identity alone is not enough to notice it.
- */
-std::uint64_t ShaderSnapshotsHash(const std::vector<ShaderSnapshot>& shaders)
-{
-	constexpr std::uint64_t kOffset = 14695981039346656037ull;
-	constexpr std::uint64_t kPrime  = 1099511628211ull;
-
-	std::uint64_t hash = kOffset;
-	const auto mix = [&hash](const std::uint64_t value)
-	{
-		hash ^= value;
-		hash *= kPrime;
-	};
-
-	for (const ShaderSnapshot& snapshot : shaders)
-	{
-		mix(static_cast<std::uint64_t>(snapshot.shaderUid));
-		mix(static_cast<std::uint64_t>(snapshot.version));
-	}
-	mix(shaders.size());
-	return hash;
-}
-
-} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -205,6 +145,10 @@ void DeferredRenderer::InitializePipeline()
 	NEURUS_LOG("[DeferredRenderer] Scene passes created; GeometryPass declares "
 	           << m_passFactory->Ports("GeometryPass").ports.size() << " ports");
 
+	// The uploader owns the document-to-runtime mapping; it borrows the factory
+	// and must be created after it (and destroyed before it).
+	m_graphUploader = std::make_unique<GraphUploader>(*m_passFactory);
+
 	// --- 4. Build the overlay graph (selection outline, debug overlay, gizmo) ---
 	// Separate from the scene graph so overlays can be redrawn over a converged
 	// scene image without re-running a single scene pass. The scene graph tells
@@ -279,7 +223,10 @@ void DeferredRenderer::InitializePipeline()
 		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; },
 		[this](const CompileRenderGraphRequest& request)
 		{
-			SetPendingGraph(request);
+			// The swap replans the cache's images, so no submitted frame may
+			// still read the old plans.
+			DrainInFlightFrames();
+			m_graphUploader->SetPending(request);
 		});
 }
 
@@ -728,33 +675,19 @@ void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 	m_requests->SetUploadManager(uploader);
 }
 
-void DeferredRenderer::SetPendingGraph(const CompileRenderGraphRequest& request)
+bool DeferredRenderer::CompileDocument(const bool fxaa)
 {
-	// The swap replans the cache's images, so no submitted frame may still read
-	// the old plans.
-	DrainInFlightFrames();
-	m_pendingGraph = request;
-}
+	GraphUploadResult upload = m_graphUploader->Compile(fxaa, *r_renderCache);
 
-bool DeferredRenderer::CompileDocument(const RenderGraphData& document, const bool fxaa,
-                                       const std::span<const ShaderSnapshot> shaders)
-{
-	const std::uint64_t graphHash = document.Hash();
+	const std::uint64_t graphHash = m_graphUploader->DocumentHash();
 
 	m_graphReport = {};
 	m_graphReport.graphHash = graphHash;
 
-	// The renderer applies the conditional nodes, so an FXAA toggle neither
-	// edits nor republishes the Editor's document.
-	RenderGraphData pruned = CloneGraph(document);
-	pruned.ApplyConditions(fxaa);
-
-	UploadResult upload = UploadCpuGraph(pruned, *m_passFactory, shaders);
-
 	if (!upload.graph)
 	{
 		m_graphReport.diagnostics = upload.errors;
-		for (const CpuGraphDiagnostic& diagnostic : upload.errors)
+		for (const GraphDiagnostic& diagnostic : upload.errors)
 		{
 			NEURUS_ERR("[RenderGraph] "
 			          << (diagnostic.node.empty() ? std::string("<graph>") : diagnostic.node)
@@ -764,46 +697,10 @@ bool DeferredRenderer::CompileDocument(const RenderGraphData& document, const bo
 		return false;
 	}
 
-	// Plan the logical cache from the document's tags, then install the legacy
-	// aliases the overlay graph and the existing accessors still use. Images are
-	// created lazily on first use, so an unused output costs nothing.
-	r_renderCache->CleanScreenSpace();
-	r_renderCache->ClearResourcePlans();
-
-	for (const auto& node : pruned.nodes)
-	{
-		for (const auto& output : node->outputs)
-		{
-			if (!output->data.tag)
-				continue;
-			r_renderCache->PlanResource(ResourceKey(node->name, output->name),
-			                            *output->data.tag);
-		}
-	}
-
-	for (const auto& node : pruned.nodes)
-	{
-		for (const auto& output : node->outputs)
-		{
-			if (!output->data.tag)
-				continue;
-			const std::string key = ResourceKey(node->name, output->name);
-			if (const std::optional<AttachmentName> legacy = LegacyAttachmentFor(key))
-				r_renderCache->AliasResourceToAttachment(*legacy, key);
-		}
-	}
-
 	m_mainGraph = std::move(*upload.graph);
 
-	bool fxaaPresent = false;
-	for (const auto& node : pruned.nodes)
-	{
-		if (node->data.pass == "FXAAPass")
-			fxaaPresent = true;
-	}
-
-	const AttachmentName tail = fxaaPresent ? AttachmentName::FXAAOutput
-	                                        : AttachmentName::ComposedOutput;
+	const AttachmentName tail = upload.fxaaPresent ? AttachmentName::FXAAOutput
+	                                               : AttachmentName::ComposedOutput;
 	m_overlayEngine->SetSceneTail(tail);
 
 	m_graphReport.compiled    = true;
@@ -1084,26 +981,18 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// was already handled by the restart that came with it.
 	if (work == FrameWork::Sample)
 	{
-		// Consume a published document first: a request and the frame that
-		// carries it compile together.
-		if (m_pendingGraph)
-		{
-			m_mainDocument   = m_pendingGraph->graph;
-			m_documentShaders = std::move(m_pendingGraph->shaders);
-			m_pendingGraph.reset();
-			m_graphDirty = true;
-		}
+		// A request and the frame that carries it compile together.
+		const bool newDocument = m_graphUploader->ConsumeNewDocument();
 
-		if (m_mainDocument)
+		if (m_graphUploader->HasDocument())
 		{
 			const PipelineSignature sig = PipelineSignature::From(
-				frame.Settings(), m_mainDocument->Hash(),
-				ShaderSnapshotsHash(m_documentShaders));
-			if (m_graphDirty || !(sig == m_builtSignature))
+				frame.Settings(), m_graphUploader->DocumentHash(),
+				m_graphUploader->ShaderHash());
+			if (newDocument || !(sig == m_builtSignature))
 			{
-				CompileDocument(*m_mainDocument, sig.fxaa, m_documentShaders);
+				CompileDocument(sig.fxaa);
 				m_builtSignature = sig;
-				m_graphDirty     = false;
 			}
 		}
 	}

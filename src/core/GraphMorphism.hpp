@@ -104,11 +104,31 @@ public:
 
 	GraphMorphism() = default;
 
+	/// @brief Binds the mapping policy only; `Map()` supplies the source.
+	explicit GraphMorphism(Policy policy)
+		: m_policy(std::move(policy))
+	{
+	}
+
 	/// @brief Binds the source graph the functor laws are checked against.
 	explicit GraphMorphism(const GraphA& from, Policy policy = {})
 		: m_policy(std::move(policy))
 		, m_from(&from)
 	{
+	}
+
+	/**
+	 * @brief Drops every recorded image so another graph can be mapped.
+	 *
+	 * A permanent morphism (a service's mapper) reuses its policy and clears the
+	 * previous images; the source and target of the old images are no longer
+	 * referenced.
+	 */
+	void Reset()
+	{
+		m_nodes.clear();
+		m_edges.clear();
+		m_from = nullptr;
 	}
 
 	// --- Mapping ---
@@ -199,6 +219,7 @@ public:
 	 */
 	GraphB Map(const GraphA& graph)
 	{
+		Reset();
 		m_from = &graph;
 
 		GraphB target;

@@ -36,11 +36,10 @@
 #include "RenderCache.hpp"
 #include "TimelineSemaphore.hpp"
 #include "passes/Pass.hpp"
-#include "asset/data/RenderGraphData.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "core/RenderConfig.hpp"
 #include "RenderContext.hpp"
 #include "OutputTarget.hpp"
+#include "render_graph/GraphUploader.hpp"
 #include "render_graph/RenderGraph.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -381,6 +380,10 @@ private:
 	// --- Polymorphic pass container (owning) ---
 	std::unique_ptr<PassFactory> m_passFactory;
 
+	// Maps published documents onto the passes above; owns the document and the
+	// permanent morphism, so DeferredRenderer never touches the data layer.
+	std::unique_ptr<GraphUploader> m_graphUploader;
+
 	// --- Cached raw pointers for zero-cost access (non-owning) ---
 	GeometryPass* r_geometryPass = nullptr;
 	LightingPass* r_lightingPass = nullptr;
@@ -403,18 +406,6 @@ private:
 	// FXAA flag change.
 	RenderGraph m_mainGraph;
 
-	/// Document the current m_mainGraph was compiled from; null until published.
-	std::shared_ptr<const RenderGraphData> m_mainDocument;
-
-	/// Shader snapshots that came with m_mainDocument.
-	std::vector<ShaderSnapshot> m_documentShaders;
-
-	/// Latest request waiting for the next sample frame.
-	std::optional<CompileRenderGraphRequest> m_pendingGraph;
-
-	/// Set when a request replaced the document, so the next sample compiles it.
-	bool m_graphDirty = false;
-
 	/**
 	 * @brief Topology-affecting projection of RenderConfig and the document.
 	 *
@@ -424,7 +415,7 @@ private:
 	 */
 	struct PipelineSignature
 	{
-		std::uint64_t graphHash  = 0;     ///< CpuGraphHash of the document.
+		std::uint64_t graphHash  = 0;     ///< Uploader's document hash.
 		std::uint64_t shaderHash = 0;     ///< Snapshot identities and versions.
 		bool          fxaa       = false; ///< RenderConfig::RequiresFXAA().
 
@@ -445,33 +436,22 @@ public:
 	/// @brief Last compile verdict, including the diagnostics the caller reports.
 	struct GraphCompileReport
 	{
-		bool                            compiled = false;
-		std::uint64_t                   graphHash = 0;
-		size_t                          scenePasses = 0;
-		std::vector<CpuGraphDiagnostic> diagnostics;
+		bool                         compiled = false;
+		std::uint64_t                graphHash = 0;
+		size_t                       scenePasses = 0;
+		std::vector<GraphDiagnostic> diagnostics;
 	};
 
 	/**
-	 * @brief Holds a published document until the next sample frame compiles it.
-	 *
-	 * Called from the request drain, which runs before the frame records, so the
-	 * document is compiled in the same frame that carries the request.
-	 */
-	void SetPendingGraph(const CompileRenderGraphRequest& request);
-
-	/**
-	 * @brief Uploads and compiles one document into the live scene graph.
+	 * @brief Compiles the uploader's current document into the live scene graph.
 	 *
 	 * On failure the previous graph keeps drawing and the diagnostics are stored
 	 * in LastGraphReport().
 	 *
-	 * @param document  CPU document to compile.
-	 * @param fxaa      Whether the hard-coded FXAA condition is on.
-	 * @param shaders   Shader snapshots that came with the document.
+	 * @param fxaa  Whether the hard-coded FXAA condition is on.
 	 * @return true when the document compiled and the graph was replaced.
 	 */
-	bool CompileDocument(const RenderGraphData& document, bool fxaa,
-	                     std::span<const ShaderSnapshot> shaders);
+	bool CompileDocument(bool fxaa);
 
 	/// @brief Last compile verdict, for tests and the command layer.
 	const GraphCompileReport& LastGraphReport() const { return m_graphReport; }
