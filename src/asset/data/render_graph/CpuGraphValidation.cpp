@@ -3,7 +3,7 @@
  * @brief Document checks against the port source.
  */
 
-#include "asset/graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 
 #include <algorithm>
 #include <set>

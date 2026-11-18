@@ -17,7 +17,7 @@
 #pragma once
 
 #include "asset/data/render_graph/GraphOutputTag.hpp"
-#include "asset/graph/PassPorts.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
 #include "core/Graph.hpp"
 
 #include <cstdint>

@@ -3,9 +3,9 @@
  * @brief Record conversion and the built-in default document.
  */
 
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 
-#include "asset/graph/PassKinds.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 
 #include <stdexcept>
 #include <string>

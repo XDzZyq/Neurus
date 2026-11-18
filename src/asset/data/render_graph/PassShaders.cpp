@@ -3,7 +3,7 @@
  * @brief Pool seeding and port extraction for the built-in pass kinds.
  */
 
-#include "asset/graph/PassShaders.hpp"
+#include "asset/data/render_graph/PassShaders.hpp"
 
 #include "asset/data/ShaderData.hpp"
 #include "core/ResourceManager.hpp"

@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include "asset/graph/PassKinds.hpp"
-#include "asset/graph/PortSource.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 
 #include <functional>
 #include <memory>

@@ -14,7 +14,7 @@
 #include "RenderCache.hpp"
 #include "../resources/MeshGPU.hpp"
 #include "../PipelineBuilder.hpp"
-#include "asset/graph/PassKinds.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "render/Barrier.hpp"
 #include "../shaders/ShaderLibrary.hpp"

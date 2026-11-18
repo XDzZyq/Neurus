@@ -10,7 +10,7 @@
 #pragma once
 
 #include "asset/data/render_graph/CpuRenderGraph.hpp"
-#include "asset/graph/PortSource.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 
 #include <string>
 #include <vector>

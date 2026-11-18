@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/graph/PassPorts.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
 #include "render/shaders/ComputeShader.hpp"
 #include "render/shaders/RenderShader.hpp"
 #include "render/shaders/ShaderLibrary.hpp"

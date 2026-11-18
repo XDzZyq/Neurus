@@ -14,7 +14,7 @@
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/data/render_graph/CpuRenderGraph.hpp"
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a
 // RenderFrameSnapshot by value, so the complete type is required here. It is

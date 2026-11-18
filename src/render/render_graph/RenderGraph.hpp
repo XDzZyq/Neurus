@@ -14,7 +14,7 @@
 #include "../ProfilingData.hpp"
 #include "../RenderCache.hpp"
 #include "../passes/Pass.hpp"
-#include "asset/graph/PassPorts.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
 #include "core/Graph.hpp"
 #include "PassBindings.hpp"
 #include "PassResources.hpp"

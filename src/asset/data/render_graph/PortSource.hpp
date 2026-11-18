@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "asset/graph/PassPorts.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
 
 #include <string>
 #include <string_view>

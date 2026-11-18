@@ -6,7 +6,7 @@
 #pragma once
 
 #include "asset/Serializable.hpp"
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 
 #include <optional>
 

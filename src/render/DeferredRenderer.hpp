@@ -37,7 +37,7 @@
 #include "TimelineSemaphore.hpp"
 #include "passes/Pass.hpp"
 #include "asset/data/render_graph/CpuRenderGraph.hpp"
-#include "asset/graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "core/RenderConfig.hpp"
 #include "RenderContext.hpp"
 #include "OutputTarget.hpp"

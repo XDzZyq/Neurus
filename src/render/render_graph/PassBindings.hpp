@@ -11,7 +11,7 @@
 #pragma once
 
 #include "../passes/Pass.hpp"
-#include "asset/graph/PassPorts.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
 
 #include <functional>
 #include <span>

@@ -66,6 +66,7 @@ add_library(neurus_render STATIC
 	RenderContext.cpp
 	RenderFrameSnapshot.hpp
 	RenderFrameSnapshot.cpp
+	ShaderSnapshot.cpp
 	FrameMailbox.hpp
 	FrameMailbox.cpp
 	PublishedFrame.hpp

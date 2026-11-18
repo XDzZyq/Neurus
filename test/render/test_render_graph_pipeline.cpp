@@ -9,7 +9,7 @@
 
 #include "core/RenderConfig.hpp"
 #include "asset/data/render_graph/CpuRenderGraph.hpp"
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 #include "render/DeferredRenderer.hpp"
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"

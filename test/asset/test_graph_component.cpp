@@ -8,7 +8,7 @@
 #include "shared/TestPassPorts.hpp"
 
 #include "asset/components/GraphComponent.hpp"
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 
 #include <cereal/archives/json.hpp>
 

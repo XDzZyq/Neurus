@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/graph/PassKinds.hpp"
-#include "asset/graph/ShaderSnapshot.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
+#include "render/RenderFrameSnapshot.hpp"
 #include "render/shaders/ComputeShader.hpp"
 #include "render/shaders/RenderShader.hpp"
 #include "render/shaders/ShaderLibrary.hpp"

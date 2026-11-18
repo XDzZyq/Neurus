@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file SceneController.cpp
  * @brief Event-driven scene document handlers: selection and membership.
  *

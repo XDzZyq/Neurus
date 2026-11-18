@@ -8,7 +8,7 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "asset/data/render_graph/CpuRenderGraph.hpp"
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 #include "render/render_graph/GraphUploader.hpp"
 #include "render/render_graph/PassFactory.hpp"
 

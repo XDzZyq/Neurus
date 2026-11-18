@@ -14,22 +14,22 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 The Editor owns the live document. `project::GraphComponent` persists it as a flat `CpuGraphRecord`: node fields and output sockets with their tags are saved, input sockets are re-derived from each node's shader on load. A project without the record, or a corrupt node, leaves no pending record and the Editor builds `MakeDefaultCpuGraph()`. The default is today's scene graph - geometry, shadow depth, shadow intensity, SSAO, lighting, compose and FXAA - and, like `CreateDefaultScene`, it is only the built-in fallback.
 
-The Editor pools one shader per built-in source through `PassShaders` (`src/asset/graph/PassShaders.hpp`). A restored project adopts its own shaders by name instead of duplicating them, and every publish carries a `ShaderSnapshot` per shader the document names, so the renderer never reads the Editor's pool.
+The Editor pools one shader per built-in source through `PassShaders` (`src/asset/data/render_graph/PassShaders.hpp`). A restored project adopts its own shaders by name instead of duplicating them, and every publish carries a `ShaderSnapshot` per shader the document names, so the renderer never reads the Editor's pool.
 
 ## Ports from the shader
 
-`ExtractPassPorts` (`src/asset/graph/PassPorts.hpp`) reads the parsed `ShaderStruct` every pass already owns:
+`ExtractPassPorts` (`src/asset/data/render_graph/PassPorts.hpp`) reads the parsed `ShaderStruct` every pass already owns:
 
 - graphics: a fragment stage's `layout(location = N) out` entries become output ports;
 - compute: `layout(binding = N) uniform sampler*` becomes an input port, and `uniform image*` becomes an output port;
 - UBOs, SSBOs, plain uniforms and non-image arrays are not ports;
 - vertex attributes and inter-stage varyings are never ports.
 
-`Pass::DeclaredOutputs()` adds outputs a pass writes without a shader binding: the G-Buffer depth and the per-light shadow bundle. `Pass::ExternalInputPorts()` names inputs the pass resolves outside the graph, which today is only the two IBL cubemaps. Both now read the built-in table (`src/asset/graph/PassKinds.hpp`), so the pass does not repeat them and the Editor can resolve ports without a pass instance.
+`Pass::DeclaredOutputs()` adds outputs a pass writes without a shader binding: the G-Buffer depth and the per-light shadow bundle. `Pass::ExternalInputPorts()` names inputs the pass resolves outside the graph, which today is only the two IBL cubemaps. Both now read the built-in table (`src/asset/data/render_graph/PassKinds.hpp`), so the pass does not repeat them and the Editor can resolve ports without a pass instance.
 
 ## Validation and upload
 
-`ValidateCpuGraph(document, ports)` (`src/asset/graph/CpuGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CpuGraphDiagnostic` naming the node and, when it has one, the port.
+`ValidateCpuGraph(document, ports)` (`src/asset/data/render_graph/CpuGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CpuGraphDiagnostic` naming the node and, when it has one, the port.
 
 The renderer uploads the document with `UploadCpuGraph(document, factory, snapshots)` (`src/render/render_graph/GraphUploader.hpp`):
 

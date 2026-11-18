@@ -7,8 +7,8 @@
 
 #include "shared/TestPassPorts.hpp"
 
-#include "asset/graph/CpuGraphValidation.hpp"
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 
 #include <cereal/archives/json.hpp>
 

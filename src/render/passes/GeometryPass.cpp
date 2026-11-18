@@ -10,7 +10,7 @@
 #include "RenderContext.hpp"
 #include "render/Barrier.hpp"
 #include "PipelineBuilder.hpp"
-#include "asset/graph/PassKinds.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "shaders/ShaderLibrary.hpp"
 #include "shaders/RenderShader.hpp"

@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/graph/PortSource.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 
 #include "render/shaders/ComputeShader.hpp"
 #include "render/shaders/RenderShader.hpp"

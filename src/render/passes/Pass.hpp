@@ -12,7 +12,7 @@
 #include "../Pipeline.hpp"
 #include "../RenderCache.hpp"
 #include "../RenderContext.hpp"
-#include "asset/graph/PassPorts.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
 #include "render_graph/PassResources.hpp"
 
 #include <vulkan/vulkan_raii.hpp>

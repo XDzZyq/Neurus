@@ -3,7 +3,7 @@
  * @brief Port extraction from ShaderStruct.
  */
 
-#include "asset/graph/PassPorts.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
 
 #include "asset/data/ShaderData.hpp"
 

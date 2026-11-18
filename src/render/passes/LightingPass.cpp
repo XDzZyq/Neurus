@@ -6,7 +6,7 @@
 #include "passes/LightingPass.hpp"
 
 #include "../PipelineBuilder.hpp"
-#include "asset/graph/PassKinds.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "RenderCache.hpp"
 #include "RenderContext.hpp"

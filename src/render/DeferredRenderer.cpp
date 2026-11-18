@@ -37,7 +37,7 @@
 #include "render_graph/GraphUploader.hpp"
 #include "render_graph/ResourceTag.hpp"
 
-#include "asset/graph/GraphDocument.hpp"
+#include "asset/data/render_graph/GraphDocument.hpp"
 
 #include "render/HaltonSequence.hpp"
 

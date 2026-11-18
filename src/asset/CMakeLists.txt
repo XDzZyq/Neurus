@@ -29,18 +29,16 @@ add_library(neurus_asset STATIC
 	data/AssetPath.cpp
 	data/render_graph/GraphOutputTag.hpp
 	data/render_graph/CpuRenderGraph.hpp
-	graph/PortSource.hpp
-	graph/PassShaders.hpp
-	graph/PassShaders.cpp
-	graph/GraphDocument.hpp
-	graph/GraphDocument.cpp
-	graph/CpuGraphValidation.hpp
-	graph/CpuGraphValidation.cpp
-	graph/PassPorts.hpp
-	graph/PassPorts.cpp
-	graph/PassKinds.hpp
-	graph/ShaderSnapshot.hpp
-	graph/ShaderSnapshot.cpp
+	data/render_graph/PortSource.hpp
+	data/render_graph/PassShaders.hpp
+	data/render_graph/PassShaders.cpp
+	data/render_graph/GraphDocument.hpp
+	data/render_graph/GraphDocument.cpp
+	data/render_graph/CpuGraphValidation.hpp
+	data/render_graph/CpuGraphValidation.cpp
+	data/render_graph/PassPorts.hpp
+	data/render_graph/PassPorts.cpp
+	data/render_graph/PassKinds.hpp
 	data/shader/ShaderStage.hpp
 	data/shader/ShaderStruct.hpp
 	data/shader/ShaderStruct.cpp

@@ -18,8 +18,8 @@
 #pragma once
 
 #include "asset/data/render_graph/CpuRenderGraph.hpp"
-#include "asset/graph/CpuGraphValidation.hpp"
-#include "asset/graph/ShaderSnapshot.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "render/RenderFrameSnapshot.hpp"
 #include "core/GraphMorphism.hpp"
 #include "PassFactory.hpp"
 #include "RenderGraph.hpp"
