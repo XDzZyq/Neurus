@@ -6,6 +6,9 @@
 #include <gtest/gtest.h>
 
 #include "editor/Editor.hpp"
+#include "editor/RenderManager.hpp"
+#include "asset/components/GraphComponent.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "render/requests/RenderRequestSink.hpp"
 #include "render/requests/RenderRequests.hpp"
@@ -53,7 +56,7 @@ TEST(EditorRenderGraph, NewSceneSeedsShadersAndPostsTheDocument)
 			node->data.shaderUid), nullptr) << node->name;
 	}
 
-	EXPECT_TRUE(editor.GetGraphProblems().empty());
+	EXPECT_TRUE(editor.GetRenderManager().Problems().empty());
 	EXPECT_FALSE(editor.IsDirty());
 
 	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
@@ -87,7 +90,7 @@ TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
 				return edge.from == "fxaa" || edge.to == "fxaa";
 			}),
 		record.edges.end());
-	editor.GetPendingRenderGraph() = record;
+	editor.GetRenderManager().PendingRecord() = record;
 
 	editor.FinishLoad();
 

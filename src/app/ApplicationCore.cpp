@@ -13,6 +13,7 @@
 #include "command/Commands.hpp"
 #include "core/Log.hpp"
 #include "editor/Editor.hpp"
+#include "editor/RenderManager.hpp"
 #include "script/ScriptConsole.hpp"
 #include "script/ScriptEngine.hpp"
 #include "script/ScriptPolicy.hpp"
@@ -58,8 +59,9 @@ void RegisterProjectComponents(project::Project& proj, Editor& editor, std::stri
 	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::ConfigComponent>(editor.GetRenderConfig());
-	proj.Register<project::GraphComponent>(editor.GetPendingRenderGraph(),
-	                                       editor.GetRenderGraph());
+
+	RenderManager& render = editor.GetRenderManager();
+	proj.Register<project::GraphComponent>(render.PendingRecord(), render.Graph());
 	proj.Register<project::UIComponent>(uiLayout);
 	// History, then editor view state: both are appended-last nodes, so legacy
 	// files that lack them load cleanly (each Load() falls back).

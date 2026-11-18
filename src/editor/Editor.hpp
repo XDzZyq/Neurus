@@ -13,8 +13,6 @@
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
-#include "asset/components/GraphComponent.hpp"
-#include "asset/data/RenderGraphData.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a
 // RenderFrameSnapshot by value, so the complete type is required here. It is
@@ -27,7 +25,8 @@ namespace neurus {
 class Camera;
 class Mesh;
 class MeshData;
-class PassShaders;
+class RenderGraphData;
+class RenderManager;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
@@ -100,13 +99,15 @@ public:	/**
 
 	// --- Accessors ---
 	Scene& GetScene();
-	RenderConfig& GetRenderConfig() { return m_config; }
+	RenderConfig& GetRenderConfig();
+	const RenderConfig& GetRenderConfig() const;
 
 	/// @brief The scene render graph document.
-	const RenderGraphData& GetRenderGraph() const { return m_renderGraph; }
+	const RenderGraphData& GetRenderGraph() const;
 
-	/// @brief The document as read from a project, applied by FinishLoad().
-	std::optional<project::RenderGraphRecord>& GetPendingRenderGraph() { return m_pendingGraph; }
+	/// @brief The Editor's render state service (document, shaders, config).
+	RenderManager& GetRenderManager();
+	const RenderManager& GetRenderManager() const;
 
 	/**
 	 * @brief Replaces the document and asks the renderer to compile it.
@@ -118,17 +119,6 @@ public:	/**
 	 *               shaders, which validation checks and reports.
 	 */
 	void SetRenderGraph(RenderGraphData graph);
-
-	/**
-	 * @brief Applies a saved document, re-deriving its input sockets.
-	 *
-	 * Used by FinishLoad and by undo. Seeds the shader pool first, so a restored
-	 * project adopts its own shaders instead of creating duplicates.
-	 */
-	void ReplaceRenderGraph(const project::RenderGraphRecord& record);
-
-	/// @brief Problems from the last seed, load and validation pass.
-	const std::vector<std::string>& GetGraphProblems() const { return m_graphProblems; }
 
 	bool IsDirty() const { return m_dirty; }
 	void MarkDirty() { m_dirty = true; }
@@ -391,18 +381,8 @@ private:
 	 */
 	void PublishActiveCamera(bool extentChanged = false);
 
-	/// @brief Posts the current document as a compile request.
-	void PublishRenderGraph();
-
-	/**
-	 * @brief Seeds the pooled pass shaders and rebuilds a default document.
-	 *
-	 * Called after the pool is cleared (NewScene) or restored (FinishLoad).
-	 */
-	void ResetRenderGraph();
-
-	/// @brief Gives every node whose shader is unset or stale its kind's shader.
-	void AssignNodeShaders();
+	/// @brief Config pointer for ControllerContext, defined out of line.
+	RenderConfig* ConfigForControllers();
 
 	/**
 	 * @brief Adds the default scene's demo debug objects.
@@ -414,13 +394,15 @@ private:
 	// --- Owned state ---
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
-	RenderConfig          m_config;
 
-	/// @brief The live graph document; empty until ResetRenderGraph().
-	RenderGraphData            m_renderGraph;
-	std::optional<project::RenderGraphRecord> m_pendingGraph;   ///< Read from the project, applied on FinishLoad.
-	std::unique_ptr<PassShaders>  m_passShaders;    ///< Pooled shaders, one per built-in kind.
-	std::vector<std::string>      m_graphProblems;  ///< Seed, load and validation reports.
+	/**
+	 * @brief The Editor's render state: document, pass shaders and config.
+	 *
+	 * Created after the pool in the constructor; declared before the controller
+	 * context so its config exists before any controller can ask for it.
+	 */
+	std::unique_ptr<RenderManager> m_renderManager;
+
 	bool                  m_dirty = false;
 
 	/**
@@ -446,7 +428,7 @@ private:
 	 */
 	ControllerContext m_ctx{ ed_eventBus, *m_resources, ed_operations,
 	                         [this]() { return m_scene.get(); },
-	                         [this]() { return &m_config; },
+	                         [this]() { return ConfigForControllers(); },
 	                         [this]() { return &m_viewport; } };
 
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;

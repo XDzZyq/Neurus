@@ -1,4 +1,5 @@
 #include "Editor.hpp"
+#include "RenderManager.hpp"
 
 #include "editor/events/InputEvents.hpp"
 #include "editor/events/AssetEvents.hpp"
@@ -36,9 +37,6 @@
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStage.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
-#include "asset/data/render_graph/PassKinds.hpp"
-#include "asset/data/render_graph/PassShaders.hpp"
 #include "render/RenderFrameSnapshot.hpp"
 #include "render/shaders/ComputeShader.hpp"
 #include "render/shaders/ShaderLibrary.hpp"
@@ -190,25 +188,6 @@ int PoolShader(neurus::ResourceManager& resources,
 	return uid;
 }
 
-/**
- * @brief Creates the default shader for one source of a built-in pass kind.
- *
- * @param source  Shader source row.
- * @return Parsed shader, or nullptr when loading failed.
- */
-std::shared_ptr<neurus::ShaderData> LoadPassKindShader(const neurus::PassShaderSource& source)
-{
-	if (!source.computePath.empty())
-	{
-		return neurus::ShaderLibrary::LoadComputeShader(
-			std::string(source.name), std::string(source.computePath));
-	}
-
-	return neurus::ShaderLibrary::LoadRenderShader(
-		std::string(source.name), std::string(source.vertexPath),
-		std::string(source.fragmentPath));
-}
-
 } // anonymous namespace
 
 Editor::Editor(RenderRequestSink* renderer)
@@ -216,7 +195,9 @@ Editor::Editor(RenderRequestSink* renderer)
 	, m_resources(std::make_unique<ResourceManager>())
 	, ed_operations(ed_eventBus)
 	, ed_renderer(renderer)
-{}
+{
+	m_renderManager = std::make_unique<RenderManager>(*m_resources, renderer);
+}
 
 Editor::~Editor()
 {
@@ -540,6 +521,36 @@ Scene& Editor::GetScene()
 	return *m_scene;
 }
 
+RenderConfig& Editor::GetRenderConfig()
+{
+	return m_renderManager->Config();
+}
+
+RenderConfig* Editor::ConfigForControllers()
+{
+	return &m_renderManager->Config();
+}
+
+const RenderConfig& Editor::GetRenderConfig() const
+{
+	return m_renderManager->Config();
+}
+
+const RenderGraphData& Editor::GetRenderGraph() const
+{
+	return m_renderManager->Graph();
+}
+
+RenderManager& Editor::GetRenderManager()
+{
+	return *m_renderManager;
+}
+
+const RenderManager& Editor::GetRenderManager() const
+{
+	return *m_renderManager;
+}
+
 // =========================================================================
 // Active camera - selection, not synchronization
 // =========================================================================
@@ -595,9 +606,9 @@ void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 	// behaviour is unchanged: r_debug_draw decides whether the overlay is
 	// published.
 	BuildSnapshot(m_scene.get(),
-	              m_config,
+	              m_renderManager->Config(),
 	              m_viewport.GetCamera(),
-	              m_config.RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr,
+	              m_renderManager->Config().RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr,
 	              &m_viewport.GizmoList(),
 	              out);
 }
@@ -740,7 +751,7 @@ void Editor::UpdateUIContext(UIContext& ctx) const
 	// compiled into neurus_editor, which does not link neurus_ui (that library
 	// links *this* one), so referencing a UIContext symbol here would not resolve.
 	ctx.scene = m_scene.get();
-	ctx.config = &m_config;
+	ctx.config = &m_renderManager->Config();
 }
 
 void Editor::UpdateScriptContext(ScriptContext& ctx)
@@ -750,9 +761,9 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	// and ids without reaching the Editor's mutable ResourceManager. Content
 	// creation is not exposed here: a script asks for it through typed events.
 	ctx.scene = m_scene.get();
-	ctx.config = &m_config;
+	ctx.config = &m_renderManager->Config();
 	ctx.resources = m_resources.get();
-	ctx.graph = &m_renderGraph;
+	ctx.graph = &m_renderManager->Graph();
 }
 
 // =========================================================================
@@ -769,7 +780,7 @@ void Editor::NewScene()
 
 		m_scene = std::make_unique<Scene>();
 		m_resources->Clear();
-		m_config = RenderConfig{};
+		m_renderManager->Config() = RenderConfig{};
 		ed_operations.Clear(); // History does not span scenes.
 
 		// The pool just lost the old viewport camera; a new document gets a new one
@@ -788,7 +799,7 @@ void Editor::NewScene()
 		// clears its list inside a dirty Rebuild().
 		m_viewport.MarkOverlaysDirty();
 
-		ResetRenderGraph();
+		m_renderManager->Reset();
 
 		NEURUS_LOG("[Editor] Created new scene.");
 	}
@@ -918,7 +929,7 @@ void Editor::BeginLoad()
 
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
-	m_config = RenderConfig{};
+	m_renderManager->Config() = RenderConfig{};
 	ed_operations.Clear(); // History does not span scenes.
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
@@ -944,118 +955,25 @@ void Editor::FinishLoad()
 
 	// The graph record was read before the pool and the scene were restored, so
 	// it is applied last, when its shaders can be resolved.
-	if (m_pendingGraph)
+	auto& pending = m_renderManager->PendingRecord();
+	if (pending)
 	{
-		ReplaceRenderGraph(*m_pendingGraph);
-		m_pendingGraph.reset();
+		m_renderManager->Restore(*pending);
+		pending.reset();
 	}
 	else
 	{
-		ResetRenderGraph();
+		m_renderManager->Reset();
 	}
 
 	// A loaded document is the saved baseline, not an unsaved edit.
 	m_dirty = false;
 }
 
-void Editor::ResetRenderGraph()
-{
-	m_graphProblems.clear();
-	m_passShaders.reset();  // the pool was cleared; the old identities are stale
-	m_passShaders = std::make_unique<PassShaders>(
-		*m_resources, &LoadPassKindShader, m_graphProblems);
-
-	m_renderGraph = RenderGraphData::Default(*m_passShaders);
-	AssignNodeShaders();
-	PublishRenderGraph();
-}
-
-void Editor::AssignNodeShaders()
-{
-	for (const auto& node : m_renderGraph.nodes)
-	{
-		if (node->data.shaderUid != 0 && m_resources->Contains(node->data.shaderUid))
-			continue;
-		node->data.shaderUid = m_passShaders->ShaderUid(node->data.pass);
-	}
-}
-
-void Editor::ReplaceRenderGraph(const project::RenderGraphRecord& record)
-{
-	m_graphProblems.clear();
-	m_passShaders.reset();  // adopt the restored shaders by name
-	m_passShaders = std::make_unique<PassShaders>(
-		*m_resources, &LoadPassKindShader, m_graphProblems);
-
-	std::vector<std::string> loadProblems;
-	m_renderGraph = project::FromRecord(record, *m_passShaders, loadProblems);
-	m_graphProblems.insert(m_graphProblems.end(), loadProblems.begin(), loadProblems.end());
-
-	AssignNodeShaders();
-	PublishRenderGraph();
-}
-
 void Editor::SetRenderGraph(RenderGraphData graph)
 {
-	if (!m_passShaders)
-	{
-		m_passShaders = std::make_unique<PassShaders>(
-			*m_resources, &LoadPassKindShader, m_graphProblems);
-	}
-
-	m_renderGraph = std::move(graph);
-	AssignNodeShaders();
+	m_renderManager->SetGraph(std::move(graph));
 	MarkDirty();
-	PublishRenderGraph();
-}
-
-void Editor::PublishRenderGraph()
-{
-	if (!ed_renderer)
-		return;
-
-	for (const CpuGraphDiagnostic& diagnostic : ValidateCpuGraph(m_renderGraph, *m_passShaders))
-	{
-		NEURUS_ERR("[Editor] render graph: " << diagnostic.node << "." << diagnostic.port
-		           << ": " << diagnostic.message);
-	}
-
-	// Snapshot every shader the document names, including the second shader of
-	// the shadow passes, so the renderer never reads the Editor's pool. A shader
-	// that fails to snapshot is reported and left out; the renderer then rejects
-	// the node by name instead of drawing against a stale shader.
-	std::vector<ShaderSnapshot> snapshots;
-	std::unordered_map<int, bool> seen;
-	for (const auto& node : m_renderGraph.nodes)
-	{
-		const PassKindInfo* kind = FindPassKind(node->data.pass);
-		const std::span<const uint32_t> optional =
-			kind ? kind->optionalBindings : std::span<const uint32_t>{};
-
-		for (const int uid : m_passShaders->ShaderUids(node->data.pass))
-		{
-			if (!seen.emplace(uid, true).second)
-				continue;
-
-			const auto shader = m_resources->Get<ShaderData>(uid);
-			if (!shader)
-				continue;
-
-			try
-			{
-				snapshots.push_back(MakeShaderSnapshot(*shader, optional));
-			}
-			catch (const std::exception& error)
-			{
-				NEURUS_ERR("[Editor] render graph: cannot snapshot shader " << uid
-				           << " for node '" << node->name << "': " << error.what());
-			}
-		}
-	}
-
-	ed_renderer->Post(CompileRenderGraphRequest{
-		std::make_shared<const RenderGraphData>(CloneGraph(m_renderGraph)),
-		std::move(snapshots)});
 }
 
 void Editor::OnMeshImport(const std::string& path)

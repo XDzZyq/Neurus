@@ -3,6 +3,8 @@
 add_library(neurus_editor STATIC
 	Editor.hpp
 	Editor.cpp
+	RenderManager.hpp
+	RenderManager.cpp
 	Input.hpp
 	commands/EditorCommandAdapter.hpp
 	commands/EditorCommandAdapter.cpp

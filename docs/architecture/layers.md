@@ -59,10 +59,11 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - Produces the two frame views: the renderer's view as an owned
   `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
   via `UpdateUIContext()`
-- Owns the scene render graph document (`RenderGraphData`), the pooled pass
-  shaders and the `ShaderSnapshot`s it publishes in a `CompileRenderGraphRequest`
-  when the project loads or the document changes; the runtime graph, descriptor
-  writes and GPU resources stay in the Renderer
+- Owns `RenderManager`, which holds the scene render graph document
+  (`RenderGraphData`), the render config, the pooled pass shaders and the
+  `ShaderSnapshot`s published in a `CompileRenderGraphRequest` when the project
+  loads or the document changes; the runtime graph, descriptor writes and GPU
+  resources stay in the Renderer
 - Owns `EditorViewport`, the viewport composition root: the **viewport camera**
   (a pooled `Camera` that is not scene content), the debug/gizmo builders and
   the resize. `Editor::ActiveCamera()` selects the activated scene camera when the

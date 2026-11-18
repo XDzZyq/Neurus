@@ -98,7 +98,7 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 
 ## Ownership boundary
 
-- Editor: owns the document, the pooled pass shaders and their snapshots, and posts `CompileRenderGraphRequest{graph, shaders}` when the document or project changes. It never touches a GPU object.
+- Editor: owns `RenderManager` (the document, the render config, the pooled pass shaders and their snapshots) and posts `CompileRenderGraphRequest{graph, shaders}` when the document or project changes. It never touches a GPU object.
 - Renderer: owns `PassFactory`, the uploader and its morphism, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
 - `RenderConfig` is copied into every published frame and supplies per-frame pass parameters; it no longer decides the graph topology, and the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
