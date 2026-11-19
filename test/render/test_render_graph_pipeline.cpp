@@ -14,7 +14,7 @@
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"
 #include "render/render_graph/PassFactory.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Scene.hpp"

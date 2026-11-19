@@ -11,7 +11,7 @@
 #pragma once
 
 #include "../GPUProfiler.hpp"
-#include "../ProfilingData.hpp"
+#include "render_api/ProfilingData.hpp"
 #include "../RenderCache.hpp"
 #include "../passes/Pass.hpp"
 #include "asset/data/render_graph/PassPorts.hpp"

@@ -3,7 +3,7 @@
  * @brief Snapshot helpers for the render-request value types.
  */
 
-#include "RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include "asset/data/ShaderData.hpp"
 
@@ -28,6 +28,37 @@ EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader)
 	if (shader.HasStage(ShaderType::FRAGMENT))
 		request.fragmentSpv = shader.GetStage(ShaderType::FRAGMENT).spv;
 
+	return request;
+}
+
+LightSnapshot MakeLightSnapshot(const Light& light)
+{
+	LightSnapshot snapshot;
+	snapshot.objectId = light.GetObjectID();
+	snapshot.type = light.light_type;
+	snapshot.position = light.GetPosition();
+	snapshot.direction = light.GetDirection();
+	snapshot.color = light.light_color;
+	snapshot.power = light.light_power;
+	snapshot.radius = light.light_radius;
+	snapshot.spotCutoff = light.spot_cutoff;
+	snapshot.spotOuterCutoff = light.spot_outer_cutoff;
+	snapshot.areaRatio = light.area_ratio;
+	snapshot.useShadow = light.use_shadow;
+	snapshot.visibleInViewport = light.is_viewport;
+	snapshot.rendered = light.is_rendered;
+	return snapshot;
+}
+
+UpdateLightingRequest MakeUpdateLightingRequest(
+	const std::unordered_map<int, std::shared_ptr<Light>>& lights)
+{
+	UpdateLightingRequest request;
+	for (const auto& [uid, light] : lights)
+	{
+		if (light && light->is_viewport && light->is_rendered)
+			request.lights.emplace(uid, MakeLightSnapshot(*light));
+	}
 	return request;
 }
 

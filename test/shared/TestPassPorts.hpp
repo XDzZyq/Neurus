@@ -9,9 +9,9 @@
 
 #include "asset/data/render_graph/PortSource.hpp"
 
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 
 #include <array>
 #include <span>

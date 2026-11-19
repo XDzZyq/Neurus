@@ -21,13 +21,11 @@
 #include "editor/controllers/TransformGizmoController.hpp"
 #include "editor/events/EventBus.hpp"
 
-#include "render/requests/RenderRequestSink.hpp"
-#include "render/requests/RenderRequests.hpp"
-#include "render/UploadManager.hpp"
+#include "render_api/RenderRequestSink.hpp"
+#include "render_api/RenderRequests.hpp"
 
-#include "render/RenderFrameSnapshot.hpp"
-#include "render/shaders/RenderShader.hpp"
-#include "ui/UIContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 #include "script/ScriptContext.hpp"
 
 #include "core/Log.hpp"
@@ -37,9 +35,8 @@
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStage.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
-#include "render/RenderFrameSnapshot.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
 #include "scene/DebugMesh.hpp"
@@ -505,8 +502,8 @@ void Editor::Initialize()
 		if (!ed_renderer) return;
 		auto light = m_resources->Get<Light>(e.objectUid);
 		if (!light) return;
-		// Pure CPU conversion here, then the renderer rewrites the one SSBO entry.
-		ed_renderer->Post(UpdateLightRequest{e.objectUid, UploadManager::UploadLighting(*light)});
+		// Snapshot scene values; the renderer converts and rewrites the SSBO entry.
+		ed_renderer->Post(UpdateLightRequest{e.objectUid, MakeLightSnapshot(*light)});
 	});
 
 	ed_eventBus.Subscribe<LightingRebuild>([this](const LightingRebuild&) {
@@ -596,7 +593,7 @@ void Editor::HandleViewportResize(glm::uvec2 logical, glm::uvec2 renderExtent)
 }
 
 // =========================================================================
-// UpdateUIContext / BuildSnapshot - the one producer of every outward view
+// BuildSnapshot - the renderer publication path
 // of the frame
 // =========================================================================
 
@@ -745,18 +742,9 @@ RenderFrameSnapshot Editor::BuildSnapshot() const
 	return snap;
 }
 
-void Editor::UpdateUIContext(UIContext& ctx) const
-{
-	// Fields only - never a call into a UIContext method. UpdateUIContext is
-	// compiled into neurus_editor, which does not link neurus_ui (that library
-	// links *this* one), so referencing a UIContext symbol here would not resolve.
-	ctx.scene = m_scene.get();
-	ctx.config = &m_renderManager->Config();
-}
-
 void Editor::UpdateScriptContext(ScriptContext& ctx)
 {
-	// Same shape as UpdateUIContext: borrowed pointers, no symbol calls. The pool
+	// Borrowed pointers only. The pool
 	// is handed over as its read-only interface so a script can resolve names
 	// and ids without reaching the Editor's mutable ResourceManager. Content
 	// creation is not exposed here: a script asks for it through typed events.
@@ -1478,9 +1466,8 @@ void Editor::DropSceneGpuResources()
 void Editor::UploadLighting()
 {
 	if (!ed_renderer) return;
-	// Pure CPU conversion of the whole light map here; the renderer rebuilds the
-	// SSBOs from the value it receives.
-	ed_renderer->Post(UpdateLightingRequest{UploadManager::UploadLighting(m_scene->light_list)});
+	// Publish owned scene values; GPU layout conversion stays in the renderer.
+	ed_renderer->Post(MakeUpdateLightingRequest(m_scene->light_list));
 }
 
 // =========================================================================

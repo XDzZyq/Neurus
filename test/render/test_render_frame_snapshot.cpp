@@ -37,7 +37,7 @@
 
 #include "editor/Editor.hpp"
 #include "editor/viewport/EditorViewport.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
 #include "scene/DebugPoints.hpp"

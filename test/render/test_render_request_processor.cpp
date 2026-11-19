@@ -18,7 +18,7 @@
 
 #include "render/RenderCache.hpp"
 #include "render/requests/RenderRequestProcessor.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 #include "render/UploadManager.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/resources/LightingCache.hpp"

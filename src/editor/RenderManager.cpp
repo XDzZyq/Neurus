@@ -10,12 +10,12 @@
 #include "asset/data/render_graph/PassShaders.hpp"
 #include "asset/data/ShaderData.hpp"
 
-#include "render/RenderFrameSnapshot.hpp"
-#include "render/requests/RenderRequestSink.hpp"
-#include "render/requests/RenderRequests.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "render_api/RenderRequestSink.hpp"
+#include "render_api/RenderRequests.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 
 #include "core/Log.hpp"
 #include "core/ResourceManager.hpp"

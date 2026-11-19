@@ -31,8 +31,8 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/passes/LightingPass.hpp"

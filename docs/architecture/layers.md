@@ -3,6 +3,14 @@
 The application, renderer, editor, script, UI, asset and scene layers each own a
 distinct responsibility, and Core supplies utilities shared across all of them.
 
+## Shared Render Contracts (`src/render_api/`)
+
+`neurus_render_api` contains owned frame snapshots, render requests and their
+write-only sink, context and profiling values, and CPU overlay payloads. It is
+Qt-free and Vulkan-free and depends only on CPU asset data, scene and core types.
+Editor and UI include these contracts without linking renderer implementation.
+`ShaderSnapshot` belongs to the CPU shader data under `asset/data/shader/`.
+
 ## Renderer Layer (`src/render/`)
 
 - Pure rendering service with no application logic
@@ -24,7 +32,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   swapchain. The scene image is never presented directly, so an overlay-only
   change redraws without re-running a scene pass
 - Builds the runtime scene graph from the Editor's `RenderGraphData` document:
-  the `GraphUploader` service instantiates its pass kinds through `PassFactory`,
+  the `GraphUploader` service maps its pass kinds to `PassFactory` instances,
   maps every node and connection through a permanent `GraphMorphism`, and its
   output tags plan the `RenderCache` resources. `RenderConfig` supplies
   per-frame pass parameters only
@@ -56,9 +64,8 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   event-replay `Operation` values. Controllers record through `IOperationSink`,
   undo and redo re-emit the inverse event synchronously, and a script run or a
   command is buffered into one history entry
-- Produces the two frame views: the renderer's view as an owned
-  `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
-  via `UpdateUIContext()`
+- Produces the renderer's owned `RenderFrameSnapshot` via `BuildSnapshot()`.
+  Application queries the scene and config to assemble the UI-owned `UIContext`.
 - Owns `RenderManager`, which holds the scene render graph document
   (`RenderGraphData`), the render config, the pooled pass shaders and the
   `ShaderSnapshot`s published in a `CompileRenderGraphRequest` when the project
@@ -73,7 +80,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   API, only `GetViewport()` and the timing (`PublishActiveCamera` in `Edit()`). A
   scene with zero cameras is a legal document. See
   [Editor Overview](../editor/overview.md).
-- Owns UIEvents (Qt signals) and the typed `EventQueue`
+- Owns the typed `EventQueue`; the Qt `UIEvents` bus lives in `ui/events/`
 - The `EventQueue` is **Editor-internal**: it is not a channel to the Renderer
   and nothing under `src/render/` includes it. It is drained once per frame
   (`Edit()`) for events that originated at the UI boundary; everything else in
@@ -81,6 +88,8 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - Communicates with the Renderer via Context (read-only frame snapshot) and typed
   `RenderRequest`s posted through a `RenderRequestSink*`
 - Must NOT directly manipulate GPU resources
+- Owns the project adapters for undo history and viewport state under
+  `editor/project/`; asset persistence does not include Editor internals
 - Controller registry pattern: `Editor::RegisterController<T>()` creates the
   controller, calls `Init(m_ctx)` and stores it in `ed_controllers`
 - Event-driven controller communication: a UI signal reaches
@@ -120,6 +129,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - `src/ui/utils/`: Non-widget UI helpers (CodeHighlighter)
 - Displays data and captures user input
 - Emits Qt signals via UIEvents for state changes
+- Owns `ui/events/UIEvents` and the Qt input translation in `ui/Input.cpp`
 - Exposes the viewport's native window handle; creates no Vulkan object,
   including `VkSurfaceKHR` (the Application creates the surface from that
   handle)
@@ -150,22 +160,28 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 
 ## Asset Layer (`src/asset/`)
 
-- Vulkan-free: no `<vulkan/>` includes in public headers
+- Vulkan-free and independent of Renderer and Editor implementation targets
 - OBJ mesh loading and parsing into MeshData (pure CPU struct)
 - PNG/HDR image decoding into ImageData (pure CPU struct, owning pixel vector)
 - `PixelFormat` enum for CPU-side format queries (maps to `vk::Format` by
   convention, not by cast)
 - CPU-side shader data: `ShaderData` under `data/`, with its IR/unit headers
   (`ShaderStruct`, `ShaderUnit`, `ShaderStage`, `ShaderStructSerialize`) under
-  `data/shader/`; the renderer's `RenderShader` / `ComputeShader` derive from
-  `ShaderData`
+  `data/shader/`; the CPU `RenderShader` / `ComputeShader` leaves and
+  `ShaderSnapshot` live there too. Parsing, generation, compilation through
+  shaderc and loading live under `asset/shader/`, with pooled shader
+  registration under `asset/registrations/`
 - CPU-side data representation only; GPU upload handled by Renderer via
   `MeshGPU` and `Image::FromImageData`
 - Must NOT issue draw calls, manage GPU pipelines, or own GPU resources
 
+The asset build separates `neurus_asset_data` (resource values and CPU shader services)
+from `neurus_asset` (project persistence). Scene depends only on the data target;
+persistence depends on scene and data, so the CPU targets have no asset/scene cycle.
+
 ## Scene Layer (`src/scene/`)
 
-- Vulkan-free in public interface: no GPU types exposed to consumers
+- Vulkan-free target: no renderer or Vulkan linkage and no GPU types exposed to consumers
 - Scene objects (Camera, Light, Transform, Mesh, UID) define logical scene
   structure
 - GPU resources (VertexBuffer, IndexBuffer) are separated into `MeshGPU` held by
@@ -202,8 +218,6 @@ Vulkan-free utilities shared across the other layers:
 - `Log` - `NEURUS_LOG` / `NEURUS_ERR` macros
 - `RenderConfig` - user-settable pipeline options (Vulkan-free; read by four
   layers)
-- `RenderGraphData` - the Vulkan-free scene render graph document (nodes, shader
-  port sockets, output tags); serialized by `project::GraphComponent`
 - `Serialize` - `archive::Optional` / `LoadFresh` / `OptionalBlock`
   (version-tolerant fields)
 - `Graph` - generic DAG template

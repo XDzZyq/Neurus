@@ -35,10 +35,10 @@
 #include <variant>
 #include <vector>
 
-#include "render/resources/LightingCache.hpp"
 #include "scene/Light.hpp"
 #include "asset/data/RenderGraphData.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "asset/data/shader/ShaderSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 
 namespace neurus
 {
@@ -46,9 +46,6 @@ namespace neurus
 class ImageData;
 class MeshData;
 class ShaderData;
-
-/// @brief One light's GPU-side struct, as LightingCache stores it.
-using LightStructVariant = std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>;
 
 /**
  * @brief Upload a mesh's geometry into the RenderCache slot for @c objectId.
@@ -98,12 +95,12 @@ struct UploadEnvironmentRequest
 /**
  * @brief Rebuild every light SSBO and the uid-to-index maps from scratch.
  *
- * The Editor converts its lights to GPU structs (pure CPU work) and hands over
- * the result by value; the renderer only writes it.
+ * The Editor snapshots scene light values; the renderer converts them to its
+ * GPU layouts and writes the buffers.
  */
 struct UpdateLightingRequest
 {
-	std::unordered_map<int, LightStructVariant> lights;
+	std::unordered_map<int, LightSnapshot> lights;
 };
 
 /**
@@ -114,8 +111,8 @@ struct UpdateLightingRequest
  */
 struct UpdateLightRequest
 {
-	int                uid = 0;
-	LightStructVariant light;
+	int           uid = 0;
+	LightSnapshot light;
 };
 
 /**
@@ -184,6 +181,13 @@ struct CompileRenderGraphRequest
 	std::shared_ptr<const RenderGraphData> graph;
 	std::vector<ShaderSnapshot>           shaders;
 };
+
+/** @brief Copies one scene light into an owned request/frame value. */
+LightSnapshot MakeLightSnapshot(const Light& light);
+
+/** @brief Snapshots visible, rendered lights for an ordered GPU update. */
+UpdateLightingRequest MakeUpdateLightingRequest(
+	const std::unordered_map<int, std::shared_ptr<Light>>& lights);
 
 /// @brief Any request the renderer executes on the Editor's behalf.
 using RenderRequest = std::variant<UploadMeshRequest,

@@ -9,7 +9,7 @@
 
 #include "RenderThread.hpp"
 
-#include "RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 
 #include "core/Log.hpp"
 

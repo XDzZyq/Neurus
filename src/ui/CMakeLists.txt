@@ -3,13 +3,13 @@
 add_library(neurus_ui STATIC
 	UIManager.hpp
 	UIManager.cpp
-	# Qt boundary of the editor layer: the signal bus and the Qt-enum input
-	# translations. They live in the UI target because it is the only consumer.
-	../editor/events/UIEvents.hpp
-	../editor/events/UIEvents.cpp
-	../editor/Input.cpp
 	UIContext.hpp
 	UIContext.cpp
+	# Qt boundary of the editor layer: the signal bus and the Qt-enum input
+	# translations. They live in the UI target because it is the only consumer.
+	events/UIEvents.hpp
+	events/UIEvents.cpp
+	Input.cpp
 	Icons.hpp
 	Icons.cpp
 	items/ScalarSlider.hpp
@@ -76,6 +76,7 @@ add_library(neurus_ui STATIC
 )
 
 target_link_libraries(neurus_ui PUBLIC
+	neurus_render_api
 	Qt6::Core
 	Qt6::Quick
 	Qt6::Qml
@@ -84,9 +85,6 @@ target_link_libraries(neurus_ui PUBLIC
 	ads::qtadvanceddocking-qt6
 )
 
-target_link_libraries(neurus_ui PRIVATE
-	Vulkan::Vulkan
-)
 
 # ADS_STATIC: tell Qt-Advanced-Docking-System headers to use static linkage
 target_compile_definitions(neurus_ui PUBLIC ADS_STATIC)

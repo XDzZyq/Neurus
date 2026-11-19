@@ -11,8 +11,8 @@
 #include "Barrier.hpp"
 #include "Image.hpp"
 #include "RenderCache.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "Swapchain.hpp"
 
 #include "resources/LightingCache.hpp"

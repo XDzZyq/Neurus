@@ -23,8 +23,8 @@
 #include "glm/glm.hpp"
 
 #include "asset/Project.hpp"
-#include "asset/components/EditorComponent.hpp"
-#include "asset/components/HistoryComponent.hpp"
+#include "editor/project/EditorComponent.hpp"
+#include "editor/project/HistoryComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "core/ResourceManager.hpp"

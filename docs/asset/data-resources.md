@@ -50,7 +50,7 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
   monotonic version. `FindStage` returns `nullptr` when a stage is absent;
   `GetStage` default-inserts.
 - The concrete leaves are `RenderShader` (vertex + fragment) and
-  `ComputeShader` (compute), both in `src/render/shaders/`. They add
+  `ComputeShader` (compute), both in `src/asset/data/shader/`. They add
   `ParseAndGenerate()` and serialize their source paths (and compute defaults);
   each leaf then serializes the stage map (`path`/`code`/`parsed`) through the
   `ShaderData` helpers.

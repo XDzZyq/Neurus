@@ -18,7 +18,7 @@
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/passes/SSAOPass.hpp"
 #include "render/Screenshot.hpp"

@@ -10,7 +10,7 @@
  * Vulkan-free, and must stay so: the snapshot describes the frame, not the GPU.
  */
 
-#include "RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 
 namespace neurus
 {

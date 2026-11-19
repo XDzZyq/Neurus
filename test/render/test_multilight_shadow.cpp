@@ -23,11 +23,11 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestMultiShadow.hpp"
 
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/UploadManager.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/passes/GeometryPass.hpp"

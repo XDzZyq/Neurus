@@ -33,7 +33,7 @@
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
 #include "asset/data/MeshData.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
 
@@ -41,7 +41,7 @@
 // UID-derived types are registered for the JSON round-trip below.
 #include "scene/registrations/TypeRegistration.hpp"
 #include "asset/registrations/DataRegistration.hpp"
-#include "render/registrations/ShaderRegistration.hpp"
+#include "asset/registrations/ShaderRegistration.hpp"
 
 using namespace neurus;
 

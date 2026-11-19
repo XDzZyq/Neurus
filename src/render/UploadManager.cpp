@@ -4,6 +4,7 @@
  */
 
 #include "UploadManager.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include "Image.hpp"
 #include "PipelineBuilder.hpp"
@@ -13,7 +14,7 @@
 #include "resources/EnvironmentGPU.hpp"
 #include "resources/LightGPU.hpp"
 #include "resources/LightingCache.hpp"
-#include "shaders/ShaderLibrary.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
@@ -331,44 +332,50 @@ UploadManager::UploadLighting(const std::unordered_map<int, std::shared_ptr<Ligh
 std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>
 UploadManager::UploadLighting(const Light& light)
 {
-	if (light.light_type == LightType::POINTLIGHT)
+	return UploadLighting(MakeLightSnapshot(light));
+}
+
+std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>
+UploadManager::UploadLighting(const LightSnapshot& light)
+{
+	if (light.type == LightType::POINTLIGHT)
 	{
 		PointLightStruct gpu = {};
-		const auto& pos = light.GetPosition();
+		const auto& pos = light.position;
 
 		gpu.posX = pos.x;
 		gpu.posY = pos.y;
 		gpu.posZ = pos.z;
-		gpu.colorR = light.light_color.r;
-		gpu.colorG = light.light_color.g;
-		gpu.colorB = light.light_color.b;
-		gpu.power = light.light_power;
-		gpu.radius = light.light_radius;
+		gpu.colorR = light.color.r;
+		gpu.colorG = light.color.g;
+		gpu.colorB = light.color.b;
+		gpu.power = light.power;
+		gpu.radius = light.radius;
 		gpu.shadowMapIndex = -1;
 
 		return gpu;
 	}
-	else if (light.light_type == LightType::SUNLIGHT)
+	else if (light.type == LightType::SUNLIGHT)
 	{
 		SunLightStruct gpu = {};
-		const auto& dir = light.GetDirection();
+		const auto& dir = light.direction;
 
 		gpu.directionX = dir.x;
 		gpu.directionY = dir.y;
 		gpu.directionZ = dir.z;
-		gpu.colorR = light.light_color.r;
-		gpu.colorG = light.light_color.g;
-		gpu.colorB = light.light_color.b;
-		gpu.power = light.light_power;
+		gpu.colorR = light.color.r;
+		gpu.colorG = light.color.g;
+		gpu.colorB = light.color.b;
+		gpu.power = light.power;
 		gpu.shadowMapIndex = -1;
 
 		return gpu;
 	}
-	else if (light.light_type == LightType::SPOTLIGHT)
+	else if (light.type == LightType::SPOTLIGHT)
 	{
 		SpotLightStruct gpu = {};
-		const auto& pos = light.GetPosition();
-		const auto& dir = light.GetDirection();
+		const auto& pos = light.position;
+		const auto& dir = light.direction;
 
 		gpu.posX = pos.x;
 		gpu.posY = pos.y;
@@ -376,20 +383,20 @@ UploadManager::UploadLighting(const Light& light)
 		gpu.dirX = dir.x;
 		gpu.dirY = dir.y;
 		gpu.dirZ = dir.z;
-		gpu.colorR = light.light_color.r;
-		gpu.colorG = light.light_color.g;
-		gpu.colorB = light.light_color.b;
-		gpu.power = light.light_power;
-		gpu.radius = light.light_radius;
-		gpu.innerCutoff = light.spot_cutoff;
-		gpu.outerCutoff = light.spot_outer_cutoff;
+		gpu.colorR = light.color.r;
+		gpu.colorG = light.color.g;
+		gpu.colorB = light.color.b;
+		gpu.power = light.power;
+		gpu.radius = light.radius;
+		gpu.innerCutoff = light.spotCutoff;
+		gpu.outerCutoff = light.spotOuterCutoff;
 		gpu.shadowMapIndex = -1;
 
 		return gpu;
 	}
 
 	// NONELIGHT - return a default PointLightStruct.
-	NEURUS_ERR("[UploadManager] Unhandled light type: " << static_cast<int>(light.light_type));
+	NEURUS_ERR("[UploadManager] Unhandled light type: " << static_cast<int>(light.type));
 	return PointLightStruct{};
 }
 

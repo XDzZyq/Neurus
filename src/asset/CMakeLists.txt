@@ -1,24 +1,22 @@
-# src/asset/CMakeLists.txt - Asset Layer (CPU-side data + project persistence)
-
-add_library(neurus_asset STATIC
-	Project.hpp
-	Project.cpp
-	Serializable.hpp
+# CPU resources and shader services do not depend on scene or persistence.
+add_library(neurus_asset_data STATIC
+	data/shader/RenderShader.hpp
+	data/shader/RenderShader.cpp
+	data/shader/ComputeShader.hpp
+	data/shader/ComputeShader.cpp
+	shader/ShaderParser.hpp
+	shader/ShaderParser.cpp
+	shader/ShaderGenerator.hpp
+	shader/ShaderGenerator.cpp
+	shader/ShaderCompiler.hpp
+	shader/ShaderCompiler.cpp
+	shader/ShaderLibrary.hpp
+	shader/ShaderLibrary.cpp
+	registrations/ShaderRegistration.hpp
+	registrations/ShaderRegistration.cpp
+	shader/ShaderSnapshot.cpp
+	data/shader/ShaderSnapshot.hpp
 	PixelFormat.hpp
-	components/ConfigComponent.hpp
-	components/ConfigComponent.cpp
-	components/GraphComponent.hpp
-	components/GraphComponent.cpp
-	components/SceneComponent.hpp
-	components/SceneComponent.cpp
-	components/UIComponent.hpp
-	components/UIComponent.cpp
-	components/HistoryComponent.hpp
-	components/HistoryComponent.cpp
-	components/EditorComponent.hpp
-	components/EditorComponent.cpp
-	components/ResourceComponent.hpp
-	components/ResourceComponent.cpp
 	registrations/DataRegistration.hpp
 	registrations/DataRegistration.cpp
 	data/ImageData.hpp
@@ -46,32 +44,32 @@ add_library(neurus_asset STATIC
 	data/ShaderData.hpp
 	data/ShaderData.cpp
 )
-
-target_link_libraries(neurus_asset PUBLIC
-	glm
-	stb
-	neurus_core
-	neurus_scene
-	cereal
-	neurus_render      # needed by ConfigComponent.cpp
-)
-
-target_compile_definitions(neurus_asset PRIVATE
+target_link_libraries(neurus_asset_data PUBLIC glm stb neurus_core cereal shaderc_shared)
+target_include_directories(neurus_asset_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(neurus_asset_data PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_compile_definitions(neurus_asset_data PRIVATE
 	NEURUS_RES_DIR="${CMAKE_SOURCE_DIR}/res/"
+	NEURUS_SHADER_DIR="${CMAKE_SOURCE_DIR}/res/shaders/"
 )
+target_compile_features(neurus_asset_data PUBLIC cxx_std_20)
 
+# Project components persist CPU resources and scene state.
+add_library(neurus_asset STATIC
+	Project.hpp
+	Project.cpp
+	Serializable.hpp
+	components/ConfigComponent.hpp
+	components/ConfigComponent.cpp
+	components/GraphComponent.hpp
+	components/GraphComponent.cpp
+	components/SceneComponent.hpp
+	components/SceneComponent.cpp
+	components/UIComponent.hpp
+	components/UIComponent.cpp
+	components/ResourceComponent.hpp
+	components/ResourceComponent.cpp
+)
+target_link_libraries(neurus_asset PUBLIC neurus_asset_data neurus_scene)
 target_include_directories(neurus_asset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(neurus_asset PRIVATE
-	${CMAKE_CURRENT_SOURCE_DIR}/..
-	${Vulkan_INCLUDE_DIRS}
-)
-
+target_include_directories(neurus_asset PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_compile_features(neurus_asset PUBLIC cxx_std_20)
-
-# NOTE: components/HistoryComponent.cpp includes editor/operations headers
-# (OperationManager, OperationRegistration) so undo/redo stacks can round-trip
-# through the project file. That is a reverse asset->editor dependency, confined
-# to that one .cpp; every final binary links neurus_editor alongside neurus_asset,
-# so no extra link target is declared here.
-# components/EditorComponent.cpp does the same for editor/viewport/EditorViewport.hpp
-# (the viewport camera's pool UID).

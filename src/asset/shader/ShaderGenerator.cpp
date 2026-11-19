@@ -3,7 +3,7 @@
  * @brief ShaderStruct IR → valid Vulkan GLSL string.
  */
 
-#include "ShaderGenerator.hpp"
+#include "asset/shader/ShaderGenerator.hpp"
 
 #include "asset/data/shader/ShaderStruct.hpp"
 

@@ -20,8 +20,8 @@
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStruct.hpp"
 #include "core/ResourceManager.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 
 namespace
 {

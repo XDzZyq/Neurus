@@ -5,10 +5,10 @@
 #include "core/RenderConfig.hpp"
 #include "Barrier.hpp"
 #include "Image.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/ComputeShader.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
 #include "core/Log.hpp"
 #include <stdexcept>
 

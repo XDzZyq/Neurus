@@ -16,8 +16,8 @@
 #include "passes/ComputePass.hpp"
 #include "../DescriptorManager.hpp"
 #include "../buffers/GPUBuffer.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/ComputeShader.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>

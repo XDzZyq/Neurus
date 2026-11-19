@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include "render/overlay/OverlayGeometry.hpp"
+#include "render_api/overlay/OverlayGeometry.hpp"
 
 #include <glm/glm.hpp>
 

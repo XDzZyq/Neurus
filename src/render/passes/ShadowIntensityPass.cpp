@@ -11,8 +11,8 @@
 #include "DescriptorLayout.hpp"
 #include "Image.hpp"
 #include "render/Barrier.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "core/Log.hpp"
 
 #include "scene/Light.hpp"
@@ -21,8 +21,8 @@
 #include "render/TemporalAccumulator.hpp"
 #include "render/HaltonSequence.hpp"
 
-#include "shaders/ComputeShader.hpp"
-#include "shaders/ShaderLibrary.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 

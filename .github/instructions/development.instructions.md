@@ -34,8 +34,10 @@ Rules that hold across waves:
 
 - Keep GPU-visible structs byte-for-byte identical to their GLSL counterparts
   (`static_assert` size + `offsetof` per field).
-- A new pass declares its image I/O through `Pass::GetIO()`; the RenderGraph wires
-  and orders it. See [render/render-graph.md](../../docs/render/render-graph.md).
+- A scene pass's ports come from CPU shader metadata plus declared-only outputs
+  in `PassKinds`; the RenderGraph wires and orders them. Legacy overlay passes
+  still declare attachments through `Pass::GetIO()`. See
+  [render/render-graph.md](../../docs/render/render-graph.md).
 - Wire each part into the renderer **immediately**; never land a feature that is
   inert.
 - Keep classes lean and functions small (single responsibility); refactor

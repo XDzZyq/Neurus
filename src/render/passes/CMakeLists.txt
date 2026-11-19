@@ -35,6 +35,8 @@ target_link_libraries(neurus_render_passes PUBLIC
 	stb
 	neurus_core
 	neurus_scene
+	neurus_asset
+	neurus_render_api
 )
 
 target_include_directories(neurus_render_passes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

@@ -27,7 +27,7 @@
 
 #include "render/RenderCache.hpp"
 #include "render/requests/RenderRequestExecutor.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 #include "render/UploadManager.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/resources/EnvironmentGPU.hpp"
@@ -35,7 +35,7 @@
 #include "render/resources/LightingCache.hpp"
 #include "render/resources/MeshGPU.hpp"
 #include "render/resources/PipelineCache.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 
 #include "asset/data/ImageData.hpp"
 #include "asset/PixelFormat.hpp"
@@ -430,8 +430,8 @@ TEST_F(RenderRequestExecutorTest, UpdateLighting_ThenUpdateLight_FindsUid)
 	EXPECT_EQ(m_cache->GetShadowIndex(kUidB), 0u);
 
 	UpdateLightingRequest rebuild;
-	rebuild.lights.emplace(kUidA, PointLightStruct{});
-	rebuild.lights.emplace(kUidB, PointLightStruct{});
+	rebuild.lights.emplace(kUidA, LightSnapshot{.type = LightType::POINTLIGHT});
+	rebuild.lights.emplace(kUidB, LightSnapshot{.type = LightType::POINTLIGHT});
 	m_executor->Execute(std::move(rebuild));
 
 	// Shadow indices are assigned in UID-sorted order: uid 5 -> 0, uid 6 -> 1.
@@ -441,13 +441,13 @@ TEST_F(RenderRequestExecutorTest, UpdateLighting_ThenUpdateLight_FindsUid)
 
 	// UpdateLight for a uid the rebuild indexed is found and rewrites in place;
 	// it must not disturb the shadow-index map the full rebuild built.
-	m_executor->Execute(UpdateLightRequest{.uid = kUidB, .light = PointLightStruct{}});
+	m_executor->Execute(UpdateLightRequest{.uid = kUidB, .light = LightSnapshot{.type = LightType::POINTLIGHT}});
 	EXPECT_EQ(m_cache->GetShadowIndex(kUidB), 1u);
 
 	// A single-light rewrite for a uid NEVER indexed is a documented no-op: it
 	// adds no index, so GetShadowIndex stays at the not-found sentinel.
 	constexpr int kUnknown = 999;
-	m_executor->Execute(UpdateLightRequest{.uid = kUnknown, .light = PointLightStruct{}});
+	m_executor->Execute(UpdateLightRequest{.uid = kUnknown, .light = LightSnapshot{.type = LightType::POINTLIGHT}});
 	EXPECT_EQ(m_cache->GetShadowIndex(kUnknown), 0u);
 }
 
@@ -466,7 +466,7 @@ TEST_F(RenderRequestExecutorTest, ShadowLayerOverflow_ExtraLightGetsNoLayer)
 	UpdateLightingRequest rebuild;
 	for (int uid = 1; uid <= 5; ++uid)
 	{
-		rebuild.lights.emplace(uid, PointLightStruct{});
+		rebuild.lights.emplace(uid, LightSnapshot{.type = LightType::POINTLIGHT});
 	}
 	m_executor->Execute(std::move(rebuild));
 
@@ -669,7 +669,7 @@ namespace
 	{
 		UpdateLightingRequest request;
 		for (const int uid : uids)
-			request.lights.emplace(uid, PointLightStruct{});
+			request.lights.emplace(uid, LightSnapshot{.type = LightType::POINTLIGHT});
 		return request;
 	}
 
@@ -678,7 +678,7 @@ namespace
 	{
 		UpdateLightingRequest request;
 		for (const int uid : uids)
-			request.lights.emplace(uid, SunLightStruct{});
+			request.lights.emplace(uid, LightSnapshot{.type = LightType::SUNLIGHT});
 		return request;
 	}
 
@@ -687,7 +687,7 @@ namespace
 	{
 		UpdateLightingRequest request;
 		for (const int uid : uids)
-			request.lights.emplace(uid, SpotLightStruct{});
+			request.lights.emplace(uid, LightSnapshot{.type = LightType::SPOTLIGHT});
 		return request;
 	}
 }

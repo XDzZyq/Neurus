@@ -1,11 +1,11 @@
-#include "ShaderLibrary.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 
 #include "asset/data/ShaderData.hpp"
-#include "ShaderCompiler.hpp"
-#include "RenderShader.hpp"
-#include "ComputeShader.hpp"
-#include "ShaderGenerator.hpp"
-#include "ShaderParser.hpp"
+#include "asset/shader/ShaderCompiler.hpp"
+#include "asset/data/shader/RenderShader.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/shader/ShaderGenerator.hpp"
+#include "asset/shader/ShaderParser.hpp"
 
 #include "core/Log.hpp"
 

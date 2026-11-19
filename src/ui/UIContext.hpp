@@ -7,12 +7,9 @@
  * Editor state a panel may see (the scene and the render settings) plus the
  * per-frame render profile. Qt-free by construction.
  *
- * Two writers, each filling only its own half: the Editor owns the document
- * state it is the source of (scene, config), and the Application owns everything
- * frame-scoped or service-backed (profile, log, history, console). A new member belongs
- * to whoever owns its source, and the Editor half must be plain assignable
- * fields: UpdateUIContext() runs in neurus_editor, which does not link neurus_ui
- * and so may not call a UIContext symbol defined there.
+ * Application assembles this view from the Editor's scene/config getters and
+ * frame-scoped services (profile, log, history, console). The Editor does not
+ * include this UI-owned type or depend on the UI library.
  *
  * Null policy: `scene` must be checked (HasScene()), `config` must not be read
  * directly - go through Settings(), which never returns null. The four
@@ -43,7 +40,7 @@ struct HistoryView;      // src/editor/operations/HistoryView.hpp
  */
 struct UIContext
 {
-	// --- Editor half - filled by Editor::UpdateUIContext() ---
+	// --- Document state - queried by the Application ---
 
 	/// @brief The scene being edited, or nullptr. Check HasScene() first.
 	const Scene* scene = nullptr;

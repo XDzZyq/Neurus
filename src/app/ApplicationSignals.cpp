@@ -19,7 +19,7 @@
 #include "editor/events/InputEvents.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/events/ShaderEvents.hpp"
-#include "editor/events/UIEvents.hpp"
+#include "ui/events/UIEvents.hpp"
 #include "ui/UIManager.hpp"
 #include "ui/UIContext.hpp"
 #include "ui/panels/Outliner.hpp"
@@ -248,7 +248,8 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     const neurus::HistoryView history = app_editor->GetHistory();
 
 	                     neurus::UIContext ctx;
-	                     app_editor->UpdateUIContext(ctx);
+	                     ctx.scene = &app_editor->GetScene();
+	                     ctx.config = &app_editor->GetRenderConfig();
 	                     // The profile belongs to the last frame the thread drew,
 	                     // typically one tick behind: fine for a stats panel.
 	                     ctx.profile = &status.profile;

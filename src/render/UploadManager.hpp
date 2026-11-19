@@ -12,6 +12,8 @@
 
 namespace neurus {
 
+struct LightSnapshot;
+
 // Forward declarations
 class IBLPass;
 class Mesh;              // scene/Mesh.hpp
@@ -115,7 +117,7 @@ enum LightType : int;    // scene/Light.hpp
 	 * @brief Convert a map of lights to GPU structs (variant-based).
 	 *
 	 * Pure CPU conversion - no GPU operations, and no member state, so static:
-	 * the Editor calls it without holding an UploadManager. Each struct gets
+	 * renderer callers may use it without an UploadManager. Each struct gets
 	 * shadowMapIndex = -1; the caller assigns real shadow indices.
 	 *
 	 * @param lights  Map of light UID to shared pointers to Light objects.
@@ -136,6 +138,10 @@ enum LightType : int;    // scene/Light.hpp
 	 */
 	static std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>
 	UploadLighting(const Light& light);
+
+	/** @brief Converts an owned scene-light snapshot to the renderer's GPU layout. */
+	static std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>
+	UploadLighting(const LightSnapshot& light);
 
 	/**
 	 * @brief Creates a LightingCache (light SSBO storage) using the transfer queue.

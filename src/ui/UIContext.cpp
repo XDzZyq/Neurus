@@ -3,7 +3,7 @@
  * @brief UIContext implementation - the settings fallback and scene object enumeration.
  */
 
-#include "UIContext.hpp"
+#include "ui/UIContext.hpp"
 
 #include "core/RenderConfig.hpp"
 #include "scene/Scene.hpp"

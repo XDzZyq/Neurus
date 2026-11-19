@@ -18,11 +18,11 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/resources/PipelineCache.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 
 #include "asset/data/MeshData.hpp"
 #include "scene/Camera.hpp"

@@ -27,7 +27,7 @@
 #include "scene/Material.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/passes/LightingPass.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Texture.hpp"
 #include "asset/data/ImageData.hpp"
 #include "render/Texture.hpp"

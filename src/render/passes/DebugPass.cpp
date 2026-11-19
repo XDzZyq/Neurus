@@ -6,14 +6,14 @@
 #include "passes/DebugPass.hpp"
 
 #include "RenderCache.hpp"
-#include "RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Barrier.hpp"
-#include "shaders/ShaderLibrary.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 #include "core/Log.hpp"
 
 #include "../resources/MeshGPU.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "render/overlay/DebugDrawList.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "render_api/overlay/DebugDrawList.hpp"
 
 #include <algorithm>
 #include <array>

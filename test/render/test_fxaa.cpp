@@ -18,7 +18,7 @@
 #include "render/Image.hpp"
 #include "render/RenderCache.hpp"
 #include "core/RenderConfig.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/FXAAPass.hpp"
 
 using namespace neurus;

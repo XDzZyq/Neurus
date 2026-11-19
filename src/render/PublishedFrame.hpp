@@ -21,8 +21,8 @@
 
 #include <vector>
 
-#include "render/RenderFrameSnapshot.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "render_api/RenderRequests.hpp"
 
 namespace neurus
 {

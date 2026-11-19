@@ -19,10 +19,13 @@ add_subdirectory(platform)
 # Asset Layer (CPU-side data only - no internal dependencies)
 add_subdirectory(asset)
 
-# Renderer Layer (depends on: asset)
+# Shared CPU-only render values and request interfaces
+add_subdirectory(render_api)
+
+# Renderer Layer (depends on: asset and render_api)
 add_subdirectory(render)
 
-# Editor Layer (depends on: nothing from src/)
+# Editor Layer (CPU assets, scene and render_api; no GPU library)
 add_subdirectory(editor)
 
 # UI Layer (depends on: editor for EventBus; Qt only)
@@ -165,9 +168,7 @@ if(NEURUS_BUILD_HEADLESS)
 		neurus_session
 		neurus_render_passes
 		neurus_asset
-		# neurus_asset references the cereal dynamic-init anchor defined in
-		# neurus_editor's registration TU, so the editor archive must come after
-		# it on a single-pass GNU linker.
+		# Editor owns the project history and viewport-state adapters.
 		neurus_editor
 		neurus_render
 		neurus_scene

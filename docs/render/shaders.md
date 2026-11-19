@@ -1,8 +1,9 @@
 # Shaders
 
 Per-mesh shaders are editable at runtime through the Shader Editor panel or a
-Python script. The CPU-side data lives in the asset layer; the renderer owns the
-parse/generate/compile pipeline and every GPU resource below it.
+Python script. The asset layer owns shader data and the CPU
+parse/generate/compile pipeline. The renderer owns shader modules, GPU pipelines
+and their descriptor resources.
 
 ## Data model
 
@@ -14,17 +15,29 @@ src/asset/data/
         ShaderStruct.hpp/.cpp   parsed GLSL IR
         ShaderStructSerialize.hpp  cereal overloads for the IR
         ShaderUnit.hpp          path, code, parsed IR, SPIR-V, version
+        RenderShader.hpp/.cpp   ShaderData + vertex/fragment parse/generate
+        ComputeShader.hpp/.cpp  ShaderData + compute parse/generate
+        ShaderSnapshot.hpp     owned interface metadata and compiled bytecode
 
-src/render/shaders/
-    RenderShader.hpp/.cpp       ShaderData + vertex/fragment parse/generate
-    ComputeShader.hpp/.cpp      ShaderData + compute parse/generate
+src/asset/shader/
     ShaderParser, ShaderGenerator, ShaderCompiler, ShaderLibrary
+    ShaderSnapshot.cpp         snapshot construction and CPU reflection
+
+src/asset/registrations/
+    ShaderRegistration.hpp/.cpp  pooled shader cereal registration
 ```
 
 `ShaderData` is the pooled identity. A `ShaderUnit` is one stage inside it and
 is never pooled on its own. `RenderShader` and `ComputeShader` are the concrete
 leaves: the former is the vertex+fragment bundle used by a mesh, the latter is a
 single compute bundle.
+
+`MakeShaderSnapshot` reflects a pooled shader into CPU descriptor declarations,
+ports, push-constant members and SPIR-V. The renderer's `ShaderReflection`
+helpers translate this metadata into Vulkan declarations instead of maintaining
+a second shader-IR traversal. Scene pass constructors still load their built-in
+shaders through the asset services; using the published snapshot's SPIR-V for
+pass construction remains a later render graph refactoring wave.
 
 ```mermaid
 flowchart TD

@@ -20,8 +20,8 @@
 #include "editor/events/OperationEvents.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/events/ShaderEvents.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
 

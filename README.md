@@ -58,6 +58,7 @@ pre-compiled dependency system are covered in the
 src/
   app/        application lifetime, Vulkan context and wiring
   render/     renderer: passes, pipelines, GPU resources (Vulkan-HPP)
+  render_api/ CPU-only snapshots, contexts and typed renderer requests
   editor/     application logic: scene mutation, controllers, operations
   ui/         Qt6 Widgets presentation
   script/     embedded CPython bindings for the `neurus` module

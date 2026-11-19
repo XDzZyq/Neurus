@@ -1,8 +1,8 @@
 #include "RenderCache.hpp"
 
 #include "core/Log.hpp"
-#include "render/overlay/DebugDrawList.hpp"
-#include "render/overlay/GizmoDrawList.hpp"
+#include "render_api/overlay/DebugDrawList.hpp"
+#include "render_api/overlay/GizmoDrawList.hpp"
 #include "render_graph/ResourceTag.hpp"
 
 #include <algorithm>

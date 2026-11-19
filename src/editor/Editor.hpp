@@ -18,7 +18,7 @@
 // RenderFrameSnapshot by value, so the complete type is required here. It is
 // Vulkan-free and header-only for this use, so including it adds no GPU
 // dependency to the Editor library.
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 
 // Forward declarations (no render headers!)
 namespace neurus {
@@ -36,7 +36,6 @@ struct MeshImportRequested;
 struct CameraAddRequested;
 struct ObjectDuplicateRequested;
 struct ScriptContext;   // script/ScriptContext.hpp - Vulkan/Qt-free script view
-struct UIContext;       // ui/UIContext.hpp         - Qt-free frame view (UI-facing)
 }
 
 namespace neurus {
@@ -198,22 +197,10 @@ public:	/**
 	                          RenderFrameSnapshot& out);
 
 	/**
-	 * @brief Fills the UI-facing view of this frame: the document, and nothing else.
-	 *
-	 * Only the two members the UI layer is entitled to (scene, config). The
-	 * Application adds the frame-scoped members the Editor does not own.
-	 *
-	 * @warning Assigns fields only - it must never call a UIContext method. This
-	 *          translation unit is neurus_editor, which does not link neurus_ui
-	 *          (neurus_ui links this one), so such a call would not resolve.
-	 */
-	void UpdateUIContext(UIContext& ctx) const;
-
-	/**
 	 * @brief Fills the script-facing view: the borrowed scene, render config
 	 *        and resource pool.
 	 *
-	 * Mirrors UpdateUIContext - field assignments, nothing else. Content
+	 * Uses field assignments only. Content
 	 * creation is not a borrowed surface here: a script asks for it through
 	 * typed editor events, so this context stays read-only. The caller builds a
 	 * ScriptContext for one script run and discards it afterwards.

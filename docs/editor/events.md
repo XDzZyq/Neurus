@@ -134,7 +134,7 @@ resolved**, not in when it is dispatched:
 | `src/editor/events/ConfigEvents.hpp` | Render config change events |
 | `src/editor/events/ShaderEvents.hpp` | Shader editor events (create, compile, code/struct edit, field add) |
 | `src/editor/events/GizmoEvents.hpp` | Modal transform intents (arm, constrain, confirm, cancel) + the shared `GizmoMode`/`GizmoAxis` enums |
-| `src/editor/events/UIEvents.hpp` | QObject singleton - Qt signal definitions for UI-to-Editor dispatch |
+| `src/ui/events/UIEvents.hpp` | QObject singleton - Qt signal definitions for UI-to-Editor dispatch |
 | `src/editor/events/EventBus.hpp` | The concrete `EventQueue`: `IEventQueue` plus the deferred `Enqueue`/`Process` pair the UI boundary uses (zero Qt dependency) |
 
 ## Event structs (pure data)

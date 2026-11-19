@@ -63,6 +63,24 @@ short working reference.
   concept, it is not core.
 - `core/` never includes asset, scene, editor, render or UI headers.
 
+## CPU and Render Boundary
+
+- Shared renderer frame/context/profiling values, overlay payloads and typed render
+  requests belong under `render_api/` in `neurus_render_api`. It contains no Qt,
+  Vulkan, Editor or Renderer implementation headers. UIContext stays in UI;
+  Application assembles it from Editor getters.
+- CPU shader data and snapshots belong under `asset/data/shader/`; shader
+  parsing, generation, compilation and loading belong under `asset/shader/`.
+  Renderer helpers translate CPU snapshot metadata into Vulkan declarations.
+- Editor light requests carry scene-light snapshots; GPU layout conversion
+  belongs to the Renderer. Never include UploadManager just to prepare a request.
+- Asset and scene targets must not link Renderer. Editor-specific persistence
+  adapters live under `editor/project/`; Qt UIEvents and input translations live
+  under `ui/`.
+- Run `python scripts/check_layer_boundaries.py` when changing layer includes;
+  `neurus_cpu_test` verifies CPU document/shader/Editor behavior without GPU or
+  Qt linkage. See [Testing](../../docs/build/test.md#cpu-boundary-tests).
+
 ## Const Correctness
 
 - Mark non-mutating methods and references `const`.

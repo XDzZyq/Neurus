@@ -9,7 +9,7 @@
 #include "render/render_graph/PassFactory.hpp"
 #include "render/render_graph/RenderGraph.hpp"
 #include "render/render_graph/ResourceTag.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"

@@ -11,7 +11,7 @@
 #include "render/render_graph/GraphUploader.hpp"
 #include "render/render_graph/PassFactory.hpp"
 #include "render/render_graph/RenderGraph.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
 

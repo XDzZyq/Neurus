@@ -1,6 +1,10 @@
 # src/editor/CMakeLists.txt - Editor Layer
 
 add_library(neurus_editor STATIC
+	project/HistoryComponent.hpp
+	project/EditorComponent.hpp
+	project/HistoryComponent.cpp
+	project/EditorComponent.cpp
 	Editor.hpp
 	Editor.cpp
 	RenderManager.hpp
@@ -55,6 +59,7 @@ target_link_libraries(neurus_editor PUBLIC
 	neurus_command
 	neurus_scene
 	neurus_asset
+	neurus_render_api
 	stb
 )
 
@@ -64,5 +69,4 @@ target_include_directories(neurus_editor PUBLIC
 
 target_include_directories(neurus_editor PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/..
-	${Vulkan_INCLUDE_DIRS}
 )

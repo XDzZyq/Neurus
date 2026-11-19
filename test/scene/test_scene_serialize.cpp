@@ -35,12 +35,12 @@
 #include "scene/Scene.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
 #include "scene/registrations/TypeRegistration.hpp"
 #include "asset/registrations/DataRegistration.hpp"
-#include "render/registrations/ShaderRegistration.hpp"
+#include "asset/registrations/ShaderRegistration.hpp"
 
 using namespace neurus;
 

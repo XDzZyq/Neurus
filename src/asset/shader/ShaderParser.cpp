@@ -7,9 +7,9 @@
  * local_size, GLSL extensions, multiview).
  */
 
-#include "ShaderParser.hpp"
+#include "asset/shader/ShaderParser.hpp"
 
-#include "ShaderLibrary.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
 
 #include "core/Log.hpp"
 

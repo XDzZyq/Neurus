@@ -25,6 +25,17 @@ cd build && ctest -C Debug --output-on-failure
 `make update` is mandatory after a fresh clone or a submodule bump; it needs
 network access for the prebuilt binaries.
 
+The CPU boundary target is independent of Renderer, Vulkan loader and Qt links:
+
+```
+cmake --build build --config Debug --target neurus_cpu_test
+ctest --test-dir build -C Debug -R "^Neurus\.CPU\." --output-on-failure
+python scripts/check_layer_boundaries.py
+```
+
+Shaderc is still required for CPU shader compilation. The full configure still
+locates the SDK; this target is a link-boundary check, not a headless renderer.
+
 On Windows, `make` uses whatever `sh.exe` is on `PATH`, so that path must not
 contain a space: Git's `usr/bin` normally lives under `Program Files`, so add
 its 8.3 short path, or install MSYS2's `make`. The `Makefile` drops an

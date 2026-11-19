@@ -10,9 +10,9 @@
  * Vulkan-free, and must stay so: RenderContext describes the frame, not the GPU.
  */
 
-#include "RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 
 namespace neurus
 {

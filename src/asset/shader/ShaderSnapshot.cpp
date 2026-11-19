@@ -3,7 +3,7 @@
  * @brief Flattens a pooled shader into the layer-boundary snapshot.
  */
 
-#include "render/RenderFrameSnapshot.hpp"
+#include "asset/data/shader/ShaderSnapshot.hpp"
 
 #include "asset/data/ShaderData.hpp"
 

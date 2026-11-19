@@ -43,9 +43,9 @@
 #include "render/RenderThread.hpp"
 
 #include "render/IFrameRenderer.hpp"
-#include "render/RenderContext.hpp"
-#include "render/RenderFrameSnapshot.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include "core/BatchQueue.hpp"
 

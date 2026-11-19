@@ -31,7 +31,7 @@
 #include <gtest/gtest.h>
 
 #include "core/BatchQueue.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "scene/Light.hpp"
 
@@ -95,7 +95,7 @@ TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 	queue.Push(CreateLightGpuRequest{.uid = 20, .type = LightType::SUNLIGHT});
 	queue.Push(DropSceneResourcesRequest{});
 	queue.Push(UploadMeshRequest{.objectId = 30});
-	queue.Push(UpdateLightRequest{.uid = 40, .light = SunLightStruct{}});
+	queue.Push(UpdateLightRequest{.uid = 40, .light = LightSnapshot{.type = LightType::SUNLIGHT}});
 
 	auto batch = queue.TakeAll();
 	ASSERT_EQ(batch.size(), 5u);
@@ -167,7 +167,7 @@ TEST(RenderRequestQueueTest, TakeAllAfterDrainReturnsEmpty)
 }
 
 // ---------------------------------------------------------------------------
-// 5. Variant payload survives the round trip: an UpdateLightingRequest's map is
+// 5. Scene-light payload survives the round trip: an UpdateLightingRequest's map is
 //    intact, keys and struct contents preserved.
 // ---------------------------------------------------------------------------
 
@@ -176,9 +176,9 @@ TEST(RenderRequestQueueTest, LightingMapPayloadSurvives)
 	BatchQueue<RenderRequest> queue;
 
 	UpdateLightingRequest req;
-	SunLightStruct sun{};
+	LightSnapshot sun{.type = LightType::SUNLIGHT};
 	sun.power = 3.5f;
-	PointLightStruct point{};
+	LightSnapshot point{.type = LightType::POINTLIGHT};
 	point.radius = 2.25f;
 	req.lights.emplace(5, sun);
 	req.lights.emplace(6, point);
@@ -193,11 +193,13 @@ TEST(RenderRequestQueueTest, LightingMapPayloadSurvives)
 
 	// Keys and the carried struct fields come through unchanged.
 	ASSERT_TRUE(drained->lights.count(5));
-	const auto& s = std::get<SunLightStruct>(drained->lights.at(5));
+	const auto& s = drained->lights.at(5);
+	EXPECT_EQ(s.type, LightType::SUNLIGHT);
 	EXPECT_FLOAT_EQ(s.power, 3.5f);
 
 	ASSERT_TRUE(drained->lights.count(6));
-	const auto& p = std::get<PointLightStruct>(drained->lights.at(6));
+	const auto& p = drained->lights.at(6);
+	EXPECT_EQ(p.type, LightType::POINTLIGHT);
 	EXPECT_FLOAT_EQ(p.radius, 2.25f);
 }
 

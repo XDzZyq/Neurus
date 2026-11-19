@@ -19,8 +19,8 @@
 
 #pragma once
 
-#include "ProfilingData.hpp"
-#include "requests/RenderRequestSink.hpp"
+#include "render_api/ProfilingData.hpp"
+#include "render_api/RenderRequestSink.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 

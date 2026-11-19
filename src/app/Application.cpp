@@ -16,7 +16,7 @@
 #include "core/Log.hpp"
 #include "editor/commands/EditorCommandAdapter.hpp"
 #include "editor/events/SceneEvents.hpp"
-#include "editor/events/UIEvents.hpp"
+#include "ui/events/UIEvents.hpp"
 #include "platform/PlatformProcess.hpp"
 #include "platform/PlatformSystem.hpp"
 #include "ui/UIManager.hpp"

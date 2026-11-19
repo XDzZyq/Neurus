@@ -10,8 +10,8 @@
 #include "asset/components/GraphComponent.hpp"
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
-#include "render/requests/RenderRequestSink.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequestSink.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include <algorithm>
 #include <variant>

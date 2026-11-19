@@ -29,10 +29,10 @@
 #include "shared/TestVulkanShared.hpp"
 
 // Shader system headers
-#include "render/shaders/RenderShader.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
-#include "render/shaders/ShaderCompiler.hpp"
+#include "asset/data/shader/RenderShader.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
+#include "asset/shader/ShaderCompiler.hpp"
 #include "asset/data/shader/ShaderStruct.hpp"
 #include "asset/data/ShaderData.hpp"
 

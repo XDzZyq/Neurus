@@ -23,13 +23,13 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestSimpleShadow.hpp"
 
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 
 #include "render/passes/ShadowDepthPass.hpp"
 #include "render/passes/ShadowIntensityPass.hpp"
 #include "render/passes/GeometryPass.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Image.hpp"
 #include "render/Barrier.hpp"
 #include "render/RenderCache.hpp"

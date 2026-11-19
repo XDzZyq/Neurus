@@ -7,18 +7,18 @@
 
 #include "passes/Pass.hpp"
 #include "RenderCache.hpp"
-#include "RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Barrier.hpp"
 #include "PipelineBuilder.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/RenderShader.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
+#include "asset/data/shader/RenderShader.hpp"
 #include "core/Log.hpp"
 
 #include "../resources/MeshGPU.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "requests/RenderRequests.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include <array>
 #include <cstdint>

@@ -3,11 +3,11 @@
  * @brief Implementation of the CPU-only parse->generate pipeline for compute shaders.
  */
 
-#include "ComputeShader.hpp"
+#include "asset/data/shader/ComputeShader.hpp"
 
-#include "ShaderGenerator.hpp"
-#include "ShaderLibrary.hpp"
-#include "ShaderParser.hpp"
+#include "asset/shader/ShaderGenerator.hpp"
+#include "asset/shader/ShaderLibrary.hpp"
+#include "asset/shader/ShaderParser.hpp"
 
 #include "core/Log.hpp"
 

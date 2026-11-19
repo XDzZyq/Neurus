@@ -3,6 +3,27 @@
 Neurus uses Google Test for both GPU-dependent and non-GPU unit tests, with
 reference-image regression as the primary signal for rendered output.
 
+## CPU Boundary Tests
+
+`neurus_cpu_test` runs graph, shader, document and Editor behavior without
+linking the renderer, the Vulkan loader, Qt or embedded Python. Shader compilation
+still uses the CPU shaderc library. The normal project configure may locate the
+Vulkan SDK; this target proves the link boundary, not an SDK-free configure.
+
+```bash
+cmake --build build --config Debug --target neurus_cpu_test
+ctest --test-dir build -C Debug -R '^Neurus\.CPU\.' --output-on-failure
+python scripts/check_layer_boundaries.py
+```
+
+CTest prefixes these cases with `Neurus.CPU.` and also registers the include
+check as `Neurus.LayerBoundaries`. Both use the normal build tree; CPU tests run
+from its root so `res/` resolves consistently. The include check rejects renderer
+internals in asset, Editor, Script and UI code, and enforces Qt/Vulkan-free CPU
+layers. Shared renderer request/frame values belong in `src/render_api/`, linked
+through `neurus_render_api`. This executable complements the full suite and does
+not replace GPU or reference-image verification.
+
 ## Overview
 
 Neurus uses **Google Test** for both GPU-dependent and non-GPU unit tests. GPU

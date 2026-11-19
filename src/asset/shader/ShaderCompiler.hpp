@@ -12,7 +12,7 @@ namespace neurus {
  * @brief Internal shaderc wrapper for GLSL-to-SPIR-V compilation.
  *
  * Owns one shaderc::Compiler and a persistent CompileOptions the public API
- * modifies. Internal to src/render/shaders/.
+ * modifies. Internal to asset/shader/.
  *
  * @note shaderc::Compiler is expensive to construct (initializes glslang
  *       internally), so keep one instance alive.

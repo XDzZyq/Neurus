@@ -21,7 +21,7 @@ enum value is added only together with its consumer.
 ### Context provisioning
 
 The frame's context is two views over the same document state - `RenderContext`
-(`src/render/RenderContext.hpp`) for the Renderer and `UIContext`
+(`src/render_api/RenderContext.hpp`) for the Renderer and `UIContext`
 (`src/ui/UIContext.hpp`) for the UI - and the Editor is the single producer of
 both. It fills them and the other layers read. See
 [RenderContext and UIContext](#rendercontext-and-uicontext).
@@ -138,18 +138,17 @@ pair of borrowed pointers.
 
 ```cpp title="src/editor/Editor.hpp"
 RenderFrameSnapshot BuildSnapshot() const;  // the whole renderer-facing frame, by value
-void UpdateUIContext(UIContext& ctx) const; // scene, config
 ```
 
 `UIContext` is forward-declared, so that half of the header pulls in nothing; but
 `BuildSnapshot()` returns a `RenderFrameSnapshot` by value, so `Editor.hpp` does
-include `render/RenderFrameSnapshot.hpp` for the complete type.
+include `render_api/RenderFrameSnapshot.hpp` for the complete type.
 
 `RenderContext` is the renderer's view, and it has two writers. The Editor
 publishes one owned frame snapshot; `DeferredRenderer::recordFrame()` stamps the
 frame half. Every field carries a banner naming the half that fills it.
 
-```cpp title="src/render/RenderContext.hpp"
+```cpp title="src/render_api/RenderContext.hpp"
 struct RenderContext
 {
     // Editor half - the owned frame published by Editor::BuildSnapshot()
@@ -167,7 +166,7 @@ struct RenderContext
 };
 ```
 
-`RenderFrameSnapshot` (`src/render/RenderFrameSnapshot.hpp`) is an owned deep copy
+`RenderFrameSnapshot` (`src/render_api/RenderFrameSnapshot.hpp`) is an owned deep copy
 of the frame - values only, no Scene pointers and no lazy reads. It carries
 `config`, a `CameraSnapshot camera` (`view`/`projection`/`position`/`target`),
 `meshes` and `lights` ordered by UID, `environmentId`, `activeObjectId`, and the
@@ -185,7 +184,7 @@ Application's frame-scoped half:
 ```cpp title="src/ui/UIContext.hpp"
 struct UIContext
 {
-    // Editor half - assigned by Editor::UpdateUIContext()
+    // Document state - queried by Application from Editor getters
     const Scene*         scene   = nullptr;  // check HasScene()
     const RenderConfig*  config  = nullptr;  // read via Settings(), never directly
 
@@ -226,12 +225,10 @@ Design:
   an owned copy can. `BuildSnapshot()` resolves every scene object to the stable
   UID the renderer's caches are keyed by and copies every matrix and parameter by
   value, so nothing in the frame dereferences the Scene after it is built (see
-  `render/RenderFrameSnapshot.hpp`).
-- `UpdateUIContext()` assigns fields only and must never call a `UIContext`
-  method: it runs in `neurus_editor`, which does not link `neurus_ui` (that
-  library links this one), so a symbol defined there would not resolve. The
-  Application adds the frame-scoped `profile`/`log`/`history`/`scriptConsole`
-  members.
+  `render_api/RenderFrameSnapshot.hpp`).
+- Application assembles the UI-owned `UIContext` from the Editor's scene/config
+  getters and adds `profile`/`log`/`history`/`scriptConsole`. Editor does not
+  include UIContext or link the UI library.
 - Keeping the UI's view a separate two-field struct is what makes "the gizmo is
   not scene data" a property of the type rather than a convention.
 - **The fallback is one value, reached two ways.** `UIContext::Settings()` is
@@ -411,8 +408,8 @@ in [Events](events.md).
 - `RenderRequest` posting through `RenderRequestSink` for Editor-to-Renderer GPU work
 - `RenderContext`: the renderer's view - one owned `RenderFrameSnapshot` (built
   by `Editor::BuildSnapshot()`) plus the frame half stamped by the renderer
-- `UIContext`: the UI's view (scene and config), produced by
-  `Editor::UpdateUIContext()`
+- `UIContext`: the UI's view, assembled by Application from Editor queries
+  and frame-scoped service values
 - Editor orchestrator with `RegisterController<T>()` and `Edit()` for event
   dispatch
 - `Controllers` base class with the `Init(ControllerContext&)` virtual interface

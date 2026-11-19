@@ -28,8 +28,8 @@
 #include <gtest/gtest.h>
 
 #include "core/RenderConfig.hpp"
-#include "render/RenderContext.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Scene.hpp"
 #include "ui/UIContext.hpp"
 
@@ -124,15 +124,11 @@ TEST(UIContextShape, EnumeratesEveryObjectInTheMasterList)
 }
 
 // ---------------------------------------------------------------------------
-// The Editor's half is assignable — what Editor::UpdateUIContext() relies on
+// Application assembles document fields without a framework dependency.
 // ---------------------------------------------------------------------------
 
-TEST(UIContextShape, EditorHalfIsTwoPlainPointers)
+TEST(UIContextShape, DocumentFieldsAreTwoPlainPointers)
 {
-	// Editor::UpdateUIContext() compiles into neurus_editor, which does not link
-	// neurus_ui, so it may only *assign* these fields — never call a UIContext
-	// method defined in that library. This is the shape that permission rests
-	// on: two pointers, no framework type, nothing to compute.
 	Scene scene{};
 	RenderConfig config{};
 

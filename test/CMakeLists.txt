@@ -318,6 +318,65 @@ add_custom_command(TARGET neurus_test POST_BUILD
 # WORKING_DIRECTORY pinned to CMAKE_BINARY_DIR so res/ and testdata/ (copied
 # there by POST_BUILD) are always resolvable relative to CWD.
 include(GoogleTest)
+
+# This executable proves that document/shader/editor behavior does not require
+# the renderer, Vulkan loader, Qt, or the embedded Python runtime.
+add_executable(neurus_cpu_test
+	shared/test_main_headless.cpp
+	core/test_graph.cpp
+	core/test_graph_morphism.cpp
+	core/test_graph_clone.cpp
+	asset/test_meshdata.cpp
+	asset/test_imagedata.cpp
+	asset/test_pass_ports.cpp
+	asset/test_graph_component.cpp
+	asset/test_shader_data.cpp
+	asset/test_render_graph_data.cpp
+	asset/test_render_graph_document.cpp
+	render/test_shader_parser.cpp
+	render/test_shader_snapshot.cpp
+	editor/test_editor_render_graph.cpp
+	editor/test_editor_scene_lifecycle.cpp
+	editor/test_shader_controller.cpp
+	editor/test_render_config_controller.cpp
+	render_api/test_render_requests.cpp
+)
+target_link_libraries(neurus_cpu_test PRIVATE
+	neurus_editor
+	neurus_render_api
+	neurus_asset
+	neurus_scene
+	gtest
+	nlohmann_json
+)
+target_include_directories(neurus_cpu_test PRIVATE
+	${CMAKE_SOURCE_DIR}/src
+	${CMAKE_SOURCE_DIR}/test
+)
+target_compile_definitions(neurus_cpu_test PRIVATE
+	TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+	TEST_RELATIVE_PROJECT_DIR="${TEST_RELATIVE_PROJECT_DIR}"
+	GLM_FORCE_DEPTH_ZERO_TO_ONE
+)
+add_custom_command(TARGET neurus_cpu_test POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_SOURCE_DIR}/res" "${CMAKE_BINARY_DIR}/res"
+)
+if(WIN32 AND TARGET shaderc_shared)
+	add_custom_command(TARGET neurus_cpu_test POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			$<TARGET_FILE:shaderc_shared> $<TARGET_FILE_DIR:neurus_cpu_test>
+	)
+endif()
+gtest_discover_tests(neurus_cpu_test
+	TEST_PREFIX "Neurus.CPU."
+	DISCOVERY_TIMEOUT 30
+	WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+add_test(NAME Neurus.LayerBoundaries
+	COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check_layer_boundaries.py"
+)
+
 gtest_discover_tests(neurus_test
 	TEST_PREFIX "Neurus."
 	DISCOVERY_TIMEOUT 30
