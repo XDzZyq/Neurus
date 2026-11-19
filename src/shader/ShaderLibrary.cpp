@@ -1,17 +1,15 @@
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include "asset/data/ShaderData.hpp"
-#include "asset/shader/ShaderCompiler.hpp"
-#include "asset/data/shader/RenderShader.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
-#include "asset/shader/ShaderGenerator.hpp"
-#include "asset/shader/ShaderParser.hpp"
+#include "shader/ShaderCompiler.hpp"
+#include "shader/RenderShader.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderGenerator.hpp"
+#include "shader/ShaderParser.hpp"
 
 #include "core/Log.hpp"
 
 #include <shaderc/shaderc.hpp>
-
-#include <filesystem>
 
 namespace neurus {
 
@@ -90,53 +88,7 @@ static const std::unordered_map<std::string, S_Const>& GetBuildInConstantsInstan
 
 std::string ShaderLibrary::ResolveShaderPath(const std::string& path)
 {
-	// Already absolute? (Unix /, Windows \, or X: drive)
-	if (!path.empty()
-		&& (path[0] == '/' || path[0] == '\\'
-			|| (path.size() > 1 && path[1] == ':')))
-	{
-		return path;
-	}
-
-	// Strip a leading "res/shaders/" prefix if present, so that paths like
-	// "res/shaders/compute/foo.comp.glsl" resolve correctly against NEURUS_SHADER_DIR
-	// (which already points to .../res/shaders/).  Without this, concatenation
-	// produces a doubled ".../res/shaders/res/shaders/..." path.
-	std::string relPath = path;
-	{
-		constexpr const char* kShaderPrefix = "res/shaders/";
-		constexpr size_t kShaderPrefixLen = 12;
-		if (relPath.size() > kShaderPrefixLen
-			&& relPath.compare(0, kShaderPrefixLen, kShaderPrefix) == 0)
-		{
-			relPath.erase(0, kShaderPrefixLen);
-		}
-	}
-
-	// Try relative to the compile-time shader directory
-	{
-		std::string resolved = NEURUS_SHADER_DIR + relPath;
-		if (std::filesystem::exists(resolved))
-		{
-			NEURUS_LOG("[ShaderLibrary] Resolved '" << path << "' -> '" << resolved << "'");
-			return resolved;
-		}
-	}
-
-	// Fallback: walk up directories (tests run from build/debug/test/)
-	for (const auto& prefix : {"../../../", "../../", "../", ""})
-	{
-		std::string resolved = std::string(prefix) + path;
-		if (std::filesystem::exists(resolved))
-		{
-			NEURUS_LOG("[ShaderLibrary] Resolved '" << path << "' -> '" << resolved << "'");
-			return resolved;
-		}
-	}
-
-	// Could not resolve - return original and let the caller fail with a clear error
-	NEURUS_LOG("[ShaderLibrary] Could NOT resolve shader path '" << path << "'");
-	return path;
+	return ShaderData::ResolveSourcePath(path);
 }
 
 // =========================================================================

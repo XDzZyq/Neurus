@@ -3,15 +3,15 @@
  * @brief Implementation of CPU-only RenderShader with parse->generate flow.
  *
  * Implements the parse->generate pipeline via ShaderParser and ShaderGenerator.
- * All GPU compilation (SPIR-V, ShaderModule creation) is handled externally
- * by ShaderLibrary.
+ * ShaderLibrary compiles generated GLSL to SPIR-V on the CPU. Vulkan shader
+ * modules and GPU pipelines remain renderer-owned.
  */
 
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/shader/ShaderParser.hpp"
-#include "asset/shader/ShaderGenerator.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderParser.hpp"
+#include "shader/ShaderGenerator.hpp"
 #include "core/Log.hpp"
 
 namespace neurus {

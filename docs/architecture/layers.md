@@ -167,17 +167,33 @@ Editor and UI include these contracts without linking renderer implementation.
   convention, not by cast)
 - CPU-side shader data: `ShaderData` under `data/`, with its IR/unit headers
   (`ShaderStruct`, `ShaderUnit`, `ShaderStage`, `ShaderStructSerialize`) under
-  `data/shader/`; the CPU `RenderShader` / `ComputeShader` leaves and
-  `ShaderSnapshot` live there too. Parsing, generation, compilation through
-  shaderc and loading live under `asset/shader/`, with pooled shader
-  registration under `asset/registrations/`
+  `data/shader/`. `ShaderSnapshot` is a passive owned value there; snapshot
+  construction and concrete shader behavior belong to the Shader module
+- `ShaderData` owns shader source text IO and path resolution; Asset neither
+  parses shader source nor compiles it
 - CPU-side data representation only; GPU upload handled by Renderer via
   `MeshGPU` and `Image::FromImageData`
 - Must NOT issue draw calls, manage GPU pipelines, or own GPU resources
 
-The asset build separates `neurus_asset_data` (resource values and CPU shader services)
+The asset build separates `neurus_asset_data` (CPU resource values and source IO)
 from `neurus_asset` (project persistence). Scene depends only on the data target;
 persistence depends on scene and data, so the CPU targets have no asset/scene cycle.
+Neither Asset target depends on shader tooling.
+
+## Shader Module (`src/shader/`)
+
+- CPU-only `neurus_shader`, depending on `neurus_asset_data` and shaderc
+- Owns `RenderShader`, `ComputeShader`, shader parsing/generation/compilation,
+  `ShaderLibrary`, and `ShaderSnapshotBuilder`
+- Consumes source text provided by Asset; file-loading convenience methods
+  delegate text IO and path resolution to `ShaderData::ReadSource` and `ResolveSourcePath`
+- Owns concrete shader cereal registrations; ApplicationCore force-links them
+  before generic Asset persistence restores registered resource types
+- Preserves current shader serialization reload/recompile behavior
+- Does not own Vulkan shader modules, pipelines, descriptor sets or renderer state
+
+The shared `render_api` contracts carry passive asset snapshots and scene values;
+they do not depend on the Shader module.
 
 ## Scene Layer (`src/scene/`)
 

@@ -7,8 +7,9 @@ reference-image regression as the primary signal for rendered output.
 
 `neurus_cpu_test` runs graph, shader, document and Editor behavior without
 linking the renderer, the Vulkan loader, Qt or embedded Python. Shader compilation
-still uses the CPU shaderc library. The normal project configure may locate the
-Vulkan SDK; this target proves the link boundary, not an SDK-free configure.
+uses `neurus_shader` and the CPU shaderc library; passive Asset targets and
+`render_api` do not depend on those services. The normal project configure may
+locate the Vulkan SDK; this target proves the link boundary, not an SDK-free configure.
 
 ```bash
 cmake --build build --config Debug --target neurus_cpu_test
@@ -20,9 +21,21 @@ CTest prefixes these cases with `Neurus.CPU.` and also registers the include
 check as `Neurus.LayerBoundaries`. Both use the normal build tree; CPU tests run
 from its root so `res/` resolves consistently. The include check rejects renderer
 internals in asset, Editor, Script and UI code, and enforces Qt/Vulkan-free CPU
-layers. Shared renderer request/frame values belong in `src/render_api/`, linked
-through `neurus_render_api`. This executable complements the full suite and does
+layers, including the dedicated CPU Shader module. Shared renderer request/frame
+values belong in `src/render_api/`, linked through `neurus_render_api`. This executable complements the full suite and does
 not replace GPU or reference-image verification.
+
+CI also runs the include checker in a standalone `Layer boundaries` job before
+starting the Windows/macOS matrix and Linux build. It needs only Python, with no
+submodules, Qt or Vulkan setup. A violation fails the required `ci-gate`; the
+existing documentation-only skip behavior is preserved.
+
+The checker resolves literal project includes against the source directory,
+`src/`, and unique header names. It reports forbidden layer dependencies and
+Qt/Vulkan includes as `file:line` diagnostics. It checks direct includes, not
+macro-generated includes, CMake link dependencies or runtime ownership. Separate
+CMake targets and the CPU executable provide additional build/link checks;
+architectural review still covers the runtime rules.
 
 ## Overview
 

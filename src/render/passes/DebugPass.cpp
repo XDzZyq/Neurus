@@ -8,7 +8,7 @@
 #include "RenderCache.hpp"
 #include "render_api/RenderContext.hpp"
 #include "render/Barrier.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ShaderLibrary.hpp"
 #include "core/Log.hpp"
 
 #include "../resources/MeshGPU.hpp"

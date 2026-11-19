@@ -69,9 +69,16 @@ short working reference.
   requests belong under `render_api/` in `neurus_render_api`. It contains no Qt,
   Vulkan, Editor or Renderer implementation headers. UIContext stays in UI;
   Application assembles it from Editor getters.
-- CPU shader data and snapshots belong under `asset/data/shader/`; shader
-  parsing, generation, compilation and loading belong under `asset/shader/`.
-  Renderer helpers translate CPU snapshot metadata into Vulkan declarations.
+- Passive shader data, IR and snapshots belong under `asset/data/shader/`.
+  `ShaderData` owns source text IO and path resolution. CPU shader
+  parsing, generation, compilation, high-level RenderShader/ComputeShader and
+  snapshot construction belong under `shader/` in `neurus_shader`; the builder
+  has its own ShaderSnapshotBuilder header. Renderer helpers translate CPU
+  snapshot metadata into Vulkan declarations.
+- Asset data and persistence must not depend on Shader tooling. Shader cereal
+  registrations belong under `shader/registrations/` and are force-linked by
+  ApplicationCore; generic persistence uses its resource callback. Preserve
+  existing shader serialization reload/recompile behavior.
 - Editor light requests carry scene-light snapshots; GPU layout conversion
   belongs to the Renderer. Never include UploadManager just to prepare a request.
 - Asset and scene targets must not link Renderer. Editor-specific persistence

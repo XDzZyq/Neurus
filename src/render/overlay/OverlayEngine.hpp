@@ -35,7 +35,7 @@
 #include "../RenderCache.hpp"
 #include "../passes/ComputePass.hpp"
 #include "../render_graph/RenderGraph.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
+#include "shader/ComputeShader.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 

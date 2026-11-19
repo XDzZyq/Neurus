@@ -7,9 +7,10 @@
  * local_size, GLSL extensions, multiview).
  */
 
-#include "asset/shader/ShaderParser.hpp"
+#include "shader/ShaderParser.hpp"
 
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "asset/data/ShaderData.hpp"
 
 #include "core/Log.hpp"
 
@@ -18,7 +19,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <sstream>
 
 namespace neurus {
@@ -201,28 +201,14 @@ std::pair<uint32_t, uint32_t> ShaderParser::GetStd140Layout(const std::string& t
 
 ShaderStruct ShaderParser::ParseShaderFile(const std::string& filepath, ShaderType type)
 {
-	// Resolve "res/..." against the compile-time shader directory so parsing does
-	// not depend on the process working directory; absolute paths pass through.
-	const std::string resolvedPath = ShaderLibrary::ResolveShaderPath(filepath);
-
-	std::ifstream file(resolvedPath);
-	if (!file.is_open())
+	std::string error;
+	const std::optional<std::string> source = ShaderData::ReadSource(filepath, &error);
+	if (!source)
 	{
-		NEURUS_ERR("ShaderParser: cannot open file '" << filepath
-			<< "' (resolved to '" << resolvedPath << "')");
+		NEURUS_ERR("ShaderParser: " << error);
 		return ShaderStruct();
 	}
-
-	std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-	if (source.empty())
-	{
-		NEURUS_ERR("ShaderParser: file is empty '" << filepath
-			<< "' (resolved to '" << resolvedPath << "')");
-		return ShaderStruct();
-	}
-
-	return ParseShaderCode(source, type);
+	return ParseShaderCode(*source, type);
 }
 
 // ============================================================================

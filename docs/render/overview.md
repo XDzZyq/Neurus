@@ -62,7 +62,7 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 - `src/render_api/RenderContext.hpp` - the renderer's per-frame view (Vulkan-free, all typed pointers), with two writers: the Editor publishes the semantic half (`scene`, `config`, `camera`, `debugDraw`, `gizmoDraw`) and `DeferredRenderer::recordFrame()` stamps the frame half (`width`, `height`, `frameIndex`, `jitter`, `iteration`). `Settings()` lives here and falls back to `DefaultRenderConfig()` (`src/core/RenderConfig.hpp`).
 - `src/render_api/ProfilingData.hpp` - Vulkan-free profiling POD (`PassProfile`, `FrameProfile`).
 - `src/render/GPUProfiler.hpp/cpp` - GPU timestamp query pool (per-frame, per-pass).
-- `src/asset/data/shader/` and `src/asset/shader/` - CPU shader data and parse/generate/compile services; see [Shaders](shaders.md).
+- `src/asset/data/shader/` - passive CPU shader IR and snapshot values; `ShaderData` owns source text IO. `src/shader/` contains CPU shader bundles and parse/generate/compile/snapshot-building services; see [Shaders](shaders.md).
 - `src/render/DeferredRenderer.hpp/cpp` - the public renderer entry point, `NextWork()` and frame drawing.
 - `src/render/overlay/OverlayEngine.hpp/cpp` - the overlay graph: selection outline, overlay copy, debug and gizmo passes over the scene graph's tail image, plus the `OverlayCopyPass` that seeds `OverlayOutput`.
 - `src/render/RenderCache.hpp/cpp` - cross-frame resource pool; holds `MeshGPU` and `EnvironmentGPU` in refcounted tables, owns `LightingCache`, `CameraGPU`, `DebugCache`, `GizmoCache`, attachments and shadow maps.

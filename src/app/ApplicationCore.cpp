@@ -3,6 +3,7 @@
 #include "app/Preferences.hpp"
 
 #include "asset/Project.hpp"
+#include "shader/registrations/ShaderRegistration.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "editor/project/EditorComponent.hpp"
 #include "asset/components/GraphComponent.hpp"

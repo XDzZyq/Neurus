@@ -104,6 +104,7 @@ set(NEURUS_TEST_SOURCES
 	asset/test_default_project.cpp
 	asset/test_serialize_optional.cpp
 	asset/test_shader_data.cpp
+	asset/test_shader_data_source.cpp
 	asset/test_ui_component.cpp
 	asset/test_render_graph_data.cpp
 	asset/test_render_graph_document.cpp
@@ -178,6 +179,8 @@ target_sources(neurus_test PRIVATE
 )
 
 target_link_libraries(neurus_test PRIVATE
+	neurus_shader
+	shaderc_shared
 	neurus_scene
 	neurus_session
 	neurus_app_core
@@ -331,6 +334,7 @@ add_executable(neurus_cpu_test
 	asset/test_pass_ports.cpp
 	asset/test_graph_component.cpp
 	asset/test_shader_data.cpp
+	asset/test_shader_data_source.cpp
 	asset/test_render_graph_data.cpp
 	asset/test_render_graph_document.cpp
 	render/test_shader_parser.cpp
@@ -342,6 +346,7 @@ add_executable(neurus_cpu_test
 	render_api/test_render_requests.cpp
 )
 target_link_libraries(neurus_cpu_test PRIVATE
+	neurus_shader
 	neurus_editor
 	neurus_render_api
 	neurus_asset

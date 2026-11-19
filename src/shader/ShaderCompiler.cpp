@@ -1,4 +1,4 @@
-#include "asset/shader/ShaderCompiler.hpp"
+#include "shader/ShaderCompiler.hpp"
 
 #include "core/Log.hpp"
 

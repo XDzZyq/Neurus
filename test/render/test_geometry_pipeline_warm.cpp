@@ -22,7 +22,7 @@
 #include "render/passes/GeometryPass.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/resources/PipelineCache.hpp"
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
 #include "asset/data/MeshData.hpp"
 #include "scene/Camera.hpp"

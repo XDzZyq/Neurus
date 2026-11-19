@@ -21,8 +21,8 @@
 #include "render/TemporalAccumulator.hpp"
 #include "render/HaltonSequence.hpp"
 
-#include "asset/data/shader/ComputeShader.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 

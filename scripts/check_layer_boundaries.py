@@ -15,19 +15,20 @@ import sys
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
 SOURCE_SUFFIXES = {".cpp", ".hpp", ".h", ".cc", ".cxx", ".mm"}
 FORBIDDEN_LAYERS = {
-    "core": {"asset", "scene", "editor", "render", "render_api", "ui"},
-    "asset": {"editor", "render", "render_api", "ui"},
-    "scene": {"editor", "render", "render_api", "ui"},
+    "core": {"shader", "asset", "scene", "editor", "render", "render_api", "ui"},
+    "asset": {"shader", "editor", "render", "render_api", "ui"},
+    "shader": {"app", "editor", "render", "render_api", "ui", "scene", "script"},
+    "scene": {"shader", "editor", "render", "render_api", "ui"},
     "editor": {"render", "ui"},
     "script": {"render", "ui"},
     "ui": {"render"},
     "render": {"editor", "ui"},
-    "render_api": {"editor", "render", "ui"},
+    "render_api": {"shader", "editor", "render", "ui"},
     "command": {"editor", "render", "render_api", "ui"},
     "ipc": {"editor", "render", "render_api", "ui"},
     "cli": {"editor", "render", "render_api", "ui"},
 }
-GPU_FREE_LAYERS = {"core", "asset", "scene", "editor", "script", "render_api", "command", "ipc", "cli"}
+GPU_FREE_LAYERS = {"core", "asset", "shader", "scene", "editor", "script", "render_api", "command", "ipc", "cli"}
 QT_FREE_LAYERS = GPU_FREE_LAYERS | {"render"}
 INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*([<"])([^>"\n]+)[>"]', re.MULTILINE)
 COMMENTS = re.compile(r'/\*.*?\*/|//[^\n]*', re.DOTALL)

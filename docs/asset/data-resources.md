@@ -50,7 +50,7 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
   monotonic version. `FindStage` returns `nullptr` when a stage is absent;
   `GetStage` default-inserts.
 - The concrete leaves are `RenderShader` (vertex + fragment) and
-  `ComputeShader` (compute), both in `src/asset/data/shader/`. They add
+  `ComputeShader` (compute), both owned by the CPU `src/shader/` module. They add
   `ParseAndGenerate()` and serialize their source paths (and compute defaults);
   each leaf then serializes the stage map (`path`/`code`/`parsed`) through the
   `ShaderData` helpers.
@@ -68,6 +68,14 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
 The Script Console exposes the data as `neurus.shader` (stage constants,
 `load_shader`, IR classes), `neurus.data.shaders` (pooled shaders by UID/name)
 and `mesh.shader` (the per-mesh slot). See [Scripting](../script/overview.md#shaders).
+
+`ShaderData::ResolveSourcePath` and `ShaderData::ReadSource` provide source path
+resolution and raw text IO without modifying stage content or compiling it. Passive shader
+IR, stage and snapshot values stay in Asset; parsing, code generation, compilation
+and snapshot building belong to the CPU Shader module. `neurus_asset_data` and
+project persistence have no dependency on that tooling. ApplicationCore registers
+concrete shader types before generic persistence restores them, preserving the
+existing reload/recompile behavior. See [Shaders](../render/shaders.md).
 
 ## PixelFormat (`asset/PixelFormat.hpp`)
 

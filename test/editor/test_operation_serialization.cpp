@@ -41,7 +41,7 @@
 #include "editor/operations/ScriptOperations.hpp"
 #include "editor/events/ShaderEvents.hpp"
 #include "editor/operations/ShaderOperations.hpp"
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"

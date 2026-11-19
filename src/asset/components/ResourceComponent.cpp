@@ -21,7 +21,6 @@
 // UID-derived types are registered before serialization runs.
 #include "scene/registrations/TypeRegistration.hpp"
 #include "asset/registrations/DataRegistration.hpp"
-#include "asset/registrations/ShaderRegistration.hpp"
 
 #include <algorithm>
 #include <string>

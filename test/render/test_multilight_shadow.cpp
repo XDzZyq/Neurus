@@ -23,7 +23,7 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestMultiShadow.hpp"
 
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"

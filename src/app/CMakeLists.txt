@@ -21,6 +21,7 @@ target_include_directories(neurus_app_core PUBLIC
 )
 
 target_link_libraries(neurus_app_core PUBLIC
+	neurus_shader
 	Vulkan::Vulkan
 	neurus_platform
 	neurus_render

@@ -35,7 +35,7 @@
 #include "render/resources/LightingCache.hpp"
 #include "render/resources/MeshGPU.hpp"
 #include "render/resources/PipelineCache.hpp"
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
 #include "asset/data/ImageData.hpp"
 #include "asset/PixelFormat.hpp"

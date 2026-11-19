@@ -1,20 +1,5 @@
-# CPU resources and shader services do not depend on scene or persistence.
+# Passive CPU resource data and file access do not depend on shader tooling.
 add_library(neurus_asset_data STATIC
-	data/shader/RenderShader.hpp
-	data/shader/RenderShader.cpp
-	data/shader/ComputeShader.hpp
-	data/shader/ComputeShader.cpp
-	shader/ShaderParser.hpp
-	shader/ShaderParser.cpp
-	shader/ShaderGenerator.hpp
-	shader/ShaderGenerator.cpp
-	shader/ShaderCompiler.hpp
-	shader/ShaderCompiler.cpp
-	shader/ShaderLibrary.hpp
-	shader/ShaderLibrary.cpp
-	registrations/ShaderRegistration.hpp
-	registrations/ShaderRegistration.cpp
-	shader/ShaderSnapshot.cpp
 	data/shader/ShaderSnapshot.hpp
 	PixelFormat.hpp
 	registrations/DataRegistration.hpp
@@ -44,7 +29,7 @@ add_library(neurus_asset_data STATIC
 	data/ShaderData.hpp
 	data/ShaderData.cpp
 )
-target_link_libraries(neurus_asset_data PUBLIC glm stb neurus_core cereal shaderc_shared)
+target_link_libraries(neurus_asset_data PUBLIC glm stb neurus_core cereal)
 target_include_directories(neurus_asset_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(neurus_asset_data PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_compile_definitions(neurus_asset_data PRIVATE

@@ -16,10 +16,10 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/shader/RenderShader.hpp"
-#include "asset/shader/ShaderGenerator.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/shader/ShaderParser.hpp"
+#include "shader/RenderShader.hpp"
+#include "shader/ShaderGenerator.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderParser.hpp"
 #include "asset/data/shader/ShaderStruct.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
 #include "core/Log.hpp"

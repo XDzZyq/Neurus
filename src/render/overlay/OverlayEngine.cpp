@@ -16,8 +16,8 @@
 #include "passes/GizmoPass.hpp"
 #include "passes/SelectionOutlinePass.hpp"
 
-#include "asset/data/shader/ComputeShader.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include "core/Log.hpp"
 

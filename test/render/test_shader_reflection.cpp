@@ -6,9 +6,9 @@
 #include <gtest/gtest.h>
 
 #include "render/render_graph/ShaderReflection.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
-#include "asset/data/shader/RenderShader.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/RenderShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include <array>
 #include <memory>

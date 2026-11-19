@@ -96,6 +96,7 @@ add_library(neurus_render STATIC
 add_subdirectory(passes)
 
 target_link_libraries(neurus_render PUBLIC
+	neurus_shader
 	Vulkan::Vulkan
 	glm
 	stb

@@ -17,11 +17,12 @@
 #include <string>
 
 #include "asset/components/ResourceComponent.hpp"
+#include "shader/registrations/ShaderRegistration.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStruct.hpp"
 #include "core/ResourceManager.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/RenderShader.hpp"
 
 namespace
 {

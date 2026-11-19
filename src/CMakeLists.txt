@@ -19,6 +19,9 @@ add_subdirectory(platform)
 # Asset Layer (CPU-side data only - no internal dependencies)
 add_subdirectory(asset)
 
+# CPU shader processing above passive resource data
+add_subdirectory(shader)
+
 # Shared CPU-only render values and request interfaces
 add_subdirectory(render_api)
 

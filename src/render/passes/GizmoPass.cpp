@@ -9,7 +9,7 @@
 #include "render_api/RenderContext.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
 #include "render/Barrier.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ShaderLibrary.hpp"
 #include "core/Log.hpp"
 
 #include "render_api/overlay/GizmoDrawList.hpp"

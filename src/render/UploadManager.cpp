@@ -14,7 +14,7 @@
 #include "resources/EnvironmentGPU.hpp"
 #include "resources/LightGPU.hpp"
 #include "resources/LightingCache.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"

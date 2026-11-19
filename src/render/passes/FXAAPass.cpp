@@ -7,8 +7,8 @@
 #include "Image.hpp"
 #include "render_api/RenderContext.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 #include "core/Log.hpp"
 #include <stdexcept>
 

@@ -8,13 +8,10 @@
 #include "asset/data/render_graph/PassPorts.hpp"
 
 #include <cstdint>
-#include <span>
 #include <string>
 #include <vector>
 
 namespace neurus {
-
-class ShaderData;
 
 /// @brief Descriptor kind a binding declares.
 enum class DescriptorKind : std::uint8_t
@@ -66,16 +63,5 @@ struct ShaderSnapshot
 	std::vector<uint32_t>           fragmentSpv;
 	std::vector<uint32_t>           computeSpv;
 };
-
-/**
- * @brief Flattens a pooled shader into a snapshot.
- *
- * @param shader            Shader bundle to read.
- * @param optionalBindings  Bindings the pass marks PARTIALLY_BOUND.
- * @throws std::runtime_error when two stages declare one binding with
- *         conflicting types or counts.
- */
-ShaderSnapshot MakeShaderSnapshot(const ShaderData& shader,
-                                  std::span<const uint32_t> optionalBindings = {});
 
 } // namespace neurus

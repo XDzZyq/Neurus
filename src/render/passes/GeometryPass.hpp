@@ -16,8 +16,8 @@
 #include "../PipelineBuilder.hpp"
 #include "../buffers/BufferLayout.hpp"
 #include "../resources/CameraGPU.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/RenderShader.hpp"
 #include "Pass.hpp"
 
 #include <glm/glm.hpp>

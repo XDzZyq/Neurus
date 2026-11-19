@@ -21,7 +21,7 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestSimpleShadow.hpp"
 
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
 #include "render/passes/ShadowDepthPass.hpp"
 #include "render/passes/GeometryPass.hpp"

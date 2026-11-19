@@ -4,6 +4,7 @@
  */
 
 #include "render/render_graph/ShaderReflection.hpp"
+#include "shader/ShaderSnapshotBuilder.hpp"
 
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderSnapshot.hpp"

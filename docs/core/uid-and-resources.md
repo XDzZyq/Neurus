@@ -42,7 +42,7 @@ classDiagram
     ShaderData <|-- ComputeShader
 ```
 
-`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. `ShaderData`'s concrete leaves are the renderer's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
+`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. `ShaderData`'s concrete leaves are the CPU Shader module's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
 
 ## ObjectID as identity (`scene/ObjectID.hpp`)
 

@@ -33,7 +33,8 @@ ctest --test-dir build -C Debug -R "^Neurus\.CPU\." --output-on-failure
 python scripts/check_layer_boundaries.py
 ```
 
-Shaderc is still required for CPU shader compilation. The full configure still
+CPU shader tests link `neurus_shader` and shaderc; passive asset data and
+`render_api` remain independent of shader tooling. The full configure still
 locates the SDK; this target is a link-boundary check, not a headless renderer.
 
 On Windows, `make` uses whatever `sh.exe` is on `PATH`, so that path must not

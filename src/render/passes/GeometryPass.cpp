@@ -12,8 +12,8 @@
 #include "PipelineBuilder.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/RenderShader.hpp"
 #include "core/Log.hpp"
 
 #include "../resources/MeshGPU.hpp"

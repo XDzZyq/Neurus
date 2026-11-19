@@ -56,6 +56,7 @@ add_library(neurus_editor STATIC
 # Qt-enum translations) are compiled into neurus_ui; the editor itself is
 # Qt-free so the headless renderer can link it.
 target_link_libraries(neurus_editor PUBLIC
+	neurus_shader
 	neurus_command
 	neurus_scene
 	neurus_asset

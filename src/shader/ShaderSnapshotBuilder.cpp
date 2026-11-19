@@ -1,9 +1,9 @@
 /**
- * @file ShaderSnapshot.cpp
+ * @file ShaderSnapshotBuilder.cpp
  * @brief Flattens a pooled shader into the layer-boundary snapshot.
  */
 
-#include "asset/data/shader/ShaderSnapshot.hpp"
+#include "shader/ShaderSnapshotBuilder.hpp"
 
 #include "asset/data/ShaderData.hpp"
 

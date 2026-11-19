@@ -10,8 +10,8 @@
 #pragma once
 
 #include "../DescriptorManager.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 #include "ComputePass.hpp"
 
 #include <vulkan/vulkan_raii.hpp>

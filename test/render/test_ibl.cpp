@@ -25,8 +25,8 @@
 #include "render/PipelineBuilder.hpp"
 #include "render/DescriptorManager.hpp"
 #include "render/Image.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 #include <algorithm>
 #include <array>
 #include <cstring>

@@ -14,8 +14,8 @@
 #include "Image.hpp"
 #include "render/Barrier.hpp"
 #include "core/RenderConfig.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 #include "Texture.hpp"
 
 #include "core/Log.hpp"

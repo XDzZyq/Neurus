@@ -25,7 +25,7 @@
 #include "render_api/RenderRequests.hpp"
 
 #include "render_api/RenderFrameSnapshot.hpp"
-#include "asset/data/shader/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 #include "script/ScriptContext.hpp"
 
 #include "core/Log.hpp"
@@ -35,8 +35,8 @@
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStage.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
-#include "asset/data/shader/ComputeShader.hpp"
-#include "asset/shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
 #include "scene/DebugMesh.hpp"
