@@ -768,7 +768,7 @@ void Editor::NewScene()
 
 		m_scene = std::make_unique<Scene>();
 		m_resources->Clear();
-		m_renderManager->Config() = RenderConfig{};
+		m_renderManager->ResetConfig();
 		ed_operations.Clear(); // History does not span scenes.
 
 		// The pool just lost the old viewport camera; a new document gets a new one
@@ -787,7 +787,7 @@ void Editor::NewScene()
 		// clears its list inside a dirty Rebuild().
 		m_viewport.MarkOverlaysDirty();
 
-		m_renderManager->Reset();
+		m_renderManager->ResetGraph();
 
 		NEURUS_LOG("[Editor] Created new scene.");
 	}
@@ -917,7 +917,7 @@ void Editor::BeginLoad()
 
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
-	m_renderManager->Config() = RenderConfig{};
+	m_renderManager->ResetConfig();
 	ed_operations.Clear(); // History does not span scenes.
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
@@ -951,7 +951,8 @@ void Editor::FinishLoad()
 	}
 	else
 	{
-		m_renderManager->Reset();
+		// Only the graph is missing; ConfigComponent already restored settings.
+		m_renderManager->ResetGraph();
 	}
 
 	// A loaded document is the saved baseline, not an unsaved edit.

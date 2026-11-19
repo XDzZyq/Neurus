@@ -14,6 +14,13 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 The Editor owns the live document. `GraphComponent` (`src/asset/components/GraphComponent.hpp`) owns the `proj_render_graph` schema: the flat `RenderGraphRecord`, its node/edge/port records, and `ToRecord`/`FromRecord`, the only crossing between the live graph and the archive. Node fields and output sockets with their tags are saved; input sockets are re-derived from each node's shader on load. A project without the record, or a corrupt node, leaves no pending record and the Editor builds `RenderGraphData::Default()`. The default is today's scene graph - geometry, shadow depth, shadow intensity, SSAO, lighting, compose and FXAA - and, like `CreateDefaultScene`, it is only the built-in fallback.
 
+`RenderManager::ResetConfig()` resets render settings only. `ResetGraph()`
+rebuilds and publishes the default graph and its shader bindings while preserving
+settings. New-scene creation calls both explicitly. During project loading,
+`BeginLoad()` clears settings before deserialization; `FinishLoad()` restores the
+saved graph or calls `ResetGraph()` for a missing record, preserving every setting
+already read from `proj_config`.
+
 The Editor pools one shader per built-in source through `PassShaders` (`src/asset/data/render_graph/PassShaders.hpp`). A restored project adopts its own shaders by name instead of duplicating them, and every publish carries a `ShaderSnapshot` per shader the document names, so the renderer never reads the Editor's pool.
 
 ## Ports from the shader

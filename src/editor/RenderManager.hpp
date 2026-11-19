@@ -52,13 +52,16 @@ public:
 	RenderManager(RenderManager&&)                 = delete;
 	RenderManager& operator=(RenderManager&&)      = delete;
 
+	/** @brief Restores default render settings without changing or publishing the graph. */
+	void ResetConfig();
+
 	/**
-	 * @brief New-scene reset: default document, reseeded shaders and default config.
+	 * @brief Restores the default graph and its shader bindings, preserving render settings.
 	 *
-	 * The pool must have been cleared by the caller; the pass shaders are
-	 * recreated from the built-in kind table.
+	 * Pass shaders are reseeded or adopted from the current pool, and the graph
+	 * is published. Missing legacy graph records use this path after config load.
 	 */
-	void Reset();
+	void ResetGraph();
 
 	/**
 	 * @brief Applies a saved document after a project load.
@@ -81,7 +84,7 @@ public:
 	RenderConfig& Config() { return m_config; }
 	const RenderConfig& Config() const { return m_config; }
 
-	/// @brief The live document; empty until Reset/Restore/SetGraph.
+	/// @brief The live document; empty until ResetGraph/Restore/SetGraph.
 	const RenderGraphData& Graph() const { return m_graph; }
 
 	/// @brief Validates the document, snapshots its shaders and posts the request.

@@ -75,10 +75,14 @@ void RenderManager::AssignNodeShaders()
 	}
 }
 
-void RenderManager::Reset()
+void RenderManager::ResetConfig()
+{
+	m_config = RenderConfig{};
+}
+
+void RenderManager::ResetGraph()
 {
 	m_problems.clear();
-	m_config = RenderConfig{};
 	SeedShaders();
 
 	m_graph = RenderGraphData::Default(*m_passShaders);
