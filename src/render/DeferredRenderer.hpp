@@ -191,14 +191,14 @@ public:
 	vk::Extent2D GetExtent() const override { return r_target ? r_target->Extent() : vk::Extent2D{800, 600}; }
 
 	/**
-	 * @brief Returns the last acquired swapchain image for screenshot capture.
+	 * @brief Returns the last presented swapchain image, or null before presentation.
 	 *
 	 * The returned image is in PRESENT_SRC layout from the most recent frame.
 	 * A caller's readback is submitted after the frame on the same queue and
 	 * waits its own submit, so no idle wait is needed.
 	 *
-	 * @return vk::Image handle (VK_NULL_HANDLE if swapchain not available or
-	 *         image index is invalid).
+	 * @return vk::Image handle, or VK_NULL_HANDLE when the current swapchain
+	 *         has no successfully presented frame.
 	 */
 	vk::Image GetLastSwapchainImage() const;
 
@@ -523,8 +523,8 @@ private:
 	///        them by then.
 	std::array<HeldTables, kMaxFramesInFlight> r_heldTables;
 
-	// --- Last acquired swapchain image index ---
-	uint32_t r_lastImageIndex = 0;
+	// --- Last presented image; invalidated whenever the target is rebuilt ---
+	std::optional<uint32_t> r_lastImageIndex;
 
 	// --- Temporal accumulation state ---
 	uint32_t m_haltonIndex = 0;

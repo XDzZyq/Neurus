@@ -1079,3 +1079,8 @@ Additional checks:
 - Closing the terminal must leave the session running.
 - Launching `Neurus.exe` directly must create no registry entry and open no
   listener.
+
+A windowed snapshot needs a presented image from the current swapchain generation.
+Before the first presentation, or immediately after target recreation, capture
+reports that no frame has been presented instead of reading an undefined image.
+A CLI smoke test should wait for a rendered frame before requesting its capture.

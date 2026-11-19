@@ -440,7 +440,6 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		if (acquired)
 		{
 			imageIndex = *acquired;
-			r_lastImageIndex = imageIndex;
 		}
 		else
 		{
@@ -597,6 +596,8 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	}
 
 	// --- Drawn and presented: this frame consumed its work ---
+	if (presents)
+		r_lastImageIndex = imageIndex;
 	m_drewNothing = false;
 	m_overlaysDirty = false;
 	r_currentFrame = (r_currentFrame + 1) % kMaxFramesInFlight;
@@ -634,7 +635,10 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
 	}
 	else if (r_target->Presents())
 	{
-		if (!m_screenshot->TakeScreenshot(GetLastSwapchainImage(), GetSwapchainFormat(),
+		const vk::Image image = GetLastSwapchainImage();
+		if (!image)
+			throw std::runtime_error("[DeferredRenderer] No frame has been presented yet - nothing to capture");
+		if (!m_screenshot->TakeScreenshot(image, GetSwapchainFormat(),
 		                                  GetExtent(), directory))
 		{
 			NEURUS_ERR("[DeferredRenderer] Swapchain screenshot failed; see the [Screenshot] log line above.");
@@ -822,6 +826,8 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 
 void DeferredRenderer::recreateTarget()
 {
+	// New swapchain images start undefined; none is a valid capture source yet.
+	r_lastImageIndex.reset();
 	// The target and the screen-space attachments it sizes are about to be
 	// replaced; a resize or an out-of-date present is rare, so holding the queue
 	// lock across the wait is accepted. A separate transfer queue is idle here
@@ -1085,11 +1091,11 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 
 vk::Image DeferredRenderer::GetLastSwapchainImage() const
 {
-	if (!r_target || r_lastImageIndex >= r_target->ImageCount())
+	if (!r_target || !r_lastImageIndex || *r_lastImageIndex >= r_target->ImageCount())
 	{
 		return vk::Image{};
 	}
-	return r_target->Image(r_lastImageIndex);
+	return r_target->Image(*r_lastImageIndex);
 }
 
 vk::Format DeferredRenderer::GetSwapchainFormat() const
