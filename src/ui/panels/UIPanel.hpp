@@ -17,7 +17,7 @@
 #include <QWidget>
 #include <cstdint>
 
-#include "UIContext.hpp"
+#include "ui/UIContext.hpp"
 
 namespace neurus
 {

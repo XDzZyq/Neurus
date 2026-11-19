@@ -17,6 +17,12 @@ used to do to them directly - upload a mesh, allocate a light's shadow maps,
 outgoing scene, reset accumulation - is posted instead as a typed
 `RenderRequest` value and executed by the renderer on the thread that submits.
 
+Request values and `RenderRequestSink` live in the Qt-free, Vulkan-free
+`render_api` target. Light updates carry owned `LightSnapshot` values;
+`RenderRequestExecutor` converts them through `UploadManager` into GPU buffer
+layouts on the render side. The Editor neither includes `UploadManager` nor
+constructs renderer lighting structs.
+
 - **Queue and drain.** The Editor holds a `RenderRequestSink*` (Post only).
   With `RenderThread` driving the renderer, `Post` appends to the thread's posting
   queue and the request rides the next published frame (ordering below); the loop

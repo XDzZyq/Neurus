@@ -1,9 +1,15 @@
 /**
  * @file ShaderData.cpp
- * @brief Base-class implementations for ShaderData (constructor, stage accessors, TypeToString).
+ * @brief ShaderData stage access, source file IO and identity.
  */
 
 #include "ShaderData.hpp"
+
+#include "core/Log.hpp"
+
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 
 namespace neurus {
 
@@ -19,6 +25,20 @@ ShaderData::ShaderData(std::string name)
 // --------------------------------------
 // Stage accessors
 // --------------------------------------
+
+bool ShaderData::IsValid() const
+{
+	const auto ready = [this](ShaderType type)
+	{
+		const ShaderUnit* stage = FindStage(type);
+		return stage && !stage->code.empty() && !stage->spv.empty();
+	};
+	if (GetType() == ShaderType::COMPUTE)
+		return ready(ShaderType::COMPUTE);
+	if (GetType() == ShaderType::VERTEX)
+		return ready(ShaderType::VERTEX) && ready(ShaderType::FRAGMENT);
+	return false;
+}
 
 bool ShaderData::HasStage(ShaderType type) const
 {
@@ -61,6 +81,75 @@ std::string ShaderData::TypeToString(ShaderType type)
 	case ShaderType::GEOMETRY: return "GEOMETRY";
 	default:                   return "UNKNOWN";
 	}
+}
+
+// --------------------------------------
+// Source file IO
+// --------------------------------------
+
+std::string ShaderData::ResolveSourcePath(const std::string& path)
+{
+	// Keep the established shader search order: the configured source directory,
+	// then ancestors, then the working directory. Absolute paths pass through.
+	if (!path.empty()
+		&& (path[0] == '/' || path[0] == '\\'
+			|| (path.size() > 1 && path[1] == ':')))
+	{
+		return path;
+	}
+
+	std::string relative = path;
+	constexpr const char* prefix = "res/shaders/";
+	constexpr size_t prefixLength = 12;
+	if (relative.size() > prefixLength && relative.compare(0, prefixLength, prefix) == 0)
+		relative.erase(0, prefixLength);
+
+	const std::string configured = std::string(NEURUS_SHADER_DIR) + relative;
+	if (std::filesystem::exists(configured))
+	{
+		NEURUS_LOG("[ShaderData] Resolved '" << path << "' -> '" << configured << "'");
+		return configured;
+	}
+
+	for (const char* ancestor : {"../../../", "../../", "../", ""})
+	{
+		const std::string candidate = std::string(ancestor) + path;
+		if (std::filesystem::exists(candidate))
+		{
+			NEURUS_LOG("[ShaderData] Resolved '" << path << "' -> '" << candidate << "'");
+			return candidate;
+		}
+	}
+
+	NEURUS_LOG("[ShaderData] Could NOT resolve shader path '" << path << "'");
+	return path;
+}
+
+std::optional<std::string> ShaderData::ReadSource(const std::string& path, std::string* error)
+{
+	if (error)
+		error->clear();
+	const std::string resolved = ResolveSourcePath(path);
+	const auto fail = [&path, &resolved, error](const char* reason) -> std::optional<std::string>
+	{
+		const std::string message = std::string(reason) + " '" + path
+		                          + "' (resolved to '" + resolved + "')";
+		if (error)
+			*error = message;
+		else
+			NEURUS_ERR("[ShaderData] " << message);
+		return std::nullopt;
+	};
+
+	std::ifstream file(resolved);
+	if (!file.is_open())
+		return fail("cannot open file");
+	std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+	if (file.bad())
+		return fail("cannot read file");
+	if (source.empty())
+		return fail("file is empty");
+	return source;
 }
 
 } // namespace neurus

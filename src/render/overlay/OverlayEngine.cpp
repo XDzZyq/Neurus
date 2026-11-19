@@ -9,15 +9,15 @@
 #include "GPUProfiler.hpp"
 #include "Image.hpp"
 #include "PipelineBuilder.hpp"
-#include "ProfilingData.hpp"
-#include "RenderContext.hpp"
+#include "render_api/ProfilingData.hpp"
+#include "render_api/RenderContext.hpp"
 
 #include "passes/DebugPass.hpp"
 #include "passes/GizmoPass.hpp"
 #include "passes/SelectionOutlinePass.hpp"
 
-#include "shaders/ComputeShader.hpp"
-#include "shaders/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include "core/Log.hpp"
 

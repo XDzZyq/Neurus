@@ -23,6 +23,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace neurus {
@@ -145,6 +146,43 @@ public:
 	/** @brief Number of output sockets. */
 	size_t OutputCount() const { return outputs.size(); }
 };
+
+// ================================================================================
+// ConnectionRef — one edge of a graph
+// ================================================================================
+
+/**
+ * @brief One connection of a graph: producer socket and consumer socket.
+ *
+ * @tparam GraphT  A `Graph` or a type derived from one.
+ */
+template<typename GraphT>
+struct ConnectionRef
+{
+	typename GraphT::SocketOutT* from = nullptr;
+	typename GraphT::SocketInT*  to   = nullptr;
+};
+
+/**
+ * @brief Every connection in the graph, one entry per connected input socket.
+ *
+ * Iterating inputs, not outputs, makes a fan-out produce one entry per consumer.
+ */
+template<typename GraphT>
+std::vector<ConnectionRef<GraphT>> EnumerateConnections(const GraphT& graph)
+{
+	std::vector<ConnectionRef<GraphT>> connections;
+	for (const auto& node : graph.nodes)
+	{
+		for (const auto& input : node->inputs)
+		{
+			if (!input->IsConnected())
+				continue;
+			connections.push_back({input->source, input.get()});
+		}
+	}
+	return connections;
+}
 
 // ================================================================================
 // Graph<SData, NData> — DAG pool + Kahn topological sort
@@ -286,6 +324,12 @@ public:
 
 	/** @brief Number of nodes in the graph. */
 	size_t NodeCount() const { return nodes.size(); }
+
+	/// @brief Every connection, one entry per connected input socket.
+	std::vector<ConnectionRef<Graph<SData, NData>>> Connections() const
+	{
+		return EnumerateConnections(*this);
+	}
 
 	// --- Topological sort ---
 
@@ -488,6 +532,33 @@ public:
 		return !BuildTopology().acyclic;
 	}
 
+	/**
+	 * @brief Nodes the topological order leaves out: those on or downstream of a cycle.
+	 *
+	 * Never throws. A validator can report the names without using the
+	 * `TopologicalSort` exception as control flow.
+	 *
+	 * @return The cyclic nodes; empty when the graph is acyclic.
+	 */
+	std::vector<NodeType*> CyclicNodes() const
+	{
+		const Topology topo = BuildTopology();
+		if (topo.acyclic)
+			return {};
+
+		std::vector<bool> ordered(nodes.size(), false);
+		for (const size_t index : topo.order)
+			ordered[index] = true;
+
+		std::vector<NodeType*> cyclic;
+		for (size_t i = 0; i < nodes.size(); ++i)
+		{
+			if (!ordered[i])
+				cyclic.push_back(nodes[i].get());
+		}
+		return cyclic;
+	}
+
 private:
 	/**
 	 * @brief Reusable topology snapshot: the edge walk every traversal needs.
@@ -622,5 +693,85 @@ private:
 		return nodes.size();
 	}
 };
+
+/**
+ * @brief Deep copy of a graph: node order, socket order, payloads and connections.
+ *
+ * `Graph` owns its nodes through `unique_ptr`, so it is movable but not copyable.
+ * The copy is what undo stores and what the Editor publishes to the renderer: it
+ * keeps identities as they are (node name, socket names and order) so a copy can
+ * be compared, serialized and re-uploaded without rewriting anything.
+ *
+ * @param graph  Graph to copy; it is not modified.
+ * @return A graph of the same type with an independent node and socket pool.
+ * @throws std::runtime_error when a connection cannot be reproduced, which means
+ *         the source graph's sockets were wired outside `Connect`.
+ *
+ * @tparam GraphT  A `Graph` or a type derived from one, such as the document.
+ */
+template<typename GraphT>
+GraphT CloneGraph(const GraphT& graph)
+{
+	using NodeT      = typename GraphT::NodeType;
+	using SocketInT  = typename GraphT::SocketInT;
+	using SocketOutT = typename GraphT::SocketOutT;
+
+	GraphT copy;
+	copy.nodes.reserve(graph.nodes.size());
+
+	// Image of every source output socket, so the second pass can reconnect by
+	// pointer instead of searching the copy.
+	std::unordered_map<const SocketOutT*, SocketOutT*> outputImages;
+	outputImages.reserve(graph.nodes.size() * 2);
+
+	for (const auto& node : graph.nodes)
+	{
+		NodeT* copied = copy.AddNode(node->name, node->data);
+		for (const auto& input : node->inputs)
+		{
+			SocketInT* socket = copied->AddInput(input->name);
+			socket->data = input->data;
+		}
+		for (const auto& output : node->outputs)
+		{
+			SocketOutT* socket = copied->AddOutput(output->name);
+			socket->data = output->data;
+			outputImages.emplace(output.get(), socket);
+		}
+	}
+
+	// Node and socket order match by construction, so an input maps by index.
+	for (size_t n = 0; n < graph.nodes.size(); ++n)
+	{
+		const NodeT& source = *graph.nodes[n];
+		NodeT* target = copy.nodes[n].get();
+
+		for (size_t i = 0; i < source.inputs.size(); ++i)
+		{
+			const SocketOutT* upstream = source.inputs[i]->source;
+			if (!upstream)
+				continue;
+
+			const auto it = outputImages.find(upstream);
+			if (it == outputImages.end())
+			{
+				throw std::runtime_error(
+					"CloneGraph: node '" + source.name + "' input '"
+					+ source.inputs[i]->name + "' is fed from outside the graph");
+			}
+
+			SocketInT* copiedInput = target->inputs[i].get();
+			if (!copy.Connect(it->second, copiedInput))
+			{
+				throw std::runtime_error(
+					"CloneGraph: could not reconnect '" + upstream->owner->name + "."
+					+ upstream->name + "' -> '" + source.name + "."
+					+ source.inputs[i]->name + "'");
+			}
+		}
+	}
+
+	return copy;
+}
 
 } // namespace neurus

@@ -19,6 +19,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <memory>
 
 #include <cstdio>   // std::remove
 
@@ -66,7 +67,7 @@ struct TempFile
  * @param resources ResourceManager pool (registered first).
  * @return Initialised project::Project ready for Save/Load.
  */
-static project::Project MakeProject(Scene& scene, RenderConfig& config, ResourceManager& resources)
+static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources)
 {
 	project::Project p;
 	p.Register<project::ResourceComponent>(resources);
@@ -90,13 +91,13 @@ TEST(ProjectRoundtrip, EmptyScene)
 	TempFile tmp("test_rt_empty.neurus.json");
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		auto p = MakeProject(scene, config, resources);
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
@@ -124,7 +125,7 @@ TEST(ProjectRoundtrip, CameraOnly)
 	TempFile tmp("test_rt_camera.neurus.json");
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		auto camera = resources.Load<Camera>();
 		camera->cam_pers = 60.0f;
@@ -138,7 +139,7 @@ TEST(ProjectRoundtrip, CameraOnly)
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
@@ -169,7 +170,7 @@ TEST(ProjectRoundtrip, MeshWithOBJ)
 	int meshDataId = 0;
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
 		meshDataId = meshData->GetObjectID();
@@ -182,7 +183,7 @@ TEST(ProjectRoundtrip, MeshWithOBJ)
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
@@ -214,7 +215,7 @@ TEST(ProjectRoundtrip, LightPoint)
 	TempFile tmp("test_rt_light.neurus.json");
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		auto light = resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f, 0.8f, 0.6f));
 		light->SetPosition(glm::vec3(3.0f, 3.0f, 3.0f));
@@ -224,7 +225,7 @@ TEST(ProjectRoundtrip, LightPoint)
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
@@ -254,7 +255,7 @@ TEST(ProjectRoundtrip, FullScene)
 	TempFile tmp("test_rt_full.neurus.json");
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		// Camera
@@ -281,7 +282,7 @@ TEST(ProjectRoundtrip, FullScene)
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
@@ -335,7 +336,7 @@ TEST(ProjectRoundtrip, SelectionState)
 	int lightUid = 0;
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto meshData = resources.Load<MeshData>("obj/cube.obj");
@@ -355,7 +356,7 @@ TEST(ProjectRoundtrip, SelectionState)
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
@@ -386,7 +387,7 @@ TEST(ProjectRoundtrip, EmptySelection)
 	TempFile tmp("test_rt_empty_selection.neurus.json");
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		auto meshData = resources.Load<MeshData>("obj/cube.obj");
 		auto mesh = resources.Load<Mesh>(meshData);
@@ -395,7 +396,7 @@ TEST(ProjectRoundtrip, EmptySelection)
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);

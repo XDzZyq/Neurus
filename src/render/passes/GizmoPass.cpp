@@ -6,13 +6,13 @@
 #include "passes/GizmoPass.hpp"
 
 #include "RenderCache.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "render/Barrier.hpp"
-#include "shaders/ShaderLibrary.hpp"
+#include "shader/ShaderLibrary.hpp"
 #include "core/Log.hpp"
 
-#include "render/overlay/GizmoDrawList.hpp"
+#include "render_api/overlay/GizmoDrawList.hpp"
 
 #include <array>
 #include <cmath>

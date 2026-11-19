@@ -16,8 +16,8 @@
 #include "../PipelineBuilder.hpp"
 #include "../buffers/BufferLayout.hpp"
 #include "../resources/CameraGPU.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/RenderShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/RenderShader.hpp"
 #include "Pass.hpp"
 
 #include <glm/glm.hpp>
@@ -67,7 +67,18 @@ public:
 	 * @param cache           Render cache for MeshGPU and attachment lookups.
 	 * @param ctx             Per-frame context (scene, camera, extent).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
+
+	/// @brief The camera set 0, written by the graph with the shared camera UBO.
+	DescriptorSet* GraphDescriptorSet(uint32_t frameIndex) override
+	{
+		(void)frameIndex;
+		return &p_cameraDescriptorSet;
+	}
+
+	/// @brief The shared camera UBO at binding 0.
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
 
 	/**
 	 * @brief Compiles the per-mesh G-Buffer pipeline for @p shader if it is missing.
@@ -104,20 +115,26 @@ public:
 	/// reads (camera data comes via a UBO).
 	PassIO GetIO() const override;
 
+	/// @brief The built-in G-Buffer shader.
+	std::vector<const ShaderData*> GetShaders() const override;
+
+	/// @brief The depth attachment, which has no fragment output declaration.
+	std::vector<PassPort> DeclaredOutputs() const override;
+
 	/**
 	 * @brief Returns the camera descriptor set layout (set 0).
 	 */
 	const DescriptorSetLayout& GetCameraLayout() const { return p_cameraLayout; }
 
 private:
-	/**
-	 * @brief Creates the camera descriptor set layout (set 0, binding 0: CameraUBO).
-	 */
-	static DescriptorSetLayout CreateCameraLayout(const vk::raii::Device& device);
+	/// @brief Delegating constructor that receives the already-loaded shader.
+	GeometryPass(const vk::raii::Device& device,
+	             const vk::raii::PhysicalDevice& physicalDevice,
+	             std::shared_ptr<const RenderShader> shader);
 
 	/**
 	 * @brief Creates the graphics pipeline using PipelineBuilder.
-	 * ShaderModules from self-loaded RenderShader.
+	 * ShaderModules from the selected immutable CPU RenderShader.
 	 */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
@@ -148,8 +165,8 @@ private:
 
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
-	// --- Self-loaded render shader (via ShaderLibrary) ---
-	std::unique_ptr<RenderShader> p_shader;
+	// --- Shared immutable CPU shader (cached for built-in defaults) ---
+	std::shared_ptr<const RenderShader> p_shader;
 
 	// --- Vertex input layout ---
 	BufferLayout p_vertexLayout;

@@ -25,6 +25,7 @@ namespace neurus {
 // --- Forward declarations ---
 class RenderCache;
 class ComputeShader;
+class Image;
 
 /**
  * @brief Per-pixel shadow intensity compute pass.
@@ -69,41 +70,37 @@ public:
 	 * @param cache   Render cache for attachment/shadow map access.
 	 * @param ctx     Per-frame context (render extent, frame index, scene).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the Position + ShadowDepth reads and the ShadowIntensity write;
 	/// per-light layers are addressed internally.
 	PassIO GetIO() const override;
+
+	/// @brief Both the point-light cubemap and sun-light 2D eval shaders.
+	std::vector<const ShaderData*> GetShaders() const override;
 
 	/**
 	 * @brief Writes all descriptors (image) into the specified set.
 	 *
 	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
 	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
+	void WriteDescriptors(uint32_t setIndex, RenderCache& cache,
+	                      Image& position, Image& shadowIntensity);
 
 private:
-	/**
-	 * @brief Creates the descriptor set layout (3 bindings).
-	 *
-	 * 0: gPosition (combined image sampler), 1: u_ShadowCube (combined image
-	 * sampler), 2: outputShadow (storage image, R8).
-	 */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
+	/// @brief Delegating constructor that receives the already-loaded shaders.
+	ShadowIntensityPass(const vk::raii::Device& device,
+	                    const vk::raii::PhysicalDevice& physicalDevice,
+	                    uint32_t numSets,
+	                    std::shared_ptr<const ComputeShader> pointLightShader,
+	                    std::shared_ptr<const ComputeShader> sunLightShader);
+
+	/// @brief Bindings written by the per-light sets, not by the graph.
+	std::vector<uint32_t> SelfManagedBindings() const override { return {0, 1, 2}; }
 
 	/** @brief Builds both the point-light cubemap and sun-light 2D pipelines. */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
-
-	// -------------------------------------------------------------------
-	// Sun (directional) shadow evaluation - second descriptor set + pipeline
-	// -------------------------------------------------------------------
-
-	/**
-	 * @brief Creates the sun-light descriptor set layout (3 bindings; sampler2D
-	 *        at binding 1).
-	 */
-	static DescriptorSetLayout CreateSunDescriptorSetLayout(const vk::raii::Device& device);
 
 	/**
 	 * @brief Creates a clamp-to-border sampler for sun shadow map reads.
@@ -122,7 +119,8 @@ private:
 	 * @param extent    Render extent for attachment lookup.
 	 * @param cache     Render cache for shadow map / output access.
 	 */
-	void WriteSunDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache);
+	void WriteSunDescriptors(uint32_t setIndex, RenderCache& cache,
+	                         Image& position, Image& shadowIntensity);
 
 	// (Pipelines inherited from Pass - p_pipelines[0]=cubemap, p_pipelines[1]=sun)
 
@@ -133,8 +131,8 @@ private:
 	std::vector<DescriptorSet> p_sunDescSets;                     ///< Sun descriptor sets (numSets * kSetsPerFrameSlot)
 
 	/// Compute shaders loaded via ShaderLibrary.
-	std::unique_ptr<ComputeShader> p_pointLightShader;  ///< Point-light cubemap eval (shadow_eval.comp.glsl)
-	std::unique_ptr<ComputeShader> p_sunLightShader;    ///< Sun-light 2D eval (sun_shadow_eval.comp.glsl)
+	std::shared_ptr<const ComputeShader> p_pointLightShader;  ///< Point-light cubemap eval (shadow_eval.comp.glsl)
+	std::shared_ptr<const ComputeShader> p_sunLightShader;    ///< Sun-light 2D eval (sun_shadow_eval.comp.glsl)
 
 	/// One descriptor set per shadow-casting light per in-flight frame slot, so
 	/// the per-light loop never updates a set that is still bound from an

@@ -21,7 +21,7 @@
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/UploadManager.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/passes/GeometryPass.hpp"
@@ -162,7 +162,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snapshot, resources.scene.get());
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -178,7 +178,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 
 	{
 		auto& cmd = BeginCmd();
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

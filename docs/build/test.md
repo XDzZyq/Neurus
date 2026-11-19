@@ -3,6 +3,42 @@
 Neurus uses Google Test for both GPU-dependent and non-GPU unit tests, with
 reference-image regression as the primary signal for rendered output.
 
+## CPU Boundary Tests
+
+`neurus_cpu_test` runs graph, shader, document and Editor behavior without
+linking the renderer, the Vulkan loader, Qt or embedded Python. Shader compilation
+uses `neurus_shader` and the CPU shaderc library; passive Asset targets and
+`render_api` do not depend on those services. The normal project configure may
+locate the Vulkan SDK; this target proves the link boundary, not an SDK-free configure.
+
+```bash
+cmake --build build --config Debug --target neurus_cpu_test
+ctest --test-dir build -C Debug -R '^Neurus\.CPU\.' --output-on-failure
+python scripts/check_layer_boundaries.py
+```
+
+CTest prefixes these cases with `Neurus.CPU.` and also registers the include
+check as `Neurus.LayerBoundaries`. Both use the normal build tree; CPU tests run
+from its root so `res/` resolves consistently. The include check rejects renderer
+internals in asset, Editor, Script and UI code, and enforces Qt/Vulkan-free CPU
+layers, including the dedicated CPU Shader module. Shared renderer request/frame
+values belong in `src/render_api/`, linked through `neurus_render_api`. This executable complements the full suite and does
+not replace GPU or reference-image verification.
+
+CI also runs the include checker in a standalone `Layer boundaries` job before
+starting the Windows/macOS matrix and Linux build. It tests the checker itself,
+then scans source includes. It needs only Python, with no
+submodules, Qt or Vulkan setup. A violation fails the required `ci-gate`; the
+existing documentation-only skip behavior is preserved.
+
+The checker resolves literal project includes against the source directory,
+`src/`, and unique header names. It reports forbidden layer dependencies and
+Qt/Vulkan includes as `file:line` diagnostics, including Vulkan-bearing
+`PlatformSurface.hpp` in UI/CPU code. It checks direct includes, not
+macro-generated includes, CMake link dependencies or runtime ownership. Separate
+CMake targets and the CPU executable provide additional build/link checks;
+architectural review still covers the runtime rules.
+
 ## Overview
 
 Neurus uses **Google Test** for both GPU-dependent and non-GPU unit tests. GPU
@@ -1001,8 +1037,7 @@ acceptable - skip none of these steps.
      saved path is logged.
    - Visual check: the rendered viewport shows the expected result (lighting,
      shadows, geometry, etc.).
-   - Runtime behaviour: resize the window, interact with the viewport, verify no
-     deadlocks or freezes.
+   - Manual viewport interaction and resize testing are handled by the user.
 
 6. **No stubs, TODOs, or placeholders remain**
    - No `// TODO`, `// FIXME`, `// STUB`, or placeholder comments left behind in
@@ -1045,3 +1080,8 @@ Additional checks:
 - Closing the terminal must leave the session running.
 - Launching `Neurus.exe` directly must create no registry entry and open no
   listener.
+
+A windowed snapshot needs a presented image from the current swapchain generation.
+Before the first presentation, or immediately after target recreation, capture
+reports that no frame has been presented instead of reading an undefined image.
+A CLI smoke test should wait for a rendered frame before requesting its capture.

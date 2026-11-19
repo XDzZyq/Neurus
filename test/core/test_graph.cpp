@@ -166,6 +166,22 @@ TEST_F(GraphTest, ConnectSingle)
 	EXPECT_EQ(m_aOut->targets[0], m_bIn);
 }
 
+TEST_F(GraphTest, ConnectionsSeesFanOutAndSkipsUnconnected)
+{
+	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
+	ASSERT_TRUE(m_graph.Connect(m_aOut, m_cIn));
+	(void)m_b->AddInput("free");  // an unconnected input is not a connection
+
+	const auto connections = m_graph.Connections();
+	ASSERT_EQ(connections.size(), 2u);
+	EXPECT_EQ(connections[0].from, m_aOut);
+	EXPECT_EQ(connections[0].to, m_bIn);
+	EXPECT_EQ(connections[1].from, m_aOut);
+	EXPECT_EQ(connections[1].to, m_cIn);
+
+	EXPECT_EQ(neurus::EnumerateConnections(m_graph).size(), connections.size());
+}
+
 TEST_F(GraphTest, ConnectSelfLoopRejected)
 {
 	auto* aIn = m_a->AddInput("self");
@@ -357,6 +373,18 @@ TEST_F(GraphTest, HasCycleDirectCycle)
 
 	EXPECT_TRUE(m_graph.HasCycle());
 	EXPECT_THROW(m_graph.TopologicalSort(), std::runtime_error);
+
+	const auto cyclic = m_graph.CyclicNodes();
+	ASSERT_EQ(cyclic.size(), 2u);
+	EXPECT_NE(std::find(cyclic.begin(), cyclic.end(), m_a), cyclic.end());
+	EXPECT_NE(std::find(cyclic.begin(), cyclic.end(), m_b), cyclic.end());
+	EXPECT_EQ(std::find(cyclic.begin(), cyclic.end(), m_c), cyclic.end());
+}
+
+TEST_F(GraphTest, CyclicNodesEmptyForAcyclicGraph)
+{
+	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
+	EXPECT_TRUE(m_graph.CyclicNodes().empty());
 }
 
 TEST_F(GraphTest, HasCycleSelfLoopRejectedAtConnect)

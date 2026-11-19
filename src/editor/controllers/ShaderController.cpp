@@ -21,9 +21,9 @@
 
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
-#include "render/shaders/ShaderGenerator.hpp"
-#include "render/shaders/ShaderParser.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderGenerator.hpp"
+#include "shader/ShaderParser.hpp"
 
 #include "core/Log.hpp"
 

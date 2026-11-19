@@ -14,8 +14,8 @@
 #pragma once
 
 #include "passes/ComputePass.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -65,6 +65,7 @@ public:
 	 * @param cache   Render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index, activeObjectId).
 	 */
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
 	/**

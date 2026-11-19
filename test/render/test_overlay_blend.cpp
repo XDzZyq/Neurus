@@ -21,7 +21,7 @@
 #include "render/Barrier.hpp"
 #include "render/Image.hpp"
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/overlay/OverlayEngine.hpp"
 
 #include <array>

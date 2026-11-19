@@ -43,14 +43,14 @@
 #include <string>
 
 #include "asset/Project.hpp"
-#include "asset/components/EditorComponent.hpp"
+#include "editor/project/EditorComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "core/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/viewport/EditorViewport.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Scene.hpp"
 

@@ -26,7 +26,7 @@
 
 #include "core/BatchQueue.hpp"
 #include "RenderRequestExecutor.hpp"
-#include "RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include <functional>
 
@@ -68,7 +68,9 @@ public:
 	                       RenderCache& cache,
 	                       GeometryPass* geometryPass,
 	                       std::function<void()> restartAccumulation,
-	                       std::function<void()> markOverlaysDirty);
+	                       std::function<void()> markOverlaysDirty,
+	                       std::function<void(const CompileRenderGraphRequest&)> setPendingGraph = {},
+	                       std::function<GeometryPass*()> geometryProvider = {});
 
 	~RenderRequestProcessor() = default;
 
@@ -98,6 +100,7 @@ private:
 	/// @brief Renderer state a request can change; see the file comment.
 	std::function<void()> m_restartAccumulation;
 	std::function<void()> m_markOverlaysDirty;
+	std::function<void(const CompileRenderGraphRequest&)> m_setPendingGraph;
 };
 
 } // namespace neurus

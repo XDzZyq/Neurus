@@ -1,9 +1,9 @@
 #include "panels/Viewport.hpp"
 
-#include "UIContext.hpp"
+#include "ui/UIContext.hpp"
 #include "core/Log.hpp"
 #include "editor/Input.hpp"
-#include "editor/events/UIEvents.hpp"
+#include "ui/events/UIEvents.hpp"
 
 #include <QFocusEvent>
 #include <QKeyEvent>

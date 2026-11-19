@@ -191,7 +191,7 @@ light, whose GPU position lives in an SSBO the transform write does not touch.
 `SetShaderCodeOp` (before/after GLSL text), `SetShaderFieldOp` (before/after of
 one whole `ShaderStruct` element, a `ShaderFieldValue` variant over
 `S_IO`/`S_Uniform`/`S_Func`/`S_PushConstant`/`S_StructDef`, serialized via the
-non-intrusive functions in `render/shaders/ShaderStructSerialize.hpp`) and
+non-intrusive functions in `asset/data/shader/ShaderStructSerialize.hpp`) and
 `AddShaderFieldOp` (append vs remove one default entry, keyed by a `bool add` flag
 it flips in `Inverse`). All are keyed by mesh UID + stage. Code edits use the
 explicit begin/end gesture (`ShaderEditBegin`/`ShaderEditEnd`), while discrete
@@ -213,7 +213,7 @@ duplicate pooled shader). Compile stays non-undoable.
 ## Persisting the history stacks
 
 The undo/redo stacks are saved into the project file via `HistoryComponent`
-(`src/asset/components/HistoryComponent.hpp/cpp`), a `project::Serializable` adapter
+(`src/editor/project/HistoryComponent.hpp/cpp`), a `project::Serializable` adapter
 keyed `"m_history"` that wraps `OperationManager`. `Save` writes the `undo`/`redo`
 vectors of `std::unique_ptr<Operation>`; `Load` decodes them and calls
 `OperationManager::RestoreHistory`. `Application::BuildProject` registers it last,

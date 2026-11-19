@@ -14,6 +14,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 
 #include "editor/controllers/Controllers.hpp"
 #include "core/RenderConfig.hpp"
@@ -38,7 +39,7 @@ public:
 
 private:
 	bool m_editing = false;      ///< True between ConfigEditBegin and ConfigEditEnd.
-	RenderConfig m_before{};     ///< Config captured at gesture start (undo endpoint).
+	std::optional<RenderConfig> m_before;     ///< Config captured at gesture start (undo endpoint).
 };
 
 } // namespace neurus

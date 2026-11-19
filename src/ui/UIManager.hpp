@@ -2,7 +2,7 @@
 
 #include <QMainWindow>
 #include <QStringList>
-#include "platform/PlatformSurface.hpp"
+#include "platform/NativeWindow.hpp"
 #include <map>
 #include <string>
 #include <utility>

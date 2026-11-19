@@ -8,7 +8,7 @@
 #include "render/Image.hpp"
 #include "render/Barrier.hpp"
 #include "render/SharedQueue.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include <iostream>
 

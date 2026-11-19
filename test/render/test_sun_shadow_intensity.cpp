@@ -28,12 +28,12 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestMultiShadow.hpp"
 
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/RenderShader.hpp"
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/ShadowDepthPass.hpp"
 #include "render/passes/ShadowIntensityPass.hpp"
 #include "render/passes/GeometryPass.hpp"
@@ -153,9 +153,9 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_VerifyNonZero)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -277,9 +277,9 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_ReferenceImage)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

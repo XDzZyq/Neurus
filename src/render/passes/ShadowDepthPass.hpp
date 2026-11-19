@@ -9,7 +9,7 @@
 #pragma once
 
 #include "passes/Pass.hpp"
-#include "RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "../Image.hpp"
 #include "../DescriptorManager.hpp"
 #include "../buffers/BufferLayout.hpp"
@@ -67,18 +67,34 @@ public:
 	ShadowDepthPass(ShadowDepthPass&&) noexcept = default;
 	ShadowDepthPass& operator=(ShadowDepthPass&&) noexcept = default;
 
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& /*cache*/, const RenderContext& ctx) override;
 
 	/// Declares the ShadowDepth bundle write; the per-light maps are addressed
 	/// internally and appear as a single ordering token.
 	PassIO GetIO() const override;
 
+	/// @brief The multiview cubemap and sun 2D depth shaders.
+	std::vector<const ShaderData*> GetShaders() const override;
+
+	/// @brief The per-light shadow bundle, a logical ordering token.
+	std::vector<PassPort> DeclaredOutputs() const override;
+
+	/// @brief The face VP SSBO set, written by the graph.
+	DescriptorSet* GraphDescriptorSet(uint32_t frameIndex) override
+	{
+		(void)frameIndex;
+		return p_ssboSet.get();
+	}
+
+	/// @brief The face VP matrices at binding 0.
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
+
 	// --- Accessors ---
 	uint32_t Resolution() const { return p_resolution; }
 
 private:
-	static DescriptorSetLayout CreateSSBOLayout(const vk::raii::Device& device);
-
 	void createSSBOResources(const vk::raii::Device& device,
 	                         const vk::raii::PhysicalDevice& physicalDevice,
 	                         SharedQueue& queue, uint32_t qfi);
@@ -99,8 +115,8 @@ private:
 	BufferLayout p_vtxLayout;
 
 	// --- Shaders (self-loaded via ShaderLibrary) ---
-	std::unique_ptr<RenderShader> p_multiviewShader;  ///< Point-light cubemap depth+colour (multiview)
-	std::unique_ptr<RenderShader> p_sunShader;         ///< Sun-light orthographic depth-only
+	std::shared_ptr<const RenderShader> p_multiviewShader;  ///< Point-light cubemap depth+colour (multiview)
+	std::shared_ptr<const RenderShader> p_sunShader;         ///< Sun-light orthographic depth-only
 	// (Pipelines inherited from Pass - p_pipelines[0]=multiview, p_pipelines[1]=sun)
 
 };

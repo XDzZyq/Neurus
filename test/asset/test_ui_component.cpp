@@ -11,6 +11,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <memory>
 
 #include <cstdio>   // std::remove
 
@@ -102,7 +103,7 @@ TEST(UIComponentRoundtrip, CoexistsWithSceneAndConfig)
 
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		std::string ui = blob;
 		project::Project p;
@@ -114,7 +115,7 @@ TEST(UIComponentRoundtrip, CoexistsWithSceneAndConfig)
 	}
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	std::string loadedUi;
 	{
@@ -140,7 +141,7 @@ TEST(UIComponentRoundtrip, OldFormatMissingUiNode)
 	// Save a project WITHOUT a UIComponent (simulates an old file).
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		project::Project p;
 		p.Register<project::ResourceComponent>(resources);
@@ -154,7 +155,7 @@ TEST(UIComponentRoundtrip, OldFormatMissingUiNode)
 	std::string loadedUi = "stale";
 	{
 		Scene loadedScene;
-		RenderConfig loadedConfig;
+		auto loadedConfig = std::make_shared<RenderConfig>();
 		ResourceManager loadedResources;
 		project::Project p;
 		p.Register<project::ResourceComponent>(loadedResources);

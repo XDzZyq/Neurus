@@ -10,6 +10,7 @@
 #include "core/Serialize.hpp"
 #include "core/UID.hpp"
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -20,7 +21,7 @@ namespace neurus
 /**
  * @brief CPU-side shader bundle: a name and one ShaderUnit per stage.
  *
- * `ShaderData` is the UID-tagged document a script addresses. The renderer's
+ * `ShaderData` is the UID-tagged document a script addresses. The CPU Shader module's
  * `RenderShader` (vertex + fragment) and `ComputeShader` (compute) are its
  * concrete leaves; a `ShaderUnit` is one stage inside a bundle and is never
  * pooled on its own.
@@ -64,6 +65,24 @@ public:
 	{
 		ar(cereal::base_class<UID>(this), CEREAL_NVP(m_name));
 	}
+
+	/**
+	 * @brief Resolves a source path using the shader-directory and ancestor search order.
+	 * @param path Relative source path or absolute path, which passes through unchanged.
+	 * @return First existing candidate, or the original path when none exists.
+	 */
+	static std::string ResolveSourcePath(const std::string& path);
+
+	/**
+	 * @brief Reads raw shader source text without modifying any stage or compiling it.
+	 * @param path Source path to resolve and read.
+	 * @param error Receives an open/read/empty-file failure; cleared on entry.
+	 * @return Source text, or nullopt on failure. Failures log when no error sink is provided.
+	 */
+	static std::optional<std::string> ReadSource(const std::string& path, std::string* error = nullptr);
+
+	/** @brief True when every required stage has source and compiled bytecode. */
+	bool IsValid() const;
 
 	/** @brief Returns true if the bundle has the given stage. */
 	bool HasStage(ShaderType type) const;

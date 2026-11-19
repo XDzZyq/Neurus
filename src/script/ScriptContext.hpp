@@ -16,6 +16,9 @@
 
 #pragma once
 
+#include "asset/data/RenderGraphData.hpp"
+#include <functional>
+
 namespace neurus
 {
 
@@ -33,6 +36,9 @@ struct ScriptContext
 	const Scene* scene = nullptr;                ///< Borrowed scene being read.
 	const RenderConfig* config = nullptr;        ///< Borrowed render configuration.
 	const IResourceLookup* resources = nullptr;  ///< Borrowed pool for name/UID lookup.
+	const RenderGraphData* graph = nullptr;       ///< Borrowed render graph document.
+	/// Re-query optional config after writes within the same script run.
+	std::function<const RenderConfig*()> configProvider;
 };
 
 }  // namespace neurus

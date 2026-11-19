@@ -29,7 +29,7 @@
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
 #include "scene/Mesh.hpp"

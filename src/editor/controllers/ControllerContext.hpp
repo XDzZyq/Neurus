@@ -24,6 +24,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 
 #include "core/IResourceLookup.hpp"
 #include "editor/events/IEventQueue.hpp"
@@ -64,6 +65,8 @@ struct ControllerContext
 	 * Mutable only so that `Gizmo()` is reachable - see the file comment.
 	 */
 	std::function<EditorViewport*()> viewport;
+	/// Nullable stored config; queried without materializing, replaced on edits.
+	std::function<std::shared_ptr<RenderConfig>&()> configData;
 };
 
 } // namespace neurus

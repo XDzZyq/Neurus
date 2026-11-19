@@ -1,30 +1,53 @@
 # Shaders
 
 Per-mesh shaders are editable at runtime through the Shader Editor panel or a
-Python script. The CPU-side data lives in the asset layer; the renderer owns the
-parse/generate/compile pipeline and every GPU resource below it.
+Python script. Asset owns passive shader data and source-file IO; the dedicated
+CPU Shader module owns parsing, generation, compilation and the high-level
+shader bundles. The renderer owns Vulkan shader modules, GPU pipelines and their
+descriptor resources.
 
 ## Data model
 
 ```
 src/asset/data/
-    ShaderData.hpp/.cpp         UID bundle: name + one ShaderUnit per stage
+    ShaderData.hpp/.cpp         UID bundle, stage values and source text IO
     shader/
         ShaderStage.hpp         ShaderType + ShaderTypeFromPath + default paths
         ShaderStruct.hpp/.cpp   parsed GLSL IR
         ShaderStructSerialize.hpp  cereal overloads for the IR
         ShaderUnit.hpp          path, code, parsed IR, SPIR-V, version
+        ShaderSnapshot.hpp     owned interface metadata and compiled bytecode
 
-src/render/shaders/
+src/shader/
     RenderShader.hpp/.cpp       ShaderData + vertex/fragment parse/generate
     ComputeShader.hpp/.cpp      ShaderData + compute parse/generate
     ShaderParser, ShaderGenerator, ShaderCompiler, ShaderLibrary
+    ShaderSnapshotBuilder.hpp/.cpp  snapshot construction and CPU reflection
+    registrations/
+        ShaderRegistration.hpp/.cpp  pooled shader cereal registration
 ```
 
 `ShaderData` is the pooled identity. A `ShaderUnit` is one stage inside it and
 is never pooled on its own. `RenderShader` and `ComputeShader` are the concrete
 leaves: the former is the vertex+fragment bundle used by a mesh, the latter is a
-single compute bundle.
+single compute bundle. Their behavior belongs to `neurus_shader`, while the
+base data and IR remain in `neurus_asset_data`. Asset data and project persistence
+do not depend on Shader tooling.
+
+`ShaderData` owns source text loading and path resolution. Reading raw text does
+not overwrite editable/generated stage code or trigger compilation. Shader tooling
+consumes source text; existing file-loading convenience methods remain
+compatibility facades that delegate IO to Asset.
+
+`MakeShaderSnapshot`, declared by `shader/ShaderSnapshotBuilder.hpp`, reflects a
+pooled shader into CPU descriptor declarations, ports, push-constant members and
+SPIR-V. The renderer's `ShaderReflection`
+helpers translate this metadata into Vulkan declarations instead of maintaining
+a second shader-IR traversal. `ShaderSnapshot` itself stays a passive asset
+value with no builder or compiler dependency. Scene pass constructors still load
+their built-in shaders through the CPU Shader module; using the published
+snapshot's SPIR-V for pass construction remains a later render graph refactoring
+wave.
 
 ```mermaid
 flowchart TD
@@ -89,6 +112,24 @@ entries. SPIR-V and versions are runtime state and are rebuilt on load.
 A stage with restored code keeps it; a legacy path-only shader (no `stages`
 key) re-parses from disk. Pooled shader names are re-seeded after a project
 load, so `neurus.data.shaders["Name"]` still resolves.
+
+ApplicationCore force-links Shader module registration before project loading.
+Asset persistence restores registered resource types through a generic callback;
+it does not include concrete shader classes or invoke shader tooling directly.
+The existing concrete shader serialization reload/recompile behavior is retained.
+
+`RenderShader::CompileToSpv` also checks the compiled SPIR-V stage interface:
+fragment input locations/components must have matching vertex output scalar
+types. Compilation or interface failure clears both runtime stage binaries.
+Resource loading drops failed shaders and clears consumer references; rendering
+uses cached built-ins without registering replacements in the project pool.
+`GeometryPass` applies the same interface check to incoming pipeline requests,
+including independently edited stages, before creating a GPU pipeline.
+
+Built-in CPU shaders are immutable and cached by `BuiltInRenderData`; their
+SPIR-V is reused when lazy renderer-owned passes create GPU pipelines. Project
+shader pipeline caches are cleared on scene replacement, because shader UIDs
+and runtime versions can repeat across project files.
 
 Replacing a mesh shader keeps the previous pooled shader so its
 `ShaderReplaceOp` can undo the relink. The pool is cleared on project new/open;

@@ -20,10 +20,10 @@ enum value is added only together with its consumer.
 
 ### Context provisioning
 
-The frame's context is two views over the same document state - `RenderContext`
-(`src/render/RenderContext.hpp`) for the Renderer and `UIContext`
-(`src/ui/UIContext.hpp`) for the UI - and the Editor is the single producer of
-both. It fills them and the other layers read. See
+The Editor publishes an owned frame for `RenderContext`
+(`src/render_api/RenderContext.hpp`). Application assembles the UI-owned
+`UIContext` (`src/ui/UIContext.hpp`) from read-only Editor getters. Both expose
+effective settings without materializing optional project data. See
 [RenderContext and UIContext](#rendercontext-and-uicontext).
 
 ### Controller orchestration
@@ -118,11 +118,17 @@ With the Data and Resource layer:
 
 ## What the Editor owns
 
-The Editor owns the `Scene`, the `RenderConfig`, the `Context`, the
+The Editor owns the `Scene`, the `RenderManager`, the frame publication,
 `ResourceManager` (the application-scoped UID object pool), and the controllers.
-It exposes `SetRenderConfig()` for UI-to-Editor sync, and an explicit scene-load
-lifecycle (`NewScene()`, `CreateDefaultScene()`, `BeginLoad()`, `FinishLoad()`)
-for Application-driven persistence. The Editor no longer owns the project file
+`RenderManager` stores nullable project config and graph pointers. Null selects
+cached built-in data without adding it to the project or its next save.
+`GetRenderConfig()` reads effective settings; `EditRenderConfig()` materializes
+stored settings for an explicit mutation. Config events carry edits through the
+controller, and undo can restore the null state. Scripts use a read-only config
+provider so reads after a write observe the current stored value.
+
+The explicit scene-load lifecycle (`NewScene()`, `CreateDefaultScene()`,
+`BeginLoad()`, `FinishLoad()`) supports Application-driven persistence. The Editor no longer owns the project file
 path or performs Save/LoadProject; `Application` coordinates persistence and owns
 the project path plus dirty aggregation. `Editor::IsDirty()`/`ClearDirty()` still
 track scene and config edits.
@@ -132,24 +138,25 @@ The viewport is owned by the Editor but is its own composition root. See
 
 ## RenderContext and UIContext
 
-The frame's context is two views over the same document state, each produced by
-the Editor. The renderer's view is an owned copy of the frame; the UI's view is a
-pair of borrowed pointers.
+The renderer and UI read two views of the same effective document state. Editor
+publishes an owned frame snapshot; Application fills the UI view with borrowed,
+frame-scoped pointers.
 
 ```cpp title="src/editor/Editor.hpp"
 RenderFrameSnapshot BuildSnapshot() const;  // the whole renderer-facing frame, by value
-void UpdateUIContext(UIContext& ctx) const; // scene, config
 ```
 
-`UIContext` is forward-declared, so that half of the header pulls in nothing; but
-`BuildSnapshot()` returns a `RenderFrameSnapshot` by value, so `Editor.hpp` does
-include `render/RenderFrameSnapshot.hpp` for the complete type.
+Editor does not include `UIContext`; Application assembles it. `BuildSnapshot()`
+returns a `RenderFrameSnapshot` by value, so `Editor.hpp` includes
+`render_api/RenderFrameSnapshot.hpp` for the complete type. Effective config is
+copied into that snapshot by value, independent of nullable mutable project
+storage. Later config edits cannot change an already published frame.
 
 `RenderContext` is the renderer's view, and it has two writers. The Editor
 publishes one owned frame snapshot; `DeferredRenderer::recordFrame()` stamps the
 frame half. Every field carries a banner naming the half that fills it.
 
-```cpp title="src/render/RenderContext.hpp"
+```cpp title="src/render_api/RenderContext.hpp"
 struct RenderContext
 {
     // Editor half - the owned frame published by Editor::BuildSnapshot()
@@ -167,7 +174,7 @@ struct RenderContext
 };
 ```
 
-`RenderFrameSnapshot` (`src/render/RenderFrameSnapshot.hpp`) is an owned deep copy
+`RenderFrameSnapshot` (`src/render_api/RenderFrameSnapshot.hpp`) is an owned deep copy
 of the frame - values only, no Scene pointers and no lazy reads. It carries
 `config`, a `CameraSnapshot camera` (`view`/`projection`/`position`/`target`),
 `meshes` and `lights` ordered by UID, `environmentId`, `activeObjectId`, and the
@@ -185,7 +192,7 @@ Application's frame-scoped half:
 ```cpp title="src/ui/UIContext.hpp"
 struct UIContext
 {
-    // Editor half - assigned by Editor::UpdateUIContext()
+    // Document state - queried by Application from Editor getters
     const Scene*         scene   = nullptr;  // check HasScene()
     const RenderConfig*  config  = nullptr;  // read via Settings(), never directly
 
@@ -226,12 +233,10 @@ Design:
   an owned copy can. `BuildSnapshot()` resolves every scene object to the stable
   UID the renderer's caches are keyed by and copies every matrix and parameter by
   value, so nothing in the frame dereferences the Scene after it is built (see
-  `render/RenderFrameSnapshot.hpp`).
-- `UpdateUIContext()` assigns fields only and must never call a `UIContext`
-  method: it runs in `neurus_editor`, which does not link `neurus_ui` (that
-  library links this one), so a symbol defined there would not resolve. The
-  Application adds the frame-scoped `profile`/`log`/`history`/`scriptConsole`
-  members.
+  `render_api/RenderFrameSnapshot.hpp`).
+- Application assembles the UI-owned `UIContext` from the Editor's scene/config
+  getters and adds `profile`/`log`/`history`/`scriptConsole`. Editor does not
+  include UIContext or link the UI library.
 - Keeping the UI's view a separate two-field struct is what makes "the gizmo is
   not scene data" a property of the type rather than a convention.
 - **The fallback is one value, reached two ways.** `UIContext::Settings()` is
@@ -411,8 +416,8 @@ in [Events](events.md).
 - `RenderRequest` posting through `RenderRequestSink` for Editor-to-Renderer GPU work
 - `RenderContext`: the renderer's view - one owned `RenderFrameSnapshot` (built
   by `Editor::BuildSnapshot()`) plus the frame half stamped by the renderer
-- `UIContext`: the UI's view (scene and config), produced by
-  `Editor::UpdateUIContext()`
+- `UIContext`: the UI's view, assembled by Application from Editor queries
+  and frame-scoped service values
 - Editor orchestrator with `RegisterController<T>()` and `Edit()` for event
   dispatch
 - `Controllers` base class with the `Init(ControllerContext&)` virtual interface

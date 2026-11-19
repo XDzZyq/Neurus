@@ -1,8 +1,14 @@
 # src/editor/CMakeLists.txt - Editor Layer
 
 add_library(neurus_editor STATIC
+	project/HistoryComponent.hpp
+	project/EditorComponent.hpp
+	project/HistoryComponent.cpp
+	project/EditorComponent.cpp
 	Editor.hpp
 	Editor.cpp
+	RenderManager.hpp
+	RenderManager.cpp
 	Input.hpp
 	commands/EditorCommandAdapter.hpp
 	commands/EditorCommandAdapter.cpp
@@ -50,9 +56,11 @@ add_library(neurus_editor STATIC
 # Qt-enum translations) are compiled into neurus_ui; the editor itself is
 # Qt-free so the headless renderer can link it.
 target_link_libraries(neurus_editor PUBLIC
+	neurus_shader
 	neurus_command
 	neurus_scene
 	neurus_asset
+	neurus_render_api
 	stb
 )
 
@@ -62,5 +70,4 @@ target_include_directories(neurus_editor PUBLIC
 
 target_include_directories(neurus_editor PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/..
-	${Vulkan_INCLUDE_DIRS}
 )

@@ -50,7 +50,7 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
   monotonic version. `FindStage` returns `nullptr` when a stage is absent;
   `GetStage` default-inserts.
 - The concrete leaves are `RenderShader` (vertex + fragment) and
-  `ComputeShader` (compute), both in `src/render/shaders/`. They add
+  `ComputeShader` (compute), both owned by the CPU `src/shader/` module. They add
   `ParseAndGenerate()` and serialize their source paths (and compute defaults);
   each leaf then serializes the stage map (`path`/`code`/`parsed`) through the
   `ShaderData` helpers.
@@ -68,6 +68,14 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
 The Script Console exposes the data as `neurus.shader` (stage constants,
 `load_shader`, IR classes), `neurus.data.shaders` (pooled shaders by UID/name)
 and `mesh.shader` (the per-mesh slot). See [Scripting](../script/overview.md#shaders).
+
+`ShaderData::ResolveSourcePath` and `ShaderData::ReadSource` provide source path
+resolution and raw text IO without modifying stage content or compiling it. Passive shader
+IR, stage and snapshot values stay in Asset; parsing, code generation, compilation
+and snapshot building belong to the CPU Shader module. `neurus_asset_data` and
+project persistence have no dependency on that tooling. ApplicationCore registers
+concrete shader types before generic persistence restores them, preserving the
+existing reload/recompile behavior. See [Shaders](../render/shaders.md).
 
 ## PixelFormat (`asset/PixelFormat.hpp`)
 
@@ -117,3 +125,13 @@ All image layout transitions go through `Barrier::Transition()`. See [Buffers](.
 Currently supported: OBJ mesh loading via `MeshData`; PNG/HDR image decoding via `ImageData` with member `SavePNG` / `SaveHDR`; the `PixelFormat` enum for CPU-side format queries; and `AssetPath` resolution.
 
 Future work: a glTF 2.0 loader with PBR material support, texture compression (BCn, ASTC), an async asset-loading thread pool, Vulkan Memory Allocator integration, and pipeline cache serialization.
+
+## Optional render project data
+
+Project config and graph data are nullable shared pointers. A missing or failed
+component stays null, selects runtime defaults, and is omitted on save. A present
+config uses per-field defaults; a present empty graph is retained as an explicit
+empty graph. Shader absence likewise selects cached built-ins without inserting
+fallback resources into the project pool. Rendering and read-only queries do not
+change project presence. Explicit edits materialize data that subsequent saves
+include; undo may restore null.

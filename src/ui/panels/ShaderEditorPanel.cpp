@@ -3,7 +3,7 @@
 #include "items/CodeEditor.hpp"
 #include "delegates/ShaderFieldDelegate.hpp"
 #include "models/ShaderStructModel.hpp"
-#include "UIContext.hpp"
+#include "ui/UIContext.hpp"
 #include "ui/utils/I18n.hpp"
 #include "scene/Scene.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"

@@ -4,6 +4,20 @@ Vulkan resources are owned by exactly one layer: the Application owns the
 instance, device, queues and surface, the Renderer owns the swapchain and every
 resource below it, and the UI owns only the native window.
 
+## Optional project render data
+
+Editor owns nullable `shared_ptr` config and graph slots; explicit shader data
+belongs to its resource pool. Null means use defaults and is omitted on save.
+Read-only effective getters do not allocate stored project data. Explicit edits
+materialize values, and config undo restores absence as well as field values.
+
+`BuiltInRenderData` owns cached CPU fallback data separately from the project.
+Renderer resolves defaults through this provider without calling Editor, and
+owns the GPU resources derived from it. The frame mailbox carries effective
+config by value, keeping mutable project pointers off the render thread.
+UI reads a frame-scoped view; scripts re-query config through a read-only
+provider after edits or undo can replace the stored pointer.
+
 ## Vulkan Ownership Graph
 
 ```mermaid
@@ -78,3 +92,7 @@ been removed.
 5. **Explicit GPU ownership** - Each Vulkan handle has one owning layer
 6. **Non-copyable GPU resources** - `= delete` copy/assign
 7. **Vulkan validation** - Debug builds enable `VK_LAYER_KHRONOS_validation`
+
+UI native window handles use the Vulkan-free `platform/NativeWindow.hpp`.
+`platform/PlatformSurface.hpp` exposes Vulkan types and belongs at the Application
+and GPU-platform boundary; UI headers must not include it.

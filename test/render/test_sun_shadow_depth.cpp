@@ -16,9 +16,9 @@
 #include <gtest/gtest.h>
 #include "shared/TestVulkanShared.hpp"
 
-#include "render/shaders/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 #include "render/passes/ShadowDepthPass.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/RenderCache.hpp"
 #include "render/Image.hpp"
 #include "render/Barrier.hpp"

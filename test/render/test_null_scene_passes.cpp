@@ -31,8 +31,8 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/passes/LightingPass.hpp"
@@ -110,7 +110,7 @@ TEST_F(NullScenePassTest, LightingPassRecordsNothingWithoutAScene)
 	PassStats stats{};
 	auto& cmd = BeginCmd();
 	// Before the fix this dereferenced ctx.scene for light_list.
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.dispatches, 0u) << "a scene-less frame must not shade";
@@ -128,7 +128,7 @@ TEST_F(NullScenePassTest, SelectionOutlinePassRecordsNothingWithoutAScene)
 	PassStats stats{};
 	auto& cmd = BeginCmd();
 	// Before the fix this dereferenced ctx.scene for selections.
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.dispatches, 0u) << "nothing is selected when nothing exists";
@@ -149,7 +149,7 @@ TEST_F(NullScenePassTest, GeometryPassRecordsNothingWithoutAScene)
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.drawCalls, 0u) << "no mesh list to iterate";
@@ -166,7 +166,7 @@ TEST_F(NullScenePassTest, ShadowDepthPassRecordsNothingWithoutAScene)
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.drawCalls, 0u) << "no light casts a shadow of nothing";
@@ -182,7 +182,7 @@ TEST_F(NullScenePassTest, ShadowIntensityPassRecordsNothingWithoutAScene)
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.dispatches, 0u) << "no light list to resolve";

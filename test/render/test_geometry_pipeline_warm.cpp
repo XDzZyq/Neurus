@@ -18,11 +18,12 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/resources/PipelineCache.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include "asset/data/MeshData.hpp"
 #include "scene/Camera.hpp"
@@ -129,7 +130,7 @@ protected:
 
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, frame, &scene);
-		PassStats stats = m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		PassStats stats = RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 		return stats;
 	}
@@ -339,4 +340,23 @@ TEST_F(GeometryPipelineWarmTest, FragmentOnlySpirv_DoesNotBuildPipeline)
 
 	PassStats stats = RecordFrame(scene);
 	EXPECT_EQ(stats.drawCalls, 1u);
+}
+TEST_F(GeometryPipelineWarmTest, IncompatibleCompiledStagesUseDefaultWithoutCreatingPipeline)
+{
+	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = MakeShader("IncompatibleShader");
+	ShaderUnit vertex;
+	vertex.code = "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n";
+	shader->GetVertex().spv = ShaderLibrary::Compile(vertex, ShaderType::VERTEX, "MissingOutputs");
+	ASSERT_FALSE(shader->GetVertex().spv.empty());
+	ASSERT_FALSE(shader->GetFragment().spv.empty());
+	shader->BumpVersion();
+
+	EXPECT_FALSE(m_geometryPass->EnsureMeshPipeline(*m_renderCache, *shader));
+	EXPECT_EQ(m_renderCache->GetPipelineCache().Get(shader->GetObjectID()), nullptr);
+
+	Scene scene;
+	BuildScene(scene, {MakeMesh(shader)});
+	EXPECT_EQ(RecordFrame(scene).drawCalls, 1u);
 }

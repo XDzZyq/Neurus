@@ -46,7 +46,7 @@ The two have opposite lifetimes (scene-object lifetime versus one gesture) and o
 
 ## Publication and null policy
 
-Both lists travel as values on `RenderFrameSnapshot` (`render/RenderFrameSnapshot.hpp`), copied once per frame by `Editor::BuildSnapshot()` rather than borrowed through a pointer. A pass reads them as `ctx.Frame().debugDraw` and `ctx.Frame().gizmoDraw`:
+Both lists travel as values on `RenderFrameSnapshot` (`render_api/RenderFrameSnapshot.hpp`), copied once per frame by `Editor::BuildSnapshot()` rather than borrowed through a pointer. A pass reads them as `ctx.Frame().debugDraw` and `ctx.Frame().gizmoDraw`:
 
 - The debug list is gated by `r_debug_draw`: when the toggle is off (or no scene is published) the producer leaves `hasDebugDraw` false and the list empty, so `ctx.Frame().HasDebugDraw()` is false and `DebugPass` draws nothing. The gate decides whether the overlay is published at all, never the RenderGraph topology - the pass stays in the graph unconditionally. See [Render Config](../core/render-config.md).
 - The gizmo list is published unconditionally - interaction feedback is not a hideable debug visualization - so it is always present and empty when nothing is armed; the pass early-outs on `Empty()`.

@@ -23,13 +23,13 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestSimpleShadow.hpp"
 
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/RenderShader.hpp"
 
 #include "render/passes/ShadowDepthPass.hpp"
 #include "render/passes/ShadowIntensityPass.hpp"
 #include "render/passes/GeometryPass.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Image.hpp"
 #include "render/Barrier.hpp"
 #include "render/RenderCache.hpp"
@@ -172,9 +172,9 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

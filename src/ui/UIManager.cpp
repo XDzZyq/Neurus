@@ -9,11 +9,11 @@
 #include "panels/ScriptConsolePanel.hpp"
 #include "panels/ShaderEditorPanel.hpp"
 #include "panels/Viewport.hpp"
-#include "UIContext.hpp"
+#include "ui/UIContext.hpp"
 #include "ui/utils/I18n.hpp"
 
 #include "core/Log.hpp"
-#include "editor/events/UIEvents.hpp"
+#include "ui/events/UIEvents.hpp"
 #include "editor/operations/HistoryView.hpp"
 
 #include <QApplication>

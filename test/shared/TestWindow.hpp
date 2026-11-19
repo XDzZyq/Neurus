@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/PlatformSurface.hpp"
+#include "platform/NativeWindow.hpp"
 
 #include <memory>
 

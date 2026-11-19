@@ -3,6 +3,14 @@
 The application, renderer, editor, script, UI, asset and scene layers each own a
 distinct responsibility, and Core supplies utilities shared across all of them.
 
+## Shared Render Contracts (`src/render_api/`)
+
+`neurus_render_api` contains owned frame snapshots, render requests and their
+write-only sink, context and profiling values, and CPU overlay payloads. It is
+Qt-free and Vulkan-free and depends only on CPU asset data, scene and core types.
+Editor and UI include these contracts without linking renderer implementation.
+`ShaderSnapshot` belongs to the CPU shader data under `asset/data/shader/`.
+
 ## Renderer Layer (`src/render/`)
 
 - Pure rendering service with no application logic
@@ -23,9 +31,11 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   GizmoPass into `OverlayOutput`, which the renderer then blits to the
   swapchain. The scene image is never presented directly, so an overlay-only
   change redraws without re-running a scene pass
-- Builds the scene graph from `RenderConfig`: ShadowDepthPass, GeometryPass
-  (G-Buffer), SSAOPass, ShadowIntensityPass, LightingPass, ComposePass and, when
-  enabled, FXAAPass
+- Builds the runtime scene graph from the Editor's `RenderGraphData` document:
+  the `GraphUploader` service maps its pass kinds to `PassFactory` instances,
+  maps every node and connection through a permanent `GraphMorphism`, and its
+  output tags plan the `RenderCache` resources. `RenderConfig` supplies
+  per-frame pass parameters only
 - Consumes the per-frame RenderContext (the renderer's view of the frame: the
   Editor's owned frame snapshot plus the frame half `recordFrame()` stamps) for
   pass dispatch
@@ -54,9 +64,17 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   event-replay `Operation` values. Controllers record through `IOperationSink`,
   undo and redo re-emit the inverse event synchronously, and a script run or a
   command is buffered into one history entry
-- Produces the two frame views: the renderer's view as an owned
-  `RenderFrameSnapshot` via `BuildSnapshot()`, and `UIContext` (the UI's view)
-  via `UpdateUIContext()`
+- Produces the renderer's owned `RenderFrameSnapshot` via `BuildSnapshot()`.
+  Application queries the scene and config to assemble the UI-owned `UIContext`.
+- Owns `RenderManager`, whose project config and graph are nullable
+  `shared_ptr` values. Null selects built-in defaults and is omitted on save;
+  reading effective settings or graph data never materializes project data
+- Publishes explicit project shader snapshots and an optional graph through
+  `CompileRenderGraphRequest`. `BuiltInRenderData` supplies cached CPU defaults
+  outside the project pool; Renderer owns the compiled graph and GPU resources
+- Explicit config edits materialize stored settings. Undo restores the previous
+  presence state, including null. Frame snapshots copy effective config by value,
+  so the render thread never shares mutable Editor config storage
 - Owns `EditorViewport`, the viewport composition root: the **viewport camera**
   (a pooled `Camera` that is not scene content), the debug/gizmo builders and
   the resize. `Editor::ActiveCamera()` selects the activated scene camera when the
@@ -66,7 +84,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
   API, only `GetViewport()` and the timing (`PublishActiveCamera` in `Edit()`). A
   scene with zero cameras is a legal document. See
   [Editor Overview](../editor/overview.md).
-- Owns UIEvents (Qt signals) and the typed `EventQueue`
+- Owns the typed `EventQueue`; the Qt `UIEvents` bus lives in `ui/events/`
 - The `EventQueue` is **Editor-internal**: it is not a channel to the Renderer
   and nothing under `src/render/` includes it. It is drained once per frame
   (`Edit()`) for events that originated at the UI boundary; everything else in
@@ -74,6 +92,8 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - Communicates with the Renderer via Context (read-only frame snapshot) and typed
   `RenderRequest`s posted through a `RenderRequestSink*`
 - Must NOT directly manipulate GPU resources
+- Owns the project adapters for undo history and viewport state under
+  `editor/project/`; asset persistence does not include Editor internals
 - Controller registry pattern: `Editor::RegisterController<T>()` creates the
   controller, calls `Init(m_ctx)` and stores it in `ed_controllers`
 - Event-driven controller communication: a UI signal reaches
@@ -90,6 +110,8 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - Reads one `ScriptContext` per run: borrowed, non-owning `Scene`,
   `RenderConfig` and `IResourceLookup` pointers built by
   `Editor::UpdateScriptContext()`. There is no process-wide context
+- Config bindings use the context's read-only provider on each access, so a
+  config created or removed by a synchronous edit is visible within the same run
 - Mutates only by emitting typed editor events: `ScriptDispatch::Emit()` hands
   the event to the Editor's `IEventQueue` synchronously, so the controller
   applies the change before the Python statement returns
@@ -113,6 +135,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 - `src/ui/utils/`: Non-widget UI helpers (CodeHighlighter)
 - Displays data and captures user input
 - Emits Qt signals via UIEvents for state changes
+- Owns `ui/events/UIEvents` and the Qt input translation in `ui/Input.cpp`
 - Exposes the viewport's native window handle; creates no Vulkan object,
   including `VkSurfaceKHR` (the Application creates the surface from that
   handle)
@@ -143,22 +166,46 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 
 ## Asset Layer (`src/asset/`)
 
-- Vulkan-free: no `<vulkan/>` includes in public headers
+- Vulkan-free and independent of Renderer and Editor implementation targets
 - OBJ mesh loading and parsing into MeshData (pure CPU struct)
 - PNG/HDR image decoding into ImageData (pure CPU struct, owning pixel vector)
 - `PixelFormat` enum for CPU-side format queries (maps to `vk::Format` by
   convention, not by cast)
 - CPU-side shader data: `ShaderData` under `data/`, with its IR/unit headers
   (`ShaderStruct`, `ShaderUnit`, `ShaderStage`, `ShaderStructSerialize`) under
-  `data/shader/`; the renderer's `RenderShader` / `ComputeShader` derive from
-  `ShaderData`
+  `data/shader/`. `ShaderSnapshot` is a passive owned value there; snapshot
+  construction and concrete shader behavior belong to the Shader module
+- `ShaderData` owns shader source text IO and path resolution; Asset neither
+  parses shader source nor compiles it
 - CPU-side data representation only; GPU upload handled by Renderer via
   `MeshGPU` and `Image::FromImageData`
 - Must NOT issue draw calls, manage GPU pipelines, or own GPU resources
 
+The asset build separates `neurus_asset_data` (CPU resource values and source IO)
+from `neurus_asset` (project persistence). Scene depends only on the data target;
+persistence depends on scene and data, so the CPU targets have no asset/scene cycle.
+Neither Asset target depends on shader tooling.
+
+## Shader Module (`src/shader/`)
+
+- CPU-only `neurus_shader`, depending on `neurus_asset_data` and shaderc
+- Owns `RenderShader`, `ComputeShader`, shader parsing/generation/compilation,
+  `ShaderLibrary`, and `ShaderSnapshotBuilder`
+- Consumes source text provided by Asset; file-loading convenience methods
+  delegate text IO and path resolution to `ShaderData::ReadSource` and `ResolveSourcePath`
+- Owns concrete shader cereal registrations; ApplicationCore force-links them
+  before generic Asset persistence restores registered resource types
+- Supplies the cached CPU `BuiltInRenderData` provider without populating project
+  config, graph or shader slots; rendering with defaults does not change saves
+- Preserves current shader serialization reload/recompile behavior
+- Does not own Vulkan shader modules, pipelines, descriptor sets or renderer state
+
+The shared `render_api` contracts carry passive asset snapshots and scene values;
+they do not depend on the Shader module.
+
 ## Scene Layer (`src/scene/`)
 
-- Vulkan-free in public interface: no GPU types exposed to consumers
+- Vulkan-free target: no renderer or Vulkan linkage and no GPU types exposed to consumers
 - Scene objects (Camera, Light, Transform, Mesh, UID) define logical scene
   structure
 - GPU resources (VertexBuffer, IndexBuffer) are separated into `MeshGPU` held by

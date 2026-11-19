@@ -52,6 +52,42 @@ short working reference.
 - `std::unique_ptr`/`std::shared_ptr` for explicit ownership; raw pointers for
   non-owning references only.
 
+## Core Layer
+
+- `src/core/` holds generic, layer-agnostic primitives only: identity (`UID`),
+  pools (`ResourceManager`), traversal (`Graph`, `GraphMorphism`), logging,
+  serialization helpers, `RenderConfig`.
+- A concrete document or data type that names this product's features belongs
+  to the layer that owns it. A render graph document lives in `asset/data/`,
+  not in `core/`: if a type mentions a pass kind, an output tag or a scene
+  concept, it is not core.
+- `core/` never includes asset, scene, editor, render or UI headers.
+
+## CPU and Render Boundary
+
+- Shared renderer frame/context/profiling values, overlay payloads and typed render
+  requests belong under `render_api/` in `neurus_render_api`. It contains no Qt,
+  Vulkan, Editor or Renderer implementation headers. UIContext stays in UI;
+  Application assembles it from Editor getters.
+- Passive shader data, IR and snapshots belong under `asset/data/shader/`.
+  `ShaderData` owns source text IO and path resolution. CPU shader
+  parsing, generation, compilation, high-level RenderShader/ComputeShader and
+  snapshot construction belong under `shader/` in `neurus_shader`; the builder
+  has its own ShaderSnapshotBuilder header. Renderer helpers translate CPU
+  snapshot metadata into Vulkan declarations.
+- Asset data and persistence must not depend on Shader tooling. Shader cereal
+  registrations belong under `shader/registrations/` and are force-linked by
+  ApplicationCore; generic persistence uses its resource callback. Preserve
+  existing shader serialization reload/recompile behavior.
+- Editor light requests carry scene-light snapshots; GPU layout conversion
+  belongs to the Renderer. Never include UploadManager just to prepare a request.
+- Asset and scene targets must not link Renderer. Editor-specific persistence
+  adapters live under `editor/project/`; Qt UIEvents and input translations live
+  under `ui/`.
+- Run `python scripts/check_layer_boundaries.py` when changing layer includes;
+  `neurus_cpu_test` verifies CPU document/shader/Editor behavior without GPU or
+  Qt linkage. See [Testing](../../docs/build/test.md#cpu-boundary-tests).
+
 ## Const Correctness
 
 - Mark non-mutating methods and references `const`.

@@ -1,0 +1,114 @@
+/**
+ * @file RenderManager.hpp
+ * @brief Editor-owned render state: the graph document, its shaders and the config.
+ *
+ * The Editor tells the renderer what to draw through two values: `RenderConfig`
+ * (copied into every frame snapshot) and `RenderGraphData` (published as a
+ * compile request). Stored config and graph pointers stay null when the project
+ * selects defaults. Effective reads use cached built-ins without adding them to
+ * the project's resource pool or serialization.
+ *
+ * It is a state service, not a controller: it does not record operations, emit
+ * events or mark the project dirty. Controllers and the Editor write through
+ * `EditConfig()`, `SetGraph()` and `Restore()`, and the Editor owns the undo and
+ * dirty policy around those writes.
+ */
+
+#pragma once
+
+#include "asset/components/GraphComponent.hpp"
+#include "asset/data/RenderGraphData.hpp"
+#include "core/RenderConfig.hpp"
+
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace neurus {
+
+class RenderRequestSink;
+class ResourceManager;
+
+/**
+ * @brief Owns optional project render data and publishes immutable renderer inputs.
+ *
+ * Non-copyable, non-movable (borrows the pool and the request sink).
+ */
+class RenderManager
+{
+public:
+	/**
+	 * @brief Binds the service to the Editor's pool and request sink.
+	 * @param resources  App-scoped pool; must outlive this service.
+	 * @param sink       Renderer request sink, or null for a headless editor.
+	 */
+	RenderManager(ResourceManager& resources, RenderRequestSink* sink);
+	~RenderManager();
+
+	RenderManager(const RenderManager&)            = delete;
+	RenderManager& operator=(const RenderManager&) = delete;
+	RenderManager(RenderManager&&)                 = delete;
+	RenderManager& operator=(RenderManager&&)      = delete;
+
+	/** @brief Selects default settings by clearing the stored config; the graph is untouched. */
+	void ResetConfig();
+
+	/**
+	 * @brief Selects the cached built-in graph without storing it, preserving render settings.
+	 *
+	 * Publishes a null document; Renderer resolves it through its built-in provider.
+	 * Missing legacy graph records remain absent on the next save.
+	 */
+	void ResetGraph();
+
+	/**
+	 * @brief Applies a saved document after a project load.
+	 *
+	 * The pool must already hold the project's shaders. Missing shader references
+	 * select cached built-ins; invalid graphs select the implicit default graph.
+	 * The config is left as the project restored it.
+	 *
+	 * @param record  Saved document.
+	 */
+	void Restore(const project::RenderGraphRecord& record);
+
+	/**
+	 * @brief Replaces the document and publishes it.
+	 *
+	 * Missing shader references select built-ins without populating the pool.
+	 */
+	void SetGraph(RenderGraphData graph);
+
+	const RenderConfig& Config() const { return m_config ? *m_config : DefaultRenderConfig(); }
+	RenderConfig& EditConfig();
+	std::shared_ptr<RenderConfig>& ConfigData() { return m_config; }
+	const std::shared_ptr<RenderConfig>& ConfigData() const { return m_config; }
+
+	/// @brief Effective read-only graph; reading a default never materializes project data.
+	const RenderGraphData& Graph() const;
+	std::shared_ptr<RenderGraphData>& GraphData() { return m_graph; }
+	const std::shared_ptr<RenderGraphData>& GraphData() const { return m_graph; }
+
+	/// @brief Validates the document, snapshots its shaders and posts the request.
+	void Publish();
+
+	/// @brief Record read from a project, applied by the Editor's FinishLoad.
+	std::optional<project::RenderGraphRecord>& PendingRecord() { return m_pending; }
+
+	/// @brief Problems from the last load and validation pass.
+	const std::vector<std::string>& Problems() const { return m_problems; }
+
+private:
+	/// @brief Rejects a broken loaded graph without changing other project data.
+	void ValidateGraph();
+
+	ResourceManager&   m_resources;
+	RenderRequestSink* m_sink;
+	std::shared_ptr<RenderConfig> m_config;
+	std::shared_ptr<RenderGraphData> m_graph;
+	std::optional<project::RenderGraphRecord> m_pending;
+	std::vector<std::string> m_problems;
+};
+
+} // namespace neurus

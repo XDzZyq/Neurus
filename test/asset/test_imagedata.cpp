@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <vulkan/vulkan_raii.hpp>
-
 #include "asset/data/ImageData.hpp"
 #include "asset/PixelFormat.hpp"
 

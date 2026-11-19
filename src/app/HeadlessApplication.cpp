@@ -11,7 +11,7 @@
 #include "platform/PlatformProcess.hpp"
 #include "render/DeferredRenderer.hpp"
 #include "render/RenderCache.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "render/RenderThread.hpp"
 #include "render/UploadManager.hpp"
 #include "render/resources/LightingCache.hpp"

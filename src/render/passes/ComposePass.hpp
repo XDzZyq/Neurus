@@ -18,8 +18,8 @@
 #pragma once
 
 #include "passes/ComputePass.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -69,23 +69,20 @@ public:
 	 * @param cache   Mutable render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index, config).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the HDRColor read and the ComposedOutput write.
 	PassIO GetIO() const override;
 
-	/**
-	 * @brief Writes both descriptors (HDRColor, ComposedOutput) into the
-	 *        specified set.
-	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
-	 * @param extent    Render area dimensions.
-	 * @param cache     Mutable render cache for attachment access.
-	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
+	/// @brief The tone-map and gamma compute shader.
+	std::vector<const ShaderData*> GetShaders() const override;
 
 private:
-	/** @brief Creates the descriptor set layout (2 bindings). */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
+	/// @brief Delegating constructor that receives the already-loaded shader.
+	ComposePass(const vk::raii::Device& device,
+	            const vk::raii::PhysicalDevice& physicalDevice,
+	            uint32_t numSets,
+	            std::shared_ptr<const ComputeShader> shader);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
@@ -94,7 +91,7 @@ private:
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
-	std::unique_ptr<ComputeShader> p_shader;
+	std::shared_ptr<const ComputeShader> p_shader;
 };
 
 } // namespace neurus

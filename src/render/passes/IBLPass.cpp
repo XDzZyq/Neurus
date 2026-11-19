@@ -9,8 +9,8 @@
 #include "Image.hpp"
 #include "render/Barrier.hpp"
 #include "render/SharedQueue.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 #include "core/Log.hpp"
 
 #include <cstring>
