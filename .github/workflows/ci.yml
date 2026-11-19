@@ -76,6 +76,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Test the layer boundary checker
+        run: python3 scripts/test_check_layer_boundaries.py
+
       - name: Check layer include boundaries
         run: python3 scripts/check_layer_boundaries.py
 

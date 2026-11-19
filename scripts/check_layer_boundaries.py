@@ -28,8 +28,8 @@ FORBIDDEN_LAYERS = {
     "ipc": {"editor", "render", "render_api", "ui"},
     "cli": {"editor", "render", "render_api", "ui"},
 }
-GPU_FREE_LAYERS = {"core", "asset", "shader", "scene", "editor", "script", "render_api", "command", "ipc", "cli"}
-QT_FREE_LAYERS = GPU_FREE_LAYERS | {"render"}
+GPU_FREE_LAYERS = {"core", "asset", "shader", "scene", "editor", "script", "render_api", "command", "ipc", "cli", "ui"}
+QT_FREE_LAYERS = (GPU_FREE_LAYERS - {"ui"}) | {"render"}
 INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*([<"])([^>"\n]+)[>"]', re.MULTILINE)
 COMMENTS = re.compile(r'/\*.*?\*/|//[^\n]*', re.DOTALL)
 
@@ -41,7 +41,10 @@ def without_comments(text):
 
 def external_family(header):
     """Identify explicit toolkit header names, avoiding STL names like queue."""
-    lowered = header.lower()
+    lowered = header.replace("\\", "/").lower()
+    # This project API exposes Vulkan types too; CPU callers use NativeWindow.hpp.
+    if lowered.rsplit("/", 1)[-1] == "platformsurface.hpp":
+        return "Vulkan"
     if lowered.startswith("vulkan/") or lowered in {"vulkan.h", "vulkan.hpp"}:
         return "Vulkan"
     if header.startswith("Qt") or re.match(r'^Q[A-Z][A-Za-z0-9]*(?:/|\.|$)', header):

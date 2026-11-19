@@ -9,6 +9,8 @@
  * VK_EXT_metal_surface.
  */
 
+#include "platform/NativeWindow.hpp"
+
 #include <vulkan/vulkan_raii.hpp>
 
 #include <cstdint>
@@ -16,9 +18,6 @@
 
 namespace neurus
 {
-
-/// Opaque native window handle. HWND on Win32, NSView* on macOS.
-using NativeWindowHandle = void*;
 
 namespace platform
 {

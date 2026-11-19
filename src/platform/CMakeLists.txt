@@ -5,6 +5,7 @@
 # Vulkan-free command transport and CLI can use them without inheriting the
 # surface layer's Vulkan dependency.
 add_library(neurus_platform_paths STATIC
+	NativeWindow.hpp
 	PlatformPaths.hpp
 	PlatformProcess.hpp
 	PlatformFile.hpp

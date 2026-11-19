@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/PlatformSurface.hpp"
+#include "platform/NativeWindow.hpp"
 #include "UIPanel.hpp"
 
 #include <glm/glm.hpp>

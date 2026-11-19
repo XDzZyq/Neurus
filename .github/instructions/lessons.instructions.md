@@ -6,6 +6,14 @@ the **rule** that prevents it. Design detail behind these lives in
 
 ## Build and tooling
 
+- **UI builds on Windows but macOS cannot find `vulkan/vulkan_raii.hpp`.**
+  The SDK environment can hide a Vulkan-bearing platform include in UI code.
+  Rule: native handles use `platform/NativeWindow.hpp`; `PlatformSurface.hpp`
+  stays at the GPU boundary. UI is Vulkan-free in the layer checker.
+- **Linux cannot link pass reflection helpers that Windows resolves.** A helper
+  needed by a pass constructor lived in an earlier renderer archive. Rule:
+  compile shader layout reflection into `neurus_render_passes`, alongside its
+  callers, rather than relying on archive rescans or adding a target cycle.
 - **A `ctest` run reports tests passed but nothing executed.** A multi-config
   build tree has no tests without `-C`. Rule: always name the config -
   `cd build && ctest -C Debug --output-on-failure` - and read an unexpected suite

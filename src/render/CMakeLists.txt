@@ -77,8 +77,6 @@ add_library(neurus_render STATIC
 	UploadManager.hpp
 	UploadManager.cpp
 	render_graph/DescriptorBinder.hpp
-	render_graph/ShaderReflection.hpp
-	render_graph/ShaderReflection.cpp
 	render_graph/ResourceTag.hpp
 	render_graph/ResourceTag.cpp
 	render_graph/PassResources.hpp

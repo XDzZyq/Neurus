@@ -381,6 +381,9 @@ gtest_discover_tests(neurus_cpu_test
 add_test(NAME Neurus.LayerBoundaries
 	COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check_layer_boundaries.py"
 )
+add_test(NAME Neurus.LayerBoundaryChecker
+	COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/test_check_layer_boundaries.py"
+)
 
 gtest_discover_tests(neurus_test
 	TEST_PREFIX "Neurus."

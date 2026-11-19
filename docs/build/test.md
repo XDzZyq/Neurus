@@ -26,13 +26,15 @@ values belong in `src/render_api/`, linked through `neurus_render_api`. This exe
 not replace GPU or reference-image verification.
 
 CI also runs the include checker in a standalone `Layer boundaries` job before
-starting the Windows/macOS matrix and Linux build. It needs only Python, with no
+starting the Windows/macOS matrix and Linux build. It tests the checker itself,
+then scans source includes. It needs only Python, with no
 submodules, Qt or Vulkan setup. A violation fails the required `ci-gate`; the
 existing documentation-only skip behavior is preserved.
 
 The checker resolves literal project includes against the source directory,
 `src/`, and unique header names. It reports forbidden layer dependencies and
-Qt/Vulkan includes as `file:line` diagnostics. It checks direct includes, not
+Qt/Vulkan includes as `file:line` diagnostics, including Vulkan-bearing
+`PlatformSurface.hpp` in UI/CPU code. It checks direct includes, not
 macro-generated includes, CMake link dependencies or runtime ownership. Separate
 CMake targets and the CPU executable provide additional build/link checks;
 architectural review still covers the runtime rules.

@@ -78,3 +78,7 @@ been removed.
 5. **Explicit GPU ownership** - Each Vulkan handle has one owning layer
 6. **Non-copyable GPU resources** - `= delete` copy/assign
 7. **Vulkan validation** - Debug builds enable `VK_LAYER_KHRONOS_validation`
+
+UI native window handles use the Vulkan-free `platform/NativeWindow.hpp`.
+`platform/PlatformSurface.hpp` exposes Vulkan types and belongs at the Application
+and GPU-platform boundary; UI headers must not include it.

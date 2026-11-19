@@ -1,6 +1,10 @@
 # src/render/passes/CMakeLists.txt - Render Pass Library
 
 add_library(neurus_render_passes STATIC
+	# Pass constructors call these helpers; keep their definitions in the same
+	# archive so static linking never needs to revisit neurus_render.
+	../render_graph/ShaderReflection.hpp
+	../render_graph/ShaderReflection.cpp
 	ComposePass.hpp
 	ComposePass.cpp
 	ComputePass.hpp
