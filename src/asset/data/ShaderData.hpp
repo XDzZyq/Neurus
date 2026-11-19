@@ -81,6 +81,9 @@ public:
 	 */
 	static std::optional<std::string> ReadSource(const std::string& path, std::string* error = nullptr);
 
+	/** @brief True when every required stage has source and compiled bytecode. */
+	bool IsValid() const;
+
 	/** @brief Returns true if the bundle has the given stage. */
 	bool HasStage(ShaderType type) const;
 

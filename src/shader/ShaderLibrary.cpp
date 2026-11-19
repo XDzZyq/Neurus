@@ -14,12 +14,12 @@
 namespace neurus {
 
 // =========================================================================
-// Meyer's singleton - internal state via function-local statics
+// Reuse one compiler per calling thread; compilation diagnostics are mutable.
 // =========================================================================
 
 static ShaderCompiler& GetCompiler()
 {
-	static ShaderCompiler s_compiler;
+	static thread_local ShaderCompiler s_compiler;
 	return s_compiler;
 }
 

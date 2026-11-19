@@ -82,7 +82,7 @@ private:
 	ComposePass(const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice,
 	            uint32_t numSets,
-	            std::unique_ptr<ComputeShader> shader);
+	            std::shared_ptr<const ComputeShader> shader);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
@@ -91,7 +91,7 @@ private:
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
-	std::unique_ptr<ComputeShader> p_shader;
+	std::shared_ptr<const ComputeShader> p_shader;
 };
 
 } // namespace neurus

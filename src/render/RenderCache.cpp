@@ -380,6 +380,11 @@ void RenderCache::RemoveSceneResources()
 	rc_uidToShadowLayer.clear();
 	rc_uidToSSBOIdx.clear();
 
+	// Project files may restore the same shader UID/version with different code.
+	// Only project pipelines live here; built-in pass pipelines stay cached in
+	// PassFactory and survive this scene replacement.
+	rc_pipelineCache.Clear();
+
 	// Shadow intensities are indexed by caster, and a new scene may have more or
 	// fewer of them, so the array is dropped and recreated at the right layer
 	// count on the next frame.

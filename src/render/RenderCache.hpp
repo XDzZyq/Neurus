@@ -339,8 +339,8 @@ public:
 	void Clean();
 
 	/**
-	 * @brief Drops the scene-scoped GPU resources: every mesh, light and
-	 *        environment entry plus the shadow bookkeeping derived from them.
+	 * @brief Drops project meshes, lights, environments, shader pipelines and
+	 *        the shadow bookkeeping derived from them.
 	 *
 	 * Called when the scene is replaced. The caches are keyed by object UID and
 	 * UIDs are restored from the project file (UID::serialize re-reads o_id), so
@@ -348,10 +348,9 @@ public:
 	 * project A, then project B, and B draws A's geometry, shadow maps and
 	 * cubemaps while B's own properties are displayed correctly beside them.
 	 *
-	 * Screen-space attachments, the pipeline cache and the LightingCache survive:
-	 * attachments are recreated lazily at the live extent, pipelines are keyed by
-	 * shader UID + version (a reloaded shader recompiles to a new version), and
-	 * the LightingCache is owned by UploadManager rather than by the scene.
+	 * Project pipeline UIDs and versions may also repeat across files. Built-in
+	 * pass pipelines live in PassFactory and survive. Screen-space attachments
+	 * and the LightingCache survive; attachments are recreated at the live extent.
 	 *
 	 * @note The caller must have drained the device first - the entries own
 	 *       vk::raii resources.

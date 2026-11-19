@@ -12,8 +12,9 @@ RenderRequestProcessor::RenderRequestProcessor(std::function<void()> drainFrames
                                                GeometryPass* geometryPass,
                                                std::function<void()> restartAccumulation,
                                                std::function<void()> markOverlaysDirty,
-                                               std::function<void(const CompileRenderGraphRequest&)> setPendingGraph)
-	: m_executor(std::move(drainFrames), cache, /*uploader=*/nullptr, geometryPass)
+                                               std::function<void(const CompileRenderGraphRequest&)> setPendingGraph,
+                                                  std::function<GeometryPass*()> geometryProvider)
+	: m_executor(std::move(drainFrames), cache, /*uploader=*/nullptr, geometryPass, std::move(geometryProvider))
 	, m_restartAccumulation(std::move(restartAccumulation))
 	, m_markOverlaysDirty(std::move(markOverlaysDirty))
 	, m_setPendingGraph(std::move(setPendingGraph))

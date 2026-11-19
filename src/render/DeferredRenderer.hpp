@@ -385,13 +385,6 @@ private:
 	std::unique_ptr<GraphUploader> m_graphUploader;
 
 	// --- Cached raw pointers for zero-cost access (non-owning) ---
-	GeometryPass* r_geometryPass = nullptr;
-	LightingPass* r_lightingPass = nullptr;
-	SSAOPass*   r_ssaoPass     = nullptr;
-	ShadowDepthPass* r_shadowDepthPass = nullptr;
-	ShadowIntensityPass* r_shadowIntensityPass = nullptr;
-	ComposePass*  r_composePass  = nullptr;
-	FXAAPass*     r_fxaaPass     = nullptr;
 
 	// --- Overlay graph (owned) ---
 	// Selection outline, debug overlay and gizmo, in their own RenderGraph over

@@ -6,14 +6,17 @@ Neurus persists projects with cereal, and `core/Serialize.hpp` provides the vers
 
 Two builds of the app rarely agree on a field list. An older build opening a newer project, or a newer build opening an older one, hits the same wall: a name the reader asks for is not in the file, cereal reports that by throwing `cereal::Exception`, and the throw unwinds past the whole component's `Load`.
 
-Because the catch blocks are deliberately coarse - `ResourceComponent::Load` calls `ResourceManager::Clear()`, `ConfigComponent::Load` assigns a fresh `RenderConfig` - one unknown field can discard an entire scene or every render setting around it. The cure is to read such a field on its own and let it keep its default when the file has nothing to say about it.
+A catch around a whole component can discard valid neighbors after one field fails.
+Per-field helpers handle version drift. Disk project loading additionally isolates
+components and resource entries before invoking cereal, so recovery does not depend
+on a shared archive cursor.
 
 ## The three helpers (`core/Serialize.hpp`)
 
 The namespace is `archive`, not `serialize`: several headers declare free `neurus::serialize(Archive&, T&)` overloads for cereal to find by ADL, and a namespace of that name inside `neurus` would redefine them.
 
 - `archive::Optional(ar, CEREAL_NVP(a), CEREAL_NVP(b), ...)` - the default. Each field is transferred independently, so one absent name does not stop the ones around it. On absence it **leaves the member alone**, and returns how many fields were absent.
-- `archive::LoadFresh(ar, "key", live)` - load-side only, for the two sites that load into an object already in use. It reads the named object into a default-constructed temporary and assigns it over the live one, so "absent" means *the in-class default*, not "inherit the last project the user had open". The two sites are `ConfigComponent::Load` and `Preferences::Load`.
+- `archive::LoadFresh(ar, "key", live)` - load-side only. It reads into a default-constructed temporary and assigns it over the live value, so missing fields use declared defaults instead of the previous session. Optional components use the return value to retain a null slot when the whole node is absent or unusable.
 - `archive::OptionalBlock(ar, ...)` - all-or-nothing: saving writes the fields and returns `true`, loading reads them and returns `false` if the whole block was missing. Use it when the group genuinely is a unit, for recognising a whole legacy format (the Scene's pre-pool ID lists, its selection block), or when "absent" must stay distinguishable from any value the field can hold (the Scene's three-state `activeCamUid`).
 
 `OptionalField(ar, field)` is the single-field primitive underneath all three. `NEURUS_OPTIONAL(ar, field)` is sugar over `Optional` for the common case where the archive key is spelled exactly like the member.
@@ -25,7 +28,7 @@ There is deliberately no `NEURUS_OPTIONAL_NVP(ar, field, fallback)`. It used to 
 A field's default is written once, in its in-class member initializer (or the type's default constructor, for `o_type` and `o_name`). Nothing in a load path restates it, and that is enforced rather than asked for:
 
 - `Optional` on absence leaves the member alone, and has no fallback parameter to pass, so there is no second place a default could be spelled.
-- That only holds if the object starts at its defaults, which is free for anything cereal constructs (every pooled scene object). The two load-into-a-live-object sites read into a freshly-constructed instance and assign it over the live one, so the defaults come from that construction.
+- That only holds if the object starts at its defaults. Cereal constructs pooled objects; load-into-live-value helpers construct a fresh temporary first. A present config object therefore gets per-field defaults, while an absent config keeps its project pointer null.
 - `test/asset/test_serialize_optional.cpp` loads an archive with every optional key renamed away and compares the result field-by-field against a default-constructed object, which fails if the two ever disagree.
 
 The same test pins the other direction with a real file: it loads the shipped `res/default.neurus.json` (written before any of this existed, still missing `r_debug_draw`), re-saves it, and asserts the re-saved document kept every member name the original had - gaining keys is allowed, losing one is not.
@@ -44,10 +47,16 @@ Value fields are optional; identity and history are not. Absence there means a b
 
 - `UID::o_id` - every cross-reference resolves through it.
 - The `cereal::base_class<>` hooks.
-- The resource pool itself, and the Scene's ID lists.
+- Resource identities and the Scene's ID lists. Individual disk pool entries are
+  isolated: a malformed or unknown entry is skipped and reported without losing
+  valid entries. Bare cereal pool loading still has its coarse failure behavior.
 - A data resource's source path: `MeshData` / `ImageData::m_path`, `Shader::m_name`, `RenderShader::m_vertPath` / `m_fragPath`.
 - `Light::light_type` - defaulting it yields `NONELIGHT`, an invisible light with no error anywhere.
-- Every undo/redo `Operation`'s own fields - a half-read op replays a `m_before` nobody ever had. An op's *endpoint contents* do follow the per-field rule, because `SetRenderConfigOp` embeds a `RenderConfig`; only the endpoint node itself is required.
+- Undo/redo operations require the data needed for replay. Config operations
+  store optional endpoint presence: `before_present` / `after_present` default to
+  true for older histories; a false flag omits that endpoint object and replay
+  restores the null config slot. Present endpoint contents use normal per-field
+  defaults, and undo can distinguish absent config from explicitly stored defaults.
 
 ## Version tolerance
 
@@ -57,14 +66,24 @@ What this does and does not buy an *older* build opening a *newer* file:
 |---|---|---|
 | a field this build lacks | ignores it | cereal's `finishNode()` does not check that members were consumed |
 | a field renamed since | defaults that one field, keeps the rest | `archive::Optional` |
-| a whole component node this build lacks | ignores it | `Project::load` iterates *its* components and finds each by name |
-| a component node this build has but the file lacks | defaults it, reports one line | `LoadFresh`'s false branch |
-| a pooled object type this build does not know | fails the whole pool | `ResourceComponent::Load` - known limit, left open on purpose |
-| an enum value out of this build's range | keeps it as-is | known limit, left open on purpose |
+| a whole component node this build lacks | ignores it | disk `Project::Load` selects registered component keys |
+| an optional config or graph node the file lacks | keeps its stored slot null; effective reads use defaults | component recovery policy |
+| a pooled object type this build does not know | skips and reports that entry, retaining valid neighbors | disk `ResourceComponent::LoadJson` |
+| a malformed config field or out-of-range config enum | defaults that field, retaining valid neighbors | disk `ConfigComponent::LoadJson` |
+| an out-of-range enum through bare cereal loading | no general range validation | the helpers provide optionality, not domain validation |
 
 A field the reader never asks for is already harmless: the JSON input archive looks members up by name and never checks that an object's members were all consumed, so a newer file's extra fields and extra top-level components are skipped silently. The helpers add tolerance for a field that was *renamed, moved or removed* between the two builds, in either direction.
 
 Order on disk does not matter on load because the lookup is name-keyed.
+
+Disk config loading accepts a present object even when some fields are unusable.
+It removes known fields with wrong primitive types or unrepresentable numeric
+values, and checks config enum domains, before cereal reads the sanitized object.
+Missing, null or non-object config stays absent. Save omits null config, graph and
+shader data; rendering with cached built-ins does not insert fallback objects
+into the saved project. These disk policies are distinct from the lower-level
+`Optional` / `LoadFresh` helpers used directly with cereal.
+
 
 ## `base_class` adds a node
 
@@ -75,13 +94,24 @@ Order on disk does not matter on load because the lookup is name-keyed.
 `src/asset/Project.hpp` defines `project::Project`, a pure registration-based serializer that owns no data - no project path, no dirty flag, no concrete type knowledge:
 
 - Components are registered via `Register<T>(args...)`, which constructs the component and stores it as `unique_ptr<Serializable>`, returning a reference.
-- `Save(path)` / `Load(path)` iterate every registered component and call its virtual `Save` / `Load`. `Project::Save` writes `cereal::make_nvp("project", *this)` into a `.neurus.json` file.
+- `Save(path)` invokes component `Save` hooks through cereal and writes the
+  `project` object into a `.neurus.json` file.
+- Disk `Load(path)` parses that object with `ordered_json`, selects each registered
+  component key and invokes `LoadJson` with an isolated wrapper. A malformed
+  component cannot strand the cursor used by another component.
 - `Clear()` destroys all components.
-- It depends only on cereal and `Serializable.hpp` - no scene or render headers.
+- It uses cereal and JSON parsing, with no scene or render implementation headers.
 
 `src/asset/Serializable.hpp` defines the component interface `project::Serializable`:
 
 - `Key()` returns the archive node name.
-- `Save(cereal::JSONOutputArchive&)` / `Load(cereal::JSONInputArchive&)` are the persistence hooks.
+- `Save(cereal::JSONOutputArchive&)` / `Load(cereal::JSONInputArchive&)` are the
+  cereal hooks.
+- `LoadJson` is the isolated disk-load boundary. Its default adapter creates a
+  local cereal archive; config, graph and resource components can validate or
+  isolate their payload before invoking typed loading.
 
-`Project`'s own `save` / `load` cast to the JSON archive because the virtual interface is typed to JSON archives. Registration order is archive read order, so a new component belongs at the end. The concrete components and their order are covered in [Project Serialization](../asset/project-serialization.md). The pool-level registration that makes polymorphic serialization work is covered in [UID and Resources](uid-and-resources.md).
+The lower-level `Project::save` / `load` cereal adapters remain available, but
+file loading uses the isolated `LoadJson` path above. Registration order still
+matters: the resource pool loads before scene references, and graph application
+waits until the pool is restored. The concrete components and their order are covered in [Project Serialization](../asset/project-serialization.md). The pool-level registration that makes polymorphic serialization work is covered in [UID and Resources](uid-and-resources.md).

@@ -27,11 +27,13 @@ namespace neurus {
 RenderRequestExecutor::RenderRequestExecutor(std::function<void()> drainFrames,
                                              RenderCache& cache,
                                              UploadManager* uploader,
-                                             GeometryPass* geometryPass)
+                                             GeometryPass* geometryPass,
+                                             std::function<GeometryPass*()> geometryProvider)
 	: m_drainFrames(std::move(drainFrames))
 	, m_cache(cache)
 	, m_uploader(uploader)
 	, m_geometryPass(geometryPass)
+	, m_geometryProvider(std::move(geometryProvider))
 {
 }
 
@@ -169,6 +171,8 @@ void RenderRequestExecutor::handle(const UpdateLightRequest& request)
 
 void RenderRequestExecutor::handle(const EnsurePipelineRequest& request)
 {
+	if (!m_geometryPass && m_geometryProvider)
+		m_geometryPass = m_geometryProvider();
 	if (!m_geometryPass)
 	{
 		if (!m_reportedNullGeometryPass)

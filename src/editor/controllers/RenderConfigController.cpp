@@ -1,14 +1,7 @@
-/**
- * @file RenderConfigController.cpp
- * @brief Applies RenderConfig edits and records them as undoable operations.
- *
- * The apply path is shared by live edits and operation replay: write the incoming
- * config and request a render reset. Recording is gesture-aware (see the header).
- */
-
 #include "editor/controllers/RenderConfigController.hpp"
 
 #include <memory>
+#include <optional>
 
 #include "editor/events/ConfigEvents.hpp"
 #include "editor/events/EditorEvents.hpp"
@@ -18,38 +11,51 @@ namespace neurus {
 
 void RenderConfigController::Init(ControllerContext& ctx)
 {
-	ctx.events.Subscribe<ConfigEditBegin>([this, ctx](const ConfigEditBegin&) {
-		if (RenderConfig* cfg = ctx.config())
+	const auto read = [ctx]() -> std::optional<RenderConfig>
+	{
+		if (ctx.configData)
 		{
-			m_before = *cfg;
-			m_editing = true;
+			const auto& data = ctx.configData();
+			return data ? std::optional<RenderConfig>(*data) : std::nullopt;
 		}
+		if (ctx.config)
+			if (RenderConfig* config = ctx.config())
+				return *config;
+		return std::nullopt;
+	};
+	ctx.events.Subscribe<ConfigEditBegin>([this, read](const ConfigEditBegin&) {
+		m_before = read();
+		m_editing = true;
 	});
-
-	ctx.events.Subscribe<RenderConfigChangedEvent>([this, ctx](const RenderConfigChangedEvent& e) {
-		RenderConfig* cfg = ctx.config();
-		if (!cfg) return;
-
-		const RenderConfig before = *cfg;
-		*cfg = e.config;
+	ctx.events.Subscribe<RenderConfigChangedEvent>([this, ctx, read](const RenderConfigChangedEvent& event) {
+		const auto before = read();
+		const std::optional<RenderConfig> after = event.useDefault
+			? std::nullopt : std::optional<RenderConfig>(event.config);
+		if (ctx.configData)
+		{
+			auto& data = ctx.configData();
+			if (!after)
+				data.reset();
+			else if (data)
+				*data = *after;
+			else
+				data = std::make_shared<RenderConfig>(*after);
+		}
+		else
+		{
+			if (!ctx.config) return;
+			RenderConfig* config = ctx.config();
+			if (!config) return;
+			*config = after.value_or(RenderConfig{});
+		}
 		ctx.events.Emit(RenderResetEvent{});
-
-		// During a slider gesture the drag is recorded once on ConfigEditEnd;
-		// discrete edits (no gesture) record immediately. Skip no-op writes.
-		if (!m_editing && !(before == e.config))
-		{
-			ctx.ops.Submit(std::make_unique<SetRenderConfigOp>(before, e.config));
-		}
+		if (!m_editing && before != after)
+			ctx.ops.Submit(std::make_unique<SetRenderConfigOp>(before, after));
 	});
-
-	ctx.events.Subscribe<ConfigEditEnd>([this, ctx](const ConfigEditEnd&) {
-		if (m_editing)
-		{
-			if (RenderConfig* cfg = ctx.config(); cfg && !(m_before == *cfg))
-			{
-				ctx.ops.Submit(std::make_unique<SetRenderConfigOp>(m_before, *cfg));
-			}
-		}
+	ctx.events.Subscribe<ConfigEditEnd>([this, ctx, read](const ConfigEditEnd&) {
+		const auto after = read();
+		if (m_editing && m_before != after)
+			ctx.ops.Submit(std::make_unique<SetRenderConfigOp>(m_before, after));
 		m_editing = false;
 	});
 }

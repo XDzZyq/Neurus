@@ -118,6 +118,19 @@ Asset persistence restores registered resource types through a generic callback;
 it does not include concrete shader classes or invoke shader tooling directly.
 The existing concrete shader serialization reload/recompile behavior is retained.
 
+`RenderShader::CompileToSpv` also checks the compiled SPIR-V stage interface:
+fragment input locations/components must have matching vertex output scalar
+types. Compilation or interface failure clears both runtime stage binaries.
+Resource loading drops failed shaders and clears consumer references; rendering
+uses cached built-ins without registering replacements in the project pool.
+`GeometryPass` applies the same interface check to incoming pipeline requests,
+including independently edited stages, before creating a GPU pipeline.
+
+Built-in CPU shaders are immutable and cached by `BuiltInRenderData`; their
+SPIR-V is reused when lazy renderer-owned passes create GPU pipelines. Project
+shader pipeline caches are cleared on scene replacement, because shader UIDs
+and runtime versions can repeat across project files.
+
 Replacing a mesh shader keeps the previous pooled shader so its
 `ShaderReplaceOp` can undo the relink. The pool is cleared on project new/open;
 a history-aware prune for long live-coding sessions is tracked separately

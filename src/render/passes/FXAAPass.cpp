@@ -8,6 +8,7 @@
 #include "render_api/RenderContext.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
 #include "shader/ShaderLibrary.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/ComputeShader.hpp"
 #include "core/Log.hpp"
 #include <stdexcept>
@@ -18,15 +19,14 @@ FXAAPass::FXAAPass(const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets)
 	: FXAAPass(device, physicalDevice, numSets,
-	           ShaderLibrary::LoadComputeShader(
-	               "fxaa", NEURUS_SHADER_DIR "compute/fxaa.comp.glsl"))
+	           BuiltInRenderData::Get().ComputeShaderFor("fxaa"))
 {
 }
 
 FXAAPass::FXAAPass(const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets,
-                   std::unique_ptr<ComputeShader> shader)
+                   std::shared_ptr<const ComputeShader> shader)
 	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
 	, p_shader(std::move(shader))
 {
@@ -69,8 +69,10 @@ void FXAAPass::BuildPipeline(const vk::raii::Device& device, const std::string& 
 {
 	if (!p_shader)
 		throw std::runtime_error("FXAAPass: shader invalid");
-	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-	                                  ShaderType::COMPUTE, debugName);
+	auto spv = p_shader->GetStage(ShaderType::COMPUTE).spv;
+	if (spv.empty())
+		spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
+		                             ShaderType::COMPUTE, debugName);
 	vk::ShaderModuleCreateInfo smCI({}, spv);
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");

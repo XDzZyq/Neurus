@@ -4,6 +4,7 @@
  */
 
 #include "PassFactory.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include "../passes/ComposePass.hpp"
 #include "../passes/FXAAPass.hpp"
@@ -12,8 +13,6 @@
 #include "../passes/SSAOPass.hpp"
 #include "../passes/ShadowDepthPass.hpp"
 #include "../passes/ShadowIntensityPass.hpp"
-
-#include "asset/data/ShaderData.hpp"
 
 #include <stdexcept>
 #include <utility>
@@ -25,64 +24,59 @@ PassFactory::PassFactory(const vk::raii::Device& device,
                            const uint32_t numSets,
                            SharedQueue& graphicsQueue,
                            const uint32_t queueFamilyIndex)
+	: m_device(device), m_physicalDevice(physicalDevice), m_numSets(numSets),
+	  m_graphicsQueue(graphicsQueue), m_queueFamilyIndex(queueFamilyIndex)
 {
-	// Same construction order the renderer used before the factory existed.
-	Add("GeometryPass", std::make_unique<GeometryPass>(device, physicalDevice));
-	Add("LightingPass", std::make_unique<LightingPass>(device, physicalDevice, numSets));
-	Add("SSAOPass",
-	    std::make_unique<SSAOPass>(device, physicalDevice, numSets,
-	                               graphicsQueue, queueFamilyIndex));
-	Add("ShadowDepthPass",
-	    std::make_unique<ShadowDepthPass>(device, physicalDevice,
-	                                      graphicsQueue, queueFamilyIndex,
-	                                      ShadowDepthPass::kDefaultResolution));
-	Add("ShadowIntensityPass",
-	    std::make_unique<ShadowIntensityPass>(device, physicalDevice, numSets));
-	Add("ComposePass", std::make_unique<ComposePass>(device, physicalDevice, numSets));
-	Add("FXAAPass", std::make_unique<FXAAPass>(device, physicalDevice, numSets));
 }
 
 PassFactory::~PassFactory() = default;
 
 void PassFactory::Add(std::string kind, std::unique_ptr<Pass> pass)
 {
-	Pass* raw = pass.get();
-
-	const std::vector<const ShaderData*> shaders = raw->GetShaders();
-	const std::vector<PassPort> declared = raw->DeclaredOutputs();
-
-	m_passes.emplace(kind, std::move(pass));
-	m_ports.emplace(kind, ExtractPassPorts(kind, shaders, declared));
-	m_externals.emplace(kind, raw->ExternalInputPorts());
+	m_passes.emplace(std::move(kind), std::move(pass));
 }
 
 Pass* PassFactory::Find(const std::string_view kind)
 {
-	const auto it = m_passes.find(std::string(kind));
-	return it == m_passes.end() ? nullptr : it->second.get();
+	const std::string key(kind);
+	if (const auto found = m_passes.find(key); found != m_passes.end())
+		return found->second.get();
+	if (kind == "GeometryPass")
+		Add(key, std::make_unique<GeometryPass>(m_device, m_physicalDevice));
+	else if (kind == "LightingPass")
+		Add(key, std::make_unique<LightingPass>(m_device, m_physicalDevice, m_numSets));
+	else if (kind == "SSAOPass")
+		Add(key, std::make_unique<SSAOPass>(m_device, m_physicalDevice, m_numSets,
+			m_graphicsQueue, m_queueFamilyIndex));
+	else if (kind == "ShadowDepthPass")
+		Add(key, std::make_unique<ShadowDepthPass>(m_device, m_physicalDevice,
+			m_graphicsQueue, m_queueFamilyIndex, ShadowDepthPass::kDefaultResolution));
+	else if (kind == "ShadowIntensityPass")
+		Add(key, std::make_unique<ShadowIntensityPass>(m_device, m_physicalDevice, m_numSets));
+	else if (kind == "ComposePass")
+		Add(key, std::make_unique<ComposePass>(m_device, m_physicalDevice, m_numSets));
+	else if (kind == "FXAAPass")
+		Add(key, std::make_unique<FXAAPass>(m_device, m_physicalDevice, m_numSets));
+	else
+		return nullptr;
+	return m_passes.at(key).get();
 }
 
 const PassPorts* PassFactory::FindPassPorts(const std::string_view passKind) const
 {
-	const auto it = m_ports.find(std::string(passKind));
-	return it == m_ports.end() ? nullptr : &it->second;
+	return BuiltInRenderData::Get().Ports().FindPassPorts(passKind);
 }
 
 std::vector<std::string> PassFactory::ExternalInputs(const std::string_view passKind) const
 {
-	const auto it = m_externals.find(std::string(passKind));
-	return it == m_externals.end() ? std::vector<std::string>{} : it->second;
+	return BuiltInRenderData::Get().Ports().ExternalInputs(passKind);
 }
 
 const PassPorts& PassFactory::Ports(const std::string_view passKind) const
 {
-	const auto it = m_ports.find(std::string(passKind));
-	if (it == m_ports.end())
-	{
-		throw std::invalid_argument(
-			"PassFactory::Ports: unknown pass kind '" + std::string(passKind) + "'");
-	}
-	return it->second;
+	if (const PassPorts* ports = FindPassPorts(passKind))
+		return *ports;
+	throw std::invalid_argument("PassFactory::Ports: unknown pass kind '" + std::string(passKind) + "'");
 }
 
 GeometryPass* PassFactory::Geometry()

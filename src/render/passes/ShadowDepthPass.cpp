@@ -18,6 +18,7 @@
 #include "DescriptorLayout.hpp"
 #include "render/Barrier.hpp"
 #include "shader/ShaderLibrary.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/RenderShader.hpp"
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
@@ -75,15 +76,11 @@ ShadowDepthPass::ShadowDepthPass(const vk::raii::Device& device,
 	, p_resolution(resolution)
 	, p_queue(&graphicsQueue)
 	, p_queueFamilyIndex(queueFamilyIndex)
-	// --- Self-load shaders via ShaderLibrary ---
+	// --- Shared immutable CPU shaders from the built-in cache ---
 	, p_multiviewShader(
-		ShaderLibrary::LoadRenderShader("ShadowDepthMultiview",
-		                                 NEURUS_SHADER_DIR "render/shadow_depth_multiview.vert.glsl",
-		                                 NEURUS_SHADER_DIR "render/shadow_depth.frag.glsl"))
+		BuiltInRenderData::Get().RenderShaderFor("ShadowDepthMultiview"))
 	, p_sunShader(
-		ShaderLibrary::LoadRenderShader("ShadowDepthSun",
-		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.vert.glsl",
-		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.frag.glsl"))
+		BuiltInRenderData::Get().RenderShaderFor("ShadowDepthSun"))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;
@@ -152,10 +149,14 @@ void ShadowDepthPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowDepthPass: Multiview shader not loaded or invalid");
 		}
 
-		auto vertSpv = ShaderLibrary::Compile(p_multiviewShader->GetStage(ShaderType::VERTEX),
-		                                      ShaderType::VERTEX, debugName + "_multiview_vert");
-		auto fragSpv = ShaderLibrary::Compile(p_multiviewShader->GetStage(ShaderType::FRAGMENT),
-		                                      ShaderType::FRAGMENT, debugName + "_multiview_frag");
+		auto vertSpv = p_multiviewShader->GetStage(ShaderType::VERTEX).spv;
+		if (vertSpv.empty())
+			vertSpv = ShaderLibrary::Compile(p_multiviewShader->GetStage(ShaderType::VERTEX),
+			                                 ShaderType::VERTEX, debugName + "_multiview_vert");
+		auto fragSpv = p_multiviewShader->GetStage(ShaderType::FRAGMENT).spv;
+		if (fragSpv.empty())
+			fragSpv = ShaderLibrary::Compile(p_multiviewShader->GetStage(ShaderType::FRAGMENT),
+			                                 ShaderType::FRAGMENT, debugName + "_multiview_frag");
 		vk::ShaderModuleCreateInfo vertSmCI({}, vertSpv);
 		vk::raii::ShaderModule vertModule(device, vertSmCI);
 		vk::ShaderModuleCreateInfo fragSmCI({}, fragSpv);
@@ -207,10 +208,14 @@ void ShadowDepthPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowDepthPass: Sun shader not loaded or invalid");
 		}
 
-		auto vertSpv = ShaderLibrary::Compile(p_sunShader->GetStage(ShaderType::VERTEX),
-		                                      ShaderType::VERTEX, debugName + "_sun_vert");
-		auto fragSpv = ShaderLibrary::Compile(p_sunShader->GetStage(ShaderType::FRAGMENT),
-		                                      ShaderType::FRAGMENT, debugName + "_sun_frag");
+		auto vertSpv = p_sunShader->GetStage(ShaderType::VERTEX).spv;
+		if (vertSpv.empty())
+			vertSpv = ShaderLibrary::Compile(p_sunShader->GetStage(ShaderType::VERTEX),
+			                                 ShaderType::VERTEX, debugName + "_sun_vert");
+		auto fragSpv = p_sunShader->GetStage(ShaderType::FRAGMENT).spv;
+		if (fragSpv.empty())
+			fragSpv = ShaderLibrary::Compile(p_sunShader->GetStage(ShaderType::FRAGMENT),
+			                                 ShaderType::FRAGMENT, debugName + "_sun_frag");
 		vk::ShaderModuleCreateInfo vertSmCI({}, vertSpv);
 		vk::raii::ShaderModule vertModule(device, vertSmCI);
 		vk::ShaderModuleCreateInfo fragSmCI({}, fragSpv);

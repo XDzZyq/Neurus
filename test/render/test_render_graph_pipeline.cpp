@@ -132,11 +132,14 @@ TEST_F(RenderGraphPipelineTest, DefaultDocumentCompilesAndDraws)
 
 	ASSERT_NO_FATAL_FAILURE(CreateRenderer());
 
-	// Before the Editor publishes, the renderer has no topology but still draws
-	// its overlays instead of throwing.
-	EXPECT_EQ(m_renderer->ScenePassCount(), 0u);
+	// No project graph has been published. The first frame resolves the cached
+	// built-in document and builds the normal seven-pass scene pipeline.
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
+	EXPECT_TRUE(m_renderer->LastGraphReport().compiled);
+	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);
+	EXPECT_TRUE(m_renderer->LastGraphReport().diagnostics.empty());
 
+	// An explicit equivalent document remains renderable after startup fallback.
 	ASSERT_NO_FATAL_FAILURE(PostDocument(DefaultDocument()));
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 

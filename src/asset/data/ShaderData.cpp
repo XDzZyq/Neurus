@@ -26,6 +26,20 @@ ShaderData::ShaderData(std::string name)
 // Stage accessors
 // --------------------------------------
 
+bool ShaderData::IsValid() const
+{
+	const auto ready = [this](ShaderType type)
+	{
+		const ShaderUnit* stage = FindStage(type);
+		return stage && !stage->code.empty() && !stage->spv.empty();
+	};
+	if (GetType() == ShaderType::COMPUTE)
+		return ready(ShaderType::COMPUTE);
+	if (GetType() == ShaderType::VERTEX)
+		return ready(ShaderType::VERTEX) && ready(ShaderType::FRAGMENT);
+	return false;
+}
+
 bool ShaderData::HasStage(ShaderType type) const
 {
 	return m_stages.count(type) > 0;

@@ -69,7 +69,8 @@ public:
 	                       GeometryPass* geometryPass,
 	                       std::function<void()> restartAccumulation,
 	                       std::function<void()> markOverlaysDirty,
-	                       std::function<void(const CompileRenderGraphRequest&)> setPendingGraph = {});
+	                       std::function<void(const CompileRenderGraphRequest&)> setPendingGraph = {},
+	                       std::function<GeometryPass*()> geometryProvider = {});
 
 	~RenderRequestProcessor() = default;
 

@@ -23,6 +23,7 @@
 
 #include "shader/ComputeShader.hpp"
 #include "shader/ShaderLibrary.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -101,18 +102,16 @@ ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
                                          const vk::raii::PhysicalDevice& physicalDevice,
                                          uint32_t numSets)
 	: ShadowIntensityPass(device, physicalDevice, numSets,
-	                      ShaderLibrary::LoadComputeShader(
-	                          "shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl"),
-	                      ShaderLibrary::LoadComputeShader(
-	                          "sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl"))
+	                      BuiltInRenderData::Get().ComputeShaderFor("shadow_eval"),
+	                      BuiltInRenderData::Get().ComputeShaderFor("sun_shadow_eval"))
 {
 }
 
 ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
                                          const vk::raii::PhysicalDevice& physicalDevice,
                                          uint32_t numSets,
-                                         std::unique_ptr<ComputeShader> pointLightShader,
-                                         std::unique_ptr<ComputeShader> sunLightShader)
+                                         std::shared_ptr<const ComputeShader> pointLightShader,
+                                         std::shared_ptr<const ComputeShader> sunLightShader)
 	: ComputePass(device, physicalDevice,
 	              // One set per shadow-casting light per frame slot, so the
 	              // per-light loop never updates a set that is still bound.
@@ -183,8 +182,10 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowIntensityPass: Point-light shader not loaded or invalid");
 		}
 
-		auto spv = ShaderLibrary::Compile(p_pointLightShader->GetStage(ShaderType::COMPUTE),
-		                                  ShaderType::COMPUTE, debugName);
+		auto spv = p_pointLightShader->GetStage(ShaderType::COMPUTE).spv;
+		if (spv.empty())
+			spv = ShaderLibrary::Compile(p_pointLightShader->GetStage(ShaderType::COMPUTE),
+			                             ShaderType::COMPUTE, debugName);
 		vk::ShaderModuleCreateInfo smCI({}, spv);
 		vk::raii::ShaderModule module(device, smCI);
 		vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
@@ -208,8 +209,10 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowIntensityPass: Sun-light shader not loaded or invalid");
 		}
 
-		auto spv = ShaderLibrary::Compile(p_sunLightShader->GetStage(ShaderType::COMPUTE),
-		                                  ShaderType::COMPUTE, debugName + "_Sun");
+		auto spv = p_sunLightShader->GetStage(ShaderType::COMPUTE).spv;
+		if (spv.empty())
+			spv = ShaderLibrary::Compile(p_sunLightShader->GetStage(ShaderType::COMPUTE),
+			                             ShaderType::COMPUTE, debugName + "_Sun");
 		vk::ShaderModuleCreateInfo smCI2({}, spv);
 		vk::raii::ShaderModule module2(device, smCI2);
 		vk::PipelineShaderStageCreateInfo stageCI2({}, vk::ShaderStageFlagBits::eCompute, *module2, "main");

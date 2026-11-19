@@ -15,7 +15,9 @@ namespace neurus {
  * modifies. Internal to shader/.
  *
  * @note shaderc::Compiler is expensive to construct (initializes glslang
- *       internally), so keep one instance alive.
+ *       internally), so keep one instance alive per compilation thread.
+ * @note A wrapper instance owns mutable options and diagnostics; do not share
+ *       it across threads. ShaderLibrary supplies one per thread.
  */
 class ShaderCompiler
 {

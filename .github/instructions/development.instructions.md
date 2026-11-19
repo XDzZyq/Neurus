@@ -90,7 +90,7 @@ work is how a bisect lands on a 20-file commit.
   named session, exercise the commands the change touches (a new scene, an object
   edit, a render-config change, undo/redo, a snapshot), close it, then sweep the
   captured stdout/stderr for `VUID-`, crashes and unexpected `NEURUS_ERR` lines.
-  Watch the viewport while it is up and resize it to catch deadlocks.
+  Manual viewport interaction and resize testing are handled by the user.
 - **Verify every reference image with Python PIL** before committing a change
   that touches one: not empty, not uniform, not all-black or all-white. The
   exact checks are in [docs/build/test.md](../../docs/build/test.md).

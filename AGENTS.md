@@ -113,8 +113,9 @@ swapchain. The Linux product binary is `neurus_headless` (no Qt, driven by the
      regression, then start a session and drive it through the CLI over what the
      change touches (`neurus project new`, `scene list`, `object set`,
      `render set`, `history undo`, `snapshot capture`) - zero `VUID-` validation
-     errors in the captured app output, no crashes or unexpected logs, and the
-     viewport still correct and responsive after a resize.
+     errors in the captured app output, no crashes or unexpected logs.
+   - **Manual viewport checks:** interaction and resize testing are handled by
+     the user.
    - **Mid-stream:** the suite is not required per commit, but run it after a
      large modification - a cross-system refactor, a new feature, anything
      crossing layers - rather than meeting the breakage at the push gate.

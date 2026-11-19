@@ -13,6 +13,8 @@
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderInterface.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/RenderShader.hpp"
 #include "core/Log.hpp"
 
@@ -35,16 +37,13 @@ namespace neurus {
 GeometryPass::GeometryPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice)
 	: GeometryPass(device, physicalDevice,
-	               ShaderLibrary::LoadRenderShader(
-	                   "GeometryPass",
-	                   "res/shaders/render/gbuffer.vert.glsl",
-	                   "res/shaders/render/gbuffer.frag.glsl"))
+	               BuiltInRenderData::Get().RenderShaderFor("GeometryPass"))
 {
 }
 
 GeometryPass::GeometryPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
-                           std::unique_ptr<RenderShader> shader)
+                           std::shared_ptr<const RenderShader> shader)
 	// --- Descriptor set layout ---
 	: p_cameraLayout(MakeDescriptorLayout(device, *shader))
 	// --- Descriptor pool (1 set, 1 UBO) ---
@@ -54,7 +53,7 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
 	// --- Camera descriptor set (allocated from pool) ---
 	, p_cameraDescriptorSet(std::move(
 	      p_descriptorPool.Allocate(p_cameraLayout, 1).front()))
-	// --- Self-load shaders via ShaderLibrary ---
+	// --- Shared immutable CPU shaders from the built-in cache ---
 	, p_shader(std::move(shader))
 {
 	p_device = &device;
@@ -93,10 +92,14 @@ void GeometryPass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("GeometryPass: Render shader not loaded or invalid");
 	}
 
-	auto vertSpv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::VERTEX),
-	                                      ShaderType::VERTEX, debugName + "_vert");
-	auto fragSpv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::FRAGMENT),
-	                                      ShaderType::FRAGMENT, debugName + "_frag");
+	auto vertSpv = p_shader->GetStage(ShaderType::VERTEX).spv;
+	if (vertSpv.empty())
+		vertSpv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::VERTEX),
+		                                 ShaderType::VERTEX, debugName + "_vert");
+	auto fragSpv = p_shader->GetStage(ShaderType::FRAGMENT).spv;
+	if (fragSpv.empty())
+		fragSpv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::FRAGMENT),
+		                                 ShaderType::FRAGMENT, debugName + "_frag");
 	vk::ShaderModuleCreateInfo vertSmCI({}, vertSpv);
 	vk::raii::ShaderModule vertModule(device, vertSmCI);
 	vk::ShaderModuleCreateInfo fragSmCI({}, fragSpv);
@@ -218,6 +221,14 @@ bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRe
 	// (VUID-VkGraphicsPipelineCreateInfo-pStages-06896). Wait for the compile
 	// that completes the set - Record() draws the pass default until then.
 	if (request.vertexSpv.empty() || request.fragmentSpv.empty()) return false;
+
+	// Independently edited stages can arrive through immutable requests too.
+	std::string interfaceError;
+	if (!ValidateRenderShaderInterface(request.vertexSpv, request.fragmentSpv, interfaceError))
+	{
+		NEURUS_ERR("[GeometryPass] Rejected mesh shader " << shaderId << ": " << interfaceError);
+		return false;
+	}
 
 	Pipeline pipeline = CreatePerMeshPipeline(request.vertexSpv, request.fragmentSpv);
 

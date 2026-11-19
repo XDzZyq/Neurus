@@ -12,16 +12,16 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 `GraphOutputTag` (`src/asset/data/render_graph/GraphOutputTag.hpp`) is the closed set described in [Resources](#resources).
 
-The Editor owns the live document. `GraphComponent` (`src/asset/components/GraphComponent.hpp`) owns the `proj_render_graph` schema: the flat `RenderGraphRecord`, its node/edge/port records, and `ToRecord`/`FromRecord`, the only crossing between the live graph and the archive. Node fields and output sockets with their tags are saved; input sockets are re-derived from each node's shader on load. A project without the record, or a corrupt node, leaves no pending record and the Editor builds `RenderGraphData::Default()`. The default is today's scene graph - geometry, shadow depth, shadow intensity, SSAO, lighting, compose and FXAA - and, like `CreateDefaultScene`, it is only the built-in fallback.
+The Editor owns the live document. `GraphComponent` (`src/asset/components/GraphComponent.hpp`) owns the `proj_render_graph` schema: the flat `RenderGraphRecord`, its node/edge/port records, and `ToRecord`/`FromRecord`, the only crossing between the live graph and the archive. Node fields and output sockets with their tags are saved; input sockets are re-derived from each node's shader on load. A project without the record, or with a malformed record, keeps its project graph null. The renderer resolves that absence through a cached CPU built-in provider. Those defaults do not populate project pointers or the project resource pool and are omitted on save. A non-null graph with empty node and edge lists is an explicit empty document and remains serialized.
 
-`RenderManager::ResetConfig()` resets render settings only. `ResetGraph()`
-rebuilds and publishes the default graph and its shader bindings while preserving
-settings. New-scene creation calls both explicitly. During project loading,
-`BeginLoad()` clears settings before deserialization; `FinishLoad()` restores the
-saved graph or calls `ResetGraph()` for a missing record, preserving every setting
-already read from `proj_config`.
+`RenderManager::ResetConfig()` clears the stored config pointer. `ResetGraph()`
+clears the stored graph pointer while preserving config. New-scene creation calls
+both explicitly. During project loading, present config fields are restored with
+per-field defaults; an absent config stays null. `FinishLoad()` restores a valid
+saved graph or keeps it null. Read-only queries and rendering never materialize
+project defaults. Explicit edits create stored data, and undo can restore absence.
 
-The Editor pools one shader per built-in source through `PassShaders` (`src/asset/data/render_graph/PassShaders.hpp`). A restored project adopts its own shaders by name instead of duplicating them, and every publish carries a `ShaderSnapshot` per shader the document names, so the renderer never reads the Editor's pool.
+Explicit project shaders remain pooled and are published as owned `ShaderSnapshot` values. Missing shaders resolve through the built-in CPU provider instead of being inserted into the project pool. The provider caches CPU shader/graph data, and the renderer owns and caches the GPU modules, pipelines and compiled graph. Rendering never calls back into the Editor or changes which project values are serialized.
 
 ## Ports from the shader
 
@@ -92,7 +92,7 @@ The four fields are closed sets, so they are enums (`GraphFormat`, `GraphUsage`,
 
 ## Descriptors and push constants
 
-A pass no longer hand-writes its set layout. CPU reflection in `shader/ShaderSnapshotBuilder.cpp` produces binding numbers, descriptor kinds, stage masks, array counts and optional-binding flags. `ReflectDescriptorLayout` (`src/render/render_graph/ShaderReflection.hpp`) translates and merges that metadata into Vulkan bindings, including `PARTIALLY_BOUND` for the light SSBOs. `MakeDescriptorLayout` wraps that for the current pass constructors, and `PushConstantRangeFromShaders` derives the range size from the same snapshot metadata. Values stay pass-owned; every current push constant is per-mesh, per-light, per-frame or per-selection. Pass construction from the Editor-published snapshot SPIR-V is still future work; current passes load their built-in shaders through the CPU Shader module.
+A pass no longer hand-writes its set layout. CPU reflection in `shader/ShaderSnapshotBuilder.cpp` produces binding numbers, descriptor kinds, stage masks, array counts and optional-binding flags. `ReflectDescriptorLayout` (`src/render/render_graph/ShaderReflection.hpp`) translates and merges that metadata into Vulkan bindings, including `PARTIALLY_BOUND` for the light SSBOs. `MakeDescriptorLayout` wraps that for the current pass constructors, and `PushConstantRangeFromShaders` derives the range size from the same snapshot metadata. Values stay pass-owned; every current push constant is per-mesh, per-light, per-frame or per-selection. Scene pass constructors reuse cached built-in CPU shaders and their compiled SPIR-V; explicit custom constructor shaders can compile when bytecode is absent. Pass construction from arbitrary Editor-published snapshots remains future work.
 
 The graph writes the descriptors. `BuildImageBindings` turns the node's connected input ports and storage-image output ports into `GraphImageBinding`s; `WritePassBindings` resolves each one through `PassResources`, then adds the pass's buffers (`CollectGraphBuffers`) and external images (`CollectGraphExternalImages`). A pass reads its images by port name from `PassFrame::resources`, never by `AttachmentName`.
 
@@ -105,10 +105,16 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 
 ## Ownership boundary
 
-- Editor: owns `RenderManager` (the document, the render config, the pooled pass shaders and their snapshots) and posts `CompileRenderGraphRequest{graph, shaders}` when the document or project changes. It never touches a GPU object.
+- Editor: owns nullable project graph/config pointers and explicit pooled shaders. `RenderManager` posts `CompileRenderGraphRequest{graph, shaders}`, preserving a null graph as a default-selection request. It never touches a GPU object.
 - Renderer: owns `PassFactory`, the uploader and its morphism, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
 - `RenderConfig` is copied into every published frame and supplies per-frame pass parameters; it no longer decides the graph topology, and the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
+
+Built-in CPU shader data and default topology are cached outside project state.
+`PassFactory` lazily caches each built-in GPU pass for its renderer/device.
+Project-specific mesh pipelines are cleared when replacing the scene, because
+another project may reuse a shader UID and version for different source code.
+This leaves the built-in pass pipelines cached.
 
 ## Tests
 
@@ -118,9 +124,9 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 - `test/asset/test_pass_ports.cpp`, `test/asset/test_shader_snapshot.cpp` - ports from the real shaders, the pass-kind table, and the snapshot boundary.
 - `test/render/test_shader_reflection.cpp` - binding and push-range reflection from every main shader.
 - `test/render/test_render_cache_resources.cpp` - tag-planned images, logical resources, legacy aliases.
-- `test/render/test_graph_uploader.cpp` - a total upload, node and order agreement, and a named failure for an unknown pass, a missing snapshot and a stale socket.
+- `test/render/test_graph_uploader.cpp` - null resolves the cached default, repeated null requests do not invalidate it, explicit empty graphs remain distinct, and unknown passes, missing snapshots and stale sockets have named failures.
 - `test/render/test_render_graph.cpp`, `test_pass_factory.cpp`, `test_pass_bindings.cpp` - port sockets, factory, binding plan.
-- `test/render/test_render_graph_pipeline.cpp` - the production renderer draws before a document arrives, compiles it, follows an edited topology, and keeps the last good graph on a bad document.
+- `test/render/test_render_graph_pipeline.cpp` - the first frame without a project document uses the cached built-in seven-pass pipeline; explicit documents remain renderable, edited topology is followed, and a bad upload keeps the last good graph.
 - `test/render/test_pass_*` - direct pass tests now use `RecordPass`, which writes the same graph-owned bindings production writes.
 - `test/asset/test_graph_component.cpp`, `test/editor/test_editor_render_graph.cpp` - persistence and the Editor's publish path, snapshots included.
 

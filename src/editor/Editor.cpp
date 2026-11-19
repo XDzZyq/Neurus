@@ -518,14 +518,27 @@ Scene& Editor::GetScene()
 	return *m_scene;
 }
 
-RenderConfig& Editor::GetRenderConfig()
+const RenderConfig& Editor::GetRenderConfig()
 {
 	return m_renderManager->Config();
 }
 
+RenderConfig& Editor::EditRenderConfig()
+{
+	return m_renderManager->EditConfig();
+}
+std::shared_ptr<RenderConfig>& Editor::GetRenderConfigData()
+{
+	return m_renderManager->ConfigData();
+}
+const std::shared_ptr<RenderConfig>& Editor::GetRenderConfigData() const
+{
+	return m_renderManager->ConfigData();
+}
+
 RenderConfig* Editor::ConfigForControllers()
 {
-	return &m_renderManager->Config();
+	return &m_renderManager->EditConfig();
 }
 
 const RenderConfig& Editor::GetRenderConfig() const
@@ -750,6 +763,7 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	// creation is not exposed here: a script asks for it through typed events.
 	ctx.scene = m_scene.get();
 	ctx.config = &m_renderManager->Config();
+	ctx.configProvider = [this]() { return &GetRenderConfig(); };
 	ctx.resources = m_resources.get();
 	ctx.graph = &m_renderManager->Graph();
 }
@@ -918,12 +932,14 @@ void Editor::BeginLoad()
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
 	m_renderManager->ResetConfig();
+	m_renderManager->GraphData().reset();
+	m_renderManager->PendingRecord().reset();
 	ed_operations.Clear(); // History does not span scenes.
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
 	// the pool. FinishLoad() resolves or creates it once the file has been read.
 	m_viewport.ForgetCamera();
-	// The caller deserializes into GetScene()/GetRenderConfig() before FinishLoad().
+	// The caller restores the scene and optional render data before FinishLoad().
 }
 
 void Editor::FinishLoad()

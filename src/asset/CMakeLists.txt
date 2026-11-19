@@ -54,7 +54,7 @@ add_library(neurus_asset STATIC
 	components/ResourceComponent.hpp
 	components/ResourceComponent.cpp
 )
-target_link_libraries(neurus_asset PUBLIC neurus_asset_data neurus_scene)
+target_link_libraries(neurus_asset PUBLIC neurus_asset_data neurus_scene PRIVATE nlohmann_json)
 target_include_directories(neurus_asset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(neurus_asset PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_compile_features(neurus_asset PUBLIC cxx_std_20)

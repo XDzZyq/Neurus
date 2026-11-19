@@ -13,6 +13,7 @@
 #include "render_api/RenderContext.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
 #include "shader/ShaderLibrary.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/ComputeShader.hpp"
 #include "core/Log.hpp"
 
@@ -87,8 +88,7 @@ SSAOPass::SSAOPass(const vk::raii::Device& device,
                    SharedQueue& graphicsQueue,
                    uint32_t queueFamilyIndex)
 	: SSAOPass(device, physicalDevice, numSets, graphicsQueue, queueFamilyIndex,
-	           ShaderLibrary::LoadComputeShader(
-	               "ssao", "res/shaders/compute/ssao.comp.glsl"))
+	           BuiltInRenderData::Get().ComputeShaderFor("ssao"))
 {
 }
 
@@ -97,7 +97,7 @@ SSAOPass::SSAOPass(const vk::raii::Device& device,
                    uint32_t numSets,
                    SharedQueue& graphicsQueue,
                    uint32_t queueFamilyIndex,
-                   std::unique_ptr<ComputeShader> shader)
+                   std::shared_ptr<const ComputeShader> shader)
 	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
 	, p_shader(std::move(shader))
 {
@@ -212,8 +212,10 @@ void SSAOPass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("SSAOPass: Compute shader not loaded or invalid");
 	}
 
-	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-	                                  ShaderType::COMPUTE, debugName);
+	auto spv = p_shader->GetStage(ShaderType::COMPUTE).spv;
+	if (spv.empty())
+		spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
+		                             ShaderType::COMPUTE, debugName);
 	vk::ShaderModuleCreateInfo smCI({}, spv);
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");

@@ -10,6 +10,7 @@
 #include "shader/RenderShader.hpp"
 
 #include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderInterface.hpp"
 #include "shader/ShaderParser.hpp"
 #include "shader/ShaderGenerator.hpp"
 #include "core/Log.hpp"
@@ -52,6 +53,8 @@ void RenderShader::ReloadContent()
 
 bool RenderShader::CompileToSpv(std::string* outError)
 {
+	m_errorMessage.clear();
+	if (outError != nullptr) outError->clear();
 	bool allOk = true;
 	for (auto type : {ShaderType::VERTEX, ShaderType::FRAGMENT})
 	{
@@ -76,7 +79,22 @@ bool RenderShader::CompileToSpv(std::string* outError)
 		unit.BumpVersion();
 	}
 
-	if (allOk)
+	if (allOk && !GetVertex().spv.empty() && !GetFragment().spv.empty())
+	{
+		allOk = ValidateRenderShaderInterface(GetVertex().spv, GetFragment().spv, m_errorMessage);
+		if (!allOk)
+		{
+			NEURUS_ERR("[RenderShader] '" << m_name << "': " << m_errorMessage);
+			if (outError != nullptr) *outError = m_errorMessage;
+		}
+	}
+	if (!allOk)
+	{
+		// A partially compiled or incompatible pair must never appear GPU-ready.
+		GetVertex().spv.clear();
+		GetFragment().spv.clear();
+	}
+	else
 		BumpVersion();
 	return allOk;
 }

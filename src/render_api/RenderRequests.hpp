@@ -172,9 +172,11 @@ struct RedrawOverlaysRequest
  * renderer keeps its previous graph when compilation fails and reports the
  * diagnostics; the request still restarts accumulation.
  *
- * The document is immutable once posted (`shared_ptr<const RenderGraphData>`),
- * and @c shaders carries a `ShaderSnapshot` for every node shader it names, so
- * the renderer never reads the Editor's pool.
+ * A null graph selects the cached built-in document; a nonnull empty graph
+ * deliberately renders no scene passes. The document is immutable once posted
+ * (`shared_ptr<const RenderGraphData>`). Node shader UID 0 selects a built-in;
+ * @c shaders carries snapshots for explicit shader UIDs, so the renderer never
+ * reads the Editor's pool.
  */
 struct CompileRenderGraphRequest
 {

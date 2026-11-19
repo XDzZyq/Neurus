@@ -35,6 +35,8 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <map>
+#include <memory>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -43,6 +45,7 @@
 #include <vector>
 
 #include <cereal/archives/json.hpp>
+#include <nlohmann/json.hpp>
 
 #include "app/Preferences.hpp"
 #include "asset/Project.hpp"
@@ -67,6 +70,8 @@
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
+#include "shader/RenderShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 using namespace neurus;
 
@@ -170,6 +175,34 @@ std::set<std::string> KeyNames(const std::string& json)
 	return keys;
 }
 
+void CollectAuthoredShaderBindings(const nlohmann::json& value, std::map<int, int>& bindings)
+{
+	if (value.is_object())
+	{
+		if (const auto shader = value.find("o_shaderId"); shader != value.end())
+		{
+			EXPECT_TRUE(shader->is_number_integer());
+			if (shader->is_number_integer() && shader->get<int>() != 0)
+			{
+				const nlohmann::json* identity = &value;
+				while (!identity->contains("o_id") && identity->contains("value0")
+				       && (*identity)["value0"].is_object())
+					identity = &(*identity)["value0"];
+				EXPECT_TRUE(identity->contains("o_id")) << "nonzero shader reference has no owning mesh UID";
+				if (identity->contains("o_id"))
+					bindings.emplace((*identity)["o_id"].get<int>(), shader->get<int>());
+			}
+		}
+		for (const auto& child : value.items())
+			CollectAuthoredShaderBindings(child.value(), bindings);
+	}
+	else if (value.is_array())
+	{
+		for (const auto& child : value)
+			CollectAuthoredShaderBindings(child, bindings);
+	}
+}
+
 } // namespace
 
 // =======================================================================
@@ -177,7 +210,7 @@ std::set<std::string> KeyNames(const std::string& json)
 // =======================================================================
 
 /**
- * @brief Every key the pre-optional format wrote is still written.
+ * @brief Authored values retain their keys; null shader selections are omitted.
  *
  * A round-trip test cannot catch a mistyped NVP name: the save and the load
  * agree on the wrong spelling and the comparison passes, while every file
@@ -204,9 +237,21 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 	const std::string meshJson = SaveOne("mesh", mesh);
 	for (const char* key : {"o_id", "o_name", "o_type", "is_viewport", "is_rendered",
 	                        "transform", "m_position", "m_rotation", "m_scale",
-	                        "o_meshDataId", "o_shaderId", "using_shadow",
+	                        "o_meshDataId", "using_shadow",
 	                        "using_material", "using_sdf", "is_closure"})
 		ExpectKey(meshJson, key);
+	EXPECT_EQ(meshJson.find("\"o_shaderId\""), std::string::npos)
+		<< "null shader selection must be omitted";
+
+	auto shader = ShaderLibrary::LoadRenderShader("AuthoredShader",
+		"res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
+	ASSERT_NE(shader, nullptr);
+	ASSERT_TRUE(shader->CompileToSpv());
+	const int shaderUid = shader->GetObjectID();
+	mesh.SetObjShader(std::shared_ptr<RenderShader>(std::move(shader)));
+	const std::string authoredMeshJson = SaveOne("mesh", mesh);
+	ExpectKey(authoredMeshJson, "o_shaderId");
+	EXPECT_EQ(nlohmann::json::parse(authoredMeshJson)["mesh"]["o_shaderId"], shaderUid);
 
 	Camera            camera;
 	const std::string cameraJson = SaveOne("camera", camera);
@@ -480,22 +525,22 @@ TEST(SerializeOptional, ConfigLoadDefaultsAbsentFields)
 	}
 })");
 
-	RenderConfig live;
-	live.r_gamma       = 9.0f;   // all three are session values that must NOT
-	live.r_ao_ksize    = 99;     // survive a load that does not mention them
-	live.r_transparent = true;
+	auto live = std::make_shared<RenderConfig>();
+	live->r_gamma       = 9.0f;   // all three are session values that must NOT
+	live->r_ao_ksize    = 99;     // survive a load that does not mention them
+	live->r_transparent = true;
 
 	project::Project p;
 	p.Register<project::ConfigComponent>(live);
 	ASSERT_NO_THROW(p.Load(tmp.path));
 
 	const RenderConfig fresh;
-	EXPECT_FLOAT_EQ(live.r_gamma, 2.5f);
-	EXPECT_EQ(live.r_ao_ksize, fresh.r_ao_ksize);
-	EXPECT_EQ(live.r_transparent, fresh.r_transparent);
-	EXPECT_EQ(live.r_shadow, fresh.r_shadow);
-	EXPECT_FLOAT_EQ(live.r_shadow_bias, fresh.r_shadow_bias);
-	EXPECT_EQ(live.r_debug_draw, fresh.r_debug_draw);
+	EXPECT_FLOAT_EQ(live->r_gamma, 2.5f);
+	EXPECT_EQ(live->r_ao_ksize, fresh.r_ao_ksize);
+	EXPECT_EQ(live->r_transparent, fresh.r_transparent);
+	EXPECT_EQ(live->r_shadow, fresh.r_shadow);
+	EXPECT_FLOAT_EQ(live->r_shadow_bias, fresh.r_shadow_bias);
+	EXPECT_EQ(live->r_debug_draw, fresh.r_debug_draw);
 }
 
 /**
@@ -505,23 +550,23 @@ TEST(SerializeOptional, ConfigLoadDefaultsAbsentFields)
  * existed still opens, with every setting at its declared default and one
  * reported line explaining why.
  */
-TEST(SerializeOptional, ConfigWithoutNodeIsFullyDefaulted)
+TEST(SerializeOptional, ConfigWithoutNodeRemainsImplicit)
 {
 	ScratchFile tmp("test_serialize_optional_noconfig.neurus.json");
 	WriteText(tmp.path, R"({
 	"project": {}
 })");
 
-	RenderConfig live;
-	live.r_gamma       = 9.0f;
-	live.r_transparent = true;
+	auto live = std::make_shared<RenderConfig>();
+	live->r_gamma       = 9.0f;
+	live->r_transparent = true;
 
 	project::Project p;
 	p.Register<project::ConfigComponent>(live);
 	ASSERT_NO_THROW(p.Load(tmp.path));
 
-	EXPECT_TRUE(live == RenderConfig{})
-		<< "an absent proj_config node must default the whole config";
+	EXPECT_FALSE(live)
+		<< "an absent proj_config node must stay null";
 }
 
 // =======================================================================
@@ -578,12 +623,12 @@ TEST(SerializeOptional, UnknownTopLevelComponentIsIgnored)
 	}
 })");
 
-	RenderConfig     live;
+	auto live = std::make_shared<RenderConfig>();
 	project::Project p;
 	p.Register<project::ConfigComponent>(live);
 	ASSERT_NO_THROW(p.Load(tmp.path));
 
-	EXPECT_FLOAT_EQ(live.r_gamma, 2.5f);
+	EXPECT_FLOAT_EQ(live->r_gamma, 2.5f);
 }
 
 // =======================================================================
@@ -672,7 +717,8 @@ TEST(SerializeOptional, PreferencesCorruptFileKeepsLiveValues)
  * application run cannot perturb them): one already carries the trailing
  * `m_editor` node, one predates it. The comparison is one-directional on
  * purpose - the new file may have *more* keys (it may gain a field a newer
- * build writes), never fewer. EditorComponent is registered (last, as the
+ * build writes). Only old zero shader bindings may disappear; every nonzero
+ * binding must survive on the same mesh. EditorComponent is registered (last, as the
  * application does) so the `m_editor` node round-trips either way.
  */
 TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
@@ -692,7 +738,7 @@ TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 		ASSERT_FALSE(before.empty()) << "cannot read " << src;
 
 		Scene            scene;
-		RenderConfig     config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager  resources;
 		std::string      ui;
 		EventQueue       bus;
@@ -718,9 +764,26 @@ TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 		const auto oldKeys = KeyNames(before);
 		const auto newKeys = KeyNames(after);
 		ASSERT_FALSE(oldKeys.empty());
+		std::map<int, int> oldShaderBindings;
+		std::map<int, int> newShaderBindings;
+		CollectAuthoredShaderBindings(nlohmann::json::parse(before), oldShaderBindings);
+		CollectAuthoredShaderBindings(nlohmann::json::parse(after), newShaderBindings);
+		for (const auto& [meshUid, shaderUid] : oldShaderBindings)
+		{
+			const auto restored = newShaderBindings.find(meshUid);
+			ASSERT_NE(restored, newShaderBindings.end())
+				<< name << " lost the authored shader reference on mesh " << meshUid;
+			EXPECT_EQ(restored->second, shaderUid) << name << " changed mesh " << meshUid;
+		}
 		for (const auto& key : oldKeys)
+		{
+			// Old files wrote zero references. Null now has no serialized binding,
+			// while every nonzero authored reference above must survive by mesh UID.
+			if (key == "o_shaderId" && oldShaderBindings.empty())
+				continue;
 			EXPECT_TRUE(newKeys.count(key) != 0)
 				<< "re-saving " << name << " dropped the key '" << key << "'";
+		}
 
 		// Both forms keep or gain the editor node - never lose it.
 		EXPECT_TRUE(newKeys.count("m_editor") != 0) << name << " lost the m_editor node";

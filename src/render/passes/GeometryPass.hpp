@@ -130,11 +130,11 @@ private:
 	/// @brief Delegating constructor that receives the already-loaded shader.
 	GeometryPass(const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice,
-	             std::unique_ptr<RenderShader> shader);
+	             std::shared_ptr<const RenderShader> shader);
 
 	/**
 	 * @brief Creates the graphics pipeline using PipelineBuilder.
-	 * ShaderModules from self-loaded RenderShader.
+	 * ShaderModules from the selected immutable CPU RenderShader.
 	 */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
@@ -165,8 +165,8 @@ private:
 
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
-	// --- Self-loaded render shader (via ShaderLibrary) ---
-	std::unique_ptr<RenderShader> p_shader;
+	// --- Shared immutable CPU shader (cached for built-in defaults) ---
+	std::shared_ptr<const RenderShader> p_shader;
 
 	// --- Vertex input layout ---
 	BufferLayout p_vertexLayout;

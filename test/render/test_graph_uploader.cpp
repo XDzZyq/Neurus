@@ -14,6 +14,7 @@
 #include "render_api/RenderRequests.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -135,9 +136,12 @@ TEST_F(GraphUploaderTest, NodeAndOrderMatch)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	neurus::RenderGraphData document = DefaultDocument();
-	const std::vector<neurus::RenderGraphData::NodeType*> cpuOrder =
-		document.TopologicalSort();
+	std::vector<std::string> cpuOrder;
+	for (const auto* node : document.TopologicalSort())
+		cpuOrder.push_back(node->name);
 
+	// Deduplicating an equivalent document can release the request's nodes.
+	// Keep expected order as owned values before transferring the document.
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 	ASSERT_NE(upload.graph, nullptr);
 	ASSERT_TRUE(upload.errors.empty());
@@ -145,8 +149,8 @@ TEST_F(GraphUploaderTest, NodeAndOrderMatch)
 	ASSERT_EQ(upload.graph->CompiledOrder().size(), cpuOrder.size());
 	for (size_t i = 0; i < cpuOrder.size(); ++i)
 	{
-		EXPECT_EQ(upload.graph->CompiledOrder()[i]->name, cpuOrder[i]->name);
-		EXPECT_EQ(upload.graph->CompiledOrder()[i]->data.id, cpuOrder[i]->name);
+		EXPECT_EQ(upload.graph->CompiledOrder()[i]->name, cpuOrder[i]);
+		EXPECT_EQ(upload.graph->CompiledOrder()[i]->data.id, cpuOrder[i]);
 	}
 }
 
@@ -210,14 +214,63 @@ TEST_F(GraphUploaderTest, EmptyDocumentCompiles)
 	EXPECT_FALSE(upload.fxaaPresent);
 }
 
-TEST_F(GraphUploaderTest, RejectsBeforeAnyDocument)
+TEST_F(GraphUploaderTest, NullDocumentResolvesCachedBuiltInGraph)
 {
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
+	EXPECT_TRUE(m_uploader->HasDocument());
+	EXPECT_EQ(m_uploader->DocumentHash(), neurus::BuiltInRenderData::Get().Graph()->Hash());
 	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
 
-	EXPECT_EQ(upload.graph, nullptr);
-	ASSERT_EQ(upload.errors.size(), 1u);
-	EXPECT_NE(upload.errors[0].message.find("no render graph document"), std::string::npos);
+	ASSERT_TRUE(upload.errors.empty());
+	ASSERT_NE(upload.graph, nullptr);
+	EXPECT_EQ(upload.graph->PassCount(), 7u);
+	EXPECT_TRUE(upload.fxaaPresent);
+}
+
+TEST_F(GraphUploaderTest, RepeatedNullRequestDoesNotInvalidateCachedDocument)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	ASSERT_TRUE(m_uploader->ConsumeNewDocument());
+	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
+	ASSERT_TRUE(upload.errors.empty());
+	ASSERT_NE(upload.graph, nullptr);
+	const auto documentHash = m_uploader->DocumentHash();
+	const auto shaderHash = m_uploader->ShaderHash();
+
+	m_uploader->SetPending(neurus::CompileRenderGraphRequest{});
+
+	EXPECT_FALSE(m_uploader->ConsumeNewDocument());
+	EXPECT_EQ(m_uploader->DocumentHash(), documentHash);
+	EXPECT_EQ(m_uploader->ShaderHash(), shaderHash);
+}
+
+TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	const auto defaultHash = m_uploader->DocumentHash();
+	m_uploader->ConsumeNewDocument();
+	neurus::CompileRenderGraphRequest empty;
+	empty.graph = std::make_shared<const neurus::RenderGraphData>();
+	m_uploader->SetPending(empty);
+	EXPECT_TRUE(m_uploader->ConsumeNewDocument());
+	EXPECT_NE(m_uploader->DocumentHash(), defaultHash);
+	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
+	ASSERT_TRUE(upload.errors.empty());
+	ASSERT_NE(upload.graph, nullptr);
+	EXPECT_EQ(upload.graph->PassCount(), 0u);
+	EXPECT_FALSE(upload.fxaaPresent);
+
+	m_uploader->SetPending(neurus::CompileRenderGraphRequest{});
+	EXPECT_TRUE(m_uploader->ConsumeNewDocument());
+	EXPECT_EQ(m_uploader->DocumentHash(), defaultHash);
+	upload = m_uploader->Compile(*m_cache);
+	ASSERT_TRUE(upload.errors.empty());
+	ASSERT_NE(upload.graph, nullptr);
+	EXPECT_EQ(upload.graph->PassCount(), 7u);
 }

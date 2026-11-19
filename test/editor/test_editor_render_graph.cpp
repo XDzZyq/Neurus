@@ -1,6 +1,6 @@
 /**
  * @file test_editor_render_graph.cpp
- * @brief The Editor owns the document, seeds its shaders and publishes it.
+ * @brief Nullable project render state stays separate from cached CPU defaults.
  */
 
 #include <gtest/gtest.h>
@@ -11,10 +11,12 @@
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "render_api/RenderRequestSink.hpp"
 #include "render_api/RenderRequests.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <sstream>
 #include <variant>
 #include <utility>
@@ -65,41 +67,27 @@ neurus::RenderConfig NonDefaultConfig()
 
 } // anonymous namespace
 
-TEST(EditorRenderGraph, NewSceneSeedsShadersAndPostsTheDocument)
+TEST(EditorRenderGraph, NewScenePublishesNullWithoutPoolingDefaults)
 {
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
-	editor.GetRenderConfig() = NonDefaultConfig();
+	editor.EditRenderConfig() = NonDefaultConfig();
 	editor.NewScene();
 	EXPECT_EQ(editor.GetRenderConfig(), neurus::RenderConfig{});
+	EXPECT_FALSE(editor.GetRenderConfigData());
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	ASSERT_EQ(editor.GetRenderGraph().nodes.size(), 7u);
 
-	const neurus::RenderGraphData& graph = editor.GetRenderGraph();
-	ASSERT_EQ(graph.nodes.size(), 7u);
-
-	for (const auto& node : graph.nodes)
+	editor.GetResourceManager().ForEachUID([](const std::shared_ptr<neurus::UID>& resource)
 	{
-		EXPECT_NE(node->data.shaderUid, 0) << node->name;
-		EXPECT_NE(editor.GetResourceManager().Get<neurus::ShaderData>(
-			node->data.shaderUid), nullptr) << node->name;
-	}
-
+		EXPECT_EQ(std::dynamic_pointer_cast<neurus::ShaderData>(resource), nullptr);
+	});
 	EXPECT_TRUE(editor.GetRenderManager().Problems().empty());
 	EXPECT_FALSE(editor.IsDirty());
-
-	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
+	const auto* request = sink.LastGraphRequest();
 	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(neurus::project::ToRecord(*request->graph), neurus::project::ToRecord(graph));
-
-	for (const auto& node : graph.nodes)
-	{
-		const bool present = std::any_of(
-			request->shaders.begin(), request->shaders.end(),
-			[&node](const neurus::ShaderSnapshot& snapshot)
-			{
-				return snapshot.shaderUid == node->data.shaderUid;
-			});
-		EXPECT_TRUE(present) << node->name;
-	}
+	EXPECT_FALSE(request->graph);
+	EXPECT_TRUE(request->shaders.empty());
 }
 
 TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
@@ -119,7 +107,7 @@ TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
 		record.edges.end());
 	editor.GetRenderManager().PendingRecord() = record;
 	const neurus::RenderConfig expected = NonDefaultConfig();
-	editor.GetRenderConfig() = expected;
+	editor.EditRenderConfig() = expected;
 
 	editor.FinishLoad();
 
@@ -157,26 +145,28 @@ TEST(EditorRenderGraph, SetPostsAndMarksDirty)
 
 TEST(EditorRenderGraph, FinishLoadWithoutGraphPreservesDeserializedConfig)
 {
-	neurus::RenderConfig expected = NonDefaultConfig();
+	auto expectedData = std::make_shared<neurus::RenderConfig>(NonDefaultConfig());
+	const neurus::RenderConfig expected = *expectedData;
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		neurus::project::ConfigComponent config(expected);
+		neurus::project::ConfigComponent config(expectedData);
 		config.Save(archive);
 	}
 
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
 	editor.NewScene();
-	editor.GetRenderConfig() = expected;
+	editor.EditRenderConfig() = expected;
 	editor.BeginLoad();
 	ASSERT_EQ(editor.GetRenderConfig(), neurus::RenderConfig{});
+	ASSERT_FALSE(editor.GetRenderConfigData());
 	{
 		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ConfigComponent config(editor.GetRenderConfig());
+		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
 		config.Load(archive);
 		neurus::RenderManager& render = editor.GetRenderManager();
-		neurus::project::GraphComponent graph(render.PendingRecord(), render.Graph());
+		neurus::project::GraphComponent graph(render.PendingRecord(), render.GraphData());
 		graph.Load(archive);
 	}
 	ASSERT_EQ(editor.GetRenderConfig(), expected);
@@ -200,7 +190,7 @@ TEST(EditorRenderGraph, ResetConfigPreservesGraphAndDoesNotPublish)
 	graph.RemoveNode(graph.nodes.back().get());
 	editor.SetRenderGraph(std::move(graph));
 	neurus::RenderManager& render = editor.GetRenderManager();
-	render.Config() = NonDefaultConfig();
+	render.EditConfig() = NonDefaultConfig();
 	const auto expected = neurus::project::ToRecord(render.Graph());
 	render.PendingRecord() = expected;
 	sink.posted.clear();
@@ -208,6 +198,8 @@ TEST(EditorRenderGraph, ResetConfigPreservesGraphAndDoesNotPublish)
 	render.ResetConfig();
 
 	EXPECT_EQ(render.Config(), neurus::RenderConfig{});
+	EXPECT_FALSE(render.ConfigData());
+	EXPECT_TRUE(render.GraphData());
 	EXPECT_EQ(neurus::project::ToRecord(render.Graph()), expected);
 	ASSERT_TRUE(render.PendingRecord().has_value());
 	EXPECT_EQ(*render.PendingRecord(), expected);
@@ -223,7 +215,7 @@ TEST(EditorRenderGraph, ResetGraphPreservesConfig)
 	graph.RemoveNode(graph.nodes.back().get());
 	editor.SetRenderGraph(std::move(graph));
 	const neurus::RenderConfig expected = NonDefaultConfig();
-	editor.GetRenderConfig() = expected;
+	editor.EditRenderConfig() = expected;
 	sink.posted.clear();
 
 	editor.GetRenderManager().ResetGraph();
@@ -231,8 +223,125 @@ TEST(EditorRenderGraph, ResetGraphPreservesConfig)
 	EXPECT_EQ(editor.GetRenderConfig(), expected);
 	EXPECT_EQ(editor.BuildSnapshot().Settings(), expected);
 	EXPECT_EQ(editor.GetRenderGraph().nodes.size(), 7u);
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	EXPECT_TRUE(editor.GetRenderConfigData());
 	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
 	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(neurus::project::ToRecord(*request->graph),
-	          neurus::project::ToRecord(editor.GetRenderGraph()));
+	EXPECT_FALSE(request->graph);
+	EXPECT_TRUE(request->shaders.empty());
+}
+
+namespace {
+
+std::string SaveOptionalRenderState(neurus::Editor& editor)
+{
+	std::ostringstream stream;
+	{
+		cereal::JSONOutputArchive archive(stream);
+		// Keep the fixture a JSON object even when every optional component is absent.
+		const bool fixture = true;
+		archive(cereal::make_nvp("fixture", fixture));
+		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
+		config.Save(archive);
+		auto& render = editor.GetRenderManager();
+		neurus::project::GraphComponent graph(render.PendingRecord(), render.GraphData());
+		graph.Save(archive);
+	}
+	return stream.str();
+}
+
+void LoadOptionalRenderState(neurus::Editor& editor, const std::string& text)
+{
+	editor.BeginLoad();
+	std::istringstream stream(text);
+	{
+		cereal::JSONInputArchive archive(stream);
+		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
+		config.Load(archive);
+		auto& render = editor.GetRenderManager();
+		neurus::project::GraphComponent graph(render.PendingRecord(), render.GraphData());
+		graph.Load(archive);
+	}
+	editor.FinishLoad();
+}
+
+} // anonymous namespace
+
+TEST(EditorRenderGraph, DefaultReadsSnapshotsAndPublishDoNotMaterializeProjectData)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.NewScene();
+	const auto& defaults = neurus::BuiltInRenderData::Get();
+	const auto* graph = defaults.Graph().get();
+	EXPECT_EQ(&editor.GetRenderGraph(), graph);
+	EXPECT_EQ(defaults.Graph().get(), graph);
+	EXPECT_EQ(defaults.RenderShaderFor("GeometryPass").get(),
+	          defaults.RenderShaderFor("GeometryPass").get());
+	EXPECT_EQ(defaults.ComputeShaderFor("ssao").get(), defaults.ComputeShaderFor("ssao").get());
+	EXPECT_EQ(editor.BuildSnapshot().Settings(), neurus::RenderConfig{});
+	editor.GetRenderManager().Publish();
+	EXPECT_FALSE(editor.GetRenderConfigData());
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	editor.GetResourceManager().ForEachUID([](const std::shared_ptr<neurus::UID>& resource)
+	{
+		EXPECT_EQ(std::dynamic_pointer_cast<neurus::ShaderData>(resource), nullptr);
+	});
+	const std::string saved = SaveOptionalRenderState(editor);
+	EXPECT_EQ(saved.find("proj_config"), std::string::npos);
+	EXPECT_EQ(saved.find("proj_render_graph"), std::string::npos);
+	LoadOptionalRenderState(editor, saved);
+	EXPECT_FALSE(editor.GetRenderConfigData());
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	EXPECT_EQ(&editor.GetRenderGraph(), graph);
+}
+
+TEST(EditorRenderGraph, PresentPartialConfigAndAbsentGraphRoundTripIndependently)
+{
+	neurus::Editor editor(nullptr);
+	LoadOptionalRenderState(editor, "{\"proj_config\": {\"r_gamma\": 1.5}}");
+	ASSERT_TRUE(editor.GetRenderConfigData());
+	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_gamma, 1.5f);
+	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_shadow_bias, neurus::RenderConfig{}.r_shadow_bias);
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	const std::string saved = SaveOptionalRenderState(editor);
+	EXPECT_NE(saved.find("proj_config"), std::string::npos);
+	EXPECT_EQ(saved.find("proj_render_graph"), std::string::npos);
+	LoadOptionalRenderState(editor, saved);
+	EXPECT_TRUE(editor.GetRenderConfigData());
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_gamma, 1.5f);
+}
+
+TEST(EditorRenderGraph, MalformedGraphDoesNotDiscardPresentConfigOrSerializeDefaults)
+{
+	neurus::Editor editor(nullptr);
+	LoadOptionalRenderState(editor, "{\"proj_config\": {\"r_shadow_bias\": 0.002}, \"proj_render_graph\": 42}");
+	ASSERT_TRUE(editor.GetRenderConfigData());
+	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_shadow_bias, 0.002f);
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	const std::string saved = SaveOptionalRenderState(editor);
+	EXPECT_NE(saved.find("proj_config"), std::string::npos);
+	EXPECT_EQ(saved.find("proj_render_graph"), std::string::npos);
+}
+
+TEST(EditorRenderGraph, ExplicitEmptyGraphRoundTripsWithoutBecomingDefault)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.NewScene();
+	editor.SetRenderGraph(neurus::RenderGraphData{});
+	ASSERT_TRUE(editor.GetRenderManager().GraphData());
+	EXPECT_TRUE(editor.GetRenderGraph().nodes.empty());
+	const auto* request = sink.LastGraphRequest();
+	ASSERT_NE(request, nullptr);
+	ASSERT_TRUE(request->graph);
+	EXPECT_TRUE(request->graph->nodes.empty());
+	const std::string saved = SaveOptionalRenderState(editor);
+	EXPECT_NE(saved.find("proj_render_graph"), std::string::npos);
+	EXPECT_EQ(saved.find("proj_config"), std::string::npos);
+	LoadOptionalRenderState(editor, saved);
+	ASSERT_TRUE(editor.GetRenderManager().GraphData());
+	EXPECT_TRUE(editor.GetRenderGraph().nodes.empty());
+	EXPECT_FALSE(editor.GetRenderConfigData());
 }

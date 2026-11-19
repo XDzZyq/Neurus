@@ -1037,8 +1037,7 @@ acceptable - skip none of these steps.
      saved path is logged.
    - Visual check: the rendered viewport shows the expected result (lighting,
      shadows, geometry, etc.).
-   - Runtime behaviour: resize the window, interact with the viewport, verify no
-     deadlocks or freezes.
+   - Manual viewport interaction and resize testing are handled by the user.
 
 6. **No stubs, TODOs, or placeholders remain**
    - No `// TODO`, `// FIXME`, `// STUB`, or placeholder comments left behind in

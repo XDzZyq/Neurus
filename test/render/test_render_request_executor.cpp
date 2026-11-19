@@ -609,9 +609,15 @@ TEST_F(RenderRequestExecutorTest, DropSceneResources_DrainsOnce)
 	ASSERT_NE(m_cache->GetMeshGPU(kObjectId), nullptr);
 	ASSERT_EQ(m_drains, 0u);
 
+	// The next document can reuse this UID and version for unrelated code.
+	constexpr int kShaderId = 501;
+	m_cache->GetPipelineCache().UsePipeline(kShaderId, Pipeline{}, 1);
+	ASSERT_NE(m_cache->GetPipelineCache().GetPipeline(kShaderId, 1), nullptr);
+
 	m_executor->Execute(DropSceneResourcesRequest{});
 
 	EXPECT_EQ(m_cache->GetMeshGPU(kObjectId), nullptr);
+	EXPECT_EQ(m_cache->GetPipelineCache().GetPipeline(kShaderId, 1), nullptr);
 	EXPECT_EQ(m_drains, 1u);
 }
 

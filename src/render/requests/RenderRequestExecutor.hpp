@@ -71,7 +71,8 @@ public:
 	RenderRequestExecutor(std::function<void()> drainFrames,
 	                      RenderCache& cache,
 	                      UploadManager* uploader,
-	                      GeometryPass* geometryPass);
+	                      GeometryPass* geometryPass,
+	                      std::function<GeometryPass*()> geometryProvider = {});
 
 	~RenderRequestExecutor() = default;
 
@@ -114,6 +115,7 @@ private:
 	RenderCache&          m_cache;
 	UploadManager*        m_uploader      = nullptr;
 	GeometryPass*         m_geometryPass  = nullptr;
+	std::function<GeometryPass*()> m_geometryProvider;
 
 	// --- Latched "collaborator missing" reports (log once, not once per drain) ---
 	bool m_reportedNullUploaderMesh = false;

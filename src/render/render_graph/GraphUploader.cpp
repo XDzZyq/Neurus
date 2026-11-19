@@ -10,6 +10,7 @@
 #include "render/render_graph/RenderGraph.hpp"
 #include "render/render_graph/ResourceTag.hpp"
 #include "render_api/RenderRequests.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
@@ -164,14 +165,22 @@ struct GraphUploader::Impl
 GraphUploader::GraphUploader(PassFactory& factory)
 	: m_impl(std::make_unique<Impl>(factory))
 {
+	SetPending(CompileRenderGraphRequest{});
 }
 
 GraphUploader::~GraphUploader() = default;
 
 void GraphUploader::SetPending(const CompileRenderGraphRequest& request)
 {
-	m_impl->document    = request.graph;
-	m_impl->shaders     = request.shaders;
+	const BuiltInRenderData& builtins = BuiltInRenderData::Get();
+	auto document = request.graph ? request.graph : builtins.Graph();
+	auto shaders = request.shaders;
+
+	if (m_impl->document && m_impl->document->Hash() == document->Hash()
+		&& ShaderSnapshotsHash(m_impl->shaders) == ShaderSnapshotsHash(shaders))
+		return;
+	m_impl->document = std::move(document);
+	m_impl->shaders = std::move(shaders);
 	m_impl->newDocument = true;
 }
 

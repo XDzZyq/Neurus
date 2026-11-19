@@ -2,9 +2,9 @@
  * @file PassFactory.hpp
  * @brief Pass kind to live instance, and the port source for the graph compiler.
  *
- * The factory owns one instance of every built-in scene pass. The renderer
+ * The factory lazily caches one GPU instance per built-in scene pass. The renderer
  * compiles a document through it, so a node's `pass` string resolves to a live
- * pass and the compiler can ask for the ports that pass's shader declares.
+ * pass. CPU port queries use the immutable built-in provider without GPU work.
  */
 
 #pragma once
@@ -40,7 +40,7 @@ class PassFactory : public IPortSource
 {
 public:
 	/**
-	 * @brief Constructs every built-in pass.
+	 * @brief Binds the device services; passes are created on first use.
 	 *
 	 * @param device            Logical device (borrowed).
 	 * @param physicalDevice    Physical device (borrowed).
@@ -89,9 +89,12 @@ public:
 private:
 	void Add(std::string kind, std::unique_ptr<Pass> pass);
 
+	const vk::raii::Device& m_device;
+	const vk::raii::PhysicalDevice& m_physicalDevice;
+	uint32_t m_numSets;
+	SharedQueue& m_graphicsQueue;
+	uint32_t m_queueFamilyIndex;
 	std::unordered_map<std::string, std::unique_ptr<Pass>> m_passes;
-	std::unordered_map<std::string, PassPorts>             m_ports;
-	std::unordered_map<std::string, std::vector<std::string>> m_externals;
 };
 
 } // namespace neurus

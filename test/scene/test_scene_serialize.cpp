@@ -77,7 +77,7 @@ TEST(SceneSerialize, FullRoundtrip)
 
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto camera = resources.Load<Camera>();
@@ -88,7 +88,11 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
 		meshDataUid = meshData->GetObjectID();
 		auto mesh = resources.Load<Mesh>(meshData);
-		auto shader = resources.Load<RenderShader>("TestShader", "", "");
+		auto shader = resources.Load<RenderShader>(
+			"TestShader", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
+		ASSERT_TRUE(shader->ParseAndGenerate());
+		ASSERT_TRUE(shader->CompileToSpv());
+		ASSERT_TRUE(shader->IsValid());
 		mesh->SetObjShader(shader);
 		scene.UseMesh(mesh);
 		// A non-identity TRS, so the matrix assertions below cannot pass by
@@ -119,7 +123,7 @@ TEST(SceneSerialize, FullRoundtrip)
 
 	// --- Load into fresh objects ---
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		project::Project p;
@@ -219,7 +223,7 @@ TEST(SceneSerialize, LegacyFileDegrades)
 	}
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	EXPECT_NO_THROW({
 		project::Project p;
@@ -252,7 +256,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	int orphanUid = 0;
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
@@ -269,7 +273,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	}
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		project::Project p;
@@ -313,7 +317,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 	int lineUid = 0;
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto line = resources.Load<DebugLine>();
@@ -350,7 +354,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 	}
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		project::Project p;
@@ -390,7 +394,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto first = resources.Load<Mesh>();
@@ -416,7 +420,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	ASSERT_LT(firstUid, secondUid);
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	project::Project p;
 	p.Register<project::ResourceComponent>(loadedResources);

@@ -134,16 +134,7 @@ void DeferredRenderer::InitializePipeline()
 	m_passFactory = std::make_unique<PassFactory>(
 		device, physicalDevice, kMaxFramesInFlight, graphicsQueue, queueFamilyIndex);
 
-	r_geometryPass        = m_passFactory->Geometry();
-	r_lightingPass        = m_passFactory->Lighting();
-	r_ssaoPass            = m_passFactory->SSAO();
-	r_shadowDepthPass     = m_passFactory->ShadowDepth();
-	r_shadowIntensityPass = m_passFactory->ShadowIntensity();
-	r_composePass         = m_passFactory->Compose();
-	r_fxaaPass            = m_passFactory->FXAA();
-
-	NEURUS_LOG("[DeferredRenderer] Scene passes created; GeometryPass declares "
-	           << m_passFactory->Ports("GeometryPass").ports.size() << " ports");
+	NEURUS_LOG("[DeferredRenderer] Scene pass cache ready; GPU passes are created on demand");
 
 	// The uploader owns the document-to-runtime mapping; it borrows the factory
 	// and must be created after it (and destroyed before it).
@@ -158,12 +149,8 @@ void DeferredRenderer::InitializePipeline()
 	NEURUS_LOG("[DeferredRenderer] OverlayEngine created ("
 	           << m_overlayEngine->PassCount() << " overlay passes)");
 
-	// --- 5. Wait for the Editor's document ---
-	// The renderer owns no default topology: the Editor publishes the document
-	// and its shader snapshots as a request, and the first sample frame after
-	// that compiles it. Until then the scene graph has no passes and only the
-	// overlays draw.
-	NEURUS_LOG("[DeferredRenderer] Waiting for the Editor's render graph document");
+	// A null document selects the cached built-in topology. Explicit documents
+	// replace it through requests; GPU passes are instantiated during compilation.
 
 	// --- 9. Allocate command buffers (one per output image, reused) ---
 	uint32_t imageCount = r_target->ImageCount();
@@ -219,7 +206,7 @@ void DeferredRenderer::InitializePipeline()
 	// accumulation iteration and the overlays-stale flag this renderer owns; the
 	// processor applies them in the same order the old per-frame drain did.
 	m_requests = std::make_unique<RenderRequestProcessor>(
-		[this] { DrainInFlightFrames(); }, *r_renderCache, r_geometryPass,
+		[this] { DrainInFlightFrames(); }, *r_renderCache, nullptr,
 		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; },
 		[this](const CompileRenderGraphRequest& request)
 		{
@@ -227,7 +214,7 @@ void DeferredRenderer::InitializePipeline()
 			// still read the old plans.
 			DrainInFlightFrames();
 			m_graphUploader->SetPending(request);
-		});
+		}, [this] { return m_passFactory->Geometry(); });
 }
 
 DeferredRenderer::~DeferredRenderer()
@@ -979,11 +966,8 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// Sample: Geometry -> Shadows -> SSAO -> Lighting -> Compose -> [FXAA], then
 	//         the overlay graph over that image.
 	// Overlay: the overlay graph alone, over the image the last sample produced.
-	// The graph is only rebuilt here (Sample only) when the config-derived
-	// signature changes: an Overlay frame runs the same scene topology the
-	// converged image came from, so re-evaluating it would be pointless - and
-	// rebuilding it mid-convergence is exactly what a signature change implies
-	// was already handled by the restart that came with it.
+	// Compile changed documents on Sample frames. Overlay frames reuse the
+	// topology and attachments that produced the converged scene image.
 	if (work == FrameWork::Sample)
 	{
 		// A request and the frame that carries it compile together.

@@ -13,9 +13,11 @@
 #pragma once
 
 #include "asset/Serializable.hpp"
+#include "core/Serialize.hpp"
 #include "asset/data/render_graph/GraphOutputTag.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -86,9 +88,12 @@ struct RenderGraphNodeRecord
 	void serialize(Archive& ar)
 	{
 		ar(cereal::make_nvp("name", name),
-		   cereal::make_nvp("pass", pass),
-		   cereal::make_nvp("shader", shaderUid),
-		   cereal::make_nvp("x", x),
+		   cereal::make_nvp("pass", pass));
+		if constexpr (Archive::is_loading::value)
+			archive::OptionalField(ar, cereal::make_nvp("shader", shaderUid));
+		else if (shaderUid != 0)
+			ar(cereal::make_nvp("shader", shaderUid));
+		ar(cereal::make_nvp("x", x),
 		   cereal::make_nvp("y", y),
 		   cereal::make_nvp("outputs", outputs));
 	}
@@ -175,7 +180,8 @@ RenderGraphData FromRecord(const RenderGraphRecord& record, const IPortSource& p
  * The live document cannot be serialized directly, so the component reads a
  * flat record and the Editor applies it once the pool is restored. A project
  * written before the document existed, or a corrupt node, leaves no pending
- * record and the Editor builds the built-in default.
+ * record and keeps the project graph null. A built-in CPU provider supplies
+ * runtime defaults independently; those defaults are never saved as project data.
  */
 class GraphComponent : public Serializable
 {
@@ -183,17 +189,19 @@ public:
 	/**
 	 * @brief Binds the component to the Editor's document slots.
 	 * @param pending  Receives the record read from the file.
-	 * @param graph    Live document, read on save.
+	 * @param graph    Nullable project document, read on save; null omits the key.
 	 */
-	GraphComponent(std::optional<RenderGraphRecord>& pending, const RenderGraphData& graph);
+	GraphComponent(std::optional<RenderGraphRecord>& pending,
+	               const std::shared_ptr<RenderGraphData>& graph);
 
 	const char* Key() const noexcept override { return "proj_render_graph"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
 	void Load(cereal::JSONInputArchive& ar) override;
+	void LoadJson(const std::string& object) override;
 
 private:
 	std::optional<RenderGraphRecord>* m_pending;
-	const RenderGraphData*            m_graph;
+	const std::shared_ptr<RenderGraphData>* m_graph;
 };
 
 } // namespace neurus::project

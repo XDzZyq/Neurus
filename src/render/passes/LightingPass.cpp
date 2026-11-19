@@ -15,6 +15,7 @@
 #include "render/Barrier.hpp"
 #include "core/RenderConfig.hpp"
 #include "shader/ShaderLibrary.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/ComputeShader.hpp"
 #include "Texture.hpp"
 
@@ -41,15 +42,14 @@ LightingPass::LightingPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
                            uint32_t numSets)
 	: LightingPass(device, physicalDevice, numSets,
-	               ShaderLibrary::LoadComputeShader(
-	                   "pbr_lighting", "res/shaders/compute/pbr_lighting.comp.glsl"))
+	               BuiltInRenderData::Get().ComputeShaderFor("pbr_lighting"))
 {
 }
 
 LightingPass::LightingPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
                            uint32_t numSets,
-                           std::unique_ptr<ComputeShader> shader)
+                           std::shared_ptr<const ComputeShader> shader)
 	: ComputePass(device, physicalDevice,
 	              MakeDescriptorLayout(device, *shader, {5, 6, 11}), numSets)
 	, p_shader(std::move(shader))
@@ -94,8 +94,10 @@ void LightingPass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("LightingPass: Compute shader not loaded or invalid");
 	}
 
-	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-	                                  ShaderType::COMPUTE, debugName);
+	auto spv = p_shader->GetStage(ShaderType::COMPUTE).spv;
+	if (spv.empty())
+		spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
+		                             ShaderType::COMPUTE, debugName);
 	vk::ShaderModuleCreateInfo smCI({}, spv);
 	vk::raii::ShaderModule module(device, smCI);
 	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");

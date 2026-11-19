@@ -98,7 +98,10 @@ public:	/**
 
 	// --- Accessors ---
 	Scene& GetScene();
-	RenderConfig& GetRenderConfig();
+	const RenderConfig& GetRenderConfig();
+	RenderConfig& EditRenderConfig();
+	std::shared_ptr<RenderConfig>& GetRenderConfigData();
+	const std::shared_ptr<RenderConfig>& GetRenderConfigData() const;
 	const RenderConfig& GetRenderConfig() const;
 
 	/// @brief The scene render graph document.
@@ -416,7 +419,8 @@ private:
 	ControllerContext m_ctx{ ed_eventBus, *m_resources, ed_operations,
 	                         [this]() { return m_scene.get(); },
 	                         [this]() { return ConfigForControllers(); },
-	                         [this]() { return &m_viewport; } };
+	                         [this]() { return &m_viewport; },
+	                         [this]() -> std::shared_ptr<RenderConfig>& { return GetRenderConfigData(); } };
 
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;
 

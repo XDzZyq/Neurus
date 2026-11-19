@@ -75,10 +75,10 @@ public:
 	void ReloadContent();
 
 	/**
-	 * @brief Compiles the stages' generated GLSL to SPIR-V in place.
+	 * @brief Compiles GLSL and validates the vertex/fragment location interface.
 	 *
-	 * @param outError Optional compiler message when a stage fails.
-	 * @return true when every present stage holds non-empty SPIR-V.
+	 * @param outError Optional compiler or interface validation diagnostic.
+	 * @return true when compilation and interface validation succeed; empty shells remain uncompiled.
 	 */
 	bool CompileToSpv(std::string* outError = nullptr);
 

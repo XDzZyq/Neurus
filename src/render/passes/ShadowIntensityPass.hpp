@@ -92,8 +92,8 @@ private:
 	ShadowIntensityPass(const vk::raii::Device& device,
 	                    const vk::raii::PhysicalDevice& physicalDevice,
 	                    uint32_t numSets,
-	                    std::unique_ptr<ComputeShader> pointLightShader,
-	                    std::unique_ptr<ComputeShader> sunLightShader);
+	                    std::shared_ptr<const ComputeShader> pointLightShader,
+	                    std::shared_ptr<const ComputeShader> sunLightShader);
 
 	/// @brief Bindings written by the per-light sets, not by the graph.
 	std::vector<uint32_t> SelfManagedBindings() const override { return {0, 1, 2}; }
@@ -131,8 +131,8 @@ private:
 	std::vector<DescriptorSet> p_sunDescSets;                     ///< Sun descriptor sets (numSets * kSetsPerFrameSlot)
 
 	/// Compute shaders loaded via ShaderLibrary.
-	std::unique_ptr<ComputeShader> p_pointLightShader;  ///< Point-light cubemap eval (shadow_eval.comp.glsl)
-	std::unique_ptr<ComputeShader> p_sunLightShader;    ///< Sun-light 2D eval (sun_shadow_eval.comp.glsl)
+	std::shared_ptr<const ComputeShader> p_pointLightShader;  ///< Point-light cubemap eval (shadow_eval.comp.glsl)
+	std::shared_ptr<const ComputeShader> p_sunLightShader;    ///< Sun-light 2D eval (sun_shadow_eval.comp.glsl)
 
 	/// One descriptor set per shadow-casting light per in-flight frame slot, so
 	/// the per-light loop never updates a set that is still bound from an

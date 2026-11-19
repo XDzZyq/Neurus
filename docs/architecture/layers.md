@@ -66,11 +66,15 @@ Editor and UI include these contracts without linking renderer implementation.
   command is buffered into one history entry
 - Produces the renderer's owned `RenderFrameSnapshot` via `BuildSnapshot()`.
   Application queries the scene and config to assemble the UI-owned `UIContext`.
-- Owns `RenderManager`, which holds the scene render graph document
-  (`RenderGraphData`), the render config, the pooled pass shaders and the
-  `ShaderSnapshot`s published in a `CompileRenderGraphRequest` when the project
-  loads or the document changes; the runtime graph, descriptor writes and GPU
-  resources stay in the Renderer
+- Owns `RenderManager`, whose project config and graph are nullable
+  `shared_ptr` values. Null selects built-in defaults and is omitted on save;
+  reading effective settings or graph data never materializes project data
+- Publishes explicit project shader snapshots and an optional graph through
+  `CompileRenderGraphRequest`. `BuiltInRenderData` supplies cached CPU defaults
+  outside the project pool; Renderer owns the compiled graph and GPU resources
+- Explicit config edits materialize stored settings. Undo restores the previous
+  presence state, including null. Frame snapshots copy effective config by value,
+  so the render thread never shares mutable Editor config storage
 - Owns `EditorViewport`, the viewport composition root: the **viewport camera**
   (a pooled `Camera` that is not scene content), the debug/gizmo builders and
   the resize. `Editor::ActiveCamera()` selects the activated scene camera when the
@@ -106,6 +110,8 @@ Editor and UI include these contracts without linking renderer implementation.
 - Reads one `ScriptContext` per run: borrowed, non-owning `Scene`,
   `RenderConfig` and `IResourceLookup` pointers built by
   `Editor::UpdateScriptContext()`. There is no process-wide context
+- Config bindings use the context's read-only provider on each access, so a
+  config created or removed by a synchronous edit is visible within the same run
 - Mutates only by emitting typed editor events: `ScriptDispatch::Emit()` hands
   the event to the Editor's `IEventQueue` synchronously, so the controller
   applies the change before the Python statement returns
@@ -189,6 +195,8 @@ Neither Asset target depends on shader tooling.
   delegate text IO and path resolution to `ShaderData::ReadSource` and `ResolveSourcePath`
 - Owns concrete shader cereal registrations; ApplicationCore force-links them
   before generic Asset persistence restores registered resource types
+- Supplies the cached CPU `BuiltInRenderData` provider without populating project
+  config, graph or shader slots; rendering with defaults does not change saves
 - Preserves current shader serialization reload/recompile behavior
 - Does not own Vulkan shader modules, pipelines, descriptor sets or renderer state
 
