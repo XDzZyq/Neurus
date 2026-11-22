@@ -152,6 +152,8 @@ struct ShaderCompileRequested
 struct ShaderCompiled
 {
 	int shaderObjectId = 0;
+	/// The graph transaction has already queued this shader upload.
+	bool uploaded = false;
 };
 
 /**

@@ -19,12 +19,26 @@
 #include "asset/data/render_graph/PassPorts.hpp"
 #include "core/Graph.hpp"
 
+#include <array>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 
 namespace neurus {
+
+inline constexpr std::array<std::string_view, 3> kSceneOutputNames = {"color", "depth", "object_id"};
+
+/// A named producer socket selected as a public output of the scene graph.
+struct GraphEndpoint
+{
+	std::string node;
+	std::string port;
+	bool operator==(const GraphEndpoint&) const = default;
+};
 
 class IPortSource;
 class ShaderData;
@@ -79,6 +93,10 @@ class RenderGraphTopology : public Graph<CpuPort, CpuNode>
 public:
 	using GraphT = Graph<CpuPort, CpuNode>;
 
+	std::map<std::string, GraphEndpoint> sceneOutputs;
+	std::set<std::string> ActiveNodes() const;
+	void InferLegacyOutputs();
+
 	/**
 	 * @brief Builds the built-in seven-node scene graph.
 	 *
@@ -100,5 +118,11 @@ public:
 	 */
 	std::uint64_t Hash() const;
 };
+
+std::optional<GraphOutputTag> BuiltInOutputTag(std::string_view kind, std::string_view port);
+RenderGraphTopology CloneGraph(const RenderGraphTopology& graph);
+PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog);
+PassPorts WithShaderPortNames(const PassPorts& builtin, const PassPorts& shaderPorts);
+void ReconcilePassPorts(RenderGraphTopology& graph, RenderGraphTopology::NodeType& node, const PassPorts& ports);
 
 } // namespace neurus

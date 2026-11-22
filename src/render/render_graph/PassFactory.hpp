@@ -22,7 +22,7 @@ class GeometryPass;
 class SharedQueue;
 
 /**
- * @brief Owns built-in scene pass instances and reuses node-local custom instances.
+ * @brief Reuses node-local pass state while all instances share uploaded shader modules.
  *
  * Non-copyable, non-movable (owns GPU resources).
  */
@@ -80,7 +80,7 @@ private:
 	SharedQueue& m_graphicsQueue;
 	uint32_t m_queueFamilyIndex;
 	std::unordered_map<std::string, std::unique_ptr<Pass>> m_passes;
-	std::unordered_map<std::string, std::weak_ptr<Pass>> m_customPasses;
+	std::unordered_map<std::string, std::weak_ptr<Pass>> m_nodePasses;
 };
 
 } // namespace neurus

@@ -67,6 +67,13 @@ void RenderCommand::Register(CLI::App& parent, const GlobalOptions& globals)
 	m_app = parent.add_subcommand("render", "Inspect and change rendering settings.");
 	m_app->require_subcommand(1);
 
+	auto* graph = m_app->add_subcommand("graph", "Inspect the scene render graph.");
+	graph->require_subcommand(1);
+	m_graphStatus = graph->add_subcommand("status", "Report the selected graph, output sockets and diagnostics.");
+	AddSessionOption(*m_graphStatus, m_session);
+	AddFormatOption(*m_graphStatus, m_format);
+	m_graphStatus->add_option("--timeout", m_timeoutSeconds, "Command timeout in seconds.")->check(CLI::PositiveNumber);
+
 	m_getApp = m_app->add_subcommand("get", "Report the render configuration.");
 	AddSessionOption(*m_getApp, m_session);
 	AddFormatOption(*m_getApp, m_format);
@@ -112,6 +119,8 @@ bool RenderCommand::Selected() const
 
 CliExit RenderCommand::Execute()
 {
+	if (m_graphStatus != nullptr && m_graphStatus->parsed())
+		return ExecuteGraphStatus();
 	if (m_getApp != nullptr && m_getApp->parsed())
 		return ExecuteGet();
 	if (m_setApp != nullptr && m_setApp->parsed())
@@ -119,6 +128,43 @@ CliExit RenderCommand::Execute()
 	PrintError(OutputFormat::Human, command::CommandErrorCode::InvalidArgument,
 	           "A render action is required.");
 	return CliExit::Usage;
+}
+
+CliExit RenderCommand::ExecuteGraphStatus()
+{
+	const OutputFormat format = Format(m_format);
+	CliExit exitCode = CliExit::Ok;
+	const auto result = RunSessionCommand(SessionName(m_session), {command::kRenderGraphStatus, {}},
+	                                      format, exitCode, m_timeoutSeconds);
+	if (!result)
+		return exitCode;
+	const auto& graph = result->details.at("graph");
+	if (format == OutputFormat::Json)
+	{
+		std::cout << command::Json{{"ok", true}, {"graph", graph}}.dump(2) << '\n';
+		return CliExit::Ok;
+	}
+	std::cout << graph.at("source").get<std::string>() << " graph";
+	if (!graph.at("uid").is_null())
+		std::cout << " (UID " << graph.at("uid") << ")";
+	std::cout << ", " << graph.at("node_count") << " nodes, " << graph.at("edge_count") << " edges\n";
+	for (const auto& [name, endpoint] : graph.at("outputs").items())
+	{
+		std::cout << name << "  ";
+		if (endpoint.is_null())
+			std::cout << "unconnected";
+		else
+			std::cout << endpoint.at("node").get<std::string>() << '.' << endpoint.at("port").get<std::string>();
+		std::cout << '\n';
+	}
+	for (const auto& diagnostic : graph.at("diagnostics"))
+	{
+		const auto node = diagnostic.value("node", "");
+		const auto port = diagnostic.value("port", "");
+		std::cout << (node.empty() ? "" : node + (port.empty() ? "" : "." + port) + ": ")
+		          << diagnostic.at("message").get<std::string>() << '\n';
+	}
+	return CliExit::Ok;
 }
 
 CliExit RenderCommand::ExecuteGet()

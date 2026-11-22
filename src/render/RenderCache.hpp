@@ -126,6 +126,7 @@ public:
 	RenderCache(const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice,
 	            std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
+	~RenderCache();
 
 	/**
 	 * @brief Sets the LightingCache (light SSBO storage) for this cache.
@@ -136,7 +137,6 @@ public:
 	 */
 	void SetLightingCache(std::unique_ptr<LightingCache> lightingCache);
 
-	~RenderCache() = default;
 
 	// --- Non-copyable, movable ---
 	RenderCache(const RenderCache&) = delete;
@@ -160,7 +160,18 @@ public:
 	 */
 	Image& GetAttachment(AttachmentName name, vk::Extent2D extent);
 
-	// --- Planned graph resources (Stage 1) ---
+	/** @brief Complete image declarations and attachment bindings for one compiled scene. */
+	struct ResourcePlan
+	{
+		std::unordered_map<std::string, GraphOutputTag> tags;
+		std::unordered_map<std::string, AttachmentName> aliases;
+		std::unordered_map<AttachmentName, std::string> attachments;
+
+		void Alias(AttachmentName attachment, std::string key);
+	};
+
+	/// Replaces screen images and their declarations together after validating a candidate graph.
+	void InstallResourcePlan(ResourcePlan plan);
 
 	/**
 	 * @brief Records one output port's resource plan.
@@ -175,13 +186,6 @@ public:
 	 */
 	void PlanResource(std::string key, GraphOutputTag tag);
 
-	/**
-	 * @brief Drops every plan and legacy alias. Created images are not destroyed.
-	 *
-	 * The caller drops the physical images first (CleanScreenSpace or a full
-	 * Clean) when a topology change invalidates them.
-	 */
-	void ClearResourcePlans();
 
 	/// @brief True when a resource with this key has been planned.
 	bool HasResource(std::string_view key) const;
@@ -670,11 +674,8 @@ private:
 
 	std::unique_ptr<Image> rc_shadowIntensityArray;
 
-	// --- Planned graph resources (stage 1) ---
-	std::unordered_map<std::string, GraphOutputTag> rc_resourceTags;
-	std::unordered_map<std::string, Image>          rc_resources;
-	std::unordered_map<std::string, AttachmentName> rc_resourceAliases;      // key -> legacy name
-	std::unordered_map<AttachmentName, std::string> rc_attachmentResources;  // legacy name -> key
+	ResourcePlan rc_graphPlan;
+	std::unordered_map<std::string, Image> rc_resources;
 
 	// --- Per-mesh GPU resources (key = object UID as int) ---
 	// Copy on write: a write installs a new table instead of mutating this one,

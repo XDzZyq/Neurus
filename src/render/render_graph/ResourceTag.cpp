@@ -46,7 +46,8 @@ vk::ImageUsageFlags UsageFromTag(const GraphOutputTag& tag)
 	case GraphUsage::StorageSampled:
 		return vk::ImageUsageFlagBits::eStorage
 		     | vk::ImageUsageFlagBits::eSampled
-		     | vk::ImageUsageFlagBits::eTransferSrc;
+		     | vk::ImageUsageFlagBits::eTransferSrc
+		     | vk::ImageUsageFlagBits::eTransferDst;  // clear unwritten graph inputs before sampling
 	case GraphUsage::DepthSampled:
 		return vk::ImageUsageFlagBits::eDepthStencilAttachment
 		     | vk::ImageUsageFlagBits::eSampled

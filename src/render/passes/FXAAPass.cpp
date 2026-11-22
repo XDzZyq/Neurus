@@ -36,10 +36,7 @@ FXAAPass::FXAAPass(const vk::raii::Device& device,
 	                == vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
 
 	if (linearOk)
-	{
-		p_bilinearSampler = CreateBilinearSampler(device);
-		p_hasBilinear = true;
-	}
+		p_sampler = CreateBilinearSampler(device);
 
 	BuildPipeline(device, "FXAAPass");
 	NEURUS_LOG("[FXAAPass] numSets=" << numSets

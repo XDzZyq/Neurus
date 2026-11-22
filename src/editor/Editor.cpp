@@ -1,5 +1,6 @@
 #include "Editor.hpp"
 #include "RenderManager.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 
 #include "editor/events/InputEvents.hpp"
 #include "editor/events/AssetEvents.hpp"
@@ -8,7 +9,7 @@
 #include "editor/events/CameraEvents.hpp"
 #include "editor/events/EditorEvents.hpp"
 #include "editor/events/GizmoEvents.hpp"
-#include "editor/operations/GraphOperations.hpp"
+#include "editor/events/GraphEvents.hpp"
 #include "editor/events/ShaderEvents.hpp"
 #include "editor/events/SceneEvents.hpp"
 
@@ -16,6 +17,7 @@
 #include "editor/controllers/MutationNotify.hpp"
 #include "editor/controllers/ObjectController.hpp"
 #include "editor/controllers/RenderConfigController.hpp"
+#include "editor/controllers/RenderGraphController.hpp"
 #include "editor/controllers/ScriptController.hpp"
 #include "editor/controllers/ShaderController.hpp"
 #include "editor/controllers/SceneController.hpp"
@@ -196,6 +198,7 @@ Editor::Editor(RenderRequestSink* renderer, std::shared_ptr<const BuiltInRenderD
 	, ed_renderer(renderer)
 {
 	m_renderManager = std::make_unique<RenderManager>(*m_resources, renderer, std::move(renderDefaults));
+	m_ctx.render = m_renderManager.get();
 }
 
 Editor::~Editor()
@@ -226,35 +229,6 @@ void Editor::Initialize()
 	});
 	ed_eventBus.Subscribe<ShaderImportRequested>([this](const ShaderImportRequested& e) {
 		OnShaderImportRequested(e);
-	});
-	ed_eventBus.Subscribe<RenderGraphCreateRequested>([this](const RenderGraphCreateRequested&) {
-		if (m_renderManager->GraphData())
-			return;
-		const auto graph = m_renderManager->CreateGraph();
-		ed_operations.Submit(std::make_unique<CreateRenderGraphOp>(graph->GetObjectID()));
-		notify::Mutated(ed_eventBus);
-	});
-	ed_eventBus.Subscribe<RenderGraphCreationRestored>([this](const RenderGraphCreationRestored& e) {
-		const auto active = m_renderManager->GraphData();
-		if (active && active->GetObjectID() != e.uid)
-			throw std::runtime_error("Graph creation history refers to a different active graph");
-		if (e.present)
-		{
-			if (active)
-				return;
-			if (!e.detached || e.detached->GetObjectID() != e.uid)
-				throw std::runtime_error("Cannot redo graph creation without its detached resource");
-			m_renderManager->RestoreCreatedGraph(e.detached);
-			e.detached.reset();
-		}
-		else
-		{
-			if (!active)
-				throw std::runtime_error("Cannot undo graph creation without its active resource");
-			m_renderManager->RemoveCreatedGraph(active);
-			e.detached = active;
-		}
-		notify::Mutated(ed_eventBus);
 	});
 	ed_eventBus.Subscribe<CameraAddEvent>([this](const CameraAddEvent&) {
 		OnCameraAdd();
@@ -325,7 +299,7 @@ void Editor::Initialize()
 
 
 	// --- Register controllers ---
-	// All seven take only the ControllerContext, which carries the event dispatch,
+	// Controllers take only the ControllerContext, which carries the event dispatch,
 	// the pooled-object lookup, the operation sink, the scene, the render config,
 	// the viewport and the gizmo state.
 	//
@@ -339,8 +313,8 @@ void Editor::Initialize()
 	RegisterController<SceneController>();
 	RegisterController<ObjectController>();
 	RegisterController<RenderConfigController>();
-	// Bounds a script run: the run-boundary events open and close the operation
-	// sink's script scope, so every write the run makes lands as one undo step.
+	// Graph changes validate and record before ScriptController closes the undo scope.
+	RegisterController<RenderGraphController>();
 	RegisterController<ScriptController>();
 
 	// --- Keep the published camera correct across a deletion ---
@@ -502,11 +476,11 @@ void Editor::Initialize()
 				usedByMesh = true;
 		});
 		const bool usedByGraph = m_renderManager->ReferencesShader(e.shaderObjectId);
-		if (usedByGraph)
+		if (usedByGraph && !e.uploaded)
 			m_renderManager->Publish();
 		if (usedByMesh && shader->GetType() == ShaderType::VERTEX)
 		{
-			if (!usedByGraph)
+			if (!usedByGraph && !e.uploaded)
 				ed_renderer->Post(MakeUploadShaderRequest(*shader));
 			ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
 		}
@@ -810,10 +784,17 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	ctx.config = &m_renderManager->Config();
 	ctx.configProvider = [this]() { return &GetRenderConfig(); };
 	ctx.resources = m_resources.get();
+	ctx.graphDiagnostics = [this]() {
+		std::vector<CpuGraphDiagnostic> problems;
+		ed_eventBus.Emit(RenderGraphFlushRequested{&problems});
+		return problems.empty() ? m_renderManager->Diagnostics() : problems;
+	};
 	ctx.graphProvider = [this]() {
+		ed_eventBus.Emit(RenderGraphFlushRequested{});
 		const auto& authored = m_renderManager->GraphData();
 		return ScriptGraphView{ &m_renderManager->Graph(),
-		                        authored ? std::optional<int>(authored->GetObjectID()) : std::nullopt };
+		                        authored ? std::optional<int>(authored->GetObjectID()) : std::nullopt,
+		                        m_projectEpoch };
 	};
 }
 
@@ -823,6 +804,7 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 
 void Editor::NewScene()
 {
+	++m_projectEpoch;
 	try
 	{
 		// The outgoing scene's GPU resources go with it (this drains the device
@@ -974,6 +956,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 
 void Editor::BeginLoad()
 {
+	++m_projectEpoch;
 	// The outgoing scene's GPU resources go with it (this drains the device
 	// first); the project's own objects are uploaded by FinishLoad().
 	DropSceneGpuResources();

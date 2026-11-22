@@ -9,7 +9,8 @@
 #include "render/render_graph/PassFactory.hpp"
 #include "render/render_graph/RenderGraph.hpp"
 #include "render/render_graph/ResourceTag.hpp"
-#include "render/render_graph/ShaderReflection.hpp"
+#include "render/resources/ShaderGPU.hpp"
+#include "shader/ShaderInterface.hpp"
 #include "render_api/RenderRequests.hpp"
 
 #include "asset/data/render_graph/RenderGraphTopology.hpp"
@@ -20,7 +21,6 @@
 #include "core/GraphMorphism.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -66,8 +66,7 @@ bool SamePorts(const PassPorts& actual, const PassPorts& expected)
 	}
 	for (const PassPort& port : expected.ports)
 	{
-		const PassPort* found = actual.Find(port.name, port.direction);
-		if (!found || !(*found == port))
+		if (!actual.FindRole(port))
 		{
 			return false;
 		}
@@ -90,8 +89,6 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 		{"geometry/gNormal",           AttachmentName::Normal},
 		{"geometry/gAlbedo",           AttachmentName::Albedo},
 		{"geometry/gMetallicRoughness", AttachmentName::MetallicRoughness},
-		{"geometry/gObjectID",         AttachmentName::IDBuffer},
-		{"geometry/depth",             AttachmentName::Depth},
 		{"shadow_intensity/outputShadow", AttachmentName::ShadowIntensity},
 		{"ssao/outputSSAO",            AttachmentName::SSAO},
 		{"lighting/outputImage",       AttachmentName::HDRColor},
@@ -105,11 +102,14 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 }
 
 /// @brief Resolves pass instances and socket names during graph compilation.
-RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog)
+using PortContracts = std::unordered_map<int, PassPorts>;
+
+RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog,
+                                      const PortContracts& contracts)
 {
 	RenderGraphMorphism::Policy policy;
 
-	policy.createNode = [&factory, &portCatalog](RenderGraph::GraphT& target,
+	policy.createNode = [&factory, &portCatalog, &contracts](RenderGraph::GraphT& target,
 	                               const RenderGraphTopology::NodeType& node) -> GpuNode*
 	{
 		const PassPorts* ports = portCatalog.FindPassPorts(node.data.pass);
@@ -120,7 +120,7 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 		const std::optional<int> shaderId = node.data.shader
 			? std::optional<int>(node.data.shader->GetObjectID()) : std::nullopt;
 		auto owned = factory.Acquire(node.data.pass, node.name, shaderId);
-		Pass* pass = owned ? owned.get() : factory.Find(node.data.pass);
+		Pass* pass = owned.get();
 		if (!pass)
 		{
 			return nullptr;
@@ -133,6 +133,16 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 			// resource keys name the graph the user edited.
 			gpu->name = node.name;
 			gpu->data.ownedPass = std::move(owned);
+			if (shaderId)
+			{
+				// Socket names follow the document. Payloads retain the canonical pass roles
+				// consumed by Record() and the built-in descriptor binding plan.
+				const auto contract = WithShaderPortNames(*ports, contracts.at(*shaderId));
+				for (auto& socket : gpu->inputs)
+					socket->name = contract.FindRole(socket->data)->name;
+				for (auto& socket : gpu->outputs)
+					socket->name = contract.FindRole(socket->data)->name;
+			}
 		}
 		return gpu;
 	};
@@ -183,15 +193,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 
 	const RenderGraphTopology& document = *m_document;
 
-	for (const CpuGraphDiagnostic& diagnostic : ValidateCpuGraph(document, m_portCatalog))
-	{
-		result.errors.push_back({diagnostic.node, diagnostic.port, diagnostic.message});
-	}
-	if (!result.errors.empty())
-	{
-		return result;
-	}
-
+	PortContracts contracts;
 	// Only the UID crosses from a live CPU shader reference into GPU mapping.
 	for (const auto& node : document.nodes)
 	{
@@ -208,20 +210,32 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 			{
 				continue;
 			}
+			contracts.try_emplace(shaderId, selected->Ports());
 			if (!SamePorts(selected->Ports(), expected->Ports()))
 			{
 				result.errors.push_back({node->name, {}, "uploaded shader changes the built-in port contract"});
 			}
-			const std::array<const ShaderGPU*, 1> actualStages = {selected.get()};
-			const std::array<const ShaderGPU*, 1> expectedStages = {expected.get()};
-			if (ReflectDescriptorLayout(actualStages).bindings != ReflectDescriptorLayout(expectedStages).bindings)
+			if (selected->GetType() != expected->GetType())
+				throw std::invalid_argument("uploaded shader changes the pass stage");
+			for (const auto stage : {ShaderType::VERTEX, ShaderType::FRAGMENT, ShaderType::COMPUTE})
 			{
-				result.errors.push_back({node->name, {}, "uploaded shader changes the descriptor contract"});
+				const auto* original = expected->FindStage(stage);
+				const auto* actual = selected->FindStage(stage);
+				if (!original && !actual)
+					continue;
+				if (!original || !actual)
+					throw std::invalid_argument("uploaded shader changes the pass stages");
+				const auto problem = PassShaderInterfaceProblem(original->parsed, original->spv,
+				                                              actual->parsed, actual->spv, stage);
+				if (!problem.empty())
+					throw std::invalid_argument(problem);
 			}
-			if (PushConstantRangeFromShaders(actualStages, vk::ShaderStageFlagBits::eAll).size
-				!= PushConstantRangeFromShaders(expectedStages, vk::ShaderStageFlagBits::eAll).size)
+			if (selected->GetType() == ShaderType::VERTEX)
 			{
-				result.errors.push_back({node->name, {}, "uploaded shader changes the push-constant contract"});
+				std::string error;
+				if (!ValidateRenderShaderInterface(selected->GetStage(ShaderType::VERTEX).spv,
+				                                   selected->GetStage(ShaderType::FRAGMENT).spv, error))
+					throw std::invalid_argument(error);
 			}
 		}
 		catch (const std::exception& error)
@@ -234,10 +248,21 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 		return result;
 	}
 
+	const auto resolve = [&](const CpuNode& node)
+	{
+		const PassPorts& builtin = *m_portCatalog.FindPassPorts(node.pass);
+		return node.shader ? WithShaderPortNames(builtin, contracts.at(node.shader->GetObjectID())) : builtin;
+	};
+	for (const auto& diagnostic : ValidateCpuGraph(document, m_portCatalog, resolve))
+		result.errors.push_back({diagnostic.node, diagnostic.port, diagnostic.message});
+	if (!result.errors.empty())
+		return result;
+	const auto active = document.ActiveNodes();
+
 	RenderGraph::GraphT target;
 	try
 	{
-		RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog));
+		RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog, contracts));
 		target = morphism.Map(document);
 		for (const std::string& problem : morphism.Validate().problems)
 		{
@@ -253,42 +278,12 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	if (!result.errors.empty())
 		return result;
 
-	// Plan the logical cache from the document's tags only after the mapping
-	// succeeded: a failed upload leaves the previous plans and graph in place.
-	cache.CleanScreenSpace();
-	cache.ClearResourcePlans();
-
-	for (const auto& node : document.nodes)
-	{
-		for (const auto& output : node->outputs)
-		{
-			if (output->data.tag)
-				cache.PlanResource(ResourceKey(node->name, output->name), *output->data.tag);
-		}
-	}
-
-	for (const auto& node : document.nodes)
-	{
-		for (const auto& output : node->outputs)
-		{
-			if (!output->data.tag)
-				continue;
-			const std::string key = ResourceKey(node->name, output->name);
-			if (const std::optional<AttachmentName> legacy = LegacyAttachmentFor(key))
-				cache.AliasResourceToAttachment(*legacy, key);
-		}
-	}
-
-	result.fxaaPresent = std::any_of(
-		document.nodes.begin(), document.nodes.end(),
-		[](const auto& node) { return node->data.pass == "FXAAPass"; });
-
 	auto graph = std::make_unique<RenderGraph>();
 	graph->Adopt(std::move(target));
 
 	try
 	{
-		graph->Compile();
+		graph->Compile(&active);
 	}
 	catch (const std::exception& error)
 	{
@@ -296,6 +291,39 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 		return result;
 	}
 
+	RenderCache::ResourcePlan plan;
+	for (const auto& node : document.nodes)
+	{
+		if (!active.contains(node->name))
+			continue;
+		for (const auto& output : node->outputs)
+		{
+			if (!output->data.tag)
+				continue;
+			const std::string key = ResourceKey(node->name, output->name);
+			plan.tags.emplace(key, *output->data.tag);
+			if (const auto legacy = LegacyAttachmentFor(key))
+				plan.Alias(*legacy, key);
+		}
+	}
+
+	for (const auto& [name, endpoint] : document.sceneOutputs)
+	{
+		const std::string key = ResourceKey(endpoint.node, endpoint.port);
+		if (name == "color")
+			result.color = key;
+		else if (name == "depth")
+		{
+			plan.Alias(AttachmentName::Depth, key);
+			result.depth = true;
+		}
+		else if (name == "object_id")
+		{
+			plan.Alias(AttachmentName::IDBuffer, key);
+			result.objectId = true;
+		}
+	}
+	cache.InstallResourcePlan(std::move(plan));
 	result.graph = std::move(graph);
 	return result;
 }

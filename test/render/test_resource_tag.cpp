@@ -64,7 +64,8 @@ TEST(ResourceTag, Usages)
 	const vk::ImageUsageFlags storage =
 		vk::ImageUsageFlagBits::eStorage
 		| vk::ImageUsageFlagBits::eSampled
-		| vk::ImageUsageFlagBits::eTransferSrc;
+		| vk::ImageUsageFlagBits::eTransferSrc
+		| vk::ImageUsageFlagBits::eTransferDst;
 	const vk::ImageUsageFlags depth =
 		vk::ImageUsageFlagBits::eDepthStencilAttachment
 		| vk::ImageUsageFlagBits::eSampled

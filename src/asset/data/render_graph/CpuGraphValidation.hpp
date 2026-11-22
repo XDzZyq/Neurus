@@ -12,6 +12,7 @@
 #include "asset/data/render_graph/RenderGraphTopology.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,7 @@ struct CpuGraphDiagnostic
  * @return One entry per problem; empty when the document is valid.
  */
 std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphTopology& graph,
-                                                 const IPortSource& ports);
+                                                 const IPortSource& ports,
+                                                 const std::function<PassPorts(const CpuNode&)>& shaderPorts = {});
 
 } // namespace neurus

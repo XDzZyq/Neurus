@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "editor/Editor.hpp"
+#include "editor/project/HistoryComponent.hpp"
 #include "core/ResourceManager.hpp"
 #include "editor/RenderManager.hpp"
 #include "asset/components/GraphComponent.hpp"
@@ -18,6 +19,8 @@
 #include "shader/RenderShader.hpp"
 #include "scene/Mesh.hpp"
 #include "editor/events/ShaderEvents.hpp"
+#include "editor/events/GraphEvents.hpp"
+#include "editor/events/ScriptEvents.hpp"
 #include "render_api/RenderRequestSink.hpp"
 #include "render_api/RenderRequests.hpp"
 
@@ -103,6 +106,7 @@ TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
 
 	neurus::project::RenderGraphRecord record = neurus::project::ToRecord(editor.GetRenderGraph());
 	record.nodes.pop_back();
+	record.outputs.reset(); // Historic inline format inferred the final pass.
 	record.edges.erase(
 		std::remove_if(record.edges.begin(), record.edges.end(),
 			[](const neurus::project::RenderGraphEdgeRecord& edge)
@@ -137,6 +141,7 @@ TEST(EditorRenderGraph, SetPostsAndMarksDirty)
 
 	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
 	graph.RemoveNode(graph.nodes.back().get());
+	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
 	editor.SetRenderGraph(std::move(graph));
 
 	EXPECT_TRUE(editor.IsDirty());
@@ -193,6 +198,7 @@ TEST(EditorRenderGraph, ResetConfigPreservesGraphAndDoesNotPublish)
 	editor.NewScene();
 	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
 	graph.RemoveNode(graph.nodes.back().get());
+	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
 	editor.SetRenderGraph(std::move(graph));
 	neurus::RenderManager& render = editor.GetRenderManager();
 	render.EditConfig() = NonDefaultConfig();
@@ -218,6 +224,7 @@ TEST(EditorRenderGraph, ResetGraphPreservesConfig)
 	editor.NewScene();
 	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
 	graph.RemoveNode(graph.nodes.back().get());
+	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
 	editor.SetRenderGraph(std::move(graph));
 	const neurus::RenderConfig expected = NonDefaultConfig();
 	editor.EditRenderConfig() = expected;
@@ -375,6 +382,7 @@ TEST(EditorRenderGraph, EditsAndPublicationPreserveOnePooledGraphIdentity)
 
 	auto topology = neurus::CloneGraph(render.Graph());
 	topology.RemoveNode(topology.nodes.back().get());
+	topology.sceneOutputs["color"] = {"compose", "outputComposed"};
 	const auto allocated = neurus::UID::GetTotalAllocated();
 	editor.SetRenderGraph(std::move(topology));
 	EXPECT_EQ(resource, render.GraphData());
@@ -532,4 +540,199 @@ TEST(EditorRenderGraph, SharedMeshAndGraphShaderUploadsBeforeMappingAndPipelineW
 	ASSERT_EQ(sink.posted.size(), 2u);
 	EXPECT_TRUE(std::holds_alternative<neurus::UploadShaderRequest>(sink.posted[0]));
 	EXPECT_TRUE(std::holds_alternative<neurus::EnsurePipelineRequest>(sink.posted[1]));
+}
+
+
+TEST(EditorRenderGraph, FailedScriptDiscardsGraphCreationAndPooledShader)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.Initialize();
+	editor.NewScene();
+	auto& bus = editor.GetEventQueue();
+	const auto before = editor.GetResourceManager().Size();
+	sink.posted.clear();
+	bus.Emit(neurus::ScriptRunStarted{"Create and fail"});
+	bus.Emit(neurus::RenderGraphCreateRequested{});
+	int shader = -1;
+	bus.Emit(neurus::RenderGraphCreateShaderRequested{"compose", &shader});
+	ASSERT_TRUE(editor.GetResourceManager().Get<neurus::ShaderData>(shader));
+	bus.Emit(neurus::RenderGraphDisconnectRequested{{"", "color"}});
+	std::string diagnostic;
+	bus.Emit(neurus::ScriptRunFinished{true, &diagnostic});
+	EXPECT_FALSE(diagnostic.empty());
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	EXPECT_EQ(before, editor.GetResourceManager().Size());
+	EXPECT_TRUE(editor.GetHistory().undo.empty());
+	EXPECT_TRUE(sink.posted.empty());
+	EXPECT_FALSE(editor.IsDirty());
+}
+
+TEST(EditorRenderGraph, BypassAndRenamePublishOnceAndUndoTogether)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.Initialize();
+	editor.NewScene();
+	auto& bus = editor.GetEventQueue();
+	bus.Emit(neurus::RenderGraphCreateRequested{});
+	sink.posted.clear();
+	bus.Emit(neurus::ScriptRunStarted{"Edit output"});
+	bus.Emit(neurus::RenderGraphDisconnectRequested{{"", "color"}});
+	bus.Emit(neurus::RenderGraphRenameRequested{"compose", "finish"});
+	bus.Emit(neurus::RenderGraphConnectRequested{{"finish", "outputComposed"}, {"", "color"}});
+	EXPECT_TRUE(sink.posted.empty());
+	std::string error;
+	bus.Emit(neurus::ScriptRunFinished{true, &error});
+	ASSERT_TRUE(error.empty()) << error;
+	EXPECT_EQ(editor.GetRenderGraph().nodes.size(), 7u);
+	const auto& selected = editor.GetRenderGraph().sceneOutputs.at("color");
+	EXPECT_EQ(selected.node, "finish");
+	auto count = std::count_if(sink.posted.begin(), sink.posted.end(), [](const auto& request) {
+		return std::holds_alternative<neurus::CompileRenderGraphRequest>(request);
+	});
+	EXPECT_EQ(count, 1);
+	editor.GetOperations().Undo();
+	EXPECT_EQ(editor.GetRenderGraph().sceneOutputs.at("color").node, "fxaa");
+	EXPECT_EQ(editor.GetRenderGraph().nodes[5]->name, "compose");
+	editor.GetOperations().Redo();
+	EXPECT_EQ(editor.GetRenderGraph().sceneOutputs.at("color").node, "finish");
+}
+
+TEST(EditorRenderGraph, IndependentPassShadersCanBeSharedAndCleared)
+{
+	neurus::Editor editor(nullptr);
+	editor.Initialize();
+	editor.NewScene();
+	auto& bus = editor.GetEventQueue();
+	bus.Emit(neurus::RenderGraphCreateRequested{});
+	bus.Emit(neurus::ScriptRunStarted{"Create two shaders"});
+	std::string name;
+	bus.Emit(neurus::RenderGraphAddRequested{"ComposePass", "other", &name});
+	bus.Emit(neurus::RenderGraphConnectRequested{{"lighting", "outputImage"}, {"other", "gHDRColor"}});
+	int first = -1, second = -1, repeated = -1;
+	bus.Emit(neurus::RenderGraphCreateShaderRequested{"compose", &first});
+	bus.Emit(neurus::RenderGraphCreateShaderRequested{"other", &second});
+	bus.Emit(neurus::RenderGraphCreateShaderRequested{"other", &repeated});
+	EXPECT_NE(first, second);
+	EXPECT_EQ(second, repeated);
+	std::string diagnostic;
+	bus.Emit(neurus::ScriptRunFinished{true, &diagnostic});
+	ASSERT_TRUE(diagnostic.empty()) << diagnostic;
+
+	bus.Emit(neurus::RenderGraphShaderRequested{"other", first});
+	EXPECT_EQ(editor.GetRenderGraph().nodes.back()->data.shader, editor.GetRenderGraph().nodes[5]->data.shader);
+	bus.Emit(neurus::RenderGraphShaderRequested{"other", {}});
+	EXPECT_FALSE(editor.GetRenderGraph().nodes.back()->data.shader);
+	editor.GetOperations().Undo();
+	EXPECT_EQ(editor.GetRenderGraph().nodes.back()->data.shader, editor.GetRenderGraph().nodes[5]->data.shader);
+}
+
+TEST(EditorRenderGraph, StageWritesCompileTogetherAndAnInvalidBatchPreservesLastGoodShader)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.Initialize();
+	editor.NewScene();
+	auto& bus = editor.GetEventQueue();
+	bus.Emit(neurus::RenderGraphCreateRequested{});
+	int uid = -1;
+	bus.Emit(neurus::RenderGraphCreateShaderRequested{"compose", &uid});
+	const auto shader = editor.GetResourceManager().Get<neurus::ShaderData>(uid);
+	ASSERT_TRUE(shader);
+	const auto& unit = shader->GetStage(neurus::ShaderType::COMPUTE);
+	const std::string original = unit.code;
+	constexpr int stage = static_cast<int>(neurus::ShaderType::COMPUTE);
+	const int version = shader->GetVersion();
+	const auto initialHistory = editor.GetHistory().undo.size();
+	sink.posted.clear();
+	editor.ClearDirty();
+
+	// Intermediate draft source may be incomplete. Reverting before commit is a no-op.
+	bus.Emit(neurus::ScriptRunStarted{"Draft"});
+	bus.Emit(neurus::ShaderUnitCodeSet{uid, stage, "broken intermediate edit"});
+	bus.Emit(neurus::ShaderUnitCodeSet{uid, stage, original});
+	std::string error;
+	bus.Emit(neurus::ScriptRunFinished{true, &error});
+	ASSERT_TRUE(error.empty()) << error;
+	EXPECT_EQ(shader->GetVersion(), version);
+	EXPECT_EQ(editor.GetHistory().undo.size(), initialHistory);
+	EXPECT_TRUE(sink.posted.empty());
+
+	bus.Emit(neurus::ScriptRunStarted{"Invalid"});
+	bus.Emit(neurus::ShaderUnitCodeSet{uid, stage, "#version 450\ninvalid GLSL"});
+	bus.Emit(neurus::ScriptRunFinished{true, &error});
+	EXPECT_NE(error.find("compose"), std::string::npos);
+	EXPECT_EQ(unit.code, original);
+	EXPECT_EQ(shader->GetVersion(), version);
+	EXPECT_EQ(editor.GetHistory().undo.size(), initialHistory);
+	EXPECT_TRUE(sink.posted.empty());
+	EXPECT_FALSE(editor.IsDirty());
+}
+
+TEST(EditorRenderGraph, SavedRedoRecreatesGraphAndEditedShaderWithOriginalIdentities)
+{
+	neurus::Editor editor(nullptr);
+	editor.Initialize();
+	editor.NewScene();
+	auto& bus = editor.GetEventQueue();
+	bus.Emit(neurus::ScriptRunStarted{"Customize compose"});
+	bus.Emit(neurus::RenderGraphCreateRequested{});
+	const int graphUid = editor.GetRenderManager().GraphData()->GetObjectID();
+	int shaderUid = -1;
+	bus.Emit(neurus::RenderGraphCreateShaderRequested{"compose", &shaderUid});
+	const auto shader = editor.GetResourceManager().Get<neurus::ShaderData>(shaderUid);
+	ASSERT_TRUE(shader);
+	const auto stage = neurus::ShaderType::COMPUTE;
+	const auto code = shader->GetStage(stage).code + "\n// project-owned edit\n";
+	bus.Emit(neurus::ShaderUnitCodeSet{shaderUid, static_cast<int>(stage), code});
+	std::string error;
+	bus.Emit(neurus::ScriptRunFinished{true, &error});
+	ASSERT_TRUE(error.empty()) << error;
+	editor.GetOperations().Undo();
+	ASSERT_FALSE(editor.GetRenderManager().GraphData());
+	ASSERT_FALSE(editor.GetResourceManager().Get<neurus::ShaderData>(shaderUid));
+	ASSERT_EQ(editor.GetHistory().redo.size(), 1u);
+
+	std::stringstream savedHistory;
+	{
+		cereal::JSONOutputArchive archive(savedHistory);
+		neurus::project::HistoryComponent(editor.GetOperations()).Save(archive);
+	}
+	neurus::Editor reopened(nullptr);
+	reopened.Initialize();
+	LoadOptionalRenderState(reopened, SaveOptionalRenderState(editor));
+	{
+		cereal::JSONInputArchive archive(savedHistory);
+		neurus::project::HistoryComponent(reopened.GetOperations()).Load(archive);
+	}
+	reopened.GetOperations().Redo();
+	const auto& graph = reopened.GetRenderManager().GraphData();
+	ASSERT_TRUE(graph);
+	EXPECT_EQ(graph->GetObjectID(), graphUid);
+	const auto restoredShader = reopened.GetResourceManager().Get<neurus::ShaderData>(shaderUid);
+	ASSERT_TRUE(restoredShader);
+	EXPECT_EQ(graph->nodes[5]->data.shader, restoredShader);
+	EXPECT_EQ(restoredShader->GetStage(stage).code, code);
+	EXPECT_TRUE(restoredShader->IsValid());
+}
+
+TEST(EditorRenderGraph, LoadingIncompatiblePooledShaderUsesOnlyThatPassDefault)
+{
+	neurus::Editor editor(nullptr);
+	editor.NewScene();
+	auto& render = editor.GetRenderManager();
+	const auto shader = editor.GetResourceManager().Load<neurus::ComputeShader>(
+		"Incompatible", "res/shaders/compute/fxaa.comp.glsl");
+	ASSERT_TRUE(shader->ParseAndGenerate());
+	ASSERT_TRUE(shader->CompileToSpv());
+	auto saved = neurus::project::ToRecord(render.Graph());
+	saved.nodes[5].shaderUid = shader->GetObjectID();
+	render.PendingRecord() = saved;
+	render.FinishGraphLoad();
+	ASSERT_TRUE(render.GraphData());
+	EXPECT_EQ(render.Graph().nodes.size(), 7u);
+	EXPECT_FALSE(render.Graph().nodes[5]->data.shader);
+	EXPECT_TRUE(editor.GetResourceManager().Get<neurus::ShaderData>(shader->GetObjectID()));
+	EXPECT_FALSE(render.Problems().empty());
 }

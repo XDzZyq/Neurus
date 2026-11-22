@@ -173,6 +173,7 @@ target_sources(neurus_test PRIVATE
 	script/test_script_writes.cpp
 	script/test_script_shader.cpp
 	script/test_script_file_roundtrip.cpp
+	script/test_script_graph.cpp
 	script/test_script_preload.cpp
 	script/test_script_isolation.cpp
 	script/test_script_sandbox.cpp

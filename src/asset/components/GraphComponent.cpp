@@ -98,10 +98,21 @@ bool ValidGraphShape(const Json& graph)
 				return false;
 		}
 	}
+	if (const auto outputs = graph.find("outputs"); outputs != graph.end())
+	{
+		if (!outputs->is_array())
+			return false;
+		for (const auto& slot : *outputs)
+			if (!slot.is_object() || !HasString(slot, "name") || !HasString(slot, "node") || !HasString(slot, "port"))
+				return false;
+	}
 	for (const auto& edge : graph["edges"])
 	{
 		if (!edge.is_object() || !HasString(edge, "from") || !HasString(edge, "fromPort")
 			|| !HasString(edge, "to") || !HasString(edge, "toPort"))
+			return false;
+		if (edge.contains("inputType") && (!HasString(edge, "inputType") || !edge.contains("inputBinding")
+		    || !UnsignedWithin(edge["inputBinding"], std::numeric_limits<uint32_t>::max())))
 			return false;
 	}
 	return true;

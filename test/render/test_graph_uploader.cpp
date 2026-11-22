@@ -115,7 +115,7 @@ TEST_F(GraphUploaderTest, DefaultDocumentCompiles)
 
 	ASSERT_TRUE(upload.errors.empty()) << problems;
 	ASSERT_NE(upload.graph, nullptr);
-	EXPECT_TRUE(upload.fxaaPresent);
+	EXPECT_EQ(upload.color, "fxaa/outputFXAA");
 	EXPECT_EQ(upload.graph->PassCount(), 7u);
 }
 
@@ -125,13 +125,14 @@ TEST_F(GraphUploaderTest, DocumentWithoutFxaaKeepsSixPasses)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	neurus::RenderGraphTopology document = DefaultDocument();
+	document.sceneOutputs["color"] = {"compose", "outputComposed"};
 	document.RemoveNode(FindNode(document, "fxaa"));
 
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 
 	ASSERT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
-	EXPECT_FALSE(upload.fxaaPresent);
+	EXPECT_EQ(upload.color, "compose/outputComposed");
 	EXPECT_EQ(upload.graph->PassCount(), 6u);
 }
 
@@ -187,7 +188,7 @@ TEST_F(GraphUploaderTest, UncompiledSelectedShaderIsNamed)
 	EXPECT_TRUE(HasError(upload.errors, "lighting", "not uploaded"));
 }
 
-TEST_F(GraphUploaderTest, UploadedShaderWithRenamedPortIsRejected)
+TEST_F(GraphUploaderTest, UploadedShaderRenamesSocketByRoleAndPreservesItsUsers)
 {
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
@@ -214,11 +215,20 @@ TEST_F(GraphUploaderTest, UploadedShaderWithRenamedPortIsRejected)
 	m_cache->UseShader(neurus::UploadManager::UploadShader(*m_device, neurus::MakeUploadShaderRequest(*shader)));
 
 	neurus::RenderGraphTopology document = DefaultDocument();
-	FindNode(document, "compose")->data.shader = shader;
-	const neurus::GraphUploadResult upload = Compile(std::move(document));
+	auto* compose = FindNode(document, "compose");
+	compose->data.shader = shader;
+	document.sceneOutputs["color"] = {"compose", "outputComposed"};
+	const auto stale = Compile(neurus::CloneGraph(document));
+	EXPECT_EQ(stale.graph, nullptr);
+	EXPECT_TRUE(HasError(stale.errors, "compose", "no longer declared"));
 
-	EXPECT_EQ(upload.graph, nullptr);
-	EXPECT_TRUE(HasError(upload.errors, "compose", "changes the built-in port contract"));
+	neurus::ReconcilePassPorts(document, *compose, neurus::EffectivePassPorts(compose->data, m_defaults->Ports()));
+	const auto upload = Compile(std::move(document));
+	ASSERT_NE(upload.graph, nullptr);
+	EXPECT_TRUE(upload.errors.empty());
+	EXPECT_EQ(upload.color, "compose/renamedOutput");
+	EXPECT_EQ(upload.graph->PassCount(), 6u);
+	EXPECT_TRUE(m_cache->HasResource(upload.color));
 }
 
 TEST_F(GraphUploaderTest, StaleSocketIsNamed)
@@ -250,7 +260,7 @@ TEST_F(GraphUploaderTest, EmptyDocumentCompiles)
 	EXPECT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
 	EXPECT_EQ(upload.graph->PassCount(), 0u);
-	EXPECT_FALSE(upload.fxaaPresent);
+	EXPECT_TRUE(upload.color.empty());
 }
 
 TEST_F(GraphUploaderTest, NullDocumentResolvesCachedBuiltInGraph)
@@ -264,7 +274,7 @@ TEST_F(GraphUploaderTest, NullDocumentResolvesCachedBuiltInGraph)
 	ASSERT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
 	EXPECT_EQ(upload.graph->PassCount(), 7u);
-	EXPECT_TRUE(upload.fxaaPresent);
+	EXPECT_EQ(upload.color, "fxaa/outputFXAA");
 }
 
 TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
@@ -281,7 +291,7 @@ TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
 	ASSERT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
 	EXPECT_EQ(upload.graph->PassCount(), 0u);
-	EXPECT_FALSE(upload.fxaaPresent);
+	EXPECT_TRUE(upload.color.empty());
 
 	m_uploader->SetPending(neurus::CompileRenderGraphRequest{});
 	EXPECT_EQ(m_uploader->DocumentHash(), defaultHash);

@@ -46,7 +46,9 @@ struct GraphDiagnostic
 struct GraphUploadResult
 {
 	std::unique_ptr<RenderGraph> graph;
-	bool                         fxaaPresent = false;
+	std::string color;  ///< Planned image key consumed by the overlay.
+	bool depth = false;
+	bool objectId = false;
 	std::vector<GraphDiagnostic> errors;
 };
 

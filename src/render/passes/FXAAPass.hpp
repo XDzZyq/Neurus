@@ -40,7 +40,5 @@ private:
 	static vk::raii::Sampler CreateBilinearSampler(const vk::raii::Device& device);
 
 	std::shared_ptr<const ShaderGPU> p_shader;
-	vk::raii::Sampler              p_bilinearSampler = nullptr;
-	bool                           p_hasBilinear     = false;
 };
 } // namespace neurus

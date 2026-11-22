@@ -14,7 +14,7 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 `RenderManager` holds a nullable `shared_ptr<RenderGraphData>` selecting the active graph. Without an authored graph, the effective topology comes from `BuiltInRenderData`. Reading the graph leaves the pointer null. Calling `neurus.render.graph.create()` copies the built-in topology into the pool and selects it. Its nodes initially use built-in shaders.
 
-The pool stores each authored graph's nodes, output tags and edges in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. `FinishLoad()` resolves selected shader UIDs from the restored pool and derives input sockets from the pass contracts. Loading a valid legacy inline graph creates a pooled resource, including when the graph is explicitly empty. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
+The pool stores each authored graph's nodes, output tags, edges and selected scene outputs in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. `FinishLoad()` resolves selected shader UIDs from the restored pool and derives input sockets from the pass contracts. Loading a valid legacy inline graph creates a pooled resource, including when the graph is explicitly empty. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
 
 `RenderManager::ResetConfig()` clears the stored config pointer. `ResetGraph()`
 clears the stored graph pointer while preserving config. New-scene creation calls
@@ -47,16 +47,16 @@ The renderer uploads the document through `GraphUploader` (`src/render/render_gr
 3. The morphism policy uses `PassFactory` to obtain a pass instance from the selected shader UID or the built-in recipe. It creates runtime sockets from the validated pass contract and maps document edges by socket name.
 4. The morphism checks that the mapping is total and preserves edge endpoints. `RenderGraph::Compile()` caches the execution order and binding plan.
 
-A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. The renderer tracks a compile key made from the published topology hash and shader cache generation. An upload under the same shader UID refreshes the graph even without a new document. FXAA is a normal node in the document and always runs, so a render-config change never rebuilds the graph.
+A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. The renderer tracks a compile key made from the published topology hash and shader cache generation. An upload under the same shader UID refreshes the graph even without a new document. The public scene outputs select the live subgraph. Connecting Compose directly to scene color bypasses FXAA. Reconnecting the FXAA output restores it. Both edits retain all seven default nodes and their internal connections.
 
 ## The runtime graph
 
 `RenderGraph` is `Graph<PassPort, PassBody>` (`src/render/render_graph/RenderGraph.hpp`):
 
-- `PassFactory` resolves the node's shader UID through `RenderCache`, constructs pass-specific pipelines from GPU modules, and reuses passes only while their shader cache revision matches. Runtime graph/resource references retain resources needed by submitted work.
+- `PassFactory` resolves the node's shader UID through `RenderCache`, constructs pass-specific pipelines from GPU modules, with independent descriptor state for each node. Runtime graph/resource references retain resources needed by submitted work.
 - `AddPass(pass, ports, externals, id)` materializes one socket per port and keeps the document id in `PassBody::id` for resource keys. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
 - `Connect(producer, fromPort, consumer, toPort)` is port to port. The overlay compatibility overload forwards to the same call with `AttachmentNameToString()`.
-- `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order.
+- `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order of nodes reachable upstream from the selected outputs.
 
 ```mermaid
 flowchart LR
@@ -74,7 +74,7 @@ flowchart LR
 
 The upload also plans the cache: one logical resource per tagged output, keyed by `ResourceKey(node, port)`.
 
-`OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph over the scene tail and is not part of the document yet.
+`OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph and consumes the selected scene color, depth and object-ID resources. Picking uses the same object-ID selection.
 
 ## Resources
 
@@ -91,7 +91,7 @@ The four fields are closed sets, so they are enums (`GraphFormat`, `GraphUsage`,
 
 `RenderCache::PlanResource` records the tag; `GetResource(key, extent)` creates the image lazily at the live extent, so a resize does not recompile. `layers: lights` creates a 4-layer array, and `usage: logical` creates nothing: the shadow depth bundle is an ordering token for per-light maps owned by `LightGPU`, not a cache image.
 
-`AttachmentName` remains for the overlay graph and for the existing accessors. The document's resources are aliased to the legacy names (`geometry/gPosition` to `Position`, `lighting/outputImage` to `HDRColor`, and so on) by `RenderCache::AliasResourceToAttachment`, so the overlay and the tests read the same physical image under both identities. A node id outside that map gets its own image. The bridge goes away when the overlay graph moves to ports.
+The scene maps each selected output to a resource key for downstream consumers. The overlay graph keeps its own attachment names and descriptor layout. See [Editing the render graph](../script/overview.md#editing-the-render-graph) for the socket and shader editing API.
 
 ## Descriptors and push constants
 

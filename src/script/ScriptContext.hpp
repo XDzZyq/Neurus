@@ -16,8 +16,10 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
+#include <vector>
 
 namespace neurus
 {
@@ -26,12 +28,14 @@ class Scene;
 class RenderConfig;
 class IResourceLookup;
 class RenderGraphTopology;
+struct CpuGraphDiagnostic;
 
 /// @brief The current effective graph and the identity of its optional project resource.
 struct ScriptGraphView
 {
 	const RenderGraphTopology* topology = nullptr;
 	std::optional<int> uid;
+	std::uint64_t projectEpoch = 0;
 };
 
 /**
@@ -46,6 +50,8 @@ struct ScriptContext
 	const IResourceLookup* resources = nullptr;  ///< Borrowed pool for name/UID lookup.
 	/// Re-query graph topology and identity after creation or undo in the same run.
 	std::function<ScriptGraphView()> graphProvider;
+	/// Named validation errors for the graph currently visible to the script.
+	std::function<std::vector<CpuGraphDiagnostic>()> graphDiagnostics;
 	/// Re-query optional config after writes within the same script run.
 	std::function<const RenderConfig*()> configProvider;
 };

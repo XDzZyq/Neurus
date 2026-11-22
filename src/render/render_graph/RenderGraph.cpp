@@ -157,9 +157,12 @@ bool RenderGraph::Connect(NodeT* producer, const AttachmentName resource, NodeT*
 	return Connect(producer, name, consumer, name);
 }
 
-void RenderGraph::Compile()
+void RenderGraph::Compile(const std::set<std::string>* active)
 {
-	for (const auto& node : m_graph.nodes)
+	m_compiled = m_graph.TopologicalSort();
+	if (active)
+		std::erase_if(m_compiled, [&](const NodeT* node) { return !active->contains(node->name); });
+	for (auto* node : m_compiled)
 	{
 		if (node->data.legacyExternal)
 			continue;
@@ -170,7 +173,7 @@ void RenderGraph::Compile()
 				continue;
 
 			const auto& external = node->data.externalInputs;
-			if (std::find(external.begin(), external.end(), input->name) != external.end())
+			if (std::find(external.begin(), external.end(), input->data.name) != external.end())
 				continue;
 
 			throw std::runtime_error(
@@ -180,17 +183,17 @@ void RenderGraph::Compile()
 	}
 
 	// --- Binding plan: one image descriptor per connected input and per image output ---
-	for (const auto& node : m_graph.nodes)
+	for (auto* node : m_compiled)
 	{
 		node->data.imageBindings.clear();
 		if (node->data.legacyExternal)
 			continue;
 
-		const auto connected = [&node](const std::string_view port)
+		const auto connected = [node](const std::string_view port)
 		{
 			for (const auto& input : node->inputs)
 			{
-				if (input->name == port && input->source)
+				if (input->data.name == port && input->source)
 					return true;
 			}
 			return false;
@@ -200,7 +203,7 @@ void RenderGraph::Compile()
 			BuildImageBindings(node->data.ports, *node->data.pass, connected);
 	}
 
-	m_compiled   = m_graph.TopologicalSort();
+
 	m_isCompiled = true;
 }
 
@@ -245,7 +248,7 @@ void RenderGraph::Execute(vk::CommandBuffer cmd,
 				throw std::runtime_error(
 					"RenderGraph::Execute: missing resource '" + key + "'");
 			}
-			resources.SetInput(input->name, image);
+			resources.SetInput(input->data.name, image);
 		}
 
 		for (const auto& output : node->outputs)
@@ -261,7 +264,7 @@ void RenderGraph::Execute(vk::CommandBuffer cmd,
 			if (IsLogicalTag(*tag))
 				continue;
 
-			resources.SetOutput(output->name, &cache.GetResource(key, renderExtent));
+			resources.SetOutput(output->data.name, &cache.GetResource(key, renderExtent));
 		}
 
 		if (!node->data.legacyExternal)

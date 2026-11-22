@@ -18,10 +18,12 @@ public:
 
 private:
 	CliExit ExecuteGet();
+	CliExit ExecuteGraphStatus();
 	CliExit ExecuteSet();
 
 	CLI::App* m_app = nullptr;
 	CLI::App* m_getApp = nullptr;
+	CLI::App* m_graphStatus = nullptr;
 	CLI::App* m_setApp = nullptr;
 
 	std::string m_session;

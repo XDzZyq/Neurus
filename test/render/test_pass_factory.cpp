@@ -93,7 +93,12 @@ TEST_F(PassFactoryTest, CustomNodeInstancesCacheOnlyWhileOwned)
 	ASSERT_TRUE(shader->CompileToSpv());
 	const int shaderId = shader->GetObjectID();
 	// UID zero is valid; absence is represented by nullopt.
-	EXPECT_EQ(factory.Acquire("ComposePass", "default", std::nullopt), nullptr);
+	auto builtin = factory.Acquire("ComposePass", "first", std::nullopt);
+	auto otherBuiltin = factory.Acquire("ComposePass", "second", std::nullopt);
+	ASSERT_NE(builtin, nullptr);
+	ASSERT_NE(otherBuiltin, nullptr);
+	EXPECT_NE(builtin->GraphDescriptorSet(0), otherBuiltin->GraphDescriptorSet(0));
+	EXPECT_EQ(builtin, factory.Acquire("ComposePass", "first", std::nullopt));
 	cache.UseShader(neurus::UploadManager::UploadShader(*m_device, neurus::MakeUploadShaderRequest(*shader)));
 	auto first = factory.Acquire("ComposePass", "first", shaderId);
 	auto same = factory.Acquire("ComposePass", "first", shaderId);

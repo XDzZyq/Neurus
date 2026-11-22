@@ -24,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <set>
 #include <vector>
 
 namespace neurus {
@@ -139,7 +140,7 @@ public:
 	 *
 	 * @throws std::runtime_error naming the node and port on an unconnected input.
 	 */
-	void Compile();
+	void Compile(const std::set<std::string>* active = nullptr);
 
 	/**
 	 * @brief Walk the compiled order and invoke each pass's Record(), driving
@@ -158,7 +159,7 @@ public:
 	             FrameProfile& frameProfile) const;
 
 	/** @return Number of registered passes. */
-	size_t PassCount() const { return m_graph.NodeCount(); }
+	size_t PassCount() const { return m_isCompiled ? m_compiled.size() : m_graph.NodeCount(); }
 
 	/**
 	 * @brief The underlying generic graph.

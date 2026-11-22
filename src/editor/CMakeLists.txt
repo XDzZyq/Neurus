@@ -9,6 +9,7 @@ add_library(neurus_editor STATIC
 	Editor.cpp
 	RenderManager.hpp
 	RenderManager.cpp
+	operations/GraphEditState.hpp
 	Input.hpp
 	commands/EditorCommandAdapter.hpp
 	commands/EditorCommandAdapter.cpp
@@ -31,6 +32,8 @@ add_library(neurus_editor STATIC
 	controllers/CameraController.cpp
 	controllers/RenderConfigController.hpp
 	controllers/RenderConfigController.cpp
+	controllers/RenderGraphController.hpp
+	controllers/RenderGraphController.cpp
 	controllers/ScriptController.hpp
 	controllers/ScriptController.cpp
 	controllers/ShaderController.hpp

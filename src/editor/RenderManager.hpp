@@ -30,6 +30,8 @@ namespace neurus {
 class BuiltInRenderData;
 class RenderRequestSink;
 class ResourceManager;
+class ShaderData;
+struct CpuGraphDiagnostic;
 
 /**
  * @brief Owns optional project render data and publishes topology plus owned GPU uploads.
@@ -72,11 +74,13 @@ public:
 	void FinishGraphLoad();
 
 	/// @brief Materializes the effective default once as a project-owned resource.
-	std::shared_ptr<RenderGraphData> CreateGraph();
+	std::shared_ptr<RenderGraphData> CreateGraph(bool publish = true);
+	const BuiltInRenderData& Defaults() const { return *m_renderDefaults; }
+	std::vector<CpuGraphDiagnostic> Diagnostics() const;
 
 	/// @brief Replays membership of the resource retained by a graph creation operation.
 	void RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph);
-	void RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph);
+	void RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish = true);
 
 	/**
 	 * @brief Replaces the document and publishes it.
@@ -96,6 +100,12 @@ public:
 
 	/// @brief Uploads distinct selected shaders, then publishes cloned topology with shared references.
 	void Publish();
+	void UploadShader(const ShaderData& shader);
+
+	/// Takes ownership of a pass shader created by an edit or restored from history.
+	void RegisterShader(const std::shared_ptr<ShaderData>& shader);
+	/// Releases a shader only after no pooled graph or mesh references it.
+	std::shared_ptr<ShaderData> RemoveUnusedShader(int uid);
 
 	/// @brief Whether an explicit graph node references this pooled shader.
 	bool ReferencesShader(int uid) const;

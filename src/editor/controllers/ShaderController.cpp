@@ -10,6 +10,7 @@
 #include "editor/controllers/ShaderController.hpp"
 #include "editor/controllers/MutationNotify.hpp"
 #include "editor/events/ShaderEvents.hpp"
+#include "editor/events/GraphEvents.hpp"
 #include "editor/events/EditorEvents.hpp"
 #include "editor/events/EventBus.hpp"
 #include "editor/operations/IOperationSink.hpp"
@@ -289,6 +290,20 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 // Shader-keyed unit handlers (script path)
 // ---------------------------------------------------------------------------
 
+// Graph consumers share a single transactional editor path for writes through
+// either a pass node or the general shader collection, including history replay.
+template<class Edit>
+bool EditGraphUnit(const neurus::ControllerContext& ctx, int uid, int stage,
+                   const neurus::ShaderUnit& unit, bool fromStruct, Edit edit)
+{
+	auto candidate = unit;
+	edit(candidate);
+	bool handled = false;
+	ctx.events.Emit(neurus::RenderGraphStageEditRequested{uid, static_cast<neurus::ShaderType>(stage),
+	                                                     candidate, fromStruct, handled});
+	return handled;
+}
+
 /**
  * @brief Handles ShaderUnitCodeSet: assigns a stage's code and records one op.
  *
@@ -301,6 +316,8 @@ void OnUnitCodeSet(const neurus::ShaderUnitCodeSet& e, const neurus::ControllerC
 	neurus::ShaderUnit* unit =
 		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
 	if (!unit || unit->code == e.code) return;
+	if (EditGraphUnit(ctx, e.shaderUid, e.stage, *unit, false, [&](auto& draft) { draft.code = e.code; }))
+		return;
 
 	std::string before = unit->code;
 	unit->code = e.code;
@@ -319,6 +336,8 @@ void OnUnitStructSet(const neurus::ShaderUnitStructSet& e, const neurus::Control
 	neurus::ShaderUnit* unit =
 		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
 	if (!unit) return;
+	if (EditGraphUnit(ctx, e.shaderUid, e.stage, *unit, true, [&](auto& draft) { draft.parsed = e.parsed; }))
+		return;
 
 	neurus::ShaderStruct before = unit->parsed;
 	unit->parsed = e.parsed;
@@ -351,6 +370,12 @@ void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
 
 	try
 	{
+		if (EditGraphUnit(ctx, e.shaderUid, e.stage, *unit, e.unitType != 0, [](auto&) {}))
+		{
+			ctx.events.Emit(neurus::RenderGraphFlushRequested{});
+			if (e.result) e.result->ok = true;
+			return;
+		}
 		if (e.unitType == 0)
 		{
 			unit->parsed = neurus::ShaderParser::ParseShaderCode(unit->code, type);
@@ -399,6 +424,8 @@ void OnUnitCodeRestored(const neurus::ShaderUnitCodeRestored& e,
 	neurus::ShaderUnit* unit =
 		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
 	if (!unit) return;
+	if (EditGraphUnit(ctx, e.shaderUid, e.stage, *unit, false, [&](auto& draft) { draft.code = e.code; }))
+		return;
 	unit->code = e.code;
 	unit->BumpVersion();
 	neurus::notify::Mutated(ctx.events);
@@ -412,6 +439,8 @@ void OnUnitStructRestored(const neurus::ShaderUnitStructRestored& e,
 	neurus::ShaderUnit* unit =
 		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
 	if (!unit) return;
+	if (EditGraphUnit(ctx, e.shaderUid, e.stage, *unit, true, [&](auto& draft) { draft.parsed = e.parsed; }))
+		return;
 	unit->parsed = e.parsed;
 	unit->BumpVersion();
 	neurus::notify::Mutated(ctx.events);

@@ -83,6 +83,17 @@ const PassPort* PassPorts::Find(const std::string_view name,
 	return nullptr;
 }
 
+const PassPort* PassPorts::FindRole(const PassPort& role) const
+{
+	for (const PassPort& port : ports)
+	{
+		if (port.direction == role.direction && port.type == role.type
+		    && port.binding == role.binding && port.location == role.location)
+			return &port;
+	}
+	return nullptr;
+}
+
 void PassPorts::Add(const PassPort& port)
 {
 	const PassPort* existing = Find(port.name, port.direction);

@@ -3,6 +3,7 @@
 #include "asset/data/RenderGraphData.hpp"
 #include "editor/events/GraphEvents.hpp"
 #include "editor/operations/Operation.hpp"
+#include "editor/operations/GraphEditState.hpp"
 
 namespace neurus {
 
@@ -55,6 +56,28 @@ private:
 	int m_uid = 0;
 	bool m_present = true;
 	std::shared_ptr<RenderGraphData> m_detached;
+};
+
+class EditRenderGraphOp : public Operation
+{
+public:
+	EditRenderGraphOp() = default;
+	explicit EditRenderGraphOp(GraphEditState state, bool forward = true)
+		: m_state(std::move(state)), m_forward(forward) {}
+
+	void Apply(OperationContext& ctx) override { ctx.events.Emit(RenderGraphEditRestored{m_state, m_forward}); }
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<EditRenderGraphOp>(m_state, !m_forward);
+	}
+	std::string Label() const override { return "Edit Render Graph"; }
+
+	template<class Archive>
+	void serialize(Archive& ar) { ar(cereal::make_nvp("edit", m_state), cereal::make_nvp("forward", m_forward)); }
+
+private:
+	GraphEditState m_state;
+	bool m_forward = true;
 };
 
 } // namespace neurus

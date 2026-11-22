@@ -396,6 +396,7 @@ private:
 	std::unique_ptr<RenderManager> m_renderManager;
 
 	bool                  m_dirty = false;
+	std::uint64_t         m_projectEpoch = 0;
 
 	/**
 	 * @brief The viewport: its own camera, its screen space, and its overlays.

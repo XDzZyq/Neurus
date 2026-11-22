@@ -24,7 +24,8 @@ public:
 	explicit RenderGraphData(RenderGraphTopology topology);
 
 	/// Restores sockets and shader references once the entire pool is available.
-	bool Resolve(const IPortSource& ports, const IResourceLookup& resources, std::vector<std::string>& problems);
+	bool Resolve(const IPortSource& ports, const IResourceLookup& resources, std::vector<std::string>& problems,
+	             const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader = {});
 
 	template<class Archive>
 	void serialize(Archive& ar)

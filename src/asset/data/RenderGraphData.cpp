@@ -56,13 +56,41 @@ CpuPort MakePort(const PassPort& port, std::optional<GraphOutputTag> tag = {})
 
 } // anonymous namespace
 
+std::optional<GraphOutputTag> BuiltInOutputTag(std::string_view kind, std::string_view port)
+{
+	struct Output
+	{
+		std::string_view kind;
+		std::string_view port;
+		GraphOutputTag tag;
+	};
+	static constexpr Output tags[] = {
+		{"GeometryPass", "gPosition", {GraphFormat::Rgba16f,    GraphUsage::ColorSampled}},
+		{"GeometryPass", "gNormal", {GraphFormat::Rgba16f,    GraphUsage::ColorSampled}},
+		{"GeometryPass", "gAlbedo", {GraphFormat::Rgba8Srgb,  GraphUsage::ColorSampled}},
+		{"GeometryPass", "gMetallicRoughness", {GraphFormat::Rgba8Unorm, GraphUsage::ColorSampled}},
+		{"GeometryPass", "gObjectID", {GraphFormat::R32Uint,    GraphUsage::ColorSampled}},
+		{"GeometryPass", "depth", {GraphFormat::D32Sfloat,  GraphUsage::DepthSampled}},
+		{"ShadowDepthPass", "shadow_depth", {GraphFormat::None, GraphUsage::Logical}},
+		{"ShadowIntensityPass", "outputShadow", {GraphFormat::R8Unorm, GraphUsage::StorageSampled,
+		                  GraphExtent::Render, GraphLayers::Lights}},
+		{"SSAOPass", "outputSSAO", {GraphFormat::R8Unorm, GraphUsage::StorageSampled}},
+		{"LightingPass", "outputImage", {GraphFormat::Rgba16f, GraphUsage::StorageSampled}},
+		{"ComposePass", "outputComposed", {GraphFormat::Rgba16f, GraphUsage::StorageSampled}},
+		{"FXAAPass", "outputFXAA", {GraphFormat::Rgba16f, GraphUsage::StorageSampled}},
+	};
+	for (const auto& output : tags)
+		if (output.kind == kind && output.port == port)
+			return output.tag;
+	return {};
+}
+
 RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
 {
 	RenderGraphTopology graph;
 
 	const auto addNode = [&graph, &ports](
-		const std::string& name, const std::string& pass,
-		const std::vector<std::pair<std::string, GraphOutputTag>>& tags) -> NodeType*
+		const std::string& name, const std::string& pass) -> NodeType*
 	{
 		const PassPorts* passPorts = ports.FindPassPorts(pass);
 		if (!passPorts)
@@ -79,18 +107,7 @@ RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
 			node->AddInput(input.name)->data = MakePort(input);
 
 		for (const PassPort& output : passPorts->Outputs())
-		{
-			std::optional<GraphOutputTag> tag;
-			for (const auto& [portName, declared] : tags)
-			{
-				if (portName == output.name)
-				{
-					tag = declared;
-					break;
-				}
-			}
-			node->AddOutput(output.name)->data = MakePort(output, tag);
-		}
+			node->AddOutput(output.name)->data = MakePort(output, BuiltInOutputTag(pass, output.name));
 
 		return node;
 	};
@@ -108,41 +125,13 @@ RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
 		}
 	};
 
-	NodeType* geometry = addNode("geometry", "GeometryPass", {
-		{"gPosition",         {GraphFormat::Rgba16f,    GraphUsage::ColorSampled}},
-		{"gNormal",           {GraphFormat::Rgba16f,    GraphUsage::ColorSampled}},
-		{"gAlbedo",           {GraphFormat::Rgba8Srgb,  GraphUsage::ColorSampled}},
-		{"gMetallicRoughness", {GraphFormat::Rgba8Unorm, GraphUsage::ColorSampled}},
-		{"gObjectID",         {GraphFormat::R32Uint,    GraphUsage::ColorSampled}},
-		{"depth",             {GraphFormat::D32Sfloat,  GraphUsage::DepthSampled}},
-	});
-
-	NodeType* shadowDepth = addNode("shadow_depth", "ShadowDepthPass", {
-		// Per-light cubemaps and sun maps are owned by LightGPU; the graph
-		// carries the dependency as a logical token.
-		{"shadow_depth", {GraphFormat::None, GraphUsage::Logical}},
-	});
-
-	NodeType* shadowIntensity = addNode("shadow_intensity", "ShadowIntensityPass", {
-		{"outputShadow", {GraphFormat::R8Unorm, GraphUsage::StorageSampled,
-		                  GraphExtent::Render, GraphLayers::Lights}},
-	});
-
-	NodeType* ssao = addNode("ssao", "SSAOPass", {
-		{"outputSSAO", {GraphFormat::R8Unorm, GraphUsage::StorageSampled}},
-	});
-
-	NodeType* lighting = addNode("lighting", "LightingPass", {
-		{"outputImage", {GraphFormat::Rgba16f, GraphUsage::StorageSampled}},
-	});
-
-	NodeType* compose = addNode("compose", "ComposePass", {
-		{"outputComposed", {GraphFormat::Rgba16f, GraphUsage::StorageSampled}},
-	});
-
-	NodeType* fxaa = addNode("fxaa", "FXAAPass", {
-		{"outputFXAA", {GraphFormat::Rgba16f, GraphUsage::StorageSampled}},
-	});
+	NodeType* geometry = addNode("geometry", "GeometryPass");
+	NodeType* shadowDepth = addNode("shadow_depth", "ShadowDepthPass");
+	NodeType* shadowIntensity = addNode("shadow_intensity", "ShadowIntensityPass");
+	NodeType* ssao = addNode("ssao", "SSAOPass");
+	NodeType* lighting = addNode("lighting", "LightingPass");
+	NodeType* compose = addNode("compose", "ComposePass");
+	NodeType* fxaa = addNode("fxaa", "FXAAPass");
 
 	// Geometry fans out to SSAO, shadow intensity and lighting.
 	connect(*geometry, "gPosition", *ssao, "gPosition");
@@ -164,6 +153,7 @@ RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
 	connect(*lighting, "outputImage", *compose, "gHDRColor");
 	connect(*compose, "outputComposed", *fxaa, "gInput");
 
+	graph.InferLegacyOutputs();
 	return graph;
 }
 
@@ -208,12 +198,26 @@ std::uint64_t RenderGraphTopology::Hash() const
 		{
 			hashByte(0x09);
 		}
+		const auto hashPort = [&](const CpuPort& port)
+		{
+			hashString(port.name);
+			hashString(port.type);
+			hashByte(static_cast<unsigned char>(port.direction));
+			hashString(std::to_string(port.binding));
+			hashString(std::to_string(port.location));
+		};
+		hashString(std::to_string(node->inputs.size()));
+		for (const auto& input : node->inputs)
+		{
+			hashString(input->name);
+			hashPort(input->data);
+		}
 		hashString(std::to_string(node->outputs.size()));
 		for (const auto& output : node->outputs)
 		{
 			hashByte(0x03);
 			hashString(output->name);
-			hashString(output->data.type);
+			hashPort(output->data);
 			if (output->data.tag)
 			{
 				hashByte(0x04);
@@ -239,7 +243,118 @@ std::uint64_t RenderGraphTopology::Hash() const
 		hashString(connection.to->name);
 	}
 
+	for (const auto& [name, endpoint] : sceneOutputs)
+	{
+		hashString(name);
+		hashString(endpoint.node);
+		hashString(endpoint.port);
+	}
 	return hash;
+}
+
+RenderGraphTopology CloneGraph(const RenderGraphTopology& graph)
+{
+	auto copy = CloneGraph<RenderGraphTopology>(graph);
+	copy.sceneOutputs = graph.sceneOutputs;
+	return copy;
+}
+
+void RenderGraphTopology::InferLegacyOutputs()
+{
+	sceneOutputs.clear();
+	for (const auto& node : nodes)
+	{
+		if (node->data.pass == "FXAAPass")
+			sceneOutputs["color"] = {node->name, "outputFXAA"};
+		else if (node->data.pass == "ComposePass")
+			sceneOutputs.try_emplace("color", GraphEndpoint{node->name, "outputComposed"});
+		else if (node->data.pass == "GeometryPass")
+		{
+			sceneOutputs["depth"] = {node->name, "depth"};
+			sceneOutputs["object_id"] = {node->name, "gObjectID"};
+		}
+	}
+}
+
+std::set<std::string> RenderGraphTopology::ActiveNodes() const
+{
+	std::vector<const NodeType*> pending;
+	for (const auto& [name, endpoint] : sceneOutputs)
+	{
+		for (const auto& node : nodes)
+			if (node->name == endpoint.node)
+				pending.push_back(node.get());
+	}
+	std::set<std::string> active;
+	while (!pending.empty())
+	{
+		const auto* node = pending.back();
+		pending.pop_back();
+		if (!active.insert(node->name).second)
+			continue;
+		for (const auto& input : node->inputs)
+			if (input->source)
+				pending.push_back(input->source->owner);
+	}
+	return active;
+}
+
+PassPorts WithShaderPortNames(const PassPorts& builtin, const PassPorts& shaderPorts)
+{
+	PassPorts result;
+	result.kind = builtin.kind;
+	result.problems = builtin.problems;
+	result.problems.insert(result.problems.end(), shaderPorts.problems.begin(), shaderPorts.problems.end());
+	for (const auto& port : shaderPorts.ports)
+	{
+		if (!builtin.FindRole(port))
+			result.problems.push_back("unsupported shader port '" + port.name + "'");
+	}
+	for (auto role : builtin.ports)
+	{
+		if (const auto* port = shaderPorts.FindRole(role))
+			role.name = port->name;
+		result.Add(role);
+	}
+	return result;
+}
+
+PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
+{
+	const auto* builtin = catalog.FindPassPorts(node.pass);
+	if (!builtin)
+		throw std::invalid_argument("unknown pass kind '" + node.pass + "'");
+	if (!node.shader)
+		return *builtin;
+	const ShaderData* shaders[] = {node.shader.get()};
+	return WithShaderPortNames(*builtin, ExtractPassPorts(node.pass, shaders));
+}
+
+void ReconcilePassPorts(RenderGraphTopology& graph, RenderGraphTopology::NodeType& node, const PassPorts& ports)
+{
+	if (!ports.problems.empty())
+		throw std::invalid_argument(node.name + ": " + ports.problems.front());
+	const auto oldOutputs = graph.sceneOutputs;
+	const auto reconcile = [&](auto& sockets)
+	{
+		for (auto& socket : sockets)
+		{
+			const auto& data = socket->data;
+			const PassPort role{data.name, data.direction, data.type, data.binding, data.location};
+			const auto* port = ports.FindRole(role);
+			if (!port)
+				throw std::invalid_argument(node.name + "." + socket->name + ": incompatible shader socket");
+			if (port->direction == PortDirection::Output)
+			{
+				for (auto& [name, endpoint] : graph.sceneOutputs)
+					if (endpoint.node == node.name && oldOutputs.at(name).port == socket->name)
+						endpoint.port = port->name;
+			}
+			socket->name = socket->data.name = port->name;
+		}
+	};
+	reconcile(node.inputs);
+	reconcile(node.outputs);
 }
 
 RenderGraphData::RenderGraphData(RenderGraphTopology topology)
@@ -248,13 +363,14 @@ RenderGraphData::RenderGraphData(RenderGraphTopology topology)
 }
 
 bool RenderGraphData::Resolve(const IPortSource& ports, const IResourceLookup& resources,
-                              std::vector<std::string>& problems)
+                              std::vector<std::string>& problems,
+                              const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
 {
 	if (!m_pending)
 		return true;
 
 	const size_t previous = problems.size();
-	auto topology = project::FromRecord(*m_pending, ports, problems, &resources);
+	auto topology = project::FromRecord(*m_pending, ports, problems, &resources, acceptsShader);
 	if (problems.size() != previous)
 		return false;
 

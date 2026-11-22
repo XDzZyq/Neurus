@@ -112,10 +112,11 @@ protected:
 		neurus::RenderFrameSnapshot snapshot{};
 		neurus::RenderContext context{};
 		PublishFrame(m_renderer->GetRenderCache(), context, snapshot, &scene, config);
-		ASSERT_NO_THROW(m_renderer->DrawFrame(context));
+		ASSERT_NO_THROW(m_profile = m_renderer->DrawFrame(context));
 		m_renderer->WaitIdle();
 	}
 
+	neurus::FrameProfile m_profile;
 	std::unique_ptr<neurus::UploadManager> m_uploader;
 	std::unique_ptr<neurus::DeferredRenderer> m_renderer;
 	std::shared_ptr<const neurus::BuiltInRenderData> m_defaults =
@@ -164,6 +165,45 @@ TEST_F(RenderGraphPipelineTest, FxaaStaysInTheDocumentWhateverTheConfig)
 	config.r_aa = neurus::AAAlg::FXAA;
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame(&config));
 	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);
+}
+
+TEST_F(RenderGraphPipelineTest, BypassingAndRestoringFxaaChangesActualDispatches)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	ASSERT_NO_FATAL_FAILURE(CreateRenderer());
+	neurus::RenderConfig config;
+	config.r_aa = neurus::AAAlg::FXAA;
+	auto graph = DefaultDocument();
+	auto draw = [&]
+	{
+		PostDocument(neurus::CloneGraph(graph));
+		DrawOneFrame(&config);
+	};
+	auto fxaaDispatches = [&]
+	{
+		uint32_t count = 0;
+		for (const auto& pass : m_profile.passes)
+			if (pass.name == "FXAAPass")
+				count += pass.dispatches;
+		return count;
+	};
+	ASSERT_NO_FATAL_FAILURE(draw());
+	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);
+	EXPECT_GT(fxaaDispatches(), 0u);
+
+	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
+	ASSERT_NO_FATAL_FAILURE(draw());
+	EXPECT_EQ(graph.nodes.size(), 7u);
+	EXPECT_EQ(m_renderer->ScenePassCount(), 6u);
+	EXPECT_EQ(fxaaDispatches(), 0u);
+	EXPECT_FALSE(m_renderer->GetRenderCache().HasResource("fxaa/outputFXAA"));
+
+	graph.sceneOutputs["color"] = {"fxaa", "outputFXAA"};
+	ASSERT_NO_FATAL_FAILURE(draw());
+	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);
+	EXPECT_GT(fxaaDispatches(), 0u);
 }
 
 TEST_F(RenderGraphPipelineTest, EditedDocumentChangesTopology)

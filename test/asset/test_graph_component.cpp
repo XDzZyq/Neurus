@@ -15,6 +15,7 @@
 #include "asset/Project.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "shader/ComputeShader.hpp"
 
 #include <cereal/archives/json.hpp>
@@ -206,8 +207,15 @@ TEST(GraphComponent, PooledGraphRestoresSharedShaderReferences)
 		neurus::ShaderData::ResolveSourcePath("res/shaders/compute/compose.comp.glsl"));
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());
-	graph->nodes[5]->data.shader = shader;
-	graph->nodes[6]->data.shader = shader;
+	auto* compose = graph->nodes[5].get();
+	compose->data.shader = shader;
+	auto* second = graph->AddNode("compose_again", compose->data);
+	for (const auto& input : compose->inputs)
+		second->AddInput(input->name)->data = input->data;
+	for (const auto& output : compose->outputs)
+		second->AddOutput(output->name)->data = output->data;
+	ASSERT_TRUE(graph->Connect(compose->outputs.front().get(), second->inputs.front().get()));
+	graph->sceneOutputs["color"] = {second->name, second->outputs.front()->name};
 
 	neurus::ResourceManager restored;
 	neurus::project::ResourceComponent(restored).LoadJson(SavePool(pool).dump());
@@ -215,12 +223,13 @@ TEST(GraphComponent, PooledGraphRestoresSharedShaderReferences)
 	const auto loaded = restored.Get<neurus::RenderGraphData>(graph->GetObjectID());
 	ASSERT_TRUE(loaded);
 	std::vector<std::string> problems;
-	ASSERT_TRUE(loaded->Resolve(ports, restored, problems));
+	ASSERT_TRUE(loaded->Resolve(ports, restored, problems)) << ::testing::PrintToString(problems);
 	const auto loadedShader = restored.Get<neurus::ComputeShader>(shader->GetObjectID());
 	ASSERT_TRUE(loadedShader);
-	ASSERT_EQ(loaded->nodes.size(), 7u);
+	ASSERT_EQ(loaded->nodes.size(), 8u);
 	EXPECT_EQ(loaded->nodes[5]->data.shader, loadedShader);
-	EXPECT_EQ(loaded->nodes[6]->data.shader, loadedShader);
+	EXPECT_EQ(loaded->nodes[7]->data.shader, loadedShader);
+	EXPECT_TRUE(neurus::ValidateCpuGraph(*loaded, ports).empty());
 	EXPECT_FALSE(loaded->nodes[4]->data.shader);
 }
 

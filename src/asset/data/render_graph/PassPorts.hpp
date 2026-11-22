@@ -62,6 +62,9 @@ struct PassPorts
 	 */
 	const PassPort* Find(std::string_view name, PortDirection direction) const;
 
+	/// @brief Finds a shader port by binding or fragment location, type and direction.
+	const PassPort* FindRole(const PassPort& role) const;
+
 	/// @brief Includes a declaration, recording a conflict if the same port differs.
 	void Add(const PassPort& port);
 

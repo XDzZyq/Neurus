@@ -707,15 +707,13 @@ void DeferredRenderer::CompileDocument()
 
 	m_mainGraph = std::move(*upload.graph);
 
-	const AttachmentName tail = upload.fxaaPresent ? AttachmentName::FXAAOutput
-	                                               : AttachmentName::ComposedOutput;
-	m_overlayEngine->SetSceneTail(tail);
+	m_overlayEngine->SetSceneOutputs(upload.color, upload.depth, upload.objectId);
 
 	m_graphReport.compiled    = true;
 	m_graphReport.scenePasses = m_mainGraph.PassCount();
 
 	NEURUS_LOG("[RenderGraph] compiled " << m_mainGraph.PassCount()
-	           << " passes, tail=" << AttachmentNameToString(tail)
+	           << " passes, color=" << upload.color
 	           << ", hash=" << std::hex << graphHash << std::dec);
 }
 
@@ -745,7 +743,7 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 	// right after a resize, before a frame has drawn at the new extent, has no
 	// ID buffer to read because the resize dropped the screen-space attachments.
 	// The honest answer is "background", i.e. object 0.
-	if (!r_renderCache->HasAttachment(AttachmentName::IDBuffer))
+	if (!m_overlayEngine->HasObjectId() || !r_renderCache->HasAttachment(AttachmentName::IDBuffer))
 	{
 		NEURUS_LOG("[DeferredRenderer] ReadIDBufferPixel: no IDBuffer at "
 		           << extent.width << "x" << extent.height

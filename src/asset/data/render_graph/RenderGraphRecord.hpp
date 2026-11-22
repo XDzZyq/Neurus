@@ -11,12 +11,14 @@
 #include <cereal/types/vector.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace neurus
 {
+class ShaderData;
 class IPortSource;
 class IResourceLookup;
 class RenderGraphTopology;
@@ -108,6 +110,10 @@ struct RenderGraphEdgeRecord
 	std::string to;
 	std::string toPort;
 
+	// The input role survives a missing custom shader even when the saved name was edited.
+	std::string inputType;
+	std::uint32_t inputBinding = 0;
+
 	bool operator==(const RenderGraphEdgeRecord&) const = default;
 
 	/**
@@ -122,16 +128,38 @@ struct RenderGraphEdgeRecord
 		   cereal::make_nvp("fromPort", fromPort),
 		   cereal::make_nvp("to", to),
 		   cereal::make_nvp("toPort", toPort));
+		if constexpr (Archive::is_loading::value)
+		{
+			if (archive::OptionalField(ar, cereal::make_nvp("inputType", inputType)))
+				ar(cereal::make_nvp("inputBinding", inputBinding));
+		}
+		else if (!inputType.empty())
+			ar(cereal::make_nvp("inputType", inputType), cereal::make_nvp("inputBinding", inputBinding));
 	}
 };
 
 /**
  * @brief The whole document in its saved form.
  */
+struct SceneOutputRecord
+{
+	std::string name;
+	std::string node;
+	std::string port;
+	bool operator==(const SceneOutputRecord&) const = default;
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		ar(CEREAL_NVP(name), CEREAL_NVP(node), CEREAL_NVP(port));
+	}
+};
+
 struct RenderGraphRecord
 {
 	std::vector<RenderGraphNodeRecord> nodes;
 	std::vector<RenderGraphEdgeRecord> edges;
+	std::optional<std::vector<SceneOutputRecord>> outputs;
 
 	bool operator==(const RenderGraphRecord&) const = default;
 
@@ -145,6 +173,13 @@ struct RenderGraphRecord
 	{
 		ar(cereal::make_nvp("nodes", nodes),
 		   cereal::make_nvp("edges", edges));
+		if constexpr (Archive::is_loading::value)
+		{
+			if (!archive::OptionalField(ar, cereal::make_nvp("outputs", outputs.emplace())))
+				outputs.reset();
+		}
+		else if (outputs)
+			ar(cereal::make_nvp("outputs", *outputs));
 	}
 };
 
@@ -173,6 +208,7 @@ RenderGraphRecord ToRecord(const RenderGraphTopology& graph);
  */
 RenderGraphTopology FromRecord(const RenderGraphRecord& record, const IPortSource& ports,
                                std::vector<std::string>& problems,
-                               const IResourceLookup* resources = nullptr);
+                               const IResourceLookup* resources = nullptr,
+                               const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader = {});
 
 } // namespace neurus::project

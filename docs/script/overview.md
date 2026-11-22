@@ -75,14 +75,37 @@ print("selected:", [o.name for o in neurus.scene.selection()])
 print("gamma", neurus.render.config.gamma)
 ```
 
-To create an editable graph with the default pass connections, run the following in the project session. Reading `uid` alone leaves project state unchanged.
+### Editing the render graph
+
+Read the effective graph through `neurus.render.graph`. Its `nodes` dictionary maps IDs to pass instances. `edges` lists connections between nodes. The `color`, `depth` and `object_id` entries in `outputs` are scene destinations. Read `socket.source` to find the connected producer and `graph.validate()` for diagnostics with `node`, `port` and `message` fields. Reading a built-in graph leaves its UID unset.
+
+Create the editable graph once, then select a different producer for the scene color. The existing FXAA node and its input wire stay available for later use.
 
 ```python
 import neurus
 
-graph = neurus.render.graph.create()
-print(graph.uid)
+g = neurus.render.graph.create()
+compose = g.nodes["compose"]
+g.connect(compose.outputs["outputComposed"], g.outputs["color"])
 ```
+
+To enable FXAA again, connect `g.nodes["fxaa"].outputs["outputFXAA"]` to `g.outputs["color"]`. A connection replaces any previous producer. Use `disconnect(destination)` to clear a connection. Use `add(kind, id="...")`, `rename(old, new)` and `remove(id)` to change pass instances. Reacquire node and socket handles after removing or renaming their node or opening another project.
+
+A node's `shader` is `None` while it uses the built-in recipe. `create_shader()` copies the recipe's primary shader into the project pool, assigns it and returns the pooled shader. Calling it again returns the assigned shader. Assign another compatible pooled shader to share edits across nodes, or assign `None` to restore the built-in. For example, this script tints geometry red while preserving the background.
+
+```python
+import neurus
+
+compose = neurus.render.graph.create().nodes["compose"]
+shader = compose.create_shader()
+shader.compute.code = shader.compute.code.replace(
+    "vec4(composed, 1.0)", "vec4(composed * vec3(1.0, 0.05, 0.05), 1.0)"
+)
+```
+
+Assigning stage `code` or `parsed` compiles a graph shader automatically. A compatible shader port rename carries connected wires, output tags and scene endpoints with it. To edit an output's allocation tag, read `tag = socket.tag`, change a field such as `tag.extent` using a `neurus.render.GraphExtent` value, then assign `socket.tag = tag`.
+
+Related graph and pass-shader writes in a script share one undo entry. A script can add a pass and wire its sockets in any order that produces a valid final graph. A script exception, invalid shader or invalid final graph discards those edits. Undo and redo restore the graph and affected shader contents together.
 
 `active_camera` and `selection` are **functions**, not properties: each call
 reads the live scene, so a value can never be captured and go stale.
@@ -299,8 +322,7 @@ mesh.shader.remove()
   later does not change a mesh shader that was already created from it.
 - All writes go through typed events, so a script run is one undo entry.
   Creation/replacement is one `ShaderReplaceOp`; compile is non-undoable.
-- A standalone `ComputeShader` can be loaded, edited and compiled, but nothing
-  dispatches it yet.
+- A compatible pooled compute shader can be assigned to a compute pass through its `shader` property.
 - Shader code, IR and pooled names survive project save/reload.
 
 ## Environment

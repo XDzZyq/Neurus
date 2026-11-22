@@ -119,16 +119,12 @@ std::unique_ptr<Pass> PassFactory::Create(std::string_view kind,
 
 std::shared_ptr<Pass> PassFactory::Acquire(std::string_view kind, std::string_view node, std::optional<int> shaderId)
 {
-	if (!shaderId)
-	{
-		return {};
-	}
 	auto shader = ShaderFor(kind, shaderId);
-	for (auto it = m_customPasses.begin(); it != m_customPasses.end();)
+	for (auto it = m_nodePasses.begin(); it != m_nodePasses.end();)
 	{
 		if (it->second.expired())
 		{
-			it = m_customPasses.erase(it);
+			it = m_nodePasses.erase(it);
 		}
 		else
 		{
@@ -136,15 +132,15 @@ std::shared_ptr<Pass> PassFactory::Acquire(std::string_view kind, std::string_vi
 		}
 	}
 	const std::string key = std::string(kind) + "/" + std::string(node) + ":"
-	                      + std::to_string(*shaderId) + ":" + std::to_string(m_cache.ShaderGeneration());
-	if (const auto found = m_customPasses.find(key); found != m_customPasses.end())
+	                      + (shaderId ? std::to_string(*shaderId) + ":" + std::to_string(m_cache.ShaderGeneration()) : "builtin");
+	if (const auto found = m_nodePasses.find(key); found != m_nodePasses.end())
 	{
 		return found->second.lock();
 	}
 	std::shared_ptr<Pass> pass = Create(kind, std::move(shader));
 	if (pass)
 	{
-		m_customPasses.emplace(key, pass);
+		m_nodePasses.emplace(key, pass);
 	}
 	return pass;
 }

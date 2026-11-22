@@ -389,6 +389,12 @@ record immediately. No-op writes (`before == after`, via `RenderConfig`'s
 defaulted `operator==`) are never recorded. `SetRenderConfigOp` is scene-level
 (not UID-based) and deliberately non-mergeable (empty `MergeKey`).
 
+## RenderGraphController
+
+`RenderGraphController` subscribes to graph edit events and coordinates the active document with `RenderManager`. A script can create or rewire nodes, select scene output sockets and change shared pass shaders in one edit. The controller compiles pending shader changes when a script needs the socket interface, validates the final graph and submits its history operation before `ScriptController` closes the run. Rejected edits restore the previous CPU state. Successful edits publish owned upload requests to the renderer.
+
+See [Editing the render graph](../script/overview.md#editing-the-render-graph) for examples.
+
 ## ScriptController
 
 `ScriptController` is the stateless bridge between a script run and the operation

@@ -345,3 +345,80 @@ TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
 	for (const auto& node : withoutPool.nodes)
 		EXPECT_EQ(node->data.shader, nullptr);
 }
+
+TEST(RenderGraphDocument, LegacyDocumentsInferOutputsOnceAndExplicitEmptyOutputsStayEmpty)
+{
+	const auto ports = neurus::test::MakeRealPortSource();
+	auto graph = RenderGraphTopology::Default(ports);
+	auto record = neurus::project::ToRecord(graph);
+	record.outputs.reset();
+	std::vector<std::string> problems;
+	auto restored = neurus::project::FromRecord(Deserialize(Serialize(record)), ports, problems);
+	EXPECT_TRUE(problems.empty());
+	EXPECT_EQ(restored.sceneOutputs, graph.sceneOutputs);
+	ASSERT_TRUE(graph.RemoveNode(FindNode(graph, "fxaa")));
+	record = neurus::project::ToRecord(graph);
+	record.outputs.reset();
+	auto compose = neurus::project::FromRecord(record, ports, problems);
+	EXPECT_EQ(compose.sceneOutputs.at("color"), (neurus::GraphEndpoint{"compose", "outputComposed"}));
+	EXPECT_TRUE(neurus::ValidateCpuGraph(compose, ports).empty());
+
+	record.outputs.emplace();
+	auto disconnected = neurus::project::FromRecord(Deserialize(Serialize(record)), ports, problems);
+	EXPECT_TRUE(disconnected.sceneOutputs.empty());
+	EXPECT_TRUE(HasDiagnostic(neurus::ValidateCpuGraph(disconnected, ports), "", "color"));
+	auto empty = neurus::project::FromRecord({}, ports, problems);
+	EXPECT_TRUE(neurus::ValidateCpuGraph(empty, ports).empty());
+}
+
+TEST(RenderGraphDocument, MissingCustomShaderRecoversRenamedInputsAndSelectedOutputByRole)
+{
+	const auto ports = neurus::test::MakeRealPortSource();
+	auto graph = RenderGraphTopology::Default(ports);
+	auto* compose = FindNode(graph, "compose");
+	compose->data.shader = std::make_shared<TestShader>();
+	auto contract = *ports.FindPassPorts("ComposePass");
+	for (auto& port : contract.ports)
+		port.name = port.direction == neurus::PortDirection::Input ? "customInput" : "customOutput";
+	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
+	neurus::ReconcilePassPorts(graph, *compose, contract);
+	const auto record = Deserialize(Serialize(neurus::project::ToRecord(graph)));
+	EXPECT_EQ(graph.sceneOutputs.at("color").port, "customOutput");
+
+	std::vector<std::string> problems;
+	auto recovered = neurus::project::FromRecord(record, ports, problems);
+	ASSERT_TRUE(problems.empty());
+	EXPECT_TRUE(neurus::ValidateCpuGraph(recovered, ports).empty());
+	EXPECT_EQ(recovered.sceneOutputs.at("color").port, "outputComposed");
+	auto* fxaa = FindNode(recovered, "fxaa");
+	ASSERT_TRUE(fxaa->inputs.front()->source);
+	EXPECT_EQ(fxaa->inputs.front()->source->name, "outputComposed");
+	EXPECT_EQ(FindNode(recovered, "compose")->data.shader, nullptr);
+}
+
+TEST(CpuGraphValidation, EditingThePublicProducerChangesReachabilityAndHash)
+{
+	const auto ports = neurus::test::MakeRealPortSource();
+	const auto graph = RenderGraphTopology::Default(ports);
+	auto bypass = neurus::CloneGraph(graph);
+	bypass.sceneOutputs["color"] = {"compose", "outputComposed"};
+	auto* fxaa = FindNode(bypass, "fxaa");
+	bypass.Disconnect(fxaa->inputs.front()->source, fxaa->inputs.front().get());
+	EXPECT_FALSE(bypass.ActiveNodes().contains("fxaa"));
+	EXPECT_NE(bypass.Hash(), graph.Hash());
+	EXPECT_TRUE(neurus::ValidateCpuGraph(bypass, ports).empty());
+
+	bypass.sceneOutputs["color"] = {"geometry", "gObjectID"};
+	EXPECT_TRUE(HasDiagnostic(neurus::ValidateCpuGraph(bypass, ports), "geometry", "incompatible scene output"));
+	bypass.sceneOutputs["color"] = {"fxaa", "outputFXAA"};
+	EXPECT_TRUE(HasDiagnostic(neurus::ValidateCpuGraph(bypass, ports), "fxaa", "not connected"));
+}
+
+TEST(CpuGraphValidation, PhysicalImageMustMatchItsPassAttachment)
+{
+	const auto ports = neurus::test::MakeRealPortSource();
+	auto graph = RenderGraphTopology::Default(ports);
+	auto* compose = FindNode(graph, "compose");
+	compose->outputs.front()->data.tag->format = neurus::GraphFormat::R32Uint;
+	EXPECT_TRUE(HasDiagnostic(neurus::ValidateCpuGraph(graph, ports), "compose", "incompatible"));
+}

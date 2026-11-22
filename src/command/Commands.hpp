@@ -29,6 +29,7 @@ inline constexpr const char* kObjectDuplicate = "object.duplicate";
 inline constexpr const char* kObjectDelete = "object.delete";
 
 // --- Render settings ---
+inline constexpr const char* kRenderGraphStatus = "render.graph.status";
 inline constexpr const char* kRenderGet = "render.get";
 inline constexpr const char* kRenderSet = "render.set";
 
