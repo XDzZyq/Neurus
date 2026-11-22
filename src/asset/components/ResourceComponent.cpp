@@ -4,6 +4,7 @@
  */
 
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/components/GraphRecordJson.hpp"
 
 #include "core/Log.hpp"
 #include "core/ResourceManager.hpp"
@@ -26,6 +27,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -129,7 +131,6 @@ void ResourceComponent::LoadJson(const std::string& object)
 	{
 		try
 		{
-			const int id = entry.at("key").get<int>();
 			auto& value = entry.at("value");
 			const uint32_t type = value.at("polymorphic_id").get<uint32_t>();
 			if (type == 0)
@@ -144,6 +145,7 @@ void ResourceComponent::LoadJson(const std::string& object)
 				value["polymorphic_name"] = typeNames.at(typeId);
 			}
 
+			const int id = entry.at("key").get<int>();
 			const auto& wrapper = value.at("ptr_wrapper");
 			if (!wrapper.is_object() || !wrapper.contains("id") || !wrapper["id"].is_number_unsigned()
 				|| !wrapper.contains("data") || !wrapper["data"].is_object())
@@ -151,6 +153,16 @@ void ResourceComponent::LoadJson(const std::string& object)
 			const std::string typeName = value.value("polymorphic_name", "");
 			if (typeName.find("Shader") != std::string::npos && !ValidShaderPayloadTypes(wrapper["data"]))
 				throw std::runtime_error("invalid shader payload field type");
+
+			if (typeName == "neurus::RenderGraphData")
+			{
+				const auto& data = wrapper.at("data");
+				const auto& identity = data.at("value0").at("o_id");
+				if (!entry.at("key").is_number_integer() || id < 0 || id == std::numeric_limits<int>::max()
+					|| !identity.is_number_integer() || identity != id || entry.at("key") != id
+					|| !ValidGraphShape(data.at("topology")))
+					throw std::runtime_error("invalid render graph identity or topology");
+			}
 
 			nlohmann::ordered_json single;
 			single["m_resources"]["resources_"] = nlohmann::ordered_json::array({entry});

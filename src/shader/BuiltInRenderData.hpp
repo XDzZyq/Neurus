@@ -7,7 +7,7 @@
 namespace neurus {
 
 class ShaderData;
-class RenderGraphData;
+class RenderGraphTopology;
 class IPortSource;
 
 /**
@@ -24,7 +24,7 @@ public:
 	BuiltInRenderData(const BuiltInRenderData&) = delete;
 	BuiltInRenderData& operator=(const BuiltInRenderData&) = delete;
 
-	const std::shared_ptr<const RenderGraphData>& Graph() const;
+	const std::shared_ptr<const RenderGraphTopology>& Graph() const;
 	const IPortSource& Ports() const;
 	/** @brief Returns the compiled default shader for a recipe name, or null if unknown. */
 	std::shared_ptr<const ShaderData> ShaderFor(std::string_view name) const;

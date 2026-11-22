@@ -8,6 +8,7 @@
 #include "editor/events/CameraEvents.hpp"
 #include "editor/events/EditorEvents.hpp"
 #include "editor/events/GizmoEvents.hpp"
+#include "editor/operations/GraphOperations.hpp"
 #include "editor/events/ShaderEvents.hpp"
 #include "editor/events/SceneEvents.hpp"
 
@@ -54,6 +55,7 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
@@ -224,6 +226,35 @@ void Editor::Initialize()
 	});
 	ed_eventBus.Subscribe<ShaderImportRequested>([this](const ShaderImportRequested& e) {
 		OnShaderImportRequested(e);
+	});
+	ed_eventBus.Subscribe<RenderGraphCreateRequested>([this](const RenderGraphCreateRequested&) {
+		if (m_renderManager->GraphData())
+			return;
+		const auto graph = m_renderManager->CreateGraph();
+		ed_operations.Submit(std::make_unique<CreateRenderGraphOp>(graph->GetObjectID()));
+		notify::Mutated(ed_eventBus);
+	});
+	ed_eventBus.Subscribe<RenderGraphCreationRestored>([this](const RenderGraphCreationRestored& e) {
+		const auto active = m_renderManager->GraphData();
+		if (active && active->GetObjectID() != e.uid)
+			throw std::runtime_error("Graph creation history refers to a different active graph");
+		if (e.present)
+		{
+			if (active)
+				return;
+			if (!e.detached || e.detached->GetObjectID() != e.uid)
+				throw std::runtime_error("Cannot redo graph creation without its detached resource");
+			m_renderManager->RestoreCreatedGraph(e.detached);
+			e.detached.reset();
+		}
+		else
+		{
+			if (!active)
+				throw std::runtime_error("Cannot undo graph creation without its active resource");
+			m_renderManager->RemoveCreatedGraph(active);
+			e.detached = active;
+		}
+		notify::Mutated(ed_eventBus);
 	});
 	ed_eventBus.Subscribe<CameraAddEvent>([this](const CameraAddEvent&) {
 		OnCameraAdd();
@@ -560,7 +591,7 @@ const RenderConfig& Editor::GetRenderConfig() const
 	return m_renderManager->Config();
 }
 
-const RenderGraphData& Editor::GetRenderGraph() const
+const RenderGraphTopology& Editor::GetRenderGraph() const
 {
 	return m_renderManager->Graph();
 }
@@ -779,7 +810,11 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	ctx.config = &m_renderManager->Config();
 	ctx.configProvider = [this]() { return &GetRenderConfig(); };
 	ctx.resources = m_resources.get();
-	ctx.graph = &m_renderManager->Graph();
+	ctx.graphProvider = [this]() {
+		const auto& authored = m_renderManager->GraphData();
+		return ScriptGraphView{ &m_renderManager->Graph(),
+		                        authored ? std::optional<int>(authored->GetObjectID()) : std::nullopt };
+	};
 }
 
 // =========================================================================
@@ -946,8 +981,7 @@ void Editor::BeginLoad()
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
 	m_renderManager->ResetConfig();
-	m_renderManager->GraphData().reset();
-	m_renderManager->PendingRecord().reset();
+	m_renderManager->BeginGraphLoad();
 	ed_operations.Clear(); // History does not span scenes.
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
@@ -973,26 +1007,16 @@ void Editor::FinishLoad()
 
 	// The graph record was read before the pool and the scene were restored, so
 	// it is applied last, when its shaders can be resolved.
-	auto& pending = m_renderManager->PendingRecord();
-	if (pending)
-	{
-		m_renderManager->Restore(*pending);
-		pending.reset();
-	}
-	else
-	{
-		// Only the graph is missing; ConfigComponent already restored settings.
-		m_renderManager->ResetGraph();
-	}
+	m_renderManager->FinishGraphLoad();
 
 	// A loaded document is the saved baseline, not an unsaved edit.
 	m_dirty = false;
 }
 
-void Editor::SetRenderGraph(RenderGraphData graph)
+void Editor::SetRenderGraph(RenderGraphTopology graph)
 {
-	m_renderManager->SetGraph(std::move(graph));
-	MarkDirty();
+	if (m_renderManager->SetGraph(std::move(graph)))
+		MarkDirty();
 }
 
 void Editor::OnMeshImport(const std::string& path)

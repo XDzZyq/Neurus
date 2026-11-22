@@ -8,7 +8,7 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "core/RenderConfig.hpp"
-#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/RenderGraphTopology.hpp"
 #include "asset/data/ImageData.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "shader/ComputeShader.hpp"
@@ -32,7 +32,7 @@ namespace
 constexpr uint32_t kWidth  = 96;
 constexpr uint32_t kHeight = 64;
 
-neurus::RenderGraphData::NodeType* FindNode(neurus::RenderGraphData& graph,
+neurus::RenderGraphTopology::NodeType* FindNode(neurus::RenderGraphTopology& graph,
                                            const std::string& name)
 {
 	for (const auto& node : graph.nodes)
@@ -43,7 +43,7 @@ neurus::RenderGraphData::NodeType* FindNode(neurus::RenderGraphData& graph,
 	return nullptr;
 }
 
-neurus::RenderGraphData::SocketOutT* FindOutput(neurus::RenderGraphData::NodeType& node,
+neurus::RenderGraphTopology::SocketOutT* FindOutput(neurus::RenderGraphTopology::NodeType& node,
                                                const std::string& name)
 {
 	for (const auto& output : node.outputs)
@@ -54,7 +54,7 @@ neurus::RenderGraphData::SocketOutT* FindOutput(neurus::RenderGraphData::NodeTyp
 	return nullptr;
 }
 
-neurus::RenderGraphData::SocketInT* FindInput(neurus::RenderGraphData::NodeType& node,
+neurus::RenderGraphTopology::SocketInT* FindInput(neurus::RenderGraphTopology::NodeType& node,
                                              const std::string& name)
 {
 	for (const auto& input : node.inputs)
@@ -90,15 +90,15 @@ protected:
 		m_renderer->SetUploadManager(m_uploader.get());
 	}
 
-	neurus::RenderGraphData DefaultDocument() const
+	neurus::RenderGraphTopology DefaultDocument() const
 	{
 		return neurus::CloneGraph(*m_defaults->Graph());
 	}
 
-	void PostDocument(neurus::RenderGraphData graph)
+	void PostDocument(neurus::RenderGraphTopology graph)
 	{
 		neurus::CompileRenderGraphRequest request;
-		request.graph = std::make_shared<const neurus::RenderGraphData>(std::move(graph));
+		request.graph = std::make_shared<const neurus::RenderGraphTopology>(std::move(graph));
 		m_renderer->Post(neurus::RenderRequest{std::move(request)});
 	}
 
@@ -140,7 +140,7 @@ TEST_F(RenderGraphPipelineTest, DefaultDocumentCompilesAndDraws)
 	// clear the existing resource plans, including this probe.
 	auto& cache = m_renderer->GetRenderCache();
 	cache.PlanResource("test/probe", {neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled});
-	PostDocument(neurus::RenderGraphData{});
+	PostDocument(neurus::RenderGraphTopology{});
 	PostDocument(DefaultDocument());
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 
@@ -173,10 +173,10 @@ TEST_F(RenderGraphPipelineTest, EditedDocumentChangesTopology)
 
 	ASSERT_NO_FATAL_FAILURE(CreateRenderer());
 
-	neurus::RenderGraphData document = DefaultDocument();
-	neurus::RenderGraphData::NodeType* ssao = FindNode(document, "ssao");
-	neurus::RenderGraphData::NodeType* geometry = FindNode(document, "geometry");
-	neurus::RenderGraphData::NodeType* lighting = FindNode(document, "lighting");
+	neurus::RenderGraphTopology document = DefaultDocument();
+	neurus::RenderGraphTopology::NodeType* ssao = FindNode(document, "ssao");
+	neurus::RenderGraphTopology::NodeType* geometry = FindNode(document, "geometry");
+	neurus::RenderGraphTopology::NodeType* lighting = FindNode(document, "lighting");
 	ASSERT_NE(ssao, nullptr);
 	ASSERT_NE(geometry, nullptr);
 	ASSERT_NE(lighting, nullptr);
@@ -205,7 +205,7 @@ TEST_F(RenderGraphPipelineTest, BadDocumentKeepsPreviousGraph)
 	const size_t previousPasses = m_renderer->ScenePassCount();
 	ASSERT_EQ(previousPasses, 7u);
 
-	neurus::RenderGraphData bad = DefaultDocument();
+	neurus::RenderGraphTopology bad = DefaultDocument();
 	bad.nodes[0]->outputs[0]->data.tag.reset();
 
 	ASSERT_NO_FATAL_FAILURE(PostDocument(std::move(bad)));

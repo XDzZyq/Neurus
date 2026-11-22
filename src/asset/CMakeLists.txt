@@ -12,6 +12,9 @@ add_library(neurus_asset_data STATIC
 	data/RenderGraphData.hpp
 	data/RenderGraphData.cpp
 	data/render_graph/GraphOutputTag.hpp
+	data/render_graph/RenderGraphTopology.hpp
+	data/render_graph/RenderGraphRecord.hpp
+	data/render_graph/RenderGraphRecord.cpp
 	data/render_graph/PortSource.hpp
 	data/render_graph/CpuGraphValidation.hpp
 	data/render_graph/CpuGraphValidation.cpp
@@ -43,6 +46,7 @@ add_library(neurus_asset STATIC
 	components/ConfigComponent.hpp
 	components/ConfigComponent.cpp
 	components/GraphComponent.hpp
+	components/GraphRecordJson.hpp
 	components/GraphComponent.cpp
 	components/SceneComponent.hpp
 	components/SceneComponent.cpp

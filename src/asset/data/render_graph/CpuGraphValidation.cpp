@@ -40,7 +40,7 @@ const PassPort* FindDeclared(const PassPorts& ports, const std::string& name,
 
 } // anonymous namespace
 
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
+std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphTopology& graph,
                                                  const IPortSource& ports)
 {
 	std::vector<CpuGraphDiagnostic> diagnostics;
@@ -114,11 +114,11 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 		}
 	}
 
-	const std::vector<RenderGraphData::NodeType*> cyclic = graph.CyclicNodes();
+	const std::vector<RenderGraphTopology::NodeType*> cyclic = graph.CyclicNodes();
 	if (!cyclic.empty())
 	{
 		std::string names;
-		for (const RenderGraphData::NodeType* node : cyclic)
+		for (const RenderGraphTopology::NodeType* node : cyclic)
 		{
 			if (!names.empty())
 				names += ", ";

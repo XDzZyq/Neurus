@@ -18,9 +18,9 @@ namespace neurus {
 
 namespace {
 
-using NodeType  = RenderGraphData::NodeType;
-using InSocket  = RenderGraphData::SocketInT;
-using OutSocket = RenderGraphData::SocketOutT;
+using NodeType  = RenderGraphTopology::NodeType;
+using InSocket  = RenderGraphTopology::SocketInT;
+using OutSocket = RenderGraphTopology::SocketOutT;
 
 OutSocket* FindOutput(NodeType& node, const std::string_view name)
 {
@@ -56,9 +56,9 @@ CpuPort MakePort(const PassPort& port, std::optional<GraphOutputTag> tag = {})
 
 } // anonymous namespace
 
-RenderGraphData RenderGraphData::Default(const IPortSource& ports)
+RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
 {
-	RenderGraphData graph;
+	RenderGraphTopology graph;
 
 	const auto addNode = [&graph, &ports](
 		const std::string& name, const std::string& pass,
@@ -68,7 +68,7 @@ RenderGraphData RenderGraphData::Default(const IPortSource& ports)
 		if (!passPorts)
 		{
 			throw std::runtime_error(
-				"RenderGraphData::Default: no ports for built-in pass '" + pass + "'");
+				"RenderGraphTopology::Default: no ports for built-in pass '" + pass + "'");
 		}
 
 		CpuNode data;
@@ -103,7 +103,7 @@ RenderGraphData RenderGraphData::Default(const IPortSource& ports)
 		if (!output || !input || !graph.Connect(output, input))
 		{
 			throw std::runtime_error(
-				"RenderGraphData::Default: bad default edge '" + from.name + "."
+				"RenderGraphTopology::Default: bad default edge '" + from.name + "."
 				+ fromPort + " -> " + to.name + "." + toPort + "'");
 		}
 	};
@@ -167,7 +167,7 @@ RenderGraphData RenderGraphData::Default(const IPortSource& ports)
 	return graph;
 }
 
-std::uint64_t RenderGraphData::Hash() const
+std::uint64_t RenderGraphTopology::Hash() const
 {
 	constexpr std::uint64_t kOffset = 14695981039346656037ull;
 	constexpr std::uint64_t kPrime  = 1099511628211ull;
@@ -240,6 +240,27 @@ std::uint64_t RenderGraphData::Hash() const
 	}
 
 	return hash;
+}
+
+RenderGraphData::RenderGraphData(RenderGraphTopology topology)
+	: RenderGraphTopology(std::move(topology))
+{
+}
+
+bool RenderGraphData::Resolve(const IPortSource& ports, const IResourceLookup& resources,
+                              std::vector<std::string>& problems)
+{
+	if (!m_pending)
+		return true;
+
+	const size_t previous = problems.size();
+	auto topology = project::FromRecord(*m_pending, ports, problems, &resources);
+	if (problems.size() != previous)
+		return false;
+
+	RenderGraphTopology::operator=(std::move(topology));
+	m_pending.reset();
+	return true;
 }
 
 } // namespace neurus

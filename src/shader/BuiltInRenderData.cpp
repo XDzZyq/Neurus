@@ -3,7 +3,7 @@
 #include "shader/ComputeShader.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/ShaderLibrary.hpp"
-#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/RenderGraphTopology.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
@@ -57,7 +57,7 @@ struct BuiltInRenderData::Impl final : IPortSource
 		return PassExternalInputs(passKind);
 	}
 
-	std::shared_ptr<const RenderGraphData> graph;
+	std::shared_ptr<const RenderGraphTopology> graph;
 	std::unordered_map<std::string, std::shared_ptr<const ShaderData>> shaders;
 	std::unordered_map<std::string, PassPorts> ports;
 };
@@ -86,7 +86,7 @@ BuiltInRenderData::Impl::Impl()
 		}
 		ports.emplace(std::string(kind.name), std::move(contract));
 	}
-	graph = std::make_shared<const RenderGraphData>(RenderGraphData::Default(*this));
+	graph = std::make_shared<const RenderGraphTopology>(RenderGraphTopology::Default(*this));
 }
 
 BuiltInRenderData::BuiltInRenderData() = default;
@@ -101,7 +101,7 @@ const BuiltInRenderData::Impl& BuiltInRenderData::Data() const
 	return *m_impl;
 }
 
-const std::shared_ptr<const RenderGraphData>& BuiltInRenderData::Graph() const
+const std::shared_ptr<const RenderGraphTopology>& BuiltInRenderData::Graph() const
 {
 	return Data().graph;
 }

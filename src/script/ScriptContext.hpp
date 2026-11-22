@@ -16,8 +16,8 @@
 
 #pragma once
 
-#include "asset/data/RenderGraphData.hpp"
 #include <functional>
+#include <optional>
 
 namespace neurus
 {
@@ -25,6 +25,14 @@ namespace neurus
 class Scene;
 class RenderConfig;
 class IResourceLookup;
+class RenderGraphTopology;
+
+/// @brief The current effective graph and the identity of its optional project resource.
+struct ScriptGraphView
+{
+	const RenderGraphTopology* topology = nullptr;
+	std::optional<int> uid;
+};
 
 /**
  * @brief Non-owning view of the state one script may read.
@@ -36,7 +44,8 @@ struct ScriptContext
 	const Scene* scene = nullptr;                ///< Borrowed scene being read.
 	const RenderConfig* config = nullptr;        ///< Borrowed render configuration.
 	const IResourceLookup* resources = nullptr;  ///< Borrowed pool for name/UID lookup.
-	const RenderGraphData* graph = nullptr;       ///< Borrowed render graph document.
+	/// Re-query graph topology and identity after creation or undo in the same run.
+	std::function<ScriptGraphView()> graphProvider;
 	/// Re-query optional config after writes within the same script run.
 	std::function<const RenderConfig*()> configProvider;
 };

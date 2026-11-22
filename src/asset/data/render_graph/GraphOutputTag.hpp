@@ -16,8 +16,6 @@
 
 #include <cstdint>
 
-#include <cereal/cereal.hpp>
-
 namespace neurus {
 
 /// @brief Image format an output socket allocates.
@@ -66,20 +64,6 @@ struct GraphOutputTag
 	GraphLayers layers = GraphLayers::Single;
 
 	bool operator==(const GraphOutputTag&) const = default;
-
-	/**
-	 * @brief Serializes the four tag fields.
-	 * @tparam Archive Cereal archive type.
-	 * @param ar Archive to read or write.
-	 */
-	template<class Archive>
-	void serialize(Archive& ar)
-	{
-		ar(cereal::make_nvp("format", format),
-		   cereal::make_nvp("usage", usage),
-		   cereal::make_nvp("extent", extent),
-		   cereal::make_nvp("layers", layers));
-	}
 };
 
 } // namespace neurus

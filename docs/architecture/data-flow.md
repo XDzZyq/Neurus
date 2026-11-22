@@ -159,15 +159,15 @@ never executes an Editor callable, so later edits cannot alter queued upload dat
 
 CPU preparation calls `MakeUploadShaderRequest` while shader data is safe to
 read, copying SPIR-V and required reflection/port metadata into an owned typed
-request. `RenderManager::Publish()` clones graph topology and posts
+request. `RenderManager::Publish()` clones the active graph's `RenderGraphTopology` and posts
 `CompileRenderGraphRequest{graph}` after the required shader uploads. FIFO
 execution gives the mapper a populated GPU cache. Null graph or shader selections
 use built-in recipes through the same CPU preparation, upload and cache path.
 Defaults do not materialize project data.
 
 `UploadManager` creates `ShaderGPU` and `RenderCache` indexes it by shader UID.
-The one-way `GraphMorphism<RenderGraphData, RenderGraph>` resolves node shader UIDs
-against that cache and may read/write cache resources while mapping. It never
+`GraphUploader` maps `RenderGraphTopology` onto `RenderGraph::GraphT` through a
+one-way `GraphMorphism`. It resolves node shader UIDs against the GPU cache. It never
 reads mutable shader source, IR, SPIR-V or CPU version fields. Passes consume GPU
 shader modules and own their pipelines. Reuploading an existing UID changes the
 GPU cache revision and refreshes dependent passes/graphs; resource references

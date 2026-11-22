@@ -17,8 +17,11 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <fstream>
 #include <string>
 #include <utility>
+
+#include <nlohmann/json.hpp>
 
 #include "glm/glm.hpp"
 
@@ -26,9 +29,11 @@
 #include "editor/project/EditorComponent.hpp"
 #include "editor/project/HistoryComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/components/GraphComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "core/ResourceManager.hpp"
 #include "editor/Editor.hpp"
+#include "editor/RenderManager.hpp"
 #include "editor/operations/ScriptOperations.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
@@ -73,6 +78,8 @@ struct TempFile
 void BuildProject(project::Project& proj, Editor& editor)
 {
 	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
+	auto& render = editor.GetRenderManager();
+	proj.Register<project::GraphComponent>(render.PendingRecord(), render.GraphData());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::HistoryComponent>(editor.GetOperations());
 	proj.Register<project::EditorComponent>(editor.GetViewport());
@@ -165,4 +172,70 @@ TEST(ScriptFileRoundTripTest, HistoryLabelAndUndoSurviveProjectSaveAndLoad)
 
 	ASSERT_EQ(editor.GetHistory().redo.size(), 1u);
 	EXPECT_EQ(editor.GetHistory().redo.front(), kLabel);
+}
+
+TEST(ScriptFileRoundTripTest, CreatedGraphUndoAndRedoPreserveOnePooledIdentityAcrossReloads)
+{
+	Editor editor(nullptr);
+	editor.Initialize();
+	editor.NewScene();
+	ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	engine.SetEventQueue(&editor.GetEventQueue());
+	ScriptContext ctx;
+	editor.UpdateScriptContext(ctx);
+	const auto& graph = editor.GetRenderManager().GraphData();
+	const auto& resources = editor.GetResourceManager();
+	const auto before = resources.Size();
+
+	ASSERT_TRUE(engine.RunStringChecked(R"(
+import neurus
+g = neurus.render.graph
+assert g.uid is None
+assert g.create() is g
+assert isinstance(g.uid, int)
+assert g.create().uid == g.uid
+)", &ctx));
+	ASSERT_TRUE(graph);
+	const int uid = graph->GetObjectID();
+	EXPECT_EQ(resources.Get<RenderGraphData>(uid), graph);
+	EXPECT_EQ(resources.Size(), before + 1);
+	EXPECT_TRUE(editor.IsDirty());
+	ASSERT_EQ(editor.GetHistory().undo.size(), 1u);
+
+	editor.ClearDirty();
+	ASSERT_TRUE(engine.RunStringChecked("import neurus\nneurus.render.graph.create()", &ctx));
+	EXPECT_FALSE(editor.IsDirty());
+	ASSERT_EQ(editor.GetHistory().undo.size(), 1u);
+
+	TempFile tmp("test_script_graph_history.neurus.json");
+	SaveProject(tmp.path, editor);
+	LoadProject(tmp.path, editor);
+	ASSERT_TRUE(graph);
+	ASSERT_EQ(graph->GetObjectID(), uid);
+
+	editor.GetOperations().Undo();
+	ASSERT_FALSE(graph);
+	EXPECT_FALSE(resources.Contains(uid));
+	EXPECT_EQ(editor.GetHistory().redo.size(), 1u);
+	SaveProject(tmp.path, editor);
+	{
+		std::ifstream saved(tmp.path);
+		const auto project = nlohmann::json::parse(saved).at("project");
+		EXPECT_FALSE(project.contains("proj_render_graph"));
+		for (const auto& entry : project.at("m_resources").at("resources_"))
+			EXPECT_NE(entry.at("key").get<int>(), uid);
+	}
+
+	LoadProject(tmp.path, editor);
+	ASSERT_FALSE(graph);
+	ASSERT_FALSE(resources.Contains(uid));
+	ASSERT_EQ(editor.GetHistory().redo.size(), 1u);
+	editor.GetOperations().Redo();
+	ASSERT_TRUE(graph);
+	EXPECT_EQ(graph->GetObjectID(), uid);
+	EXPECT_EQ(resources.Get<RenderGraphData>(uid), graph);
+	EXPECT_EQ(graph->nodes.size(), 7u);
+	for (const auto& node : graph->nodes)
+		EXPECT_FALSE(node->data.shader);
 }

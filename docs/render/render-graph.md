@@ -4,7 +4,7 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 ## The document
 
-`RenderGraphData` (`src/asset/data/RenderGraphData.hpp`) derives from `core::Graph`, which keeps the document the same shape as the runtime graph:
+`RenderGraphData` is a pooled `UID` resource. Its movable `RenderGraphTopology` base holds the pass graph used for editing and publication. `src/asset/data/render_graph/RenderGraphTopology.hpp` defines this value using `Graph<CpuPort, CpuNode>`.
 
 - a node payload, `CpuNode`, holds the pass kind, a `shared_ptr<const ShaderData>` shader reference and the graph-editor position; `Graph::Node::name` is the document id;
 - a socket payload, `CpuPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
@@ -12,7 +12,9 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 `GraphOutputTag` (`src/asset/data/render_graph/GraphOutputTag.hpp`) is the closed set described in [Resources](#resources).
 
-The Editor owns the live document. `GraphComponent` (`src/asset/components/GraphComponent.hpp`) owns the `proj_render_graph` schema: the flat `RenderGraphRecord`, its node/edge/port records, and `ToRecord`/`FromRecord`, the only crossing between the live graph and the archive. Node fields and output sockets with their tags are saved; selected shaders are written as pooled UID references, while null selections are omitted. Loading resolves authored UIDs against the resource pool and derives input sockets from the built-in port catalog for each node's pass kind. A project without the record, or with a malformed record, keeps its project graph null. The renderer resolves that absence through a cached CPU built-in provider. Those defaults do not populate project pointers or the project resource pool and are omitted on save. A non-null graph with empty node and edge lists is an explicit empty document and remains serialized.
+`RenderManager` holds a nullable `shared_ptr<RenderGraphData>` selecting the active graph. Without an authored graph, the effective topology comes from `BuiltInRenderData`. Reading the graph leaves the pointer null. Calling `neurus.render.graph.create()` copies the built-in topology into the pool and selects it. Its nodes initially use built-in shaders.
+
+The pool stores each authored graph's nodes, output tags and edges in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. `FinishLoad()` resolves selected shader UIDs from the restored pool and derives input sockets from the pass contracts. Loading a valid legacy inline graph creates a pooled resource, including when the graph is explicitly empty. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
 
 `RenderManager::ResetConfig()` clears the stored config pointer. `ResetGraph()`
 clears the stored graph pointer while preserving config. New-scene creation calls
@@ -58,7 +60,7 @@ A failure leaves the previous graph drawing and is reported through `LastGraphRe
 
 ```mermaid
 flowchart LR
-    doc["Published RenderGraphData<br/>topology + owned CPU shader references"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
+    doc["Published RenderGraphTopology<br/>shared CPU shader references"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
     catalog["BuiltInRenderData<br/>IPortSource"] --> validate
     validate --> upload["GraphUploader::Compile<br/>GraphMorphism::Map"]
     catalog --> upload
@@ -106,7 +108,7 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 
 ## Ownership boundary
 
-- Editor: owns nullable project graph/config pointers and explicit pooled shaders. `RenderManager` posts `CompileRenderGraphRequest{graph}`, preserving a null graph as a default-selection request. It never touches a GPU object.
+- The Editor owns the project pool and the nullable active graph and config pointers. `RenderManager` posts `CompileRenderGraphRequest{graph}` with a frozen topology or a null request for the built-in.
 - Renderer: owns `PassFactory`, the uploader, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
 - `RenderConfig` is copied into every published frame and supplies per-frame pass parameters; it no longer decides the graph topology, and the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.

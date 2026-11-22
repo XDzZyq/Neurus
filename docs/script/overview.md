@@ -60,6 +60,7 @@ The module is split by subject, not by layer:
   - `.select(objects, additive=False)`, `.clear_selection()` and
     `.delete(objects)` edit selection and scene membership.
 - `neurus.render.config` - the render settings (`gamma`, `pipeline`, ...).
+- `neurus.render.graph` - the active scene graph. Its `uid` is `None` while the project uses the built-in topology. `create()` creates a pooled copy on first use and returns the active graph on subsequent calls.
 
 ```python
 import neurus
@@ -72,6 +73,15 @@ print("in scene:", len(neurus.scene.meshes))
 print("active:", neurus.scene.active_camera())
 print("selected:", [o.name for o in neurus.scene.selection()])
 print("gamma", neurus.render.config.gamma)
+```
+
+To create an editable graph with the default pass connections, run the following in the project session. Reading `uid` alone leaves project state unchanged.
+
+```python
+import neurus
+
+graph = neurus.render.graph.create()
+print(graph.uid)
 ```
 
 `active_camera` and `selection` are **functions**, not properties: each call

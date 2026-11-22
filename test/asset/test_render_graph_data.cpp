@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/RenderGraphTopology.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "core/ResourceManager.hpp"
 
@@ -45,12 +45,12 @@ neurus::CpuPort InputPort(const std::string& name, const std::uint32_t binding)
 	return port;
 }
 
-void SetInput(neurus::RenderGraphData::SocketInT* socket, const neurus::CpuPort& port)
+void SetInput(neurus::RenderGraphTopology::SocketInT* socket, const neurus::CpuPort& port)
 {
 	socket->data = port;
 }
 
-void SetOutput(neurus::RenderGraphData::SocketOutT* socket, const neurus::CpuPort& port)
+void SetOutput(neurus::RenderGraphTopology::SocketOutT* socket, const neurus::CpuPort& port)
 {
 	socket->data = port;
 }
@@ -59,20 +59,20 @@ void SetOutput(neurus::RenderGraphData::SocketOutT* socket, const neurus::CpuPor
 
 TEST(RenderGraphData, SocketsCarryPassPorts)
 {
-	neurus::RenderGraphData graph;
+	neurus::RenderGraphTopology graph;
 	neurus::CpuNode pass;
 	pass.pass = "GeometryPass";
 	pass.shader = std::make_shared<TestShader>();
 	pass.x = 40.0f;
 	pass.y = 60.0f;
 
-	neurus::RenderGraphData::NodeType* node = graph.AddNode("geometry", pass);
+	neurus::RenderGraphTopology::NodeType* node = graph.AddNode("geometry", pass);
 	SetOutput(node->AddOutput("gPosition"),
 	          OutputPort("gPosition", "vec4",
 	                     neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled));
 	SetInput(node->AddInput("gPrevious"), InputPort("gPrevious", 3));
 
-	const neurus::RenderGraphData::NodeType& stored = *graph.nodes[0];
+	const neurus::RenderGraphTopology::NodeType& stored = *graph.nodes[0];
 	EXPECT_EQ(stored.name, "geometry");
 	EXPECT_EQ(stored.data.pass, "GeometryPass");
 	EXPECT_EQ(stored.data.shader, pass.shader);
@@ -92,11 +92,11 @@ TEST(RenderGraphData, SocketsCarryPassPorts)
 
 TEST(RenderGraphData, ClonePreservesPortsAndTags)
 {
-	neurus::RenderGraphData graph;
+	neurus::RenderGraphTopology graph;
 
 	neurus::CpuNode geometry;
 	geometry.pass = "GeometryPass";
-	neurus::RenderGraphData::NodeType* source = graph.AddNode("geometry", geometry);
+	neurus::RenderGraphTopology::NodeType* source = graph.AddNode("geometry", geometry);
 	SetOutput(source->AddOutput("gPosition"),
 	          OutputPort("gPosition", "vec4",
 	                     neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled));
@@ -104,7 +104,7 @@ TEST(RenderGraphData, ClonePreservesPortsAndTags)
 	neurus::CpuNode ssao;
 	ssao.pass = "SSAOPass";
 	ssao.shader = std::make_shared<TestShader>();
-	neurus::RenderGraphData::NodeType* consumer = graph.AddNode("ssao", ssao);
+	neurus::RenderGraphTopology::NodeType* consumer = graph.AddNode("ssao", ssao);
 	SetInput(consumer->AddInput("gPosition"), InputPort("gPosition", 0));
 	SetOutput(consumer->AddOutput("outputSSAO"),
 	          OutputPort("outputSSAO", "image2D",
@@ -112,7 +112,7 @@ TEST(RenderGraphData, ClonePreservesPortsAndTags)
 
 	ASSERT_TRUE(graph.Connect(source->outputs[0].get(), consumer->inputs[0].get()));
 
-	const neurus::RenderGraphData copy = neurus::CloneGraph(graph);
+	const neurus::RenderGraphTopology copy = neurus::CloneGraph(graph);
 
 	ASSERT_EQ(copy.nodes.size(), 2u);
 	EXPECT_EQ(copy.nodes[0]->name, "geometry");
@@ -138,7 +138,7 @@ TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<TestShader>();
 	const std::weak_ptr<const neurus::ShaderData> lifetime = shader;
-	neurus::RenderGraphData graph;
+	neurus::RenderGraphTopology graph;
 	neurus::CpuNode data;
 	data.shader = shader;
 	graph.AddNode("custom", data);
@@ -154,7 +154,7 @@ TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
 
 TEST(RenderGraphData, HashIncludesShaderIdentityButExcludesShaderContentAndLayout)
 {
-	neurus::RenderGraphData graph;
+	neurus::RenderGraphTopology graph;
 	auto* node = graph.AddNode("custom");
 	const auto defaultHash = graph.Hash();
 	auto shader = std::make_shared<TestShader>();

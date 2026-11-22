@@ -73,9 +73,10 @@ short working reference.
   `asset/data/shader/`. It owns source IO and path resolution. CPU parsing,
   generation, compilation and high-level RenderShader/ComputeShader belong under
   `shader/` in `neurus_shader`.
-- Live graph nodes own pooled shaders with `shared_ptr<const ShaderData>`; null
-  selects a default. Publish cloned topology and read only stable shader UIDs on
-  the render thread, never mutable source, IR, SPIR-V or CPU version fields.
+- Keep authored `RenderGraphData` in the resource pool. `proj_render_graph` saves
+  its active UID. On publication clone the `RenderGraphTopology` value. Nodes hold
+  `shared_ptr<const ShaderData>` references, with null selecting a built-in. The
+  render thread reads the shader UID and consumes the uploaded GPU resource.
   CPU `MakeUploadShaderRequest` copies SPIR-V and required reflection/port metadata
   into owned typed requests before FIFO graph mapping. UploadManager constructs
   ShaderGPU; RenderCache owns/indexes it; passes consume modules and own pipelines.

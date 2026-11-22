@@ -44,12 +44,14 @@ add_library(neurus_editor STATIC
 	operations/OperationManager.cpp
 	operations/SceneOperations.hpp
 	operations/ConfigOperations.hpp
+	operations/GraphOperations.hpp
 	operations/ShaderOperations.hpp
 	operations/ScriptOperations.hpp
 	operations/registrations/OperationRegistration.hpp
 	operations/registrations/OperationRegistration.cpp
 	events/GizmoEvents.hpp
 	events/ScriptEvents.hpp
+	events/GraphEvents.hpp
 )
 
 # Qt lives in the UI layer. UIEvents (the Qt signal bus) and Input.cpp (the

@@ -7,8 +7,8 @@
 
 #include "shared/TestPassPorts.hpp"
 
-#include "asset/components/GraphComponent.hpp"
-#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
+#include "asset/data/render_graph/RenderGraphTopology.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "core/ResourceManager.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
@@ -33,9 +33,9 @@ using neurus::project::RenderGraphEdgeRecord;
 using neurus::project::RenderGraphNodeRecord;
 using neurus::project::RenderGraphRecord;
 using neurus::CpuGraphDiagnostic;
-using neurus::RenderGraphData;
+using neurus::RenderGraphTopology;
 
-const RenderGraphData::NodeType* FindNode(const RenderGraphData& graph,
+const RenderGraphTopology::NodeType* FindNode(const RenderGraphTopology& graph,
                                          const std::string& name)
 {
 	for (const auto& node : graph.nodes)
@@ -46,7 +46,7 @@ const RenderGraphData::NodeType* FindNode(const RenderGraphData& graph,
 	return nullptr;
 }
 
-RenderGraphData::NodeType* FindNode(RenderGraphData& graph, const std::string& name)
+RenderGraphTopology::NodeType* FindNode(RenderGraphTopology& graph, const std::string& name)
 {
 	for (const auto& node : graph.nodes)
 	{
@@ -100,7 +100,7 @@ bool HasProblem(const std::vector<std::string>& problems, const std::string& fra
 TEST(RenderGraphDocument, DefaultGraph)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	const RenderGraphData graph = neurus::RenderGraphData::Default(ports);
+	const RenderGraphTopology graph = neurus::RenderGraphTopology::Default(ports);
 
 	ASSERT_EQ(graph.nodes.size(), 7u);
 	const std::vector<std::string> expected = {
@@ -137,14 +137,14 @@ TEST(RenderGraphDocument, DefaultGraph)
 TEST(RenderGraphDocument, RoundTripPreservesTopology)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	const RenderGraphData graph = neurus::RenderGraphData::Default(ports);
+	const RenderGraphTopology graph = neurus::RenderGraphTopology::Default(ports);
 	const RenderGraphRecord original = neurus::project::ToRecord(graph);
 
 	const RenderGraphRecord restored = Deserialize(Serialize(original));
 	EXPECT_EQ(restored, original);
 
 	std::vector<std::string> problems;
-	const RenderGraphData copy = neurus::project::FromRecord(restored, ports, problems);
+	const RenderGraphTopology copy = neurus::project::FromRecord(restored, ports, problems);
 	EXPECT_TRUE(problems.empty());
 	EXPECT_EQ(neurus::project::ToRecord(copy), original);
 
@@ -173,7 +173,7 @@ TEST(RenderGraphDocument, InputsComeFromShaders)
 	record.nodes.push_back(node);
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::project::FromRecord(record, ports, problems);
+	const RenderGraphTopology graph = neurus::project::FromRecord(record, ports, problems);
 	EXPECT_TRUE(problems.empty());
 
 	ASSERT_EQ(graph.nodes.size(), 1u);
@@ -210,7 +210,7 @@ TEST(RenderGraphDocument, DoubleProducerIsReportedAtLoad)
 	};
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::project::FromRecord(record, ports, problems);
+	const RenderGraphTopology graph = neurus::project::FromRecord(record, ports, problems);
 	EXPECT_EQ(graph.nodes.size(), 2u);
 	ASSERT_EQ(problems.size(), 1u);
 	EXPECT_NE(problems[0].find("more than one producer"), std::string::npos);
@@ -227,7 +227,7 @@ TEST(RenderGraphDocument, UnknownPassIsNamed)
 	record.nodes.push_back(node);
 
 	std::vector<std::string> problems;
-	const RenderGraphData graph = neurus::project::FromRecord(record, ports, problems);
+	const RenderGraphTopology graph = neurus::project::FromRecord(record, ports, problems);
 	EXPECT_TRUE(HasProblem(problems, "unknown pass kind"));
 
 	const std::vector<CpuGraphDiagnostic> diagnostics =
@@ -238,9 +238,9 @@ TEST(RenderGraphDocument, UnknownPassIsNamed)
 TEST(CpuGraphValidation, MissingTagIsNamed)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
+	RenderGraphTopology graph = neurus::RenderGraphTopology::Default(ports);
 
-	RenderGraphData::NodeType* geometry = FindNode(graph, "geometry");
+	RenderGraphTopology::NodeType* geometry = FindNode(graph, "geometry");
 	ASSERT_NE(geometry, nullptr);
 	geometry->outputs[0]->data.tag.reset();
 
@@ -252,9 +252,9 @@ TEST(CpuGraphValidation, MissingTagIsNamed)
 TEST(CpuGraphValidation, StaleOutputPortIsReported)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
+	RenderGraphTopology graph = neurus::RenderGraphTopology::Default(ports);
 
-	RenderGraphData::NodeType* geometry = FindNode(graph, "geometry");
+	RenderGraphTopology::NodeType* geometry = FindNode(graph, "geometry");
 	ASSERT_NE(geometry, nullptr);
 	geometry->AddOutput("ghost")->data =
 		neurus::CpuPort{"ghost", neurus::PortDirection::Output, "vec4", 0, 0,
@@ -269,17 +269,17 @@ TEST(CpuGraphValidation, StaleOutputPortIsReported)
 TEST(CpuGraphValidation, CycleIsNamed)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
-	RenderGraphData graph = neurus::RenderGraphData::Default(ports);
+	RenderGraphTopology graph = neurus::RenderGraphTopology::Default(ports);
 
 	// Wire a back edge by hand: Connect refuses a cycle, the public sockets do
 	// not, and validation must still name it.
-	RenderGraphData::NodeType* geometry = FindNode(graph, "geometry");
-	RenderGraphData::NodeType* lighting = FindNode(graph, "lighting");
+	RenderGraphTopology::NodeType* geometry = FindNode(graph, "geometry");
+	RenderGraphTopology::NodeType* lighting = FindNode(graph, "lighting");
 	ASSERT_NE(geometry, nullptr);
 	ASSERT_NE(lighting, nullptr);
 
-	RenderGraphData::SocketOutT* lightingOut = lighting->outputs[0].get();
-	RenderGraphData::SocketInT* geometryIn = geometry->inputs.empty()
+	RenderGraphTopology::SocketOutT* lightingOut = lighting->outputs[0].get();
+	RenderGraphTopology::SocketInT* geometryIn = geometry->inputs.empty()
 		? geometry->AddInput("gInput")
 		: geometry->inputs[0].get();
 
@@ -304,7 +304,7 @@ TEST(RenderGraphDocument, SavedShaderUidResolvesToOwnedPoolResource)
 	auto& stage = shader->GetStage(neurus::ShaderType::COMPUTE);
 	stage.code = "restored content";
 	stage.spv = {1, 2, 3};
-	RenderGraphData graph = RenderGraphData::Default(ports);
+	RenderGraphTopology graph = RenderGraphTopology::Default(ports);
 	graph.nodes[3]->data.shader = shader;
 	const auto record = Deserialize(Serialize(neurus::project::ToRecord(graph)));
 	EXPECT_EQ(record.nodes[3].shaderUid, shader->GetObjectID());
@@ -326,7 +326,7 @@ TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
 	neurus::ResourceManager resources;
 	const auto invalid = resources.Load<TestShader>();
 	const auto wrongType = resources.Load<neurus::UID>();
-	auto record = neurus::project::ToRecord(RenderGraphData::Default(ports));
+	auto record = neurus::project::ToRecord(RenderGraphTopology::Default(ports));
 	record.nodes[0].shaderUid = invalid->GetObjectID();
 	record.nodes[1].shaderUid = wrongType->GetObjectID();
 	record.nodes[2].shaderUid = 2147483647;

@@ -12,7 +12,7 @@
 #include "render/render_graph/ShaderReflection.hpp"
 #include "render_api/RenderRequests.hpp"
 
-#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/RenderGraphTopology.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
@@ -35,7 +35,7 @@ using GpuNode   = RenderGraph::NodeT;
 using GpuOutput = RenderGraph::SocketOutT;
 using GpuInput  = RenderGraph::SocketInT;
 
-using RenderGraphMorphism = GraphMorphism<RenderGraphData, RenderGraph::GraphT>;
+using RenderGraphMorphism = GraphMorphism<RenderGraphTopology, RenderGraph::GraphT>;
 
 GpuOutput* FindOutput(GpuNode& node, const std::string_view name)
 {
@@ -110,7 +110,7 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 	RenderGraphMorphism::Policy policy;
 
 	policy.createNode = [&factory, &portCatalog](RenderGraph::GraphT& target,
-	                               const RenderGraphData::NodeType& node) -> GpuNode*
+	                               const RenderGraphTopology::NodeType& node) -> GpuNode*
 	{
 		const PassPorts* ports = portCatalog.FindPassPorts(node.data.pass);
 		if (!ports)
@@ -137,13 +137,13 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 		return gpu;
 	};
 
-	policy.createOutput = [](GpuNode& node, const RenderGraphData::SocketOutT& port)
+	policy.createOutput = [](GpuNode& node, const RenderGraphTopology::SocketOutT& port)
 		-> GpuOutput*
 	{
 		return FindOutput(node, port.name);
 	};
 
-	policy.createInput = [](GpuNode& node, const RenderGraphData::SocketInT& port)
+	policy.createInput = [](GpuNode& node, const RenderGraphTopology::SocketInT& port)
 		-> GpuInput*
 	{
 		return FindInput(node, port.name);
@@ -155,7 +155,7 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 } // anonymous namespace
 
 GraphUploader::GraphUploader(PassFactory& factory, const IPortSource& portCatalog,
-                             std::shared_ptr<const RenderGraphData> defaultGraph)
+                             std::shared_ptr<const RenderGraphTopology> defaultGraph)
 	: m_factory(factory)
 	, m_portCatalog(portCatalog)
 	, m_defaultGraph(std::move(defaultGraph))
@@ -181,7 +181,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 {
 	GraphUploadResult result;
 
-	const RenderGraphData& document = *m_document;
+	const RenderGraphTopology& document = *m_document;
 
 	for (const CpuGraphDiagnostic& diagnostic : ValidateCpuGraph(document, m_portCatalog))
 	{

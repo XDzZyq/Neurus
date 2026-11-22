@@ -35,7 +35,7 @@ flowchart LR
     resources["1 - ResourceComponent<br/>the UID pool"]
     scene["2 - SceneComponent<br/>the Scene"]
     config["3 - ConfigComponent<br/>optional config"]
-    graph["4 - GraphComponent<br/>optional graph record"]
+    graph["4 - GraphComponent<br/>optional active graph UID"]
     ui["5 - UIComponent<br/>layout blob"]
     history["6 - HistoryComponent<br/>undo/redo stacks"]
     editor["7 - EditorComponent<br/>viewport camera UID"]
@@ -48,7 +48,7 @@ flowchart LR
 | 1 | `ResourceComponent` | `m_resources` | The `ResourceManager` UID pool |
 | 2 | `SceneComponent` | `m_scene` | The `Scene` |
 | 3 | `ConfigComponent` | `proj_config` | Nullable `shared_ptr<RenderConfig>` |
-| 4 | `GraphComponent` | `proj_render_graph` | Nullable graph plus pending flat record |
+| 4 | `GraphComponent` | `proj_render_graph` | Active graph UID in the resource pool |
 | 5 | `UIComponent` | `ui` | An opaque UI-state string |
 | 6 | `HistoryComponent` | `m_history` | The undo/redo stacks |
 | 7 | `EditorComponent` | `m_editor` | The viewport camera's pool UID |
@@ -77,7 +77,9 @@ Load then wires `Mesh` to `MeshData` / `ShaderData`, `Environment` to `ImageData
 
 A missing, null or unusable whole config stays null and is omitted on save. A present config is constructed with declared defaults, then valid fields are restored independently; malformed fields keep their defaults without discarding valid neighbors. Read-only queries use effective defaults without creating project data. Explicit edits materialize stored config, and undo can restore absence.
 
-`GraphComponent` validates the JSON record shape before cereal reads it, then leaves a pending flat record for the Editor. Missing, malformed or structurally invalid graph data leaves the stored graph null. The renderer resolves null through the cached CPU built-in provider and caches the GPU result; that fallback is never serialized into the project. A non-null empty graph remains an explicit empty document and is saved. Live nodes own shared read-only shader references. Only the saved record stores a shader UID, derived from that reference; null omits the `shader` key (legacy UID `0` also means default). `FromRecord` resolves nonzero UIDs against the restored resource pool. Missing, wrong-type or invalid shaders become null without creating replacement resources. Publication clones topology and shares CPU shader ownership. Owned shader uploads and GPU cache revisions are runtime state and are never serialized. See [Render Graph](../render/render-graph.md).
+`GraphComponent` writes the active graph selection as `"proj_render_graph": {"uid": 42}`. The corresponding `RenderGraphData` entry under `m_resources` owns the `topology` record containing the nodes, output tags and edges. On load the Editor resolves the active UID and wires the graph's authored shader UIDs after the pool has been restored. A missing or unusable shader selects the built-in shader for that node. A null node shader omits its `shader` field on save.
+
+A valid legacy inline `proj_render_graph` with `nodes` and `edges` is adopted into the pool, including a graph with both lists empty. The next save writes the active UID. An absent graph key, unusable graph or unresolved active UID leaves the graph pointer null. A read or render uses the cached built-in topology and preserves the missing key on save. See [Render Graph](../render/render-graph.md).
 
 ## UIComponent: opaque layout blob
 

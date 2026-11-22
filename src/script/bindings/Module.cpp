@@ -53,6 +53,7 @@ void RegisterNeurusModule(py::module_& m)
 	RegisterDataBindings(data);
 	RegisterSceneBindings(scene);
 	RegisterConfigBindings(render);
+	RegisterGraphBindings(render);
 
 	// `neurus.data.scene` is the scene module itself, not a second proxy object.
 	data.attr("scene") = scene;
@@ -68,6 +69,7 @@ void InstallNeurusViews(py::module_& m, const ScriptView* view)
 	InstallDataViews(data, view);
 	InstallSceneViews(scene, view);
 	InstallConfigProxies(render, view);
+	InstallGraphProxy(render, view);
 	InstallShaderViews(shader, data, view);
 }
 

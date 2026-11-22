@@ -12,6 +12,7 @@
 #include <cereal/types/polymorphic.hpp>
 
 #include "editor/operations/ConfigOperations.hpp"
+#include "editor/operations/GraphOperations.hpp"
 #include "editor/operations/Operation.hpp"
 #include "editor/operations/SceneOperations.hpp"
 #include "editor/operations/ScriptOperations.hpp"
@@ -51,6 +52,7 @@ CEREAL_REGISTER_TYPE(neurus::SceneObjectAddOp)
 CEREAL_REGISTER_TYPE(neurus::CompositeOp)
 CEREAL_REGISTER_TYPE(neurus::ScriptRunOp)
 CEREAL_REGISTER_TYPE(neurus::SetRenderConfigOp)
+CEREAL_REGISTER_TYPE(neurus::CreateRenderGraphOp)
 CEREAL_REGISTER_TYPE(neurus::SetShaderCodeOp)
 CEREAL_REGISTER_TYPE(neurus::SetShaderFieldOp)
 CEREAL_REGISTER_TYPE(neurus::AddShaderFieldOp)
@@ -93,6 +95,7 @@ CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SceneObjectAddOp
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::CompositeOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::ScriptRunOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetRenderConfigOp)
+CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::CreateRenderGraphOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetShaderCodeOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::SetShaderFieldOp)
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::Operation, neurus::AddShaderFieldOp)

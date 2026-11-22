@@ -3,14 +3,14 @@
  * @brief Editor-owned render state: the graph document, its shaders and the config.
  *
  * The Editor tells the renderer what to draw through two values: `RenderConfig`
- * (copied into every frame snapshot) and `RenderGraphData` (published as a
+ * (copied into every frame snapshot) and `RenderGraphTopology` (published as a
  * compile request). Stored config and graph pointers stay null when the project
  * selects defaults. Effective reads use cached built-ins without adding them to
  * the project's resource pool or serialization.
  *
  * It is a state service, not a controller: it does not record operations, emit
  * events or mark the project dirty. Controllers and the Editor write through
- * `EditConfig()`, `SetGraph()` and `Restore()`, and the Editor owns the undo and
+ * `EditConfig()`, `SetGraph()` and `FinishGraphLoad()`, and the Editor owns the undo and
  * dirty policy around those writes.
  */
 
@@ -65,23 +65,25 @@ public:
 	 */
 	void ResetGraph();
 
-	/**
-	 * @brief Applies a saved document after a project load.
-	 *
-	 * The pool must already hold the project's shaders. Missing shader references
-	 * select cached built-ins; invalid graphs select the implicit default graph.
-	 * The config is left as the project restored it.
-	 *
-	 * @param record  Saved document.
-	 */
-	void Restore(const project::RenderGraphRecord& record);
+	/// @brief Drops the outgoing selection before deserializing a new project.
+	void BeginGraphLoad();
+
+	/// @brief Resolves pooled shader links and the active graph after the pool loads.
+	void FinishGraphLoad();
+
+	/// @brief Materializes the effective default once as a project-owned resource.
+	std::shared_ptr<RenderGraphData> CreateGraph();
+
+	/// @brief Replays membership of the resource retained by a graph creation operation.
+	void RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph);
+	void RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph);
 
 	/**
 	 * @brief Replaces the document and publishes it.
 	 *
 	 * Missing shader references select built-ins without populating the pool.
 	 */
-	void SetGraph(RenderGraphData graph);
+	bool SetGraph(RenderGraphTopology graph);
 
 	const RenderConfig& Config() const { return m_config ? *m_config : DefaultRenderConfig(); }
 	RenderConfig& EditConfig();
@@ -89,8 +91,7 @@ public:
 	const std::shared_ptr<RenderConfig>& ConfigData() const { return m_config; }
 
 	/// @brief Effective read-only graph; reading a default never materializes project data.
-	const RenderGraphData& Graph() const;
-	std::shared_ptr<RenderGraphData>& GraphData() { return m_graph; }
+	const RenderGraphTopology& Graph() const;
 	const std::shared_ptr<RenderGraphData>& GraphData() const { return m_graph; }
 
 	/// @brief Uploads distinct selected shaders, then publishes cloned topology with shared references.
@@ -100,21 +101,18 @@ public:
 	bool ReferencesShader(int uid) const;
 
 	/// @brief Record read from a project, applied by the Editor's FinishLoad.
-	std::optional<project::RenderGraphRecord>& PendingRecord() { return m_pending; }
+	std::optional<project::GraphSelection>& PendingRecord() { return m_pending; }
 
 	/// @brief Problems from the last load and validation pass.
 	const std::vector<std::string>& Problems() const { return m_problems; }
 
 private:
-	/// @brief Rejects a broken loaded graph without changing other project data.
-	void ValidateGraph();
-
 	ResourceManager&   m_resources;
 	RenderRequestSink* m_sink;
 	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::shared_ptr<RenderConfig> m_config;
 	std::shared_ptr<RenderGraphData> m_graph;
-	std::optional<project::RenderGraphRecord> m_pending;
+	std::optional<project::GraphSelection> m_pending;
 	std::vector<std::string> m_problems;
 };
 

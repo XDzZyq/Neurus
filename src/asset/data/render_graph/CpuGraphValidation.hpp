@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/RenderGraphTopology.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
 #include <string>
@@ -40,7 +40,7 @@ struct CpuGraphDiagnostic
  * @param ports  Pass-kind port source.
  * @return One entry per problem; empty when the document is valid.
  */
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
+std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphTopology& graph,
                                                  const IPortSource& ports);
 
 } // namespace neurus

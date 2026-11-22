@@ -9,9 +9,9 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 write-only sink, context and profiling values, and CPU overlay payloads. It is
 Qt-free and Vulkan-free and depends only on CPU asset data, scene and core types.
 Editor and UI include these contracts without linking renderer implementation.
-Graph requests carry cloned `RenderGraphData` topology with shared CPU shader
-ownership. Owned shader upload requests carry bytecode and metadata separately;
-the graph mapper reads only stable shader UIDs and resolves renderer GPU data.
+Graph requests carry an immutable `RenderGraphTopology` with shared CPU shader
+references. Shader upload requests carry bytecode and metadata. The graph mapper
+uses stable shader UIDs to resolve the uploaded GPU resources.
 
 ## Renderer Layer (`src/render/`)
 
@@ -33,8 +33,8 @@ the graph mapper reads only stable shader UIDs and resolves renderer GPU data.
   GizmoPass into `OverlayOutput`, which the renderer then blits to the
   swapchain. The scene image is never presented directly, so an overlay-only
   change redraws without re-running a scene pass
-- Builds the runtime scene graph from the Editor's `RenderGraphData` document:
-  the `GraphUploader` service maps pass kinds and cached GPU shaders to `PassFactory` instances,
+- Builds the runtime scene graph from the published `RenderGraphTopology`.
+  `GraphUploader` maps pass kinds and cached GPU shaders to `PassFactory` instances,
   maps every node and connection through a `GraphMorphism` local to each compile, and its
   output tags plan the `RenderCache` resources. `RenderConfig` supplies
   per-frame pass parameters only
@@ -68,9 +68,9 @@ the graph mapper reads only stable shader UIDs and resolves renderer GPU data.
   command is buffered into one history entry
 - Produces the renderer's owned `RenderFrameSnapshot` via `BuildSnapshot()`.
   Application queries the scene and config to assemble the UI-owned `UIContext`.
-- Owns `RenderManager`, whose project config and graph are nullable
-  `shared_ptr` values. Null selects built-in defaults and is omitted on save;
-  reading effective settings or graph data never materializes project data
+- Owns `RenderManager`. Its active graph pointer selects a pooled `RenderGraphData`.
+  Null graph and config pointers select built-in defaults and omit their respective
+  project keys on save. Reads preserve this state
 - Prepares owned shader upload requests on the CPU, then publishes optional
   cloned graph topology through `CompileRenderGraphRequest{graph}` in FIFO order.
   Live nodes own pooled shader references; graph mapping reads only their stable
