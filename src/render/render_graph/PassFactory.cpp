@@ -154,34 +154,4 @@ GeometryPass* PassFactory::Geometry()
 	return static_cast<GeometryPass*>(Find("GeometryPass"));
 }
 
-LightingPass* PassFactory::Lighting()
-{
-	return static_cast<LightingPass*>(Find("LightingPass"));
-}
-
-SSAOPass* PassFactory::SSAO()
-{
-	return static_cast<SSAOPass*>(Find("SSAOPass"));
-}
-
-ShadowDepthPass* PassFactory::ShadowDepth()
-{
-	return static_cast<ShadowDepthPass*>(Find("ShadowDepthPass"));
-}
-
-ShadowIntensityPass* PassFactory::ShadowIntensity()
-{
-	return static_cast<ShadowIntensityPass*>(Find("ShadowIntensityPass"));
-}
-
-ComposePass* PassFactory::Compose()
-{
-	return static_cast<ComposePass*>(Find("ComposePass"));
-}
-
-FXAAPass* PassFactory::FXAA()
-{
-	return static_cast<FXAAPass*>(Find("FXAAPass"));
-}
-
 } // namespace neurus

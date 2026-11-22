@@ -88,7 +88,6 @@ protected:
 		neurus::CompileRenderGraphRequest request;
 		request.graph = std::make_shared<const neurus::RenderGraphData>(std::move(document));
 		m_uploader->SetPending(request);
-		m_uploader->ConsumeNewDocument();
 	}
 
 	neurus::GraphUploadResult Compile(neurus::RenderGraphData document)
@@ -259,7 +258,6 @@ TEST_F(GraphUploaderTest, NullDocumentResolvesCachedBuiltInGraph)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	EXPECT_TRUE(m_uploader->HasDocument());
 	EXPECT_EQ(m_uploader->DocumentHash(), m_defaults->Graph()->Hash());
 	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
 
@@ -269,34 +267,15 @@ TEST_F(GraphUploaderTest, NullDocumentResolvesCachedBuiltInGraph)
 	EXPECT_TRUE(upload.fxaaPresent);
 }
 
-TEST_F(GraphUploaderTest, RepeatedNullRequestDoesNotInvalidateCachedDocument)
-{
-	if (!HasVulkan())
-		GTEST_SKIP() << "No Vulkan-capable GPU found.";
-
-	ASSERT_TRUE(m_uploader->ConsumeNewDocument());
-	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
-	ASSERT_TRUE(upload.errors.empty());
-	ASSERT_NE(upload.graph, nullptr);
-	const auto documentHash = m_uploader->DocumentHash();
-
-	m_uploader->SetPending(neurus::CompileRenderGraphRequest{});
-
-	EXPECT_FALSE(m_uploader->ConsumeNewDocument());
-	EXPECT_EQ(m_uploader->DocumentHash(), documentHash);
-}
-
 TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
 {
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	const auto defaultHash = m_uploader->DocumentHash();
-	m_uploader->ConsumeNewDocument();
 	neurus::CompileRenderGraphRequest empty;
 	empty.graph = std::make_shared<const neurus::RenderGraphData>();
 	m_uploader->SetPending(empty);
-	EXPECT_TRUE(m_uploader->ConsumeNewDocument());
 	EXPECT_NE(m_uploader->DocumentHash(), defaultHash);
 	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
 	ASSERT_TRUE(upload.errors.empty());
@@ -305,7 +284,6 @@ TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
 	EXPECT_FALSE(upload.fxaaPresent);
 
 	m_uploader->SetPending(neurus::CompileRenderGraphRequest{});
-	EXPECT_TRUE(m_uploader->ConsumeNewDocument());
 	EXPECT_EQ(m_uploader->DocumentHash(), defaultHash);
 	upload = m_uploader->Compile(*m_cache);
 	ASSERT_TRUE(upload.errors.empty());

@@ -19,12 +19,6 @@ class Pass;
 class ShaderGPU;
 class RenderCache;
 class GeometryPass;
-class LightingPass;
-class SSAOPass;
-class ShadowDepthPass;
-class ShadowIntensityPass;
-class ComposePass;
-class FXAAPass;
 class SharedQueue;
 
 /**
@@ -72,14 +66,8 @@ public:
 	/** @brief Resolves an uploaded shader ID, or a built-in default when the ID is absent. */
 	std::shared_ptr<const ShaderGPU> ShaderFor(std::string_view kind, std::optional<int> shaderId = std::nullopt);
 
-	// --- Typed accessors for the renderer's request path ---
+	/// @brief Geometry pass used to warm mesh pipelines.
 	GeometryPass* Geometry();
-	LightingPass* Lighting();
-	SSAOPass* SSAO();
-	ShadowDepthPass* ShadowDepth();
-	ShadowIntensityPass* ShadowIntensity();
-	ComposePass* Compose();
-	FXAAPass* FXAA();
 
 private:
 	void Add(std::string kind, std::unique_ptr<Pass> pass);

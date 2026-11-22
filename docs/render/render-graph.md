@@ -38,14 +38,14 @@ Explicit project shaders remain pooled, and live nodes own references to them. P
 
 `ValidateCpuGraph(document, ports)` (`src/asset/data/render_graph/CpuGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CpuGraphDiagnostic` naming the node and, when it has one, the port.
 
-The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`). It owns the published topology and the one-way morphism. `Compile(cache)` prepares the runtime graph:
+The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`). It retains the published topology and maps it directly with a one-way morphism local to each compile. `Compile(cache)` prepares the runtime graph:
 
 1. Shader uploads populate the GPU cache before graph compilation.
 2. The uploader validates the document against the injected `IPortSource` and checks that each selected GPU shader preserves the pass's port, descriptor and push-constant contracts. The Editor uses the same port catalog.
 3. The morphism policy uses `PassFactory` to obtain a pass instance from the selected shader UID or the built-in recipe. It creates runtime sockets from the validated pass contract and maps document edges by socket name.
 4. The morphism checks that the mapping is total and preserves edge endpoints. `RenderGraph::Compile()` caches the execution order and binding plan.
 
-A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. The document hash includes topology and selected shader UIDs, without reading mutable CPU shader content. GPU cache revisions detect same-UID uploads and refresh dependent passes/graphs independently of topology. FXAA is a normal node in the document and always runs, so a render-config change never rebuilds the graph.
+A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. The renderer tracks a compile key made from the published topology hash and shader cache generation. An upload under the same shader UID refreshes the graph even without a new document. FXAA is a normal node in the document and always runs, so a render-config change never rebuilds the graph.
 
 ## The runtime graph
 
@@ -107,7 +107,7 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 ## Ownership boundary
 
 - Editor: owns nullable project graph/config pointers and explicit pooled shaders. `RenderManager` posts `CompileRenderGraphRequest{graph}`, preserving a null graph as a default-selection request. It never touches a GPU object.
-- Renderer: owns `PassFactory`, the uploader and its morphism, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
+- Renderer: owns `PassFactory`, the uploader, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
 - `RenderConfig` is copied into every published frame and supplies per-frame pass parameters; it no longer decides the graph topology, and the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
 

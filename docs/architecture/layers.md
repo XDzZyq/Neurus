@@ -35,7 +35,7 @@ the graph mapper reads only stable shader UIDs and resolves renderer GPU data.
   change redraws without re-running a scene pass
 - Builds the runtime scene graph from the Editor's `RenderGraphData` document:
   the `GraphUploader` service maps pass kinds and cached GPU shaders to `PassFactory` instances,
-  maps every node and connection through a permanent `GraphMorphism`, and its
+  maps every node and connection through a `GraphMorphism` local to each compile, and its
   output tags plan the `RenderCache` resources. `RenderConfig` supplies
   per-frame pass parameters only
 - Consumes the per-frame RenderContext (the renderer's view of the frame: the

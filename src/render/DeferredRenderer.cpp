@@ -420,23 +420,14 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// topology and attachments that produced the converged scene image.
 	if (work == FrameWork::Sample)
 	{
-		// A request and the frame that carries it compile together.
-		const bool newDocument = m_graphUploader->ConsumeNewDocument();
-
-		if (m_graphUploader->HasDocument())
+		const GraphCompileKey key{m_graphUploader->DocumentHash(), r_renderCache->ShaderGeneration()};
+		if (!m_lastGraphCompile || *m_lastGraphCompile != key)
 		{
-			const auto hash = m_graphUploader->DocumentHash();
-			if (newDocument || !m_builtGraphHash || *m_builtGraphHash != hash
-				|| m_builtShaderGeneration != r_renderCache->ShaderGeneration())
-			{
-				DrainInFlightFrames();
-				CompileDocument();
-				m_builtGraphHash = hash;
-				m_builtShaderGeneration = r_renderCache->ShaderGeneration();
-			}
+			DrainInFlightFrames();
+			CompileDocument();
+			m_lastGraphCompile = key;
 		}
 	}
-
 
 	// --- Profiling: read back this slot's GPU timestamps (fence signaled) ---
 	// Resolve() reads the slot about to be reused; the resolved GPU ms are
@@ -692,7 +683,7 @@ void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 	m_requests->SetUploadManager(uploader);
 }
 
-bool DeferredRenderer::CompileDocument()
+void DeferredRenderer::CompileDocument()
 {
 	GraphUploadResult upload = m_graphUploader->Compile(*r_renderCache);
 
@@ -711,7 +702,7 @@ bool DeferredRenderer::CompileDocument()
 			          << (diagnostic.port.empty() ? std::string{} : "." + diagnostic.port)
 			          << ": " << diagnostic.message);
 		}
-		return false;
+		return;
 	}
 
 	m_mainGraph = std::move(*upload.graph);
@@ -726,7 +717,6 @@ bool DeferredRenderer::CompileDocument()
 	NEURUS_LOG("[RenderGraph] compiled " << m_mainGraph.PassCount()
 	           << " passes, tail=" << AttachmentNameToString(tail)
 	           << ", hash=" << std::hex << graphHash << std::dec);
-	return true;
 }
 
 void DeferredRenderer::WaitIdle()

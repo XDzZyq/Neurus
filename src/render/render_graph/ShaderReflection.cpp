@@ -158,13 +158,6 @@ ReflectedDescriptorLayout ReflectLayout(
 	return layout;
 }
 
-std::vector<vk::DescriptorSetLayoutBinding> DescriptorBindingsFromShaders(
-	const std::span<const ShaderData* const> shaders,
-	const std::span<const uint32_t> optionalBindings)
-{
-	return ReflectDescriptorLayout(shaders, optionalBindings).bindings;
-}
-
 template<typename Shader>
 vk::PushConstantRange PushRange(
 	const std::span<const Shader* const> shaders,

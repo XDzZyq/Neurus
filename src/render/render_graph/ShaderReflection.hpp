@@ -44,15 +44,6 @@ ReflectedDescriptorLayout ReflectDescriptorLayout(
 	std::span<const uint32_t> optionalBindings = {});
 
 /**
- * @brief Convenience wrapper returning only the bindings.
- * @param shaders          Shaders owned by the pass.
- * @param optionalBindings Bindings that get PARTIALLY_BOUND.
- */
-std::vector<vk::DescriptorSetLayoutBinding> DescriptorBindingsFromShaders(
-	std::span<const ShaderData* const> shaders,
-	std::span<const uint32_t> optionalBindings = {});
-
-/**
  * @brief The push-constant range covering every declared member, across stages.
  *
  * The size is the maximum of `offset + size` over every member. @p stages is the

@@ -2,13 +2,8 @@
  * @file GraphUploader.hpp
  * @brief Render-side service that maps the Editor's document onto pass instances.
  *
- * This service retains the published CPU document and the permanent
- * `GraphMorphism` to the runtime graph, plus the resulting resource plan.
- * `DeferredRenderer` only asks for a compiled graph and a verdict.
- *
- * Like `UploadManager`, the service is long-lived: constructed once with the
- * pass factory, it keeps its policy and its mapping across uploads and clears
- * only the images when a new document arrives.
+ * Retains the published CPU document. Each compile maps it onto a runtime
+ * graph and plans the resources declared by its output tags.
  */
 
 #pragma once
@@ -58,7 +53,7 @@ struct GraphUploadResult
 /**
  * @brief Maps published documents onto the pass factory's instances.
  *
- * Non-copyable, non-movable (the policy keeps pointers to this service).
+ * Non-copyable, non-movable.
  */
 class GraphUploader
 {
@@ -71,7 +66,6 @@ public:
 	 */
 	GraphUploader(PassFactory& factory, const IPortSource& portCatalog,
 	              std::shared_ptr<const RenderGraphData> defaultGraph);
-	~GraphUploader();
 
 	GraphUploader(const GraphUploader&)            = delete;
 	GraphUploader& operator=(const GraphUploader&) = delete;
@@ -85,35 +79,26 @@ public:
 	 */
 	void SetPending(const CompileRenderGraphRequest& request);
 
-	/**
-	 * @brief True once for a changed published topology.
-	 *
-	 * The frame consumes the flag, so a document is compiled exactly once even
-	 * when uploaded shader resources also changed.
-	 */
-	bool ConsumeNewDocument();
-
-	/// @brief True once a document has been published.
-	bool HasDocument() const;
-
-	/// @brief Hash of topology and selected shader identities; 0 when absent.
-	std::uint64_t DocumentHash() const;
+	/// @brief Cached hash of the published topology and selected shader UIDs.
+	std::uint64_t DocumentHash() const { return m_documentHash; }
 
 	/**
 	 * @brief Compiles the current document into a candidate runtime graph.
 	 *
-	 * Validates the document against the built-in port catalog, maps it through the
-	 * permanent morphism, plans the cache's images from the document's tags, and
-	 * adopts and compiles the runtime graph. On failure the result names every
-	 * problem and carries no graph.
+	 * Validates the document against the port catalog, maps and compiles the
+	 * runtime graph, and plans images from the document's tags. On failure the
+	 * result carries diagnostics and no graph.
 	 *
 	 * @param cache  Resource cache whose plans follow the document.
 	 */
 	GraphUploadResult Compile(RenderCache& cache);
 
 private:
-	struct Impl;
-	std::unique_ptr<Impl> m_impl;
+	PassFactory& m_factory;
+	const IPortSource& m_portCatalog;
+	const std::shared_ptr<const RenderGraphData> m_defaultGraph;
+	std::shared_ptr<const RenderGraphData> m_document;
+	std::uint64_t m_documentHash = 0;
 };
 
 } // namespace neurus

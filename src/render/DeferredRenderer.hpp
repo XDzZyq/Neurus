@@ -385,8 +385,7 @@ private:
 	// --- Polymorphic pass container (owning) ---
 	std::unique_ptr<PassFactory> m_passFactory;
 
-	// Maps published documents onto the passes above; owns the document and the
-	// permanent morphism, so DeferredRenderer never touches the data layer.
+	// Retains and maps the published CPU document onto the passes above.
 	std::unique_ptr<GraphUploader> m_graphUploader;
 
 	// --- Cached raw pointers for zero-cost access (non-owning) ---
@@ -403,9 +402,16 @@ private:
 	// dispatches it and compiles it only when the document or its shaders change.
 	RenderGraph m_mainGraph;
 
-	/// Hash of the published topology and selected shader UIDs.
-	std::optional<std::uint64_t> m_builtGraphHash;
-	std::uint64_t m_builtShaderGeneration = 0;
+	struct GraphCompileKey
+	{
+		std::uint64_t documentHash;
+		std::uint64_t shaderGeneration;
+		bool operator==(const GraphCompileKey&) const = default;
+	};
+	std::optional<GraphCompileKey> m_lastGraphCompile;
+
+	/// @brief Builds the scene graph and stores the verdict in LastGraphReport().
+	void CompileDocument();
 
 public:
 	/// @brief Last compile verdict, including the diagnostics the caller reports.
@@ -416,16 +422,6 @@ public:
 		size_t                       scenePasses = 0;
 		std::vector<GraphDiagnostic> diagnostics;
 	};
-
-	/**
-	 * @brief Compiles the uploader's current document into the live scene graph.
-	 *
-	 * On failure the previous graph keeps drawing and the diagnostics are stored
-	 * in LastGraphReport().
-	 *
-	 * @return true when the document compiled and the graph was replaced.
-	 */
-	bool CompileDocument();
 
 	/// @brief Last compile verdict, for tests and the command layer.
 	const GraphCompileReport& LastGraphReport() const { return m_graphReport; }

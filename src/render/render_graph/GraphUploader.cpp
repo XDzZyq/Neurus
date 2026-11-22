@@ -17,7 +17,6 @@
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
-#include "core/Graph.hpp"
 #include "core/GraphMorphism.hpp"
 
 #include <algorithm>
@@ -105,7 +104,7 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 	                            : std::optional<AttachmentName>(it->second);
 }
 
-/// @brief The policy the service's permanent morphism applies.
+/// @brief Resolves pass instances and socket names during graph compilation.
 RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog)
 {
 	RenderGraphMorphism::Policy policy;
@@ -155,82 +154,36 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 
 } // anonymous namespace
 
-struct GraphUploader::Impl
-{
-	Impl(PassFactory& passFactory, const IPortSource& ports,
-	     std::shared_ptr<const RenderGraphData> builtInGraph)
-		: factory(passFactory)
-		, portCatalog(ports)
-		, morphism(MakePolicy(passFactory, ports))
-		, defaultGraph(std::move(builtInGraph))
-	{
-	}
-
-	PassFactory&                          factory;
-	const IPortSource&                    portCatalog;
-	RenderGraphMorphism                   morphism;   ///< Permanent, reused per document.
-	RenderGraphData                       source;     ///< Owned topology used by the morphism.
-	std::shared_ptr<const RenderGraphData> defaultGraph;
-	std::shared_ptr<const RenderGraphData> document;
-	bool                                  newDocument = false;
-};
-
 GraphUploader::GraphUploader(PassFactory& factory, const IPortSource& portCatalog,
                              std::shared_ptr<const RenderGraphData> defaultGraph)
-	: m_impl(std::make_unique<Impl>(factory, portCatalog, std::move(defaultGraph)))
+	: m_factory(factory)
+	, m_portCatalog(portCatalog)
+	, m_defaultGraph(std::move(defaultGraph))
 {
-	if (!m_impl->defaultGraph)
+	if (!m_defaultGraph)
 	{
 		throw std::invalid_argument("GraphUploader requires a default graph");
 	}
 	SetPending(CompileRenderGraphRequest{});
 }
 
-GraphUploader::~GraphUploader() = default;
-
 void GraphUploader::SetPending(const CompileRenderGraphRequest& request)
 {
-	auto document = request.graph ? request.graph : m_impl->defaultGraph;
-
-	const bool changed = !m_impl->document || m_impl->document->Hash() != document->Hash();
-	// Equivalent topology may carry different resource owners after project load.
-	// Replace the publication even when no topology recompilation is needed.
-	m_impl->document = std::move(document);
-	m_impl->newDocument = m_impl->newDocument || changed;
-}
-
-bool GraphUploader::ConsumeNewDocument()
-{
-	const bool consumed = m_impl->newDocument;
-	m_impl->newDocument = false;
-	return consumed;
-}
-
-bool GraphUploader::HasDocument() const
-{
-	return static_cast<bool>(m_impl->document);
-}
-
-std::uint64_t GraphUploader::DocumentHash() const
-{
-	return m_impl->document ? m_impl->document->Hash() : 0;
+	auto document = request.graph ? request.graph : m_defaultGraph;
+	if (m_document != document)
+	{
+		m_documentHash = document->Hash();
+		m_document = std::move(document);
+	}
 }
 
 GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 {
 	GraphUploadResult result;
 
-	if (!m_impl->document)
-	{
-		result.errors.push_back({{}, {}, "no render graph document"});
-		return result;
-	}
+	const RenderGraphData& document = *m_document;
 
-	// The morphism maps an owned copy: its images point into the source, which
-	// must outlive the mapping, while the Editor's request stays immutable.
-	m_impl->source = CloneGraph(*m_impl->document);
-
-	for (const CpuGraphDiagnostic& diagnostic : ValidateCpuGraph(m_impl->source, m_impl->portCatalog))
+	for (const CpuGraphDiagnostic& diagnostic : ValidateCpuGraph(document, m_portCatalog))
 	{
 		result.errors.push_back({diagnostic.node, diagnostic.port, diagnostic.message});
 	}
@@ -240,7 +193,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	}
 
 	// Only the UID crosses from a live CPU shader reference into GPU mapping.
-	for (const auto& node : m_impl->source.nodes)
+	for (const auto& node : document.nodes)
 	{
 		if (!node->data.shader)
 		{
@@ -249,8 +202,8 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 		try
 		{
 			const int shaderId = node->data.shader->GetObjectID();
-			const auto selected = m_impl->factory.ShaderFor(node->data.pass, shaderId);
-			const auto expected = m_impl->factory.ShaderFor(node->data.pass);
+			const auto selected = m_factory.ShaderFor(node->data.pass, shaderId);
+			const auto expected = m_factory.ShaderFor(node->data.pass);
 			if (!selected || !expected)
 			{
 				continue;
@@ -284,15 +237,18 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	RenderGraph::GraphT target;
 	try
 	{
-		target = m_impl->morphism.Map(m_impl->source);
+		RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog));
+		target = morphism.Map(document);
+		for (const std::string& problem : morphism.Validate().problems)
+		{
+			result.errors.push_back({{}, {}, problem});
+		}
 	}
 	catch (const std::exception& error)
 	{
 		result.errors.push_back({{}, {}, std::string("pass creation failed: ") + error.what()});
 		return result;
 	}
-	for (const std::string& problem : m_impl->morphism.Validate().problems)
-		result.errors.push_back({{}, {}, problem});
 
 	if (!result.errors.empty())
 		return result;
@@ -302,7 +258,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	cache.CleanScreenSpace();
 	cache.ClearResourcePlans();
 
-	for (const auto& node : m_impl->source.nodes)
+	for (const auto& node : document.nodes)
 	{
 		for (const auto& output : node->outputs)
 		{
@@ -311,7 +267,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 		}
 	}
 
-	for (const auto& node : m_impl->source.nodes)
+	for (const auto& node : document.nodes)
 	{
 		for (const auto& output : node->outputs)
 		{
@@ -324,7 +280,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	}
 
 	result.fxaaPresent = std::any_of(
-		m_impl->source.nodes.begin(), m_impl->source.nodes.end(),
+		document.nodes.begin(), document.nodes.end(),
 		[](const auto& node) { return node->data.pass == "FXAAPass"; });
 
 	auto graph = std::make_unique<RenderGraph>();

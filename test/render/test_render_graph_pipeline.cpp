@@ -136,10 +136,15 @@ TEST_F(RenderGraphPipelineTest, DefaultDocumentCompilesAndDraws)
 	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);
 	EXPECT_TRUE(m_renderer->LastGraphReport().diagnostics.empty());
 
-	// An explicit equivalent document remains renderable after startup fallback.
-	ASSERT_NO_FATAL_FAILURE(PostDocument(DefaultDocument()));
+	// Only the final topology in a batch matters. A redundant compile would
+	// clear the existing resource plans, including this probe.
+	auto& cache = m_renderer->GetRenderCache();
+	cache.PlanResource("test/probe", {neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled});
+	PostDocument(neurus::RenderGraphData{});
+	PostDocument(DefaultDocument());
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 
+	EXPECT_TRUE(cache.HasResource("test/probe"));
 	EXPECT_TRUE(m_renderer->LastGraphReport().compiled);
 	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);  // the document always has FXAA
 	EXPECT_TRUE(m_renderer->LastGraphReport().diagnostics.empty());
@@ -241,13 +246,13 @@ TEST_F(RenderGraphPipelineTest, UploadedCustomComposeShaderChangesPixelsAndRetai
 	ASSERT_NE(redUpload.stages.at(neurus::ShaderType::COMPUTE).spv,
 	          greenUpload.stages.at(neurus::ShaderType::COMPUTE).spv);
 
-	const auto drawColor = [&](const neurus::UploadShaderRequest& upload,
-	                           const uint16_t red, const uint16_t green)
+	auto document = DefaultDocument();
+	FindNode(document, "compose")->data.shader = shader;
+	m_renderer->Post(neurus::RenderRequest{redUpload});
+	PostDocument(std::move(document));
+
+	const auto drawColor = [&](const uint16_t red, const uint16_t green)
 	{
-		auto document = DefaultDocument();
-		FindNode(document, "compose")->data.shader = shader;
-		m_renderer->Post(neurus::RenderRequest{upload});
-		PostDocument(std::move(document));
 		DrawOneFrame();
 		ASSERT_TRUE(m_renderer->LastGraphReport().compiled);
 		auto& output = m_renderer->GetRenderCache().GetAttachment(neurus::AttachmentName::ComposedOutput,
@@ -259,7 +264,10 @@ TEST_F(RenderGraphPipelineTest, UploadedCustomComposeShaderChangesPixelsAndRetai
 		EXPECT_EQ(pixel[1], green);
 		EXPECT_EQ(pixel[2], 0u);
 	};
-	drawColor(redUpload, 0x3c00, 0);
-	drawColor(greenUpload, 0, 0x3c00);
-	drawColor(redUpload, 0x3c00, 0);
+	drawColor(0x3c00, 0);
+	// Shader uploads alone invalidate the compiled graph.
+	m_renderer->Post(neurus::RenderRequest{greenUpload});
+	drawColor(0, 0x3c00);
+	m_renderer->Post(neurus::RenderRequest{redUpload});
+	drawColor(0x3c00, 0);
 }
