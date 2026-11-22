@@ -12,7 +12,6 @@
 #include <iterator>
 
 namespace neurus {
-
 // --------------------------------------
 // Constructor - initialises name only; m_stages starts empty
 // --------------------------------------

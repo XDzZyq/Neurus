@@ -1,4 +1,6 @@
 #include "RenderCache.hpp"
+#include "UploadManager.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include "core/Log.hpp"
 #include "render_api/overlay/DebugDrawList.hpp"
@@ -11,14 +13,53 @@
 #include <utility>
 
 namespace neurus {
+// ---------------------------------------------------------------------------
+// Uploaded shaders
+// ---------------------------------------------------------------------------
+
+std::shared_ptr<const ShaderGPU> RenderCache::GetShader(const int id) const
+{
+	const auto found = m_shaders.find(id);
+	return found == m_shaders.end() ? nullptr : found->second;
+}
+
+void RenderCache::UseShader(std::shared_ptr<const ShaderGPU> shader)
+{
+	if (!shader)
+	{
+		throw std::invalid_argument("Cannot cache a null GPU shader");
+	}
+	const int id = shader->GetObjectID();
+	m_shaders.insert_or_assign(id, std::move(shader));
+	++m_shaderGeneration;
+}
+
+std::shared_ptr<const ShaderGPU> RenderCache::EnsureDefaultShader(const std::string_view name)
+{
+	const std::string key(name);
+	if (const auto found = m_defaultShaders.find(key); found != m_defaultShaders.end())
+	{
+		return found->second;
+	}
+	const auto source = m_renderDefaults->ShaderFor(name);
+	if (!source)
+	{
+		throw std::invalid_argument("Unknown default shader " + key);
+	}
+	auto uploaded = UploadManager::UploadShader(*rc_device, MakeUploadShaderRequest(*source));
+	m_defaultShaders.emplace(key, uploaded);
+	return uploaded;
+}
 
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
 RenderCache::RenderCache(const vk::raii::Device& device,
-                       const vk::raii::PhysicalDevice& physicalDevice)
-	: rc_device(&device)
+                       const vk::raii::PhysicalDevice& physicalDevice,
+                       std::shared_ptr<const BuiltInRenderData> renderDefaults)
+	: m_renderDefaults(renderDefaults ? std::move(renderDefaults) : std::make_shared<const BuiltInRenderData>())
+	, rc_device(&device)
 	, rc_physicalDevice(&physicalDevice)
 	, rc_cameraGPU(std::make_unique<CameraGPU>(device, physicalDevice))
 	, rc_debugCache(std::make_unique<DebugCache>(device, physicalDevice))
@@ -356,6 +397,9 @@ void RenderCache::UseMeshGPU(const int objectId, MeshGPU meshGPU)
 
 void RenderCache::Clean()
 {
+	m_shaders.clear();
+	m_defaultShaders.clear();
+	++m_shaderGeneration;
 	rc_attachments.clear();
 	rc_shadowIntensityArray.reset();
 	rc_resources.clear();
@@ -374,6 +418,8 @@ void RenderCache::Clean()
 
 void RenderCache::RemoveSceneResources()
 {
+	m_shaders.clear();
+	++m_shaderGeneration;
 	rc_meshGPUs = std::make_shared<const MeshTable>();
 	rc_environmentGPUs = std::make_shared<const EnvironmentTable>();
 	rc_lightGPUs.clear();

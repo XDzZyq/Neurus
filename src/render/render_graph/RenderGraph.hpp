@@ -21,6 +21,7 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -45,6 +46,7 @@ public:
 	struct PassBody
 	{
 		std::string              id;               ///< Document node id, for resource keys.
+		std::shared_ptr<Pass>     ownedPass;          ///< Custom instance retained by this runtime node.
 		Pass*                    pass = nullptr;   ///< Provides Record().
 		PassIO                   io;               ///< Cached I/O declaration.
 		PassPorts                ports;            ///< Ports from the shader.

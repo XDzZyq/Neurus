@@ -11,12 +11,33 @@ belongs to its resource pool. Null means use defaults and is omitted on save.
 Read-only effective getters do not allocate stored project data. Explicit edits
 materialize values, and config undo restores absence as well as field values.
 
-`BuiltInRenderData` owns cached CPU fallback data separately from the project.
-Renderer resolves defaults through this provider without calling Editor, and
-owns the GPU resources derived from it. The frame mailbox carries effective
-config by value, keeping mutable project pointers off the render thread.
+`ApplicationCore` supplies one `BuiltInRenderData` service to the Editor and
+renderer. The service compiles and caches default CPU shaders, ports and graph
+separately from project data. Renderer owns the GPU resources derived from it.
+The frame mailbox carries effective config by value, keeping mutable project
+pointers off the render thread.
 UI reads a frame-scoped view; scripts re-query config through a read-only
 provider after edits or undo can replace the stored pointer.
+
+## Graph shader ownership
+
+An authoring `CpuNode::shader` is a `shared_ptr<const ShaderData>` owning its
+pooled CPU shader; null selects the pass default. The Editor retains mutable
+access to that resource. Publication clones graph topology, preserving shared
+shader ownership. The graph mapper reads only the stable shader UID from these
+references, never mutable source, parsed IR, SPIR-V or version fields.
+
+CPU preparation copies SPIR-V and required reflection/port metadata into owned
+`UploadShaderRequest` values through `MakeUploadShaderRequest`. FIFO execution
+uploads these before mapping the graph. `UploadManager` constructs `ShaderGPU`;
+`RenderCache` owns and indexes it. Passes consume GPU shader modules and own their
+pass-specific pipelines. Reuploading the same UID changes its GPU cache revision
+and refreshes dependent passes and graphs. Retained resource references and
+frame fences keep resources alive until recorded GPU work has finished.
+
+Defaults follow the same path: built-in recipes are prepared on the CPU, uploaded,
+cached and consumed by passes. CPU defaults stay outside the project pool;
+renderer-owned GPU defaults and custom shaders never change serialized state.
 
 ## Vulkan Ownership Graph
 
@@ -37,7 +58,7 @@ The handles, in full:
   `QVulkanInstance`), `VkSurfaceKHR` from `platform::CreateSurface()`, and the
   `UploadManager`.
 - **Renderer**: `VkSwapchainKHR` (borrowing the surface, device and queue),
-  pipelines and layouts, command pools and buffers, `RenderCache` with its lazy
+  pipelines and layouts, command pools and buffers, `RenderCache` with its uploaded `ShaderGPU` modules and lazy
   `GetAttachment` / `GetShadowMap` / `GetShadowIntensityArray`, and every
   framebuffer attachment.
 - **Through `src/render/` abstractions**: `Buffer` (`GPUBuffer`, `StagingBuffer`,

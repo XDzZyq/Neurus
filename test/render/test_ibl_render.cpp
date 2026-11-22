@@ -161,13 +161,13 @@ protected:
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			dev, pd);
+			*m_renderCache, dev, pd);
 
 		// --- Upload manager for CPU→GPU struct conversion ---
 
 		// --- Lighting pass ---
 		m_lightingPass = std::make_unique<LightingPass>(
-			dev, pd,
+			*m_renderCache, dev, pd,
 			1u);  // single frame
 
 		// --- IBL pass ---
@@ -488,10 +488,10 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	m_geometryPass = std::make_unique<GeometryPass>(
-		dev, pd);
+		*m_renderCache, dev, pd);
 
 	m_lightingPass = std::make_unique<LightingPass>(
-		dev, pd, 1u);
+		*m_renderCache, dev, pd, 1u);
 
 	m_iblPass = std::make_unique<IBLPass>(
 		dev, pd);

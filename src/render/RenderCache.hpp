@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Image.hpp"
+#include "resources/ShaderGPU.hpp"
 #include "asset/data/render_graph/GraphOutputTag.hpp"
 #include "resources/MeshGPU.hpp"
 #include "resources/EnvironmentGPU.hpp"
@@ -23,6 +24,7 @@
 
 namespace neurus {
 
+class BuiltInRenderData;
 struct DebugDrawList;
 struct GizmoDrawList;
 
@@ -100,6 +102,15 @@ enum class AttachmentName
 class RenderCache
 {
 public:
+	/** @brief Current uploaded project shader, or null before upload. */
+	std::shared_ptr<const ShaderGPU> GetShader(int id) const;
+	/** @brief Installs an upload and advances the GPU cache generation. */
+	void UseShader(std::shared_ptr<const ShaderGPU> shader);
+	/** @brief Changes when project shader uploads are installed or cleared. */
+	uint64_t ShaderGeneration() const { return m_shaderGeneration; }
+	/** @brief Resolves a CPU built-in recipe through the uploader and caches its GPU modules. */
+	std::shared_ptr<const ShaderGPU> EnsureDefaultShader(std::string_view name);
+
 	/**
 	 * @brief Constructs the render cache with its always-present GPU resources.
 	 *
@@ -110,9 +121,11 @@ public:
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (retained reference, used for format/memory queries).
+	 * @param renderDefaults    Shared CPU defaults, or null for a local provider.
 	 */
 	RenderCache(const vk::raii::Device& device,
-	            const vk::raii::PhysicalDevice& physicalDevice);
+	            const vk::raii::PhysicalDevice& physicalDevice,
+	            std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
 
 	/**
 	 * @brief Sets the LightingCache (light SSBO storage) for this cache.
@@ -626,6 +639,11 @@ public:
 	void CleanScreenSpace();
 
 private:
+	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
+	std::unordered_map<int, std::shared_ptr<const ShaderGPU>> m_shaders;
+	std::unordered_map<std::string, std::shared_ptr<const ShaderGPU>> m_defaultShaders;
+	uint64_t m_shaderGeneration = 0;
+
 	/** @brief Configuration record for each attachment type. */
 	struct AttachmentConfig
 	{

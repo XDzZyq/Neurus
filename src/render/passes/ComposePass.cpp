@@ -5,6 +5,7 @@
 
 #include "RenderCache.hpp"
 #include "passes/ComposePass.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 
 #include "../PipelineBuilder.hpp"
 #include "DescriptorLayout.hpp"
@@ -13,9 +14,8 @@
 #include "render/Barrier.hpp"
 #include "render_api/RenderContext.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/BuiltInRenderData.hpp"
-#include "shader/ComputeShader.hpp"
+
+
 #include "core/Log.hpp"
 
 #include <stdexcept>
@@ -27,19 +27,19 @@ namespace neurus {
 // Construction
 // ---------------------------------------------------------------------------
 
-ComposePass::ComposePass(const vk::raii::Device& device,
+ComposePass::ComposePass(RenderCache& cache, const vk::raii::Device& device,
                          const vk::raii::PhysicalDevice& physicalDevice,
                          uint32_t numSets)
 	: ComposePass(device, physicalDevice, numSets,
-	              BuiltInRenderData::Get().ComputeShaderFor("compose"))
+	              cache.EnsureDefaultShader(kComposeShaders[0].name))
 {
 }
 
 ComposePass::ComposePass(const vk::raii::Device& device,
                          const vk::raii::PhysicalDevice& physicalDevice,
                          uint32_t numSets,
-                         std::shared_ptr<const ComputeShader> shader)
-	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
+                         std::shared_ptr<const ShaderGPU> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, RequireShader(shader)), numSets)
 	, p_shader(std::move(shader))
 {
 	BuildPipeline(device, "ComposePass");
@@ -68,13 +68,8 @@ void ComposePass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("ComposePass: Compute shader not loaded or invalid");
 	}
 
-	auto spv = p_shader->GetStage(ShaderType::COMPUTE).spv;
-	if (spv.empty())
-		spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-		                             ShaderType::COMPUTE, debugName);
-	vk::ShaderModuleCreateInfo smCI({}, spv);
-	vk::raii::ShaderModule module(device, smCI);
-	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
+	const auto module = p_shader->Module(ShaderType::COMPUTE);
+	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, module, "main");
 
 	vk::PushConstantRange pushRange = MakePushConstantRange(
 		*p_shader, vk::ShaderStageFlagBits::eCompute);
@@ -154,7 +149,7 @@ PassIO ComposePass::GetIO() const
 	return io;
 }
 
-std::vector<const ShaderData*> ComposePass::GetShaders() const
+std::vector<const ShaderGPU*> ComposePass::GetShaders() const
 {
 	return {p_shader.get()};
 }

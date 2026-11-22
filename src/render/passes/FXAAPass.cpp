@@ -1,5 +1,6 @@
 #include "RenderCache.hpp"
 #include "passes/FXAAPass.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 #include "../PipelineBuilder.hpp"
 #include "DescriptorLayout.hpp"
 #include "core/RenderConfig.hpp"
@@ -7,27 +8,26 @@
 #include "Image.hpp"
 #include "render_api/RenderContext.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/BuiltInRenderData.hpp"
-#include "shader/ComputeShader.hpp"
+
+
 #include "core/Log.hpp"
 #include <stdexcept>
 
 namespace neurus {
 
-FXAAPass::FXAAPass(const vk::raii::Device& device,
+FXAAPass::FXAAPass(RenderCache& cache, const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets)
 	: FXAAPass(device, physicalDevice, numSets,
-	           BuiltInRenderData::Get().ComputeShaderFor("fxaa"))
+	           cache.EnsureDefaultShader(kFxaaShaders[0].name))
 {
 }
 
 FXAAPass::FXAAPass(const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets,
-                   std::shared_ptr<const ComputeShader> shader)
-	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
+                   std::shared_ptr<const ShaderGPU> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, RequireShader(shader)), numSets)
 	, p_shader(std::move(shader))
 {
 	// Check format features: linear filtering required for sub-pixel texture() resample
@@ -69,13 +69,8 @@ void FXAAPass::BuildPipeline(const vk::raii::Device& device, const std::string& 
 {
 	if (!p_shader)
 		throw std::runtime_error("FXAAPass: shader invalid");
-	auto spv = p_shader->GetStage(ShaderType::COMPUTE).spv;
-	if (spv.empty())
-		spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-		                             ShaderType::COMPUTE, debugName);
-	vk::ShaderModuleCreateInfo smCI({}, spv);
-	vk::raii::ShaderModule module(device, smCI);
-	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
+	const auto module = p_shader->Module(ShaderType::COMPUTE);
+	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, module, "main");
 	vk::PushConstantRange pc = MakePushConstantRange(
 		*p_shader, vk::ShaderStageFlagBits::eCompute);
 	p_pipelines.push_back(
@@ -143,7 +138,7 @@ PassIO FXAAPass::GetIO() const
 	return io;
 }
 
-std::vector<const ShaderData*> FXAAPass::GetShaders() const
+std::vector<const ShaderGPU*> FXAAPass::GetShaders() const
 {
 	return {p_shader.get()};
 }

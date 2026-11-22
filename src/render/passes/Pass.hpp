@@ -26,6 +26,7 @@ namespace neurus {
 
 class DescriptorSet;
 class ShaderData;
+class ShaderGPU;
 
 /**
  * @brief One buffer descriptor the graph writes for a pass.
@@ -210,29 +211,8 @@ public:
 	 */
 	virtual PassIO GetIO() const { return {}; }
 
-	// --- Port declarations (Stage 1 scene graph) ---
-
-	/**
-	 * @brief Every shader whose declarations contribute ports to this pass.
-	 *
-	 * The graph extracts sampler/image uniforms and fragment outputs from these.
-	 * A pass with no shaders falls back to GetIO() and the legacy socket names.
-	 */
-	virtual std::vector<const ShaderData*> GetShaders() const { return {}; }
-
-	/**
-	 * @brief Outputs the pass writes without a shader binding.
-	 *
-	 * Examples: the G-Buffer depth attachment and the per-light shadow bundle.
-	 */
-	virtual std::vector<PassPort> DeclaredOutputs() const { return {}; }
-
-	/**
-	 * @brief Input ports the pass resolves outside the graph (IBL cubemaps).
-	 *
-	 * An unconnected input is a compile error unless it is named here.
-	 */
-	virtual std::vector<std::string> ExternalInputPorts() const { return {}; }
+	/** @brief Uploaded shaders used to assemble ports when adding a standalone pass. */
+	virtual std::vector<const ShaderGPU*> GetShaders() const { return {}; }
 
 	// --- Pass type queries ---
 

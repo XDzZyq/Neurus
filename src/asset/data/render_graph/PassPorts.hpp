@@ -18,6 +18,7 @@
 namespace neurus {
 
 class ShaderData;
+struct PassKindInfo;
 
 /**
  * @brief Direction of one image port in the graph.
@@ -61,12 +62,24 @@ struct PassPorts
 	 */
 	const PassPort* Find(std::string_view name, PortDirection direction) const;
 
+	/// @brief Includes a declaration, recording a conflict if the same port differs.
+	void Add(const PassPort& port);
+
+	/// @brief Includes another shader's ports and any diagnostics it carries.
+	void Merge(const PassPorts& other);
+
 	/// @brief Every input port, in declaration order.
 	std::vector<PassPort> Inputs() const;
 
 	/// @brief Every output port, in declaration order.
 	std::vector<PassPort> Outputs() const;
 };
+
+/// @brief Adds the kind's outputs without a shader binding, such as depth.
+void AddDeclaredPassOutputs(PassPorts& ports, const PassKindInfo& kind);
+
+/// @brief Returns the kind's externally resolved inputs from the built-in catalog.
+std::vector<std::string> PassExternalInputs(std::string_view passKind);
 
 /// @brief True for a GLSL type that binds as a combined image sampler.
 bool IsSamplerPortType(std::string_view type);

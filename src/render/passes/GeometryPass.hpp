@@ -12,12 +12,12 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "../DescriptorManager.hpp"
 #include "../PipelineBuilder.hpp"
 #include "../buffers/BufferLayout.hpp"
 #include "../resources/CameraGPU.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/RenderShader.hpp"
 #include "Pass.hpp"
 
 #include <glm/glm.hpp>
@@ -50,7 +50,7 @@ public:
 	 *
 	 * @throws std::runtime_error if shader or pipeline creation fails.
 	 */
-	GeometryPass(const vk::raii::Device& device,
+	GeometryPass(RenderCache& cache, const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice);
 
 	/**
@@ -81,33 +81,10 @@ public:
 	                         std::vector<GraphBufferBinding>& out) const override;
 
 	/**
-	 * @brief Compiles the per-mesh G-Buffer pipeline for @p shader if it is missing.
-	 *
-	 * The warm entry point, and the only place a per-mesh pipeline is built:
-	 * compilation reads the live Shader's SPIR-V, so it must run on the Editor
-	 * thread that owns it, before the frame is handed off. Idempotent.
-	 *
-	 * @param cache  Render cache owning the cross-frame pipeline cache.
-	 * @param shader CPU-side Shader to compile (borrowed for the call only).
-	 * @return true if a pipeline for @p shader is cached when this returns;
-	 *         false if the shader carries no usable SPIR-V yet - not an error,
-	 *         Record() draws such a mesh with the pass default.
-	 */
-	bool EnsureMeshPipeline(RenderCache& cache, const ShaderData& shader);
-
-	/**
-	 * @brief Compiles the per-mesh G-Buffer pipeline from a request's SPIR-V.
-	 *
-	 * The one build path: the Shader overload snapshots the live Shader into a
-	 * request and calls this, and the renderer's request drain calls it with a
-	 * request the Editor posted. Building from the request's owned SPIR-V rather
-	 * than a live Shader is the point - a recompile landing before the drain
-	 * cannot change the code under the version it no longer belongs to.
-	 *
-	 * @param cache    Render cache owning the cross-frame pipeline cache.
-	 * @param request  Carries the shader id, version and per-stage SPIR-V.
-	 * @return true if a pipeline for (id, version) is cached when this returns;
-	 *         false if the request carries no usable SPIR-V - not an error.
+	 * @brief Builds the per-mesh pipeline from an already uploaded shader version.
+	 * @param cache Cache owning shader modules and the resulting pipeline.
+	 * @param request Stable shader UID and uploaded version to consume.
+	 * @return True if the pipeline exists; false when its upload is absent.
 	 */
 	bool EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRequest& request);
 
@@ -116,43 +93,30 @@ public:
 	PassIO GetIO() const override;
 
 	/// @brief The built-in G-Buffer shader.
-	std::vector<const ShaderData*> GetShaders() const override;
-
-	/// @brief The depth attachment, which has no fragment output declaration.
-	std::vector<PassPort> DeclaredOutputs() const override;
+	std::vector<const ShaderGPU*> GetShaders() const override;
 
 	/**
 	 * @brief Returns the camera descriptor set layout (set 0).
 	 */
 	const DescriptorSetLayout& GetCameraLayout() const { return p_cameraLayout; }
 
-private:
-	/// @brief Delegating constructor that receives the already-loaded shader.
+public:
+	/// @brief Constructs from a cached uploaded shader.
 	GeometryPass(const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice,
-	             std::shared_ptr<const RenderShader> shader);
+	             std::shared_ptr<const ShaderGPU> shader);
+
+private:
 
 	/**
 	 * @brief Creates the graphics pipeline using PipelineBuilder.
-	 * ShaderModules from the selected immutable CPU RenderShader.
+	 * Shader modules from the selected cached GPU shader.
 	 */
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
 
-	/**
-	 * @brief Creates a per-mesh graphics pipeline from stage SPIR-V.
-	 *
-	 * Builds a graphics pipeline matching the default G-Buffer attachment
-	 * formats and vertex layout. Called only from EnsureMeshPipeline(), i.e.
-	 * only off the frame path.
-	 *
-	 * @param vertexSpv   Vertex-stage SPIR-V, or empty to skip the stage.
-	 * @param fragmentSpv Fragment-stage SPIR-V, or empty to skip the stage.
-	 * @return Fully constructed Pipeline, or an empty Pipeline when neither
-	 *         stage carries SPIR-V.
-	 */
-	Pipeline CreatePerMeshPipeline(const std::vector<uint32_t>& vertexSpv,
-	                               const std::vector<uint32_t>& fragmentSpv);
+	/** @brief Builds a G-Buffer pipeline from uploaded shader modules. */
+	Pipeline CreatePerMeshPipeline(const ShaderGPU& shader);
 	void ConfigureGBufferPipeline(PipelineBuilder& builder);
 
 	// --- Descriptor resources ---
@@ -165,8 +129,8 @@ private:
 
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
-	// --- Shared immutable CPU shader (cached for built-in defaults) ---
-	std::shared_ptr<const RenderShader> p_shader;
+	// --- Cached uploaded shader ---
+	std::shared_ptr<const ShaderGPU> p_shader;
 
 	// --- Vertex input layout ---
 	BufferLayout p_vertexLayout;

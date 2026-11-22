@@ -1,6 +1,8 @@
 #include "asset/components/GraphComponent.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "core/IResourceLookup.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 #include "core/Log.hpp"
 #include "core/Serialize.hpp"
@@ -140,7 +142,7 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph)
 		RenderGraphNodeRecord saved;
 		saved.name      = node->name;
 		saved.pass      = node->data.pass;
-		saved.shaderUid = node->data.shaderUid;
+		saved.shaderUid = node->data.shader ? node->data.shader->GetObjectID() : 0;
 		saved.x         = node->data.x;
 		saved.y         = node->data.y;
 
@@ -173,7 +175,8 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph)
 }
 
 RenderGraphData FromRecord(const RenderGraphRecord& record, const IPortSource& ports,
-                           std::vector<std::string>& problems)
+                           std::vector<std::string>& problems,
+                           const IResourceLookup* resources)
 {
 	RenderGraphData graph;
 	graph.nodes.reserve(record.nodes.size());
@@ -185,7 +188,12 @@ RenderGraphData FromRecord(const RenderGraphRecord& record, const IPortSource& p
 	{
 		CpuNode data;
 		data.pass      = saved.pass;
-		data.shaderUid = saved.shaderUid;
+		if (resources && saved.shaderUid != 0)
+		{
+			auto shader = resources->Get<ShaderData>(saved.shaderUid);
+			if (shader && shader->IsValid())
+				data.shader = std::move(shader);
+		}
 		data.x         = saved.x;
 		data.y         = saved.y;
 

@@ -1,17 +1,18 @@
 /**
  * @file ShaderReflection.cpp
- * @brief Converts the CPU shader interface into Vulkan layout declarations.
+ * @brief Descriptor layout and push-constant reflection from ShaderStruct.
  */
 
 #include "render/render_graph/ShaderReflection.hpp"
-#include "shader/ShaderSnapshotBuilder.hpp"
 
 #include "asset/data/ShaderData.hpp"
-#include "asset/data/shader/ShaderSnapshot.hpp"
+#include "resources/ShaderGPU.hpp"
 
 #include <algorithm>
 #include <array>
 #include <map>
+#include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 
@@ -19,84 +20,141 @@ namespace neurus {
 
 namespace {
 
-/// @brief Converts the snapshot's stage mask to Vulkan shader stage flags.
-vk::ShaderStageFlags StageFlags(const uint32_t mask)
+/// @brief The Vulkan stage flag for one shader stage.
+vk::ShaderStageFlags StageFlags(const ShaderType type)
 {
-	vk::ShaderStageFlags flags;
-	constexpr std::array<ShaderType, 4> stages = {
-		ShaderType::VERTEX, ShaderType::FRAGMENT,
-		ShaderType::COMPUTE, ShaderType::GEOMETRY,
-	};
-	for (const ShaderType stage : stages)
+	switch (type)
 	{
-		if (!(mask & (1u << static_cast<uint32_t>(stage))))
-			continue;
-		switch (stage)
-		{
-		case ShaderType::VERTEX:   flags |= vk::ShaderStageFlagBits::eVertex; break;
-		case ShaderType::FRAGMENT: flags |= vk::ShaderStageFlagBits::eFragment; break;
-		case ShaderType::COMPUTE:  flags |= vk::ShaderStageFlagBits::eCompute; break;
-		case ShaderType::GEOMETRY: flags |= vk::ShaderStageFlagBits::eGeometry; break;
-		}
+	case ShaderType::VERTEX:   return vk::ShaderStageFlagBits::eVertex;
+	case ShaderType::FRAGMENT: return vk::ShaderStageFlagBits::eFragment;
+	case ShaderType::COMPUTE:  return vk::ShaderStageFlagBits::eCompute;
+	case ShaderType::GEOMETRY: return vk::ShaderStageFlagBits::eGeometry;
 	}
-	return flags;
+	return {};
 }
 
-/// @brief Converts the CPU descriptor kind without inspecting live shader IR.
-vk::DescriptorType DescriptorType(const DescriptorKind kind)
+/// @brief The GLSL type string of a uniform declaration.
+std::string UniformType(const S_Uniform& uniform)
 {
-	switch (kind)
-	{
-	case DescriptorKind::CombinedImageSampler: return vk::DescriptorType::eCombinedImageSampler;
-	case DescriptorKind::StorageImage:         return vk::DescriptorType::eStorageImage;
-	case DescriptorKind::UniformBuffer:        return vk::DescriptorType::eUniformBuffer;
-	case DescriptorKind::StorageBuffer:        return vk::DescriptorType::eStorageBuffer;
-	}
-	throw std::invalid_argument("ShaderReflection: unknown descriptor kind");
+	if (!uniform.actualType.empty())
+		return uniform.actualType;
+	return ShaderStruct::ParseType(uniform.type);
+}
+
+/// @brief The descriptor type of a sampler or image uniform, or nullopt when it is neither.
+std::optional<vk::DescriptorType> DescriptorTypeOf(const S_Uniform& uniform)
+{
+	const std::string type = UniformType(uniform);
+	if (type.starts_with("sampler"))
+		return vk::DescriptorType::eCombinedImageSampler;
+	if (type.starts_with("image"))
+		return vk::DescriptorType::eStorageImage;
+	return std::nullopt;
 }
 
 } // anonymous namespace
 
-ReflectedDescriptorLayout ReflectDescriptorLayout(
-	const std::span<const ShaderData* const> shaders,
+template<typename Shader>
+ReflectedDescriptorLayout ReflectLayout(
+	const std::span<const Shader* const> shaders,
 	const std::span<const uint32_t> optionalBindings)
 {
-	// Reflection and validation belong to the CPU snapshot builder. This bridge
-	// only translates descriptors and merges the interfaces of shader variants.
-	std::map<uint32_t, DescriptorBinding> byBinding;
-	for (const ShaderData* shader : shaders)
+	// Sorted by binding, so the returned vectors are deterministic.
+	std::map<uint32_t, vk::DescriptorSetLayoutBinding> byBinding;
+
+	auto add = [&byBinding](const uint32_t binding,
+	                        const vk::DescriptorType type,
+	                        const vk::ShaderStageFlags stageFlags,
+	                        const uint32_t count)
+	{
+		const auto it = byBinding.find(binding);
+		if (it == byBinding.end())
+		{
+			byBinding.emplace(binding,
+			                  vk::DescriptorSetLayoutBinding(binding, type, count, stageFlags));
+			return;
+		}
+
+		if (it->second.descriptorType != type || it->second.descriptorCount != count)
+		{
+			throw std::runtime_error(
+				"ShaderReflection: binding " + std::to_string(binding)
+				+ " is declared with conflicting descriptor types or counts");
+		}
+
+		it->second.stageFlags |= stageFlags;
+	};
+
+	constexpr std::array<ShaderType, 4> kStages = {
+		ShaderType::VERTEX,
+		ShaderType::FRAGMENT,
+		ShaderType::COMPUTE,
+		ShaderType::GEOMETRY,
+	};
+
+	for (const auto* shader : shaders)
 	{
 		if (!shader)
 			continue;
 
-		const ShaderSnapshot snapshot = MakeShaderSnapshot(*shader, optionalBindings);
-		for (const DescriptorBinding& binding : snapshot.bindings)
+		for (const ShaderType stage : kStages)
 		{
-			const auto [it, inserted] = byBinding.emplace(binding.binding, binding);
-			if (inserted)
+			if (!shader->HasStage(stage))
 				continue;
-			if (it->second.kind != binding.kind || it->second.count != binding.count)
+
+			const auto* unit = shader->FindStage(stage);
+			if (!unit)
+				continue;
+
+			const ShaderStruct& ir = unit->parsed;
+			const vk::ShaderStageFlags stageFlags = StageFlags(stage);
+
+			for (const S_Uniform& uniform : ir.uniform_list)
 			{
-				throw std::runtime_error(
-					"ShaderReflection: binding " + std::to_string(binding.binding)
-					+ " is declared with conflicting descriptor types or counts");
+				if (uniform.binding < 0)
+					continue;
+
+				const std::optional<vk::DescriptorType> type = DescriptorTypeOf(uniform);
+				if (!type)
+					continue;
+
+				add(static_cast<uint32_t>(uniform.binding), *type, stageFlags,
+				    static_cast<uint32_t>(std::max(uniform.count, 1)));
 			}
-			it->second.stageMask |= binding.stageMask;
+
+			for (const S_StructDef& block : ir.ubuffer_list)
+			{
+				if (block.binding < 0)
+					continue;
+				add(static_cast<uint32_t>(block.binding),
+				    vk::DescriptorType::eUniformBuffer, stageFlags, 1);
+			}
+
+			for (const S_StructDef& block : ir.SB_list)
+			{
+				if (block.binding < 0)
+					continue;
+				add(static_cast<uint32_t>(block.binding),
+				    vk::DescriptorType::eStorageBuffer, stageFlags, 1);
+			}
 		}
 	}
+
+	const std::set<uint32_t> optional(optionalBindings.begin(), optionalBindings.end());
 
 	ReflectedDescriptorLayout layout;
 	layout.bindings.reserve(byBinding.size());
 	layout.bindingFlags.reserve(byBinding.size());
-	for (const auto& [index, binding] : byBinding)
+
+	for (const auto& [binding, descriptor] : byBinding)
 	{
-		layout.bindings.emplace_back(index, DescriptorType(binding.kind),
-		                            binding.count, StageFlags(binding.stageMask));
+		layout.bindings.push_back(descriptor);
 		layout.bindingFlags.push_back(
-			binding.partiallyBound
+			optional.contains(binding)
 				? vk::DescriptorBindingFlags(vk::DescriptorBindingFlagBits::ePartiallyBound)
 				: vk::DescriptorBindingFlags{});
 	}
+
 	return layout;
 }
 
@@ -107,20 +165,57 @@ std::vector<vk::DescriptorSetLayoutBinding> DescriptorBindingsFromShaders(
 	return ReflectDescriptorLayout(shaders, optionalBindings).bindings;
 }
 
-vk::PushConstantRange PushConstantRangeFromShaders(
-	const std::span<const ShaderData* const> shaders,
+template<typename Shader>
+vk::PushConstantRange PushRange(
+	const std::span<const Shader* const> shaders,
 	const vk::ShaderStageFlags stages)
 {
 	uint32_t size = 0;
-	for (const ShaderData* shader : shaders)
+
+	for (const auto* shader : shaders)
 	{
 		if (!shader)
 			continue;
-		const ShaderSnapshot snapshot = MakeShaderSnapshot(*shader);
-		for (const PushConstantMember& member : snapshot.pushConstants)
-			size = std::max(size, member.offset + member.size);
+
+		for (const ShaderType stage : {ShaderType::VERTEX, ShaderType::FRAGMENT,
+		                               ShaderType::COMPUTE, ShaderType::GEOMETRY})
+		{
+			if (!shader->HasStage(stage))
+				continue;
+
+			const auto* unit = shader->FindStage(stage);
+			if (!unit)
+				continue;
+
+			for (const S_PushConstant& member : unit->parsed.push_constants)
+				size = std::max(size, member.offset + member.size);
+		}
 	}
-	return size == 0 ? vk::PushConstantRange{} : vk::PushConstantRange(stages, 0, size);
+
+	if (size == 0)
+		return vk::PushConstantRange{};
+
+	return vk::PushConstantRange(stages, 0, size);
 }
 
+ReflectedDescriptorLayout ReflectDescriptorLayout(std::span<const ShaderData* const> shaders,
+                                                   std::span<const uint32_t> optional)
+{
+	return ReflectLayout(shaders, optional);
+}
+ReflectedDescriptorLayout ReflectDescriptorLayout(std::span<const ShaderGPU* const> shaders,
+                                                   std::span<const uint32_t> optional)
+{
+	return ReflectLayout(shaders, optional);
+}
+vk::PushConstantRange PushConstantRangeFromShaders(
+	std::span<const ShaderData* const> shaders, vk::ShaderStageFlags stages)
+{
+	return PushRange(shaders, stages);
+}
+vk::PushConstantRange PushConstantRangeFromShaders(
+	std::span<const ShaderGPU* const> shaders, vk::ShaderStageFlags stages)
+{
+	return PushRange(shaders, stages);
+}
 } // namespace neurus

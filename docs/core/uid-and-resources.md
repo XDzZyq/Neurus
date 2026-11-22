@@ -4,13 +4,13 @@
 
 ## UID (`core/UID.hpp`)
 
-`UID` provides globally unique integer IDs:
+`UID` provides globally unique logical resource IDs:
 
 - IDs are sequential and allocated from a static counter (`s_count`).
 - Not thread-safe: IDs should be allocated on the main thread.
 - IDs are never reused, even after object destruction.
 - Value semantics are deleted - `UID` is non-copyable and non-movable, because identity must not be duplicated or transferred. Objects are held via `shared_ptr`, and every UID-derived type (`ObjectID`, `Camera`, `Mesh`, `Light`, `Environment`, `Sprite`, the debug objects, `Scene`, `MeshData`, `ImageData`, `ShaderData`) repeats the ban so the contract is visible where it is inherited.
-- The only duplication path is the pool: `ResourceManager::Load<T>` constructs a fresh object with a new id and the caller copies the fields it wants (`Editor::DuplicateObject`). A copy or move constructor is never the answer, because every id already handed out - scene references, undo records, GPU caches, the pool's own indexes - would silently name a different object.
+- Independent resource duplication goes through the pool: `ResourceManager::Load<T>` constructs a fresh object with a new id and the caller copies the fields it wants (`Editor::DuplicateObject`). A copy or move constructor is never the answer, because every id already handed out - scene references, undo records, GPU caches, the pool's own indexes - would silently name a different object.
 - `GetObjectID()` returns the unique integer; `GetTotalAllocated()` returns the total allocation count, including destroyed objects.
 - `serialize(ar)` writes `o_id`, and on load bumps `s_count` ahead of the loaded id so newly created objects do not collide with restored ones.
 
@@ -43,6 +43,13 @@ classDiagram
 ```
 
 `ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, bound by UID plus cereal polymorphism in the `ResourceManager` pool. `ShaderData`'s concrete leaves are the CPU Shader module's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
+
+A graph clone shares ownership of selected CPU shaders rather than copying
+identity-bearing objects. Owned upload payloads carry a shader UID plus copied
+GPU input data; they allocate no CPU resource identity. Reuploading the same UID
+replaces its renderer cache revision, independently of the resource's stable
+logical identity. Ordinary UID copy/move construction and assignment remain
+deleted, with no special revision-copy path.
 
 ## ObjectID as identity (`scene/ObjectID.hpp`)
 

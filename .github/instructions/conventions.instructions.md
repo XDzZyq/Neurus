@@ -69,12 +69,19 @@ short working reference.
   requests belong under `render_api/` in `neurus_render_api`. It contains no Qt,
   Vulkan, Editor or Renderer implementation headers. UIContext stays in UI;
   Application assembles it from Editor getters.
-- Passive shader data, IR and snapshots belong under `asset/data/shader/`.
-  `ShaderData` owns source text IO and path resolution. CPU shader
-  parsing, generation, compilation, high-level RenderShader/ComputeShader and
-  snapshot construction belong under `shader/` in `neurus_shader`; the builder
-  has its own ShaderSnapshotBuilder header. Renderer helpers translate CPU
-  snapshot metadata into Vulkan declarations.
+- `ShaderData` belongs under `asset/data/`; stage values and IR belong under
+  `asset/data/shader/`. It owns source IO and path resolution. CPU parsing,
+  generation, compilation and high-level RenderShader/ComputeShader belong under
+  `shader/` in `neurus_shader`.
+- Live graph nodes own pooled shaders with `shared_ptr<const ShaderData>`; null
+  selects a default. Publish cloned topology and read only stable shader UIDs on
+  the render thread, never mutable source, IR, SPIR-V or CPU version fields.
+  CPU `MakeUploadShaderRequest` copies SPIR-V and required reflection/port metadata
+  into owned typed requests before FIFO graph mapping. UploadManager constructs
+  ShaderGPU; RenderCache owns/indexes it; passes consume modules and own pipelines.
+  Reuploading a UID refreshes dependent GPU state by cache revision. Resource
+  references and fences preserve lifetime. Persist authored UID references only;
+  defaults follow recipes through CPU preparation/upload/cache outside the pool.
 - Asset data and persistence must not depend on Shader tooling. Shader cereal
   registrations belong under `shader/registrations/` and are force-linked by
   ApplicationCore; generic persistence uses its resource callback. Preserve

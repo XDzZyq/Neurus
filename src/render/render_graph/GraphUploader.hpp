@@ -2,9 +2,8 @@
  * @file GraphUploader.hpp
  * @brief Render-side service that maps the Editor's document onto pass instances.
  *
- * The renderer does not read the Editor's document type: this service owns the
- * document and its shader snapshots, the permanent `GraphMorphism` from that
- * document to the runtime graph, and the resource plan that follows from it.
+ * This service retains the published CPU document and the permanent
+ * `GraphMorphism` to the runtime graph, plus the resulting resource plan.
  * `DeferredRenderer` only asks for a compiled graph and a verdict.
  *
  * Like `UploadManager`, the service is long-lived: constructed once with the
@@ -21,9 +20,11 @@
 
 namespace neurus {
 
+class IPortSource;
 class PassFactory;
 class RenderCache;
 class RenderGraph;
+class RenderGraphData;
 struct CompileRenderGraphRequest;
 
 /**
@@ -64,9 +65,12 @@ class GraphUploader
 public:
 	/**
 	 * @brief Binds the service to the renderer's pass instances.
-	 * @param factory  Pass factory; borrowed and must outlive this service.
+	 * @param factory       Runtime pass factory (borrowed).
+	 * @param portCatalog   Built-in port contracts (borrowed).
+	 * @param defaultGraph  Nonnull built-in topology used for null graph requests.
 	 */
-	explicit GraphUploader(PassFactory& factory);
+	GraphUploader(PassFactory& factory, const IPortSource& portCatalog,
+	              std::shared_ptr<const RenderGraphData> defaultGraph);
 	~GraphUploader();
 
 	GraphUploader(const GraphUploader&)            = delete;
@@ -75,33 +79,30 @@ public:
 	GraphUploader& operator=(GraphUploader&&)      = delete;
 
 	/**
-	 * @brief Replaces the current document and snapshots with a published one.
+	 * @brief Replaces the current topology with a published document.
 	 *
 	 * The request is copied in; the caller may drop its own reference.
 	 */
 	void SetPending(const CompileRenderGraphRequest& request);
 
 	/**
-	 * @brief True once for every published request.
+	 * @brief True once for a changed published topology.
 	 *
 	 * The frame consumes the flag, so a document is compiled exactly once even
-	 * when the pipeline signature also changed.
+	 * when uploaded shader resources also changed.
 	 */
 	bool ConsumeNewDocument();
 
 	/// @brief True once a document has been published.
 	bool HasDocument() const;
 
-	/// @brief Topology hash of the current document; 0 when none.
+	/// @brief Hash of topology and selected shader identities; 0 when absent.
 	std::uint64_t DocumentHash() const;
-
-	/// @brief Identity and version hash of the current shader snapshots.
-	std::uint64_t ShaderHash() const;
 
 	/**
 	 * @brief Compiles the current document into a candidate runtime graph.
 	 *
-	 * Validates the document against the factory's ports, maps it through the
+	 * Validates the document against the built-in port catalog, maps it through the
 	 * permanent morphism, plans the cache's images from the document's tags, and
 	 * adopts and compiles the runtime graph. On failure the result names every
 	 * problem and carries no graph.

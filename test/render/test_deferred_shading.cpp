@@ -99,11 +99,11 @@ protected:
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 
 		// --- Lighting pass ---
 		m_lightingPass = std::make_unique<LightingPass>(
-			*m_device, pd,
+			*m_renderCache, *m_device, pd,
 			2u);
 	}
 

@@ -758,7 +758,7 @@ TEST_F(ShaderControllerTest, UnitCompileSucceedsAndEmitsShaderCompiled)
 	EXPECT_FALSE(VertexUnit().spv.empty());
 }
 
-TEST_F(ShaderControllerTest, ComputeShaderUnitCompilesWithoutShaderCompiled)
+TEST_F(ShaderControllerTest, ComputeShaderUnitCompileNotifiesGraphConsumers)
 {
 	auto compute = m_resources.Load<ComputeShader>(
 		"TestCompute", "res/shaders/compute/dummy.comp.glsl");
@@ -778,6 +778,6 @@ TEST_F(ShaderControllerTest, ComputeShaderUnitCompilesWithoutShaderCompiled)
 	ShaderCompileResult result;
 	m_eventBus.Emit(ShaderUnitCompileRequested{ shaderUid, stage, 0, &result });
 	EXPECT_TRUE(result.ok) << result.error;
-	EXPECT_FALSE(fired);
+	EXPECT_TRUE(fired);
 	EXPECT_FALSE(compute->GetStage(ShaderType::COMPUTE).spv.empty());
 }

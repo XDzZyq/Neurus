@@ -6,6 +6,7 @@
 #include "asset/data/render_graph/PassPorts.hpp"
 
 #include "asset/data/ShaderData.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 
 #include <algorithm>
 #include <array>
@@ -14,28 +15,6 @@
 namespace neurus {
 
 namespace {
-
-/// @brief Adds a port unless an identical declaration already exists.
-void AddPort(PassPorts& result, const PassPort& port)
-{
-	auto it = std::find_if(result.ports.begin(), result.ports.end(),
-		[&port](const PassPort& existing)
-		{
-			return existing.direction == port.direction && existing.name == port.name;
-		});
-
-	if (it == result.ports.end())
-	{
-		result.ports.push_back(port);
-		return;
-	}
-
-	if (it->type != port.type || it->binding != port.binding || it->location != port.location)
-	{
-		result.problems.push_back(
-			"port '" + port.name + "' is declared twice with different descriptor identity");
-	}
-}
 
 /// @brief The GLSL type string of a uniform declaration.
 std::string UniformType(const S_Uniform& uniform)
@@ -65,12 +44,12 @@ void AddUniformPorts(PassPorts& result, const ShaderStruct& shader)
 		if (IsSamplerPortType(type))
 		{
 			port.direction = PortDirection::Input;
-			AddPort(result, port);
+			result.Add(port);
 		}
 		else if (IsStorageImagePortType(type))
 		{
 			port.direction = PortDirection::Output;
-			AddPort(result, port);
+			result.Add(port);
 		}
 	}
 }
@@ -87,7 +66,7 @@ void AddFragmentOutputs(PassPorts& result, const ShaderStruct& shader)
 		                                         : output.typeName;
 		port.binding   = 0;
 		port.location  = static_cast<uint32_t>(std::max(output.location, 0));
-		AddPort(result, port);
+		result.Add(port);
 	}
 }
 
@@ -102,6 +81,46 @@ const PassPort* PassPorts::Find(const std::string_view name,
 			return &port;
 	}
 	return nullptr;
+}
+
+void PassPorts::Add(const PassPort& port)
+{
+	const PassPort* existing = Find(port.name, port.direction);
+	if (!existing)
+	{
+		ports.push_back(port);
+	}
+	else if (*existing != port)
+	{
+		problems.push_back("port '" + port.name + "' is declared twice with different descriptor identity");
+	}
+}
+
+void PassPorts::Merge(const PassPorts& other)
+{
+	for (const PassPort& port : other.ports)
+	{
+		Add(port);
+	}
+	problems.insert(problems.end(), other.problems.begin(), other.problems.end());
+}
+
+void AddDeclaredPassOutputs(PassPorts& ports, const PassKindInfo& kind)
+{
+	for (const DeclaredPort& port : kind.declaredOutputs)
+	{
+		ports.Add({std::string(port.name), PortDirection::Output, std::string(port.type), 0, 0});
+	}
+}
+
+std::vector<std::string> PassExternalInputs(const std::string_view passKind)
+{
+	const PassKindInfo* kind = FindPassKind(passKind);
+	if (!kind)
+	{
+		return {};
+	}
+	return {kind->externalInputs.begin(), kind->externalInputs.end()};
 }
 
 std::vector<PassPort> PassPorts::Inputs() const
@@ -172,7 +191,7 @@ PassPorts ExtractPassPorts(std::string kind,
 	}
 
 	for (const PassPort& declared : declaredOutputs)
-		AddPort(result, declared);
+		result.Add(declared);
 
 	return result;
 }

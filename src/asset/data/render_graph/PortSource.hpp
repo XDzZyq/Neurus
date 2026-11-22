@@ -2,9 +2,8 @@
  * @file PortSource.hpp
  * @brief Resolves a pass kind to the ports its shader declares.
  *
- * The interface is Vulkan-free and survives the flat document: the CPU graph
- * derives its input sockets from the same source, validation checks drift
- * against it, and the renderer's pass factory implements it.
+ * The Vulkan-free catalog provides socket declarations to the CPU graph,
+ * document validation and the document-to-runtime mapping.
  */
 
 #pragma once

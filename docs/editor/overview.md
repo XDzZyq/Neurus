@@ -356,6 +356,23 @@ with deactivation handing it back at the pose it was left at, and the resize pat
 `ResourceComponent` wires the per-object data references as the pool loads, and
 each `RenderShader` re-parses and recompiles inside its own `serialize`.
 
+## Graph shader publication
+
+Live graph nodes own pooled shaders through `shared_ptr<const ShaderData>`;
+null selects a built-in recipe. Script and Editor edits still target the mutable
+pooled resource. `MakeUploadShaderRequest` copies compiled SPIR-V and required
+reflection/port metadata on the CPU before an upload request crosses the boundary.
+Publication clones graph topology and posts `CompileRenderGraphRequest{graph}`
+after those uploads. The renderer reads only stable shader UIDs from node
+references and resolves `ShaderGPU` in its cache; it never reads mutable shader
+content through the graph.
+
+A successful compile uploads updated render or compute shader data before
+refreshing dependent passes/graphs. Reuploading a UID advances its GPU cache
+revision. GPU references and frame fences preserve resources still in use.
+Graph persistence writes authored shader UIDs and omits null selections; cached
+fallbacks and GPU resources remain outside project state.
+
 ## Data flow
 
 ```mermaid

@@ -30,6 +30,7 @@
 namespace neurus
 {
 class IPortSource;
+class IResourceLookup;
 class RenderGraphData;
 }
 
@@ -170,9 +171,11 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph);
  * @param record    Saved document.
  * @param ports     Pass-kind port source.
  * @param problems  Receives one message per recoverable inconsistency.
+ * @param resources Optional restored pool; missing or invalid shaders select defaults.
  */
 RenderGraphData FromRecord(const RenderGraphRecord& record, const IPortSource& ports,
-                           std::vector<std::string>& problems);
+                           std::vector<std::string>& problems,
+                           const IResourceLookup* resources = nullptr);
 
 /**
  * @brief Saves and loads the render graph document under `proj_render_graph`.

@@ -5,6 +5,7 @@
 
 #include "RenderCache.hpp"
 #include "passes/ShadowIntensityPass.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 #include "core/RenderConfig.hpp"
 
 #include "../PipelineBuilder.hpp"
@@ -21,9 +22,8 @@
 #include "render/TemporalAccumulator.hpp"
 #include "render/HaltonSequence.hpp"
 
-#include "shader/ComputeShader.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/BuiltInRenderData.hpp"
+
+
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -98,24 +98,24 @@ static_assert(offsetof(SunShadowEvalPushConstants, frameCount) == 92,
 // Construction
 // ---------------------------------------------------------------------------
 
-ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
+ShadowIntensityPass::ShadowIntensityPass(RenderCache& cache, const vk::raii::Device& device,
                                          const vk::raii::PhysicalDevice& physicalDevice,
                                          uint32_t numSets)
 	: ShadowIntensityPass(device, physicalDevice, numSets,
-	                      BuiltInRenderData::Get().ComputeShaderFor("shadow_eval"),
-	                      BuiltInRenderData::Get().ComputeShaderFor("sun_shadow_eval"))
+	                      cache.EnsureDefaultShader(kShadowIntensityShaders[0].name),
+	                      cache.EnsureDefaultShader(kShadowIntensityShaders[1].name))
 {
 }
 
 ShadowIntensityPass::ShadowIntensityPass(const vk::raii::Device& device,
                                          const vk::raii::PhysicalDevice& physicalDevice,
                                          uint32_t numSets,
-                                         std::shared_ptr<const ComputeShader> pointLightShader,
-                                         std::shared_ptr<const ComputeShader> sunLightShader)
+                                         std::shared_ptr<const ShaderGPU> pointLightShader,
+                                         std::shared_ptr<const ShaderGPU> sunLightShader)
 	: ComputePass(device, physicalDevice,
 	              // One set per shadow-casting light per frame slot, so the
 	              // per-light loop never updates a set that is still bound.
-	              MakeDescriptorLayout(device, *pointLightShader),
+	              MakeDescriptorLayout(device, RequireShader(pointLightShader)),
 	              numSets * kSetsPerFrameSlot)
 	, p_pointLightShader(std::move(pointLightShader))
 	, p_sunLightShader(std::move(sunLightShader))
@@ -182,13 +182,8 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowIntensityPass: Point-light shader not loaded or invalid");
 		}
 
-		auto spv = p_pointLightShader->GetStage(ShaderType::COMPUTE).spv;
-		if (spv.empty())
-			spv = ShaderLibrary::Compile(p_pointLightShader->GetStage(ShaderType::COMPUTE),
-			                             ShaderType::COMPUTE, debugName);
-		vk::ShaderModuleCreateInfo smCI({}, spv);
-		vk::raii::ShaderModule module(device, smCI);
-		vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
+		const auto module = p_pointLightShader->Module(ShaderType::COMPUTE);
+		vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, module, "main");
 
 		vk::PushConstantRange pushRange = MakePushConstantRange(
 			*p_pointLightShader, vk::ShaderStageFlagBits::eCompute);  // 48 bytes
@@ -209,13 +204,8 @@ void ShadowIntensityPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowIntensityPass: Sun-light shader not loaded or invalid");
 		}
 
-		auto spv = p_sunLightShader->GetStage(ShaderType::COMPUTE).spv;
-		if (spv.empty())
-			spv = ShaderLibrary::Compile(p_sunLightShader->GetStage(ShaderType::COMPUTE),
-			                             ShaderType::COMPUTE, debugName + "_Sun");
-		vk::ShaderModuleCreateInfo smCI2({}, spv);
-		vk::raii::ShaderModule module2(device, smCI2);
-		vk::PipelineShaderStageCreateInfo stageCI2({}, vk::ShaderStageFlagBits::eCompute, *module2, "main");
+		const auto module2 = p_sunLightShader->Module(ShaderType::COMPUTE);
+		vk::PipelineShaderStageCreateInfo stageCI2({}, vk::ShaderStageFlagBits::eCompute, module2, "main");
 
 		vk::PushConstantRange pushRange = MakePushConstantRange(
 			*p_sunLightShader, vk::ShaderStageFlagBits::eCompute);  // 96 bytes
@@ -570,7 +560,7 @@ PassIO ShadowIntensityPass::GetIO() const
 	return io;
 }
 
-std::vector<const ShaderData*> ShadowIntensityPass::GetShaders() const
+std::vector<const ShaderGPU*> ShadowIntensityPass::GetShaders() const
 {
 	return {p_pointLightShader.get(), p_sunLightShader.get()};
 }

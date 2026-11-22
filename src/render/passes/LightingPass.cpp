@@ -6,7 +6,6 @@
 #include "passes/LightingPass.hpp"
 
 #include "../PipelineBuilder.hpp"
-#include "asset/data/render_graph/PassKinds.hpp"
 #include "DescriptorLayout.hpp"
 #include "RenderCache.hpp"
 #include "render_api/RenderContext.hpp"
@@ -14,9 +13,9 @@
 #include "Image.hpp"
 #include "render/Barrier.hpp"
 #include "core/RenderConfig.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/BuiltInRenderData.hpp"
-#include "shader/ComputeShader.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
+
+
 #include "Texture.hpp"
 
 #include "core/Log.hpp"
@@ -38,20 +37,20 @@ namespace neurus {
 // Construction
 // ---------------------------------------------------------------------------
 
-LightingPass::LightingPass(const vk::raii::Device& device,
+LightingPass::LightingPass(RenderCache& cache, const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
                            uint32_t numSets)
 	: LightingPass(device, physicalDevice, numSets,
-	               BuiltInRenderData::Get().ComputeShaderFor("pbr_lighting"))
+	               cache.EnsureDefaultShader(kLightingShaders[0].name))
 {
 }
 
 LightingPass::LightingPass(const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice,
                            uint32_t numSets,
-                           std::shared_ptr<const ComputeShader> shader)
+                           std::shared_ptr<const ShaderGPU> shader)
 	: ComputePass(device, physicalDevice,
-	              MakeDescriptorLayout(device, *shader, {5, 6, 11}), numSets)
+	              MakeDescriptorLayout(device, RequireShader(shader), kLightingOptionalBindings), numSets)
 	, p_shader(std::move(shader))
 {
 	BuildPipeline(device, "LightingPass");
@@ -94,13 +93,8 @@ void LightingPass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("LightingPass: Compute shader not loaded or invalid");
 	}
 
-	auto spv = p_shader->GetStage(ShaderType::COMPUTE).spv;
-	if (spv.empty())
-		spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-		                             ShaderType::COMPUTE, debugName);
-	vk::ShaderModuleCreateInfo smCI({}, spv);
-	vk::raii::ShaderModule module(device, smCI);
-	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
+	const auto module = p_shader->Module(ShaderType::COMPUTE);
+	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, module, "main");
 
 	vk::PushConstantRange pushRange = MakePushConstantRange(
 		*p_shader, vk::ShaderStageFlagBits::eCompute);  // 176 bytes
@@ -342,17 +336,9 @@ PassIO LightingPass::GetIO() const
 	return io;
 }
 
-std::vector<const ShaderData*> LightingPass::GetShaders() const
+std::vector<const ShaderGPU*> LightingPass::GetShaders() const
 {
 	return {p_shader.get()};
-}
-
-std::vector<std::string> LightingPass::ExternalInputPorts() const
-{
-	std::vector<std::string> names;
-	for (const std::string_view name : FindPassKind("LightingPass")->externalInputs)
-		names.emplace_back(name);
-	return names;
 }
 
 } // namespace neurus

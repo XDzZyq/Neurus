@@ -27,11 +27,12 @@
 
 namespace neurus {
 
+class BuiltInRenderData;
 class RenderRequestSink;
 class ResourceManager;
 
 /**
- * @brief Owns optional project render data and publishes immutable renderer inputs.
+ * @brief Owns optional project render data and publishes topology plus owned GPU uploads.
  *
  * Non-copyable, non-movable (borrows the pool and the request sink).
  */
@@ -42,8 +43,10 @@ public:
 	 * @brief Binds the service to the Editor's pool and request sink.
 	 * @param resources  App-scoped pool; must outlive this service.
 	 * @param sink       Renderer request sink, or null for a headless editor.
+	 * @param renderDefaults Shared CPU defaults, or null to create a local provider.
 	 */
-	RenderManager(ResourceManager& resources, RenderRequestSink* sink);
+	RenderManager(ResourceManager& resources, RenderRequestSink* sink,
+	              std::shared_ptr<const BuiltInRenderData> renderDefaults);
 	~RenderManager();
 
 	RenderManager(const RenderManager&)            = delete;
@@ -90,8 +93,11 @@ public:
 	std::shared_ptr<RenderGraphData>& GraphData() { return m_graph; }
 	const std::shared_ptr<RenderGraphData>& GraphData() const { return m_graph; }
 
-	/// @brief Validates the document, snapshots its shaders and posts the request.
+	/// @brief Uploads distinct selected shaders, then publishes cloned topology with shared references.
 	void Publish();
+
+	/// @brief Whether an explicit graph node references this pooled shader.
+	bool ReferencesShader(int uid) const;
 
 	/// @brief Record read from a project, applied by the Editor's FinishLoad.
 	std::optional<project::RenderGraphRecord>& PendingRecord() { return m_pending; }
@@ -105,6 +111,7 @@ private:
 
 	ResourceManager&   m_resources;
 	RenderRequestSink* m_sink;
+	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::shared_ptr<RenderConfig> m_config;
 	std::shared_ptr<RenderGraphData> m_graph;
 	std::optional<project::RenderGraphRecord> m_pending;

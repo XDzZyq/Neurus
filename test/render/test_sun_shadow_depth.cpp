@@ -54,8 +54,8 @@ protected:
 
 	void SetUp() override { VulkanTestShared::SetUp(); if (!m_hasVulkan) return;
 		auto& pd = PhysicalDevice();
-		m_pass = std::make_unique<ShadowDepthPass>(*m_device,pd,*m_queue,m_graphicsQueueFamily,kRes);
 		m_cache = std::make_unique<RenderCache>(*m_device,pd);
+		m_pass = std::make_unique<ShadowDepthPass>(*m_cache, *m_device,pd,*m_queue,m_graphicsQueueFamily,kRes);
 		m_cache->SetLightingCache(
 		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily)); }
 	void TearDown() override { VulkanTestShared::TearDown(); }

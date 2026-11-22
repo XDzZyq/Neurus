@@ -9,7 +9,9 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 write-only sink, context and profiling values, and CPU overlay payloads. It is
 Qt-free and Vulkan-free and depends only on CPU asset data, scene and core types.
 Editor and UI include these contracts without linking renderer implementation.
-`ShaderSnapshot` belongs to the CPU shader data under `asset/data/shader/`.
+Graph requests carry cloned `RenderGraphData` topology with shared CPU shader
+ownership. Owned shader upload requests carry bytecode and metadata separately;
+the graph mapper reads only stable shader UIDs and resolves renderer GPU data.
 
 ## Renderer Layer (`src/render/`)
 
@@ -32,7 +34,7 @@ Editor and UI include these contracts without linking renderer implementation.
   swapchain. The scene image is never presented directly, so an overlay-only
   change redraws without re-running a scene pass
 - Builds the runtime scene graph from the Editor's `RenderGraphData` document:
-  the `GraphUploader` service maps its pass kinds to `PassFactory` instances,
+  the `GraphUploader` service maps pass kinds and cached GPU shaders to `PassFactory` instances,
   maps every node and connection through a permanent `GraphMorphism`, and its
   output tags plan the `RenderCache` resources. `RenderConfig` supplies
   per-frame pass parameters only
@@ -69,9 +71,11 @@ Editor and UI include these contracts without linking renderer implementation.
 - Owns `RenderManager`, whose project config and graph are nullable
   `shared_ptr` values. Null selects built-in defaults and is omitted on save;
   reading effective settings or graph data never materializes project data
-- Publishes explicit project shader snapshots and an optional graph through
-  `CompileRenderGraphRequest`. `BuiltInRenderData` supplies cached CPU defaults
-  outside the project pool; Renderer owns the compiled graph and GPU resources
+- Prepares owned shader upload requests on the CPU, then publishes optional
+  cloned graph topology through `CompileRenderGraphRequest{graph}` in FIFO order.
+  Live nodes own pooled shader references; graph mapping reads only their stable
+  UIDs and resolves cached GPU shaders. Built-in CPU preparation stays outside
+  the project pool; Renderer owns the compiled graph and GPU resources
 - Explicit config edits materialize stored settings. Undo restores the previous
   presence state, including null. Frame snapshots copy effective config by value,
   so the render thread never shares mutable Editor config storage
@@ -173,8 +177,8 @@ Editor and UI include these contracts without linking renderer implementation.
   convention, not by cast)
 - CPU-side shader data: `ShaderData` under `data/`, with its IR/unit headers
   (`ShaderStruct`, `ShaderUnit`, `ShaderStage`, `ShaderStructSerialize`) under
-  `data/shader/`. `ShaderSnapshot` is a passive owned value there; snapshot
-  construction and concrete shader behavior belong to the Shader module
+  `data/shader/`. CPU shader values remain editable; concrete shader behavior
+  belongs to the Shader module
 - `ShaderData` owns shader source text IO and path resolution; Asset neither
   parses shader source nor compiles it
 - CPU-side data representation only; GPU upload handled by Renderer via
@@ -190,17 +194,17 @@ Neither Asset target depends on shader tooling.
 
 - CPU-only `neurus_shader`, depending on `neurus_asset_data` and shaderc
 - Owns `RenderShader`, `ComputeShader`, shader parsing/generation/compilation,
-  `ShaderLibrary`, and `ShaderSnapshotBuilder`
+  `ShaderLibrary`, and the built-in CPU data provider
 - Consumes source text provided by Asset; file-loading convenience methods
   delegate text IO and path resolution to `ShaderData::ReadSource` and `ResolveSourcePath`
 - Owns concrete shader cereal registrations; ApplicationCore force-links them
   before generic Asset persistence restores registered resource types
-- Supplies the cached CPU `BuiltInRenderData` provider without populating project
-  config, graph or shader slots; rendering with defaults does not change saves
+- Defines the `BuiltInRenderData` service. Each application shares one instance
+  between the Editor and renderer. Its cached defaults stay outside the project.
 - Preserves current shader serialization reload/recompile behavior
 - Does not own Vulkan shader modules, pipelines, descriptor sets or renderer state
 
-The shared `render_api` contracts carry passive asset snapshots and scene values;
+The shared `render_api` contracts carry owned shader upload payloads, graph topology and scene values;
 they do not depend on the Shader module.
 
 ## Scene Layer (`src/scene/`)

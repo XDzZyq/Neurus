@@ -9,11 +9,14 @@
 
 #include "core/RenderConfig.hpp"
 #include "asset/data/RenderGraphData.hpp"
-#include "asset/data/RenderGraphData.hpp"
+#include "asset/data/ImageData.hpp"
+#include "shader/BuiltInRenderData.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderParser.hpp"
 #include "render/DeferredRenderer.hpp"
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"
-#include "render/render_graph/PassFactory.hpp"
 #include "render_api/RenderRequests.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "scene/Camera.hpp"
@@ -70,7 +73,6 @@ protected:
 	void TearDown() override
 	{
 		m_renderer.reset();
-		m_documentFactory.reset();
 		m_uploader.reset();
 		VulkanTestShared::TearDown();
 	}
@@ -79,24 +81,18 @@ protected:
 	{
 		m_renderer = std::make_unique<neurus::DeferredRenderer>(
 			*m_device, m_physicalDevices[m_selectedPdIndex], *m_queue,
-			m_graphicsQueueFamily, vk::Extent2D{kWidth, kHeight});
+			m_graphicsQueueFamily, vk::Extent2D{kWidth, kHeight}, m_defaults);
 
 		m_uploader = std::make_unique<neurus::UploadManager>(
 			*m_device, m_physicalDevices[m_selectedPdIndex], *m_queue, m_graphicsQueueFamily);
 		m_renderer->GetRenderCache().SetLightingCache(
 			m_uploader->CreateLightingCache(*m_device, m_physicalDevices[m_selectedPdIndex]));
 		m_renderer->SetUploadManager(m_uploader.get());
-
-		// A second factory supplies the document's ports. The renderer's own
-		// instances are separate; only the port tables are shared knowledge.
-		m_documentFactory = std::make_unique<neurus::PassFactory>(
-			*m_device, m_physicalDevices[m_selectedPdIndex], 2,
-			*m_queue, m_graphicsQueueFamily);
 	}
 
 	neurus::RenderGraphData DefaultDocument() const
 	{
-		return neurus::RenderGraphData::Default(*m_documentFactory);
+		return neurus::CloneGraph(*m_defaults->Graph());
 	}
 
 	void PostDocument(neurus::RenderGraphData graph)
@@ -122,7 +118,8 @@ protected:
 
 	std::unique_ptr<neurus::UploadManager> m_uploader;
 	std::unique_ptr<neurus::DeferredRenderer> m_renderer;
-	std::unique_ptr<neurus::PassFactory> m_documentFactory;
+	std::shared_ptr<const neurus::BuiltInRenderData> m_defaults =
+		std::make_shared<const neurus::BuiltInRenderData>();
 };
 
 TEST_F(RenderGraphPipelineTest, DefaultDocumentCompilesAndDraws)
@@ -212,4 +209,57 @@ TEST_F(RenderGraphPipelineTest, BadDocumentKeepsPreviousGraph)
 	EXPECT_FALSE(m_renderer->LastGraphReport().compiled);
 	EXPECT_FALSE(m_renderer->LastGraphReport().diagnostics.empty());
 	EXPECT_EQ(m_renderer->ScenePassCount(), previousPasses);
+}
+
+TEST_F(RenderGraphPipelineTest, UploadedCustomComposeShaderChangesPixelsAndRetainsOwnedPayload)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	ASSERT_NO_FATAL_FAILURE(CreateRenderer());
+	std::shared_ptr<neurus::ComputeShader> shader = neurus::ShaderLibrary::LoadComputeShader(
+		"custom compose", "res/shaders/compute/compose.comp.glsl");
+	ASSERT_NE(shader, nullptr);
+	auto& unit = shader->GetStage(neurus::ShaderType::COMPUTE);
+	const std::string declarations = unit.code.substr(0, unit.code.find("void main("));
+	const auto compileColor = [&](const char* color)
+	{
+		unit.code = declarations + "void main() {\n"
+			"ivec2 p = ivec2(gl_GlobalInvocationID.xy);\n"
+			"if (any(greaterThanEqual(p, imageSize(outputComposed)))) return;\n"
+			"imageStore(outputComposed, p, vec4(" + color + ", 1.0));\n}\n";
+		unit.parsed = neurus::ShaderParser::ParseShaderCode(unit.code, neurus::ShaderType::COMPUTE);
+		unit.spv = neurus::ShaderLibrary::Compile(unit, neurus::ShaderType::COMPUTE, "custom compose");
+		unit.BumpVersion();
+		shader->BumpVersion();
+	};
+	compileColor("1.0, 0.0, 0.0");
+	ASSERT_FALSE(unit.spv.empty());
+	const auto redUpload = neurus::MakeUploadShaderRequest(*shader);
+	compileColor("0.0, 1.0, 0.0");
+	ASSERT_FALSE(unit.spv.empty());
+	const auto greenUpload = neurus::MakeUploadShaderRequest(*shader);
+	ASSERT_NE(redUpload.stages.at(neurus::ShaderType::COMPUTE).spv,
+	          greenUpload.stages.at(neurus::ShaderType::COMPUTE).spv);
+
+	const auto drawColor = [&](const neurus::UploadShaderRequest& upload,
+	                           const uint16_t red, const uint16_t green)
+	{
+		auto document = DefaultDocument();
+		FindNode(document, "compose")->data.shader = shader;
+		m_renderer->Post(neurus::RenderRequest{upload});
+		PostDocument(std::move(document));
+		DrawOneFrame();
+		ASSERT_TRUE(m_renderer->LastGraphReport().compiled);
+		auto& output = m_renderer->GetRenderCache().GetAttachment(neurus::AttachmentName::ComposedOutput,
+		                                                        vk::Extent2D{kWidth, kHeight});
+		const auto image = output.ReadImageData(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+		ASSERT_NE(image, nullptr);
+		const auto* pixel = reinterpret_cast<const uint16_t*>(image->GetPixelData().data());
+		EXPECT_EQ(pixel[0], red);
+		EXPECT_EQ(pixel[1], green);
+		EXPECT_EQ(pixel[2], 0u);
+	};
+	drawColor(redUpload, 0x3c00, 0);
+	drawColor(greenUpload, 0, 0x3c00);
+	drawColor(redUpload, 0x3c00, 0);
 }

@@ -18,8 +18,9 @@
  *
  * Payload rule, binding for every request type added here: a payload is a
  * value, or a `shared_ptr<const T>` to data nobody mutates after creation. It is
- * never a Scene, Mesh or Shader pointer - the Editor may edit or delete those
- * before the request is drained - and never a callable, because a closure
+ * never a Scene or Mesh pointer. A graph retains shared shader references for
+ * identity only: rendering reads their UID and uses separately uploaded GPU data.
+ * Requests never carry a callable, because a closure
  * capturing the Editor would run Editor code wherever the renderer runs.
  *
  * Ordering is part of the contract: requests are executed FIFO, so an upload
@@ -37,7 +38,9 @@
 
 #include "scene/Light.hpp"
 #include "asset/data/RenderGraphData.hpp"
-#include "asset/data/shader/ShaderSnapshot.hpp"
+#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/shader/ShaderStage.hpp"
+#include "asset/data/shader/ShaderStruct.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
 
 namespace neurus
@@ -115,19 +118,41 @@ struct UpdateLightRequest
 	LightSnapshot light;
 };
 
+/** @brief Compiled bytes and reflection metadata for one GPU shader stage. */
+struct ShaderStageUpload
+{
+	std::vector<uint32_t> spv;
+	ShaderStruct parsed;
+};
+
+/**
+ * @brief Upload a shader version before graph mapping or mesh pipeline use.
+ *
+ * Owns compiled bytes, descriptor metadata and the extracted image ports.
+ * Later CPU edits cannot alter a queued upload.
+ */
+struct UploadShaderRequest
+{
+	int shaderId = 0;
+	int version = 0;
+	ShaderType primaryType = ShaderType::VERTEX;
+	std::unordered_map<ShaderType, ShaderStageUpload> stages;
+	PassPorts ports;  ///< Image-port contract extracted on the CPU.
+};
+
+/** @brief Copies compiled stages and descriptor metadata and derives the image ports. */
+UploadShaderRequest MakeUploadShaderRequest(const ShaderData& shader);
+
 /**
  * @brief Make sure the per-mesh pipeline for one shader version exists.
  *
- * Carries its own copy of the SPIR-V rather than the Shader, so a recompile
- * that lands before the drain cannot change the code under a version it no
- * longer belongs to. An empty stage is skipped, as for a live Shader.
+ * Selects a previously uploaded GPU shader by identity and version. The
+ * UploadShaderRequest must precede this request in FIFO order.
  */
 struct EnsurePipelineRequest
 {
 	int                   shaderId = 0;
 	int                   version  = 0;
-	std::vector<uint32_t> vertexSpv;
-	std::vector<uint32_t> fragmentSpv;
 };
 
 /**
@@ -174,14 +199,14 @@ struct RedrawOverlaysRequest
  *
  * A null graph selects the cached built-in document; a nonnull empty graph
  * deliberately renders no scene passes. The document is immutable once posted
- * (`shared_ptr<const RenderGraphData>`). Node shader UID 0 selects a built-in;
- * @c shaders carries snapshots for explicit shader UIDs, so the renderer never
- * reads the Editor's pool.
+ * (`shared_ptr<const RenderGraphData>`). Each explicit node shader is a
+ * shared CPU reference retained for identity; the renderer reads only its UID
+ * and resolves uploaded GPU data. A null node shader selects a built-in.
+ * Shader uploads precede this request in FIFO order.
  */
 struct CompileRenderGraphRequest
 {
 	std::shared_ptr<const RenderGraphData> graph;
-	std::vector<ShaderSnapshot>           shaders;
 };
 
 /** @brief Copies one scene light into an owned request/frame value. */
@@ -192,7 +217,8 @@ UpdateLightingRequest MakeUpdateLightingRequest(
 	const std::unordered_map<int, std::shared_ptr<Light>>& lights);
 
 /// @brief Any request the renderer executes on the Editor's behalf.
-using RenderRequest = std::variant<UploadMeshRequest,
+using RenderRequest = std::variant<UploadShaderRequest,
+                                   UploadMeshRequest,
                                    CreateLightGpuRequest,
                                    UploadEnvironmentRequest,
                                    UpdateLightingRequest,
@@ -206,8 +232,8 @@ using RenderRequest = std::variant<UploadMeshRequest,
 /**
  * @brief Snapshot what a per-mesh pipeline build needs out of a live Shader.
  *
- * Copies the id, the version and the vertex/fragment SPIR-V at the moment of
- * the call, so the request stays correct however the Shader changes later.
+ * Copies only the id and version; compiled bytes travel through the preceding
+ * UploadShaderRequest.
  */
 EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader);
 

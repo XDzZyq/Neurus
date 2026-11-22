@@ -12,10 +12,10 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "passes/ComputePass.hpp"
 #include "../buffers/GPUBuffer.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/ComputeShader.hpp"
 #include "../buffers/UniformBuffer.hpp"
 
 #include <glm/glm.hpp>
@@ -113,7 +113,7 @@ public:
 	 *
 	 * @throws std::runtime_error if shader or pipeline creation fails.
 	 */
-	SSAOPass(const vk::raii::Device& device,
+	SSAOPass(RenderCache& cache, const vk::raii::Device& device,
 	         const vk::raii::PhysicalDevice& physicalDevice,
 	         uint32_t numSets,
 	         SharedQueue& graphicsQueue,
@@ -141,7 +141,7 @@ public:
 	PassIO GetIO() const override;
 
 	/// @brief The SSAO compute shader.
-	std::vector<const ShaderData*> GetShaders() const override;
+	std::vector<const ShaderGPU*> GetShaders() const override;
 
 	/**
 	 * @brief Buffers the graph writes into the descriptor set.
@@ -151,14 +151,16 @@ public:
 	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
 	                         std::vector<GraphBufferBinding>& out) const override;
 
-private:
-	/// @brief Delegating constructor that receives the already-loaded shader.
+public:
+	/// @brief Constructs from a selected uploaded shader.
 	SSAOPass(const vk::raii::Device& device,
 	         const vk::raii::PhysicalDevice& physicalDevice,
 	         uint32_t numSets,
 	         SharedQueue& graphicsQueue,
 	         uint32_t queueFamilyIndex,
-	         std::shared_ptr<const ComputeShader> shader);
+	         std::shared_ptr<const ShaderGPU> shader);
+
+private:
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
@@ -187,7 +189,7 @@ private:
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
-	std::shared_ptr<const ComputeShader> p_shader;
+	std::shared_ptr<const ShaderGPU> p_shader;
 
 	// --- Owned UBOs ---
 	std::unique_ptr<UniformBuffer<SSAOParamsGpu>> p_paramsUBO;   ///< SSAO params (camera + kernel), host-visible

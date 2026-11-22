@@ -7,7 +7,34 @@
 
 #include "asset/data/ShaderData.hpp"
 
+#include <array>
+
 namespace neurus {
+
+UploadShaderRequest MakeUploadShaderRequest(const ShaderData& shader)
+{
+	UploadShaderRequest request;
+	request.shaderId = shader.GetObjectID();
+	request.version = shader.GetVersion();
+	request.primaryType = shader.GetType();
+	for (const auto type : {ShaderType::VERTEX, ShaderType::FRAGMENT,
+	                        ShaderType::COMPUTE, ShaderType::GEOMETRY})
+	{
+		if (const auto* stage = shader.FindStage(type))
+		{
+			ShaderStageUpload upload;
+			upload.spv = stage->spv;
+			upload.parsed.uniform_list = stage->parsed.uniform_list;
+			upload.parsed.ubuffer_list = stage->parsed.ubuffer_list;
+			upload.parsed.SB_list = stage->parsed.SB_list;
+			upload.parsed.push_constants = stage->parsed.push_constants;
+			request.stages.emplace(type, std::move(upload));
+		}
+	}
+	const std::array<const ShaderData*, 1> shaders = {&shader};
+	request.ports = ExtractPassPorts({}, shaders);
+	return request;
+}
 
 EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader)
 {
@@ -19,14 +46,6 @@ EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader)
 	request.shaderId = shader.GetObjectID();
 	request.version  = shader.GetVersion();
 
-	// Copy the SPIR-V by value so a recompile landing before the drain cannot
-	// change the code under the version it no longer belongs to. A stage the
-	// shader does not carry leaves the corresponding vector empty, which the
-	// executor skips exactly as a live Shader with an empty stage would.
-	if (shader.HasStage(ShaderType::VERTEX))
-		request.vertexSpv = shader.GetStage(ShaderType::VERTEX).spv;
-	if (shader.HasStage(ShaderType::FRAGMENT))
-		request.fragmentSpv = shader.GetStage(ShaderType::FRAGMENT).spv;
 
 	return request;
 }

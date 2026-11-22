@@ -145,8 +145,8 @@ struct ShaderCompileRequested
 /**
  * @brief Emitted when a shader compiled successfully (the compile RESULT).
  *
- * Carries the SHADER's object id, not a mesh UID, because the per-mesh pipeline
- * cache is keyed on the shader. The Editor warms that pipeline in response.
+ * Carries the shader's object id. The Editor republishes graphs referencing
+ * that shader and warms a mesh pipeline when a mesh uses the vertex shader.
  * Non-undoable, like the compile that produces it.
  */
 struct ShaderCompiled

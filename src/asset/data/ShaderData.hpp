@@ -10,6 +10,7 @@
 #include "core/Serialize.hpp"
 #include "core/UID.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -27,7 +28,8 @@ namespace neurus
  * pooled on its own.
  *
  * @note Non-copyable, non-movable (UID semantics - held via shared_ptr).
- * @note Not thread-safe; must be used from the main thread.
+ * @note Editable contents belong to the main thread. Render requests copy upload
+ *       values; asynchronous consumers only read this resource's stable UID.
  */
 class ShaderData : public UID
 {
@@ -155,6 +157,7 @@ protected:
 
 	/** @brief Map of ShaderUnits, keyed by ShaderType. */
 	std::unordered_map<ShaderType, ShaderUnit> m_stages;
+
 };
 
 } // namespace neurus

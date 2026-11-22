@@ -18,6 +18,7 @@
 namespace neurus {
 
 class ShaderData;
+class ShaderGPU;
 
 /**
  * @brief A reflected descriptor set layout: bindings and aligned per-binding flags.
@@ -61,4 +62,10 @@ vk::PushConstantRange PushConstantRangeFromShaders(
 	std::span<const ShaderData* const> shaders,
 	vk::ShaderStageFlags stages);
 
+/** @brief Builds Vulkan descriptor declarations from uploaded shader metadata. */
+ReflectedDescriptorLayout ReflectDescriptorLayout(std::span<const ShaderGPU* const> shaders,
+                                                   std::span<const uint32_t> optionalBindings = {});
+/** @brief Covers the push-constant members retained by uploaded shader resources. */
+vk::PushConstantRange PushConstantRangeFromShaders(std::span<const ShaderGPU* const> shaders,
+                                                  vk::ShaderStageFlags stages);
 } // namespace neurus

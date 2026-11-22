@@ -34,6 +34,7 @@ add_library(neurus_render_passes STATIC
 )
 
 target_link_libraries(neurus_render_passes PUBLIC
+	neurus_shader_gpu
 	neurus_shader
 	Vulkan::Vulkan
 	glm

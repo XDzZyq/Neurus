@@ -149,10 +149,33 @@ an upload posted after `DropSceneResourcesRequest` lands in the new scene, and
 one posted before it is discarded with the old one. `RedrawOverlaysRequest` is
 the one request that does not restart accumulation: it only marks the overlays
 stale, so a converged renderer redraws them over the image it already has. A
-payload is a value or a `shared_ptr<const T>` to immutable data - never a
-`Scene`, `Mesh` or `Shader` pointer, and never a callable, so the request stays
-correct however the Editor edits or deletes afterward. See
+payload owns the data the renderer reads. Shader uploads copy bytecode and
+metadata; graph topology may own shared CPU shader references, but the mapper
+reads only their stable UIDs. It never reads mutable scene or shader content and
+never executes an Editor callable, so later edits cannot alter queued upload data. See
 [Render request path](../render/resources.md#render-request-path).
+
+### Shader uploads and graph publication
+
+CPU preparation calls `MakeUploadShaderRequest` while shader data is safe to
+read, copying SPIR-V and required reflection/port metadata into an owned typed
+request. `RenderManager::Publish()` clones graph topology and posts
+`CompileRenderGraphRequest{graph}` after the required shader uploads. FIFO
+execution gives the mapper a populated GPU cache. Null graph or shader selections
+use built-in recipes through the same CPU preparation, upload and cache path.
+Defaults do not materialize project data.
+
+`UploadManager` creates `ShaderGPU` and `RenderCache` indexes it by shader UID.
+The one-way `GraphMorphism<RenderGraphData, RenderGraph>` resolves node shader UIDs
+against that cache and may read/write cache resources while mapping. It never
+reads mutable shader source, IR, SPIR-V or CPU version fields. Passes consume GPU
+shader modules and own their pipelines. Reuploading an existing UID changes the
+GPU cache revision and refreshes dependent passes/graphs; resource references
+and frame fences preserve the lifetime of work using the previous resources.
+
+A successful shader compile posts updated upload data before graph compilation,
+including compute shaders. The CPU graph keeps shared shader ownership, but the
+render thread uses those references only to read their stable logical UIDs.
 
 ## Render Thread (Application to Renderer plumbing)
 

@@ -378,11 +378,8 @@ void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
 		unit->BumpVersion();
 		neurus::notify::Mutated(ctx.events);
 
-		if (shader->HasStage(neurus::ShaderType::VERTEX))
-		{
-			shader->BumpVersion();
-			ctx.events.Emit(neurus::ShaderCompiled{ shader->GetObjectID() });
-		}
+		shader->BumpVersion();
+		ctx.events.Emit(neurus::ShaderCompiled{ shader->GetObjectID() });
 
 		if (e.result != nullptr) e.result->ok = true;
 		NEURUS_LOG("[ShaderController] Unit compiled: shader=" << e.shaderUid

@@ -49,7 +49,7 @@ set(NEURUS_TEST_SOURCES
 	render/test_render_graph.cpp
 	render/test_render_graph_pipeline.cpp
 	render/test_pass_factory.cpp
-	render/test_shader_snapshot.cpp
+	render/test_shader_ports.cpp
 	render/test_graph_uploader.cpp
 	render/test_pass_bindings.cpp
 	render/test_shader_reflection.cpp
@@ -338,7 +338,7 @@ add_executable(neurus_cpu_test
 	asset/test_render_graph_data.cpp
 	asset/test_render_graph_document.cpp
 	render/test_shader_parser.cpp
-	render/test_shader_snapshot.cpp
+	render/test_shader_ports.cpp
 	editor/test_editor_render_graph.cpp
 	editor/test_editor_scene_lifecycle.cpp
 	editor/test_shader_controller.cpp

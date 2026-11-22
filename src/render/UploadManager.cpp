@@ -4,6 +4,8 @@
  */
 
 #include "UploadManager.hpp"
+#include "resources/ShaderGPU.hpp"
+#include "shader/ShaderInterface.hpp"
 #include "render_api/RenderRequests.hpp"
 
 #include "Image.hpp"
@@ -28,7 +30,52 @@
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
 
+#include <stdexcept>
+
 namespace neurus {
+
+std::shared_ptr<const ShaderGPU> UploadManager::UploadShader(const UploadShaderRequest& request)
+{
+	return UploadShader(*um_device, request);
+}
+
+std::shared_ptr<const ShaderGPU> UploadManager::UploadShader(const vk::raii::Device& device,
+                                                           const UploadShaderRequest& request)
+{
+	const auto valid = [&request](ShaderType stage)
+	{
+		const auto found = request.stages.find(stage);
+		return found != request.stages.end() && !found->second.spv.empty();
+	};
+	if (request.primaryType == ShaderType::COMPUTE)
+	{
+		if (!valid(ShaderType::COMPUTE))
+		{
+			throw std::invalid_argument("Shader upload requires compiled compute stage");
+		}
+	}
+	else
+	{
+		if (!valid(ShaderType::VERTEX) || !valid(ShaderType::FRAGMENT))
+		{
+			throw std::invalid_argument("Shader upload requires compiled vertex and fragment stages");
+		}
+		std::string error;
+		if (!ValidateRenderShaderInterface(request.stages.at(ShaderType::VERTEX).spv,
+		                                  request.stages.at(ShaderType::FRAGMENT).spv, error))
+		{
+			throw std::invalid_argument("Shader upload interface: " + error);
+		}
+	}
+	for (const auto& [stage, data] : request.stages)
+	{
+		if (data.spv.empty())
+		{
+			throw std::invalid_argument("Shader upload contains empty bytecode");
+		}
+	}
+	return std::make_shared<const ShaderGPU>(device, request);
+}
 
 UploadManager::UploadManager(const vk::raii::Device& device,
                              const vk::raii::PhysicalDevice& physicalDevice,

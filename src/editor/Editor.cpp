@@ -187,13 +187,13 @@ int PoolShader(neurus::ResourceManager& resources,
 
 } // anonymous namespace
 
-Editor::Editor(RenderRequestSink* renderer)
+Editor::Editor(RenderRequestSink* renderer, std::shared_ptr<const BuiltInRenderData> renderDefaults)
 	: m_scene(std::make_unique<Scene>())
 	, m_resources(std::make_unique<ResourceManager>())
 	, ed_operations(ed_eventBus)
 	, ed_renderer(renderer)
 {
-	m_renderManager = std::make_unique<RenderManager>(*m_resources, renderer);
+	m_renderManager = std::make_unique<RenderManager>(*m_resources, renderer, std::move(renderDefaults));
 }
 
 Editor::~Editor()
@@ -464,7 +464,21 @@ void Editor::Initialize()
 		if (!ed_renderer) return;
 		auto shader = m_resources->Get<ShaderData>(e.shaderObjectId);
 		if (!shader) return;
-		ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
+		bool usedByMesh = false;
+		m_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
+		{
+			if (mesh && mesh->o_shader && mesh->o_shader->GetObjectID() == e.shaderObjectId)
+				usedByMesh = true;
+		});
+		const bool usedByGraph = m_renderManager->ReferencesShader(e.shaderObjectId);
+		if (usedByGraph)
+			m_renderManager->Publish();
+		if (usedByMesh && shader->GetType() == ShaderType::VERTEX)
+		{
+			if (!usedByGraph)
+				ed_renderer->Post(MakeUploadShaderRequest(*shader));
+			ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
+		}
 	});
 
 	// --- Selection moves the resting handle, and selection alone emits no
@@ -1437,7 +1451,10 @@ void Editor::UploadSceneResources()
 		// the event bus, so no ShaderCompiled fires. Warm each mesh's pipeline
 		// once here instead.
 		if (mesh->o_shader)
+		{
+			ed_renderer->Post(MakeUploadShaderRequest(*mesh->o_shader));
 			ed_renderer->Post(MakeEnsurePipelineRequest(*mesh->o_shader));
+		}
 	}
 
 	for (const auto& [uid, light] : m_scene->light_list)

@@ -74,7 +74,7 @@ protected:
 
 			// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 
 			m_hasVulkan = true;
 		}

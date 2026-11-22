@@ -56,6 +56,7 @@
 namespace neurus {
 
 // --- Forward declarations ---
+class BuiltInRenderData;
 class RenderCache;
 class VertexBuffer;
 class IndexBuffer;
@@ -97,6 +98,7 @@ public:
 	 * @param surface          Presentation surface (borrowed, must outlive swapchain).
 	 * @param width            Initial window width.
 	 * @param height           Initial window height.
+	 * @param renderDefaults   Shared CPU defaults, or null for a local provider.
 	 */
 	DeferredRenderer(const vk::raii::Device& device,
 	                 const vk::raii::PhysicalDevice& physicalDevice,
@@ -104,7 +106,8 @@ public:
 	                 uint32_t queueFamilyIndex,
 	                 const vk::raii::SurfaceKHR& surface,
 	                 uint32_t width,
-	                 uint32_t height);
+	                 uint32_t height,
+	                 std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
 
 	/**
 	 * @brief Creates the pipeline for a windowless (headless) renderer.
@@ -115,12 +118,14 @@ public:
 	 * VK_KHR_swapchain extension and no surface are required.
 	 *
 	 * @param extent Initial render extent in pixels.
+	 * @param renderDefaults Shared CPU defaults, or null for a local provider.
 	 */
 	DeferredRenderer(const vk::raii::Device& device,
 	                 const vk::raii::PhysicalDevice& physicalDevice,
 	                 SharedQueue& graphicsQueue,
 	                 uint32_t queueFamilyIndex,
-	                 vk::Extent2D extent);
+	                 vk::Extent2D extent,
+	                 std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
 
 	~DeferredRenderer();
 
@@ -338,7 +343,7 @@ private:
 	 * Requires r_target to be set; allocates the passes, the graph, command
 	 * buffers and the sync objects the target needs.
 	 */
-	void InitializePipeline();
+	void InitializePipeline(std::shared_ptr<const BuiltInRenderData> renderDefaults);
 
 	/** @brief Shared member initialisation; the public constructors delegate. */
 	DeferredRenderer(const vk::raii::Device& device,
@@ -398,29 +403,9 @@ private:
 	// dispatches it and compiles it only when the document or its shaders change.
 	RenderGraph m_mainGraph;
 
-	/**
-	 * @brief Topology-affecting projection of the document and its shaders.
-	 *
-	 * The graph is derived from the document and the shader snapshots; this
-	 * signature captures both, so a sample rebuilds the graph only when one of
-	 * them changed. FXAA is part of the document's topology, so the render config
-	 * no longer participates.
-	 */
-	struct PipelineSignature
-	{
-		std::uint64_t graphHash  = 0;     ///< Uploader's document hash.
-		std::uint64_t shaderHash = 0;     ///< Snapshot identities and versions.
-
-		static PipelineSignature From(std::uint64_t graphHash, std::uint64_t shaderHash)
-		{
-			return PipelineSignature{graphHash, shaderHash};
-		}
-
-		bool operator==(const PipelineSignature&) const = default;
-	};
-
-	/// Signature the current m_mainGraph was built for (dirty-key, not truth).
-	PipelineSignature m_builtSignature;
+	/// Hash of the published topology and selected shader UIDs.
+	std::optional<std::uint64_t> m_builtGraphHash;
+	std::uint64_t m_builtShaderGeneration = 0;
 
 public:
 	/// @brief Last compile verdict, including the diagnostics the caller reports.

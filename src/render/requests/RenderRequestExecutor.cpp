@@ -169,6 +169,34 @@ void RenderRequestExecutor::handle(const UpdateLightRequest& request)
 // Per-mesh pipeline warm
 // ---------------------------------------------------------------------------
 
+void RenderRequestExecutor::handle(const UploadShaderRequest& request)
+{
+	const auto resident = m_cache.GetShader(request.shaderId);
+	if (resident && resident->GetVersion() == request.version)
+		return;
+	if (!m_uploader)
+	{
+		if (!m_reportedNullUploaderShader)
+		{
+			m_reportedNullUploaderShader = true;
+			NEURUS_ERR("[RenderRequestExecutor] UploadShaderRequest with no UploadManager - skipping");
+		}
+		return;
+	}
+
+	try
+	{
+		auto shader = m_uploader->UploadShader(request);
+		// Passes retain uploaded modules. Replacing a cache entry does not
+		// release their shader; pipeline and graph replacement own their waits.
+		m_cache.UseShader(std::move(shader));
+	}
+	catch (const std::exception& error)
+	{
+		NEURUS_ERR("[RenderRequestExecutor] Rejected shader " << request.shaderId << ": " << error.what());
+	}
+}
+
 void RenderRequestExecutor::handle(const EnsurePipelineRequest& request)
 {
 	if (!m_geometryPass && m_geometryProvider)

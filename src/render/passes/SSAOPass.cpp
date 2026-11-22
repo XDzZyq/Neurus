@@ -5,6 +5,7 @@
 
 #include "RenderCache.hpp"
 #include "passes/SSAOPass.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 
 #include "../PipelineBuilder.hpp"
 #include "DescriptorLayout.hpp"
@@ -12,9 +13,8 @@
 #include "render/Barrier.hpp"
 #include "render_api/RenderContext.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/BuiltInRenderData.hpp"
-#include "shader/ComputeShader.hpp"
+
+
 #include "core/Log.hpp"
 
 #include "scene/Camera.hpp"
@@ -82,13 +82,13 @@ private:
 // Construction
 // ---------------------------------------------------------------------------
 
-SSAOPass::SSAOPass(const vk::raii::Device& device,
+SSAOPass::SSAOPass(RenderCache& cache, const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets,
                    SharedQueue& graphicsQueue,
                    uint32_t queueFamilyIndex)
 	: SSAOPass(device, physicalDevice, numSets, graphicsQueue, queueFamilyIndex,
-	           BuiltInRenderData::Get().ComputeShaderFor("ssao"))
+	           cache.EnsureDefaultShader(kSsaoShaders[0].name))
 {
 }
 
@@ -97,8 +97,8 @@ SSAOPass::SSAOPass(const vk::raii::Device& device,
                    uint32_t numSets,
                    SharedQueue& graphicsQueue,
                    uint32_t queueFamilyIndex,
-                   std::shared_ptr<const ComputeShader> shader)
-	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, *shader), numSets)
+                   std::shared_ptr<const ShaderGPU> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, RequireShader(shader)), numSets)
 	, p_shader(std::move(shader))
 {
 	BuildPipeline(device, "SSAOPass");
@@ -212,13 +212,8 @@ void SSAOPass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("SSAOPass: Compute shader not loaded or invalid");
 	}
 
-	auto spv = p_shader->GetStage(ShaderType::COMPUTE).spv;
-	if (spv.empty())
-		spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-		                             ShaderType::COMPUTE, debugName);
-	vk::ShaderModuleCreateInfo smCI({}, spv);
-	vk::raii::ShaderModule module(device, smCI);
-	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
+	const auto module = p_shader->Module(ShaderType::COMPUTE);
+	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, module, "main");
 
 	vk::PushConstantRange pushRange = MakePushConstantRange(
 		*p_shader, vk::ShaderStageFlagBits::eCompute);
@@ -350,7 +345,7 @@ PassIO SSAOPass::GetIO() const
 	return io;
 }
 
-std::vector<const ShaderData*> SSAOPass::GetShaders() const
+std::vector<const ShaderGPU*> SSAOPass::GetShaders() const
 {
 	return {p_shader.get()};
 }

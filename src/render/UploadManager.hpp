@@ -13,6 +13,8 @@
 namespace neurus {
 
 struct LightSnapshot;
+struct UploadShaderRequest;
+class ShaderGPU;
 
 // Forward declarations
 class IBLPass;
@@ -54,6 +56,21 @@ enum LightType : int;    // scene/Light.hpp
 		              const vk::raii::PhysicalDevice& physicalDevice,
 		              SharedQueue& transferQueue,
 		              uint32_t transferQueueFamily);
+	/**
+	 * @brief Validates an owned shader upload and creates its GPU modules.
+	 * @param request Compiled stage bytes and parsed interface metadata.
+	 * @throws std::invalid_argument for incomplete stages or incompatible graphics interfaces.
+	 */
+	std::shared_ptr<const ShaderGPU> UploadShader(const UploadShaderRequest& request);
+
+	/**
+	 * @brief Uploads a shader using a borrowed device, without creating an upload service.
+	 * @param device Device owning the resulting modules.
+	 * @param request Compiled stage bytes and parsed interface metadata.
+	 * @throws std::invalid_argument for incomplete stages or incompatible graphics interfaces.
+	 */
+	static std::shared_ptr<const ShaderGPU> UploadShader(const vk::raii::Device& device,
+	                                                   const UploadShaderRequest& request);
 	~UploadManager();
 
 	// Non-copyable

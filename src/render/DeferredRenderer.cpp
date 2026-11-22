@@ -22,6 +22,7 @@
 #include "Screenshot.hpp"
 #include "SharedQueue.hpp"
 #include "UploadManager.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include "overlay/OverlayEngine.hpp"
 
@@ -79,7 +80,8 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
                                     uint32_t queueFamilyIndex,
                                     const vk::raii::SurfaceKHR& surface,
                                     uint32_t width,
-                                    uint32_t height)
+                                    uint32_t height,
+                                    std::shared_ptr<const BuiltInRenderData> renderDefaults)
 	: DeferredRenderer(device, physicalDevice, graphicsQueue, queueFamilyIndex)
 {
 	// --- 1. Window output target ---
@@ -87,25 +89,31 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	// final HDR composite blit needs.
 	r_target = std::make_unique<SwapchainTarget>(
 		physicalDevice, device, graphicsQueue, surface, width, height);
-	InitializePipeline();
+	InitializePipeline(std::move(renderDefaults));
 }
 
 DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
                                     SharedQueue& graphicsQueue,
                                     uint32_t queueFamilyIndex,
-                                    vk::Extent2D extent)
+                                    vk::Extent2D extent,
+                                    std::shared_ptr<const BuiltInRenderData> renderDefaults)
 	: DeferredRenderer(device, physicalDevice, graphicsQueue, queueFamilyIndex)
 {
 	// --- 1. Headless output target ---
 	// No surface, no acquire, no present: the last image of a frame is the
 	// OverlayOutput attachment.
 	r_target = std::make_unique<OffscreenTarget>(extent);
-	InitializePipeline();
+	InitializePipeline(std::move(renderDefaults));
 }
 
-void DeferredRenderer::InitializePipeline()
+void DeferredRenderer::InitializePipeline(std::shared_ptr<const BuiltInRenderData> renderDefaults)
 {
+	if (!renderDefaults)
+	{
+		renderDefaults = std::make_shared<const BuiltInRenderData>();
+	}
+
 	// The body below used to live in the constructor. These aliases keep it
 	// reading exactly as before now that both constructors share it.
 	const vk::raii::Device& device = r_device;
@@ -119,7 +127,7 @@ void DeferredRenderer::InitializePipeline()
 	m_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
 
 	// --- 2. Create G-Buffer attachment cache (lazy creation on first access) ---
-	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice);
+	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice, renderDefaults);
 
 	// --- 2b. Create the screenshot capture service ---
 	// Same Vulkan handles the renderer draws with; its capture methods sync the
@@ -128,17 +136,16 @@ void DeferredRenderer::InitializePipeline()
 	m_screenshot = std::make_unique<Screenshot>(
 		r_device, r_physicalDevice, graphicsQueue, r_queueFamilyIndex);
 
-	// --- 3. Create the built-in passes ---
-	// The factory owns one instance of each scene pass and caches the ports its
-	// shader declares; the compiler and the graph both read them.
+	// --- 3. Wire the pass factory and graph uploader ---
 	m_passFactory = std::make_unique<PassFactory>(
-		device, physicalDevice, kMaxFramesInFlight, graphicsQueue, queueFamilyIndex);
+		device, physicalDevice, kMaxFramesInFlight, graphicsQueue, queueFamilyIndex, *r_renderCache);
 
 	NEURUS_LOG("[DeferredRenderer] Scene pass cache ready; GPU passes are created on demand");
 
-	// The uploader owns the document-to-runtime mapping; it borrows the factory
-	// and must be created after it (and destroyed before it).
-	m_graphUploader = std::make_unique<GraphUploader>(*m_passFactory);
+	// The cache retains the CPU defaults for the uploader's borrowed port catalog.
+	// Prepare them here on the caller thread before rendering starts.
+	m_graphUploader = std::make_unique<GraphUploader>(
+		*m_passFactory, renderDefaults->Ports(), renderDefaults->Graph());
 
 	// --- 4. Build the overlay graph (selection outline, debug overlay, gizmo) ---
 	// Separate from the scene graph so overlays can be redrawn over a converged
@@ -210,9 +217,6 @@ void DeferredRenderer::InitializePipeline()
 		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; },
 		[this](const CompileRenderGraphRequest& request)
 		{
-			// The swap replans the cache's images, so no submitted frame may
-			// still read the old plans.
-			DrainInFlightFrames();
 			m_graphUploader->SetPending(request);
 		}, [this] { return m_passFactory->Geometry(); });
 }
@@ -411,6 +415,28 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		return m_frameProfile;
 	}
 	m_reportedNoCamera = false;
+
+	// Compile changed documents on Sample frames. Overlay frames reuse the
+	// topology and attachments that produced the converged scene image.
+	if (work == FrameWork::Sample)
+	{
+		// A request and the frame that carries it compile together.
+		const bool newDocument = m_graphUploader->ConsumeNewDocument();
+
+		if (m_graphUploader->HasDocument())
+		{
+			const auto hash = m_graphUploader->DocumentHash();
+			if (newDocument || !m_builtGraphHash || *m_builtGraphHash != hash
+				|| m_builtShaderGeneration != r_renderCache->ShaderGeneration())
+			{
+				DrainInFlightFrames();
+				CompileDocument();
+				m_builtGraphHash = hash;
+				m_builtShaderGeneration = r_renderCache->ShaderGeneration();
+			}
+		}
+	}
+
 
 	// --- Profiling: read back this slot's GPU timestamps (fence signaled) ---
 	// Resolve() reads the slot about to be reused; the resolved GPU ms are
@@ -966,24 +992,6 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// Sample: Geometry -> Shadows -> SSAO -> Lighting -> Compose -> [FXAA], then
 	//         the overlay graph over that image.
 	// Overlay: the overlay graph alone, over the image the last sample produced.
-	// Compile changed documents on Sample frames. Overlay frames reuse the
-	// topology and attachments that produced the converged scene image.
-	if (work == FrameWork::Sample)
-	{
-		// A request and the frame that carries it compile together.
-		const bool newDocument = m_graphUploader->ConsumeNewDocument();
-
-		if (m_graphUploader->HasDocument())
-		{
-			const PipelineSignature sig = PipelineSignature::From(
-				m_graphUploader->DocumentHash(), m_graphUploader->ShaderHash());
-			if (newDocument || !(sig == m_builtSignature))
-			{
-				CompileDocument();
-				m_builtSignature = sig;
-			}
-		}
-	}
 
 	// --- Profiling: bracket the whole pipeline with GPU frame timestamps ---
 	// One BeginFrame/EndFrame pair covers both graphs, so the overlay passes are

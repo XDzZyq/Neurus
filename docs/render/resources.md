@@ -8,6 +8,26 @@
 
 **Scene-scoped eviction.** Mesh, environment and light entries - plus the shadow-layer / SSBO-index maps and the shadow intensity array derived from them - are dropped together by `RenderCache::RemoveSceneResources()`. The renderer calls it when it executes a `DropSceneResourcesRequest`, which the Editor posts whenever it replaces the scene (from `BeginLoad()` and `NewScene()`); the executor drains the in-flight frames first, since the entries own `vk::raii` resources the last frame may still read. Keying by object UID makes this necessary rather than tidy: `UID::serialize()` *restores* `o_id` from the project file, so an entry left behind by the previous scene shadows whatever returns under the same id. FIFO ordering is what makes the drop safe across a replacement - the Editor posts the drop before the new scene's upload requests, so the old cache is evicted before the new scene uploads. Screen-space attachments, the pipeline cache and the `LightingCache` survive it - they are recreated lazily, versioned, or owned by `UploadManager` rather than by the scene.
 
+## Shader GPU resources
+
+CPU `MakeUploadShaderRequest` copies a shader UID, compile version, primary type,
+and per-stage `ShaderStageUpload{spv, parsed}` values. `UploadManager` constructs
+`ShaderGPU` modules and uploaded reflection/port metadata; `RenderCache` owns and
+indexes them. This copy isolates queued uploads from subsequent Editor edits.
+No source code or source paths cross the upload boundary.
+
+Shader uploads precede graph compilation and pipeline selection in the FIFO.
+`EnsurePipelineRequest` selects an uploaded shader by identity and version;
+passes use cached GPU modules and own pass-specific pipelines. The graph mapper
+reads only stable CPU shader UIDs, then resolves GPU resources and metadata from
+the cache. It may read/write cache resources as part of one-way graph mapping.
+
+Reuploading the same UID changes the GPU cache revision and refreshes dependent
+passes/graphs even when graph topology is unchanged. Cache/resource references
+and frame fences preserve older resources while submitted work uses them.
+Defaults follow built-in recipes through CPU preparation, upload, cache and pass
+construction. These renderer resources never become serialized project objects.
+
 ## Render request path
 
 The renderer is the sole GPU submitter: the Editor touches no `VkQueue`, waits
@@ -67,14 +87,13 @@ constructs renderer lighting structs.
   scene; one posted before it is discarded with the old one. This is exactly what
   makes a scene replacement safe (see scene-scoped eviction above).
 
-- **The payload rule.** A payload is a value, or a `shared_ptr<const T>` to data
-  nobody mutates after creation. It is never a `Scene`, `Mesh` or `Shader`
-  pointer - the Editor may edit or delete those before the request is drained -
-  and never a callable, because a closure capturing the Editor would run Editor
-  code wherever the renderer runs. `EnsurePipelineRequest` carries its own copy
-  of the SPIR-V (via `MakeEnsurePipelineRequest(const Shader&)`) rather than the
-  `Shader`, so a recompile landing before the drain cannot change the code under
-  a version it no longer belongs to.
+- **The payload rule.** Requests own the content the renderer reads. Shader
+  uploads carry copied SPIR-V and reflection metadata; pipeline selection uses
+  the already-uploaded shader UID and version. Published graph topology retains
+  shared CPU shader references for ownership, but the mapper reads only their
+  stable UIDs, never mutable code, IR, bytecode or CPU versions. Requests never
+  capture Editor callables or dereference mutable scene objects on the render
+  thread.
 
 - **Ordering against frames on the render thread.** A request does not reach the
   renderer when the Editor makes it. `RenderThread::Post` appends to a posting

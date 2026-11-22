@@ -13,10 +13,20 @@
 #include "render_graph/ShaderReflection.hpp"
 
 #include <array>
-#include <initializer_list>
 #include <span>
+#include <memory>
+#include <stdexcept>
 
 namespace neurus {
+
+/** @brief Requires an immutable shader before constructor layout evaluation. */
+template<typename Shader>
+inline const Shader& RequireShader(const std::shared_ptr<const Shader>& shader)
+{
+	if (!shader)
+		throw std::invalid_argument("Pass construction requires a shader");
+	return *shader;
+}
 
 /**
  * @brief Reflects a descriptor set layout from one shader bundle.
@@ -24,14 +34,15 @@ namespace neurus {
  * @param shader            Shader whose stages declare the bindings.
  * @param optionalBindings  Bindings that get PARTIALLY_BOUND.
  */
+template<typename Shader>
 inline DescriptorSetLayout MakeDescriptorLayout(
 	const vk::raii::Device& device,
-	const ShaderData& shader,
-	const std::initializer_list<uint32_t> optionalBindings = {})
+	const Shader& shader,
+	const std::span<const uint32_t> optionalBindings = {})
 {
-	const std::array<const ShaderData*, 1> shaders = {&shader};
+	const std::array<const Shader*, 1> shaders = {&shader};
 	const ReflectedDescriptorLayout layout =
-		ReflectDescriptorLayout(shaders, std::span<const uint32_t>(optionalBindings));
+		ReflectDescriptorLayout(shaders, optionalBindings);
 
 	return DescriptorSetLayout(device, layout.bindings, layout.bindingFlags);
 }
@@ -41,11 +52,12 @@ inline DescriptorSetLayout MakeDescriptorLayout(
  * @param shader  Shader whose stages declare the members.
  * @param stages  Stage mask for the range.
  */
+template<typename Shader>
 inline vk::PushConstantRange MakePushConstantRange(
-	const ShaderData& shader,
+	const Shader& shader,
 	const vk::ShaderStageFlags stages)
 {
-	const std::array<const ShaderData*, 1> shaders = {&shader};
+	const std::array<const Shader*, 1> shaders = {&shader};
 	vk::PushConstantRange range = PushConstantRangeFromShaders(shaders, stages);
 
 	// The IR size is the last declared member's end. Vulkan push-constant

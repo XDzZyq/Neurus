@@ -1,6 +1,5 @@
 # Passive CPU resource data and file access do not depend on shader tooling.
 add_library(neurus_asset_data STATIC
-	data/shader/ShaderSnapshot.hpp
 	PixelFormat.hpp
 	registrations/DataRegistration.hpp
 	registrations/DataRegistration.cpp
@@ -14,8 +13,6 @@ add_library(neurus_asset_data STATIC
 	data/RenderGraphData.cpp
 	data/render_graph/GraphOutputTag.hpp
 	data/render_graph/PortSource.hpp
-	data/render_graph/PassShaders.hpp
-	data/render_graph/PassShaders.cpp
 	data/render_graph/CpuGraphValidation.hpp
 	data/render_graph/CpuGraphValidation.cpp
 	data/render_graph/PassPorts.hpp

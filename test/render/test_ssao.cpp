@@ -59,11 +59,11 @@ protected:
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 
 		// --- SSAO pass ---
 		m_ssaoPass = std::make_unique<SSAOPass>(
-			*m_device, pd,
+			*m_renderCache, *m_device, pd,
 			1u,   // one descriptor set for single-frame test
 			*m_queue, m_graphicsQueueFamily);
 	}

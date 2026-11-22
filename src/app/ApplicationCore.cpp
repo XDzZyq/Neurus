@@ -3,6 +3,7 @@
 #include "app/Preferences.hpp"
 
 #include "asset/Project.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/registrations/ShaderRegistration.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "editor/project/EditorComponent.hpp"
@@ -111,7 +112,8 @@ command::Json StringArrayJson(const std::vector<std::string>& values)
 } // namespace
 
 ApplicationCore::ApplicationCore()
-	: m_preferences(std::make_unique<Preferences>())
+	: m_renderDefaults(std::make_shared<const BuiltInRenderData>())
+	, m_preferences(std::make_unique<Preferences>())
 	, m_script(std::make_unique<ScriptEngine>())
 {
 }

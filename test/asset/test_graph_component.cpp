@@ -12,6 +12,7 @@
 #include "asset/Project.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/data/RenderGraphData.hpp"
+#include "shader/ComputeShader.hpp"
 
 #include <cereal/archives/json.hpp>
 
@@ -136,11 +137,12 @@ TEST(GraphComponent, ExplicitShaderReferenceIsRetained)
 {
 	const neurus::test::FakePortSource ports = neurus::test::MakeRealPortSource();
 	auto graph = std::make_shared<neurus::RenderGraphData>(neurus::RenderGraphData::Default(ports));
-	graph->nodes.front()->data.shaderUid = 12345;
+	const auto shader = std::make_shared<neurus::ComputeShader>();
+	graph->nodes.front()->data.shader = shader;
 	const auto restored = Load(Save(graph));
 	ASSERT_TRUE(restored.has_value());
 	ASSERT_FALSE(restored->nodes.empty());
-	EXPECT_EQ(restored->nodes.front().shaderUid, 12345);
+	EXPECT_EQ(restored->nodes.front().shaderUid, shader->GetObjectID());
 }
 
 TEST(GraphComponent, ProjectLoadRejectsMalformedNodeWithoutDiscardingLaterConfig)

@@ -4,6 +4,7 @@
  */
 
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/ShaderData.hpp"
 
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
@@ -198,7 +199,15 @@ std::uint64_t RenderGraphData::Hash() const
 		hashByte(0x02);
 		hashString(node->name);
 		hashString(node->data.pass);
-		hashString(std::to_string(node->data.shaderUid));
+		if (const auto& shader = node->data.shader)
+		{
+			hashByte(0x08);
+			hashString(std::to_string(shader->GetObjectID()));
+		}
+		else
+		{
+			hashByte(0x09);
+		}
 		hashString(std::to_string(node->outputs.size()));
 		for (const auto& output : node->outputs)
 		{

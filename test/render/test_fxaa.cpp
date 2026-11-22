@@ -65,7 +65,7 @@ protected:
 		VulkanTestShared::SetUp();
 		if (!m_hasVulkan) return;
 		m_cache   = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
-		m_fxaaPass = std::make_unique<FXAAPass>(*m_device, PhysicalDevice(), 2);
+		m_fxaaPass = std::make_unique<FXAAPass>(*m_cache, *m_device, PhysicalDevice(), 2);
 	}
 	void TearDown() override
 	{

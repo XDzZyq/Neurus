@@ -58,7 +58,7 @@ protected:
 				*m_device, pd, *m_queue, m_graphicsQueueFamily));
 			m_upload = std::make_unique<UploadManager>(
 				*m_device, pd, *m_queue, m_graphicsQueueFamily);
-			m_geometryPass = std::make_unique<GeometryPass>(*m_device, pd);
+			m_geometryPass = std::make_unique<GeometryPass>(*m_cache, *m_device, pd);
 			m_processor = std::make_unique<RenderRequestProcessor>(
 				[this]
 				{

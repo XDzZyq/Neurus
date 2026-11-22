@@ -4,6 +4,7 @@
  */
 
 #include "RenderGraph.hpp"
+#include "resources/ShaderGPU.hpp"
 
 #include "../DescriptorManager.hpp"
 #include "../Image.hpp"
@@ -49,12 +50,9 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 		throw std::runtime_error("RenderGraph::AddPass: pass must be non-null");
 
 	const PassIO io = pass->GetIO();
-	const std::vector<const ShaderData*> shaders = pass->GetShaders();
-	const std::vector<PassPort> declared = pass->DeclaredOutputs();
-
-	PassPorts ports = ExtractPassPorts(io.name.empty() ? "Pass" : io.name,
-	                                   shaders, declared);
-	return AddPass(pass, std::move(ports), pass->ExternalInputPorts());
+	const std::vector<const ShaderGPU*> shaders = pass->GetShaders();
+	PassPorts ports = CollectUploadedPassPorts(io.name.empty() ? "Pass" : io.name, shaders);
+	return AddPass(pass, std::move(ports), PassExternalInputs(io.name));
 }
 
 RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,

@@ -2,10 +2,9 @@
  * @file PassKinds.hpp
  * @brief Built-in pass kinds: their shader sources and declared-only ports.
  *
- * The table is Vulkan-free. It is the single description of a built-in pass:
- * the shader pool creates a node's shaders from a row, the default graph seeds
- * its nodes from the same rows, and the passes read their declared outputs and
- * external inputs back from here instead of hard-coding them.
+ * The Vulkan-free table defines each built-in kind's shader recipes and the
+ * socket declarations that cannot be extracted from the shader. The CPU catalog
+ * and renderer use the same rows.
  *
  * A kind lists every shader it owns, because two passes carry a second shader
  * for the sun variant (`ShadowDepthPass`, `ShadowIntensityPass`). Ports are

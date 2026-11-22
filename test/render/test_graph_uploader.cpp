@@ -4,10 +4,14 @@
  */
 
 #include <gtest/gtest.h>
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderParser.hpp"
 
 #include "shared/TestVulkanShared.hpp"
 
 #include "render/RenderCache.hpp"
+#include "render/UploadManager.hpp"
 #include "render/render_graph/GraphUploader.hpp"
 #include "render/render_graph/PassFactory.hpp"
 #include "render/render_graph/RenderGraph.hpp"
@@ -19,6 +23,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -57,25 +62,25 @@ protected:
 		if (!HasVulkan())
 			return;
 
-		m_factory = std::make_unique<neurus::PassFactory>(
-			*m_device, m_physicalDevices[m_selectedPdIndex], 2,
-			*m_queue, m_graphicsQueueFamily);
+		m_defaults = std::make_shared<const neurus::BuiltInRenderData>();
 		m_cache = std::make_unique<neurus::RenderCache>(
-			*m_device, m_physicalDevices[m_selectedPdIndex]);
-		m_uploader = std::make_unique<neurus::GraphUploader>(*m_factory);
+			*m_device, m_physicalDevices[m_selectedPdIndex], m_defaults);
+		m_factory = std::make_unique<neurus::PassFactory>(
+			*m_device, m_physicalDevices[m_selectedPdIndex], 2, *m_queue, m_graphicsQueueFamily, *m_cache);
+		m_uploader = std::make_unique<neurus::GraphUploader>(*m_factory, m_defaults->Ports(), m_defaults->Graph());
 	}
 
 	void TearDown() override
 	{
 		m_uploader.reset();
-		m_cache.reset();
 		m_factory.reset();
+		m_cache.reset();
 		VulkanTestShared::TearDown();
 	}
 
 	neurus::RenderGraphData DefaultDocument() const
 	{
-		return neurus::RenderGraphData::Default(*m_factory);
+		return neurus::RenderGraphData::Default(m_defaults->Ports());
 	}
 
 	void SetPending(neurus::RenderGraphData document)
@@ -92,8 +97,9 @@ protected:
 		return m_uploader->Compile(*m_cache);
 	}
 
-	std::unique_ptr<neurus::PassFactory> m_factory;
+	std::shared_ptr<const neurus::BuiltInRenderData> m_defaults;
 	std::unique_ptr<neurus::RenderCache> m_cache;
+	std::unique_ptr<neurus::PassFactory> m_factory;
 	std::unique_ptr<neurus::GraphUploader> m_uploader;
 };
 
@@ -168,18 +174,52 @@ TEST_F(GraphUploaderTest, UnknownPassIsNamed)
 	EXPECT_TRUE(HasError(upload.errors, "ssao", "unknown pass kind"));
 }
 
-TEST_F(GraphUploaderTest, MissingShaderSnapshotIsNamed)
+TEST_F(GraphUploaderTest, UncompiledSelectedShaderIsNamed)
 {
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	neurus::RenderGraphData document = DefaultDocument();
-	FindNode(document, "lighting")->data.shaderUid = 4242;
+	FindNode(document, "lighting")->data.shader = std::make_shared<const neurus::ComputeShader>("uncompiled");
 
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 
 	EXPECT_EQ(upload.graph, nullptr);
-	EXPECT_TRUE(HasError(upload.errors, "lighting", "no shader snapshot"));
+	EXPECT_TRUE(HasError(upload.errors, "lighting", "not uploaded"));
+}
+
+TEST_F(GraphUploaderTest, UploadedShaderWithRenamedPortIsRejected)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = std::shared_ptr<neurus::ComputeShader>(
+		neurus::ShaderLibrary::LoadComputeShader("RenamedComposePort", "res/shaders/compute/compose.comp.glsl"));
+	ASSERT_NE(shader, nullptr);
+
+	auto& stage = shader->GetStage(neurus::ShaderType::COMPUTE);
+	constexpr std::string_view original = "outputComposed";
+	constexpr std::string_view replacement = "renamedOutput";
+	auto offset = stage.code.find(original);
+	ASSERT_NE(offset, std::string::npos);
+	while (offset != std::string::npos)
+	{
+		stage.code.replace(offset, original.size(), replacement);
+		offset = stage.code.find(original, offset + replacement.size());
+	}
+
+	stage.parsed = neurus::ShaderParser::ParseShaderCode(stage.code, neurus::ShaderType::COMPUTE);
+	ASSERT_FALSE(stage.parsed.IsEmpty());
+	stage.spv.clear();
+	ASSERT_TRUE(shader->CompileToSpv());
+	m_cache->UseShader(neurus::UploadManager::UploadShader(*m_device, neurus::MakeUploadShaderRequest(*shader)));
+
+	neurus::RenderGraphData document = DefaultDocument();
+	FindNode(document, "compose")->data.shader = shader;
+	const neurus::GraphUploadResult upload = Compile(std::move(document));
+
+	EXPECT_EQ(upload.graph, nullptr);
+	EXPECT_TRUE(HasError(upload.errors, "compose", "changes the built-in port contract"));
 }
 
 TEST_F(GraphUploaderTest, StaleSocketIsNamed)
@@ -220,7 +260,7 @@ TEST_F(GraphUploaderTest, NullDocumentResolvesCachedBuiltInGraph)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	EXPECT_TRUE(m_uploader->HasDocument());
-	EXPECT_EQ(m_uploader->DocumentHash(), neurus::BuiltInRenderData::Get().Graph()->Hash());
+	EXPECT_EQ(m_uploader->DocumentHash(), m_defaults->Graph()->Hash());
 	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
 
 	ASSERT_TRUE(upload.errors.empty());
@@ -239,13 +279,11 @@ TEST_F(GraphUploaderTest, RepeatedNullRequestDoesNotInvalidateCachedDocument)
 	ASSERT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
 	const auto documentHash = m_uploader->DocumentHash();
-	const auto shaderHash = m_uploader->ShaderHash();
 
 	m_uploader->SetPending(neurus::CompileRenderGraphRequest{});
 
 	EXPECT_FALSE(m_uploader->ConsumeNewDocument());
 	EXPECT_EQ(m_uploader->DocumentHash(), documentHash);
-	EXPECT_EQ(m_uploader->ShaderHash(), shaderHash);
 }
 
 TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)

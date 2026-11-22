@@ -9,6 +9,8 @@
 
 #include "asset/components/GraphComponent.hpp"
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "core/ResourceManager.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 
 #include <cereal/archives/json.hpp>
@@ -20,6 +22,12 @@
 #include <vector>
 
 namespace {
+
+class TestShader final : public neurus::ShaderData
+{
+public:
+	neurus::ShaderType GetType() const override { return neurus::ShaderType::COMPUTE; }
+};
 
 using neurus::project::RenderGraphEdgeRecord;
 using neurus::project::RenderGraphNodeRecord;
@@ -104,6 +112,7 @@ TEST(RenderGraphDocument, DefaultGraph)
 
 	for (const auto& node : graph.nodes)
 	{
+		EXPECT_EQ(node->data.shader, nullptr);
 		for (const auto& output : node->outputs)
 		{
 			EXPECT_TRUE(output->data.tag.has_value())
@@ -285,4 +294,54 @@ TEST(CpuGraphValidation, CycleIsNamed)
 			return diagnostic.message.find("cycle") != std::string::npos;
 		});
 	EXPECT_TRUE(named);
+}
+
+TEST(RenderGraphDocument, SavedShaderUidResolvesToOwnedPoolResource)
+{
+	const auto ports = neurus::test::MakeRealPortSource();
+	neurus::ResourceManager resources;
+	auto shader = resources.Load<TestShader>();
+	auto& stage = shader->GetStage(neurus::ShaderType::COMPUTE);
+	stage.code = "restored content";
+	stage.spv = {1, 2, 3};
+	RenderGraphData graph = RenderGraphData::Default(ports);
+	graph.nodes[3]->data.shader = shader;
+	const auto record = Deserialize(Serialize(neurus::project::ToRecord(graph)));
+	EXPECT_EQ(record.nodes[3].shaderUid, shader->GetObjectID());
+	EXPECT_EQ(record.nodes[0].shaderUid, 0);
+
+	std::vector<std::string> problems;
+	const auto restored = neurus::project::FromRecord(record, ports, problems, &resources);
+	EXPECT_TRUE(problems.empty());
+	ASSERT_EQ(restored.nodes.size(), graph.nodes.size());
+	EXPECT_EQ(restored.nodes[3]->data.shader, shader);
+	EXPECT_EQ(restored.nodes[0]->data.shader, nullptr);
+	EXPECT_EQ(restored.Hash(), graph.Hash());
+	EXPECT_EQ(neurus::project::ToRecord(restored), record);
+}
+
+TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
+{
+	const auto ports = neurus::test::MakeRealPortSource();
+	neurus::ResourceManager resources;
+	const auto invalid = resources.Load<TestShader>();
+	const auto wrongType = resources.Load<neurus::UID>();
+	auto record = neurus::project::ToRecord(RenderGraphData::Default(ports));
+	record.nodes[0].shaderUid = invalid->GetObjectID();
+	record.nodes[1].shaderUid = wrongType->GetObjectID();
+	record.nodes[2].shaderUid = 2147483647;
+
+	std::vector<std::string> problems;
+	const auto restored = neurus::project::FromRecord(record, ports, problems, &resources);
+	EXPECT_TRUE(problems.empty());
+	ASSERT_EQ(restored.nodes.size(), 7u);
+	for (const auto& node : restored.nodes)
+		EXPECT_EQ(node->data.shader, nullptr);
+	for (const auto& node : neurus::project::ToRecord(restored).nodes)
+		EXPECT_EQ(node.shaderUid, 0);
+	EXPECT_EQ(resources.Get<TestShader>(invalid->GetObjectID()), invalid);
+
+	const auto withoutPool = neurus::project::FromRecord(record, ports, problems);
+	for (const auto& node : withoutPool.nodes)
+		EXPECT_EQ(node->data.shader, nullptr);
 }

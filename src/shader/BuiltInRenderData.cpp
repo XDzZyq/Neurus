@@ -4,82 +4,118 @@
 #include "shader/RenderShader.hpp"
 #include "shader/ShaderLibrary.hpp"
 #include "asset/data/RenderGraphData.hpp"
-#include "asset/data/render_graph/PassShaders.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace neurus {
 
-struct BuiltInRenderData::Impl
+namespace {
+
+std::shared_ptr<const ShaderData> LoadDefaultShader(const PassShaderSource& source)
 {
-	ResourceManager resources;
-	std::unique_ptr<PassShaders> ports;
+	const std::string name(source.name);
+	if (!source.computePath.empty())
+	{
+		auto shader = ShaderLibrary::LoadComputeShader(name, std::string(source.computePath));
+		if (shader && shader->CompileToSpv())
+		{
+			return std::shared_ptr<const ShaderData>(std::move(shader));
+		}
+	}
+	else
+	{
+		auto shader = ShaderLibrary::LoadRenderShader(name, std::string(source.vertexPath),
+		                                              std::string(source.fragmentPath));
+		if (shader && shader->CompileToSpv())
+		{
+			return std::shared_ptr<const ShaderData>(std::move(shader));
+		}
+	}
+	throw std::runtime_error("Cannot construct built-in shader '" + name + "'");
+}
+
+} // namespace
+
+struct BuiltInRenderData::Impl final : IPortSource
+{
+	Impl();
+
+	const PassPorts* FindPassPorts(const std::string_view passKind) const override
+	{
+		const auto found = ports.find(std::string(passKind));
+		return found == ports.end() ? nullptr : &found->second;
+	}
+
+	std::vector<std::string> ExternalInputs(const std::string_view passKind) const override
+	{
+		return PassExternalInputs(passKind);
+	}
+
 	std::shared_ptr<const RenderGraphData> graph;
 	std::unordered_map<std::string, std::shared_ptr<const ShaderData>> shaders;
+	std::unordered_map<std::string, PassPorts> ports;
 };
 
-const BuiltInRenderData& BuiltInRenderData::Get()
+BuiltInRenderData::Impl::Impl()
 {
-	static const BuiltInRenderData builtins;
-	return builtins;
-}
-
-BuiltInRenderData::BuiltInRenderData() : m_impl(std::make_unique<Impl>())
-{
-	const auto load = [this](const PassShaderSource& source) -> std::shared_ptr<ShaderData>
+	for (const PassKindInfo& kind : kPassKinds)
 	{
-		std::shared_ptr<ShaderData> shader;
-		if (!source.computePath.empty())
+		std::vector<const ShaderData*> passShaders;
+		passShaders.reserve(kind.shaders.size());
+		for (const PassShaderSource& source : kind.shaders)
 		{
-			auto compute = ShaderLibrary::LoadComputeShader(std::string(source.name), std::string(source.computePath));
-			if (!compute || !compute->CompileToSpv())
-				throw std::runtime_error("Cannot construct built-in shader '" + std::string(source.name) + "'");
-			shader = std::move(compute);
+			auto [entry, inserted] = shaders.try_emplace(std::string(source.name));
+			if (inserted)
+			{
+				entry->second = LoadDefaultShader(source);
+			}
+			passShaders.push_back(entry->second.get());
 		}
-		else
-		{
-			auto render = ShaderLibrary::LoadRenderShader(std::string(source.name),
-				std::string(source.vertexPath), std::string(source.fragmentPath));
-			if (!render || !render->CompileToSpv())
-				throw std::runtime_error("Cannot construct built-in shader '" + std::string(source.name) + "'");
-			shader = std::move(render);
-		}
-		m_impl->shaders.emplace(std::string(source.name), shader);
-		return shader;
-	};
-	std::vector<std::string> problems;
-	m_impl->ports = std::make_unique<PassShaders>(m_impl->resources, load, problems);
-	if (!problems.empty())
-		throw std::runtime_error(problems.front());
 
-	auto graph = std::make_shared<RenderGraphData>(RenderGraphData::Default(*m_impl->ports));
-	m_impl->graph = std::move(graph);
+		PassPorts contract = ExtractPassPorts(std::string(kind.name), passShaders);
+		AddDeclaredPassOutputs(contract, kind);
+		if (!contract.problems.empty())
+		{
+			throw std::runtime_error("Invalid port contract for '" + contract.kind + "': " + contract.problems.front());
+		}
+		ports.emplace(std::string(kind.name), std::move(contract));
+	}
+	graph = std::make_shared<const RenderGraphData>(RenderGraphData::Default(*this));
 }
 
+BuiltInRenderData::BuiltInRenderData() = default;
 BuiltInRenderData::~BuiltInRenderData() = default;
+
+const BuiltInRenderData::Impl& BuiltInRenderData::Data() const
+{
+	std::call_once(m_initialize, [this]
+	{
+		m_impl = std::make_unique<const Impl>();
+	});
+	return *m_impl;
+}
 
 const std::shared_ptr<const RenderGraphData>& BuiltInRenderData::Graph() const
 {
-	return m_impl->graph;
+	return Data().graph;
 }
 
 const IPortSource& BuiltInRenderData::Ports() const
 {
-	return *m_impl->ports;
+	return Data();
 }
 
-std::shared_ptr<const RenderShader> BuiltInRenderData::RenderShaderFor(const std::string_view name) const
+std::shared_ptr<const ShaderData> BuiltInRenderData::ShaderFor(const std::string_view name) const
 {
-	return std::dynamic_pointer_cast<const RenderShader>(m_impl->shaders.at(std::string(name)));
-}
-
-std::shared_ptr<const ComputeShader> BuiltInRenderData::ComputeShaderFor(const std::string_view name) const
-{
-	return std::dynamic_pointer_cast<const ComputeShader>(m_impl->shaders.at(std::string(name)));
+	const auto& shaders = Data().shaders;
+	const auto found = shaders.find(std::string(name));
+	return found == shaders.end() ? nullptr : found->second;
 }
 
 } // namespace neurus

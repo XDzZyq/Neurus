@@ -16,13 +16,12 @@ src/asset/data/
         ShaderStruct.hpp/.cpp   parsed GLSL IR
         ShaderStructSerialize.hpp  cereal overloads for the IR
         ShaderUnit.hpp          path, code, parsed IR, SPIR-V, version
-        ShaderSnapshot.hpp     owned interface metadata and compiled bytecode
 
 src/shader/
     RenderShader.hpp/.cpp       ShaderData + vertex/fragment parse/generate
     ComputeShader.hpp/.cpp      ShaderData + compute parse/generate
     ShaderParser, ShaderGenerator, ShaderCompiler, ShaderLibrary
-    ShaderSnapshotBuilder.hpp/.cpp  snapshot construction and CPU reflection
+    BuiltInRenderData.hpp/.cpp  compiled defaults, port catalog and fallback graph
     registrations/
         ShaderRegistration.hpp/.cpp  pooled shader cereal registration
 ```
@@ -39,26 +38,40 @@ not overwrite editable/generated stage code or trigger compilation. Shader tooli
 consumes source text; existing file-loading convenience methods remain
 compatibility facades that delegate IO to Asset.
 
-`MakeShaderSnapshot`, declared by `shader/ShaderSnapshotBuilder.hpp`, reflects a
-pooled shader into CPU descriptor declarations, ports, push-constant members and
-SPIR-V. The renderer's `ShaderReflection`
-helpers translate this metadata into Vulkan declarations instead of maintaining
-a second shader-IR traversal. `ShaderSnapshot` itself stays a passive asset
-value with no builder or compiler dependency. Scene pass constructors still load
-their built-in shaders through the CPU Shader module; using the published
-snapshot's SPIR-V for pass construction remains a later render graph refactoring
-wave.
+Authoring graph nodes own pooled shaders through `shared_ptr<const ShaderData>`;
+the Editor retains mutable access to the originals. Publication clones topology
+and shares those references. The render thread reads only their stable shader
+UIDs, never mutable source, parsed IR, bytecode or version fields. Ordinary UID
+copy/move stays deleted; no shader data clones or secondary identities are needed.
+
+`MakeUploadShaderRequest` copies shader identity, stage SPIR-V and the metadata
+needed to reflect Vulkan descriptors and push constants. It also derives owned
+image ports with the Vulkan-free `ExtractPassPorts`, which `BuiltInRenderData`
+uses to build the default pass contracts. Uploads execute before
+`CompileRenderGraphRequest{graph}` in FIFO order. `UploadManager` constructs
+`ShaderGPU` with the uploaded ports, and `RenderCache` owns and indexes it. Passes
+consume cached GPU modules and own their pass-specific pipelines. The graph
+uploader checks custom shaders against the built-in contracts before mapping
+the runtime graph.
+
+A same-UID upload changes the GPU cache revision and refreshes dependent
+passes/graphs even when topology is unchanged. Resource references and frame
+fences preserve earlier GPU resources until their submitted work completes.
+Built-in recipes follow the same CPU preparation, uploader, cache and pass path;
+null selection does not insert default shaders into the project pool.
 
 ```mermaid
 flowchart TD
     library["ShaderLibrary::LoadRenderShader(name, vertPath, fragPath)"]
     data["RenderShader : ShaderData<br/>UID + name + stages"]
     unit["ShaderUnit per stage<br/>path + code + parsed IR + SPIR-V + version"]
-    pipeline["GeometryPass pipeline<br/>rebuilt when the shader version changes"]
+    upload["MakeUploadShaderRequest<br/>owned SPIR-V + Vulkan reflection IR + image ports"]
+    gpu["UploadManager -> RenderCache<br/>ShaderGPU by UID + cache revision"]
+    pipeline["Pass-specific pipelines<br/>consume cached GPU modules"]
 
     library --> data
     data --> unit
-    unit --> pipeline
+    unit --> upload --> gpu --> pipeline
 ```
 
 ## Edit flow
@@ -98,9 +111,10 @@ The script path is shader-keyed, so it also reaches a pooled `ComputeShader`:
 
 Compile resets temporal shadow accumulation. Both compile paths emit
 `RenderResetEvent`: the panel handler does it in its subscription wrapper after
-`OnCompileShader`, and the shader-keyed handler emits it on success. A mesh
-shader also emits `ShaderCompiled`, so the Editor warms its pipeline; a
-standalone compute shader does not.
+`OnCompileShader`, and the shader-keyed handler emits it on success. Successful
+compilation emits `ShaderCompiled` for both render and compute shaders, so the
+Editor uploads changed data before republishing graphs referencing the shader.
+Mesh startup and successful compilation use the same owned shader upload path.
 
 ## Persistence
 
@@ -123,13 +137,16 @@ fragment input locations/components must have matching vertex output scalar
 types. Compilation or interface failure clears both runtime stage binaries.
 Resource loading drops failed shaders and clears consumer references; rendering
 uses cached built-ins without registering replacements in the project pool.
-`GeometryPass` applies the same interface check to incoming pipeline requests,
-including independently edited stages, before creating a GPU pipeline.
+The renderer applies the same interface requirements to uploaded stage data
+before creating dependent GPU pipelines.
 
-Built-in CPU shaders are immutable and cached by `BuiltInRenderData`; their
-SPIR-V is reused when lazy renderer-owned passes create GPU pipelines. Project
-shader pipeline caches are cleared on scene replacement, because shader UIDs
-and runtime versions can repeat across project files.
+`BuiltInRenderData` uses `ShaderLibrary` to load and compile the recipes in
+`PassKinds`, then owns the results directly by recipe name. It builds the port
+catalog from those shaders and uses the catalog to construct the fallback graph.
+Default and custom scene passes get their GPU shader modules from `RenderCache`.
+Pass reuse depends on the selected shader UID and GPU cache revision. Scene
+replacement invalidates project shader and pipeline cache entries because
+resource UIDs and compile versions can repeat across files.
 
 Replacing a mesh shader keeps the previous pooled shader so its
 `ShaderReplaceOp` can undo the relink. The pool is cleared on project new/open;

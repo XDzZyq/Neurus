@@ -107,6 +107,7 @@ private:
 	void handle(const UploadEnvironmentRequest& request);
 	void handle(const UpdateLightingRequest& request);
 	void handle(const UpdateLightRequest& request);
+	void handle(const UploadShaderRequest& request);
 	void handle(const EnsurePipelineRequest& request);
 	void handle(const DropSceneResourcesRequest& request);
 
@@ -122,6 +123,7 @@ private:
 	bool m_reportedNullUploaderLight = false;
 	bool m_reportedNullUploaderEnv = false;
 	bool m_reportedNullGeometryPass = false;
+	bool m_reportedNullUploaderShader = false;
 };
 
 } // namespace neurus

@@ -16,8 +16,6 @@ add_library(neurus_shader STATIC
 	ShaderCompiler.cpp
 	ShaderLibrary.hpp
 	ShaderLibrary.cpp
-	ShaderSnapshotBuilder.hpp
-	ShaderSnapshotBuilder.cpp
 	registrations/ShaderRegistration.hpp
 	registrations/ShaderRegistration.cpp
 )

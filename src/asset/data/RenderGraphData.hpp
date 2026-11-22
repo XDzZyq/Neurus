@@ -25,12 +25,14 @@
 #include "core/Graph.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
 namespace neurus {
 
 class IPortSource;
+class ShaderData;
 
 /**
  * @brief Socket payload of the CPU graph: one shader port.
@@ -55,14 +57,14 @@ struct CpuPort
  * @brief Node payload of the CPU graph: one pass instance plus its editor state.
  *
  * The node's document id is `Graph::Node::name`, which the graph editor and the
- * script API use. A pass kind names a built-in factory entry; @c shaderUid is the
- * pooled shader the node draws with, and the position is graph-editor layout that
+ * script API use. A pass kind names a built-in factory entry; @c shader owns the
+ * selected CPU shader (null selects the built-in), and the position is layout that
  * the renderer never reads.
  */
 struct CpuNode
 {
 	std::string pass;
-	int         shaderUid = 0;
+	std::shared_ptr<const ShaderData> shader;
 	float       x = 0.0f;
 	float       y = 0.0f;
 
@@ -86,8 +88,8 @@ public:
 	 * @brief Builds the built-in seven-node scene graph.
 	 *
 	 * The default is the fallback when a project has no saved document, exactly
-	 * like `CreateDefaultScene`. Node shaders are left unset (uid 0); the Editor
-	 * assigns a pooled shader to each node after the resource pool is ready.
+	 * like `CreateDefaultScene`. Node shaders stay null and select cached built-ins
+	 * without creating project resources.
 	 *
 	 * @param ports  Pass-kind port source.
 	 * @throws std::runtime_error when a built-in pass kind has no ports.

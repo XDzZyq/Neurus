@@ -27,6 +27,7 @@ class Mesh;
 class MeshData;
 class RenderGraphData;
 class RenderManager;
+class BuiltInRenderData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
@@ -59,8 +60,9 @@ public:	/**
 	 *                  before that tick's BuildSnapshot/publish, so FIFO order on
 	 *                  the sink matches the frame the snapshot describes (see
 	 *                  RenderRequestSink.hpp).
+	 * @param renderDefaults Shared CPU defaults. Standalone editors may use a local provider.
 	 */
-	Editor(RenderRequestSink* renderer);
+	explicit Editor(RenderRequestSink* renderer, std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
 	~Editor();
 
 	Editor(const Editor&) = delete;

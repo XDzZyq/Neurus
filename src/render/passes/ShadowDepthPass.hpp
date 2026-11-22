@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "passes/Pass.hpp"
 #include "render_api/RenderContext.hpp"
 #include "../Image.hpp"
@@ -55,11 +57,18 @@ public:
 	static_assert(sizeof(LightPushData) == kLightPushSize,
 	              "LightPushData must be exactly 16 bytes");
 
-	ShadowDepthPass(const vk::raii::Device& device,
+	ShadowDepthPass(RenderCache& cache, const vk::raii::Device& device,
 	                const vk::raii::PhysicalDevice& physicalDevice,
 	                SharedQueue& graphicsQueue,
 	                uint32_t queueFamilyIndex,
 	                uint32_t resolution = kDefaultResolution);
+
+	/** @brief Builds both depth pipelines from their uploaded shaders. */
+	ShadowDepthPass(const vk::raii::Device& device,
+	                const vk::raii::PhysicalDevice& physicalDevice,
+	                SharedQueue& graphicsQueue, uint32_t queueFamilyIndex,
+	                uint32_t resolution, std::shared_ptr<const ShaderGPU> multiviewShader,
+	                std::shared_ptr<const ShaderGPU> sunShader);
 
 	~ShadowDepthPass() override = default;
 	ShadowDepthPass(const ShadowDepthPass&) = delete;
@@ -75,10 +84,7 @@ public:
 	PassIO GetIO() const override;
 
 	/// @brief The multiview cubemap and sun 2D depth shaders.
-	std::vector<const ShaderData*> GetShaders() const override;
-
-	/// @brief The per-light shadow bundle, a logical ordering token.
-	std::vector<PassPort> DeclaredOutputs() const override;
+	std::vector<const ShaderGPU*> GetShaders() const override;
 
 	/// @brief The face VP SSBO set, written by the graph.
 	DescriptorSet* GraphDescriptorSet(uint32_t frameIndex) override
@@ -114,9 +120,9 @@ private:
 	std::unique_ptr<DescriptorSet> p_ssboSet;
 	BufferLayout p_vtxLayout;
 
-	// --- Shaders (self-loaded via ShaderLibrary) ---
-	std::shared_ptr<const RenderShader> p_multiviewShader;  ///< Point-light cubemap depth+colour (multiview)
-	std::shared_ptr<const RenderShader> p_sunShader;         ///< Sun-light orthographic depth-only
+	// --- Uploaded shaders ---
+	std::shared_ptr<const ShaderGPU> p_multiviewShader;  ///< Point-light cubemap depth+colour (multiview)
+	std::shared_ptr<const ShaderGPU> p_sunShader;         ///< Sun-light orthographic depth-only
 	// (Pipelines inherited from Pass - p_pipelines[0]=multiview, p_pipelines[1]=sun)
 
 };

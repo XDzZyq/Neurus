@@ -1,5 +1,14 @@
 # src/render/CMakeLists.txt - Renderer Layer
 
+# Leaf GPU shader resource shared by renderer services and pass implementations.
+# It depends on CPU contracts, never on either of its renderer consumers.
+add_library(neurus_shader_gpu STATIC
+	resources/ShaderGPU.hpp
+	resources/ShaderGPU.cpp
+)
+target_include_directories(neurus_shader_gpu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(neurus_shader_gpu PUBLIC neurus_render_api Vulkan::Vulkan)
+
 add_library(neurus_render STATIC
 	buffers/ArrayBuffer.hpp
 	buffers/Buffer.hpp
@@ -94,6 +103,7 @@ add_library(neurus_render STATIC
 add_subdirectory(passes)
 
 target_link_libraries(neurus_render PUBLIC
+	neurus_shader_gpu
 	neurus_shader
 	Vulkan::Vulkan
 	glm

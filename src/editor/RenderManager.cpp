@@ -1,23 +1,23 @@
 #include "editor/RenderManager.hpp"
 
 #include "shader/BuiltInRenderData.hpp"
-#include "shader/ShaderSnapshotBuilder.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
-#include "asset/data/render_graph/PassKinds.hpp"
 #include "core/Log.hpp"
 #include "core/ResourceManager.hpp"
 #include "render_api/RenderRequestSink.hpp"
 #include "render_api/RenderRequests.hpp"
 
-#include <exception>
-#include <unordered_set>
 #include <utility>
+#include <unordered_set>
 
 namespace neurus {
 
-RenderManager::RenderManager(ResourceManager& resources, RenderRequestSink* sink)
-	: m_resources(resources), m_sink(sink)
+RenderManager::RenderManager(ResourceManager& resources, RenderRequestSink* sink,
+                             std::shared_ptr<const BuiltInRenderData> renderDefaults)
+	: m_resources(resources)
+	, m_sink(sink)
+	, m_renderDefaults(renderDefaults ? std::move(renderDefaults) : std::make_shared<const BuiltInRenderData>())
 {
 }
 RenderManager::~RenderManager() = default;
@@ -31,7 +31,7 @@ RenderConfig& RenderManager::EditConfig()
 
 const RenderGraphData& RenderManager::Graph() const
 {
-	return m_graph ? *m_graph : *BuiltInRenderData::Get().Graph();
+	return m_graph ? *m_graph : *m_renderDefaults->Graph();
 }
 
 void RenderManager::ResetConfig()
@@ -53,13 +53,10 @@ void RenderManager::ValidateGraph()
 		return;
 	for (const auto& node : m_graph->nodes)
 	{
-		if (node->data.shaderUid == 0)
-			continue;
-		const auto shader = m_resources.Get<ShaderData>(node->data.shaderUid);
-		if (!shader || !shader->IsValid())
-			node->data.shaderUid = 0;
+		if (node->data.shader && !node->data.shader->IsValid())
+			node->data.shader.reset();
 	}
-	for (const auto& diagnostic : ValidateCpuGraph(*m_graph, BuiltInRenderData::Get().Ports()))
+	for (const auto& diagnostic : ValidateCpuGraph(*m_graph, m_renderDefaults->Ports()))
 		m_problems.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
 	if (!m_problems.empty())
 	{
@@ -73,7 +70,7 @@ void RenderManager::Restore(const project::RenderGraphRecord& record)
 {
 	m_problems.clear();
 	m_graph = std::make_shared<RenderGraphData>(
-		project::FromRecord(record, BuiltInRenderData::Get().Ports(), m_problems));
+		project::FromRecord(record, m_renderDefaults->Ports(), m_problems, &m_resources));
 	ValidateGraph();
 	Publish();
 }
@@ -90,47 +87,32 @@ void RenderManager::Publish()
 {
 	if (!m_sink)
 		return;
-	std::vector<ShaderSnapshot> snapshots;
-	std::unordered_set<int> seen;
+	std::shared_ptr<const RenderGraphData> published;
 	if (m_graph)
 	{
-		for (const auto& node : m_graph->nodes)
+		auto graph = std::make_shared<RenderGraphData>(CloneGraph(*m_graph));
+		std::unordered_set<int> uploaded;
+		for (const auto& node : graph->nodes)
 		{
-			const PassKindInfo* kind = FindPassKind(node->data.pass);
-			if (!kind)
-				continue;
-			std::vector<int> shaderIds{node->data.shaderUid};
-			// Secondary built-in variants can be explicitly stored by source name.
-			for (const PassShaderSource& source : kind->shaders)
-			{
-				m_resources.ForEachUID([&](const std::shared_ptr<UID>& value)
-				{
-					const auto shader = std::dynamic_pointer_cast<ShaderData>(value);
-					if (shader && shader->GetName() == source.name && shader->IsValid())
-						shaderIds.push_back(shader->GetObjectID());
-				});
-			}
-			for (const int uid : shaderIds)
-			{
-				if (!uid || !seen.insert(uid).second)
-					continue;
-				const auto shader = m_resources.Get<ShaderData>(uid);
-				if (!shader || !shader->IsValid())
-					continue;
-				try
-				{
-					snapshots.push_back(MakeShaderSnapshot(*shader, kind->optionalBindings));
-				}
-				catch (const std::exception& error)
-				{
-					NEURUS_LOG("[RenderManager] Cannot snapshot shader " << uid << ": " << error.what());
-				}
-			}
+			if (const auto& shader = node->data.shader;
+			    shader && uploaded.insert(shader->GetObjectID()).second)
+				m_sink->Post(MakeUploadShaderRequest(*shader));
 		}
+		published = std::move(graph);
 	}
-	m_sink->Post(CompileRenderGraphRequest{
-		m_graph ? std::make_shared<const RenderGraphData>(CloneGraph(*m_graph)) : nullptr,
-		std::move(snapshots)});
+	m_sink->Post(CompileRenderGraphRequest{std::move(published)});
+}
+
+bool RenderManager::ReferencesShader(const int uid) const
+{
+	if (!m_graph)
+		return false;
+	for (const auto& node : m_graph->nodes)
+	{
+		if (node->data.shader && node->data.shader->GetObjectID() == uid)
+			return true;
+	}
+	return false;
 }
 
 } // namespace neurus

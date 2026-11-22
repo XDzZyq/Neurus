@@ -70,12 +70,12 @@ protected:
 		m_renderCache->SetLightingCache(
 		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
-			*m_device, pd, *m_queue, m_graphicsQueueFamily,
+			*m_renderCache, *m_device, pd, *m_queue, m_graphicsQueueFamily,
 			ShadowDepthPass::kDefaultResolution);
 		m_shadowIntensityPass = std::make_unique<ShadowIntensityPass>(
-			*m_device, pd, 1u);
+			*m_renderCache, *m_device, pd, 1u);
 	}
 	void TearDown() override { VulkanTestShared::TearDown(); }
 

@@ -13,11 +13,11 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "passes/ComputePass.hpp"
 #include "../DescriptorManager.hpp"
 #include "../buffers/GPUBuffer.hpp"
-#include "shader/ShaderLibrary.hpp"
-#include "shader/ComputeShader.hpp"
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -59,7 +59,7 @@ public:
 	 *
 	 * @throws std::runtime_error if shader or pipeline creation fails.
 	 */
-	LightingPass(const vk::raii::Device& device,
+	LightingPass(RenderCache& cache, const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice,
 	             uint32_t numSets);
 
@@ -94,10 +94,7 @@ public:
 	PassIO GetIO() const override;
 
 	/// @brief The PBR lighting compute shader.
-	std::vector<const ShaderData*> GetShaders() const override;
-
-	/// @brief IBL cubemaps, which are produced outside this graph.
-	std::vector<std::string> ExternalInputPorts() const override;
+	std::vector<const ShaderGPU*> GetShaders() const override;
 
 	/// @brief Light SSBOs, written by the graph into bindings 5, 6 and 11.
 	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
@@ -107,12 +104,14 @@ public:
 	void CollectGraphExternalImages(RenderCache& cache, const RenderContext& ctx,
 	                                std::vector<GraphExternalImage>& out) const override;
 
-private:
-	/// @brief Delegating constructor that receives the already-loaded shader.
+public:
+	/// @brief Constructs from a selected uploaded shader.
 	LightingPass(const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice,
 	             uint32_t numSets,
-	             std::shared_ptr<const ComputeShader> shader);
+	             std::shared_ptr<const ShaderGPU> shader);
+
+private:
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
@@ -121,7 +120,7 @@ private:
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
-	std::shared_ptr<const ComputeShader> p_shader;
+	std::shared_ptr<const ShaderGPU> p_shader;
 
 	// --- Empty cubemap placeholder for IBL bindings when no env exists (1x1x6, black) ---
 	std::unique_ptr<Texture> p_emptyCube;

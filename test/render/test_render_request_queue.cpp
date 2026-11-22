@@ -213,15 +213,15 @@ TEST(RenderRequestQueueTest, SpirvPayloadMovedNotCopied)
 {
 	BatchQueue<RenderRequest> queue;
 
-	EnsurePipelineRequest req;
+	UploadShaderRequest req;
 	req.shaderId = 11;
 	req.version  = 3;
-	req.vertexSpv   = std::vector<uint32_t>(64, 0xABu);
-	req.fragmentSpv = std::vector<uint32_t>(32, 0xCDu);
+	req.stages[ShaderType::VERTEX].spv   = std::vector<uint32_t>(64, 0xABu);
+	req.stages[ShaderType::FRAGMENT].spv = std::vector<uint32_t>(32, 0xCDu);
 
 	// Capture the storage addresses before the request leaves our hands.
-	const uint32_t* vertexData   = req.vertexSpv.data();
-	const uint32_t* fragmentData = req.fragmentSpv.data();
+	const uint32_t* vertexData   = req.stages[ShaderType::VERTEX].spv.data();
+	const uint32_t* fragmentData = req.stages[ShaderType::FRAGMENT].spv.data();
 	ASSERT_NE(vertexData, nullptr);
 	ASSERT_NE(fragmentData, nullptr);
 
@@ -229,23 +229,23 @@ TEST(RenderRequestQueueTest, SpirvPayloadMovedNotCopied)
 
 	auto batch = queue.TakeAll();
 	ASSERT_EQ(batch.size(), 1u);
-	const auto* drained = std::get_if<EnsurePipelineRequest>(&batch[0]);
+	const auto* drained = std::get_if<UploadShaderRequest>(&batch[0]);
 	ASSERT_NE(drained, nullptr);
 
 	EXPECT_EQ(drained->shaderId, 11);
 	EXPECT_EQ(drained->version, 3);
-	ASSERT_EQ(drained->vertexSpv.size(), 64u);
-	ASSERT_EQ(drained->fragmentSpv.size(), 32u);
+	ASSERT_EQ(drained->stages.at(ShaderType::VERTEX).spv.size(), 64u);
+	ASSERT_EQ(drained->stages.at(ShaderType::FRAGMENT).spv.size(), 32u);
 
 	// The decisive check: same buffer, so Post + TakeAll moved the vector's
 	// storage rather than reallocating a copy. A copy anywhere on the path would
 	// change the address and fail here.
-	EXPECT_EQ(drained->vertexSpv.data(), vertexData);
-	EXPECT_EQ(drained->fragmentSpv.data(), fragmentData);
+	EXPECT_EQ(drained->stages.at(ShaderType::VERTEX).spv.data(), vertexData);
+	EXPECT_EQ(drained->stages.at(ShaderType::FRAGMENT).spv.data(), fragmentData);
 
 	// Contents are what we put in.
-	EXPECT_EQ(drained->vertexSpv.front(), 0xABu);
-	EXPECT_EQ(drained->fragmentSpv.front(), 0xCDu);
+	EXPECT_EQ(drained->stages.at(ShaderType::VERTEX).spv.front(), 0xABu);
+	EXPECT_EQ(drained->stages.at(ShaderType::FRAGMENT).spv.front(), 0xCDu);
 }
 
 // ---------------------------------------------------------------------------

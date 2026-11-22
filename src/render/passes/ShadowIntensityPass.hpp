@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "passes/ComputePass.hpp"
 #include "render/TemporalAccumulator.hpp"
 
@@ -50,7 +52,7 @@ public:
 	 *
 	 * @throws std::runtime_error if shader loading or pipeline creation fails.
 	 */
-	ShadowIntensityPass(const vk::raii::Device& device,
+	ShadowIntensityPass(RenderCache& cache, const vk::raii::Device& device,
 	                    const vk::raii::PhysicalDevice& physicalDevice,
 	                    uint32_t numSets);
 
@@ -77,7 +79,7 @@ public:
 	PassIO GetIO() const override;
 
 	/// @brief Both the point-light cubemap and sun-light 2D eval shaders.
-	std::vector<const ShaderData*> GetShaders() const override;
+	std::vector<const ShaderGPU*> GetShaders() const override;
 
 	/**
 	 * @brief Writes all descriptors (image) into the specified set.
@@ -87,13 +89,15 @@ public:
 	void WriteDescriptors(uint32_t setIndex, RenderCache& cache,
 	                      Image& position, Image& shadowIntensity);
 
-private:
-	/// @brief Delegating constructor that receives the already-loaded shaders.
+public:
+	/// @brief Constructs from selected uploaded shader variants.
 	ShadowIntensityPass(const vk::raii::Device& device,
 	                    const vk::raii::PhysicalDevice& physicalDevice,
 	                    uint32_t numSets,
-	                    std::shared_ptr<const ComputeShader> pointLightShader,
-	                    std::shared_ptr<const ComputeShader> sunLightShader);
+	                    std::shared_ptr<const ShaderGPU> pointLightShader,
+	                    std::shared_ptr<const ShaderGPU> sunLightShader);
+
+private:
 
 	/// @brief Bindings written by the per-light sets, not by the graph.
 	std::vector<uint32_t> SelfManagedBindings() const override { return {0, 1, 2}; }
@@ -131,8 +135,8 @@ private:
 	std::vector<DescriptorSet> p_sunDescSets;                     ///< Sun descriptor sets (numSets * kSetsPerFrameSlot)
 
 	/// Compute shaders loaded via ShaderLibrary.
-	std::shared_ptr<const ComputeShader> p_pointLightShader;  ///< Point-light cubemap eval (shadow_eval.comp.glsl)
-	std::shared_ptr<const ComputeShader> p_sunLightShader;    ///< Sun-light 2D eval (sun_shadow_eval.comp.glsl)
+	std::shared_ptr<const ShaderGPU> p_pointLightShader;  ///< Point-light cubemap eval (shadow_eval.comp.glsl)
+	std::shared_ptr<const ShaderGPU> p_sunLightShader;    ///< Sun-light 2D eval (sun_shadow_eval.comp.glsl)
 
 	/// One descriptor set per shadow-casting light per in-flight frame slot, so
 	/// the per-light loop never updates a set that is still bound from an
