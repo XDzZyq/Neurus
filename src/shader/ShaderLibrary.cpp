@@ -10,6 +10,7 @@
 #include "core/Log.hpp"
 
 #include <shaderc/shaderc.hpp>
+#include <stdexcept>
 
 namespace neurus {
 
@@ -177,6 +178,21 @@ std::vector<uint32_t> ShaderLibrary::Compile(
 		*outError = compiler.GetErrorMessage();
 	}
 	return spv;
+}
+
+void ShaderLibrary::CompileEditedUnit(ShaderUnit& candidate, ShaderType stage, const std::string& name, bool fromStruct)
+{
+	if (fromStruct)
+		candidate.code = ShaderGenerator::Generate(candidate.parsed);
+
+	// Compile the actual source before extracting metadata. A parser that recognizes only
+	// the renderer's declaration subset must never turn invalid user GLSL into a valid edit.
+	std::string error;
+	candidate.spv = Compile(candidate, stage, name, &error);
+	if (candidate.spv.empty())
+		throw std::invalid_argument(name + " " + ShaderData::TypeToString(stage) + ": " + error);
+	if (!fromStruct)
+		candidate.parsed = ShaderParser::ParseShaderCode(candidate.code, stage);
 }
 
 std::unordered_map<ShaderType, std::vector<uint32_t>> ShaderLibrary::CompileAll(

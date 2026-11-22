@@ -75,6 +75,9 @@ public:
 		const std::string& debugName,
 		std::string* outError = nullptr);
 
+	/// Compile edited GLSL or regenerate an edited IR. On failure the caller discards its candidate.
+	static void CompileEditedUnit(ShaderUnit& candidate, ShaderType stage, const std::string& name, bool fromStruct);
+
 	static std::unordered_map<ShaderType, std::vector<uint32_t>> CompileAll(
 		const ShaderData& shader);
 
