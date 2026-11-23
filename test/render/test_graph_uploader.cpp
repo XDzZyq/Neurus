@@ -17,7 +17,7 @@
 #include "render/render_graph/RenderGraph.hpp"
 #include "render_api/RenderRequests.hpp"
 
-#include "asset/data/render_graph/RenderGraphTopology.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "shader/BuiltInRenderData.hpp"
 
 #include <algorithm>
@@ -29,7 +29,7 @@
 
 namespace {
 
-neurus::RenderGraphTopology::NodeType* FindNode(neurus::RenderGraphTopology& graph,
+neurus::RenderGraphData::NodeType* FindNode(neurus::RenderGraphData& graph,
                                             const std::string& name)
 {
 	for (const auto& node : graph.nodes)
@@ -78,19 +78,19 @@ protected:
 		VulkanTestShared::TearDown();
 	}
 
-	neurus::RenderGraphTopology DefaultDocument() const
+	std::unique_ptr<neurus::RenderGraphData> DefaultDocument() const
 	{
-		return neurus::RenderGraphTopology::Default(m_defaults->Ports());
+		return std::make_unique<neurus::RenderGraphData>(m_defaults->Ports());
 	}
 
-	void SetPending(neurus::RenderGraphTopology document)
+	void SetPending(std::unique_ptr<neurus::RenderGraphData> document)
 	{
 		neurus::CompileRenderGraphRequest request;
-		request.graph = std::make_shared<const neurus::RenderGraphTopology>(std::move(document));
+		request.graph = std::move(document);
 		m_uploader->SetPending(request);
 	}
 
-	neurus::GraphUploadResult Compile(neurus::RenderGraphTopology document)
+	neurus::GraphUploadResult Compile(std::unique_ptr<neurus::RenderGraphData> document)
 	{
 		SetPending(std::move(document));
 		return m_uploader->Compile(*m_cache);
@@ -124,9 +124,9 @@ TEST_F(GraphUploaderTest, DocumentWithoutFxaaKeepsSixPasses)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::RenderGraphTopology document = DefaultDocument();
-	document.sceneOutputs["color"] = {"compose", "outputComposed"};
-	document.RemoveNode(FindNode(document, "fxaa"));
+	auto document = DefaultDocument();
+	document->sceneOutputs["color"] = {"compose", "outputComposed"};
+	document->RemoveNode(FindNode(*document, "fxaa"));
 
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 
@@ -141,13 +141,13 @@ TEST_F(GraphUploaderTest, NodeAndOrderMatch)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::RenderGraphTopology document = DefaultDocument();
+	auto document = DefaultDocument();
 	std::vector<std::string> cpuOrder;
-	for (const auto* node : document.TopologicalSort())
+	for (const auto* node : document->TopologicalSort())
 		cpuOrder.push_back(node->name);
 
 	// Deduplicating an equivalent document can release the request's nodes.
-	// Keep expected order as owned values before transferring the document.
+	// Keep expected order as owned values before transferring the document->
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 	ASSERT_NE(upload.graph, nullptr);
 	ASSERT_TRUE(upload.errors.empty());
@@ -165,8 +165,8 @@ TEST_F(GraphUploaderTest, UnknownPassIsNamed)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::RenderGraphTopology document = DefaultDocument();
-	FindNode(document, "ssao")->data.pass = "NopePass";
+	auto document = DefaultDocument();
+	FindNode(*document, "ssao")->data.pass = "NopePass";
 
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 
@@ -179,8 +179,8 @@ TEST_F(GraphUploaderTest, UncompiledSelectedShaderIsNamed)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::RenderGraphTopology document = DefaultDocument();
-	FindNode(document, "lighting")->data.shader = std::make_shared<const neurus::ComputeShader>("uncompiled");
+	auto document = DefaultDocument();
+	FindNode(*document, "lighting")->data.shader = std::make_shared<const neurus::ComputeShader>("uncompiled");
 
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 
@@ -214,15 +214,15 @@ TEST_F(GraphUploaderTest, UploadedShaderRenamesSocketByRoleAndPreservesItsUsers)
 	ASSERT_TRUE(shader->CompileToSpv());
 	m_cache->UseShader(neurus::UploadManager::UploadShader(*m_device, neurus::MakeUploadShaderRequest(*shader)));
 
-	neurus::RenderGraphTopology document = DefaultDocument();
-	auto* compose = FindNode(document, "compose");
+	auto document = DefaultDocument();
+	auto* compose = FindNode(*document, "compose");
 	compose->data.shader = shader;
-	document.sceneOutputs["color"] = {"compose", "outputComposed"};
-	const auto stale = Compile(neurus::CloneGraph(document));
+	document->sceneOutputs["color"] = {"compose", "outputComposed"};
+	const auto stale = Compile(document->Clone());
 	EXPECT_EQ(stale.graph, nullptr);
 	EXPECT_TRUE(HasError(stale.errors, "compose", "no longer declared"));
 
-	neurus::ReconcilePassPorts(document, *compose, neurus::EffectivePassPorts(compose->data, m_defaults->Ports()));
+	neurus::ReconcilePassPorts(*document, *compose, neurus::EffectivePassPorts(compose->data, m_defaults->Ports()));
 	const auto upload = Compile(std::move(document));
 	ASSERT_NE(upload.graph, nullptr);
 	EXPECT_TRUE(upload.errors.empty());
@@ -236,8 +236,8 @@ TEST_F(GraphUploaderTest, StaleSocketIsNamed)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::RenderGraphTopology document = DefaultDocument();
-	neurus::RenderGraphTopology::NodeType* geometry = FindNode(document, "geometry");
+	auto document = DefaultDocument();
+	neurus::RenderGraphData::NodeType* geometry = FindNode(*document, "geometry");
 	ASSERT_NE(geometry, nullptr);
 	geometry->AddOutput("ghost")->data =
 		neurus::CpuPort{"ghost", neurus::PortDirection::Output, "vec4", 0, 0,
@@ -255,7 +255,7 @@ TEST_F(GraphUploaderTest, EmptyDocumentCompiles)
 	if (!HasVulkan())
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
-	neurus::GraphUploadResult upload = Compile(neurus::RenderGraphTopology{});
+	neurus::GraphUploadResult upload = Compile(std::make_unique<neurus::RenderGraphData>());
 
 	EXPECT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
@@ -284,7 +284,7 @@ TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
 
 	const auto defaultHash = m_uploader->DocumentHash();
 	neurus::CompileRenderGraphRequest empty;
-	empty.graph = std::make_shared<const neurus::RenderGraphTopology>();
+	empty.graph = std::make_shared<const neurus::RenderGraphData>();
 	m_uploader->SetPending(empty);
 	EXPECT_NE(m_uploader->DocumentHash(), defaultHash);
 	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);

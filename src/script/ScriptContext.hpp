@@ -27,13 +27,13 @@ namespace neurus
 class Scene;
 class RenderConfig;
 class IResourceLookup;
-class RenderGraphTopology;
+class RenderGraphData;
 struct CpuGraphDiagnostic;
 
 /// @brief The current effective graph and the identity of its optional project resource.
 struct ScriptGraphView
 {
-	const RenderGraphTopology* topology = nullptr;
+	const RenderGraphData* topology = nullptr;
 	std::optional<int> uid;
 	std::uint64_t projectEpoch = 0;
 };

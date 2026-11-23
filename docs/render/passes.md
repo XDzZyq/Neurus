@@ -4,7 +4,7 @@ Neurus renders deferred PBR through a fixed chain of compute and raster passes, 
 
 ## Pipeline order
 
-The pipeline is orchestrated by two RenderGraphs. `DeferredRenderer::m_mainGraph` is the scene graph, built from the published `RenderGraphTopology`. Each scene pass declares its ports from its shader, `ValidateCpuGraph()` names every document problem, and `GraphUploader::Compile()` maps the nodes and connections onto the runtime DAG through a `GraphMorphism` local to each compile. `OverlayEngine` owns the overlay graph, which draws the selection outline, debug primitives and gizmo over whatever image the scene graph ends with; it still declares its I/O through `Pass::GetIO()` and `AttachmentName`.
+The pipeline is orchestrated by two RenderGraphs. `DeferredRenderer::m_mainGraph` is the scene graph, built from the published `RenderGraphData`. Each scene pass declares its ports from its shader, `ValidateCpuGraph()` names every document problem, and `GraphUploader::Compile()` maps the nodes and connections onto the runtime DAG through a `GraphMorphism` local to each compile. `OverlayEngine` owns the overlay graph, which draws the selection outline, debug primitives and gizmo over whatever image the scene graph ends with; it still declares its I/O through `Pass::GetIO()` and `AttachmentName`.
 
 The scene graph maps every authored pass and executes those that contribute to the selected color, depth or object-ID output. A topology edit or a new revision of a selected shader rebuilds the runtime graph. The separate overlay graph reads the selected color and uses depth and object ID for depth-tested overlays and selection outlines when available. Each pass records its own barriers. The graph writes its descriptors. See [Render Graph](render-graph.md).
 

@@ -19,7 +19,7 @@ class IPortSource;
 class PassFactory;
 class RenderCache;
 class RenderGraph;
-class RenderGraphTopology;
+class RenderGraphData;
 struct CompileRenderGraphRequest;
 
 /**
@@ -67,7 +67,7 @@ public:
 	 * @param defaultGraph  Nonnull built-in topology used for null graph requests.
 	 */
 	GraphUploader(PassFactory& factory, const IPortSource& portCatalog,
-	              std::shared_ptr<const RenderGraphTopology> defaultGraph);
+	              std::shared_ptr<const RenderGraphData> defaultGraph);
 
 	GraphUploader(const GraphUploader&)            = delete;
 	GraphUploader& operator=(const GraphUploader&) = delete;
@@ -98,8 +98,8 @@ public:
 private:
 	PassFactory& m_factory;
 	const IPortSource& m_portCatalog;
-	const std::shared_ptr<const RenderGraphTopology> m_defaultGraph;
-	std::shared_ptr<const RenderGraphTopology> m_document;
+	const std::shared_ptr<const RenderGraphData> m_defaultGraph;
+	std::shared_ptr<const RenderGraphData> m_document;
 	std::uint64_t m_documentHash = 0;
 };
 

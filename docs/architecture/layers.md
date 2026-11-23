@@ -9,7 +9,7 @@ distinct responsibility, and Core supplies utilities shared across all of them.
 write-only sink, context and profiling values, and CPU overlay payloads. It is
 Qt-free and Vulkan-free and depends only on CPU asset data, scene and core types.
 Editor and UI include these contracts without linking renderer implementation.
-Graph requests carry an immutable `RenderGraphTopology` with shared CPU shader
+Graph requests carry an immutable `RenderGraphData` with shared CPU shader
 references. Shader upload requests carry bytecode and metadata. The graph mapper
 uses stable shader UIDs to resolve the uploaded GPU resources.
 
@@ -33,7 +33,7 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
   GizmoPass into `OverlayOutput`, which the renderer then blits to the
   swapchain. The scene image is never presented directly, so an overlay-only
   change redraws without re-running a scene pass
-- Builds the runtime scene graph from the published `RenderGraphTopology`.
+- Builds the runtime scene graph from the published `RenderGraphData`.
   `GraphUploader` maps pass kinds and cached GPU shaders to `PassFactory` instances,
   maps every node and connection through a `GraphMorphism` local to each compile, and its
   output tags plan the `RenderCache` resources. `RenderConfig` supplies

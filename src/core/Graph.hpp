@@ -698,16 +698,14 @@ private:
  * @brief Deep copy of a graph: node order, socket order, payloads and connections.
  *
  * `Graph` owns its nodes through `unique_ptr`, so it is movable but not copyable.
- * The copy is what undo stores and what the Editor publishes to the renderer: it
- * keeps identities as they are (node name, socket names and order) so a copy can
- * be compared, serialized and re-uploaded without rewriting anything.
+ * The copy preserves node and socket names, their order and their payloads.
  *
  * @param graph  Graph to copy; it is not modified.
  * @return A graph of the same type with an independent node and socket pool.
  * @throws std::runtime_error when a connection cannot be reproduced, which means
  *         the source graph's sockets were wired outside `Connect`.
  *
- * @tparam GraphT  A `Graph` or a type derived from one, such as the document.
+ * @tparam GraphT  A `Graph` or a movable derived type.
  */
 template<typename GraphT>
 GraphT CloneGraph(const GraphT& graph)

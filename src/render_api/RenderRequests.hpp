@@ -47,7 +47,7 @@ namespace neurus
 
 class ImageData;
 class MeshData;
-class RenderGraphTopology;
+class RenderGraphData;
 class ShaderData;
 
 /**
@@ -199,14 +199,14 @@ struct RedrawOverlaysRequest
  *
  * A null graph selects the cached built-in document; a nonnull empty graph
  * deliberately renders no scene passes. The document is immutable once posted
- * (`shared_ptr<const RenderGraphTopology>`). Each explicit node shader is a
+ * (`shared_ptr<const RenderGraphData>`). Each explicit node shader is a
  * shared CPU reference retained for identity; the renderer reads only its UID
  * and resolves uploaded GPU data. A null node shader selects a built-in.
  * Shader uploads precede this request in FIFO order.
  */
 struct CompileRenderGraphRequest
 {
-	std::shared_ptr<const RenderGraphTopology> graph;
+	std::shared_ptr<const RenderGraphData> graph;
 };
 
 /** @brief Copies one scene light into an owned request/frame value. */

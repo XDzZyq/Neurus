@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "asset/data/render_graph/RenderGraphTopology.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
 #include <functional>
@@ -41,7 +41,7 @@ struct CpuGraphDiagnostic
  * @param ports  Pass-kind port source.
  * @return One entry per problem; empty when the document is valid.
  */
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphTopology& graph,
+std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
                                                  const std::function<PassPorts(const CpuNode&)>& shaderPorts = {});
 

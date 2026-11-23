@@ -22,7 +22,7 @@ bool Matches(const CpuPort& socket, const PassPort& port)
 
 } // anonymous namespace
 
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphTopology& graph,
+std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
                                                  const std::function<PassPorts(const CpuNode&)>& shaderPorts)
 {
@@ -144,11 +144,11 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphTopology& grap
 				diagnostics.push_back({node->name, port.name, "declared input port has no socket"});
 	}
 
-	const std::vector<RenderGraphTopology::NodeType*> cyclic = graph.CyclicNodes();
+	const std::vector<RenderGraphData::NodeType*> cyclic = graph.CyclicNodes();
 	if (!cyclic.empty())
 	{
 		std::string names;
-		for (const RenderGraphTopology::NodeType* node : cyclic)
+		for (const RenderGraphData::NodeType* node : cyclic)
 		{
 			if (!names.empty())
 				names += ", ";

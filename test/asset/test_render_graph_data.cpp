@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/render_graph/RenderGraphTopology.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "core/ResourceManager.hpp"
 
@@ -45,12 +45,12 @@ neurus::CpuPort InputPort(const std::string& name, const std::uint32_t binding)
 	return port;
 }
 
-void SetInput(neurus::RenderGraphTopology::SocketInT* socket, const neurus::CpuPort& port)
+void SetInput(neurus::RenderGraphData::SocketInT* socket, const neurus::CpuPort& port)
 {
 	socket->data = port;
 }
 
-void SetOutput(neurus::RenderGraphTopology::SocketOutT* socket, const neurus::CpuPort& port)
+void SetOutput(neurus::RenderGraphData::SocketOutT* socket, const neurus::CpuPort& port)
 {
 	socket->data = port;
 }
@@ -59,20 +59,20 @@ void SetOutput(neurus::RenderGraphTopology::SocketOutT* socket, const neurus::Cp
 
 TEST(RenderGraphData, SocketsCarryPassPorts)
 {
-	neurus::RenderGraphTopology graph;
+	neurus::RenderGraphData graph;
 	neurus::CpuNode pass;
 	pass.pass = "GeometryPass";
 	pass.shader = std::make_shared<TestShader>();
 	pass.x = 40.0f;
 	pass.y = 60.0f;
 
-	neurus::RenderGraphTopology::NodeType* node = graph.AddNode("geometry", pass);
+	neurus::RenderGraphData::NodeType* node = graph.AddNode("geometry", pass);
 	SetOutput(node->AddOutput("gPosition"),
 	          OutputPort("gPosition", "vec4",
 	                     neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled));
 	SetInput(node->AddInput("gPrevious"), InputPort("gPrevious", 3));
 
-	const neurus::RenderGraphTopology::NodeType& stored = *graph.nodes[0];
+	const neurus::RenderGraphData::NodeType& stored = *graph.nodes[0];
 	EXPECT_EQ(stored.name, "geometry");
 	EXPECT_EQ(stored.data.pass, "GeometryPass");
 	EXPECT_EQ(stored.data.shader, pass.shader);
@@ -92,11 +92,11 @@ TEST(RenderGraphData, SocketsCarryPassPorts)
 
 TEST(RenderGraphData, ClonePreservesPortsAndTags)
 {
-	neurus::RenderGraphTopology graph;
+	neurus::RenderGraphData graph;
 
 	neurus::CpuNode geometry;
 	geometry.pass = "GeometryPass";
-	neurus::RenderGraphTopology::NodeType* source = graph.AddNode("geometry", geometry);
+	neurus::RenderGraphData::NodeType* source = graph.AddNode("geometry", geometry);
 	SetOutput(source->AddOutput("gPosition"),
 	          OutputPort("gPosition", "vec4",
 	                     neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled));
@@ -104,7 +104,7 @@ TEST(RenderGraphData, ClonePreservesPortsAndTags)
 	neurus::CpuNode ssao;
 	ssao.pass = "SSAOPass";
 	ssao.shader = std::make_shared<TestShader>();
-	neurus::RenderGraphTopology::NodeType* consumer = graph.AddNode("ssao", ssao);
+	neurus::RenderGraphData::NodeType* consumer = graph.AddNode("ssao", ssao);
 	SetInput(consumer->AddInput("gPosition"), InputPort("gPosition", 0));
 	SetOutput(consumer->AddOutput("outputSSAO"),
 	          OutputPort("outputSSAO", "image2D",
@@ -112,25 +112,25 @@ TEST(RenderGraphData, ClonePreservesPortsAndTags)
 
 	ASSERT_TRUE(graph.Connect(source->outputs[0].get(), consumer->inputs[0].get()));
 
-	const neurus::RenderGraphTopology copy = neurus::CloneGraph(graph);
+	const auto copy = graph.Clone();
 
-	ASSERT_EQ(copy.nodes.size(), 2u);
-	EXPECT_EQ(copy.nodes[0]->name, "geometry");
-	EXPECT_EQ(copy.nodes[1]->name, "ssao");
-	EXPECT_EQ(copy.nodes[1]->data.shader, ssao.shader);
+	ASSERT_EQ(copy->nodes.size(), 2u);
+	EXPECT_EQ(copy->nodes[0]->name, "geometry");
+	EXPECT_EQ(copy->nodes[1]->name, "ssao");
+	EXPECT_EQ(copy->nodes[1]->data.shader, ssao.shader);
 
-	ASSERT_EQ(copy.nodes[0]->outputs.size(), 1u);
-	ASSERT_TRUE(copy.nodes[0]->outputs[0]->data.tag.has_value());
-	EXPECT_EQ(copy.nodes[0]->outputs[0]->data.tag->format, neurus::GraphFormat::Rgba16f);
+	ASSERT_EQ(copy->nodes[0]->outputs.size(), 1u);
+	ASSERT_TRUE(copy->nodes[0]->outputs[0]->data.tag.has_value());
+	EXPECT_EQ(copy->nodes[0]->outputs[0]->data.tag->format, neurus::GraphFormat::Rgba16f);
 
-	ASSERT_EQ(copy.nodes[1]->outputs.size(), 1u);
-	ASSERT_TRUE(copy.nodes[1]->outputs[0]->data.tag.has_value());
-	EXPECT_EQ(copy.nodes[1]->outputs[0]->data.tag->usage, neurus::GraphUsage::StorageSampled);
+	ASSERT_EQ(copy->nodes[1]->outputs.size(), 1u);
+	ASSERT_TRUE(copy->nodes[1]->outputs[0]->data.tag.has_value());
+	EXPECT_EQ(copy->nodes[1]->outputs[0]->data.tag->usage, neurus::GraphUsage::StorageSampled);
 
-	ASSERT_EQ(copy.nodes[1]->inputs.size(), 1u);
-	ASSERT_TRUE(copy.nodes[1]->inputs[0]->IsConnected());
-	EXPECT_EQ(copy.nodes[1]->inputs[0]->source->owner->name, "geometry");
-	EXPECT_EQ(copy.nodes[1]->inputs[0]->data.binding, 0u);
+	ASSERT_EQ(copy->nodes[1]->inputs.size(), 1u);
+	ASSERT_TRUE(copy->nodes[1]->inputs[0]->IsConnected());
+	EXPECT_EQ(copy->nodes[1]->inputs[0]->source->owner->name, "geometry");
+	EXPECT_EQ(copy->nodes[1]->inputs[0]->data.binding, 0u);
 }
 
 TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
@@ -138,23 +138,23 @@ TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<TestShader>();
 	const std::weak_ptr<const neurus::ShaderData> lifetime = shader;
-	neurus::RenderGraphTopology graph;
+	neurus::RenderGraphData graph;
 	neurus::CpuNode data;
 	data.shader = shader;
 	graph.AddNode("custom", data);
-	auto copy = neurus::CloneGraph(graph);
+	auto copy = graph.Clone();
 	data.shader.reset();
 	shader.reset();
 	resources.Clear();
 	graph.nodes.clear();
 	EXPECT_FALSE(lifetime.expired());
-	copy.nodes.clear();
+	copy->nodes.clear();
 	EXPECT_TRUE(lifetime.expired());
 }
 
 TEST(RenderGraphData, HashIncludesShaderIdentityButExcludesShaderContentAndLayout)
 {
-	neurus::RenderGraphTopology graph;
+	neurus::RenderGraphData graph;
 	auto* node = graph.AddNode("custom");
 	const auto defaultHash = graph.Hash();
 	auto shader = std::make_shared<TestShader>();
@@ -172,11 +172,11 @@ TEST(RenderGraphData, HashIncludesShaderIdentityButExcludesShaderContentAndLayou
 
 	// Graph publication preserves ownership and identity. GPU upload values,
 	// rather than graph copies, isolate queued bytes from later CPU edits.
-	auto published = neurus::CloneGraph(graph);
-	EXPECT_EQ(published.nodes[0]->data.shader, shader);
+	auto published = graph.Clone();
+	EXPECT_EQ(published->nodes[0]->data.shader, shader);
 	stage.spv.back() = 4;
 	EXPECT_EQ(graph.Hash(), selectedHash);
-	EXPECT_EQ(published.Hash(), selectedHash);
+	EXPECT_EQ(published->Hash(), selectedHash);
 
 	node->data.shader = std::make_shared<TestShader>();
 	EXPECT_NE(graph.Hash(), selectedHash);

@@ -22,7 +22,7 @@ namespace neurus
 class ShaderData;
 class IPortSource;
 class IResourceLookup;
-class RenderGraphTopology;
+class RenderGraphData;
 template<class, class> class Node;
 struct CpuPort;
 struct CpuNode;
@@ -204,7 +204,7 @@ std::unique_ptr<Node<CpuPort, CpuNode>> FromRecord(
  *
  * @param graph  Document to read; it is not modified.
  */
-RenderGraphRecord ToRecord(const RenderGraphTopology& graph);
+RenderGraphRecord ToRecord(const RenderGraphData& graph);
 
 /**
  * @brief Rebuilds a live document from a saved record.
@@ -219,9 +219,9 @@ RenderGraphRecord ToRecord(const RenderGraphTopology& graph);
  * @param problems  Receives one message per recoverable inconsistency.
  * @param resources Optional restored pool; missing or invalid shaders select defaults.
  */
-RenderGraphTopology FromRecord(const RenderGraphRecord& record, const IPortSource& ports,
-                               std::vector<std::string>& problems,
-                               const IResourceLookup* resources = nullptr,
-                               const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader = {});
+std::unique_ptr<RenderGraphData> FromRecord(
+	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources = nullptr,
+	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader = {});
 
 } // namespace neurus::project

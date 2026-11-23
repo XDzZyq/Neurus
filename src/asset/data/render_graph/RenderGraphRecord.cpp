@@ -1,6 +1,6 @@
 #include "asset/data/render_graph/RenderGraphRecord.hpp"
 
-#include "asset/data/render_graph/RenderGraphTopology.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 #include "core/IResourceLookup.hpp"
@@ -14,11 +14,11 @@ namespace neurus::project
 
 namespace {
 
-using NodeType  = RenderGraphTopology::NodeType;
-using InSocket  = RenderGraphTopology::SocketInT;
-using OutSocket = RenderGraphTopology::SocketOutT;
+using NodeType  = RenderGraphData::NodeType;
+using InSocket  = RenderGraphData::SocketInT;
+using OutSocket = RenderGraphData::SocketOutT;
 
-NodeType* FindNode(RenderGraphTopology& graph, const std::string_view name)
+NodeType* FindNode(RenderGraphData& graph, const std::string_view name)
 {
 	for (const auto& node : graph.nodes)
 	{
@@ -85,7 +85,7 @@ RenderGraphNodeRecord ToRecord(const NodeType& node)
 	return saved;
 }
 
-RenderGraphRecord ToRecord(const RenderGraphTopology& graph)
+RenderGraphRecord ToRecord(const RenderGraphData& graph)
 {
 	RenderGraphRecord record;
 	record.nodes.reserve(graph.nodes.size());
@@ -139,28 +139,28 @@ std::unique_ptr<NodeType> FromRecord(
 	return node;
 }
 
-RenderGraphTopology FromRecord(const RenderGraphRecord& record, const IPortSource& ports,
-                               std::vector<std::string>& problems,
-                               const IResourceLookup* resources,
-                               const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
+std::unique_ptr<RenderGraphData> FromRecord(
+	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources,
+	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
 {
-	RenderGraphTopology graph;
-	graph.nodes.reserve(record.nodes.size());
+	auto graph = std::make_unique<RenderGraphData>();
+	graph->nodes.reserve(record.nodes.size());
 
 	std::set<NodeType*> useFallback;
 	for (const auto& saved : record.nodes)
 	{
-		if (FindNode(graph, saved.name))
+		if (FindNode(*graph, saved.name))
 			problems.push_back("duplicate node name '" + saved.name + "'");
-		auto* node = graph.AddNode(FromRecord(saved, ports, problems, resources, acceptsShader));
+		auto* node = graph->AddNode(FromRecord(saved, ports, problems, resources, acceptsShader));
 		if (saved.shaderUid && !node->data.shader)
 			useFallback.insert(node);
 	}
 
 	for (const RenderGraphEdgeRecord& edge : record.edges)
 	{
-		NodeType* from = FindNode(graph, edge.from);
-		NodeType* to   = FindNode(graph, edge.to);
+		NodeType* from = FindNode(*graph, edge.from);
+		NodeType* to   = FindNode(*graph, edge.to);
 		if (!from || !to)
 		{
 			problems.push_back("edge '" + edge.from + "." + edge.fromPort + " -> "
@@ -199,7 +199,7 @@ RenderGraphTopology FromRecord(const RenderGraphRecord& record, const IPortSourc
 			continue;
 		}
 
-		if (!graph.Connect(output, input))
+		if (!graph->Connect(output, input))
 		{
 			problems.push_back("connection '" + edge.from + "." + edge.fromPort
 			                   + " -> " + edge.to + "." + edge.toPort
@@ -210,18 +210,18 @@ RenderGraphTopology FromRecord(const RenderGraphRecord& record, const IPortSourc
 	if (record.outputs)
 	{
 		for (const auto& output : *record.outputs)
-			if (!graph.sceneOutputs.emplace(output.name, GraphEndpoint{output.node, output.port}).second)
+			if (!graph->sceneOutputs.emplace(output.name, GraphEndpoint{output.node, output.port}).second)
 				problems.push_back("duplicate scene output '" + output.name + "'");
 	}
 	else
-		graph.InferLegacyOutputs();
+		graph->InferLegacyOutputs();
 	for (auto* node : useFallback)
 	{
 		if (const auto* builtin = ports.FindPassPorts(node->data.pass))
 		{
 			try
 			{
-				ReconcilePassPorts(graph, *node, *builtin);
+				ReconcilePassPorts(*graph, *node, *builtin);
 			}
 			catch (const std::invalid_argument& error)
 			{

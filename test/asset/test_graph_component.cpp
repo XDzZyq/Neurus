@@ -68,7 +68,7 @@ protected:
 	}
 };
 
-nlohmann::ordered_json SaveInline(const neurus::RenderGraphTopology& topology)
+nlohmann::ordered_json SaveInline(const neurus::RenderGraphData& topology)
 {
 	std::ostringstream stream;
 	{
@@ -84,7 +84,7 @@ TEST_F(GraphComponent, ActiveUidSelectsOnePooledPayload)
 {
 	const auto& ports = catalog.Ports();
 	neurus::ResourceManager pool;
-	auto graph = pool.Load<neurus::RenderGraphData>(neurus::RenderGraphTopology::Default(ports));
+	auto graph = pool.Load<neurus::RenderGraphData>(ports);
 	graph->nodes.front()->data.x = 16.0f;
 	graph->sceneOutputs["color"] = {"compose", "outputComposed"};
 	const auto expected = neurus::project::ToRecord(*graph);
@@ -185,7 +185,7 @@ TEST_F(GraphComponent, MissingOrCorruptGraphClearsPreviousSelection)
 TEST_F(GraphComponent, NullShaderReferencesAreOmittedAndLoadAsDefaults)
 {
 	const auto& ports = catalog.Ports();
-	const auto graph = neurus::RenderGraphTopology::Default(ports);
+	const neurus::RenderGraphData graph(ports);
 	const std::string saved = SaveInline(graph).dump();
 	EXPECT_EQ(saved.find("\"shader\""), std::string::npos);
 	Load(saved);
@@ -199,7 +199,7 @@ TEST_F(GraphComponent, InactiveGraphResolvesShadersStoredLaterInPool)
 {
 	const auto& ports = catalog.Ports();
 	neurus::ResourceManager pool;
-	auto graph = pool.Load<neurus::RenderGraphData>(neurus::RenderGraphTopology::Default(ports));
+	auto graph = pool.Load<neurus::RenderGraphData>(ports);
 	auto shader = pool.Load<neurus::ComputeShader>("Custom",
 		neurus::ShaderData::ResolveSourcePath("res/shaders/compute/compose.comp.glsl"));
 	ASSERT_TRUE(shader->ParseAndGenerate());
@@ -268,7 +268,7 @@ TEST_F(GraphComponent, ProjectLoadRejectsMalformedNodeWithoutDiscardingLaterConf
 TEST_F(GraphComponent, LoadJsonGuardsNestedTypesAndKeepsNullInsteadOfAllocatingDefaults)
 {
 	const auto& ports = catalog.Ports();
-	const auto saved = SaveInline(neurus::RenderGraphTopology::Default(ports));
+	const auto saved = SaveInline(neurus::RenderGraphData(ports));
 	std::vector<nlohmann::ordered_json> corrupt;
 	corrupt.push_back(saved);
 	corrupt.back()["proj_render_graph"]["nodes"][0]["pass"] = 42;

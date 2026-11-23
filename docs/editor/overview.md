@@ -362,8 +362,7 @@ Live graph nodes own pooled shaders through `shared_ptr<const ShaderData>`;
 null selects a built-in recipe. Script and Editor edits still target the mutable
 pooled resource. `MakeUploadShaderRequest` copies compiled SPIR-V and required
 reflection/port metadata on the CPU before an upload request crosses the boundary.
-`RenderManager` holds the active pooled `RenderGraphData`. Publication clones its
-`RenderGraphTopology` and posts `CompileRenderGraphRequest{graph}` after those uploads. The renderer reads only stable shader UIDs from node
+`RenderManager` holds the active pooled `RenderGraphData`. Publication clones this document and posts `CompileRenderGraphRequest{graph}` after those uploads. The renderer reads only stable shader UIDs from node
 references and resolves `ShaderGPU` in its cache; it never reads mutable shader
 content through the graph.
 

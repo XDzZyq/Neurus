@@ -604,7 +604,7 @@ const RenderConfig& Editor::GetRenderConfig() const
 	return m_renderManager->Config();
 }
 
-const RenderGraphTopology& Editor::GetRenderGraph() const
+const RenderGraphData& Editor::GetRenderGraph() const
 {
 	return m_renderManager->Graph();
 }
@@ -1034,7 +1034,7 @@ void Editor::FinishLoad()
 	m_dirty = false;
 }
 
-void Editor::SetRenderGraph(RenderGraphTopology graph)
+void Editor::SetRenderGraph(std::unique_ptr<RenderGraphData> graph)
 {
 	if (m_renderManager->SetGraph(std::move(graph)))
 		MarkDirty();

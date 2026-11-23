@@ -4,7 +4,7 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 ## The document
 
-`RenderGraphData` is a pooled `UID` resource. Its movable `RenderGraphTopology` base holds the pass graph used for editing and publication. `src/asset/data/render_graph/RenderGraphTopology.hpp` defines this value using `Graph<CpuPort, CpuNode>`.
+The CPU document, `RenderGraphData`, derives from `UID` and `Graph<CpuPort, CpuNode>`. The editor keeps the authored graph in the resource pool. The built-in default and published snapshots use the same type and stay outside the pool.
 
 - a node payload, `CpuNode`, holds the pass kind, a `shared_ptr<const ShaderData>` shader reference and the graph-editor position; `Graph::Node::name` is the document id;
 - a socket payload, `CpuPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
@@ -23,7 +23,7 @@ per-field defaults; an absent config stays null. `FinishLoad()` restores a valid
 saved graph or keeps it null. Read-only queries and rendering never materialize
 project defaults. Explicit edits create stored data, and undo can restore absence.
 
-Explicit project shaders remain pooled, and live nodes own references to them. Publication clones topology and retains shared CPU shader ownership. CPU preparation deduplicates selected shaders by UID and posts owned `MakeUploadShaderRequest` payloads before graph compilation. The mapper reads only stable UIDs from the node references. The GPU cache supplies the selected shader modules and their uploaded metadata for compatibility checks. Null shader selections follow built-in recipes through CPU preparation, upload and caching. Rendering never calls back into the Editor or changes which project values are serialized.
+Explicit project shaders remain pooled, and live nodes own references to them. Publication clones the document with a fresh UID and shares its CPU shader references. The project selection keeps its original UID. CPU preparation deduplicates selected shaders by UID and posts owned `MakeUploadShaderRequest` payloads before graph compilation. The mapper reads only stable UIDs from the node references. The GPU cache supplies the selected shader modules and their uploaded metadata for compatibility checks. Null shader selections follow built-in recipes through CPU preparation, upload and caching. Rendering never calls back into the Editor or changes which project values are serialized.
 
 ## Ports from the shader
 
@@ -60,7 +60,7 @@ A failure leaves the previous graph drawing and is reported through `LastGraphRe
 
 ```mermaid
 flowchart LR
-    doc["Published RenderGraphTopology<br/>shared CPU shader references"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
+    doc["Published RenderGraphData<br/>shared CPU shader references"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
     catalog["BuiltInRenderData<br/>IPortSource"] --> validate
     validate --> upload["GraphUploader::Compile<br/>GraphMorphism::Map"]
     catalog --> upload

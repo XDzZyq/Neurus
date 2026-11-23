@@ -1,7 +1,9 @@
 #pragma once
 
-#include "asset/data/render_graph/RenderGraphTopology.hpp"
+#include "asset/data/render_graph/GraphEndpoint.hpp"
+#include "asset/data/render_graph/GraphOutputTag.hpp"
 
+#include <cstddef>
 #include <optional>
 
 namespace neurus::project { struct RenderGraphNodeRecord; }
@@ -13,7 +15,7 @@ struct GraphNodeMembershipChanged
 {
 	int graphUid;
 	const project::RenderGraphNodeRecord& node;
-	size_t index;
+	std::size_t index;
 	bool present;
 };
 

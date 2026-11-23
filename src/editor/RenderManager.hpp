@@ -3,7 +3,7 @@
  * @brief Editor-owned render state: the graph document, its shaders and the config.
  *
  * The Editor tells the renderer what to draw through two values: `RenderConfig`
- * (copied into every frame snapshot) and `RenderGraphTopology` (published as a
+ * (copied into every frame snapshot) and `RenderGraphData` (published as a
  * compile request). Stored config and graph pointers stay null when the project
  * selects defaults. Effective reads use cached built-ins without adding them to
  * the project's resource pool or serialization.
@@ -79,7 +79,7 @@ public:
 	 *
 	 * Missing shader references select built-ins without populating the pool.
 	 */
-	bool SetGraph(RenderGraphTopology graph);
+	bool SetGraph(std::unique_ptr<RenderGraphData> graph);
 
 	const RenderConfig& Config() const { return m_config ? *m_config : DefaultRenderConfig(); }
 	RenderConfig& EditConfig();
@@ -87,7 +87,7 @@ public:
 	const std::shared_ptr<RenderConfig>& ConfigData() const { return m_config; }
 
 	/// @brief Effective read-only graph; reading a default never materializes project data.
-	const RenderGraphTopology& Graph() const;
+	const RenderGraphData& Graph() const;
 	std::shared_ptr<RenderGraphData>& GraphData() { return m_graph; }
 	const std::shared_ptr<RenderGraphData>& GraphData() const { return m_graph; }
 

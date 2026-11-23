@@ -19,9 +19,9 @@ namespace neurus {
 
 namespace {
 
-using NodeType  = RenderGraphTopology::NodeType;
-using InSocket  = RenderGraphTopology::SocketInT;
-using OutSocket = RenderGraphTopology::SocketOutT;
+using NodeType  = RenderGraphData::NodeType;
+using InSocket  = RenderGraphData::SocketInT;
+using OutSocket = RenderGraphData::SocketOutT;
 
 OutSocket* FindOutput(NodeType& node, const std::string_view name)
 {
@@ -86,23 +86,21 @@ std::optional<GraphOutputTag> BuiltInOutputTag(std::string_view kind, std::strin
 	return {};
 }
 
-RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
+RenderGraphData::RenderGraphData(const IPortSource& ports)
 {
-	RenderGraphTopology graph;
-
-	const auto addNode = [&graph, &ports](
+	const auto addNode = [this, &ports](
 		const std::string& name, const std::string& pass) -> NodeType*
 	{
 		const PassPorts* passPorts = ports.FindPassPorts(pass);
 		if (!passPorts)
 		{
 			throw std::runtime_error(
-				"RenderGraphTopology::Default: no ports for built-in pass '" + pass + "'");
+				"No ports for built-in pass '" + pass + "'");
 		}
 
 		CpuNode data;
 		data.pass = pass;
-		NodeType* node = graph.AddNode(name, data);
+		NodeType* node = AddNode(name, data);
 
 		for (const PassPort& input : passPorts->Inputs())
 			node->AddInput(input.name)->data = MakePort(input);
@@ -113,15 +111,15 @@ RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
 		return node;
 	};
 
-	const auto connect = [&graph](NodeType& from, const std::string& fromPort,
-	                              NodeType& to, const std::string& toPort)
+	const auto connect = [this](NodeType& from, const std::string& fromPort,
+	                            NodeType& to, const std::string& toPort)
 	{
 		OutSocket* output = FindOutput(from, fromPort);
 		InSocket* input   = FindInput(to, toPort);
-		if (!output || !input || !graph.Connect(output, input))
+		if (!output || !input || !Connect(output, input))
 		{
 			throw std::runtime_error(
-				"RenderGraphTopology::Default: bad default edge '" + from.name + "."
+				"Invalid default graph edge '" + from.name + "."
 				+ fromPort + " -> " + to.name + "." + toPort + "'");
 		}
 	};
@@ -154,11 +152,10 @@ RenderGraphTopology RenderGraphTopology::Default(const IPortSource& ports)
 	connect(*lighting, "outputImage", *compose, "gHDRColor");
 	connect(*compose, "outputComposed", *fxaa, "gInput");
 
-	graph.InferLegacyOutputs();
-	return graph;
+	InferLegacyOutputs();
 }
 
-std::uint64_t RenderGraphTopology::Hash() const
+std::uint64_t RenderGraphData::Hash() const
 {
 	constexpr std::uint64_t kOffset = 14695981039346656037ull;
 	constexpr std::uint64_t kPrime  = 1099511628211ull;
@@ -253,14 +250,23 @@ std::uint64_t RenderGraphTopology::Hash() const
 	return hash;
 }
 
-RenderGraphTopology CloneGraph(const RenderGraphTopology& graph)
+std::unique_ptr<RenderGraphData> RenderGraphData::Clone() const
 {
-	auto copy = CloneGraph<RenderGraphTopology>(graph);
-	copy.sceneOutputs = graph.sceneOutputs;
+	auto copy = std::make_unique<RenderGraphData>();
+	copy->nodes = CloneGraph<GraphT>(*this).nodes;
+	copy->sceneOutputs = sceneOutputs;
+	copy->m_pending = m_pending;
 	return copy;
 }
 
-void RenderGraphTopology::InferLegacyOutputs()
+void RenderGraphData::SwapContents(RenderGraphData& other) noexcept
+{
+	nodes.swap(other.nodes);
+	sceneOutputs.swap(other.sceneOutputs);
+	m_pending.swap(other.m_pending);
+}
+
+void RenderGraphData::InferLegacyOutputs()
 {
 	sceneOutputs.clear();
 	for (const auto& node : nodes)
@@ -277,7 +283,7 @@ void RenderGraphTopology::InferLegacyOutputs()
 	}
 }
 
-std::set<std::string> RenderGraphTopology::ActiveNodes() const
+std::set<std::string> RenderGraphData::ActiveNodes() const
 {
 	std::vector<const NodeType*> pending;
 	for (const auto& [name, endpoint] : sceneOutputs)
@@ -331,7 +337,7 @@ PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
 	return WithShaderPortNames(*builtin, ExtractPassPorts(node.pass, shaders));
 }
 
-void ReconcilePassPorts(RenderGraphTopology& graph, RenderGraphTopology::NodeType& node, const PassPorts& ports)
+void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const PassPorts& ports)
 {
 	if (!ports.problems.empty())
 		throw std::invalid_argument(node.name + ": " + ports.problems.front());
@@ -367,11 +373,6 @@ void ReconcilePassPorts(RenderGraphTopology& graph, RenderGraphTopology::NodeTyp
 	reconcile(node.outputs);
 }
 
-RenderGraphData::RenderGraphData(RenderGraphTopology topology)
-	: RenderGraphTopology(std::move(topology))
-{
-}
-
 RenderGraphData::RenderGraphData(project::RenderGraphRecord record)
 	: m_pending(std::move(record))
 {
@@ -403,7 +404,7 @@ bool RenderGraphData::Resolve(const IPassShaderCatalog& catalog, const IResource
 	auto topology = project::FromRecord(*m_pending, ports, errors, &resources, acceptsShader);
 	if (errors.empty())
 	{
-		for (const auto& diagnostic : ValidateCpuGraph(topology, ports))
+		for (const auto& diagnostic : ValidateCpuGraph(*topology, ports))
 			errors.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
 	}
 	if (!errors.empty())
@@ -412,8 +413,8 @@ bool RenderGraphData::Resolve(const IPassShaderCatalog& catalog, const IResource
 		return false;
 	}
 
-	RenderGraphTopology::operator=(std::move(topology));
-	m_pending.reset();
+	// The resolved document has no pending record. The old record leaves with the temporary.
+	SwapContents(*topology);
 	return true;
 }
 

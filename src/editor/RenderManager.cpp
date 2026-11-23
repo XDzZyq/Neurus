@@ -30,7 +30,7 @@ RenderConfig& RenderManager::EditConfig()
 	return *m_config;
 }
 
-const RenderGraphTopology& RenderManager::Graph() const
+const RenderGraphData& RenderManager::Graph() const
 {
 	return m_graph ? *m_graph : *m_renderDefaults->Graph();
 }
@@ -50,7 +50,7 @@ void RenderManager::ResetGraph(bool publish)
 
 namespace {
 
-void CheckTopology(RenderGraphTopology& graph, const IPortSource& ports, std::vector<std::string>& problems)
+void CheckTopology(RenderGraphData& graph, const IPortSource& ports, std::vector<std::string>& problems)
 {
 	for (const auto& node : graph.nodes)
 	{
@@ -105,7 +105,7 @@ void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& 
 		return;
 	// A creation restored from redo history carries only its original UID.
 	if (graph->nodes.empty())
-		static_cast<RenderGraphTopology&>(*graph) = CloneGraph(*m_renderDefaults->Graph());
+		graph->SwapContents(*m_renderDefaults->Graph()->Clone());
 	m_resources.Register(graph);
 	m_graph = graph;
 	m_problems.clear();
@@ -113,10 +113,15 @@ void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& 
 		Publish();
 }
 
-bool RenderManager::SetGraph(RenderGraphTopology graph)
+bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 {
+	if (!graph)
+	{
+		ResetGraph();
+		return true;
+	}
 	m_problems.clear();
-	CheckTopology(graph, m_renderDefaults->Ports(), m_problems);
+	CheckTopology(*graph, m_renderDefaults->Ports(), m_problems);
 	if (!m_problems.empty())
 	{
 		for (const auto& problem : m_problems)
@@ -124,9 +129,12 @@ bool RenderManager::SetGraph(RenderGraphTopology graph)
 		return false;
 	}
 	if (m_graph)
-		static_cast<RenderGraphTopology&>(*m_graph) = std::move(graph);
+		m_graph->SwapContents(*graph);
 	else
-		m_graph = m_resources.Load<RenderGraphData>(std::move(graph));
+	{
+		m_graph = std::move(graph);
+		m_resources.Register(m_graph);
+	}
 	Publish();
 	return true;
 }
@@ -167,10 +175,10 @@ void RenderManager::Publish()
 {
 	if (!m_sink)
 		return;
-	std::shared_ptr<const RenderGraphTopology> published;
+	std::shared_ptr<const RenderGraphData> published;
 	if (m_graph)
 	{
-		auto graph = std::make_shared<RenderGraphTopology>(CloneGraph(Graph()));
+		auto graph = m_graph->Clone();
 		std::unordered_set<int> uploaded;
 		for (const auto& node : graph->nodes)
 		{

@@ -8,7 +8,7 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "core/RenderConfig.hpp"
-#include "asset/data/render_graph/RenderGraphTopology.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ImageData.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "shader/ComputeShader.hpp"
@@ -32,7 +32,7 @@ namespace
 constexpr uint32_t kWidth  = 96;
 constexpr uint32_t kHeight = 64;
 
-neurus::RenderGraphTopology::NodeType* FindNode(neurus::RenderGraphTopology& graph,
+neurus::RenderGraphData::NodeType* FindNode(neurus::RenderGraphData& graph,
                                            const std::string& name)
 {
 	for (const auto& node : graph.nodes)
@@ -43,7 +43,7 @@ neurus::RenderGraphTopology::NodeType* FindNode(neurus::RenderGraphTopology& gra
 	return nullptr;
 }
 
-neurus::RenderGraphTopology::SocketOutT* FindOutput(neurus::RenderGraphTopology::NodeType& node,
+neurus::RenderGraphData::SocketOutT* FindOutput(neurus::RenderGraphData::NodeType& node,
                                                const std::string& name)
 {
 	for (const auto& output : node.outputs)
@@ -54,7 +54,7 @@ neurus::RenderGraphTopology::SocketOutT* FindOutput(neurus::RenderGraphTopology:
 	return nullptr;
 }
 
-neurus::RenderGraphTopology::SocketInT* FindInput(neurus::RenderGraphTopology::NodeType& node,
+neurus::RenderGraphData::SocketInT* FindInput(neurus::RenderGraphData::NodeType& node,
                                              const std::string& name)
 {
 	for (const auto& input : node.inputs)
@@ -90,15 +90,15 @@ protected:
 		m_renderer->SetUploadManager(m_uploader.get());
 	}
 
-	neurus::RenderGraphTopology DefaultDocument() const
+	std::unique_ptr<neurus::RenderGraphData> DefaultDocument() const
 	{
-		return neurus::CloneGraph(*m_defaults->Graph());
+		return m_defaults->Graph()->Clone();
 	}
 
-	void PostDocument(neurus::RenderGraphTopology graph)
+	void PostDocument(std::unique_ptr<neurus::RenderGraphData> graph)
 	{
 		neurus::CompileRenderGraphRequest request;
-		request.graph = std::make_shared<const neurus::RenderGraphTopology>(std::move(graph));
+		request.graph = std::move(graph);
 		m_renderer->Post(neurus::RenderRequest{std::move(request)});
 	}
 
@@ -141,7 +141,7 @@ TEST_F(RenderGraphPipelineTest, DefaultDocumentCompilesAndDraws)
 	// clear the existing resource plans, including this probe.
 	auto& cache = m_renderer->GetRenderCache();
 	cache.PlanResource("test/probe", {neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled});
-	PostDocument(neurus::RenderGraphTopology{});
+	PostDocument(std::make_unique<neurus::RenderGraphData>());
 	PostDocument(DefaultDocument());
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
 
@@ -178,7 +178,7 @@ TEST_F(RenderGraphPipelineTest, BypassingAndRestoringFxaaChangesActualDispatches
 	auto graph = DefaultDocument();
 	auto draw = [&]
 	{
-		PostDocument(neurus::CloneGraph(graph));
+		PostDocument(graph->Clone());
 		DrawOneFrame(&config);
 	};
 	auto fxaaDispatches = [&]
@@ -193,14 +193,14 @@ TEST_F(RenderGraphPipelineTest, BypassingAndRestoringFxaaChangesActualDispatches
 	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);
 	EXPECT_GT(fxaaDispatches(), 0u);
 
-	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
+	graph->sceneOutputs["color"] = {"compose", "outputComposed"};
 	ASSERT_NO_FATAL_FAILURE(draw());
-	EXPECT_EQ(graph.nodes.size(), 7u);
+	EXPECT_EQ(graph->nodes.size(), 7u);
 	EXPECT_EQ(m_renderer->ScenePassCount(), 6u);
 	EXPECT_EQ(fxaaDispatches(), 0u);
 	EXPECT_FALSE(m_renderer->GetRenderCache().HasResource("fxaa/outputFXAA"));
 
-	graph.sceneOutputs["color"] = {"fxaa", "outputFXAA"};
+	graph->sceneOutputs["color"] = {"fxaa", "outputFXAA"};
 	ASSERT_NO_FATAL_FAILURE(draw());
 	EXPECT_EQ(m_renderer->ScenePassCount(), 7u);
 	EXPECT_GT(fxaaDispatches(), 0u);
@@ -213,18 +213,18 @@ TEST_F(RenderGraphPipelineTest, EditedDocumentChangesTopology)
 
 	ASSERT_NO_FATAL_FAILURE(CreateRenderer());
 
-	neurus::RenderGraphTopology document = DefaultDocument();
-	neurus::RenderGraphTopology::NodeType* ssao = FindNode(document, "ssao");
-	neurus::RenderGraphTopology::NodeType* geometry = FindNode(document, "geometry");
-	neurus::RenderGraphTopology::NodeType* lighting = FindNode(document, "lighting");
+	auto document = DefaultDocument();
+	neurus::RenderGraphData::NodeType* ssao = FindNode(*document, "ssao");
+	neurus::RenderGraphData::NodeType* geometry = FindNode(*document, "geometry");
+	neurus::RenderGraphData::NodeType* lighting = FindNode(*document, "lighting");
 	ASSERT_NE(ssao, nullptr);
 	ASSERT_NE(geometry, nullptr);
 	ASSERT_NE(lighting, nullptr);
 
 	// U_AO still has to be fed by something; the topology test only cares that
 	// removing a node changes the executed pass list.
-	ASSERT_TRUE(document.RemoveNode(ssao));
-	ASSERT_TRUE(document.Connect(FindOutput(*geometry, "gAlbedo"),
+	ASSERT_TRUE(document->RemoveNode(ssao));
+	ASSERT_TRUE(document->Connect(FindOutput(*geometry, "gAlbedo"),
 	                             FindInput(*lighting, "U_AO")));
 
 	ASSERT_NO_FATAL_FAILURE(PostDocument(std::move(document)));
@@ -245,8 +245,8 @@ TEST_F(RenderGraphPipelineTest, BadDocumentKeepsPreviousGraph)
 	const size_t previousPasses = m_renderer->ScenePassCount();
 	ASSERT_EQ(previousPasses, 7u);
 
-	neurus::RenderGraphTopology bad = DefaultDocument();
-	bad.nodes[0]->outputs[0]->data.tag.reset();
+	auto bad = DefaultDocument();
+	bad->nodes[0]->outputs[0]->data.tag.reset();
 
 	ASSERT_NO_FATAL_FAILURE(PostDocument(std::move(bad)));
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
@@ -287,7 +287,7 @@ TEST_F(RenderGraphPipelineTest, UploadedCustomComposeShaderChangesPixelsAndRetai
 	          greenUpload.stages.at(neurus::ShaderType::COMPUTE).spv);
 
 	auto document = DefaultDocument();
-	FindNode(document, "compose")->data.shader = shader;
+	FindNode(*document, "compose")->data.shader = shader;
 	m_renderer->Post(neurus::RenderRequest{redUpload});
 	PostDocument(std::move(document));
 

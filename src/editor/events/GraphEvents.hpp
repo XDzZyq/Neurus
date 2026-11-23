@@ -1,6 +1,7 @@
 #pragma once
 
-#include "asset/data/render_graph/RenderGraphTopology.hpp"
+#include "asset/data/render_graph/GraphEndpoint.hpp"
+#include "asset/data/render_graph/GraphOutputTag.hpp"
 
 #include <memory>
 #include <optional>

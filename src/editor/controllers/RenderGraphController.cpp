@@ -34,7 +34,7 @@ void SubscribeGraphEdit(ControllerContext& ctx, Edit edit)
 	});
 }
 
-using NodeType = RenderGraphTopology::NodeType;
+using NodeType = RenderGraphData::NodeType;
 
 RenderGraphData& Document(const ControllerContext& ctx)
 {
@@ -52,12 +52,12 @@ RenderGraphData& Document(const ControllerContext& ctx, int uid)
 	return graph;
 }
 
-auto NodePosition(const RenderGraphTopology& graph, const std::string& name)
+auto NodePosition(const RenderGraphData& graph, const std::string& name)
 {
 	return std::ranges::find_if(graph.nodes, [&](const auto& node) { return node->name == name; });
 }
 
-NodeType& FindNode(const RenderGraphTopology& graph, const std::string& name)
+NodeType& FindNode(const RenderGraphData& graph, const std::string& name)
 {
 	const auto found = NodePosition(graph, name);
 	if (found == graph.nodes.end())
@@ -65,7 +65,7 @@ NodeType& FindNode(const RenderGraphTopology& graph, const std::string& name)
 	return **found;
 }
 
-void CheckNewName(const RenderGraphTopology& graph, const std::string& name)
+void CheckNewName(const RenderGraphData& graph, const std::string& name)
 {
 	if (name.empty() || name.find('/') != std::string::npos)
 		throw std::invalid_argument("A graph node name must be nonempty and cannot contain '/'");
@@ -82,12 +82,12 @@ auto& FindSocket(const Sockets& sockets, const GraphEndpoint& endpoint)
 	throw std::invalid_argument("Unknown graph socket '" + endpoint.node + "." + endpoint.port + "'");
 }
 
-auto& Output(const RenderGraphTopology& graph, const GraphEndpoint& endpoint)
+auto& Output(const RenderGraphData& graph, const GraphEndpoint& endpoint)
 {
 	return FindSocket(FindNode(graph, endpoint.node).outputs, endpoint);
 }
 
-auto& Input(const RenderGraphTopology& graph, const GraphEndpoint& endpoint)
+auto& Input(const RenderGraphData& graph, const GraphEndpoint& endpoint)
 {
 	return FindSocket(FindNode(graph, endpoint.node).inputs, endpoint);
 }
@@ -99,7 +99,7 @@ GraphEndpoint Endpoint(const Socket& socket)
 }
 
 // A destination with an empty node names a public scene output.
-std::optional<GraphEndpoint> Producer(const RenderGraphTopology& graph, const GraphEndpoint& destination)
+std::optional<GraphEndpoint> Producer(const RenderGraphData& graph, const GraphEndpoint& destination)
 {
 	if (destination.node.empty())
 	{

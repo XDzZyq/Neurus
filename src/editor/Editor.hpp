@@ -25,7 +25,7 @@ namespace neurus {
 class Camera;
 class Mesh;
 class MeshData;
-class RenderGraphTopology;
+class RenderGraphData;
 class RenderManager;
 class BuiltInRenderData;
 class RenderRequestSink;
@@ -107,7 +107,7 @@ public:	/**
 	const RenderConfig& GetRenderConfig() const;
 
 	/// @brief The scene render graph document.
-	const RenderGraphTopology& GetRenderGraph() const;
+	const RenderGraphData& GetRenderGraph() const;
 
 	/// @brief The Editor's render state service (document, shaders, config).
 	RenderManager& GetRenderManager();
@@ -119,10 +119,9 @@ public:	/**
 	 * Marks the document dirty; the renderer keeps drawing its previous graph
 	 * when the new one fails to compile and reports the diagnostics.
 	 *
-	 * @param graph  New document; its sockets are expected to match the pooled
-	 *               shaders, which validation checks and reports.
+	 * @param graph New document to validate and adopt, or null to select the built-in graph.
 	 */
-	void SetRenderGraph(RenderGraphTopology graph);
+	void SetRenderGraph(std::unique_ptr<RenderGraphData> graph);
 
 	bool IsDirty() const { return m_dirty; }
 	void MarkDirty() { m_dirty = true; }

@@ -157,9 +157,9 @@ TEST(EditorRenderGraph, SetPostsAndMarksDirty)
 	editor.NewScene();
 	editor.ClearDirty();
 
-	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
-	graph.RemoveNode(graph.nodes.back().get());
-	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
+	auto graph = editor.GetRenderGraph().Clone();
+	graph->RemoveNode(graph->nodes.back().get());
+	graph->sceneOutputs["color"] = {"compose", "outputComposed"};
 	editor.SetRenderGraph(std::move(graph));
 
 	EXPECT_TRUE(editor.IsDirty());
@@ -214,9 +214,9 @@ TEST(EditorRenderGraph, ResetConfigPreservesGraphAndDoesNotPublish)
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
 	editor.NewScene();
-	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
-	graph.RemoveNode(graph.nodes.back().get());
-	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
+	auto graph = editor.GetRenderGraph().Clone();
+	graph->RemoveNode(graph->nodes.back().get());
+	graph->sceneOutputs["color"] = {"compose", "outputComposed"};
 	editor.SetRenderGraph(std::move(graph));
 	neurus::RenderManager& render = editor.GetRenderManager();
 	render.EditConfig() = NonDefaultConfig();
@@ -237,9 +237,9 @@ TEST(EditorRenderGraph, ResetGraphPreservesConfig)
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
 	editor.NewScene();
-	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
-	graph.RemoveNode(graph.nodes.back().get());
-	graph.sceneOutputs["color"] = {"compose", "outputComposed"};
+	auto graph = editor.GetRenderGraph().Clone();
+	graph->RemoveNode(graph->nodes.back().get());
+	graph->sceneOutputs["color"] = {"compose", "outputComposed"};
 	editor.SetRenderGraph(std::move(graph));
 	const neurus::RenderConfig expected = NonDefaultConfig();
 	editor.EditRenderConfig() = expected;
@@ -366,7 +366,7 @@ TEST(EditorRenderGraph, ExplicitEmptyGraphRoundTripsWithoutBecomingDefault)
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
 	editor.NewScene();
-	editor.SetRenderGraph(neurus::RenderGraphTopology{});
+	editor.SetRenderGraph(std::make_unique<neurus::RenderGraphData>());
 	ASSERT_TRUE(editor.GetRenderManager().GraphData());
 	const int graphUid = editor.GetRenderManager().GraphData()->GetObjectID();
 	EXPECT_TRUE(editor.GetRenderGraph().nodes.empty());
@@ -395,14 +395,21 @@ TEST(EditorRenderGraph, EditsAndPublicationPreserveOnePooledGraphIdentity)
 	EXPECT_EQ(resource, editor.GetResourceManager().Get<neurus::RenderGraphData>(uid));
 	EXPECT_EQ(resource, render.CreateGraph());
 
-	auto topology = neurus::CloneGraph(render.Graph());
-	topology.RemoveNode(topology.nodes.back().get());
-	topology.sceneOutputs["color"] = {"compose", "outputComposed"};
-	const auto allocated = neurus::UID::GetTotalAllocated();
+	auto topology = render.Graph().Clone();
+	topology->RemoveNode(topology->nodes.back().get());
+	topology->sceneOutputs["color"] = {"compose", "outputComposed"};
+	const auto previous = sink.LastGraphRequest()->graph;
+	const auto poolSize = editor.GetResourceManager().Size();
 	editor.SetRenderGraph(std::move(topology));
 	EXPECT_EQ(resource, render.GraphData());
 	EXPECT_EQ(sink.LastGraphRequest()->graph->nodes.size(), 6u);
-	EXPECT_EQ(neurus::UID::GetTotalAllocated(), allocated);
+	const auto published = sink.LastGraphRequest()->graph;
+	EXPECT_NE(published->GetObjectID(), uid);
+	EXPECT_FALSE(editor.GetResourceManager().Get<neurus::RenderGraphData>(published->GetObjectID()));
+	EXPECT_EQ(editor.GetResourceManager().Size(), poolSize);
+	EXPECT_EQ(previous->nodes.size(), 7u);
+	EXPECT_EQ(previous->sceneOutputs.at("color").node, "fxaa");
+	EXPECT_EQ(published->sceneOutputs.at("color").node, "compose");
 }
 
 TEST(EditorRenderGraph, MissingActiveUidPreservesTheRestOfThePool)
@@ -427,8 +434,8 @@ TEST(EditorRenderGraph, PublicationRetainsShaderIdentityAndUploadsBeforeMapping)
 		"CustomCompose", "res/shaders/compute/compose.comp.glsl");
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());
-	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
-	graph.nodes[5]->data.shader = shader;
+	auto graph = editor.GetRenderGraph().Clone();
+	graph->nodes[5]->data.shader = shader;
 	sink.posted.clear();
 	editor.SetRenderGraph(std::move(graph));
 	ASSERT_EQ(sink.posted.size(), 2u);
@@ -492,8 +499,8 @@ TEST(EditorRenderGraph, ComputeCompileNotificationRepublishesReferencedShaderWit
 		"CustomCompose", "res/shaders/compute/compose.comp.glsl");
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());
-	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
-	graph.nodes[5]->data.shader = shader;
+	auto graph = editor.GetRenderGraph().Clone();
+	graph->nodes[5]->data.shader = shader;
 	editor.SetRenderGraph(std::move(graph));
 	sink.posted.clear();
 	editor.GetEventQueue().Emit(neurus::ShaderCompiled{shader->GetObjectID()});
@@ -513,8 +520,8 @@ TEST(EditorRenderGraph, GraphOnlyVertexShaderDoesNotWarmAMeshPipeline)
 		"CustomGeometry", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());
-	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
-	graph.nodes[0]->data.shader = shader;
+	auto graph = editor.GetRenderGraph().Clone();
+	graph->nodes[0]->data.shader = shader;
 	editor.SetRenderGraph(std::move(graph));
 	sink.posted.clear();
 	editor.GetEventQueue().Emit(neurus::ShaderCompiled{shader->GetObjectID()});
@@ -535,8 +542,8 @@ TEST(EditorRenderGraph, SharedMeshAndGraphShaderUploadsBeforeMappingAndPipelineW
 	ASSERT_TRUE(shader->CompileToSpv());
 	auto mesh = editor.GetResourceManager().Load<neurus::Mesh>();
 	mesh->o_shader = shader;
-	auto graph = neurus::CloneGraph(editor.GetRenderGraph());
-	graph.nodes[0]->data.shader = shader;
+	auto graph = editor.GetRenderGraph().Clone();
+	graph->nodes[0]->data.shader = shader;
 	editor.SetRenderGraph(std::move(graph));
 	sink.posted.clear();
 	editor.GetEventQueue().Emit(neurus::ShaderCompiled{shader->GetObjectID()});

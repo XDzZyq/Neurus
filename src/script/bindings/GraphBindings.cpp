@@ -17,7 +17,7 @@ namespace neurus::script {
 
 namespace {
 
-using CpuGraphNode = RenderGraphTopology::NodeType;
+using CpuGraphNode = RenderGraphData::NodeType;
 
 // A fresh generation after remove protects a saved handle even if the allocator
 // reuses the old node's address for another node with the same name.
@@ -52,7 +52,7 @@ struct GraphProxy : ProxyBase
 		return {};
 	}
 
-	const RenderGraphTopology& Topology() const
+	const RenderGraphData& Topology() const
 	{
 		auto current = Read();
 		if (!current.topology)
