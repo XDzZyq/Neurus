@@ -109,7 +109,7 @@ std::optional<GraphEndpoint> Producer(const RenderGraphData& graph, const GraphE
 		if (it != graph.sceneOutputs.end())
 			return it->second;
 	}
-	else if (const auto* source = Input(graph, destination).source)
+	else if (const auto* source = Input(graph, destination).incoming.from)
 		return Endpoint(*source);
 	return {};
 }
@@ -138,7 +138,7 @@ void ChangeProducer(const ControllerContext& ctx, const GraphProducerChanged& e)
 
 	auto& input = Input(graph, e.destination);
 	if (!output)
-		graph.Disconnect(input.source, &input);
+		graph.Disconnect(input.incoming.from, &input);
 	else if (!graph.Connect(output, &input))
 		throw std::invalid_argument("Connection to '" + e.destination.node + "." + e.destination.port
 		                            + "' creates a cycle");
@@ -192,8 +192,8 @@ void RemoveNode(const ControllerContext& ctx, const std::string& name)
 	// Record the disconnects first so undo recreates the node before restoring its links.
 	std::vector<std::unique_ptr<Operation>> ops;
 	for (const auto& input : node.inputs)
-		if (input->source)
-			ops.push_back(std::make_unique<GraphConnectionOp>(uid, Endpoint(*input->source), Endpoint(*input), false));
+		if (input->IsConnected())
+			ops.push_back(std::make_unique<GraphConnectionOp>(uid, Endpoint(*input->incoming.from), Endpoint(*input), false));
 	for (const auto& output : node.outputs)
 		for (const auto* target : output->targets)
 			ops.push_back(std::make_unique<GraphConnectionOp>(uid, Endpoint(*output), Endpoint(*target), false));

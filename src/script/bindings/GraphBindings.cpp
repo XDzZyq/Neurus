@@ -160,9 +160,9 @@ struct SocketProxy
 		{
 			for (const auto& input : owner.Get().inputs)
 			{
-				if (input->name == name && input->source)
-					return SocketProxy{NodeProxy(owner.graph, input->source->owner),
-					                   input->source->name, SocketKind::Output};
+				if (input->name == name && input->IsConnected())
+					return SocketProxy{NodeProxy(owner.graph, input->incoming.from->owner),
+					                   input->incoming.from->name, SocketKind::Output};
 			}
 		}
 		return std::nullopt;
@@ -282,8 +282,8 @@ void RegisterGraphBindings(py::module_& render)
 		})
 		.def_property_readonly("edges", [](const GraphProxy& g) {
 			std::vector<Edge> edges;
-			for (const auto& link : g.Topology().Connections())
-				edges.push_back({link.from->owner->name, link.from->name, link.to->owner->name, link.to->name});
+			for (const auto* link : g.Topology().Connections())
+				edges.push_back({link->from->owner->name, link->from->name, link->to->owner->name, link->to->name});
 			return edges;
 		})
 		.def_property_readonly("outputs", [](const GraphProxy& g) {

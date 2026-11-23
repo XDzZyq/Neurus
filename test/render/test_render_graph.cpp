@@ -406,7 +406,7 @@ TEST(RenderGraphTest, CycleErrorNamesInvolvedNodes)
 	ASSERT_EQ(na->inputs.size(), 1u);
 	ASSERT_EQ(nb->outputs.size(), 1u);
 	nb->outputs[0]->targets.push_back(na->inputs[0].get());
-	na->inputs[0]->source = nb->outputs[0].get();
+	na->inputs[0]->incoming.from = nb->outputs[0].get();
 
 	try
 	{

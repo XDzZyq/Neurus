@@ -34,6 +34,21 @@ template<typename SData, typename NData> class SocketOut;
 template<typename SData, typename NData> class Node;
 template<typename SData, typename NData> class Graph;
 
+/** @brief Directed edge from a producer to its consumer. The input owns this record. */
+template<typename SData, typename NData>
+struct Connection
+{
+	SocketOut<SData, NData>* from = nullptr;
+	SocketIn<SData, NData>* const to;
+
+	Connection(const Connection&) = delete;
+	Connection& operator=(const Connection&) = delete;
+
+private:
+	friend class SocketIn<SData, NData>;
+	explicit Connection(SocketIn<SData, NData>* input) : to(input) {}
+};
+
 // ================================================================================
 // SocketIn<SData, NData> — input slot
 // ================================================================================
@@ -48,16 +63,17 @@ template<typename SData, typename NData>
 class SocketIn
 {
 public:
-	using NodeType   = Node<SData, NData>;
-	using SocketOutT = SocketOut<SData, NData>;
+	using NodeType    = Node<SData, NData>;
+	using SocketOutT  = SocketOut<SData, NData>;
+	using ConnectionT = Connection<SData, NData>;
 
 	std::string  name;
 	SData        data{};               ///< Payload owned by this socket.
-	SocketOutT*  source = nullptr;     ///< Upstream producer (null = disconnected).
+	ConnectionT  incoming{this}; ///< Stable for the lifetime of this input.
 	NodeType*    owner  = nullptr;     ///< Back-pointer to owning Node.
 
 	/** @return true if a source SocketOut feeds this slot. */
-	bool IsConnected() const { return source != nullptr; }
+	bool IsConnected() const { return incoming.from != nullptr; }
 };
 
 // ================================================================================
@@ -148,43 +164,6 @@ public:
 };
 
 // ================================================================================
-// ConnectionRef — one edge of a graph
-// ================================================================================
-
-/**
- * @brief One connection of a graph: producer socket and consumer socket.
- *
- * @tparam GraphT  A `Graph` or a type derived from one.
- */
-template<typename GraphT>
-struct ConnectionRef
-{
-	typename GraphT::SocketOutT* from = nullptr;
-	typename GraphT::SocketInT*  to   = nullptr;
-};
-
-/**
- * @brief Every connection in the graph, one entry per connected input socket.
- *
- * Iterating inputs, not outputs, makes a fan-out produce one entry per consumer.
- */
-template<typename GraphT>
-std::vector<ConnectionRef<GraphT>> EnumerateConnections(const GraphT& graph)
-{
-	std::vector<ConnectionRef<GraphT>> connections;
-	for (const auto& node : graph.nodes)
-	{
-		for (const auto& input : node->inputs)
-		{
-			if (!input->IsConnected())
-				continue;
-			connections.push_back({input->source, input.get()});
-		}
-	}
-	return connections;
-}
-
-// ================================================================================
 // Graph<SData, NData> — DAG pool + Kahn topological sort
 // ================================================================================
 
@@ -205,6 +184,7 @@ public:
 	using NodeType   = Node<SData, NData>;
 	using SocketInT  = SocketIn<SData, NData>;
 	using SocketOutT = SocketOut<SData, NData>;
+	using ConnectionT = Connection<SData, NData>;
 
 	std::vector<std::unique_ptr<NodeType>> nodes;
 
@@ -253,9 +233,9 @@ public:
 		// Break all incoming connections to this node's inputs
 		for (auto& in : (*it)->inputs)
 		{
-			if (in->source)
+			if (in->IsConnected())
 			{
-				DisconnectRaw(in->source, in.get());
+				DisconnectRaw(in->incoming.from, in.get());
 			}
 		}
 
@@ -303,11 +283,11 @@ public:
 		if (Reaches(in->owner, out->owner)) return false;
 
 		// Break existing input connection if any
-		if (in->source)
-			DisconnectRaw(in->source, in);
+		if (in->IsConnected())
+			DisconnectRaw(in->incoming.from, in);
 
 		out->targets.push_back(in);
-		in->source = out;
+		in->incoming.from = out;
 		return true;
 	}
 
@@ -325,10 +305,15 @@ public:
 	/** @brief Number of nodes in the graph. */
 	size_t NodeCount() const { return nodes.size(); }
 
-	/// @brief Every connection, one entry per connected input socket.
-	std::vector<ConnectionRef<Graph<SData, NData>>> Connections() const
+	/// @brief Borrows each active connection in node and input order.
+	std::vector<const ConnectionT*> Connections() const
 	{
-		return EnumerateConnections(*this);
+		std::vector<const ConnectionT*> connections;
+		for (const auto& node : nodes)
+			for (const auto& input : node->inputs)
+				if (input->IsConnected())
+					connections.push_back(&input->incoming);
+		return connections;
 	}
 
 	// --- Topological sort ---
@@ -680,7 +665,7 @@ private:
 		if (it != out->targets.end())
 		{
 			out->targets.erase(it);
-			in->source = nullptr;
+			in->incoming.from = nullptr;
 		}
 	}
 
@@ -746,7 +731,7 @@ GraphT CloneGraph(const GraphT& graph)
 
 		for (size_t i = 0; i < source.inputs.size(); ++i)
 		{
-			const SocketOutT* upstream = source.inputs[i]->source;
+			const SocketOutT* upstream = source.inputs[i]->incoming.from;
 			if (!upstream)
 				continue;
 

@@ -1,6 +1,6 @@
 /**
- * @file test_graph_images.cpp
- * @brief Functor laws between generic graphs.
+ * @file test_graph_morphism.cpp
+ * @brief Node and connection mappings between generic graphs.
  */
 
 #include <gtest/gtest.h>
@@ -121,6 +121,8 @@ TEST(GraphMorphism, IdentityIsTotalAndPreservesIncidence)
 	EXPECT_TRUE(images.Validate(graph).Ok());
 	EXPECT_EQ(images.MappedNodeCount(), 3u);
 	EXPECT_EQ(images.MappedConnectionCount(), 2u);
+	for (const auto* edge : graph.Connections())
+		EXPECT_EQ(images.ImageOf(edge), edge);
 }
 
 TEST(GraphMorphism, MapBuildsTheTarget)
@@ -203,13 +205,12 @@ TEST(GraphMorphism, IncidenceRejectsReversedEdge)
 	for (const char* name : {"A", "B", "C"})
 		EXPECT_TRUE(images.RecordNode(*FindNode(source, name), *FindNode(target, name)));
 
-	GraphI::NodeType* a = FindNode(source, "A");
-	GraphI::NodeType* b = FindNode(source, "B");
-	GraphI::NodeType* ta = FindNode(target, "A");
-	GraphI::NodeType* tb = FindNode(target, "B");
-
-	EXPECT_TRUE(images.RecordConnection(*FindOutput(a, "out"), *FindInput(b, "in"),
-	                                   *FindOutput(tb, "out"), *FindInput(ta, "in")));
+	auto* aIn = FindInput(FindNode(target, "A"), "in");
+	auto* bIn = FindInput(FindNode(target, "B"), "in");
+	target.Disconnect(bIn->incoming.from, bIn);
+	ASSERT_TRUE(target.Connect(FindOutput(FindNode(target, "B"), "out"), aIn));
+	EXPECT_TRUE(images.RecordConnection(FindInput(FindNode(source, "B"), "in")->incoming,
+	                                    aIn->incoming));
 
 	EXPECT_FALSE(images.PreservesIncidence());
 	EXPECT_FALSE(images.Validate(source).Ok());
@@ -224,26 +225,28 @@ TEST(GraphMorphism, IncidenceRejectsCrossedEdge)
 	for (const char* name : {"A", "B", "C"})
 		EXPECT_TRUE(images.RecordNode(*FindNode(source, name), *FindNode(target, name)));
 
-	GraphI::NodeType* a = FindNode(source, "A");
-	GraphI::NodeType* b = FindNode(source, "B");
-	GraphI::NodeType* ta = FindNode(target, "A");
-	GraphI::NodeType* tc = FindNode(target, "C");
-
-	EXPECT_TRUE(images.RecordConnection(*FindOutput(a, "out"), *FindInput(b, "in"),
-	                                   *FindOutput(ta, "out"), *FindInput(tc, "in")));
+	auto* cIn = FindInput(FindNode(target, "C"), "in");
+	ASSERT_TRUE(target.Connect(FindOutput(FindNode(target, "A"), "out"), cIn));
+	EXPECT_TRUE(images.RecordConnection(FindInput(FindNode(source, "B"), "in")->incoming,
+	                                    cIn->incoming));
 
 	EXPECT_FALSE(images.PreservesIncidence());
 }
 
-TEST(GraphMorphism, EnumerateConnectionsSeesEveryEdge)
+TEST(GraphMorphism, FanOutMapsToDistinctTargetConnectionsAfterMove)
 {
-	GraphI graph = MakeFanOut();
-	const auto connections = neurus::EnumerateConnections(graph);
+	GraphI source = MakeFanOut();
+	const Morphism mapper{CopyPolicy()};
+	auto result = mapper.Map(source);
+	auto moved = std::move(result);
 
-	ASSERT_EQ(connections.size(), 2u);
-	EXPECT_EQ(connections[0].from->owner->name, "A");
-	EXPECT_EQ(connections[0].to->owner->name, "B");
-	EXPECT_EQ(connections[1].to->owner->name, "C");
+	const auto edges = source.Connections();
+	const auto images = moved.target.Connections();
+	ASSERT_EQ(edges.size(), 2u);
+	ASSERT_EQ(images.size(), 2u);
+	EXPECT_NE(images[0], images[1]);
+	EXPECT_EQ(moved.images.ImageOf(edges[0]), images[0]);
+	EXPECT_EQ(moved.images.ImageOf(edges[1]), images[1]);
 }
 
 TEST(GraphMorphism, MapNodeMapsOneElement)
@@ -268,11 +271,33 @@ TEST(GraphMorphism, MapConnectCreatesAndWires)
 
 	mapper.MapNode(mapping, *FindNode(source, "A"));
 	mapper.MapNode(mapping, *FindNode(source, "B"));
-	EXPECT_TRUE(mapper.MapConnect(mapping, *FindOutput(FindNode(source, "A"), "out"),
-	                               *FindInput(FindNode(source, "B"), "in")));
+	const auto& edge = FindInput(FindNode(source, "B"), "in")->incoming;
+	EXPECT_TRUE(mapper.MapConnect(mapping, edge));
+	EXPECT_FALSE(mapper.MapConnect(mapping, edge));
 
 	EXPECT_TRUE(FindInput(FindNode(mapping.target, "B"), "in")->IsConnected());
-	EXPECT_EQ(FindInput(FindNode(mapping.target, "B"), "in")->source->owner->name, "A");
+	EXPECT_EQ(FindInput(FindNode(mapping.target, "B"), "in")->incoming.from->owner->name, "A");
+}
+
+TEST(GraphMorphism, ConflictingProducersCannotOverwriteAMappedConnection)
+{
+	GraphI source;
+	auto* producer = source.AddNode("producer");
+	auto* consumer = source.AddNode("consumer");
+	ASSERT_TRUE(source.Connect(producer->AddOutput("left"), consumer->AddInput("first")));
+	ASSERT_TRUE(source.Connect(producer->AddOutput("right"), consumer->AddInput("second")));
+
+	auto policy = CopyPolicy();
+	policy.createInput = [](GraphI::NodeType& node, const GraphI::SocketInT&) {
+		return node.inputs.front().get();
+	};
+	const auto mapping = Morphism(std::move(policy)).Map(source);
+	const auto edges = source.Connections();
+	const auto* image = mapping.images.ImageOf(edges[0]);
+	ASSERT_NE(image, nullptr);
+	EXPECT_EQ(image->from->name, "left");
+	EXPECT_EQ(mapping.images.ImageOf(edges[1]), nullptr);
+	EXPECT_FALSE(mapping.images.Validate(source).Ok());
 }
 
 TEST(GraphMorphism, SharedTargetIsAccepted)

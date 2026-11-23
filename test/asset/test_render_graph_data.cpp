@@ -129,7 +129,7 @@ TEST(RenderGraphData, ClonePreservesPortsAndTags)
 
 	ASSERT_EQ(copy->nodes[1]->inputs.size(), 1u);
 	ASSERT_TRUE(copy->nodes[1]->inputs[0]->IsConnected());
-	EXPECT_EQ(copy->nodes[1]->inputs[0]->source->owner->name, "geometry");
+	EXPECT_EQ(copy->nodes[1]->inputs[0]->incoming.from->owner->name, "geometry");
 	EXPECT_EQ(copy->nodes[1]->inputs[0]->data.binding, 0u);
 }
 

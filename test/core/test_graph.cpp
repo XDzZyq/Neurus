@@ -37,7 +37,7 @@ using GraphT   = Graph<SData, NData>;
 static void ForceEdge(SockOut* out, SockIn* in)
 {
 	out->targets.push_back(in);
-	in->source = out;
+	in->incoming.from = out;
 }
 
 // ============================================================================
@@ -161,7 +161,7 @@ protected:
 TEST_F(GraphTest, ConnectSingle)
 {
 	EXPECT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	EXPECT_EQ(m_bIn->source, m_aOut);
+	EXPECT_EQ(m_bIn->incoming.from, m_aOut);
 	EXPECT_EQ(m_aOut->targets.size(), 1u);
 	EXPECT_EQ(m_aOut->targets[0], m_bIn);
 }
@@ -174,12 +174,12 @@ TEST_F(GraphTest, ConnectionsSeesFanOutAndSkipsUnconnected)
 
 	const auto connections = m_graph.Connections();
 	ASSERT_EQ(connections.size(), 2u);
-	EXPECT_EQ(connections[0].from, m_aOut);
-	EXPECT_EQ(connections[0].to, m_bIn);
-	EXPECT_EQ(connections[1].from, m_aOut);
-	EXPECT_EQ(connections[1].to, m_cIn);
+	EXPECT_EQ(connections[0]->from, m_aOut);
+	EXPECT_EQ(connections[0]->to, m_bIn);
+	EXPECT_EQ(connections[1]->from, m_aOut);
+	EXPECT_EQ(connections[1]->to, m_cIn);
 
-	EXPECT_EQ(neurus::EnumerateConnections(m_graph).size(), connections.size());
+	EXPECT_EQ(connections, m_graph.Connections());
 }
 
 TEST_F(GraphTest, ConnectSelfLoopRejected)
@@ -202,7 +202,7 @@ TEST_F(GraphTest, ConnectDirectCycleRejected)
 	auto* aIn = m_a->AddInput("aIn");
 	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));   // a → b
 	EXPECT_FALSE(m_graph.Connect(m_bOut, aIn));     // b → a rejected
-	EXPECT_EQ(aIn->source, nullptr);                // nothing wired
+	EXPECT_EQ(aIn->incoming.from, nullptr);                // nothing wired
 	EXPECT_EQ(m_bOut->targets.size(), 0u);
 	EXPECT_FALSE(m_graph.HasCycle());               // graph stayed acyclic
 }
@@ -215,7 +215,7 @@ TEST_F(GraphTest, ConnectTransitiveCycleRejected)
 	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));   // a → b
 	ASSERT_TRUE(m_graph.Connect(m_bOut, m_cIn));   // b → c
 	EXPECT_FALSE(m_graph.Connect(cOut, aIn));       // c → a rejected
-	EXPECT_EQ(aIn->source, nullptr);
+	EXPECT_EQ(aIn->incoming.from, nullptr);
 	EXPECT_FALSE(m_graph.HasCycle());
 }
 
@@ -240,7 +240,7 @@ TEST_F(GraphTest, ConnectAutoBreakOldSource)
 	auto* cOut = m_c->AddOutput("c→");
 	EXPECT_TRUE(m_graph.Connect(cOut, m_bIn));
 
-	EXPECT_EQ(m_bIn->source, cOut);
+	EXPECT_EQ(m_bIn->incoming.from, cOut);
 	EXPECT_EQ(m_aOut->targets.size(), 0u);  // old edge removed
 }
 
@@ -249,7 +249,7 @@ TEST_F(GraphTest, Disconnect)
 	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
 	m_graph.Disconnect(m_aOut, m_bIn);
 
-	EXPECT_EQ(m_bIn->source, nullptr);
+	EXPECT_EQ(m_bIn->incoming.from, nullptr);
 	EXPECT_EQ(m_aOut->targets.size(), 0u);
 }
 
@@ -278,7 +278,7 @@ TEST_F(GraphTest, RemoveNodeBreaksConnections)
 	EXPECT_EQ(m_aOut->targets.size(), 0u);
 
 	// c's input should be disconnected
-	EXPECT_EQ(m_cIn->source, nullptr);
+	EXPECT_EQ(m_cIn->incoming.from, nullptr);
 }
 
 // ============================================================================
@@ -529,8 +529,8 @@ std::vector<NodeT*> ProducersOf(NodeT* node)
 {
 	std::vector<NodeT*> producers;
 	for (const auto& in : node->inputs)
-		if (in->source && in->source->owner)
-			producers.push_back(in->source->owner);
+		if (in->incoming.from && in->incoming.from->owner)
+			producers.push_back(in->incoming.from->owner);
 	return producers;
 }
 

@@ -93,14 +93,14 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph)
 	for (const auto& node : graph.nodes)
 		record.nodes.push_back(ToRecord(*node));
 
-	for (const auto& connection : graph.Connections())
+	for (const auto* connection : graph.Connections())
 	{
-		RenderGraphEdgeRecord edge{connection.from->owner->name, connection.from->name,
-		                           connection.to->owner->name, connection.to->name};
-		if (connection.to->owner->data.shader)
+		RenderGraphEdgeRecord edge{connection->from->owner->name, connection->from->name,
+		                           connection->to->owner->name, connection->to->name};
+		if (connection->to->owner->data.shader)
 		{
-			edge.inputType = connection.to->data.type;
-			edge.inputBinding = connection.to->data.binding;
+			edge.inputType = connection->to->data.type;
+			edge.inputBinding = connection->to->data.binding;
 		}
 		record.edges.push_back(std::move(edge));
 	}
@@ -192,7 +192,7 @@ std::unique_ptr<RenderGraphData> FromRecord(
 			continue;
 		}
 
-		if (input->source)
+		if (input->IsConnected())
 		{
 			problems.push_back("input '" + edge.to + "." + edge.toPort
 			                   + "' has more than one producer");

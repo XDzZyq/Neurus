@@ -26,6 +26,8 @@ public:
 	using SocketOutA = typename GraphA::SocketOutT;
 	using SocketInB  = typename GraphB::SocketInT;
 	using SocketOutB = typename GraphB::SocketOutT;
+	using ConnectionA = typename GraphA::ConnectionT;
+	using ConnectionB = typename GraphB::ConnectionT;
 
 	/** A factory may return nullptr to decline an element. Validation names each missing image. */
 	struct Policy
@@ -33,14 +35,6 @@ public:
 		std::function<NodeB*(GraphB&, const NodeA&)>          createNode;
 		std::function<SocketOutB*(NodeB&, const SocketOutA&)> createOutput;
 		std::function<SocketInB*(NodeB&, const SocketInA&)>   createInput;
-	};
-
-	struct Connection
-	{
-		const SocketOutA* fromA;
-		const SocketInA*  toA;
-		const SocketOutB* fromB;
-		const SocketInB*  toB;
 	};
 
 	struct Report
@@ -52,8 +46,8 @@ public:
 	/**
 	 * @brief Images of nodes and connections for one mapping.
 	 *
-	 * The graphs own the nodes and sockets. Keep both alive while inspecting
-	 * their images. Independent mappings have independent correspondence tables.
+	 * The correspondence borrows graph-owned nodes and incoming connections. Keep
+	 * mapped sockets and nodes alive. Rebuild the mapping after rewiring them.
 	 */
 	class Correspondence
 	{
@@ -63,12 +57,9 @@ public:
 			return m_nodes.emplace(&from, &to).second;
 		}
 
-		bool RecordConnection(const SocketOutA& fromA, const SocketInA& toA,
-		                      SocketOutB& fromB, SocketInB& toB)
+		bool RecordConnection(const ConnectionA& edge, const ConnectionB& image)
 		{
-			// An input has one producer, so it uniquely identifies its source edge.
-			return toA.source == &fromA
-			    && m_edges.emplace(&toA, Connection{&fromA, &toA, &fromB, &toB}).second;
+			return edge.from && image.from && m_edges.emplace(&edge, &image).second;
 		}
 
 		NodeB* ImageOf(const NodeA* node)
@@ -83,10 +74,10 @@ public:
 			return it == m_nodes.end() ? nullptr : it->second;
 		}
 
-		const Connection* ImageOf(const SocketOutA* from, const SocketInA* to) const
+		const ConnectionB* ImageOf(const ConnectionA* edge) const
 		{
-			const auto it = m_edges.find(to);
-			return it != m_edges.end() && it->second.fromA == from ? &it->second : nullptr;
+			const auto it = m_edges.find(edge);
+			return it == m_edges.end() ? nullptr : it->second;
 		}
 
 		size_t MappedNodeCount() const { return m_nodes.size(); }
@@ -97,16 +88,16 @@ public:
 			for (const auto& node : source.nodes)
 				if (!ImageOf(node.get()))
 					return false;
-			for (const auto& edge : EnumerateConnections(source))
-				if (!ImageOf(edge.from, edge.to))
+			for (const auto* edge : source.Connections())
+				if (!ImageOf(edge))
 					return false;
 			return true;
 		}
 
 		bool PreservesIncidence() const
 		{
-			for (const auto& entry : m_edges)
-				if (!MatchesEndpoints(entry.second))
+			for (const auto& [edge, image] : m_edges)
+				if (!MatchesEndpoints(*edge, *image))
 					return false;
 			return true;
 		}
@@ -118,14 +109,14 @@ public:
 				if (!ImageOf(node.get()))
 					report.problems.push_back("node '" + node->name + "' is not mapped");
 
-			for (const auto& edge : EnumerateConnections(source))
+			for (const auto* edge : source.Connections())
 			{
-				const Connection* image = ImageOf(edge.from, edge.to);
-				if (image && MatchesEndpoints(*image))
+				const ConnectionB* image = ImageOf(edge);
+				if (image && MatchesEndpoints(*edge, *image))
 					continue;
 
-				const std::string name = edge.from->owner->name + "." + edge.from->name
-				                       + " -> " + edge.to->owner->name + "." + edge.to->name;
+				const std::string name = edge->from->owner->name + "." + edge->from->name
+				                       + " -> " + edge->to->owner->name + "." + edge->to->name;
 				report.problems.push_back("connection '" + name +
 					(image ? "' is mapped to a non-matching target" : "' is not mapped"));
 			}
@@ -133,16 +124,15 @@ public:
 		}
 
 	private:
-		bool MatchesEndpoints(const Connection& edge) const
+		bool MatchesEndpoints(const ConnectionA& edge, const ConnectionB& image) const
 		{
-			return edge.toA->source == edge.fromA
-			    && ImageOf(edge.fromA->owner) == edge.fromB->owner
-			    && ImageOf(edge.toA->owner) == edge.toB->owner
-			    && edge.toB->source == edge.fromB;
+			return edge.from && image.from
+			    && ImageOf(edge.from->owner) == image.from->owner
+			    && ImageOf(edge.to->owner) == image.to->owner;
 		}
 
 		std::unordered_map<const NodeA*, NodeB*> m_nodes;
-		std::unordered_map<const SocketInA*, Connection> m_edges;
+		std::unordered_map<const ConnectionA*, const ConnectionB*> m_edges;
 	};
 
 	struct Result
@@ -165,25 +155,28 @@ public:
 	}
 
 	/** @brief Resolves both owners and records a connected pair of target sockets. */
-	bool MapConnect(Result& result, const SocketOutA& from, const SocketInA& to) const
+	bool MapConnect(Result& result, const ConnectionA& edge) const
 	{
-		if (to.source != &from || result.images.ImageOf(&from, &to)
+		if (!edge.from || result.images.ImageOf(&edge)
 		    || !m_policy.createOutput || !m_policy.createInput)
 			return false;
 
-		NodeB* fromNode = result.images.ImageOf(from.owner);
-		NodeB* toNode = result.images.ImageOf(to.owner);
+		NodeB* fromNode = result.images.ImageOf(edge.from->owner);
+		NodeB* toNode = result.images.ImageOf(edge.to->owner);
 		if (!fromNode || !toNode)
 			return false;
 
-		SocketOutB* output = m_policy.createOutput(*fromNode, from);
-		SocketInB* input = m_policy.createInput(*toNode, to);
+		SocketOutB* output = m_policy.createOutput(*fromNode, *edge.from);
+		SocketInB* input = m_policy.createInput(*toNode, *edge.to);
 		if (!output || !input)
 			return false;
-		if (input->source != output && !result.target.Connect(output, input))
+		// Two source edges can share an image, provided they resolve to the same producer.
+		if (!input->IsConnected())
+			result.target.Connect(output, input);
+		if (input->incoming.from != output)
 			return false;
 
-		return result.images.RecordConnection(from, to, *output, *input);
+		return result.images.RecordConnection(edge, input->incoming);
 	}
 
 	/** @brief Creates a fresh target and correspondence for the supplied source. */
@@ -192,8 +185,8 @@ public:
 		Result result;
 		for (const auto& node : source.nodes)
 			MapNode(result, *node);
-		for (const auto& edge : EnumerateConnections(source))
-			MapConnect(result, *edge.from, *edge.to);
+		for (const auto* edge : source.Connections())
+			MapConnect(result, *edge);
 		return result;
 	}
 
@@ -208,8 +201,8 @@ auto IdentityMorphism(GraphT& graph)
 	typename GraphMorphism<GraphT, GraphT>::Correspondence images;
 	for (const auto& node : graph.nodes)
 		images.RecordNode(*node, *node);
-	for (const auto& edge : EnumerateConnections(graph))
-		images.RecordConnection(*edge.from, *edge.to, *edge.from, *edge.to);
+	for (const auto* edge : graph.Connections())
+		images.RecordConnection(*edge, *edge);
 	return images;
 }
 

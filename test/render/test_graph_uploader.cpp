@@ -188,6 +188,25 @@ TEST_F(GraphUploaderTest, UncompiledSelectedShaderIsNamed)
 	EXPECT_TRUE(HasError(upload.errors, "lighting", "not uploaded"));
 }
 
+TEST_F(GraphUploaderTest, CustomGeometryShaderPreservesPassDepthOutput)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = m_defaults->CreatePassShader("GeometryPass", "CustomGeometry");
+	const auto request = neurus::MakeUploadShaderRequest(*shader);
+	EXPECT_EQ(request.ports.Find("depth", neurus::PortDirection::Output), nullptr);
+	m_cache->UseShader(neurus::UploadManager::UploadShader(*m_device, request));
+
+	auto document = DefaultDocument();
+	FindNode(*document, "geometry")->data.shader = shader;
+	const auto upload = Compile(std::move(document));
+	ASSERT_TRUE(upload.errors.empty()) << upload.errors.front().message;
+	ASSERT_NE(upload.graph, nullptr);
+	EXPECT_TRUE(upload.depth);
+	EXPECT_TRUE(m_cache->HasResource("geometry/depth"));
+}
+
 TEST_F(GraphUploaderTest, UploadedShaderRenamesSocketByRoleAndPreservesItsUsers)
 {
 	if (!HasVulkan())

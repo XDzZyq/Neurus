@@ -169,7 +169,7 @@ void RenderGraph::Compile(const std::set<std::string>* active)
 
 		for (const auto& input : node->inputs)
 		{
-			if (input->source)
+			if (input->IsConnected())
 				continue;
 
 			const auto& external = node->data.externalInputs;
@@ -193,7 +193,7 @@ void RenderGraph::Compile(const std::set<std::string>* active)
 		{
 			for (const auto& input : node->inputs)
 			{
-				if (input->data.name == port && input->source)
+				if (input->data.name == port && input->IsConnected())
 					return true;
 			}
 			return false;
@@ -234,11 +234,11 @@ void RenderGraph::Execute(vk::CommandBuffer cmd,
 
 		for (const auto& input : node->inputs)
 		{
-			if (node->data.legacyExternal || !input->source)
+			if (node->data.legacyExternal || !input->IsConnected())
 				continue;
 
 			const std::string key =
-				ResourceKey(input->source->owner->data.id, input->source->name);
+				ResourceKey(input->incoming.from->owner->data.id, input->incoming.from->name);
 			Image* image = cache.FindPlannedResource(key);
 			if (!image)
 			{

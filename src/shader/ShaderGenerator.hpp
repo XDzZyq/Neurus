@@ -13,13 +13,14 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace neurus {
 
 // Forward declarations
 class ShaderStruct;
-enum class Interp : uint8_t;
+enum class Interp : std::uint8_t;
 
 /**
  * @brief Pure function: ShaderStruct IR -> Vulkan GLSL.

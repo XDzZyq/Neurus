@@ -284,7 +284,7 @@ TEST(CpuGraphValidation, CycleIsNamed)
 		: geometry->inputs[0].get();
 
 	lightingOut->targets.push_back(geometryIn);
-	geometryIn->source = lightingOut;
+	geometryIn->incoming.from = lightingOut;
 
 	const std::vector<CpuGraphDiagnostic> diagnostics =
 		neurus::ValidateCpuGraph(graph, ports);
@@ -391,8 +391,8 @@ TEST(RenderGraphDocument, MissingCustomShaderRecoversRenamedInputsAndSelectedOut
 	EXPECT_TRUE(neurus::ValidateCpuGraph(*recovered, ports).empty());
 	EXPECT_EQ(recovered->sceneOutputs.at("color").port, "outputComposed");
 	auto* fxaa = FindNode(*recovered, "fxaa");
-	ASSERT_TRUE(fxaa->inputs.front()->source);
-	EXPECT_EQ(fxaa->inputs.front()->source->name, "outputComposed");
+	ASSERT_TRUE(fxaa->inputs.front()->incoming.from);
+	EXPECT_EQ(fxaa->inputs.front()->incoming.from->name, "outputComposed");
 	EXPECT_EQ(FindNode(*recovered, "compose")->data.shader, nullptr);
 }
 
@@ -403,7 +403,7 @@ TEST(CpuGraphValidation, EditingThePublicProducerChangesReachabilityAndHash)
 	auto bypass = graph.Clone();
 	bypass->sceneOutputs["color"] = {"compose", "outputComposed"};
 	auto* fxaa = FindNode(*bypass, "fxaa");
-	bypass->Disconnect(fxaa->inputs.front()->source, fxaa->inputs.front().get());
+	bypass->Disconnect(fxaa->inputs.front()->incoming.from, fxaa->inputs.front().get());
 	EXPECT_FALSE(bypass->ActiveNodes().contains("fxaa"));
 	EXPECT_NE(bypass->Hash(), graph.Hash());
 	EXPECT_TRUE(neurus::ValidateCpuGraph(*bypass, ports).empty());

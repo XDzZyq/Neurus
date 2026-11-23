@@ -232,13 +232,13 @@ std::uint64_t RenderGraphData::Hash() const
 	}
 
 	hashByte(0x06);
-	for (const auto& connection : Connections())
+	for (const auto* connection : Connections())
 	{
 		hashByte(0x07);
-		hashString(connection.from->owner->name);
-		hashString(connection.from->name);
-		hashString(connection.to->owner->name);
-		hashString(connection.to->name);
+		hashString(connection->from->owner->name);
+		hashString(connection->from->name);
+		hashString(connection->to->owner->name);
+		hashString(connection->to->name);
 	}
 
 	for (const auto& [name, endpoint] : sceneOutputs)
@@ -300,8 +300,8 @@ std::set<std::string> RenderGraphData::ActiveNodes() const
 		if (!active.insert(node->name).second)
 			continue;
 		for (const auto& input : node->inputs)
-			if (input->source)
-				pending.push_back(input->source->owner);
+			if (input->IsConnected())
+				pending.push_back(input->incoming.from->owner);
 	}
 	return active;
 }

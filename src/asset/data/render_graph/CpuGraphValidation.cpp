@@ -118,11 +118,11 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 				diagnostics.push_back({node->name, input->name, "socket differs from declared input role"});
 			const auto* role = declared ? builtin->FindRole(*declared) : nullptr;
 			const bool externalInput = role && externalSet.contains(role->name);
-			if (input->source && externalInput)
+			if (input->IsConnected() && externalInput)
 				diagnostics.push_back({node->name, input->name, "external input cannot be connected"});
-			if (input->source && input->source->data.tag)
+			if (input->IsConnected() && input->incoming.from->data.tag)
 			{
-				const auto& source = *input->source->data.tag;
+				const auto& source = *input->incoming.from->data.tag;
 				const bool shadow = node->data.pass == "ShadowIntensityPass" && role
 				                 && (role->name == "u_ShadowCube" || role->name == "u_SunShadowMap");
 				const bool array = input->data.type.find("Array") != std::string::npos;

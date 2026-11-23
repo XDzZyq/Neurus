@@ -53,9 +53,9 @@ std::vector<Connection> Connections(const GraphI& graph)
 	{
 		for (const auto& input : node->inputs)
 		{
-			if (!input->source)
+			if (!input->incoming.from)
 				continue;
-			connections.push_back({input->source->owner->name, input->source->name,
+			connections.push_back({input->incoming.from->owner->name, input->incoming.from->name,
 			                       node->name, input->name});
 		}
 	}
