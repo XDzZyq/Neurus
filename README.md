@@ -86,7 +86,7 @@ C++ sources use `.cpp` and headers use `.hpp`; GLSL sources are named
 [`AGENTS.md`](AGENTS.md) is the entry point for the hard rules - layer
 isolation, Vulkan ownership, the coordinate system - and routes to the coding
 conventions and development workflow under
-[`.agent/instructions/`](.agent/instructions/README.md).
+[`.agents/instructions/`](.agents/instructions/README.md).
 The [neurus-develop skill](.agents/skills/neurus-develop/SKILL.md) guides
 agents through design decisions for editor operations and rendering changes.
 

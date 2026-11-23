@@ -165,7 +165,7 @@ doc-graph:
 # The build is retried once because mkdoxy 1.2.8 ignores doxygen's exit code and
 # stderr, so an intermittent doxygen failure surfaces only later as a missing
 # index.xml - roughly one clean run in four. See
-# .agent/instructions/lessons.instructions.md.
+# .agents/instructions/lessons.instructions.md.
 doc: doc-graph
 	@command -v mkdocs >/dev/null 2>&1 \
 	  || { echo "mkdocs not on PATH - run: make doc-deps"; exit 1; }
