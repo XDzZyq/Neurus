@@ -62,34 +62,36 @@ CpuPort MakePort(const PassPort& port, std::optional<GraphOutputTag> tag = {})
 
 } // anonymous namespace
 
+RenderGraphNodeRecord ToRecord(const NodeType& node)
+{
+	RenderGraphNodeRecord saved;
+	saved.name      = node.name;
+	saved.pass      = node.data.pass;
+	saved.shaderUid = node.data.shader ? node.data.shader->GetObjectID() : 0;
+	saved.x         = node.data.x;
+	saved.y         = node.data.y;
+
+	saved.outputs.reserve(node.outputs.size());
+	for (const auto& output : node.outputs)
+	{
+		RenderGraphPortRecord port;
+		port.name     = output->name;
+		port.type     = output->data.type;
+		port.binding  = output->data.binding;
+		port.location = output->data.location;
+		port.tag      = output->data.tag;
+		saved.outputs.push_back(std::move(port));
+	}
+	return saved;
+}
+
 RenderGraphRecord ToRecord(const RenderGraphTopology& graph)
 {
 	RenderGraphRecord record;
 	record.nodes.reserve(graph.nodes.size());
 
 	for (const auto& node : graph.nodes)
-	{
-		RenderGraphNodeRecord saved;
-		saved.name      = node->name;
-		saved.pass      = node->data.pass;
-		saved.shaderUid = node->data.shader ? node->data.shader->GetObjectID() : 0;
-		saved.x         = node->data.x;
-		saved.y         = node->data.y;
-
-		saved.outputs.reserve(node->outputs.size());
-		for (const auto& output : node->outputs)
-		{
-			RenderGraphPortRecord port;
-			port.name     = output->name;
-			port.type     = output->data.type;
-			port.binding  = output->data.binding;
-			port.location = output->data.location;
-			port.tag      = output->data.tag;
-			saved.outputs.push_back(std::move(port));
-		}
-
-		record.nodes.push_back(std::move(saved));
-	}
+		record.nodes.push_back(ToRecord(*node));
 
 	for (const auto& connection : graph.Connections())
 	{
@@ -109,6 +111,34 @@ RenderGraphRecord ToRecord(const RenderGraphTopology& graph)
 	return record;
 }
 
+std::unique_ptr<NodeType> FromRecord(
+	const RenderGraphNodeRecord& saved, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources,
+	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
+{
+	auto node = std::make_unique<NodeType>();
+	node->name = saved.name;
+	node->data.pass = saved.pass;
+	node->data.x = saved.x;
+	node->data.y = saved.y;
+	if (resources && saved.shaderUid)
+	{
+		auto shader = resources->Get<ShaderData>(saved.shaderUid);
+		if (shader && shader->IsValid() && (!acceptsShader || acceptsShader(saved.pass, *shader)))
+			node->data.shader = std::move(shader);
+	}
+
+	for (const auto& port : saved.outputs)
+		node->AddOutput(port.name)->data = {port.name, PortDirection::Output, port.type,
+		                                    port.binding, port.location, port.tag};
+	if (!ports.FindPassPorts(saved.pass))
+		problems.push_back("node '" + saved.name + "' names unknown pass kind '" + saved.pass + "'");
+	else
+		for (const auto& input : EffectivePassPorts(node->data, ports).Inputs())
+			node->AddInput(input.name)->data = MakePort(input);
+	return node;
+}
+
 RenderGraphTopology FromRecord(const RenderGraphRecord& record, const IPortSource& ports,
                                std::vector<std::string>& problems,
                                const IResourceLookup* resources,
@@ -117,59 +147,14 @@ RenderGraphTopology FromRecord(const RenderGraphRecord& record, const IPortSourc
 	RenderGraphTopology graph;
 	graph.nodes.reserve(record.nodes.size());
 
-	std::vector<NodeType*> created;
 	std::set<NodeType*> useFallback;
-	created.reserve(record.nodes.size());
-
-	for (const RenderGraphNodeRecord& saved : record.nodes)
+	for (const auto& saved : record.nodes)
 	{
-		CpuNode data;
-		data.pass      = saved.pass;
-		if (resources && saved.shaderUid != 0)
-		{
-			auto shader = resources->Get<ShaderData>(saved.shaderUid);
-			if (shader && shader->IsValid() && (!acceptsShader || acceptsShader(saved.pass, *shader)))
-				data.shader = std::move(shader);
-		}
-		data.x         = saved.x;
-		data.y         = saved.y;
-
 		if (FindNode(graph, saved.name))
 			problems.push_back("duplicate node name '" + saved.name + "'");
-
-		NodeType* node = graph.AddNode(saved.name, data);
-		created.push_back(node);
-		if (saved.shaderUid != 0 && !data.shader)
+		auto* node = graph.AddNode(FromRecord(saved, ports, problems, resources, acceptsShader));
+		if (saved.shaderUid && !node->data.shader)
 			useFallback.insert(node);
-
-		for (const RenderGraphPortRecord& savedPort : saved.outputs)
-		{
-			OutSocket* output = node->AddOutput(savedPort.name);
-			output->data.name      = savedPort.name;
-			output->data.direction = PortDirection::Output;
-			output->data.type      = savedPort.type;
-			output->data.binding   = savedPort.binding;
-			output->data.location  = savedPort.location;
-			output->data.tag       = savedPort.tag;
-		}
-	}
-
-	for (size_t i = 0; i < created.size(); ++i)
-	{
-		const RenderGraphNodeRecord& saved = record.nodes[i];
-		const PassPorts* passPorts = ports.FindPassPorts(saved.pass);
-		if (!passPorts)
-		{
-			problems.push_back("node '" + saved.name + "' names unknown pass kind '"
-			                   + saved.pass + "'");
-			continue;
-		}
-
-		for (const PassPort& input : EffectivePassPorts(created[i]->data, ports).Inputs())
-		{
-			InSocket* socket = created[i]->AddInput(input.name);
-			socket->data = MakePort(input);
-		}
 	}
 
 	for (const RenderGraphEdgeRecord& edge : record.edges)

@@ -1,22 +1,6 @@
 /**
  * @file GraphMorphism.hpp
- * @brief Functor between two graphs: the mapping policy, its images and the laws.
- *
- * A graph is a small category: nodes are objects and connections are
- * morphisms. A map from one graph to another is a functor when it is total and
- * preserves incidence. Nothing here asks for an inverse, an injection or a
- * surjection; the map is deliberately one-way.
- *
- * The morphism owns the policy that builds the target objects, so it knows how
- * to map `G_A` to `G_B` instead of asking a caller to combine a policy with a
- * free function:
- *
- *     GraphMorphism<A, B> morphism(Policy{...});
- *     B target = morphism.Map(source);
- *
- * @note The node and connection images point into the target graph `Map()`
- *       returned and into the source graph it was given, so both must outlive
- *       the morphism.
+ * @brief One-way mapping policies for typed graphs.
  */
 
 #pragma once
@@ -25,20 +9,13 @@
 
 #include <functional>
 #include <string>
-#include <utility>
 #include <unordered_map>
-#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace neurus {
 
-/**
- * @brief Functor from one graph to another.
- *
- * Owns the @ref Policy that creates the target objects and records the node and
- * connection images. `Map()` maps a whole graph; `MapNode()` and `MapConnect()`
- * map one element at a time for callers that build the target themselves.
- */
+/** @brief Maps source nodes and connections with a reusable construction policy. */
 template<typename GraphA, typename GraphB>
 class GraphMorphism
 {
@@ -50,317 +27,190 @@ public:
 	using SocketInB  = typename GraphB::SocketInT;
 	using SocketOutB = typename GraphB::SocketOutT;
 
-	/**
-	 * @brief How the morphism creates the target objects of one source element.
-	 *
-	 * A factory returns null to leave an element unmapped; `Validate()` then
-	 * names it. The factories receive the target graph or node so an
-	 * implementation can create the object in place (and keep its own state out
-	 * of the morphism).
-	 */
+	/** A factory may return nullptr to decline an element. Validation names each missing image. */
 	struct Policy
 	{
-		std::function<NodeB*(GraphB&, const NodeA&)>           createNode;
-		std::function<SocketOutB*(NodeB&, const SocketOutA&)>  createOutput;
-		std::function<SocketInB*(NodeB&, const SocketInA&)>    createInput;
+		std::function<NodeB*(GraphB&, const NodeA&)>          createNode;
+		std::function<SocketOutB*(NodeB&, const SocketOutA&)> createOutput;
+		std::function<SocketInB*(NodeB&, const SocketInA&)>   createInput;
 	};
 
 	struct Connection
 	{
-		SocketOutA* fromA = nullptr;
-		SocketInA*  toA   = nullptr;
-		SocketOutB* fromB = nullptr;
-		SocketInB*  toB   = nullptr;
+		const SocketOutA* fromA;
+		const SocketInA*  toA;
+		const SocketOutB* fromB;
+		const SocketInB*  toB;
 	};
-
-	GraphMorphism() = default;
-
-	/// @brief Binds the mapping policy only; `Map()` supplies the source.
-	explicit GraphMorphism(Policy policy)
-		: m_policy(std::move(policy))
-	{
-	}
-
-	/// @brief Binds the source graph the functor laws are checked against.
-	explicit GraphMorphism(const GraphA& from, Policy policy = {})
-		: m_policy(std::move(policy))
-		, m_from(&from)
-	{
-	}
-
-	/**
-	 * @brief Drops every recorded image so another graph can be mapped.
-	 *
-	 * A permanent morphism (a service's mapper) reuses its policy and clears the
-	 * previous images; the source and target of the old images are no longer
-	 * referenced.
-	 */
-	void Reset()
-	{
-		m_nodes.clear();
-		m_edges.clear();
-		m_from = nullptr;
-	}
-
-	// --- Mapping ---
-
-	/**
-	 * @brief Creates the target image of one source node and records it.
-	 * @return The created node, or nullptr when the policy declines or the
-	 *         source node already has an image.
-	 */
-	NodeB* MapNode(GraphB& target, const NodeA& node)
-	{
-		if (!m_policy.createNode || m_nodes.contains(&node))
-			return nullptr;
-
-		NodeB* image = m_policy.createNode(target, node);
-		if (!image)
-			return nullptr;
-
-		m_nodes.emplace(&node, image);
-		return image;
-	}
-
-	/// @brief Records an already-created node image.
-	/// @return false for a null target or a source that already has an image.
-	bool MapNode(const NodeA& from, NodeB& to)
-	{
-		if (m_nodes.contains(&from))
-			return false;
-		m_nodes.emplace(&from, &to);
-		return true;
-	}
-
-	/**
-	 * @brief Maps one source connection: creates both target sockets, wires them
-	 *        in @p target, and records the image.
-	 * @return false when an endpoint is not mapped, the policy declines, or the
-	 *         target refuses the edge.
-	 */
-	bool MapConnect(GraphB& target, SocketOutA& from, SocketInA& to)
-	{
-		if (to.source != &from)
-			return false;
-
-		NodeB* fromNode = ImageOf(from.owner);
-		NodeB* toNode   = ImageOf(to.owner);
-		if (!fromNode || !toNode)
-			return false;
-
-		auto& targets = m_edges[&from];
-		if (targets.contains(&to))
-			return false;
-
-		if (!m_policy.createOutput || !m_policy.createInput)
-			return false;
-
-		SocketOutB* fromB = m_policy.createOutput(*fromNode, from);
-		SocketInB* toB    = m_policy.createInput(*toNode, to);
-		if (!fromB || !toB || !target.Connect(fromB, toB))
-			return false;
-
-		targets.emplace(&to, Connection{&from, &to, fromB, toB});
-		return true;
-	}
-
-	/// @brief Records an already-created connection image.
-	bool MapConnect(SocketOutA& fromA, SocketInA& toA,
-	                SocketOutB& fromB, SocketInB& toB)
-	{
-		if (toA.source != &fromA)
-			return false;
-
-		auto& targets = m_edges[&fromA];
-		if (targets.contains(&toA))
-			return false;
-
-		targets.emplace(&toA, Connection{&fromA, &toA, &fromB, &toB});
-		return true;
-	}
-
-	/**
-	 * @brief Maps every node and connection of @p graph into a new target graph.
-	 *
-	 * Nodes map first, so a connection can always resolve both owners. An
-	 * element the policy declines stays unmapped and `Validate()` reports it.
-	 *
-	 * @param graph  Source graph; it must outlive the morphism.
-	 * @return The built target graph.
-	 */
-	GraphB Map(const GraphA& graph)
-	{
-		Reset();
-		m_from = &graph;
-
-		GraphB target;
-		for (const auto& node : graph.nodes)
-			MapNode(target, *node);
-
-		for (const ConnectionRef<GraphA>& connection : EnumerateConnections(graph))
-			MapConnect(target, *connection.from, *connection.to);
-
-		return target;
-	}
-
-	// --- Queries ---
-
-	NodeB* ImageOf(const NodeA* node)
-	{
-		const auto it = m_nodes.find(node);
-		return it == m_nodes.end() ? nullptr : it->second;
-	}
-
-	const NodeB* ImageOf(const NodeA* node) const
-	{
-		const auto it = m_nodes.find(node);
-		return it == m_nodes.end() ? nullptr : it->second;
-	}
-
-	const Connection* ImageOf(const SocketOutA* from, const SocketInA* to) const
-	{
-		const auto fromIt = m_edges.find(from);
-		if (fromIt == m_edges.end())
-			return nullptr;
-		const auto toIt = fromIt->second.find(to);
-		return toIt == fromIt->second.end() ? nullptr : &toIt->second;
-	}
-
-	size_t MappedNodeCount() const { return m_nodes.size(); }
-	size_t MappedConnectionCount() const
-	{
-		size_t count = 0;
-		for (const auto& [from, targets] : m_edges)
-		{
-			(void)from;
-			count += targets.size();
-		}
-		return count;
-	}
-
-	bool CoversAllNodes() const
-	{
-		if (!m_from)
-			return false;
-		for (const auto& node : m_from->nodes)
-		{
-			if (!ImageOf(node.get()))
-				return false;
-		}
-		return true;
-	}
-
-	bool CoversAllConnections() const
-	{
-		if (!m_from)
-			return false;
-		for (const ConnectionRef<GraphA>& connection : EnumerateConnections(*m_from))
-		{
-			if (!ImageOf(connection.from, connection.to))
-				return false;
-		}
-		return true;
-	}
-
-	// --- Functor laws ---
-
-	bool IsTotal() const
-	{
-		return CoversAllNodes() && CoversAllConnections();
-	}
-
-	bool PreservesIncidence() const
-	{
-		for (const auto& [from, targets] : m_edges)
-		{
-			for (const auto& [to, connection] : targets)
-			{
-				(void)from;
-				(void)to;
-				if (!connection.fromA || !connection.toA
-				    || !connection.fromB || !connection.toB)
-					return false;
-				if (ImageOf(connection.fromA->owner) != connection.fromB->owner)
-					return false;
-				if (ImageOf(connection.toA->owner) != connection.toB->owner)
-					return false;
-				if (connection.toB->source != connection.fromB)
-					return false;
-			}
-		}
-		return true;
-	}
 
 	struct Report
 	{
 		std::vector<std::string> problems;
-
 		bool Ok() const { return problems.empty(); }
 	};
 
-	Report Validate() const
+	/**
+	 * @brief Images of nodes and connections for one mapping.
+	 *
+	 * The graphs own the nodes and sockets. Keep both alive while inspecting
+	 * their images. Independent mappings have independent correspondence tables.
+	 */
+	class Correspondence
 	{
-		Report report;
-		if (!m_from)
+	public:
+		bool RecordNode(const NodeA& from, NodeB& to)
 		{
-			report.problems.push_back("morphism has no source graph");
+			return m_nodes.emplace(&from, &to).second;
+		}
+
+		bool RecordConnection(const SocketOutA& fromA, const SocketInA& toA,
+		                      SocketOutB& fromB, SocketInB& toB)
+		{
+			// An input has one producer, so it uniquely identifies its source edge.
+			return toA.source == &fromA
+			    && m_edges.emplace(&toA, Connection{&fromA, &toA, &fromB, &toB}).second;
+		}
+
+		NodeB* ImageOf(const NodeA* node)
+		{
+			const auto it = m_nodes.find(node);
+			return it == m_nodes.end() ? nullptr : it->second;
+		}
+
+		const NodeB* ImageOf(const NodeA* node) const
+		{
+			const auto it = m_nodes.find(node);
+			return it == m_nodes.end() ? nullptr : it->second;
+		}
+
+		const Connection* ImageOf(const SocketOutA* from, const SocketInA* to) const
+		{
+			const auto it = m_edges.find(to);
+			return it != m_edges.end() && it->second.fromA == from ? &it->second : nullptr;
+		}
+
+		size_t MappedNodeCount() const { return m_nodes.size(); }
+		size_t MappedConnectionCount() const { return m_edges.size(); }
+
+		bool IsTotal(const GraphA& source) const
+		{
+			for (const auto& node : source.nodes)
+				if (!ImageOf(node.get()))
+					return false;
+			for (const auto& edge : EnumerateConnections(source))
+				if (!ImageOf(edge.from, edge.to))
+					return false;
+			return true;
+		}
+
+		bool PreservesIncidence() const
+		{
+			for (const auto& entry : m_edges)
+				if (!MatchesEndpoints(entry.second))
+					return false;
+			return true;
+		}
+
+		Report Validate(const GraphA& source) const
+		{
+			Report report;
+			for (const auto& node : source.nodes)
+				if (!ImageOf(node.get()))
+					report.problems.push_back("node '" + node->name + "' is not mapped");
+
+			for (const auto& edge : EnumerateConnections(source))
+			{
+				const Connection* image = ImageOf(edge.from, edge.to);
+				if (image && MatchesEndpoints(*image))
+					continue;
+
+				const std::string name = edge.from->owner->name + "." + edge.from->name
+				                       + " -> " + edge.to->owner->name + "." + edge.to->name;
+				report.problems.push_back("connection '" + name +
+					(image ? "' is mapped to a non-matching target" : "' is not mapped"));
+			}
 			return report;
 		}
 
-		for (const auto& node : m_from->nodes)
+	private:
+		bool MatchesEndpoints(const Connection& edge) const
 		{
-			if (!ImageOf(node.get()))
-				report.problems.push_back("node '" + node->name + "' is not mapped");
+			return edge.toA->source == edge.fromA
+			    && ImageOf(edge.fromA->owner) == edge.fromB->owner
+			    && ImageOf(edge.toA->owner) == edge.toB->owner
+			    && edge.toB->source == edge.fromB;
 		}
 
-		for (const ConnectionRef<GraphA>& connection : EnumerateConnections(*m_from))
-		{
-			const std::string name =
-				connection.from->owner->name + "." + connection.from->name
-				+ " -> " + connection.to->owner->name + "." + connection.to->name;
+		std::unordered_map<const NodeA*, NodeB*> m_nodes;
+		std::unordered_map<const SocketInA*, Connection> m_edges;
+	};
 
-			const Connection* image = ImageOf(connection.from, connection.to);
-			if (!image)
-			{
-				report.problems.push_back("connection '" + name + "' is not mapped");
-				continue;
-			}
+	struct Result
+	{
+		GraphB target;
+		Correspondence images;
+	};
 
-			if (ImageOf(connection.from->owner) != image->fromB->owner
-			    || ImageOf(connection.to->owner) != image->toB->owner
-			    || image->toB->source != image->fromB)
-			{
-				report.problems.push_back(
-					"connection '" + name + "' is mapped to a non-matching target");
-			}
-		}
+	explicit GraphMorphism(Policy policy) : m_policy(std::move(policy)) {}
 
-		return report;
+	/** @brief Creates the image of a single node in this result. */
+	NodeB* MapNode(Result& result, const NodeA& node) const
+	{
+		if (!m_policy.createNode || result.images.ImageOf(&node))
+			return nullptr;
+		NodeB* image = m_policy.createNode(result.target, node);
+		if (image)
+			result.images.RecordNode(node, *image);
+		return image;
+	}
+
+	/** @brief Resolves both owners and records a connected pair of target sockets. */
+	bool MapConnect(Result& result, const SocketOutA& from, const SocketInA& to) const
+	{
+		if (to.source != &from || result.images.ImageOf(&from, &to)
+		    || !m_policy.createOutput || !m_policy.createInput)
+			return false;
+
+		NodeB* fromNode = result.images.ImageOf(from.owner);
+		NodeB* toNode = result.images.ImageOf(to.owner);
+		if (!fromNode || !toNode)
+			return false;
+
+		SocketOutB* output = m_policy.createOutput(*fromNode, from);
+		SocketInB* input = m_policy.createInput(*toNode, to);
+		if (!output || !input)
+			return false;
+		if (input->source != output && !result.target.Connect(output, input))
+			return false;
+
+		return result.images.RecordConnection(from, to, *output, *input);
+	}
+
+	/** @brief Creates a fresh target and correspondence for the supplied source. */
+	Result Map(const GraphA& source) const
+	{
+		Result result;
+		for (const auto& node : source.nodes)
+			MapNode(result, *node);
+		for (const auto& edge : EnumerateConnections(source))
+			MapConnect(result, *edge.from, *edge.to);
+		return result;
 	}
 
 private:
-	Policy        m_policy;
-	const GraphA* m_from = nullptr;
-
-	std::unordered_map<const NodeA*, NodeB*> m_nodes;
-	std::unordered_map<const SocketOutA*,
-	                   std::unordered_map<const SocketInA*, Connection>> m_edges;
+	Policy m_policy;
 };
 
-/// @brief Records every node and connection of @p graph as its own image.
+/** @brief Maps each element to itself. The returned images borrow the supplied graph. */
 template<typename GraphT>
-GraphMorphism<GraphT, GraphT> IdentityMorphism(GraphT& graph)
+auto IdentityMorphism(GraphT& graph)
 {
-	GraphMorphism<GraphT, GraphT> morphism(graph);
-
+	typename GraphMorphism<GraphT, GraphT>::Correspondence images;
 	for (const auto& node : graph.nodes)
-		morphism.MapNode(*node, *node);
-
-	for (const ConnectionRef<GraphT>& connection : EnumerateConnections(graph))
-		morphism.MapConnect(*connection.from, *connection.to,
-		                    *connection.from, *connection.to);
-
-	return morphism;
+		images.RecordNode(*node, *node);
+	for (const auto& edge : EnumerateConnections(graph))
+		images.RecordConnection(*edge.from, *edge.to, *edge.from, *edge.to);
+	return images;
 }
 
 } // namespace neurus

@@ -23,7 +23,7 @@
 #include "editor/events/SceneEvents.hpp"
 #include "editor/Input.hpp"
 #include "core/ResourceManager.hpp"
-#include "editor/operations/OperationContext.hpp"
+#include "shared/OperationTestAccess.hpp"
 #include "editor/operations/OperationManager.hpp"
 #include "editor/operations/SceneOperations.hpp"
 #include "scene/Camera.hpp"
@@ -170,7 +170,7 @@ TEST_F(OperationManagerTest, Inverse_IsInvolution)
 	// (g⁻¹)⁻¹ must reproduce the original forward effect.
 	EXPECT_EQ(twice->Label(), op->Label());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	twice->Apply(ctx); // Emit() dispatches synchronously.
 	EXPECT_FLOAT_EQ(m_light->light_power, 77.0f);
 }
@@ -181,7 +181,7 @@ TEST_F(OperationManagerTest, Inverse_SwapsBeforeAfter)
 	auto op = std::make_unique<SetLightPowerOp>(m_light->GetObjectID(), 10.0f, 90.0f);
 	auto inv = op->Inverse();
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	inv->Apply(ctx); // inverse applies the "before" value.
 	EXPECT_FLOAT_EQ(m_light->light_power, 10.0f);
 }
@@ -193,7 +193,7 @@ TEST_F(OperationManagerTest, Apply_UnknownUid_IsNoOp)
 	const float before = m_light->light_power;
 	auto op = std::make_unique<SetLightPowerOp>(999999, 1.0f, 2.0f); // no object with this UID
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	op->Apply(ctx); // Resolve() -> nullptr -> safe no-op, must not crash.
 	EXPECT_FLOAT_EQ(m_light->light_power, before);
 }
@@ -392,7 +392,7 @@ TEST_F(OperationManagerTest, CameraTransform_Inverse_IsInvolution)
 	EXPECT_EQ(twice->Label(), op->Label());
 	EXPECT_EQ(twice->MergeKey(), op->MergeKey());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	twice->Apply(ctx);
 	EXPECT_EQ(m_camera->GetPosition(), pos);
 	EXPECT_EQ(m_camera->cam_tar, tar);
@@ -492,7 +492,7 @@ TEST_F(OperationManagerTest, SetSelectionOp_Inverse_IsInvolution)
 	EXPECT_EQ(twice->Label(), op->Label());
 	EXPECT_TRUE(twice->PreservesRedo());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	twice->Apply(ctx); // reproduces the original "after" selection.
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
 	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());

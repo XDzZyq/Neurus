@@ -2,13 +2,13 @@
 
 #include "asset/data/RenderGraphData.hpp"
 #include "editor/events/GraphEvents.hpp"
-#include "editor/operations/Operation.hpp"
-#include "editor/operations/GraphEditState.hpp"
+#include "asset/data/ShaderData.hpp"
+#include "editor/operations/GraphOperation.hpp"
 
 namespace neurus {
 
 /** @brief Toggles membership of the default graph created by an explicit edit. */
-class CreateRenderGraphOp : public Operation
+class CreateRenderGraphOp : public GraphOperation
 {
 public:
 	CreateRenderGraphOp() = default;
@@ -19,7 +19,7 @@ public:
 
 	void Apply(OperationContext& ctx) override
 	{
-		ctx.events.Emit(RenderGraphCreationRestored{m_uid, m_present, m_detached});
+		ctx.events.Emit(RenderGraphMembershipChanged{m_uid, m_present, m_detached});
 	}
 
 	std::unique_ptr<Operation> Inverse() const override
@@ -58,26 +58,40 @@ private:
 	std::shared_ptr<RenderGraphData> m_detached;
 };
 
-class EditRenderGraphOp : public Operation
+/// Pool membership is a separate edit from assigning the shader to a pass.
+class CreatePassShaderOp : public GraphOperation
 {
 public:
-	EditRenderGraphOp() = default;
-	explicit EditRenderGraphOp(GraphEditState state, bool forward = true)
-		: m_state(std::move(state)), m_forward(forward) {}
+	CreatePassShaderOp() = default;
+	explicit CreatePassShaderOp(int uid) : m_uid(uid) {}
 
-	void Apply(OperationContext& ctx) override { ctx.events.Emit(RenderGraphEditRestored{m_state, m_forward}); }
+	void Apply(OperationContext& ctx) override
+	{
+		ctx.events.Emit(PassShaderMembershipChanged{m_uid, m_present, m_detached});
+	}
+
 	std::unique_ptr<Operation> Inverse() const override
 	{
-		return std::make_unique<EditRenderGraphOp>(m_state, !m_forward);
+		auto inverse = std::make_unique<CreatePassShaderOp>(*this);
+		inverse->m_present = !m_present;
+		return inverse;
 	}
-	std::string Label() const override { return "Edit Render Graph"; }
+
+	std::string Label() const override { return "Create Pass Shader"; }
+	bool ChangesTopology() const override { return false; }
 
 	template<class Archive>
-	void serialize(Archive& ar) { ar(cereal::make_nvp("edit", m_state), cereal::make_nvp("forward", m_forward)); }
+	void serialize(Archive& ar)
+	{
+		ar(CEREAL_NVP(m_uid), CEREAL_NVP(m_present));
+		if (!m_present)
+			ar(CEREAL_NVP(m_detached));
+	}
 
 private:
-	GraphEditState m_state;
-	bool m_forward = true;
+	int m_uid = 0;
+	bool m_present = true;
+	std::shared_ptr<ShaderData> m_detached;
 };
 
 } // namespace neurus

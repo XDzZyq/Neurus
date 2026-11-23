@@ -40,7 +40,7 @@
 #include "editor/controllers/ShaderController.hpp"
 #include "editor/events/EventBus.hpp"
 #include "editor/events/ShaderEvents.hpp"
-#include "editor/operations/OperationContext.hpp"
+#include "shared/OperationTestAccess.hpp"
 #include "editor/operations/OperationManager.hpp"
 #include "editor/operations/registrations/OperationRegistration.hpp"
 #include "editor/operations/ShaderOperations.hpp"
@@ -246,7 +246,7 @@ TEST_F(ShaderControllerTest, SetShaderCodeOp_Inverse_IsInvolution)
 
 	EXPECT_EQ(twice->Label(), op->Label());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	twice->Apply(ctx); // (g⁻¹)⁻¹ reproduces the original forward effect.
 	EXPECT_EQ(VertexUnit().code, "CODE_B");
 }
@@ -257,7 +257,7 @@ TEST_F(ShaderControllerTest, SetShaderCodeOp_Inverse_AppliesBefore)
 	auto op = std::make_unique<SetShaderCodeOp>(uid, kVertex, "CODE_A", "CODE_B");
 	auto inv = op->Inverse();
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	inv->Apply(ctx); // inverse applies the "before" code.
 	EXPECT_EQ(VertexUnit().code, "CODE_A");
 }
@@ -273,7 +273,7 @@ TEST_F(ShaderControllerTest, SetShaderCodeOp_Serialize_RoundTrip)
 	EXPECT_NE(dynamic_cast<SetShaderCodeOp*>(restored.get()), nullptr);
 	EXPECT_EQ(restored->Label(), op->Label());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	restored->Apply(ctx); // "after" survived
 	EXPECT_EQ(VertexUnit().code, "CODE_AFTER");
 
@@ -298,7 +298,7 @@ TEST_F(ShaderControllerTest, SetShaderFieldOp_Inverse_IsInvolution)
 
 	EXPECT_EQ(twice->Label(), op->Label());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	twice->Apply(ctx); // reproduces the original forward effect.
 	EXPECT_EQ(VertexUnit().parsed.AB_list[0].name, "renamed");
 }
@@ -319,7 +319,7 @@ TEST_F(ShaderControllerTest, SetShaderFieldOp_Serialize_RoundTrip)
 	EXPECT_NE(dynamic_cast<SetShaderFieldOp*>(restored.get()), nullptr);
 	EXPECT_EQ(restored->Label(), op->Label());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	restored->Apply(ctx); // "after" element + section + index survived
 	EXPECT_EQ(VertexUnit().parsed.AB_list[0].name, "renamed");
 
@@ -337,7 +337,7 @@ TEST_F(ShaderControllerTest, AddShaderFieldOp_Inverse_RemovesThenReadds)
 	auto op = std::make_unique<AddShaderFieldOp>(
 		uid, kVertex, ShaderSection::Attributes, /*subFieldIndex*/ -1, /*add*/ true);
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	op->Apply(ctx); // re-append default
 	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
 
@@ -363,7 +363,7 @@ TEST_F(ShaderControllerTest, AddShaderFieldOp_Serialize_RoundTrip)
 	EXPECT_NE(dynamic_cast<AddShaderFieldOp*>(restored.get()), nullptr);
 	EXPECT_EQ(restored->Label(), op->Label());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	restored->Apply(ctx); // add flag + section survived -> appends
 	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
 
@@ -653,7 +653,7 @@ TEST_F(ShaderCreateUndoTest, RoundTripsThroughCereal)
 	EXPECT_NE(dynamic_cast<ShaderLinkOp*>(restored.get()), nullptr);
 	EXPECT_EQ(restored->Label(), "Create Shader");
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	restored->Apply(ctx);
 	EXPECT_EQ(m_mesh->o_shaderId, shaderId);
 

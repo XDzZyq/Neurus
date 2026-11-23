@@ -22,6 +22,7 @@
 
 #include <cereal/cereal.hpp>
 #include <cereal/types/memory.hpp>
+#include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
 
 #include "editor/operations/OperationContext.hpp"
@@ -177,14 +178,26 @@ public:
 
 	void Apply(OperationContext& ctx) override
 	{
-		for (const auto& op : m_ops)
-			op->Apply(ctx);
+		size_t applied = 0;
+		try
+		{
+			for (; applied < m_ops.size(); ++applied)
+				m_ops[applied]->Apply(ctx);
+		}
+		catch (...)
+		{
+			while (applied > 0)
+				m_ops[--applied]->Inverse()->Apply(ctx);
+			throw;
+		}
 	}
 
 	std::unique_ptr<Operation> Inverse() const override
 	{
 		return std::make_unique<CompositeOp>(InvertedSequence());
 	}
+
+	const auto& Children() const { return m_ops; }
 
 	std::string Label() const override
 	{
@@ -220,6 +233,31 @@ protected:
 
 private:
 	std::vector<std::unique_ptr<Operation>> m_ops; ///< Forward-order primitive sequence.
+};
+
+/// A multi-edit request keeps its user-facing label in both directions of history.
+class NamedCompositeOp : public CompositeOp
+{
+public:
+	NamedCompositeOp() = default;
+	NamedCompositeOp(std::vector<std::unique_ptr<Operation>> ops, std::string name)
+		: CompositeOp(std::move(ops)), m_name(std::move(name)) {}
+
+	std::unique_ptr<Operation> Inverse() const override
+	{
+		return std::make_unique<NamedCompositeOp>(InvertedSequence(), m_name);
+	}
+	std::string Label() const override { return m_name; }
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		CompositeOp::serialize(ar);
+		ar(CEREAL_NVP(m_name));
+	}
+
+protected:
+	std::string m_name;
 };
 
 } // namespace neurus

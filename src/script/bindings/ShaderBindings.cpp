@@ -539,13 +539,13 @@ void RegisterShaderBindings(py::module_& shader)
 			[](const ShaderUnitProxy& s) { return s.ResolveUnit()->code; },
 			[](const ShaderUnitProxy& s, const std::string& code)
 			{
-				EmitEvent(s, ShaderUnitCodeSet{s.uid, s.stage, code});
+				EmitCheckedEvent(s, ShaderUnitCodeSet{s.uid, s.stage, code});
 			})
 		.def_property("parsed",
 			[](const ShaderUnitProxy& s) { return s.ResolveUnit()->parsed; },
 			[](const ShaderUnitProxy& s, const ShaderStruct& parsed)
 			{
-				EmitEvent(s, ShaderUnitStructSet{s.uid, s.stage, parsed});
+				EmitCheckedEvent(s, ShaderUnitStructSet{s.uid, s.stage, parsed});
 			})
 		.def("compile", &CompileUnit, py::arg("by") = "code",
 		     "Compile the stage by 'code' or 'struct'; raises RuntimeError with the shaderc message on failure.");

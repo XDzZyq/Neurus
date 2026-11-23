@@ -334,16 +334,25 @@ void ReconcilePassPorts(RenderGraphTopology& graph, RenderGraphTopology::NodeTyp
 {
 	if (!ports.problems.empty())
 		throw std::invalid_argument(node.name + ": " + ports.problems.front());
+	const auto roleFor = [&](const auto& socket) {
+		const auto& data = socket->data;
+		const PassPort role{data.name, data.direction, data.type, data.binding, data.location};
+		return ports.FindRole(role);
+	};
+	const auto validate = [&](const auto& sockets) {
+		for (const auto& socket : sockets)
+			if (!roleFor(socket))
+				throw std::invalid_argument(node.name + "." + socket->name + ": incompatible shader socket");
+	};
+	validate(node.inputs);
+	validate(node.outputs);
+
 	const auto oldOutputs = graph.sceneOutputs;
 	const auto reconcile = [&](auto& sockets)
 	{
 		for (auto& socket : sockets)
 		{
-			const auto& data = socket->data;
-			const PassPort role{data.name, data.direction, data.type, data.binding, data.location};
-			const auto* port = ports.FindRole(role);
-			if (!port)
-				throw std::invalid_argument(node.name + "." + socket->name + ": incompatible shader socket");
+			const auto* port = roleFor(socket);
 			if (port->direction == PortDirection::Output)
 			{
 				for (auto& [name, endpoint] : graph.sceneOutputs)

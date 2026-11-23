@@ -41,7 +41,8 @@ public:
 	virtual void BeginScriptScope(std::string name = {}) = 0;
 
 	/// @brief Closes the script scope, committing the buffered operations as one step.
-	virtual void EndScriptScope() = 0;
+	virtual std::string EndScriptScope(bool success = true) = 0;
+
 };
 
 } // namespace neurus

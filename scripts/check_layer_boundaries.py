@@ -81,15 +81,19 @@ def main():
     errors = []
     for source in sources:
         layer = source.relative_to(SOURCE_ROOT).parts[0]
-        if layer not in FORBIDDEN_LAYERS:
-            continue
+        in_operations = source.is_relative_to(SOURCE_ROOT / "editor" / "operations")
         text = without_comments(source.read_text(encoding="utf-8-sig"))
         for match in INCLUDE.finditer(text):
             opener, header = match.groups()
             family = external_family(header)
             target = included_layer(source, header, opener, headers_by_name)
             reason = None
-            if target in FORBIDDEN_LAYERS[layer]:
+            if (not in_operations and target == "editor"
+                    and Path(header.replace("\\", "/")).name == "OperationContext.hpp"):
+                reason = "operation replay belongs to editor/operations"
+            elif layer not in FORBIDDEN_LAYERS:
+                continue
+            elif target in FORBIDDEN_LAYERS[layer]:
                 reason = f"{layer} must not include {target} internals"
             elif family == "Vulkan" and layer in GPU_FREE_LAYERS:
                 reason = f"{layer} must remain Vulkan-free"

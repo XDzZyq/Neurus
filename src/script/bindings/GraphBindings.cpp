@@ -173,7 +173,7 @@ struct SocketProxy
 		owner.graph.RequireEditable();
 		if (kind != SocketKind::Output)
 			throw py::value_error("Resource tags belong to pass output sockets");
-		EmitEvent(owner.graph, RenderGraphTagRequested{Endpoint(), tag});
+		EmitCheckedEvent(owner.graph, RenderGraphTagRequested{Endpoint(), tag});
 	}
 };
 
@@ -264,12 +264,12 @@ void RegisterGraphBindings(py::module_& render)
 			n.graph.RequireEditable();
 			if (shader)
 				shader->Resolve();
-			EmitEvent(n.graph, RenderGraphShaderRequested{n.Get().name, shader ? std::optional(shader->uid) : std::nullopt});
+			EmitCheckedEvent(n.graph, RenderGraphShaderRequested{n.Get().name, shader ? std::optional(shader->uid) : std::nullopt});
 		})
 		.def("create_shader", [](const NodeProxy& n) {
 			n.graph.RequireEditable();
 			int uid = 0;
-			EmitEvent(n.graph, RenderGraphCreateShaderRequested{n.Get().name, &uid});
+			EmitCheckedEvent(n.graph, RenderGraphCreateShaderRequested{n.Get().name, &uid});
 			return ShaderProxy(uid, n.graph.view);
 		}, "Create this pass's editable shader from its primary built-in recipe.");
 	py::class_<GraphProxy>(render, "RenderGraph")
@@ -299,7 +299,7 @@ void RegisterGraphBindings(py::module_& render)
 			return g.view->ctx->graphDiagnostics();
 		})
 		.def("create", [](GraphProxy& g) -> GraphProxy& {
-			EmitEvent(g, RenderGraphCreateRequested{});
+			EmitCheckedEvent(g, RenderGraphCreateRequested{});
 			if (!g.Read().uid)
 				throw std::runtime_error("No project graph was created");
 			return g;
@@ -307,17 +307,17 @@ void RegisterGraphBindings(py::module_& render)
 		.def("add", [](const GraphProxy& g, const std::string& kind, const std::string& id) {
 			g.RequireEditable();
 			std::string created;
-			EmitEvent(g, RenderGraphAddRequested{kind, id, &created});
+			EmitCheckedEvent(g, RenderGraphAddRequested{kind, id, &created});
 			return NodeProxy(g, &g.FindNode(created));
 		}, py::arg("kind"), py::arg("id") = "")
 		.def("remove", [](const GraphProxy& g, const std::string& id) {
 			g.RequireEditable();
-			EmitEvent(g, RenderGraphRemoveRequested{id});
+			EmitCheckedEvent(g, RenderGraphRemoveRequested{id});
 			g.generations->active.erase(id);
 		}, py::arg("id"))
 		.def("rename", [](const GraphProxy& g, const std::string& oldName, const std::string& newName) {
 			g.RequireEditable();
-			EmitEvent(g, RenderGraphRenameRequested{oldName, newName});
+			EmitCheckedEvent(g, RenderGraphRenameRequested{oldName, newName});
 			if (oldName != newName)
 				g.generations->active.erase(oldName);
 			return NodeProxy(g, &g.FindNode(newName));
@@ -326,13 +326,13 @@ void RegisterGraphBindings(py::module_& render)
 			g.RequireEditable();
 			if (source.kind != SocketKind::Output || dest.kind == SocketKind::Output)
 				throw py::value_error("Connect a pass output to a pass input or a scene output");
-			EmitEvent(g, RenderGraphConnectRequested{source.Endpoint(), dest.Endpoint()});
+			EmitCheckedEvent(g, RenderGraphConnectRequested{source.Endpoint(), dest.Endpoint()});
 		}, py::arg("source"), py::arg("destination"))
 		.def("disconnect", [](const GraphProxy& g, const SocketProxy& dest) {
 			g.RequireEditable();
 			if (dest.kind == SocketKind::Output)
 				throw py::value_error("Disconnect a pass input or a scene output");
-			EmitEvent(g, RenderGraphDisconnectRequested{dest.Endpoint()});
+			EmitCheckedEvent(g, RenderGraphDisconnectRequested{dest.Endpoint()});
 		}, py::arg("destination"));
 }
 

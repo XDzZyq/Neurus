@@ -550,15 +550,17 @@ public:
 	~CommandEditScope()
 	{
 		if (m_active)
-			m_operations.EndCommandScope();
+			m_operations.EndCommandScope(false);
 	}
 
 	void Close()
 	{
 		if (m_active)
 		{
-			m_operations.EndCommandScope();
 			m_active = false;
+			const auto error = m_operations.EndCommandScope();
+			if (!error.empty())
+				throw std::runtime_error(error);
 		}
 	}
 

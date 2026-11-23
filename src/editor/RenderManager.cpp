@@ -160,12 +160,7 @@ std::vector<CpuGraphDiagnostic> RenderManager::Diagnostics() const
 std::shared_ptr<RenderGraphData> RenderManager::CreateGraph(bool publish)
 {
 	if (!m_graph)
-	{
-		m_graph = m_resources.Load<RenderGraphData>(CloneGraph(*m_renderDefaults->Graph()));
-		m_problems.clear();
-		if (publish)
-			Publish();
-	}
+		RestoreCreatedGraph(std::make_shared<RenderGraphData>(), publish);
 	return m_graph;
 }
 
@@ -180,7 +175,7 @@ void RenderManager::RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& g
 	}
 }
 
-void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph)
+void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish)
 {
 	if (!graph || m_graph)
 		return;
@@ -190,7 +185,8 @@ void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& 
 	m_resources.Register(graph);
 	m_graph = graph;
 	m_problems.clear();
-	Publish();
+	if (publish)
+		Publish();
 }
 
 bool RenderManager::SetGraph(RenderGraphTopology graph)

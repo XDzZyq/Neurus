@@ -3,12 +3,25 @@
 #include "core/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
+#include "editor/events/GraphEvents.hpp"
+#include "editor/events/OperationEvents.hpp"
 #include "editor/events/ScriptEvents.hpp"
 #include "script/ScriptContext.hpp"
 #include "script/ScriptEngine.hpp"
+#include "script/proxies/ProxyBase.hpp"
 
 namespace neurus {
 namespace {
+
+template <typename Event>
+concept CanEmitCheckedEvent = requires(const script::ProxyBase& proxy, Event event)
+{
+	script::EmitCheckedEvent(proxy, event);
+};
+
+static_assert(CanEmitCheckedEvent<RenderGraphCreateRequested>);
+static_assert(!CanEmitCheckedEvent<UndoRequested>);      // No error slot.
+static_assert(!CanEmitCheckedEvent<OperationRejected>); // Owns its error string.
 
 class ScriptGraphTest : public ::testing::Test
 {
@@ -110,6 +123,30 @@ raise RuntimeError("discard creation")
 	EXPECT_TRUE(editor.GetHistory().undo.empty());
 }
 
+TEST_F(ScriptGraphTest, RejectedGraphMutationsAndStaleShaderWritesReportAtTheCall)
+{
+	ASSERT_TRUE(Run("g.create()"));
+	EXPECT_FALSE(Run(R"PY(
+stage = g.nodes["compose"].create_shader().compute
+try:
+    g.add("ComposePass", id="compose")
+except RuntimeError as error:
+    duplicate_error = str(error)
+)PY"));
+	EXPECT_TRUE(Run(R"PY(
+assert "Duplicate" in duplicate_error and "compose" in duplicate_error
+for operation in (lambda: setattr(stage, "code", "stale"),
+                  lambda: setattr(stage, "parsed", neurus.shader.ShaderStruct()),
+                  lambda: stage.compile()):
+    try:
+        operation()
+    except RuntimeError as error:
+        assert "shader stage not found" in str(error)
+    else:
+        raise AssertionError("a stale shader stage accepted an edit")
+)PY")) << engine.LastRunMessage();
+}
+
 TEST_F(ScriptGraphTest, RenamePreservesEdgesAndShaderAssignment)
 {
 	ASSERT_TRUE(Run(R"PY(
@@ -166,9 +203,13 @@ assert s.compute.code == red
 	EXPECT_FALSE(Run(R"PY(
 g.nodes['compose'].shader.compute.code = 'this is invalid GLSL'
 shader_errors = [diagnostic.message for diagnostic in g.validate()]
+try:
+    s.compute.compile()
+except RuntimeError as error:
+    compile_error = str(error)
 )PY"));
 	EXPECT_EQ(editor.GetHistory().undo.size(), history);
-	EXPECT_TRUE(Run("assert any(shader_errors) and g.nodes['compose'].shader.compute.code == red")) << engine.LastRunMessage();
+	EXPECT_TRUE(Run("assert any(shader_errors) and \"compose\" in compile_error and s.compute.code == red")) << engine.LastRunMessage();
 }
 
 } // namespace

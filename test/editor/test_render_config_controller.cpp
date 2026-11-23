@@ -32,7 +32,7 @@
 #include "editor/events/ConfigEvents.hpp"
 #include "editor/events/EventBus.hpp"
 #include "editor/operations/ConfigOperations.hpp"
-#include "editor/operations/OperationContext.hpp"
+#include "shared/OperationTestAccess.hpp"
 #include "editor/operations/OperationManager.hpp"
 #include "core/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
@@ -183,7 +183,7 @@ TEST_F(RenderConfigControllerTest, SetRenderConfigOp_Inverse_IsInvolution)
 
 	EXPECT_EQ(twice->Label(), op->Label());
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	twice->Apply(ctx); // (g⁻¹)⁻¹ reproduces the original forward effect.
 	EXPECT_FLOAT_EQ(m_config.r_gamma, 2.2f);
 }
@@ -195,7 +195,7 @@ TEST_F(RenderConfigControllerTest, SetRenderConfigOp_Inverse_AppliesBefore)
 	auto op = std::make_unique<SetRenderConfigOp>(before, after);
 	auto inv = op->Inverse();
 
-	OperationContext ctx{ m_eventBus };
+	auto ctx = OperationTestAccess::Context(m_eventBus);
 	inv->Apply(ctx); // inverse applies the "before" config.
 	EXPECT_FLOAT_EQ(m_config.r_gamma, 1.0f);
 }
@@ -256,7 +256,7 @@ TEST_F(OptionalRenderConfigControllerTest, SerializedOperationRetainsAbsentEndpo
 	EXPECT_EQ(serialized.str().find("\"before\""), std::string::npos);
 	SetRenderConfigOp restored;
 	{ cereal::JSONInputArchive archive(serialized); archive(restored); }
-	OperationContext context{m_events};
+	auto context = OperationTestAccess::Context(m_events);
 	restored.Apply(context);
 	ASSERT_NE(m_data, nullptr);
 	EXPECT_FLOAT_EQ(m_data->r_gamma, 2.2f);
@@ -329,7 +329,7 @@ TEST_F(OptionalRenderConfigControllerTest, LegacyOperationWithoutPresenceFlagsLo
 	}
 	SetRenderConfigOp restored;
 	{ cereal::JSONInputArchive archive(serialized); restored.serialize(archive); }
-	OperationContext context{m_events};
+	auto context = OperationTestAccess::Context(m_events);
 	restored.Apply(context);
 	ASSERT_NE(m_data, nullptr);
 	EXPECT_FLOAT_EQ(m_data->r_gamma, 2.2f);

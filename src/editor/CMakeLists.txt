@@ -9,7 +9,10 @@ add_library(neurus_editor STATIC
 	Editor.cpp
 	RenderManager.hpp
 	RenderManager.cpp
-	operations/GraphEditState.hpp
+	operations/GraphOperation.hpp
+	operations/GraphTopologyOperations.hpp
+	operations/PassShaderStageOperation.hpp
+	operations/GraphOperation.cpp
 	Input.hpp
 	commands/EditorCommandAdapter.hpp
 	commands/EditorCommandAdapter.cpp

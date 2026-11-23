@@ -31,6 +31,11 @@ then scans source includes. It needs only Python, with no
 submodules, Qt or Vulkan setup. A violation fails the required `ci-gate`; the
 existing documentation-only skip behavior is preserved.
 
+A production source outside `src/editor/operations/` that directly includes
+`OperationContext.hpp` fails the boundary check. The context's private
+constructor also enforces replay ownership in code that includes an operation
+type transitively. Unit tests for individual operations use a test-only fixture.
+
 The checker resolves literal project includes against the source directory,
 `src/`, and unique header names. It reports forbidden layer dependencies and
 Qt/Vulkan includes as `file:line` diagnostics, including Vulkan-bearing

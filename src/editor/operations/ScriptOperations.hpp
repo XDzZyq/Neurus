@@ -30,39 +30,18 @@ namespace neurus {
  * serialized with the edits, so the History panel shows the same text after a
  * project save and reload.
  */
-class ScriptRunOp : public CompositeOp
+class ScriptRunOp : public NamedCompositeOp
 {
 public:
 	ScriptRunOp() = default;
-	explicit ScriptRunOp(std::vector<std::unique_ptr<Operation>> ops, std::string name = {});
+	explicit ScriptRunOp(std::vector<std::unique_ptr<Operation>> ops, std::string name = {})
+		: NamedCompositeOp(std::move(ops), std::move(name)) {}
 
-	std::unique_ptr<Operation> Inverse() const override;
-	std::string Label() const override { return m_name.empty() ? "Run Script" : m_name; }
-
-	template<class Archive>
-	void serialize(Archive& ar)
+	std::unique_ptr<Operation> Inverse() const override
 	{
-		CompositeOp::serialize(ar);
-		ar(CEREAL_NVP(m_name));
+		return std::make_unique<ScriptRunOp>(InvertedSequence(), m_name);
 	}
-
-private:
-	std::string m_name; ///< Run-supplied label; empty means "Run Script".
+	std::string Label() const override { return m_name.empty() ? "Run Script" : m_name; }
 };
-
-/// @brief Constructs a script run from its forward-order edits and history label.
-inline ScriptRunOp::ScriptRunOp(std::vector<std::unique_ptr<Operation>> ops, std::string name)
-	: CompositeOp(std::move(ops))
-	, m_name(std::move(name))
-{}
-
-/**
- * @brief Inverts as another ScriptRunOp carrying the same name, so the redo
- *        entry keeps the label.
- */
-inline std::unique_ptr<Operation> ScriptRunOp::Inverse() const
-{
-	return std::make_unique<ScriptRunOp>(InvertedSequence(), m_name);
-}
 
 } // namespace neurus

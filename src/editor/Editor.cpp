@@ -290,6 +290,22 @@ void Editor::Initialize()
 
 	// Undo/redo replay their inverse events synchronously (never queued), so
 	// the mutation applies in-place and cannot reorder against live input.
+	ed_eventBus.Subscribe<OperationRejected>([this](const OperationRejected& request) {
+		ed_operations.RejectScope(request.error);
+	});
+	ed_eventBus.Subscribe<RenderGraphFlushRequested>([this](const RenderGraphFlushRequested& request) {
+		try
+		{
+			ed_operations.FlushGraphDrafts(request.diagnostics);
+		}
+		catch (const std::exception& failure)
+		{
+			ed_operations.RejectScope(failure.what());
+			if (!request.error)
+				throw;
+			*request.error = failure.what();
+		}
+	});
 	ed_eventBus.Subscribe<UndoRequested>([this](const UndoRequested&) {
 		ed_operations.Undo();
 	});
@@ -313,7 +329,6 @@ void Editor::Initialize()
 	RegisterController<SceneController>();
 	RegisterController<ObjectController>();
 	RegisterController<RenderConfigController>();
-	// Graph changes validate and record before ScriptController closes the undo scope.
 	RegisterController<RenderGraphController>();
 	RegisterController<ScriptController>();
 
@@ -457,6 +472,30 @@ void Editor::Initialize()
 		// guide rides the same broadcast, which is what makes it appear on arm,
 		// follow a drag and vanish on confirm or cancel.
 		m_viewport.MarkOverlaysDirty();
+	});
+
+	ed_eventBus.Subscribe<RenderGraphCommitRequested>([this](const RenderGraphCommitRequested& change) {
+		const auto diagnostics = m_renderManager->Diagnostics();
+		if (!diagnostics.empty())
+		{
+			const auto& d = diagnostics.front();
+			const auto location = d.port.empty() ? d.node : d.node + "." + d.port;
+			throw std::invalid_argument(location + ": " + d.message);
+		}
+
+		for (int uid : change.shaderUids)
+			if (const auto shader = m_resources->Get<ShaderData>(uid))
+				shader->BumpVersion();
+		if (change.topologyChanged)
+			m_renderManager->Publish();
+		for (int uid : change.shaderUids)
+			if (const auto shader = m_resources->Get<ShaderData>(uid))
+			{
+				if (!change.topologyChanged || !m_renderManager->ReferencesShader(uid))
+					m_renderManager->UploadShader(*shader);
+				ed_eventBus.Emit(ShaderCompiled{uid, true});
+			}
+		notify::Mutated(ed_eventBus);
 	});
 
 	// --- Warm the per-mesh pipeline when a shader actually compiled ---
@@ -809,12 +848,12 @@ void Editor::NewScene()
 	{
 		// The outgoing scene's GPU resources go with it (this drains the device
 		// first). Nothing is uploaded in return: the new scene is empty.
+		ed_operations.Clear(); // Finish any pending edits against the outgoing resources.
 		DropSceneGpuResources();
 
 		m_scene = std::make_unique<Scene>();
 		m_resources->Clear();
 		m_renderManager->ResetConfig();
-		ed_operations.Clear(); // History does not span scenes.
 
 		// The pool just lost the old viewport camera; a new document gets a new one
 		// at the default framing, already adopting the live viewport extent. This is
@@ -959,13 +998,13 @@ void Editor::BeginLoad()
 	++m_projectEpoch;
 	// The outgoing scene's GPU resources go with it (this drains the device
 	// first); the project's own objects are uploaded by FinishLoad().
+	ed_operations.Clear(); // Finish any pending edits against the outgoing resources.
 	DropSceneGpuResources();
 
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
 	m_renderManager->ResetConfig();
 	m_renderManager->BeginGraphLoad();
-	ed_operations.Clear(); // History does not span scenes.
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
 	// the pool. FinishLoad() resolves or creates it once the file has been read.

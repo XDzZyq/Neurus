@@ -5,22 +5,17 @@ living in `src/editor/operations/`.
 
 ## Overview
 
-Operations never mutate the scene directly: `Apply()` re-dispatches the
-originating scene event through `IEventQueue::Emit`, so the existing controller
-handler performs the mutation. This keeps a single mutation path: undo/redo
-exercises the same code as a live edit.
+A live edit starts with a typed request. The controller makes the requested
+change to the CPU document and calls `IOperationSink::Submit` with a description
+of its effect. For example, replacing an input connection records the unlink
+and link as two children of one history entry.
 
-A `Phase::Replaying` guard in `OperationManager` makes `Submit()` a no-op during
-replay so playback does not re-record. `Replay()` saves the phase, sets
-`Replaying`, and restores the saved phase on every exit path - after a successful
-`Apply()`, and in both catch blocks - so this is manual save/restore rather than
-an RAII guard: a new exit path means a new restore. `Replay()` catches and logs
-handler exceptions and returns whether the op applied, and `Undo()`/`Redo()` only
-move an op onto the opposite stack when replay succeeded; a failed replay is
-dropped, never pushed as a phantom entry.
-
-Diagnostic hint: a stuck `Replaying` phase presents as "undo stopped working",
-because `Submit()` stays a no-op while the guard is held.
+The operation system owns the history stacks and the open scope's buffer. Only
+`OperationManager` can construct a production `OperationContext`. Undo, redo,
+and rollback call `Operation::Apply` inside the operation system. Each
+operation emits a typed event through that context. Its handler resolves the
+target and updates the document. During undo and redo the manager suppresses
+recording so that replay leaves exactly one entry on the destination stack.
 
 The controller-side wiring that produces operations (gesture begin/end,
 per-controller specifics) lives in [Controllers](controllers.md); this page
@@ -51,25 +46,20 @@ exit path; `ScriptController` forwards both to `BeginScriptScope()` and
   and enters `Phase::Script`. A refused call is not harmless: every later `Submit`
   keeps buffering into the still-open scope, so the next successful
   `EndScriptScope` commits two runs as a single undo step.
-- `EndScriptScope` restores `Idle` first, so the composite's own `Submit` takes the
-  normal recording path instead of re-entering the buffer. It then wraps the
-  buffered operations in one `ScriptRunOp` and submits it, which clears the redo
-  stack and honours the undo-depth cap like any other entry.
+- For graph and pass-shader edits, the operation manager uses its buffer to request compilation of the affected stages before a graph read or at scope completion. It requests validation of the final graph before publication. If a request or final validation fails, the operation system replays the inverse graph edits in reverse order. The caller receives the failure even if the script caught an earlier request error.
+- After validation, `EndScriptScope` wraps the remaining operations in a
+  `ScriptRunOp` and records it as one undo entry. The history name, redo handling,
+  and undo-depth cap follow the same rules as a standalone edit.
 - An empty run records nothing, so a run that only reads cannot leave an entry
   that makes `Ctrl+Z` appear to do nothing.
-- A run that raises still closes its scope, because `ScriptRunFinished` is emitted
-  by a scope guard's destructor. The writes made before the error stay as one
-  entry, so one undo removes exactly what the run did.
+- A run that raises still closes its scope. Graph and pass-shader changes roll back. Ordinary scene edits completed before the exception stay together as one undo entry.
 - `Clear()` drops any buffered script operations along with both stacks.
 
 The buffered operations are not replayed from the buffer: the committed
 `ScriptRunOp` is an ordinary history entry, so undo and redo replay it like any
 other composite. It carries the run name as its label, defaulting to "Run Script"
 when the host supplied none, and serializes that name with the edits, so the
-label is the same in the undo list, the redo list and after a save/reload. One
-pre-existing `CompositeOp` property becomes more visible as script composites
-grow: if replaying a child throws, `Replay` drops the whole entry while the
-document is already partially rewound. See also the write path in
+label is the same in the undo list, the redo list and after a save/reload. See also the write path in
 [Scripting](../script/overview.md#one-undo-step-per-run).
 
 ## Operation model
@@ -112,6 +102,7 @@ document is already partially rewound. See also the write path in
   reversed, individually-inverted operations (`o = h*g*f` implies
   `o^-1 = f^-1 * g^-1 * h^-1`), so inversion is an involution. It serializes its
   contained ops polymorphically (same pattern as the manager stacks).
+- Render graph operations describe the affected node, connection, output tag or shader assignment. A connection identifies its source and destination sockets. Replacing a producer is a composite with two children in execution order, unlink the old producer and link the new one. Undo inverts these children in reverse order. That composite is one history entry for a standalone request and one child of a script's history entry when grouped.
 - `SceneObjectAddOp` (membership toggle) makes Add/Delete undoable. It stores the
   object UID plus an `add` flag (the `AddShaderFieldOp` convention): `Apply()`
   re-dispatches the originating events `SceneObjectAddRequested` /
@@ -253,7 +244,7 @@ base pointers, it will need the same
 
 ## Adding a new operation
 
-1. Give the op a default ctor + templated `serialize`.
+1. Handle the live request in its controller and submit a record of the change. Implement replay using a typed event. Give the operation a default constructor and a templated `serialize` method.
 2. Add the two registration lines in
    `operations/registrations/OperationRegistration.cpp`
    (`CEREAL_REGISTER_TYPE` + `CEREAL_REGISTER_POLYMORPHIC_RELATION`).

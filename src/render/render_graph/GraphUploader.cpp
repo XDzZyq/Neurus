@@ -262,12 +262,12 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	RenderGraph::GraphT target;
 	try
 	{
-		RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog, contracts));
-		target = morphism.Map(document);
-		for (const std::string& problem : morphism.Validate().problems)
-		{
+		const RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog, contracts));
+		auto mapping = morphism.Map(document);
+		for (const auto& problem : mapping.images.Validate(document).problems)
 			result.errors.push_back({{}, {}, problem});
-		}
+		if (result.errors.empty())
+			target = std::move(mapping.target);
 	}
 	catch (const std::exception& error)
 	{

@@ -13,8 +13,10 @@
 
 #pragma once
 
+#include <concepts>
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 #include "core/IResourceLookup.hpp"
 #include "scene/ObjectID.hpp"
@@ -75,6 +77,23 @@ void EmitEvent(const ProxyBase& proxy, const TEvent& event)
 		throw std::runtime_error("scripting is not attached to an editor");
 	}
 	dispatch->Emit(event);
+}
+
+template <typename TEvent>
+concept EventWithErrorSlot = requires(TEvent& event)
+{
+	{ event.error } -> std::same_as<std::string*&>;
+};
+
+/// @brief Raises an editor's synchronous mutation diagnostic in the script.
+template <EventWithErrorSlot TEvent>
+void EmitCheckedEvent(const ProxyBase& proxy, TEvent event)
+{
+	std::string error;
+	event.error = &error;
+	EmitEvent(proxy, event);
+	if (!error.empty())
+		throw std::runtime_error(error);
 }
 
 }  // namespace script

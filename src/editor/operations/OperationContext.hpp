@@ -17,10 +17,23 @@ namespace neurus {
 /**
  * @brief Context for replaying an operation (event dispatch only).
  */
-struct OperationContext
+class OperationContext
 {
+	friend class OperationManager;
+	friend struct OperationTestAccess;
+
+	explicit OperationContext(IEventQueue& queue, bool replay = false)
+		: events(queue), historyReplay(replay) {}
+
+public:
+	OperationContext(const OperationContext&) = delete;
+	OperationContext& operator=(const OperationContext&) = delete;
+
 	/// @brief Queue the operation replays its event on (via Emit).
 	IEventQueue& events;
+
+	/// A committed undo/redo must advance UI revisions even when restoring an older value.
+	const bool historyReplay;
 };
 
 } // namespace neurus

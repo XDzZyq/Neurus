@@ -19,7 +19,9 @@
 #include "shader/RenderShader.hpp"
 #include "scene/Mesh.hpp"
 #include "editor/events/ShaderEvents.hpp"
+#include "editor/events/ConfigEvents.hpp"
 #include "editor/events/GraphEvents.hpp"
+#include "editor/events/GraphTopologyEvents.hpp"
 #include "editor/events/ScriptEvents.hpp"
 #include "render_api/RenderRequestSink.hpp"
 #include "render_api/RenderRequests.hpp"
@@ -568,6 +570,33 @@ TEST(EditorRenderGraph, FailedScriptDiscardsGraphCreationAndPooledShader)
 	EXPECT_FALSE(editor.IsDirty());
 }
 
+TEST(EditorRenderGraph, RejectedGraphGroupKeepsIndependentConfigEditUndoable)
+{
+	neurus::Editor editor(nullptr);
+	editor.Initialize();
+	editor.NewScene();
+	auto& events = editor.GetEventQueue();
+	auto& ops = editor.GetOperations();
+	const auto original = editor.GetRenderConfig();
+	auto changed = original;
+	changed.r_gamma += 0.5f;
+
+	ops.BeginCommandScope("Change gamma and graph");
+	events.Emit(neurus::RenderGraphCreateRequested{});
+	events.Emit(neurus::RenderConfigChangedEvent{changed});
+	events.Emit(neurus::RenderGraphDisconnectRequested{{"", "color"}});
+	EXPECT_FALSE(ops.EndCommandScope().empty());
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+	EXPECT_EQ(editor.GetRenderConfig(), changed);
+	ASSERT_EQ(ops.GetUndoStack().size(), 1u);
+
+	ops.Undo();
+	EXPECT_EQ(editor.GetRenderConfig(), original);
+	ops.Redo();
+	EXPECT_EQ(editor.GetRenderConfig(), changed);
+	EXPECT_FALSE(editor.GetRenderManager().GraphData());
+}
+
 TEST(EditorRenderGraph, BypassAndRenamePublishOnceAndUndoTogether)
 {
 	RecordingSink sink;
@@ -717,6 +746,57 @@ TEST(EditorRenderGraph, SavedRedoRecreatesGraphAndEditedShaderWithOriginalIdenti
 	EXPECT_TRUE(restoredShader->IsValid());
 }
 
+TEST(EditorRenderGraph, ReplaysAShaderPortRenameBeforeConnectionsUsingTheNewName)
+{
+	neurus::Editor editor(nullptr);
+	editor.Initialize();
+	editor.NewScene();
+	auto& events = editor.GetEventQueue();
+	events.Emit(neurus::RenderGraphCreateRequested{});
+	int shaderUid = -1;
+	events.Emit(neurus::RenderGraphCreateShaderRequested{"compose", &shaderUid});
+	const auto shader = editor.GetResourceManager().Get<neurus::ShaderData>(shaderUid);
+	ASSERT_TRUE(shader);
+	constexpr auto stage = neurus::ShaderType::COMPUTE;
+	const auto& unit = shader->GetStage(stage);
+	const auto originalCode = unit.code;
+	const auto before = neurus::project::ToRecord(editor.GetRenderGraph());
+	const auto history = editor.GetHistory().undo.size();
+	const std::string oldPort = "outputComposed", newPort = "tintedOutput";
+	auto renamedCode = originalCode;
+	for (size_t pos = renamedCode.find(oldPort); pos != std::string::npos;
+	     pos = renamedCode.find(oldPort, pos + newPort.size()))
+		renamedCode.replace(pos, oldPort.size(), newPort);
+	ASSERT_NE(renamedCode, originalCode);
+
+	std::string error;
+	events.Emit(neurus::ScriptRunStarted{"Rename and route compose output"});
+	events.Emit(neurus::ShaderUnitCodeSet{shaderUid, static_cast<int>(stage), renamedCode, &error});
+	EXPECT_TRUE(error.empty()) << error;
+	const neurus::GraphEndpoint renamed{"compose", newPort};
+	events.Emit(neurus::RenderGraphConnectRequested{renamed, {"", "color"}, &error});
+	EXPECT_TRUE(error.empty()) << error;
+	events.Emit(neurus::ScriptRunFinished{true, &error});
+	ASSERT_TRUE(error.empty()) << error;
+	const auto after = neurus::project::ToRecord(editor.GetRenderGraph());
+	EXPECT_EQ(editor.GetRenderGraph().sceneOutputs.at("color"), renamed);
+	EXPECT_TRUE(std::ranges::any_of(after.edges, [&](const auto& edge) {
+		return edge.from == "compose" && edge.fromPort == newPort && edge.to == "fxaa" && edge.toPort == "gInput";
+	}));
+	EXPECT_EQ(editor.GetHistory().undo.size(), history + 1);
+
+	const int committedVersion = unit.GetVersion();
+	editor.GetOperations().Undo();
+	EXPECT_GT(unit.GetVersion(), committedVersion);
+	EXPECT_EQ(unit.code, originalCode);
+	EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), before);
+	const int undoneVersion = unit.GetVersion();
+	editor.GetOperations().Redo();
+	EXPECT_GT(unit.GetVersion(), undoneVersion);
+	EXPECT_EQ(unit.code, renamedCode);
+	EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), after);
+}
+
 TEST(EditorRenderGraph, LoadingIncompatiblePooledShaderUsesOnlyThatPassDefault)
 {
 	neurus::Editor editor(nullptr);
@@ -735,4 +815,169 @@ TEST(EditorRenderGraph, LoadingIncompatiblePooledShaderUsesOnlyThatPassDefault)
 	EXPECT_FALSE(render.Graph().nodes[5]->data.shader);
 	EXPECT_TRUE(editor.GetResourceManager().Get<neurus::ShaderData>(shader->GetObjectID()));
 	EXPECT_FALSE(render.Problems().empty());
+}
+
+TEST(EditorRenderGraph, ReplacingAnOccupiedSocketRecordsUnlinkThenLink)
+{
+	for (const auto& destination : {neurus::GraphEndpoint{"fxaa", "gInput"}, neurus::GraphEndpoint{"", "color"}})
+	{
+		SCOPED_TRACE(destination.port);
+		neurus::Editor editor(nullptr);
+		editor.Initialize();
+		editor.NewScene();
+		auto& bus = editor.GetEventQueue();
+		auto& ops = editor.GetOperations();
+		bus.Emit(neurus::RenderGraphCreateRequested{});
+		const auto before = neurus::project::ToRecord(editor.GetRenderGraph());
+		const auto initialCount = ops.GetUndoStack().size();
+
+		int producerChanges = 0;
+		bus.Subscribe<neurus::GraphProducerChanged>([&](const auto&) { ++producerChanges; });
+		const neurus::GraphEndpoint source{"lighting", "outputImage"};
+		bus.Emit(neurus::RenderGraphConnectRequested{source, destination});
+		EXPECT_EQ(producerChanges, 1); // A live request changes the occupied input atomically.
+		const auto after = neurus::project::ToRecord(editor.GetRenderGraph());
+		if (destination.node.empty())
+			EXPECT_EQ(editor.GetRenderGraph().sceneOutputs.at(destination.port), source);
+		else
+			EXPECT_TRUE(std::ranges::any_of(after.edges, [&](const auto& edge) {
+				return edge.from == source.node && edge.fromPort == source.port &&
+				       edge.to == destination.node && edge.toPort == destination.port;
+			}));
+
+		ASSERT_EQ(ops.GetUndoStack().size(), initialCount + 1);
+		const auto* rewire = dynamic_cast<const neurus::CompositeOp*>(ops.GetUndoStack().back().get());
+		ASSERT_NE(rewire, nullptr);
+		EXPECT_EQ(rewire->Label(), "Replace Graph Connection");
+		ASSERT_EQ(rewire->Children().size(), 2u);
+		EXPECT_EQ(rewire->Children()[0]->Label(), "Unlink Graph Socket");
+		EXPECT_EQ(rewire->Children()[1]->Label(), "Link Graph Socket");
+
+		bus.Emit(neurus::RenderGraphConnectRequested{source, destination});
+		EXPECT_EQ(ops.GetUndoStack().size(), initialCount + 1);
+		EXPECT_EQ(producerChanges, 1); // Repeating the request did no work.
+		ops.Undo();
+		EXPECT_EQ(producerChanges, 3); // History replays the two inverse children.
+		EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), before);
+		ops.Redo();
+		EXPECT_EQ(producerChanges, 5);
+		EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), after);
+
+		std::stringstream saved;
+		{
+			cereal::JSONOutputArchive archive(saved);
+			neurus::project::HistoryComponent(ops).Save(archive);
+		}
+		// Rewire history stores only the endpoints, never unrelated pass records.
+		EXPECT_EQ(saved.str().find("ShadowIntensityPass"), std::string::npos);
+	}
+}
+
+TEST(EditorRenderGraph, RejectedStandaloneRewireKeepsTheProducerAndHistory)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.Initialize();
+	editor.NewScene();
+	auto& bus = editor.GetEventQueue();
+	bus.Emit(neurus::RenderGraphCreateRequested{});
+	const auto before = neurus::project::ToRecord(editor.GetRenderGraph());
+	const auto initialCount = editor.GetOperations().GetUndoStack().size();
+	editor.ClearDirty();
+	sink.posted.clear();
+
+	// The first replacement introduces a cycle. The second fails output validation.
+	for (auto request : {neurus::RenderGraphConnectRequested{{"fxaa", "outputFXAA"}, {"compose", "gHDRColor"}},
+	                     neurus::RenderGraphConnectRequested{{"geometry", "gObjectID"}, {"", "color"}}})
+	{
+		std::string error;
+		request.error = &error;
+		bus.Emit(request);
+		EXPECT_FALSE(error.empty());
+		EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), before);
+		EXPECT_EQ(editor.GetOperations().GetUndoStack().size(), initialCount);
+		EXPECT_TRUE(sink.posted.empty());
+		EXPECT_FALSE(editor.IsDirty());
+	}
+}
+
+TEST(EditorRenderGraph, StandaloneTagRenameAndRemoveUndoIndependently)
+{
+	neurus::Editor editor(nullptr);
+	editor.Initialize();
+	editor.NewScene();
+	auto& bus = editor.GetEventQueue();
+	auto& ops = editor.GetOperations();
+	bus.Emit(neurus::RenderGraphCreateRequested{});
+	// Bypass compose so its removal leaves a valid active graph.
+	bus.Emit(neurus::RenderGraphConnectRequested{{"lighting", "outputImage"}, {"fxaa", "gInput"}});
+	const auto original = neurus::project::ToRecord(editor.GetRenderGraph());
+	const auto initialCount = ops.GetUndoStack().size();
+
+	const neurus::GraphOutputTag logical{neurus::GraphFormat::None, neurus::GraphUsage::Logical,
+	                                     neurus::GraphExtent::Shadow};
+	bus.Emit(neurus::RenderGraphTagRequested{{"shadow_depth", "shadow_depth"}, logical});
+	const auto tagged = neurus::project::ToRecord(editor.GetRenderGraph());
+	EXPECT_NE(tagged, original);
+	bus.Emit(neurus::RenderGraphRenameRequested{"compose", "standby"});
+	const auto renamed = neurus::project::ToRecord(editor.GetRenderGraph());
+	EXPECT_NE(renamed, tagged);
+	bus.Emit(neurus::RenderGraphRemoveRequested{"standby"});
+	const auto removed = neurus::project::ToRecord(editor.GetRenderGraph());
+	EXPECT_EQ(removed.nodes.size() + 1, renamed.nodes.size());
+	ASSERT_EQ(ops.GetUndoStack().size(), initialCount + 3);
+
+	std::stringstream saved;
+	{
+		cereal::JSONOutputArchive archive(saved);
+		neurus::project::HistoryComponent(ops).Save(archive);
+	}
+	{
+		cereal::JSONInputArchive archive(saved);
+		neurus::project::HistoryComponent(ops).Load(archive);
+	}
+	ASSERT_EQ(ops.GetUndoStack().size(), initialCount + 3);
+	ops.Undo();
+	EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), renamed);
+	ops.Undo();
+	EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), tagged);
+	ops.Undo();
+	EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), original);
+	ops.Redo();
+	ops.Redo();
+	ops.Redo();
+	EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), removed);
+}
+
+TEST(EditorRenderGraph, CommandScopeCanStageAndRejectEditsWithoutAScript)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.Initialize();
+	editor.NewScene();
+	auto& ops = editor.GetOperations();
+	auto& events = editor.GetEventQueue();
+	events.Emit(neurus::RenderGraphCreateRequested{});
+	const auto history = ops.GetUndoStack().size();
+	sink.posted.clear();
+
+	ops.BeginCommandScope("Bypass FXAA");
+	events.Emit(neurus::RenderGraphDisconnectRequested{{"", "color"}});
+	events.Emit(neurus::RenderGraphConnectRequested{{"compose", "outputComposed"}, {"", "color"}});
+	EXPECT_TRUE(sink.posted.empty());
+	ASSERT_EQ(ops.EndCommandScope(), "");
+	EXPECT_EQ(ops.GetUndoStack().size(), history + 1);
+	EXPECT_EQ(editor.GetRenderGraph().sceneOutputs.at("color").node, "compose");
+
+	ops.BeginCommandScope("Rejected rename");
+	events.Emit(neurus::RenderGraphRenameRequested{"compose", "finish"});
+	std::string error;
+	events.Emit(neurus::RenderGraphRenameRequested{"finish", "geometry", &error});
+	ASSERT_FALSE(error.empty());
+	EXPECT_EQ(ops.EndCommandScope(), error);
+	EXPECT_EQ(ops.GetUndoStack().size(), history + 1);
+	EXPECT_EQ(editor.GetRenderGraph().sceneOutputs.at("color").node, "compose");
+
+	ops.Undo();
+	EXPECT_EQ(editor.GetRenderGraph().sceneOutputs.at("color").node, "fxaa");
 }

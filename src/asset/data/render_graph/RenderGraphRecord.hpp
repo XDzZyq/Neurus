@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -22,6 +23,9 @@ class ShaderData;
 class IPortSource;
 class IResourceLookup;
 class RenderGraphTopology;
+template<class, class> class Node;
+struct CpuPort;
+struct CpuNode;
 
 /// Stores the image declaration on each serialized output socket.
 template<class Archive>
@@ -182,6 +186,15 @@ struct RenderGraphRecord
 			ar(cereal::make_nvp("outputs", *outputs));
 	}
 };
+
+/// Captures one node, including its shader UID, position and tagged outputs.
+RenderGraphNodeRecord ToRecord(const Node<CpuPort, CpuNode>& node);
+
+/// Rebuilds the node's sockets from the recorded outputs and its pass input roles.
+std::unique_ptr<Node<CpuPort, CpuNode>> FromRecord(
+	const RenderGraphNodeRecord& saved, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources,
+	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader = {});
 
 /**
  * @brief Flattens a live document into the project's record.

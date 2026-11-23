@@ -68,6 +68,28 @@ class LayerBoundariesTest(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("editor must remain Qt-free", errors)
 
+    def test_only_operations_include_the_replay_context(self):
+        self.write("editor/operations/OperationContext.hpp", "// replay API\n")
+        for layer in ["editor/controllers", "app"]:
+            for header in ["editor/operations/OperationContext.hpp", "OperationContext.hpp"]:
+                with self.subTest(layer=layer, header=header):
+                    result, errors = self.check(f'#include "{header}"\n', layer)
+                    self.assertEqual(result, 1)
+                    self.assertIn(f"src/{layer}/Consumer.hpp:1:", errors)
+                    self.assertIn("operation replay belongs to editor/operations", errors)
+
+    def test_operation_implementation_can_include_its_local_context(self):
+        self.write("editor/operations/OperationContext.hpp", "// replay API\n")
+        result, errors = self.check('#include "OperationContext.hpp"\n', "editor/operations")
+        self.assertEqual(result, 0, errors)
+
+    def test_controller_can_submit_history_or_call_an_unrelated_apply(self):
+        result, errors = self.check(
+            '#include "editor/operations/GraphOperations.hpp"\n'
+            'void Update(Filter& filter) { filter.Apply(); }\n',
+            "editor/controllers")
+        self.assertEqual(result, 0, errors)
+
     def test_forbidden_layer_include_is_rejected(self):
         result, errors = self.check('#include "editor/Editor.hpp"\n', "render")
         self.assertEqual(result, 1)

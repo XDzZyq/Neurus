@@ -4,6 +4,14 @@ Controllers are the Editor's event-driven reaction layer: each one subscribes to
 typed events in `Init()` and mutates state in its handlers, with no per-frame
 polling.
 
+## Controller design constraints
+
+- **Keep controllers as stateless as possible.** Use local variables for a discrete request. The document owns the live value and the operation owns the values needed for undo. Keep a controller member only when the interaction itself spans events, such as a drag whose begin and end events delimit one gesture.
+- **Keep the header light.** Declare the controller interface and include only what those declarations require. Forward-declare types used through pointers or references. Keep a controller’s handlers and private helpers in its implementation file. Extract a shared helper when multiple controllers use the same behavior.
+- **Respect the controller's knowledge boundary.** Handle typed requests through `ControllerContext`. The same graph request can come from the UI, a command or a script. `ScriptController` translates script boundaries into operation scopes. `OperationManager` owns grouping and replay. The Editor publishes render requests and the renderer owns GPU allocation and execution.
+- **Submit history after the edit.** A handler receives a typed request, changes the CPU document, then passes the reversible description to `ctx.ops.Submit`. The operation manager owns the recording buffer, creates `OperationContext`, and calls `Operation::Apply` for undo, redo, or rollback.
+- **Return results on the request.** For synchronous mutations that can fail, give the event a caller-owned reply slot for the result or diagnostic, as `ShaderCreateRequested` does. Fill it before `Emit` returns. The caller owns presentation or exception translation. Keep deferred validation errors on the scope-completion reply.
+
 ## The event-driven pattern
 
 Controllers receive discrete events rather than polling. Only the UI boundary is
@@ -42,14 +50,10 @@ public:
 };
 ```
 
-Design:
-
-- Pure virtual base class for all editor controllers.
 - `Init(ControllerContext& ctx)` receives the controller context (event dispatch,
   pooled-object lookup, operation sink, scene/config providers).
 - Derived classes subscribe to typed events in `Init()` (for example,
-  `ctx.events.Subscribe<CameraZoomEvent>()`); handler lambdas capture the context
-  by value so they are fully self-contained.
+  `ctx.events.Subscribe<CameraZoomEvent>()`).
 - Handlers emit through `ctx.events.Emit(...)`, which is synchronous: the event a
   handler emits is fully handled before the handler resumes.
 - Stored via `std::unique_ptr<Controllers>` in the Editor's controller list.
@@ -82,13 +86,9 @@ per-frame job by documented contract, not by a `const` that had to be routed
 around. A read-only handler should still bind `const EditorViewport*` locally,
 since every query it needs is const.
 
-Ownership rules:
-
-- The context is constructed by the Editor once and outlives the controllers'
-  event subscriptions (it is declared before the controller list).
-- Controllers MUST NOT store the context or any of its members; handler lambdas
-  capture it by value (they outlive the `EventQueue`, whose stored lambdas
-  reference it).
+The Editor owns the context for the lifetime of the subscriptions. Handlers may
+capture it by reference or capture its interface handles by value. Resolve the
+current scene and other replaceable resources inside each handler.
 
 ## Registration
 
@@ -326,56 +326,17 @@ Design:
 
 ## ShaderController
 
-`src/editor/controllers/ShaderController.hpp/cpp` owns event-driven shader
-lifecycle (create, compile, code/struct edit, field add) via `ShaderEvents`.
+`ShaderEvents.hpp` defines two ways to address a stage. The mesh panel sends a mesh UID. Pooled shader requests carry the shader UID directly, including when a script obtains the shader through a pass node.
 
-```cpp
-void ShaderController::Init(ControllerContext& ctx)
-{
-    // Lifecycle (non-undoable): bump Shader::m_version + reset accumulation.
-    // (Shader CREATE is handled by the Editor, which constructs the pooled
-    // RenderShader and records a ShaderLinkOp - see the Undo/redo section.
-    // ShaderController keeps only pool-free handlers.)
-    ctx.events.Subscribe<ShaderCompileRequested>( [ctx](const ShaderCompileRequested& e) {
-        OnCompileShader(e, ctx);
-        ctx.events.Emit(RenderResetEvent{});  // pipeline rebuilt -> reset accumulation
-    });
+| Request | Operation and compile behavior |
+| --- | --- |
+| Mesh panel text edit | `ShaderEditBegin` captures the initial text. `ShaderCodeEdited` updates the draft. `ShaderEditEnd` records one `SetShaderCodeOp` if the text changed. The panel's Compile action compiles the draft. |
+| Mesh panel structure edit | Changing an element records `SetShaderFieldOp`. Adding an element records `AddShaderFieldOp`. Both use the panel's explicit Compile action. |
+| Pooled stage code or structure edit | `ShaderUnitCodeSet` and `ShaderUnitStructSet` resolve the shader UID and stage. A pass-referenced shader records `SetPassShaderStageOp` and compiles automatically at the next graph read or when the request or group completes. Other pooled shaders record their code or structure operation and compile on request. |
 
-    // Code edits apply live; recording is bracketed by ShaderEditBegin/End so a
-    // keystroke burst collapses to ONE undo entry on focus-out.
-    ctx.events.Subscribe<ShaderCodeEdited>( [ctx](const ShaderCodeEdited& e) { OnCodeEdited(e, ctx); });
-    ctx.events.Subscribe<ShaderEditBegin>( /* capture m_beforeCode + m_editObjectId */ );
-    ctx.events.Subscribe<ShaderEditEnd>( /* record SetShaderCodeOp if code changed */ );
+Only the mesh text gesture needs controller state between events. On history replay, a pass-stage operation restores the stage and reconciles renamed sockets before the next connection operation runs. A saved project rebuilds the stage bytecode from the stored source.
 
-    // Discrete struct/field edits: snapshot the element, apply the edit, record one delta op each.
-    ctx.events.Subscribe<ShaderStructEdited>( /* VisitElement + ApplyFieldEdit; Submit SetShaderFieldOp if before != after */ );
-    ctx.events.Subscribe<ShaderFieldAdded>( /* AppendDefault + Submit AddShaderFieldOp */ );
-
-    // Undo/redo replay: re-apply one edit dimension + bump version (panel refresh).
-    ctx.events.Subscribe<ShaderCodeRestored>(     [ctx](const ShaderCodeRestored& e)     { OnCodeRestored(e, ctx); });
-    ctx.events.Subscribe<ShaderFieldRestored>(    [ctx](const ShaderFieldRestored& e)    { OnFieldRestored(e, ctx); });
-    ctx.events.Subscribe<ShaderFieldAddRestored>( [ctx](const ShaderFieldAddRestored& e) { OnFieldAddRestored(e, ctx); });
-    ctx.events.Subscribe<ShaderFieldRemoved>(     [ctx](const ShaderFieldRemoved& e)     { OnFieldRemoved(e, ctx); });
-}
-```
-
-Design:
-
-- Mutation handlers are free functions in an anonymous namespace; gesture state
-  (`m_codeEditing`, `m_editObjectId`, `m_editStage`, `m_beforeCode`) lives on the
-  controller so begin/end can bracket a burst.
-- Handlers resolve the event's `int objectUid` to `Mesh*` (via the current
-  scene's `mesh_list`, the only shader-owning object type) and mutate
-  `mesh->o_shader` data directly, with no Editor, Renderer, or GPU state.
-- Create/Compile bump `Shader::m_version` on success (pipeline rebuild). Create is
-  undoable (the Editor records `ShaderLinkOp`: undo drops the pooled reference,
-  redo relinks it via `ShaderLinkRestored`/`ShaderUnlinkRestored`); Compile stays
-  a non-undoable lifecycle action. Content edits (code/struct/field) only mutate
-  CPU IR/code and require the user to press Compile to reach the GPU.
-- Only Create/Compile emit `RenderResetEvent` (temporal accumulation reset).
-- Undo/redo of content edits is CPU-only: `OnRestoreSource` overwrites the
-  stage's `code` + `parsed` IR and bumps `ShaderUnit::m_version` (panel refresh);
-  it does not recompile to SPIR-V. See [Operations](operations.md).
+Mesh shader creation goes through the Editor's `ShaderCreateRequested` handler. It compiles and pools the shader, then sends `ObjectShaderAddRequested` to `SceneController`, which assigns the mesh reference and records `ShaderReplaceOp`. Synchronous creation and compile requests can return diagnostics through their caller-owned result slots.
 
 ## RenderConfigController
 
@@ -391,28 +352,18 @@ defaulted `operator==`) are never recorded. `SetRenderConfigOp` is scene-level
 
 ## RenderGraphController
 
-`RenderGraphController` subscribes to graph edit events and coordinates the active document with `RenderManager`. A script can create or rewire nodes, select scene output sockets and change shared pass shaders in one edit. The controller compiles pending shader changes when a script needs the socket interface, validates the final graph and submits its history operation before `ScriptController` closes the run. Rejected edits restore the previous CPU state. Successful edits publish owned upload requests to the renderer.
+A topology request describes one user edit. Renaming a node records the old and new names. Connecting an occupied input or scene output emits one `GraphProducerChanged` event. The controller records a composite with two children that unlink the previous producer and link the new one. One undo restores the previous connection. Reconnecting the same producer leaves history untouched.
+
+The graph controller also handles assigning a pooled shader to a node. `ShaderController` handles edits to the shader's code or structure, addressed by shader UID and stage. Both controllers submit history describing the change they have already made. The operation system requests validation and publication at the appropriate boundary. A standalone request validates before publishing. A script can temporarily disconnect a required input and reconnect it within the same operation scope. The scope validates the final graph and publishes the accepted changes together.
 
 See [Editing the render graph](../script/overview.md#editing-the-render-graph) for examples.
 
 ## ScriptController
 
 `ScriptController` is the stateless bridge between a script run and the operation
-sink. It subscribes to two events and does nothing else:
+sink. It forwards run boundaries and returns any final validation error through the completion event.
 
-```cpp
-void ScriptController::Init(ControllerContext& ctx)
-{
-    ctx.events.Subscribe<ScriptRunStarted>([ctx](const ScriptRunStarted& e) {
-        ctx.ops.BeginScriptScope(e.name);
-    });
-    ctx.events.Subscribe<ScriptRunFinished>([ctx](const ScriptRunFinished&) {
-        ctx.ops.EndScriptScope();
-    });
-}
-```
-
-`e.name` is the History label the host chose - "Run Script" for a console run,
+The start event carries the history label the host chose - "Run Script" for a console run,
 "Run <file>.py" for a file run.
 
 `ScriptEngineImpl::RunSource` emits `ScriptRunStarted` before it executes the
@@ -458,29 +409,8 @@ a begin event, mutate live without recording, record one op on the end event):
   boundary vs. burst coalescing are distinct behaviors that belong to distinct
   ops.
 - `RenderConfigController`: described above.
-- `ShaderController`: content edits to a mesh's shader become undoable via three
-  fine-grained delta ops, each carrying only its before/after slice (no
-  whole-`ShaderStruct` snapshot, which keeps history and project files small):
-  `SetShaderCodeOp` (before/after GLSL text of one stage), `SetShaderFieldOp`
-  (before/after of one whole IR element, a `ShaderFieldValue` variant, keyed by
-  section + field index), and `AddShaderFieldOp` (append vs. remove one default
-  entry via a `bool add` flag, whose `Inverse()` flips the flag). All are keyed by
-  mesh UID + stage. Code edits are gesture-bounded: `ShaderEditBegin` snapshots
-  `m_beforeCode`, `ShaderCodeEdited` applies live, `ShaderEditEnd` records one
-  `SetShaderCodeOp` on focus-out only if the code changed. Discrete struct/field
-  edits have no gesture: `ShaderStructEdited` snapshots the element, applies the
-  UI's `{field,value}` via `VisitElement`/`ApplyFieldEdit`, and records a
-  `SetShaderFieldOp` only if the element changed (`before != after`);
-  `ShaderFieldAdded` calls `AppendDefault` and records an
-  `AddShaderFieldOp(add=true)`. Undo/redo replays four dedicated restore events
-  (`ShaderCodeRestored`, `ShaderFieldRestored`, `ShaderFieldAddRestored`,
-  `ShaderFieldRemoved`) distinct from the forward events, so the replay handlers
-  bump `ShaderUnit::m_version` (panel refresh) while live forward edits do not
-  (avoiding a cursor jump mid-typing). Restore is CPU-only, no recompile to
-  SPIR-V; the user presses Compile to push restored source to the GPU. All three
-  ops are deliberately non-mergeable (empty `MergeKey`). Shader Create is
-  undoable via `ShaderLinkOp` (recorded by the Editor; a pool-preserving
-  membership toggle); Compile stays a non-undoable lifecycle action.
+- `ShaderController` uses the mesh panel's gesture and element operations and the
+  pooled stage operations described [above](#shadercontroller).
 
 Every controller records through `ctx.ops.Submit`, whether the edit came from a
 panel, a gesture or a script. While a script run is open, `OperationManager`

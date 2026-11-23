@@ -72,7 +72,7 @@ flowchart LR
     execute --> frame["FrameProfile"]
 ```
 
-The upload also plans the cache: one logical resource per tagged output, keyed by `ResourceKey(node, port)`.
+Each call to `GraphMorphism::Map(source)` returns its own target graph and a correspondence table for node and connection lookups. The mapper retains only its construction policy. The uploader calls `mapping.images.Validate(source)` while both graphs are alive to check that every source element has an image and each connection joins the mapped owners. It then moves the validated target into the runtime graph. The upload plans one cache resource per tagged output, keyed by `ResourceKey(node, port)`.
 
 `OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph and consumes the selected scene color, depth and object-ID resources. Picking uses the same object-ID selection.
 

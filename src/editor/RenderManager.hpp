@@ -79,7 +79,7 @@ public:
 	std::vector<CpuGraphDiagnostic> Diagnostics() const;
 
 	/// @brief Replays membership of the resource retained by a graph creation operation.
-	void RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph);
+	void RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish = true);
 	void RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish = true);
 
 	/**

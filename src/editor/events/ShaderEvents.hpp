@@ -2,21 +2,25 @@
  * @file ShaderEvents.hpp
  * @brief Event structs for the shader editor pipeline (UI -> Editor -> ShaderController).
  *
- * All events carry an int objectUid (the target mesh's UID); the controller
- * resolves it against the current scene and operates on the shader data.
- * Version flow: only create and compile bump the shader version, and only on a
- * successful compile - code and struct edits need an explicit Compile.
+ * Mesh-panel events address a mesh UID. Pooled unit events address the shader
+ * UID directly. Pass shader edits compile when their request or group commits.
+ * Mesh-only drafts compile on an explicit request.
  */
 
 #pragma once
 
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "asset/data/shader/ShaderStruct.hpp"
 #include "editor/events/AssetEvents.hpp"
 
 namespace neurus {
+
+struct CpuGraphDiagnostic;
+struct ShaderUnit;
+enum class ShaderType;
 
 /**
  * @brief One ShaderStruct element payload (the granularity of an undoable edit).
@@ -152,7 +156,7 @@ struct ShaderCompileRequested
 struct ShaderCompiled
 {
 	int shaderObjectId = 0;
-	/// The graph transaction has already queued this shader upload.
+	/// True when the publisher has already queued the GPU upload.
 	bool uploaded = false;
 };
 
@@ -271,10 +275,9 @@ struct ShaderUnlinkRestored
 };
 
 // ---------------------------------------------------------------------------
-// Shader-keyed unit edits (script path)
+// Pooled shader stage edits
 //
-// These address a pooled ShaderData directly, so they work for a mesh shader
-// and for a pooled ComputeShader. The panel keeps its mesh-keyed delta events.
+// The target UID identifies the shared ShaderData used by meshes and passes.
 // ---------------------------------------------------------------------------
 
 /** @brief Result of an explicit compile request, filled synchronously. */
@@ -290,6 +293,7 @@ struct ShaderUnitCodeSet
 	int         shaderUid = 0;  ///< Pooled ShaderData UID.
 	int         stage = 0;      ///< ShaderType as int.
 	std::string code;           ///< New GLSL source text.
+	std::string* error = nullptr; ///< Optional synchronous edit diagnostic.
 };
 
 /** @brief Replaces one stage's parsed IR and records one undo op. */
@@ -298,6 +302,7 @@ struct ShaderUnitStructSet
 	int           shaderUid = 0;  ///< Pooled ShaderData UID.
 	int           stage = 0;      ///< ShaderType as int.
 	ShaderStruct  parsed;         ///< New IR for the stage.
+	std::string* error = nullptr; ///< Optional synchronous edit diagnostic.
 };
 
 /**
@@ -321,6 +326,31 @@ struct ShaderUnitCodeRestored
 	int         shaderUid = 0;
 	int         stage = 0;
 	std::string code;
+};
+
+enum class PassShaderEditSource { Code, Structure, CompileCode };
+
+/// Compile the live draft for one stage. A changed result borrows the compiled stage.
+struct PassShaderDraftCompileRequested
+{
+	int shaderUid;
+	ShaderType stage;
+	PassShaderEditSource source;
+	const ShaderUnit& before;
+	const ShaderUnit*& changed;
+	bool& portsChanged;
+	std::vector<CpuGraphDiagnostic>* diagnostics = nullptr;
+};
+
+/// Sets one live stage from a draft or a previously compiled value.
+struct PassShaderStageChanged
+{
+	int shaderUid;
+	ShaderType stage;
+	const ShaderUnit& unit;
+	bool compiled;
+	bool portsChanged;
+	bool refreshVersion; ///< Advance the inspector revision when the restored stage becomes visible.
 };
 
 /** @brief Restores a stage's parsed IR (undo/redo replay). */
