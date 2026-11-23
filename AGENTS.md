@@ -3,10 +3,11 @@
 Guidance for agentic coding in Neurus: a C++20 Vulkan-HPP 1.4 real-time renderer
 built around strict layer isolation.
 
-System design, architecture and style are **product documentation** under
-[`docs/`](docs/README.md). This file is the entry point - hard rules, the
-development workflow, and a routing table. It does not restate design prose;
-route to `docs/` or `.github/instructions/` instead.
+Use the shared [neurus-develop skill](.agents/skills/neurus-develop/SKILL.md)
+when implementing or reviewing changes to layer boundaries, editor operations
+or GPU uploads. Detailed contributor rules live in the
+[instructions index](.agent/instructions/README.md). System design and style
+live in the [product documentation](docs/README.md).
 
 ---
 
@@ -24,7 +25,7 @@ route to `docs/` or `.github/instructions/` instead.
 - Keep command, IPC and CLI targets Qt-free and Vulkan-free. Execute session
   commands on the application main thread.
 
-Follow the [architecture instructions](.github/instructions/architecture.instructions.md)
+Follow the [architecture instructions](.agent/instructions/architecture.instructions.md)
 for permitted interfaces, controller dependencies, replay authority and GPU ownership.
 
 ### Platform-specific code is isolated
@@ -77,7 +78,7 @@ swapchain. The Linux product binary is `neurus_headless` (no Qt, driven by the
      PIL (not empty, not uniform, not all-black/white) - never cheat yourself -
      and run `python scripts/extract_i18n.py --check` for any new user-visible
      string.
-4. **Update docs.** Keep `docs/` and `.github/instructions/` current before
+4. **Update docs.** Keep `docs/` and `.agent/instructions/` current before
    committing.
 5. **Commit** only after the user approves (unless told in advance). Message
    `feat(scope): what was built`, and add "No validation error, no unreasonable
@@ -93,20 +94,20 @@ Stop and wait for user verification after each phase.
 
 | I need... | Read |
 |-----------|------|
-| Coding rules (format, naming, RAII, errors, comments, shaders) | [conventions.instructions.md](.github/instructions/conventions.instructions.md), [docs/style/style.md](docs/style/style.md), [docs/style/conventions.md](docs/style/conventions.md) |
-| Feature-development workflow | [development.instructions.md](.github/instructions/development.instructions.md) |
-| Build/test commands, build trees, worktrees, graphify | [tips.instructions.md](.github/instructions/tips.instructions.md), [docs/build/build.md](docs/build/build.md), [docs/build/test.md](docs/build/test.md) |
-| Web documentation (`make doc`, MkDocs, API reference, structure graph) | [docs/build/build.md](docs/build/build.md#web-documentation), [tips.instructions.md](.github/instructions/tips.instructions.md) |
-| Encountered issues / pitfalls (symptom -> rule) | [lessons.instructions.md](.github/instructions/lessons.instructions.md) |
-| Git, branch, worktree and commit conventions | [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md) |
-| Agent roles, parallel lanes, racing prevention | [roles.instructions.md](.github/instructions/roles.instructions.md) |
+| Coding rules (format, naming, RAII, errors, comments, shaders) | [conventions.instructions.md](.agent/instructions/conventions.instructions.md), [docs/style/style.md](docs/style/style.md), [docs/style/conventions.md](docs/style/conventions.md) |
+| Feature-development workflow | [development.instructions.md](.agent/instructions/development.instructions.md) |
+| Build/test commands, build trees, worktrees, graphify | [tips.instructions.md](.agent/instructions/tips.instructions.md), [docs/build/build.md](docs/build/build.md), [docs/build/test.md](docs/build/test.md) |
+| Web documentation (`make doc`, MkDocs, API reference, structure graph) | [docs/build/build.md](docs/build/build.md#web-documentation), [tips.instructions.md](.agent/instructions/tips.instructions.md) |
+| Encountered issues / pitfalls (symptom -> rule) | [lessons.instructions.md](.agent/instructions/lessons.instructions.md) |
+| Git, branch, worktree and commit conventions | [git-workflow.instructions.md](.agent/instructions/git-workflow.instructions.md) |
+| Agent roles, parallel lanes, racing prevention | [roles.instructions.md](.agent/instructions/roles.instructions.md) |
 | Architecture, layers, data flow, ownership, coordinates | [docs/architecture/overview.md](docs/architecture/overview.md), [layers.md](docs/architecture/layers.md), [data-flow.md](docs/architecture/data-flow.md), [ownership.md](docs/architecture/ownership.md), [coordinate-system.md](docs/core/coordinate-system.md) |
 | Renderer: passes, graph, buffers, resources, shaders, temporal | [docs/render/overview.md](docs/render/overview.md) and its siblings |
 | Editor: viewport, controllers, events, operations, gizmo, overlays | [docs/editor/overview.md](docs/editor/overview.md) and its siblings |
 | UI: panels, items, models, i18n | [docs/ui/overview.md](docs/ui/overview.md) and its siblings |
 | Core (UID, serialization, render config, logging), scene and assets | [docs/core/uid-and-resources.md](docs/core/uid-and-resources.md), [docs/scene/objects.md](docs/scene/objects.md), [docs/asset/data-resources.md](docs/asset/data-resources.md) |
 | Scripting: embedded CPython, the `neurus` module, Script Console | [docs/script/overview.md](docs/script/overview.md) |
-| Full indexes | [.github/instructions/README.md](.github/instructions/README.md), [docs/README.md](docs/README.md) |
+| Full indexes | [.agent/instructions/README.md](.agent/instructions/README.md), [docs/README.md](docs/README.md) |
 
 Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
 `docs/` never links back.
@@ -124,7 +125,7 @@ Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
   pointer moved), push Neurus-Lib and wait for its build/release workflow to
   succeed before pushing Neurus - Neurus CI downloads the prebuilt libs from that
   release, so pushing Neurus first breaks CI. See
-  [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md).
+  [git-workflow.instructions.md](.agent/instructions/git-workflow.instructions.md).
 - Keep changes minimal and localized; respect layer isolation. See
-  [roles.instructions.md](.github/instructions/roles.instructions.md) for the
+  [roles.instructions.md](.agent/instructions/roles.instructions.md) for the
   full set.
