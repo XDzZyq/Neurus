@@ -62,8 +62,8 @@ private:
 		CommandCompletion  completion;
 	};
 
-	mutable std::mutex          m_mutex;
-	std::deque<PendingCommand>  m_pending;
+	mutable std::mutex          cmd_mutex;
+	std::deque<PendingCommand>  cmd_pending;
 };
 
 } // namespace neurus::command

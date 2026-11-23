@@ -50,7 +50,9 @@ Value fields are optional; identity and history are not. Absence there means a b
 - Resource identities and the Scene's ID lists. Individual disk pool entries are
   isolated: a malformed or unknown entry is skipped and reported without losing
   valid entries. Bare cereal pool loading still has its coarse failure behavior.
-- A data resource's source path: `MeshData` / `ImageData::m_path`, `Shader::m_name`, `RenderShader::m_vertPath` / `m_fragPath`.
+- Mesh and image source paths, shader names and stage paths are required. Shader
+  project keys keep their original spelling, including `m_name`, `m_vertPath`,
+  `m_fragPath` and `m_compPath`.
 - `Light::light_type` - defaulting it yields `NONELIGHT`, an invisible light with no error anywhere.
 - Undo/redo operations require the data needed for replay. Config operations
   store optional endpoint presence: `before_present` / `after_present` default to

@@ -13,11 +13,11 @@
 
 namespace neurus {
 // --------------------------------------
-// Constructor - initialises name only; m_stages starts empty
+// Constructor - initialises name only; sh_stages starts empty
 // --------------------------------------
 
 ShaderData::ShaderData(std::string name)
-	: m_name(std::move(name))
+	: sh_name(std::move(name))
 {
 }
 
@@ -41,29 +41,29 @@ bool ShaderData::IsValid() const
 
 bool ShaderData::HasStage(ShaderType type) const
 {
-	return m_stages.count(type) > 0;
+	return sh_stages.count(type) > 0;
 }
 
 ShaderUnit* ShaderData::FindStage(ShaderType type)
 {
-	auto it = m_stages.find(type);
-	return it == m_stages.end() ? nullptr : &it->second;
+	auto it = sh_stages.find(type);
+	return it == sh_stages.end() ? nullptr : &it->second;
 }
 
 const ShaderUnit* ShaderData::FindStage(ShaderType type) const
 {
-	auto it = m_stages.find(type);
-	return it == m_stages.end() ? nullptr : &it->second;
+	auto it = sh_stages.find(type);
+	return it == sh_stages.end() ? nullptr : &it->second;
 }
 
 ShaderUnit& ShaderData::GetStage(ShaderType type)
 {
-	return m_stages[type];
+	return sh_stages[type];
 }
 
 const ShaderUnit& ShaderData::GetStage(ShaderType type) const
 {
-	return m_stages.at(type);
+	return sh_stages.at(type);
 }
 
 // --------------------------------------

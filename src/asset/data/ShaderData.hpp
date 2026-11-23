@@ -65,7 +65,7 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<UID>(this), CEREAL_NVP(m_name));
+		ar(cereal::base_class<UID>(this), cereal::make_nvp("m_name", sh_name));
 	}
 
 	/**
@@ -110,17 +110,17 @@ public:
 	static std::string TypeToString(ShaderType type);
 
 	/** @brief Returns the human-readable name. */
-	const std::string& GetName() const { return m_name; }
+	const std::string& GetName() const { return sh_name; }
 
 	/** @brief Sets the human-readable name (and the pool registry key, by caller). */
-	void SetName(std::string name) { m_name = std::move(name); }
+	void SetName(std::string name) { sh_name = std::move(name); }
 
 	/** @brief Returns the last error message, if any. */
-	const std::string& GetErrorMessage() const { return m_errorMessage; }
+	const std::string& GetErrorMessage() const { return sh_errorMessage; }
 
 	/** @brief Monotonic version; bumped on each successful compile. */
-	int  GetVersion() const { return m_version; }
-	void BumpVersion() { m_version++; }
+	int  GetVersion() const { return sh_version; }
+	void BumpVersion() { sh_version++; }
 
 protected:
 	/**
@@ -130,7 +130,7 @@ protected:
 	template<class Archive>
 	void SerializeStages(Archive& ar)
 	{
-		ar(cereal::make_nvp("stages", m_stages));
+		ar(cereal::make_nvp("stages", sh_stages));
 	}
 
 	/**
@@ -145,18 +145,18 @@ protected:
 		std::unordered_map<ShaderType, ShaderUnit> stages;
 		if (archive::OptionalField(ar, cereal::make_nvp("stages", stages)))
 		{
-			m_stages = std::move(stages);
+			sh_stages = std::move(stages);
 			return true;
 		}
 		return false;
 	}
 
-	std::string m_name;          ///< Human-readable shader name
-	std::string m_errorMessage;  ///< Last error message
-	int         m_version = 0;   ///< Version counter for pipeline invalidation
+	std::string sh_name;          ///< Human-readable shader name
+	std::string sh_errorMessage;  ///< Last error message
+	int         sh_version = 0;   ///< Version counter for pipeline invalidation
 
 	/** @brief Map of ShaderUnits, keyed by ShaderType. */
-	std::unordered_map<ShaderType, ShaderUnit> m_stages;
+	std::unordered_map<ShaderType, ShaderUnit> sh_stages;
 
 };
 

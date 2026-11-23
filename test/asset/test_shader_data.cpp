@@ -208,6 +208,24 @@ TEST(ShaderDataPersistence, ResourceComponentPreservesRenderAndComputeShadersByN
 		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(out);
 	}
+	// These keys must remain readable by earlier Neurus versions.
+	const auto saved = nlohmann::ordered_json::parse(ss.str());
+	for (const auto& entry : saved.at("m_resources").at("resources_"))
+	{
+		const auto& data = entry.at("value").at("ptr_wrapper").at("data");
+		if (entry.at("key") == compute->GetObjectID())
+		{
+			EXPECT_EQ(data.at("value0").at("m_name"), "Comp");
+			EXPECT_EQ(data.at("m_compPath"), "res/shaders/compute/dummy.comp.glsl");
+			EXPECT_EQ(data.at("m_defaults").at(0).at("name"), "radius");
+		}
+		if (entry.at("key") == shader->GetObjectID())
+		{
+			EXPECT_EQ(data.at("value0").at("m_name"), "MyFrag");
+			EXPECT_EQ(data.at("m_vertPath"), "res/shaders/render/gbuffer.vert.glsl");
+			EXPECT_EQ(data.at("m_fragPath"), "res/shaders/render/gbuffer.frag.glsl");
+		}
+	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive in(ss);

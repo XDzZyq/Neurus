@@ -3,10 +3,10 @@
  * @brief CPU-only render shader - vertex+fragment pipeline with parse->generate flow.
  *
  * RenderShader owns ShaderUnit IR representations for both vertex and fragment
- * stages via the base-class m_stages map, and generated GLSL source code.
+ * stages via the base-class sh_stages map, and generated GLSL source code.
  *
  * Architecture:
- *   - Inherits Shader - base class with m_stages ShaderUnit map.
+ *   - Inherits Shader - base class with sh_stages ShaderUnit map.
  *   - Uses ShaderParser to populate ShaderStruct IRs.
  *   - Uses ShaderGenerator to emit GLSL source.
  *
@@ -95,7 +95,9 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_vertPath), CEREAL_NVP(m_fragPath));
+		ar(cereal::base_class<ShaderData>(this),
+		   cereal::make_nvp("m_vertPath", sh_vertPath),
+		   cereal::make_nvp("m_fragPath", sh_fragPath));
 		if constexpr (Archive::is_saving::value)
 		{
 			SerializeStages(ar);
@@ -104,8 +106,8 @@ public:
 		{
 			DeserializeStages(ar);
 			const bool hasContent =
-				!m_stages[ShaderType::VERTEX].code.empty() ||
-				!m_stages[ShaderType::FRAGMENT].code.empty();
+				!sh_stages[ShaderType::VERTEX].code.empty() ||
+				!sh_stages[ShaderType::FRAGMENT].code.empty();
 			if (!hasContent)
 			{
 				ReloadContent();
@@ -155,8 +157,8 @@ public:
 	bool Recompile(ShaderType type);
 
 private:
-	std::string m_vertPath; ///< Path to vertex shader source file
-	std::string m_fragPath; ///< Path to fragment shader source file
+	std::string sh_vertPath; ///< Path to vertex shader source file
+	std::string sh_fragPath; ///< Path to fragment shader source file
 };
 
 } // namespace neurus

@@ -134,7 +134,7 @@ label is the same in the undo list, the redo list and after a save/reload. See a
 `OperationManager` caps the undo stack at `kDefaultMaxUndoDepth` (256) entries;
 the ctor takes an optional `maxUndoDepth` override (0 = unbounded). `Submit` and
 `RestoreHistory` call `EnforceUndoLimit()`, which evicts the oldest entries
-(front of `m_undo`) once the cap is exceeded, bounding memory over long sessions.
+(front of `op_undo`) once the cap is exceeded, bounding memory over long sessions.
 Redo is bounded implicitly: its entries only ever originate from undo pops.
 
 ## Coalescing gestures into one undo entry

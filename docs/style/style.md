@@ -27,7 +27,7 @@ RAII throughout.
 | Type and its class files | PascalCase | `VulkanContext`, `VulkanContext.hpp`, `VulkanContext.cpp` |
 | Public or private member function | PascalCase at either access level | Public `DeferredRenderer::DrawFrame`, private `DeferredRenderer::CompileDocument` |
 | File-local free function | lowerCamelCase | `vkFormatToPixelFormat` in `Screenshot.cpp` |
-| Private instance field | Owner prefix below, followed by lowerCamelCase. The default is `m_`. | `Editor::ed_eventBus`, `ScriptEngine::m_impl` |
+| Private instance field | Owner prefix below, followed by lowerCamelCase. The default is `m_`. | `Editor::ed_eventBus`, `IpcServer::m_impl` |
 | Named constant | UPPER_SNAKE_CASE | `RenderCache::MAX_SHADOW_LAYERS` |
 | New enum type and enumerators | PascalCase | `FrameWork::Overlay` |
 
@@ -43,13 +43,19 @@ references, flags and counters.
 | `Editor` | `ed_` | `ed_operations` |
 | `VulkanContext` | `ctx_` | `ctx_instance` |
 | `UIManager` | `win_` | `win_dockManager` |
+| `OperationManager` | `op_` | `op_undo` |
+| `CommandDispatcher`, `CommandCatalog` | `cmd_` | `cmd_pending`, `cmd_descriptors` |
+| `ShaderData`, `RenderShader`, `ComputeShader` | `sh_` | `sh_stages`, `sh_vertPath` |
+| `ScriptEngine`, `ScriptEngine::Impl` | `sc_` | `sc_impl`, `sc_pending` |
 
-Apply the table to direct private instance fields. Helpers in the same
+Apply the table to direct private instance fields and to the protected
+storage `ShaderData` shares with its derived shader classes. Helpers in the same
 directory and nested value types have their own declarations. Public data
 contracts such as `RenderContext::frameIndex` keep their established spelling.
 Check archive names before renaming storage. For example,
 `RenderConfig::r_sampling_count` is also a saved project key through
-`CEREAL_NVP`.
+`CEREAL_NVP`. When the saved spelling differs from the member, bind it
+explicitly, as in `cereal::make_nvp("m_vertPath", sh_vertPath)`.
 
 When extending an existing renderer feature, give a new private method a
 PascalCase name, following `CompileDocument`. For a new value in an existing

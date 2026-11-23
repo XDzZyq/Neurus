@@ -6,13 +6,13 @@ namespace neurus::command
 {
 
 CommandCatalog::CommandCatalog(std::vector<CommandDescriptor> descriptors)
-	: m_descriptors(std::move(descriptors))
+	: cmd_descriptors(std::move(descriptors))
 {
 }
 
 const CommandDescriptor* CommandCatalog::Find(std::string_view name) const
 {
-	for (const auto& descriptor : m_descriptors)
+	for (const auto& descriptor : cmd_descriptors)
 	{
 		if (descriptor.name == name)
 			return &descriptor;
@@ -22,7 +22,7 @@ const CommandDescriptor* CommandCatalog::Find(std::string_view name) const
 
 const std::vector<CommandDescriptor>& CommandCatalog::All() const
 {
-	return m_descriptors;
+	return cmd_descriptors;
 }
 
 CommandCatalog MakeCommandCatalog()

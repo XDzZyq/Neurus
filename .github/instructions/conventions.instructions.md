@@ -31,6 +31,9 @@ short working reference.
 - Prefix direct private instance fields by declaring class. Use `r_` in
   DeferredRenderer and Swapchain, `ed_` in Editor, `ctx_` in VulkanContext,
   `app_` in Application and HeadlessApplication, and `win_` in UIManager.
+  Use `op_` in OperationManager, `cmd_` in CommandDispatcher and CommandCatalog,
+  `sh_` in ShaderData (including its protected fields), RenderShader and
+  ComputeShader, and `sc_` in ScriptEngine and its private implementation.
   Use lowerCamelCase after the prefix. The default for other classes is `m_`.
 - Use UPPER_SNAKE_CASE for constants and PascalCase for new enums and their
   values. Extend an existing enum using its current spelling.

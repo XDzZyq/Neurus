@@ -23,37 +23,37 @@ namespace neurus {
 
 RenderShader::RenderShader(std::string name, std::string vertPath, std::string fragPath)
 	: ShaderData(std::move(name))
-	, m_vertPath(std::move(vertPath))
-	, m_fragPath(std::move(fragPath))
+	, sh_vertPath(std::move(vertPath))
+	, sh_fragPath(std::move(fragPath))
 {
-	m_stages[ShaderType::VERTEX]   = ShaderUnit{m_vertPath, {}, {}};
-	m_stages[ShaderType::FRAGMENT] = ShaderUnit{m_fragPath, {}, {}};
-	NEURUS_LOG("[RenderShader] Created '" << m_name << "'");
+	sh_stages[ShaderType::VERTEX]   = ShaderUnit{sh_vertPath, {}, {}};
+	sh_stages[ShaderType::FRAGMENT] = ShaderUnit{sh_fragPath, {}, {}};
+	NEURUS_LOG("[RenderShader] Created '" << sh_name << "'");
 }
 
 RenderShader::RenderShader(std::string name, ShaderUnit vert, ShaderUnit frag)
 	: ShaderData(std::move(name))
-	, m_vertPath(vert.path)
-	, m_fragPath(frag.path)
+	, sh_vertPath(vert.path)
+	, sh_fragPath(frag.path)
 {
-	m_stages[ShaderType::VERTEX]   = std::move(vert);
-	m_stages[ShaderType::FRAGMENT] = std::move(frag);
-	NEURUS_LOG("[RenderShader] Created '" << m_name << "' from resolved stages");
+	sh_stages[ShaderType::VERTEX]   = std::move(vert);
+	sh_stages[ShaderType::FRAGMENT] = std::move(frag);
+	NEURUS_LOG("[RenderShader] Created '" << sh_name << "' from resolved stages");
 }
 
 void RenderShader::ReloadContent()
 {
-	if (m_vertPath.empty() && m_fragPath.empty())
+	if (sh_vertPath.empty() && sh_fragPath.empty())
 		return;   // identity shell (empty paths)
 
-	m_stages[ShaderType::VERTEX].path   = m_vertPath;
-	m_stages[ShaderType::FRAGMENT].path = m_fragPath;
+	sh_stages[ShaderType::VERTEX].path   = sh_vertPath;
+	sh_stages[ShaderType::FRAGMENT].path = sh_fragPath;
 	ParseAndGenerate();
 }
 
 bool RenderShader::CompileToSpv(std::string* outError)
 {
-	m_errorMessage.clear();
+	sh_errorMessage.clear();
 	if (outError != nullptr) outError->clear();
 	bool allOk = true;
 	for (auto type : {ShaderType::VERTEX, ShaderType::FRAGMENT})
@@ -64,10 +64,10 @@ bool RenderShader::CompileToSpv(std::string* outError)
 		if (unit.code.empty()) continue; // identity shell (no content to compile)
 
 		std::string stageError;
-		unit.spv = ShaderLibrary::Compile(unit, type, m_name, &stageError);
+		unit.spv = ShaderLibrary::Compile(unit, type, sh_name, &stageError);
 		if (unit.spv.empty())
 		{
-			NEURUS_ERR("[RenderShader] CompileToSpv failed for '" << m_name
+			NEURUS_ERR("[RenderShader] CompileToSpv failed for '" << sh_name
 			           << "' stage " << TypeToString(type));
 			if (outError != nullptr && outError->empty())
 			{
@@ -81,11 +81,11 @@ bool RenderShader::CompileToSpv(std::string* outError)
 
 	if (allOk && !GetVertex().spv.empty() && !GetFragment().spv.empty())
 	{
-		allOk = ValidateRenderShaderInterface(GetVertex().spv, GetFragment().spv, m_errorMessage);
+		allOk = ValidateRenderShaderInterface(GetVertex().spv, GetFragment().spv, sh_errorMessage);
 		if (!allOk)
 		{
-			NEURUS_ERR("[RenderShader] '" << m_name << "': " << m_errorMessage);
-			if (outError != nullptr) *outError = m_errorMessage;
+			NEURUS_ERR("[RenderShader] '" << sh_name << "': " << sh_errorMessage);
+			if (outError != nullptr) *outError = sh_errorMessage;
 		}
 	}
 	if (!allOk)
@@ -105,16 +105,16 @@ bool RenderShader::CompileToSpv(std::string* outError)
 
 bool RenderShader::ParseAndGenerate()
 {
-	m_errorMessage.clear();
+	sh_errorMessage.clear();
 
 	// -- Parse vertex --
 	{
-		auto& vertUnit = m_stages[ShaderType::VERTEX];
+		auto& vertUnit = sh_stages[ShaderType::VERTEX];
 		vertUnit.parsed = ShaderParser::ParseShaderFile(vertUnit.path, ShaderType::VERTEX);
 		if (vertUnit.parsed.IsEmpty())
 		{
-			m_errorMessage = "Failed to parse vertex shader: " + vertUnit.path;
-			NEURUS_ERR("[RenderShader] " << m_errorMessage);
+			sh_errorMessage = "Failed to parse vertex shader: " + vertUnit.path;
+			NEURUS_ERR("[RenderShader] " << sh_errorMessage);
 			return false;
 		}
 		vertUnit.code = ShaderGenerator::Generate(vertUnit.parsed);
@@ -122,18 +122,18 @@ bool RenderShader::ParseAndGenerate()
 
 	// -- Parse fragment --
 	{
-		auto& fragUnit = m_stages[ShaderType::FRAGMENT];
+		auto& fragUnit = sh_stages[ShaderType::FRAGMENT];
 		fragUnit.parsed = ShaderParser::ParseShaderFile(fragUnit.path, ShaderType::FRAGMENT);
 		if (fragUnit.parsed.IsEmpty())
 		{
-			m_errorMessage = "Failed to parse fragment shader: " + fragUnit.path;
-			NEURUS_ERR("[RenderShader] " << m_errorMessage);
+			sh_errorMessage = "Failed to parse fragment shader: " + fragUnit.path;
+			NEURUS_ERR("[RenderShader] " << sh_errorMessage);
 			return false;
 		}
 		fragUnit.code = ShaderGenerator::Generate(fragUnit.parsed);
 	}
 
-	NEURUS_LOG("[RenderShader] '" << m_name << "' parsed and generated");
+	NEURUS_LOG("[RenderShader] '" << sh_name << "' parsed and generated");
 	return true;
 }
 
@@ -141,8 +141,8 @@ bool RenderShader::ParseAndGenerate()
 // Path accessors
 // =========================================================================
 
-const std::string& RenderShader::GetVertPath() const { return m_vertPath; }
-const std::string& RenderShader::GetFragPath() const { return m_fragPath; }
+const std::string& RenderShader::GetVertPath() const { return sh_vertPath; }
+const std::string& RenderShader::GetFragPath() const { return sh_fragPath; }
 
 // =========================================================================
 // Recompile
@@ -156,16 +156,16 @@ bool RenderShader::Recompile(ShaderType type)
 		return false;
 	}
 
-	auto& unit = m_stages[type];
+	auto& unit = sh_stages[type];
 	unit.parsed = ShaderParser::ParseShaderFile(unit.path, type);
 	if (unit.parsed.IsEmpty())
 	{
-		m_errorMessage = "Failed to re-parse: " + unit.path;
-		NEURUS_ERR("[RenderShader] " << m_errorMessage);
+		sh_errorMessage = "Failed to re-parse: " + unit.path;
+		NEURUS_ERR("[RenderShader] " << sh_errorMessage);
 		return false;
 	}
 	unit.code = ShaderGenerator::Generate(unit.parsed);
-	NEURUS_LOG("[RenderShader] Recompiled '" << m_name << "' stage " << TypeToString(type));
+	NEURUS_LOG("[RenderShader] Recompiled '" << sh_name << "' stage " << TypeToString(type));
 	return true;
 }
 

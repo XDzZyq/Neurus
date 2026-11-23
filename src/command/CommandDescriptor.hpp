@@ -44,7 +44,7 @@ public:
 	const std::vector<CommandDescriptor>& All() const;
 
 private:
-	std::vector<CommandDescriptor> m_descriptors;
+	std::vector<CommandDescriptor> cmd_descriptors;
 };
 
 /**

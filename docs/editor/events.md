@@ -423,7 +423,7 @@ struct ShaderUnlinkRestored { int objectUid; };                // undo: drop the
 ```
 
 Version flow: only `ShaderCreateRequested` and `ShaderCompileRequested` bump
-`Shader::m_version` (and only on successful compile). The other events mutate
+`ShaderData::sh_version` (and only on successful compile). The other events mutate
 data without recompiling; the user must press Compile to apply changes to the GPU
 pipeline. Because create/compile rebuild the pipeline, `ShaderController`
 emits `RenderResetEvent` after both, so temporal accumulation resets.
