@@ -72,16 +72,11 @@ private:
 	std::filesystem::path m_path;
 };
 
-TEST(PreferencesTest, DefaultPathPointsIntoDotNeurus)
-{
-	const std::string path = Preferences::DefaultPath();
-	EXPECT_FALSE(path.empty());
-	EXPECT_NE(path.find(".neurus/preferences.json"), std::string::npos);
-}
-
 TEST(PreferencesTest, MissingFileKeepsDefaults)
 {
 	Preferences prefs;
+	EXPECT_EQ(prefs.Load("/nonexistent/path/preferences.json"), LoadResult::Missing);
+	EXPECT_EQ(prefs, Preferences{});
 	prefs.language = "auto";
 	prefs.targetFps = 120;
 
@@ -121,6 +116,7 @@ TEST(PreferencesTest, BackupMovesTheFileAside)
 {
 	TempDir dir;
 	const std::string path = dir.filePath("preferences.json");
+	EXPECT_FALSE(Preferences::Backup(path));
 	{
 		std::ofstream out(path, std::ios::binary);
 		out << "not json";
@@ -140,18 +136,13 @@ TEST(PreferencesTest, BackupMovesTheFileAside)
 	EXPECT_TRUE(std::filesystem::exists(path + ".bak"));
 }
 
-TEST(PreferencesTest, BackupOfAMissingFileFails)
-{
-	EXPECT_FALSE(Preferences::Backup("/nonexistent/path/preferences.json"));
-}
-
 TEST(PreferencesTest, SaveLoadRoundtrip)
 {
 	TempDir dir;
-	const std::string path = dir.filePath("preferences.json");
+	const std::string path = dir.filePath("nested/settings/preferences.json");
 
 	Preferences prefs;
-	prefs.language = "zh_CN";
+	prefs.language = "auto";
 	prefs.targetFps = 30;
 	prefs.scriptPreload = {"numpy", "json"};
 	prefs.scriptSandboxReadRoots = {"D:/project"};
@@ -162,31 +153,6 @@ TEST(PreferencesTest, SaveLoadRoundtrip)
 	prefs.scriptSandboxAllowCtypes = true;
 	prefs.scriptSandboxTimeLimitSeconds = 12;
 	prefs.scriptSandboxMemoryLimitMb = 512;
-	EXPECT_TRUE(prefs.Save(path));
-
-	Preferences loaded;
-	EXPECT_EQ(loaded.Load(path), LoadResult::Ok);
-	EXPECT_EQ(loaded.language, "zh_CN");
-	EXPECT_EQ(loaded.targetFps, 30);
-	EXPECT_EQ(loaded.scriptPreload, prefs.scriptPreload);
-	EXPECT_EQ(loaded.scriptSandboxReadRoots, prefs.scriptSandboxReadRoots);
-	EXPECT_EQ(loaded.scriptSandboxWriteRoots, prefs.scriptSandboxWriteRoots);
-	EXPECT_EQ(loaded.scriptSandboxBlockedModules, prefs.scriptSandboxBlockedModules);
-	EXPECT_EQ(loaded.scriptSandboxAllowNetwork, true);
-	EXPECT_EQ(loaded.scriptSandboxAllowSubprocess, true);
-	EXPECT_EQ(loaded.scriptSandboxAllowCtypes, true);
-	EXPECT_EQ(loaded.scriptSandboxTimeLimitSeconds, 12);
-	EXPECT_EQ(loaded.scriptSandboxMemoryLimitMb, 512);
-}
-
-TEST(PreferencesTest, SavesNestedScriptObject)
-{
-	TempDir dir;
-	const std::string path = dir.filePath("preferences.json");
-
-	Preferences prefs;
-	prefs.scriptPreload = {"numpy"};
-	prefs.scriptSandboxBlockedModules = {"subprocess"};
 	ASSERT_TRUE(prefs.Save(path));
 
 	std::ifstream in(path, std::ios::binary);
@@ -197,6 +163,20 @@ TEST(PreferencesTest, SavesNestedScriptObject)
 	EXPECT_NE(text.find("\"sandbox\""), std::string::npos);
 	EXPECT_NE(text.find("\"blocked_modules\""), std::string::npos);
 	EXPECT_EQ(text.find("\"script_sandbox_blocked_modules\""), std::string::npos);
+
+	Preferences loaded;
+	EXPECT_EQ(loaded.Load(path), LoadResult::Ok);
+	EXPECT_EQ(loaded.language, "auto");
+	EXPECT_EQ(loaded.targetFps, 30);
+	EXPECT_EQ(loaded.scriptPreload, prefs.scriptPreload);
+	EXPECT_EQ(loaded.scriptSandboxReadRoots, prefs.scriptSandboxReadRoots);
+	EXPECT_EQ(loaded.scriptSandboxWriteRoots, prefs.scriptSandboxWriteRoots);
+	EXPECT_EQ(loaded.scriptSandboxBlockedModules, prefs.scriptSandboxBlockedModules);
+	EXPECT_EQ(loaded.scriptSandboxAllowNetwork, true);
+	EXPECT_EQ(loaded.scriptSandboxAllowSubprocess, true);
+	EXPECT_EQ(loaded.scriptSandboxAllowCtypes, true);
+	EXPECT_EQ(loaded.scriptSandboxTimeLimitSeconds, 12);
+	EXPECT_EQ(loaded.scriptSandboxMemoryLimitMb, 512);
 }
 
 TEST(PreferencesTest, ScriptSandboxPolicyUsesHostSettings)
@@ -254,39 +234,6 @@ TEST(PreferencesTest, MissingScriptPreloadKeepsTheDefault)
 	EXPECT_EQ(prefs.targetFps, 30);
 }
 
-TEST(PreferencesTest, RoundtripPreservesAutoLanguage)
-{
-	// "auto" is stored/loaded verbatim by the data type; resolving it to a
-	// concrete code is I18n::setLanguage()'s job, so the round-trip must be
-	// lossless — the stored preference is "follow the system", not the code the
-	// system happened to report at first launch.
-	TempDir dir;
-	const std::string path = dir.filePath("preferences.json");
-
-	Preferences prefs;
-	prefs.language = "auto";
-	prefs.targetFps = 60;
-	ASSERT_TRUE(prefs.Save(path));
-
-	Preferences loaded;
-	EXPECT_EQ(loaded.Load(path), LoadResult::Ok);
-	EXPECT_EQ(loaded.language, "auto");
-	EXPECT_EQ(loaded.targetFps, 60);
-}
-
-TEST(PreferencesTest, SaveCreatesParentDirectory)
-{
-	TempDir dir;
-	// A nested path whose parent directories do not exist yet.
-	const std::string path = dir.filePath("a/b/c/preferences.json");
-
-	Preferences prefs;
-	prefs.language = "en";
-	prefs.targetFps = 60;
-	EXPECT_TRUE(prefs.Save(path));
-	EXPECT_TRUE(std::filesystem::exists(path));
-}
-
 // The shutdown save fires only when the live values differ from the loaded
 // snapshot, so equality must track every persisted field: a lossless round-trip
 // compares equal (no rewrite), a changed field does not (a save happens).
@@ -320,16 +267,6 @@ TEST(PreferencesTest, EqualityFollowsEveryPersistedField)
 
 	loaded.scriptSandboxTimeLimitSeconds = 1;
 	EXPECT_NE(loaded, prefs);
-}
-
-TEST(PreferencesTest, MissingFileComparesEqualToDefaults)
-{
-	// A read-only run leaves the file missing: the untouched defaults compare
-	// equal, so Application's shutdown save stays silent.
-	Preferences loaded;
-	EXPECT_EQ(loaded.Load("/nonexistent/path/preferences.json"),
-	          LoadResult::Missing);
-	EXPECT_EQ(loaded, Preferences{});
 }
 
 } // namespace

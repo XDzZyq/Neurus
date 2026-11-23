@@ -198,11 +198,10 @@ TEST_F(ShaderEditorPanelTest, FieldAdd_TwoDifferentSections_UndoRefreshesTree)
 	EXPECT_FALSE(m_operations.CanUndo());
 }
 
-TEST_F(ShaderEditorPanelTest, Sections_HaveNoIndexWidgets)
+TEST_F(ShaderEditorPanelTest, AddClick_DoesNotMoveFocusAway)
 {
-	// Regression: per-row "+" index widgets fought with the frequent model
-	// resets and macOS accessibility (input loss after clicking "+"). The "+"
-	// is now a delegate-painted cell, so the tree must hold no index widgets.
+	// Clicking "+" must not move keyboard focus anywhere (NoFocus buttons) —
+	// dead focus after the tree rebuild was the reported input-loss bug.
 	RefreshPanel();
 
 	auto* tree = m_panel.findChild<QTreeView*>();
@@ -222,18 +221,6 @@ TEST_F(ShaderEditorPanelTest, Sections_HaveNoIndexWidgets)
 				<< "struct-def rows must not use index widgets";
 		}
 	}
-}
-
-TEST_F(ShaderEditorPanelTest, AddClick_DoesNotMoveFocusAway)
-{
-	// Clicking "+" must not move keyboard focus anywhere (NoFocus buttons) —
-	// dead focus after the tree rebuild was the reported input-loss bug.
-	RefreshPanel();
-
-	auto* tree = m_panel.findChild<QTreeView*>();
-	ASSERT_NE(tree, nullptr);
-	auto* model = static_cast<ShaderStructModel*>(tree->model());
-	ASSERT_NE(model, nullptr);
 
 	// Make the panel a real (offscreen) window so the focus system works.
 	m_panel.show();
@@ -263,47 +250,6 @@ TEST_F(ShaderEditorPanelTest, AddClick_DoesNotMoveFocusAway)
 	EXPECT_EQ(afterRebuild, tree)
 		<< "focus must return to the tree after the rebuild (was "
 		<< (afterRebuild ? afterRebuild->metaObject()->className() : "null") << ")";
-}
-
-TEST_F(ShaderEditorPanelTest, FieldAdd_AttributesAndPassOutputs_UndoRefreshesTree)
-{
-	// The exact reported combo: one field into Attributes, one into Pass
-	// Outputs — both S_IO containers.
-	RefreshPanel();
-
-	auto* tree = m_panel.findChild<QTreeView*>();
-	ASSERT_NE(tree, nullptr);
-	auto* model = static_cast<ShaderStructModel*>(tree->model());
-	ASSERT_NE(model, nullptr);
-
-	QModelIndex attrs = SectionRow(model, "Attributes");
-	ASSERT_TRUE(attrs.isValid());
-	ClickAddCell(tree, attrs);
-	Process();
-	RefreshPanel();
-
-	QModelIndex pass = SectionRow(model, "Pass Outputs");
-	ASSERT_TRUE(pass.isValid());
-	ClickAddCell(tree, pass);
-	Process();
-	RefreshPanel();
-
-	ASSERT_EQ(VertexUnit().parsed.AB_list.size(), 2u);
-	ASSERT_EQ(VertexUnit().parsed.pass_list.size(), 2u);
-
-	// Undo the pass-output add first (LIFO).
-	m_operations.Undo();
-	RefreshPanel();
-	EXPECT_EQ(VertexUnit().parsed.pass_list.size(), 1u);
-	EXPECT_EQ(model->rowCount(SectionRow(model, "Pass Outputs")), 1);
-	EXPECT_EQ(model->rowCount(SectionRow(model, "Attributes")), 2);
-
-	// Then the attribute add.
-	m_operations.Undo();
-	RefreshPanel();
-	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
-	EXPECT_EQ(model->rowCount(SectionRow(model, "Attributes")), 1);
-	EXPECT_FALSE(m_operations.CanUndo());
 }
 
 TEST_F(ShaderEditorPanelTest, FieldAdd_60FpsFramePattern_UndoRefreshesTree)

@@ -20,65 +20,57 @@ TEST(CommandJson, RequestRoundTripsWithIdAndVersion)
 	EXPECT_EQ(parsed["args"]["save"], true);
 
 	CommandError error{};
-	auto decoded = DecodeRequest(text, error);
+	parsed["future"] = true;
+	auto decoded = DecodeRequest(parsed.dump(), error);
 	ASSERT_TRUE(decoded.has_value()) << error.message;
 	EXPECT_EQ(decoded->id, 7u);
 	EXPECT_EQ(decoded->request.name, "session.close");
 	EXPECT_TRUE(decoded->request.args["save"].get<bool>());
 }
 
-TEST(CommandJson, MissingCommandIsInvalidArgument)
+TEST(CommandJson, InvalidRequestReportsTheProtocolError)
 {
-	CommandError error{};
-	EXPECT_FALSE(DecodeRequest(R"({"v":1,"id":1,"args":{}})", error).has_value());
-	EXPECT_EQ(error.code, CommandErrorCode::InvalidArgument);
+	struct InvalidRequest
+	{
+		const char* text;
+		CommandErrorCode expected;
+	};
+	const InvalidRequest cases[] = {
+		{R"({"v":1,"id":1,"args":{}})", CommandErrorCode::InvalidArgument},
+		{R"({"v":99,"id":1,"command":"session.status"})", CommandErrorCode::ProtocolVersionMismatch},
+		{"{not json", CommandErrorCode::FrameInvalid}
+	};
+	for (const auto& request : cases)
+	{
+		SCOPED_TRACE(request.text);
+		CommandError error{};
+		EXPECT_FALSE(DecodeRequest(request.text, error).has_value());
+		EXPECT_EQ(error.code, request.expected);
+	}
 }
 
-TEST(CommandJson, WrongVersionIsAMismatch)
+TEST(CommandJson, ResponsesRoundTripTheirIdsAndPayloads)
 {
-	CommandError error{};
-	EXPECT_FALSE(DecodeRequest(R"({"v":99,"id":1,"command":"session.status"})", error).has_value());
-	EXPECT_EQ(error.code, CommandErrorCode::ProtocolVersionMismatch);
-}
+	const CommandResult results[] = {
+		CommandResult::Success({{"session", "build-1"}}),
+		CommandResult::Failure(CommandErrorCode::DirtyProject, "dirty")
+	};
+	for (const auto& result : results)
+	{
+		SCOPED_TRACE(result.ok ? "success" : "failure");
+		const auto text = EncodeResponse({3, result});
+		const auto wire = nlohmann::json::parse(text);
+		EXPECT_EQ(wire["ok"], result.ok);
+		if (!result.ok)
+			EXPECT_EQ(wire["error"]["code"], "DIRTY_PROJECT");
 
-TEST(CommandJson, MalformedBodyIsFrameInvalid)
-{
-	CommandError error{};
-	EXPECT_FALSE(DecodeRequest("{not json", error).has_value());
-	EXPECT_EQ(error.code, CommandErrorCode::FrameInvalid);
-}
-
-TEST(CommandJson, UnknownFieldsAreIgnored)
-{
-	nlohmann::json json = {{"v", kProtocolVersion}, {"id", 2},
-	                       {"command", "session.status"},
-	                       {"args", nlohmann::json::object()}, {"future", true}};
-	CommandError error{};
-	EXPECT_TRUE(DecodeRequest(json.dump(), error).has_value());
-}
-
-TEST(CommandJson, ErrorCodeStringRoundTrips)
-{
-	auto text = EncodeResponse({3, CommandResult::Failure(CommandErrorCode::DirtyProject, "dirty")});
-	auto parsed = nlohmann::json::parse(text);
-	EXPECT_EQ(parsed["ok"], false);
-	EXPECT_EQ(parsed["error"]["code"], "DIRTY_PROJECT");
-
-	CommandError error{};
-	auto decoded = DecodeResponse(text, error);
-	ASSERT_TRUE(decoded.has_value()) << error.message;
-	EXPECT_EQ(decoded->id, 3u);
-	EXPECT_FALSE(decoded->result.ok);
-	EXPECT_EQ(decoded->result.code, CommandErrorCode::DirtyProject);
-	EXPECT_EQ(decoded->result.message, "dirty");
-}
-
-TEST(CommandJson, SuccessResponseCarriesResultObject)
-{
-	auto text = EncodeResponse({4, CommandResult::Success({{"session", "build-1"}})});
-	CommandError error{};
-	auto decoded = DecodeResponse(text, error);
-	ASSERT_TRUE(decoded.has_value()) << error.message;
-	EXPECT_TRUE(decoded->result.ok);
-	EXPECT_EQ(decoded->result.details["session"], "build-1");
+		CommandError error{};
+		const auto decoded = DecodeResponse(text, error);
+		ASSERT_TRUE(decoded.has_value()) << error.message;
+		EXPECT_EQ(decoded->id, 3u);
+		EXPECT_EQ(decoded->result.ok, result.ok);
+		EXPECT_EQ(decoded->result.code, result.code);
+		EXPECT_EQ(decoded->result.message, result.message);
+		EXPECT_EQ(decoded->result.details, result.details);
+	}
 }

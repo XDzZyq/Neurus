@@ -20,13 +20,6 @@
 
 using namespace neurus;
 
-TEST(ScriptConsolePanelTest, RefreshWithDefaultContextDoesNotCrash)
-{
-	ScriptConsolePanel panel;
-	UIContext ctx;  // every pointer null
-	EXPECT_NO_THROW(panel.Refresh(ctx));
-}
-
 TEST(ScriptConsolePanelTest, RefreshDrainsConsoleBufferIdempotently)
 {
 	ScriptConsolePanel panel;
@@ -35,6 +28,7 @@ TEST(ScriptConsolePanelTest, RefreshDrainsConsoleBufferIdempotently)
 	buffer.Append(ScriptLineKind::Error, "boom\n");
 
 	UIContext ctx;
+	EXPECT_NO_THROW(panel.Refresh(ctx));
 	ctx.scriptConsole = &buffer;
 	EXPECT_NO_THROW(panel.Refresh(ctx));
 	EXPECT_NO_THROW(panel.Refresh(ctx));

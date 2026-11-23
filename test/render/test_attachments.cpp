@@ -241,23 +241,15 @@ TEST_F(RenderCacheTest, GetAllAttachments_ByEnumAndString)
 // Non-copyable, movable
 // ---------------------------------------------------------------------------
 
-TEST_F(RenderCacheTest, NonCopyable)
-{
-	static_assert(!std::is_copy_constructible_v<RenderCache>,
-	              "RenderCache must not be copy-constructible");
-	static_assert(!std::is_copy_assignable_v<RenderCache>,
-	              "RenderCache must not be copy-assignable");
-	SUCCEED();
-}
+static_assert(!std::is_copy_constructible_v<RenderCache>,
+              "RenderCache must not be copy-constructible");
+static_assert(!std::is_copy_assignable_v<RenderCache>,
+              "RenderCache must not be copy-assignable");
 
-TEST_F(RenderCacheTest, Movable)
-{
-	static_assert(std::is_move_constructible_v<RenderCache>,
-	              "RenderCache must be move-constructible");
-	static_assert(std::is_move_assignable_v<RenderCache>,
-	              "RenderCache must be move-assignable");
-	SUCCEED();
-}
+static_assert(std::is_move_constructible_v<RenderCache>,
+              "RenderCache must be move-constructible");
+static_assert(std::is_move_assignable_v<RenderCache>,
+              "RenderCache must be move-assignable");
 
 // ---------------------------------------------------------------------------
 // HasAttachment check

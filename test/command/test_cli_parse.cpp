@@ -52,24 +52,25 @@ TEST(CliParse, ParseErrorsExitWithUsageCode)
 	EXPECT_EQ(RunCli({"neurus", "--help"}), static_cast<int>(CliExit::Ok));
 }
 
-TEST(CliParse, CloseRejectsNameWithAll)
+TEST(CliParse, RejectsInvalidCloseOptions)
 {
 	CloseOptions options;
+	std::string error;
 	options.name = "build-1";
 	options.all = true;
-	std::string error;
 	EXPECT_FALSE(ValidateCloseOptions(options, error));
 	EXPECT_FALSE(error.empty());
-}
 
-TEST(CliParse, CloseRejectsSaveWithForce)
-{
-	CloseOptions options;
+	options = {};
 	options.save = true;
 	options.force = true;
-	std::string error;
+	error.clear();
 	EXPECT_FALSE(ValidateCloseOptions(options, error));
 	EXPECT_NE(error.find("mutually exclusive"), std::string::npos);
+
+	options = {};
+	options.timeoutSeconds = 0;
+	EXPECT_FALSE(ValidateCloseOptions(options, error));
 }
 
 TEST(CliParse, ObjectGetAcceptsPropertyFlag)
@@ -89,29 +90,16 @@ TEST(CliParse, ObjectGetAcceptsPropertyFlag)
 	          static_cast<int>(CliExit::NoSession));
 }
 
-TEST(CliParse, OpenRejectsMissingProjectFile)
+TEST(CliParse, OpenRejectsMissingProjectsAndInvalidSessionNames)
 {
 	OpenOptions options;
 	options.project = "definitely/missing.neurus.json";
 	std::string error;
 	EXPECT_FALSE(ValidateOpenOptions(options, error));
 	EXPECT_FALSE(error.empty());
-}
-
-TEST(CliParse, RejectsInvalidSessionName)
-{
-	OpenOptions options;
+	options = {};
 	options.name = "../escape";
-	std::string error;
 	EXPECT_FALSE(ValidateOpenOptions(options, error));
-}
-
-TEST(CliParse, RejectsNonPositiveTimeout)
-{
-	CloseOptions options;
-	options.timeoutSeconds = 0;
-	std::string error;
-	EXPECT_FALSE(ValidateCloseOptions(options, error));
 }
 
 TEST(CliParse, ExitCodesMap)
@@ -133,9 +121,9 @@ TEST(CliParse, ExitCodesMap)
 	          CliExit::Usage);
 }
 
-TEST(CliParse, ResolveTargetsByName)
+TEST(CliParse, ResolvesTargetsForAvailableSessions)
 {
-	const std::vector<SessionRecord> live{SessionRecord{1, "a", 1, 1, "", "", "", 1, ""},
+	std::vector<SessionRecord> live{SessionRecord{1, "a", 1, 1, "", "", "", 1, ""},
 	                                      SessionRecord{1, "b", 2, 2, "", "", "", 1, ""}};
 	std::vector<SessionRecord> targets;
 	std::vector<std::string> ambiguous;
@@ -144,40 +132,20 @@ TEST(CliParse, ResolveTargetsByName)
 	          TargetResolution::Ok);
 	ASSERT_EQ(targets.size(), 1u);
 	EXPECT_EQ(targets[0].session, "b");
-}
-
-TEST(CliParse, ResolveTargetsAmbiguousWithoutName)
-{
-	const std::vector<SessionRecord> live{SessionRecord{1, "a", 1, 1, "", "", "", 1, ""},
-	                                      SessionRecord{1, "b", 2, 2, "", "", "", 1, ""}};
-	std::vector<SessionRecord> targets;
-	std::vector<std::string> ambiguous;
 
 	EXPECT_EQ(ResolveTargets(std::nullopt, false, live, targets, ambiguous),
 	          TargetResolution::Ambiguous);
 	EXPECT_TRUE(targets.empty());
 	ASSERT_EQ(ambiguous.size(), 2u);
-}
-
-TEST(CliParse, ResolveTargetsSingleWithoutName)
-{
-	const std::vector<SessionRecord> live{SessionRecord{1, "only", 1, 1, "", "", "", 1, ""}};
-	std::vector<SessionRecord> targets;
-	std::vector<std::string> ambiguous;
-
-	EXPECT_EQ(ResolveTargets(std::nullopt, false, live, targets, ambiguous),
-	          TargetResolution::Ok);
+	live.pop_back();
+	EXPECT_EQ(ResolveTargets(std::nullopt, false, live, targets, ambiguous), TargetResolution::Ok);
 	ASSERT_EQ(targets.size(), 1u);
-	EXPECT_EQ(targets[0].session, "only");
-}
+	EXPECT_EQ(targets[0].session, "a");
 
-TEST(CliParse, ResolveTargetsAllAndEmpty)
-{
-	std::vector<SessionRecord> targets;
-	std::vector<std::string> ambiguous;
-
-	EXPECT_EQ(ResolveTargets(std::nullopt, true, {}, targets, ambiguous),
-	          TargetResolution::NoSessions);
-	EXPECT_EQ(ResolveTargets(std::nullopt, false, {}, targets, ambiguous),
-	          TargetResolution::NoSessions);
+	for (bool all : {true, false})
+	{
+		SCOPED_TRACE(all);
+		EXPECT_EQ(ResolveTargets(std::nullopt, all, {}, targets, ambiguous), TargetResolution::NoSessions);
+		EXPECT_TRUE(targets.empty());
+	}
 }

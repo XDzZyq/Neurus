@@ -112,74 +112,33 @@ protected:
 
 // --- Per-value-shape single-op round-trips ---------------------------------
 
-TEST_F(OperationSerializationTest, FloatOp_RoundTrip)
+TEST_F(OperationSerializationTest, PropertyOperationsPreserveTheirConcreteTypeAndBothEndpoints)
 {
-	const int uid = m_light->GetObjectID();
-	std::unique_ptr<Operation> op = std::make_unique<SetLightPowerOp>(uid, 10.0f, 42.0f);
-
-	auto restored = RoundTrip(op);
-	ASSERT_NE(restored, nullptr);
-	EXPECT_NE(dynamic_cast<SetLightPowerOp*>(restored.get()), nullptr);
-	EXPECT_EQ(restored->Label(), op->Label());
-
 	auto ctx = OperationTestAccess::Context(m_eventBus);
-	restored->Apply(ctx);
-	EXPECT_FLOAT_EQ(m_light->light_power, 42.0f); // "after" survived
-
-	restored->Inverse()->Apply(ctx);
-	EXPECT_FLOAT_EQ(m_light->light_power, 10.0f); // "before" + uid survived
-}
-
-TEST_F(OperationSerializationTest, BoolOp_RoundTrip)
-{
-	const int uid = m_light->GetObjectID();
-	std::unique_ptr<Operation> op = std::make_unique<SetLightShadowOp>(uid, true, false);
-
-	auto restored = RoundTrip(op);
-	ASSERT_NE(restored, nullptr);
-	EXPECT_NE(dynamic_cast<SetLightShadowOp*>(restored.get()), nullptr);
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	restored->Apply(ctx);
-	EXPECT_FALSE(m_light->use_shadow);
-	restored->Inverse()->Apply(ctx);
-	EXPECT_TRUE(m_light->use_shadow);
-}
-
-TEST_F(OperationSerializationTest, Vec3Op_RoundTrip)
-{
-	const int uid = m_mesh->GetObjectID();
-	std::unique_ptr<Operation> op = std::make_unique<SetPositionOp>(
-		uid, glm::vec3(0.0f), glm::vec3(1.0f, 2.0f, 3.0f));
-
-	auto restored = RoundTrip(op);
-	ASSERT_NE(restored, nullptr);
-	EXPECT_NE(dynamic_cast<SetPositionOp*>(restored.get()), nullptr);
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	restored->Apply(ctx);
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
-	restored->Inverse()->Apply(ctx);
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(0.0f));
-}
-
-TEST_F(OperationSerializationTest, VisibilityStateOp_RoundTrip)
-{
-	const int uid = m_mesh->GetObjectID();
-	std::unique_ptr<Operation> op = std::make_unique<SetVisibilityOp>(
-		uid, VisibilityState{ true, true }, VisibilityState{ false, false });
-
-	auto restored = RoundTrip(op);
-	ASSERT_NE(restored, nullptr);
-	EXPECT_NE(dynamic_cast<SetVisibilityOp*>(restored.get()), nullptr);
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	restored->Apply(ctx);
-	EXPECT_FALSE(m_mesh->is_viewport);
-	EXPECT_FALSE(m_mesh->is_rendered);
-	restored->Inverse()->Apply(ctx);
-	EXPECT_TRUE(m_mesh->is_viewport);
-	EXPECT_TRUE(m_mesh->is_rendered);
+	auto check = [&](const char* property, auto operation, auto readValue, auto before, auto after)
+	{
+		SCOPED_TRACE(property);
+		using Op = typename decltype(operation)::element_type;
+		std::unique_ptr<Operation> original = std::move(operation);
+		auto restored = RoundTrip(original);
+		ASSERT_NE(dynamic_cast<Op*>(restored.get()), nullptr);
+		EXPECT_EQ(restored->Label(), original->Label());
+		restored->Apply(ctx);
+		EXPECT_EQ(readValue(), after);
+		restored->Inverse()->Apply(ctx);
+		EXPECT_EQ(readValue(), before);
+	};
+	const int light = m_light->GetObjectID();
+	const int mesh = m_mesh->GetObjectID();
+	check("light power", std::make_unique<SetLightPowerOp>(light, 10.0f, 42.0f),
+	      [&] { return m_light->light_power; }, 10.0f, 42.0f);
+	check("light shadow", std::make_unique<SetLightShadowOp>(light, true, false),
+	      [&] { return m_light->use_shadow; }, true, false);
+	check("position", std::make_unique<SetPositionOp>(mesh, glm::vec3(0.0f), glm::vec3(1, 2, 3)),
+	      [&] { return m_mesh->GetPosition(); }, glm::vec3(0.0f), glm::vec3(1, 2, 3));
+	check("visibility", std::make_unique<SetVisibilityOp>(mesh, VisibilityState{true, true}, VisibilityState{false, false}),
+	      [&] { return std::pair{m_mesh->is_viewport, m_mesh->is_rendered}; },
+	      std::pair{true, true}, std::pair{false, false});
 }
 
 TEST_F(OperationSerializationTest, CameraPoseOp_RoundTrip)

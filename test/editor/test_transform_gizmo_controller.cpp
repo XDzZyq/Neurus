@@ -207,6 +207,8 @@ TEST_F(TransformGizmoControllerTest, ConfirmedGestureIsOneOpAndOneDirtyMark)
 
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u) << "one gesture, one undo entry";
 	EXPECT_EQ(m_tally.modified, 1) << "one gesture, one dirty mark";
+	EXPECT_EQ(m_tally.lightStruct, 0);
+	EXPECT_EQ(m_tally.lightDict, 0);
 }
 
 // --- 3/4. Light work is type-correct and tier-correct ----------------------
@@ -221,18 +223,11 @@ TEST_F(TransformGizmoControllerTest, DraggingALightUsesTheCheapSync)
 	EXPECT_EQ(m_tally.lightStruct, 2) << "one cheap SSBO update per drag frame";
 	EXPECT_EQ(m_tally.lightDict, 0) << "a full dict rebuild walks every light: not per frame";
 	EXPECT_EQ(m_tally.modified, 0);
-}
-
-/// @test Confirming a light's move rebuilds the dict, which is what filters variants.
-TEST_F(TransformGizmoControllerTest, ConfirmingALightRebuildsTheDict)
-{
-	Arm(GizmoMode::Move, m_light->GetObjectID());
-	DragTo(kW * 0.70f);
 	Confirm();
-
 	EXPECT_EQ(m_tally.lightDict, 1);
 	EXPECT_EQ(m_tally.modified, 1);
 }
+
 
 // --- 6. Debug line/points are ordinary gizmo targets ------------------------
 
@@ -266,16 +261,6 @@ TEST_F(TransformGizmoControllerTest, DebugLineIsGizmoTargetable)
 	EXPECT_EQ(m_tally.modified, 1) << "one gesture, one dirty mark";
 }
 
-/// @test A mesh asks for no light work in either tier.
-TEST_F(TransformGizmoControllerTest, MeshGestureAsksForNoLightWork)
-{
-	Arm(GizmoMode::Move, m_mesh->GetObjectID());
-	DragTo(kW * 0.70f);
-	Confirm();
-
-	EXPECT_EQ(m_tally.lightStruct, 0);
-	EXPECT_EQ(m_tally.lightDict, 0);
-}
 
 // --- 5. A no-op gesture records nothing ------------------------------------
 

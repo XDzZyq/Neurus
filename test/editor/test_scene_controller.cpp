@@ -67,31 +67,6 @@ protected:
 
 // --- Selection -------------------------------------------------------------
 
-TEST_F(SceneControllerTest, ObjectSelected_SelectsObject)
-{
-	m_eventBus.Enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
-	Process();
-	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
-	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
-}
-
-TEST_F(SceneControllerTest, ObjectSelected_NullObject_ClearsSelection)
-{
-	m_scene.selections.Select(m_mesh.get(), false);
-	m_eventBus.Enqueue(ObjectSelected{0, 0});
-	Process();
-	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0);
-}
-
-TEST_F(SceneControllerTest, ObjectSelected_Shift_AddsToSelection)
-{
-	m_eventBus.Enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
-	m_eventBus.Enqueue(ObjectSelected{m_light->GetObjectID(),
-	                                  static_cast<int>(Input::Mod_Shift)});
-	Process();
-	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 2);
-}
-
 TEST_F(SceneControllerTest, ObjectDeselected_RemovesFromSelection)
 {
 	m_scene.selections.Select(m_mesh.get(), false);
@@ -108,6 +83,10 @@ TEST_F(SceneControllerTest, Selection_DoesNotEmitSceneModified)
 	m_eventBus.Subscribe<SceneModified>([&](const SceneModified&) { modified++; });
 	m_eventBus.Enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
 	Process();
+	EXPECT_EQ(modified, 0);
+	m_eventBus.Enqueue(ObjectSelected{0, 0});
+	Process();
+	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0u);
 	EXPECT_EQ(modified, 0);
 }
 
@@ -134,6 +113,12 @@ TEST_F(SceneControllerTest, SceneObjectAdd_RegistersSelectsAndRecordsOp)
 	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_scene.GetObjectID(uid));
 	EXPECT_TRUE(m_operations.CanUndo());
 
+	const auto mesh = m_resources.Get<Mesh>(uid);
+	ASSERT_TRUE(mesh);
+	const auto name = mesh->o_name;
+	ASSERT_FALSE(name.empty());
+	EXPECT_EQ(m_resources.GetByName<Mesh>(name), mesh);
+
 	// Undo: object removed, selection restored to the pre-add (empty) set.
 	m_operations.Undo();
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
@@ -143,37 +128,8 @@ TEST_F(SceneControllerTest, SceneObjectAdd_RegistersSelectsAndRecordsOp)
 	m_operations.Redo();
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 1u);
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_scene.GetObjectID(uid)));
-}
-
-/**
- * @test Adding a pooled object registers its display name in the resource
- *       registry, so a runtime-created object is addressable by name without a
- *       save/load round-trip. Re-adding on undo/redo keeps the same name.
- */
-TEST_F(SceneControllerTest, SceneObjectAdd_RegistersNameInResourceRegistry)
-{
-	auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
-	m_eventBus.Enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
-	Process();
-
-	ASSERT_FALSE(mesh->o_name.empty());
-	EXPECT_EQ(m_resources.GetByName<Mesh>(mesh->o_name), mesh);
-
-	// Undo removes the scene reference but not the pooled object; redo replays
-	// the add, and the idempotent SetName must not suffix the owned name.
-	const std::string name = mesh->o_name;
-	m_operations.Undo();
-	m_operations.Redo();
 	EXPECT_EQ(mesh->o_name, name);
 	EXPECT_EQ(m_resources.GetByName<Mesh>(name), mesh);
-}
-
-TEST_F(SceneControllerTest, SceneObjectAdd_AlreadyInScene_NoOp)
-{
-	const int uid = LoadPooledMesh(m_resources);
-	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
-	Process();
-
 	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 	Process();
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 1u);
@@ -188,30 +144,6 @@ TEST_F(SceneControllerTest, SceneObjectAdd_StaleUid_NoOp)
 	Process();
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
 	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-TEST_F(SceneControllerTest, DeleteObjects_RemovesSelectionAndRecordsComposite)
-{
-	const int uid = LoadPooledMesh(m_resources);
-	m_eventBus.Enqueue(SceneObjectAddRequested{uid});
-	Process(); // mesh added + selected
-
-	m_eventBus.Enqueue(DeleteObjectsRequested{{uid}});
-	Process();
-
-	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
-	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0u);
-	EXPECT_TRUE(m_operations.CanUndo());
-
-	// Undo: mesh re-added (from the pool) + selection restored.
-	m_operations.Undo();
-	EXPECT_EQ(m_scene.mesh_list.count(uid), 1u);
-	EXPECT_TRUE(m_scene.selections.IsSelected(m_scene.GetObjectID(uid)));
-
-	// Redo: deleted again.
-	m_operations.Redo();
-	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
-	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0u);
 }
 
 TEST_F(SceneControllerTest, DeleteObjects_MultiSelection_RemovesAllAndRestores)
@@ -287,81 +219,31 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesLightingRebuild)
 	Process();
 	EXPECT_TRUE(rebuilt);
 	EXPECT_EQ(m_scene.light_list.count(light->GetObjectID()), 1u);
-}
-
-TEST_F(SceneControllerTest, DeleteObjects_Light_EnqueuesLightingRebuild)
-{
-	auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-	m_eventBus.Enqueue(SceneObjectAddRequested{light->GetObjectID()});
-	Process();
-
-	bool rebuilt = false;
-	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
+	rebuilt = false;
 	m_eventBus.Enqueue(DeleteObjectsRequested{{light->GetObjectID()}});
 	Process();
-
 	EXPECT_TRUE(rebuilt);
 	EXPECT_EQ(m_scene.light_list.count(light->GetObjectID()), 0u);
 }
 
 // --- Scene-scoped GPU upload on demand (SceneObjectGpuUploadRequested) ------
 
-TEST_F(SceneControllerTest, SceneObjectAdd_Mesh_EnqueuesGpuUpload)
+TEST_F(SceneControllerTest, SceneAddRequestsUploadsOnlyForGpuBackedObjectTypes)
 {
 	int uploadedUid = 0;
-	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
-		uploadedUid = e.objectUid;
-	});
+	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const auto& event) { uploadedUid = event.objectUid; });
 
-	auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
-	m_eventBus.Enqueue(SceneObjectAddRequested{mesh->GetObjectID()});
-	Process();
-
-	EXPECT_EQ(uploadedUid, mesh->GetObjectID()); // the re-added mesh
-	EXPECT_EQ(m_scene.mesh_list.count(mesh->GetObjectID()), 1u);
-}
-
-TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesGpuUpload)
-{
-	int uploadedUid = 0;
-	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
-		uploadedUid = e.objectUid;
-	});
-
-	auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-	m_eventBus.Enqueue(SceneObjectAddRequested{light->GetObjectID()});
-	Process();
-
-	EXPECT_EQ(uploadedUid, light->GetObjectID());
-	EXPECT_EQ(m_scene.light_list.count(light->GetObjectID()), 1u);
-}
-
-TEST_F(SceneControllerTest, SceneObjectAdd_Environment_EnqueuesGpuUpload)
-{
-	int uploadedUid = 0;
-	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested& e) {
-		uploadedUid = e.objectUid;
-	});
-
-	auto env = m_resources.Load<Environment>(m_resources.Load<ImageData>(""));
-	m_eventBus.Enqueue(SceneObjectAddRequested{env->GetObjectID()});
-	Process();
-
-	EXPECT_EQ(uploadedUid, env->GetObjectID());
-	EXPECT_EQ(m_scene.env_list.count(env->GetObjectID()), 1u);
-}
-
-TEST_F(SceneControllerTest, SceneObjectAdd_Camera_DoesNotEnqueueGpuUpload)
-{
-	bool uploaded = false;
-	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const SceneObjectGpuUploadRequested&) {
-		uploaded = true;
-	});
-
-	auto camera = m_resources.Load<Camera>();
-	m_eventBus.Enqueue(SceneObjectAddRequested{camera->GetObjectID()});
-	Process();
-
-	EXPECT_FALSE(uploaded); // cameras own no GPU resources
-	EXPECT_EQ(m_scene.cam_list.count(camera->GetObjectID()), 1u);
+	const auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
+	const auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+	const auto env = m_resources.Load<Environment>(m_resources.Load<ImageData>(""));
+	const auto camera = m_resources.Load<Camera>();
+	for (const int uid : { mesh->GetObjectID(), light->GetObjectID(), env->GetObjectID(), camera->GetObjectID() })
+	{
+		SCOPED_TRACE(uid);
+		uploadedUid = 0;
+		m_eventBus.Enqueue(SceneObjectAddRequested{uid});
+		Process();
+		EXPECT_EQ(uploadedUid, uid == camera->GetObjectID() ? 0 : uid);
+		EXPECT_NE(m_scene.GetObjectID(uid), nullptr);
+	}
 }

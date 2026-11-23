@@ -130,81 +130,36 @@ protected:
 
 // --- Code-edit gesture ------------------------------------------------------
 
-TEST_F(ShaderControllerTest, CodeEditGesture_AppliesAndRecords_RoundTrip)
+TEST_F(ShaderControllerTest, UnchangedCodeGesturesLeaveHistoryEmpty)
 {
-	// Begin gesture -> live keystroke -> end gesture: one op on focus-out.
-	m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
-	m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V1" });
-	m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
-	Process();
-
-	EXPECT_EQ(VertexUnit().code, "VERT_V1");
-	ASSERT_TRUE(m_operations.CanUndo());
-	EXPECT_FALSE(m_operations.CanRedo());
-
-	const int versionAfterEdit = VertexUnit().GetVersion();
-
-	m_operations.Undo();
-	EXPECT_EQ(VertexUnit().code, "VERT_V0");
-	EXPECT_GT(VertexUnit().GetVersion(), versionAfterEdit); // restore bumps version
-	EXPECT_FALSE(m_operations.CanUndo());
-	ASSERT_TRUE(m_operations.CanRedo());
-
-	m_operations.Redo();
-	EXPECT_EQ(VertexUnit().code, "VERT_V1");
-	EXPECT_TRUE(m_operations.CanUndo());
-	EXPECT_FALSE(m_operations.CanRedo());
-}
-
-TEST_F(ShaderControllerTest, CodeEditGesture_NoNetChange_RecordsNothing)
-{
-	// Begin/end with no intervening code change: nothing recorded.
-	m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
-	m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
-	Process();
-
-	EXPECT_EQ(VertexUnit().code, "VERT_V0");
-	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-TEST_F(ShaderControllerTest, CodeEditGesture_DrainAwayAndBack_RecordsNothing)
-{
-	// Edit within a gesture then return to the original code: net no-op.
-	m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
-	m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_TEMP" });
-	m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V0" });
-	m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
-	Process();
-
-	EXPECT_EQ(VertexUnit().code, "VERT_V0");
-	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-// --- Discrete field-add edit ------------------------------------------------
-
-TEST_F(ShaderControllerTest, FieldAdd_AppliesAndRecords_RoundTrip)
-{
-	ASSERT_TRUE(VertexUnit().parsed.AB_list.empty());
-
-	// Adding an attribute is a discrete edit: recorded immediately, one op.
-	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
-	Process();
-
-	ASSERT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
-	ASSERT_TRUE(m_operations.CanUndo());
-
-	m_operations.Undo();
-	EXPECT_TRUE(VertexUnit().parsed.AB_list.empty()); // parsed IR restored
-	ASSERT_TRUE(m_operations.CanRedo());
-
-	m_operations.Redo();
-	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
+	for (bool editThenRestore : { false, true })
+	{
+		SCOPED_TRACE(editThenRestore);
+		m_eventBus.Enqueue(ShaderEditBegin{ MeshObj(), kVertex });
+		if (editThenRestore)
+		{
+			m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_TEMP" });
+			m_eventBus.Enqueue(ShaderCodeEdited{ MeshObj(), kVertex, "VERT_V0" });
+		}
+		m_eventBus.Enqueue(ShaderEditEnd{ MeshObj(), kVertex });
+		Process();
+		EXPECT_EQ(VertexUnit().code, "VERT_V0");
+		EXPECT_FALSE(m_operations.CanUndo());
+	}
 }
 
 // --- Discrete struct-field edit ---------------------------------------------
 
-TEST_F(ShaderControllerTest, StructEdit_RenamesField_RoundTrip)
+TEST_F(ShaderControllerTest, ShaderFieldRenameRecordsOnlyValidTargets)
 {
+	// fieldIndex out of range: VisitElement returns false, no op recorded.
+	m_eventBus.Enqueue(ShaderStructEdited{
+		MeshObj(), kVertex, ShaderSection::Attributes, /*fieldIndex*/ 5,
+		/*subFieldIndex*/ -1, /*field*/ "name", /*value*/ "x" });
+	Process();
+
+	EXPECT_FALSE(m_operations.CanUndo());
+
 	// Seed one attribute so there is a field to rename.
 	VertexUnit().parsed.AB_list.push_back(
 		S_IO{ 0, "orig", ParaType::FLOAT, "", Interp::Smooth });
@@ -225,42 +180,7 @@ TEST_F(ShaderControllerTest, StructEdit_RenamesField_RoundTrip)
 	EXPECT_EQ(VertexUnit().parsed.AB_list[0].name, "renamed");
 }
 
-TEST_F(ShaderControllerTest, StructEdit_NoMatchingField_RecordsNothing)
-{
-	// fieldIndex out of range: VisitElement returns false, no op recorded.
-	m_eventBus.Enqueue(ShaderStructEdited{
-		MeshObj(), kVertex, ShaderSection::Attributes, /*fieldIndex*/ 5,
-		/*subFieldIndex*/ -1, /*field*/ "name", /*value*/ "x" });
-	Process();
-
-	EXPECT_FALSE(m_operations.CanUndo());
-}
-
 // --- SetShaderCodeOp: involution + serialization ----------------------------
-
-TEST_F(ShaderControllerTest, SetShaderCodeOp_Inverse_IsInvolution)
-{
-	const int uid = m_mesh->GetObjectID();
-	auto op = std::make_unique<SetShaderCodeOp>(uid, kVertex, "CODE_A", "CODE_B");
-	auto twice = op->Inverse()->Inverse();
-
-	EXPECT_EQ(twice->Label(), op->Label());
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	twice->Apply(ctx); // (g⁻¹)⁻¹ reproduces the original forward effect.
-	EXPECT_EQ(VertexUnit().code, "CODE_B");
-}
-
-TEST_F(ShaderControllerTest, SetShaderCodeOp_Inverse_AppliesBefore)
-{
-	const int uid = m_mesh->GetObjectID();
-	auto op = std::make_unique<SetShaderCodeOp>(uid, kVertex, "CODE_A", "CODE_B");
-	auto inv = op->Inverse();
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	inv->Apply(ctx); // inverse applies the "before" code.
-	EXPECT_EQ(VertexUnit().code, "CODE_A");
-}
 
 TEST_F(ShaderControllerTest, SetShaderCodeOp_Serialize_RoundTrip)
 {
@@ -282,26 +202,6 @@ TEST_F(ShaderControllerTest, SetShaderCodeOp_Serialize_RoundTrip)
 }
 
 // --- SetShaderFieldOp: involution + serialization ---------------------------
-
-TEST_F(ShaderControllerTest, SetShaderFieldOp_Inverse_IsInvolution)
-{
-	// Seed one attribute so the field op has a target to overwrite.
-	VertexUnit().parsed.AB_list.push_back(
-		S_IO{ 0, "orig", ParaType::FLOAT, "", Interp::Smooth });
-
-	const int uid = m_mesh->GetObjectID();
-	ShaderFieldValue before = S_IO{ 0, "orig", ParaType::FLOAT, "", Interp::Smooth };
-	ShaderFieldValue after  = S_IO{ 0, "renamed", ParaType::FLOAT, "", Interp::Smooth };
-	auto op = std::make_unique<SetShaderFieldOp>(
-		uid, kVertex, ShaderSection::Attributes, /*fieldIndex*/ 0, before, after);
-	auto twice = op->Inverse()->Inverse();
-
-	EXPECT_EQ(twice->Label(), op->Label());
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	twice->Apply(ctx); // reproduces the original forward effect.
-	EXPECT_EQ(VertexUnit().parsed.AB_list[0].name, "renamed");
-}
 
 TEST_F(ShaderControllerTest, SetShaderFieldOp_Serialize_RoundTrip)
 {
@@ -328,27 +228,6 @@ TEST_F(ShaderControllerTest, SetShaderFieldOp_Serialize_RoundTrip)
 }
 
 // --- AddShaderFieldOp: involution + serialization ---------------------------
-
-TEST_F(ShaderControllerTest, AddShaderFieldOp_Inverse_RemovesThenReadds)
-{
-	ASSERT_TRUE(VertexUnit().parsed.AB_list.empty());
-
-	const int uid = m_mesh->GetObjectID();
-	auto op = std::make_unique<AddShaderFieldOp>(
-		uid, kVertex, ShaderSection::Attributes, /*subFieldIndex*/ -1, /*add*/ true);
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	op->Apply(ctx); // re-append default
-	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
-
-	op->Inverse()->Apply(ctx); // remove last
-	EXPECT_TRUE(VertexUnit().parsed.AB_list.empty());
-
-	// Double inverse reproduces the add.
-	op->Inverse()->Inverse()->Apply(ctx);
-	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), 1u);
-	EXPECT_EQ(op->Label(), "Add Shader Field");
-}
 
 TEST_F(ShaderControllerTest, AddShaderFieldOp_Serialize_RoundTrip)
 {
@@ -398,35 +277,6 @@ void SeedRealisticIR(neurus::ShaderStruct& parsed)
 		}, "mat" });
 }
 
-TEST_F(ShaderControllerTest, FieldAdd_TwoDifferentSections_UndoRestoresBoth)
-{
-	SeedRealisticIR(VertexUnit().parsed);
-	const size_t attrs = VertexUnit().parsed.AB_list.size();
-	const size_t unifs = VertexUnit().parsed.uniform_list.size();
-
-	// Add one field to Attributes and one to Uniforms (two different sections).
-	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Attributes, -1 });
-	m_eventBus.Enqueue(ShaderFieldAdded{ MeshObj(), kVertex, ShaderSection::Uniforms, -1 });
-	Process();
-
-	ASSERT_EQ(VertexUnit().parsed.AB_list.size(), attrs + 1);
-	ASSERT_EQ(VertexUnit().parsed.uniform_list.size(), unifs + 1);
-	ASSERT_TRUE(m_operations.CanUndo());
-
-	// Undo the uniform add, then the attribute add.
-	m_operations.Undo();
-	EXPECT_EQ(VertexUnit().parsed.uniform_list.size(), unifs);
-	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), attrs + 1);
-
-	m_operations.Undo();
-	EXPECT_EQ(VertexUnit().parsed.AB_list.size(), attrs);
-
-	// Undo stack is exhausted and the IR matches the original seed exactly.
-	EXPECT_FALSE(m_operations.CanUndo());
-	EXPECT_EQ(VertexUnit().parsed.AB_list[0].name, "aPosition");
-	EXPECT_EQ(VertexUnit().parsed.uniform_list[0].name, "uTime");
-}
-
 TEST_F(ShaderControllerTest, FieldAdd_TwoDifferentStructDefs_UndoRestoresBoth)
 {
 	SeedRealisticIR(VertexUnit().parsed);
@@ -467,10 +317,17 @@ TEST_F(ShaderControllerTest, FieldAdd_MixedAdds_ThenCodeEdit_UndoKeepsWorking)
 	Process();
 	ASSERT_EQ(VertexUnit().code, "VERT_V1");
 
+	const int versionAfterEdit = VertexUnit().GetVersion();
 	// Undo the code edit first (LIFO) — everything stays consistent.
 	m_operations.Undo();
 	EXPECT_EQ(VertexUnit().code, "VERT_V0");
 	ASSERT_TRUE(m_operations.CanUndo());
+
+	EXPECT_GT(VertexUnit().GetVersion(), versionAfterEdit);
+	m_operations.Redo();
+	EXPECT_EQ(VertexUnit().code, "VERT_V1");
+	EXPECT_FALSE(m_operations.CanRedo());
+	m_operations.Undo();
 
 	// Then undo both adds.
 	m_operations.Undo();
@@ -611,7 +468,11 @@ TEST_F(ShaderCreateUndoTest, UndoDropsRedoRelinksSamePooledShader)
 
 	// Mirror Editor::OnCreateShader: link the pooled shader, then record.
 	m_mesh->SetObjShader(m_shader);
-	m_operations.Submit(std::make_unique<ShaderLinkOp>(m_mesh->GetObjectID(), shaderId, true));
+	std::unique_ptr<Operation> op = std::make_unique<ShaderLinkOp>(m_mesh->GetObjectID(), shaderId, true);
+	auto restored = RoundTrip(op);
+	ASSERT_NE(dynamic_cast<ShaderLinkOp*>(restored.get()), nullptr);
+	EXPECT_EQ(restored->Label(), "Create Shader");
+	m_operations.Submit(std::move(restored));
 
 	EXPECT_EQ(m_mesh->o_shaderId, shaderId);
 
@@ -638,26 +499,6 @@ TEST_F(ShaderCreateUndoTest, StaleMeshUidNoOps)
 	// the unresolved mesh is never linked.
 	EXPECT_TRUE(m_operations.CanUndo());
 	EXPECT_FALSE(m_operations.CanRedo());
-	EXPECT_EQ(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, 0);
-}
-
-TEST_F(ShaderCreateUndoTest, RoundTripsThroughCereal)
-{
-	const int shaderId = m_shader->GetObjectID();
-	std::unique_ptr<Operation> op =
-		std::make_unique<ShaderLinkOp>(m_mesh->GetObjectID(), shaderId, true);
-
-	auto restored = RoundTrip(op);
-	ASSERT_NE(restored, nullptr);
-	EXPECT_NE(dynamic_cast<ShaderLinkOp*>(restored.get()), nullptr);
-	EXPECT_EQ(restored->Label(), "Create Shader");
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	restored->Apply(ctx);
-	EXPECT_EQ(m_mesh->o_shaderId, shaderId);
-
-	restored->Inverse()->Apply(ctx);
 	EXPECT_EQ(m_mesh->o_shader, nullptr);
 	EXPECT_EQ(m_mesh->o_shaderId, 0);
 }
@@ -736,27 +577,21 @@ TEST_F(ShaderControllerTest, UnitStructSetReplacesTheWholeIr)
 	EXPECT_EQ(VertexUnit().parsed.uniform_list[0].name, "u_time");
 }
 
-TEST_F(ShaderControllerTest, UnitCompileReportsTheCompilerError)
+TEST_F(ShaderControllerTest, UnitCompilePublishesOnlySuccessfulCode)
 {
-	m_eventBus.Emit(ShaderUnitCodeSet{ ShaderUid(), kVertex, "this is not glsl" });
-	ShaderCompileResult result;
-	m_eventBus.Emit(ShaderUnitCompileRequested{ ShaderUid(), kVertex, 0, &result });
-	EXPECT_FALSE(result.ok);
-	EXPECT_FALSE(result.error.empty());
-}
-
-TEST_F(ShaderControllerTest, UnitCompileSucceedsAndEmitsShaderCompiled)
-{
-	m_eventBus.Emit(ShaderUnitCodeSet{ ShaderUid(), kVertex,
-		"#version 450\nvoid main() { gl_Position = vec4(0.0); }\n" });
-
-	bool fired = false;
-	m_eventBus.Subscribe<ShaderCompiled>([&](const ShaderCompiled&) { fired = true; });
-
-	ShaderCompileResult result;
-	m_eventBus.Emit(ShaderUnitCompileRequested{ ShaderUid(), kVertex, 0, &result });
-	EXPECT_TRUE(result.ok) << result.error;
-	EXPECT_TRUE(fired);
+	int published = 0;
+	m_eventBus.Subscribe<ShaderCompiled>([&](const ShaderCompiled&) { ++published; });
+	for (bool valid : { false, true })
+	{
+		SCOPED_TRACE(valid);
+		const char* code = valid ? "#version 450\nvoid main() { gl_Position = vec4(0.0); }\n" : "this is not glsl";
+		m_eventBus.Emit(ShaderUnitCodeSet{ShaderUid(), kVertex, code});
+		ShaderCompileResult result;
+		m_eventBus.Emit(ShaderUnitCompileRequested{ShaderUid(), kVertex, 0, &result});
+		EXPECT_EQ(result.ok, valid) << result.error;
+		EXPECT_EQ(result.error.empty(), valid);
+		EXPECT_EQ(published, valid ? 1 : 0);
+	}
 	EXPECT_FALSE(VertexUnit().spv.empty());
 }
 

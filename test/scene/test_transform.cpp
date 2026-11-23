@@ -20,56 +20,17 @@ using namespace neurus;
 // Transform base class
 // -----------------------------------------------------------------------
 
-/**
- * @brief Test that Transform base provides virtual GetTransformPtr().
- */
-TEST(Transform, GetTransformPtr_ReturnsPolymorphicPointer)
-{
-	Transform3D t3d;
-	Transform* base = &t3d;
+static_assert(!std::is_copy_constructible_v<Transform>);
+static_assert(!std::is_copy_assignable_v<Transform>);
+static_assert(!std::is_copy_constructible_v<Transform3D>);
+static_assert(!std::is_copy_assignable_v<Transform3D>);
 
-	// Call through base pointer - must not return nullptr
-	Transform* ptr = base->GetTransformPtr();
-	EXPECT_NE(ptr, nullptr);
-	// Dynamic cast to verify it's actually a Transform3D
-	EXPECT_NE(dynamic_cast<Transform3D*>(ptr), nullptr);
-}
-
-/**
- * @brief Test that Transform is non-copyable (RAII semantics).
- */
-TEST(Transform, NonCopyable)
-{
-	EXPECT_FALSE(std::is_copy_constructible_v<Transform>);
-	EXPECT_FALSE(std::is_copy_assignable_v<Transform>);
-	EXPECT_FALSE(std::is_copy_constructible_v<Transform3D>);
-	EXPECT_FALSE(std::is_copy_assignable_v<Transform3D>);
-}
-
-// -----------------------------------------------------------------------
-// Transform3D - Identity
-// -----------------------------------------------------------------------
-
-/**
- * @brief Default-constructed Transform3D produces identity matrix.
- */
-TEST(Transform3D, IdentityMatrix)
-{
-	Transform3D t;
-	glm::mat4 model = t.GetModelMatrix();
-	EXPECT_EQ(model, glm::mat4(1.0f));
-}
-
-// -----------------------------------------------------------------------
-// Transform3D - Translation
-// -----------------------------------------------------------------------
-
-/**
- * @brief Translation-only transform produces correct translation matrix.
- */
 TEST(Transform3D, TranslateOnly)
 {
 	Transform3D t;
+	Transform& base = t;
+	EXPECT_EQ(base.GetTransformPtr(), &t);
+	EXPECT_EQ(t.GetModelMatrix(), glm::mat4(1.0f));
 	t.SetPosition(glm::vec3(5.0f, 10.0f, -3.0f));
 
 	glm::mat4 model = t.GetModelMatrix();
@@ -82,128 +43,27 @@ TEST(Transform3D, TranslateOnly)
 
 	// Rotation/scale part (upper-left 3x3) should remain identity
 	EXPECT_EQ(glm::mat3(model), glm::mat3(1.0f));
+	t.SetPosition(glm::vec3(-1.0f, 2.0f, 3.0f));
+	EXPECT_EQ(glm::vec3(t.GetModelMatrix()[3]), glm::vec3(-1.0f, 2.0f, 3.0f));
 }
 
-// -----------------------------------------------------------------------
-// Transform3D - Rotation (90 degrees around X axis)
-// -----------------------------------------------------------------------
-
-/**
- * @brief Rotation of 90 degrees around X (pitch) produces correct rotation matrix.
- *
- * Rx(90°) rotates the basis vectors in Z-up right-hand coordinates:
- * - X axis (1,0,0): unchanged
- * - Y axis (0,1,0): rotates to +Z (0,0,1)
- * - Z axis (0,0,1): rotates to -Y (0,-1,0)
- *
- * Matrix:
- * [1,  0,  0, 0]
- * [0,  0, -1, 0]
- * [0,  1,  0, 0]
- * [0,  0,  0, 1]
- */
-TEST(Transform3D, Rotate90X)
+TEST(Transform3D, QuarterTurnsRotateTheBasisVectors)
 {
-	Transform3D t;
-	t.SetRotation(glm::vec3(90.0f, 0.0f, 0.0f));
-
-	glm::mat4 model = t.GetModelMatrix();
-
-	// Column 0 (X axis) - unchanged
-	EXPECT_FLOAT_EQ(model[0][0], 1.0f);
-	EXPECT_NEAR(model[0][1], 0.0f, 1e-6f);
-	EXPECT_NEAR(model[0][2], 0.0f, 1e-6f);
-
-	// Column 1 (Y axis) - rotates to Z: (0, 0, 1)
-	EXPECT_NEAR(model[1][0], 0.0f, 1e-6f);
-	EXPECT_NEAR(model[1][1], 0.0f, 1e-6f);
-	EXPECT_FLOAT_EQ(model[1][2], 1.0f);
-
-	// Column 2 (Z axis) - rotates to -Y: (0, -1, 0)
-	EXPECT_NEAR(model[2][0], 0.0f, 1e-6f);
-	EXPECT_FLOAT_EQ(model[2][1], -1.0f);
-	EXPECT_NEAR(model[2][2], 0.0f, 1e-6f);
-}
-
-// -----------------------------------------------------------------------
-// Transform3D - Rotation (90 degrees around Y axis)
-// -----------------------------------------------------------------------
-
-/**
- * @brief Rotation of 90 degrees around Y (roll, the forward axis) produces
- *        correct rotation matrix.
- *
- * Ry(90°) in Z-up right-hand coordinates:
- * - X axis (1,0,0): rotates to -Z (0,0,-1)
- * - Y axis (0,1,0): unchanged (rotation axis)
- * - Z axis (0,0,1): rotates to +X (1,0,0)
- *
- * Matrix:
- * [ 0, 0, 1, 0]
- * [ 0, 1, 0, 0]
- * [-1, 0, 0, 0]
- * [ 0, 0, 0, 1]
- */
-TEST(Transform3D, Rotate90Y)
-{
-	Transform3D t;
-	t.SetRotation(glm::vec3(0.0f, 90.0f, 0.0f));
-
-	glm::mat4 model = t.GetModelMatrix();
-
-	// Column 0 (X axis) - rotates to -Z: (0, 0, -1)
-	EXPECT_NEAR(model[0][0], 0.0f, 1e-6f);
-	EXPECT_NEAR(model[0][1], 0.0f, 1e-6f);
-	EXPECT_FLOAT_EQ(model[0][2], -1.0f);
-
-	// Column 1 (Y axis) - unchanged
-	EXPECT_NEAR(model[1][0], 0.0f, 1e-6f);
-	EXPECT_FLOAT_EQ(model[1][1], 1.0f);
-	EXPECT_NEAR(model[1][2], 0.0f, 1e-6f);
-
-	// Column 2 (Z axis) - rotates to X: (1, 0, 0)
-	EXPECT_FLOAT_EQ(model[2][0], 1.0f);
-	EXPECT_NEAR(model[2][1], 0.0f, 1e-6f);
-	EXPECT_NEAR(model[2][2], 0.0f, 1e-6f);
-}
-
-// -----------------------------------------------------------------------
-// Transform3D - Scale (uniform)
-// -----------------------------------------------------------------------
-
-/**
- * @brief Uniform scale produces correctly scaled diagonal matrix.
- */
-TEST(Transform3D, ScaleUniform)
-{
-	Transform3D t;
-	t.SetScale(glm::vec3(2.0f));
-
-	glm::mat4 model = t.GetModelMatrix();
-
-	EXPECT_FLOAT_EQ(model[0][0], 2.0f);
-	EXPECT_FLOAT_EQ(model[1][1], 2.0f);
-	EXPECT_FLOAT_EQ(model[2][2], 2.0f);
-	EXPECT_FLOAT_EQ(model[3][3], 1.0f); // w-component always 1
-}
-
-// -----------------------------------------------------------------------
-// Transform3D - Scale (non-uniform)
-// -----------------------------------------------------------------------
-
-/**
- * @brief Non-uniform scale factors are correctly reflected in the matrix.
- */
-TEST(Transform3D, ScaleNonUniform)
-{
-	Transform3D t;
-	t.SetScale(glm::vec3(2.0f, 0.5f, 3.0f));
-
-	glm::mat4 model = t.GetModelMatrix();
-
-	EXPECT_FLOAT_EQ(model[0][0], 2.0f);
-	EXPECT_FLOAT_EQ(model[1][1], 0.5f);
-	EXPECT_FLOAT_EQ(model[2][2], 3.0f);
+	struct Rotation { glm::vec3 degrees; glm::mat3 expected; };
+	const Rotation cases[] = {
+		{{90, 0, 0}, {{1, 0, 0}, {0, 0, 1}, {0, -1, 0}}},
+		{{0, 90, 0}, {{0, 0, -1}, {0, 1, 0}, {1, 0, 0}}}
+	};
+	for (const auto& rotation : cases)
+	{
+		SCOPED_TRACE(::testing::Message() << "pitch " << rotation.degrees.x << ", roll " << rotation.degrees.y);
+		Transform3D transform;
+		transform.SetRotation(rotation.degrees);
+		const auto matrix = transform.GetModelMatrix();
+		for (int column = 0; column < 3; ++column)
+			for (int row = 0; row < 3; ++row)
+				EXPECT_NEAR(matrix[column][row], rotation.expected[column][row], 1e-6f);
+	}
 }
 
 // -----------------------------------------------------------------------
@@ -230,47 +90,6 @@ TEST(Transform3D, NormalMatrix)
 			EXPECT_FLOAT_EQ(normalMat[col][row], expected[col][row]);
 		}
 	}
-}
-
-// -----------------------------------------------------------------------
-// Transform3D - Eager matrix update
-// -----------------------------------------------------------------------
-
-/**
- * @brief Repeated calls return the same matrix when no changes occur.
- */
-TEST(Transform3D, Eager_ReturnsSameMatrixOnRepeatedAccess)
-{
-	Transform3D t;
-	t.SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
-
-	glm::mat4 first = t.GetModelMatrix();
-	glm::mat4 second = t.GetModelMatrix();
-
-	// Without modifying anything, same matrix returned
-	EXPECT_EQ(first, second);
-}
-
-/**
- * @brief Modifying a transform component updates the model matrix immediately.
- */
-TEST(Transform3D, Eager_UpdatesOnPositionChange)
-{
-	Transform3D t;
-	t.SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
-
-	glm::mat4 first = t.GetModelMatrix();
-
-	t.SetPosition(glm::vec3(4.0f, 5.0f, 6.0f));
-	glm::mat4 third = t.GetModelMatrix();
-
-	// Different position → different matrix
-	EXPECT_NE(first, third);
-
-	// Verify new translation
-	EXPECT_FLOAT_EQ(third[3][0], 4.0f);
-	EXPECT_FLOAT_EQ(third[3][1], 5.0f);
-	EXPECT_FLOAT_EQ(third[3][2], 6.0f);
 }
 
 // -----------------------------------------------------------------------
@@ -337,7 +156,7 @@ TEST(Transform3D, FullTRS)
 	Transform3D t;
 	t.SetPosition(glm::vec3(10.0f, 20.0f, 30.0f));
 	t.SetRotation(glm::vec3(0.0f, 0.0f, 90.0f)); // pitch=0, roll=0, yaw=90°
-	t.SetScale(glm::vec3(2.0f));
+	t.SetScale(glm::vec3(2.0f, 0.5f, 3.0f));
 
 	glm::mat4 model = t.GetModelMatrix();
 
@@ -346,15 +165,15 @@ TEST(Transform3D, FullTRS)
 	EXPECT_FLOAT_EQ(model[0][1], 2.0f);
 	EXPECT_NEAR(model[0][2], 0.0f, 1e-6f);
 
-	// Column 1 (Y axis) - rotates to -X: (-2, 0, 0)
-	EXPECT_FLOAT_EQ(model[1][0], -2.0f);
+	// Column 1 (Y axis) - rotates to -X: (-0.5, 0, 0)
+	EXPECT_FLOAT_EQ(model[1][0], -0.5f);
 	EXPECT_NEAR(model[1][1], 0.0f, 1e-6f);
 	EXPECT_NEAR(model[1][2], 0.0f, 1e-6f);
 
-	// Column 2 (Z axis) - unchanged: (0, 0, 2)
+	// Column 2 (Z axis) - unchanged: (0, 0, 3)
 	EXPECT_NEAR(model[2][0], 0.0f, 1e-6f);
 	EXPECT_NEAR(model[2][1], 0.0f, 1e-6f);
-	EXPECT_FLOAT_EQ(model[2][2], 2.0f);
+	EXPECT_FLOAT_EQ(model[2][2], 3.0f);
 
 	// Translation: [10, 20, 30]
 	EXPECT_FLOAT_EQ(model[3][0], 10.0f);
@@ -407,85 +226,23 @@ static glm::vec3 EulerFromDirection(const glm::vec3& dir, float rollDeg = 0.0f)
  * 4. Comparing GetDirection() against the ground-truth direction.
  */
 
-/**
- * @brief Identity: no rotation → forward is (0, 1, 0).
- */
-TEST(Transform3D, GetDirection_Identity)
+TEST(Transform3D, ForwardDirectionMatchesTarget)
 {
-	Transform3D t;
-	t.SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-
-	const glm::vec3 target(0.0f, 1.0f, 0.0f);
-	const glm::vec3 gtDir = glm::normalize(target - t.GetPosition());
-
-	const glm::vec3 euler = EulerFromDirection(gtDir);
-	t.SetRotation(euler);
-
-	const glm::vec3 dir = t.GetDirection();
-	EXPECT_NEAR(dir.x, gtDir.x, 1e-5f);
-	EXPECT_NEAR(dir.y, gtDir.y, 1e-5f);
-	EXPECT_NEAR(dir.z, gtDir.z, 1e-5f);
-}
-
-/**
- * @brief Yaw -90°: target to the right (+X) from origin → forward ≈ (1, 0, 0).
- */
-TEST(Transform3D, GetDirection_YawNeg90)
-{
-	Transform3D t;
-	t.SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-
-	const glm::vec3 target(1.0f, 0.0f, 0.0f);
-	const glm::vec3 gtDir = glm::normalize(target - t.GetPosition());
-
-	const glm::vec3 euler = EulerFromDirection(gtDir);
-	t.SetRotation(euler);
-
-	const glm::vec3 dir = t.GetDirection();
-	EXPECT_NEAR(dir.x, gtDir.x, 1e-5f);
-	EXPECT_NEAR(dir.y, gtDir.y, 1e-5f);
-	EXPECT_NEAR(dir.z, gtDir.z, 1e-5f);
-}
-
-/**
- * @brief Yaw +45°: target at (-1, 1, 0) → forward points left-forward in XY plane.
- */
-TEST(Transform3D, GetDirection_Yaw45Left)
-{
-	Transform3D t;
-	t.SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-
-	const glm::vec3 target(-1.0f, 1.0f, 0.0f);
-	const glm::vec3 gtDir = glm::normalize(target - t.GetPosition());
-
-	const glm::vec3 euler = EulerFromDirection(gtDir);
-	t.SetRotation(euler);
-
-	const glm::vec3 dir = t.GetDirection();
-	EXPECT_NEAR(dir.x, gtDir.x, 1e-5f);
-	EXPECT_NEAR(dir.y, gtDir.y, 1e-5f);
-	EXPECT_NEAR(dir.z, gtDir.z, 1e-5f);
-}
-
-/**
- * @brief Pitch +30°: target elevated above forward → forward has positive Z component.
- */
-TEST(Transform3D, GetDirection_PitchUp30)
-{
-	Transform3D t;
-	t.SetPosition(glm::vec3(0.0f, 0.0f, 0.0f));
-
-	// 30° up: forward=(0, cos30, sin30) ≈ (0, 0.866, 0.5)
-	const glm::vec3 target(0.0f, std::cos(glm::radians(30.0f)), std::sin(glm::radians(30.0f)));
-	const glm::vec3 gtDir = glm::normalize(target - t.GetPosition());
-
-	const glm::vec3 euler = EulerFromDirection(gtDir);
-	t.SetRotation(euler);
-
-	const glm::vec3 dir = t.GetDirection();
-	EXPECT_NEAR(dir.x, gtDir.x, 1e-5f);
-	EXPECT_NEAR(dir.y, gtDir.y, 1e-5f);
-	EXPECT_NEAR(dir.z, gtDir.z, 1e-5f);
+	const glm::vec3 targets[] = {
+		{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {-1.0f, 1.0f, 0.0f},
+		{0.0f, std::cos(glm::radians(30.0f)), std::sin(glm::radians(30.0f))}
+	};
+	for (const auto target : targets)
+	{
+		SCOPED_TRACE(::testing::Message() << target.x << ", " << target.y << ", " << target.z);
+		const auto expected = glm::normalize(target);
+		Transform3D transform;
+		transform.SetRotation(EulerFromDirection(expected));
+		const auto direction = transform.GetDirection();
+		EXPECT_NEAR(direction.x, expected.x, 1e-5f);
+		EXPECT_NEAR(direction.y, expected.y, 1e-5f);
+		EXPECT_NEAR(direction.z, expected.z, 1e-5f);
+	}
 }
 
 /**

@@ -1,6 +1,5 @@
 // Must define platform before including Vulkan headers
 
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -25,19 +24,6 @@ using namespace neurus;
  *
  * These tests verify binding accumulation without requiring a Vulkan device.
  */
-TEST(DescriptorSetLayoutBuilderTest, AddSingleBinding_BuildsCorrectly)
-{
-	auto bindings = BuildLayout()
-	                    .AddBinding(0, vk::DescriptorType::eUniformBuffer,
-	                                vk::ShaderStageFlagBits::eVertex)
-	                    .Build();
-
-	ASSERT_EQ(bindings.size(), 1u);
-	EXPECT_EQ(bindings[0].binding, 0u);
-	EXPECT_EQ(bindings[0].descriptorType, vk::DescriptorType::eUniformBuffer);
-	EXPECT_EQ(bindings[0].descriptorCount, 1u);
-	EXPECT_EQ(bindings[0].stageFlags, vk::ShaderStageFlagBits::eVertex);
-}
 
 TEST(DescriptorSetLayoutBuilderTest, AddMultipleBindings_BuildsAll)
 {
@@ -45,7 +31,7 @@ TEST(DescriptorSetLayoutBuilderTest, AddMultipleBindings_BuildsAll)
 	                    .AddBinding(0, vk::DescriptorType::eUniformBuffer,
 	                                vk::ShaderStageFlagBits::eVertex)
 	                    .AddBinding(1, vk::DescriptorType::eCombinedImageSampler,
-	                                vk::ShaderStageFlagBits::eFragment)
+	                                vk::ShaderStageFlagBits::eFragment, 4)
 	                    .AddBinding(2, vk::DescriptorType::eStorageBuffer,
 	                                vk::ShaderStageFlagBits::eCompute)
 	                    .Build();
@@ -55,6 +41,10 @@ TEST(DescriptorSetLayoutBuilderTest, AddMultipleBindings_BuildsAll)
 	EXPECT_EQ(bindings[0].binding, 0u);
 	EXPECT_EQ(bindings[0].descriptorType, vk::DescriptorType::eUniformBuffer);
 
+	EXPECT_EQ(bindings[0].descriptorCount, 1u);
+	EXPECT_EQ(bindings[0].stageFlags, vk::ShaderStageFlagBits::eVertex);
+
+	EXPECT_EQ(bindings[1].descriptorCount, 4u);
 	EXPECT_EQ(bindings[1].binding, 1u);
 	EXPECT_EQ(bindings[1].descriptorType, vk::DescriptorType::eCombinedImageSampler);
 
@@ -62,31 +52,10 @@ TEST(DescriptorSetLayoutBuilderTest, AddMultipleBindings_BuildsAll)
 	EXPECT_EQ(bindings[2].descriptorType, vk::DescriptorType::eStorageBuffer);
 }
 
-TEST(DescriptorSetLayoutBuilderTest, AddBindingWithCount_StoresDescriptorCount)
-{
-	auto bindings = BuildLayout()
-	                    .AddBinding(0, vk::DescriptorType::eCombinedImageSampler,
-	                                vk::ShaderStageFlagBits::eFragment, 4)
-	                    .Build();
-
-	ASSERT_EQ(bindings.size(), 1u);
-	EXPECT_EQ(bindings[0].descriptorCount, 4u);
-}
-
 TEST(DescriptorSetLayoutBuilderTest, EmptyBuilder_ReturnsEmptyVector)
 {
 	auto bindings = BuildLayout().Build();
 	EXPECT_TRUE(bindings.empty());
-}
-
-TEST(DescriptorSetLayoutBuilderTest, ChainedAddBinding_ReturnsBuilderReference)
-{
-	auto& ref = BuildLayout().AddBinding(0, vk::DescriptorType::eUniformBuffer,
-	                                     vk::ShaderStageFlagBits::eVertex);
-	// Compile-time check: AddBinding returns a reference to the builder
-	// for fluent chaining.
-	EXPECT_TRUE(true);
-	(void)ref;
 }
 
 // ---------------------------------------------------------------------------

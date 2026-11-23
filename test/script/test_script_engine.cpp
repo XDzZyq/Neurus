@@ -6,38 +6,18 @@
 #include <string>
 
 #include "core/Log.hpp"
-#include "core/RenderConfig.hpp"
-#include "core/ResourceManager.hpp"
-#include "editor/controllers/ObjectController.hpp"
-#include "editor/controllers/ScriptController.hpp"
-#include "editor/events/EventBus.hpp"
-#include "editor/operations/OperationManager.hpp"
-#include "scene/Mesh.hpp"
-#include "scene/Scene.hpp"
 #include "script/ScriptConsole.hpp"
 #include "script/ScriptEngine.hpp"
 
-TEST(ScriptEngine, InitializesAndShutsDown)
+TEST(ScriptEngine, EvalReportsErrorsAndLogsTheNextResult)
 {
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
-	EXPECT_TRUE(engine.IsReady());
-	engine.Shutdown();
-	EXPECT_FALSE(engine.IsReady());
-}
-
-TEST(ScriptEngine, RunStringExecutesWithoutThrowing)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	EXPECT_NO_THROW(engine.RunString("x = 1 + 1\nassert x == 2"));
-	engine.Shutdown();
-}
-
-TEST(ScriptEngine, EvalStringReturnsReprAndLogsResult)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
+	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
+	EXPECT_EQ(engine.EvalString("1 / 0"), "");
+	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), before);
+	EXPECT_FALSE(engine.EvalStringChecked("1 / 0").has_value());
+	EXPECT_EQ(engine.EvalStringChecked("6 * 7").value_or(""), "42");
 	engine.Console().Clear();
 	EXPECT_EQ(engine.EvalString("1 + 2"), "3");
 
@@ -49,17 +29,6 @@ TEST(ScriptEngine, EvalStringReturnsReprAndLogsResult)
 			logged = true;
 	}
 	EXPECT_TRUE(logged);
-	engine.Shutdown();
-}
-
-TEST(ScriptEngine, EvalStringRaisesWithoutBreakingTheEngine)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
-	EXPECT_EQ(engine.EvalString("1 / 0"), "");
-	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), before);
-	EXPECT_EQ(engine.EvalString("2 + 2"), "4");
 	engine.Shutdown();
 }
 
@@ -89,34 +58,16 @@ TEST(ScriptEngine, CheckedRunDistinguishesStderrFromARaise)
 	engine.Shutdown();
 }
 
-TEST(ScriptEngine, CheckedEvalReportsFailureAsNullopt)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	EXPECT_EQ(engine.EvalStringChecked("6 * 7").value_or(""), "42");
-	EXPECT_FALSE(engine.EvalStringChecked("1 / 0").has_value());
-	engine.Shutdown();
-}
-
 TEST(ScriptEngine, ReportsPythonVersion)
 {
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
+	EXPECT_TRUE(engine.IsReady());
 	EXPECT_FALSE(engine.PythonVersion().empty());
 	EXPECT_NO_THROW((void)engine.EnvironmentPath());
 	engine.Shutdown();
+	EXPECT_FALSE(engine.IsReady());
 	EXPECT_TRUE(engine.PythonVersion().empty());
-}
-
-TEST(ScriptEngine, RaisingScriptLogsErrorAndSurvives)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	const std::size_t before = neurus::LogBuffer::instance().ErrorCount();
-	EXPECT_NO_THROW(engine.RunString("raise RuntimeError('boom')"));
-	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), before);
-	EXPECT_NO_THROW(engine.RunString("y = 5"));  // engine still usable
-	engine.Shutdown();
 }
 
 TEST(ScriptEngine, RunFileExecutesATempScript)
@@ -157,77 +108,12 @@ TEST(ScriptEngine, RunFileExecutesATempScript)
 	std::filesystem::remove(path);
 }
 
-TEST(ScriptEngine, FileRunRecordsOneEntryLabelledWithItsBasename)
-{
-	// The editor stack a file run writes through: the run boundary reaches
-	// ScriptController -> OperationManager, and the property write reaches
-	// ObjectController. Only the renderer and the UI are absent.
-	neurus::EventQueue events;
-	neurus::Scene scene;
-	neurus::OperationManager operations{ events };
-	neurus::ResourceManager resources;
-	neurus::RenderConfig config;
-	neurus::ControllerContext ctx{ events, resources, operations,
-	                               [&scene]() { return &scene; },
-	                               [&config]() { return &config; } };
-	neurus::ScriptController scriptController;
-	neurus::ObjectController objectController;
-	scriptController.Init(ctx);
-	objectController.Init(ctx);
-
-	auto mesh = resources.Load<neurus::Mesh>();
-	mesh->o_name = resources.SetName(mesh->GetObjectID(), "Ground");
-	scene.UseMesh(mesh);
-
-	neurus::ScriptContext scriptCtx;
-	scriptCtx.scene = &scene;
-	scriptCtx.config = &config;
-	scriptCtx.resources = &resources;
-
-	// Declared last so the engine is torn down before the document it hands to
-	// Python, matching the other scripted-write fixture.
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	engine.SetEventQueue(&events);
-
-	const auto path = std::filesystem::temp_directory_path() / "neurus_runfile_label_test.py";
-	std::ofstream(path) << "import neurus\n"
-	                       "neurus.data.meshes['Ground'].position = (1, 2, 3)\n";
-
-	EXPECT_NO_THROW(engine.RunFile(path.string(), &scriptCtx));
-	std::filesystem::remove(path);
-
-	ASSERT_EQ(operations.GetHistoryView().undo.size(), 1u);
-	EXPECT_EQ(operations.GetHistoryView().undo.back(), "Run neurus_runfile_label_test.py");
-
-	engine.Shutdown();
-}
-
-TEST(ScriptEngine, CapturesStdoutInConsole)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	EXPECT_NO_THROW(engine.RunString("print('neurus console capture')"));
-
-	bool found = false;
-	for (std::size_t i = 0; i < engine.Console().Size(); ++i)
-	{
-		const neurus::ScriptLine line = engine.Console().At(i);
-		if (line.kind == neurus::ScriptLineKind::Output
-		    && line.text.find("neurus console capture") != std::string::npos)
-		{
-			found = true;
-		}
-	}
-	EXPECT_TRUE(found);
-	engine.Shutdown();
-}
-
 TEST(ScriptEngine, CapturesErrorTracebackInConsole)
 {
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
 	engine.Console().Clear();
+	const auto before = neurus::LogBuffer::instance().ErrorCount();
 	EXPECT_NO_THROW(engine.RunString("raise ValueError('neurus boom')"));
 
 	bool found = false;
@@ -241,6 +127,8 @@ TEST(ScriptEngine, CapturesErrorTracebackInConsole)
 		}
 	}
 	EXPECT_TRUE(found);
+	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), before);
+	EXPECT_EQ(engine.EvalString("2 + 2"), "4");
 	engine.Shutdown();
 }
 

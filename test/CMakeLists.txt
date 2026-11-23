@@ -12,11 +12,6 @@ set(NEURUS_TEST_SOURCES
 	render/test_buffers.cpp
 	render/test_buffer.cpp
 	render/test_vulkan_context.cpp
-	asset/test_meshdata.cpp
-	asset/test_imagedata.cpp
-	asset/test_pass_ports.cpp
-	asset/test_graph_component.cpp
-	render/test_shader_parser.cpp
 	render/test_syncobjects.cpp
 	render/test_image.cpp
 	render/test_descriptor.cpp
@@ -49,7 +44,6 @@ set(NEURUS_TEST_SOURCES
 	render/test_render_graph.cpp
 	render/test_render_graph_pipeline.cpp
 	render/test_pass_factory.cpp
-	render/test_shader_ports.cpp
 	render/test_graph_uploader.cpp
 	render/test_pass_bindings.cpp
 	render/test_shader_reflection.cpp
@@ -67,7 +61,6 @@ set(NEURUS_TEST_SOURCES
 	render/test_timeline_semaphore.cpp
 	editor/test_camera_controller.cpp
 	editor/test_debug_draw_builder.cpp
-	editor/test_editor_scene_lifecycle.cpp
 	editor/test_editor_command_adapter.cpp
 	editor/test_editor_overlay_redraw.cpp
 	editor/test_editor_viewport.cpp
@@ -79,10 +72,7 @@ set(NEURUS_TEST_SOURCES
 	editor/test_scene_controller.cpp
 	editor/test_operation_manager.cpp
 	editor/test_operation_serialization.cpp
-	editor/test_render_config_controller.cpp
-	editor/test_editor_render_graph.cpp
 	editor/test_script_controller.cpp
-	editor/test_shader_controller.cpp
 	editor/test_shader_create.cpp
 	editor/test_shader_editor_panel.cpp
 	editor/test_ui_events_script.cpp
@@ -103,14 +93,7 @@ set(NEURUS_TEST_SOURCES
 	asset/test_project_roundtrip.cpp
 	asset/test_default_project.cpp
 	asset/test_serialize_optional.cpp
-	asset/test_shader_data.cpp
-	asset/test_shader_data_source.cpp
 	asset/test_ui_component.cpp
-	asset/test_render_graph_data.cpp
-	asset/test_render_graph_document.cpp
-	core/test_graph.cpp
-	core/test_graph_clone.cpp
-	core/test_graph_morphism.cpp
 	core/test_selections.cpp
 	core/test_log_buffer.cpp
 	core/test_uid.cpp
@@ -130,7 +113,6 @@ set(NEURUS_TEST_SOURCES
 	app/test_preferences.cpp
 	platform/test_platform_paths.cpp
 	platform/test_platform_system.cpp
-	command/test_dependencies.cpp
 	command/test_command_types.cpp
 	command/test_command_json.cpp
 	command/test_dispatcher.cpp
@@ -168,7 +150,6 @@ add_executable(neurus_test ${NEURUS_TEST_SOURCES})
 # Scripting engine unit tests. The script layer is always built.
 target_sources(neurus_test PRIVATE
 	script/test_script_engine.cpp
-	script/test_script_context.cpp
 	script/test_script_bindings.cpp
 	script/test_script_writes.cpp
 	script/test_script_shader.cpp
@@ -376,6 +357,7 @@ if(WIN32 AND TARGET shaderc_shared)
 endif()
 gtest_discover_tests(neurus_cpu_test
 	TEST_PREFIX "Neurus.CPU."
+	NO_PRETTY_TYPES NO_PRETTY_VALUES
 	DISCOVERY_TIMEOUT 30
 	WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
@@ -388,6 +370,11 @@ add_test(NAME Neurus.LayerBoundaryChecker
 
 gtest_discover_tests(neurus_test
 	TEST_PREFIX "Neurus."
+	NO_PRETTY_TYPES NO_PRETTY_VALUES
 	DISCOVERY_TIMEOUT 30
 	WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
+
+set_tests_properties(Neurus.LayerBoundaries PROPERTIES LABELS "Layer::Architecture;Severity::High")
+set_tests_properties(Neurus.LayerBoundaryChecker PROPERTIES LABELS "Layer::Architecture;Severity::Medium")
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${CMAKE_SOURCE_DIR}/cmake/NeurusTestLabels.cmake")

@@ -58,32 +58,6 @@ protected:
 		return m_objects.back().get();
 	}
 
-	void TearDown() override
-	{
-		m_queue->Process();
-	}
-
-	std::vector<std::unique_ptr<ObjectID>> m_objects;
-	EventQueue m_eventBus;
-	class EventQueue* m_queue = &m_eventBus;
-};
-
-/**
- * @brief Expanded fixture covering concrete editor event payloads.
- */
-class TypedEventQueueExpandedTest : public ::testing::Test
-{
-protected:
-	ObjectID* NewObject()
-	{
-		m_objects.push_back(std::make_unique<ObjectID>());
-		return m_objects.back().get();
-	}
-
-	void TearDown() override
-	{
-		m_queue->Process();
-	}
 
 	std::vector<std::unique_ptr<ObjectID>> m_objects;
 	EventQueue m_eventBus;
@@ -93,29 +67,6 @@ protected:
 // ---------------------------------------------------------------------------
 // Core Subscribe/Emit/Process lifecycle
 // ---------------------------------------------------------------------------
-
-TEST_F(TypedEventQueueTest, SubscribeAndEmit_HandlerReceivesEvent)
-{
-	ObjectID* obj = NewObject();
-	bool received = false;
-	int receivedId = 0;
-
-	m_queue->Subscribe<ObjectSelected>(
-		[&](const ObjectSelected& e) {
-			received = true;
-			receivedId = e.objectUid;
-		});
-
-	m_queue->Enqueue(ObjectSelected{obj->GetObjectID(), 0});
-
-	// Not received yet - deferred dispatch
-	EXPECT_FALSE(received);
-
-	m_queue->Process();
-
-	EXPECT_TRUE(received);
-	EXPECT_EQ(receivedId, obj->GetObjectID());
-}
 
 TEST_F(TypedEventQueueTest, Emit_MultipleHandlersAllReceive)
 {
@@ -131,14 +82,11 @@ TEST_F(TypedEventQueueTest, Emit_MultipleHandlersAllReceive)
 	EXPECT_EQ(callCount, 3);
 }
 
-TEST_F(TypedEventQueueTest, Process_EmptyQueueIsNoOp)
+TEST_F(TypedEventQueueTest, ProcessingWithoutConsumersIsHarmless)
 {
 	EXPECT_NO_THROW({ m_queue->Process(); });
 	EXPECT_NO_THROW({ m_queue->Process(0); });
-}
 
-TEST_F(TypedEventQueueTest, Emit_WithoutSubscribersIsNoOp)
-{
 	EXPECT_NO_THROW({
 		m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
 		m_queue->Process();
@@ -152,34 +100,22 @@ TEST_F(TypedEventQueueTest, Emit_WithoutSubscribersIsNoOp)
 TEST_F(TypedEventQueueTest, DifferentEventTypes_IndependentChannels)
 {
 	int objectSelectedCount = 0;
-	int objectDeselectedCount = 0;
+	int deselectedUid = 0;
 
 	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) { objectSelectedCount++; });
-	m_queue->Subscribe<ObjectDeselected>([&](const ObjectDeselected&) { objectDeselectedCount++; });
+	m_queue->Subscribe<ObjectDeselected>([&](const ObjectDeselected& e) { deselectedUid = e.objectUid; });
 
 	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
 	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
 	m_queue->Process();
 
 	EXPECT_EQ(objectSelectedCount, 2);
-	EXPECT_EQ(objectDeselectedCount, 0);
-}
-
-TEST_F(TypedEventQueueTest, MultipleEventTypes_EmitAndProcess)
-{
-	int selectCount = 0;
-	int deselectCount = 0;
-
-	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) { selectCount++; });
-	m_queue->Subscribe<ObjectDeselected>([&](const ObjectDeselected&) { deselectCount++; });
-
-	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
-	m_queue->Enqueue(ObjectDeselected{NewObject()->GetObjectID()});
-
+	EXPECT_EQ(deselectedUid, 0);
+	const int uid = NewObject()->GetObjectID();
+	m_queue->Enqueue(ObjectDeselected{uid});
 	m_queue->Process();
-
-	EXPECT_EQ(selectCount, 1);
-	EXPECT_EQ(deselectCount, 1);
+	EXPECT_EQ(deselectedUid, uid);
+	EXPECT_EQ(objectSelectedCount, 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,62 +145,23 @@ TEST_F(TypedEventQueueTest, MultipleEmits_ProcessedInOrder)
 }
 
 // ---------------------------------------------------------------------------
-// Re-entrant emit (handler emits within Process)
-// ---------------------------------------------------------------------------
-
-TEST_F(TypedEventQueueTest, ReentrantEmit_HandlerEmitsDuringProcess)
-{
-	ObjectID* obj = NewObject();
-	int outerCount = 0;
-	int innerCount = 0;
-
-	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) {
-		outerCount++;
-		m_queue->Enqueue(ObjectDeselected{obj->GetObjectID()});
-	});
-
-	m_queue->Subscribe<ObjectDeselected>([&](const ObjectDeselected&) {
-		innerCount++;
-	});
-
-	m_queue->Enqueue(ObjectSelected{obj->GetObjectID(), 0});
-	m_queue->Process();
-
-	EXPECT_EQ(outerCount, 1);
-	EXPECT_EQ(innerCount, 1);
-}
-
-TEST_F(TypedEventQueueTest, ReentrantEmit_SameTypeCreatesChain)
-{
-	int callCount = 0;
-
-	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) {
-		callCount++;
-		if (callCount < 5)
-		{
-			m_queue->Enqueue(ObjectSelected{0, 0});
-		}
-	});
-
-	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
-	m_queue->Process();
-
-	EXPECT_EQ(callCount, 5);
-}
-
-// ---------------------------------------------------------------------------
 // maxEvents guard
 // ---------------------------------------------------------------------------
 
-TEST_F(TypedEventQueueTest, Process_MaxEventsCapPreventsInfiniteLoop)
+TEST_F(TypedEventQueueTest, ProcessingAReentrantQueueHonorsTheDrainLimit)
 {
+	int handled = 0;
 	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) {
-		m_queue->Enqueue(ObjectSelected{0, 0});
+		++handled;
+		if (handled < 20)
+			m_queue->Enqueue(ObjectSelected{0, 0});
 	});
-
 	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
-
-	EXPECT_NO_THROW({ m_queue->Process(10); });
+	m_queue->Process(10);
+	EXPECT_EQ(handled, 10);
+	m_queue->Process();
+	EXPECT_EQ(handled, 20);
+	EXPECT_EQ(m_queue->PendingCount(), 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -297,12 +194,8 @@ TEST(EventBusTyped, RunawayEmitChainIsStoppedAndRecovers)
 // Synchronous dispatch contract
 // ---------------------------------------------------------------------------
 
-TEST(EventBusTyped, ControllerFacingInterfaceCannotDefer)
-{
-	static_assert(!DeferredEnqueue<IEventQueue>,
-	              "IEventQueue must not expose Enqueue: controllers emit synchronously");
-	SUCCEED();
-}
+static_assert(!DeferredEnqueue<IEventQueue>,
+              "IEventQueue must not expose Enqueue: controllers emit synchronously");
 
 TEST(EventBusTyped, HandlerEmittedEventsCompleteBeforeTheHandlerReturns)
 {
@@ -342,87 +235,7 @@ TEST(EventBusTyped, UiBoundaryEnqueueStaysDeferred)
 // EventQueue is NOT copyable (compile-time check)
 // ---------------------------------------------------------------------------
 
-TEST_F(TypedEventQueueTest, EventQueueIsNotCopyable)
-{
-	static_assert(!std::is_copy_constructible_v<class EventQueue>,
-	              "EventQueue must not be copyable");
-	static_assert(!std::is_copy_assignable_v<class EventQueue>,
-	              "EventQueue must not be copy-assignable");
-	SUCCEED();
-}
-
-// ===========================================================================
-// Expanded tests (UID payloads)
-// ===========================================================================
-
-TEST_F(TypedEventQueueExpandedTest, ObjectSelected_MultipleEmits)
-{
-	ObjectID* o1 = NewObject();
-	ObjectID* o2 = NewObject();
-	ObjectID* o3 = NewObject();
-	std::vector<int> receivedIds;
-
-	m_queue->Subscribe<ObjectSelected>(
-		[&](const ObjectSelected& e) { receivedIds.push_back(e.objectUid); });
-
-	m_queue->Enqueue(ObjectSelected{o1->GetObjectID(), 0});
-	m_queue->Enqueue(ObjectSelected{o2->GetObjectID(), 0});
-	m_queue->Enqueue(ObjectSelected{o3->GetObjectID(), 0});
-
-	m_queue->Process();
-
-	ASSERT_EQ(receivedIds.size(), 3);
-	EXPECT_EQ(receivedIds[0], o1->GetObjectID());
-	EXPECT_EQ(receivedIds[1], o2->GetObjectID());
-	EXPECT_EQ(receivedIds[2], o3->GetObjectID());
-}
-
-TEST_F(TypedEventQueueExpandedTest, ObjectDeselected_NoCrossContamination)
-{
-	int selectCount = 0;
-	int deselectCount = 0;
-
-	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) { selectCount++; });
-	m_queue->Subscribe<ObjectDeselected>([&](const ObjectDeselected&) { deselectCount++; });
-
-	m_queue->Enqueue(ObjectDeselected{NewObject()->GetObjectID()});
-	m_queue->Process();
-
-	EXPECT_EQ(selectCount, 0);
-	EXPECT_EQ(deselectCount, 1);
-}
-
-TEST_F(TypedEventQueueExpandedTest, ObjectDeselected_EmitReceivesCorrectId)
-{
-	ObjectID* obj = NewObject();
-	int receivedId = 0;
-
-	m_queue->Subscribe<ObjectDeselected>(
-		[&](const ObjectDeselected& e) { receivedId = e.objectUid; });
-
-	m_queue->Enqueue(ObjectDeselected{obj->GetObjectID()});
-	m_queue->Process();
-
-	EXPECT_EQ(receivedId, obj->GetObjectID());
-}
-
-// ---------------------------------------------------------------------------
-// All remaining event types: independent channels
-// ---------------------------------------------------------------------------
-
-TEST_F(TypedEventQueueExpandedTest, AllNewSignals_IndependentChannels)
-{
-	int selectCount = 0;
-	int deselectCount = 0;
-
-	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) { selectCount++; });
-	m_queue->Subscribe<ObjectDeselected>([&](const ObjectDeselected&) { deselectCount++; });
-
-	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
-	m_queue->Enqueue(ObjectDeselected{NewObject()->GetObjectID()});
-
-	m_queue->Process();
-
-	EXPECT_EQ(selectCount, 1);
-	EXPECT_EQ(deselectCount, 1);
-}
+static_assert(!std::is_copy_constructible_v<class EventQueue>,
+              "EventQueue must not be copyable");
+static_assert(!std::is_copy_assignable_v<class EventQueue>,
+              "EventQueue must not be copy-assignable");

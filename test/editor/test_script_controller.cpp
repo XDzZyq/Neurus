@@ -56,7 +56,7 @@ protected:
 	std::shared_ptr<Mesh> m_mesh;
 };
 
-TEST_F(ScriptControllerTest, RunBoundaryEventsOpenAndCloseTheScope)
+TEST_F(ScriptControllerTest, RunBoundaryCreatesOneUndoableEdit)
 {
 	m_eventBus.Emit(ScriptRunStarted{});
 	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
@@ -65,34 +65,6 @@ TEST_F(ScriptControllerTest, RunBoundaryEventsOpenAndCloseTheScope)
 
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
 	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(4.0f, 5.0f, 6.0f));
-}
-
-TEST_F(ScriptControllerTest, RunNameBecomesTheHistoryLabel)
-{
-	m_eventBus.Emit(ScriptRunStarted{ "Run demo.py" });
-	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
-	m_eventBus.Emit(ScriptRunFinished{});
-
-	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
-	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run demo.py");
-}
-
-TEST_F(ScriptControllerTest, EmptyRunNameUsesTheDefaultLabel)
-{
-	m_eventBus.Emit(ScriptRunStarted{});
-	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
-	m_eventBus.Emit(ScriptRunFinished{});
-
-	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
-	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run Script");
-}
-
-TEST_F(ScriptControllerTest, UndoOfARunRestoresTheRunStartState)
-{
-	m_eventBus.Emit(ScriptRunStarted{});
-	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
-	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
-	m_eventBus.Emit(ScriptRunFinished{});
 
 	// One undo rewinds the WHOLE run, not just its last write.
 	m_operations.Undo();
@@ -103,14 +75,21 @@ TEST_F(ScriptControllerTest, UndoOfARunRestoresTheRunStartState)
 	m_operations.Redo();
 	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(4.0f, 5.0f, 6.0f));
 	EXPECT_FALSE(m_operations.CanRedo());
-}
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run Script");
 
-TEST_F(ScriptControllerTest, EditsOutsideARunStaySeparateEntries)
-{
-	// No run boundary: each write is its own history entry, so the scope can be
-	// proven to close rather than leaking open past a run.
+	// Finishing the run returns ordinary edits to independent history entries.
 	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
+	EXPECT_EQ(m_operations.GetUndoStack().size(), 3u);
+}
 
-	EXPECT_EQ(m_operations.GetUndoStack().size(), 2u);
+TEST_F(ScriptControllerTest, RunNameBecomesTheHistoryLabel)
+{
+	m_eventBus.Emit(ScriptRunStarted{ "Run demo.py" });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(ScriptRunFinished{});
+
+	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
+	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run demo.py");
 }

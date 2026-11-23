@@ -80,6 +80,10 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	stage.spv[1] = 99;
 	stage.parsed.uniform_list[0].name = "edited";
 	shader->BumpVersion();
+	const auto edited = MakeUploadShaderRequest(*shader);
+	EXPECT_EQ(edited.shaderId, upload.shaderId);
+	EXPECT_GT(edited.version, upload.version);
+	EXPECT_EQ(edited.stages.at(ShaderType::COMPUTE).spv, (std::vector<uint32_t>{0x07230203, 99, 22}));
 	shader.reset();
 
 	EXPECT_EQ(upload.shaderId, uid);
@@ -96,20 +100,6 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	EXPECT_EQ(output->type, "image2D");
 	EXPECT_EQ(upload.ports.Find("edited", PortDirection::Output), nullptr);
 	EXPECT_TRUE(uploaded.parsed.Main.empty());
-}
-
-TEST(RenderRequestValues, LaterShaderUploadKeepsUidAndAdvancesVersion)
-{
-	UploadTestShader shader;
-	shader.GetStage(ShaderType::COMPUTE).spv = {1, 2, 3};
-	const auto original = MakeUploadShaderRequest(shader);
-	shader.GetStage(ShaderType::COMPUTE).spv = {4, 5, 6};
-	shader.BumpVersion();
-	const auto edited = MakeUploadShaderRequest(shader);
-	EXPECT_EQ(original.shaderId, edited.shaderId);
-	EXPECT_LT(original.version, edited.version);
-	EXPECT_EQ(original.stages.at(ShaderType::COMPUTE).spv, (std::vector<uint32_t>{1, 2, 3}));
-	EXPECT_EQ(edited.stages.at(ShaderType::COMPUTE).spv, (std::vector<uint32_t>{4, 5, 6}));
 }
 
 } // namespace neurus

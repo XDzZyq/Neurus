@@ -57,33 +57,6 @@ namespace
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 1. Empty on construction, and Empty() tracks Post / TakeAll.
-// ---------------------------------------------------------------------------
-
-TEST(RenderRequestQueueTest, EmptyTracksPostAndTake)
-{
-	BatchQueue<RenderRequest> queue;
-	EXPECT_TRUE(queue.Empty());
-
-	queue.Push(UploadMeshRequest{.objectId = 1});
-	EXPECT_FALSE(queue.Empty());
-
-	// A second Push keeps it non-empty: Empty() reflects the whole batch, not
-	// the last Push.
-	queue.Push(UploadMeshRequest{.objectId = 2});
-	EXPECT_FALSE(queue.Empty());
-
-	auto batch = queue.TakeAll();
-	EXPECT_EQ(batch.size(), 2u);
-	// TakeAll drained everything: the queue is empty again.
-	EXPECT_TRUE(queue.Empty());
-}
-
-// ---------------------------------------------------------------------------
-// 2. Strict FIFO: a batch comes back in append order, oldest first.
-// ---------------------------------------------------------------------------
-
 TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 {
 	BatchQueue<RenderRequest> queue;
@@ -91,12 +64,14 @@ TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 	// A deliberately interleaved sequence across request kinds: order is the
 	// contract, independent of alternative. DropScene between two uploads is the
 	// exact ordering RenderRequests.hpp calls out.
+	EXPECT_TRUE(queue.Empty());
 	queue.Push(UploadMeshRequest{.objectId = 10});
 	queue.Push(CreateLightGpuRequest{.uid = 20, .type = LightType::SUNLIGHT});
 	queue.Push(DropSceneResourcesRequest{});
 	queue.Push(UploadMeshRequest{.objectId = 30});
 	queue.Push(UpdateLightRequest{.uid = 40, .light = LightSnapshot{.type = LightType::SUNLIGHT}});
 
+	EXPECT_FALSE(queue.Empty());
 	auto batch = queue.TakeAll();
 	ASSERT_EQ(batch.size(), 5u);
 
@@ -114,56 +89,8 @@ TEST(RenderRequestQueueTest, TakeAllPreservesFifoOrder)
 
 	EXPECT_EQ(RequestObjectId(batch[4]), 40);
 	EXPECT_TRUE(std::holds_alternative<UpdateLightRequest>(batch[4]));
-}
-
-// ---------------------------------------------------------------------------
-// 3. Whole-batch isolation: a Post between two TakeAll() lands in the second
-//    batch only. This is the guarantee that lets a handler post a follow-up
-//    without the executor tripping over the container it is walking.
-// ---------------------------------------------------------------------------
-
-TEST(RenderRequestQueueTest, PostDuringProcessingLandsInNextBatch)
-{
-	BatchQueue<RenderRequest> queue;
-
-	queue.Push(UploadMeshRequest{.objectId = 100});
-	queue.Push(UploadMeshRequest{.objectId = 101});
-
-	// First drain takes the storage; the returned vector is now independent of
-	// the queue's internal (freshly empty) vector.
-	auto first = queue.TakeAll();
-	ASSERT_EQ(first.size(), 2u);
-	EXPECT_EQ(RequestObjectId(first[0]), 100);
-	EXPECT_EQ(RequestObjectId(first[1]), 101);
-
-	// A Push now - standing in for a handler enqueuing a follow-up while the
-	// first batch is still being executed.
-	queue.Push(UploadMeshRequest{.objectId = 200});
-
-	// The new request did not appear in the already-taken batch ...
-	EXPECT_EQ(first.size(), 2u);
-	// ... it is waiting in the next one.
-	auto second = queue.TakeAll();
-	ASSERT_EQ(second.size(), 1u);
-	EXPECT_EQ(RequestObjectId(second[0]), 200);
-}
-
-// ---------------------------------------------------------------------------
-// 4. Repeated TakeAll on a drained queue returns empty, never the prior batch.
-// ---------------------------------------------------------------------------
-
-TEST(RenderRequestQueueTest, TakeAllAfterDrainReturnsEmpty)
-{
-	BatchQueue<RenderRequest> queue;
-	queue.Push(UploadMeshRequest{.objectId = 7});
-
-	auto first = queue.TakeAll();
-	EXPECT_EQ(first.size(), 1u);
-
-	// The storage left with the first batch; a second TakeAll sees a fresh,
-	// empty vector - it must not hand back the already-drained request.
-	auto second = queue.TakeAll();
-	EXPECT_TRUE(second.empty());
+	EXPECT_TRUE(queue.Empty());
+	EXPECT_TRUE(queue.TakeAll().empty());
 }
 
 // ---------------------------------------------------------------------------

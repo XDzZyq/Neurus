@@ -144,9 +144,14 @@ TEST(SessionCommand, StatusReportsDirtyAndPid)
 	EXPECT_EQ(result.details["objects"], 3);
 	EXPECT_EQ(result.details["app_version"], "0.1.0");
 	EXPECT_EQ(result.details["uptime_s"], 42);
+	const auto info = executor.Execute({kProjectInfo, {}});
+	ASSERT_TRUE(info.ok);
+	EXPECT_EQ(info.details["path"], "C:/work/p.neurus.json");
+	EXPECT_EQ(info.details["dirty"], true);
+	EXPECT_EQ(info.details["objects"], 3);
 }
 
-TEST(SessionCommand, CloseRefusesDirtyWithoutSaveOrForce)
+TEST(SessionCommand, DirtySessionStaysOpenUntilSaved)
 {
 	FakeSessionState state;
 	state.dirty = true;
@@ -158,36 +163,20 @@ TEST(SessionCommand, CloseRefusesDirtyWithoutSaveOrForce)
 	EXPECT_EQ(result.code, CommandErrorCode::DirtyProject);
 	EXPECT_FALSE(closeCalled);
 	EXPECT_FALSE(executor.CloseRequested());
-}
 
-TEST(SessionCommand, CloseSavePersistsThenRequestsClose)
-{
-	FakeSessionState state;
-	state.dirty = true;
-	bool closeCalled = false;
-	SessionCommandExecutor executor(state, [&] { closeCalled = true; });
-
-	const auto result = executor.Execute({kSessionClose, {{"save", true}}});
-	EXPECT_TRUE(result.ok);
+	state.saveFails = true;
+	const auto failedSave = executor.Execute({kSessionClose, {{"save", true}}});
+	EXPECT_FALSE(failedSave.ok);
+	EXPECT_EQ(failedSave.code, CommandErrorCode::SaveFailed);
+	EXPECT_EQ(failedSave.message, "disk full");
+	EXPECT_FALSE(closeCalled);
+	EXPECT_FALSE(executor.CloseRequested());
+	state.saveFails = false;
+	const auto saved = executor.Execute({kSessionClose, {{"save", true}}});
+	EXPECT_TRUE(saved.ok);
 	EXPECT_TRUE(state.saved);
 	EXPECT_TRUE(closeCalled);
 	EXPECT_TRUE(executor.CloseRequested());
-}
-
-TEST(SessionCommand, SaveFailureIsReportedAndDoesNotClose)
-{
-	FakeSessionState state;
-	state.dirty = true;
-	state.saveFails = true;
-	bool closeCalled = false;
-	SessionCommandExecutor executor(state, [&] { closeCalled = true; });
-
-	const auto result = executor.Execute({kSessionClose, {{"save", true}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::SaveFailed);
-	EXPECT_EQ(result.message, "disk full");
-	EXPECT_FALSE(closeCalled);
-	EXPECT_FALSE(executor.CloseRequested());
 }
 
 TEST(SessionCommand, ForceClosesDirtyWithoutSaving)
@@ -202,31 +191,25 @@ TEST(SessionCommand, ForceClosesDirtyWithoutSaving)
 	EXPECT_TRUE(executor.CloseRequested());
 }
 
-TEST(SessionCommand, NonBooleanArgumentIsRejected)
+TEST(SessionCommand, InvalidArgumentTypesLeaveSessionStateUnchanged)
 {
 	FakeSessionState state;
 	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({kSessionClose, {{"force", "yes"}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-	EXPECT_FALSE(executor.CloseRequested());
+	const CommandRequest requests[] = {
+		{kSessionClose, {{"force", "yes"}}}, {kProjectOpen, {{"path", 12}}}
+	};
+	for (const auto& request : requests)
+	{
+		SCOPED_TRACE(request.name);
+		const auto result = executor.Execute(request);
+		EXPECT_FALSE(result.ok);
+		EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+		EXPECT_FALSE(executor.CloseRequested());
+		EXPECT_TRUE(state.openPath.empty());
+	}
 }
 
-TEST(SessionCommand, ProjectInfoReportsTheDocument)
-{
-	FakeSessionState state;
-	state.dirty = true;
-	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({kProjectInfo, {}});
-	ASSERT_TRUE(result.ok);
-	EXPECT_EQ(result.details["path"], "C:/work/p.neurus.json");
-	EXPECT_EQ(result.details["dirty"], true);
-	EXPECT_EQ(result.details["objects"], 3);
-}
-
-TEST(SessionCommand, ProjectNewRefusesDirtyWithoutForce)
+TEST(SessionCommand, ReplacingADirtyProjectRequiresForce)
 {
 	FakeSessionState state;
 	state.dirty = true;
@@ -236,46 +219,16 @@ TEST(SessionCommand, ProjectNewRefusesDirtyWithoutForce)
 	EXPECT_FALSE(result.ok);
 	EXPECT_EQ(result.code, CommandErrorCode::DirtyProject);
 	EXPECT_FALSE(state.newCalled);
-}
 
-TEST(SessionCommand, ProjectNewForceReplacesTheDocument)
-{
-	FakeSessionState state;
-	state.dirty = true;
-	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({kProjectNew, {{"force", true}}});
-	ASSERT_TRUE(result.ok);
+	const auto forced = executor.Execute({kProjectNew, {{"force", true}}});
+	ASSERT_TRUE(forced.ok);
 	EXPECT_TRUE(state.newCalled);
-	EXPECT_EQ(result.details["path"], "");
-	EXPECT_EQ(result.details["dirty"], false);
-	EXPECT_EQ(result.details["objects"], 7);
+	EXPECT_EQ(forced.details["path"], "");
+	EXPECT_EQ(forced.details["dirty"], false);
+	EXPECT_EQ(forced.details["objects"], 7);
 }
 
-TEST(SessionCommand, ProjectOpenRequiresAStringPath)
-{
-	FakeSessionState state;
-	SessionCommandExecutor executor(state, [] {});
-
-	auto result = executor.Execute({kProjectOpen, {{"path", 12}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-	EXPECT_TRUE(state.openPath.empty());
-}
-
-TEST(SessionCommand, ProjectOpenLoadsThePath)
-{
-	FakeSessionState state;
-	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({kProjectOpen, {{"path", "C:/work/next.neurus.json"}}});
-	ASSERT_TRUE(result.ok);
-	EXPECT_EQ(state.openPath, "C:/work/next.neurus.json");
-	EXPECT_EQ(result.details["path"], "C:/work/next.neurus.json");
-	EXPECT_EQ(result.details["objects"], 11);
-}
-
-TEST(SessionCommand, ProjectOpenRefusesDirtyWithoutForce)
+TEST(SessionCommand, OpeningAProjectRequiresACleanStateOrForce)
 {
 	FakeSessionState state;
 	state.dirty = true;
@@ -285,21 +238,16 @@ TEST(SessionCommand, ProjectOpenRefusesDirtyWithoutForce)
 	EXPECT_FALSE(result.ok);
 	EXPECT_EQ(result.code, CommandErrorCode::DirtyProject);
 	EXPECT_TRUE(state.openPath.empty());
+
+	state.dirty = false;
+	const auto opened = executor.Execute({kProjectOpen, {{"path", "C:/work/next.neurus.json"}}});
+	ASSERT_TRUE(opened.ok);
+	EXPECT_EQ(state.openPath, "C:/work/next.neurus.json");
+	EXPECT_EQ(opened.details["path"], "C:/work/next.neurus.json");
+	EXPECT_EQ(opened.details["objects"], 11);
 }
 
-TEST(SessionCommand, ProjectSaveToAPathUsesSaveAs)
-{
-	FakeSessionState state;
-	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({kProjectSave, {{"path", "C:/work/out.neurus.json"}}});
-	ASSERT_TRUE(result.ok);
-	EXPECT_EQ(state.saveAsPath, "C:/work/out.neurus.json");
-	EXPECT_EQ(result.details["path"], "C:/work/out.neurus.json");
-	EXPECT_EQ(result.details["saved"], true);
-}
-
-TEST(SessionCommand, ProjectSaveWithoutPathUsesTheCurrentPath)
+TEST(SessionCommand, SavesToTheCurrentOrExplicitPath)
 {
 	FakeSessionState state;
 	SessionCommandExecutor executor(state, [] {});
@@ -308,9 +256,15 @@ TEST(SessionCommand, ProjectSaveWithoutPathUsesTheCurrentPath)
 	ASSERT_TRUE(result.ok);
 	EXPECT_TRUE(state.saved);
 	EXPECT_EQ(result.details["path"], "C:/work/p.neurus.json");
+
+	const auto savedAs = executor.Execute({kProjectSave, {{"path", "C:/work/out.neurus.json"}}});
+	ASSERT_TRUE(savedAs.ok);
+	EXPECT_EQ(state.saveAsPath, "C:/work/out.neurus.json");
+	EXPECT_EQ(savedAs.details["path"], "C:/work/out.neurus.json");
+	EXPECT_EQ(savedAs.details["saved"], true);
 }
 
-TEST(SessionCommand, SceneAndObjectCommandsDelegateToTheEditor)
+TEST(SessionCommand, DelegatesEditorCommandsAndPreservesArguments)
 {
 	FakeSessionState state;
 	FakeEditorCommands editor;
@@ -321,13 +275,6 @@ TEST(SessionCommand, SceneAndObjectCommandsDelegateToTheEditor)
 	EXPECT_EQ(result.details["delegated"], "scene.list");
 	EXPECT_EQ(editor.lastRequest.name, "scene.list");
 	EXPECT_EQ(editor.lastRequest.args["type"], "mesh");
-}
-
-TEST(SessionCommand, RenderAndHistoryCommandsDelegateToTheEditor)
-{
-	FakeSessionState state;
-	FakeEditorCommands editor;
-	SessionCommandExecutor executor(state, [] {}, &editor);
 
 	for (const char* name : {kRenderGet, kRenderSet, kHistoryGet, kHistoryUndo,
 	                         kHistoryRedo})
@@ -358,21 +305,15 @@ TEST(SessionCommand, ScriptCommandsDelegateToTheScriptExecutor)
 	}
 }
 
-TEST(SessionCommand, ScriptCommandsAreUnavailableWithoutAnExecutor)
-{
-	FakeSessionState state;
-	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({kScriptRun, {{"code", "print(1)"}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-}
-
 TEST(SessionCommand, SnapshotCommandsDelegateToTheSnapshotExecutor)
 {
 	FakeSessionState state;
 	FakeSnapshotCommands snapshot;
 	SessionCommandExecutor executor(state, [] {}, nullptr, nullptr, &snapshot);
+	const auto missingPath = executor.Execute({kSnapshotCapture, {}});
+	EXPECT_FALSE(missingPath.ok);
+	EXPECT_EQ(missingPath.code, CommandErrorCode::InvalidArgument);
+	EXPECT_TRUE(snapshot.path.empty());
 
 	const auto result = executor.Execute(
 		{kSnapshotCapture, {{"path", "C:/shots/out.png"}, {"all", true}}});
@@ -383,38 +324,19 @@ TEST(SessionCommand, SnapshotCommandsDelegateToTheSnapshotExecutor)
 	EXPECT_TRUE(snapshot.allAttachments);
 }
 
-TEST(SessionCommand, SnapshotRequiresAPathAndAnExecutor)
+TEST(SessionCommand, UnavailableCommandsReturnInvalidArgument)
 {
 	FakeSessionState state;
 	SessionCommandExecutor executor(state, [] {});
-
-	auto result = executor.Execute({kSnapshotCapture, {{"path", "C:/shots/out.png"}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-
-	FakeSnapshotCommands snapshot;
-	SessionCommandExecutor withSnapshot(state, [] {}, nullptr, nullptr, &snapshot);
-	result = withSnapshot.Execute({kSnapshotCapture, {}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-}
-
-TEST(SessionCommand, SceneCommandsAreUnknownWithoutAnEditor)
-{
-	FakeSessionState state;
-	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({kSceneList, {}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-}
-
-TEST(SessionCommand, UnknownCommandIsInvalidArgument)
-{
-	FakeSessionState state;
-	SessionCommandExecutor executor(state, [] {});
-
-	const auto result = executor.Execute({"nonsense.command", {}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+	const CommandRequest requests[] = {
+		{kSceneList, {}}, {kScriptRun, {{"code", "print(1)"}}},
+		{kSnapshotCapture, {{"path", "out.png"}}}, {"nonsense.command", {}}
+	};
+	for (const auto& request : requests)
+	{
+		SCOPED_TRACE(request.name);
+		const auto result = executor.Execute(request);
+		EXPECT_FALSE(result.ok);
+		EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+	}
 }

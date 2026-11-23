@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <thread>
 
@@ -47,10 +48,17 @@ TEST(CommandDispatcher, PostsFromWorkerAndRunsOnlyInDrain)
 	RecordingExecutor executor;
 	const auto mainThread = std::this_thread::get_id();
 
+	bool completed = false;
 	std::thread worker([&]
 	{
 		ASSERT_TRUE(dispatcher.Post(1, {kSessionStatus, {}},
-		                            [](std::uint64_t, const CommandResult&) {}));
+		                            [&](std::uint64_t id, const CommandResult& result)
+		                            {
+			                            EXPECT_EQ(id, 1u);
+			                            EXPECT_TRUE(result.ok);
+			                            EXPECT_EQ(result.details["ok"], true);
+			                            completed = true;
+		                            }));
 	});
 	worker.join();
 
@@ -58,25 +66,10 @@ TEST(CommandDispatcher, PostsFromWorkerAndRunsOnlyInDrain)
 	EXPECT_EQ(dispatcher.Drain(executor), 1u);
 	EXPECT_EQ(executor.calls.load(), 1);
 	EXPECT_EQ(executor.lastThread, mainThread);
+	EXPECT_TRUE(completed);
 }
 
-TEST(CommandDispatcher, DrainIsBoundedToBatchSize)
-{
-	CommandDispatcher dispatcher;
-	RecordingExecutor executor;
-	for (std::uint64_t i = 0; i < kCommandDrainBatch + 5; ++i)
-	{
-		ASSERT_TRUE(dispatcher.Post(i, {kSessionStatus, {}},
-		                            [](std::uint64_t, const CommandResult&) {}));
-	}
-
-	EXPECT_EQ(dispatcher.Drain(executor), kCommandDrainBatch);
-	EXPECT_EQ(dispatcher.PendingCount(), 5u);
-	EXPECT_EQ(dispatcher.Drain(executor), 5u);
-	EXPECT_EQ(dispatcher.PendingCount(), 0u);
-}
-
-TEST(CommandDispatcher, FullQueueRejects)
+TEST(CommandDispatcher, FullQueueRejectsNewWorkUntilDrainedInBoundedBatches)
 {
 	CommandDispatcher dispatcher;
 	for (std::size_t i = 0; i < kCommandQueueCapacity; ++i)
@@ -86,26 +79,21 @@ TEST(CommandDispatcher, FullQueueRejects)
 	}
 	EXPECT_FALSE(dispatcher.Post(999, {kSessionStatus, {}},
 	                             [](std::uint64_t, const CommandResult&) {}));
-}
-
-TEST(CommandDispatcher, CompletionReceivesIdAndResult)
-{
-	CommandDispatcher dispatcher;
 	RecordingExecutor executor;
-	std::uint64_t seenId = 0;
-	CommandResult seen = CommandResult::Failure(CommandErrorCode::Internal, "unset");
-
-	ASSERT_TRUE(dispatcher.Post(42, {kSessionStatus, {}},
-	                            [&](std::uint64_t id, const CommandResult& result)
-	                            {
-		                            seenId = id;
-		                            seen = result;
-	                            }));
-	dispatcher.Drain(executor);
-
-	EXPECT_EQ(seenId, 42u);
-	EXPECT_TRUE(seen.ok);
-	EXPECT_EQ(seen.details["ok"], true);
+	ASSERT_EQ(dispatcher.Drain(executor), kCommandDrainBatch);
+	constexpr std::size_t refill = 5;
+	for (std::size_t i = 0; i < refill; ++i)
+	{
+		ASSERT_TRUE(dispatcher.Post(kCommandQueueCapacity + i, {kSessionStatus, {}},
+		                            [](std::uint64_t, const CommandResult&) {}));
+	}
+	for (std::size_t pending = kCommandQueueCapacity - kCommandDrainBatch + refill; pending > 0;)
+	{
+		const auto expected = std::min(pending, kCommandDrainBatch);
+		ASSERT_EQ(dispatcher.Drain(executor), expected) << "pending before drain: " << pending;
+		pending -= expected;
+		EXPECT_EQ(dispatcher.PendingCount(), pending);
+	}
 }
 
 TEST(CommandDispatcher, ExecutorExceptionBecomesInternalFailure)

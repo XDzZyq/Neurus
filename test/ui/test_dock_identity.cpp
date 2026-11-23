@@ -65,8 +65,10 @@ protected:
 	void TearDown() override { I18n::instance().setLanguage("en"); }
 };
 
-TEST_F(DockIdentityTest, PanelIdsAreNonEmptyUniqueAscii)
+TEST_F(DockIdentityTest, DockWidgetsUseUniqueStableAsciiIds)
 {
+	auto win = MakeWindow();
+	I18n::instance().setLanguage("zh_CN");
 	QSet<QString> seen;
 	for (PanelType type : AllPanelTypes())
 	{
@@ -81,80 +83,39 @@ TEST_F(DockIdentityTest, PanelIdsAreNonEmptyUniqueAscii)
 
 		EXPECT_FALSE(seen.contains(id)) << "duplicate id " << id.toStdString();
 		seen.insert(id);
-	}
-	EXPECT_EQ(seen.size(), static_cast<int>(PanelType::Count));
-}
-
-TEST_F(DockIdentityTest, PanelIdsDoNotFollowTheActiveLanguage)
-{
-	std::vector<QString> english;
-	for (PanelType type : AllPanelTypes())
-		english.push_back(QString::fromLatin1(UIPanel::PanelIdFor(type)));
-
-	I18n::instance().setLanguage("zh_CN");
-
-	for (size_t i = 0; i < english.size(); ++i)
-	{
-		const auto type = static_cast<PanelType>(i);
-		EXPECT_EQ(QString::fromLatin1(UIPanel::PanelIdFor(type)), english[i]);
-	}
-}
-
-TEST_F(DockIdentityTest, DockObjectNamesAreIdsNotTitles)
-{
-	auto win = MakeWindow();
-	I18n::instance().setLanguage("zh_CN");
-
-	for (PanelType type : AllPanelTypes())
-	{
 		auto* dock = win->GetDock(type);
-		ASSERT_NE(dock, nullptr) << "type " << int(type);
-		EXPECT_EQ(dock->objectName(), QString::fromLatin1(UIPanel::PanelIdFor(type)));
-		// The title is free to follow the language; the key is not.
+		ASSERT_NE(dock, nullptr);
+		EXPECT_EQ(dock->objectName(), id);
 		EXPECT_NE(dock->objectName(), dock->windowTitle());
 	}
+	EXPECT_EQ(seen.size(), static_cast<int>(PanelType::Count));
 }
 
 // The acceptance test for the whole change: save in one language, restore in the
 // other. A live language switch alone would NOT catch a regression here —
 // setWindowTitle() leaves objectName alone, so breakage only surfaces on the
 // next launch, which is exactly what this exercises.
-TEST_F(DockIdentityTest, LayoutRoundTripsAcrossLanguages)
+TEST_F(DockIdentityTest, LayoutRoundTripsInBothLanguageDirections)
 {
-	std::string blob;
+	for (const bool chineseFirst : { false, true })
 	{
-		I18n::instance().setLanguage("zh_CN");
-		auto saver = MakeWindow();
-		blob = saver->ExportLayout();
+		SCOPED_TRACE(chineseFirst);
+		std::string blob;
+		{
+			I18n::instance().setLanguage(chineseFirst ? "zh_CN" : "en");
+			auto saver = MakeWindow();
+			blob = saver->ExportLayout();
+		}
+		ASSERT_FALSE(blob.empty());
+
+		I18n::instance().setLanguage(chineseFirst ? "en" : "zh_CN");
+		auto loader = MakeWindow();
+		loader->ApplyLayout(blob);
+
+		EXPECT_TRUE(OrphanedDocks(*loader).isEmpty())
+			<< "unclaimed docks: "
+			<< OrphanedDocks(*loader).join(QStringLiteral(", ")).toStdString();
 	}
-	ASSERT_FALSE(blob.empty());
-
-	I18n::instance().setLanguage("en");
-	auto loader = MakeWindow();
-	loader->ApplyLayout(blob);
-
-	EXPECT_TRUE(OrphanedDocks(*loader).isEmpty())
-		<< "docks unclaimed by a zh_CN-saved layout: "
-		<< OrphanedDocks(*loader).join(QStringLiteral(", ")).toStdString();
-}
-
-TEST_F(DockIdentityTest, LayoutRoundTripsInTheOppositeDirection)
-{
-	std::string blob;
-	{
-		I18n::instance().setLanguage("en");
-		auto saver = MakeWindow();
-		blob = saver->ExportLayout();
-	}
-	ASSERT_FALSE(blob.empty());
-
-	I18n::instance().setLanguage("zh_CN");
-	auto loader = MakeWindow();
-	loader->ApplyLayout(blob);
-
-	EXPECT_TRUE(OrphanedDocks(*loader).isEmpty())
-		<< "docks unclaimed by an en-saved layout: "
-		<< OrphanedDocks(*loader).join(QStringLiteral(", ")).toStdString();
 }
 
 // A blob keyed by dock names from before the fix (or from any foreign source)

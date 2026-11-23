@@ -25,6 +25,9 @@ TEST(HaltonSequenceTest, ValuesInRange)
     {
         float h2 = HaltonSequence::Halton2(i);
         float h3 = HaltonSequence::Halton3(i);
+        float h5 = HaltonSequence::Halton5(i);
+        EXPECT_GE(h5, 0.0f) << i;
+        EXPECT_LT(h5, 1.0f) << i;
 
         EXPECT_GE(h2, 0.0f) << "Halton2(" << i << ") = " << h2 << " < 0";
         EXPECT_LT(h2, 1.0f) << "Halton2(" << i << ") = " << h2 << " >= 1";
@@ -35,6 +38,8 @@ TEST(HaltonSequenceTest, ValuesInRange)
 
 TEST(HaltonSequenceTest, Deterministic)
 {
+    EXPECT_FLOAT_EQ(HaltonSequence::Halton5(0), 0.0f);
+    EXPECT_FLOAT_EQ(HaltonSequence::Halton5(1), 1.0f / 5.0f);
     // Same index should always produce the same value
     EXPECT_FLOAT_EQ(HaltonSequence::Halton2(0), 0.0f);
     EXPECT_FLOAT_EQ(HaltonSequence::Halton2(1), 0.5f);
@@ -43,42 +48,6 @@ TEST(HaltonSequenceTest, Deterministic)
     EXPECT_FLOAT_EQ(HaltonSequence::Halton3(0), 0.0f);
     EXPECT_FLOAT_EQ(HaltonSequence::Halton3(1), 1.0f / 3.0f);
     EXPECT_FLOAT_EQ(HaltonSequence::Halton3(2), 2.0f / 3.0f);
-}
-
-TEST(HaltonSequenceTest, Halton5InRange)
-{
-    for (uint32_t i = 0; i < 100; ++i)
-    {
-        float h5 = HaltonSequence::Halton5(i);
-        EXPECT_GE(h5, 0.0f) << "Halton5(" << i << ") = " << h5 << " < 0";
-        EXPECT_LT(h5, 1.0f) << "Halton5(" << i << ") = " << h5 << " >= 1";
-    }
-    EXPECT_FLOAT_EQ(HaltonSequence::Halton5(0), 0.0f);
-    EXPECT_FLOAT_EQ(HaltonSequence::Halton5(1), 1.0f / 5.0f);
-}
-
-TEST(HaltonSequenceTest, JitterRange)
-{
-    // Jitter = Halton - 0.5 maps to [-0.5, 0.5)
-    for (uint32_t i = 0; i < 100; ++i)
-    {
-        float jx = HaltonSequence::Halton2(i) - 0.5f;
-        float jy = HaltonSequence::Halton3(i) - 0.5f;
-
-        EXPECT_GE(jx, -0.5f);
-        EXPECT_LE(jx, 0.5f);
-        EXPECT_GE(jy, -0.5f);
-        EXPECT_LE(jy, 0.5f);
-    }
-
-    // Verify the Halton values are actually in [0, 1) so jitter is [-0.5, 0.5)
-    for (uint32_t i = 0; i < 100; ++i)
-    {
-        EXPECT_GE(HaltonSequence::Halton2(i), 0.0f);
-        EXPECT_LT(HaltonSequence::Halton2(i), 1.0f);
-        EXPECT_GE(HaltonSequence::Halton3(i), 0.0f);
-        EXPECT_LT(HaltonSequence::Halton3(i), 1.0f);
-    }
 }
 
 // ---------------------------------------------------------------------------

@@ -314,20 +314,12 @@ TEST_F(ImageTest, GenerateMipmaps_Completes)
 // Non-copyable, movable
 // ---------------------------------------------------------------------------
 
-TEST_F(ImageTest, NonCopyable)
-{
-	static_assert(!std::is_copy_constructible_v<Image>,
-	              "Image must not be copy-constructible");
-	static_assert(!std::is_copy_assignable_v<Image>,
-	              "Image must not be copy-assignable");
-	SUCCEED();
-}
+static_assert(!std::is_copy_constructible_v<Image>,
+              "Image must not be copy-constructible");
+static_assert(!std::is_copy_assignable_v<Image>,
+              "Image must not be copy-assignable");
 
-TEST_F(ImageTest, Movable)
-{
-	static_assert(std::is_move_constructible_v<Image>,
-	              "Image must be move-constructible");
-	static_assert(std::is_move_assignable_v<Image>,
-	              "Image must be move-assignable");
-	SUCCEED();
-}
+static_assert(std::is_move_constructible_v<Image>,
+              "Image must be move-constructible");
+static_assert(std::is_move_assignable_v<Image>,
+              "Image must be move-assignable");

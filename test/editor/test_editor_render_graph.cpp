@@ -150,27 +150,6 @@ TEST(EditorRenderGraph, GraphComponentResolvesBeforeFinishLoadPublishes)
 	EXPECT_EQ(neurus::project::ToRecord(*request->graph), neurus::project::ToRecord(editor.GetRenderGraph()));
 }
 
-TEST(EditorRenderGraph, SetPostsAndMarksDirty)
-{
-	RecordingSink sink;
-	neurus::Editor editor(&sink);
-	editor.NewScene();
-	editor.ClearDirty();
-
-	auto graph = editor.GetRenderGraph().Clone();
-	graph->RemoveNode(graph->nodes.back().get());
-	graph->sceneOutputs["color"] = {"compose", "outputComposed"};
-	editor.SetRenderGraph(std::move(graph));
-
-	EXPECT_TRUE(editor.IsDirty());
-	EXPECT_EQ(editor.GetRenderGraph().nodes.size(), 6u);
-	EXPECT_EQ(editor.GetRenderGraph().nodes.back()->name, "compose");
-
-	const neurus::CompileRenderGraphRequest* request = sink.LastGraphRequest();
-	ASSERT_NE(request, nullptr);
-	EXPECT_EQ(neurus::project::ToRecord(*request->graph), neurus::project::ToRecord(editor.GetRenderGraph()));
-}
-
 TEST(EditorRenderGraph, FinishLoadWithoutGraphPreservesDeserializedConfig)
 {
 	auto expectedData = std::make_shared<neurus::RenderConfig>(NonDefaultConfig());
@@ -400,10 +379,13 @@ TEST(EditorRenderGraph, EditsAndPublicationPreserveOnePooledGraphIdentity)
 	topology->sceneOutputs["color"] = {"compose", "outputComposed"};
 	const auto previous = sink.LastGraphRequest()->graph;
 	const auto poolSize = editor.GetResourceManager().Size();
+	editor.ClearDirty();
 	editor.SetRenderGraph(std::move(topology));
+	EXPECT_TRUE(editor.IsDirty());
 	EXPECT_EQ(resource, render.GraphData());
 	EXPECT_EQ(sink.LastGraphRequest()->graph->nodes.size(), 6u);
 	const auto published = sink.LastGraphRequest()->graph;
+	EXPECT_EQ(neurus::project::ToRecord(*published), neurus::project::ToRecord(editor.GetRenderGraph()));
 	EXPECT_NE(published->GetObjectID(), uid);
 	EXPECT_FALSE(editor.GetResourceManager().Get<neurus::RenderGraphData>(published->GetObjectID()));
 	EXPECT_EQ(editor.GetResourceManager().Size(), poolSize);

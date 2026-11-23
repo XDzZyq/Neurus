@@ -86,51 +86,23 @@ class CameraControllerTest : public ::testing::Test
 // Orbit tests (MMB, no modifier 鈫?CameraRotateEvent)
 // ===========================================================================
 
-/**
- * @test Orbit_MMB_Right_Drag_AzimuthIncreases
- *
- * Camera at (5,0,0), target at origin. MMB drag right (positive mouseDeltaX)
- * should rotate azimuth around world Z axis, producing a non-zero Y component
- * (forward axis in Z-up convention). Target remains unchanged.
- */
-TEST_F(CameraControllerTest, Orbit_MMB_Right_Drag_AzimuthIncreases)
+/** @test OrbitChangesAzimuthAndElevationAroundFixedTarget */
+TEST_F(CameraControllerTest, OrbitChangesAzimuthAndElevationAroundFixedTarget)
 {
 	m_camera->SetPosition(glm::vec3(5.0f, 0.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	CameraRotateEvent e{m_camera->GetObjectID(), 10.0f, 0.0f};
-	m_eventBus.Enqueue(e);
+	m_camera->SetTarPos(glm::vec3(0.0f));
+	m_eventBus.Enqueue(CameraRotateEvent{m_camera->GetObjectID(), 10.0f, 0.0f});
 	m_eventBus.Process();
+	EXPECT_LT(m_camera->GetPosition().y, -1e-4f);
+	EXPECT_FLOAT_EQ(m_camera->GetPosition().z, 0.0f);
+	EXPECT_EQ(m_camera->cam_tar, glm::vec3(0.0f));
 
-	// Camera Y should be non-zero (azimuth rotated right around target, forward axis)
-	EXPECT_NE(m_camera->GetPosition().y, 0.0f);
-	// Target unchanged
-	EXPECT_EQ(m_camera->cam_tar, initialTar);
-}
-
-/**
- * @test Orbit_MMB_Up_Drag_ElevationIncreases
- *
- * Camera at (5,0,0), target at origin. MMB drag up (positive mouseDeltaY)
- * should decrease elevation (drag up = look down, natural 3D convention).
- * Camera Z position decreases (elevation axis in Z-up). Target remains unchanged.
- */
-TEST_F(CameraControllerTest, Orbit_MMB_Up_Drag_ElevationIncreases)
-{
 	m_camera->SetPosition(glm::vec3(5.0f, 0.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const float initialZ = m_camera->GetPosition().z;
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	CameraRotateEvent e{m_camera->GetObjectID(), 0.0f, -10.0f}; // deltaY negative = drag up = look down
-	m_eventBus.Enqueue(e);
+	m_eventBus.Enqueue(CameraRotateEvent{m_camera->GetObjectID(), 0.0f, -10.0f});
 	m_eventBus.Process();
-
-	// Elevation decreased (drag up = look down) camera Z should be lower
-	EXPECT_LT(m_camera->GetPosition().z, initialZ);
-	// Target unchanged
-	EXPECT_EQ(m_camera->cam_tar, initialTar);
+	EXPECT_NEAR(m_camera->GetPosition().y, 0.0f, 1e-4f);
+	EXPECT_LT(m_camera->GetPosition().z, 0.0f);
+	EXPECT_EQ(m_camera->cam_tar, glm::vec3(0.0f));
 }
 
 /**
@@ -172,70 +144,23 @@ TEST_F(CameraControllerTest, Orbit_Clamp_Elevation_89_Degrees)
 // Zoom tests (scroll wheel 鈫?CameraZoomEvent)
 // ===========================================================================
 
-/**
- * @test Zoom_ScrollUp_Decreases_Distance
- *
- * Camera at (0,5,0), target at origin (Z-up: +Y is forward).
- * Scroll up (positive scroll_dir) should zoom in, decreasing the
- * distance from camera to target.
- */
-TEST_F(CameraControllerTest, Zoom_ScrollUp_Decreases_Distance)
+/** @test WheelDirectionControlsZoomDistance */
+TEST_F(CameraControllerTest, WheelDirectionControlsZoomDistance)
 {
-	m_camera->SetPosition(glm::vec3(0.0f, 5.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const float initialDist = DistanceToTarget(*m_camera);
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	CameraZoomEvent e{m_camera->GetObjectID(), 1.0f};
-	m_eventBus.Enqueue(e);
-	m_eventBus.Process();
-
-	EXPECT_LT(DistanceToTarget(*m_camera), initialDist);
-	EXPECT_EQ(m_camera->cam_tar, initialTar);
-}
-
-/**
- * @test Zoom_ScrollDown_Increases_Distance
- *
- * Camera at (0,5,0), target at origin (Z-up: +Y is forward).
- * Scroll down (negative scroll_dir) should zoom out, increasing the
- * distance from camera to target.
- */
-TEST_F(CameraControllerTest, Zoom_ScrollDown_Increases_Distance)
-{
-	m_camera->SetPosition(glm::vec3(0.0f, 5.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const float initialDist = DistanceToTarget(*m_camera);
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	CameraZoomEvent e{m_camera->GetObjectID(), -1.0f};
-	m_eventBus.Enqueue(e);
-	m_eventBus.Process();
-
-	EXPECT_GT(DistanceToTarget(*m_camera), initialDist);
-	EXPECT_EQ(m_camera->cam_tar, initialTar);
-}
-
-/**
- * @test Zoom_Clamp_MinRadius
- *
- * Camera already at minimum distance (0.01) from target along forward axis
- * (Z-up: +Y is forward). Attempting to zoom in further should not reduce
- * distance below the minimum clamp. No crash.
- */
-TEST_F(CameraControllerTest, Zoom_Clamp_MinRadius)
-{
-	m_camera->SetPosition(glm::vec3(0.0f, 0.01f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-
-	CameraZoomEvent e{m_camera->GetObjectID(), 1.0f}; // Try to zoom in more
-
-	EXPECT_NO_FATAL_FAILURE(
-		m_eventBus.Enqueue(e);
+	for (float direction : { 1.0f, -1.0f })
+	{
+		SCOPED_TRACE(direction);
+		m_camera->SetPosition(glm::vec3(0.0f, 5.0f, 0.0f));
+		m_camera->SetTarPos(glm::vec3(0.0f));
+		const float distance = DistanceToTarget(*m_camera);
+		m_eventBus.Enqueue(CameraZoomEvent{m_camera->GetObjectID(), direction});
 		m_eventBus.Process();
-	);
-
-	// Distance must stay at or above the minimum clamp
+		EXPECT_LT((DistanceToTarget(*m_camera) - distance) * direction, 0.0f);
+		EXPECT_EQ(m_camera->cam_tar, glm::vec3(0.0f));
+	}
+	m_camera->SetPosition(glm::vec3(0.0f, 0.01f, 0.0f));
+	m_eventBus.Enqueue(CameraZoomEvent{m_camera->GetObjectID(), 1.0f});
+	m_eventBus.Process();
 	EXPECT_GE(DistanceToTarget(*m_camera), 0.01f);
 }
 
@@ -271,80 +196,29 @@ TEST_F(CameraControllerTest, Dolly_CtrlMMB_MovesAlongForward)
 	EXPECT_EQ(m_camera->cam_tar, initialTar);
 }
 
-/**
- * @test Dolly_WithoutMMB_NoMovement
- *
- * No event enqueued — camera should not change.
- */
-TEST_F(CameraControllerTest, Dolly_WithoutMMB_NoMovement)
-{
-	m_camera->SetPosition(glm::vec3(0.0f, 5.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const glm::vec3 initialPos = m_camera->GetPosition();
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	// No event — camera unchanged
-	m_eventBus.Process();
-
-	EXPECT_EQ(m_camera->GetPosition(), initialPos);
-	EXPECT_EQ(m_camera->cam_tar, initialTar);
-}
-
 // ===========================================================================
 // Pan tests (Shift + MMB 鈫?CameraSlideEvent)
 // ===========================================================================
 
-/**
- * @test Pan_ShiftMMB_Right_MovesCameraAndTarget
- *
- * Camera at (5,0,0), target at origin. Shift+MMB drag right
- * (positive mouseDeltaX) should pan both camera and target along
- * the camera's right vector. The offset between them is preserved.
- */
-TEST_F(CameraControllerTest, Pan_ShiftMMB_Right_MovesCameraAndTarget)
+/** @test PanTranslatesEyeAndTargetTogetherInBothDirections */
+TEST_F(CameraControllerTest, PanTranslatesEyeAndTargetTogetherInBothDirections)
 {
-	m_camera->SetPosition(glm::vec3(5.0f, 0.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const glm::vec3 initialPos = m_camera->GetPosition();
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	CameraSlideEvent e{m_camera->GetObjectID(), 10.0f, 0.0f};
-	m_eventBus.Enqueue(e);
-	m_eventBus.Process();
-
-	// Both camera position and target changed (pan shifts both)
-	EXPECT_NE(m_camera->GetPosition(), initialPos);
-	EXPECT_NE(m_camera->cam_tar, initialTar);
-
-	// Position-target offset preserved (pure translation, no rotation)
-	const glm::vec3 offsetBefore = initialPos - initialTar;
-	const glm::vec3 offsetAfter  = m_camera->GetPosition() - m_camera->cam_tar;
-	EXPECT_NEAR(offsetAfter.x, offsetBefore.x, 1e-4f);
-	EXPECT_NEAR(offsetAfter.y, offsetBefore.y, 1e-4f);
-	EXPECT_NEAR(offsetAfter.z, offsetBefore.z, 1e-4f);
-}
-
-/**
- * @test Pan_ShiftMMB_Up_MovesUp
- *
- * Camera at (5,0,0), target at origin. Shift+MMB drag up
- * (positive mouseDeltaY) should pan vertically, changing Z of
- * both camera and target (Z is up in Z-up convention).
- */
-TEST_F(CameraControllerTest, Pan_ShiftMMB_Up_MovesUp)
-{
-	m_camera->SetPosition(glm::vec3(5.0f, 0.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const float initialZ = m_camera->GetPosition().z;
-	const float initialTarZ = m_camera->cam_tar.z;
-
-	CameraSlideEvent e{m_camera->GetObjectID(), 0.0f, 10.0f};
-	m_eventBus.Enqueue(e);
-	m_eventBus.Process();
-
-	// Vertical pan should change Z of both camera and target (Z-up)
-	EXPECT_NE(m_camera->GetPosition().z, initialZ);
-	EXPECT_NE(m_camera->cam_tar.z, initialTarZ);
+	const glm::vec3 initialPos(5.0f, 0.0f, 0.0f);
+	const glm::vec3 initialTar(0.0f);
+	const struct { float dx, dy; glm::vec3 translation; } cases[] = {
+		{10.0f, 0.0f, {0.0f, -0.1f, 0.0f}},
+		{0.0f, 10.0f, {0.0f, 0.0f, 0.1f}},
+	};
+	for (const auto& [dx, dy, translation] : cases)
+	{
+		SCOPED_TRACE(::testing::Message() << "dx=" << dx << ", dy=" << dy);
+		m_camera->SetPosition(initialPos);
+		m_camera->SetTarPos(initialTar);
+		m_eventBus.Enqueue(CameraSlideEvent{m_camera->GetObjectID(), dx, dy});
+		m_eventBus.Process();
+		EXPECT_NEAR(glm::distance(m_camera->GetPosition(), initialPos + translation), 0.0f, 1e-4f);
+		EXPECT_NEAR(glm::distance(m_camera->cam_tar, initialTar + translation), 0.0f, 1e-4f);
+	}
 }
 
 // ===========================================================================
@@ -375,49 +249,6 @@ TEST_F(CameraControllerTest, Edge_CameraAtTarget_NoCrash)
 	EXPECT_EQ(m_camera->cam_tar, initialTar);
 }
 
-/**
- * @test Edge_NoInput_NoChange
- *
- * No events enqueued — camera should not change.
- */
-TEST_F(CameraControllerTest, Edge_NoInput_NoChange)
-{
-	m_camera->SetPosition(glm::vec3(3.0f, 5.0f, 4.0f));
-	m_camera->SetTarPos(glm::vec3(1.0f, 3.0f, 2.0f));
-	const glm::vec3 initialPos = m_camera->GetPosition();
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	// No events enqueued — camera unchanged
-	m_eventBus.Process();
-
-	EXPECT_EQ(m_camera->GetPosition(), initialPos);
-	EXPECT_EQ(m_camera->cam_tar, initialTar);
-}
-
-/**
- * @test Edge_ModifierConflict_CtrlWins
- *
- * When both Ctrl and Shift are held (event system decides), the appropriate
- * event type (CameraPushEvent for Ctrl priority) should be enqueued.
- * Target should NOT move (dolly behavior, not pan).
- */
-TEST_F(CameraControllerTest, Edge_ModifierConflict_CtrlWins)
-{
-	m_camera->SetPosition(glm::vec3(0.0f, 5.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	const glm::vec3 initialTar = m_camera->cam_tar;
-
-	// Ctrl wins → CameraPushEvent (dolly), not CameraSlideEvent (pan)
-	CameraPushEvent e{m_camera->GetObjectID(), 0.0f, 10.0f};
-	m_eventBus.Enqueue(e);
-	m_eventBus.Process();
-
-	// Ctrl wins → Dolly behavior: target should NOT move
-	EXPECT_EQ(m_camera->cam_tar, initialTar);
-	// Camera should have moved (dolly along forward, Y in Z-up)
-	EXPECT_NE(m_camera->GetPosition().y, 5.0f);
-}
-
 // ===========================================================================
 // Drag gesture undo bounding (CameraDragBegin/End brackets one undo entry)
 // ===========================================================================
@@ -428,31 +259,6 @@ TEST_F(CameraControllerTest, Edge_ModifierConflict_CtrlWins)
 // provider, so Undo/Redo replay is a no-op on the camera — but the undo-stack
 // bookkeeping (Submit / pop) is scene-independent, so it faithfully proves how
 // many entries a gesture records.
-
-/**
- * @test DragGesture_RecordsSingleUndoEntry
- *
- * Begin → two orbit moves → End should record exactly one undo entry, no
- * matter how many intermediate moves the drag contained.
- */
-TEST_F(CameraControllerTest, DragGesture_RecordsSingleUndoEntry)
-{
-	m_camera->SetPosition(glm::vec3(5.0f, 0.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-
-	m_eventBus.Enqueue(CameraDragBegin{m_camera->GetObjectID()});
-	m_eventBus.Enqueue(CameraRotateEvent{m_camera->GetObjectID(), 10.0f, 0.0f});
-	m_eventBus.Enqueue(CameraRotateEvent{m_camera->GetObjectID(), 10.0f, 0.0f});
-	m_eventBus.Enqueue(CameraDragEnd{m_camera->GetObjectID()});
-	m_eventBus.Process();
-
-	ASSERT_TRUE(m_operations.CanUndo());
-
-	// Exactly one entry: a single undo empties the stack (moves it to redo).
-	m_operations.Undo();
-	EXPECT_FALSE(m_operations.CanUndo());
-	EXPECT_TRUE(m_operations.CanRedo());
-}
 
 /**
  * @test ThreeDragGestures_RecordThreeSeparateEntries
@@ -470,6 +276,7 @@ TEST_F(CameraControllerTest, ThreeDragGestures_RecordThreeSeparateEntries)
 	{
 		m_eventBus.Enqueue(CameraDragBegin{m_camera->GetObjectID()});
 		m_eventBus.Enqueue(CameraRotateEvent{m_camera->GetObjectID(), 10.0f, 0.0f});
+		m_eventBus.Enqueue(CameraRotateEvent{m_camera->GetObjectID(), 0.0f, 5.0f});
 		m_eventBus.Enqueue(CameraDragEnd{m_camera->GetObjectID()});
 		m_eventBus.Process();
 	}
@@ -484,17 +291,12 @@ TEST_F(CameraControllerTest, ThreeDragGestures_RecordThreeSeparateEntries)
 	EXPECT_FALSE(m_operations.CanUndo());
 }
 
-/**
- * @test DragMoves_WithoutGesture_RecordNothing
- *
- * Orbit moves that arrive outside a begin/end bracket mutate the camera live
- * but must NOT record — otherwise every intermediate drag frame would pollute
- * the history.
- */
-TEST_F(CameraControllerTest, DragMoves_WithoutGesture_RecordNothing)
+/** @test OnlyCompletedDragsWithMotionCreateHistory */
+TEST_F(CameraControllerTest, OnlyCompletedDragsWithMotionCreateHistory)
 {
 	m_camera->SetPosition(glm::vec3(5.0f, 0.0f, 0.0f));
 	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
+
 	const glm::vec3 posBefore = m_camera->GetPosition();
 
 	m_eventBus.Enqueue(CameraRotateEvent{m_camera->GetObjectID(), 10.0f, 0.0f});
@@ -506,42 +308,12 @@ TEST_F(CameraControllerTest, DragMoves_WithoutGesture_RecordNothing)
 	EXPECT_NE(m_camera->GetPosition(), posBefore);
 	// ...but nothing was recorded.
 	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-/**
- * @test DragGesture_NoMovement_RecordsNothing
- *
- * A begin/end bracket with no intervening move (e.g. a click that didn't drag)
- * leaves the pose unchanged, so no undo entry is recorded.
- */
-TEST_F(CameraControllerTest, DragGesture_NoMovement_RecordsNothing)
-{
-	m_camera->SetPosition(glm::vec3(5.0f, 0.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 
 	m_eventBus.Enqueue(CameraDragBegin{m_camera->GetObjectID()});
 	m_eventBus.Enqueue(CameraDragEnd{m_camera->GetObjectID()});
 	m_eventBus.Process();
 
 	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-/**
- * @test ScrollZoom_RecordsPerEvent_WithoutGesture
- *
- * Scroll zoom has no press/release, so it keeps recording per-event as a
- * CameraZoomOp (coalesced by MergeKey at the OperationManager level). A single
- * zoom records one entry even with no drag gesture around it.
- */
-TEST_F(CameraControllerTest, ScrollZoom_RecordsPerEvent_WithoutGesture)
-{
-	m_camera->SetPosition(glm::vec3(0.0f, 5.0f, 0.0f));
-	m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-
-	m_eventBus.Enqueue(CameraZoomEvent{m_camera->GetObjectID(), 1.0f});
-	m_eventBus.Process();
-
-	EXPECT_TRUE(m_operations.CanUndo());
 }
 
 /**

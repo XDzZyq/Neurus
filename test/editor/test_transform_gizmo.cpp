@@ -217,7 +217,7 @@ TEST(GizmoMath, AxisDirection_YAgreesBetweenBothSetsForEveryTriple)
  * one set for both would drag a constrained Move along a line the guide is not
  * drawn on, which is why the two derivations are separate branches.
  */
-TEST(GizmoMath, AxisDirection_XAndZDivergeBetweenTheSets)
+TEST(GizmoMath, AxisDirectionAccountsForEulerRotationOrder)
 {
 	const glm::vec3 rollOnly{0.0f, 40.0f, 0.0f};
 	EXPECT_GT(MaxDiff(GizmoAxisDirection(GizmoMode::Rotate, GizmoAxis::X, rollOnly),
@@ -232,11 +232,7 @@ TEST(GizmoMath, AxisDirection_XAndZDivergeBetweenTheSets)
 	EXPECT_GT(MaxDiff(GizmoAxisDirection(GizmoMode::Rotate, GizmoAxis::Z, pitchOnly),
 	                  GizmoAxisDirection(GizmoMode::Move, GizmoAxis::Z, pitchOnly)), 0.1f)
 	    << "pitch separates the two Z axes";
-}
 
-/// @test The gimbal Z axis is world Z whatever the object's orientation.
-TEST(GizmoMath, AxisDirection_GimbalZIsAlwaysWorldZ)
-{
 	const glm::vec3 axis =
 	    GizmoAxisDirection(GizmoMode::Rotate, GizmoAxis::Z, glm::vec3(20.0f, 35.0f, -50.0f));
 	EXPECT_LT(MaxDiff(axis, glm::vec3(0.0f, 0.0f, 1.0f)), 1e-5f)
@@ -282,11 +278,16 @@ protected:
 // ===========================================================================
 
 /// @test A mode of None or a uid of 0 arms nothing and changes nothing.
-TEST_F(TransformGizmoTest, Arm_RejectsNoModeAndNoObject)
+TEST_F(TransformGizmoTest, InactiveGizmoRejectsMissingTargetAndIgnoresDrags)
 {
 	EXPECT_FALSE(m_gizmo.Arm(GizmoMode::None, kUid, m_target, Centre()));
 	EXPECT_FALSE(m_gizmo.Arm(GizmoMode::Move, 0, m_target, Centre()));
 	EXPECT_FALSE(m_gizmo.IsActive());
+
+	m_target.SetPosition(glm::vec3(4.0f, 5.0f, 6.0f));
+	m_gizmo.Cancel(m_target);
+	EXPECT_EQ(m_target.GetPosition(), glm::vec3(4.0f, 5.0f, 6.0f));
+	EXPECT_FALSE(m_gizmo.Drag(m_vp, Centre(), m_target));
 }
 
 /// @test Arm snapshots the whole triple and leaves the gesture free, not idle.
@@ -327,17 +328,9 @@ TEST_F(TransformGizmoTest, CancelRestoresAndDisarmKeeps)
 	EXPECT_EQ(m_gizmo.ObjectUid(), 0);
 }
 
-/// @test Cancel and Drag on an inactive gizmo do nothing at all.
-TEST_F(TransformGizmoTest, InactiveGizmoIgnoresCancelAndDrag)
-{
-	m_target.SetPosition(glm::vec3(4.0f, 5.0f, 6.0f));
-	m_gizmo.Cancel(m_target);
-	EXPECT_EQ(m_target.GetPosition(), glm::vec3(4.0f, 5.0f, 6.0f));
-	EXPECT_FALSE(m_gizmo.Drag(m_vp, Centre(), m_target));
-}
 
 /// @test Constrain needs a usable viewport; without one it refuses and stays free.
-TEST_F(TransformGizmoTest, Constrain_RefusedWithoutAValidViewport)
+TEST_F(TransformGizmoTest, UnusableConstraintsLeaveMoveArmedForAnotherAxis)
 {
 	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, Centre()));
 
@@ -345,23 +338,6 @@ TEST_F(TransformGizmoTest, Constrain_RefusedWithoutAValidViewport)
 	EXPECT_FALSE(m_gizmo.Constrain(GizmoAxis::X, blank, Centre()));
 	EXPECT_EQ(m_gizmo.Axis(), GizmoAxis::None);
 	EXPECT_TRUE(m_gizmo.IsActive()) << "a refusal leaves the mode armed";
-}
-
-// ===========================================================================
-// E. Constrained Move
-// ===========================================================================
-
-/**
- * @test An axis along the view ray is refused, and the gesture survives it.
- *
- * At this pose world Y *is* the view ray, so the closest-point solve is
- * meaningless and a pixel of cursor motion would be metres of travel. X is
- * perpendicular and accepted, which is what proves the refusal is about the
- * geometry and not about Constrain() being broken.
- */
-TEST_F(TransformGizmoTest, ConstrainMove_RefusesTheAxisAlongTheViewRay)
-{
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, Centre()));
 
 	EXPECT_FALSE(m_gizmo.Constrain(GizmoAxis::Y, m_vp, Centre()));
 	EXPECT_EQ(m_gizmo.Axis(), GizmoAxis::None) << "refused: still armed, still axis-less";
@@ -370,8 +346,12 @@ TEST_F(TransformGizmoTest, ConstrainMove_RefusesTheAxisAlongTheViewRay)
 	EXPECT_EQ(m_gizmo.Axis(), GizmoAxis::X);
 }
 
+// ===========================================================================
+// E. Constrained Move
+// ===========================================================================
+
 /// @test A constrained Move stays on its line: only X changes, and in the right sign.
-TEST_F(TransformGizmoTest, DragMove_MovesAlongTheConstraintLineOnly)
+TEST_F(TransformGizmoTest, ConstrainedMoveFollowsItsAxisWithoutRoundTripDrift)
 {
 	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, Centre()));
 	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::X, m_vp, Centre()));
@@ -380,20 +360,6 @@ TEST_F(TransformGizmoTest, DragMove_MovesAlongTheConstraintLineOnly)
 	EXPECT_GT(m_target.GetPosition().x, 0.0f) << "screen right is world +X at this pose";
 	EXPECT_FLOAT_EQ(m_target.GetPosition().y, 0.0f);
 	EXPECT_FLOAT_EQ(m_target.GetPosition().z, 0.0f);
-}
-
-/**
- * @test A cursor round trip lands on the EXACT starting value.
- *
- * Contract 4. Asserted with == rather than a tolerance, which is only defensible
- * because the drag recomputes `before + (t - grabAnchorT) * axis` from the
- * snapshot: at the anchor pixel the two parameters are the same float, so the
- * offset is identically zero. A drag that integrated deltas would drift here.
- */
-TEST_F(TransformGizmoTest, DragMove_IsDriftFreeAcrossARoundTrip)
-{
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, Centre()));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::X, m_vp, Centre()));
 
 	for (const float dx : {40.0f, 90.0f, 210.0f, 90.0f, -160.0f})
 		m_gizmo.Drag(m_vp, Centre() + glm::vec2(dx, 0.0f), m_target);
@@ -407,20 +373,6 @@ TEST_F(TransformGizmoTest, DragMove_IsDriftFreeAcrossARoundTrip)
 // F. Constrained Rotate
 // ===========================================================================
 
-/// @test A constrained Rotate adds to exactly one stored Euler component.
-TEST_F(TransformGizmoTest, DragRotate_AddsToOneStoredComponentOnly)
-{
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Rotate, kUid, m_target, Centre()));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::Z, m_vp, Centre() + glm::vec2(100.0f, 0.0f)));
-
-	ASSERT_TRUE(m_gizmo.Drag(m_vp, Centre() + glm::vec2(0.0f, -100.0f), m_target));
-
-	// `before + theta` on the yaw component: no matrix round trip, so the two it does
-	// not touch are bitwise unchanged and the PropertyPanel keeps a readable number.
-	EXPECT_FLOAT_EQ(m_target.GetRotation().x, 0.0f);
-	EXPECT_FLOAT_EQ(m_target.GetRotation().y, 0.0f);
-	EXPECT_NEAR(std::abs(m_target.GetRotation().z), 90.0f, 1e-3f);
-}
 
 /**
  * @test Two full turns accumulate to two full turns, not to a wrapped remainder.
@@ -428,26 +380,22 @@ TEST_F(TransformGizmoTest, DragRotate_AddsToOneStoredComponentOnly)
  * The bearing is an atan2 and therefore lives on (-pi, pi]; only the unwrapped
  * accumulation makes a sweep past 180 degrees mean what it looks like.
  */
-TEST_F(TransformGizmoTest, DragRotate_AccumulatesPastMultipleTurns)
+TEST_F(TransformGizmoTest, AxisRotationAccumulatesOnlyItsStoredComponentAcrossTurns)
 {
 	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Rotate, kUid, m_target, Centre()));
 	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::Z, m_vp, Centre() + glm::vec2(100.0f, 0.0f)));
 
-	// 24 steps of 15 degrees apiece: one full turn, sampled finely enough that no single
-	// step is ambiguous about which way it went.
-	for (int i = 1; i <= 24; ++i)
+	// Two full revolutions, sampled finely enough to determine the direction.
+	for (int step = 1; step <= 48; ++step)
 	{
-		const float a = glm::radians(15.0f * static_cast<float>(i));
-		m_gizmo.Drag(m_vp, Centre() + glm::vec2(std::cos(a), std::sin(a)) * 100.0f, m_target);
+		const float degrees = 15.0f * static_cast<float>(step);
+		const float angle = glm::radians(degrees);
+		m_gizmo.Drag(m_vp, Centre() + glm::vec2(std::cos(angle), std::sin(angle)) * 100.0f, m_target);
+		const auto rotation = m_target.GetRotation();
+		EXPECT_FLOAT_EQ(rotation.x, 0.0f);
+		EXPECT_FLOAT_EQ(rotation.y, 0.0f);
+		EXPECT_NEAR(std::abs(rotation.z), degrees, 1e-2f) << "step " << step;
 	}
-	EXPECT_NEAR(std::abs(m_target.GetRotation().z), 360.0f, 1e-2f);
-
-	for (int i = 25; i <= 48; ++i)
-	{
-		const float a = glm::radians(15.0f * static_cast<float>(i));
-		m_gizmo.Drag(m_vp, Centre() + glm::vec2(std::cos(a), std::sin(a)) * 100.0f, m_target);
-	}
-	EXPECT_NEAR(std::abs(m_target.GetRotation().z), 720.0f, 1e-2f);
 }
 
 // ===========================================================================
@@ -480,6 +428,9 @@ TEST_F(TransformGizmoTest, DragMoveFree_SlidesAcrossTheViewPlane)
 {
 	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, Centre()));
 
+	EXPECT_FALSE(m_gizmo.Drag(m_vp, Centre(), m_target));
+	EXPECT_EQ(m_target.GetPosition(), glm::vec3(0.0f));
+
 	// No axis, yet already live: that is the whole of Blender's bare G.
 	ASSERT_EQ(m_gizmo.Axis(), GizmoAxis::None);
 	ASSERT_TRUE(m_gizmo.Drag(m_vp, Centre() + glm::vec2(100.0f, -80.0f), m_target));
@@ -489,15 +440,6 @@ TEST_F(TransformGizmoTest, DragMoveFree_SlidesAcrossTheViewPlane)
 	EXPECT_NEAR(m_target.GetPosition().y, 0.0f, 1e-3f) << "the plane is parallel to the screen";
 }
 
-/// @test At the anchor pixel a free Move reports no change at all — no opening snap.
-TEST_F(TransformGizmoTest, DragMoveFree_IsExactlyZeroAtTheAnchor)
-{
-	const glm::vec2 anchor = Centre() + glm::vec2(60.0f, 40.0f);
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, anchor));
-
-	EXPECT_FALSE(m_gizmo.Drag(m_vp, anchor, m_target)) << "nothing moved, so nothing to report";
-	EXPECT_EQ(m_target.GetPosition(), glm::vec3(0.0f));
-}
 
 /// @test A bare S scales all three components by one factor, preserving shape.
 TEST_F(TransformGizmoTest, DragScaleFree_IsUniform)
@@ -571,52 +513,35 @@ TEST_F(TransformGizmoTest, DragRotateFree_HoldsInsideTheDeadZone)
  * exactly, since both ends of the free solve are the same pixel. Without this,
  * leaving a constraint would keep the partial translate and silently compound it.
  */
-TEST_F(TransformGizmoTest, ConstrainNone_NormalizesAConstrainedMoveBackToBefore)
+TEST_F(TransformGizmoTest, ReleasingAnAxisRestoresTheGestureSnapshot)
 {
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, Centre()));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::X, m_vp, Centre()));
-
-	const glm::vec2 cursor = Centre() + glm::vec2(150.0f, 0.0f);
-	ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
-	ASSERT_NE(m_target.GetPosition(), glm::vec3(0.0f));
-
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::None, m_vp, cursor));
-	EXPECT_EQ(m_gizmo.Axis(), GizmoAxis::None);
-	EXPECT_TRUE(m_gizmo.IsActive()) << "W changes the constraint, it does not end the gesture";
-
-	ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
-	EXPECT_EQ(m_target.GetPosition(), glm::vec3(0.0f));
+	struct Case { GizmoMode mode; GizmoAxis axis; glm::vec2 start; glm::vec2 end; };
+	for (const Case row : { Case{GizmoMode::Move, GizmoAxis::X, {0, 0}, {150, 0}},
+	                        Case{GizmoMode::Rotate, GizmoAxis::Z, {100, 0}, {0, -100}},
+	                        Case{GizmoMode::Scale, GizmoAxis::X, {100, 0}, {250, 0}} })
+	{
+		SCOPED_TRACE(static_cast<int>(row.mode));
+		const auto value = [&] {
+			if (row.mode == GizmoMode::Rotate) return m_target.GetRotation();
+			if (row.mode == GizmoMode::Scale) return m_target.GetScale();
+			return m_target.GetPosition();
+		};
+		const auto before = value();
+		ASSERT_TRUE(m_gizmo.Arm(row.mode, kUid, m_target, Centre()));
+		ASSERT_TRUE(m_gizmo.Constrain(row.axis, m_vp, Centre() + row.start));
+		const auto cursor = Centre() + row.end;
+		ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
+		ASSERT_NE(value(), before);
+		ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::None, m_vp, cursor));
+		EXPECT_EQ(m_gizmo.Axis(), GizmoAxis::None);
+		EXPECT_TRUE(m_gizmo.IsActive());
+		ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
+		EXPECT_EQ(value(), before);
+		m_gizmo.Disarm();
+	}
 }
 
-/// @test W on a constrained Rotate restores the stored triple verbatim.
-TEST_F(TransformGizmoTest, ConstrainNone_NormalizesAConstrainedRotateBackToBefore)
-{
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Rotate, kUid, m_target, Centre()));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::Z, m_vp, Centre() + glm::vec2(100.0f, 0.0f)));
 
-	const glm::vec2 cursor = Centre() + glm::vec2(0.0f, -100.0f);
-	ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
-	ASSERT_NE(m_target.GetRotation(), glm::vec3(0.0f));
-
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::None, m_vp, cursor));
-	ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
-	EXPECT_EQ(m_target.GetRotation(), glm::vec3(0.0f)) << "the snapshot, not a recomposition";
-}
-
-/// @test W on a constrained Scale restores the whole triple.
-TEST_F(TransformGizmoTest, ConstrainNone_NormalizesAConstrainedScaleBackToBefore)
-{
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Scale, kUid, m_target, Centre()));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::X, m_vp, Centre() + glm::vec2(100.0f, 0.0f)));
-
-	const glm::vec2 cursor = Centre() + glm::vec2(250.0f, 0.0f);
-	ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
-	ASSERT_NE(m_target.GetScale(), glm::vec3(1.0f));
-
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::None, m_vp, cursor));
-	ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
-	EXPECT_EQ(m_target.GetScale(), glm::vec3(1.0f)) << "the radius ratio is exactly 1 again";
-}
 
 /**
  * @test Switching axis mid-gesture undoes the previous axis rather than compounding.
@@ -640,14 +565,3 @@ TEST_F(TransformGizmoTest, Constrain_SwitchingAxisUndoesThePreviousAxisTravel)
 	ASSERT_TRUE(m_gizmo.Drag(m_vp, cursor, m_target));
 	EXPECT_EQ(m_target.GetPosition(), glm::vec3(0.0f)) << "the X travel is gone, not carried over";
 }
-
-
-
-
-
-
-
-
-
-
-

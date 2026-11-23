@@ -156,6 +156,21 @@ TEST(ScriptPreload, PreloadsAStdlibPackageAndReportsCache)
 	EXPECT_TRUE(second[0].cached);
 	EXPECT_GE(second[0].loadSeconds, 0.0);
 
+	const std::vector<neurus::ScriptModuleInfo> modules = engine.LoadedModules();
+	ASSERT_FALSE(modules.empty());
+	ASSERT_LE(modules.size(), 500u);
+
+	bool found = false;
+	for (const neurus::ScriptModuleInfo& module : modules)
+	{
+		if (module.name == "json")
+		{
+			found = true;
+			EXPECT_FALSE(module.origin.empty());
+			EXPECT_GE(module.loadSeconds, 0.0);
+		}
+	}
+	EXPECT_TRUE(found) << "loaded modules did not include the preloaded package";
 	engine.Shutdown();
 }
 
@@ -175,31 +190,6 @@ TEST(ScriptPreload, MissingPackageIsReportedAndTheEngineStillRuns)
 	// A failed preload must not poison the interpreter.
 	EXPECT_TRUE(engine.RunStringChecked("preload_survivor = 40 + 2"));
 	EXPECT_EQ(engine.EvalStringChecked("preload_survivor").value_or(""), "42");
-
-	engine.Shutdown();
-}
-
-TEST(ScriptPreload, LoadedModulesReportsThePreloadedPackage)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	ASSERT_TRUE(engine.Preload({"json"})[0].ok);
-
-	const std::vector<neurus::ScriptModuleInfo> modules = engine.LoadedModules();
-	ASSERT_FALSE(modules.empty());
-	ASSERT_LE(modules.size(), 500u);
-
-	bool found = false;
-	for (const neurus::ScriptModuleInfo& module : modules)
-	{
-		if (module.name == "json")
-		{
-			found = true;
-			EXPECT_FALSE(module.origin.empty());
-			EXPECT_GE(module.loadSeconds, 0.0);
-		}
-	}
-	EXPECT_TRUE(found) << "loaded modules did not include the preloaded package";
 
 	engine.Shutdown();
 }

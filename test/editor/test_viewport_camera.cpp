@@ -197,59 +197,18 @@ TEST(ViewportCameraTest, ViewportCameraIsPooledButNotSceneContent)
 	EXPECT_EQ(scene.cam_list.count(uid), 0u);
 	EXPECT_EQ(scene.GetObjectID(uid), nullptr);
 	EXPECT_FALSE(scene.ActivateCamera(uid)) << "the Scene must refuse to activate it";
-}
-
-/**
- * @test The default framing is the one the viewport seeds, not a
- *       default-constructed Camera. A fresh Camera is degenerate for viewing
- *       (eye == target), so the pose has to be set explicitly — and the two
- *       constants live on EditorViewport, which is the only definition of them.
- */
-TEST(ViewportCameraTest, ViewportCameraIsSeededWithAUsablePose)
-{
-	Editor editor(nullptr);
-	editor.NewScene(); // no content needed: this is the viewport camera alone
-
-	const Camera* cam = editor.GetViewport().ViewportCamera();
-	ASSERT_NE(cam, nullptr);
-	EXPECT_EQ(cam->GetPosition(), EditorViewport::kDefaultEye);
-	EXPECT_EQ(cam->cam_tar, EditorViewport::kDefaultTarget);
-	EXPECT_NE(cam->GetPosition(), cam->cam_tar);
+	EXPECT_EQ(view->GetPosition(), EditorViewport::kDefaultEye);
+	EXPECT_EQ(view->cam_tar, EditorViewport::kDefaultTarget);
+	editor.NewScene();
+	EXPECT_NE(vp.CameraID(), uid);
+	ASSERT_NE(vp.GetCamera(), nullptr);
+	EXPECT_EQ(vp.GetCamera()->GetObjectID(), vp.CameraID());
+	EXPECT_EQ(vp.GetCamera()->GetPosition(), EditorViewport::kDefaultEye);
 }
 
 // ---------------------------------------------------------------------------
 // Lifecycle: re-established after every pool clear
 // ---------------------------------------------------------------------------
-
-/**
- * @test Repeated File > New keeps a usable viewport camera. Each scene swap calls
- *       ResourceManager::Clear(), which drops the viewport camera along with
- *       everything else — so it gets a *new* UID each time, and a stale UID left
- *       behind would resolve to nothing and blank the viewport. ForgetCamera()
- *       before the clear is what makes that true.
- */
-TEST(ViewportCameraTest, RepeatedNewScene_RebuildsTheViewportCamera)
-{
-	Editor editor(nullptr);
-
-	int previousUid = 0;
-	for (int i = 0; i < 3; ++i)
-	{
-		editor.NewScene(); // the reset is NewScene()'s half of File > New
-
-		const EditorViewport& vp = editor.GetViewport();
-		const int uid = vp.CameraID();
-		ASSERT_NE(uid, 0) << "iteration " << i;
-		EXPECT_NE(uid, previousUid) << "the pool was cleared; the UID cannot survive";
-		previousUid = uid;
-
-		const Camera* cam = vp.GetCamera();
-		ASSERT_NE(cam, nullptr) << "iteration " << i;
-		EXPECT_EQ(cam->GetObjectID(), uid);
-		// Reset to the seeded framing, not carried over from the previous document.
-		EXPECT_EQ(cam->GetPosition(), EditorViewport::kDefaultEye);
-	}
-}
 
 /**
  * @test Deleting every camera in the scene is legal and leaves the viewport
@@ -299,6 +258,9 @@ TEST(ViewportCameraTest, ActivationSwitchesTheViewAndDeactivationRestoresThePose
 	Scene& scene = editor.GetScene();
 	ASSERT_EQ(scene.cam_list.size(), 1u);
 	Camera* sceneCam = scene.cam_list.begin()->second.get();
+	scene.selections.Select(sceneCam, false);
+	PublishFrame(editor);
+	EXPECT_EQ(editor.GetViewport().GetCamera(), viewportCam);
 	ASSERT_TRUE(scene.ActivateCamera(sceneCam->GetObjectID()));
 	PublishFrame(editor);
 
@@ -311,25 +273,6 @@ TEST(ViewportCameraTest, ActivationSwitchesTheViewAndDeactivationRestoresThePose
 	ASSERT_EQ(vp.GetCamera(), viewportCam);
 	EXPECT_EQ(vp.GetCamera()->GetPosition(), orbited)
 		<< "the viewport camera must keep the pose it was left at";
-}
-
-/**
- * @test Selecting a scene camera does not change the view. Selection drives the
- *       PropertyPanel; only activation drives the viewport.
- */
-TEST(ViewportCameraTest, SelectingASceneCameraDoesNotChangeTheView)
-{
-	Editor editor(nullptr);
-	NewProject(editor);
-
-	Scene& scene = editor.GetScene();
-	ASSERT_EQ(scene.cam_list.size(), 1u);
-	scene.selections.Select(scene.cam_list.begin()->second.get(), false);
-	PublishFrame(editor);
-
-	const EditorViewport& vp = editor.GetViewport();
-	ASSERT_NE(vp.GetCamera(), nullptr);
-	EXPECT_EQ(vp.GetCamera()->GetObjectID(), vp.CameraID());
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +451,7 @@ TEST(ViewportCameraTest, CameraLessProjectLoads_WithNothingInjected)
  *       other. With no scene camera activated that is the viewport camera; the
  *       scene camera keeps its own aspect.
  */
-TEST(ViewportCameraTest, ResizeFramesOnlyTheActiveViewportCamera)
+TEST(ViewportCameraTest, ActiveCameraFollowsViewportResizesAndActivation)
 {
 	Editor editor(nullptr);
 	editor.Initialize();
@@ -529,63 +472,24 @@ TEST(ViewportCameraTest, ResizeFramesOnlyTheActiveViewportCamera)
 	EXPECT_FLOAT_EQ(sceneCam->cam_w, 1.0f)
 		<< "the inactive scene camera must be untouched";
 	EXPECT_FLOAT_EQ(sceneCam->cam_h, 1.0f);
-}
-
-/**
- * @test With a scene camera activated, the same resize reaches that camera and
- *       leaves the viewport camera alone. The controller still only sees a UID,
- *       so it does not know which kind of camera it resized.
- */
-TEST(ViewportCameraTest, ResizeFramesOnlyTheActivatedSceneCamera)
-{
-	Editor editor(nullptr);
-	editor.Initialize();
-	NewProject(editor);
-
-	Scene& scene = editor.GetScene();
-	ASSERT_EQ(scene.cam_list.size(), 1u);
-	Camera* sceneCam = scene.cam_list.begin()->second.get();
-	ASSERT_TRUE(scene.ActivateCamera(sceneCam->GetObjectID()));
-	PublishFrame(editor);
-
-	Camera* viewportCam = editor.GetViewport().ViewportCamera();
-	ASSERT_NE(viewportCam, nullptr);
-	const float viewportW = viewportCam->cam_w;
-	const float viewportH = viewportCam->cam_h;
-
-	editor.HandleViewportResize(glm::uvec2(800, 600), glm::uvec2(800, 600));
-
-	EXPECT_FLOAT_EQ(sceneCam->cam_w, 800.0f);
-	EXPECT_FLOAT_EQ(sceneCam->cam_h, 600.0f);
-	EXPECT_FLOAT_EQ(viewportCam->cam_w, viewportW)
-		<< "the viewport camera is skipped while a scene camera is active";
-	EXPECT_FLOAT_EQ(viewportCam->cam_h, viewportH);
-}
-
-/**
- * @test Activation applies the current viewport extent to the newly active scene
- *       camera once, through the same CameraResizeEvent a resize uses. A fresh
- *       Camera is 1x1, so without this the first activated frame is stretched.
- */
-TEST(ViewportCameraTest, ActivationFramesTheSceneCameraToTheCurrentViewport)
-{
-	Editor editor(nullptr);
-	editor.Initialize();
-	NewProject(editor);
-
-	editor.HandleViewportResize(glm::uvec2(1024, 768), glm::uvec2(1024, 768));
-
-	Scene& scene = editor.GetScene();
-	ASSERT_EQ(scene.cam_list.size(), 1u);
-	Camera* sceneCam = scene.cam_list.begin()->second.get();
-	ASSERT_FLOAT_EQ(sceneCam->cam_w, 1.0f) << "precondition: not active, not framed";
 
 	editor.OnUIEvent(ActiveCameraChanged{sceneCam->GetObjectID()});
 	editor.Edit();
 
+	EXPECT_FLOAT_EQ(sceneCam->cam_w, 800.0f);
+	EXPECT_FLOAT_EQ(sceneCam->cam_h, 600.0f);
+	EXPECT_EQ(editor.GetViewport().GetCamera(), sceneCam);
+
+	const float viewportW = viewportCam->cam_w;
+	const float viewportH = viewportCam->cam_h;
+
+	editor.HandleViewportResize(glm::uvec2(1024, 768), glm::uvec2(1024, 768));
+
 	EXPECT_FLOAT_EQ(sceneCam->cam_w, 1024.0f);
 	EXPECT_FLOAT_EQ(sceneCam->cam_h, 768.0f);
-	EXPECT_EQ(editor.GetViewport().GetCamera(), sceneCam);
+	EXPECT_FLOAT_EQ(viewportCam->cam_w, viewportW)
+		<< "the viewport camera is skipped while a scene camera is active";
+	EXPECT_FLOAT_EQ(viewportCam->cam_h, viewportH);
 }
 
 /**

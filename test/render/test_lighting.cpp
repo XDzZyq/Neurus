@@ -150,10 +150,6 @@ protected:
 	std::unique_ptr<LightingPass>  m_lightingPass;
 };
 
-// ===========================================================================
-// Tests
-// ===========================================================================
-
 // ---------------------------------------------------------------------------
 // 1. Constructor - pipeline is created successfully
 // ---------------------------------------------------------------------------
@@ -173,41 +169,27 @@ TEST_F(LightingPassTest, Constructor_CreatesValidPipeline)
 // 2. PointLightStruct - size matches shader expectation (std140, 48 bytes)
 // ---------------------------------------------------------------------------
 
-TEST_F(LightingPassTest, PointLightStruct_SizeIs48Bytes)
-{
-	EXPECT_EQ(sizeof(PointLightStruct), 48u);
-}
+static_assert(sizeof(PointLightStruct) == 48u);
 
 // ---------------------------------------------------------------------------
 // 3. LightingPushConstants - size matches shader expectation (176 bytes)
 // ---------------------------------------------------------------------------
 
-TEST_F(LightingPassTest, PushConstants_SizeIs176Bytes)
-{
-	EXPECT_EQ(sizeof(LightingPushConstants), 176u);
-}
+static_assert(sizeof(LightingPushConstants) == 176u);
 
 // ---------------------------------------------------------------------------
 // 4. Non-copyable / movable
 // ---------------------------------------------------------------------------
 
-TEST_F(LightingPassTest, NonCopyable)
-{
-	static_assert(!std::is_copy_constructible_v<LightingPass>,
-	              "LightingPass must not be copy-constructible");
-	static_assert(!std::is_copy_assignable_v<LightingPass>,
-	              "LightingPass must not be copy-assignable");
-	SUCCEED();
-}
+static_assert(!std::is_copy_constructible_v<LightingPass>,
+              "LightingPass must not be copy-constructible");
+static_assert(!std::is_copy_assignable_v<LightingPass>,
+              "LightingPass must not be copy-assignable");
 
-TEST_F(LightingPassTest, Movable)
-{
-	static_assert(std::is_move_constructible_v<LightingPass>,
-	              "LightingPass must be move-constructible");
-	static_assert(std::is_move_assignable_v<LightingPass>,
-	              "LightingPass must be move-assignable");
-	SUCCEED();
-}
+static_assert(std::is_move_constructible_v<LightingPass>,
+              "LightingPass must be move-constructible");
+static_assert(std::is_move_assignable_v<LightingPass>,
+              "LightingPass must be move-assignable");
 
 // ---------------------------------------------------------------------------
 // 5. Single point light - dispatch produces non-zero HDR output

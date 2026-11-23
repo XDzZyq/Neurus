@@ -66,7 +66,7 @@ configure:
 # Full build only when no sub-target (app/test) is specified.
 #   make build       → full build
 #   make build app   → Neurus.exe only
-#   make build test  → neurus_test only
+#   make build test  → both Google Test executables
 build:
 ifeq ($(filter app test,$(MAKECMDGOALS)),)
 	cmake --build $(BUILD_DIR) --config Debug
@@ -77,9 +77,9 @@ endif
 app:
 	cmake --build $(BUILD_DIR) --target $(APP_TARGET) --config Debug
 
-# Build neurus_test only (make test  or  make build test)
+# Build both Google Test executables (make test or make build test)
 test:
-	cmake --build $(BUILD_DIR) --target neurus_test --config Debug
+	cmake --build $(BUILD_DIR) --target neurus_test neurus_cpu_test --config Debug
 
 # Run tests. Pass FILTER for specific tests.
 #   make check                          → all tests
@@ -193,9 +193,9 @@ help:
 	@echo "  make configure      - Configure Debug build (VS 2022)"
 	@echo "  make build          - Build everything (Debug)"
 	@echo "  make build app      - Build Neurus.exe only"
-	@echo "  make build test     - Build neurus_test only"
+	@echo "  make build test     - Build both Google Test executables"
 	@echo "  make app            - Alias: build Neurus.exe only"
-	@echo "  make test           - Alias: build neurus_test only"
+	@echo "  make test           - Alias: build both Google Test executables"
 	@echo "  make check          - Run all tests"
 	@echo "  make check FILTER=\"-R Pattern\" - Run specific tests"
 	@echo "  make clean          - Clean Debug build"

@@ -14,53 +14,23 @@ using namespace neurus;
 // BufferLayout - pure CPU tests (no Vulkan required)
 // ===========================================================================
 
-TEST(BufferLayoutTest, EmptyLayout_HasZeroAttributes)
+TEST(BufferLayoutTest, AttributesAndBindingDescribeTheVertexLayout)
 {
 	BufferLayout layout;
 	EXPECT_EQ(layout.GetAttributeCount(), 0u);
 	EXPECT_EQ(layout.GetStride(), 0u);
-}
-
-TEST(BufferLayoutTest, AddSingleAttribute_IncrementsCount)
-{
-	BufferLayout layout;
 	layout.AddAttribute(0, vk::Format::eR32G32B32Sfloat, 0);
-
 	EXPECT_EQ(layout.GetAttributeCount(), 1u);
-	EXPECT_EQ(layout.GetStride(), 12u);  // vec3 = 12 bytes
-}
-
-TEST(BufferLayoutTest, AddMultipleAttributes_ComputesCorrectStride)
-{
-	// Typical vertex layout: position(12) + normal(12) + uv(8)
-	BufferLayout layout;
-	layout.AddAttribute(0, vk::Format::eR32G32B32Sfloat, 0);   // position: 0..11
-	layout.AddAttribute(1, vk::Format::eR32G32B32Sfloat, 12);  // normal:   12..23
-	layout.AddAttribute(2, vk::Format::eR32G32Sfloat, 24);     // uv:       24..31
-
-	EXPECT_EQ(layout.GetAttributeCount(), 3u);
-	EXPECT_EQ(layout.GetStride(), 32u);  // 24 + 8 = 32
-}
-
-TEST(BufferLayoutTest, GetBindingDescription_ReturnsCorrectValues)
-{
-	BufferLayout layout;
-	layout.AddAttribute(0, vk::Format::eR32G32B32Sfloat, 0);
-	layout.AddAttribute(1, vk::Format::eR32G32Sfloat, 12);
-
-	auto binding = layout.GetBindingDescription();
-
-	EXPECT_EQ(binding.binding, 0u);
-	EXPECT_EQ(binding.stride, 20u);  // 12 + 8 = 20
-	EXPECT_EQ(binding.inputRate, vk::VertexInputRate::eVertex);
-}
-
-TEST(BufferLayoutTest, GetAttributeDescriptions_ReturnsCorrectAttributes)
-{
-	BufferLayout layout;
-	layout.AddAttribute(0, vk::Format::eR32G32B32Sfloat, 0);
+	EXPECT_EQ(layout.GetStride(), 12u);
 	layout.AddAttribute(1, vk::Format::eR32G32Sfloat, 12);
 	layout.AddAttribute(2, vk::Format::eR32G32B32A32Sfloat, 20);
+
+	EXPECT_EQ(layout.GetAttributeCount(), 3u);
+	EXPECT_EQ(layout.GetStride(), 36u);
+	const auto binding = layout.GetBindingDescription();
+	EXPECT_EQ(binding.binding, 0u);
+	EXPECT_EQ(binding.stride, 36u);
+	EXPECT_EQ(binding.inputRate, vk::VertexInputRate::eVertex);
 
 	const auto& attrs = layout.GetAttributeDescriptions();
 	ASSERT_EQ(attrs.size(), 3u);

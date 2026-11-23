@@ -107,33 +107,6 @@ bool StripActiveCamUid(const std::string& path)
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Default state: registering cameras activates nothing
-// ---------------------------------------------------------------------------
-
-/**
- * @test Two registered cameras leave the scene with none activated. This is the
- *       whole point of the feature: under the old positional lookup the first
- *       bucket won, so a scene could never report "no camera in use".
- */
-TEST(SceneCameraActivation, RegisteringCamerasActivatesNothing)
-{
-	Scene scene;
-	ResourceManager resources;
-
-	scene.UseCamera(resources.Load<Camera>());
-	scene.UseCamera(resources.Load<Camera>());
-
-	ASSERT_EQ(scene.cam_list.size(), 2u);
-	EXPECT_EQ(scene.ActiveCameraID(), 0);
-	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
-	EXPECT_EQ(static_cast<const Scene&>(scene).GetActiveCamera(), nullptr);
-}
-
-// ---------------------------------------------------------------------------
-// Activate / replace / deactivate
-// ---------------------------------------------------------------------------
-
 TEST(SceneCameraActivation, ActivateCamera_PutsThatExactCameraInUse)
 {
 	Scene scene;
@@ -143,42 +116,27 @@ TEST(SceneCameraActivation, ActivateCamera_PutsThatExactCameraInUse)
 	auto second = resources.Load<Camera>();
 	scene.UseCamera(first);
 	scene.UseCamera(second);
+	EXPECT_EQ(scene.ActiveCameraID(), 0);
+	const Scene& view = scene;
+	EXPECT_EQ(view.GetActiveCamera(), nullptr);
+	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
 
 	ASSERT_TRUE(scene.ActivateCamera(second->GetObjectID()));
 	EXPECT_EQ(scene.ActiveCameraID(), second->GetObjectID());
 	EXPECT_EQ(scene.GetActiveCamera(), second.get());
+	EXPECT_EQ(view.GetActiveCamera(), second.get());
 
 	// Replacing, not accumulating: the previous activation is simply dropped.
 	ASSERT_TRUE(scene.ActivateCamera(first->GetObjectID()));
 	EXPECT_EQ(scene.GetActiveCamera(), first.get());
-}
-
-TEST(SceneCameraActivation, DeactivateCamera_LeavesNoSceneCameraInUse)
-{
-	Scene scene;
-	ResourceManager resources;
-
-	auto cam = resources.Load<Camera>();
-	scene.UseCamera(cam);
-	ASSERT_TRUE(scene.ActivateCamera(cam->GetObjectID()));
-
+	ASSERT_TRUE(scene.RemoveCamera(second->GetObjectID()));
+	EXPECT_EQ(scene.GetActiveCamera(), first.get());
 	scene.DeactivateCamera();
-	EXPECT_EQ(scene.ActiveCameraID(), 0);
 	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
-	// The camera is still scene content — deactivating is not deleting.
+	EXPECT_EQ(scene.ActiveCameraID(), 0);
 	EXPECT_EQ(scene.cam_list.size(), 1u);
 }
 
-// ---------------------------------------------------------------------------
-// Only scene content can be activated
-// ---------------------------------------------------------------------------
-
-/**
- * @test A pooled camera that was never handed to UseCamera cannot be activated.
- *       This is exactly the viewport camera's situation — it lives in the
- *       ResourceManager so CameraController can resolve and orbit it, but it is
- *       not scene content and must not be reachable as a *scene* activation.
- */
 TEST(SceneCameraActivation, ActivateCamera_RejectsAPooledNonSceneCamera)
 {
 	Scene scene;
@@ -190,56 +148,14 @@ TEST(SceneCameraActivation, ActivateCamera_RejectsAPooledNonSceneCamera)
 
 	auto editorCam = resources.Load<Camera>(); // pooled, never registered
 	EXPECT_FALSE(scene.ActivateCamera(editorCam->GetObjectID()));
+	EXPECT_FALSE(scene.ActivateCamera(0));
+	EXPECT_FALSE(scene.ActivateCamera(999999));
 
 	// A refused activation changes nothing.
 	EXPECT_EQ(scene.ActiveCameraID(), sceneCam->GetObjectID());
 	EXPECT_EQ(scene.GetActiveCamera(), sceneCam.get());
 }
 
-TEST(SceneCameraActivation, ActivateCamera_RejectsAnUnknownUid)
-{
-	Scene scene;
-	ResourceManager resources;
-	scene.UseCamera(resources.Load<Camera>());
-
-	EXPECT_FALSE(scene.ActivateCamera(0));
-	EXPECT_FALSE(scene.ActivateCamera(999999));
-	EXPECT_EQ(scene.ActiveCameraID(), 0);
-}
-
-// ---------------------------------------------------------------------------
-// Removal leaves the UID stale on purpose, so undo restores it for free
-// ---------------------------------------------------------------------------
-
-/**
- * @test Deleting the activated camera is legal and takes the view with it: the
- *       scene reports no camera in use, so the Editor falls back to its own.
- *       ActiveCameraID() keeps naming the removed camera — that staleness is the
- *       feature, not a leak, and the next test is why.
- */
-TEST(SceneCameraActivation, RemovingTheActivatedCamera_LeavesTheUidStale)
-{
-	Scene scene;
-	ResourceManager resources;
-
-	auto cam = resources.Load<Camera>();
-	const int uid = cam->GetObjectID();
-	scene.UseCamera(cam);
-	ASSERT_TRUE(scene.ActivateCamera(uid));
-
-	ASSERT_TRUE(scene.RemoveCamera(uid));
-	EXPECT_TRUE(scene.cam_list.empty());
-	EXPECT_EQ(scene.GetActiveCamera(), nullptr) << "must validate against cam_list";
-	EXPECT_EQ(scene.ActiveCameraID(), uid) << "left stale so undo can revalidate it";
-}
-
-/**
- * @test Undoing the delete re-validates the activation with no extra operation.
- *       The undo path is SceneObjectAddOp -> UsePooledObject -> UseCamera, which
- *       is what this stands in for; because the UID was never cleared, putting
- *       the camera back in cam_list is enough to restore the view, which keeps
- *       delete-and-undo at exactly one undo entry each way.
- */
 TEST(SceneCameraActivation, ReAddingTheRemovedCamera_RestoresTheActivation)
 {
 	Scene scene;
@@ -250,26 +166,13 @@ TEST(SceneCameraActivation, ReAddingTheRemovedCamera_RestoresTheActivation)
 	scene.UseCamera(cam);
 	ASSERT_TRUE(scene.ActivateCamera(uid));
 	ASSERT_TRUE(scene.RemoveCamera(uid));
+	EXPECT_TRUE(scene.cam_list.empty());
+	EXPECT_EQ(scene.ActiveCameraID(), uid);
 	ASSERT_EQ(scene.GetActiveCamera(), nullptr);
 
 	scene.UseCamera(cam); // the undo of the delete
 	EXPECT_EQ(scene.GetActiveCamera(), cam.get())
 		<< "the surviving UID must re-resolve without a second activation";
-}
-
-TEST(SceneCameraActivation, RemovingADifferentCamera_DoesNotDisturbTheActivation)
-{
-	Scene scene;
-	ResourceManager resources;
-
-	auto kept = resources.Load<Camera>();
-	auto other = resources.Load<Camera>();
-	scene.UseCamera(kept);
-	scene.UseCamera(other);
-	ASSERT_TRUE(scene.ActivateCamera(kept->GetObjectID()));
-
-	ASSERT_TRUE(scene.RemoveCamera(other->GetObjectID()));
-	EXPECT_EQ(scene.GetActiveCamera(), kept.get());
 }
 
 // ---------------------------------------------------------------------------

@@ -29,20 +29,27 @@ protected:
 	void TearDown() override { I18n::instance().setLanguage("en"); }
 };
 
-TEST_F(I18nTest, EnglishIsTheBuiltinFallback)
+TEST_F(I18nTest, EnglishAndUnknownLocalesFallBackToSource)
 {
 	I18n& i18n = I18n::instance();
+
 	EXPECT_EQ(i18n.language(), QStringLiteral("en"));
 
 	// No dictionary is loaded for English — keys ARE the strings.
 	EXPECT_EQ(i18n.translate("&File"), QStringLiteral("&File"));
 	EXPECT_EQ(i18n.translate("Anything at all"), QStringLiteral("Anything at all"));
+
+	i18n.setLanguage("klingon");
+	EXPECT_EQ(i18n.language(), QStringLiteral("klingon"));
+	EXPECT_EQ(i18n.translate("&File"), QStringLiteral("&File"));
+	EXPECT_EQ(i18n.translate("Viewport"), QStringLiteral("Viewport"));
 }
 
-TEST_F(I18nTest, ChineseCatalogTranslatesKnownKeys)
+TEST_F(I18nTest, ChineseCatalogResolvesKeysByContextAndFallsBackForMisses)
 {
 	I18n& i18n = I18n::instance();
 	i18n.setLanguage("zh_CN");
+
 	EXPECT_EQ(i18n.language(), QStringLiteral("zh_CN"));
 
 	EXPECT_EQ(i18n.translate("&File"), QStringLiteral("文件(&F)"));
@@ -51,12 +58,6 @@ TEST_F(I18nTest, ChineseCatalogTranslatesKnownKeys)
 	// Untranslated keys fall back to English verbatim.
 	EXPECT_EQ(i18n.translate("Some untranslated key"),
 	          QStringLiteral("Some untranslated key"));
-}
-
-TEST_F(I18nTest, ContextsDisambiguateIdenticalStrings)
-{
-	I18n& i18n = I18n::instance();
-	i18n.setLanguage("zh_CN");
 
 	// "Viewport" is only translated in the "Dock" context (dock titles).
 	EXPECT_EQ(i18n.translateCtx("Viewport", "Dock"), QStringLiteral("视口"));
@@ -70,15 +71,6 @@ TEST_F(I18nTest, ContextsDisambiguateIdenticalStrings)
 	EXPECT_EQ(i18n.translateCtx("Save Log", "Dialog"),
 	          QStringLiteral("保存日志"));
 	EXPECT_EQ(i18n.translate("Save Log"), QStringLiteral("Save Log"));
-}
-
-TEST_F(I18nTest, UnknownLanguageFallsBackToEnglish)
-{
-	I18n& i18n = I18n::instance();
-	i18n.setLanguage("klingon");
-	EXPECT_EQ(i18n.language(), QStringLiteral("klingon"));
-	EXPECT_EQ(i18n.translate("&File"), QStringLiteral("&File"));
-	EXPECT_EQ(i18n.translate("Viewport"), QStringLiteral("Viewport"));
 }
 
 TEST_F(I18nTest, LanguageChangedSignalContract)
@@ -127,17 +119,9 @@ TEST_F(I18nTest, SystemLanguageIsOneOfTheSupportedLanguages)
 	                        [&lang](const auto& l) { return l.code == lang; }))
 		<< "systemLanguage() returned '" << lang.toStdString()
 		<< "', which is not in supportedLanguages()";
-}
-
-TEST_F(I18nTest, AutoLanguageResolvesToSystemLanguage)
-{
-	// Safety net: "auto" (used by Preferences before the Application resolves
-	// it) is treated as "follow the system UI language".
-	I18n& i18n = I18n::instance();
+	auto& i18n = I18n::instance();
 	i18n.setLanguage(QStringLiteral("auto"));
-	EXPECT_NE(i18n.language(), QStringLiteral("auto"));
-	EXPECT_TRUE(i18n.language() == QStringLiteral("en")
-	            || i18n.language() == QStringLiteral("zh_CN"));
+	EXPECT_EQ(i18n.language(), lang);
 }
 
 } // namespace

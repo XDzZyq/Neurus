@@ -115,6 +115,7 @@ TEST_F(IpcRoundtripTest, HelloThenStatus)
 	EXPECT_TRUE(result->ok);
 	EXPECT_EQ(result->details["session"], "test-session");
 	EXPECT_EQ(m_executor.calls.load(), 1);
+	EXPECT_TRUE(m_server->WaitForWrites(std::chrono::seconds(2)));
 }
 
 TEST_F(IpcRoundtripTest, WrongTokenIsUnauthorizedAndExecutorNeverRuns)
@@ -163,14 +164,4 @@ TEST_F(IpcRoundtripTest, NoResponseBeforeTheMainThreadDrains)
 	EXPECT_FALSE(result.has_value());
 	EXPECT_EQ(error.code, CommandErrorCode::Timeout);
 	EXPECT_EQ(m_executor.calls.load(), 0);
-}
-
-TEST_F(IpcRoundtripTest, WaitForWritesReturnsAfterResponse)
-{
-	IpcClient client({m_server->Port(), m_token, std::chrono::seconds(2)});
-	CommandError error{};
-	auto result = RunCommand(client, {kSessionStatus, {}}, error);
-
-	ASSERT_TRUE(result.has_value()) << error.message;
-	EXPECT_TRUE(m_server->WaitForWrites(std::chrono::seconds(2)));
 }

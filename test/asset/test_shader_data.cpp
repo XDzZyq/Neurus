@@ -186,7 +186,7 @@ TEST(ShaderDataPersistence, LegacyMissingStagesReloadsFromPaths)
 	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::FRAGMENT).code.empty());
 }
 
-TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
+TEST(ShaderDataPersistence, ResourceComponentPreservesRenderAndComputeShadersByName)
 {
 	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
@@ -195,6 +195,12 @@ TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
 	ASSERT_TRUE(compute->ParseAndGenerate());
 	resources.SetName(compute->GetObjectID(), "Comp");
 	compute->SetName("Comp");
+
+	compute->SetDefault("radius", 0.5f);
+	auto shader = resources.Load<neurus::RenderShader>(
+		"MyFrag", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
+	resources.SetName(shader->GetObjectID(), "MyFrag");
+	shader->SetName("MyFrag");
 
 	std::stringstream ss;
 	{
@@ -214,52 +220,8 @@ TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
 	EXPECT_EQ(loaded->GetType(), neurus::ShaderType::COMPUTE);
 	EXPECT_FALSE(loaded->GetStage(neurus::ShaderType::COMPUTE).code.empty());
 	EXPECT_FALSE(loaded->GetStage(neurus::ShaderType::COMPUTE).spv.empty());
-}
-
-TEST(ShaderDataPersistence, ComputeShaderRoundTripsContentAndDefaults)
-{
-	neurus::ComputeShader src("Dummy", "res/shaders/compute/dummy.comp.glsl");
-	ASSERT_TRUE(src.ParseAndGenerate());
-	src.SetDefault("radius", 0.5f);
-
-	std::stringstream ss;
-	{
-		cereal::JSONOutputArchive out(ss);
-		out(cereal::make_nvp("shader", src));
-	}
-	neurus::ComputeShader dst;
-	{
-		cereal::JSONInputArchive in(ss);
-		in(cereal::make_nvp("shader", dst));
-	}
-	EXPECT_EQ(dst.GetType(), neurus::ShaderType::COMPUTE);
-	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::COMPUTE).code.empty());
-	ASSERT_EQ(dst.GetDefaults().size(), 1u);
-	EXPECT_EQ(dst.GetDefaults()[0].name, "radius");
-	EXPECT_FALSE(dst.GetStage(neurus::ShaderType::COMPUTE).spv.empty());
-}
-
-TEST(ShaderDataPersistence, ShaderNamesSurviveResourceComponentRoundTrip)
-{
-	const neurus::BuiltInRenderData catalog;
-	neurus::ResourceManager resources;
-	auto shader = resources.Load<neurus::RenderShader>(
-		"MyFrag", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
-	resources.SetName(shader->GetObjectID(), "MyFrag");
-	shader->SetName("MyFrag");
-
-	std::stringstream ss;
-	{
-		cereal::JSONOutputArchive out(ss);
-		neurus::project::ResourceComponent save(resources, catalog);
-		save.Save(out);
-	}
-	neurus::ResourceManager restored;
-	{
-		cereal::JSONInputArchive in(ss);
-		neurus::project::ResourceComponent load(restored, catalog);
-		load.Load(in);
-	}
+	ASSERT_EQ(loaded->GetDefaults().size(), 1u);
+	EXPECT_EQ(loaded->GetDefaults()[0].name, "radius");
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));
 }
 

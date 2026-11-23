@@ -53,7 +53,7 @@ TEST(TerminalBinding, WritesReadsAndClearsTheBinding)
 	EnvironmentGuard sessions("NEURUS_SESSIONS_DIR", directory.string());
 	EnvironmentGuard terminal("NEURUS_TERMINAL_ID", "unit-test-terminal");
 
-	EXPECT_FALSE(neurus::cli::TerminalIdentity().empty());
+	EXPECT_EQ(neurus::cli::TerminalIdentity(), "explicit:unit-test-terminal");
 	EXPECT_FALSE(ReadTerminalBinding().has_value());
 
 	std::string message;
@@ -73,13 +73,6 @@ TEST(TerminalBinding, WritesReadsAndClearsTheBinding)
 	EXPECT_FALSE(ReadTerminalBinding().has_value());
 
 	std::filesystem::remove_all(directory, error);
-}
-
-TEST(TerminalBinding, IdentityOverrideIsStable)
-{
-	EnvironmentGuard terminal("NEURUS_TERMINAL_ID", "parallel-agent-7");
-	EXPECT_EQ(neurus::cli::TerminalIdentity(), "explicit:parallel-agent-7");
-	EXPECT_EQ(neurus::cli::TerminalIdentity(), "explicit:parallel-agent-7");
 }
 
 TEST(TerminalBinding, ResolutionPrefersExplicitThenEnvironmentThenBinding)

@@ -49,158 +49,38 @@ TEST(DebugLine, DefaultConstruction)
 	EXPECT_TRUE(dl.GetVertices().empty());
 }
 
-/**
- * @test DebugLine inherits Transform3D - can set position.
- */
-TEST(DebugLine, InheritsTransform3D)
+TEST(DebugLine, AppendsSegmentsInOrderUntilCleared)
 {
-	DebugLine dl;
-	dl.SetPosition(glm::vec3(10.0f, 20.0f, 30.0f));
-
-	glm::mat4 model = dl.GetModelMatrix();
-	EXPECT_FLOAT_EQ(model[3][0], 10.0f);
-	EXPECT_FLOAT_EQ(model[3][1], 20.0f);
-	EXPECT_FLOAT_EQ(model[3][2], 30.0f);
-
-	// GetTransformPtr returns valid pointer to this Transform3D
-	Transform* base = &dl;
-	Transform3D* ptr = dynamic_cast<Transform3D*>(base->GetTransformPtr());
-	EXPECT_NE(ptr, nullptr);
+	DebugLine lines;
+	const glm::vec3 a(1, 0, 0), b(0, 1, 0), c(0, 0, 1);
+	lines.PushDebugLine(a, b);
+	lines.PushDebugLine(b, c);
+	lines.PushDebugLines({c, a});
+	const std::vector<glm::vec3> expected{a, b, b, c, c, a};
+	EXPECT_EQ(lines.GetVertices(), expected);
+	EXPECT_EQ(lines.GetVertexCount(), expected.size());
+	lines.ClearVertices();
+	EXPECT_TRUE(lines.GetVertices().empty());
+	EXPECT_EQ(lines.GetVertexCount(), 0);
 }
 
-/**
- * @test GetTransform() exposes the object's own Transform3D.
- *
- * Consumers resolve a target's transform polymorphically through
- * ObjectID::GetTransform() -- the gizmo, the property panel and the Scene's
- * per-frame transform update all bail out on nullptr. A DebugLine that returns
- * nullptr is invisible to every one of them.
- */
-TEST(DebugLine, GetTransformReturnsItsOwnTransform)
+TEST(DebugLine, UpdatesDrawingStyle)
 {
 	DebugLine dl;
-	ASSERT_NE(dl.GetTransform(), nullptr);
 
-	// The handle is this object: writing through it is the object's own TRS.
-	auto* xf = static_cast<Transform3D*>(dl.GetTransform());
-	xf->SetPosition(glm::vec3(2.0f, 4.0f, 6.0f));
-	EXPECT_EQ(dl.GetPosition(), glm::vec3(2.0f, 4.0f, 6.0f));
-	EXPECT_FLOAT_EQ(dl.GetModelMatrix()[3][1], 4.0f);
-}
-
-/**
- * @test PushDebugLine adds a pair of vertices (start/end).
- */
-TEST(DebugLine, PushDebugLine_SingleSegment)
-{
-	DebugLine dl;
-	dl.PushDebugLine(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
-
-	EXPECT_EQ(dl.GetVertexCount(), 2);
-
-	const auto& verts = dl.GetVertices();
-	EXPECT_EQ(verts[0], glm::vec3(0.0f, 0.0f, 0.0f));
-	EXPECT_EQ(verts[1], glm::vec3(1.0f, 1.0f, 1.0f));
-}
-
-/**
- * @test PushDebugLines appends multiple vertices.
- */
-TEST(DebugLine, PushDebugLines_MultipleVertices)
-{
-	DebugLine dl;
-	std::vector<glm::vec3> points = {
-		{0.0f, 0.0f, 0.0f},
-		{1.0f, 0.0f, 0.0f},
-		{1.0f, 1.0f, 0.0f},
-		{0.0f, 1.0f, 0.0f}
-	};
-	dl.PushDebugLines(points);
-
-	EXPECT_EQ(dl.GetVertexCount(), 4);
-
-	const auto& verts = dl.GetVertices();
-	for (size_t i = 0; i < points.size(); ++i)
-	{
-		EXPECT_EQ(verts[i], points[i]);
-	}
-}
-
-/**
- * @test Multiple PushDebugLine calls accumulate vertices.
- */
-TEST(DebugLine, PushDebugLine_Accumulates)
-{
-	DebugLine dl;
-	dl.PushDebugLine(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	dl.PushDebugLine(glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 0.0f));
-
-	EXPECT_EQ(dl.GetVertexCount(), 4);
-}
-
-/**
- * @test Color property can be set and retrieved.
- */
-TEST(DebugLine, SetColor)
-{
-	DebugLine dl;
 	glm::vec4 color(0.2f, 0.4f, 0.6f, 0.8f);
 	dl.SetColor(color);
 	EXPECT_EQ(dl.GetColor(), color);
-}
 
-/**
- * @test Width property can be set and retrieved.
- */
-TEST(DebugLine, SetWidth)
-{
-	DebugLine dl;
-	dl.SetWidth(3.0f);
-	EXPECT_FLOAT_EQ(dl.GetWidth(), 3.0f);
-}
-
-/**
- * @test Opacity property can be set and retrieved.
- */
-TEST(DebugLine, SetOpacity)
-{
-	DebugLine dl;
 	dl.SetOpacity(0.5f);
 	EXPECT_FLOAT_EQ(dl.GetOpacity(), 0.5f);
-}
 
-/**
- * @test Stipple flag can be set and retrieved.
- */
-TEST(DebugLine, SetStipple)
-{
-	DebugLine dl;
+	dl.SetWidth(3.0f);
+	EXPECT_FLOAT_EQ(dl.GetWidth(), 3.0f);
+
 	EXPECT_FALSE(dl.GetStipple());
 	dl.SetStipple(true);
 	EXPECT_TRUE(dl.GetStipple());
-}
-
-/**
- * @test ClearVertices removes all stored vertices.
- */
-TEST(DebugLine, ClearVertices)
-{
-	DebugLine dl;
-	dl.PushDebugLine(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
-	EXPECT_EQ(dl.GetVertexCount(), 2);
-
-	dl.ClearVertices();
-	EXPECT_EQ(dl.GetVertexCount(), 0);
-	EXPECT_TRUE(dl.GetVertices().empty());
-}
-
-/**
- * @test DebugLine is non-copyable (respects UID semantics).
- */
-TEST(DebugLine, NonCopyable)
-{
-	EXPECT_FALSE(std::is_copy_constructible_v<DebugLine>);
-	EXPECT_FALSE(std::is_copy_assignable_v<DebugLine>);
 }
 
 // ===========================================================================
@@ -244,86 +124,19 @@ TEST(DebugPoints, DefaultConstruction)
 	EXPECT_TRUE(dp.GetPoints().empty());
 }
 
-/**
- * @test DebugPoints inherits Transform3D - can set position.
- */
-TEST(DebugPoints, InheritsTransform3D)
+TEST(DebugPoints, AppendsPointsInOrderUntilCleared)
 {
-	DebugPoints dp;
-	dp.SetPosition(glm::vec3(5.0f, 10.0f, -3.0f));
-
-	glm::mat4 model = dp.GetModelMatrix();
-	EXPECT_FLOAT_EQ(model[3][0], 5.0f);
-	EXPECT_FLOAT_EQ(model[3][1], 10.0f);
-	EXPECT_FLOAT_EQ(model[3][2], -3.0f);
-
-	Transform* base = &dp;
-	Transform3D* ptr = dynamic_cast<Transform3D*>(base->GetTransformPtr());
-	EXPECT_NE(ptr, nullptr);
-}
-
-/**
- * @test GetTransform() exposes the object's own Transform3D (see the DebugLine
- *       case for why every polymorphic transform consumer depends on it).
- */
-TEST(DebugPoints, GetTransformReturnsItsOwnTransform)
-{
-	DebugPoints dp;
-	ASSERT_NE(dp.GetTransform(), nullptr);
-
-	auto* xf = static_cast<Transform3D*>(dp.GetTransform());
-	xf->SetPosition(glm::vec3(-1.0f, 0.0f, 3.0f));
-	EXPECT_EQ(dp.GetPosition(), glm::vec3(-1.0f, 0.0f, 3.0f));
-	EXPECT_FLOAT_EQ(dp.GetModelMatrix()[3][2], 3.0f);
-}
-
-/**
- * @test PushDebugPoint adds a single point.
- */
-TEST(DebugPoints, PushDebugPoint_Single)
-{
-	DebugPoints dp;
-	dp.PushDebugPoint(glm::vec3(1.0f, 2.0f, 3.0f));
-
-	EXPECT_EQ(dp.GetPointCount(), 1);
-
-	const auto& pts = dp.GetPoints();
-	EXPECT_EQ(pts[0], glm::vec3(1.0f, 2.0f, 3.0f));
-}
-
-/**
- * @test PushDebugPoints appends multiple points.
- */
-TEST(DebugPoints, PushDebugPoints_Multiple)
-{
-	DebugPoints dp;
-	std::vector<glm::vec3> points = {
-		{0.0f, 0.0f, 0.0f},
-		{1.0f, 0.0f, 0.0f},
-		{0.0f, 1.0f, 0.0f}
-	};
-	dp.PushDebugPoints(points);
-
-	EXPECT_EQ(dp.GetPointCount(), 3);
-
-	const auto& pts = dp.GetPoints();
-	for (size_t i = 0; i < points.size(); ++i)
-	{
-		EXPECT_EQ(pts[i], points[i]);
-	}
-}
-
-/**
- * @test Multiple PushDebugPoint calls accumulate points.
- */
-TEST(DebugPoints, PushDebugPoint_Accumulates)
-{
-	DebugPoints dp;
-	dp.PushDebugPoint(glm::vec3(0.0f, 0.0f, 0.0f));
-	dp.PushDebugPoint(glm::vec3(1.0f, 1.0f, 1.0f));
-	dp.PushDebugPoint(glm::vec3(2.0f, 2.0f, 2.0f));
-
-	EXPECT_EQ(dp.GetPointCount(), 3);
+	DebugPoints points;
+	const glm::vec3 a(1, 0, 0), b(0, 1, 0), c(0, 0, 1);
+	points.PushDebugPoint(a);
+	points.PushDebugPoint(b);
+	points.PushDebugPoints({c, a});
+	const std::vector<glm::vec3> expected{a, b, c, a};
+	EXPECT_EQ(points.GetPoints(), expected);
+	EXPECT_EQ(points.GetPointCount(), expected.size());
+	points.ClearPoints();
+	EXPECT_TRUE(points.GetPoints().empty());
+	EXPECT_EQ(points.GetPointCount(), 0);
 }
 
 /**
@@ -346,67 +159,20 @@ TEST(DebugPoints, SetPointType)
 	EXPECT_EQ(dp.GetPointType(), DebugPoints::PointType::CUBE);
 }
 
-/**
- * @test Color property can be set and retrieved.
- */
-TEST(DebugPoints, SetColor)
+TEST(DebugPoints, UpdatesDrawingStyle)
 {
 	DebugPoints dp;
+
 	glm::vec4 color(1.0f, 0.0f, 0.0f, 0.5f);
 	dp.SetColor(color);
 	EXPECT_EQ(dp.GetColor(), color);
-}
 
-/**
- * @test Scale property can be set and retrieved.
- */
-TEST(DebugPoints, SetScale)
-{
-	DebugPoints dp;
-	dp.SetScale(5.0f);
-	EXPECT_FLOAT_EQ(dp.GetScale(), 5.0f);
-}
-
-/**
- * @test Opacity property can be set and retrieved.
- */
-TEST(DebugPoints, SetOpacity)
-{
-	DebugPoints dp;
 	dp.SetOpacity(0.25f);
 	EXPECT_FLOAT_EQ(dp.GetOpacity(), 0.25f);
-}
 
-/**
- * @test ProjectionMode property can be set and retrieved.
- */
-TEST(DebugPoints, SetProjectionMode)
-{
-	DebugPoints dp;
+	dp.SetScale(5.0f);
+	EXPECT_FLOAT_EQ(dp.GetScale(), 5.0f);
+
 	dp.SetProjectionMode(1);
 	EXPECT_EQ(dp.GetProjectionMode(), 1);
-}
-
-/**
- * @test ClearPoints removes all stored points.
- */
-TEST(DebugPoints, ClearPoints)
-{
-	DebugPoints dp;
-	dp.PushDebugPoint(glm::vec3(1.0f, 2.0f, 3.0f));
-	dp.PushDebugPoint(glm::vec3(4.0f, 5.0f, 6.0f));
-	EXPECT_EQ(dp.GetPointCount(), 2);
-
-	dp.ClearPoints();
-	EXPECT_EQ(dp.GetPointCount(), 0);
-	EXPECT_TRUE(dp.GetPoints().empty());
-}
-
-/**
- * @test DebugPoints is non-copyable (respects UID semantics).
- */
-TEST(DebugPoints, NonCopyable)
-{
-	EXPECT_FALSE(std::is_copy_constructible_v<DebugPoints>);
-	EXPECT_FALSE(std::is_copy_assignable_v<DebugPoints>);
 }

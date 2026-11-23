@@ -57,57 +57,6 @@ bool RunCleanly(neurus::ScriptEngine& engine, const std::string& code,
 
 }  // namespace
 
-TEST(ScriptBindings, ReadsSceneObjects)
-{
-	neurus::Scene scene;
-	neurus::RenderConfig cfg;
-	neurus::ResourceManager resources;
-
-	auto mesh = resources.Load<neurus::Mesh>();
-	auto camera = resources.Load<neurus::Camera>();
-
-	// Distinctive, non-symmetric TRS values: an axis swap, a transposed scale
-	// or a wrong rotation component changes the exact tuples asserted below.
-	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
-	mesh->SetRotation(glm::vec3(10.0f, 20.0f, 30.0f));
-	mesh->SetScale(glm::vec3(4.0f, 5.0f, 6.0f));
-
-	scene.UseMesh(mesh);
-	scene.UseCamera(camera);
-
-	neurus::ScriptContext ctx;
-	ctx.scene     = &scene;
-	ctx.config    = &cfg;
-	ctx.resources = &resources;
-
-	// Look the mesh up by UID: iteration order of the unordered master pool is
-	// unspecified, so `objs[0]` could be either object.
-	const std::string meshUid = std::to_string(mesh->GetObjectID());
-	const std::string meshType = std::to_string(static_cast<int>(neurus::ObjectID::GOType::GO_MESH));
-
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-
-	const std::string script =
-		"import neurus\n"
-		"objs = list(neurus.data.objects)\n"
-		"assert len(objs) == 2\n"
-		"mesh = neurus.data.objects[" + meshUid + "]\n"
-		"assert mesh is not None\n"
-		// The integer-valued floats below are exactly representable, so exact
-		// tuple equality is sound and catches an axis swap.
-		"assert tuple(mesh.transform.position) == (1.0, 2.0, 3.0)\n"
-		"assert tuple(mesh.transform.rotation) == (10.0, 20.0, 30.0)\n"
-		"assert tuple(mesh.transform.scale) == (4.0, 5.0, 6.0)\n"
-		"assert mesh.type == " + meshType + "\n"
-		"assert isinstance(mesh.name, str)\n"
-		"assert isinstance(mesh.visible, bool)\n";
-
-	EXPECT_TRUE(RunCleanly(engine, script, ctx));
-
-	engine.Shutdown();
-}
-
 TEST(ScriptBindings, ProxyAndViewSurviveAcrossRuns)
 {
 	neurus::Scene scene;
@@ -158,6 +107,8 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 	auto mesh = resources.Load<neurus::Mesh>();
 	mesh->o_name = resources.SetName(mesh->GetObjectID(), "Ground");
 	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
+	mesh->SetRotation(glm::vec3(10.0f, 20.0f, 30.0f));
+	mesh->SetScale(glm::vec3(4.0f, 5.0f, 6.0f));
 
 	// Two meshes keep their default name: the registry suffixes the second one.
 	auto second = resources.Load<neurus::Mesh>();
@@ -192,8 +143,14 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 		"assert isinstance(ground, neurus.data.Object)\n"
 		"assert ground.name == 'Ground'\n"
 		"assert tuple(ground.position) == (1.0, 2.0, 3.0)\n"
-		"assert tuple(ground.rotation) == (0.0, 0.0, 0.0)\n"
-		"assert tuple(ground.scale) == (1.0, 1.0, 1.0)\n"
+		"assert tuple(ground.rotation) == (10.0, 20.0, 30.0)\n"
+		"assert tuple(ground.scale) == (4.0, 5.0, 6.0)\n"
+		"by_uid = neurus.data.objects[" + meshUid + "]\n"
+		"assert tuple(by_uid.transform.position) == tuple(ground.position)\n"
+		"assert tuple(by_uid.transform.rotation) == tuple(ground.rotation)\n"
+		"assert tuple(by_uid.transform.scale) == tuple(ground.scale)\n"
+		"assert by_uid.type == " + std::to_string(static_cast<int>(neurus::ObjectID::GOType::GO_MESH)) + "\n"
+		"assert isinstance(by_uid.visible, bool)\n"
 		// Registration made the duplicate default name unique.
 		"assert neurus.data.meshes['Mesh'] is not None\n"
 		"assert neurus.data.meshes['Mesh.001'] is not None\n"
@@ -227,6 +184,7 @@ TEST(ScriptBindings, ResourceCollectionsIncludeDetachedObjects)
 	ctx.config    = &cfg;
 	ctx.resources = &resources;
 
+	const std::string uidA = std::to_string(meshA->GetObjectID());
 	const std::string uidB = std::to_string(meshB->GetObjectID());
 
 	neurus::ScriptEngine engine;
@@ -251,48 +209,16 @@ TEST(ScriptBindings, ResourceCollectionsIncludeDetachedObjects)
 		"assert neurus.data.objects['Detached'] is None\n"
 		"assert 'Detached' not in neurus.data.objects\n", ctx));
 
-	engine.Shutdown();
-}
-
-TEST(ScriptBindings, SceneCollectionExcludesDetachedObjects)
-{
-	neurus::Scene scene;
-	neurus::RenderConfig cfg;
-	neurus::ResourceManager resources;
-
-	// meshA is used by the scene; meshB exists only in the pool, as a mesh held
-	// by undo history would. Both are named through the registry, mirrored into
-	// the display name so the proxy's `.name` agrees.
-	auto meshA = resources.Load<neurus::Mesh>();
-	meshA->o_name = resources.SetName(meshA->GetObjectID(), "Ground");
-	auto meshB = resources.Load<neurus::Mesh>();
-	meshB->o_name = resources.SetName(meshB->GetObjectID(), "Detached");
-	scene.UseMesh(meshA);
-
-	neurus::ScriptContext ctx;
-	ctx.scene     = &scene;
-	ctx.config    = &cfg;
-	ctx.resources = &resources;
-
-	const std::string uidA = std::to_string(meshA->GetObjectID());
-	const std::string uidB = std::to_string(meshB->GetObjectID());
-
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-
-	// The scene, not the pool, is this collection's source: the detached mesh is
-	// invisible to iteration, to a name lookup and to a UID lookup, while the
-	// attached one stays reachable through both keys.
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
 		"assert len(neurus.scene.meshes) == 1\n"
 		"assert neurus.scene.meshes['Detached'] is None\n"
-		"assert neurus.scene.meshes['Ground'] is not None\n"
-		"assert neurus.scene.meshes[" + uidA + "].name == 'Ground'\n"
+		"assert neurus.scene.meshes['Attached'] is not None\n"
+		"assert neurus.scene.meshes[" + uidA + "].name == 'Attached'\n"
 		"assert neurus.scene.meshes[" + uidB + "] is None\n"
 		"assert " + uidA + " in neurus.scene.meshes\n"
 		"assert " + uidB + " not in neurus.scene.meshes\n"
-		"assert 'Ground' in neurus.scene.meshes\n"
+		"assert 'Attached' in neurus.scene.meshes\n"
 		"assert 'Detached' not in neurus.scene.meshes\n"
 		// `neurus.data.scene` is the scene module itself, not a second proxy.
 		"assert neurus.data.scene is neurus.scene\n"
@@ -301,14 +227,13 @@ TEST(ScriptBindings, SceneCollectionExcludesDetachedObjects)
 		"assert len(neurus.scene.lights) == 0\n"
 		"assert len(neurus.scene.environments) == 0\n"
 		"assert len(neurus.scene.objects) == 1\n"
-		"assert neurus.scene.objects[" + uidA + "].name == 'Ground'\n"
+		"assert neurus.scene.objects[" + uidA + "].name == 'Attached'\n"
 		"assert neurus.scene.objects[" + uidB + "] is None\n"
 		"assert " + uidA + " in neurus.scene.objects\n"
 		// D2: `objects` is UID-only, so a generic name resolves to None and
 		// `in` agrees with that lookup.
-		"assert neurus.scene.objects['Ground'] is None\n"
-		"assert 'Ground' not in neurus.scene.objects\n", ctx));
-
+		"assert neurus.scene.objects['Attached'] is None\n"
+		"assert 'Attached' not in neurus.scene.objects\n", ctx));
 	engine.Shutdown();
 }
 
@@ -451,25 +376,7 @@ TEST(ScriptBindings, ObjectsCollectionEnumeratesEveryPooledObjectId)
 	engine.Shutdown();
 }
 
-TEST(ScriptBindings, NoSceneYieldsNoObjects)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	// No context at all (so no scene and no resource lookup): the bindings must
-	// see an empty collection, not crash.
-	EXPECT_TRUE(RunCleanly(engine,
-		"import neurus\n"
-		"assert list(neurus.data.objects) == []\n"
-		"assert len(neurus.data.objects) == 0\n"
-		"assert neurus.data.objects[12345] is None\n"
-		"assert len(neurus.scene.meshes) == 0\n"
-		"assert neurus.scene.meshes['Ground'] is None\n"
-		"assert neurus.scene.objects[12345] is None\n"));
-
-	engine.Shutdown();
-}
-
-TEST(ScriptBindings, EmptySceneYieldsNoObjects)
+TEST(ScriptBindings, EmptySceneAndAbsentContextExposeNoObjects)
 {
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
@@ -486,6 +393,11 @@ TEST(ScriptBindings, EmptySceneYieldsNoObjects)
 		"import neurus\n"
 		"assert list(neurus.data.objects) == []\n", ctx));
 
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"assert list(neurus.data.objects) == []\n"
+		"assert neurus.scene.active_camera() is None\n"
+		"assert neurus.render.config.gamma is None\n"));
 	engine.Shutdown();
 }
 
@@ -547,19 +459,6 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 		"assert neurus.render.config.gamma == 2.0\n";
 
 	EXPECT_TRUE(RunCleanly(engine, script, ctx));
-	engine.Shutdown();
-}
-
-TEST(ScriptBindings, EmptyContextHasNoActiveCamera)
-{
-	neurus::ScriptEngine engine;
-	ASSERT_TRUE(engine.Initialize());
-	EXPECT_TRUE(RunCleanly(engine,
-		"import neurus\n"
-		"assert list(neurus.data.objects) == []\n"
-		"assert neurus.scene.active_camera() is None\n"
-		"assert neurus.render.config.gamma is None\n"));
-
 	engine.Shutdown();
 }
 
