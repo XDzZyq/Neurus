@@ -85,7 +85,7 @@ it.
 
 ### It cannot be created once in the constructor
 
-`m_resources->Clear()` runs in both scene-swap paths and drops every pooled
+`ed_resources->Clear()` runs in both scene-swap paths and drops every pooled
 object, so `EditorViewport::EnsureCamera(ResourceManager&)` (resolve the stored
 uid through the pool, else `Load<Camera>()` at `kDefaultEye` looking at
 `kDefaultTarget`) runs on each of them. The `ResourceManager` is a parameter, not

@@ -2,7 +2,7 @@
  * @file OverlayEngine.hpp
  * @brief The overlay graph: everything drawn on top of the converged scene image.
  *
- * The scene graph (DeferredRenderer::m_mainGraph) ends at the composed, tone
+ * The scene graph (DeferredRenderer::r_mainGraph) ends at the composed, tone
  * mapped image. The overlays - selection outline, debug primitives and the
  * transform gizmo - live in their own graph here, so they can be redrawn
  * without re-running a single scene pass once accumulation has converged, and so

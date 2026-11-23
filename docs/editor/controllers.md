@@ -97,7 +97,7 @@ template<typename T>
 void Editor::RegisterController()
 {
     auto ctrl = std::make_unique<T>();
-    ctrl->Init(m_ctx);
+    ctrl->Init(ed_ctx);
     ed_controllers.push_back(std::move(ctrl));
 }
 ```

@@ -30,7 +30,7 @@ effective settings without materializing optional project data. See
 
 The `Controllers` base class declares `virtual Init(ControllerContext& ctx)`,
 which binds a controller to its context. `Editor::RegisterController<T>()` is the
-template factory that creates a controller, calls `Init(m_ctx)`, and stores it in
+template factory that creates a controller, calls `Init(ed_ctx)`, and stores it in
 `ed_controllers`. Controllers receive discrete events rather than polling per
 frame; `Editor::Edit()` drains the UI boundary's queued events through
 `EventQueue::Process()`, and every event the editor emits itself dispatches
@@ -270,7 +270,7 @@ Design:
 `NewScene()` means empty. No mesh, no light, no scene camera, nothing in the
 Outliner. It drops the outgoing scene's GPU resources, replaces the `Scene`,
 clears the pool, the undo history and the `RenderConfig`, re-mints the viewport
-camera, and leaves `m_dirty` false. It takes no `objPath` and loads no asset.
+camera, and leaves `ed_dirty` false. It takes no `objPath` and loads no asset.
 
 `CreateDefaultScene(objPath)` is purely additive. It adds a deactivated scene
 camera, the starter mesh, a point light, an IBL environment, and one debug object
@@ -339,7 +339,7 @@ skip-if-cached (`regenerate = false`) while a live environment change
 `regenerate = true` to force the cubemaps to rebuild.
 
 `DeferredRenderer::DrawFrame()` still carries a null-camera precondition check as
-defense in depth: it skips the frame and logs once (`m_reportedNoCamera`) instead
+defense in depth: it skips the frame and logs once (`r_reportedNoCamera`) instead
 of faulting. That guard is a diagnostic, not a license. `GetCamera()` cannot
 return null unless a scene-mutation path broke the viewport contract (see
 [Viewport](viewport.md)), and that path is the bug.

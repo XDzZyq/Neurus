@@ -45,10 +45,10 @@ UIManager::UIManager(const QString& language, int targetFps,
                        const ScriptPreferencesUi& script,
                        const QString& preferencesPath, QWidget* parent)
 	: QMainWindow(parent)
-	, m_currentLanguage(language)
-	, m_targetFps(targetFps)
-	, m_scriptPreferences(script)
-	, m_preferencesPath(preferencesPath)
+	, win_currentLanguage(language)
+	, win_targetFps(targetFps)
+	, win_scriptPreferences(script)
+	, win_preferencesPath(preferencesPath)
 {
 	Icons::Initialize();
 
@@ -86,8 +86,8 @@ UIManager::UIManager(const QString& language, int targetFps,
 UIManager::~UIManager()
 {
 	// Release panel/dock pointers before Qt parent-child cleanup destroys them.
-	m_panels.clear();
-	m_docks.clear();
+	win_panels.clear();
+	win_docks.clear();
 }
 
 // =========================================================================
@@ -122,22 +122,22 @@ void UIManager::Refresh(const UIContext& ctx)
 	// stacks on demand (the snapshot pointer is only valid for this call).
 	if (const auto* history = ctx.history)
 	{
-		m_undoLabels.clear();
+		win_undoLabels.clear();
 		for (const auto& label : history->undo)
-			m_undoLabels.push_back(QString::fromStdString(label));
+			win_undoLabels.push_back(QString::fromStdString(label));
 
-		m_redoLabels.clear();
+		win_redoLabels.clear();
 		for (const auto& label : history->redo)
-			m_redoLabels.push_back(QString::fromStdString(label));
+			win_redoLabels.push_back(QString::fromStdString(label));
 
 		// Grey out an empty submenu, matching how Undo/Redo normally disable.
-		if (m_undoMenu)
-			m_undoMenu->menuAction()->setEnabled(!m_undoLabels.isEmpty());
-		if (m_redoMenu)
-			m_redoMenu->menuAction()->setEnabled(!m_redoLabels.isEmpty());
+		if (win_undoMenu)
+			win_undoMenu->menuAction()->setEnabled(!win_undoLabels.isEmpty());
+		if (win_redoMenu)
+			win_redoMenu->menuAction()->setEnabled(!win_redoLabels.isEmpty());
 	}
 
-	for (auto& [type, widget] : m_panels)
+	for (auto& [type, widget] : win_panels)
 	{
 		auto* panel = qobject_cast<UIPanel*>(widget);
 		panel->Refresh(ctx);
@@ -150,39 +150,39 @@ void UIManager::Refresh(const UIContext& ctx)
 
 void UIManager::PopulateUndoMenu()
 {
-	for (QAction* item : m_undoItems)
+	for (QAction* item : win_undoItems)
 	{
-		m_undoMenu->removeAction(item);
+		win_undoMenu->removeAction(item);
 		delete item;
 	}
-	m_undoItems.clear();
+	win_undoItems.clear();
 
 	// Newest first: the top row is the next Ctrl+Z target. View-only (disabled).
-	for (auto it = m_undoLabels.crbegin(); it != m_undoLabels.crend(); ++it)
+	for (auto it = win_undoLabels.crbegin(); it != win_undoLabels.crend(); ++it)
 	{
-		auto* item = new QAction(*it, m_undoMenu);
+		auto* item = new QAction(*it, win_undoMenu);
 		item->setEnabled(false);
-		m_undoMenu->addAction(item);
-		m_undoItems.push_back(item);
+		win_undoMenu->addAction(item);
+		win_undoItems.push_back(item);
 	}
 }
 
 void UIManager::PopulateRedoMenu()
 {
-	for (QAction* item : m_redoItems)
+	for (QAction* item : win_redoItems)
 	{
-		m_redoMenu->removeAction(item);
+		win_redoMenu->removeAction(item);
 		delete item;
 	}
-	m_redoItems.clear();
+	win_redoItems.clear();
 
 	// Replay order: the top row is the next Ctrl+Y target. View-only (disabled).
-	for (const QString& label : m_redoLabels)
+	for (const QString& label : win_redoLabels)
 	{
-		auto* item = new QAction(label, m_redoMenu);
+		auto* item = new QAction(label, win_redoMenu);
 		item->setEnabled(false);
-		m_redoMenu->addAction(item);
-		m_redoItems.push_back(item);
+		win_redoMenu->addAction(item);
+		win_redoItems.push_back(item);
 	}
 }
 
@@ -199,12 +199,12 @@ void UIManager::CreateMenus()
 	// on language switches.
 	auto addMenu = [this, &i18n](auto* parent, const char* key) -> QMenu* {
 		auto* menu = parent->addMenu(i18n.translate(key));
-		m_menuItems.emplace_back(menu->menuAction(), key);
+		win_menuItems.emplace_back(menu->menuAction(), key);
 		return menu;
 	};
 	auto trAction = [this, &i18n](auto* parent, const char* key) -> QAction* {
 		auto* action = parent->addAction(i18n.translate(key));
-		m_menuItems.emplace_back(action, key);
+		win_menuItems.emplace_back(action, key);
 		return action;
 	};
 
@@ -262,10 +262,10 @@ void UIManager::CreateMenus()
 	// Full screen must be reachable and escapable from the menu: with the frame
 	// gone there is no other way back. Leaving full screen clears only that
 	// flag, so a window that was maximized stays maximized.
-	m_fullScreenAction = trAction(viewMenu, N_("&Full Screen"));
-	m_fullScreenAction->setCheckable(true);
-	m_fullScreenAction->setShortcut(QKeySequence::FullScreen);
-	connect(m_fullScreenAction, &QAction::toggled, this, [this](bool on) {
+	win_fullScreenAction = trAction(viewMenu, N_("&Full Screen"));
+	win_fullScreenAction->setCheckable(true);
+	win_fullScreenAction->setShortcut(QKeySequence::FullScreen);
+	connect(win_fullScreenAction, &QAction::toggled, this, [this](bool on) {
 		if (on)
 			showFullScreen();
 		else
@@ -292,11 +292,11 @@ void UIManager::CreateMenus()
 	});
 	addAction(redoTrigger);
 
-	m_undoMenu = addMenu(editMenu, N_("&Undo"));
-	connect(m_undoMenu, &QMenu::aboutToShow, this, &UIManager::PopulateUndoMenu);
+	win_undoMenu = addMenu(editMenu, N_("&Undo"));
+	connect(win_undoMenu, &QMenu::aboutToShow, this, &UIManager::PopulateUndoMenu);
 
-	m_redoMenu = addMenu(editMenu, N_("&Redo"));
-	connect(m_redoMenu, &QMenu::aboutToShow, this, &UIManager::PopulateRedoMenu);
+	win_redoMenu = addMenu(editMenu, N_("&Redo"));
+	connect(win_redoMenu, &QMenu::aboutToShow, this, &UIManager::PopulateRedoMenu);
 
 	editMenu->addSeparator();
 
@@ -426,10 +426,10 @@ void UIManager::changeEvent(QEvent* event)
 	// Keep View > Full Screen in step with a transition we did not initiate.
 	// setChecked() with an unchanged value emits no toggled(), so this cannot
 	// bounce back into the action's lambda.
-	if (m_fullScreenAction && m_fullScreenAction->isChecked() != fullScreen)
-		m_fullScreenAction->setChecked(fullScreen);
+	if (win_fullScreenAction && win_fullScreenAction->isChecked() != fullScreen)
+		win_fullScreenAction->setChecked(fullScreen);
 
-	if (fullScreen == m_floatingLocked)
+	if (fullScreen == win_floatingLocked)
 		return;
 
 	if (fullScreen)
@@ -448,7 +448,7 @@ void UIManager::SetFloatingLocked(bool lock)
 	win_dockManager->lockDockWidgetFeaturesGlobally(
 		lock ? ads::CDockWidget::DockWidgetFloatable
 		     : ads::CDockWidget::NoDockWidgetFeatures);
-	m_floatingLocked = lock;
+	win_floatingLocked = lock;
 }
 
 void UIManager::DockFloatingPanels()
@@ -476,7 +476,7 @@ void UIManager::DockFloatingPanels()
 		// Reverse-lookup the panel type to reuse the same fallback areas
 		// RepairOrphanedDocks() uses; the texture dock is not a UIPanel.
 		auto area = ads::BottomDockWidgetArea;
-		for (const auto& [type, registered] : m_docks)
+		for (const auto& [type, registered] : win_docks)
 			if (registered == dock)
 			{
 				area = DefaultDockArea(type);
@@ -516,8 +516,8 @@ void UIManager::CreateDocks()
 
 	// Transfer panel ownership to CDockWidget (Qt parent-child).
 	// After setWidget(), the dock owns the panel; release unique_ptr to avoid double-delete.
-	m_panels[PanelType::Viewport] = viewport.release();
-	m_docks[PanelType::Viewport] = viewportDock;
+	win_panels[PanelType::Viewport] = viewport.release();
+	win_docks[PanelType::Viewport] = viewportDock;
 
 	// --- Left: Shader Editor ---
 	auto shaderEditor = std::make_unique<ShaderEditorPanel>();
@@ -526,8 +526,8 @@ void UIManager::CreateDocks()
 	shaderDock->resize(280, 300);
 	shaderDock->setMinimumSize(200, 200);
 	win_dockManager->addDockWidget(ads::LeftDockWidgetArea, shaderDock);
-	m_panels[PanelType::ShaderEditor] = shaderEditor.release();
-	m_docks[PanelType::ShaderEditor] = shaderDock;
+	win_panels[PanelType::ShaderEditor] = shaderEditor.release();
+	win_docks[PanelType::ShaderEditor] = shaderDock;
 
 	// --- Left: Outliner ---
 	auto outliner = std::make_unique<Outliner>();
@@ -536,8 +536,8 @@ void UIManager::CreateDocks()
 	outlinerDock->resize(280, 300);
 	outlinerDock->setMinimumSize(200, 200);
 	win_dockManager->addDockWidget(ads::LeftDockWidgetArea, outlinerDock);
-	m_panels[PanelType::Outliner] = outliner.release();
-	m_docks[PanelType::Outliner] = outlinerDock;
+	win_panels[PanelType::Outliner] = outliner.release();
+	win_docks[PanelType::Outliner] = outlinerDock;
 
 	// --- Right: Property Panel ---
 	auto propertyPanel = std::make_unique<PropertyPanel>();
@@ -546,8 +546,8 @@ void UIManager::CreateDocks()
 	propDock->resize(280, 300);
 	propDock->setMinimumSize(200, 200);
 	win_dockManager->addDockWidget(ads::RightDockWidgetArea, propDock, outlinerDock->dockAreaWidget());
-	m_panels[PanelType::PropertyPanel] = propertyPanel.release();
-	m_docks[PanelType::PropertyPanel] = propDock;
+	win_panels[PanelType::PropertyPanel] = propertyPanel.release();
+	win_docks[PanelType::PropertyPanel] = propDock;
 
 	// --- Right: Render Config ---
 	auto renderConfigPanel = std::make_unique<RenderConfigPanel>();
@@ -556,8 +556,8 @@ void UIManager::CreateDocks()
 	configDock->resize(280, 400);
 	configDock->setMinimumSize(220, 300);
 	win_dockManager->addDockWidget(ads::RightDockWidgetArea, configDock, outlinerDock->dockAreaWidget());
-	m_panels[PanelType::RenderConfig] = renderConfigPanel.release();
-	m_docks[PanelType::RenderConfig] = configDock;
+	win_panels[PanelType::RenderConfig] = renderConfigPanel.release();
+	win_docks[PanelType::RenderConfig] = configDock;
 
 	// --- Bottom: Profiling ---
 	auto profilingPanel = std::make_unique<ProfilingPanel>();
@@ -566,28 +566,28 @@ void UIManager::CreateDocks()
 	profilingDock->resize(640, 220);
 	profilingDock->setMinimumSize(320, 140);
 	win_dockManager->addDockWidget(ads::BottomDockWidgetArea, profilingDock);
-	m_panels[PanelType::Profiling] = profilingPanel.release();
-	m_docks[PanelType::Profiling] = profilingDock;
+	win_panels[PanelType::Profiling] = profilingPanel.release();
+	win_docks[PanelType::Profiling] = profilingDock;
 
 	// --- Bottom: Texture Viewer (placeholder, not a UIPanel) ---
-	m_textureLabel = new QLabel(I18n::instance().translateCtx("Texture Viewer", "Dock"));
-	m_textureLabel->setAlignment(Qt::AlignCenter);
-	QFont font = m_textureLabel->font();
+	win_textureLabel = new QLabel(I18n::instance().translateCtx("Texture Viewer", "Dock"));
+	win_textureLabel->setAlignment(Qt::AlignCenter);
+	QFont font = win_textureLabel->font();
 	font.setPointSize(14);
-	m_textureLabel->setFont(font);
+	win_textureLabel->setFont(font);
 	auto* textureWrap = new QWidget();
 	auto* textureLayout = new QVBoxLayout(textureWrap);
-	textureLayout->addWidget(m_textureLabel);
+	textureLayout->addWidget(win_textureLabel);
 
-	m_textureDock = new ads::CDockWidget(win_dockManager,
+	win_textureDock = new ads::CDockWidget(win_dockManager,
 	                                     I18n::instance().translateCtx("Texture Viewer", "Dock"));
 	// Not a UIPanel, so MakeDock() cannot supply the id; set the stable ASCII
 	// objectName explicitly for the same serialization reason.
-	m_textureDock->setObjectName(QStringLiteral("dock.textureViewer"));
-	m_textureDock->setWidget(textureWrap);
-	m_textureDock->resize(300, 200);
-	m_textureDock->setMinimumSize(200, 150);
-	win_dockManager->addDockWidget(ads::BottomDockWidgetArea, m_textureDock);
+	win_textureDock->setObjectName(QStringLiteral("dock.textureViewer"));
+	win_textureDock->setWidget(textureWrap);
+	win_textureDock->resize(300, 200);
+	win_textureDock->setMinimumSize(200, 150);
+	win_dockManager->addDockWidget(ads::BottomDockWidgetArea, win_textureDock);
 
 	// --- Bottom: Log Panel (tabbed onto Texture Viewer area) ---
 	auto logPanel = std::make_unique<neurus::LogPanel>();
@@ -597,9 +597,9 @@ void UIManager::CreateDocks()
 	logDock->resize(640, 220);
 	logDock->setMinimumSize(320, 140);
 	win_dockManager->addDockWidget(ads::BottomDockWidgetArea, logDock,
-	                               m_textureDock->dockAreaWidget());
-	m_panels[PanelType::Log] = logPanel.release();
-	m_docks[PanelType::Log] = logDock;
+	                               win_textureDock->dockAreaWidget());
+	win_panels[PanelType::Log] = logPanel.release();
+	win_docks[PanelType::Log] = logDock;
 
 	// Error notifier: LogPanel signal -> status bar (3s).
 	QObject::connect(logPanelRaw, &neurus::LogPanel::errorNotified,
@@ -617,8 +617,8 @@ void UIManager::CreateDocks()
 	scriptDock->setMinimumSize(320, 140);
 	win_dockManager->addDockWidget(ads::BottomDockWidgetArea, scriptDock,
 	                               logDock->dockAreaWidget());
-	m_panels[PanelType::ScriptConsole] = scriptConsole.release();
-	m_docks[PanelType::ScriptConsole] = scriptDock;
+	win_panels[PanelType::ScriptConsole] = scriptConsole.release();
+	win_docks[PanelType::ScriptConsole] = scriptDock;
 
 	// Notify the new native window handle for surface recreation.
 	UIEvents::instance().requestUIRecreation(reinterpret_cast<quintptr>(newHwnd));
@@ -633,30 +633,30 @@ void UIManager::RetranslateAll()
 	auto& i18n = I18n::instance();
 
 	// --- Menu bar ---
-	for (const auto& [action, key] : m_menuItems)
+	for (const auto& [action, key] : win_menuItems)
 		action->setText(i18n.translate(key));
 
 	// --- Dock titles + per-panel texts ---
-	for (const auto& [type, widget] : m_panels)
+	for (const auto& [type, widget] : win_panels)
 	{
 		auto* panel = qobject_cast<UIPanel*>(widget);
 		if (!panel)
 			continue;
-		auto dockIt = m_docks.find(type);
-		if (dockIt != m_docks.end())
+		auto dockIt = win_docks.find(type);
+		if (dockIt != win_docks.end())
 			dockIt->second->setWindowTitle(panel->PanelName());
 		panel->Retranslate();
 	}
 
 	// --- Texture Viewer placeholder (not a UIPanel) ---
-	if (m_textureDock)
-		m_textureDock->setWindowTitle(i18n.translateCtx("Texture Viewer", "Dock"));
-	if (m_textureLabel)
-		m_textureLabel->setText(i18n.translateCtx("Texture Viewer", "Dock"));
+	if (win_textureDock)
+		win_textureDock->setWindowTitle(i18n.translateCtx("Texture Viewer", "Dock"));
+	if (win_textureLabel)
+		win_textureLabel->setText(i18n.translateCtx("Texture Viewer", "Dock"));
 
 	// --- Preferences dialog (if already opened) ---
-	if (m_preferencesDialog)
-		m_preferencesDialog->Retranslate();
+	if (win_preferencesDialog)
+		win_preferencesDialog->Retranslate();
 }
 
 // =========================================================================
@@ -665,43 +665,43 @@ void UIManager::RetranslateAll()
 
 void UIManager::OpenPreferences()
 {
-	if (!m_preferencesDialog)
+	if (!win_preferencesDialog)
 	{
-		m_preferencesDialog = new PreferencesDialog(
-			m_currentLanguage, m_targetFps, m_scriptPreferences,
-			m_preferencesPath, this);
+		win_preferencesDialog = new PreferencesDialog(
+			win_currentLanguage, win_targetFps, win_scriptPreferences,
+			win_preferencesPath, this);
 
 		// Dialog changes update the local cache and are routed on the UIEvents
 		// bus so they get applied and persisted.
-		connect(m_preferencesDialog, &PreferencesDialog::languageChangeRequested,
+		connect(win_preferencesDialog, &PreferencesDialog::languageChangeRequested,
 		        this, [this](const QString& lang) {
-		            m_currentLanguage = lang;
+		            win_currentLanguage = lang;
 		            neurus::UIEvents::instance().requestLanguageChange(lang);
 		        });
-		connect(m_preferencesDialog, &PreferencesDialog::targetFpsChangeRequested,
+		connect(win_preferencesDialog, &PreferencesDialog::targetFpsChangeRequested,
 		        this, [this](int fps) {
-		            m_targetFps = fps;
+		            win_targetFps = fps;
 		            neurus::UIEvents::instance().requestTargetFps(fps);
 		        });
-		connect(m_preferencesDialog, &PreferencesDialog::scriptPreferencesChanged,
+		connect(win_preferencesDialog, &PreferencesDialog::scriptPreferencesChanged,
 		        this, [this]() {
-		            m_scriptPreferences = m_preferencesDialog->ScriptPreferences();
+		            win_scriptPreferences = win_preferencesDialog->ScriptPreferences();
 		            neurus::UIEvents::instance().requestScriptPreferences(
-		                m_scriptPreferences.readRoots, m_scriptPreferences.writeRoots,
-		                m_scriptPreferences.blockedModules, m_scriptPreferences.preload,
-		                m_scriptPreferences.allowNetwork, m_scriptPreferences.allowSubprocess,
-		                m_scriptPreferences.allowCtypes, m_scriptPreferences.timeLimitSeconds,
-		                m_scriptPreferences.memoryLimitMb);
+		                win_scriptPreferences.readRoots, win_scriptPreferences.writeRoots,
+		                win_scriptPreferences.blockedModules, win_scriptPreferences.preload,
+		                win_scriptPreferences.allowNetwork, win_scriptPreferences.allowSubprocess,
+		                win_scriptPreferences.allowCtypes, win_scriptPreferences.timeLimitSeconds,
+		                win_scriptPreferences.memoryLimitMb);
 		        });
 	}
 
 	// Re-seed the controls from the cache in case values changed since the
 	// dialog was last shown (e.g. after a Reset to Defaults).
-	m_preferencesDialog->SyncFrom(m_currentLanguage, m_targetFps, m_scriptPreferences);
+	win_preferencesDialog->SyncFrom(win_currentLanguage, win_targetFps, win_scriptPreferences);
 
-	m_preferencesDialog->show();
-	m_preferencesDialog->raise();
-	m_preferencesDialog->activateWindow();
+	win_preferencesDialog->show();
+	win_preferencesDialog->raise();
+	win_preferencesDialog->activateWindow();
 }
 
 // =========================================================================
@@ -769,9 +769,9 @@ void UIManager::RepairOrphanedDocks()
 		repaired << dock->objectName();
 	};
 
-	for (const auto& [type, dock] : m_docks)
+	for (const auto& [type, dock] : win_docks)
 		repair(dock, DefaultDockArea(type));
-	repair(m_textureDock, ads::BottomDockWidgetArea);
+	repair(win_textureDock, ads::BottomDockWidgetArea);
 
 	if (!repaired.isEmpty())
 		NEURUS_ERR("[UIManager] Saved layout did not claim these docks; restored "
@@ -784,8 +784,8 @@ void UIManager::RestoreDefaultLayout()
 	// Clear panel/dock maps before the dock manager destroys its children:
 	// docks and panels are owned via Qt parent-child, the maps hold
 	// non-owning pointers only.
-	m_panels.clear();
-	m_docks.clear();
+	win_panels.clear();
+	win_docks.clear();
 
 	auto docks = win_dockManager->dockWidgetsMap();
 	for (auto it = docks.begin(); it != docks.end(); ++it)

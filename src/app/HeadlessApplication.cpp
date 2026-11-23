@@ -100,8 +100,8 @@ std::vector<std::string> SplitPackageList(const std::string& value)
 } // namespace
 
 HeadlessApplication::HeadlessApplication(std::vector<std::string> arguments)
-	: m_args(AppArgs::Parse(arguments))
-	, m_startTime(std::chrono::steady_clock::now())
+	: app_args(AppArgs::Parse(arguments))
+	, app_startTime(std::chrono::steady_clock::now())
 {
 }
 
@@ -113,9 +113,9 @@ HeadlessApplication::~HeadlessApplication() = default;
 
 int HeadlessApplication::Run()
 {
-	if (!m_args.error.empty())
+	if (!app_args.error.empty())
 	{
-		NEURUS_ERR("[neurus_headless] " << m_args.error);
+		NEURUS_ERR("[neurus_headless] " << app_args.error);
 		return 2;
 	}
 
@@ -124,9 +124,9 @@ int HeadlessApplication::Run()
 	std::signal(SIGTERM, OnTerminationSignal);
 
 	// --- Preferences and the script engine: shared with the Qt application ---
-	m_core = std::make_unique<ApplicationCore>();
-	m_core->LoadPreferences();
-	const int targetFps = m_core->Prefs().targetFps;
+	app_core = std::make_unique<ApplicationCore>();
+	app_core->LoadPreferences();
+	const int targetFps = app_core->Prefs().targetFps;
 
 	try
 	{
@@ -135,60 +135,60 @@ int HeadlessApplication::Run()
 		options.surfaceExtensions = false;
 		options.swapchain = false;
 
-		m_vkContext = std::make_unique<VulkanContext>(VulkanContext::CreateInstance(options));
-		m_vkContext->InitDevice(options);
-		m_vkContext->InitQueue();
+		app_vkContext = std::make_unique<VulkanContext>(VulkanContext::CreateInstance(options));
+		app_vkContext->InitDevice(options);
+		app_vkContext->InitQueue();
 
-		const vk::Extent2D extent{m_args.width, m_args.height};
-		NEURUS_LOG("[neurus_headless] " << m_vkContext->gpuName()
+		const vk::Extent2D extent{app_args.width, app_args.height};
+		NEURUS_LOG("[neurus_headless] " << app_vkContext->gpuName()
 		           << " headless " << extent.width << "x" << extent.height);
 
 		// --- Renderer on an offscreen target ---
-		m_renderer = std::make_unique<DeferredRenderer>(
-			m_vkContext->device(), m_vkContext->physicalDevice(),
-			m_vkContext->graphicsQueue(), m_vkContext->graphicsQueueFamily(), extent, m_core->RenderDefaults());
-		m_renderThread = std::make_unique<RenderThread>(*m_renderer);
+		app_renderer = std::make_unique<DeferredRenderer>(
+			app_vkContext->device(), app_vkContext->physicalDevice(),
+			app_vkContext->graphicsQueue(), app_vkContext->graphicsQueueFamily(), extent, app_core->RenderDefaults());
+		app_renderThread = std::make_unique<RenderThread>(*app_renderer);
 
-		m_uploader = std::make_unique<UploadManager>(
-			m_vkContext->device(), m_vkContext->physicalDevice(),
-			m_vkContext->transferQueue(), m_vkContext->transferQueueFamily());
-		m_renderer->GetRenderCache().SetLightingCache(
-			m_uploader->CreateLightingCache(m_vkContext->device(), m_vkContext->physicalDevice()));
-		m_renderer->SetUploadManager(m_uploader.get());
+		app_uploader = std::make_unique<UploadManager>(
+			app_vkContext->device(), app_vkContext->physicalDevice(),
+			app_vkContext->transferQueue(), app_vkContext->transferQueueFamily());
+		app_renderer->GetRenderCache().SetLightingCache(
+			app_uploader->CreateLightingCache(app_vkContext->device(), app_vkContext->physicalDevice()));
+		app_renderer->SetUploadManager(app_uploader.get());
 
 		// --- Editor ---
-		m_editor = std::make_unique<Editor>(m_renderThread.get(), m_core->RenderDefaults());
-		m_editor->Initialize();
-		m_editor->HandleViewportResize(glm::uvec2(m_args.width, m_args.height),
-		                               glm::uvec2(m_args.width, m_args.height));
-		m_commands = std::make_unique<EditorCommandAdapter>(*m_editor);
+		app_editor = std::make_unique<Editor>(app_renderThread.get(), app_core->RenderDefaults());
+		app_editor->Initialize();
+		app_editor->HandleViewportResize(glm::uvec2(app_args.width, app_args.height),
+		                               glm::uvec2(app_args.width, app_args.height));
+		app_commands = std::make_unique<EditorCommandAdapter>(*app_editor);
 
 		// --- Script layer: the same engine the GUI runs, always present ---
 		// Preload precedence matches the GUI: --preload, then the persisted
 		// preference, then NEURUS_SCRIPT_PRELOAD.
 		std::vector<std::string> preload;
-		if (!m_args.preload.empty())
-			preload = m_args.preload;
-		else if (!m_core->Prefs().scriptPreload.empty())
-			preload = m_core->Prefs().scriptPreload;
+		if (!app_args.preload.empty())
+			preload = app_args.preload;
+		else if (!app_core->Prefs().scriptPreload.empty())
+			preload = app_core->Prefs().scriptPreload;
 		else
 			preload = SplitPackageList(EnvironmentValue("NEURUS_SCRIPT_PRELOAD"));
 
-		m_core->InitializeScripting(*m_editor, preload);
+		app_core->InitializeScripting(*app_editor, preload);
 
 		// --- Document ---
 		std::string loadError;
 		const std::filesystem::path defaultProject =
 			ExecutableDirectory() / "res" / "shadow.neurus.json";
-		const std::filesystem::path project = m_args.project
-			? std::filesystem::path(*m_args.project)
+		const std::filesystem::path project = app_args.project
+			? std::filesystem::path(*app_args.project)
 			: defaultProject;
 
 		std::string uiLayout;
 		if (std::filesystem::is_regular_file(project) &&
-		    m_core->LoadProject(project, *m_editor, uiLayout, loadError))
+		    app_core->LoadProject(project, *app_editor, uiLayout, loadError))
 		{
-			NEURUS_LOG("[neurus_headless] Loaded project " << m_core->ProjectPath());
+			NEURUS_LOG("[neurus_headless] Loaded project " << app_core->ProjectPath());
 		}
 		else
 		{
@@ -196,7 +196,7 @@ int HeadlessApplication::Run()
 				NEURUS_ERR("[neurus_headless] " << loadError);
 
 			std::string defaultError;
-			if (!m_core->CreateDefaultDocument(*m_editor,
+			if (!app_core->CreateDefaultDocument(*app_editor,
 			                                   ExecutableDirectory() / kDefaultSceneObj,
 			                                   defaultError))
 			{
@@ -205,25 +205,25 @@ int HeadlessApplication::Run()
 			}
 		}
 
-		m_editor->UploadSceneResources();
+		app_editor->UploadSceneResources();
 
 		// --- Session server (the CLI's entry point) ---
-		if (m_args.session)
+		if (app_args.session)
 		{
-			m_core->SetSessionName(*m_args.session);
-			m_session = std::make_unique<SessionServer>(
-				*this, kAppVersion, m_commands.get(), this, this);
+			app_core->SetSessionName(*app_args.session);
+			app_session = std::make_unique<SessionServer>(
+				*this, kAppVersion, app_commands.get(), this, this);
 			std::string sessionError;
-			if (!m_session->Start(m_core->SessionName(), m_core->ProjectPath(), sessionError))
+			if (!app_session->Start(app_core->SessionName(), app_core->ProjectPath(), sessionError))
 			{
 				NEURUS_ERR("[neurus_headless] Failed to start the session: " << sessionError);
 				return 1;
 			}
-			NEURUS_LOG("[neurus_headless] Session '" << m_core->SessionName()
-			          << "' listening on port " << m_session->Port());
+			NEURUS_LOG("[neurus_headless] Session '" << app_core->SessionName()
+			          << "' listening on port " << app_session->Port());
 		}
 
-		m_renderThread->Start();
+		app_renderThread->Start();
 
 		// --- Command/render loop ---
 		// Publishing every tick keeps the mailbox live and lets a capture observe
@@ -237,29 +237,29 @@ int HeadlessApplication::Run()
 		auto nextTick = std::chrono::steady_clock::now();
 		while (!g_stopRequested.load())
 		{
-			if (m_session)
+			if (app_session)
 			{
-				m_session->DrainOnMainThread();
-				if (m_session->CloseRequested())
+				app_session->DrainOnMainThread();
+				if (app_session->CloseRequested())
 				{
-					m_session->WaitForWrites(std::chrono::seconds(2));
+					app_session->WaitForWrites(std::chrono::seconds(2));
 					break;
 				}
 			}
 
-			m_editor->Edit();
+			app_editor->Edit();
 
 			// Scripts run before the snapshot is built, so a script mutation is in
 			// the frame the renderer receives.
 			{
 				ScriptContext scriptContext;
-				m_editor->UpdateScriptContext(scriptContext);
-				m_core->Script().ExecutePending(scriptContext);
+				app_editor->UpdateScriptContext(scriptContext);
+				app_core->Script().ExecutePending(scriptContext);
 			}
 
 			RenderFrameSnapshot snapshot;
-			m_editor->BuildSnapshot(snapshot);
-			m_renderThread->Publish(std::move(snapshot));
+			app_editor->BuildSnapshot(snapshot);
+			app_renderThread->Publish(std::move(snapshot));
 
 			nextTick += interval;
 			std::this_thread::sleep_until(nextTick);
@@ -271,17 +271,17 @@ int HeadlessApplication::Run()
 		}
 
 		// --- Stop: session first, then the render thread (as the GUI does) ---
-		if (m_session)
-			m_session->Stop();
-		m_renderThread->Stop();
+		if (app_session)
+			app_session->Stop();
+		app_renderThread->Stop();
 	}
 	catch (const std::exception& e)
 	{
 		NEURUS_ERR("[neurus_headless] Fatal: " << e.what());
-		if (m_session)
-			m_session->Stop();
-		if (m_renderThread)
-			m_renderThread->Stop();
+		if (app_session)
+			app_session->Stop();
+		if (app_renderThread)
+			app_renderThread->Stop();
 		return 1;
 	}
 
@@ -299,32 +299,32 @@ int HeadlessApplication::Pid() const
 
 std::string HeadlessApplication::SessionName() const
 {
-	return m_core->SessionName();
+	return app_core->SessionName();
 }
 
 std::string HeadlessApplication::ProjectPath() const
 {
-	return m_core->ProjectPath();
+	return app_core->ProjectPath();
 }
 
 bool HeadlessApplication::IsDirty() const
 {
-	return m_editor && m_editor->IsDirty();
+	return app_editor && app_editor->IsDirty();
 }
 
 bool HeadlessApplication::Save(std::string& error)
 {
-	if (m_core->ProjectPath().empty())
+	if (app_core->ProjectPath().empty())
 	{
 		error = "No project path is set.";
 		return false;
 	}
-	return m_core->SaveProject(m_core->ProjectPath(), *m_editor, {}, error);
+	return app_core->SaveProject(app_core->ProjectPath(), *app_editor, {}, error);
 }
 
 bool HeadlessApplication::SaveAs(const std::string& path, std::string& error)
 {
-	return m_core->SaveProject(path, *m_editor, {}, error);
+	return app_core->SaveProject(path, *app_editor, {}, error);
 }
 
 bool HeadlessApplication::NewProject(bool force, std::string& error)
@@ -334,9 +334,9 @@ bool HeadlessApplication::NewProject(bool force, std::string& error)
 		error = "The project has unsaved changes; pass force to discard them.";
 		return false;
 	}
-	if (!m_core->CreateDefaultDocument(*m_editor, ExecutableDirectory() / kDefaultSceneObj, error))
+	if (!app_core->CreateDefaultDocument(*app_editor, ExecutableDirectory() / kDefaultSceneObj, error))
 		return false;
-	m_core->SetProjectPath({});
+	app_core->SetProjectPath({});
 	return true;
 }
 
@@ -360,30 +360,30 @@ bool HeadlessApplication::OpenProject(const std::string& path, bool force, std::
 	}
 
 	std::string uiLayout;
-	if (!m_core->LoadProject(path, *m_editor, uiLayout, error))
+	if (!app_core->LoadProject(path, *app_editor, uiLayout, error))
 	{
 		// BeginLoad already dropped the previous document, so leave a valid one
 		// behind. Creating the default document also clears the project path, so
 		// no later save can write over the project that failed to open.
 		std::string resetError;
-		if (!m_core->CreateDefaultDocument(*m_editor, ExecutableDirectory() / kDefaultSceneObj,
+		if (!app_core->CreateDefaultDocument(*app_editor, ExecutableDirectory() / kDefaultSceneObj,
 		                                   resetError))
 			NEURUS_ERR("[neurus_headless] Recovery after a failed open failed: " << resetError);
 		return false;
 	}
 
-	m_editor->UploadSceneResources();
+	app_editor->UploadSceneResources();
 	return true;
 }
 
 int HeadlessApplication::SceneObjectCount() const
 {
-	return m_editor ? static_cast<int>(m_editor->GetScene().obj_list.size()) : 0;
+	return app_editor ? static_cast<int>(app_editor->GetScene().obj_list.size()) : 0;
 }
 
 std::int64_t HeadlessApplication::UptimeSeconds() const
 {
-	const auto elapsed = std::chrono::steady_clock::now() - m_startTime;
+	const auto elapsed = std::chrono::steady_clock::now() - app_startTime;
 	return std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
 }
 
@@ -398,12 +398,12 @@ std::string HeadlessApplication::AppVersion() const
 
 command::CommandResult HeadlessApplication::Execute(const command::CommandRequest& request)
 {
-	if (!m_editor)
+	if (!app_editor)
 	{
 		return command::CommandResult::Failure(command::CommandErrorCode::Internal,
 		                                      "The editor is not available.");
 	}
-	return m_core->ExecuteScript(request, *m_editor);
+	return app_core->ExecuteScript(request, *app_editor);
 }
 
 // ---------------------------------------------------------------------------
@@ -412,7 +412,7 @@ command::CommandResult HeadlessApplication::Execute(const command::CommandReques
 
 command::CommandResult HeadlessApplication::Capture(const std::string& path, bool all)
 {
-	if (!m_renderThread)
+	if (!app_renderThread)
 	{
 		return command::CommandResult::Failure(command::CommandErrorCode::Internal,
 		                                      "The render thread is not available.");
@@ -421,7 +421,7 @@ command::CommandResult HeadlessApplication::Capture(const std::string& path, boo
 	std::error_code pathError;
 	const std::filesystem::path requested = std::filesystem::absolute(path, pathError);
 	const std::filesystem::path base = pathError ? std::filesystem::path(path) : requested;
-	const std::string session = m_core->SessionName().empty() ? "session" : m_core->SessionName();
+	const std::string session = app_core->SessionName().empty() ? "session" : app_core->SessionName();
 
 	auto waitForCapture = [](std::future<bool>& future)
 	{
@@ -463,7 +463,7 @@ command::CommandResult HeadlessApplication::Capture(const std::string& path, boo
 		}
 
 		const auto before = ListFiles(directory);
-		auto future = m_renderThread->PostScreenshotSync(true, directory);
+		auto future = app_renderThread->PostScreenshotSync(true, directory);
 		const command::CommandResult waited = waitForCapture(future);
 		if (!waited.ok)
 			return waited;
@@ -520,7 +520,7 @@ command::CommandResult HeadlessApplication::Capture(const std::string& path, boo
 			{{"path", scratch.string()}});
 	}
 
-	auto future = m_renderThread->PostScreenshotSync(false, scratch);
+	auto future = app_renderThread->PostScreenshotSync(false, scratch);
 	const command::CommandResult waited = waitForCapture(future);
 	if (!waited.ok)
 	{

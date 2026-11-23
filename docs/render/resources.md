@@ -56,7 +56,7 @@ constructs renderer lighting structs.
   `RedrawOverlaysRequest` - and passes every GPU request to
   `RenderRequestExecutor`, which runs it against the device, cache,
   `UploadManager` and `GeometryPass`. Every GPU request restarts accumulation
-  (`m_iteration = 0`) before it reaches the executor, so the next frame samples
+  (`r_iteration = 0`) before it reaches the executor, so the next frame samples
   from scratch. `RedrawOverlaysRequest` is the one exception - it marks the
   overlays stale and keeps the converged scene image, which is the whole reason
   it exists. Requests posted inside one `Editor::Edit()` therefore execute for

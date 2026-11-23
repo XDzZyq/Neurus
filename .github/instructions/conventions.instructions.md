@@ -26,13 +26,17 @@ short working reference.
 
 ## Naming
 
-- Types/classes: PascalCase (`VulkanContext`, `Shader`).
-- Public API functions/methods: PascalCase (`DrawFrame()`); internal helpers in
-  `.cpp` may be camelCase - match the surrounding convention.
-- Members: `m_` prefix for member variables.
-- Constants: UPPER_SNAKE_CASE. Enums: PascalCase type, PascalCase or UPPER_CASE
-  values.
-- Files: PascalCase (`VulkanContext.hpp`).
+- Use PascalCase for types, class filenames and member functions, including
+  private methods. Use lowerCamelCase for file-local free functions.
+- Prefix direct private instance fields by declaring class. Use `r_` in
+  DeferredRenderer and Swapchain, `ed_` in Editor, `ctx_` in VulkanContext,
+  `app_` in Application and HeadlessApplication, and `win_` in UIManager.
+  Use lowerCamelCase after the prefix. The default for other classes is `m_`.
+- Use UPPER_SNAKE_CASE for constants and PascalCase for new enums and their
+  values. Extend an existing enum using its current spelling.
+- Preserve exposed API and serialized names during private member renames.
+  See the [style guide's naming table](../../docs/style/style.md#naming) for
+  examples, scope and compatibility rules.
 
 ## RAII (Non-Negotiable)
 

@@ -99,7 +99,7 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
 - Owns the project adapters for undo history and viewport state under
   `editor/project/`; asset persistence does not include Editor internals
 - Controller registry pattern: `Editor::RegisterController<T>()` creates the
-  controller, calls `Init(m_ctx)` and stores it in `ed_controllers`
+  controller, calls `Init(ed_ctx)` and stores it in `ed_controllers`
 - Event-driven controller communication: a UI signal reaches
   `Editor::OnUIEvent`, the next `Edit()` drains it to the controllers, and every
   event a handler emits is dispatched before that handler returns
