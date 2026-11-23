@@ -107,6 +107,7 @@ def main():
     for source in sources:
         layer = source.relative_to(SOURCE_ROOT).parts[0]
         in_operations = source.is_relative_to(SOURCE_ROOT / "editor" / "operations")
+        in_controllers = source.is_relative_to(SOURCE_ROOT / "editor" / "controllers")
         text = without_comments(source.read_text(encoding="utf-8-sig"))
         for match in INCLUDE.finditer(text):
             opener, header = match.groups()
@@ -117,6 +118,8 @@ def main():
             if (not in_operations and target == "editor"
                     and Path(header.replace("\\", "/")).name == "OperationContext.hpp"):
                 reason = "operation replay belongs to editor/operations"
+            elif in_controllers and project_header == Path("editor/operations/OperationManager.hpp"):
+                reason = "controllers record history through IOperationSink"
             elif layer not in FORBIDDEN_LAYERS:
                 continue
             elif target == "app" or target in FORBIDDEN_LAYERS[layer]:

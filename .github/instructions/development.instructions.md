@@ -9,6 +9,10 @@ detail lives in [`docs/`](../../docs/README.md).
 
 1. **Trace the closest existing feature** end to end to find every touchpoint.
    Example: study the entire point-light pipeline before adding a sun light.
+   For GPU uploads, trace the current Mesh or RenderGraph implementation before
+   writing code. Identify what keeps the CPU payload alive, which requests
+   must arrive first, and which renderer component owns the resulting GPU
+   resource. See [upload reference paths](../../docs/render/resources.md#upload-reference-paths).
 2. **Map every layer** the feature crosses: scene -> cache -> passes -> shaders ->
    renderer -> UI -> tests -> docs. No layer should be surprised by it.
 3. **Confirm the approach with the user** before writing code: new class vs.

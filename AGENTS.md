@@ -65,6 +65,35 @@ in `scripts/check_layer_boundaries.py` and cover it in the checker tests.
 See [layer responsibilities](docs/architecture/layers.md) and
 [runtime data flow](docs/architecture/data-flow.md).
 
+### Controllers and undo
+
+- A controller handles a typed event, makes the live CPU edit, and submits a
+  reversible description through `ControllerContext::ops` (`IOperationSink`).
+  Only the operation system may call `Operation::Apply`. Only
+  `OperationManager` constructs the production `OperationContext` for undo,
+  redo and rollback. Controllers must never acquire a replay context or drive
+  replay themselves.
+- Prefer one event per edit intent and one operation per reversible change.
+  Record the target UID and the smallest set of values needed to restore it.
+  For example, moving an object records its old and new position. Group
+  related edits into a composite for one undo step. Avoid capturing the
+  entire scene, config or graph to undo a change to one field.
+- Keep controllers stateless wherever possible. Resolve current objects through
+  `ControllerContext` in the handler. Keep temporary state only for the span of
+  an interaction that needs it. Keep headers limited to declarations and their
+  required types. Forward-declare pointer/reference types and put handler
+  bodies, concrete operation includes and resource dependencies in the `.cpp`.
+  See [controllers](docs/editor/controllers.md#controller-design-constraints)
+  and [operations](docs/editor/operations.md#overview).
+
+### GPU uploads
+
+Before implementing an upload, trace the current Mesh or RenderGraph path from
+CPU preparation through the typed request to its renderer consumer. Use Mesh
+for individual resources and RenderGraph when publication depends on other
+uploads. Follow the reference path's payload lifetime, FIFO ordering and GPU
+cache ownership. See the [two upload paths](docs/render/resources.md#upload-reference-paths).
+
 ### Vulkan ownership
 
 - Application owns the instance, device and queues (`src/app/VulkanContext`, no

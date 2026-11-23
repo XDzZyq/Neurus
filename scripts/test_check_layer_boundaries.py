@@ -85,10 +85,20 @@ class LayerBoundariesTest(unittest.TestCase):
 
     def test_controller_can_submit_history_or_call_an_unrelated_apply(self):
         result, errors = self.check(
+            '#include "editor/operations/IOperationSink.hpp"\n'
             '#include "editor/operations/GraphOperations.hpp"\n'
             'void Update(Filter& filter) { filter.Apply(); }\n',
             "editor/controllers")
         self.assertEqual(result, 0, errors)
+
+    def test_controller_uses_operation_sink_instead_of_concrete_manager(self):
+        self.write("editor/operations/OperationManager.hpp", "// history owner\n")
+        for header in ['"editor/operations/OperationManager.hpp"', '"../operations/OperationManager.hpp"',
+                       '<OperationManager.hpp>']:
+            with self.subTest(header=header):
+                result, errors = self.check(f'#include {header}\n', "editor/controllers")
+                self.assertEqual(result, 1)
+                self.assertIn("src/editor/controllers/Consumer.hpp:1: controllers record history through IOperationSink", errors)
 
     def test_forbidden_layer_include_is_rejected(self):
         result, errors = self.check('#include "editor/Editor.hpp"\n', "render")

@@ -41,7 +41,10 @@ and thread handoffs against the [runtime data flow](../architecture/data-flow.md
 A production source outside `src/editor/operations/` that directly includes
 `OperationContext.hpp` fails the boundary check. The context's private
 constructor also enforces replay ownership in code that includes an operation
-type transitively. Unit tests for individual operations use a test-only fixture.
+type transitively. A controller that directly includes `OperationManager.hpp`
+also fails the check. Controllers can include concrete operation types to describe
+edits and submit them through `IOperationSink`. Unit tests for individual
+operations use a test-only fixture.
 
 The checker resolves literal project includes against the source directory,
 `src/`, and unique header names. It reports forbidden layer dependencies and

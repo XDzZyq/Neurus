@@ -28,6 +28,16 @@ and frame fences preserve older resources while submitted work uses them.
 Defaults follow built-in recipes through CPU preparation, upload, cache and pass
 construction. These renderer resources never become serialized project objects.
 
+## Upload reference paths
+
+Trace the path that matches the proposed upload before choosing a request type
+or deciding who owns its payload.
+
+| Use case | CPU producer and handoff | Render-side consumer |
+| --- | --- | --- |
+| Upload one resource | `PostMeshUpload` in `src/editor/Editor.cpp` posts `UploadMeshRequest` with the object UID and a `shared_ptr<const MeshData>`. The request keeps the geometry alive through the handoff. | `RenderRequestExecutor::handle(const UploadMeshRequest&)` checks residency, uploads the geometry through `UploadManager` and stores the result in `RenderCache`. |
+| Publish a graph with shader dependencies | `RenderManager::Publish` clones the authored graph, posts a shader upload for each distinct referenced shader UID, then posts `CompileRenderGraphRequest`. Each shader request owns its bytecode and metadata. | `RenderRequestProcessor` passes the graph to `GraphUploader`. When compiling, the mapper resolves shader UIDs against the GPU cache populated by the preceding uploads. |
+
 ## Render request path
 
 The renderer is the sole GPU submitter: the Editor touches no `VkQueue`, waits
