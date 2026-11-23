@@ -5,10 +5,18 @@ description: Implement and review Neurus changes that affect layer boundaries, c
 
 # Neurus development
 
-Start with the [repository rules](../../../AGENTS.md). Before choosing an API
-or adding an include, identify which component owns the state, who may change
-it and how the caller reaches that owner. Trace a comparable implementation
-and use the relevant contract below.
+## First, trace the existing pattern and data path
+
+Before designing a change, find the closest working feature in the owning layer.
+Follow a real call from its entry point through each handoff to the code that
+changes state or produces the result. For example, trace an object move through
+`PositionChanged`, its handler in `ObjectController.cpp`, and the `SetPositionOp`
+it submits for undo. Identify who owns the data at each step and what crosses
+each boundary. Use that path to choose where the change belongs.
+
+Follow the [repository rules](../../../AGENTS.md) and the
+[file organization conventions](../../instructions/conventions.instructions.md#file-organization)
+when extending the family. Use the relevant design contract below.
 
 - **Cross-layer changes.** Use the [communication table](../../instructions/architecture.instructions.md#communication)
   to choose the handoff. For example, Editor posts GPU work through

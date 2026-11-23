@@ -24,6 +24,23 @@ short working reference.
 - Local project headers before system headers.
 - Group: local, third-party (Vulkan, Qt, GLM), STL.
 
+## File organization
+
+Place new code beside the closest implementation in its owning layer. Where
+callers use several implementations through one interface, keep the base small
+and put specialized behavior in the concrete types. Keep a helper used by one
+implementation in its `.cpp`. Extract a named helper when it has a distinct
+responsibility shared by callers, and keep it with the family that uses it.
+
+| Family | Where the next addition belongs |
+| --- | --- |
+| Render passes | [Pass.hpp](../../src/render/passes/Pass.hpp) defines the common interface. Add a concrete pass beside [GeometryPass.hpp](../../src/render/passes/GeometryPass.hpp) in `src/render/passes/`. |
+| Editor events | Group related typed payloads in a domain header such as [SceneEvents.hpp](../../src/editor/events/SceneEvents.hpp). Plain event structs need no base class. |
+| Undo operations | [Operation.hpp](../../src/editor/operations/Operation.hpp) defines the replay contract. Group related concrete edits in a domain header such as [SceneOperations.hpp](../../src/editor/operations/SceneOperations.hpp). |
+| CLI commands | [SubCommand.hpp](../../src/cli/SubCommand.hpp) defines the CLI interface. Each command family has a sibling implementation under `src/cli/subcommands/`, such as [SceneCommand.hpp](../../src/cli/subcommands/SceneCommand.hpp). |
+| Project components | Keep persistence with the layer that owns the data. Asset components include [SceneComponent.hpp](../../src/asset/components/SceneComponent.hpp). Editor-owned history lives in [HistoryComponent.hpp](../../src/editor/project/HistoryComponent.hpp). |
+| Type registrations | Add serialization registrations to the owning family's `registrations/` directory. For an undo operation, extend [OperationRegistration.cpp](../../src/editor/operations/registrations/OperationRegistration.cpp). |
+
 ## Naming
 
 - Use PascalCase for types, class filenames and member functions, including
