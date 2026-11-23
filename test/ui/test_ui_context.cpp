@@ -26,10 +26,15 @@
  */
 
 #include <gtest/gtest.h>
+#include "ui/items/ScalarSlider.hpp"
+#include "ui/panels/RenderConfigPanel.hpp"
+#include <QDoubleSpinBox>
+#include <QSlider>
+
 
 #include "core/RenderConfig.hpp"
-#include "render/RenderContext.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Scene.hpp"
 #include "ui/UIContext.hpp"
 
@@ -124,15 +129,11 @@ TEST(UIContextShape, EnumeratesEveryObjectInTheMasterList)
 }
 
 // ---------------------------------------------------------------------------
-// The Editor's half is assignable — what Editor::UpdateUIContext() relies on
+// Application assembles document fields without a framework dependency.
 // ---------------------------------------------------------------------------
 
-TEST(UIContextShape, EditorHalfIsTwoPlainPointers)
+TEST(UIContextShape, DocumentFieldsAreTwoPlainPointers)
 {
-	// Editor::UpdateUIContext() compiles into neurus_editor, which does not link
-	// neurus_ui, so it may only *assign* these fields — never call a UIContext
-	// method defined in that library. This is the shape that permission rests
-	// on: two pointers, no framework type, nothing to compute.
 	Scene scene{};
 	RenderConfig config{};
 
@@ -143,4 +144,51 @@ TEST(UIContextShape, EditorHalfIsTwoPlainPointers)
 	EXPECT_EQ(ui.scene,  &scene);
 	EXPECT_EQ(ui.config, &config);
 	EXPECT_EQ(ui.Settings().r_shadow_bias, config.r_shadow_bias);
+}
+
+// Widget integration: model settings may exceed a slider's convenient drag range.
+
+TEST(ScalarSliderModel, OutOfRangeValueIsDisplayedWithoutChangingDragRange)
+{
+	ScalarSlider slider(0.0, 0.01, 1000, 0.0005);
+	int emitted = 0;
+	QObject::connect(&slider, &ScalarSlider::valueChanged, [&]() { ++emitted; });
+	slider.setValue(0.02);
+	EXPECT_DOUBLE_EQ(slider.value(), 0.02);
+	EXPECT_DOUBLE_EQ(slider.spinBox()->value(), 0.02);
+	EXPECT_EQ(slider.slider()->minimum(), 0);
+	EXPECT_EQ(slider.slider()->maximum(), 1000);
+	EXPECT_EQ(slider.slider()->value(), 1000);
+	EXPECT_EQ(emitted, 0);
+
+	slider.setValue(0.005);
+	EXPECT_DOUBLE_EQ(slider.value(), 0.005);
+	slider.setValue(0.02);
+	EXPECT_DOUBLE_EQ(slider.value(), 0.02);
+	EXPECT_EQ(emitted, 0);
+}
+
+TEST(RenderConfigPanelModel, GammaEditPreservesDefaultBiasOutsideDragRange)
+{
+	RenderConfigPanel panel;
+	UIContext context;
+	int emitted = 0;
+	RenderConfig reported;
+	QObject::connect(&panel, &RenderConfigPanel::configValueChanged,
+		[&](const RenderConfigChangedEvent& event) { reported = event.config; ++emitted; });
+	panel.Refresh(context);
+	EXPECT_EQ(emitted, 0);
+	EXPECT_FLOAT_EQ(panel.Save().r_shadow_bias, context.Settings().r_shadow_bias);
+
+	ScalarSlider* gamma = nullptr;
+	for (auto* slider : panel.findChildren<ScalarSlider*>())
+	{
+		if (slider->slider()->maximum() == 200)
+			gamma = slider;
+	}
+	ASSERT_NE(gamma, nullptr);
+	gamma->spinBox()->setValue(2.2);
+	ASSERT_EQ(emitted, 1);
+	EXPECT_FLOAT_EQ(reported.r_gamma, 2.2f);
+	EXPECT_FLOAT_EQ(reported.r_shadow_bias, context.Settings().r_shadow_bias);
 }

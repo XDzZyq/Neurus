@@ -8,22 +8,27 @@
  */
 
 #include "editor/controllers/ShaderController.hpp"
+#include "editor/RenderManager.hpp"
 #include "editor/controllers/MutationNotify.hpp"
 #include "editor/events/ShaderEvents.hpp"
+#include "editor/events/GraphEvents.hpp"
+#include "editor/events/OperationEvents.hpp"
 #include "editor/events/EditorEvents.hpp"
-#include "editor/events/EventBus.hpp"
 #include "editor/operations/IOperationSink.hpp"
 #include "editor/operations/ShaderOperations.hpp"
+#include "editor/operations/PassShaderStageOperation.hpp"
 
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
 #include "scene/ObjectID.hpp"
 
 #include "asset/data/ShaderData.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
-#include "render/shaders/ShaderGenerator.hpp"
-#include "render/shaders/ShaderParser.hpp"
+#include "shader/BuiltInRenderData.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ShaderGenerator.hpp"
+#include "shader/ShaderParser.hpp"
 
 #include "core/Log.hpp"
 
@@ -286,8 +291,47 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 }
 
 // ---------------------------------------------------------------------------
-// Shader-keyed unit handlers (script path)
+// Pooled shader stage handlers
 // ---------------------------------------------------------------------------
+
+// Pooled edits use the same UID whether the caller reached it from a mesh or a pass.
+using neurus::PassShaderEditSource;
+
+template<class Write>
+bool EditPassStage(const neurus::ControllerContext& ctx, int uid, int stage, neurus::ShaderUnit& live,
+                   PassShaderEditSource source, Write write, std::string* error = nullptr)
+{
+	if (!ctx.render || !ctx.render->ReferencesShader(uid))
+		return false;
+	try
+	{
+		auto draft = live;
+		write(draft);
+		auto edit = std::make_unique<neurus::SetPassShaderStageOp>(
+			uid, static_cast<neurus::ShaderType>(stage), live, draft, source);
+		ctx.events.Emit(neurus::PassShaderStageChanged{uid, static_cast<neurus::ShaderType>(stage), draft, false, false, false});
+		ctx.ops.Submit(std::move(edit));
+	}
+	catch (const std::exception& failure)
+	{
+		ctx.events.Emit(neurus::OperationRejected{failure.what()});
+		if (!error)
+			throw;
+		*error = failure.what();
+	}
+	return true;
+}
+
+neurus::ShaderUnit* FindUnit(const neurus::ControllerContext& ctx, int uid, int stage,
+                            std::string* error = nullptr)
+{
+	const auto type = static_cast<neurus::ShaderType>(stage);
+	auto* shader = ResolveShaderData(ctx, uid);
+	auto* unit = shader ? shader->FindStage(type) : nullptr;
+	if (!unit && error)
+		*error = "shader stage not found for UID " + std::to_string(uid);
+	return unit;
+}
 
 /**
  * @brief Handles ShaderUnitCodeSet: assigns a stage's code and records one op.
@@ -297,10 +341,11 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
  */
 void OnUnitCodeSet(const neurus::ShaderUnitCodeSet& e, const neurus::ControllerContext& ctx)
 {
-	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
-	neurus::ShaderUnit* unit =
-		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
+	auto* unit = FindUnit(ctx, e.shaderUid, e.stage, e.error);
 	if (!unit || unit->code == e.code) return;
+	if (EditPassStage(ctx, e.shaderUid, e.stage, *unit, PassShaderEditSource::Code,
+	                  [&](auto& stage) { stage.code = e.code; }, e.error))
+		return;
 
 	std::string before = unit->code;
 	unit->code = e.code;
@@ -315,10 +360,11 @@ void OnUnitCodeSet(const neurus::ShaderUnitCodeSet& e, const neurus::ControllerC
  */
 void OnUnitStructSet(const neurus::ShaderUnitStructSet& e, const neurus::ControllerContext& ctx)
 {
-	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
-	neurus::ShaderUnit* unit =
-		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
+	auto* unit = FindUnit(ctx, e.shaderUid, e.stage, e.error);
 	if (!unit) return;
+	if (EditPassStage(ctx, e.shaderUid, e.stage, *unit, PassShaderEditSource::Structure,
+	                  [&](auto& stage) { stage.parsed = e.parsed; }, e.error))
+		return;
 
 	neurus::ShaderStruct before = unit->parsed;
 	unit->parsed = e.parsed;
@@ -331,13 +377,15 @@ void OnUnitStructSet(const neurus::ShaderUnitStructSet& e, const neurus::Control
 /**
  * @brief Handles ShaderUnitCompileRequested: parses/generates and compiles a stage.
  *
- * Fills the reply slot with the shaderc message on failure. On success it
- * resets temporal accumulation and, for a mesh shader, emits ShaderCompiled so
- * the Editor warms the pipeline; a ComputeShader does neither.
+ * Returns compiler diagnostics through the request. For a pass shader, this
+ * also flushes earlier edits in the current group. ShaderCompiled identifies
+ * the pooled resource when its compiled version becomes available.
  */
 void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
                    const neurus::ControllerContext& ctx)
 {
+	if (e.result)
+		*e.result = {};
 	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
 	neurus::ShaderUnit* unit =
 		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
@@ -348,9 +396,20 @@ void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
 	}
 
 	const auto type = static_cast<neurus::ShaderType>(e.stage);
+	std::string* error = e.result ? &e.result->error : nullptr;
 
 	try
 	{
+		if (EditPassStage(ctx, e.shaderUid, e.stage, *unit,
+		                  e.unitType == 0 ? PassShaderEditSource::CompileCode : PassShaderEditSource::Structure, [](auto&) {}, error))
+		{
+			if (error && !error->empty())
+				return;
+			ctx.events.Emit(neurus::RenderGraphFlushRequested{nullptr, error});
+			if (e.result)
+				e.result->ok = e.result->error.empty();
+			return;
+		}
 		if (e.unitType == 0)
 		{
 			unit->parsed = neurus::ShaderParser::ParseShaderCode(unit->code, type);
@@ -378,11 +437,8 @@ void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
 		unit->BumpVersion();
 		neurus::notify::Mutated(ctx.events);
 
-		if (shader->HasStage(neurus::ShaderType::VERTEX))
-		{
-			shader->BumpVersion();
-			ctx.events.Emit(neurus::ShaderCompiled{ shader->GetObjectID() });
-		}
+		shader->BumpVersion();
+		ctx.events.Emit(neurus::ShaderCompiled{ shader->GetObjectID() });
 
 		if (e.result != nullptr) e.result->ok = true;
 		NEURUS_LOG("[ShaderController] Unit compiled: shader=" << e.shaderUid
@@ -394,30 +450,37 @@ void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
 	}
 }
 
-/** @brief Restores a stage's code (undo/redo replay) and bumps its version. */
-void OnUnitCodeRestored(const neurus::ShaderUnitCodeRestored& e,
-                        const neurus::ControllerContext& ctx)
+// A pooled stage can acquire a graph consumer after a mesh-only edit was recorded.
+template<class Write>
+void RestoreUnitEdit(const neurus::ControllerContext& ctx, int uid, int stage, PassShaderEditSource source, Write write)
 {
-	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
-	neurus::ShaderUnit* unit =
-		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
-	if (!unit) return;
-	unit->code = e.code;
-	unit->BumpVersion();
-	neurus::notify::Mutated(ctx.events);
-}
+	auto* live = FindUnit(ctx, uid, stage);
+	if (!live)
+		return;
+	if (!ctx.render || !ctx.render->ReferencesShader(uid))
+	{
+		write(*live);
+		live->BumpVersion();
+		neurus::notify::Mutated(ctx.events);
+		return;
+	}
 
-/** @brief Restores a stage's whole IR (undo/redo replay) and bumps its version. */
-void OnUnitStructRestored(const neurus::ShaderUnitStructRestored& e,
-                          const neurus::ControllerContext& ctx)
-{
-	neurus::ShaderData* shader = ResolveShaderData(ctx, e.shaderUid);
-	neurus::ShaderUnit* unit =
-		shader ? shader->FindStage(static_cast<neurus::ShaderType>(e.stage)) : nullptr;
-	if (!unit) return;
-	unit->parsed = e.parsed;
-	unit->BumpVersion();
-	neurus::notify::Mutated(ctx.events);
+	const auto before = *live;
+	const auto type = static_cast<neurus::ShaderType>(stage);
+	const neurus::ShaderUnit* changed = nullptr;
+	bool portsChanged = false;
+	try
+	{
+		write(*live);
+		ctx.events.Emit(neurus::PassShaderDraftCompileRequested{uid, type, source, before, changed, portsChanged});
+		if (changed)
+			ctx.events.Emit(neurus::RenderGraphCommitRequested{portsChanged, {uid}});
+	}
+	catch (...)
+	{
+		ctx.events.Emit(neurus::PassShaderStageChanged{uid, type, before, false, portsChanged, false});
+		throw;
+	}
 }
 
 /**
@@ -687,6 +750,128 @@ void OnFieldRemoved(const neurus::ShaderFieldRemoved& e, const neurus::Controlle
 } // anonymous namespace
 
 namespace neurus {
+namespace {
+
+ShaderData& RequireShader(const ControllerContext& ctx, int uid, ShaderType stage)
+{
+	const auto shader = ctx.resources.Get<ShaderData>(uid);
+	if (!shader || !shader->HasStage(stage))
+		throw std::invalid_argument("Missing shader stage for UID " + std::to_string(uid));
+	return *shader;
+}
+
+// Resolve every use before renaming any socket. A shared shader with an
+// incompatible interface must leave the links of all its consumers intact.
+bool ReconcileStagePorts(const ControllerContext& ctx, const ShaderData& shader)
+{
+	auto graph = ctx.render->GraphData();
+	if (!graph)
+		return false;
+	std::vector<std::pair<RenderGraphData::NodeType*, PassPorts>> changed;
+	for (const auto& node : graph->nodes)
+	{
+		if (node->data.shader.get() != &shader)
+			continue;
+		auto ports = EffectivePassPorts(node->data, ctx.render->Defaults().Ports());
+		if (!ports.problems.empty())
+			throw std::invalid_argument(node->name + ": " + ports.problems.front());
+
+		bool renamed = false;
+		const auto check = [&](const auto& sockets) {
+			for (const auto& socket : sockets)
+			{
+				const auto& data = socket->data;
+				const auto* port = ports.FindRole({data.name, data.direction, data.type, data.binding, data.location});
+				if (!port)
+					throw std::invalid_argument(node->name + "." + socket->name + ": incompatible shader socket");
+				renamed |= socket->name != port->name;
+			}
+		};
+		check(node->inputs);
+		check(node->outputs);
+		if (renamed)
+			changed.emplace_back(node.get(), std::move(ports));
+	}
+	for (auto& [node, ports] : changed)
+		ReconcilePassPorts(*graph, *node, ports);
+	return !changed.empty();
+}
+
+void CompileDraft(const ControllerContext& ctx, const PassShaderDraftCompileRequested& e)
+{
+	e.changed = nullptr;
+	e.portsChanged = false;
+	auto& shader = RequireShader(ctx, e.shaderUid, e.stage);
+	auto& live = shader.GetStage(e.stage);
+	try
+	{
+		if (e.source == PassShaderEditSource::Code && live.code == e.before.code && !e.before.spv.empty())
+		{
+			live = e.before;
+			return;
+		}
+
+		auto compiled = live;
+		ShaderLibrary::CompileEditedUnit(compiled, e.stage, shader.GetName(), e.source == PassShaderEditSource::Structure);
+		if (compiled.code == e.before.code && compiled.spv == e.before.spv)
+		{
+			live = e.before;
+			return;
+		}
+
+		compiled.m_version = e.before.m_version + 1;
+		std::swap(live, compiled);
+		try
+		{
+			e.portsChanged = ReconcileStagePorts(ctx, shader);
+		}
+		catch (...)
+		{
+			std::swap(live, compiled);
+			throw;
+		}
+		e.changed = &live;
+	}
+	catch (const std::exception& error)
+	{
+		const auto& nodes = ctx.render->Graph().nodes;
+		const auto use = std::ranges::find_if(nodes, [&](const auto& n) { return n->data.shader.get() == &shader; });
+		const std::string node = use == nodes.end() ? shader.GetName() : (*use)->name;
+		const auto port = ShaderData::TypeToString(e.stage);
+		if (!e.diagnostics)
+			throw std::invalid_argument(node + "." + port + ": " + error.what());
+		e.diagnostics->push_back({node, port, error.what()});
+	}
+}
+
+void SetPassShaderStage(const ControllerContext& ctx, const PassShaderStageChanged& event)
+{
+	auto& shader = RequireShader(ctx, event.shaderUid, event.stage);
+	auto& live = shader.GetStage(event.stage);
+	auto target = event.unit;
+	if (event.compiled && target.spv.empty())
+	{
+		// Saved history stores editable shader units; bytecode is runtime data.
+		ShaderLibrary::CompileEditedUnit(target, event.stage, shader.GetName(), false);
+	}
+	if (event.refreshVersion)
+		target.m_version = live.m_version + 1;
+	std::swap(live, target);
+	if (event.portsChanged)
+	{
+		try
+		{
+			ReconcileStagePorts(ctx, shader);
+		}
+		catch (...)
+		{
+			std::swap(live, target);
+			throw;
+		}
+	}
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Init - register the shader event handlers
@@ -702,8 +887,7 @@ void ShaderController::Init(ControllerContext& ctx)
 			ctx.events.Emit(RenderResetEvent{});
 		});
 
-	// Shader-keyed unit edits (script path): address the pooled ShaderData UID,
-	// so they work for a mesh shader and for a standalone ComputeShader.
+	// A pooled shader can be shared by meshes and graph passes.
 	ctx.events.Subscribe<ShaderUnitCodeSet>(
 		[ctx](const ShaderUnitCodeSet& e) { OnUnitCodeSet(e, ctx); });
 	ctx.events.Subscribe<ShaderUnitStructSet>(
@@ -711,9 +895,18 @@ void ShaderController::Init(ControllerContext& ctx)
 	ctx.events.Subscribe<ShaderUnitCompileRequested>(
 		[ctx](const ShaderUnitCompileRequested& e) { OnUnitCompile(e, ctx); });
 	ctx.events.Subscribe<ShaderUnitCodeRestored>(
-		[ctx](const ShaderUnitCodeRestored& e) { OnUnitCodeRestored(e, ctx); });
+		[ctx](const ShaderUnitCodeRestored& e) {
+			RestoreUnitEdit(ctx, e.shaderUid, e.stage, PassShaderEditSource::Code, [&](auto& live) { live.code = e.code; });
+		});
 	ctx.events.Subscribe<ShaderUnitStructRestored>(
-		[ctx](const ShaderUnitStructRestored& e) { OnUnitStructRestored(e, ctx); });
+		[ctx](const ShaderUnitStructRestored& e) {
+			RestoreUnitEdit(ctx, e.shaderUid, e.stage, PassShaderEditSource::Structure, [&](auto& live) { live.parsed = e.parsed; });
+		});
+
+	ctx.events.Subscribe<PassShaderDraftCompileRequested>(
+		[ctx](const PassShaderDraftCompileRequested& e) { CompileDraft(ctx, e); });
+	ctx.events.Subscribe<PassShaderStageChanged>(
+		[ctx](const PassShaderStageChanged& e) { SetPassShaderStage(ctx, e); });
 
 	// Code edits apply live; recording is bracketed by the ShaderEditBegin/End
 	// gesture so a keystroke burst collapses to one SetShaderCodeOp on focus-out.

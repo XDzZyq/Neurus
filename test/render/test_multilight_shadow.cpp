@@ -23,11 +23,11 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestMultiShadow.hpp"
 
-#include "render/shaders/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/UploadManager.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/passes/GeometryPass.hpp"
@@ -90,19 +90,19 @@ protected:
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 
 		// --- Shadow depth pass ---
 		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
-			*m_device, pd, *m_queue, m_graphicsQueueFamily,
+			*m_renderCache, *m_device, pd, *m_queue, m_graphicsQueueFamily,
 			ShadowDepthPass::kDefaultResolution);
 		// --- Shadow intensity pass (1 set = single-frame recording) ---
 		m_shadowIntensityPass = std::make_unique<ShadowIntensityPass>(
-			*m_device, pd, 1u);
+			*m_renderCache, *m_device, pd, 1u);
 
 		// --- Lighting pass (2 sets = matches test_deferred_shading) ---
 		m_lightingPass = std::make_unique<LightingPass>(
-			*m_device, pd, 2u);
+			*m_renderCache, *m_device, pd, 2u);
 
 		// --- Upload manager for CPU→GPU struct conversion ---
 	}
@@ -187,10 +187,10 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -276,10 +276,10 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -381,9 +381,9 @@ TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -462,9 +462,9 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
 		// NO LightingPass here — pure isolation test
 		EndSubmitWait(cmd);
 	}
@@ -604,10 +604,10 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -813,10 +813,10 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snap, shadowRes.scene.get(), &config);
-		m_shadowDepthPass->Record(*cmd, *m_renderCache, ctx);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
-		m_shadowIntensityPass->Record(*cmd, *m_renderCache, ctx);
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowDepthPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_shadowIntensityPass, *cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

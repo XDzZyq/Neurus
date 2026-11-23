@@ -10,10 +10,10 @@
 #include "Image.hpp"
 #include "render/Barrier.hpp"
 #include "render/render_graph/DescriptorBinder.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/ComputeShader.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 
 #include "core/Log.hpp"
 

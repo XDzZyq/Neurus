@@ -6,9 +6,11 @@
 #include "editor/operations/OperationManager.hpp"
 
 #include "core/Log.hpp"
+#include "editor/operations/GraphOperation.hpp"
 #include "editor/operations/OperationContext.hpp"
 #include "editor/operations/ScriptOperations.hpp"
 #include "editor/events/EventBus.hpp"
+#include <algorithm>
 
 namespace neurus {
 
@@ -52,6 +54,22 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 		return;
 	}
 
+	// The controller already changed the document. Only its inverse is needed on rejection.
+	try
+	{
+		GraphOperationBatch(*op).Commit(m_bus);
+	}
+	catch (...)
+	{
+		Apply(*op->Inverse(), false);
+		throw;
+	}
+	if (!GraphOperationBatch::IsNoOp(*op))
+		Record(std::move(op));
+}
+
+void OperationManager::Record(std::unique_ptr<Operation> op)
+{
 	// Coalesce a stream of same-key edits into the undo-stack top; the live state
 	// is already up to date, so merging only extends the recorded range.
 	const std::string key = op->MergeKey();
@@ -87,9 +105,9 @@ void OperationManager::BeginCommandScope(std::string label)
 	BeginScriptScope(std::move(label));
 }
 
-void OperationManager::EndCommandScope()
+std::string OperationManager::EndCommandScope(bool success)
 {
-	EndScriptScope();
+	return EndScriptScope(success);
 }
 
 void OperationManager::Undo()
@@ -150,6 +168,11 @@ void OperationManager::Clear()
 	NEURUS_LOG("[OperationManager] Clear: dropping " << m_undo.size()
 	           << " undo + " << m_redo.size() << " redo entries and "
 	           << m_scriptOps.size() << " buffered script op(s)");
+	if (m_phase == Phase::Script)
+	{
+		RollbackGraphRequests();
+		m_phase = Phase::Idle;
+	}
 	m_undo.clear();
 	m_redo.clear();
 	m_scriptOps.clear();
@@ -169,6 +192,7 @@ void OperationManager::BeginScriptScope(std::string name)
 	}
 
 	m_scriptOps.clear();
+	m_scopeError.clear();
 	// Only a successful Begin adopts the new label, so an ignored one cannot
 	// rename the run whose buffer is still open.
 	m_scriptName = std::move(name);
@@ -176,17 +200,54 @@ void OperationManager::BeginScriptScope(std::string name)
 	NEURUS_LOG("[OperationManager] BeginScriptScope: buffering edits into one undo step");
 }
 
-void OperationManager::EndScriptScope()
+void OperationManager::FlushGraphDrafts(std::vector<CpuGraphDiagnostic>* diagnostics)
+{
+	GraphOperationBatch(m_scriptOps).FlushDrafts(m_bus, diagnostics);
+}
+
+void OperationManager::RollbackGraphRequests()
+{
+	for (auto it = m_scriptOps.rbegin(); it != m_scriptOps.rend(); ++it)
+	{
+		if (GraphOperationBatch(**it).Empty())
+			continue;
+		Apply(*(*it)->Inverse(), false);
+		it->reset();
+	}
+	std::erase(m_scriptOps, nullptr);
+}
+
+void OperationManager::RejectScope(const std::string& error)
+{
+	if (m_phase == Phase::Script && m_scopeError.empty())
+		m_scopeError = error;
+}
+
+std::string OperationManager::EndScriptScope(bool success)
 {
 	if (m_phase != Phase::Script)
 	{
 		NEURUS_ERR("[OperationManager] EndScriptScope ignored: no script scope is open (phase="
 		           << PhaseName(m_phase) << ")");
-		return;
+		return {};
 	}
 
-	// Restore Idle FIRST: the composite's Submit() below must take the normal
-	// recording path, not re-enter the buffering branch.
+	std::string error = std::move(m_scopeError);
+	if (success && error.empty())
+	{
+		try
+		{
+			GraphOperationBatch(m_scriptOps).Commit(m_bus);
+			std::erase_if(m_scriptOps, [](const auto& op) { return GraphOperationBatch::IsNoOp(*op); });
+		}
+		catch (const std::exception& failure)
+		{
+			error = failure.what();
+		}
+	}
+	if (!success || !error.empty())
+		RollbackGraphRequests();
+
 	m_phase = Phase::Idle;
 
 	std::vector<std::unique_ptr<Operation>> buffered = std::move(m_scriptOps);
@@ -202,14 +263,15 @@ void OperationManager::EndScriptScope()
 	if (buffered.empty())
 	{
 		NEURUS_LOG("[OperationManager] EndScriptScope: the run recorded no edits");
-		return;
+		return error;
 	}
 
 	// The run records as one labelled step: ScriptRunOp is a CompositeOp that
 	// reports the run's name ("Run Script" when the host supplied none).
 	NEURUS_LOG("[OperationManager] EndScriptScope: committing " << buffered.size()
 	           << " buffered op(s) as one step");
-	Submit(std::make_unique<ScriptRunOp>(std::move(buffered), std::move(runName)));
+	Record(std::make_unique<ScriptRunOp>(std::move(buffered), std::move(runName)));
+	return error;
 }
 
 void OperationManager::RestoreHistory(std::vector<std::unique_ptr<Operation>> undo,
@@ -242,42 +304,49 @@ HistoryView OperationManager::GetHistoryView() const
 	return view;
 }
 
+void OperationManager::Apply(Operation& op, bool historyReplay)
+{
+	// A synchronous restore handler may submit a record. Suppress it during
+	// both history replay and compensation, and restore the enclosing phase.
+	struct RestorePhase
+	{
+		Phase& current;
+		Phase previous;
+		~RestorePhase() { current = previous; }
+	} guard{m_phase, m_phase};
+	m_phase = Phase::Replaying;
+	OperationContext ctx{m_bus, historyReplay};
+	op.Apply(ctx);
+	if (historyReplay)
+	{
+		try
+		{
+			GraphOperationBatch(op).Commit(m_bus);
+		}
+		catch (...)
+		{
+			Apply(*op.Inverse(), false);
+			throw;
+		}
+	}
+}
+
 bool OperationManager::Replay(Operation& op)
 {
-	NEURUS_LOG("[OperationManager] Replay: applying '" << op.Label()
-	           << "' (phase -> Replaying)");
-
-	OperationContext ctx{ m_bus };
-
-	// m_phase must be restored on every exit path: a stuck Replaying phase would
-	// silently suppress every later Submit(), making all further undo/redo
-	// recording appear dead.
-	const Phase prior = m_phase;
-	m_phase = Phase::Replaying;
-
-	// Contain handler exceptions: a single broken handler must not abort the
-	// undo/redo call or propagate further. The op is reported as failed so the
-	// caller drops it instead of moving it onto the opposite stack.
 	try
 	{
-		op.Apply(ctx);
+		Apply(op, true);
+		return true;
 	}
-	catch (const std::exception& ex)
+	catch (const std::exception& failure)
 	{
-		NEURUS_ERR("[OperationManager] Replay of '" << op.Label()
-		           << "' threw: " << ex.what());
-		m_phase = prior;
-		return false;
+		NEURUS_ERR("[OperationManager] Replay of '" << op.Label() << "' failed: " << failure.what());
 	}
 	catch (...)
 	{
-		NEURUS_ERR("[OperationManager] Replay of '" << op.Label()
-		           << "' threw a non-standard exception");
-		m_phase = prior;
-		return false;
+		NEURUS_ERR("[OperationManager] Replay of '" << op.Label() << "' threw a non-standard exception");
 	}
-	m_phase = prior;
-	return true;
+	return false;
 }
 
 void OperationManager::EnforceUndoLimit()

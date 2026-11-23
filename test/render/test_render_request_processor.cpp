@@ -18,7 +18,7 @@
 
 #include "render/RenderCache.hpp"
 #include "render/requests/RenderRequestProcessor.hpp"
-#include "render/requests/RenderRequests.hpp"
+#include "render_api/RenderRequests.hpp"
 #include "render/UploadManager.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/resources/LightingCache.hpp"
@@ -58,7 +58,7 @@ protected:
 				*m_device, pd, *m_queue, m_graphicsQueueFamily));
 			m_upload = std::make_unique<UploadManager>(
 				*m_device, pd, *m_queue, m_graphicsQueueFamily);
-			m_geometryPass = std::make_unique<GeometryPass>(*m_device, pd);
+			m_geometryPass = std::make_unique<GeometryPass>(*m_cache, *m_device, pd);
 			m_processor = std::make_unique<RenderRequestProcessor>(
 				[this]
 				{

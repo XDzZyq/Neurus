@@ -17,17 +17,20 @@
 #include "editor/Editor.hpp"
 #include "render/Barrier.hpp"
 #include "render/RenderCache.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "scene/Camera.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render/render_graph/PassBindings.hpp"
+#include "render/render_graph/PassResources.hpp"
 #include "scene/Scene.hpp"
 
 #include <array>
 #include <cstdint>
 #include <fstream>
+#include <utility>
 #include <memory>
 #include <string>
 #include <utility>
@@ -275,6 +278,72 @@ protected:
 		                              out);
 
 		ctx.snapshot = &out;
+	}
+
+	/**
+	 * @brief Builds a direct-pass frame with the default scene resource mapping
+	 *        and writes the descriptors the graph would write.
+	 *
+	 * Every pass test used to drive a pass straight against RenderCache and the
+	 * pass looked its images up by AttachmentName. Production hands a pass a
+	 * PassResources table and writes its descriptors from the compiled binding
+	 * plan; this helper does both for the default document, so a pass test stays
+	 * a pass test and still exercises the production write path.
+	 *
+	 * @param pass   Pass to record.
+	 * @param cmd    Command buffer in recording state.
+	 * @param cache  Cache that owns the images.
+	 * @param ctx    Per-frame context (extent and frame index are used).
+	 */
+	static neurus::PassStats RecordPass(neurus::Pass& pass,
+	                                    vk::CommandBuffer cmd,
+	                                    neurus::RenderCache& cache,
+	                                    const neurus::RenderContext& ctx)
+	{
+		const vk::Extent2D extent{ctx.width, ctx.height};
+		neurus::PassResources resources;
+
+		const auto input = [&](const char* port, const neurus::AttachmentName name)
+		{
+			resources.SetInput(port, &cache.GetAttachment(name, extent));
+		};
+		const auto output = [&](const char* port, const neurus::AttachmentName name)
+		{
+			resources.SetOutput(port, &cache.GetAttachment(name, extent));
+		};
+
+		input("gPosition",          neurus::AttachmentName::Position);
+		input("gNormal",            neurus::AttachmentName::Normal);
+		input("gAlbedo",            neurus::AttachmentName::Albedo);
+		input("gAlpha",             neurus::AttachmentName::Albedo);
+		input("gMetallicRoughness", neurus::AttachmentName::MetallicRoughness);
+		input("gHDRColor",          neurus::AttachmentName::HDRColor);
+		input("gInput",             neurus::AttachmentName::ComposedOutput);
+		input("U_AO",               neurus::AttachmentName::SSAO);
+
+		output("gPosition",          neurus::AttachmentName::Position);
+		output("gNormal",            neurus::AttachmentName::Normal);
+		output("gAlbedo",            neurus::AttachmentName::Albedo);
+		output("gMetallicRoughness", neurus::AttachmentName::MetallicRoughness);
+		output("gObjectID",          neurus::AttachmentName::IDBuffer);
+		output("depth",              neurus::AttachmentName::Depth);
+		output("outputSSAO",         neurus::AttachmentName::SSAO);
+		output("outputImage",        neurus::AttachmentName::HDRColor);
+		output("outputComposed",     neurus::AttachmentName::ComposedOutput);
+		output("outputFXAA",         neurus::AttachmentName::FXAAOutput);
+
+		neurus::Image& intensity = cache.GetShadowIntensityArray(extent);
+		resources.SetInput("U_ShadowArray", &intensity);
+		resources.SetOutput("outputShadow", &intensity);
+
+		const std::vector<const neurus::ShaderGPU*> shaders = pass.GetShaders();
+		const neurus::PassPorts ports = neurus::CollectUploadedPassPorts(pass.GetIO().name, shaders);
+		const std::vector<neurus::GraphImageBinding> bindings =
+			neurus::BuildImageBindings(ports, pass);
+		neurus::WritePassBindings(pass, cache, ctx, resources, bindings);
+
+		const neurus::PassFrame frame{cache, ctx, std::move(resources), ctx.frameIndex};
+		return pass.Record(cmd, frame);
 	}
 
 	/**

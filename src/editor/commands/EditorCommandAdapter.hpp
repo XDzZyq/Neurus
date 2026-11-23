@@ -34,6 +34,7 @@ private:
 	command::CommandResult ExecuteObjectDuplicate(const command::Json& args);
 	command::CommandResult ExecuteObjectDelete(const command::Json& args);
 	command::CommandResult ExecuteRenderGet();
+	command::CommandResult ExecuteGraphStatus();
 	command::CommandResult ExecuteRenderSet(const command::Json& args);
 	command::CommandResult ExecuteHistoryGet();
 	command::CommandResult ExecuteHistoryUndo();

@@ -27,7 +27,7 @@
 #include "scene/Material.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/passes/LightingPass.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Texture.hpp"
 #include "asset/data/ImageData.hpp"
 #include "render/Texture.hpp"
@@ -90,11 +90,11 @@ protected:
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 
 		// --- Lighting pass ---
 		m_lightingPass = std::make_unique<LightingPass>(
-			*m_device, pd,
+			*m_renderCache, *m_device, pd,
 			2u);                          // numSets = kMaxFramesInFlight
 
 		// --- Upload manager for CPU→GPU struct conversion ---
@@ -266,7 +266,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, snapshot, &scene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -280,7 +280,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 
 	{
 		auto& cmd = BeginCmd();
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

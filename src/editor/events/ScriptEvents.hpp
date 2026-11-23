@@ -34,6 +34,10 @@ struct ScriptRunStarted
 };
 
 /** @brief Emitted when a script run ends; commits the buffered writes as one step. */
-struct ScriptRunFinished {};
+struct ScriptRunFinished
+{
+	bool success = true;
+	std::string* error = nullptr;
+};
 
 } // namespace neurus

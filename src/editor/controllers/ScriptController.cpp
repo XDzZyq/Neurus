@@ -7,6 +7,9 @@
 
 #include "editor/events/ScriptEvents.hpp"
 
+#include <stdexcept>
+#include <utility>
+
 namespace {
 
 /**
@@ -25,9 +28,13 @@ void OnScriptRunStarted(const neurus::ScriptRunStarted& e, const neurus::Control
  * @note Emitted even when the run raised, so the scope always closes and the
  *       preceding writes are still one undoable step.
  */
-void OnScriptRunFinished(const neurus::ScriptRunFinished&, const neurus::ControllerContext& ctx)
+void OnScriptRunFinished(const neurus::ScriptRunFinished& e, const neurus::ControllerContext& ctx)
 {
-	ctx.ops.EndScriptScope();
+	auto error = ctx.ops.EndScriptScope(e.success);
+	if (e.error)
+		*e.error = std::move(error);
+	else if (!error.empty())
+		throw std::runtime_error(error);
 }
 
 } // anonymous namespace

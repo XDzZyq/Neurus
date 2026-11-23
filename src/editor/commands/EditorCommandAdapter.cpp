@@ -5,6 +5,8 @@
 #include "core/RenderConfig.hpp"
 #include "core/ResourceManager.hpp"
 #include "editor/Editor.hpp"
+#include "editor/RenderManager.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "editor/controllers/MutationNotify.hpp"
 #include "editor/events/ConfigEvents.hpp"
 #include "editor/events/SceneEvents.hpp"
@@ -548,15 +550,17 @@ public:
 	~CommandEditScope()
 	{
 		if (m_active)
-			m_operations.EndCommandScope();
+			m_operations.EndCommandScope(false);
 	}
 
 	void Close()
 	{
 		if (m_active)
 		{
-			m_operations.EndCommandScope();
 			m_active = false;
+			const auto error = m_operations.EndCommandScope();
+			if (!error.empty())
+				throw std::runtime_error(error);
 		}
 	}
 
@@ -864,6 +868,8 @@ command::CommandResult EditorCommandAdapter::Execute(const command::CommandReque
 		return ExecuteObjectDuplicate(request.args);
 	if (request.name == command::kObjectDelete)
 		return ExecuteObjectDelete(request.args);
+	if (request.name == command::kRenderGraphStatus)
+		return ExecuteGraphStatus();
 	if (request.name == command::kRenderGet)
 		return ExecuteRenderGet();
 	if (request.name == command::kRenderSet)
@@ -1170,6 +1176,28 @@ command::CommandResult EditorCommandAdapter::ExecuteObjectDelete(const command::
 		{"deleted", deleted},
 		{"count", deleted.size()},
 	});
+}
+
+command::CommandResult EditorCommandAdapter::ExecuteGraphStatus()
+{
+	const auto& manager = m_editor.GetRenderManager();
+	const auto& graph = manager.Graph();
+	const auto& selected = manager.GraphData();
+	Json outputs = Json::object();
+	for (const auto name : kSceneOutputNames)
+		outputs[std::string(name)] = nullptr;
+	for (const auto& [name, endpoint] : graph.sceneOutputs)
+		outputs[name] = {{"node", endpoint.node}, {"port", endpoint.port}};
+	Json diagnostics = Json::array();
+	for (const auto& diagnostic : manager.Diagnostics())
+		diagnostics.push_back({{"node", diagnostic.node}, {"port", diagnostic.port}, {"message", diagnostic.message}});
+	for (const auto& problem : manager.Problems())
+		diagnostics.push_back({{"message", problem}});
+	return CommandResult::Success({{"graph", {
+		{"source", selected ? "project" : "builtin"}, {"uid", selected ? Json(selected->GetObjectID()) : Json(nullptr)},
+		{"node_count", graph.nodes.size()}, {"edge_count", graph.Connections().size()},
+		{"outputs", std::move(outputs)}, {"diagnostics", std::move(diagnostics)}
+	}}});
 }
 
 command::CommandResult EditorCommandAdapter::ExecuteRenderGet()

@@ -77,10 +77,20 @@ public:
 	{
 		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
-		// A zero data/shader id is already a handled, reported state on load,
-		// so an absent id costs this mesh its geometry and nothing else.
-		archive::Optional(ar, CEREAL_NVP(o_meshDataId), CEREAL_NVP(o_shaderId),
-		                  CEREAL_NVP(using_shadow), CEREAL_NVP(using_material),
+		// Missing shader references remain null and select the runtime built-in.
+		// Save omits that reference rather than materializing a fallback resource.
+		archive::Optional(ar, CEREAL_NVP(o_meshDataId));
+		if constexpr (Archive::is_saving::value)
+		{
+			if (o_shader)
+				ar(CEREAL_NVP(o_shaderId));
+		}
+		else
+		{
+			o_shaderId = 0;
+			archive::OptionalField(ar, CEREAL_NVP(o_shaderId));
+		}
+		archive::Optional(ar, CEREAL_NVP(using_shadow), CEREAL_NVP(using_material),
 		                  CEREAL_NVP(using_sdf), CEREAL_NVP(is_closure));
 	}
 

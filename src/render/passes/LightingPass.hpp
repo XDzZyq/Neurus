@@ -13,11 +13,11 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "passes/ComputePass.hpp"
 #include "../DescriptorManager.hpp"
 #include "../buffers/GPUBuffer.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/ComputeShader.hpp"
 
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -59,7 +59,7 @@ public:
 	 *
 	 * @throws std::runtime_error if shader or pipeline creation fails.
 	 */
-	LightingPass(const vk::raii::Device& device,
+	LightingPass(RenderCache& cache, const vk::raii::Device& device,
 	             const vk::raii::PhysicalDevice& physicalDevice,
 	             uint32_t numSets);
 
@@ -87,14 +87,29 @@ public:
 	 * @param ctx             Per-frame context (camera position, view matrix,
 	 *                        invProjView, render extent, frame index).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the G-Buffer, SSAO and ShadowIntensity reads and the HDRColor
 	/// write. (IBL cubemaps are not modeled as bindings here.)
 	PassIO GetIO() const override;
 
-	/** @brief Creates the descriptor set layout (12 bindings). */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
+	/// @brief The PBR lighting compute shader.
+	std::vector<const ShaderGPU*> GetShaders() const override;
+
+	/// @brief Light SSBOs, written by the graph into bindings 5, 6 and 11.
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
+
+	/// @brief IBL cubemaps (bindings 8 and 9), resolved from the environment.
+	void CollectGraphExternalImages(RenderCache& cache, const RenderContext& ctx,
+	                                std::vector<GraphExternalImage>& out) const override;
+
+public:
+	/// @brief Constructs from a selected uploaded shader.
+	LightingPass(const vk::raii::Device& device,
+	             const vk::raii::PhysicalDevice& physicalDevice,
+	             uint32_t numSets,
+	             std::shared_ptr<const ShaderGPU> shader);
 
 private:
 
@@ -102,19 +117,10 @@ private:
 	void BuildPipeline(const vk::raii::Device& device,
 	                   const std::string& debugName) override;
 
-	/**
-	 * @brief Writes all descriptors (image + buffer) into the specified set.
-	 *
-	 * Light SSBOs are read from the cache at binding time, not stored locally.
-	 *
-	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
-	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
-
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
-	std::unique_ptr<ComputeShader> p_shader;
+	std::shared_ptr<const ShaderGPU> p_shader;
 
 	// --- Empty cubemap placeholder for IBL bindings when no env exists (1x1x6, black) ---
 	std::unique_ptr<Texture> p_emptyCube;

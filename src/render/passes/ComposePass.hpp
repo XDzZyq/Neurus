@@ -17,9 +17,9 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "passes/ComputePass.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/ComputeShader.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -50,7 +50,7 @@ public:
 	 * @param physicalDevice    Physical device (for sampler creation).
 	 * @param numSets           Number of descriptor sets (one per in-flight frame).
 	 */
-	ComposePass(const vk::raii::Device& device,
+	ComposePass(RenderCache& cache, const vk::raii::Device& device,
 	            const vk::raii::PhysicalDevice& physicalDevice,
 	            uint32_t numSets);
 
@@ -69,23 +69,22 @@ public:
 	 * @param cache   Mutable render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index, config).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the HDRColor read and the ComposedOutput write.
 	PassIO GetIO() const override;
 
-	/**
-	 * @brief Writes both descriptors (HDRColor, ComposedOutput) into the
-	 *        specified set.
-	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
-	 * @param extent    Render area dimensions.
-	 * @param cache     Mutable render cache for attachment access.
-	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
+	/// @brief The tone-map and gamma compute shader.
+	std::vector<const ShaderGPU*> GetShaders() const override;
+
+public:
+	/// @brief Constructs from a selected uploaded shader.
+	ComposePass(const vk::raii::Device& device,
+	            const vk::raii::PhysicalDevice& physicalDevice,
+	            uint32_t numSets,
+	            std::shared_ptr<const ShaderGPU> shader);
 
 private:
-	/** @brief Creates the descriptor set layout (2 bindings). */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
@@ -94,7 +93,7 @@ private:
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
-	std::unique_ptr<ComputeShader> p_shader;
+	std::shared_ptr<const ShaderGPU> p_shader;
 };
 
 } // namespace neurus

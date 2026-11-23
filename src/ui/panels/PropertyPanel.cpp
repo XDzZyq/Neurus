@@ -1,7 +1,7 @@
 #include "panels/PropertyPanel.hpp"
 
 #include "Icons.hpp"
-#include "UIContext.hpp"
+#include "ui/UIContext.hpp"
 #include "ui/utils/I18n.hpp"
 #include "presets/CameraProperties.hpp"
 #include "presets/DebugProperties.hpp"

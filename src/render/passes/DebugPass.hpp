@@ -14,7 +14,7 @@
 #include "../DescriptorManager.hpp"
 #include "../PipelineBuilder.hpp"
 #include "../buffers/BufferLayout.hpp"
-#include "../shaders/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 #include "Pass.hpp"
 
 #include <glm/glm.hpp>
@@ -122,6 +122,7 @@ public:
 	 * wireframes with a depth-test toggle per x-ray range. Leaves the target in
 	 * ColorAttachment.
 	 */
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
 
 	/**

@@ -230,6 +230,9 @@ public:
 		ar(CEREAL_NVP(resources_));
 		if constexpr (Archive::is_loading::value)
 		{
+			// Null references select runtime defaults; they are not pooled project
+			// objects and must not survive into a later save.
+			std::erase_if(resources_, [](const auto& entry) { return !entry.second; });
 			// Not derived state a rebuild can recover: names are only in the
 			// registry, so an old entry would survive its object and keep
 			// stealing the bare name from a later resource.

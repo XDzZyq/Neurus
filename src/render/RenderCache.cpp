@@ -1,8 +1,11 @@
 #include "RenderCache.hpp"
+#include "UploadManager.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include "core/Log.hpp"
-#include "render/overlay/DebugDrawList.hpp"
-#include "render/overlay/GizmoDrawList.hpp"
+#include "render_api/overlay/DebugDrawList.hpp"
+#include "render_api/overlay/GizmoDrawList.hpp"
+#include "render_graph/ResourceTag.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -10,14 +13,53 @@
 #include <utility>
 
 namespace neurus {
+// ---------------------------------------------------------------------------
+// Uploaded shaders
+// ---------------------------------------------------------------------------
+
+std::shared_ptr<const ShaderGPU> RenderCache::GetShader(const int id) const
+{
+	const auto found = m_shaders.find(id);
+	return found == m_shaders.end() ? nullptr : found->second;
+}
+
+void RenderCache::UseShader(std::shared_ptr<const ShaderGPU> shader)
+{
+	if (!shader)
+	{
+		throw std::invalid_argument("Cannot cache a null GPU shader");
+	}
+	const int id = shader->GetObjectID();
+	m_shaders.insert_or_assign(id, std::move(shader));
+	++m_shaderGeneration;
+}
+
+std::shared_ptr<const ShaderGPU> RenderCache::EnsureDefaultShader(const std::string_view name)
+{
+	const std::string key(name);
+	if (const auto found = m_defaultShaders.find(key); found != m_defaultShaders.end())
+	{
+		return found->second;
+	}
+	const auto source = m_renderDefaults->ShaderFor(name);
+	if (!source)
+	{
+		throw std::invalid_argument("Unknown default shader " + key);
+	}
+	auto uploaded = UploadManager::UploadShader(*rc_device, MakeUploadShaderRequest(*source));
+	m_defaultShaders.emplace(key, uploaded);
+	return uploaded;
+}
 
 // ---------------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------------
 
 RenderCache::RenderCache(const vk::raii::Device& device,
-                       const vk::raii::PhysicalDevice& physicalDevice)
-	: rc_device(&device)
+                       const vk::raii::PhysicalDevice& physicalDevice,
+                       std::shared_ptr<const BuiltInRenderData> renderDefaults)
+	: m_renderDefaults(renderDefaults ? std::move(renderDefaults) : std::make_shared<const BuiltInRenderData>())
+	, rc_device(&device)
 	, rc_physicalDevice(&physicalDevice)
 	, rc_cameraGPU(std::make_unique<CameraGPU>(device, physicalDevice))
 	, rc_debugCache(std::make_unique<DebugCache>(device, physicalDevice))
@@ -25,6 +67,8 @@ RenderCache::RenderCache(const vk::raii::Device& device,
 {
 	NEURUS_LOG("[RenderCache] Created");
 }
+
+RenderCache::~RenderCache() = default;
 
 void RenderCache::SetLightingCache(std::unique_ptr<LightingCache> lightingCache)
 {
@@ -38,7 +82,30 @@ void RenderCache::SetLightingCache(std::unique_ptr<LightingCache> lightingCache)
 
 void RenderCache::createAttachment(const AttachmentName name, const vk::Extent2D extent)
 {
-	const auto config = ConfigFor(name);
+	AttachmentConfig config{vk::Format::eUndefined, {}, Image::ImageType::e2D};
+	uint32_t arrayLayers = 1;
+
+	// A planned resource alias supplies the config; ConfigFor remains the
+	// fallback for the overlay and for legacy attachments.
+	const auto aliasIt = rc_graphPlan.attachments.find(name);
+	if (aliasIt != rc_graphPlan.attachments.end())
+	{
+		const auto tagIt = rc_graphPlan.tags.find(aliasIt->second);
+		if (tagIt != rc_graphPlan.tags.end())
+		{
+			const GraphOutputTag& tag = tagIt->second;
+			config      = {FormatFromTag(tag), UsageFromTag(tag), ImageTypeFromTag(tag)};
+			arrayLayers = LayerCountFromTag(tag);
+		}
+		else
+		{
+			config = ConfigFor(name);
+		}
+	}
+	else
+	{
+		config = ConfigFor(name);
+	}
 
 	Image image(*rc_device,
 	                  *rc_physicalDevice,
@@ -47,9 +114,119 @@ void RenderCache::createAttachment(const AttachmentName name, const vk::Extent2D
 	                  config.usage,
 	                  1,                // mipLevels
 	                  config.imageType,
-	                  AttachmentNameToString(name));  // debug name
+	                  AttachmentNameToString(name),  // debug name
+	                  false,            // arrayView
+	                  arrayLayers);
 
 	rc_attachments.emplace(name, std::move(image));
+}
+
+// ---------------------------------------------------------------------------
+// Planned graph resources
+// ---------------------------------------------------------------------------
+
+void RenderCache::PlanResource(std::string key, GraphOutputTag tag)
+{
+	rc_graphPlan.tags.insert_or_assign(std::move(key), std::move(tag));
+}
+
+void RenderCache::InstallResourcePlan(ResourcePlan plan)
+{
+	CleanScreenSpace();
+	rc_graphPlan = std::move(plan);
+}
+
+void RenderCache::ResourcePlan::Alias(AttachmentName attachment, std::string key)
+{
+	if (auto old = attachments.find(attachment); old != attachments.end())
+		aliases.erase(old->second);
+	if (auto old = aliases.find(key); old != aliases.end())
+		attachments.erase(old->second);
+	attachments.insert_or_assign(attachment, key);
+	aliases.insert_or_assign(std::move(key), attachment);
+}
+
+bool RenderCache::HasResource(const std::string_view key) const
+{
+	return rc_graphPlan.tags.contains(std::string(key));
+}
+
+const GraphOutputTag* RenderCache::GetResourceTag(const std::string_view key) const
+{
+	const auto it = rc_graphPlan.tags.find(std::string(key));
+	return it == rc_graphPlan.tags.end() ? nullptr : &it->second;
+}
+
+void RenderCache::AliasResourceToAttachment(const AttachmentName name, std::string key)
+{
+	const auto existing = rc_graphPlan.attachments.find(name);
+	if (existing != rc_graphPlan.attachments.end() && existing->second != key)
+	{
+		// A different plan used to own this attachment. Drop the created image so
+		// the next GetAttachment() takes the new tag's config. The caller must
+		// have drained in-flight frames before replacing a topology.
+		rc_attachments.erase(name);
+	}
+
+	rc_graphPlan.Alias(name, std::move(key));
+}
+
+Image* RenderCache::FindPlannedResource(const std::string_view key)
+{
+	const auto aliasIt = rc_graphPlan.aliases.find(std::string(key));
+	if (aliasIt != rc_graphPlan.aliases.end())
+	{
+		const auto attachmentIt = rc_attachments.find(aliasIt->second);
+		return attachmentIt == rc_attachments.end() ? nullptr : &attachmentIt->second;
+	}
+
+	const auto it = rc_resources.find(std::string(key));
+	return it == rc_resources.end() ? nullptr : &it->second;
+}
+
+Image& RenderCache::createResource(const std::string& key, const vk::Extent2D extent)
+{
+	const auto tagIt = rc_graphPlan.tags.find(key);
+	if (tagIt == rc_graphPlan.tags.end())
+		throw std::invalid_argument("RenderCache::createResource: resource not planned: " + key);
+
+	const GraphOutputTag& tag = tagIt->second;
+	Image image(*rc_device,
+	            *rc_physicalDevice,
+	            extent,
+	            FormatFromTag(tag),
+	            UsageFromTag(tag),
+	            1,
+	            ImageTypeFromTag(tag),
+	            key.c_str(),
+	            false,
+	            LayerCountFromTag(tag));
+
+	const auto [it, inserted] = rc_resources.emplace(key, std::move(image));
+	(void)inserted;
+	return it->second;
+}
+
+Image& RenderCache::GetResource(const std::string_view key, const vk::Extent2D extent)
+{
+	const auto tagIt = rc_graphPlan.tags.find(std::string(key));
+	if (tagIt == rc_graphPlan.tags.end())
+		throw std::invalid_argument("RenderCache::GetResource: resource not planned: "
+		                            + std::string(key));
+
+	if (IsLogicalTag(tagIt->second))
+		throw std::invalid_argument("RenderCache::GetResource: logical resource has no image: "
+		                            + std::string(key));
+
+	const auto aliasIt = rc_graphPlan.aliases.find(std::string(key));
+	if (aliasIt != rc_graphPlan.aliases.end())
+		return GetAttachment(aliasIt->second, extent);
+
+	const auto it = rc_resources.find(std::string(key));
+	if (it != rc_resources.end())
+		return it->second;
+
+	return createResource(std::string(key), extent);
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +263,11 @@ const Image& RenderCache::GetAttachment(const AttachmentName name) const
 
 Image& RenderCache::GetShadowIntensityArray(const vk::Extent2D extent)
 {
+	// A planned outputShadow resource owns the array once the graph compiles;
+	// the legacy lazy path stays for tests and single-pass callers.
+	if (rc_graphPlan.attachments.contains(AttachmentName::ShadowIntensity))
+		return GetAttachment(AttachmentName::ShadowIntensity, extent);
+
 	if (rc_shadowIntensityArray)
 	{
 		return *rc_shadowIntensityArray;
@@ -225,8 +407,13 @@ void RenderCache::UseMeshGPU(const int objectId, MeshGPU meshGPU)
 
 void RenderCache::Clean()
 {
+	m_shaders.clear();
+	m_defaultShaders.clear();
+	++m_shaderGeneration;
 	rc_attachments.clear();
 	rc_shadowIntensityArray.reset();
+	rc_resources.clear();
+	rc_graphPlan = {};
 	// Fresh empty tables rather than clears: a frame still holding the old one
 	// keeps drawing from it until its fence is seen signalled.
 	rc_meshGPUs = std::make_shared<const MeshTable>();
@@ -239,11 +426,18 @@ void RenderCache::Clean()
 
 void RenderCache::RemoveSceneResources()
 {
+	m_shaders.clear();
+	++m_shaderGeneration;
 	rc_meshGPUs = std::make_shared<const MeshTable>();
 	rc_environmentGPUs = std::make_shared<const EnvironmentTable>();
 	rc_lightGPUs.clear();
 	rc_uidToShadowLayer.clear();
 	rc_uidToSSBOIdx.clear();
+
+	// Project files may restore the same shader UID/version with different code.
+	// Only project pipelines live here; built-in pass pipelines stay cached in
+	// PassFactory and survive this scene replacement.
+	rc_pipelineCache.Clear();
 
 	// Shadow intensities are indexed by caster, and a new scene may have more or
 	// fewer of them, so the array is dropped and recreated at the right layer
@@ -256,6 +450,7 @@ void RenderCache::RemoveSceneResources()
 void RenderCache::CleanScreenSpace()
 {
 	rc_attachments.clear();
+	rc_resources.clear();
 	rc_shadowIntensityArray.reset();
 	// rc_uidTo*Index maps preserved — shadow indexing survives resize
 	// rc_meshGPUs preserved — mesh GPU buffers survive resize
@@ -677,12 +872,12 @@ RenderCache::AttachmentConfig RenderCache::ConfigFor(const AttachmentName name)
 	// --- Selection ---
 	case AttachmentName::SelectionOutline:
 		return { vk::Format::eR8Unorm,
-		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage, e2D };
+		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst, e2D };
 
 	// --- Composite ---
 	case AttachmentName::ComposedOutput:
 		return { vk::Format::eR16G16B16A16Sfloat,
-		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage, e2D };
+		         kColorAttachmentUsage | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst, e2D };
 
 	// --- Anti-Aliasing ---
 	case AttachmentName::FXAAOutput:

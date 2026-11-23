@@ -1,7 +1,7 @@
 #include "ProfilingPanel.hpp"
 
-#include "UIContext.hpp"
-#include "render/ProfilingData.hpp"
+#include "ui/UIContext.hpp"
+#include "render_api/ProfilingData.hpp"
 #include "ui/utils/I18n.hpp"
 
 #include <QAbstractItemView>

@@ -42,6 +42,7 @@ CommandCatalog MakeCommandCatalog()
 		CommandDescriptor{"object.add", "Create an object in the scene.", true, false, {"type"}},
 		CommandDescriptor{"object.duplicate", "Duplicate a scene object.", true, false, {}},
 		CommandDescriptor{"object.delete", "Remove one or more scene objects.", true, false, {}},
+		CommandDescriptor{"render.graph.status", "Inspect the active render graph.", false, false, {}},
 		CommandDescriptor{"render.get", "Report the render configuration.", false, false, {}},
 		CommandDescriptor{"render.set", "Change render configuration values.", true, false, {}},
 		CommandDescriptor{"history.get", "Report the undo/redo history.", false, false, {}},

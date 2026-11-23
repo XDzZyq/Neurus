@@ -330,6 +330,21 @@ TEST_F(EditorCommandAdapterTest, ObjectDeleteAcceptsAUidList)
 	EXPECT_EQ(m_editor->GetScene().GetObjectID(light), nullptr);
 }
 
+TEST_F(EditorCommandAdapterTest, GraphStatusReportsBuiltInWithoutCreatingProjectData)
+{
+	const auto result = m_adapter->Execute({kRenderGraphStatus, {}});
+	ASSERT_TRUE(result.ok) << result.message;
+	const auto& graph = result.details.at("graph");
+	EXPECT_EQ(graph.at("source"), "builtin");
+	EXPECT_TRUE(graph.at("uid").is_null());
+	EXPECT_EQ(graph.at("node_count"), 7);
+	EXPECT_EQ(graph.at("edge_count"), 14);
+	EXPECT_EQ(graph.at("outputs").at("color").at("node"), "fxaa");
+	EXPECT_EQ(graph.at("outputs").at("object_id").at("port"), "gObjectID");
+	EXPECT_TRUE(graph.at("diagnostics").empty());
+	EXPECT_FALSE(m_editor->IsDirty());
+}
+
 TEST_F(EditorCommandAdapterTest, RenderGetReportsTheDefaults)
 {
 	const auto result = m_adapter->Execute({kRenderGet, {}});

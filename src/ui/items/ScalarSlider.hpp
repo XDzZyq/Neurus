@@ -28,8 +28,8 @@ public:
 	 * The spinbox step and decimal places are derived from the range and
 	 * slider resolution: step = (max - min) / sliderSteps.
 	 *
-	 * @param min         Minimum value (spinbox lower bound).
-	 * @param max         Maximum value (spinbox upper bound).
+	 * @param min         Minimum interactive slider value.
+	 * @param max         Maximum interactive slider value.
 	 * @param sliderSteps Number of discrete slider positions (resolution).
 	 * @param initial     Initial value for both controls.
 	 * @param parent      Parent widget.
@@ -54,7 +54,8 @@ public slots:
 	/**
 	 * @brief Sets the value on both controls without emitting signals.
 	 *
-	 * No-op when the value is unchanged.
+	 * No-op when the value is unchanged. Values outside the drag range expand
+	 * the numeric control bounds; the slider keeps its interactive range.
 	 *
 	 * @param v New value.
 	 */

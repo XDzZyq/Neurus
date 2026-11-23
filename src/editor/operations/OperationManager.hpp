@@ -34,6 +34,7 @@
 namespace neurus {
 
 class EventQueue;
+struct CpuGraphDiagnostic;
 
 /**
  * @brief Owns the undo/redo history and drives synchronous replay.
@@ -66,7 +67,10 @@ public:
 	 * @param name History label for the run; empty means the default "Run Script".
 	 */
 	void BeginScriptScope(std::string name = {}) override;
-	void EndScriptScope() override;
+	std::string EndScriptScope(bool success = true) override;
+	/// Compile drafts already recorded in the open group before a graph query.
+	void FlushGraphDrafts(std::vector<CpuGraphDiagnostic>* diagnostics = nullptr);
+	void RejectScope(const std::string& error);
 
 	/**
 	 * @brief Opens a command's edit buffer, so all of its writes land as one entry.
@@ -80,7 +84,7 @@ public:
 	void BeginCommandScope(std::string label = {});
 
 	/// @brief Commits the buffered command edits as one composite entry.
-	void EndCommandScope();
+	std::string EndCommandScope(bool success = true);
 
 	// --- History control ---
 	/** @brief Undoes the most recent operation (no-op if none). */
@@ -137,6 +141,9 @@ private:
 	 *         op must be dropped.
 	 */
 	bool Replay(Operation& op);
+	void Apply(Operation& op, bool historyReplay);
+	void Record(std::unique_ptr<Operation> op);
+	void RollbackGraphRequests();
 
 	/**
 	 * @brief Evicts the oldest undo entries so the stack stays within the depth.
@@ -153,6 +160,7 @@ private:
 
 	/// History label of the open script run; empty means "Run Script".
 	std::string m_scriptName;
+	std::string m_scopeError; ///< First rejected edit in the current scope.
 
 	/// Maximum undo-stack depth; oldest entries evicted past this.
 	size_t m_maxUndoDepth = kDefaultMaxUndoDepth;

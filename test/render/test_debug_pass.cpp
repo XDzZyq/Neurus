@@ -31,12 +31,12 @@
 #include "render/Image.hpp"
 #include "render/RenderCache.hpp"
 #include "core/RenderConfig.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/UploadManager.hpp"
 #include "render/passes/DebugPass.hpp"
 #include "render/resources/MeshGPU.hpp"
 #include "scene/Camera.hpp"
-#include "render/overlay/DebugDrawList.hpp"
+#include "render_api/overlay/DebugDrawList.hpp"
 #include "scene/Scene.hpp"
 
 #include <glm/glm.hpp>

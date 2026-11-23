@@ -8,7 +8,7 @@
 
 #include "GizmoCache.hpp"
 
-#include "render/overlay/GizmoDrawList.hpp"
+#include "render_api/overlay/GizmoDrawList.hpp"
 
 namespace neurus {
 

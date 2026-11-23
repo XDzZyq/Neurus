@@ -539,18 +539,19 @@ void RegisterShaderBindings(py::module_& shader)
 			[](const ShaderUnitProxy& s) { return s.ResolveUnit()->code; },
 			[](const ShaderUnitProxy& s, const std::string& code)
 			{
-				EmitEvent(s, ShaderUnitCodeSet{s.uid, s.stage, code});
+				EmitCheckedEvent(s, ShaderUnitCodeSet{s.uid, s.stage, code});
 			})
 		.def_property("parsed",
 			[](const ShaderUnitProxy& s) { return s.ResolveUnit()->parsed; },
 			[](const ShaderUnitProxy& s, const ShaderStruct& parsed)
 			{
-				EmitEvent(s, ShaderUnitStructSet{s.uid, s.stage, parsed});
+				EmitCheckedEvent(s, ShaderUnitStructSet{s.uid, s.stage, parsed});
 			})
 		.def("compile", &CompileUnit, py::arg("by") = "code",
 		     "Compile the stage by 'code' or 'struct'; raises RuntimeError with the shaderc message on failure.");
 
 	py::class_<ShaderProxy>(shader, "Shader", "A pooled RenderShader or ComputeShader bundle.")
+		.def_property_readonly("uid", [](const ShaderProxy& s) { return s.Resolve()->GetObjectID(); })
 		.def_property_readonly("name", [](const ShaderProxy& s) { return s.Resolve()->GetName(); })
 		.def_property_readonly("stage",
 			[](const ShaderProxy& s) { return static_cast<int>(s.Resolve()->GetType()); })

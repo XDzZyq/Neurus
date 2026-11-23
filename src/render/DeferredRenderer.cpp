@@ -11,8 +11,8 @@
 #include "Barrier.hpp"
 #include "Image.hpp"
 #include "RenderCache.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "Swapchain.hpp"
 
 #include "resources/LightingCache.hpp"
@@ -22,6 +22,7 @@
 #include "Screenshot.hpp"
 #include "SharedQueue.hpp"
 #include "UploadManager.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include "overlay/OverlayEngine.hpp"
 
@@ -32,6 +33,11 @@
 #include "passes/ShadowIntensityPass.hpp"
 #include "passes/ComposePass.hpp"
 #include "passes/FXAAPass.hpp"
+
+#include "render_graph/PassFactory.hpp"
+#include "render_graph/GraphUploader.hpp"
+#include "render_graph/ResourceTag.hpp"
+
 
 #include "render/HaltonSequence.hpp"
 
@@ -49,6 +55,7 @@
 #include <vector>
 
 namespace neurus {
+
 
 // ---------------------------------------------------------------------------
 // Construction
@@ -73,7 +80,8 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
                                     uint32_t queueFamilyIndex,
                                     const vk::raii::SurfaceKHR& surface,
                                     uint32_t width,
-                                    uint32_t height)
+                                    uint32_t height,
+                                    std::shared_ptr<const BuiltInRenderData> renderDefaults)
 	: DeferredRenderer(device, physicalDevice, graphicsQueue, queueFamilyIndex)
 {
 	// --- 1. Window output target ---
@@ -81,25 +89,31 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
 	// final HDR composite blit needs.
 	r_target = std::make_unique<SwapchainTarget>(
 		physicalDevice, device, graphicsQueue, surface, width, height);
-	InitializePipeline();
+	InitializePipeline(std::move(renderDefaults));
 }
 
 DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
                                     SharedQueue& graphicsQueue,
                                     uint32_t queueFamilyIndex,
-                                    vk::Extent2D extent)
+                                    vk::Extent2D extent,
+                                    std::shared_ptr<const BuiltInRenderData> renderDefaults)
 	: DeferredRenderer(device, physicalDevice, graphicsQueue, queueFamilyIndex)
 {
 	// --- 1. Headless output target ---
 	// No surface, no acquire, no present: the last image of a frame is the
 	// OverlayOutput attachment.
 	r_target = std::make_unique<OffscreenTarget>(extent);
-	InitializePipeline();
+	InitializePipeline(std::move(renderDefaults));
 }
 
-void DeferredRenderer::InitializePipeline()
+void DeferredRenderer::InitializePipeline(std::shared_ptr<const BuiltInRenderData> renderDefaults)
 {
+	if (!renderDefaults)
+	{
+		renderDefaults = std::make_shared<const BuiltInRenderData>();
+	}
+
 	// The body below used to live in the constructor. These aliases keep it
 	// reading exactly as before now that both constructors share it.
 	const vk::raii::Device& device = r_device;
@@ -113,7 +127,7 @@ void DeferredRenderer::InitializePipeline()
 	m_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
 
 	// --- 2. Create G-Buffer attachment cache (lazy creation on first access) ---
-	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice);
+	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice, renderDefaults);
 
 	// --- 2b. Create the screenshot capture service ---
 	// Same Vulkan handles the renderer draws with; its capture methods sync the
@@ -122,87 +136,28 @@ void DeferredRenderer::InitializePipeline()
 	m_screenshot = std::make_unique<Screenshot>(
 		r_device, r_physicalDevice, graphicsQueue, r_queueFamilyIndex);
 
-	// --- 3. Create geometry pass ---
-	{
-		auto geoPass = std::make_unique<GeometryPass>(
-			device, physicalDevice);
-		r_geometryPass = geoPass.get();
-		r_passes.push_back(std::move(geoPass));
-	}
+	// --- 3. Wire the pass factory and graph uploader ---
+	m_passFactory = std::make_unique<PassFactory>(
+		device, physicalDevice, kMaxFramesInFlight, graphicsQueue, queueFamilyIndex, *r_renderCache);
 
-	// --- 5. Create lighting pass ---
-	{
-		auto lightPass = std::make_unique<LightingPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_lightingPass = lightPass.get();
-		r_passes.push_back(std::move(lightPass));
-	}
+	NEURUS_LOG("[DeferredRenderer] Scene pass cache ready; GPU passes are created on demand");
 
-	// --- 6. Create SSAO pass ---
-	{
-		auto ssaoPass = std::make_unique<SSAOPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight,
-			graphicsQueue, queueFamilyIndex);
-		r_ssaoPass = ssaoPass.get();
-		r_passes.push_back(std::move(ssaoPass));
-	}
+	// The cache retains the CPU defaults for the uploader's borrowed port catalog.
+	// Prepare them here on the caller thread before rendering starts.
+	m_graphUploader = std::make_unique<GraphUploader>(
+		*m_passFactory, renderDefaults->Ports(), renderDefaults->Graph());
 
-	// --- 7. Create shadow depth pass (cubemap depth from light's POV) ---
-	{
-		auto shadowDepth = std::make_unique<ShadowDepthPass>(
-			device, physicalDevice,
-			graphicsQueue, queueFamilyIndex,
-			ShadowDepthPass::kDefaultResolution);
-		r_shadowDepthPass = shadowDepth.get();
-		r_passes.push_back(std::move(shadowDepth));
-		NEURUS_LOG("[DeferredRenderer] ShadowDepthPass created");
-	}
-
-	// --- 8b. Create shadow intensity pass (per-pixel shadow evaluation from cubemap) ---
-	{
-		auto shadowIntensity = std::make_unique<ShadowIntensityPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_shadowIntensityPass = shadowIntensity.get();
-		r_passes.push_back(std::move(shadowIntensity));
-		NEURUS_LOG("[DeferredRenderer] ShadowIntensityPass created");
-	}
-
-	// --- 8c. Build the overlay graph (selection outline, debug overlay, gizmo) ---
+	// --- 4. Build the overlay graph (selection outline, debug overlay, gizmo) ---
 	// Separate from the scene graph so overlays can be redrawn over a converged
-	// scene image without re-running a single scene pass. RebuildMainGraph below
-	// tells it which scene image to draw over.
+	// scene image without re-running a single scene pass. The scene graph tells
+	// it which image to draw over once the Editor's document is compiled.
 	m_overlayEngine = std::make_unique<OverlayEngine>(
 		device, physicalDevice, kMaxFramesInFlight);
 	NEURUS_LOG("[DeferredRenderer] OverlayEngine created ("
 	           << m_overlayEngine->PassCount() << " overlay passes)");
 
-	// --- 8d. Create compose pass (tone map + gamma correction) ---
-	{
-		auto composePass = std::make_unique<ComposePass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_composePass = composePass.get();
-		r_passes.push_back(std::move(composePass));
-		NEURUS_LOG("[DeferredRenderer] ComposePass created");
-	}
-
-	// --- 8e. Create FXAA pass (luma-based anti-aliasing) ---
-	{
-		auto fxaaPass = std::make_unique<FXAAPass>(
-			device, physicalDevice,
-			kMaxFramesInFlight);
-		r_fxaaPass = fxaaPass.get();
-		r_passes.push_back(std::move(fxaaPass));
-		NEURUS_LOG("[DeferredRenderer] FXAAPass created");
-	}
-
-	// --- 8f. Build the scene RenderGraph ---
-	// Initial build uses a default signature (no FXAA); recordFrame rebuilds
-	// it whenever the pipeline signature derived from RenderConfig changes.
-	RebuildMainGraph(PipelineSignature{});
+	// A null document selects the cached built-in topology. Explicit documents
+	// replace it through requests; GPU passes are instantiated during compilation.
 
 	// --- 9. Allocate command buffers (one per output image, reused) ---
 	uint32_t imageCount = r_target->ImageCount();
@@ -258,15 +213,19 @@ void DeferredRenderer::InitializePipeline()
 	// accumulation iteration and the overlays-stale flag this renderer owns; the
 	// processor applies them in the same order the old per-frame drain did.
 	m_requests = std::make_unique<RenderRequestProcessor>(
-		[this] { DrainInFlightFrames(); }, *r_renderCache, r_geometryPass,
-		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; });
+		[this] { DrainInFlightFrames(); }, *r_renderCache, nullptr,
+		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; },
+		[this](const CompileRenderGraphRequest& request)
+		{
+			m_graphUploader->SetPending(request);
+		}, [this] { return m_passFactory->Geometry(); });
 }
 
 DeferredRenderer::~DeferredRenderer()
 {
 	WaitIdle();
 	// vk::raii destructors clean up automatically in reverse declaration order;
-	// r_passes destroys all passes before RenderCache. WaitIdle() is what makes
+	// m_passFactory destroys all passes before RenderCache. WaitIdle() is what makes
 	// the held tables safe to release: with the queue idle no submitted frame is
 	// still reading the meshes and environments they kept alive, and they are
 	// destroyed first (declared after r_renderCache) so nothing outlives the
@@ -457,6 +416,19 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	}
 	m_reportedNoCamera = false;
 
+	// Compile changed documents on Sample frames. Overlay frames reuse the
+	// topology and attachments that produced the converged scene image.
+	if (work == FrameWork::Sample)
+	{
+		const GraphCompileKey key{m_graphUploader->DocumentHash(), r_renderCache->ShaderGeneration()};
+		if (!m_lastGraphCompile || *m_lastGraphCompile != key)
+		{
+			DrainInFlightFrames();
+			CompileDocument();
+			m_lastGraphCompile = key;
+		}
+	}
+
 	// --- Profiling: read back this slot's GPU timestamps (fence signaled) ---
 	// Resolve() reads the slot about to be reused; the resolved GPU ms are
 	// back-filled into m_frameProfile after recordFrame repopulates the pass
@@ -472,7 +444,6 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		if (acquired)
 		{
 			imageIndex = *acquired;
-			r_lastImageIndex = imageIndex;
 		}
 		else
 		{
@@ -629,6 +600,8 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	}
 
 	// --- Drawn and presented: this frame consumed its work ---
+	if (presents)
+		r_lastImageIndex = imageIndex;
 	m_drewNothing = false;
 	m_overlaysDirty = false;
 	r_currentFrame = (r_currentFrame + 1) % kMaxFramesInFlight;
@@ -666,7 +639,10 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
 	}
 	else if (r_target->Presents())
 	{
-		if (!m_screenshot->TakeScreenshot(GetLastSwapchainImage(), GetSwapchainFormat(),
+		const vk::Image image = GetLastSwapchainImage();
+		if (!image)
+			throw std::runtime_error("[DeferredRenderer] No frame has been presented yet - nothing to capture");
+		if (!m_screenshot->TakeScreenshot(image, GetSwapchainFormat(),
 		                                  GetExtent(), directory))
 		{
 			NEURUS_ERR("[DeferredRenderer] Swapchain screenshot failed; see the [Screenshot] log line above.");
@@ -707,66 +683,38 @@ void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 	m_requests->SetUploadManager(uploader);
 }
 
-void DeferredRenderer::RebuildMainGraph(const PipelineSignature& sig)
+void DeferredRenderer::CompileDocument()
 {
-	// Rebuild the whole-pipeline DAG so it contains exactly the passes that
-	// will run. Edges follow image data-flow; camera/light SSBOs and the
-	// per-light shadow maps are addressed by the passes internally.
-	//
-	// Overlays are NOT in this graph. They live in OverlayEngine, which draws over
-	// whatever this graph ends with, so the graph stops at the scene image (the
-	// tone mapped/gamma corrected one, optionally FXAA'd). That split is what lets
-	// an overlay-only change redraw without re-running a single pass below.
-	m_mainGraph.Clear();
+	GraphUploadResult upload = m_graphUploader->Compile(*r_renderCache);
 
-	auto* geometryNode  = m_mainGraph.AddPass(r_geometryPass);
-	auto* shadowDepth   = m_mainGraph.AddPass(r_shadowDepthPass);
-	auto* shadowInt     = m_mainGraph.AddPass(r_shadowIntensityPass);
-	auto* ssaoNode      = m_mainGraph.AddPass(r_ssaoPass);
-	auto* lightingNode  = m_mainGraph.AddPass(r_lightingPass);
-	auto* composeNode   = m_mainGraph.AddPass(r_composePass);
+	const std::uint64_t graphHash = m_graphUploader->DocumentHash();
 
-	// Geometry (G-Buffer) → consumers
-	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          ssaoNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Normal,            ssaoNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Albedo,            ssaoNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          shadowInt);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Position,          lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Normal,            lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::Albedo,            lightingNode);
-	m_mainGraph.Connect(geometryNode, AttachmentName::MetallicRoughness, lightingNode);
+	m_graphReport = {};
+	m_graphReport.graphHash = graphHash;
 
-	// Shadow depth bundle → shadow intensity → lighting
-	m_mainGraph.Connect(shadowDepth, AttachmentName::ShadowDepth,     shadowInt);
-	m_mainGraph.Connect(shadowInt,   AttachmentName::ShadowIntensity, lightingNode);
-
-	// SSAO → lighting → compose (tone map + gamma only; the selection highlight is
-	// an overlay and is blended in the overlay graph, after this pass).
-	m_mainGraph.Connect(ssaoNode,     AttachmentName::SSAO,             lightingNode);
-	m_mainGraph.Connect(lightingNode, AttachmentName::HDRColor,         composeNode);
-
-	// Compose -> [FXAA]. The scene tail is the last image this graph writes, and
-	// the overlay graph copies it - FXAA is the only topology variation, so the
-	// tail choice belongs here, with the config projection that produced it.
-	const AttachmentName tail = sig.fxaa ? AttachmentName::FXAAOutput
-	                                     : AttachmentName::ComposedOutput;
-	if (sig.fxaa)
+	if (!upload.graph)
 	{
-		auto* fxaaNode = m_mainGraph.AddPass(r_fxaaPass);
-		m_mainGraph.Connect(composeNode, AttachmentName::ComposedOutput, fxaaNode);
+		m_graphReport.diagnostics = upload.errors;
+		for (const GraphDiagnostic& diagnostic : upload.errors)
+		{
+			NEURUS_ERR("[RenderGraph] "
+			          << (diagnostic.node.empty() ? std::string("<graph>") : diagnostic.node)
+			          << (diagnostic.port.empty() ? std::string{} : "." + diagnostic.port)
+			          << ": " << diagnostic.message);
+		}
+		return;
 	}
 
-	// Tell the overlay graph which image to copy. Its copy source is part of its
-	// socket names, so it re-wires itself when the tail changes.
-	m_overlayEngine->SetSceneTail(tail);
+	m_mainGraph = std::move(*upload.graph);
 
-	m_mainGraph.Compile();
-	m_builtSignature = sig;
+	m_overlayEngine->SetSceneOutputs(upload.color, upload.depth, upload.objectId);
 
-	NEURUS_LOG("[DeferredRenderer] RenderGraph rebuilt ("
-	           << m_mainGraph.PassCount() << " passes, FXAA="
-	           << (sig.fxaa ? "on" : "off") << ", tail="
-	           << AttachmentNameToString(tail) << ")");
+	m_graphReport.compiled    = true;
+	m_graphReport.scenePasses = m_mainGraph.PassCount();
+
+	NEURUS_LOG("[RenderGraph] compiled " << m_mainGraph.PassCount()
+	           << " passes, color=" << upload.color
+	           << ", hash=" << std::hex << graphHash << std::dec);
 }
 
 void DeferredRenderer::WaitIdle()
@@ -795,7 +743,7 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 	// right after a resize, before a frame has drawn at the new extent, has no
 	// ID buffer to read because the resize dropped the screen-space attachments.
 	// The honest answer is "background", i.e. object 0.
-	if (!r_renderCache->HasAttachment(AttachmentName::IDBuffer))
+	if (!m_overlayEngine->HasObjectId() || !r_renderCache->HasAttachment(AttachmentName::IDBuffer))
 	{
 		NEURUS_LOG("[DeferredRenderer] ReadIDBufferPixel: no IDBuffer at "
 		           << extent.width << "x" << extent.height
@@ -879,6 +827,8 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 
 void DeferredRenderer::recreateTarget()
 {
+	// New swapchain images start undefined; none is a valid capture source yet.
+	r_lastImageIndex.reset();
 	// The target and the screen-space attachments it sizes are about to be
 	// replaced; a resize or an out-of-date present is rare, so holding the queue
 	// lock across the wait is accepted. A separate transfer queue is idle here
@@ -1030,17 +980,6 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// Sample: Geometry -> Shadows -> SSAO -> Lighting -> Compose -> [FXAA], then
 	//         the overlay graph over that image.
 	// Overlay: the overlay graph alone, over the image the last sample produced.
-	// The graph is only rebuilt here (Sample only) when the config-derived
-	// signature changes: an Overlay frame runs the same scene topology the
-	// converged image came from, so re-evaluating it would be pointless - and
-	// rebuilding it mid-convergence is exactly what a signature change implies
-	// was already handled by the restart that came with it.
-	if (work == FrameWork::Sample)
-	{
-		const PipelineSignature sig = PipelineSignature::From(frame.Settings());
-		if (!(sig == m_builtSignature))
-			RebuildMainGraph(sig);
-	}
 
 	// --- Profiling: bracket the whole pipeline with GPU frame timestamps ---
 	// One BeginFrame/EndFrame pair covers both graphs, so the overlay passes are
@@ -1048,10 +987,10 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// profile order (OverlayEngine appends them to m_frameProfile). GPU per-pass
 	// ms are back-filled in DrawFrame after Resolve().
 	m_profiler.BeginFrame(cmdBuf);
-	if (work == FrameWork::Sample)
+	if (work == FrameWork::Sample && m_mainGraph.PassCount() > 0)
 		m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 	else
-		m_frameProfile = FrameProfile{};  // An overlay frame records only overlay passes.
+		m_frameProfile = FrameProfile{};  // Overlay-only, or no document yet.
 	m_overlayEngine->Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
 
 	// --- Blit the final image to the presented image (window target only) ---
@@ -1132,11 +1071,11 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 
 vk::Image DeferredRenderer::GetLastSwapchainImage() const
 {
-	if (!r_target || r_lastImageIndex >= r_target->ImageCount())
+	if (!r_target || !r_lastImageIndex || *r_lastImageIndex >= r_target->ImageCount())
 	{
 		return vk::Image{};
 	}
-	return r_target->Image(r_lastImageIndex);
+	return r_target->Image(*r_lastImageIndex);
 }
 
 vk::Format DeferredRenderer::GetSwapchainFormat() const

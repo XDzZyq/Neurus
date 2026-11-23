@@ -1,4 +1,6 @@
 #include "Editor.hpp"
+#include "RenderManager.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 
 #include "editor/events/InputEvents.hpp"
 #include "editor/events/AssetEvents.hpp"
@@ -7,6 +9,7 @@
 #include "editor/events/CameraEvents.hpp"
 #include "editor/events/EditorEvents.hpp"
 #include "editor/events/GizmoEvents.hpp"
+#include "editor/events/GraphEvents.hpp"
 #include "editor/events/ShaderEvents.hpp"
 #include "editor/events/SceneEvents.hpp"
 
@@ -14,19 +17,18 @@
 #include "editor/controllers/MutationNotify.hpp"
 #include "editor/controllers/ObjectController.hpp"
 #include "editor/controllers/RenderConfigController.hpp"
+#include "editor/controllers/RenderGraphController.hpp"
 #include "editor/controllers/ScriptController.hpp"
 #include "editor/controllers/ShaderController.hpp"
 #include "editor/controllers/SceneController.hpp"
 #include "editor/controllers/TransformGizmoController.hpp"
 #include "editor/events/EventBus.hpp"
 
-#include "render/requests/RenderRequestSink.hpp"
-#include "render/requests/RenderRequests.hpp"
-#include "render/UploadManager.hpp"
+#include "render_api/RenderRequestSink.hpp"
+#include "render_api/RenderRequests.hpp"
 
-#include "render/RenderFrameSnapshot.hpp"
-#include "render/shaders/RenderShader.hpp"
-#include "ui/UIContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "shader/RenderShader.hpp"
 #include "script/ScriptContext.hpp"
 
 #include "core/Log.hpp"
@@ -36,8 +38,8 @@
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStage.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
 #include "scene/DebugMesh.hpp"
@@ -54,8 +56,11 @@
 #include <cstring>
 #include <filesystem>
 #include <optional>
+#include <span>
+#include <stdexcept>
 #include <system_error>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace neurus {
@@ -186,12 +191,15 @@ int PoolShader(neurus::ResourceManager& resources,
 
 } // anonymous namespace
 
-Editor::Editor(RenderRequestSink* renderer)
+Editor::Editor(RenderRequestSink* renderer, std::shared_ptr<const BuiltInRenderData> renderDefaults)
 	: m_scene(std::make_unique<Scene>())
 	, m_resources(std::make_unique<ResourceManager>())
 	, ed_operations(ed_eventBus)
 	, ed_renderer(renderer)
-{}
+{
+	m_renderManager = std::make_unique<RenderManager>(*m_resources, renderer, std::move(renderDefaults));
+	m_ctx.render = m_renderManager.get();
+}
 
 Editor::~Editor()
 {
@@ -282,6 +290,22 @@ void Editor::Initialize()
 
 	// Undo/redo replay their inverse events synchronously (never queued), so
 	// the mutation applies in-place and cannot reorder against live input.
+	ed_eventBus.Subscribe<OperationRejected>([this](const OperationRejected& request) {
+		ed_operations.RejectScope(request.error);
+	});
+	ed_eventBus.Subscribe<RenderGraphFlushRequested>([this](const RenderGraphFlushRequested& request) {
+		try
+		{
+			ed_operations.FlushGraphDrafts(request.diagnostics);
+		}
+		catch (const std::exception& failure)
+		{
+			ed_operations.RejectScope(failure.what());
+			if (!request.error)
+				throw;
+			*request.error = failure.what();
+		}
+	});
 	ed_eventBus.Subscribe<UndoRequested>([this](const UndoRequested&) {
 		ed_operations.Undo();
 	});
@@ -291,7 +315,7 @@ void Editor::Initialize()
 
 
 	// --- Register controllers ---
-	// All seven take only the ControllerContext, which carries the event dispatch,
+	// Controllers take only the ControllerContext, which carries the event dispatch,
 	// the pooled-object lookup, the operation sink, the scene, the render config,
 	// the viewport and the gizmo state.
 	//
@@ -305,8 +329,7 @@ void Editor::Initialize()
 	RegisterController<SceneController>();
 	RegisterController<ObjectController>();
 	RegisterController<RenderConfigController>();
-	// Bounds a script run: the run-boundary events open and close the operation
-	// sink's script scope, so every write the run makes lands as one undo step.
+	RegisterController<RenderGraphController>();
 	RegisterController<ScriptController>();
 
 	// --- Keep the published camera correct across a deletion ---
@@ -451,6 +474,30 @@ void Editor::Initialize()
 		m_viewport.MarkOverlaysDirty();
 	});
 
+	ed_eventBus.Subscribe<RenderGraphCommitRequested>([this](const RenderGraphCommitRequested& change) {
+		const auto diagnostics = m_renderManager->Diagnostics();
+		if (!diagnostics.empty())
+		{
+			const auto& d = diagnostics.front();
+			const auto location = d.port.empty() ? d.node : d.node + "." + d.port;
+			throw std::invalid_argument(location + ": " + d.message);
+		}
+
+		for (int uid : change.shaderUids)
+			if (const auto shader = m_resources->Get<ShaderData>(uid))
+				shader->BumpVersion();
+		if (change.topologyChanged)
+			m_renderManager->Publish();
+		for (int uid : change.shaderUids)
+			if (const auto shader = m_resources->Get<ShaderData>(uid))
+			{
+				if (!change.topologyChanged || !m_renderManager->ReferencesShader(uid))
+					m_renderManager->UploadShader(*shader);
+				ed_eventBus.Emit(ShaderCompiled{uid, true});
+			}
+		notify::Mutated(ed_eventBus);
+	});
+
 	// --- Warm the per-mesh pipeline when a shader actually compiled ---
 	//
 	// A controller cannot reach the renderer by design, so the Editor subscribes
@@ -461,7 +508,21 @@ void Editor::Initialize()
 		if (!ed_renderer) return;
 		auto shader = m_resources->Get<ShaderData>(e.shaderObjectId);
 		if (!shader) return;
-		ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
+		bool usedByMesh = false;
+		m_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
+		{
+			if (mesh && mesh->o_shader && mesh->o_shader->GetObjectID() == e.shaderObjectId)
+				usedByMesh = true;
+		});
+		const bool usedByGraph = m_renderManager->ReferencesShader(e.shaderObjectId);
+		if (usedByGraph && !e.uploaded)
+			m_renderManager->Publish();
+		if (usedByMesh && shader->GetType() == ShaderType::VERTEX)
+		{
+			if (!usedByGraph && !e.uploaded)
+				ed_renderer->Post(MakeUploadShaderRequest(*shader));
+			ed_renderer->Post(MakeEnsurePipelineRequest(*shader));
+		}
 	});
 
 	// --- Selection moves the resting handle, and selection alone emits no
@@ -499,8 +560,8 @@ void Editor::Initialize()
 		if (!ed_renderer) return;
 		auto light = m_resources->Get<Light>(e.objectUid);
 		if (!light) return;
-		// Pure CPU conversion here, then the renderer rewrites the one SSBO entry.
-		ed_renderer->Post(UpdateLightRequest{e.objectUid, UploadManager::UploadLighting(*light)});
+		// Snapshot scene values; the renderer converts and rewrites the SSBO entry.
+		ed_renderer->Post(UpdateLightRequest{e.objectUid, MakeLightSnapshot(*light)});
 	});
 
 	ed_eventBus.Subscribe<LightingRebuild>([this](const LightingRebuild&) {
@@ -513,6 +574,49 @@ void Editor::Initialize()
 Scene& Editor::GetScene()
 {
 	return *m_scene;
+}
+
+const RenderConfig& Editor::GetRenderConfig()
+{
+	return m_renderManager->Config();
+}
+
+RenderConfig& Editor::EditRenderConfig()
+{
+	return m_renderManager->EditConfig();
+}
+std::shared_ptr<RenderConfig>& Editor::GetRenderConfigData()
+{
+	return m_renderManager->ConfigData();
+}
+const std::shared_ptr<RenderConfig>& Editor::GetRenderConfigData() const
+{
+	return m_renderManager->ConfigData();
+}
+
+RenderConfig* Editor::ConfigForControllers()
+{
+	return &m_renderManager->EditConfig();
+}
+
+const RenderConfig& Editor::GetRenderConfig() const
+{
+	return m_renderManager->Config();
+}
+
+const RenderGraphData& Editor::GetRenderGraph() const
+{
+	return m_renderManager->Graph();
+}
+
+RenderManager& Editor::GetRenderManager()
+{
+	return *m_renderManager;
+}
+
+const RenderManager& Editor::GetRenderManager() const
+{
+	return *m_renderManager;
 }
 
 // =========================================================================
@@ -560,7 +664,7 @@ void Editor::HandleViewportResize(glm::uvec2 logical, glm::uvec2 renderExtent)
 }
 
 // =========================================================================
-// UpdateUIContext / BuildSnapshot - the one producer of every outward view
+// BuildSnapshot - the renderer publication path
 // of the frame
 // =========================================================================
 
@@ -570,9 +674,9 @@ void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 	// behaviour is unchanged: r_debug_draw decides whether the overlay is
 	// published.
 	BuildSnapshot(m_scene.get(),
-	              m_config,
+	              m_renderManager->Config(),
 	              m_viewport.GetCamera(),
-	              m_config.RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr,
+	              m_renderManager->Config().RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr,
 	              &m_viewport.GizmoList(),
 	              out);
 }
@@ -709,24 +813,28 @@ RenderFrameSnapshot Editor::BuildSnapshot() const
 	return snap;
 }
 
-void Editor::UpdateUIContext(UIContext& ctx) const
-{
-	// Fields only - never a call into a UIContext method. UpdateUIContext is
-	// compiled into neurus_editor, which does not link neurus_ui (that library
-	// links *this* one), so referencing a UIContext symbol here would not resolve.
-	ctx.scene = m_scene.get();
-	ctx.config = &m_config;
-}
-
 void Editor::UpdateScriptContext(ScriptContext& ctx)
 {
-	// Same shape as UpdateUIContext: borrowed pointers, no symbol calls. The pool
+	// Borrowed pointers only. The pool
 	// is handed over as its read-only interface so a script can resolve names
 	// and ids without reaching the Editor's mutable ResourceManager. Content
 	// creation is not exposed here: a script asks for it through typed events.
 	ctx.scene = m_scene.get();
-	ctx.config = &m_config;
+	ctx.config = &m_renderManager->Config();
+	ctx.configProvider = [this]() { return &GetRenderConfig(); };
 	ctx.resources = m_resources.get();
+	ctx.graphDiagnostics = [this]() {
+		std::vector<CpuGraphDiagnostic> problems;
+		ed_eventBus.Emit(RenderGraphFlushRequested{&problems});
+		return problems.empty() ? m_renderManager->Diagnostics() : problems;
+	};
+	ctx.graphProvider = [this]() {
+		ed_eventBus.Emit(RenderGraphFlushRequested{});
+		const auto& authored = m_renderManager->GraphData();
+		return ScriptGraphView{ &m_renderManager->Graph(),
+		                        authored ? std::optional<int>(authored->GetObjectID()) : std::nullopt,
+		                        m_projectEpoch };
+	};
 }
 
 // =========================================================================
@@ -735,16 +843,17 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 
 void Editor::NewScene()
 {
+	++m_projectEpoch;
 	try
 	{
 		// The outgoing scene's GPU resources go with it (this drains the device
 		// first). Nothing is uploaded in return: the new scene is empty.
+		ed_operations.Clear(); // Finish any pending edits against the outgoing resources.
 		DropSceneGpuResources();
 
 		m_scene = std::make_unique<Scene>();
 		m_resources->Clear();
-		m_config = RenderConfig{};
-		ed_operations.Clear(); // History does not span scenes.
+		m_renderManager->ResetConfig();
 
 		// The pool just lost the old viewport camera; a new document gets a new one
 		// at the default framing, already adopting the live viewport extent. This is
@@ -761,6 +870,8 @@ void Editor::NewScene()
 		// is anchored on the outgoing document's selection, and the builder only
 		// clears its list inside a dirty Rebuild().
 		m_viewport.MarkOverlaysDirty();
+
+		m_renderManager->ResetGraph();
 
 		NEURUS_LOG("[Editor] Created new scene.");
 	}
@@ -884,19 +995,21 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 
 void Editor::BeginLoad()
 {
+	++m_projectEpoch;
 	// The outgoing scene's GPU resources go with it (this drains the device
 	// first); the project's own objects are uploaded by FinishLoad().
+	ed_operations.Clear(); // Finish any pending edits against the outgoing resources.
 	DropSceneGpuResources();
 
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
-	m_config = RenderConfig{};
-	ed_operations.Clear(); // History does not span scenes.
+	m_renderManager->ResetConfig();
+	m_renderManager->ResetGraph(false);
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
 	// the pool. FinishLoad() resolves or creates it once the file has been read.
 	m_viewport.ForgetCamera();
-	// The caller deserializes into GetScene()/GetRenderConfig() before FinishLoad().
+	// The caller restores the scene and optional render data before FinishLoad().
 }
 
 void Editor::FinishLoad()
@@ -913,8 +1026,19 @@ void Editor::FinishLoad()
 	// anchors a new handle.
 	m_viewport.MarkOverlaysDirty();
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
+
+	// Publish once the project components have restored the graph and its shaders.
+	m_renderManager->Publish();
+
+	// A loaded document is the saved baseline, not an unsaved edit.
+	m_dirty = false;
 }
 
+void Editor::SetRenderGraph(std::unique_ptr<RenderGraphData> graph)
+{
+	if (m_renderManager->SetGraph(std::move(graph)))
+		MarkDirty();
+}
 
 void Editor::OnMeshImport(const std::string& path)
 {
@@ -1372,7 +1496,10 @@ void Editor::UploadSceneResources()
 		// the event bus, so no ShaderCompiled fires. Warm each mesh's pipeline
 		// once here instead.
 		if (mesh->o_shader)
+		{
+			ed_renderer->Post(MakeUploadShaderRequest(*mesh->o_shader));
 			ed_renderer->Post(MakeEnsurePipelineRequest(*mesh->o_shader));
+		}
 	}
 
 	for (const auto& [uid, light] : m_scene->light_list)
@@ -1418,9 +1545,8 @@ void Editor::DropSceneGpuResources()
 void Editor::UploadLighting()
 {
 	if (!ed_renderer) return;
-	// Pure CPU conversion of the whole light map here; the renderer rebuilds the
-	// SSBOs from the value it receives.
-	ed_renderer->Post(UpdateLightingRequest{UploadManager::UploadLighting(m_scene->light_list)});
+	// Publish owned scene values; GPU layout conversion stays in the renderer.
+	ed_renderer->Post(MakeUpdateLightingRequest(m_scene->light_list));
 }
 
 // =========================================================================

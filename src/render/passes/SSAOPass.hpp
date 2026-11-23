@@ -12,10 +12,10 @@
 
 #pragma once
 
+#include "render/resources/ShaderGPU.hpp"
+
 #include "passes/ComputePass.hpp"
 #include "../buffers/GPUBuffer.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/ComputeShader.hpp"
 #include "../buffers/UniformBuffer.hpp"
 
 #include <glm/glm.hpp>
@@ -113,7 +113,7 @@ public:
 	 *
 	 * @throws std::runtime_error if shader or pipeline creation fails.
 	 */
-	SSAOPass(const vk::raii::Device& device,
+	SSAOPass(RenderCache& cache, const vk::raii::Device& device,
 	         const vk::raii::PhysicalDevice& physicalDevice,
 	         uint32_t numSets,
 	         SharedQueue& graphicsQueue,
@@ -135,25 +135,32 @@ public:
 	 * @param cache   Render cache for attachment access.
 	 * @param ctx     Per-frame context (render extent, frame index).
 	 */
-	PassStats Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx) override;
+	PassStats Record(vk::CommandBuffer cmdBuf, const PassFrame& frame) override;
 
 	/// Declares the G-Buffer reads (Position/Normal/Albedo) and the SSAO write.
 	PassIO GetIO() const override;
 
+	/// @brief The SSAO compute shader.
+	std::vector<const ShaderGPU*> GetShaders() const override;
+
 	/**
-	 * @brief Writes all descriptors (image + buffer) into the specified set.
-	 * @param setIndex  Index into p_descriptorSets (0 .. numSets-1).
+	 * @brief Buffers the graph writes into the descriptor set.
+	 *
+	 * Binding 4 is the params UBO, binding 5 the noise UBO.
 	 */
-	void WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache) override;
+	void CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+	                         std::vector<GraphBufferBinding>& out) const override;
+
+public:
+	/// @brief Constructs from a selected uploaded shader.
+	SSAOPass(const vk::raii::Device& device,
+	         const vk::raii::PhysicalDevice& physicalDevice,
+	         uint32_t numSets,
+	         SharedQueue& graphicsQueue,
+	         uint32_t queueFamilyIndex,
+	         std::shared_ptr<const ShaderGPU> shader);
 
 private:
-	/**
-	 * @brief Creates the descriptor set layout (6 bindings).
-	 *
-	 * 0-2: G-Buffer Position/Normal/Albedo (combined image samplers),
-	 * 3: outputSSAO (storage image, R8), 4: SSAOParams UBO, 5: NoiseBuffer UBO.
-	 */
-	static DescriptorSetLayout CreateDescriptorSetLayout(const vk::raii::Device& device);
 
 	/** @brief Creates the compute pipeline from the self-loaded shader. */
 	void BuildPipeline(const vk::raii::Device& device,
@@ -182,7 +189,7 @@ private:
 	// (Pipelines inherited from Pass - p_pipelines[0])
 
 	// --- Self-loaded compute shader (via ShaderLibrary) ---
-	std::unique_ptr<ComputeShader> p_shader;
+	std::shared_ptr<const ShaderGPU> p_shader;
 
 	// --- Owned UBOs ---
 	std::unique_ptr<UniformBuffer<SSAOParamsGpu>> p_paramsUBO;   ///< SSAO params (camera + kernel), host-visible

@@ -7,7 +7,7 @@
 
 #include "items/ScalarSlider.hpp"
 #include "core/RenderConfig.hpp"
-#include "UIContext.hpp"
+#include "ui/UIContext.hpp"
 #include "ui/utils/I18n.hpp"
 
 #include <QCheckBox>

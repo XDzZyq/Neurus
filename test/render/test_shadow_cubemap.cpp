@@ -21,11 +21,11 @@
 #include "shared/TestVulkanShared.hpp"
 #include "shared/TestSimpleShadow.hpp"
 
-#include "render/shaders/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
 #include "render/passes/ShadowDepthPass.hpp"
 #include "render/passes/GeometryPass.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Image.hpp"
 #include "render/Barrier.hpp"
 
@@ -61,9 +61,9 @@ protected:
 
 		auto& pd = PhysicalDevice();
 
-		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
-			*m_device, pd, *m_queue, m_graphicsQueueFamily, kRes);
 		m_renderCache = std::make_unique<RenderCache>(*m_device, pd);
+		m_shadowDepthPass = std::make_unique<ShadowDepthPass>(
+			*m_renderCache, *m_device, pd, *m_queue, m_graphicsQueueFamily, kRes);
 		m_renderCache->SetLightingCache(std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 	}
 

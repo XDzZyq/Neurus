@@ -34,8 +34,10 @@ Rules that hold across waves:
 
 - Keep GPU-visible structs byte-for-byte identical to their GLSL counterparts
   (`static_assert` size + `offsetof` per field).
-- A new pass declares its image I/O through `Pass::GetIO()`; the RenderGraph wires
-  and orders it. See [render/render-graph.md](../../docs/render/render-graph.md).
+- A scene pass's ports come from CPU shader metadata plus declared-only outputs
+  in `PassKinds`; the RenderGraph wires and orders them. Legacy overlay passes
+  still declare attachments through `Pass::GetIO()`. See
+  [render/render-graph.md](../../docs/render/render-graph.md).
 - Wire each part into the renderer **immediately**; never land a feature that is
   inert.
 - Keep classes lean and functions small (single responsibility); refactor
@@ -88,7 +90,7 @@ work is how a bisect lands on a 20-file commit.
   named session, exercise the commands the change touches (a new scene, an object
   edit, a render-config change, undo/redo, a snapshot), close it, then sweep the
   captured stdout/stderr for `VUID-`, crashes and unexpected `NEURUS_ERR` lines.
-  Watch the viewport while it is up and resize it to catch deadlocks.
+  Manual viewport interaction and resize testing are handled by the user.
 - **Verify every reference image with Python PIL** before committing a change
   that touches one: not empty, not uniform, not all-black or all-white. The
   exact checks are in [docs/build/test.md](../../docs/build/test.md).

@@ -37,7 +37,7 @@
 
 #include "editor/Editor.hpp"
 #include "editor/viewport/EditorViewport.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
 #include "scene/DebugPoints.hpp"
@@ -272,7 +272,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_SurvivesLaterSceneMutation)
 	cam->SetTarPos(glm::vec3(7.0f, 1.0f, -2.0f));
 	AddMesh(scene, glm::vec3(5.0f, 5.0f, 5.0f), 3.0f);   // a whole new object
 	scene.RemoveLight(ids.lightSpot);                     // and one gone
-	editor.GetRenderConfig().r_shadow_bias = 0.5f;
+	editor.EditRenderConfig().r_shadow_bias = 0.5f;
 
 	// --- Meshes: the transform it was built from, not the one the Scene holds now
 	const MeshInstanceSnapshot* a = FindMesh(snap, ids.meshA);
@@ -389,7 +389,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_GatesDebugDrawAndCopiesOverlays)
 	const glm::vec3 gizmoPivotBefore   = vp.GizmoList().points.back().p;
 	ASSERT_EQ(gizmoPivotBefore, glm::vec3(1.0f, 2.0f, 3.0f)) << "the pivot is meshA's position";
 
-	editor.GetRenderConfig().r_debug_draw = true;
+	editor.EditRenderConfig().r_debug_draw = true;
 	const RenderFrameSnapshot on = editor.BuildSnapshot();
 
 	// --- The geometry actually travelled
@@ -433,7 +433,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_GatesDebugDrawAndCopiesOverlays)
 	    << "the gizmo list is copied, not borrowed";
 
 	// --- The gate
-	editor.GetRenderConfig().r_debug_draw = false;
+	editor.EditRenderConfig().r_debug_draw = false;
 	const RenderFrameSnapshot off = editor.BuildSnapshot();
 	EXPECT_FALSE(off.HasDebugDraw()) << "r_debug_draw gates publication, as in BuildSnapshot";
 	EXPECT_TRUE(off.debugDraw.Empty()) << "and nothing is copied when the gate is shut";

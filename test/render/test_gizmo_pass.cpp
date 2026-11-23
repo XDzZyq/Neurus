@@ -32,12 +32,12 @@
 #include "render/Image.hpp"
 #include "render/RenderCache.hpp"
 #include "core/RenderConfig.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/GizmoPass.hpp"
 #include "render/resources/GizmoCache.hpp"
 #include "scene/Camera.hpp"
-#include "render/overlay/GizmoDrawList.hpp"
-#include "render/overlay/OverlayGeometry.hpp"
+#include "render_api/overlay/GizmoDrawList.hpp"
+#include "render_api/overlay/OverlayGeometry.hpp"
 #include "scene/Scene.hpp"
 
 #include <glm/glm.hpp>

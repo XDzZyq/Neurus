@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,13 +18,16 @@
 // RenderFrameSnapshot by value, so the complete type is required here. It is
 // Vulkan-free and header-only for this use, so including it adds no GPU
 // dependency to the Editor library.
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 
 // Forward declarations (no render headers!)
 namespace neurus {
 class Camera;
 class Mesh;
 class MeshData;
+class RenderGraphData;
+class RenderManager;
+class BuiltInRenderData;
 class RenderRequestSink;
 class Scene;
 struct ShaderCreateRequested;
@@ -33,7 +37,6 @@ struct MeshImportRequested;
 struct CameraAddRequested;
 struct ObjectDuplicateRequested;
 struct ScriptContext;   // script/ScriptContext.hpp - Vulkan/Qt-free script view
-struct UIContext;       // ui/UIContext.hpp         - Qt-free frame view (UI-facing)
 }
 
 namespace neurus {
@@ -57,8 +60,9 @@ public:	/**
 	 *                  before that tick's BuildSnapshot/publish, so FIFO order on
 	 *                  the sink matches the frame the snapshot describes (see
 	 *                  RenderRequestSink.hpp).
+	 * @param renderDefaults Shared CPU defaults. Standalone editors may use a local provider.
 	 */
-	Editor(RenderRequestSink* renderer);
+	explicit Editor(RenderRequestSink* renderer, std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
 	~Editor();
 
 	Editor(const Editor&) = delete;
@@ -96,7 +100,29 @@ public:	/**
 
 	// --- Accessors ---
 	Scene& GetScene();
-	RenderConfig& GetRenderConfig() { return m_config; }
+	const RenderConfig& GetRenderConfig();
+	RenderConfig& EditRenderConfig();
+	std::shared_ptr<RenderConfig>& GetRenderConfigData();
+	const std::shared_ptr<RenderConfig>& GetRenderConfigData() const;
+	const RenderConfig& GetRenderConfig() const;
+
+	/// @brief The scene render graph document.
+	const RenderGraphData& GetRenderGraph() const;
+
+	/// @brief The Editor's render state service (document, shaders, config).
+	RenderManager& GetRenderManager();
+	const RenderManager& GetRenderManager() const;
+
+	/**
+	 * @brief Replaces the document and asks the renderer to compile it.
+	 *
+	 * Marks the document dirty; the renderer keeps drawing its previous graph
+	 * when the new one fails to compile and reports the diagnostics.
+	 *
+	 * @param graph New document to validate and adopt, or null to select the built-in graph.
+	 */
+	void SetRenderGraph(std::unique_ptr<RenderGraphData> graph);
+
 	bool IsDirty() const { return m_dirty; }
 	void MarkDirty() { m_dirty = true; }
 	void ClearDirty() { m_dirty = false; }
@@ -175,22 +201,10 @@ public:	/**
 	                          RenderFrameSnapshot& out);
 
 	/**
-	 * @brief Fills the UI-facing view of this frame: the document, and nothing else.
-	 *
-	 * Only the two members the UI layer is entitled to (scene, config). The
-	 * Application adds the frame-scoped members the Editor does not own.
-	 *
-	 * @warning Assigns fields only - it must never call a UIContext method. This
-	 *          translation unit is neurus_editor, which does not link neurus_ui
-	 *          (neurus_ui links this one), so such a call would not resolve.
-	 */
-	void UpdateUIContext(UIContext& ctx) const;
-
-	/**
 	 * @brief Fills the script-facing view: the borrowed scene, render config
 	 *        and resource pool.
 	 *
-	 * Mirrors UpdateUIContext - field assignments, nothing else. Content
+	 * Uses field assignments only. Content
 	 * creation is not a borrowed surface here: a script asks for it through
 	 * typed editor events, so this context stays read-only. The caller builds a
 	 * ScriptContext for one script run and discards it afterwards.
@@ -358,6 +372,9 @@ private:
 	 */
 	void PublishActiveCamera(bool extentChanged = false);
 
+	/// @brief Config pointer for ControllerContext, defined out of line.
+	RenderConfig* ConfigForControllers();
+
 	/**
 	 * @brief Adds the default scene's demo debug objects.
 	 * @param meshData The demo mesh's geometry, reused for the DebugMesh wireframe
@@ -368,8 +385,17 @@ private:
 	// --- Owned state ---
 	std::unique_ptr<Scene> m_scene;
 	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
-	RenderConfig          m_config;
+
+	/**
+	 * @brief The Editor's render state: document, pass shaders and config.
+	 *
+	 * Created after the pool in the constructor; declared before the controller
+	 * context so its config exists before any controller can ask for it.
+	 */
+	std::unique_ptr<RenderManager> m_renderManager;
+
 	bool                  m_dirty = false;
+	std::uint64_t         m_projectEpoch = 0;
 
 	/**
 	 * @brief The viewport: its own camera, its screen space, and its overlays.
@@ -394,8 +420,9 @@ private:
 	 */
 	ControllerContext m_ctx{ ed_eventBus, *m_resources, ed_operations,
 	                         [this]() { return m_scene.get(); },
-	                         [this]() { return &m_config; },
-	                         [this]() { return &m_viewport; } };
+	                         [this]() { return ConfigForControllers(); },
+	                         [this]() { return &m_viewport; },
+	                         [this]() -> std::shared_ptr<RenderConfig>& { return GetRenderConfigData(); } };
 
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;
 

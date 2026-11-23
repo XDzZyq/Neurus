@@ -13,11 +13,13 @@
  */
 
 #include <gtest/gtest.h>
+#include <memory>
 
 #include <string>
 
 #include "asset/Project.hpp"
 #include "asset/components/SceneComponent.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/data/ImageData.hpp"
@@ -63,10 +65,11 @@ static std::string DefaultProjectPath()
  *                  ID references against it).
  * @return Initialised project::Project ready for Load().
  */
-static project::Project MakeProject(Scene& scene, RenderConfig& config, ResourceManager& resources)
+static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources,
+                                    const BuiltInRenderData& catalog)
 {
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources);
+	p.Register<project::ResourceComponent>(resources, catalog);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Register<project::ConfigComponent>(config);
 	return p;
@@ -81,11 +84,12 @@ static project::Project MakeProject(Scene& scene, RenderConfig& config, Resource
  */
 TEST(DefaultProject, LoadsWithoutException)
 {
+	const neurus::BuiltInRenderData catalog;
 	Scene scene;
-	RenderConfig config;
+	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
 	EXPECT_NO_THROW({
-		auto p = MakeProject(scene, config, resources);
+		auto p = MakeProject(scene, config, resources, catalog);
 		p.Load(DefaultProjectPath());
 	});
 }
@@ -100,11 +104,12 @@ TEST(DefaultProject, LoadsWithoutException)
  */
 TEST(DefaultProject, HasCamera)
 {
+	const neurus::BuiltInRenderData catalog;
 	Scene scene;
-	RenderConfig config;
+	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
 	{
-		auto p = MakeProject(scene, config, resources);
+		auto p = MakeProject(scene, config, resources, catalog);
 		p.Load(DefaultProjectPath());
 	}
 	EXPECT_GE(scene.cam_list.size(), 1u);
@@ -127,11 +132,12 @@ TEST(DefaultProject, HasCamera)
  */
 TEST(DefaultProject, HasMesh)
 {
+	const neurus::BuiltInRenderData catalog;
 	Scene scene;
-	RenderConfig config;
+	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
 	{
-		auto p = MakeProject(scene, config, resources);
+		auto p = MakeProject(scene, config, resources, catalog);
 		p.Load(DefaultProjectPath());
 	}
 	EXPECT_GE(scene.mesh_list.size(), 1u);
@@ -155,11 +161,12 @@ TEST(DefaultProject, HasMesh)
  */
 TEST(DefaultProject, HasLight)
 {
+	const neurus::BuiltInRenderData catalog;
 	Scene scene;
-	RenderConfig config;
+	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
 	{
-		auto p = MakeProject(scene, config, resources);
+		auto p = MakeProject(scene, config, resources, catalog);
 		p.Load(DefaultProjectPath());
 	}
 	EXPECT_GE(scene.light_list.size(), 1u);
@@ -180,11 +187,12 @@ TEST(DefaultProject, HasLight)
  */
 TEST(DefaultProject, HasEnvironment)
 {
+	const neurus::BuiltInRenderData catalog;
 	Scene scene;
-	RenderConfig config;
+	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
 	{
-		auto p = MakeProject(scene, config, resources);
+		auto p = MakeProject(scene, config, resources, catalog);
 		p.Load(DefaultProjectPath());
 	}
 	EXPECT_FALSE(scene.env_list.empty());

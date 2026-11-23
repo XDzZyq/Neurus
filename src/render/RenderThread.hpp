@@ -73,11 +73,11 @@
 #include "core/BatchQueue.hpp"
 #include "FrameMailbox.hpp"
 #include "IFrameRenderer.hpp"
-#include "ProfilingData.hpp"
+#include "render_api/ProfilingData.hpp"
 #include "PublishedFrame.hpp"
 #include "RenderControl.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "requests/RenderRequestSink.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "render_api/RenderRequestSink.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 

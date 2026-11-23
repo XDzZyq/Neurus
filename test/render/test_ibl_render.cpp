@@ -20,7 +20,7 @@
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/UploadManager.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/passes/GeometryPass.hpp"
@@ -161,13 +161,13 @@ protected:
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			dev, pd);
+			*m_renderCache, dev, pd);
 
 		// --- Upload manager for CPU→GPU struct conversion ---
 
 		// --- Lighting pass ---
 		m_lightingPass = std::make_unique<LightingPass>(
-			dev, pd,
+			*m_renderCache, dev, pd,
 			1u);  // single frame
 
 		// --- IBL pass ---
@@ -339,7 +339,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -348,7 +348,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		m_lightingPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -447,11 +447,11 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 
 		auto& cmd2 = BeginCmd();
-		m_lightingPass->Record(*cmd2, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd2, *m_renderCache, ctx);
 		EndSubmitWait(cmd2);
 	}
 
@@ -488,10 +488,10 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 		std::make_unique<neurus::LightingCache>(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily));
 
 	m_geometryPass = std::make_unique<GeometryPass>(
-		dev, pd);
+		*m_renderCache, dev, pd);
 
 	m_lightingPass = std::make_unique<LightingPass>(
-		dev, pd, 1u);
+		*m_renderCache, dev, pd, 1u);
 
 	m_iblPass = std::make_unique<IBLPass>(
 		dev, pd);
@@ -595,11 +595,11 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, frameSnapshot, &scene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 
 		auto& cmd2 = BeginCmd();
-		m_lightingPass->Record(*cmd2, *m_renderCache, ctx);
+		RecordPass(*m_lightingPass, *cmd2, *m_renderCache, ctx);
 		EndSubmitWait(cmd2);
 	}
 

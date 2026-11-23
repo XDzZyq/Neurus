@@ -52,6 +52,50 @@ short working reference.
 - `std::unique_ptr`/`std::shared_ptr` for explicit ownership; raw pointers for
   non-owning references only.
 
+## Core Layer
+
+- `src/core/` holds generic, layer-agnostic primitives only: identity (`UID`),
+  pools (`ResourceManager`), traversal (`Graph`, `GraphMorphism`), logging,
+  serialization helpers, `RenderConfig`.
+- A concrete document or data type that names this product's features belongs
+  to the layer that owns it. A render graph document lives in `asset/data/`,
+  not in `core/`: if a type mentions a pass kind, an output tag or a scene
+  concept, it is not core.
+- `core/` never includes asset, scene, editor, render or UI headers.
+
+## CPU and Render Boundary
+
+- Shared renderer frame/context/profiling values, overlay payloads and typed render
+  requests belong under `render_api/` in `neurus_render_api`. It contains no Qt,
+  Vulkan, Editor or Renderer implementation headers. UIContext stays in UI;
+  Application assembles it from Editor getters.
+- `ShaderData` belongs under `asset/data/`; stage values and IR belong under
+  `asset/data/shader/`. It owns source IO and path resolution. CPU parsing,
+  generation, compilation and high-level RenderShader/ComputeShader belong under
+  `shader/` in `neurus_shader`.
+- Keep authored `RenderGraphData` in the resource pool. `proj_render_graph` saves
+  its active UID. Publish an unpooled clone of the document. Nodes hold
+  `shared_ptr<const ShaderData>` references, with null selecting a built-in. The
+  render thread reads the shader UID and consumes the uploaded GPU resource.
+  CPU `MakeUploadShaderRequest` copies SPIR-V and required reflection/port metadata
+  into owned typed requests before FIFO graph mapping. UploadManager constructs
+  ShaderGPU; RenderCache owns/indexes it; passes consume modules and own pipelines.
+  Reuploading a UID refreshes dependent GPU state by cache revision. Resource
+  references and fences preserve lifetime. Persist authored UID references only;
+  defaults follow recipes through CPU preparation/upload/cache outside the pool.
+- Asset data and persistence must not depend on Shader tooling. Shader cereal
+  registrations belong under `shader/registrations/` and are force-linked by
+  ApplicationCore; generic persistence uses its resource callback. Preserve
+  existing shader serialization reload/recompile behavior.
+- Editor light requests carry scene-light snapshots; GPU layout conversion
+  belongs to the Renderer. Never include UploadManager just to prepare a request.
+- Asset and scene targets must not link Renderer. Editor-specific persistence
+  adapters live under `editor/project/`; Qt UIEvents and input translations live
+  under `ui/`.
+- Run `python scripts/check_layer_boundaries.py` when changing layer includes;
+  `neurus_cpu_test` verifies CPU document/shader/Editor behavior without GPU or
+  Qt linkage. See [Testing](../../docs/build/test.md#cpu-boundary-tests).
+
 ## Const Correctness
 
 - Mark non-mutating methods and references `const`.

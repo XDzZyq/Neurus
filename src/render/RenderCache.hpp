@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Image.hpp"
+#include "resources/ShaderGPU.hpp"
+#include "asset/data/render_graph/GraphOutputTag.hpp"
 #include "resources/MeshGPU.hpp"
 #include "resources/EnvironmentGPU.hpp"
 #include "resources/LightGPU.hpp"
@@ -14,12 +16,15 @@
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 #include <vector>
 
 namespace neurus {
 
+class BuiltInRenderData;
 struct DebugDrawList;
 struct GizmoDrawList;
 
@@ -97,6 +102,15 @@ enum class AttachmentName
 class RenderCache
 {
 public:
+	/** @brief Current uploaded project shader, or null before upload. */
+	std::shared_ptr<const ShaderGPU> GetShader(int id) const;
+	/** @brief Installs an upload and advances the GPU cache generation. */
+	void UseShader(std::shared_ptr<const ShaderGPU> shader);
+	/** @brief Changes when project shader uploads are installed or cleared. */
+	uint64_t ShaderGeneration() const { return m_shaderGeneration; }
+	/** @brief Resolves a CPU built-in recipe through the uploader and caches its GPU modules. */
+	std::shared_ptr<const ShaderGPU> EnsureDefaultShader(std::string_view name);
+
 	/**
 	 * @brief Constructs the render cache with its always-present GPU resources.
 	 *
@@ -107,9 +121,12 @@ public:
 	 *
 	 * @param device            Logical device (retained reference).
 	 * @param physicalDevice    Physical device (retained reference, used for format/memory queries).
+	 * @param renderDefaults    Shared CPU defaults, or null for a local provider.
 	 */
 	RenderCache(const vk::raii::Device& device,
-	            const vk::raii::PhysicalDevice& physicalDevice);
+	            const vk::raii::PhysicalDevice& physicalDevice,
+	            std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
+	~RenderCache();
 
 	/**
 	 * @brief Sets the LightingCache (light SSBO storage) for this cache.
@@ -120,7 +137,6 @@ public:
 	 */
 	void SetLightingCache(std::unique_ptr<LightingCache> lightingCache);
 
-	~RenderCache() = default;
 
 	// --- Non-copyable, movable ---
 	RenderCache(const RenderCache&) = delete;
@@ -143,6 +159,57 @@ public:
 	 * @return Non-owning reference to the attachment image.
 	 */
 	Image& GetAttachment(AttachmentName name, vk::Extent2D extent);
+
+	/** @brief Complete image declarations and attachment bindings for one compiled scene. */
+	struct ResourcePlan
+	{
+		std::unordered_map<std::string, GraphOutputTag> tags;
+		std::unordered_map<std::string, AttachmentName> aliases;
+		std::unordered_map<AttachmentName, std::string> attachments;
+
+		void Alias(AttachmentName attachment, std::string key);
+	};
+
+	/// Replaces screen images and their declarations together after validating a candidate graph.
+	void InstallResourcePlan(ResourcePlan plan);
+
+	/**
+	 * @brief Records one output port's resource plan.
+	 *
+	 * The tag is the only source of format, usage, extent policy and layer
+	 * policy; `ConfigFor` is not consulted for a planned resource. Planning does
+	 * not allocate: the image is created on the first GetResource() at the
+	 * current extent, so a resize does not recompile the graph.
+	 *
+	 * @param key  "node/port" identity, see ResourceKey().
+	 * @param tag  Output tag the port was declared with.
+	 */
+	void PlanResource(std::string key, GraphOutputTag tag);
+
+
+	/// @brief True when a resource with this key has been planned.
+	bool HasResource(std::string_view key) const;
+
+	/// @brief Returns the created image for a key, or nullptr when not created yet.
+	Image* FindPlannedResource(std::string_view key);
+
+	/**
+	 * @brief Returns (or lazily creates) the image for a planned key.
+	 * @throws std::invalid_argument when the key is unplanned or logical.
+	 */
+	Image& GetResource(std::string_view key, vk::Extent2D extent);
+
+	/// @brief Returns the tag a key was planned with, or nullptr when absent.
+	const GraphOutputTag* GetResourceTag(std::string_view key) const;
+
+	/**
+	 * @brief Stage 1 bridge: make an AttachmentName return this planned resource.
+	 *
+	 * The overlay graph and the legacy attachment accessors keep working while
+	 * the scene graph is port-keyed. Removed when Stage 3 replaces the overlay's
+	 * AttachmentName sockets.
+	 */
+	void AliasResourceToAttachment(AttachmentName name, std::string key);
 
 	// --- Per-light shadow resources (lazily created) ---
 
@@ -289,8 +356,8 @@ public:
 	void Clean();
 
 	/**
-	 * @brief Drops the scene-scoped GPU resources: every mesh, light and
-	 *        environment entry plus the shadow bookkeeping derived from them.
+	 * @brief Drops project meshes, lights, environments, shader pipelines and
+	 *        the shadow bookkeeping derived from them.
 	 *
 	 * Called when the scene is replaced. The caches are keyed by object UID and
 	 * UIDs are restored from the project file (UID::serialize re-reads o_id), so
@@ -298,10 +365,9 @@ public:
 	 * project A, then project B, and B draws A's geometry, shadow maps and
 	 * cubemaps while B's own properties are displayed correctly beside them.
 	 *
-	 * Screen-space attachments, the pipeline cache and the LightingCache survive:
-	 * attachments are recreated lazily at the live extent, pipelines are keyed by
-	 * shader UID + version (a reloaded shader recompiles to a new version), and
-	 * the LightingCache is owned by UploadManager rather than by the scene.
+	 * Project pipeline UIDs and versions may also repeat across files. Built-in
+	 * pass pipelines live in PassFactory and survive. Screen-space attachments
+	 * and the LightingCache survive; attachments are recreated at the live extent.
 	 *
 	 * @note The caller must have drained the device first - the entries own
 	 *       vk::raii resources.
@@ -577,6 +643,11 @@ public:
 	void CleanScreenSpace();
 
 private:
+	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
+	std::unordered_map<int, std::shared_ptr<const ShaderGPU>> m_shaders;
+	std::unordered_map<std::string, std::shared_ptr<const ShaderGPU>> m_defaultShaders;
+	uint64_t m_shaderGeneration = 0;
+
 	/** @brief Configuration record for each attachment type. */
 	struct AttachmentConfig
 	{
@@ -591,6 +662,9 @@ private:
 	/** @brief Creates a single attachment at the given extent and inserts it into the map. */
 	void createAttachment(AttachmentName name, vk::Extent2D extent);
 
+	/** @brief Creates a planned resource image at the given extent and inserts it. */
+	Image& createResource(const std::string& key, vk::Extent2D extent);
+
 	// --- References (non-owning) ---
 	const vk::raii::Device* rc_device;
 	const vk::raii::PhysicalDevice* rc_physicalDevice;
@@ -599,6 +673,9 @@ private:
 	std::unordered_map<AttachmentName, Image> rc_attachments;
 
 	std::unique_ptr<Image> rc_shadowIntensityArray;
+
+	ResourcePlan rc_graphPlan;
+	std::unordered_map<std::string, Image> rc_resources;
 
 	// --- Per-mesh GPU resources (key = object UID as int) ---
 	// Copy on write: a write installs a new table instead of mutating this one,

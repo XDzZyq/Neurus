@@ -9,18 +9,19 @@
 #include "GPUProfiler.hpp"
 #include "Image.hpp"
 #include "PipelineBuilder.hpp"
-#include "ProfilingData.hpp"
-#include "RenderContext.hpp"
+#include "render_api/ProfilingData.hpp"
+#include "render_api/RenderContext.hpp"
 
 #include "passes/DebugPass.hpp"
 #include "passes/GizmoPass.hpp"
 #include "passes/SelectionOutlinePass.hpp"
 
-#include "shaders/ComputeShader.hpp"
-#include "shaders/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
 
 #include "core/Log.hpp"
 
+#include <array>
 #include <iterator>
 #include <stdexcept>
 #include <string>
@@ -121,12 +122,18 @@ void OverlayCopyPass::BuildPipeline(const vk::raii::Device& device,
 			.BuildComputePipeline(device));
 }
 
+Image& OverlayCopyPass::Source(RenderCache& cache, vk::Extent2D extent) const
+{
+	return p_sourceKey.empty() ? cache.GetAttachment(p_source, extent)
+	                           : cache.GetResource(p_sourceKey, extent);
+}
+
 void OverlayCopyPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
 {
 	DescriptorSet& dstSet = p_descriptorSets[setIndex];
 
 	{
-		const auto& tailAtt = cache.GetAttachment(p_source, extent);
+		const auto& tailAtt = Source(cache, extent);
 		dstSet.WriteImage(0,
 		                  vk::DescriptorImageInfo(*p_sampler,
 		                                          *tailAtt.ImageViewHandle(),
@@ -163,7 +170,7 @@ PassStats OverlayCopyPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 	WriteDescriptors(frameIndex, renderExtent, cache);
 
 	{
-		auto& tailAtt = cache.GetAttachment(p_source, renderExtent);
+		auto& tailAtt = Source(cache, renderExtent);
 		Barrier::Transition(cmdBuf, tailAtt, ImageState::ColorShaderRead);
 
 		auto& maskAtt = cache.GetAttachment(AttachmentName::SelectionOutline, renderExtent);
@@ -229,54 +236,41 @@ OverlayEngine::OverlayEngine(const vk::raii::Device& device,
 	RebuildGraph();
 
 	NEURUS_LOG("[OverlayEngine] numSets=" << numSets
-	           << " tail=" << AttachmentNameToString(m_sceneTail)
 	           << " passes=" << m_graph.PassCount());
 }
 
 OverlayEngine::~OverlayEngine() = default;
 
-void OverlayEngine::SetSceneTail(const AttachmentName tail)
+void OverlayEngine::SetSceneOutputs(const std::string& color, bool depth, bool objectId)
 {
-	if (tail == m_sceneTail && m_compiled)
-		return;
-
-	m_sceneTail = tail;
-	m_copy->SetSource(tail);
-	RebuildGraph();
-
-	NEURUS_LOG("[OverlayEngine] tail=" << AttachmentNameToString(tail)
-	           << " passes=" << m_graph.PassCount());
+	m_sceneColor = color;
+	m_copy->SetResourceKey(color);
+	if (depth != m_hasDepth || objectId != m_hasObjectId)
+	{
+		m_hasDepth = depth;
+		m_hasObjectId = objectId;
+		RebuildGraph();
+	}
 }
 
 void OverlayEngine::RebuildGraph()
 {
-	// Every socket name is part of a pass's cached PassIO, so a rebuild
-	// re-registers all four passes rather than patching one node: OverlayCopyPass
-	// names the scene tail, and after a rebuild that name may have changed.
 	m_graph.Clear();
-
-	auto* maskNode  = m_graph.AddPass(m_selectionOutline.get());
-	auto* copyNode  = m_graph.AddPass(m_copy.get());
-	auto* debugNode = m_graph.AddPass(m_debug.get());
-	auto* gizmoNode = m_graph.AddPass(m_gizmo.get());
-
-	// Mask -> copy: the copy blends the mask it just produced.
-	m_graph.Connect(maskNode, AttachmentName::SelectionOutline, copyNode);
-
-	// Copy -> debug -> gizmo, all on OverlayOutput. Debug and gizmo declare the
-	// same attachment as read and written (LOAD_OP_LOAD), so one edge each is
-	// what orders them; the explicit debug -> gizmo edge is what keeps the guides
-	// above the debug geometry instead of at an unconstrained position in the
-	// topological order.
-	m_graph.Connect(copyNode,  AttachmentName::OverlayOutput, debugNode);
-	m_graph.Connect(debugNode, AttachmentName::OverlayOutput, gizmoNode);
-
-	// IDBuffer and Depth are written by the scene graph, which this graph does
-	// not know about: they stay external inputs, ordered by each pass's own
-	// barrier. On an overlay frame they hold the converged scene's contents.
-
+	auto* copy = m_graph.AddPass(m_copy.get());
+	if (m_hasObjectId)
+	{
+		auto* mask = m_graph.AddPass(m_selectionOutline.get());
+		m_graph.Connect(mask, AttachmentName::SelectionOutline, copy);
+	}
+	auto* color = copy;
+	if (m_hasDepth)
+	{
+		auto* debug = m_graph.AddPass(m_debug.get());
+		m_graph.Connect(copy, AttachmentName::OverlayOutput, debug);
+		color = debug;
+	}
+	m_graph.Connect(color, AttachmentName::OverlayOutput, m_graph.AddPass(m_gizmo.get()));
 	m_graph.Compile();
-	m_compiled = true;
 }
 
 void OverlayEngine::Execute(vk::CommandBuffer cmd,
@@ -285,6 +279,21 @@ void OverlayEngine::Execute(vk::CommandBuffer cmd,
                             GPUProfiler& profiler,
                             FrameProfile& frameProfile)
 {
+	// Without a scene producer, the copy pass samples a black image or an empty mask.
+	const auto clearFallback = [&](AttachmentName attachment)
+	{
+		Image& image = cache.GetAttachment(attachment, {ctx.width, ctx.height});
+		if (image.State() != ImageState::Undefined)
+			return;
+		Barrier::Transition(cmd, image, ImageState::TransferDst);
+		cmd.clearColorImage(*image.ImageHandle(), vk::ImageLayout::eTransferDstOptimal,
+		                    vk::ClearColorValue(std::array<float, 4>{}),
+		                    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+	};
+	if (m_sceneColor.empty())
+		clearFallback(AttachmentName::ComposedOutput);
+	if (!m_hasObjectId)
+		clearFallback(AttachmentName::SelectionOutline);
 	// The graph clears the profile it writes, so it writes to a scratch one and
 	// this appends: the frame keeps the scene passes already recorded in it.
 	FrameProfile overlayProfile;

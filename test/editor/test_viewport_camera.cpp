@@ -43,14 +43,16 @@
 #include <string>
 
 #include "asset/Project.hpp"
-#include "asset/components/EditorComponent.hpp"
+#include "editor/project/EditorComponent.hpp"
+#include "shader/BuiltInRenderData.hpp"
+#include "editor/RenderManager.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "core/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/viewport/EditorViewport.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Scene.hpp"
 
@@ -113,7 +115,7 @@ struct TempFile
  */
 void BuildProject(project::Project& proj, Editor& editor)
 {
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
+	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), editor.GetRenderManager().Defaults());
 	proj.Register<project::SceneComponent>(editor.GetScene(),
 	                                       editor.GetResourceManager());
 	proj.Register<project::EditorComponent>(editor.GetViewport());
@@ -442,7 +444,7 @@ TEST(ViewportCameraTest, ProjectWithoutTheSavedUid_MintsAFreshViewportCamera)
 		Editor editor(nullptr);
 		NewProject(editor);
 		project::Project proj;
-		proj.Register<project::ResourceComponent>(editor.GetResourceManager());
+		proj.Register<project::ResourceComponent>(editor.GetResourceManager(), editor.GetRenderManager().Defaults());
 		proj.Register<project::SceneComponent>(editor.GetScene(),
 		                                       editor.GetResourceManager());
 		proj.Save(tmp.path); // no EditorComponent: the node never gets written

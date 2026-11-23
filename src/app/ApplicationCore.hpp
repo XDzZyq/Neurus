@@ -10,6 +10,7 @@
 namespace neurus
 {
 
+class BuiltInRenderData;
 class Editor;
 struct Preferences;
 class ScriptEngine;
@@ -17,10 +18,9 @@ class ScriptEngine;
 /**
  * @brief Behaviour both composition roots share.
  *
- * The Qt application and the headless renderer own the same three things beyond
- * their GPU stack: the preferences file, the embedded script engine and the open
- * project (with its session name). This class owns them and the operations that
- * act on them, so the CLI sees one implementation on every platform:
+ * The Qt and headless applications share preferences, the script engine, the
+ * open project and the CPU render defaults. This class owns that state and the
+ * operations that act on it, so the CLI sees one implementation on every platform:
  *
  *   - application: ApplicationCore + QApplication + UIManager + surface + Qt signals
  *   - headless:    ApplicationCore + offscreen target + the session loop
@@ -43,6 +43,9 @@ public:
 	 * A missing file is not an error; the defaults apply.
 	 */
 	void LoadPreferences();
+
+	/** @brief The CPU defaults shared by the Editor and renderer in this application. */
+	const std::shared_ptr<const BuiltInRenderData>& RenderDefaults() const { return m_renderDefaults; }
 
 	Preferences& Prefs() { return *m_preferences; }
 	const Preferences& Prefs() const { return *m_preferences; }
@@ -112,6 +115,7 @@ private:
 	/// Directory the script sandbox roots default to: the project directory.
 	std::string ScriptProjectRoot() const;
 
+	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::unique_ptr<Preferences> m_preferences;
 	std::unique_ptr<ScriptEngine> m_script;
 	std::string m_projectPath;

@@ -96,6 +96,7 @@ events: scene-scoped handlers obtain it from the context.
 
 ## UIEvents System (Qt Signals)
 
+- Defined under `src/ui/events/`; the Editor owns only the typed event queue
 - QObject singleton with typed Qt signals
 - UI panels emit their own signals (for example `Outliner::objectClicked`,
   `RenderConfigPanel::configValueChanged`)
@@ -148,10 +149,33 @@ an upload posted after `DropSceneResourcesRequest` lands in the new scene, and
 one posted before it is discarded with the old one. `RedrawOverlaysRequest` is
 the one request that does not restart accumulation: it only marks the overlays
 stale, so a converged renderer redraws them over the image it already has. A
-payload is a value or a `shared_ptr<const T>` to immutable data - never a
-`Scene`, `Mesh` or `Shader` pointer, and never a callable, so the request stays
-correct however the Editor edits or deletes afterward. See
+payload owns the data the renderer reads. Shader uploads copy bytecode and
+metadata; graph topology may own shared CPU shader references, but the mapper
+reads only their stable UIDs. It never reads mutable scene or shader content and
+never executes an Editor callable, so later edits cannot alter queued upload data. See
 [Render request path](../render/resources.md#render-request-path).
+
+### Shader uploads and graph publication
+
+CPU preparation calls `MakeUploadShaderRequest` while shader data is safe to
+read, copying SPIR-V and required reflection/port metadata into an owned typed
+request. `RenderManager::Publish()` clones the active `RenderGraphData` and posts
+`CompileRenderGraphRequest{graph}` after the required shader uploads. FIFO
+execution gives the mapper a populated GPU cache. Null graph or shader selections
+use built-in recipes through the same CPU preparation, upload and cache path.
+Defaults do not materialize project data.
+
+`UploadManager` creates `ShaderGPU` and `RenderCache` indexes it by shader UID.
+`GraphUploader` maps `RenderGraphData` onto `RenderGraph::GraphT` through a
+one-way `GraphMorphism`. It resolves node shader UIDs against the GPU cache. It never
+reads mutable shader source, IR, SPIR-V or CPU version fields. Passes consume GPU
+shader modules and own their pipelines. Reuploading an existing UID changes the
+GPU cache revision and refreshes dependent passes/graphs; resource references
+and frame fences preserve the lifetime of work using the previous resources.
+
+A successful shader compile posts updated upload data before graph compilation,
+including compute shaders. The CPU graph keeps shared shader ownership, but the
+render thread uses those references only to read their stable logical UIDs.
 
 ## Render Thread (Application to Renderer plumbing)
 
@@ -221,7 +245,7 @@ before any GPU member is destroyed.
 Two frame views over the same document state, with the Editor as the single
 pivot, so neither consumer reaches around it for the other's data:
 
-- `RenderContext` (`src/render/RenderContext.hpp`) - the renderer's view. The
+- `RenderContext` (`src/render_api/RenderContext.hpp`) - the renderer's view. The
   Editor half is a single owned frame snapshot: the Application publishes one
   `PublishedFrame` per tick (the `Editor::BuildSnapshot()` snapshot plus that
   tick's requests), and the render thread points `ctx.snapshot` at the snapshot
@@ -230,13 +254,13 @@ pivot, so neither consumer reaches around it for the other's data:
   is no second publication path - a pass reads what is being rendered through
   `ctx.Frame()`.
 - `UIContext` (`src/ui/UIContext.hpp`) - the UI's view, two fields wide: `scene`
-  and `config` from `Editor::UpdateUIContext()`, plus the Application's typed
+  and `config` queried by the Application from the Editor, plus its typed
   `profile`/`log`/`history`/`scriptConsole` pointers. A panel never names the
   camera or either overlay payload.
 - Read-only access to scene data for Renderer
 - Data flows: Editor mutates, Renderer consumes
 - **`RenderContext` carries the Editor half as one forward-declared
-  `const RenderFrameSnapshot*`** (`src/render/RenderFrameSnapshot.hpp`) - an owned
+  `const RenderFrameSnapshot*`** (`src/render_api/RenderFrameSnapshot.hpp`) - an owned
   deep copy with no Scene pointers and no lazy reads, so the renderer reads values
   the Editor is free to keep mutating. `UIContext`'s members stay typed pointers
   declared by forward declaration (`const Scene*`, `const RenderConfig*`,
@@ -259,4 +283,4 @@ pivot, so neither consumer reaches around it for the other's data:
   (`HasScene()`)
 - `Editor::SetRenderConfig()` writes UI config changes directly to the
   Editor-owned RenderConfig, which then reaches the renderer in the next frame's
-  snapshot and the UI through `UpdateUIContext()`
+  snapshot and the UI through Application-assembled `UIContext`

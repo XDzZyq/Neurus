@@ -32,26 +32,31 @@
 #include "FramesInFlight.hpp"
 #include "GPUProfiler.hpp"
 #include "IFrameRenderer.hpp"
-#include "ProfilingData.hpp"
+#include "render_api/ProfilingData.hpp"
 #include "RenderCache.hpp"
 #include "TimelineSemaphore.hpp"
 #include "passes/Pass.hpp"
 #include "core/RenderConfig.hpp"
-#include "RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "OutputTarget.hpp"
+#include "render_graph/GraphUploader.hpp"
 #include "render_graph/RenderGraph.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
 #include <glm/glm.hpp>
 #include <array>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
 namespace neurus {
 
 // --- Forward declarations ---
+class BuiltInRenderData;
 class RenderCache;
 class VertexBuffer;
 class IndexBuffer;
@@ -69,6 +74,7 @@ class ShadowIntensityPass;
 class ComposePass;
 class FXAAPass;
 class OverlayEngine;
+class PassFactory;
 struct CameraUBOData;
 class UploadManager;
 class RenderRequestProcessor;
@@ -92,6 +98,7 @@ public:
 	 * @param surface          Presentation surface (borrowed, must outlive swapchain).
 	 * @param width            Initial window width.
 	 * @param height           Initial window height.
+	 * @param renderDefaults   Shared CPU defaults, or null for a local provider.
 	 */
 	DeferredRenderer(const vk::raii::Device& device,
 	                 const vk::raii::PhysicalDevice& physicalDevice,
@@ -99,7 +106,8 @@ public:
 	                 uint32_t queueFamilyIndex,
 	                 const vk::raii::SurfaceKHR& surface,
 	                 uint32_t width,
-	                 uint32_t height);
+	                 uint32_t height,
+	                 std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
 
 	/**
 	 * @brief Creates the pipeline for a windowless (headless) renderer.
@@ -110,12 +118,14 @@ public:
 	 * VK_KHR_swapchain extension and no surface are required.
 	 *
 	 * @param extent Initial render extent in pixels.
+	 * @param renderDefaults Shared CPU defaults, or null for a local provider.
 	 */
 	DeferredRenderer(const vk::raii::Device& device,
 	                 const vk::raii::PhysicalDevice& physicalDevice,
 	                 SharedQueue& graphicsQueue,
 	                 uint32_t queueFamilyIndex,
-	                 vk::Extent2D extent);
+	                 vk::Extent2D extent,
+	                 std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
 
 	~DeferredRenderer();
 
@@ -186,14 +196,14 @@ public:
 	vk::Extent2D GetExtent() const override { return r_target ? r_target->Extent() : vk::Extent2D{800, 600}; }
 
 	/**
-	 * @brief Returns the last acquired swapchain image for screenshot capture.
+	 * @brief Returns the last presented swapchain image, or null before presentation.
 	 *
 	 * The returned image is in PRESENT_SRC layout from the most recent frame.
 	 * A caller's readback is submitted after the frame on the same queue and
 	 * waits its own submit, so no idle wait is needed.
 	 *
-	 * @return vk::Image handle (VK_NULL_HANDLE if swapchain not available or
-	 *         image index is invalid).
+	 * @return vk::Image handle, or VK_NULL_HANDLE when the current swapchain
+	 *         has no successfully presented frame.
 	 */
 	vk::Image GetLastSwapchainImage() const;
 
@@ -333,7 +343,7 @@ private:
 	 * Requires r_target to be set; allocates the passes, the graph, command
 	 * buffers and the sync objects the target needs.
 	 */
-	void InitializePipeline();
+	void InitializePipeline(std::shared_ptr<const BuiltInRenderData> renderDefaults);
 
 	/** @brief Shared member initialisation; the public constructors delegate. */
 	DeferredRenderer(const vk::raii::Device& device,
@@ -373,16 +383,12 @@ private:
 	// destroyed BEFORE the cache it reads during an all-attachments capture.
 	std::unique_ptr<Screenshot> m_screenshot;
 	// --- Polymorphic pass container (owning) ---
-	std::vector<std::unique_ptr<Pass>> r_passes;
+	std::unique_ptr<PassFactory> m_passFactory;
+
+	// Retains and maps the published CPU document onto the passes above.
+	std::unique_ptr<GraphUploader> m_graphUploader;
 
 	// --- Cached raw pointers for zero-cost access (non-owning) ---
-	GeometryPass* r_geometryPass = nullptr;
-	LightingPass* r_lightingPass = nullptr;
-	SSAOPass*   r_ssaoPass     = nullptr;
-	ShadowDepthPass* r_shadowDepthPass = nullptr;
-	ShadowIntensityPass* r_shadowIntensityPass = nullptr;
-	ComposePass*  r_composePass  = nullptr;
-	FXAAPass*     r_fxaaPass     = nullptr;
 
 	// --- Overlay graph (owned) ---
 	// Selection outline, debug overlay and gizmo, in their own RenderGraph over
@@ -392,39 +398,39 @@ private:
 	std::unique_ptr<OverlayEngine> m_overlayEngine;
 
 	// --- RenderGraph (the active pipeline) ---
-	// Compile-once-per-topology DAG holding the whole deferred pipeline; recordFrame
-	// dispatches it and rebuilds it (RebuildMainGraph) only when the pipeline
-	// signature derived from RenderConfig changes.
+	// Compile-once-per-document DAG holding the whole deferred pipeline; recordFrame
+	// dispatches it and compiles it only when the document or its shaders change.
 	RenderGraph m_mainGraph;
 
-	/**
-	 * @brief Topology-affecting projection of RenderConfig.
-	 *
-	 * The graph is a derived view of RenderConfig: this signature captures
-	 * exactly the config choices that change which passes are in the graph,
-	 * so the graph is rebuilt only when they differ - there is no independent
-	 * per-node "enabled" state to fall out of sync with RenderConfig.
-	 */
-	struct PipelineSignature
+	struct GraphCompileKey
 	{
-		bool fxaa = false; ///< FXAAPass present (RenderConfig::RequiresFXAA()).
+		std::uint64_t documentHash;
+		std::uint64_t shaderGeneration;
+		bool operator==(const GraphCompileKey&) const = default;
+	};
+	std::optional<GraphCompileKey> m_lastGraphCompile;
 
-		static PipelineSignature From(const RenderConfig& cfg)
-		{
-			return PipelineSignature{ cfg.RequiresFXAA() };
-		}
+	/// @brief Builds the scene graph and stores the verdict in LastGraphReport().
+	void CompileDocument();
 
-		bool operator==(const PipelineSignature&) const = default;
+public:
+	/// @brief Last compile verdict, including the diagnostics the caller reports.
+	struct GraphCompileReport
+	{
+		bool                         compiled = false;
+		std::uint64_t                graphHash = 0;
+		size_t                       scenePasses = 0;
+		std::vector<GraphDiagnostic> diagnostics;
 	};
 
-	/// Signature the current m_mainGraph was built for (dirty-key, not truth).
-	PipelineSignature m_builtSignature;
+	/// @brief Last compile verdict, for tests and the command layer.
+	const GraphCompileReport& LastGraphReport() const { return m_graphReport; }
 
-	/**
-	 * @brief Rebuild m_mainGraph to match a pipeline signature.
-	 * @param sig  Projection of RenderConfig deciding which passes participate.
-	 */
-	void RebuildMainGraph(const PipelineSignature& sig);
+	/// @brief Number of passes in the live scene graph.
+	size_t ScenePassCount() const { return m_mainGraph.PassCount(); }
+
+private:
+	GraphCompileReport m_graphReport;
 
 	// --- Command pool ---
 	vk::raii::CommandPool r_commandPool;
@@ -491,8 +497,8 @@ private:
 	///        them by then.
 	std::array<HeldTables, kMaxFramesInFlight> r_heldTables;
 
-	// --- Last acquired swapchain image index ---
-	uint32_t r_lastImageIndex = 0;
+	// --- Last presented image; invalidated whenever the target is rebuilt ---
+	std::optional<uint32_t> r_lastImageIndex;
 
 	// --- Temporal accumulation state ---
 	uint32_t m_haltonIndex = 0;

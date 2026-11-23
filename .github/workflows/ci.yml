@@ -64,8 +64,26 @@ jobs:
               - '!.github/workflows/docs_build.yml'
               - '!**/*.md'
 
-  build:
+  layer-boundaries:
+    name: Layer boundaries
     needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test the layer boundary checker
+        run: python3 scripts/test_check_layer_boundaries.py
+
+      - name: Check layer include boundaries
+        run: python3 scripts/check_layer_boundaries.py
+
+  build:
+    needs: [changes, layer-boundaries]
     if: needs.changes.outputs.code == 'true'
 
     strategy:
@@ -164,7 +182,7 @@ jobs:
   # Rendering on Linux is verified on a real GPU, not here.
   build-linux:
     name: build (ubuntu-22.04, headless)
-    needs: changes
+    needs: [changes, layer-boundaries]
     if: needs.changes.outputs.code == 'true'
 
     runs-on: ubuntu-22.04
@@ -216,12 +234,13 @@ jobs:
         run: ctest --output-on-failure --timeout 900
 
   # The single stable status check for branch protection. Reports success when
-  # the matrix was skipped for a documentation-only pull request, and fails when
-  # a leg actually broke. `always()` is load-bearing: without it a skipped
-  # `build` would skip this job too, and the required check would never report.
+  # code checks were skipped for a documentation-only pull request, and fails when
+  # the boundary check or a build leg actually broke. `always()` is load-bearing:
+  # without it a skipped `build` would skip this job too, and the required check
+  # would never report.
   ci-gate:
     name: ci-gate
-    needs: [changes, build, build-linux]
+    needs: [changes, layer-boundaries, build, build-linux]
     if: always()
 
     runs-on: ubuntu-latest
@@ -233,11 +252,13 @@ jobs:
         env:
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
           CHANGES_RESULT: ${{ needs.changes.result }}
+          LAYERS_RESULT: ${{ needs.layer-boundaries.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           LINUX_RESULT: ${{ needs.build-linux.result }}
         run: |
           echo "non-documentation changes: ${CODE_CHANGED:-<unset>}"
           echo "changes job:               $CHANGES_RESULT"
+          echo "layer boundaries:          $LAYERS_RESULT"
           echo "build matrix:              $BUILD_RESULT"
           echo "linux headless:            $LINUX_RESULT"
 
@@ -246,6 +267,13 @@ jobs:
           case "$CHANGES_RESULT" in
             failure | cancelled)
               echo "::error::change detection reported $CHANGES_RESULT"
+              exit 1
+              ;;
+          esac
+
+          case "$LAYERS_RESULT" in
+            failure | cancelled)
+              echo "::error::layer boundary check reported $LAYERS_RESULT"
               exit 1
               ;;
           esac

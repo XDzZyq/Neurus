@@ -165,9 +165,6 @@ public:
 		       r_ssr == SSRAlg::SDFResolvedRayMarching;
 	}
 
-	/** @brief Returns true if FXAA is enabled. */
-	bool RequiresFXAA() const { return r_aa == AAAlg::FXAA; }
-
 	/** @brief Returns true if the viewport debug/gizmo overlay should be drawn. */
 	bool RequiresDebugDraw() const { return r_debug_draw; }
 };

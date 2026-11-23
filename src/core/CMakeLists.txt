@@ -13,6 +13,7 @@ add_library(neurus_core STATIC
 	ResourceManager.cpp
 	Serialize.hpp
 	RenderConfig.hpp
+	GraphMorphism.hpp
 	ThreadPool.hpp
 	ThreadPool.cpp
 	BatchQueue.hpp

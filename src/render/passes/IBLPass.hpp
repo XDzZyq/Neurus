@@ -10,8 +10,8 @@
 #pragma once
 
 #include "../DescriptorManager.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 #include "ComputePass.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -60,6 +60,7 @@ public:
 	~IBLPass();
 
 	/** @brief No-op: IBL generation is one-shot via Generate(), not per-frame. */
+	using Pass::Record;
 	PassStats Record(vk::CommandBuffer cmd, RenderCache& cache, const RenderContext& ctx) override
 	{
 		(void)cmd;

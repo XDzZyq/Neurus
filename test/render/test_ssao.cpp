@@ -18,7 +18,7 @@
 
 // --- Render layer ---
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/passes/SSAOPass.hpp"
 #include "render/Screenshot.hpp"
@@ -59,11 +59,11 @@ protected:
 
 		// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 
 		// --- SSAO pass ---
 		m_ssaoPass = std::make_unique<SSAOPass>(
-			*m_device, pd,
+			*m_renderCache, *m_device, pd,
 			1u,   // one descriptor set for single-frame test
 			*m_queue, m_graphicsQueueFamily);
 	}
@@ -124,7 +124,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	{
 		auto& cmd = BeginCmd();
 		PublishFrame(*m_renderCache, ctx, frameSnapshot, cb.scene.get());
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -133,7 +133,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	{
 		auto& cmd = BeginCmd();
-		m_ssaoPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_ssaoPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

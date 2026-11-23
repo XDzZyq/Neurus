@@ -35,6 +35,7 @@ add_library(neurus_script STATIC
 	bindings/DataBindings.cpp
 	bindings/SceneBindings.cpp
 	bindings/ConfigBindings.cpp
+	bindings/GraphBindings.cpp
 	bindings/ShaderBindings.hpp
 	bindings/ShaderBindings.cpp
 	bindings/Module.cpp

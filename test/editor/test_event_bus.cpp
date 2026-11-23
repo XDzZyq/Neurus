@@ -2,7 +2,7 @@
 
 #include <QObject>
 
-#include "editor/events/UIEvents.hpp"
+#include "ui/events/UIEvents.hpp"
 
 using namespace neurus;
 

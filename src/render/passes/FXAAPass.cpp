@@ -1,23 +1,34 @@
 #include "RenderCache.hpp"
 #include "passes/FXAAPass.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 #include "../PipelineBuilder.hpp"
+#include "DescriptorLayout.hpp"
 #include "core/RenderConfig.hpp"
 #include "Barrier.hpp"
 #include "Image.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/ComputeShader.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+
+
 #include "core/Log.hpp"
 #include <stdexcept>
 
 namespace neurus {
 
-FXAAPass::FXAAPass(const vk::raii::Device& device,
+FXAAPass::FXAAPass(RenderCache& cache, const vk::raii::Device& device,
                    const vk::raii::PhysicalDevice& physicalDevice,
                    uint32_t numSets)
-	: ComputePass(device, physicalDevice, CreateLayout(device), numSets)
-	, p_shader(ShaderLibrary::LoadComputeShader("fxaa", NEURUS_SHADER_DIR "compute/fxaa.comp.glsl"))
+	: FXAAPass(device, physicalDevice, numSets,
+	           cache.EnsureDefaultShader(kFxaaShaders[0].name))
+{
+}
+
+FXAAPass::FXAAPass(const vk::raii::Device& device,
+                   const vk::raii::PhysicalDevice& physicalDevice,
+                   uint32_t numSets,
+                   std::shared_ptr<const ShaderGPU> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, RequireShader(shader)), numSets)
+	, p_shader(std::move(shader))
 {
 	// Check format features: linear filtering required for sub-pixel texture() resample
 	auto fmtProps = physicalDevice.getFormatProperties(vk::Format::eR16G16B16A16Sfloat);
@@ -25,10 +36,7 @@ FXAAPass::FXAAPass(const vk::raii::Device& device,
 	                == vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
 
 	if (linearOk)
-	{
-		p_bilinearSampler = CreateBilinearSampler(device);
-		p_hasBilinear = true;
-	}
+		p_sampler = CreateBilinearSampler(device);
 
 	BuildPipeline(device, "FXAAPass");
 	NEURUS_LOG("[FXAAPass] numSets=" << numSets
@@ -54,24 +62,14 @@ vk::raii::Sampler FXAAPass::CreateBilinearSampler(const vk::raii::Device& device
 	return vk::raii::Sampler(device, ci);
 }
 
-DescriptorSetLayout FXAAPass::CreateLayout(const vk::raii::Device& d)
-{
-	return BuildLayout()
-		.AddBinding(0, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute)
-		.AddBinding(1, vk::DescriptorType::eStorageImage,         vk::ShaderStageFlagBits::eCompute)
-		.Build(d);
-}
-
 void FXAAPass::BuildPipeline(const vk::raii::Device& device, const std::string& debugName)
 {
 	if (!p_shader)
 		throw std::runtime_error("FXAAPass: shader invalid");
-	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-	                                  ShaderType::COMPUTE, debugName);
-	vk::ShaderModuleCreateInfo smCI({}, spv);
-	vk::raii::ShaderModule module(device, smCI);
-	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
-	vk::PushConstantRange pc(vk::ShaderStageFlagBits::eCompute, 0, sizeof(FXAAPushConstants));
+	const auto module = p_shader->Module(ShaderType::COMPUTE);
+	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, module, "main");
+	vk::PushConstantRange pc = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eCompute);
 	p_pipelines.push_back(
 		PipelineBuilder()
 			.AddShaderStage(stageCI)
@@ -81,42 +79,28 @@ void FXAAPass::BuildPipeline(const vk::raii::Device& device, const std::string& 
 			.BuildComputePipeline(device));
 }
 
-void FXAAPass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
-{
-	DescriptorSet& ds = p_descriptorSets[setIndex];
 
-	// Use bilinear sampler for sub-pixel texture() resample (fallback to nearest if unsupported)
-	const auto& in = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
-	vk::DescriptorImageInfo ii(
-		p_hasBilinear ? *p_bilinearSampler : *p_sampler,
-		*in.ImageViewHandle(),
-		vk::ImageLayout::eShaderReadOnlyOptimal);
-	ds.WriteImage(0, ii, vk::DescriptorType::eCombinedImageSampler);
-
-	const auto& out = cache.GetAttachment(AttachmentName::FXAAOutput, extent);
-	vk::DescriptorImageInfo oi(nullptr, *out.ImageViewHandle(), vk::ImageLayout::eGeneral);
-	ds.WriteImage(1, oi, vk::DescriptorType::eStorageImage);
-}
-
-PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 {
 	PassStats stats{};
 
-	const vk::Extent2D extent{ctx.width, ctx.height};
-	const uint32_t fi = ctx.frameIndex;
+	const vk::Extent2D extent{frame.ctx.width, frame.ctx.height};
+	const uint32_t fi = frame.frameIndex;
 
 	// Settings() is never null and resolves to RenderConfig's own in-class
 	// defaults, so the three tuning values below carry no literal of their own.
-	const RenderConfig& cfg = ctx.Frame().Settings();
+	const RenderConfig& cfg = frame.ctx.Frame().Settings();
 
-	WriteDescriptors(fi, extent, cache);
-
+	Image* input  = frame.resources.Input("gInput");
+	Image* output = frame.resources.Output("outputFXAA");
+	if (!input || !output)
 	{
-		auto& in = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
-		Barrier::Transition(cmdBuf, in, ImageState::ColorShaderRead);
-		auto& out = cache.GetAttachment(AttachmentName::FXAAOutput, extent);
-		Barrier::Transition(cmdBuf, out, ImageState::ShaderWrite);
+		NEURUS_ERR("[FXAAPass] graph did not provide gInput/outputFXAA");
+		return stats;
 	}
+
+	Barrier::Transition(cmdBuf, *input, ImageState::ColorShaderRead);
+	Barrier::Transition(cmdBuf, *output, ImageState::ShaderWrite);
 
 	FXAAPushConstants pc = {};
 	pc.rcpWidth       = 1.0f / float(extent.width);
@@ -146,17 +130,14 @@ PassStats FXAAPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const R
 
 PassIO FXAAPass::GetIO() const
 {
-	// Binding metadata is indicative only: FXAAPass still writes its own
-	// descriptors.
 	PassIO io;
-	io.name  = "FXAAPass";
-	io.reads = {
-		{AttachmentName::ComposedOutput, 0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-	};
-	io.writes = {
-		{AttachmentName::FXAAOutput, 1, vk::DescriptorType::eStorageImage, vk::ImageLayout::eGeneral},
-	};
+	io.name = "FXAAPass";
 	return io;
+}
+
+std::vector<const ShaderGPU*> FXAAPass::GetShaders() const
+{
+	return {p_shader.get()};
 }
 
 } // namespace neurus

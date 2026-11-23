@@ -9,14 +9,16 @@
  */
 
 #include "passes/ShadowDepthPass.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "RenderCache.hpp"
 #include "../resources/MeshGPU.hpp"
 #include "../PipelineBuilder.hpp"
+#include "DescriptorLayout.hpp"
 #include "render/Barrier.hpp"
-#include "../shaders/ShaderLibrary.hpp"
-#include "../shaders/RenderShader.hpp"
+
+
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
@@ -61,40 +63,31 @@ std::array<glm::mat4, 6> MakeFaceVPs(const glm::mat4& proj)
 } // anon
 
 // ===========================================================================
-// Descriptor set layout (SSBO for face VP matrices)
-// ===========================================================================
-
-DescriptorSetLayout ShadowDepthPass::CreateSSBOLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		.AddBinding(0, vk::DescriptorType::eStorageBuffer,
-		            vk::ShaderStageFlagBits::eVertex |
-		                vk::ShaderStageFlagBits::eFragment)
-		.Build(device);
-}
-
-// ===========================================================================
 // Constructor
 // ===========================================================================
 
-ShadowDepthPass::ShadowDepthPass(const vk::raii::Device& device,
+ShadowDepthPass::ShadowDepthPass(RenderCache& cache, const vk::raii::Device& device,
                                     const vk::raii::PhysicalDevice& physicalDevice,
                                     SharedQueue& graphicsQueue,
                                     uint32_t queueFamilyIndex,
                                     uint32_t resolution)
+	: ShadowDepthPass(device, physicalDevice, graphicsQueue, queueFamilyIndex, resolution,
+	                  cache.EnsureDefaultShader(kShadowDepthShaders[0].name),
+	                  cache.EnsureDefaultShader(kShadowDepthShaders[1].name))
+{
+}
+
+ShadowDepthPass::ShadowDepthPass(const vk::raii::Device& device,
+                                const vk::raii::PhysicalDevice& physicalDevice,
+                                SharedQueue& graphicsQueue, uint32_t queueFamilyIndex,
+                                uint32_t resolution, std::shared_ptr<const ShaderGPU> multiviewShader,
+                                std::shared_ptr<const ShaderGPU> sunShader)
 	: Pass()
 	, p_resolution(resolution)
 	, p_queue(&graphicsQueue)
 	, p_queueFamilyIndex(queueFamilyIndex)
-	// --- Self-load shaders via ShaderLibrary ---
-	, p_multiviewShader(
-		ShaderLibrary::LoadRenderShader("ShadowDepthMultiview",
-		                                 NEURUS_SHADER_DIR "render/shadow_depth_multiview.vert.glsl",
-		                                 NEURUS_SHADER_DIR "render/shadow_depth.frag.glsl"))
-	, p_sunShader(
-		ShaderLibrary::LoadRenderShader("ShadowDepthSun",
-		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.vert.glsl",
-		                                 NEURUS_SHADER_DIR "render/sun_shadow_depth.frag.glsl"))
+	, p_multiviewShader(std::move(multiviewShader))
+	, p_sunShader(std::move(sunShader))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;
@@ -135,7 +128,7 @@ void ShadowDepthPass::createSSBOResources(const vk::raii::Device& device,
 	p_faceVPs->Upload(faceVPs.data(), kFaceVPSize);
 
 	// --- Descriptor layout, pool, and set ---
-	p_ssboLayout = CreateSSBOLayout(device);
+	p_ssboLayout = MakeDescriptorLayout(device, *p_multiviewShader);
 	p_ssboPool = DescriptorPool(device, 1,
 	                            DescriptorPool::CalculatePoolSizes({&p_ssboLayout}, 1));
 	p_ssboSet = std::make_unique<DescriptorSet>(
@@ -163,21 +156,15 @@ void ShadowDepthPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowDepthPass: Multiview shader not loaded or invalid");
 		}
 
-		auto vertSpv = ShaderLibrary::Compile(p_multiviewShader->GetStage(ShaderType::VERTEX),
-		                                      ShaderType::VERTEX, debugName + "_multiview_vert");
-		auto fragSpv = ShaderLibrary::Compile(p_multiviewShader->GetStage(ShaderType::FRAGMENT),
-		                                      ShaderType::FRAGMENT, debugName + "_multiview_frag");
-		vk::ShaderModuleCreateInfo vertSmCI({}, vertSpv);
-		vk::raii::ShaderModule vertModule(device, vertSmCI);
-		vk::ShaderModuleCreateInfo fragSmCI({}, fragSpv);
-		vk::raii::ShaderModule fragModule(device, fragSmCI);
-		vk::PipelineShaderStageCreateInfo vertStageCI({}, vk::ShaderStageFlagBits::eVertex, *vertModule, "main");
-		vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, *fragModule, "main");
+		const auto vertModule = p_multiviewShader->Module(ShaderType::VERTEX);
+	const auto fragModule = p_multiviewShader->Module(ShaderType::FRAGMENT);
+		vk::PipelineShaderStageCreateInfo vertStageCI({}, vk::ShaderStageFlagBits::eVertex, vertModule, "main");
+		vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, fragModule, "main");
 
 		std::vector<vk::PushConstantRange> pushRanges = {
-			vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex |
-			                      vk::ShaderStageFlagBits::eFragment,
-			                      0, kTotalPushSize)
+			MakePushConstantRange(*p_multiviewShader,
+			                      vk::ShaderStageFlagBits::eVertex |
+			                          vk::ShaderStageFlagBits::eFragment),
 		};
 
 		std::vector<vk::DescriptorSetLayout> dslayouts = { *p_ssboLayout.layout() };
@@ -218,20 +205,13 @@ void ShadowDepthPass::BuildPipeline(const vk::raii::Device& device,
 			throw std::runtime_error("ShadowDepthPass: Sun shader not loaded or invalid");
 		}
 
-		auto vertSpv = ShaderLibrary::Compile(p_sunShader->GetStage(ShaderType::VERTEX),
-		                                      ShaderType::VERTEX, debugName + "_sun_vert");
-		auto fragSpv = ShaderLibrary::Compile(p_sunShader->GetStage(ShaderType::FRAGMENT),
-		                                      ShaderType::FRAGMENT, debugName + "_sun_frag");
-		vk::ShaderModuleCreateInfo vertSmCI({}, vertSpv);
-		vk::raii::ShaderModule vertModule(device, vertSmCI);
-		vk::ShaderModuleCreateInfo fragSmCI({}, fragSpv);
-		vk::raii::ShaderModule fragModule(device, fragSmCI);
-		vk::PipelineShaderStageCreateInfo vertStageCI({}, vk::ShaderStageFlagBits::eVertex, *vertModule, "main");
-		vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, *fragModule, "main");
+		const auto vertModule = p_sunShader->Module(ShaderType::VERTEX);
+	const auto fragModule = p_sunShader->Module(ShaderType::FRAGMENT);
+		vk::PipelineShaderStageCreateInfo vertStageCI({}, vk::ShaderStageFlagBits::eVertex, vertModule, "main");
+		vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, fragModule, "main");
 
 		std::vector<vk::PushConstantRange> pushRanges = {
-			vk::PushConstantRange(vk::ShaderStageFlagBits::eVertex,
-			                      0, sizeof(glm::mat4))
+			MakePushConstantRange(*p_sunShader, vk::ShaderStageFlagBits::eVertex),
 		};
 
 		PipelineBuilder builder;
@@ -509,12 +489,26 @@ PassStats ShadowDepthPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, 
 
 PassIO ShadowDepthPass::GetIO() const
 {
-	// The per-light depth maps are addressed internally; the graph models the
-	// whole set as one ShadowDepth write token. No image reads.
 	PassIO io;
-	io.name   = "ShadowDepthPass";
-	io.writes = { { AttachmentName::ShadowDepth } };
+	io.name = "ShadowDepthPass";
 	return io;
+}
+
+std::vector<const ShaderGPU*> ShadowDepthPass::GetShaders() const
+{
+	return {p_multiviewShader.get(), p_sunShader.get()};
+}
+
+void ShadowDepthPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+                                          std::vector<GraphBufferBinding>& out) const
+{
+	(void)cache;
+	(void)frameIndex;
+	if (p_faceVPs)
+	{
+		out.push_back({0, p_faceVPs->GetDescriptorInfo(),
+		               vk::DescriptorType::eStorageBuffer});
+	}
 }
 
 } // namespace neurus

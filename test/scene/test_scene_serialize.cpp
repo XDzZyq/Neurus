@@ -23,6 +23,7 @@
 
 #include "asset/Project.hpp"
 #include "asset/components/SceneComponent.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "core/ResourceManager.hpp"
@@ -35,12 +36,12 @@
 #include "scene/Scene.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "shader/RenderShader.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
 #include "scene/registrations/TypeRegistration.hpp"
 #include "asset/registrations/DataRegistration.hpp"
-#include "render/registrations/ShaderRegistration.hpp"
+#include "shader/registrations/ShaderRegistration.hpp"
 
 using namespace neurus;
 
@@ -67,6 +68,7 @@ struct TempFile
  */
 TEST(SceneSerialize, FullRoundtrip)
 {
+	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_scene_serialize_rt.neurus.json");
 
 	int meshUid = 0;
@@ -77,7 +79,7 @@ TEST(SceneSerialize, FullRoundtrip)
 
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto camera = resources.Load<Camera>();
@@ -88,7 +90,11 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
 		meshDataUid = meshData->GetObjectID();
 		auto mesh = resources.Load<Mesh>(meshData);
-		auto shader = resources.Load<RenderShader>("TestShader", "", "");
+		auto shader = resources.Load<RenderShader>(
+			"TestShader", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
+		ASSERT_TRUE(shader->ParseAndGenerate());
+		ASSERT_TRUE(shader->CompileToSpv());
+		ASSERT_TRUE(shader->IsValid());
 		mesh->SetObjShader(shader);
 		scene.UseMesh(mesh);
 		// A non-identity TRS, so the matrix assertions below cannot pass by
@@ -111,7 +117,7 @@ TEST(SceneSerialize, FullRoundtrip)
 		scene.selections.Select(mesh.get(), false);
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::ResourceComponent>(resources, catalog);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -119,11 +125,11 @@ TEST(SceneSerialize, FullRoundtrip)
 
 	// --- Load into fresh objects ---
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources);
+		p.Register<project::ResourceComponent>(loadedResources, catalog);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -203,6 +209,7 @@ TEST(SceneSerialize, FullRoundtrip)
  */
 TEST(SceneSerialize, LegacyFileDegrades)
 {
+	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_scene_serialize_legacy.neurus.json");
 
 	// Simulate an old-format file: no m_resources, m_scene with old keys.
@@ -219,11 +226,11 @@ TEST(SceneSerialize, LegacyFileDegrades)
 	}
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	EXPECT_NO_THROW({
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources);
+		p.Register<project::ResourceComponent>(loadedResources, catalog);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -247,12 +254,13 @@ TEST(SceneSerialize, LegacyFileDegrades)
  */
 TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 {
+	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_scene_serialize_orphan.neurus.json");
 
 	int orphanUid = 0;
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
@@ -262,18 +270,18 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 		// simulating a deleted object whose pooled resource survives.
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::ResourceComponent>(resources, catalog);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
 	}
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources);
+		p.Register<project::ResourceComponent>(loadedResources, catalog);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -308,12 +316,13 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
  */
 TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 {
+	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_scene_serialize_legacy_smooth.neurus.json");
 
 	int lineUid = 0;
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto line = resources.Load<DebugLine>();
@@ -324,7 +333,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 		scene.UseDebugLine(line);
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::ResourceComponent>(resources, catalog);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -350,11 +359,11 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 	}
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources);
+		p.Register<project::ResourceComponent>(loadedResources, catalog);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		ASSERT_NO_THROW(p.Load(tmp.path));
@@ -383,6 +392,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
  */
 TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 {
+	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_scene_duplicate_names.neurus.json");
 
 	int firstUid = 0;
@@ -390,7 +400,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 
 	{
 		Scene scene;
-		RenderConfig config;
+		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 
 		auto first = resources.Load<Mesh>();
@@ -407,7 +417,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 		// longer touches names); the load path's registry seeding must
 		// disambiguate them.
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::ResourceComponent>(resources, catalog);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -416,10 +426,10 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	ASSERT_LT(firstUid, secondUid);
 
 	Scene loadedScene;
-	RenderConfig loadedConfig;
+	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	project::Project p;
-	p.Register<project::ResourceComponent>(loadedResources);
+	p.Register<project::ResourceComponent>(loadedResources, catalog);
 	p.Register<project::SceneComponent>(loadedScene, loadedResources);
 	p.Register<project::ConfigComponent>(loadedConfig);
 	ASSERT_NO_THROW(p.Load(tmp.path));

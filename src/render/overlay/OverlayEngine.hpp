@@ -35,7 +35,7 @@
 #include "../RenderCache.hpp"
 #include "../passes/ComputePass.hpp"
 #include "../render_graph/RenderGraph.hpp"
-#include "../shaders/ComputeShader.hpp"
+#include "shader/ComputeShader.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -89,17 +89,9 @@ public:
 	 */
 	~OverlayCopyPass() override;
 
-	/**
-	 * @brief Chooses the scene image to copy from.
-	 *
-	 * Called by OverlayEngine from DeferredRenderer::RebuildMainGraph(), which
-	 * owns the config-to-topology decision of whether the scene ends in
-	 * ComposedOutput or FXAAOutput. Changing it changes GetIO(), so the caller
-	 * must re-register the pass with the graph (OverlayEngine::SetSceneTail does).
-	 *
-	 * @param source  ComposedOutput or FXAAOutput.
-	 */
-	void SetSource(AttachmentName source) { p_source = source; }
+	/** @brief Selects a legacy attachment or an authored scene output, respectively. */
+	void SetSource(AttachmentName source) { p_source = source; p_sourceKey.clear(); }
+	void SetResourceKey(const std::string& key) { p_sourceKey = key; }
 
 	/** @brief The scene image this pass copies from. */
 	AttachmentName GetSource() const { return p_source; }
@@ -129,6 +121,8 @@ private:
 	std::unique_ptr<ComputeShader> p_shader;
 
 	/// @brief Scene image copied from - the scene graph's tail.
+	Image& Source(RenderCache& cache, vk::Extent2D extent) const;
+	std::string p_sourceKey;
 	AttachmentName p_source = AttachmentName::ComposedOutput;
 };
 
@@ -164,19 +158,9 @@ public:
 	OverlayEngine(OverlayEngine&&)                 = delete;
 	OverlayEngine& operator=(OverlayEngine&&)      = delete;
 
-	/**
-	 * @brief Points the overlay graph at the scene image it draws over.
-	 *
-	 * Called by DeferredRenderer::RebuildMainGraph() whenever the scene topology
-	 * changes, because the copy source is part of both graphs' sockets. Rebuilds
-	 * the overlay graph when the tail actually changed.
-	 *
-	 * @param tail  ComposedOutput or FXAAOutput.
-	 */
-	void SetSceneTail(AttachmentName tail);
-
-	/** @brief The scene image the overlays draw over. */
-	AttachmentName GetSceneTail() const { return m_sceneTail; }
+	/** @brief Selects the scene image and enables consumers of the published depth and object ID. */
+	void SetSceneOutputs(const std::string& color, bool depth, bool objectId);
+	bool HasObjectId() const { return m_hasObjectId; }
 
 	/** @brief The attachment the swapchain blit reads: OverlayOutput. */
 	static constexpr AttachmentName OutputAttachment() { return AttachmentName::OverlayOutput; }
@@ -229,11 +213,9 @@ private:
 	// --- The overlay DAG ---
 	RenderGraph m_graph;
 
-	/// @brief Scene image the copy reads; part of the graph's socket names.
-	AttachmentName m_sceneTail = AttachmentName::ComposedOutput;
-
-	/// @brief True once the graph has been wired and compiled.
-	bool m_compiled = false;
+	std::string m_sceneColor;
+	bool m_hasDepth = true;
+	bool m_hasObjectId = true;
 };
 
 } // namespace neurus

@@ -25,6 +25,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#include <utility>
 
 #include "core/Log.hpp"
 #include "editor/events/IEventQueue.hpp"
@@ -260,16 +261,17 @@ struct ScriptEngine::Impl
 		{
 			pybind11::gil_scoped_acquire gil;
 			ContextScope scope(m_current, ctx);
-			RunScope runScope(m_dispatch.EventQueue(), {});
+			RunScope runScope(m_dispatch.EventQueue());
 
 			try
 			{
+				m_lastPolicy = PolicyOrDefault(policy);
+				runScope.Start({});
 				// Built while the run is still trusted: the redirect imports
 				// `types`, which the policy may not allow it to read.
 				StreamRedirect redirect(m_console);
 				SandboxScope sandboxScope(m_sandbox.get(), policy,
 				                          m_memoryLimitUnsupportedLogged);
-				m_lastPolicy = PolicyOrDefault(policy);
 
 				if (sandboxScope.ApplyFailed())
 				{
@@ -286,7 +288,6 @@ struct ScriptEngine::Impl
 					pybind11::object value =
 						pybind11::eval(expression, pybind11::globals(), pybind11::globals());
 					result = pybind11::repr(value).cast<std::string>();
-					m_console.Append(ScriptLineKind::Result, *result + "\n");
 					m_lastStatus = ScriptRunStatus::Ok;
 					m_lastMessage.clear();
 				}
@@ -302,6 +303,14 @@ struct ScriptEngine::Impl
 				ReportError(e, "ScriptEngine::EvalString");
 				result = std::nullopt;
 			}
+			catch (const std::exception& e)
+			{
+				RecordHostError(e.what());
+			}
+			if (!FinishRun(runScope, result.has_value()))
+				result.reset();
+			if (result)
+				m_console.Append(ScriptLineKind::Result, *result + "\n");
 		}
 		return result;
 	}
@@ -539,10 +548,12 @@ private:
 			// after the document is published, so it closes on every exit path -
 			// including a raising script - and the run's writes are recorded
 			// while the context is still live.
-			RunScope runScope(m_dispatch.EventQueue(), runName);
+			RunScope runScope(m_dispatch.EventQueue());
 
 			try
 			{
+				m_lastPolicy = PolicyOrDefault(policy);
+				runScope.Start(runName);
 				// Redirect before running so `print` and tracebacks land in the
 				// buffer, and before the policy activates: installing it imports
 				// `types`, which the policy may not allow.
@@ -550,7 +561,6 @@ private:
 				SandboxScope sandboxScope(m_sandbox.get(), policy,
 				                          m_memoryLimitUnsupportedLogged);
 
-				m_lastPolicy = PolicyOrDefault(policy);
 				if (sandboxScope.ApplyFailed())
 				{
 					m_lastStatus = ScriptRunStatus::ScriptError;
@@ -579,6 +589,11 @@ private:
 				m_lastMessage = MessageOf(e);
 				ReportError(e, entryName);
 			}
+			catch (const std::exception& e)
+			{
+				RecordHostError(e.what());
+			}
+			ok = FinishRun(runScope, ok);
 		}
 		return ok;
 	}
@@ -792,50 +807,37 @@ private:
 	/**
 	 * @brief Brackets one script run so its writes compact into one undo step.
 	 *
-	 * Emits `ScriptRunStarted` on construction and `ScriptRunFinished` on
-	 * destruction; `ScriptController` forwards both to the operation sink's
-	 * script scope. The history label travels with `ScriptRunStarted`, so a
-	 * console run records as "Run Script" and a file run as "Run <file>.py". A
-	 * raising run still reaches the destructor, so the scope always closes.
+	 * Carries the history label at entry and reports the Python outcome at
+	 * completion. Final graph validation happens while the document view is
+	 * still live. Unwinding an unfinished scope discards pending graph edits.
 	 *
-	 * Constructor and destructor are both `noexcept`: an exception leaving a
-	 * destructor during unwinding calls `std::terminate`. Clearing
-	 * @ref m_events in the constructor's catch keeps the pair symmetric - if
-	 * Started never landed, Finished must not be sent either.
+	 * Start runs inside the host error boundary. If a subscriber throws after
+	 * another subscriber opened a transaction, Finish(false) closes it.
 	 */
 	class RunScope
 	{
 	public:
-		explicit RunScope(IEventQueue* events, const std::string& name) noexcept
-			: m_events(events)
+		explicit RunScope(IEventQueue* events) : m_events(events) {}
+
+		void Start(const std::string& name)
 		{
-			try
-			{
-				if (m_events != nullptr)
-				{
-					m_events->Emit(ScriptRunStarted{ name });
-				}
-			}
-			catch (...)
-			{
-				// Clear the pointer so Started and Finished stay paired: a run
-				// whose start never landed must not send its finish either. The
-				// run still executes; it just records per-edit instead of as one
-				// undo step.
-				NEURUS_ERR("[ScriptEngine] ScriptRunStarted could not be emitted: "
-				           "this run will record individual undo steps");
-				m_events = nullptr;
-			}
+			if (m_events)
+				m_events->Emit(ScriptRunStarted{name});
+		}
+
+		std::string Finish(bool success)
+		{
+			std::string error;
+			if (auto* events = std::exchange(m_events, nullptr))
+				events->Emit(ScriptRunFinished{success, &error});
+			return error;
 		}
 
 		~RunScope() noexcept
 		{
 			try
 			{
-				if (m_events != nullptr)
-				{
-					m_events->Emit(ScriptRunFinished{});
-				}
+				Finish(false);
 			}
 			catch (...)
 			{
@@ -849,6 +851,30 @@ private:
 	private:
 		IEventQueue* m_events = nullptr;
 	};
+
+	bool FinishRun(RunScope& scope, bool success)
+	{
+		std::string error;
+		try
+		{
+			error = scope.Finish(success);
+		}
+		catch (const std::exception& e)
+		{
+			error = e.what();
+		}
+		if (error.empty())
+			return success;
+		RecordHostError(std::move(error));
+		return false;
+	}
+
+	void RecordHostError(std::string error)
+	{
+		m_lastStatus = ScriptRunStatus::ScriptError;
+		m_lastMessage = std::move(error);
+		m_console.Append(ScriptLineKind::Error, m_lastMessage + "\n");
+	}
 
 	/**
 	 * @brief RAII redirection of Python `sys.stdout`/`sys.stderr`.

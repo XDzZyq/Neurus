@@ -4,19 +4,21 @@
  */
 
 #include "passes/GeometryPass.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 
 #include "passes/Pass.hpp"
 #include "RenderCache.hpp"
-#include "RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/Barrier.hpp"
 #include "PipelineBuilder.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/RenderShader.hpp"
+#include "DescriptorLayout.hpp"
+
+
 #include "core/Log.hpp"
 
 #include "../resources/MeshGPU.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "requests/RenderRequests.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+#include "render_api/RenderRequests.hpp"
 
 #include <array>
 #include <cstdint>
@@ -30,10 +32,18 @@ namespace neurus {
 // Construction
 // ---------------------------------------------------------------------------
 
-GeometryPass::GeometryPass(const vk::raii::Device& device,
+GeometryPass::GeometryPass(RenderCache& cache, const vk::raii::Device& device,
                            const vk::raii::PhysicalDevice& physicalDevice)
+	: GeometryPass(device, physicalDevice,
+	               cache.EnsureDefaultShader(kGeometryShaders[0].name))
+{
+}
+
+GeometryPass::GeometryPass(const vk::raii::Device& device,
+                           const vk::raii::PhysicalDevice& physicalDevice,
+                           std::shared_ptr<const ShaderGPU> shader)
 	// --- Descriptor set layout ---
-	: p_cameraLayout(CreateCameraLayout(device))
+	: p_cameraLayout(MakeDescriptorLayout(device, RequireShader(shader)))
 	// --- Descriptor pool (1 set, 1 UBO) ---
 	, p_descriptorPool(device,
 	                   1,
@@ -41,11 +51,8 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
 	// --- Camera descriptor set (allocated from pool) ---
 	, p_cameraDescriptorSet(std::move(
 	      p_descriptorPool.Allocate(p_cameraLayout, 1).front()))
-	// --- Self-load shaders via ShaderLibrary ---
-	, p_shader(
-		ShaderLibrary::LoadRenderShader("GeometryPass",
-		                                 "res/shaders/render/gbuffer.vert.glsl",
-		                                 "res/shaders/render/gbuffer.frag.glsl"))
+	// --- Cached uploaded shader modules ---
+	, p_shader(std::move(shader))
 {
 	p_device = &device;
 	p_physicalDevice = &physicalDevice;
@@ -72,19 +79,6 @@ GeometryPass::GeometryPass(const vk::raii::Device& device,
 }
 
 // ---------------------------------------------------------------------------
-// Descriptor set layout factory
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout GeometryPass::CreateCameraLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		.AddBinding(0,
-		            vk::DescriptorType::eUniformBuffer,
-		            vk::ShaderStageFlagBits::eVertex)
-		.Build(device);
-}
-
-// ---------------------------------------------------------------------------
 // Pipeline creation
 // ---------------------------------------------------------------------------
 
@@ -96,16 +90,10 @@ void GeometryPass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("GeometryPass: Render shader not loaded or invalid");
 	}
 
-	auto vertSpv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::VERTEX),
-	                                      ShaderType::VERTEX, debugName + "_vert");
-	auto fragSpv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::FRAGMENT),
-	                                      ShaderType::FRAGMENT, debugName + "_frag");
-	vk::ShaderModuleCreateInfo vertSmCI({}, vertSpv);
-	vk::raii::ShaderModule vertModule(device, vertSmCI);
-	vk::ShaderModuleCreateInfo fragSmCI({}, fragSpv);
-	vk::raii::ShaderModule fragModule(device, fragSmCI);
-	vk::PipelineShaderStageCreateInfo vertStageCI({}, vk::ShaderStageFlagBits::eVertex, *vertModule, "main");
-	vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, *fragModule, "main");
+	const auto vertModule = p_shader->Module(ShaderType::VERTEX);
+	const auto fragModule = p_shader->Module(ShaderType::FRAGMENT);
+	vk::PipelineShaderStageCreateInfo vertStageCI({}, vk::ShaderStageFlagBits::eVertex, vertModule, "main");
+	vk::PipelineShaderStageCreateInfo fragStageCI({}, vk::ShaderStageFlagBits::eFragment, fragModule, "main");
 
 	PipelineBuilder builder;
 	builder.SetDebugName(debugName.c_str())
@@ -139,8 +127,8 @@ void GeometryPass::ConfigureGBufferPipeline(PipelineBuilder& builder)
 	builder.SetVertexInput(p_vertexLayout);
 	builder.AddDescriptorSetLayout(*p_cameraLayout.layout());
 
-	vk::PushConstantRange pushRange(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-	                                0, sizeof(MeshPushConstants));
+	vk::PushConstantRange pushRange = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 	builder.SetPushConstantRanges({pushRange});
 
 	builder.SetInputAssembly(vk::PrimitiveTopology::eTriangleList);
@@ -157,82 +145,52 @@ void GeometryPass::ConfigureGBufferPipeline(PipelineBuilder& builder)
 // Per-mesh custom pipeline creation
 // ---------------------------------------------------------------------------
 
-Pipeline GeometryPass::CreatePerMeshPipeline(const std::vector<uint32_t>& vertexSpv,
-                                             const std::vector<uint32_t>& fragmentSpv)
+Pipeline GeometryPass::CreatePerMeshPipeline(const ShaderGPU& shader)
 {
-	struct StageEntry
-	{
-		vk::PipelineShaderStageCreateInfo ci;
-		vk::raii::ShaderModule module;
-	};
-	std::vector<StageEntry> stages;
-
-	const std::array<std::pair<vk::ShaderStageFlagBits, const std::vector<uint32_t>*>, 2> inputs = {{
-		{vk::ShaderStageFlagBits::eVertex,   &vertexSpv},
-		{vk::ShaderStageFlagBits::eFragment, &fragmentSpv},
-	}};
-
-	for (const auto& [flag, spv] : inputs)
-	{
-		if (spv->empty()) continue;
-
-		vk::ShaderModuleCreateInfo smCI({}, *spv);
-		vk::raii::ShaderModule module(*p_device, smCI);
-		vk::PipelineShaderStageCreateInfo stageCI({}, flag, *module, "main");
-
-		stages.push_back({stageCI, std::move(module)});
-	}
-
-	if (stages.empty()) return Pipeline{};
-
 	PipelineBuilder builder;
-	builder.SetDebugName("PerMeshPipeline");
-	for (auto& s : stages)
-		builder.AddShaderStage(s.ci);
+	builder.SetDebugName("PerMeshPipeline")
+	       .AddShaderStage(vk::PipelineShaderStageCreateInfo(
+		       {}, vk::ShaderStageFlagBits::eVertex, shader.Module(ShaderType::VERTEX), "main"))
+	       .AddShaderStage(vk::PipelineShaderStageCreateInfo(
+		       {}, vk::ShaderStageFlagBits::eFragment, shader.Module(ShaderType::FRAGMENT), "main"));
 	ConfigureGBufferPipeline(builder);
 	return builder.BuildGraphicsPipeline(*p_device);
 }
 
 // ---------------------------------------------------------------------------
-// Per-mesh pipeline warm (Editor thread, off the frame path)
+// Per-mesh pipeline warm (render thread, before recording)
 // ---------------------------------------------------------------------------
-
-bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const ShaderData& shader)
-{
-	// One build path: snapshot the live Shader into a request and warm from it,
-	// the same code the renderer's request drain runs.
-	return EnsureMeshPipeline(cache, MakeEnsurePipelineRequest(shader));
-}
 
 bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRequest& request)
 {
-	// Id and version come from the same Shader snapshot (MakeEnsurePipelineRequest):
-	// keying a mesh's id with a shader's version cannot discriminate a mesh
-	// relinked between two shaders that share a version.
-	const int      shaderId  = request.shaderId;
-	const int      version   = request.version;
 	PipelineCache& pipelines = cache.GetPipelineCache();
+	if (pipelines.GetPipeline(request.shaderId, request.version))
+		return true;
 
-	if (pipelines.GetPipeline(shaderId, version)) return true;
+	const auto shader = cache.GetShader(request.shaderId);
+	if (!shader || shader->GetVersion() != request.version
+		|| !shader->HasStage(ShaderType::VERTEX) || !shader->HasStage(ShaderType::FRAGMENT))
+		return false;
 
-	// A G-buffer pipeline needs both a pre-raster and a fragment stage. A shader
-	// compiles one unit at a time, so an in-between state carries SPIR-V for the
-	// fragment only; building from it creates an invalid pipeline
-	// (VUID-VkGraphicsPipelineCreateInfo-pStages-06896). Wait for the compile
-	// that completes the set - Record() draws the pass default until then.
-	if (request.vertexSpv.empty() || request.fragmentSpv.empty()) return false;
+	const std::array<const ShaderGPU*, 1> selected = {shader.get()};
+	const std::array<const ShaderGPU*, 1> expected = {p_shader.get()};
+	if (ReflectDescriptorLayout(selected).bindings != ReflectDescriptorLayout(expected).bindings
+		|| PushConstantRangeFromShaders(selected, vk::ShaderStageFlagBits::eAll).size
+			!= PushConstantRangeFromShaders(expected, vk::ShaderStageFlagBits::eAll).size)
+	{
+		NEURUS_ERR("[GeometryPass] Rejected mesh shader " << request.shaderId
+		           << ": uploaded bindings or push constants differ from the G-Buffer contract");
+		return false;
+	}
 
-	Pipeline pipeline = CreatePerMeshPipeline(request.vertexSpv, request.fragmentSpv);
+	Pipeline pipeline = CreatePerMeshPipeline(*shader);
+	if (!*pipeline.pipeline)
+		return false;
 
-	// No SPIR-V for any supported stage is an ordinary state while a shader is
-	// being edited, so it is neither cached nor reported here - Record() logs
-	// the resulting miss, latched.
-	if (!*pipeline.pipeline) return false;
-
-	pipelines.UsePipeline(shaderId, std::move(pipeline), version);
-	p_reportedMissingPipelines.erase(shaderId);
+	pipelines.UsePipeline(request.shaderId, std::move(pipeline), request.version);
+	p_reportedMissingPipelines.erase(request.shaderId);
 	NEURUS_LOG("[GeometryPass] Warmed per-mesh pipeline for shaderId="
-	           << shaderId << " version=" << version);
+	           << request.shaderId << " version=" << request.version);
 	return true;
 }
 
@@ -240,45 +198,53 @@ bool GeometryPass::EnsureMeshPipeline(RenderCache& cache, const EnsurePipelineRe
 // Record
 // ---------------------------------------------------------------------------
 
-PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 {
 	PassStats stats{};
 
-	const RenderFrameSnapshot& frame = ctx.Frame();
+	const RenderFrameSnapshot& snapshot = frame.ctx.Frame();
 
-	const vk::Extent2D renderExtent{ctx.width, ctx.height};
+	const vk::Extent2D renderExtent{frame.ctx.width, frame.ctx.height};
 
-	// Point set 0 at the cache's shared camera UBO. Bailing out when no frame
-	// has published a camera yet keeps the descriptor from naming an unwritten
-	// UBO.
-	const CameraGPU& camera = cache.GetCameraGPU();
+	Image* gPosition          = frame.resources.Output("gPosition");
+	Image* gNormal            = frame.resources.Output("gNormal");
+	Image* gAlbedo            = frame.resources.Output("gAlbedo");
+	Image* gMetallicRoughness = frame.resources.Output("gMetallicRoughness");
+	Image* gObjectID          = frame.resources.Output("gObjectID");
+	Image* depth              = frame.resources.Output("depth");
+	if (!gPosition || !gNormal || !gAlbedo || !gMetallicRoughness || !gObjectID || !depth)
+	{
+		NEURUS_ERR("[GeometryPass] graph did not provide the G-Buffer output set");
+		return stats;
+	}
+
+	// The graph writes the camera UBO into set 0 before this call. Bailing out
+	// when no frame has published a camera keeps a draw from reading an
+	// unwritten buffer.
+	const CameraGPU& camera = frame.cache.GetCameraGPU();
 	if (!camera.IsValid())
 	{
 		return stats;
 	}
-	p_cameraDescriptorSet.WriteBuffer(0, camera.GetDescriptorInfo(),
-	                                  vk::DescriptorType::eUniformBuffer);
 
-	const std::array<AttachmentName, 5> gBufferColorAttachments = {
-		AttachmentName::Position,
-		AttachmentName::Normal,
-		AttachmentName::Albedo,
-		AttachmentName::MetallicRoughness,
-		AttachmentName::IDBuffer,
+	const std::array<Image*, 5> gBufferColorAttachments = {
+		gPosition,
+		gNormal,
+		gAlbedo,
+		gMetallicRoughness,
+		gObjectID,
 	};
 
 	std::vector<vk::ImageView> colorViews;
 	colorViews.reserve(5);
-	for (const auto& attName : gBufferColorAttachments)
+	for (Image* attachment : gBufferColorAttachments)
 	{
-		auto& att = cache.GetAttachment(attName, renderExtent);
-		Barrier::Transition(cmdBuf, att, ImageState::ColorAttachment);
-		colorViews.push_back(*att.ImageViewHandle());
+		Barrier::Transition(cmdBuf, *attachment, ImageState::ColorAttachment);
+		colorViews.push_back(*attachment->ImageViewHandle());
 	}
 
-	auto& depthAtt = cache.GetAttachment(AttachmentName::Depth, renderExtent);
-	Barrier::Transition(cmdBuf, depthAtt, ImageState::DepthAttachment);
-	vk::ImageView depthView = *depthAtt.ImageViewHandle();
+	Barrier::Transition(cmdBuf, *depth, ImageState::DepthAttachment);
+	vk::ImageView depthView = *depth->ImageViewHandle();
 
 	const auto clearValues = Pass::PresetClearValues(Pass::PassType::G_BUFFER);
 
@@ -293,14 +259,14 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 	const vk::Rect2D scissor({0, 0}, renderExtent);
 	cmdBuf.setScissor(0, scissor);
 
-	if (frame.HasScene())
+	if (snapshot.HasScene())
 	{
-		for (const auto& inst : frame.meshes)
+		for (const auto& inst : snapshot.meshes)
 		{
 			if (!inst.hasGeometry) continue;
 			if (!inst.visibleInViewport || !inst.rendered) continue;
 
-			const MeshGPU* gpuPtr = cache.GetMeshGPU(inst.objectId);
+			const MeshGPU* gpuPtr = frame.cache.GetMeshGPU(inst.objectId);
 			if (!gpuPtr)
 			{
 				NEURUS_ERR("[GeometryPass] GetMeshGPU returned nullptr for objectId=" << inst.objectId);
@@ -320,7 +286,7 @@ PassStats GeometryPass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, con
 				// Editor may be mutating. A miss means the shader has not
 				// compiled, and the mesh draws with the pass default.
 				Pipeline* customPipeline =
-				    cache.GetPipelineCache().GetPipeline(shaderId, version);
+				    frame.cache.GetPipelineCache().GetPipeline(shaderId, version);
 				if (!customPipeline)
 				{
 					if (p_reportedMissingPipelines.insert(shaderId).second)
@@ -460,21 +426,26 @@ void GeometryPass::EndPass(vk::CommandBuffer cmdBuf)
 
 PassIO GeometryPass::GetIO() const
 {
-	// GeometryPass is a rasterization pass writing the G-Buffer MRT + depth.
-	// It has no image reads, and binding metadata is unused because the pass
-	// self-manages its attachments; only the resource identities drive the
-	// RenderGraph edges.
 	PassIO io;
-	io.name  = "GeometryPass";
-	io.writes = {
-		{AttachmentName::Position},
-		{AttachmentName::Normal},
-		{AttachmentName::Albedo},
-		{AttachmentName::MetallicRoughness},
-		{AttachmentName::IDBuffer},
-		{AttachmentName::Depth},
-	};
+	io.name = "GeometryPass";
 	return io;
+}
+
+std::vector<const ShaderGPU*> GeometryPass::GetShaders() const
+{
+	return {p_shader.get()};
+}
+
+void GeometryPass::CollectGraphBuffers(RenderCache& cache, uint32_t frameIndex,
+                                        std::vector<GraphBufferBinding>& out) const
+{
+	(void)frameIndex;
+	const CameraGPU& camera = cache.GetCameraGPU();
+	if (camera.IsValid())
+	{
+		out.push_back({0, camera.GetDescriptorInfo(),
+		               vk::DescriptorType::eUniformBuffer});
+	}
 }
 
 } // namespace neurus

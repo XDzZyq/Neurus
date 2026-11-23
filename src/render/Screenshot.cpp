@@ -11,8 +11,8 @@
 
 #include "PipelineBuilder.hpp"
 #include "DescriptorManager.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/ComputeShader.hpp"
+#include "shader/ShaderLibrary.hpp"
+#include "shader/ComputeShader.hpp"
 
 #include <algorithm>
 #include <chrono>

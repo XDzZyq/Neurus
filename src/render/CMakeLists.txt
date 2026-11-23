@@ -1,5 +1,14 @@
 # src/render/CMakeLists.txt - Renderer Layer
 
+# Leaf GPU shader resource shared by renderer services and pass implementations.
+# It depends on CPU contracts, never on either of its renderer consumers.
+add_library(neurus_shader_gpu STATIC
+	resources/ShaderGPU.hpp
+	resources/ShaderGPU.cpp
+)
+target_include_directories(neurus_shader_gpu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(neurus_shader_gpu PUBLIC neurus_render_api Vulkan::Vulkan)
+
 add_library(neurus_render STATIC
 	buffers/ArrayBuffer.hpp
 	buffers/Buffer.hpp
@@ -23,6 +32,7 @@ add_library(neurus_render STATIC
 	Image.cpp
 	DescriptorManager.hpp
 	DescriptorManager.cpp
+	DescriptorLayout.hpp
 	Swapchain.hpp
 	Swapchain.cpp
 	OutputTarget.hpp
@@ -30,18 +40,6 @@ add_library(neurus_render STATIC
 	targets/SwapchainTarget.cpp
 	targets/OffscreenTarget.hpp
 	targets/OffscreenTarget.cpp
-	shaders/RenderShader.hpp
-	shaders/RenderShader.cpp
-	shaders/ComputeShader.hpp
-	shaders/ComputeShader.cpp
-	shaders/ShaderGenerator.hpp
-	shaders/ShaderGenerator.cpp
-	shaders/ShaderParser.hpp
-	shaders/ShaderParser.cpp
-	shaders/ShaderCompiler.hpp
-	shaders/ShaderCompiler.cpp
-	shaders/ShaderLibrary.hpp
-	shaders/ShaderLibrary.cpp
 	resources/MeshGPU.hpp
 	resources/EnvironmentGPU.hpp
 	resources/LightGPU.hpp
@@ -61,10 +59,6 @@ add_library(neurus_render STATIC
 	PipelineBuilder.cpp
 	RenderCache.hpp
 	RenderCache.cpp
-	RenderContext.hpp
-	RenderContext.cpp
-	RenderFrameSnapshot.hpp
-	RenderFrameSnapshot.cpp
 	FrameMailbox.hpp
 	FrameMailbox.cpp
 	PublishedFrame.hpp
@@ -73,9 +67,6 @@ add_library(neurus_render STATIC
 	FramesInFlight.hpp
 	TimelineSemaphore.hpp
 	TimelineSemaphore.cpp
-	requests/RenderRequests.hpp
-	requests/RenderRequests.cpp
-	requests/RenderRequestSink.hpp
 	requests/RenderRequestExecutor.hpp
 	requests/RenderRequestExecutor.cpp
 	requests/RenderRequestProcessor.hpp
@@ -84,12 +75,8 @@ add_library(neurus_render STATIC
 	IFrameRenderer.hpp
 	RenderThread.hpp
 	RenderThread.cpp
-	overlay/OverlayGeometry.hpp
-	overlay/DebugDrawList.hpp
-	overlay/GizmoDrawList.hpp
 	overlay/OverlayEngine.hpp
 	overlay/OverlayEngine.cpp
-	ProfilingData.hpp
 	GPUProfiler.hpp
 	GPUProfiler.cpp
 	DeferredRenderer.hpp
@@ -99,22 +86,33 @@ add_library(neurus_render STATIC
 	UploadManager.hpp
 	UploadManager.cpp
 	render_graph/DescriptorBinder.hpp
+	render_graph/ResourceTag.hpp
+	render_graph/ResourceTag.cpp
+	render_graph/PassResources.hpp
+	render_graph/PassResources.cpp
+	render_graph/PassBindings.hpp
+	render_graph/PassBindings.cpp
+	render_graph/PassFactory.hpp
+	render_graph/PassFactory.cpp
+	render_graph/GraphUploader.hpp
+	render_graph/GraphUploader.cpp
 	render_graph/RenderGraph.hpp
 	render_graph/RenderGraph.cpp
-	registrations/ShaderRegistration.hpp
-	registrations/ShaderRegistration.cpp
 )
 
 add_subdirectory(passes)
 
 target_link_libraries(neurus_render PUBLIC
+	neurus_shader_gpu
+	neurus_shader
 	Vulkan::Vulkan
 	glm
 	stb
 	neurus_core
+	neurus_asset
+	neurus_render_api
 	neurus_scene
 	neurus_render_passes
-	shaderc_shared
 )
 
 target_include_directories(neurus_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

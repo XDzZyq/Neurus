@@ -16,7 +16,7 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
+#include "render_api/RenderContext.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/buffers/BufferLayout.hpp"
 #include "render/buffers/IndexBuffer.hpp"
@@ -74,7 +74,7 @@ protected:
 
 			// --- Geometry pass ---
 		m_geometryPass = std::make_unique<GeometryPass>(
-			*m_device, pd);
+			*m_renderCache, *m_device, pd);
 
 			m_hasVulkan = true;
 		}
@@ -179,7 +179,7 @@ TEST_F(GeometryPassTest, Record_SingleTriangle_NoValidationError)
 			.width = kRenderWidth, .height = kRenderHeight,
 		};
 		PublishFrame(*m_renderCache, ctx, frame, &testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 
 		EndSubmitWait(cmd);
 	}
@@ -231,7 +231,7 @@ TEST_F(GeometryPassTest, Record_MultipleItems_NoValidationError)
 			.width = kRenderWidth, .height = kRenderHeight,
 		};
 		PublishFrame(*m_renderCache, ctx, frame, &testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 
@@ -265,7 +265,7 @@ TEST_F(GeometryPassTest, Record_EmptyRenderItems_NoCrash)
 			.width = kRenderWidth, .height = kRenderHeight,
 		};
 		PublishFrame(*m_renderCache, ctx, frame, &testScene);
-		m_geometryPass->Record(*cmd, *m_renderCache, ctx);
+		RecordPass(*m_geometryPass, *cmd, *m_renderCache, ctx);
 		EndSubmitWait(cmd);
 	}
 

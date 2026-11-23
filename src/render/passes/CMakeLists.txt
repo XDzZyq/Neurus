@@ -1,6 +1,10 @@
 # src/render/passes/CMakeLists.txt - Render Pass Library
 
 add_library(neurus_render_passes STATIC
+	# Pass constructors call these helpers; keep their definitions in the same
+	# archive so static linking never needs to revisit neurus_render.
+	../render_graph/ShaderReflection.hpp
+	../render_graph/ShaderReflection.cpp
 	ComposePass.hpp
 	ComposePass.cpp
 	ComputePass.hpp
@@ -30,11 +34,15 @@ add_library(neurus_render_passes STATIC
 )
 
 target_link_libraries(neurus_render_passes PUBLIC
+	neurus_shader_gpu
+	neurus_shader
 	Vulkan::Vulkan
 	glm
 	stb
 	neurus_core
 	neurus_scene
+	neurus_asset
+	neurus_render_api
 )
 
 target_include_directories(neurus_render_passes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

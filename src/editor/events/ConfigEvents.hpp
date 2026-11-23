@@ -5,7 +5,11 @@
 namespace neurus {
 
 /** @brief Emitted when the render configuration is changed from the UI panel. */
-struct RenderConfigChangedEvent { RenderConfig config; };
+struct RenderConfigChangedEvent
+{
+	RenderConfig config;
+	bool useDefault = false; ///< Restore implicit defaults without storing a config.
+};
 
 /**
  * @brief Emitted when a bounded render-config edit gesture begins (slider press).

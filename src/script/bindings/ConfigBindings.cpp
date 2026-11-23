@@ -26,12 +26,19 @@ namespace script
 namespace
 {
 
+const RenderConfig* ReadConfig(const ProxyBase& self)
+{
+	if (!self.view || !self.view->ctx)
+		return nullptr;
+	const auto& context = *self.view->ctx;
+	return context.configProvider ? context.configProvider() : context.config;
+}
+
 /// @brief Applies @p f to the run's config, or returns `None` when there is none.
 template <typename Fn>
 py::object WithConfig(const ProxyBase& self, Fn&& f)
 {
-	const RenderConfig* config =
-	    (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->config : nullptr;
+	const RenderConfig* config = ReadConfig(self);
 	if (config == nullptr)
 	{
 		return py::none();
@@ -43,8 +50,7 @@ py::object WithConfig(const ProxyBase& self, Fn&& f)
 template <typename Mutator>
 void EmitConfig(const ProxyBase& self, Mutator&& mutate)
 {
-	const RenderConfig* live =
-	    (self.view != nullptr && self.view->ctx != nullptr) ? self.view->ctx->config : nullptr;
+	const RenderConfig* live = ReadConfig(self);
 	RenderConfig config = live != nullptr ? *live : RenderConfig{};
 	mutate(config);
 	EmitEvent(self, RenderConfigChangedEvent{config});

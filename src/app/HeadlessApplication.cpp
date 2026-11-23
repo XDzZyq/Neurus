@@ -11,7 +11,7 @@
 #include "platform/PlatformProcess.hpp"
 #include "render/DeferredRenderer.hpp"
 #include "render/RenderCache.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "render/RenderThread.hpp"
 #include "render/UploadManager.hpp"
 #include "render/resources/LightingCache.hpp"
@@ -146,7 +146,7 @@ int HeadlessApplication::Run()
 		// --- Renderer on an offscreen target ---
 		m_renderer = std::make_unique<DeferredRenderer>(
 			m_vkContext->device(), m_vkContext->physicalDevice(),
-			m_vkContext->graphicsQueue(), m_vkContext->graphicsQueueFamily(), extent);
+			m_vkContext->graphicsQueue(), m_vkContext->graphicsQueueFamily(), extent, m_core->RenderDefaults());
 		m_renderThread = std::make_unique<RenderThread>(*m_renderer);
 
 		m_uploader = std::make_unique<UploadManager>(
@@ -157,7 +157,7 @@ int HeadlessApplication::Run()
 		m_renderer->SetUploadManager(m_uploader.get());
 
 		// --- Editor ---
-		m_editor = std::make_unique<Editor>(m_renderThread.get());
+		m_editor = std::make_unique<Editor>(m_renderThread.get(), m_core->RenderDefaults());
 		m_editor->Initialize();
 		m_editor->HandleViewportResize(glm::uvec2(m_args.width, m_args.height),
 		                               glm::uvec2(m_args.width, m_args.height));

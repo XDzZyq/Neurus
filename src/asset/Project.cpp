@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include <cereal/archives/json.hpp>
+#include <nlohmann/json.hpp>
 
 #include "core/Log.hpp"
 
@@ -43,9 +44,18 @@ void Project::Load(const std::string& path)
 		throw std::runtime_error("Failed to open project file: " + path);
 	}
 
+	const nlohmann::ordered_json document = nlohmann::ordered_json::parse(is);
+	const auto& project = document.at("project");
+	if (!project.is_object())
+		throw std::runtime_error("Project root must be an object");
+	// Components keep their own recovery policy, but never share parser state.
+	// A malformed graph/config must not make later UI or history data disappear.
+	for (auto& component : m_components)
 	{
-		cereal::JSONInputArchive archive(is);
-		archive(cereal::make_nvp("project", *this));
+		nlohmann::ordered_json isolated = nlohmann::ordered_json::object();
+		if (const auto value = project.find(component->Key()); value != project.end())
+			isolated[component->Key()] = *value;
+		component->LoadJson(isolated.dump());
 	}
 
 	NEURUS_LOG("[Project] Loaded from " << path);

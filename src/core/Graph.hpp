@@ -23,6 +23,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace neurus {
@@ -32,6 +33,21 @@ template<typename SData, typename NData> class SocketIn;
 template<typename SData, typename NData> class SocketOut;
 template<typename SData, typename NData> class Node;
 template<typename SData, typename NData> class Graph;
+
+/** @brief Directed edge from a producer to its consumer. The input owns this record. */
+template<typename SData, typename NData>
+struct Connection
+{
+	SocketOut<SData, NData>* from = nullptr;
+	SocketIn<SData, NData>* const to;
+
+	Connection(const Connection&) = delete;
+	Connection& operator=(const Connection&) = delete;
+
+private:
+	friend class SocketIn<SData, NData>;
+	explicit Connection(SocketIn<SData, NData>* input) : to(input) {}
+};
 
 // ================================================================================
 // SocketIn<SData, NData> — input slot
@@ -47,16 +63,17 @@ template<typename SData, typename NData>
 class SocketIn
 {
 public:
-	using NodeType   = Node<SData, NData>;
-	using SocketOutT = SocketOut<SData, NData>;
+	using NodeType    = Node<SData, NData>;
+	using SocketOutT  = SocketOut<SData, NData>;
+	using ConnectionT = Connection<SData, NData>;
 
 	std::string  name;
 	SData        data{};               ///< Payload owned by this socket.
-	SocketOutT*  source = nullptr;     ///< Upstream producer (null = disconnected).
+	ConnectionT  incoming{this}; ///< Stable for the lifetime of this input.
 	NodeType*    owner  = nullptr;     ///< Back-pointer to owning Node.
 
 	/** @return true if a source SocketOut feeds this slot. */
-	bool IsConnected() const { return source != nullptr; }
+	bool IsConnected() const { return incoming.from != nullptr; }
 };
 
 // ================================================================================
@@ -167,6 +184,7 @@ public:
 	using NodeType   = Node<SData, NData>;
 	using SocketInT  = SocketIn<SData, NData>;
 	using SocketOutT = SocketOut<SData, NData>;
+	using ConnectionT = Connection<SData, NData>;
 
 	std::vector<std::unique_ptr<NodeType>> nodes;
 
@@ -215,9 +233,9 @@ public:
 		// Break all incoming connections to this node's inputs
 		for (auto& in : (*it)->inputs)
 		{
-			if (in->source)
+			if (in->IsConnected())
 			{
-				DisconnectRaw(in->source, in.get());
+				DisconnectRaw(in->incoming.from, in.get());
 			}
 		}
 
@@ -265,11 +283,11 @@ public:
 		if (Reaches(in->owner, out->owner)) return false;
 
 		// Break existing input connection if any
-		if (in->source)
-			DisconnectRaw(in->source, in);
+		if (in->IsConnected())
+			DisconnectRaw(in->incoming.from, in);
 
 		out->targets.push_back(in);
-		in->source = out;
+		in->incoming.from = out;
 		return true;
 	}
 
@@ -286,6 +304,17 @@ public:
 
 	/** @brief Number of nodes in the graph. */
 	size_t NodeCount() const { return nodes.size(); }
+
+	/// @brief Borrows each active connection in node and input order.
+	std::vector<const ConnectionT*> Connections() const
+	{
+		std::vector<const ConnectionT*> connections;
+		for (const auto& node : nodes)
+			for (const auto& input : node->inputs)
+				if (input->IsConnected())
+					connections.push_back(&input->incoming);
+		return connections;
+	}
 
 	// --- Topological sort ---
 
@@ -488,6 +517,33 @@ public:
 		return !BuildTopology().acyclic;
 	}
 
+	/**
+	 * @brief Nodes the topological order leaves out: those on or downstream of a cycle.
+	 *
+	 * Never throws. A validator can report the names without using the
+	 * `TopologicalSort` exception as control flow.
+	 *
+	 * @return The cyclic nodes; empty when the graph is acyclic.
+	 */
+	std::vector<NodeType*> CyclicNodes() const
+	{
+		const Topology topo = BuildTopology();
+		if (topo.acyclic)
+			return {};
+
+		std::vector<bool> ordered(nodes.size(), false);
+		for (const size_t index : topo.order)
+			ordered[index] = true;
+
+		std::vector<NodeType*> cyclic;
+		for (size_t i = 0; i < nodes.size(); ++i)
+		{
+			if (!ordered[i])
+				cyclic.push_back(nodes[i].get());
+		}
+		return cyclic;
+	}
+
 private:
 	/**
 	 * @brief Reusable topology snapshot: the edge walk every traversal needs.
@@ -609,7 +665,7 @@ private:
 		if (it != out->targets.end())
 		{
 			out->targets.erase(it);
-			in->source = nullptr;
+			in->incoming.from = nullptr;
 		}
 	}
 
@@ -622,5 +678,83 @@ private:
 		return nodes.size();
 	}
 };
+
+/**
+ * @brief Deep copy of a graph: node order, socket order, payloads and connections.
+ *
+ * `Graph` owns its nodes through `unique_ptr`, so it is movable but not copyable.
+ * The copy preserves node and socket names, their order and their payloads.
+ *
+ * @param graph  Graph to copy; it is not modified.
+ * @return A graph of the same type with an independent node and socket pool.
+ * @throws std::runtime_error when a connection cannot be reproduced, which means
+ *         the source graph's sockets were wired outside `Connect`.
+ *
+ * @tparam GraphT  A `Graph` or a movable derived type.
+ */
+template<typename GraphT>
+GraphT CloneGraph(const GraphT& graph)
+{
+	using NodeT      = typename GraphT::NodeType;
+	using SocketInT  = typename GraphT::SocketInT;
+	using SocketOutT = typename GraphT::SocketOutT;
+
+	GraphT copy;
+	copy.nodes.reserve(graph.nodes.size());
+
+	// Image of every source output socket, so the second pass can reconnect by
+	// pointer instead of searching the copy.
+	std::unordered_map<const SocketOutT*, SocketOutT*> outputImages;
+	outputImages.reserve(graph.nodes.size() * 2);
+
+	for (const auto& node : graph.nodes)
+	{
+		NodeT* copied = copy.AddNode(node->name, node->data);
+		for (const auto& input : node->inputs)
+		{
+			SocketInT* socket = copied->AddInput(input->name);
+			socket->data = input->data;
+		}
+		for (const auto& output : node->outputs)
+		{
+			SocketOutT* socket = copied->AddOutput(output->name);
+			socket->data = output->data;
+			outputImages.emplace(output.get(), socket);
+		}
+	}
+
+	// Node and socket order match by construction, so an input maps by index.
+	for (size_t n = 0; n < graph.nodes.size(); ++n)
+	{
+		const NodeT& source = *graph.nodes[n];
+		NodeT* target = copy.nodes[n].get();
+
+		for (size_t i = 0; i < source.inputs.size(); ++i)
+		{
+			const SocketOutT* upstream = source.inputs[i]->incoming.from;
+			if (!upstream)
+				continue;
+
+			const auto it = outputImages.find(upstream);
+			if (it == outputImages.end())
+			{
+				throw std::runtime_error(
+					"CloneGraph: node '" + source.name + "' input '"
+					+ source.inputs[i]->name + "' is fed from outside the graph");
+			}
+
+			SocketInT* copiedInput = target->inputs[i].get();
+			if (!copy.Connect(it->second, copiedInput))
+			{
+				throw std::runtime_error(
+					"CloneGraph: could not reconnect '" + upstream->owner->name + "."
+					+ upstream->name + "' -> '" + source.name + "."
+					+ source.inputs[i]->name + "'");
+			}
+		}
+	}
+
+	return copy;
+}
 
 } // namespace neurus

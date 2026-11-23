@@ -31,8 +31,8 @@
 #include "shared/TestVulkanShared.hpp"
 
 #include "render/RenderCache.hpp"
-#include "render/RenderContext.hpp"
-#include "render/RenderFrameSnapshot.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "render/resources/LightingCache.hpp"
 #include "render/passes/GeometryPass.hpp"
 #include "render/passes/LightingPass.hpp"
@@ -103,14 +103,14 @@ TEST_F(NullScenePassTest, LightingPassRecordsNothingWithoutAScene)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan device";
 
-	LightingPass pass(*m_device, PhysicalDevice(), 2u);
+	LightingPass pass(*m_renderCache, *m_device, PhysicalDevice(), 2u);
 
 	const RenderContext ctx = EmptyContext();
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
 	// Before the fix this dereferenced ctx.scene for light_list.
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.dispatches, 0u) << "a scene-less frame must not shade";
@@ -128,7 +128,7 @@ TEST_F(NullScenePassTest, SelectionOutlinePassRecordsNothingWithoutAScene)
 	PassStats stats{};
 	auto& cmd = BeginCmd();
 	// Before the fix this dereferenced ctx.scene for selections.
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.dispatches, 0u) << "nothing is selected when nothing exists";
@@ -143,13 +143,13 @@ TEST_F(NullScenePassTest, GeometryPassRecordsNothingWithoutAScene)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan device";
 
-	GeometryPass pass(*m_device, PhysicalDevice());
+	GeometryPass pass(*m_renderCache, *m_device, PhysicalDevice());
 
 	const RenderContext ctx = EmptyContext();
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.drawCalls, 0u) << "no mesh list to iterate";
@@ -159,14 +159,14 @@ TEST_F(NullScenePassTest, ShadowDepthPassRecordsNothingWithoutAScene)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan device";
 
-	ShadowDepthPass pass(*m_device, PhysicalDevice(), *m_queue,
+	ShadowDepthPass pass(*m_renderCache, *m_device, PhysicalDevice(), *m_queue,
 	                     m_graphicsQueueFamily);
 
 	const RenderContext ctx = EmptyContext();
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.drawCalls, 0u) << "no light casts a shadow of nothing";
@@ -176,13 +176,13 @@ TEST_F(NullScenePassTest, ShadowIntensityPassRecordsNothingWithoutAScene)
 {
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan device";
 
-	ShadowIntensityPass pass(*m_device, PhysicalDevice(), 2u);
+	ShadowIntensityPass pass(*m_renderCache, *m_device, PhysicalDevice(), 2u);
 
 	const RenderContext ctx = EmptyContext();
 
 	PassStats stats{};
 	auto& cmd = BeginCmd();
-	stats = pass.Record(*cmd, *m_renderCache, ctx);
+	stats = RecordPass(pass, *cmd, *m_renderCache, ctx);
 	EndSubmitWait(cmd);
 
 	EXPECT_EQ(stats.dispatches, 0u) << "no light list to resolve";

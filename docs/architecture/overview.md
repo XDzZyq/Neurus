@@ -49,8 +49,10 @@ flowchart TB
         asset["Asset<br/>src/asset - CPU data"]
         scene["Scene<br/>src/scene - objects"]
         core["Core<br/>src/core - utilities"]
+        shader["Shader<br/>src/shader - CPU tooling"]
 
         asset ~~~ scene ~~~ core
+        shader -->|"asset values + source IO"| asset
 ```
 
 ### The event bus is the pivot

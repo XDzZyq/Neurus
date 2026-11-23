@@ -3,15 +3,19 @@
 #include "app/Preferences.hpp"
 
 #include "asset/Project.hpp"
+#include "shader/BuiltInRenderData.hpp"
+#include "shader/registrations/ShaderRegistration.hpp"
 #include "asset/components/ConfigComponent.hpp"
-#include "asset/components/EditorComponent.hpp"
-#include "asset/components/HistoryComponent.hpp"
+#include "editor/project/EditorComponent.hpp"
+#include "asset/components/GraphComponent.hpp"
+#include "editor/project/HistoryComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/components/UIComponent.hpp"
 #include "command/Commands.hpp"
 #include "core/Log.hpp"
 #include "editor/Editor.hpp"
+#include "editor/RenderManager.hpp"
 #include "script/ScriptConsole.hpp"
 #include "script/ScriptEngine.hpp"
 #include "script/ScriptPolicy.hpp"
@@ -54,9 +58,13 @@ std::string Utf8Path(const std::filesystem::path& path)
 void RegisterProjectComponents(project::Project& proj, Editor& editor, std::string& uiLayout)
 {
 	// Resource pool first: the Scene's ID references resolve against it.
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
+	auto& render = editor.GetRenderManager();
+	auto& resources = editor.GetResourceManager();
+	proj.Register<project::ResourceComponent>(resources, render.Defaults(), &render.Problems());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
-	proj.Register<project::ConfigComponent>(editor.GetRenderConfig());
+	proj.Register<project::ConfigComponent>(editor.GetRenderConfigData());
+
+	proj.Register<project::GraphComponent>(render.GraphData(), resources, render.Defaults(), render.Problems());
 	proj.Register<project::UIComponent>(uiLayout);
 	// History, then editor view state: both are appended-last nodes, so legacy
 	// files that lack them load cleanly (each Load() falls back).
@@ -105,7 +113,8 @@ command::Json StringArrayJson(const std::vector<std::string>& values)
 } // namespace
 
 ApplicationCore::ApplicationCore()
-	: m_preferences(std::make_unique<Preferences>())
+	: m_renderDefaults(std::make_shared<const BuiltInRenderData>())
+	, m_preferences(std::make_unique<Preferences>())
 	, m_script(std::make_unique<ScriptEngine>())
 {
 }

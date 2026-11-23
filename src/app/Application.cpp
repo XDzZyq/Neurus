@@ -16,7 +16,7 @@
 #include "core/Log.hpp"
 #include "editor/commands/EditorCommandAdapter.hpp"
 #include "editor/events/SceneEvents.hpp"
-#include "editor/events/UIEvents.hpp"
+#include "ui/events/UIEvents.hpp"
 #include "platform/PlatformProcess.hpp"
 #include "platform/PlatformSystem.hpp"
 #include "ui/UIManager.hpp"
@@ -400,8 +400,8 @@ bool Application::InitRenderer()
 			app_vkContext->graphicsQueueFamily(),
 			*app_surface,
 			app_mainWindow->getViewportWidth(),
-			app_mainWindow->getViewportHeight()
-		);
+			app_mainWindow->getViewportHeight(),
+			app_core->RenderDefaults());
 	}
 	catch (const std::exception& e)
 	{
@@ -535,7 +535,7 @@ void Application::InitEditor()
 {
 	// Every Editor request now goes through the thread's Post, which also wakes
 	// the thread: a request posted while no frame is coming is still serviced.
-	app_editor = std::make_unique<neurus::Editor>(app_renderThread.get());
+	app_editor = std::make_unique<neurus::Editor>(app_renderThread.get(), app_core->RenderDefaults());
 	app_editor->Initialize();
 
 	// The script engine lives in app_core, which the constructor created: its

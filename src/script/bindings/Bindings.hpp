@@ -64,6 +64,9 @@ void InstallDataViews(pybind11::module_& data, const ScriptView* view);
 void RegisterSceneBindings(pybind11::module_& scene);
 void InstallSceneViews(pybind11::module_& scene, const ScriptView* view);
 
+void RegisterGraphBindings(pybind11::module_& render);
+void InstallGraphProxy(pybind11::module_& render, const ScriptView* view);
+
 void RegisterConfigBindings(pybind11::module_& render);
 void InstallConfigProxies(pybind11::module_& render, const ScriptView* view);
 

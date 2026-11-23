@@ -24,6 +24,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 
 #include "core/IResourceLookup.hpp"
 #include "editor/events/IEventQueue.hpp"
@@ -34,6 +35,7 @@ namespace neurus {
 class Scene;
 class RenderConfig;
 class EditorViewport;
+class RenderManager;
 
 /**
  * @brief The three controller-facing interfaces plus editor singleton access.
@@ -64,6 +66,10 @@ struct ControllerContext
 	 * Mutable only so that `Gizmo()` is reachable - see the file comment.
 	 */
 	std::function<EditorViewport*()> viewport;
+	/// Nullable stored config; queried without materializing, replaced on edits.
+	std::function<std::shared_ptr<RenderConfig>&()> configData;
+	/// Editor-owned render document and its resource publication service.
+	RenderManager* render = nullptr;
 };
 
 } // namespace neurus

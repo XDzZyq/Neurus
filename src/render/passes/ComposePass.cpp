@@ -5,15 +5,17 @@
 
 #include "RenderCache.hpp"
 #include "passes/ComposePass.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
 
 #include "../PipelineBuilder.hpp"
+#include "DescriptorLayout.hpp"
 #include "core/RenderConfig.hpp"
 #include "Image.hpp"
 #include "render/Barrier.hpp"
-#include "RenderContext.hpp"
-#include "RenderFrameSnapshot.hpp"
-#include "shaders/ShaderLibrary.hpp"
-#include "shaders/ComputeShader.hpp"
+#include "render_api/RenderContext.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
+
+
 #include "core/Log.hpp"
 
 #include <stdexcept>
@@ -25,15 +27,20 @@ namespace neurus {
 // Construction
 // ---------------------------------------------------------------------------
 
-ComposePass::ComposePass(const vk::raii::Device& device,
+ComposePass::ComposePass(RenderCache& cache, const vk::raii::Device& device,
                          const vk::raii::PhysicalDevice& physicalDevice,
                          uint32_t numSets)
-	: ComputePass(device, physicalDevice,
-	              ComposePass::CreateDescriptorSetLayout(device), numSets)
-	// --- Self-load compute shader via ShaderLibrary ---
-	, p_shader(
-		ShaderLibrary::LoadComputeShader("compose",
-		                                  NEURUS_SHADER_DIR "compute/compose.comp.glsl"))
+	: ComposePass(device, physicalDevice, numSets,
+	              cache.EnsureDefaultShader(kComposeShaders[0].name))
+{
+}
+
+ComposePass::ComposePass(const vk::raii::Device& device,
+                         const vk::raii::PhysicalDevice& physicalDevice,
+                         uint32_t numSets,
+                         std::shared_ptr<const ShaderGPU> shader)
+	: ComputePass(device, physicalDevice, MakeDescriptorLayout(device, RequireShader(shader)), numSets)
+	, p_shader(std::move(shader))
 {
 	BuildPipeline(device, "ComposePass");
 
@@ -50,24 +57,6 @@ ComposePass::ComposePass(const vk::raii::Device& device,
 }
 
 // ---------------------------------------------------------------------------
-// Descriptor set layout
-// ---------------------------------------------------------------------------
-
-DescriptorSetLayout ComposePass::CreateDescriptorSetLayout(const vk::raii::Device& device)
-{
-	return BuildLayout()
-		// HDRColor input (combined image sampler)
-		.AddBinding(0,
-		            vk::DescriptorType::eCombinedImageSampler,
-		            vk::ShaderStageFlagBits::eCompute)
-		// ComposedOutput (storage image, RGBA16F)
-		.AddBinding(1,
-		            vk::DescriptorType::eStorageImage,
-		            vk::ShaderStageFlagBits::eCompute)
-		.Build(device);
-}
-
-// ---------------------------------------------------------------------------
 // Pipeline creation
 // ---------------------------------------------------------------------------
 
@@ -79,16 +68,11 @@ void ComposePass::BuildPipeline(const vk::raii::Device& device,
 		throw std::runtime_error("ComposePass: Compute shader not loaded or invalid");
 	}
 
-	auto spv = ShaderLibrary::Compile(p_shader->GetStage(ShaderType::COMPUTE),
-	                                  ShaderType::COMPUTE, debugName);
-	vk::ShaderModuleCreateInfo smCI({}, spv);
-	vk::raii::ShaderModule module(device, smCI);
-	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, *module, "main");
+	const auto module = p_shader->Module(ShaderType::COMPUTE);
+	vk::PipelineShaderStageCreateInfo stageCI({}, vk::ShaderStageFlagBits::eCompute, module, "main");
 
-	vk::PushConstantRange pushRange(
-		vk::ShaderStageFlagBits::eCompute,
-		0,
-		sizeof(float));  // gamma
+	vk::PushConstantRange pushRange = MakePushConstantRange(
+		*p_shader, vk::ShaderStageFlagBits::eCompute);
 
 	PipelineBuilder builder;
 	p_pipelines.push_back(
@@ -103,61 +87,32 @@ void ComposePass::BuildPipeline(const vk::raii::Device& device,
 // Descriptor writes
 // ---------------------------------------------------------------------------
 
-void ComposePass::WriteDescriptors(uint32_t setIndex, vk::Extent2D extent, RenderCache& cache)
-{
-	DescriptorSet& dstSet = p_descriptorSets[setIndex];
-
-	{
-		const auto& hdrAtt = cache.GetAttachment(AttachmentName::HDRColor, extent);
-
-		vk::DescriptorImageInfo imageInfo(
-			*p_sampler,                              // sampler
-			*hdrAtt.ImageViewHandle(),               // imageView
-			vk::ImageLayout::eShaderReadOnlyOptimal  // imageLayout
-		);
-
-		dstSet.WriteImage(0, imageInfo,
-		                  vk::DescriptorType::eCombinedImageSampler);
-	}
-
-	{
-		const auto& compAtt = cache.GetAttachment(AttachmentName::ComposedOutput, extent);
-
-		vk::DescriptorImageInfo imageInfo(
-			nullptr,                      // sampler (not used for storage images)
-			*compAtt.ImageViewHandle(),   // imageView
-			vk::ImageLayout::eGeneral     // imageLayout
-		);
-
-		dstSet.WriteImage(1, imageInfo,
-		                  vk::DescriptorType::eStorageImage);
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Record
 // ---------------------------------------------------------------------------
 
-PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, const RenderContext& ctx)
+PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 {
 	PassStats stats{};
 
-	const vk::Extent2D renderExtent{ctx.width, ctx.height};
-	const uint32_t    frameIndex   = ctx.frameIndex;
+	const vk::Extent2D renderExtent{frame.ctx.width, frame.ctx.height};
+	const uint32_t    frameIndex   = frame.frameIndex;
 
 	// Settings() is never null; with no published config it resolves to
 	// RenderConfig's own declared default.
-	const float gamma = ctx.Frame().Settings().r_gamma;
+	const float gamma = frame.ctx.Frame().Settings().r_gamma;
 
-	WriteDescriptors(frameIndex, renderExtent, cache);
-
+	Image* input  = frame.resources.Input("gHDRColor");
+	Image* output = frame.resources.Output("outputComposed");
+	if (!input || !output)
 	{
-		auto& hdrAtt = cache.GetAttachment(AttachmentName::HDRColor, renderExtent);
-		Barrier::Transition(cmdBuf, hdrAtt, ImageState::ColorShaderRead);
-
-		auto& compAtt = cache.GetAttachment(AttachmentName::ComposedOutput, renderExtent);
-		Barrier::Transition(cmdBuf, compAtt, ImageState::ShaderWrite);
+		NEURUS_ERR("[ComposePass] graph did not provide gHDRColor/outputComposed");
+		return stats;
 	}
+
+	Barrier::Transition(cmdBuf, *input, ImageState::ColorShaderRead);
+	Barrier::Transition(cmdBuf, *output, ImageState::ShaderWrite);
 
 	cmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, *p_pipelines[0].pipeline);
 
@@ -189,17 +144,14 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, RenderCache& cache, cons
 
 PassIO ComposePass::GetIO() const
 {
-	// Binding metadata is indicative only: ComposePass still writes its own
-	// descriptors. Resource names drive the RenderGraph edges.
 	PassIO io;
-	io.name  = "ComposePass";
-	io.reads = {
-		{AttachmentName::HDRColor,      0, vk::DescriptorType::eCombinedImageSampler, vk::ImageLayout::eShaderReadOnlyOptimal},
-	};
-	io.writes = {
-		{AttachmentName::ComposedOutput, 1, vk::DescriptorType::eStorageImage, vk::ImageLayout::eGeneral},
-	};
+	io.name = "ComposePass";
 	return io;
+}
+
+std::vector<const ShaderGPU*> ComposePass::GetShaders() const
+{
+	return {p_shader.get()};
 }
 
 } // namespace neurus

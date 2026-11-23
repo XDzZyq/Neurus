@@ -162,6 +162,7 @@ neurus object add --type camera [--name NAME] [--position X,Y,Z]
 neurus object duplicate --name NAME|--uid N [--rename NAME] [--type TYPE]
 neurus object delete --name NAME|--uid N|--uids N,N,... [--type TYPE]
 neurus render get
+neurus render graph status --format json
 neurus render set [--pipeline forward|deferred|custom0] [--aa none|msaa|fxaa]
                   [--ao none|ssao]
                   [--shadow none|shadow_mapping|sdf_soft|vssm]
@@ -230,6 +231,9 @@ sessions from different terminals. Every `script` subcommand accepts
   `add` with properties, and a `duplicate` are each one undo entry.
 - `render get` reports the render configuration; `render set` changes any
   subset through the render-config controller and its undo entry.
+- `render graph status` reports the graph source, nullable UID, node and edge counts,
+  selected scene output sockets and CPU validation diagnostics. It leaves a built-in
+  graph unmaterialized. Use `script run` to [edit the graph](../script/overview.md#editing-the-render-graph).
 - `history show` reports the undo/redo stacks; `history undo` and
   `history redo` step them.
 - `script run` executes Python in the running application and returns the
@@ -310,6 +314,7 @@ runs:
 - `object.add` - create a camera (lights are disabled until issue #60 is fixed).
 - `object.duplicate` - copy a mesh or camera.
 - `object.delete` - remove one or more objects from the scene.
+- `render.graph.status` - effective graph source, UID, counts, scene outputs and validation diagnostics.
 - `render.get` - pipeline, anti-aliasing, AO, shadow, SSR and quality settings.
 - `render.set` - change a subset of render settings.
 - `history.get` - undo/redo labels and availability.

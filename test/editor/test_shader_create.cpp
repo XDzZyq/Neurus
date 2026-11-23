@@ -13,6 +13,8 @@
 #include <sstream>
 #include <string>
 
+#include "shader/BuiltInRenderData.hpp"
+#include "editor/RenderManager.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "editor/Editor.hpp"
@@ -20,8 +22,8 @@
 #include "editor/events/OperationEvents.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/events/ShaderEvents.hpp"
-#include "render/shaders/ComputeShader.hpp"
-#include "render/shaders/RenderShader.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/RenderShader.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
 
@@ -104,13 +106,13 @@ TEST_F(ShaderCreateTest, LoadedNameSurvivesResourceComponentRoundTrip)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive out(ss);
-		neurus::project::ResourceComponent save(m_editor.GetResourceManager());
+		neurus::project::ResourceComponent save(m_editor.GetResourceManager(), m_editor.GetRenderManager().Defaults());
 		save.Save(out);
 	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive in(ss);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, m_editor.GetRenderManager().Defaults());
 		load.Load(in);
 	}
 
