@@ -12,15 +12,10 @@ route to `docs/` or `.github/instructions/` instead.
 
 ## Hard Rules
 
-### Layer isolation is unidirectional
+### Layer isolation and ownership
 
-```
-UI (Qt6) -> UIEvents (Qt signals) -> Editor -> EventQueue (typed events)
-         -> Controllers -> Context -> Renderer
-```
-
-Each arrow is a **decoupled interface** (signals, typed events, context objects).
-No layer knows the internals of the next.
+Application wires the concrete components. UI, Script and Renderer depend on
+the contracts below. Only Editor and its controllers mutate the scene.
 
 - **Application** (`src/app/`): composition root; owns the Qt app, Preferences,
   `VulkanContext` (instance, device, queues) and the `VkSurfaceKHR`; wires UI,
@@ -46,21 +41,29 @@ No layer knows the internals of the next.
 
 ### Communication
 
-Cross-layer traffic MUST go through exactly one of:
+| Intent | Required interface | Who handles it |
+| --- | --- | --- |
+| UI edits the document | Panel or `UIEvents` signal | Application connects it to `Editor::OnUIEvent`. Editor drains its queue during `Edit()`. |
+| Script reads or edits the document | Read through `ScriptContext`. Emit writes via `ScriptDispatch` and `IEventQueue`. | The Editor handler applies the event synchronously. |
+| UI displays document state | Application assembles a read-only `UIContext`. | Panels refresh from that view. |
+| Renderer reads a frame | `Editor::BuildSnapshot` produces an owned `RenderFrameSnapshot`. Application publishes it to `RenderThread`. | Render passes read that snapshot through `RenderContext::Frame()`. |
+| Editor requests GPU work | Post an owned, typed `RenderRequest` through `RenderRequestSink`. | The render thread drains requests in posting order with the published frame. |
+| Window resize, surface replacement, picking or screenshot | Application posts the corresponding `RenderThread` control. | The render thread performs it. Application translates a completed pick into an editor event. |
+| CLI requests a scene edit | IPC queues the command in `CommandDispatcher`. | Application drains on the main thread. The editor adapter emits typed edits. |
 
-- **UIEvents** (Qt Signals/Slots) for UI <-> Editor.
-- **RenderRequest** (typed values posted through `RenderRequestSink`) for
-  Editor -> Renderer GPU work. The Editor's `EventQueue` is Editor-internal
-  (input -> Controllers) and never crosses into the Renderer.
-- **EventQueue** (typed events) inside the Editor: the UI boundary is enqueued
-  and drained once per frame, while controller reactions dispatch synchronously.
-- **Typed editor events** (`ScriptDispatch` -> `IEventQueue`) for Script ->
-  Editor writes, dispatched synchronously.
-- **Context objects** (`RenderContext`, `UIContext`, `ScriptContext`) for
-  read-only data queries.
+The concrete `EventQueue` stays inside Editor. Controllers react to events
+and dispatch follow-up events synchronously. Renderer must never call back
+into Editor or retain a live Editor scene for later reads.
 
-Direct coupling across layers is forbidden. Controllers react to discrete typed
-events - never poll per frame. Renderer never calls back into Editor.
+UI and Script may include Editor's public input and typed event contracts.
+UI also consumes the read-only `HistoryView`; Script uses `IEventQueue` for
+dispatch. Concrete headers such as `Editor.hpp`, `EventBus.hpp` and controller
+implementations stay behind that boundary. Application may include the concrete
+components it wires. Component libraries must never include Application headers.
+When exposing a new Editor contract, add its header for the intended consumer
+in `scripts/check_layer_boundaries.py` and cover it in the checker tests.
+See [layer responsibilities](docs/architecture/layers.md) and
+[runtime data flow](docs/architecture/data-flow.md).
 
 ### Vulkan ownership
 

@@ -15,6 +15,7 @@ locate the Vulkan SDK; this target proves the link boundary, not an SDK-free con
 cmake --build build --config Debug --target neurus_cpu_test
 ctest --test-dir build -C Debug -R '^Neurus\.CPU\.' --output-on-failure
 python scripts/check_layer_boundaries.py
+python scripts/test_check_layer_boundaries.py
 ```
 
 CTest prefixes these cases with `Neurus.CPU.` and also registers the include
@@ -29,6 +30,13 @@ After change detection, CI starts the layer-boundary checks, translation checks,
 Windows/macOS build matrix and headless Linux build in parallel. The two Python
 jobs use a plain checkout. The required `ci-gate` checks all four results.
 Documentation-only PRs skip all four jobs and still receive a gate result.
+
+The include checker rejects Application headers in component libraries and
+checks UI and Script imports against each consumer's public Editor contracts.
+For example, both can use scene event values, UI can read `HistoryView`, and
+Script can dispatch through `IEventQueue`. Including `Editor.hpp` or the
+concrete event bus from either consumer fails the gate. Review frame ownership
+and thread handoffs against the [runtime data flow](../architecture/data-flow.md).
 
 A production source outside `src/editor/operations/` that directly includes
 `OperationContext.hpp` fails the boundary check. The context's private

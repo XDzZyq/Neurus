@@ -102,6 +102,11 @@ short working reference.
 - Run `python scripts/check_layer_boundaries.py` when changing layer includes;
   `neurus_cpu_test` verifies CPU document/shader/Editor behavior without GPU or
   Qt linkage. See [Testing](../../docs/build/test.md#cpu-boundary-tests).
+- Application wires concrete components. For UI and Script imports from Editor,
+  use the consumer's public input, event or view contracts listed in
+  `scripts/check_layer_boundaries.py`. Use the [data-flow guide](../../docs/architecture/data-flow.md)
+  to choose between posting an editor event, publishing a frame, posting a GPU
+  request or sending a render-thread control.
 
 ## Const Correctness
 
