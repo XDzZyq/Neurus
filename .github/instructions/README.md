@@ -7,6 +7,7 @@ this folder does not restate them.
 
 | Instruction | Purpose |
 |-------------|---------|
+| [architecture.instructions.md](architecture.instructions.md) | Layer boundaries, controller and operation authority, GPU upload paths, Vulkan ownership and command sessions |
 | [conventions.instructions.md](conventions.instructions.md) | C++/GLSL language, formatting, naming, RAII, error handling, logging and comment conventions |
 | [development.instructions.md](development.instructions.md) | The four-wave feature-development workflow and its per-wave verification |
 | [git-workflow.instructions.md](git-workflow.instructions.md) | Branch, worktree, issue and commit conventions, plus the lessons learned around them |
