@@ -25,11 +25,10 @@ layers, including the dedicated CPU Shader module. Shared renderer request/frame
 values belong in `src/render_api/`, linked through `neurus_render_api`. This executable complements the full suite and does
 not replace GPU or reference-image verification.
 
-CI also runs the include checker in a standalone `Layer boundaries` job before
-starting the Windows/macOS matrix and Linux build. It tests the checker itself,
-then scans source includes. It needs only Python, with no
-submodules, Qt or Vulkan setup. A violation fails the required `ci-gate`; the
-existing documentation-only skip behavior is preserved.
+After change detection, CI starts the layer-boundary checks, translation checks,
+Windows/macOS build matrix and headless Linux build in parallel. The two Python
+jobs use a plain checkout. The required `ci-gate` checks all four results.
+Documentation-only PRs skip all four jobs and still receive a gate result.
 
 A production source outside `src/editor/operations/` that directly includes
 `OperationContext.hpp` fails the boundary check. The context's private
