@@ -15,6 +15,7 @@ add_library(neurus_asset_data STATIC
 	data/render_graph/RenderGraphTopology.hpp
 	data/render_graph/RenderGraphRecord.hpp
 	data/render_graph/RenderGraphRecord.cpp
+	data/render_graph/PassShaderCatalog.hpp
 	data/render_graph/PortSource.hpp
 	data/render_graph/CpuGraphValidation.hpp
 	data/render_graph/CpuGraphValidation.cpp

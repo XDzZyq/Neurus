@@ -40,17 +40,12 @@ void RenderManager::ResetConfig()
 	m_config.reset();
 }
 
-void RenderManager::BeginGraphLoad()
+void RenderManager::ResetGraph(bool publish)
 {
 	m_graph.reset();
-	m_pending.reset();
 	m_problems.clear();
-}
-
-void RenderManager::ResetGraph()
-{
-	BeginGraphLoad();
-	Publish();
+	if (publish)
+		Publish();
 }
 
 namespace {
@@ -67,75 +62,6 @@ void CheckTopology(RenderGraphTopology& graph, const IPortSource& ports, std::ve
 }
 
 } // namespace
-
-void RenderManager::FinishGraphLoad()
-{
-	auto selection = std::exchange(m_pending, std::nullopt);
-	m_problems.clear();
-	m_graph.reset();
-
-	const int* selectedUid = selection ? std::get_if<int>(&*selection) : nullptr;
-	if (selectedUid)
-	{
-		m_graph = m_resources.Get<RenderGraphData>(*selectedUid);
-		if (!m_graph)
-			m_problems.push_back("Missing render graph UID " + std::to_string(*selectedUid));
-	}
-
-	std::vector<std::string> warnings;
-	const auto acceptsShader = [&](const std::string& kind, const ShaderData& shader) {
-		try
-		{
-			m_renderDefaults->ValidatePassShader(kind, shader);
-			return true;
-		}
-		catch (const std::exception& error)
-		{
-			warnings.push_back(kind + " shader UID " + std::to_string(shader.GetObjectID())
-			                   + " uses its built-in fallback: " + error.what());
-			return false;
-		}
-	};
-
-	// Pool reads cannot resolve connections until shaders and their port contracts are available.
-	std::vector<int> invalid;
-	m_resources.ForEach<RenderGraphData>([&](const std::shared_ptr<RenderGraphData>& graph)
-	{
-		std::vector<std::string> problems;
-		if (graph->Resolve(m_renderDefaults->Ports(), m_resources, problems, acceptsShader))
-			CheckTopology(*graph, m_renderDefaults->Ports(), problems);
-		if (problems.empty())
-			return;
-		invalid.push_back(graph->GetObjectID());
-		if (graph == m_graph)
-		{
-			m_problems = std::move(problems);
-			m_graph.reset();
-		}
-		else
-		{
-			for (const auto& problem : problems)
-				NEURUS_LOG("[RenderManager] Ignoring graph " << graph->GetObjectID() << ": " << problem);
-		}
-	});
-	for (const int uid : invalid)
-		m_resources.Remove(uid);
-
-	if (selection && !selectedUid)
-	{
-		auto topology = project::FromRecord(std::get<project::RenderGraphRecord>(*selection),
-		                                    m_renderDefaults->Ports(), m_problems, &m_resources, acceptsShader);
-		CheckTopology(topology, m_renderDefaults->Ports(), m_problems);
-		if (m_problems.empty())
-			m_graph = m_resources.Load<RenderGraphData>(std::move(topology));
-	}
-	for (const auto& problem : m_problems)
-		NEURUS_LOG("[RenderManager] " << problem << " - using built-in graph");
-	for (const auto& warning : warnings)
-		NEURUS_LOG("[RenderManager] " << warning);
-	m_problems.insert(m_problems.end(), warnings.begin(), warnings.end());
-	Publish();
-}
 
 std::vector<CpuGraphDiagnostic> RenderManager::Diagnostics() const
 {
@@ -169,9 +95,7 @@ void RenderManager::RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& g
 	if (graph && m_graph == graph)
 	{
 		m_resources.Remove(graph->GetObjectID());
-		BeginGraphLoad();
-		if (publish)
-			Publish();
+		ResetGraph(publish);
 	}
 }
 

@@ -36,6 +36,7 @@
 #include <string>
 
 #include "asset/Project.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/data/MeshData.hpp"
@@ -314,6 +315,7 @@ namespace
 void SaveTwoCameraScene(const std::string& path, bool activateSecond,
                         int& outFirstUid, int& outSecondUid)
 {
+	const neurus::BuiltInRenderData catalog;
 	Scene scene;
 	ResourceManager resources;
 
@@ -328,7 +330,7 @@ void SaveTwoCameraScene(const std::string& path, bool activateSecond,
 		ASSERT_TRUE(scene.ActivateCamera(outSecondUid));
 
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources);
+	p.Register<project::ResourceComponent>(resources, catalog);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Save(path);
 }
@@ -336,8 +338,9 @@ void SaveTwoCameraScene(const std::string& path, bool activateSecond,
 /// @brief Loads a project into @p scene, which must outlive @p resources' users.
 void LoadProject(const std::string& path, Scene& scene, ResourceManager& resources)
 {
+	const neurus::BuiltInRenderData catalog;
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources);
+	p.Register<project::ResourceComponent>(resources, catalog);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Load(path);
 }
@@ -431,6 +434,7 @@ TEST(SceneCameraActivation, LegacyFileWithoutTheFieldMigratesToACamera)
  */
 TEST(SceneCameraActivation, LegacyCameraLessFileMigratesToNone)
 {
+	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_scene_camera_activation_legacy_empty.neurus.json");
 
 	{
@@ -439,7 +443,7 @@ TEST(SceneCameraActivation, LegacyCameraLessFileMigratesToNone)
 		scene.UseMesh(resources.Load<Mesh>(resources.Load<MeshData>("res/obj/sphere.obj")));
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources);
+		p.Register<project::ResourceComponent>(resources, catalog);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Save(tmp.path);
 	}

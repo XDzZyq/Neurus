@@ -13,7 +13,10 @@
 
 #include "asset/Serializable.hpp"
 
-namespace neurus { class ResourceManager; }
+#include <string>
+#include <vector>
+
+namespace neurus { class ResourceManager; class IPassShaderCatalog; }
 
 namespace neurus::project
 {
@@ -24,7 +27,8 @@ namespace neurus::project
 class ResourceComponent : public Serializable
 {
 public:
-	explicit ResourceComponent(ResourceManager& resources);
+	ResourceComponent(ResourceManager& resources, const IPassShaderCatalog& catalog,
+	                  std::vector<std::string>* diagnostics = nullptr);
 
 	const char* Key() const noexcept override { return "m_resources"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
@@ -35,6 +39,8 @@ private:
 	void RestoreReferences();
 
 	ResourceManager* m_resources;
+	const IPassShaderCatalog& m_catalog;
+	std::vector<std::string>* m_diagnostics;
 };
 
 } // namespace neurus::project

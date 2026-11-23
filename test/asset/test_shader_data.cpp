@@ -23,6 +23,7 @@
 #include <thread>
 #include <string>
 
+#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/Project.hpp"
 #include "asset/data/MeshData.hpp"
@@ -187,6 +188,7 @@ TEST(ShaderDataPersistence, LegacyMissingStagesReloadsFromPaths)
 
 TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
 	auto compute = resources.Load<neurus::ComputeShader>(
 		"Comp", "res/shaders/compute/dummy.comp.glsl");
@@ -197,13 +199,13 @@ TEST(ShaderDataPersistence, ComputeShaderSurvivesResourceComponentRoundTrip)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive out(ss);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(out);
 	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive in(ss);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, catalog);
 		load.Load(in);
 	}
 
@@ -239,6 +241,7 @@ TEST(ShaderDataPersistence, ComputeShaderRoundTripsContentAndDefaults)
 
 TEST(ShaderDataPersistence, ShaderNamesSurviveResourceComponentRoundTrip)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>(
 		"MyFrag", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
@@ -248,13 +251,13 @@ TEST(ShaderDataPersistence, ShaderNamesSurviveResourceComponentRoundTrip)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive out(ss);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(out);
 	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive in(ss);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, catalog);
 		load.Load(in);
 	}
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));
@@ -289,6 +292,7 @@ TEST(ShaderDataPersistence, CompiledReadinessRequiresEveryRenderStage)
 
 TEST(ShaderDataPersistence, FailedShaderLoadClearsMeshReferenceAndIsOmittedOnSave)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
 	auto broken = resources.Load<neurus::RenderShader>("Broken");
 	broken->GetVertex().code = kMinimalVertex;
@@ -303,14 +307,14 @@ TEST(ShaderDataPersistence, FailedShaderLoadClearsMeshReferenceAndIsOmittedOnSav
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(archive);
 	}
 
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, catalog);
 		load.Load(archive);
 	}
 	EXPECT_FALSE(restored.Contains(brokenId));
@@ -325,7 +329,7 @@ TEST(ShaderDataPersistence, FailedShaderLoadClearsMeshReferenceAndIsOmittedOnSav
 	std::stringstream savedAgain;
 	{
 		cereal::JSONOutputArchive archive(savedAgain);
-		neurus::project::ResourceComponent save(restored);
+		neurus::project::ResourceComponent save(restored, catalog);
 		save.Save(archive);
 	}
 	EXPECT_EQ(savedAgain.str().find("Broken"), std::string::npos);
@@ -335,6 +339,7 @@ TEST(ShaderDataPersistence, FailedShaderLoadClearsMeshReferenceAndIsOmittedOnSav
 
 TEST(ShaderDataPersistence, MissingShaderSourceDoesNotCreatePersistedFallback)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>(
 		"Unavailable", "missing-default-fallback.vert.glsl", "missing-default-fallback.frag.glsl");
@@ -345,13 +350,13 @@ TEST(ShaderDataPersistence, MissingShaderSourceDoesNotCreatePersistedFallback)
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(archive);
 	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, catalog);
 		load.Load(archive);
 	}
 	EXPECT_FALSE(restored.Contains(shaderId));
@@ -370,6 +375,7 @@ TEST(ShaderDataPersistence, MissingShaderSourceDoesNotCreatePersistedFallback)
 
 TEST(ShaderDataPersistence, SavingLiveCompileFailurePreservesEditableSource)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>("Editable");
 	shader->GetVertex().code = kMinimalVertex;
@@ -379,7 +385,7 @@ TEST(ShaderDataPersistence, SavingLiveCompileFailurePreservesEditableSource)
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(archive);
 	}
 	EXPECT_TRUE(resources.Contains(shader->GetObjectID()));
@@ -388,19 +394,20 @@ TEST(ShaderDataPersistence, SavingLiveCompileFailurePreservesEditableSource)
 
 TEST(ShaderDataPersistence, NullPoolEntriesDoNotSurviveLoadOrSave)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager restored;
 	std::stringstream serialized(
 		R"({"m_resources":{"resources_":[{"key":9123,"value":{"polymorphic_id":0}}]}})");
 	{
 		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, catalog);
 		load.Load(archive);
 	}
 	EXPECT_EQ(restored.Size(), 0u);
 	std::stringstream saved;
 	{
 		cereal::JSONOutputArchive archive(saved);
-		neurus::project::ResourceComponent save(restored);
+		neurus::project::ResourceComponent save(restored, catalog);
 		save.Save(archive);
 	}
 	EXPECT_EQ(saved.str().find("9123"), std::string::npos);
@@ -454,6 +461,7 @@ TEST(ShaderDataPersistence, ConcurrentCompilationKeepsDiagnosticsWithTheirSource
 
 TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResources)
 {
+	const neurus::BuiltInRenderData catalog;
 	// Resource references reserve zero for absence; UID's first allocation is zero.
 	neurus::UID reserved;
 	neurus::ResourceManager resources;
@@ -481,7 +489,7 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 		~Cleanup() { std::error_code error; std::filesystem::remove(path, error); }
 	} cleanup{path};
 	neurus::project::Project source;
-	source.Register<neurus::project::ResourceComponent>(resources);
+	source.Register<neurus::project::ResourceComponent>(resources, catalog);
 	source.Save(path.string());
 	nlohmann::ordered_json document;
 	{ std::ifstream file(path); file >> document; }
@@ -509,7 +517,7 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 
 	neurus::ResourceManager restored;
 	neurus::project::Project loaded;
-	loaded.Register<neurus::project::ResourceComponent>(restored);
+	loaded.Register<neurus::project::ResourceComponent>(restored, catalog);
 	ASSERT_NO_THROW(loaded.Load(path.string()));
 	EXPECT_EQ(restored.Size(), 4u);
 	EXPECT_FALSE(restored.Contains(brokenId));
@@ -534,6 +542,7 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 
 TEST(ShaderDataPersistence, ComputeShaderRemainsPooledButCannotBindToAMesh)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
 	auto compute = resources.Load<neurus::ComputeShader>(
 		"Standalone", "res/shaders/compute/dummy.comp.glsl");
@@ -542,13 +551,13 @@ TEST(ShaderDataPersistence, ComputeShaderRemainsPooledButCannotBindToAMesh)
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(archive);
 	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, catalog);
 		load.Load(archive);
 	}
 	ASSERT_NE(restored.Get<neurus::ComputeShader>(compute->GetObjectID()), nullptr);
@@ -561,6 +570,7 @@ TEST(ShaderDataPersistence, ComputeShaderRemainsPooledButCannotBindToAMesh)
 
 TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>("Malformed");
 	shader->GetVertex().code = kMinimalVertex;
@@ -570,7 +580,7 @@ TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(archive);
 	}
 	auto document = nlohmann::ordered_json::parse(serialized.str());
@@ -580,7 +590,7 @@ TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
 			entry["value"]["ptr_wrapper"]["data"]["m_vertPath"] = 42;
 	}
 	neurus::ResourceManager restored;
-	neurus::project::ResourceComponent load(restored);
+	neurus::project::ResourceComponent load(restored, catalog);
 	ASSERT_NO_THROW(load.LoadJson(document.dump()));
 	EXPECT_FALSE(restored.Contains(shader->GetObjectID()));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
@@ -653,6 +663,7 @@ TEST(ShaderInterface, BlocksArraysMatricesAndPackedComponentsMatch)
 
 TEST(ShaderDataPersistence, IncompatibleCompiledStagesAreDiscardedOnLoad)
 {
+	const neurus::BuiltInRenderData catalog;
 	neurus::UID reserved;
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>("Incompatible");
@@ -665,13 +676,13 @@ TEST(ShaderDataPersistence, IncompatibleCompiledStagesAreDiscardedOnLoad)
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		neurus::project::ResourceComponent save(resources);
+		neurus::project::ResourceComponent save(resources, catalog);
 		save.Save(archive);
 	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
+		neurus::project::ResourceComponent load(restored, catalog);
 		load.Load(archive);
 	}
 	EXPECT_FALSE(restored.Contains(shader->GetObjectID()));
@@ -682,7 +693,7 @@ TEST(ShaderDataPersistence, IncompatibleCompiledStagesAreDiscardedOnLoad)
 	std::stringstream saved;
 	{
 		cereal::JSONOutputArchive archive(saved);
-		neurus::project::ResourceComponent save(restored);
+		neurus::project::ResourceComponent save(restored, catalog);
 		save.Save(archive);
 	}
 	EXPECT_EQ(saved.str().find("Incompatible"), std::string::npos);

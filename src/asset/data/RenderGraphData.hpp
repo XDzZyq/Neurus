@@ -16,16 +16,19 @@
 
 namespace neurus {
 
+class IPassShaderCatalog;
+
 /** @brief An authored scene graph with a stable pool identity. */
 class RenderGraphData : public UID, public RenderGraphTopology
 {
 public:
 	RenderGraphData() = default;
 	explicit RenderGraphData(RenderGraphTopology topology);
+	explicit RenderGraphData(project::RenderGraphRecord record);
 
 	/// Restores sockets and shader references once the entire pool is available.
-	bool Resolve(const IPortSource& ports, const IResourceLookup& resources, std::vector<std::string>& problems,
-	             const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader = {});
+	bool Resolve(const IPassShaderCatalog& catalog, const IResourceLookup& resources,
+	             std::vector<std::string>& diagnostics);
 
 	template<class Archive>
 	void serialize(Archive& ar)

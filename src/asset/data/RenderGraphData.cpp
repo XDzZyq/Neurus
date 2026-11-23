@@ -7,7 +7,8 @@
 #include "asset/data/ShaderData.hpp"
 
 #include "asset/data/render_graph/PassKinds.hpp"
-#include "asset/data/render_graph/PortSource.hpp"
+#include "asset/data/render_graph/PassShaderCatalog.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -371,17 +372,45 @@ RenderGraphData::RenderGraphData(RenderGraphTopology topology)
 {
 }
 
-bool RenderGraphData::Resolve(const IPortSource& ports, const IResourceLookup& resources,
-                              std::vector<std::string>& problems,
-                              const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
+RenderGraphData::RenderGraphData(project::RenderGraphRecord record)
+	: m_pending(std::move(record))
+{
+}
+
+bool RenderGraphData::Resolve(const IPassShaderCatalog& catalog, const IResourceLookup& resources,
+                              std::vector<std::string>& diagnostics)
 {
 	if (!m_pending)
 		return true;
 
-	const size_t previous = problems.size();
-	auto topology = project::FromRecord(*m_pending, ports, problems, &resources, acceptsShader);
-	if (problems.size() != previous)
+	const auto acceptsShader = [&](const std::string& kind, const ShaderData& shader)
+	{
+		try
+		{
+			catalog.ValidatePassShader(kind, shader);
+			return true;
+		}
+		catch (const std::exception& error)
+		{
+			diagnostics.push_back(kind + " shader UID " + std::to_string(shader.GetObjectID())
+			                      + " uses its built-in fallback: " + error.what());
+			return false;
+		}
+	};
+
+	const auto& ports = catalog.Ports();
+	std::vector<std::string> errors;
+	auto topology = project::FromRecord(*m_pending, ports, errors, &resources, acceptsShader);
+	if (errors.empty())
+	{
+		for (const auto& diagnostic : ValidateCpuGraph(topology, ports))
+			errors.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
+	}
+	if (!errors.empty())
+	{
+		diagnostics.insert(diagnostics.end(), errors.begin(), errors.end());
 		return false;
+	}
 
 	RenderGraphTopology::operator=(std::move(topology));
 	m_pending.reset();

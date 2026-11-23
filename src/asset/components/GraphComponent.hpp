@@ -4,32 +4,27 @@
 #pragma once
 
 #include "asset/Serializable.hpp"
-#include "asset/data/render_graph/RenderGraphRecord.hpp"
 
 #include <memory>
-#include <optional>
-#include <variant>
+#include <string>
+#include <vector>
 
 namespace neurus
 {
 class RenderGraphData;
+class IPassShaderCatalog;
+class ResourceManager;
 }
 
 namespace neurus::project
 {
 
-using GraphSelection = std::variant<int, RenderGraphRecord>;
-
 class GraphComponent : public Serializable
 {
 public:
-	/**
-	 * @brief Binds the component to the Editor's document slots.
-	 * @param pending  Receives the graph UID or legacy record read from the file.
-	 * @param graph    Nullable project document, read on save; null omits the key.
-	 */
-	GraphComponent(std::optional<GraphSelection>& pending,
-	               const std::shared_ptr<RenderGraphData>& graph);
+	/// Loads the active selection against the already restored resource pool.
+	GraphComponent(std::shared_ptr<RenderGraphData>& graph, ResourceManager& resources,
+	               const IPassShaderCatalog& catalog, std::vector<std::string>& diagnostics);
 
 	const char* Key() const noexcept override { return "proj_render_graph"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
@@ -37,8 +32,10 @@ public:
 	void LoadJson(const std::string& object) override;
 
 private:
-	std::optional<GraphSelection>* m_pending;
-	const std::shared_ptr<RenderGraphData>* m_graph;
+	std::shared_ptr<RenderGraphData>& m_graph;
+	ResourceManager& m_resources;
+	const IPassShaderCatalog& m_catalog;
+	std::vector<std::string>& m_diagnostics;
 };
 
 } // namespace neurus::project

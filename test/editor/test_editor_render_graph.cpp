@@ -76,6 +76,18 @@ neurus::RenderConfig NonDefaultConfig()
 	return config;
 }
 
+void LoadInlineGraph(neurus::Editor& editor, const neurus::project::RenderGraphRecord& record)
+{
+	std::stringstream stream;
+	{
+		cereal::JSONOutputArchive archive(stream);
+		archive(cereal::make_nvp("proj_render_graph", record));
+	}
+	auto& render = editor.GetRenderManager();
+	neurus::project::GraphComponent(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems())
+		.LoadJson(stream.str());
+}
+
 } // anonymous namespace
 
 TEST(EditorRenderGraph, NewScenePublishesNullWithoutPoolingDefaults)
@@ -100,7 +112,7 @@ TEST(EditorRenderGraph, NewScenePublishesNullWithoutPoolingDefaults)
 	EXPECT_FALSE(request->graph);
 }
 
-TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
+TEST(EditorRenderGraph, GraphComponentResolvesBeforeFinishLoadPublishes)
 {
 	RecordingSink sink;
 	neurus::Editor editor(&sink);
@@ -116,7 +128,11 @@ TEST(EditorRenderGraph, FinishLoadAppliesThePendingRecord)
 				return edge.from == "fxaa" || edge.to == "fxaa";
 			}),
 		record.edges.end());
-	editor.GetRenderManager().PendingRecord() = record;
+	sink.posted.clear();
+	LoadInlineGraph(editor, record);
+	ASSERT_TRUE(editor.GetRenderManager().GraphData());
+	EXPECT_EQ(editor.GetRenderGraph().nodes.size(), 6u);
+	EXPECT_TRUE(sink.posted.empty());
 	const neurus::RenderConfig expected = NonDefaultConfig();
 	editor.EditRenderConfig() = expected;
 
@@ -178,11 +194,11 @@ TEST(EditorRenderGraph, FinishLoadWithoutGraphPreservesDeserializedConfig)
 		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
 		config.Load(archive);
 		neurus::RenderManager& render = editor.GetRenderManager();
-		neurus::project::GraphComponent graph(render.PendingRecord(), render.GraphData());
+		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
 		graph.Load(archive);
 	}
 	ASSERT_EQ(editor.GetRenderConfig(), expected);
-	ASSERT_FALSE(editor.GetRenderManager().PendingRecord().has_value());
+	ASSERT_FALSE(editor.GetRenderManager().GraphData());
 
 	editor.FinishLoad();
 
@@ -205,7 +221,6 @@ TEST(EditorRenderGraph, ResetConfigPreservesGraphAndDoesNotPublish)
 	neurus::RenderManager& render = editor.GetRenderManager();
 	render.EditConfig() = NonDefaultConfig();
 	const auto expected = neurus::project::ToRecord(render.Graph());
-	render.PendingRecord() = expected;
 	sink.posted.clear();
 
 	render.ResetConfig();
@@ -214,8 +229,6 @@ TEST(EditorRenderGraph, ResetConfigPreservesGraphAndDoesNotPublish)
 	EXPECT_FALSE(render.ConfigData());
 	EXPECT_TRUE(render.GraphData());
 	EXPECT_EQ(neurus::project::ToRecord(render.Graph()), expected);
-	ASSERT_TRUE(render.PendingRecord().has_value());
-	EXPECT_EQ(std::get<neurus::project::RenderGraphRecord>(*render.PendingRecord()), expected);
 	EXPECT_TRUE(sink.posted.empty());
 }
 
@@ -256,10 +269,10 @@ std::string SaveOptionalRenderState(neurus::Editor& editor)
 		archive(cereal::make_nvp("fixture", fixture));
 		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
 		config.Save(archive);
-		neurus::project::ResourceComponent resources(editor.GetResourceManager());
-		resources.Save(archive);
 		auto& render = editor.GetRenderManager();
-		neurus::project::GraphComponent graph(render.PendingRecord(), render.GraphData());
+		neurus::project::ResourceComponent resources(editor.GetResourceManager(), render.Defaults(), &render.Problems());
+		resources.Save(archive);
+		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
 		graph.Save(archive);
 	}
 	return stream.str();
@@ -273,10 +286,10 @@ void LoadOptionalRenderState(neurus::Editor& editor, const std::string& text)
 		cereal::JSONInputArchive archive(stream);
 		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
 		config.Load(archive);
-		neurus::project::ResourceComponent resources(editor.GetResourceManager());
-		resources.LoadJson(text);
 		auto& render = editor.GetRenderManager();
-		neurus::project::GraphComponent graph(render.PendingRecord(), render.GraphData());
+		neurus::project::ResourceComponent resources(editor.GetResourceManager(), render.Defaults(), &render.Problems());
+		resources.LoadJson(text);
+		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
 		graph.LoadJson(text);
 	}
 	editor.FinishLoad();
@@ -398,8 +411,8 @@ TEST(EditorRenderGraph, MissingActiveUidPreservesTheRestOfThePool)
 	editor.NewScene();
 	auto resource = editor.GetResourceManager().Load<neurus::Mesh>();
 	auto& render = editor.GetRenderManager();
-	render.PendingRecord() = resource->GetObjectID();
-	render.FinishGraphLoad();
+	neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
+	graph.LoadJson("{\"proj_render_graph\":{\"uid\":" + std::to_string(resource->GetObjectID()) + "}}");
 	EXPECT_FALSE(render.GraphData());
 	EXPECT_FALSE(render.Problems().empty());
 	EXPECT_EQ(editor.GetResourceManager().Get<neurus::Mesh>(resource->GetObjectID()), resource);
@@ -806,14 +819,14 @@ TEST(EditorRenderGraph, LoadingIncompatiblePooledShaderUsesOnlyThatPassDefault)
 		"Incompatible", "res/shaders/compute/fxaa.comp.glsl");
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());
-	auto saved = neurus::project::ToRecord(render.Graph());
-	saved.nodes[5].shaderUid = shader->GetObjectID();
-	render.PendingRecord() = saved;
-	render.FinishGraphLoad();
+	const int shaderUid = shader->GetObjectID();
+	auto graph = render.CreateGraph(false);
+	graph->nodes[5]->data.shader = shader;
+	LoadOptionalRenderState(editor, SaveOptionalRenderState(editor));
 	ASSERT_TRUE(render.GraphData());
 	EXPECT_EQ(render.Graph().nodes.size(), 7u);
 	EXPECT_FALSE(render.Graph().nodes[5]->data.shader);
-	EXPECT_TRUE(editor.GetResourceManager().Get<neurus::ShaderData>(shader->GetObjectID()));
+	EXPECT_TRUE(editor.GetResourceManager().Get<neurus::ShaderData>(shaderUid));
 	EXPECT_FALSE(render.Problems().empty());
 }
 

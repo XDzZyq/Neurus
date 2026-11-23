@@ -3,6 +3,7 @@
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/components/GraphRecordJson.hpp"
 #include "core/Log.hpp"
+#include "core/ResourceManager.hpp"
 #include "core/Serialize.hpp"
 
 #include <cereal/cereal.hpp>
@@ -13,6 +14,7 @@
 
 #include <nlohmann/json.hpp>
 #include <utility>
+#include <variant>
 
 namespace neurus::project
 {
@@ -53,7 +55,7 @@ bool ValidTag(const Json& tag)
 // This adapter preserves the flat legacy shape while saving only an active UID.
 struct SavedSelection
 {
-	GraphSelection selection;
+	std::variant<int, RenderGraphRecord> selection;
 
 	template<class Archive>
 	void serialize(Archive& ar)
@@ -118,24 +120,23 @@ bool ValidGraphShape(const Json& graph)
 	return true;
 }
 
-GraphComponent::GraphComponent(std::optional<GraphSelection>& pending,
-                               const std::shared_ptr<RenderGraphData>& graph)
-	: m_pending(&pending)
-	, m_graph(&graph)
+GraphComponent::GraphComponent(std::shared_ptr<RenderGraphData>& graph, ResourceManager& resources,
+                               const IPassShaderCatalog& catalog, std::vector<std::string>& diagnostics)
+	: m_graph(graph), m_resources(resources), m_catalog(catalog), m_diagnostics(diagnostics)
 {
 }
 
 void GraphComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	if (!*m_graph)
+	if (!m_graph)
 		return;
-	SavedSelection active{(*m_graph)->GetObjectID()};
+	SavedSelection active{m_graph->GetObjectID()};
 	ar(cereal::make_nvp("proj_render_graph", active));
 }
 
 void GraphComponent::LoadJson(const std::string& object)
 {
-	m_pending->reset();
+	m_graph.reset();
 	try
 	{
 		const Json document = Json::parse(object);
@@ -156,7 +157,6 @@ void GraphComponent::LoadJson(const std::string& object)
 	}
 	catch (const std::exception& error)
 	{
-		m_pending->reset();
 		NEURUS_LOG("[GraphComponent] cannot load graph: " << error.what() << " - keeping null");
 	}
 }
@@ -165,7 +165,7 @@ void GraphComponent::Load(cereal::JSONInputArchive& ar)
 {
 	// Every field is optional at the archive level; an absent key means "no
 	// saved document", never the previous session's graph.
-	m_pending->reset();
+	m_graph.reset();
 	SavedSelection loaded;
 	try
 	{
@@ -173,7 +173,6 @@ void GraphComponent::Load(cereal::JSONInputArchive& ar)
 		{
 			NEURUS_LOG("GraphComponent::Load: no proj_render_graph node"
 			           " - using runtime defaults without storing a project graph.");
-			m_pending->reset();
 			return;
 		}
 	}
@@ -181,11 +180,31 @@ void GraphComponent::Load(cereal::JSONInputArchive& ar)
 	{
 		NEURUS_ERR("GraphComponent::Load: " << e.what()
 		           << " - using runtime defaults (corrupt graph).");
-		m_pending->reset();
 		return;
 	}
 
-	*m_pending = std::move(loaded.selection);
+	if (const int* uid = std::get_if<int>(&loaded.selection))
+	{
+		m_graph = m_resources.Get<RenderGraphData>(*uid);
+		if (!m_graph)
+		{
+			m_diagnostics.push_back("Missing render graph UID " + std::to_string(*uid));
+			NEURUS_LOG("[GraphComponent] " << m_diagnostics.back());
+		}
+		return;
+	}
+
+	// Older projects store the selected graph inline. Adopt it only after resolution succeeds.
+	auto graph = std::make_shared<RenderGraphData>(std::move(std::get<RenderGraphRecord>(loaded.selection)));
+	std::vector<std::string> diagnostics;
+	if (graph->Resolve(m_catalog, m_resources, diagnostics))
+	{
+		m_resources.Register(graph);
+		m_graph = std::move(graph);
+	}
+	for (const auto& diagnostic : diagnostics)
+		NEURUS_LOG("[GraphComponent] " << diagnostic);
+	m_diagnostics.insert(m_diagnostics.end(), diagnostics.begin(), diagnostics.end());
 }
 
 } // namespace neurus::project

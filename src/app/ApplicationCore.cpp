@@ -58,12 +58,13 @@ std::string Utf8Path(const std::filesystem::path& path)
 void RegisterProjectComponents(project::Project& proj, Editor& editor, std::string& uiLayout)
 {
 	// Resource pool first: the Scene's ID references resolve against it.
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
+	auto& render = editor.GetRenderManager();
+	auto& resources = editor.GetResourceManager();
+	proj.Register<project::ResourceComponent>(resources, render.Defaults(), &render.Problems());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::ConfigComponent>(editor.GetRenderConfigData());
 
-	RenderManager& render = editor.GetRenderManager();
-	proj.Register<project::GraphComponent>(render.PendingRecord(), render.GraphData());
+	proj.Register<project::GraphComponent>(render.GraphData(), resources, render.Defaults(), render.Problems());
 	proj.Register<project::UIComponent>(uiLayout);
 	// History, then editor view state: both are appended-last nodes, so legacy
 	// files that lack them load cleanly (each Load() falls back).

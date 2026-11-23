@@ -11,6 +11,7 @@
 
 // Types needed for the pooled data-reference wiring in Load().
 #include "asset/data/ImageData.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/MeshData.hpp"
 #include "scene/Environment.hpp"
 #include "scene/DebugMesh.hpp"
@@ -82,8 +83,9 @@ bool ValidShaderPayloadTypes(const nlohmann::ordered_json& value)
 
 } // namespace
 
-ResourceComponent::ResourceComponent(ResourceManager& resources)
-	: m_resources(&resources)
+ResourceComponent::ResourceComponent(ResourceManager& resources, const IPassShaderCatalog& catalog,
+                                     std::vector<std::string>* diagnostics)
+	: m_resources(&resources), m_catalog(catalog), m_diagnostics(diagnostics)
 {
 }
 
@@ -210,6 +212,24 @@ void ResourceComponent::RestoreReferences()
 		           << " could not be restored; using the built-in fallback");
 		m_resources->Remove(uid);
 	}
+
+	// Resolve inactive graphs too. A graph may appear before its shaders in the archive.
+	std::vector<int> invalidGraphs;
+	m_resources->ForEach<RenderGraphData>([&](const std::shared_ptr<RenderGraphData>& graph)
+	{
+		std::vector<std::string> diagnostics;
+		if (!graph->Resolve(m_catalog, *m_resources, diagnostics))
+			invalidGraphs.push_back(graph->GetObjectID());
+		for (const auto& diagnostic : diagnostics)
+		{
+			const auto message = "Graph UID " + std::to_string(graph->GetObjectID()) + ": " + diagnostic;
+			NEURUS_LOG("[ResourceComponent] " << message);
+			if (m_diagnostics)
+				m_diagnostics->push_back(message);
+		}
+	});
+	for (const int uid : invalidGraphs)
+		m_resources->Remove(uid);
 
 	// Wire data references for EVERY pooled mesh/environment, not just the
 	// scene members: a pooled object can stay referenced elsewhere after

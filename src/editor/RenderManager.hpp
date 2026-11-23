@@ -10,18 +10,16 @@
  *
  * It is a state service, not a controller: it does not record operations, emit
  * events or mark the project dirty. Controllers and the Editor write through
- * `EditConfig()`, `SetGraph()` and `FinishGraphLoad()`, and the Editor owns the undo and
+ * `EditConfig()` and `SetGraph()`. The Editor owns the undo and
  * dirty policy around those writes.
  */
 
 #pragma once
 
-#include "asset/components/GraphComponent.hpp"
 #include "asset/data/RenderGraphData.hpp"
 #include "core/RenderConfig.hpp"
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -65,13 +63,7 @@ public:
 	 * Publishes a null document; Renderer resolves it through its built-in provider.
 	 * Missing legacy graph records remain absent on the next save.
 	 */
-	void ResetGraph();
-
-	/// @brief Drops the outgoing selection before deserializing a new project.
-	void BeginGraphLoad();
-
-	/// @brief Resolves pooled shader links and the active graph after the pool loads.
-	void FinishGraphLoad();
+	void ResetGraph(bool publish = true);
 
 	/// @brief Materializes the effective default once as a project-owned resource.
 	std::shared_ptr<RenderGraphData> CreateGraph(bool publish = true);
@@ -96,6 +88,7 @@ public:
 
 	/// @brief Effective read-only graph; reading a default never materializes project data.
 	const RenderGraphTopology& Graph() const;
+	std::shared_ptr<RenderGraphData>& GraphData() { return m_graph; }
 	const std::shared_ptr<RenderGraphData>& GraphData() const { return m_graph; }
 
 	/// @brief Uploads distinct selected shaders, then publishes cloned topology with shared references.
@@ -110,10 +103,8 @@ public:
 	/// @brief Whether an explicit graph node references this pooled shader.
 	bool ReferencesShader(int uid) const;
 
-	/// @brief Record read from a project, applied by the Editor's FinishLoad.
-	std::optional<project::GraphSelection>& PendingRecord() { return m_pending; }
-
-	/// @brief Problems from the last load and validation pass.
+	/// @brief Diagnostics shared with the project loader and graph status queries.
+	std::vector<std::string>& Problems() { return m_problems; }
 	const std::vector<std::string>& Problems() const { return m_problems; }
 
 private:
@@ -122,7 +113,6 @@ private:
 	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::shared_ptr<RenderConfig> m_config;
 	std::shared_ptr<RenderGraphData> m_graph;
-	std::optional<project::GraphSelection> m_pending;
 	std::vector<std::string> m_problems;
 };
 

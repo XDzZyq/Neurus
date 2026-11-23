@@ -1004,7 +1004,7 @@ void Editor::BeginLoad()
 	m_scene = std::make_unique<Scene>();
 	m_resources->Clear(); // Pool is restored from the project file next.
 	m_renderManager->ResetConfig();
-	m_renderManager->BeginGraphLoad();
+	m_renderManager->ResetGraph(false);
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
 	// the pool. FinishLoad() resolves or creates it once the file has been read.
@@ -1027,9 +1027,8 @@ void Editor::FinishLoad()
 	m_viewport.MarkOverlaysDirty();
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
 
-	// The graph record was read before the pool and the scene were restored, so
-	// it is applied last, when its shaders can be resolved.
-	m_renderManager->FinishGraphLoad();
+	// Publish once the project components have restored the graph and its shaders.
+	m_renderManager->Publish();
 
 	// A loaded document is the saved baseline, not an unsaved edit.
 	m_dirty = false;
