@@ -170,6 +170,7 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
 
 ## Asset Layer (`src/asset/`)
 
+- `ResourceManager` owns the UID pool and constructs resources. `ResourceType` maps cereal archive names to registered resource types.
 - Vulkan-free and independent of Renderer and Editor implementation targets
 - OBJ mesh loading and parsing into MeshData (pure CPU struct)
 - PNG/HDR image decoding into ImageData (pure CPU struct, owning pixel vector)
@@ -240,8 +241,6 @@ they do not depend on the Shader module.
 Vulkan-free utilities shared across the other layers:
 
 - `UID` - generic unique identifier primitive (resource base)
-- `ResourceManager` - single factory + UID pool (`Load<T>`, polymorphic
-  serialize)
 - `IResourceLookup` - pool fetch/lookup and name-registry interface
 - `Log` - `NEURUS_LOG` / `NEURUS_ERR` macros
 - `RenderConfig` - user-settable pipeline options (Vulkan-free; read by four

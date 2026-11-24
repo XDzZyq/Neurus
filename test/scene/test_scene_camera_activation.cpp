@@ -40,7 +40,7 @@
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/data/MeshData.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"

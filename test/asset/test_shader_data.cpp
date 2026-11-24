@@ -30,7 +30,7 @@
 #include "shader/registrations/ShaderRegistration.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/shader/ShaderStruct.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Mesh.hpp"
 #include "shader/ComputeShader.hpp"
 #include "shader/ShaderLibrary.hpp"

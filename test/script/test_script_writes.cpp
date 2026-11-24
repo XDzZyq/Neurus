@@ -26,7 +26,7 @@
 
 #include "core/Log.hpp"
 #include "core/RenderConfig.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/controllers/ObjectController.hpp"
 #include "editor/controllers/RenderConfigController.hpp"

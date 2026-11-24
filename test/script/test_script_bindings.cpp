@@ -25,7 +25,7 @@
 
 #include "core/Log.hpp"
 #include "core/RenderConfig.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Environment.hpp"
 #include "scene/Light.hpp"

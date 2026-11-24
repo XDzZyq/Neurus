@@ -79,7 +79,7 @@ responsibility shared by callers, and keep it with the family that uses it.
 ## Core Layer
 
 - `src/core/` holds generic, layer-agnostic primitives only: identity (`UID`),
-  pools (`ResourceManager`), traversal (`Graph`, `GraphMorphism`), logging,
+  resource lookup (`IResourceLookup`), traversal (`Graph`, `GraphMorphism`), logging,
   serialization helpers, `RenderConfig`.
 - A concrete document or data type that names this product's features belongs
   to the layer that owns it. A render graph document lives in `asset/data/`,

@@ -32,7 +32,7 @@
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/GraphComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
 #include "editor/operations/ScriptOperations.hpp"

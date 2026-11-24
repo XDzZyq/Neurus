@@ -22,7 +22,7 @@
 #include "editor/events/EventBus.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/Input.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "shared/OperationTestAccess.hpp"
 #include "editor/operations/OperationManager.hpp"
 #include "editor/operations/SceneOperations.hpp"

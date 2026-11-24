@@ -44,7 +44,7 @@
 #include "editor/operations/OperationManager.hpp"
 #include "editor/operations/registrations/OperationRegistration.hpp"
 #include "editor/operations/ShaderOperations.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/ComputeShader.hpp"
@@ -56,7 +56,7 @@
 #include "asset/data/shader/ShaderUnit.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 
 #include <fstream>
 #include <sstream>

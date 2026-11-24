@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
 #include "editor/events/GraphEvents.hpp"

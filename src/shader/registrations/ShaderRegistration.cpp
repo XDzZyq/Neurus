@@ -9,7 +9,7 @@
  */
 
 #include <cereal/archives/json.hpp>
-#include "core/ResourceType.hpp"
+#include "asset/ResourceType.hpp"
 
 #include "core/UID.hpp"
 #include "shader/ComputeShader.hpp"

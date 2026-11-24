@@ -7,10 +7,10 @@
 #include "asset/components/ResourceArchiveWriter.hpp"
 #include "asset/components/GraphRecordJson.hpp"
 
-#include "core/ArchiveUid.hpp"
+#include "core/ArchiveUID.hpp"
 #include "core/Log.hpp"
-#include "core/ResourceManager.hpp"
-#include "core/ResourceType.hpp"
+#include "asset/ResourceManager.hpp"
+#include "asset/ResourceType.hpp"
 
 // Types needed for the pooled data-reference wiring in Load().
 #include "asset/data/ImageData.hpp"
@@ -263,7 +263,7 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 			{
 				std::istringstream stream(*payload);
 				cereal::JSONInputArchive archive(stream);
-				const ArchiveUid identity(id);
+				const ArchiveUID identity(id);
 				archive(cereal::make_nvp("value", resource));
 			}
 			if (!resource || resource->GetObjectID() != id)

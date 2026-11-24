@@ -91,13 +91,13 @@ set(NEURUS_TEST_SOURCES
 	scene/test_scene_camera_activation.cpp
 	scene/test_debug.cpp
 	asset/test_project_roundtrip.cpp
+	asset/test_resource_manager.cpp
 	asset/test_default_project.cpp
 	asset/test_serialize_optional.cpp
 	asset/test_ui_component.cpp
 	core/test_selections.cpp
 	core/test_log_buffer.cpp
 	core/test_uid.cpp
-	core/test_resource_manager.cpp
 	ui/test_log_model.cpp
 	ui/test_debug_properties.cpp
 	ui/test_i18n.cpp

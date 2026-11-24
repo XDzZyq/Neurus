@@ -1,6 +1,6 @@
 /**
  * @file test_resource_manager.cpp
- * @brief Tests for the core ResourceManager (UID object pool + factory).
+ * @brief Tests for the asset ResourceManager (UID object pool + factory).
  *
  * Covers:
  * - Load<T> constructs + registers + returns a typed shared_ptr
@@ -28,7 +28,7 @@
 #include <sstream>
 #include <vector>
 
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"

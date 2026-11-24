@@ -63,7 +63,7 @@ deleted, with no special revision-copy path.
 
 `ObjectID::serialize` keeps the `base_class<UID>` hook strict but reads its own metadata fields through `archive::Optional` - the concrete default constructor already sets `o_type` and `o_name`, so a field a file lacks keeps the right value.
 
-## ResourceManager (`core/ResourceManager.hpp`)
+## ResourceManager (`asset/ResourceManager.hpp`)
 
 `ResourceManager` is the single factory and registry for UID-derived objects (scene objects via `ObjectID`, data resources such as `MeshData` / `ImageData` / `ShaderData`). It is:
 

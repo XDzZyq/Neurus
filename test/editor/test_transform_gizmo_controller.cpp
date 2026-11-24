@@ -41,7 +41,7 @@
 #include "editor/operations/OperationManager.hpp"
 #include "editor/viewport/EditorViewport.hpp"
 #include "editor/viewport/TransformGizmo.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"

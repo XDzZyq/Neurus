@@ -31,7 +31,7 @@
 #include "editor/events/SceneEvents.hpp"
 #include "editor/Input.hpp"
 #include "editor/project/HistoryComponent.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/data/MeshData.hpp"
 #include "shared/OperationTestAccess.hpp"

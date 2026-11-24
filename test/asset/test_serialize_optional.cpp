@@ -58,7 +58,7 @@
 #include "asset/components/UIComponent.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/Serialize.hpp"
 #include "editor/events/EventBus.hpp"
 #include "editor/operations/ConfigOperations.hpp"

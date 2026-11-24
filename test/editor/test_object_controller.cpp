@@ -19,7 +19,7 @@
 #include "editor/events/SceneEvents.hpp"
 #include "editor/events/EditorEvents.hpp"
 #include "editor/operations/OperationManager.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"

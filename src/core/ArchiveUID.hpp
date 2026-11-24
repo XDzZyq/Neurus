@@ -7,14 +7,14 @@ namespace neurus
  * Gives the next UID constructor on this thread the identity already reserved
  * for its archive record. Scope this around a single pooled pointer read.
  */
-class ArchiveUid
+class ArchiveUID
 {
 public:
-	explicit ArchiveUid(int id);
-	~ArchiveUid();
+	explicit ArchiveUID(int id);
+	~ArchiveUID();
 
-	ArchiveUid(const ArchiveUid&) = delete;
-	ArchiveUid& operator=(const ArchiveUid&) = delete;
+	ArchiveUID(const ArchiveUID&) = delete;
+	ArchiveUID& operator=(const ArchiveUID&) = delete;
 
 private:
 	int m_previous;

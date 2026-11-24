@@ -27,7 +27,7 @@
 #include "editor/events/EventBus.hpp"
 #include "editor/events/ShaderEvents.hpp"
 #include "editor/operations/OperationManager.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "shader/RenderShader.hpp"
 #include "asset/data/ShaderData.hpp"

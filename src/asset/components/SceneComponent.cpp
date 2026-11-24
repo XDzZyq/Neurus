@@ -1,7 +1,7 @@
 #include "asset/components/SceneComponent.hpp"
 
 #include "core/Log.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/Serialize.hpp"
 #include "scene/Scene.hpp"
 

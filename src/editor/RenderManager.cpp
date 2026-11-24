@@ -4,7 +4,7 @@
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "core/Log.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Mesh.hpp"
 #include "render_api/RenderRequestSink.hpp"
 #include "render_api/RenderRequests.hpp"

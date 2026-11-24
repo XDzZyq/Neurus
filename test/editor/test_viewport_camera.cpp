@@ -48,7 +48,7 @@
 #include "editor/RenderManager.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/viewport/EditorViewport.hpp"

@@ -3,7 +3,7 @@
 #include "asset/data/MeshData.hpp"
 #include "command/Commands.hpp"
 #include "core/RenderConfig.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"

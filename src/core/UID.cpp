@@ -4,7 +4,7 @@
  */
 
 #include "core/UID.hpp"
-#include "core/ArchiveUid.hpp"
+#include "core/ArchiveUID.hpp"
 
 #include <limits>
 #include <stdexcept>
@@ -17,12 +17,12 @@ namespace
 thread_local int archiveId = -1;
 }
 
-ArchiveUid::ArchiveUid(int id)
+ArchiveUID::ArchiveUID(int id)
 	: m_previous(std::exchange(archiveId, id))
 {
 }
 
-ArchiveUid::~ArchiveUid()
+ArchiveUID::~ArchiveUID()
 {
 	archiveId = m_previous;
 }

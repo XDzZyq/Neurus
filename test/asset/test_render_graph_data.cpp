@@ -7,7 +7,7 @@
 
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 
 #include <cstdint>
 #include <optional>

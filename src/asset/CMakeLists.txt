@@ -1,5 +1,9 @@
 # Passive CPU resource data and file access do not depend on shader tooling.
 add_library(neurus_asset_data STATIC
+	ResourceManager.hpp
+	ResourceManager.cpp
+	ResourceType.hpp
+	ResourceType.cpp
 	PixelFormat.hpp
 	registrations/DataRegistration.hpp
 	registrations/DataRegistration.cpp

@@ -1,4 +1,4 @@
-#include "core/ResourceType.hpp"
+#include "asset/ResourceType.hpp"
 
 #include <map>
 #include <string>

@@ -5,7 +5,7 @@
 #include "asset/data/render_graph/PortSource.hpp"
 #include "asset/data/render_graph/PassShaderCatalog.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
-#include "core/ArchiveUid.hpp"
+#include "core/ArchiveUID.hpp"
 #include "core/IResourceLookup.hpp"
 
 #include <set>
@@ -277,7 +277,7 @@ std::unique_ptr<RenderGraphData> RestoreGraph(const RenderGraphRecord& record, c
 
 	const auto& ports = catalog.Ports();
 	std::vector<std::string> errors;
-	std::optional<ArchiveUid> identity;
+	std::optional<ArchiveUID> identity;
 	if (reservedUid)
 		identity.emplace(*reservedUid);
 	auto topology = FromRecord(record, ports, errors, &resources, acceptsShader);

@@ -3,7 +3,7 @@
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/components/GraphRecordJson.hpp"
 #include "core/Log.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/Serialize.hpp"
 
 #include <cereal/cereal.hpp>

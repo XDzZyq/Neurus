@@ -10,7 +10,7 @@
 #include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 
 #include <cereal/archives/json.hpp>

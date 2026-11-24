@@ -1,7 +1,7 @@
 #include "asset/components/ResourceArchiveWriter.hpp"
 
-#include "core/ResourceManager.hpp"
-#include "core/ResourceType.hpp"
+#include "asset/ResourceManager.hpp"
+#include "asset/ResourceType.hpp"
 
 #include <cereal/archives/json.hpp>
 #include <nlohmann/json.hpp>

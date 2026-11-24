@@ -7,7 +7,7 @@
 
 #include "editor/Editor.hpp"
 #include "editor/project/HistoryComponent.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "editor/RenderManager.hpp"
 #include "asset/components/GraphComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"

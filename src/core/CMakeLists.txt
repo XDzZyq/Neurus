@@ -3,17 +3,10 @@
 # Threading primitives for ThreadPool (std::jthread) — portable pthread link.
 find_package(Threads REQUIRED)
 
-# STATIC (not INTERFACE) since UID and ResourceManager have .cpp files
-# (s_count definition, non-template members). Consumers get the include dirs
-# and glm/cereal transitively via PUBLIC.
 add_library(neurus_core STATIC
 	UID.hpp
 	UID.cpp
-	ArchiveUid.hpp
-	ResourceManager.hpp
-	ResourceManager.cpp
-	ResourceType.hpp
-	ResourceType.cpp
+	ArchiveUID.hpp
 	Serialize.hpp
 	RenderConfig.hpp
 	GraphMorphism.hpp

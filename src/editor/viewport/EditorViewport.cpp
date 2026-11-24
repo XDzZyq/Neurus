@@ -13,7 +13,7 @@
 #include <cmath>
 
 #include "core/Log.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "scene/ObjectID.hpp"
 #include "scene/Scene.hpp"

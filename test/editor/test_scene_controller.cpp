@@ -17,7 +17,7 @@
 #include "editor/events/EditorEvents.hpp"
 #include "editor/operations/OperationManager.hpp"
 #include "editor/Input.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
 #include "scene/Camera.hpp"
