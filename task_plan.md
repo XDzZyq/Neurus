@@ -66,3 +66,7 @@ The full Windows Debug build succeeded. `make check` reported 1,004 passes, zero
 ## Phase 3 checkpoint
 
 Project open now resolves the scene, viewport camera and active graph through the indexed pool. The mixed fixture reads the shared OBJ once and does zero unused OBJ reads, image decodes or inactive shader compilations through first publication. Scene membership and graph topology are restored from local records. Scene and RenderGraphData no longer carry pending state. The full Debug build and 99 targeted CTest cases passed.
+
+## Phase 4 checkpoint
+
+Saving a partially loaded pool preserves unrequested records and writes current live objects. The application fixture reports zero additional content loads through Save As and one on first explicit lookup of each unused asset. The mixed-save regression covers a legacy name field, shared geometry, UID removal, an absent original project file, and reopening through both supported project readers. The focused persistence suite passed all 57 tests.

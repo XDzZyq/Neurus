@@ -114,13 +114,24 @@ std::string ResourceManager::RegisteredName(int id) const
 	return found == m_nameOf.end() ? std::string{} : found->second.name;
 }
 
-void ResourceManager::ForEachUID(const std::function<void(const std::shared_ptr<UID>&)>& fn) const
+std::vector<int> ResourceManager::RegisteredIds() const
 {
 	std::vector<int> ids;
 	ids.reserve(Size());
 	for (const auto& entry : m_typeOf)
 		ids.push_back(entry.first);
-	for (int id : ids)
+	return ids;
+}
+
+std::shared_ptr<const std::string> ResourceManager::ArchivedRecord(int id) const
+{
+	const auto found = m_loaders.find(id);
+	return found == m_loaders.end() ? nullptr : found->second.archivedRecord;
+}
+
+void ResourceManager::ForEachUID(const std::function<void(const std::shared_ptr<UID>&)>& fn) const
+{
+	for (int id : RegisteredIds())
 		if (auto resource = Get(id))
 			fn(resource);
 }
@@ -159,7 +170,10 @@ bool ResourceManager::EraseResource(int id) const
 		throw std::logic_error("Cannot remove a loading resource: " + std::to_string(id));
 
 	EraseName(id);
-	std::erase(m_byType.at(type->second), id);
+	auto tracked = m_byType.find(type->second);
+	std::erase(tracked->second, id);
+	if (tracked->second.empty())
+		m_byType.erase(tracked);
 	m_typeOf.erase(type);
 	m_loaders.erase(id);
 	resources_.erase(id);

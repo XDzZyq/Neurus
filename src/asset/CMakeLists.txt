@@ -55,6 +55,8 @@ add_library(neurus_asset STATIC
 	components/UIComponent.cpp
 	components/ResourceComponent.hpp
 	components/ResourceComponent.cpp
+	components/ResourceArchiveWriter.cpp
+	components/ResourceArchiveWriter.hpp
 )
 target_link_libraries(neurus_asset PUBLIC neurus_asset_data neurus_scene PRIVATE nlohmann_json)
 target_include_directories(neurus_asset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

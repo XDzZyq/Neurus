@@ -4,6 +4,7 @@
  */
 
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/components/ResourceArchiveWriter.hpp"
 #include "asset/components/GraphRecordJson.hpp"
 
 #include "core/ArchiveUid.hpp"
@@ -142,18 +143,23 @@ std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeNa
 	if (*type == typeid(RenderGraphData) && !ValidGraphShape(data.at("topology")))
 		throw std::runtime_error("invalid render graph topology");
 
-	// Cereal's unnamed base-class field is value0. Only follow that chain
-	// for identity; an unrelated field named o_id cannot identify a resource.
+	// Cereal puts each unnamed base at value0. Scene objects and concrete
+	// shaders each have a named base between their own fields and UID.
+	const char* nameField = ResourceNameField(typeName);
 	const Json* base = &data;
 	const Json* parent = nullptr;
-	while (base->contains("value0"))
+	const int depth = *type == typeid(UID) ? 0 : (nameField && *type != typeid(ObjectID) ? 2 : 1);
+	for (int i = 0; i < depth; ++i)
 	{
+		if (base->contains("o_id"))
+			throw std::runtime_error("misplaced resource identity");
 		parent = base;
 		base = &base->at("value0");
 	}
-	const char* nameField = shader ? "m_name" : "o_name";
+	if (base->contains("value0"))
+		throw std::runtime_error("invalid resource identity base");
 	std::string name;
-	if (parent && parent->contains(nameField))
+	if (nameField && parent && parent->contains(nameField))
 		name = parent->at(nameField).get<std::string>();
 	else
 		name = legacyName(typeName);
@@ -290,7 +296,7 @@ ResourceComponent::ResourceComponent(ResourceManager& resources, const IPassShad
 
 void ResourceComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	ar(cereal::make_nvp("m_resources", *m_resources));
+	WriteResourcePool(ar, *m_resources);
 }
 
 void ResourceComponent::Load(cereal::JSONInputArchive& ar)

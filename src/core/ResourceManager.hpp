@@ -124,6 +124,10 @@ public:
 	/// Registry name of a live or deferred resource, or an empty string for an unnamed UID.
 	std::string RegisteredName(int id) const;
 
+	/// Snapshot registered identities for project persistence without running their loaders.
+	std::vector<int> RegisteredIds() const;
+	std::shared_ptr<const std::string> ArchivedRecord(int id) const;
+
 	/// Returns a cached object without invoking a loader.
 	std::shared_ptr<UID> GetLive(int id) const;
 

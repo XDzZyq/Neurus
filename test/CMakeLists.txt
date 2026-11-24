@@ -315,6 +315,7 @@ add_executable(neurus_cpu_test
 	asset/test_imagedata.cpp
 	asset/test_pass_ports.cpp
 	asset/test_graph_component.cpp
+	asset/test_project_lazy_save.cpp
 	asset/test_shader_data.cpp
 	asset/test_shader_data_source.cpp
 	asset/test_render_graph_data.cpp

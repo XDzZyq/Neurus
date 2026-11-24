@@ -73,6 +73,10 @@ See [Scene Objects](../scene/objects.md) and [Serialization](../core/serializati
 
 Each object's loader wires `Mesh` to `MeshData` / `ShaderData`, `Environment` to `ImageData`, and `DebugMesh` to `MeshData`. Missing or unusable mesh shaders become null references with UID `0`, selecting cached renderer defaults without inserting replacement resources. Surviving names are restored deterministically by UID. See [UID and Resources](../core/uid-and-resources.md) and [Data Resources](data-resources.md).
 
+### Saving a mixed pool
+
+Project save walks the registry's UIDs. For a live entry it writes the object's current fields. For a deferred entry it writes the owned record and applies its current registered name. Both paths use the same output archive to assign cereal's pointer and type IDs. Removed UIDs have no entry to write. Save As can write the document after the original project file has been moved or deleted. External assets continue to use the normal asset path resolver.
+
 ## Optional config and render graph
 
 A missing, null or unusable whole config stays null and is omitted on save. A present config is constructed with declared defaults, then valid fields are restored independently; malformed fields keep their defaults without discarding valid neighbors. Read-only queries use effective defaults without creating project data. Explicit edits materialize stored config, and undo can restore absence.

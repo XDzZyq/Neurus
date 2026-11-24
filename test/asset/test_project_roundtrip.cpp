@@ -426,7 +426,7 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 	since = log.HeadSeq();
 	ASSERT_TRUE(app.SaveProject(savedCopy.path, reader, layout, error)) << error;
 #if defined(_DEBUG) || !defined(NDEBUG)
-	ExpectContentLoads(since, "save", {0, 1, 1, 1});
+	ExpectContentLoads(since, "save", {0, 0, 0, 0});
 #endif
 	since = log.HeadSeq();
 	const auto& pool = reader.GetResourceManager();
@@ -444,7 +444,7 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 	EXPECT_FALSE(loadedShader->GetStage(ShaderType::COMPUTE).spv.empty());
 	EXPECT_EQ(graph->nodes.at(5)->data.shader, loadedShader);
 #if defined(_DEBUG) || !defined(NDEBUG)
-	ExpectContentLoads(since, "lookup", {0, 0, 0, 0});
+	ExpectContentLoads(since, "lookup", {0, 1, 1, 1});
 #endif
 }
 

@@ -566,6 +566,11 @@ TEST(ResourceTypeIndex, BaseInstanceDoesNotHideDerivedObjectsFromForEachUID)
 	int objects = 0;
 	rm.ForEach<neurus::ObjectID>([&](const std::shared_ptr<neurus::ObjectID>&) { ++objects; });
 	EXPECT_EQ(objects, 1) << "ForEach<T> is exact-dynamic-type, not a base walk";
+
+	ASSERT_TRUE(rm.Remove(plain->GetObjectID()));
+	objects = 0;
+	rm.ForEach<neurus::ObjectID>([&](const auto&) { ++objects; });
+	EXPECT_EQ(objects, 2) << "removing the last exact match restores the base-type scan";
 }
 
 /**
