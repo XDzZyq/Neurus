@@ -70,3 +70,18 @@ Project open now resolves the scene, viewport camera and active graph through th
 ## Phase 4 checkpoint
 
 Saving a partially loaded pool preserves unrequested records and writes current live objects. The application fixture reports zero additional content loads through Save As and one on first explicit lookup of each unused asset. The mixed-save regression covers a legacy name field, shared geometry, UID removal, an absent original project file, and reopening through both supported project readers. The focused persistence suite passed all 57 tests.
+
+## Phase 5 verification
+
+Three independent Windows x64 MSVC Debug runs of the phase 1 fixture measured 40.837, 45.927 and 40.365 ms from project open to first graph publication. Median open time fell from 286.7 ms to 40.8 ms on this fixture. Filesystem caches may be warm. All three runs produced the same content-load counts.
+
+| Observed operation | Open | Immediate Save As | Explicit lookups after save |
+|---|---:|---:|---:|
+| Shared scene OBJ read | 1 | 0 | 0 |
+| Unused OBJ read | 0 | 0 | 1 |
+| Unused image decode | 0 | 0 | 1 |
+| Inactive graph shader compilation | 0 | 0 | 1 |
+
+The Debug build succeeded. `make check` passed 1,008 tests with zero failures. Windows skipped the POSIX-only registry permission test. PIL read all 25 reference PNGs, including the intentionally uniform sun shadow depth reference. The translation check found all 207 keys translated.
+
+A CLI-driven Vulkan session opened a fixture with unused mesh and image records, added and moved a camera, replayed undo and redo, changed gamma, saved and reopened the project. The camera retained its position of (1, 2, 3). Both unused UIDs and source paths survived Save As without a corresponding asset load in the log. Snapshot capture produced a nonuniform 1278 × 797 image after the first frame was presented. The application logs contained zero `VUID-` messages. The host also reported RenderDoc manifest, OBS layer version and Qt window geometry warnings.

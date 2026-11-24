@@ -77,19 +77,19 @@ Design:
 - `Load<T>(args...)` constructs and registers in one step, returning a typed `shared_ptr<T>`. It `static_assert`s that `T` derives from `UID`, and - when `T` has a public `o_name` - registers that name and mirrors the unique result back into `o_name` (see [Resource names](#resource-names)).
 - `Register(shared_ptr<UID>)` registers an already-constructed object (tests, legacy paths).
 - `RegisterDeferred` reserves a UID and records the concrete type and a loader. Project persistence supplies the loader and owns the interpretation of its serialized record.
-- `Contains` and `Size` include deferred entries. The first `Get(id)` runs the loader on the main thread, validates the returned object's UID and concrete type, and caches the shared pointer. Recursive requests can load dependencies. A cycle or a failed load produces a diagnostic and leaves the entry available for a retry. `Get<T>` casts the result and name lookup uses the same cache.
+- `Contains` and `Size` include deferred entries. The first `Get(id)` runs the loader on the main thread, validates the returned object's UID and concrete type, and caches the shared pointer. Recursive requests can load dependencies. A loader exception clears the in-progress flag so the lookup can be retried. If project persistence rejects a record and returns null, the pool drops its UID and name. `Get<T>` casts the result and name lookup uses the same cache.
 - `ForEach<T>(fn)` visits every pooled object whose **exact dynamic type** is `T`; this is how UID-keyed GPU caches follow the pool rather than the scene (pooled objects stay referenced by undo history after deletion). It is not a base-class walk: once a base instance (`ObjectID`, `UID`) is itself pooled, the per-type index holds only that instance and derived types are skipped. Base-class enumeration uses `ForEachUID(fn)` plus a cast. Neither callback may `Load` / `Register` / `Remove` / `Clear`, because mutating the pool during iteration invalidates the walk.
 - `Remove(int)` and `Clear()` mutate the pool; `Size()` reports its size.
 - `SetName(id, name)` / `GetByName(...)` own the display-name registry; names are unique per concrete dynamic type and are derived state, never serialized (see [Resource names](#resource-names)).
-- `serialize(ar)` writes every pooled object polymorphically (which is what makes the type registrations load-bearing); on load, each object's own `serialize(load)` restores its content. A load replaces the pool, so it also drops the previous name registry and rebuilds the type index from the restored objects; names are then re-seeded by the caller. `ResourceComponent` seeds `ObjectID` names from `o_name` and `ShaderData` names from `GetName`, because pooled shaders are addressed by name.
+- Direct cereal serialization of `ResourceManager` materializes the full pool. Project save uses `ResourceComponent` to write live objects and retained records into the same archive. Project open rebuilds the type and name indexes from the records before restoring scene membership.
 - Not thread-safe: main thread only.
 
 Two rules keep the pool decoupled:
 
-- The Scene neither owns nor references the pool. It holds plain typed pools and resolves references against the pool.
+- The scene holds typed maps of its members. During project open, `SceneComponent` looks up their UIDs and restores the maps, camera and selection.
 - No UID object knows the `ResourceManager`, and no UID object constructs another UID object internally - construction happens through `Load<T>`.
 
-Because the pool serializes the real objects (polymorphically) and the Scene serializes only ID references, the pool must be loaded before the Scene. See [Serialization](serialization.md) and [Project Serialization](../asset/project-serialization.md).
+Scene membership is stored as UID references, so project open must index the pool before reading the scene. See [Serialization](serialization.md) and [Project Serialization](../asset/project-serialization.md).
 
 ## Resource names
 
