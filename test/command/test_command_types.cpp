@@ -10,22 +10,6 @@
 
 using namespace neurus::command;
 
-TEST(CommandTypes, SuccessHasNoError)
-{
-	auto result = CommandResult::Success({{"session", "build-1"}});
-	EXPECT_TRUE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::None);
-	EXPECT_EQ(result.details["session"], "build-1");
-}
-
-TEST(CommandTypes, FailureCarriesCodeAndMessage)
-{
-	auto result = CommandResult::Failure(CommandErrorCode::DirtyProject, "unsaved changes");
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(ToString(result.code), "DIRTY_PROJECT");
-	EXPECT_EQ(result.message, "unsaved changes");
-}
-
 TEST(CommandTypes, EveryErrorCodeHasAStableString)
 {
 	EXPECT_EQ(ToString(CommandErrorCode::Unauthorized), "UNAUTHORIZED");

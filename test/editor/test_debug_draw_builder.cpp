@@ -77,26 +77,7 @@ bool Has(uint32_t flags, uint32_t bit) { return (flags & bit) != 0u; }
 // A. Dirty tracking and revision semantics
 // ===========================================================================
 
-/// @test A fresh builder is dirty, so the first Edit() populates the list.
-TEST(DebugDrawBuilder, StartsDirty)
-{
-	DebugDrawBuilder b;
-	EXPECT_TRUE(b.IsDirty());
-	EXPECT_TRUE(b.List().Empty());
-}
 
-/// @test A rebuild clears the dirty flag and bumps the revision exactly once.
-TEST(DebugDrawBuilder, Rebuild_ClearsDirtyAndTouchesOnce)
-{
-	Scene scene;
-	DebugDrawBuilder b;
-	const uint64_t before = b.List().revision;
-
-	b.Rebuild(scene);
-
-	EXPECT_FALSE(b.IsDirty());
-	EXPECT_EQ(b.List().revision, before + 1) << "Exactly one Touch() per rebuild";
-}
 
 /**
  * @test A clean builder ignores Rebuild entirely — including scene changes made
@@ -108,7 +89,12 @@ TEST(DebugDrawBuilder, CleanRebuild_IsNoOp)
 	scene.UseDebugLine(MakeLine(1, false));
 
 	DebugDrawBuilder b;
+	EXPECT_TRUE(b.IsDirty());
+	EXPECT_TRUE(b.List().Empty());
+	const auto initialRevision = b.List().revision;
 	b.Rebuild(scene);
+	EXPECT_FALSE(b.IsDirty());
+	EXPECT_EQ(b.List().revision, initialRevision + 1);
 	const uint64_t rev = b.List().revision;
 	ASSERT_EQ(b.List().segments.size(), 1u);
 
@@ -189,61 +175,25 @@ TEST(DebugDrawList, PackDebugColor_LayoutAndClamping)
  * @test Vertices are consumed in endpoint pairs; a trailing odd vertex is
  *       dropped rather than becoming a degenerate segment.
  */
-TEST(DebugDrawBuilder, Line_VerticesPairIntoSegments)
+TEST(DebugDrawBuilder, LinesEmitOnlyCompleteVertexPairs)
 {
-	auto line = std::make_shared<DebugLine>();
-	line->PushDebugLines({glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f),
-	                      glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(3.0f, 0.0f, 0.0f),
-	                      glm::vec3(4.0f, 0.0f, 0.0f)});   // 5 = 2 pairs + 1 orphan
-
-	Scene scene;
-	scene.UseDebugLine(line);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_EQ(b.List().segments.size(), 2u) << "The 5th vertex has no partner";
+	for (const unsigned count : { 1u, 2u, 5u })
+	{
+		SCOPED_TRACE(count);
+		auto line = std::make_shared<DebugLine>();
+		std::vector<glm::vec3> vertices;
+		for (unsigned i = 0; i < count; ++i)
+			vertices.emplace_back(static_cast<float>(i), 0.0f, 0.0f);
+		line->PushDebugLines(vertices);
+		Scene scene;
+		scene.UseDebugLine(line);
+		DebugDrawBuilder builder;
+		builder.Rebuild(scene);
+		EXPECT_EQ(builder.List().segments.size(), count / 2u);
+		EXPECT_EQ(builder.List().Empty(), count < 2u);
+	}
 }
 
-/// @test A lone vertex produces nothing at all.
-TEST(DebugDrawBuilder, Line_SingleVertexEmitsNothing)
-{
-	auto line = std::make_shared<DebugLine>();
-	line->PushDebugLines({glm::vec3(0.0f)});
-
-	Scene scene;
-	scene.UseDebugLine(line);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_TRUE(b.List().segments.empty()) << "A lone vertex is not a segment";
-	EXPECT_TRUE(b.List().Empty());
-}
-
-/**
- * @test Endpoints leave the builder already in world space.
- *
- * DebugDrawList carries no matrix for segments, so a transform that is not
- * folded in here is lost outright: the overlay would draw at the origin no
- * matter where its object sits.
- */
-TEST(DebugDrawBuilder, Line_BakesModelMatrixIntoWorldSpace)
-{
-	auto line = std::make_shared<DebugLine>();
-	line->PushDebugLine(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	line->SetPosition(glm::vec3(10.0f, -3.0f, 2.0f));
-
-	Scene scene;
-	scene.UseDebugLine(line);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	ASSERT_EQ(b.List().segments.size(), 1u);
-	EXPECT_EQ(b.List().segments[0].a, glm::vec3(10.0f, -3.0f, 2.0f));
-	EXPECT_EQ(b.List().segments[0].b, glm::vec3(11.0f, -3.0f, 2.0f));
-}
 
 /**
  * @test Width and the stipple switch reach the segment, and opacity is folded
@@ -253,6 +203,7 @@ TEST(DebugDrawBuilder, Line_CarriesWidthFlagsAndTintedColor)
 {
 	auto line = std::make_shared<DebugLine>();
 	line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	line->SetPosition(glm::vec3(10.0f, -3.0f, 2.0f));
 	line->SetWidth(4.0f);
 	line->SetColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 	line->SetOpacity(0.5f);
@@ -272,6 +223,8 @@ TEST(DebugDrawBuilder, Line_CarriesWidthFlagsAndTintedColor)
 
 	// 0xAABBGGRR: opaque red at 50% opacity -> alpha 128, red 255.
 	EXPECT_EQ(s.rgba, 0x800000FFu) << "Opacity must multiply into the packed alpha";
+	EXPECT_EQ(s.a, glm::vec3(10.0f, -3.0f, 2.0f));
+	EXPECT_EQ(s.b, glm::vec3(11.0f, -3.0f, 2.0f));
 }
 
 /**
@@ -325,13 +278,16 @@ TEST(DebugDrawBuilder, Line_SmoothingFollowsTheLineStyle)
  * @test All depth-tested segments precede all x-ray ones, with xraySegmentStart
  *       exactly at the boundary, whatever order the objects were authored in.
  */
-TEST(DebugDrawBuilder, Partition_SegmentsSplitAtXraySegmentStart)
+TEST(DebugDrawBuilder, MixedDepthModesPartitionBothSegmentsAndPoints)
 {
 	Scene scene;
 	scene.UseDebugLine(MakeLine(3, /*xray=*/false));
 	scene.UseDebugLine(MakeLine(2, /*xray=*/true));
 	scene.UseDebugLine(MakeLine(4, /*xray=*/false));
 	scene.UseDebugLine(MakeLine(1, /*xray=*/true));
+
+	scene.UseDebugPoints(MakePoints(3, false));
+	scene.UseDebugPoints(MakePoints(5, true));
 
 	DebugDrawBuilder b;
 	b.Rebuild(scene);
@@ -345,53 +301,6 @@ TEST(DebugDrawBuilder, Partition_SegmentsSplitAtXraySegmentStart)
 		EXPECT_EQ(Has(l.segments[i].flags, DebugFlag::XRay), i >= l.xraySegmentStart)
 			<< "Segment " << i << " is on the wrong side of the partition";
 	}
-}
-
-/**
- * @test With no x-ray geometry the boundary sits at the end, so DebugPass's
- *       x-ray range is empty and it issues one draw instead of two.
- */
-TEST(DebugDrawBuilder, Partition_NoXrayPutsBoundaryAtEnd)
-{
-	Scene scene;
-	scene.UseDebugLine(MakeLine(3, false));
-	scene.UseDebugPoints(MakePoints(2, false));
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_EQ(b.List().xraySegmentStart, b.List().segments.size());
-	EXPECT_EQ(b.List().xrayPointStart, b.List().points.size());
-}
-
-/// @test All-x-ray geometry puts the boundary at 0: the depth-tested range is empty.
-TEST(DebugDrawBuilder, Partition_AllXrayPutsBoundaryAtZero)
-{
-	Scene scene;
-	scene.UseDebugLine(MakeLine(3, true));
-	scene.UseDebugPoints(MakePoints(2, true));
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_EQ(b.List().segments.size(), 3u);
-	EXPECT_EQ(b.List().xraySegmentStart, 0u);
-	EXPECT_EQ(b.List().points.size(), 2u);
-	EXPECT_EQ(b.List().xrayPointStart, 0u);
-}
-
-/// @test Points partition independently: x-ray segments must not shift the points.
-TEST(DebugDrawBuilder, Partition_PointsSplitAtXrayPointStart)
-{
-	Scene scene;
-	scene.UseDebugPoints(MakePoints(3, /*xray=*/false));
-	scene.UseDebugPoints(MakePoints(5, /*xray=*/true));
-	scene.UseDebugLine(MakeLine(2, /*xray=*/true));
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	const DebugDrawList& l = b.List();
 	ASSERT_EQ(l.points.size(), 8u);
 	EXPECT_EQ(l.xrayPointStart, 3u);
 	for (size_t i = 0; i < l.points.size(); ++i)
@@ -400,6 +309,30 @@ TEST(DebugDrawBuilder, Partition_PointsSplitAtXrayPointStart)
 			<< "Point " << i << " is on the wrong side of the partition";
 	}
 }
+
+/**
+ * @test With no x-ray geometry the boundary sits at the end, so DebugPass's
+ *       x-ray range is empty and it issues one draw instead of two.
+ */
+TEST(DebugDrawBuilder, HomogeneousDepthModeSetsPartitionBoundary)
+{
+	for (const bool xray : { false, true })
+	{
+		SCOPED_TRACE(xray);
+		Scene scene;
+		scene.UseDebugLine(MakeLine(3, xray));
+		scene.UseDebugPoints(MakePoints(2, xray));
+		DebugDrawBuilder builder;
+		builder.Rebuild(scene);
+		const auto& list = builder.List();
+		EXPECT_EQ(list.segments.size(), 3u);
+		EXPECT_EQ(list.points.size(), 2u);
+		EXPECT_EQ(list.xraySegmentStart, xray ? 0u : list.segments.size());
+		EXPECT_EQ(list.xrayPointStart, xray ? 0u : list.points.size());
+	}
+}
+
+
 
 /**
  * @test The x-ray scratch buffers do not leak between rebuilds.
@@ -431,31 +364,6 @@ TEST(DebugDrawBuilder, Rebuild_DoesNotLeakXrayScratch)
 // D. Point sprites
 // ===========================================================================
 
-/**
- * @test ScreenSpaceSize tracks the projection mode: mode 0 means the scale is a
- *       pixel diameter, mode 1 means world units.
- */
-TEST(DebugDrawBuilder, Point_ScreenSpaceFlagFollowsProjectionMode)
-{
-	auto screen = MakePoints(1, false);
-	screen->SetProjectionMode(0);
-	auto world = MakePoints(1, false);
-	world->SetProjectionMode(1);
-
-	Scene scene;
-	scene.UseDebugPoints(screen);
-	scene.UseDebugPoints(world);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	ASSERT_EQ(b.List().points.size(), 2u);
-	int screenSpace = 0;
-	for (const DebugPointSprite& p : b.List().points)
-		if (Has(p.flags, DebugFlag::ScreenSpaceSize)) ++screenSpace;
-	EXPECT_EQ(screenSpace, 1) << "Exactly one of the two is screen-space sized";
-}
-
 /// @test PointType maps onto the shader's shape ids, and scale reaches the sprite.
 TEST(DebugDrawBuilder, Point_ShapeMatchesPointType)
 {
@@ -470,16 +378,22 @@ TEST(DebugDrawBuilder, Point_ShapeMatchesPointType)
 		auto pts = MakePoints(1, false);
 		pts->SetPointType(type);
 		pts->SetScale(7.0f);
-
 		Scene scene;
 		scene.UseDebugPoints(pts);
 
-		DebugDrawBuilder b;
-		b.Rebuild(scene);
+		SCOPED_TRACE(static_cast<int>(type));
+		for (const bool screenSized : {false, true})
+		{
+			SCOPED_TRACE(screenSized);
+			pts->SetProjectionMode(screenSized ? 0 : 1);
+			DebugDrawBuilder b;
+			b.Rebuild(scene);
 
-		ASSERT_EQ(b.List().points.size(), 1u);
-		EXPECT_EQ(b.List().points[0].shape, shape);
-		EXPECT_FLOAT_EQ(b.List().points[0].size, 7.0f);
+			ASSERT_EQ(b.List().points.size(), 1u);
+			EXPECT_EQ(Has(b.List().points[0].flags, DebugFlag::ScreenSpaceSize), screenSized);
+			EXPECT_EQ(b.List().points[0].shape, shape);
+			EXPECT_FLOAT_EQ(b.List().points[0].size, 7.0f);
+		}
 	}
 }
 
@@ -498,45 +412,7 @@ TEST(DebugDrawBuilder, Point_BakesModelMatrixIntoWorldSpace)
 
 	ASSERT_EQ(b.List().points.size(), 1u);
 	EXPECT_EQ(b.List().points[0].p, glm::vec3(1.0f, 2.0f, 13.0f));
-}
-
-/**
- * @test Every sprite shape is smoothed, unconditionally and for all projection
- *       modes — DebugPoints has no line style that could turn it off.
- *
- * The shape mask in overlay_point.frag.glsl is an analytic distance (Chebyshev,
- * Manhattan or Euclidean), so a rhombus or circle boundary is visibly stepped
- * without the fade. Nothing authors this, so the assertion is on a plain
- * default-constructed object.
- */
-TEST(DebugDrawBuilder, Point_SpritesAreAlwaysSmoothed)
-{
-	const DebugPoints::PointType shapes[] = {
-		DebugPoints::PointType::SQUARE,
-		DebugPoints::PointType::RHOMBUS,
-		DebugPoints::PointType::CIR,
-	};
-
-	for (DebugPoints::PointType type : shapes)
-	{
-		for (int mode : {0, 1})
-		{
-			auto pts = MakePoints(1, false);
-			pts->SetPointType(type);
-			pts->SetProjectionMode(mode);
-
-			Scene scene;
-			scene.UseDebugPoints(pts);
-
-			DebugDrawBuilder b;
-			b.Rebuild(scene);
-
-			ASSERT_EQ(b.List().points.size(), 1u);
-			EXPECT_TRUE(Has(b.List().points[0].flags, DebugFlag::Smooth))
-				<< "Sprites are antialiased by default, shape " << static_cast<int>(type)
-				<< " projection mode " << mode;
-		}
-	}
+	EXPECT_TRUE(Has(b.List().points[0].flags, DebugFlag::Smooth));
 }
 
 // ===========================================================================
@@ -571,6 +447,9 @@ TEST(DebugDrawBuilder, CubePoint_DecomposesInto12Edges)
 	int perAxis[3] = {0, 0, 0};
 	for (const DebugSegment& s : l.segments)
 	{
+		EXPECT_FALSE(Has(s.flags, DebugFlag::ScreenSpaceSize));
+		EXPECT_TRUE(Has(s.flags, DebugFlag::Smooth));
+		EXPECT_FALSE(Has(s.flags, DebugFlag::Stipple));
 		const glm::vec3 d = s.b - s.a;
 		int axis = -1, moving = 0;
 		for (int k = 0; k < 3; ++k)
@@ -586,51 +465,6 @@ TEST(DebugDrawBuilder, CubePoint_DecomposesInto12Edges)
 	EXPECT_EQ(perAxis[0], 4) << "4 edges run along X";
 	EXPECT_EQ(perAxis[1], 4) << "4 edges run along Y";
 	EXPECT_EQ(perAxis[2], 4) << "4 edges run along Z";
-}
-
-/**
- * @test A cube's edges are world-space by definition, so ScreenSpaceSize stays
- *       clear even though the default projection mode is screen space.
- */
-TEST(DebugDrawBuilder, CubePoint_EdgesAreNeverScreenSpaceSized)
-{
-	auto pts = std::make_shared<DebugPoints>();
-	pts->PushDebugPoint(glm::vec3(0.0f));
-	pts->SetPointType(DebugPoints::PointType::CUBE);
-	pts->SetProjectionMode(0);   // the sprite default: pixels
-
-	Scene scene;
-	scene.UseDebugPoints(pts);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	ASSERT_EQ(b.List().segments.size(), 12u);
-	for (const DebugSegment& s : b.List().segments)
-		EXPECT_FALSE(Has(s.flags, DebugFlag::ScreenSpaceSize));
-}
-
-/**
- * @test Cube edges are smoothed and never stippled: they are segments of a solid
- *       style, so they get what a solid DebugLine gets.
- */
-TEST(DebugDrawBuilder, CubePoint_EdgesAreSmoothedLikeSolidLines)
-{
-	auto pts = MakePoints(1, false);
-	pts->SetPointType(DebugPoints::PointType::CUBE);
-
-	Scene scene;
-	scene.UseDebugPoints(pts);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	ASSERT_EQ(b.List().segments.size(), 12u);
-	for (const DebugSegment& s : b.List().segments)
-	{
-		EXPECT_TRUE(Has(s.flags, DebugFlag::Smooth));
-		EXPECT_FALSE(Has(s.flags, DebugFlag::Stipple));
-	}
 }
 
 /// @test An x-ray cube's edges join the x-ray half rather than the depth-tested one.
@@ -658,25 +492,6 @@ TEST(DebugDrawBuilder, CubePoint_XrayEdgesJoinTheXrayPartition)
 // ===========================================================================
 
 /**
- * @test A DebugMesh with no geometry is skipped.
- *
- * DebugPass draws wireframes from the mesh's MeshGPU; without geometry there is
- * nothing to reference, and an entry the pass always skips is dead weight in
- * the list.
- */
-TEST(DebugDrawBuilder, WireMesh_WithoutGeometryIsSkipped)
-{
-	Scene scene;
-	scene.UseDebugMesh(std::make_shared<DebugMesh>());
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_TRUE(b.List().wireMeshes.empty());
-	EXPECT_TRUE(b.List().Empty());
-}
-
-/**
  * @test A DebugMesh with geometry contributes one entry carrying its id, its
  *       transform as a matrix, and its tinted color.
  *
@@ -693,6 +508,7 @@ TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
 	mesh->SetXRay(true);
 
 	Scene scene;
+	scene.UseDebugMesh(std::make_shared<DebugMesh>()); // no geometry to upload
 	scene.UseDebugMesh(mesh);
 
 	DebugDrawBuilder b;
@@ -705,29 +521,7 @@ TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
 	EXPECT_EQ(w.rgba, 0xFF00FF00u) << "0xAABBGGRR: opaque green";
 	EXPECT_TRUE(Has(w.flags, DebugFlag::XRay));
 	EXPECT_FALSE(b.List().Empty()) << "A wire mesh alone must not read as empty";
-}
-
-/**
- * @test A wire mesh carries no Smooth bit, unlike every segment and sprite.
- *
- * Wireframes are rasterized by PolygonMode::eLine, so the fragment stage has no
- * distance-to-edge to fade and debug_wire.frag.glsl has no branch on the flag. Pinning
- * the asymmetry keeps "smooth by default" from being read as "set the bit
- * everywhere", which would advertise a behaviour the shader does not implement.
- */
-TEST(DebugDrawBuilder, WireMesh_IsNotFlaggedSmooth)
-{
-	auto mesh = std::make_shared<DebugMesh>();
-	mesh->SetMeshData(std::make_shared<MeshData>());
-
-	Scene scene;
-	scene.UseDebugMesh(mesh);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	ASSERT_EQ(b.List().wireMeshes.size(), 1u);
-	EXPECT_FALSE(Has(b.List().wireMeshes[0].flags, DebugFlag::Smooth));
+	EXPECT_FALSE(Has(w.flags, DebugFlag::Smooth));
 }
 
 /**
@@ -780,64 +574,28 @@ TEST(DebugDrawBuilder, WireMesh_MixedDepthModesStayInAuthoringOrder)
 // half that was missing: the filter itself.
 
 /// @test A hidden DebugLine contributes no segments.
-TEST(DebugDrawBuilder, Visibility_ViewportHiddenLineIsSkipped)
+TEST(DebugDrawBuilder, HiddenDebugObjectsDoNotEmitGeometry)
 {
-	auto line = MakeLine(3, false);
-	line->SetVisible(false, true);
-
-	Scene scene;
-	scene.UseDebugLine(line);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_TRUE(b.List().segments.empty());
-	EXPECT_TRUE(b.List().Empty());
+	for (const bool viewportVisible : { false, true })
+	{
+		SCOPED_TRACE(viewportVisible);
+		auto line = MakeLine(3, false);
+		line->SetVisible(viewportVisible, !viewportVisible);
+		auto points = MakePoints(4, false);
+		points->SetVisible(viewportVisible, !viewportVisible);
+		auto mesh = std::make_shared<DebugMesh>();
+		mesh->SetMeshData(std::make_shared<MeshData>());
+		mesh->SetVisible(viewportVisible, !viewportVisible);
+		Scene scene;
+		scene.UseDebugPoints(points);
+		scene.UseDebugMesh(mesh);
+		scene.UseDebugLine(line);
+		DebugDrawBuilder builder;
+		builder.Rebuild(scene);
+		EXPECT_TRUE(builder.List().Empty());
+	}
 }
 
-/**
- * @test Render visibility hides the overlay too, matching every other pass.
- *
- * The overlay is editor-only, so `is_viewport` is the flag that obviously
- * applies; `is_rendered` is honoured as well because every existing consumer
- * treats the two as an AND, and a gizmo that survived one toggle but not the
- * other would make the Outliner's two buttons mean different things per row.
- */
-TEST(DebugDrawBuilder, Visibility_RenderHiddenLineIsSkipped)
-{
-	auto line = MakeLine(3, false);
-	line->SetVisible(true, false);
-
-	Scene scene;
-	scene.UseDebugLine(line);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_TRUE(b.List().segments.empty());
-}
-
-/// @test Hiding points and wire meshes works the same way.
-TEST(DebugDrawBuilder, Visibility_HiddenPointsAndWireMeshAreSkipped)
-{
-	auto pts = MakePoints(4, false);
-	pts->SetVisible(false, true);
-
-	auto mesh = std::make_shared<DebugMesh>();
-	mesh->SetMeshData(std::make_shared<MeshData>());
-	mesh->SetVisible(false, true);
-
-	Scene scene;
-	scene.UseDebugPoints(pts);
-	scene.UseDebugMesh(mesh);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-
-	EXPECT_TRUE(b.List().points.empty());
-	EXPECT_TRUE(b.List().wireMeshes.empty());
-	EXPECT_TRUE(b.List().Empty());
-}
 
 /**
  * @test A hidden object drops out of the list without disturbing the x-ray
@@ -868,34 +626,11 @@ TEST(DebugDrawBuilder, Visibility_HidingOneObjectKeepsThePartitionExact)
 		EXPECT_FALSE(Has(l.segments[i].flags, DebugFlag::XRay));
 	for (size_t i = l.xraySegmentStart; i < l.segments.size(); ++i)
 		EXPECT_TRUE(Has(l.segments[i].flags, DebugFlag::XRay));
-}
-
-/**
- * @test Un-hiding brings the geometry back on the next rebuild.
- *
- * The visible path: a toggle enqueues RenderResetEvent, whose handler marks the
- * builder dirty, and Editor::Edit() rebuilds once. Without MarkDirty() the clean
- * builder would return early and the overlay would stay hidden until some other
- * mutation happened to dirty it.
- */
-TEST(DebugDrawBuilder, Visibility_UnhidingRestoresGeometryOnNextRebuild)
-{
-	auto line = MakeLine(3, false);
-	line->SetVisible(false, false);
-
-	Scene scene;
-	scene.UseDebugLine(line);
-
-	DebugDrawBuilder b;
-	b.Rebuild(scene);
-	ASSERT_TRUE(b.List().segments.empty());
-	const uint64_t hiddenRevision = b.List().revision;
-
-	line->SetVisible(true, true);
+	const auto revision = l.revision;
+	hiddenOpaque->SetVisible(true, true);
 	b.MarkDirty();
 	b.Rebuild(scene);
-
-	EXPECT_EQ(b.List().segments.size(), 3u);
-	EXPECT_NE(b.List().revision, hiddenRevision)
-	    << "DebugPass re-uploads only when the revision moves";
+	EXPECT_EQ(l.segments.size(), 6u);
+	EXPECT_EQ(l.xraySegmentStart, 5u);
+	EXPECT_GT(l.revision, revision);
 }

@@ -46,30 +46,27 @@ protected:
 	int m_groundUid = 0;
 };
 
-TEST_F(ShaderCreateTest, LoadFragmentBuildsRenderBundleWithDefaultVertex)
+TEST_F(ShaderCreateTest, ImportSuppliesTheMissingGraphicsStage)
 {
-	neurus::ShaderRequestResult result;
-	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
-		"res/shaders/render/gbuffer.frag.glsl", "", &result});
-	ASSERT_NE(result.shaderUid, 0) << result.error;
-	auto shader = m_editor.GetResourceManager().Get<neurus::RenderShader>(result.shaderUid);
-	ASSERT_TRUE(shader);
-	EXPECT_TRUE(shader->HasStage(neurus::ShaderType::VERTEX));
-	EXPECT_TRUE(shader->HasStage(neurus::ShaderType::FRAGMENT));
-	EXPECT_FALSE(shader->GetStage(neurus::ShaderType::FRAGMENT).code.empty());
-	EXPECT_FALSE(shader->GetStage(neurus::ShaderType::VERTEX).code.empty());
-}
-
-TEST_F(ShaderCreateTest, LoadVertexUsesDefaultFragment)
-{
-	neurus::ShaderRequestResult result;
-	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
-		"res/shaders/render/gbuffer.vert.glsl", "MyVert", &result});
-	ASSERT_NE(result.shaderUid, 0) << result.error;
-	auto shader = m_editor.GetResourceManager().Get<neurus::RenderShader>(result.shaderUid);
-	ASSERT_TRUE(shader);
-	EXPECT_FALSE(shader->GetStage(neurus::ShaderType::FRAGMENT).code.empty());
-	EXPECT_EQ(shader->GetName(), "MyVert");
+	struct Case { const char* path; const char* name; };
+	for (const Case row : { Case{"res/shaders/render/gbuffer.frag.glsl", "MyFrag"},
+	                        Case{"res/shaders/render/gbuffer.vert.glsl", "MyVert"} })
+	{
+		SCOPED_TRACE(row.path);
+		m_editor.ClearDirty();
+		neurus::ShaderRequestResult result;
+		m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{row.path, row.name, &result});
+		ASSERT_NE(result.shaderUid, 0) << result.error;
+		auto shader = m_editor.GetResourceManager().Get<neurus::RenderShader>(result.shaderUid);
+		ASSERT_TRUE(shader);
+		EXPECT_EQ(shader->GetName(), row.name);
+		for (auto stage : { neurus::ShaderType::VERTEX, neurus::ShaderType::FRAGMENT })
+		{
+			ASSERT_TRUE(shader->HasStage(stage));
+			EXPECT_FALSE(shader->GetStage(stage).code.empty());
+		}
+		EXPECT_TRUE(m_editor.IsDirty());
+	}
 }
 
 TEST_F(ShaderCreateTest, LoadComputePoolsAComputeShader)
@@ -132,35 +129,6 @@ TEST_F(ShaderCreateTest, ShaderCreateEventCreatesAndLinksDefaultShader)
 	EXPECT_TRUE(m_editor.IsDirty());
 }
 
-TEST_F(ShaderCreateTest, CreateDefaultBuildsAndCompilesBothStages)
-{
-	neurus::ShaderRequestResult result;
-	m_editor.GetEventQueue().Emit(neurus::ShaderCreateRequested{
-		GroundUid(), "", "", 0, 0, &result});
-	ASSERT_NE(result.shaderUid, 0) << result.error;
-
-	auto mesh = m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid());
-	ASSERT_TRUE(mesh->o_shader);
-	EXPECT_FALSE(mesh->o_shader->GetStage(neurus::ShaderType::VERTEX).spv.empty());
-	EXPECT_FALSE(mesh->o_shader->GetStage(neurus::ShaderType::FRAGMENT).spv.empty());
-}
-
-TEST_F(ShaderCreateTest, CreateFromPathsUsesTheGivenSources)
-{
-	neurus::ShaderCreateRequested request;
-	request.objectUid = GroundUid();
-	request.vertexPath = "res/shaders/render/gbuffer.vert.glsl";
-	request.fragmentPath = "res/shaders/render/gbuffer.frag.glsl";
-	neurus::ShaderRequestResult result;
-	request.result = &result;
-	m_editor.GetEventQueue().Emit(request);
-	ASSERT_NE(result.shaderUid, 0) << result.error;
-
-	auto shader = m_editor.GetResourceManager().Get<neurus::RenderShader>(result.shaderUid);
-	ASSERT_TRUE(shader);
-	EXPECT_EQ(shader->GetFragPath(), request.fragmentPath);
-}
-
 TEST_F(ShaderCreateTest, CreateFromPooledShaderCopiesTheMatchingStage)
 {
 	neurus::ShaderRequestResult loaded;
@@ -189,11 +157,20 @@ TEST_F(ShaderCreateTest, ReplaceIsOneUndoEntryAndRestoresTheOldShader)
 		GroundUid(), "", "", 0, 0, &first});
 	ASSERT_NE(first.shaderUid, 0) << first.error;
 
+	auto mesh = m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid());
+	ASSERT_TRUE(mesh->o_shader);
+	EXPECT_FALSE(mesh->o_shader->GetStage(neurus::ShaderType::VERTEX).spv.empty());
+	EXPECT_FALSE(mesh->o_shader->GetStage(neurus::ShaderType::FRAGMENT).spv.empty());
+	EXPECT_TRUE(m_editor.IsDirty());
+
 	neurus::ShaderRequestResult second;
 	m_editor.GetEventQueue().Emit(neurus::ShaderCreateRequested{
-		GroundUid(), "", "", 0, 0, &second});
+		GroundUid(), "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl", 0, 0, &second});
 	ASSERT_NE(second.shaderUid, 0) << second.error;
 	ASSERT_NE(second.shaderUid, first.shaderUid);
+	auto replacement = m_editor.GetResourceManager().Get<neurus::RenderShader>(second.shaderUid);
+	ASSERT_TRUE(replacement);
+	EXPECT_EQ(replacement->GetFragPath(), "res/shaders/render/gbuffer.frag.glsl");
 
 	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shaderId,
 	          second.shaderUid);
@@ -238,7 +215,9 @@ TEST_F(ShaderCreateTest, RemoveDropsTheReferenceAndUndoRelinks)
 		GroundUid(), "", "", 0, 0, &created});
 	ASSERT_NE(created.shaderUid, 0) << created.error;
 
+	m_editor.ClearDirty();
 	m_editor.GetEventQueue().Emit(neurus::ShaderRemoveRequested{GroundUid()});
+	EXPECT_TRUE(m_editor.IsDirty());
 	EXPECT_FALSE(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shader);
 	EXPECT_TRUE(m_editor.GetResourceManager().Get<neurus::RenderShader>(created.shaderUid));
 
@@ -273,26 +252,4 @@ TEST_F(ShaderCreateTest, CompileFailureDuringCreateLeavesPoolAndMeshUntouched)
 	m_editor.GetResourceManager().ForEachUID(
 		[&](const std::shared_ptr<neurus::UID>&) { ++after; });
 	EXPECT_EQ(after, before);
-}
-
-TEST_F(ShaderCreateTest, CreateAndLoadMarkProjectDirty)
-{
-	EXPECT_FALSE(m_editor.IsDirty());
-
-	neurus::ShaderRequestResult created;
-	m_editor.GetEventQueue().Emit(neurus::ShaderCreateRequested{
-		GroundUid(), "", "", 0, 0, &created});
-	ASSERT_NE(created.shaderUid, 0) << created.error;
-	EXPECT_TRUE(m_editor.IsDirty());
-
-	m_editor.ClearDirty();
-	neurus::ShaderRequestResult loaded;
-	m_editor.GetEventQueue().Emit(neurus::ShaderImportRequested{
-		"res/shaders/render/gbuffer.frag.glsl", "DirtyFrag", &loaded});
-	ASSERT_NE(loaded.shaderUid, 0) << loaded.error;
-	EXPECT_TRUE(m_editor.IsDirty());
-
-	m_editor.ClearDirty();
-	m_editor.GetEventQueue().Emit(neurus::ShaderRemoveRequested{GroundUid()});
-	EXPECT_TRUE(m_editor.IsDirty());
 }

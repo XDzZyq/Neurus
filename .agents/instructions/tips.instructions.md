@@ -14,6 +14,10 @@ make release    # configure + build Release
 make nobuild    # generate the VS 2022 solution at ../Neurus_VS2022
 ```
 
+Use repeated CTest `-L` filters to intersect layer and severity, for example
+`make check FILTER="-L Layer::Editor -L Severity::High"`. When introducing a
+Google Test suite, assign its labels in `cmake/NeurusTestLabels.cmake`.
+
 Direct CMake equivalents:
 
 ```

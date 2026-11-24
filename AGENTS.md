@@ -3,75 +3,30 @@
 Guidance for agentic coding in Neurus: a C++20 Vulkan-HPP 1.4 real-time renderer
 built around strict layer isolation.
 
-System design, architecture and style are **product documentation** under
-[`docs/`](docs/README.md). This file is the entry point - hard rules, the
-development workflow, and a routing table. It does not restate design prose;
-route to `docs/` or `.github/instructions/` instead.
+Use the shared [neurus-develop skill](.agents/skills/neurus-develop/SKILL.md)
+when implementing or reviewing changes to layer boundaries, editor operations
+or GPU uploads. Detailed contributor rules live in the
+[instructions index](.agents/instructions/README.md). System design and style
+live in the [product documentation](docs/README.md).
 
 ---
 
 ## Hard Rules
 
-### Layer isolation is unidirectional
+### Layer isolation and ownership
 
-```
-UI (Qt6) -> UIEvents (Qt signals) -> Editor -> EventQueue (typed events)
-         -> Controllers -> Context -> Renderer
-```
+- Application wires the layers. Editor owns scene mutation. UI and Script use
+  public Editor contracts. Renderer consumes owned snapshots and typed requests.
+- Keep controllers lean and event-driven. Submit fine-grained operations through
+  `IOperationSink`. In production, only the operation system may use
+  `OperationContext` and call `Operation::Apply`.
+- Trace Mesh or RenderGraph before adding a GPU upload. Application owns the
+  Vulkan device and surface. Renderer owns the swapchain and GPU resources.
+- Keep command, IPC and CLI targets Qt-free and Vulkan-free. Execute session
+  commands on the application main thread.
 
-Each arrow is a **decoupled interface** (signals, typed events, context objects).
-No layer knows the internals of the next.
-
-- **Application** (`src/app/`): composition root; owns the Qt app, Preferences,
-  `VulkanContext` (instance, device, queues) and the `VkSurfaceKHR`; wires UI,
-  Editor, Renderer, Script and the command `SessionServer`.
-- **Renderer** (`src/render/`): pure rendering service; borrows the surface,
-  device and queues and owns the swapchain and every GPU resource below it;
-  consumes read-only scene data; must never mutate application state; must never
-  include Editor or UI headers.
-- **Editor** (`src/editor/`): application logic and scene mutation; owns the
-  Scene, `RenderConfig`, Controllers and the `ResourceManager`; communicates via
-  Context, UIEvents, its internal typed EventQueue and posted `RenderRequest`s.
-- **UI** (`src/ui/`): Qt6 Widgets presentation only; owns the native window and
-  exposes its handle (no Vulkan objects); emits signals; must never include
-  Renderer headers.
-- **Script** (`src/script/`): embedded CPython `neurus` module; reads the scene
-  through a read-only `ScriptContext` and mutates only by emitting typed editor
-  events through `ScriptDispatch`; never calls Editor methods, never reaches
-  project save or snapshot capture, never includes Renderer or UI headers.
-- **Asset** (`src/asset/`): Vulkan-free CPU-side asset loading (`MeshData`,
-  `ImageData`, `PixelFormat`).
-- **Scene** (`src/scene/`): Vulkan-free logical objects (Camera, Light, Mesh,
-  Transform, overlays).
-
-### Communication
-
-Cross-layer traffic MUST go through exactly one of:
-
-- **UIEvents** (Qt Signals/Slots) for UI <-> Editor.
-- **RenderRequest** (typed values posted through `RenderRequestSink`) for
-  Editor -> Renderer GPU work. The Editor's `EventQueue` is Editor-internal
-  (input -> Controllers) and never crosses into the Renderer.
-- **EventQueue** (typed events) inside the Editor: the UI boundary is enqueued
-  and drained once per frame, while controller reactions dispatch synchronously.
-- **Typed editor events** (`ScriptDispatch` -> `IEventQueue`) for Script ->
-  Editor writes, dispatched synchronously.
-- **Context objects** (`RenderContext`, `UIContext`, `ScriptContext`) for
-  read-only data queries.
-
-Direct coupling across layers is forbidden. Controllers react to discrete typed
-events - never poll per frame. Renderer never calls back into Editor.
-
-### Vulkan ownership
-
-- Application owns the instance, device and queues (`src/app/VulkanContext`, no
-  `QVulkanInstance`) and the `VkSurfaceKHR`, created with
-  `platform::CreateSurface` from the viewport's native window handle.
-- Renderer borrows the surface, device and queues and owns everything below
-  them: swapchain, pipelines, command pools and all GPU resources.
-- UI owns no Vulkan objects; it only exposes the native window handle.
-- No shared ownership of GPU resources across layers. GPU-resource classes
-  `= delete` copy/assign and use `vk::raii` - never a raw `vkDestroy*`.
+Follow the [architecture instructions](.agents/instructions/architecture.instructions.md)
+for permitted interfaces, controller dependencies, replay authority and GPU ownership.
 
 ### Platform-specific code is isolated
 
@@ -123,7 +78,7 @@ swapchain. The Linux product binary is `neurus_headless` (no Qt, driven by the
      PIL (not empty, not uniform, not all-black/white) - never cheat yourself -
      and run `python scripts/extract_i18n.py --check` for any new user-visible
      string.
-4. **Update docs.** Keep `docs/` and `.github/instructions/` current before
+4. **Update docs.** Keep `docs/` and `.agents/instructions/` current before
    committing.
 5. **Commit** only after the user approves (unless told in advance). Message
    `feat(scope): what was built`, and add "No validation error, no unreasonable
@@ -139,20 +94,20 @@ Stop and wait for user verification after each phase.
 
 | I need... | Read |
 |-----------|------|
-| Coding rules (format, naming, RAII, errors, comments, shaders) | [conventions.instructions.md](.github/instructions/conventions.instructions.md), [docs/style/style.md](docs/style/style.md), [docs/style/conventions.md](docs/style/conventions.md) |
-| Feature-development workflow | [development.instructions.md](.github/instructions/development.instructions.md) |
-| Build/test commands, build trees, worktrees, graphify | [tips.instructions.md](.github/instructions/tips.instructions.md), [docs/build/build.md](docs/build/build.md), [docs/build/test.md](docs/build/test.md) |
-| Web documentation (`make doc`, MkDocs, API reference, structure graph) | [docs/build/build.md](docs/build/build.md#web-documentation), [tips.instructions.md](.github/instructions/tips.instructions.md) |
-| Encountered issues / pitfalls (symptom -> rule) | [lessons.instructions.md](.github/instructions/lessons.instructions.md) |
-| Git, branch, worktree and commit conventions | [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md) |
-| Agent roles, parallel lanes, racing prevention | [roles.instructions.md](.github/instructions/roles.instructions.md) |
+| Coding rules (format, naming, RAII, errors, comments, shaders) | [conventions.instructions.md](.agents/instructions/conventions.instructions.md), [docs/style/style.md](docs/style/style.md), [docs/style/conventions.md](docs/style/conventions.md) |
+| Feature-development workflow | [development.instructions.md](.agents/instructions/development.instructions.md) |
+| Build/test commands, build trees, worktrees, graphify | [tips.instructions.md](.agents/instructions/tips.instructions.md), [docs/build/build.md](docs/build/build.md), [docs/build/test.md](docs/build/test.md) |
+| Web documentation (`make doc`, MkDocs, API reference, structure graph) | [docs/build/build.md](docs/build/build.md#web-documentation), [tips.instructions.md](.agents/instructions/tips.instructions.md) |
+| Encountered issues / pitfalls (symptom -> rule) | [lessons.instructions.md](.agents/instructions/lessons.instructions.md) |
+| Git, branch, worktree and commit conventions | [git-workflow.instructions.md](.agents/instructions/git-workflow.instructions.md) |
+| Agent roles, parallel lanes, racing prevention | [roles.instructions.md](.agents/instructions/roles.instructions.md) |
 | Architecture, layers, data flow, ownership, coordinates | [docs/architecture/overview.md](docs/architecture/overview.md), [layers.md](docs/architecture/layers.md), [data-flow.md](docs/architecture/data-flow.md), [ownership.md](docs/architecture/ownership.md), [coordinate-system.md](docs/core/coordinate-system.md) |
 | Renderer: passes, graph, buffers, resources, shaders, temporal | [docs/render/overview.md](docs/render/overview.md) and its siblings |
 | Editor: viewport, controllers, events, operations, gizmo, overlays | [docs/editor/overview.md](docs/editor/overview.md) and its siblings |
 | UI: panels, items, models, i18n | [docs/ui/overview.md](docs/ui/overview.md) and its siblings |
 | Core (UID, serialization, render config, logging), scene and assets | [docs/core/uid-and-resources.md](docs/core/uid-and-resources.md), [docs/scene/objects.md](docs/scene/objects.md), [docs/asset/data-resources.md](docs/asset/data-resources.md) |
 | Scripting: embedded CPython, the `neurus` module, Script Console | [docs/script/overview.md](docs/script/overview.md) |
-| Full indexes | [.github/instructions/README.md](.github/instructions/README.md), [docs/README.md](docs/README.md) |
+| Full indexes | [.agents/instructions/README.md](.agents/instructions/README.md), [docs/README.md](docs/README.md) |
 
 Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
 `docs/` never links back.
@@ -170,14 +125,7 @@ Link direction is one-way: instructions and `AGENTS.md` may link to `docs/`;
   pointer moved), push Neurus-Lib and wait for its build/release workflow to
   succeed before pushing Neurus - Neurus CI downloads the prebuilt libs from that
   release, so pushing Neurus first breaks CI. See
-  [git-workflow.instructions.md](.github/instructions/git-workflow.instructions.md).
+  [git-workflow.instructions.md](.agents/instructions/git-workflow.instructions.md).
 - Keep changes minimal and localized; respect layer isolation. See
-  [roles.instructions.md](.github/instructions/roles.instructions.md) for the
+  [roles.instructions.md](.agents/instructions/roles.instructions.md) for the
   full set.
-- **Command/IPC/CLI targets stay Qt-free and Vulkan-free.** `neurus_command`,
-  `neurus_ipc` and `neurus_cli` must not include Qt, Vulkan, Editor or UI
-  headers. The IPC I/O thread never touches editor state; only the
-  main-thread drain in `Application::NewFrameSignals` may execute a command.
-  The CLI never constructs an `Editor`, and the session registry under
-  `~/.neurus/sessions` is per-user and owner-only. See
-  [docs/command/overview.md](docs/command/overview.md).

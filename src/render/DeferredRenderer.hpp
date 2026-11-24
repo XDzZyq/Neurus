@@ -381,12 +381,12 @@ private:
 	std::unique_ptr<RenderCache> r_renderCache;
 	// Screenshot capture service; declared right after r_renderCache so it is
 	// destroyed BEFORE the cache it reads during an all-attachments capture.
-	std::unique_ptr<Screenshot> m_screenshot;
+	std::unique_ptr<Screenshot> r_screenshot;
 	// --- Polymorphic pass container (owning) ---
-	std::unique_ptr<PassFactory> m_passFactory;
+	std::unique_ptr<PassFactory> r_passFactory;
 
 	// Retains and maps the published CPU document onto the passes above.
-	std::unique_ptr<GraphUploader> m_graphUploader;
+	std::unique_ptr<GraphUploader> r_graphUploader;
 
 	// --- Cached raw pointers for zero-cost access (non-owning) ---
 
@@ -395,12 +395,12 @@ private:
 	// the scene graph's tail image. Separate so an overlay-only change redraws
 	// over the converged image without re-running a single scene pass; see
 	// OverlayEngine.hpp for the graph shape.
-	std::unique_ptr<OverlayEngine> m_overlayEngine;
+	std::unique_ptr<OverlayEngine> r_overlayEngine;
 
 	// --- RenderGraph (the active pipeline) ---
 	// Compile-once-per-document DAG holding the whole deferred pipeline; recordFrame
 	// dispatches it and compiles it only when the document or its shaders change.
-	RenderGraph m_mainGraph;
+	RenderGraph r_mainGraph;
 
 	struct GraphCompileKey
 	{
@@ -408,7 +408,7 @@ private:
 		std::uint64_t shaderGeneration;
 		bool operator==(const GraphCompileKey&) const = default;
 	};
-	std::optional<GraphCompileKey> m_lastGraphCompile;
+	std::optional<GraphCompileKey> r_lastGraphCompile;
 
 	/// @brief Builds the scene graph and stores the verdict in LastGraphReport().
 	void CompileDocument();
@@ -424,13 +424,13 @@ public:
 	};
 
 	/// @brief Last compile verdict, for tests and the command layer.
-	const GraphCompileReport& LastGraphReport() const { return m_graphReport; }
+	const GraphCompileReport& LastGraphReport() const { return r_graphReport; }
 
 	/// @brief Number of passes in the live scene graph.
-	size_t ScenePassCount() const { return m_mainGraph.PassCount(); }
+	size_t ScenePassCount() const { return r_mainGraph.PassCount(); }
 
 private:
-	GraphCompileReport m_graphReport;
+	GraphCompileReport r_graphReport;
 
 	// --- Command pool ---
 	vk::raii::CommandPool r_commandPool;
@@ -501,43 +501,43 @@ private:
 	std::optional<uint32_t> r_lastImageIndex;
 
 	// --- Temporal accumulation state ---
-	uint32_t m_haltonIndex = 0;
-	uint32_t m_iteration = 0;
+	uint32_t r_haltonIndex = 0;
+	uint32_t r_iteration = 0;
 
 	/// @brief Scene frames to accumulate after a restart; max(1, r_sampling_count).
 	///
 	/// Refreshed on every sample frame, which is the only place it is compared
-	/// against m_iteration and the only place a change can matter: a new
+	/// against r_iteration and the only place a change can matter: a new
 	/// r_sampling_count always arrives with an accumulation restart, so the next
 	/// comparison uses the fresh value.
-	uint32_t m_samplingCount = 64;
+	uint32_t r_samplingCount = 64;
 
 	/// @brief An overlay-only redraw is pending (a RedrawOverlaysRequest arrived).
-	bool m_overlaysDirty = false;
+	bool r_overlaysDirty = false;
 
 	/// @brief The last DrawFrame drew nothing (no camera, failed acquire).
 	///        NextWork() reports Retry while set, so the caller waits for a new
 	///        frame instead of redrawing a stale one.
-	bool m_drewNothing = false;
+	bool r_drewNothing = false;
 
 	// --- Per-frame profiling (always on; RenderGraph drives GPU sections) ---
-	// m_profiler owns the GPU timestamp query pool and per-pass sections;
+	// r_profiler owns the GPU timestamp query pool and per-pass sections;
 	// RenderGraph::Execute brackets each pass with BeginPass/EndPass and folds
-	// PassStats into m_frameProfile. DrawFrame calls Resolve() after the frame
-	// slot's fence signals and back-fills the resolved GPU ms into m_frameProfile
+	// PassStats into r_frameProfile. DrawFrame calls Resolve() after the frame
+	// slot's fence signals and back-fills the resolved GPU ms into r_frameProfile
 	// once recordFrame has repopulated the pass list (1-2 frame lag by design).
-	GPUProfiler m_profiler;
-	FrameProfile m_frameProfile;
-	bool m_gpuResolved = false; ///< Last Resolve() produced fresh GPU sections.
+	GPUProfiler r_profiler;
+	FrameProfile r_frameProfile;
+	bool r_gpuResolved = false; ///< Last Resolve() produced fresh GPU sections.
 
 	/// @brief Latches the "no active camera" report so it is logged once, not
 	///        once per frame, while the unrenderable scene is on screen.
-	bool m_reportedNoCamera = false;
+	bool r_reportedNoCamera = false;
 
 	// --- Editor-posted GPU requests (drained at the top of DrawFrame) ---
 	// The processor owns the queue and the executor. It borrows the cache and
 	// the geometry pass, both declared before it, so it is destroyed first.
-	std::unique_ptr<RenderRequestProcessor> m_requests;
+	std::unique_ptr<RenderRequestProcessor> r_requests;
 
 };
 

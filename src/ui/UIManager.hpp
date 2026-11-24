@@ -74,8 +74,8 @@ public:
 	template<typename PanelClass>
 	PanelClass* GetPanel() const
 	{
-		auto it = m_panels.find(PanelClass::kType);
-		if (it != m_panels.end())
+		auto it = win_panels.find(PanelClass::kType);
+		if (it != win_panels.end())
 			return qobject_cast<PanelClass*>(it->second);
 		return nullptr;
 	}
@@ -87,8 +87,8 @@ public:
 	 */
 	ads::CDockWidget* GetDock(PanelType type) const
 	{
-		auto it = m_docks.find(type);
-		return (it != m_docks.end()) ? it->second : nullptr;
+		auto it = win_docks.find(type);
+		return (it != win_docks.end()) ? it->second : nullptr;
 	}
 
 	/**
@@ -176,39 +176,39 @@ private:
 	/// True while full screen has DockWidgetFloatable locked; guards against
 	/// re-applying on the WindowStateChange events full screen also emits for
 	/// maximize/minimize.
-	bool m_floatingLocked = false;
+	bool win_floatingLocked = false;
 
 	/// View > Full Screen toggle; changeEvent() keeps its check mark in step so
 	/// it follows full screen however that state was entered.
-	QAction* m_fullScreenAction = nullptr;
+	QAction* win_fullScreenAction = nullptr;
 
 	// --- Panel registry (raw pointers; Qt parent-child manages lifetime) ---
-	std::map<PanelType, QWidget*> m_panels;
+	std::map<PanelType, QWidget*> win_panels;
 
 	// --- Dock registry (raw pointers; CDockManager owns via Qt parent-child) ---
-	std::map<PanelType, ads::CDockWidget*> m_docks;
+	std::map<PanelType, ads::CDockWidget*> win_docks;
 
 	// --- Menu translation registry: (action, i18n key) pairs ---
-	std::vector<std::pair<QAction*, const char*>> m_menuItems;
+	std::vector<std::pair<QAction*, const char*>> win_menuItems;
 
 	// --- Edit-menu Undo/Redo submenus (view-only stack lists) ---
-	QMenu*                m_undoMenu = nullptr; ///< Expands to the applied-op stack.
-	QMenu*                m_redoMenu = nullptr; ///< Expands to the undone-op stack.
-	std::vector<QAction*> m_undoItems;          ///< Rows currently shown in Undo menu.
-	std::vector<QAction*> m_redoItems;          ///< Rows currently shown in Redo menu.
-	QStringList           m_undoLabels;         ///< Applied ops, oldest → newest.
-	QStringList           m_redoLabels;         ///< Undone ops, in replay order.
+	QMenu*                win_undoMenu = nullptr; ///< Expands to the applied-op stack.
+	QMenu*                win_redoMenu = nullptr; ///< Expands to the undone-op stack.
+	std::vector<QAction*> win_undoItems;          ///< Rows currently shown in Undo menu.
+	std::vector<QAction*> win_redoItems;          ///< Rows currently shown in Redo menu.
+	QStringList           win_undoLabels;         ///< Applied ops, oldest → newest.
+	QStringList           win_redoLabels;         ///< Undone ops, in replay order.
 
 	// --- Preferences dialog (lazy, non-dock panel) ---
-	QString            m_currentLanguage;    ///< Cached active language code.
-	int                m_targetFps = 60;     ///< Cached render-loop target FPS.
-	ScriptPreferencesUi m_scriptPreferences; ///< Cached script settings.
-	QString            m_preferencesPath;    ///< ~/.neurus/preferences.json.
-	PreferencesDialog* m_preferencesDialog = nullptr; ///< Lazy-created; Qt parent owns.
+	QString            win_currentLanguage;    ///< Cached active language code.
+	int                win_targetFps = 60;     ///< Cached render-loop target FPS.
+	ScriptPreferencesUi win_scriptPreferences; ///< Cached script settings.
+	QString            win_preferencesPath;    ///< ~/.neurus/preferences.json.
+	PreferencesDialog* win_preferencesDialog = nullptr; ///< Lazy-created; Qt parent owns.
 
 	// --- Texture Viewer placeholder dock (not a UIPanel) ---
-	ads::CDockWidget* m_textureDock  = nullptr;
-	QLabel*           m_textureLabel = nullptr;
+	ads::CDockWidget* win_textureDock  = nullptr;
+	QLabel*           win_textureLabel = nullptr;
 };
 
 } // namespace neurus

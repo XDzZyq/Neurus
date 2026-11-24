@@ -104,10 +104,10 @@ GraphI MakeFanOut()
 
 } // anonymous namespace
 
-TEST(GraphClone, EqualPayloads)
+TEST(GraphClone, ClonedPayloadsAndTopologyAreIndependent)
 {
 	const GraphI original = MakeChain();
-	const GraphI copy = neurus::CloneGraph(original);
+	GraphI copy = neurus::CloneGraph(original);
 
 	ASSERT_EQ(copy.nodes.size(), original.nodes.size());
 	for (size_t i = 0; i < copy.nodes.size(); ++i)
@@ -125,6 +125,16 @@ TEST(GraphClone, EqualPayloads)
 		EXPECT_EQ(node->outputs[0]->name, "out");
 		EXPECT_EQ(node->outputs[0]->data, 2);
 	}
+
+	EXPECT_TRUE(copy.RemoveNode(FindNode(copy, "B")));
+	EXPECT_EQ(copy.nodes.size(), 2u);
+	EXPECT_TRUE(Connections(copy).empty());
+
+	EXPECT_EQ(original.nodes.size(), 3u);
+	EXPECT_EQ(Connections(original).size(), 2u);
+
+	FindNode(copy, "C")->data = "changed";
+	EXPECT_EQ(FindNode(original, "C")->data, "third");
 }
 
 TEST(GraphClone, EqualTopology)
@@ -139,22 +149,6 @@ TEST(GraphClone, EqualTopology)
 	EXPECT_EQ(Connections(copy)[0].to, "B");
 	EXPECT_EQ(Connections(copy)[1].to, "C");  // fan-out is preserved per consumer
 	EXPECT_EQ(FindNode(copy, "A")->outputs[0]->FanOut(), 2u);
-}
-
-TEST(GraphClone, IsIndependent)
-{
-	const GraphI original = MakeChain();
-	GraphI copy = neurus::CloneGraph(original);
-
-	EXPECT_TRUE(copy.RemoveNode(FindNode(copy, "B")));
-	EXPECT_EQ(copy.nodes.size(), 2u);
-	EXPECT_TRUE(Connections(copy).empty());
-
-	EXPECT_EQ(original.nodes.size(), 3u);
-	EXPECT_EQ(Connections(original).size(), 2u);
-
-	FindNode(copy, "C")->data = "changed";
-	EXPECT_EQ(FindNode(original, "C")->data, "third");
 }
 
 TEST(GraphClone, PreservesSocketOrder)

@@ -77,7 +77,7 @@ constexpr vk::ShaderStageFlags kFragment = vk::ShaderStageFlagBits::eFragment;
 
 } // anonymous namespace
 
-TEST(ShaderReflection, GeometryLayout)
+TEST(ShaderReflection, GeometryInterface)
 {
 	auto shader = LoadRender("GeometryPass",
 	                         "res/shaders/render/gbuffer.vert.glsl",
@@ -90,9 +90,15 @@ TEST(ShaderReflection, GeometryLayout)
 	ASSERT_EQ(layout.bindings.size(), 1u);
 	ASSERT_EQ(layout.bindingFlags.size(), layout.bindings.size());
 	ExpectBinding(layout, 0, vk::DescriptorType::eUniformBuffer, kVertex);
+
+	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(
+		shaders, kVertex | kFragment);
+
+	EXPECT_EQ(range.offset, 0u);
+	EXPECT_EQ(range.size, 132u);
 }
 
-TEST(ShaderReflection, SsaoLayout)
+TEST(ShaderReflection, SsaoInterface)
 {
 	auto shader = LoadCompute("ssao", "res/shaders/compute/ssao.comp.glsl");
 	ASSERT_TRUE(shader);
@@ -107,9 +113,14 @@ TEST(ShaderReflection, SsaoLayout)
 	ExpectBinding(layout, 3, vk::DescriptorType::eStorageImage, kCompute);
 	ExpectBinding(layout, 4, vk::DescriptorType::eUniformBuffer, kCompute);
 	ExpectBinding(layout, 5, vk::DescriptorType::eUniformBuffer, kCompute);
+
+	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
+
+	EXPECT_EQ(range.offset, 0u);
+	EXPECT_EQ(range.size, 16u);
 }
 
-TEST(ShaderReflection, LightingLayout)
+TEST(ShaderReflection, LightingInterface)
 {
 	auto shader = LoadCompute("lighting", "res/shaders/compute/pbr_lighting.comp.glsl");
 	ASSERT_TRUE(shader);
@@ -141,9 +152,14 @@ TEST(ShaderReflection, LightingLayout)
 	          vk::DescriptorBindingFlags{});
 	EXPECT_EQ(FlagsFor(layout, 0), vk::DescriptorBindingFlags{});
 	EXPECT_EQ(FlagsFor(layout, 4), vk::DescriptorBindingFlags{});
+
+	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
+
+	EXPECT_EQ(range.offset, 0u);
+	EXPECT_EQ(range.size, 176u);
 }
 
-TEST(ShaderReflection, ComposeLayout)
+TEST(ShaderReflection, ComposeInterface)
 {
 	auto shader = LoadCompute("compose", "res/shaders/compute/compose.comp.glsl");
 	ASSERT_TRUE(shader);
@@ -154,9 +170,13 @@ TEST(ShaderReflection, ComposeLayout)
 	ASSERT_EQ(layout.bindings.size(), 2u);
 	ExpectBinding(layout, 0, vk::DescriptorType::eCombinedImageSampler, kCompute);
 	ExpectBinding(layout, 1, vk::DescriptorType::eStorageImage, kCompute);
+
+	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
+
+	EXPECT_EQ(range.size, 4u);
 }
 
-TEST(ShaderReflection, FxaaLayout)
+TEST(ShaderReflection, FxaaInterface)
 {
 	auto shader = LoadCompute("fxaa", "res/shaders/compute/fxaa.comp.glsl");
 	ASSERT_TRUE(shader);
@@ -167,9 +187,13 @@ TEST(ShaderReflection, FxaaLayout)
 	ASSERT_EQ(layout.bindings.size(), 2u);
 	ExpectBinding(layout, 0, vk::DescriptorType::eCombinedImageSampler, kCompute);
 	ExpectBinding(layout, 1, vk::DescriptorType::eStorageImage, kCompute);
+
+	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
+
+	EXPECT_EQ(range.size, 28u);
 }
 
-TEST(ShaderReflection, ShadowIntensityMergesBothShaders)
+TEST(ShaderReflection, ShadowIntensityInterface)
 {
 	auto point = LoadCompute("shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl");
 	auto sun = LoadCompute("sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl");
@@ -183,89 +207,6 @@ TEST(ShaderReflection, ShadowIntensityMergesBothShaders)
 	ExpectBinding(layout, 0, vk::DescriptorType::eCombinedImageSampler, kCompute);
 	ExpectBinding(layout, 1, vk::DescriptorType::eCombinedImageSampler, kCompute);
 	ExpectBinding(layout, 2, vk::DescriptorType::eStorageImage, kCompute);
-}
-
-TEST(ShaderReflection, ShadowDepthLayout)
-{
-	auto shader = LoadRender("ShadowDepthMultiview",
-	                         "res/shaders/render/shadow_depth_multiview.vert.glsl",
-	                         "res/shaders/render/shadow_depth.frag.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const ReflectedDescriptorLayout layout = neurus::ReflectDescriptorLayout(shaders);
-
-	ASSERT_EQ(layout.bindings.size(), 1u);
-	ExpectBinding(layout, 0, vk::DescriptorType::eStorageBuffer, kVertex);
-}
-
-TEST(ShaderReflection, GeometryPushRange)
-{
-	auto shader = LoadRender("GeometryPass",
-	                         "res/shaders/render/gbuffer.vert.glsl",
-	                         "res/shaders/render/gbuffer.frag.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(
-		shaders, kVertex | kFragment);
-
-	EXPECT_EQ(range.offset, 0u);
-	EXPECT_EQ(range.size, 132u);
-}
-
-TEST(ShaderReflection, SsaoPushRange)
-{
-	auto shader = LoadCompute("ssao", "res/shaders/compute/ssao.comp.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
-
-	EXPECT_EQ(range.offset, 0u);
-	EXPECT_EQ(range.size, 16u);
-}
-
-TEST(ShaderReflection, LightingPushRange)
-{
-	auto shader = LoadCompute("lighting", "res/shaders/compute/pbr_lighting.comp.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
-
-	EXPECT_EQ(range.offset, 0u);
-	EXPECT_EQ(range.size, 176u);
-}
-
-TEST(ShaderReflection, ComposePushRange)
-{
-	auto shader = LoadCompute("compose", "res/shaders/compute/compose.comp.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
-
-	EXPECT_EQ(range.size, 4u);
-}
-
-TEST(ShaderReflection, FxaaPushRange)
-{
-	auto shader = LoadCompute("fxaa", "res/shaders/compute/fxaa.comp.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
-
-	EXPECT_EQ(range.size, 28u);
-}
-
-TEST(ShaderReflection, ShadowIntensityPushRanges)
-{
-	auto point = LoadCompute("shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl");
-	auto sun = LoadCompute("sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl");
-	ASSERT_TRUE(point);
-	ASSERT_TRUE(sun);
 
 	const std::array<const neurus::ShaderData*, 1> pointShaders = {point.get()};
 	const std::array<const neurus::ShaderData*, 1> sunShaders = {sun.get()};
@@ -279,7 +220,7 @@ TEST(ShaderReflection, ShadowIntensityPushRanges)
 	EXPECT_EQ(sunRange.size, 96u);
 }
 
-TEST(ShaderReflection, ShadowDepthPushRange)
+TEST(ShaderReflection, ShadowDepthInterface)
 {
 	auto shader = LoadRender("ShadowDepthMultiview",
 	                         "res/shaders/render/shadow_depth_multiview.vert.glsl",
@@ -287,6 +228,11 @@ TEST(ShaderReflection, ShadowDepthPushRange)
 	ASSERT_TRUE(shader);
 
 	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
+	const ReflectedDescriptorLayout layout = neurus::ReflectDescriptorLayout(shaders);
+
+	ASSERT_EQ(layout.bindings.size(), 1u);
+	ExpectBinding(layout, 0, vk::DescriptorType::eStorageBuffer, kVertex);
+
 	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(
 		shaders, kVertex | kFragment);
 

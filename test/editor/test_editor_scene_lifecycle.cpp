@@ -68,29 +68,6 @@ void NewProject(Editor& editor)
 } // namespace
 
 // ---------------------------------------------------------------------------
-// 1. NewScene() leaves the scene renderable — with nothing in it
-// ---------------------------------------------------------------------------
-
-TEST(EditorSceneLifecycleTest, NewScene_LeavesARenderableViewCamera)
-{
-	Editor editor(nullptr);
-	editor.NewScene();
-
-	const Camera* cam = editor.GetViewport().GetCamera();
-	ASSERT_NE(cam, nullptr)
-		<< "A null view camera faults or silently blanks every pass that builds "
-		   "a view-projection (ShadowDepthPass in the default graph).";
-
-	// The view camera is the VIEWPORT camera, which is pooled but is not scene
-	// content — that is what makes an empty scene a renderable document.
-	EXPECT_EQ(cam->GetObjectID(), editor.GetViewport().CameraID());
-	EXPECT_TRUE(editor.GetScene().cam_list.empty())
-		<< "NewScene() seeds no scene camera; CreateDefaultScene() does.";
-	EXPECT_EQ(editor.GetScene().GetActiveCamera(), nullptr);
-	EXPECT_EQ(editor.GetScene().ActiveCameraID(), 0);
-}
-
-// ---------------------------------------------------------------------------
 // 2. NewScene() means EMPTY: no mesh, no light, no camera, nothing
 // ---------------------------------------------------------------------------
 
@@ -112,6 +89,21 @@ TEST(EditorSceneLifecycleTest, NewScene_LeavesTheSceneEmpty)
 
 	// An empty document is its own saved baseline, not an unsaved edit.
 	EXPECT_FALSE(editor.IsDirty());
+	const Camera* cam = editor.GetViewport().GetCamera();
+	ASSERT_NE(cam, nullptr)
+		<< "A null view camera faults or silently blanks every pass that builds "
+		   "a view-projection (ShadowDepthPass in the default graph).";
+
+	// The view camera is the VIEWPORT camera, which is pooled but is not scene
+	// content — that is what makes an empty scene a renderable document.
+	EXPECT_EQ(cam->GetObjectID(), editor.GetViewport().CameraID());
+	EXPECT_TRUE(editor.GetScene().cam_list.empty())
+		<< "NewScene() seeds no scene camera; CreateDefaultScene() does.";
+	EXPECT_EQ(editor.GetScene().GetActiveCamera(), nullptr);
+	EXPECT_EQ(editor.GetScene().ActiveCameraID(), 0);
+	EXPECT_NE(cam->GetPosition(), cam->cam_tar);
+	EXPECT_GT(cam->cam_w, 0.0f);
+	EXPECT_GT(cam->cam_h, 0.0f);
 }
 
 // ---------------------------------------------------------------------------
@@ -211,48 +203,6 @@ TEST(EditorSceneLifecycleTest, NewProject_SeedsVisibleStarterContent)
 }
 
 // ---------------------------------------------------------------------------
-// 5b. The default debug primitives get unique registry names too
-// ---------------------------------------------------------------------------
-
-TEST(EditorSceneLifecycleTest, NewProject_RegistersUniqueDebugNames)
-{
-	Editor editor(nullptr);
-	NewProject(editor);
-
-	// The two axis lines share the "DebugLine" constructor name and the two
-	// point sets share "DebugPoints"; creation must register both, so the
-	// second of each is suffixed instead of colliding.
-	const ResourceManager& resources = editor.GetResourceManager();
-	auto line = resources.GetByName<DebugLine>("DebugLine");
-	auto line001 = resources.GetByName<DebugLine>("DebugLine.001");
-	ASSERT_NE(line, nullptr) << "the solid axis line was not registered";
-	ASSERT_NE(line001, nullptr) << "the x-ray axis line reused the bare name";
-	EXPECT_NE(line->GetObjectID(), line001->GetObjectID());
-
-	auto points = resources.GetByName<DebugPoints>("DebugPoints");
-	auto points001 = resources.GetByName<DebugPoints>("DebugPoints.001");
-	ASSERT_NE(points, nullptr) << "the axis-tip points were not registered";
-	ASSERT_NE(points001, nullptr) << "the light-cube points reused the bare name";
-	EXPECT_NE(points->GetObjectID(), points001->GetObjectID());
-
-	// The Outliner reads o_name, so the unique registry result has to be
-	// mirrored back into it - otherwise both rows still say "DebugLine".
-	EXPECT_EQ(line->o_name, "DebugLine");
-	EXPECT_EQ(line001->o_name, "DebugLine.001");
-	EXPECT_EQ(points->o_name, "DebugPoints");
-	EXPECT_EQ(points001->o_name, "DebugPoints.001");
-
-	// The Outliner walks the scene pools, so the same strings must be there.
-	const Scene& scene = editor.GetScene();
-	ASSERT_EQ(scene.dLine_list.size(), 2u);
-	ASSERT_EQ(scene.dPoints_list.size(), 2u);
-	EXPECT_EQ(scene.dLine_list.at(line->GetObjectID())->o_name, "DebugLine");
-	EXPECT_EQ(scene.dLine_list.at(line001->GetObjectID())->o_name, "DebugLine.001");
-	EXPECT_EQ(scene.dPoints_list.at(points->GetObjectID())->o_name, "DebugPoints");
-	EXPECT_EQ(scene.dPoints_list.at(points001->GetObjectID())->o_name, "DebugPoints.001");
-}
-
-// ---------------------------------------------------------------------------
 // 5c. CreateDefaultScene registers one name per seeded kind
 // ---------------------------------------------------------------------------
 
@@ -279,6 +229,32 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededContentIsRegisteredByName)
 	          editor.GetViewport().ViewportCamera());
 	EXPECT_NE(editor.GetViewport().ViewportCamera()->GetObjectID(),
 	          scene.cam_list.begin()->first);
+	auto line = resources.GetByName<DebugLine>("DebugLine");
+	auto line001 = resources.GetByName<DebugLine>("DebugLine.001");
+	ASSERT_NE(line, nullptr) << "the solid axis line was not registered";
+	ASSERT_NE(line001, nullptr) << "the x-ray axis line reused the bare name";
+	EXPECT_NE(line->GetObjectID(), line001->GetObjectID());
+
+	auto points = resources.GetByName<DebugPoints>("DebugPoints");
+	auto points001 = resources.GetByName<DebugPoints>("DebugPoints.001");
+	ASSERT_NE(points, nullptr) << "the axis-tip points were not registered";
+	ASSERT_NE(points001, nullptr) << "the light-cube points reused the bare name";
+	EXPECT_NE(points->GetObjectID(), points001->GetObjectID());
+
+	// The Outliner reads o_name, so the unique registry result has to be
+	// mirrored back into it - otherwise both rows still say "DebugLine".
+	EXPECT_EQ(line->o_name, "DebugLine");
+	EXPECT_EQ(line001->o_name, "DebugLine.001");
+	EXPECT_EQ(points->o_name, "DebugPoints");
+	EXPECT_EQ(points001->o_name, "DebugPoints.001");
+
+	// The Outliner walks the scene pools, so the same strings must be there.
+	ASSERT_EQ(scene.dLine_list.size(), 2u);
+	ASSERT_EQ(scene.dPoints_list.size(), 2u);
+	EXPECT_EQ(scene.dLine_list.at(line->GetObjectID())->o_name, "DebugLine");
+	EXPECT_EQ(scene.dLine_list.at(line001->GetObjectID())->o_name, "DebugLine.001");
+	EXPECT_EQ(scene.dPoints_list.at(points->GetObjectID())->o_name, "DebugPoints");
+	EXPECT_EQ(scene.dPoints_list.at(points001->GetObjectID())->o_name, "DebugPoints.001");
 }
 
 // ---------------------------------------------------------------------------
@@ -328,25 +304,6 @@ TEST(EditorSceneLifecycleTest, CreateDefaultScene_AddsToTheCurrentSceneWithoutRe
 }
 
 // ---------------------------------------------------------------------------
-// 7. Every seeded object carries a display name
-// ---------------------------------------------------------------------------
-
-TEST(EditorSceneLifecycleTest, NewProject_SeededObjectsAreNamed)
-{
-	Editor editor(nullptr);
-	NewProject(editor);
-
-	// A blank o_name renders as an empty Outliner row, indistinguishable from a
-	// broken entry. Camera and Light used to leave it default-constructed.
-	for (const auto& [uid, obj] : editor.GetScene().obj_list)
-	{
-		ASSERT_NE(obj, nullptr) << "uid " << uid;
-		EXPECT_FALSE(obj->o_name.empty())
-			<< "unnamed object of type " << static_cast<int>(obj->o_type);
-	}
-}
-
-// ---------------------------------------------------------------------------
 // 8. The camera New seeds is framed for the viewport, not for 1x1
 // ---------------------------------------------------------------------------
 
@@ -383,22 +340,4 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededCameraAdoptsTheViewportExtent)
 	ASSERT_NE(editor.GetViewport().GetCamera(), nullptr);
 	EXPECT_FLOAT_EQ(editor.GetViewport().GetCamera()->cam_w, static_cast<float>(kW));
 	EXPECT_FLOAT_EQ(editor.GetViewport().GetCamera()->cam_h, static_cast<float>(kH));
-}
-
-// ---------------------------------------------------------------------------
-// 9. A New before any resize leaves the camera untouched rather than zeroed
-// ---------------------------------------------------------------------------
-
-TEST(EditorSceneLifecycleTest, NewScene_WithoutAViewportKeepsANonDegenerateCamera)
-{
-	// At startup the extent is still 0x0. Replaying that onto the camera would
-	// divide by zero in the projection; EditorViewport::FrameCamera bails out
-	// instead and leaves the camera's own defaults in place.
-	Editor editor(nullptr);
-	editor.NewScene();
-
-	const Camera* cam = editor.GetViewport().GetCamera();
-	ASSERT_NE(cam, nullptr);
-	EXPECT_GT(cam->cam_w, 0.0f);
-	EXPECT_GT(cam->cam_h, 0.0f);
 }

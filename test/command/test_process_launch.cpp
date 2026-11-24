@@ -71,34 +71,19 @@ protected:
 
 } // namespace
 
-TEST_F(ProcessLaunchTest, ExplicitOverrideWins)
+TEST_F(ProcessLaunchTest, ResolvesExplicitEnvironmentAndSiblingPathsInPriorityOrder)
 {
-	const auto overridePath = Touch(m_root / "custom-app");
-	const auto resolved = ResolveAppExecutable(m_root / "cli" / kCliName, overridePath, "");
-	ASSERT_TRUE(resolved.has_value());
-	EXPECT_EQ(*resolved, overridePath);
-}
-
-TEST_F(ProcessLaunchTest, FindsAppBesideTheCliDirectory)
-{
-	Touch(m_root / kAppName);
-	const auto resolved = ResolveAppExecutable(m_root / "cli" / kCliName, std::nullopt, "");
-	ASSERT_TRUE(resolved.has_value());
-	EXPECT_EQ(resolved->filename(), kAppName);
-}
-
-TEST_F(ProcessLaunchTest, EnvironmentPathWinsOverSearch)
-{
-	const auto envPath = Touch(m_root / "from-env");
-	const auto resolved = ResolveAppExecutable(m_root / "cli" / kCliName, std::nullopt,
-	                                           envPath.string());
-	ASSERT_TRUE(resolved.has_value());
-	EXPECT_EQ(*resolved, envPath);
-}
-
-TEST_F(ProcessLaunchTest, MissingAppReturnsNullopt)
-{
-	EXPECT_FALSE(ResolveAppExecutable(m_root / "cli" / kCliName, std::nullopt, "").has_value());
+	const auto cli = m_root / "cli" / kCliName;
+	EXPECT_FALSE(ResolveAppExecutable(cli, std::nullopt, "").has_value());
+	const auto sibling = Touch(m_root / kAppName);
+	const auto resolvedSibling = ResolveAppExecutable(cli, std::nullopt, "");
+	ASSERT_TRUE(resolvedSibling.has_value());
+	EXPECT_TRUE(std::filesystem::equivalent(*resolvedSibling, sibling))
+		<< *resolvedSibling << " should resolve to " << sibling;
+	const auto fromEnvironment = Touch(m_root / "from-env");
+	EXPECT_EQ(ResolveAppExecutable(cli, std::nullopt, fromEnvironment.string()), fromEnvironment);
+	const auto explicitPath = Touch(m_root / "custom-app");
+	EXPECT_EQ(ResolveAppExecutable(cli, explicitPath, fromEnvironment.string()), explicitPath);
 }
 
 TEST_F(ProcessLaunchTest, BuildsSessionArguments)

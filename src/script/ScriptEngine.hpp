@@ -289,7 +289,7 @@ public:
 
 private:
 	struct Impl;  ///< Python/pybind11-owning body; defined in ScriptEngineImpl.hpp
-	std::unique_ptr<Impl> m_impl;
+	std::unique_ptr<Impl> sc_impl;
 };
 
 }  // namespace neurus

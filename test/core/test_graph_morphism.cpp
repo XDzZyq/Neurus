@@ -163,20 +163,6 @@ TEST(GraphMorphism, MapReportsNullFactory)
 	EXPECT_NE(report.problems[0].find("C"), std::string::npos);
 }
 
-TEST(GraphMorphism, TotalRejectsUnmappedNode)
-{
-	GraphI source = MakeChain();
-	Morphism::Correspondence images;
-
-	EXPECT_TRUE(images.RecordNode(*FindNode(source, "A"), *FindNode(source, "A")));
-	EXPECT_TRUE(images.RecordNode(*FindNode(source, "B"), *FindNode(source, "B")));
-
-	EXPECT_FALSE(images.IsTotal(source));
-	const auto report = images.Validate(source);
-	ASSERT_FALSE(report.Ok());
-	EXPECT_NE(report.problems[0].find("C"), std::string::npos);
-}
-
 TEST(GraphMorphism, TotalRejectsUnmappedConnection)
 {
 	GraphI source = MakeChain();
@@ -249,7 +235,7 @@ TEST(GraphMorphism, FanOutMapsToDistinctTargetConnectionsAfterMove)
 	EXPECT_EQ(moved.images.ImageOf(edges[1]), images[1]);
 }
 
-TEST(GraphMorphism, MapNodeMapsOneElement)
+TEST(GraphMorphism, IncrementalMapCreatesEachNodeAndConnectionOnce)
 {
 	GraphI source = MakeChain();
 	Morphism::Result mapping;
@@ -261,15 +247,7 @@ TEST(GraphMorphism, MapNodeMapsOneElement)
 
 	// A source node maps once; a second call declines instead of duplicating it.
 	EXPECT_EQ(mapper.MapNode(mapping, *FindNode(source, "A")), nullptr);
-}
 
-TEST(GraphMorphism, MapConnectCreatesAndWires)
-{
-	GraphI source = MakeChain();
-	Morphism::Result mapping;
-	const Morphism mapper{CopyPolicy()};
-
-	mapper.MapNode(mapping, *FindNode(source, "A"));
 	mapper.MapNode(mapping, *FindNode(source, "B"));
 	const auto& edge = FindInput(FindNode(source, "B"), "in")->incoming;
 	EXPECT_TRUE(mapper.MapConnect(mapping, edge));

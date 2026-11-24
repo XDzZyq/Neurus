@@ -423,7 +423,7 @@ struct ShaderUnlinkRestored { int objectUid; };                // undo: drop the
 ```
 
 Version flow: only `ShaderCreateRequested` and `ShaderCompileRequested` bump
-`Shader::m_version` (and only on successful compile). The other events mutate
+`ShaderData::sh_version` (and only on successful compile). The other events mutate
 data without recompiling; the user must press Compile to apply changes to the GPU
 pipeline. Because create/compile rebuild the pipeline, `ShaderController`
 emits `RenderResetEvent` after both, so temporal accumulation resets.
@@ -630,7 +630,7 @@ ctx.events.Subscribe<PositionChanged>([ctx](const PositionChanged& e) {
 
 // Editor::Initialize() - handles cross-component GPU-sync events
 ed_eventBus.Subscribe<LightGpuChanged>([this](const LightGpuChanged& e) {
-    auto light = m_resources->Get<Light>(e.objectUid);
+    auto light = ed_resources->Get<Light>(e.objectUid);
     if (!light) return;
     // Pure CPU conversion here; the renderer rewrites the one SSBO entry.
     ed_renderer->Post(UpdateLightRequest{e.objectUid, UploadManager::UploadLighting(*light)});
@@ -639,7 +639,7 @@ ed_eventBus.Subscribe<LightingRebuild>([this](const LightingRebuild&) {
     UploadLighting();
 });
 ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
-    m_dirty = true;
+    ed_dirty = true;
 });
 ```
 

@@ -136,6 +136,13 @@ TEST(EditorOverlayRedraw, SelectionChange_PostsExactlyOneRedrawAndNoReset)
 	    << "selecting is not a scene edit; restarting accumulation would discard "
 	       "the converged image for a click";
 	EXPECT_EQ(f.sink.Size(), 1u) << "one overlay rebuild, one request";
+	f.sink.Clear();
+
+	f.editor.OnUIEvent(ObjectSelected{0, 0}); // background click clears the selection
+	f.editor.Edit();
+
+	EXPECT_EQ(f.sink.Count<RedrawOverlaysRequest>(), 1u);
+	EXPECT_EQ(f.sink.Size(), 1u);
 }
 
 /**
@@ -145,20 +152,6 @@ TEST(EditorOverlayRedraw, SelectionChange_PostsExactlyOneRedrawAndNoReset)
  * overlay change as a selection is. The empty payload is what makes this easy to
  * lose: the rebuilt list is empty, not absent.
  */
-TEST(EditorOverlayRedraw, Deselection_PostsExactlyOneRedraw)
-{
-	OverlayFixture f;
-
-	f.editor.OnUIEvent(ObjectSelected{f.uid, 0});
-	f.editor.Edit();
-	f.sink.Clear();
-
-	f.editor.OnUIEvent(ObjectSelected{0, 0}); // background click clears the selection
-	f.editor.Edit();
-
-	EXPECT_EQ(f.sink.Count<RedrawOverlaysRequest>(), 1u);
-	EXPECT_EQ(f.sink.Size(), 1u);
-}
 
 // ---------------------------------------------------------------------------
 // 2. The opposite failure: a redraw on every tick would pin accumulation at 0

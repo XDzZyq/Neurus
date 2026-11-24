@@ -19,16 +19,6 @@ protected:
 	void TearDown() override { LogBuffer::instance().Clear(); }
 };
 
-TEST_F(LogModelTest, RowCountMatchesBuffer)
-{
-	LogBuffer::instance().Append(LogEntry{LogLevel::Info, {}, "f", 1, "a", 0});
-	LogBuffer::instance().Append(LogEntry{LogLevel::Error, {}, "f", 2, "b", 0});
-
-	LogModel model;
-	model.Refresh(&LogBuffer::instance());
-	EXPECT_EQ(model.rowCount(), 2);
-}
-
 TEST_F(LogModelTest, DataRoles)
 {
 	LogBuffer::instance().Append(
@@ -45,7 +35,7 @@ TEST_F(LogModelTest, DataRoles)
 	EXPECT_EQ(idx.data(LogModel::SeqRole).toULongLong(), 1u);
 }
 
-TEST_F(LogModelTest, RefreshAppendsNewRows)
+TEST_F(LogModelTest, RefreshReflectsAppendedAndClearedRows)
 {
 	LogBuffer& buf = LogBuffer::instance();
 	buf.Append(LogEntry{LogLevel::Info, {}, "f", 1, "a", 0});
@@ -58,15 +48,6 @@ TEST_F(LogModelTest, RefreshAppendsNewRows)
 	EXPECT_EQ(model.rowCount(), 2);
 	EXPECT_EQ(model.index(1, 0).data(LogModel::MessageRole).toString(),
 	          QStringLiteral("b"));
-}
-
-TEST_F(LogModelTest, ClearResetsModel)
-{
-	LogBuffer& buf = LogBuffer::instance();
-	buf.Append(LogEntry{LogLevel::Info, {}, "f", 1, "a", 0});
-	LogModel model;
-	model.Refresh(&buf);
-	EXPECT_EQ(model.rowCount(), 1);
 
 	buf.Clear();
 	model.Refresh(&buf);
@@ -157,7 +138,7 @@ protected:
 	}
 };
 
-TEST_F(LogFilterProxyTest, LevelFilter)
+TEST_F(LogFilterProxyTest, LevelAndCaseInsensitiveTextSelectMatchingRows)
 {
 	PopulateAndRefresh();
 
@@ -173,31 +154,13 @@ TEST_F(LogFilterProxyTest, LevelFilter)
 
 	m_proxy.setLevelFilter(LogFilterProxy::LevelFilter::All);
 	EXPECT_EQ(m_proxy.rowCount(), 2);
-}
-
-TEST_F(LogFilterProxyTest, SearchFilterIsCaseInsensitive)
-{
-	PopulateAndRefresh();
-
 	m_proxy.setSearchText(QStringLiteral("FAILED"));
-	EXPECT_EQ(m_proxy.rowCount(), 1);
-	EXPECT_EQ(m_proxy.index(0, 0).data(LogModel::MessageRole).toString(),
-	          QStringLiteral("shader failed"));
-
-	m_proxy.setSearchText(QStringLiteral("nonexistent"));
+	ASSERT_EQ(m_proxy.rowCount(), 1);
+	EXPECT_EQ(m_proxy.index(0, 0).data(LogModel::MessageRole).toString(), QStringLiteral("shader failed"));
+	m_proxy.setLevelFilter(LogFilterProxy::LevelFilter::InfoOnly);
 	EXPECT_EQ(m_proxy.rowCount(), 0);
-}
-
-TEST_F(LogFilterProxyTest, LevelAndSearchCombine)
-{
-	PopulateAndRefresh();
-
-	m_proxy.setLevelFilter(LogFilterProxy::LevelFilter::ErrorsOnly);
 	m_proxy.setSearchText(QStringLiteral("geometry"));
-	EXPECT_EQ(m_proxy.rowCount(), 0); // geometry is Info, filter is ErrorsOnly
-
-	m_proxy.setLevelFilter(LogFilterProxy::LevelFilter::All);
-	EXPECT_EQ(m_proxy.rowCount(), 1); // geometry only
+	EXPECT_EQ(m_proxy.rowCount(), 1);
 }
 
 } // namespace neurus

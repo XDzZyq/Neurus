@@ -30,27 +30,19 @@ protected:
 	std::filesystem::path m_path;
 };
 
-TEST_F(ShaderDataSourceTest, MissingFileReportsTheRequestedPath)
+TEST_F(ShaderDataSourceTest, ReadSourceReportsFailuresAndClearsThemAfterRecovery)
 {
 	std::string error;
 	EXPECT_FALSE(ShaderData::ReadSource(m_path.string(), &error));
 	EXPECT_NE(error.find("cannot open file"), std::string::npos);
 	EXPECT_NE(error.find(m_path.filename().string()), std::string::npos);
-}
 
-TEST_F(ShaderDataSourceTest, EmptyFileIsReportedRatherThanParsed)
-{
 	{ std::ofstream file(m_path); }
-	std::string error;
 	EXPECT_FALSE(ShaderData::ReadSource(m_path.string(), &error));
 	EXPECT_NE(error.find("file is empty"), std::string::npos);
-}
 
-TEST_F(ShaderDataSourceTest, SourceTextIsPreservedAndPreviousErrorCleared)
-{
 	const std::string text = "#version 450\nvoid main() {}\n";
 	{ std::ofstream file(m_path); file << text; }
-	std::string error = "previous failure";
 	const auto source = ShaderData::ReadSource(m_path.string(), &error);
 	ASSERT_TRUE(source);
 	EXPECT_EQ(*source, text);

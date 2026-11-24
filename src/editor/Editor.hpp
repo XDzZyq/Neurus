@@ -123,9 +123,9 @@ public:	/**
 	 */
 	void SetRenderGraph(std::unique_ptr<RenderGraphData> graph);
 
-	bool IsDirty() const { return m_dirty; }
-	void MarkDirty() { m_dirty = true; }
-	void ClearDirty() { m_dirty = false; }
+	bool IsDirty() const { return ed_dirty; }
+	void MarkDirty() { ed_dirty = true; }
+	void ClearDirty() { ed_dirty = false; }
 
 	/**
 	 * @brief Returns the app-scoped ResourceManager (UID object pool).
@@ -133,7 +133,7 @@ public:	/**
 	 * The pool is serialized first and the Scene resolves its ID references
 	 * against it on load.
 	 */
-	ResourceManager& GetResourceManager() { return *m_resources; }
+	ResourceManager& GetResourceManager() { return *ed_resources; }
 
 	/**
 	 * @brief Returns the editor's viewport: its camera, screen space and overlays.
@@ -141,8 +141,8 @@ public:	/**
 	 * The Editor exposes no camera API of its own; all of that is a viewport
 	 * question, and the viewport is the one object that answers it.
 	 */
-	EditorViewport& GetViewport() { return m_viewport; }
-	const EditorViewport& GetViewport() const { return m_viewport; }
+	EditorViewport& GetViewport() { return ed_viewport; }
+	const EditorViewport& GetViewport() const { return ed_viewport; }
 
 	/**
 	 * @brief Copies this frame out of the Scene: the view the renderer reads.
@@ -234,7 +234,7 @@ public:	/**
 	void RegisterController()
 	{
 		auto ctrl = std::make_unique<T>();
-		ctrl->Init(m_ctx);
+		ctrl->Init(ed_ctx);
 		ed_controllers.push_back(std::move(ctrl));
 	}
 
@@ -383,8 +383,8 @@ private:
 	void AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData);
 
 	// --- Owned state ---
-	std::unique_ptr<Scene> m_scene;
-	std::unique_ptr<ResourceManager> m_resources;  ///< App-scoped UID object pool
+	std::unique_ptr<Scene> ed_scene;
+	std::unique_ptr<ResourceManager> ed_resources;  ///< App-scoped UID object pool
 
 	/**
 	 * @brief The Editor's render state: document, pass shaders and config.
@@ -392,10 +392,10 @@ private:
 	 * Created after the pool in the constructor; declared before the controller
 	 * context so its config exists before any controller can ask for it.
 	 */
-	std::unique_ptr<RenderManager> m_renderManager;
+	std::unique_ptr<RenderManager> ed_renderManager;
 
-	bool                  m_dirty = false;
-	std::uint64_t         m_projectEpoch = 0;
+	bool                  ed_dirty = false;
+	std::uint64_t         ed_projectEpoch = 0;
 
 	/**
 	 * @brief The viewport: its own camera, its screen space, and its overlays.
@@ -405,7 +405,7 @@ private:
 	 * the active camera once per frame (PublishActiveCamera), rebuilds overlays
 	 * (RebuildOverlays), and nothing else.
 	 */
-	EditorViewport        m_viewport;
+	EditorViewport        ed_viewport;
 
 	// --- Editor infrastructure ---
 	EventQueue ed_eventBus;                        ///< Editor-owned event dispatch queue.
@@ -418,10 +418,10 @@ private:
 	 * it outlives the controllers' event subscriptions (handler lambdas capture it
 	 * by value).
 	 */
-	ControllerContext m_ctx{ ed_eventBus, *m_resources, ed_operations,
-	                         [this]() { return m_scene.get(); },
+	ControllerContext ed_ctx{ ed_eventBus, *ed_resources, ed_operations,
+	                         [this]() { return ed_scene.get(); },
 	                         [this]() { return ConfigForControllers(); },
-	                         [this]() { return &m_viewport; },
+	                         [this]() { return &ed_viewport; },
 	                         [this]() -> std::shared_ptr<RenderConfig>& { return GetRenderConfigData(); } };
 
 	std::vector<std::unique_ptr<Controllers>> ed_controllers;

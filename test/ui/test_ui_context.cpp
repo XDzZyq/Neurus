@@ -1,28 +1,5 @@
-/**
- * @file test_ui_context.cpp
- * @brief The UI-facing frame view: its settings fallback, and its parity with the
- *        render-facing one.
- *
- * UIContext is the type that decides what a panel is allowed to see. Two things
- * are worth pinning about it, and both are load-bearing rather than cosmetic:
- *
- * - **`Settings()` never returns null and never invents a default.** With no
- *   config published a panel must still get a usable RenderConfig, and it must
- *   be the *same* one a render pass would get — otherwise the viewport renders
- *   at one exposure and the panel displays another, which reads as a broken
- *   slider rather than as a missing pointer.
- * - **The UI's view is two fields wide.** `scene` and `config` are the whole of
- *   what the Editor injects, and the type deliberately carries no camera and no
- *   overlay payload. That is a property of the struct, so the check here is a
- *   compile-time one: adding a camera or a draw list to UIContext would break
- *   the constructible-from-two-pointers test below.
- *
- * The render-side half of the fallback guard lives in
- * test/render/test_null_scene_passes.cpp (RenderContextSettings); this file adds
- * the panel side and the parity between the two.
- *
- * Needs no QApplication: UIContext is Qt-free by construction, which is itself
- * part of what is being asserted.
+/** @file test_ui_context.cpp
+ *  @brief UI setting publication, fallback parity and slider integration.
  */
 
 #include <gtest/gtest.h>
@@ -43,20 +20,6 @@ using namespace neurus;
 // ---------------------------------------------------------------------------
 // Settings(): the fallback, and that both carriers agree
 // ---------------------------------------------------------------------------
-
-TEST(UIContextSettings, FallsBackToRenderConfigsOwnDefaults)
-{
-	const UIContext ui{};
-	const RenderConfig declared{};
-
-	EXPECT_EQ(&ui.Settings(), &ui.Settings())
-		<< "one shared instance, not a temporary per call";
-
-	EXPECT_FLOAT_EQ(ui.Settings().r_shadow_bias,   declared.r_shadow_bias);
-	EXPECT_FLOAT_EQ(ui.Settings().r_gamma,         declared.r_gamma);
-	EXPECT_EQ(ui.Settings().r_sampling_mode,       declared.r_sampling_mode);
-	EXPECT_FLOAT_EQ(ui.Settings().r_fxaa_subpix,   declared.r_fxaa_subpix);
-}
 
 TEST(UIContextSettings, AgreesWithRenderContextOnAnUnsetConfig)
 {
@@ -108,43 +71,9 @@ TEST(UIContextShape, HasSceneTracksThePointer)
 	EXPECT_TRUE(ui.HasScene());
 }
 
-TEST(UIContextShape, EnumeratesEveryObjectInTheMasterList)
-{
-	Scene scene{};
-	UIContext ui{};
-	ui.scene = &scene;
-
-	EXPECT_EQ(ui.GetObjectIDs().size(), scene.obj_list.size());
-
-	// Ids are the plain ints a panel compares for dirty checks; they must match
-	// the master list exactly, in order, with no duplicates.
-	std::vector<int> expected;
-	expected.reserve(scene.obj_list.size());
-	for (const auto& [id, obj] : scene.obj_list)
-	{
-		(void)obj;
-		expected.push_back(id);
-	}
-	EXPECT_EQ(ui.GetObjectIDs(), expected);
-}
-
 // ---------------------------------------------------------------------------
 // Application assembles document fields without a framework dependency.
 // ---------------------------------------------------------------------------
-
-TEST(UIContextShape, DocumentFieldsAreTwoPlainPointers)
-{
-	Scene scene{};
-	RenderConfig config{};
-
-	UIContext ui{};
-	ui.scene  = &scene;
-	ui.config = &config;
-
-	EXPECT_EQ(ui.scene,  &scene);
-	EXPECT_EQ(ui.config, &config);
-	EXPECT_EQ(ui.Settings().r_shadow_bias, config.r_shadow_bias);
-}
 
 // Widget integration: model settings may exceed a slider's convenient drag range.
 

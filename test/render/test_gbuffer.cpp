@@ -111,10 +111,6 @@ protected:
 	std::unique_ptr<GeometryPass> m_geometryPass;
 };
 
-// ===========================================================================
-// Tests
-// ===========================================================================
-
 // ---------------------------------------------------------------------------
 // 1. Constructor - pipeline is created successfully
 // ---------------------------------------------------------------------------
@@ -276,40 +272,26 @@ TEST_F(GeometryPassTest, Record_EmptyRenderItems_NoCrash)
 // 5. Non-copyable / movable
 // ---------------------------------------------------------------------------
 
-TEST_F(GeometryPassTest, NonCopyable)
-{
-	static_assert(!std::is_copy_constructible_v<GeometryPass>,
-	              "GeometryPass must not be copy-constructible");
-	static_assert(!std::is_copy_assignable_v<GeometryPass>,
-	              "GeometryPass must not be copy-assignable");
-	SUCCEED();
-}
+static_assert(!std::is_copy_constructible_v<GeometryPass>,
+              "GeometryPass must not be copy-constructible");
+static_assert(!std::is_copy_assignable_v<GeometryPass>,
+              "GeometryPass must not be copy-assignable");
 
-TEST_F(GeometryPassTest, Movable)
-{
-	static_assert(std::is_move_constructible_v<GeometryPass>,
-	              "GeometryPass must be move-constructible");
-	static_assert(std::is_move_assignable_v<GeometryPass>,
-	              "GeometryPass must be move-assignable");
-	SUCCEED();
-}
+static_assert(std::is_move_constructible_v<GeometryPass>,
+              "GeometryPass must be move-constructible");
+static_assert(std::is_move_assignable_v<GeometryPass>,
+              "GeometryPass must be move-assignable");
 
 // ---------------------------------------------------------------------------
 // 6. Camera UBO layout - size sanity check
 // ---------------------------------------------------------------------------
 
-TEST_F(GeometryPassTest, CameraUBOData_SizeMatchesShaderExpectation)
-{
-	// Shader expects 2 mat4s (viewProj + view) = 128 bytes
-	EXPECT_EQ(sizeof(CameraUBOData), 128u);
-}
+// Shader expects 2 mat4s (viewProj + view) = 128 bytes
+static_assert(sizeof(CameraUBOData) == 128u);
 
 // ---------------------------------------------------------------------------
 // 7. PushConstants size matches shader
 // ---------------------------------------------------------------------------
 
-TEST_F(GeometryPassTest, PushConstants_SizeMatchesShaderExpectation)
-{
-	// Shader expects 2 mat4s (model + normalMatrix) + uint32 objectID = 144 bytes
-	EXPECT_EQ(sizeof(MeshPushConstants), 144u);
-}
+// Shader expects 2 mat4s (model + normalMatrix) + uint32 objectID = 144 bytes
+static_assert(sizeof(MeshPushConstants) == 144u);

@@ -149,38 +149,35 @@ TEST(PassPorts, LightingPorts)
 	EXPECT_EQ(ports.Find("SpotLightBuffer", neurus::PortDirection::Input), nullptr);
 }
 
-TEST(PassPorts, ComposePorts)
+TEST(PassPorts, PostProcessingPorts)
 {
-	auto shader = LoadCompute("compose", "res/shaders/compute/compose.comp.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const neurus::PassPorts ports = neurus::ExtractPassPorts("ComposePass", shaders);
-
-	EXPECT_TRUE(ports.problems.empty());
-	ASSERT_EQ(ports.Inputs().size(), 1u);
-	ASSERT_EQ(ports.Outputs().size(), 1u);
-	EXPECT_EQ(ports.Inputs()[0].name, "gHDRColor");
-	EXPECT_EQ(ports.Inputs()[0].binding, 0u);
-	EXPECT_EQ(ports.Outputs()[0].name, "outputComposed");
-	EXPECT_EQ(ports.Outputs()[0].binding, 1u);
-}
-
-TEST(PassPorts, FxaaPorts)
-{
-	auto shader = LoadCompute("fxaa", "res/shaders/compute/fxaa.comp.glsl");
-	ASSERT_TRUE(shader);
-
-	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const neurus::PassPorts ports = neurus::ExtractPassPorts("FXAAPass", shaders);
-
-	EXPECT_TRUE(ports.problems.empty());
-	ASSERT_EQ(ports.Inputs().size(), 1u);
-	ASSERT_EQ(ports.Outputs().size(), 1u);
-	EXPECT_EQ(ports.Inputs()[0].name, "gInput");
-	EXPECT_EQ(ports.Inputs()[0].binding, 0u);
-	EXPECT_EQ(ports.Outputs()[0].name, "outputFXAA");
-	EXPECT_EQ(ports.Outputs()[0].binding, 1u);
+	struct Case
+	{
+		const char* pass;
+		const char* shader;
+		const char* path;
+		const char* input;
+		const char* output;
+	};
+	constexpr Case cases[] = {
+		{"ComposePass", "compose", "res/shaders/compute/compose.comp.glsl", "gHDRColor", "outputComposed"},
+		{"FXAAPass", "fxaa", "res/shaders/compute/fxaa.comp.glsl", "gInput", "outputFXAA"},
+	};
+	for (const auto& entry : cases)
+	{
+		SCOPED_TRACE(entry.pass);
+		auto shader = LoadCompute(entry.shader, entry.path);
+		ASSERT_TRUE(shader);
+		const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
+		const auto ports = neurus::ExtractPassPorts(entry.pass, shaders);
+		EXPECT_TRUE(ports.problems.empty());
+		ASSERT_EQ(ports.Inputs().size(), 1u);
+		ASSERT_EQ(ports.Outputs().size(), 1u);
+		EXPECT_EQ(ports.Inputs()[0].name, entry.input);
+		EXPECT_EQ(ports.Inputs()[0].binding, 0u);
+		EXPECT_EQ(ports.Outputs()[0].name, entry.output);
+		EXPECT_EQ(ports.Outputs()[0].binding, 1u);
+	}
 }
 
 TEST(PassPorts, ShadowIntensityMergesBothShaders)

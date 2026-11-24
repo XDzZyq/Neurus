@@ -47,15 +47,9 @@ TEST(ObjectIDTest, DefaultConstruction)
 	// Default visibility flags
 	EXPECT_TRUE(obj.is_viewport);
 	EXPECT_TRUE(obj.is_rendered);
-}
-
-/**
- * @test ObjectID inherits valid UID.
- */
-TEST(ObjectIDTest, InheritsValidUID)
-{
-	neurus::ObjectID obj;
-	EXPECT_GE(obj.GetObjectID(), 0);
+	EXPECT_EQ(obj.GetShader(), nullptr);
+	EXPECT_EQ(obj.GetTransform(), nullptr);
+	EXPECT_EQ(obj.GetMaterial(), nullptr);
 }
 
 /**
@@ -71,30 +65,6 @@ TEST(ObjectIDTest, SetVisible)
 	obj.SetVisible(true, false);
 	EXPECT_TRUE(obj.is_viewport);
 	EXPECT_FALSE(obj.is_rendered);
-}
-
-/**
- * @test Virtual accessors return nullptr by default.
- */
-TEST(ObjectIDTest, VirtualAccessorsReturnNull)
-{
-	neurus::ObjectID obj;
-	EXPECT_EQ(obj.GetShader(), nullptr);
-	EXPECT_EQ(obj.GetTransform(), nullptr);
-	EXPECT_EQ(obj.GetMaterial(), nullptr);
-}
-
-/**
- * @test ObjectID can have name and type assigned.
- */
-TEST(ObjectIDTest, AssignedNameAndType)
-{
-	neurus::ObjectID obj;
-	obj.o_name = "TestCamera";
-	obj.o_type = neurus::ObjectID::GOType::GO_CAM;
-
-	EXPECT_EQ(obj.o_name, "TestCamera");
-	EXPECT_EQ(obj.o_type, neurus::ObjectID::GOType::GO_CAM);
 }
 
 /**
@@ -145,27 +115,21 @@ void ExpectIdentityOnly()
 
 } // namespace
 
-/**
- * @test Every UID-derived type deletes copy and move.
- *
- * Fails to compile, rather than at run time, if a future scene or data type
- * gains value semantics.
- */
-TEST(ObjectIDTest, IdentityIsNeverCopiedOrMoved)
+// Explicit instantiation checks every identity contract while compiling this translation unit.
+namespace
 {
-	ExpectIdentityOnly<neurus::UID>();
-	ExpectIdentityOnly<neurus::ObjectID>();
-	ExpectIdentityOnly<neurus::Camera>();
-	ExpectIdentityOnly<neurus::Mesh>();
-	ExpectIdentityOnly<neurus::Light>();
-	ExpectIdentityOnly<neurus::Environment>();
-	ExpectIdentityOnly<neurus::Sprite>();
-	ExpectIdentityOnly<neurus::DebugLine>();
-	ExpectIdentityOnly<neurus::DebugMesh>();
-	ExpectIdentityOnly<neurus::DebugPoints>();
-	ExpectIdentityOnly<neurus::Scene>();
-	ExpectIdentityOnly<neurus::MeshData>();
-	ExpectIdentityOnly<neurus::ImageData>();
-	ExpectIdentityOnly<neurus::ShaderData>();
-}
-
+template void ExpectIdentityOnly<neurus::UID>();
+template void ExpectIdentityOnly<neurus::ObjectID>();
+template void ExpectIdentityOnly<neurus::Camera>();
+template void ExpectIdentityOnly<neurus::Mesh>();
+template void ExpectIdentityOnly<neurus::Light>();
+template void ExpectIdentityOnly<neurus::Environment>();
+template void ExpectIdentityOnly<neurus::Sprite>();
+template void ExpectIdentityOnly<neurus::DebugLine>();
+template void ExpectIdentityOnly<neurus::DebugMesh>();
+template void ExpectIdentityOnly<neurus::DebugPoints>();
+template void ExpectIdentityOnly<neurus::Scene>();
+template void ExpectIdentityOnly<neurus::MeshData>();
+template void ExpectIdentityOnly<neurus::ImageData>();
+template void ExpectIdentityOnly<neurus::ShaderData>();
+} // namespace

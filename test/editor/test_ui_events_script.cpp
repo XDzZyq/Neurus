@@ -15,30 +15,16 @@
 
 using namespace neurus;
 
-TEST(UIEventsScript, RequestRunScriptEmitsCode)
+TEST(UIEventsScript, RunRequestsRouteSnippetsAndFilePaths)
 {
-	UIEvents& ui = UIEvents::instance();
-
-	QString received;
-	auto conn = QObject::connect(&ui, &UIEvents::runScriptRequested,
-	                             [&received](const QString& code) { received = code; });
-
+	auto& ui = UIEvents::instance();
+	QObject receiver;
+	QString snippet, path;
+	QObject::connect(&ui, &UIEvents::runScriptRequested, &receiver, [&](const QString& value) { snippet = value; });
+	QObject::connect(&ui, &UIEvents::runScriptFileRequested, &receiver, [&](const QString& value) { path = value; });
 	ui.requestRunScript(QStringLiteral("x = 1"));
-	QObject::disconnect(conn);
-
-	EXPECT_EQ(received, QStringLiteral("x = 1"));
-}
-
-TEST(UIEventsScript, RequestRunScriptFileEmitsPath)
-{
-	UIEvents& ui = UIEvents::instance();
-
-	QString received;
-	auto conn = QObject::connect(&ui, &UIEvents::runScriptFileRequested,
-	                             [&received](const QString& path) { received = path; });
-
+	EXPECT_TRUE(path.isEmpty());
 	ui.requestRunScriptFile(QStringLiteral("scripts/demo.py"));
-	QObject::disconnect(conn);
-
-	EXPECT_EQ(received, QStringLiteral("scripts/demo.py"));
+	EXPECT_EQ(snippet, QStringLiteral("x = 1"));
+	EXPECT_EQ(path, QStringLiteral("scripts/demo.py"));
 }

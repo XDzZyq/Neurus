@@ -15,6 +15,7 @@ locate the Vulkan SDK; this target proves the link boundary, not an SDK-free con
 cmake --build build --config Debug --target neurus_cpu_test
 ctest --test-dir build -C Debug -R '^Neurus\.CPU\.' --output-on-failure
 python scripts/check_layer_boundaries.py
+python scripts/test_check_layer_boundaries.py
 ```
 
 CTest prefixes these cases with `Neurus.CPU.` and also registers the include
@@ -25,16 +26,25 @@ layers, including the dedicated CPU Shader module. Shared renderer request/frame
 values belong in `src/render_api/`, linked through `neurus_render_api`. This executable complements the full suite and does
 not replace GPU or reference-image verification.
 
-CI also runs the include checker in a standalone `Layer boundaries` job before
-starting the Windows/macOS matrix and Linux build. It tests the checker itself,
-then scans source includes. It needs only Python, with no
-submodules, Qt or Vulkan setup. A violation fails the required `ci-gate`; the
-existing documentation-only skip behavior is preserved.
+After change detection, CI starts the layer-boundary checks, translation checks,
+Windows/macOS build matrix and headless Linux build in parallel. The two Python
+jobs use a plain checkout. The required `ci-gate` checks all four results.
+Documentation-only PRs skip all four jobs and still receive a gate result.
+
+The include checker rejects Application headers in component libraries and
+checks UI and Script imports against each consumer's public Editor contracts.
+For example, both can use scene event values, UI can read `HistoryView`, and
+Script can dispatch through `IEventQueue`. Including `Editor.hpp` or the
+concrete event bus from either consumer fails the gate. Review frame ownership
+and thread handoffs against the [runtime data flow](../architecture/data-flow.md).
 
 A production source outside `src/editor/operations/` that directly includes
 `OperationContext.hpp` fails the boundary check. The context's private
 constructor also enforces replay ownership in code that includes an operation
-type transitively. Unit tests for individual operations use a test-only fixture.
+type transitively. A controller that directly includes `OperationManager.hpp`
+also fails the check. Controllers can include concrete operation types to describe
+edits and submit them through `IOperationSink`. Unit tests for individual
+operations use a test-only fixture.
 
 The checker resolves literal project includes against the source directory,
 `src/`, and unique header names. It reports forbidden layer dependencies and
@@ -471,12 +481,32 @@ make check FILTER="-R DeferredShading"
 # Run a specific test case
 make check FILTER="-R DeferredShadingTest.GbufferAttachments"
 
-# Run only non-GPU tests (CI-compatible)
-make check FILTER="-E DeferredShading|Lighting|Screenshot|ModelRender|Texture"
+# Run the CPU boundary executable's cases
+make check FILTER="-R ^Neurus[.]CPU[.]"
 
 # Run the test executable directly with GTest filters
 build/Debug/neurus_test --gtest_filter="DeferredShadingTest.*"
 ```
+
+### Selecting by layer and severity
+
+Each CTest entry has one `Layer::*` label identifying the subsystem under test and one `Severity::*` label describing the impact of a regression. Repeated `-L` options select their intersection. Use `-N` to preview the matching names before running them.
+
+```sh
+ctest --test-dir build -C Debug --print-labels
+ctest --test-dir build -C Debug -N -L "^Layer::Editor$" -L "^Severity::High$"
+ctest --test-dir build -C Debug -L "^Layer::Editor$" -L "^Severity::High$" --output-on-failure
+make check FILTER="-L Severity::Critical"
+```
+
+| Severity | Regression impact |
+|---|---|
+| Critical | Data loss, a broken isolation guarantee, a deadlock, or failure of a primary rendering path |
+| High | A major workflow fails or produces incorrect output |
+| Medium | A localized feature or input behaves incorrectly |
+| Low | Presentation, logging, or diagnostic details degrade |
+
+Assign new Google Test suites in [NeurusTestLabels.cmake](../../cmake/NeurusTestLabels.cmake). Cases inherit the suite's labels. Use a `Suite.Case` entry when a case has a different owner or impact. CTest applies the mapping after discovery through `TEST_INCLUDE_FILES`. The two Python checks receive their labels at registration.
 
 `make check` resolves the single-config `build/debug` tree whenever it exists and
 falls back to the multi-config `build/` tree otherwise, running `ctest` in

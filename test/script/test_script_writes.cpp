@@ -145,30 +145,20 @@ assert mesh.name == "Ground Renamed"
 	EXPECT_EQ(m_mesh->o_name, "Ground");
 }
 
-TEST_F(ScriptWrites, ObjectDeleteRemovesSceneMembershipAndIsUndoable)
+TEST_F(ScriptWrites, DeletingViaObjectOrSceneIsUndoable)
 {
 	const int uid = m_mesh->GetObjectID();
-	const std::size_t before = m_operations.GetUndoStack().size();
-	RunCleanly(R"(
-import neurus
-neurus.data.meshes["Ground"].delete()
-)");
-	EXPECT_EQ(m_scene.GetObjectID(uid), nullptr);
-	EXPECT_NE(m_resources.Get<neurus::Mesh>(uid), nullptr);
-	EXPECT_EQ(m_operations.GetUndoStack().size(), before + 1);
-
-	m_operations.Undo();
-	EXPECT_NE(m_scene.GetObjectID(uid), nullptr);
-}
-
-TEST_F(ScriptWrites, SceneDeleteAcceptsASingleObject)
-{
-	const int uid = m_mesh->GetObjectID();
-	RunCleanly(R"(
-import neurus
-neurus.scene.delete(neurus.data.meshes["Ground"])
-)");
-	EXPECT_EQ(m_scene.GetObjectID(uid), nullptr);
+	for (const char* operation : {"mesh.delete()", "neurus.scene.delete(mesh)"})
+	{
+		SCOPED_TRACE(operation);
+		const auto before = m_operations.GetUndoStack().size();
+		RunCleanly(std::string("import neurus\nmesh = neurus.data.meshes['Ground']\n") + operation);
+		EXPECT_EQ(m_scene.GetObjectID(uid), nullptr);
+		EXPECT_NE(m_resources.Get<neurus::Mesh>(uid), nullptr);
+		ASSERT_EQ(m_operations.GetUndoStack().size(), before + 1);
+		m_operations.Undo();
+		ASSERT_EQ(m_scene.GetObjectID(uid), m_mesh.get());
+	}
 }
 
 TEST_F(ScriptWrites, SceneSelectionIsWritableAndUndoable)
@@ -182,18 +172,12 @@ assert [o.name for o in neurus.scene.selection()] == ["Ground"]
 	EXPECT_EQ(m_mesh->o_name, "Ground");
 	EXPECT_EQ(m_operations.GetUndoStack().size(), before + 1);
 
-	m_operations.Undo();
+	RunCleanly("neurus.scene.clear_selection()\nassert neurus.scene.selection() == []");
 	EXPECT_TRUE(m_scene.selections.GetSelectedList().empty());
-}
+	m_operations.Undo();
+	ASSERT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
 
-TEST_F(ScriptWrites, SceneClearSelectionWorks)
-{
-	RunCleanly(R"(
-import neurus
-neurus.scene.select(neurus.data.meshes["Ground"])
-neurus.scene.clear_selection()
-assert neurus.scene.selection() == []
-)");
+	m_operations.Undo();
 	EXPECT_TRUE(m_scene.selections.GetSelectedList().empty());
 }
 
@@ -246,33 +230,6 @@ assert len(neurus.scene.cameras) == 1
 	engine.Shutdown();
 }
 
-TEST_F(ScriptWrites, WriteIsVisibleOnTheNextStatement)
-{
-	RunCleanly(R"(
-import neurus
-mesh = neurus.data.meshes["Ground"]
-mesh.position = (2, 2, 2)
-assert tuple(mesh.position) == (2.0, 2.0, 2.0), mesh.position
-)");
-
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(2.0f, 2.0f, 2.0f));
-}
-
-TEST_F(ScriptWrites, RunIsOneUndoStep)
-{
-	RunCleanly(R"(
-import neurus
-mesh = neurus.data.meshes["Ground"]
-mesh.position = (1, 0, 0)
-mesh.position = (2, 0, 0)
-mesh.position = (3, 0, 0)
-)");
-
-	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
-	m_operations.Undo();
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(0.0f));
-}
-
 TEST_F(ScriptWrites, FailedRunKeepsOneUndoStep)
 {
 	Run("import neurus\nmesh = neurus.data.meshes['Ground']\n"
@@ -281,12 +238,6 @@ TEST_F(ScriptWrites, FailedRunKeepsOneUndoStep)
 
 	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(1.0f, 0.0f, 0.0f));
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
-}
-
-TEST_F(ScriptWrites, DetachedObjectIsWritable)
-{
-	RunCleanly("import neurus\nneurus.data.meshes['Detached'].position = (5, 5, 5)\n");
-	EXPECT_EQ(m_detached->GetPosition(), glm::vec3(5.0f));
 }
 
 /**
@@ -307,11 +258,11 @@ TEST_F(ScriptWrites, CameraPositionIsOneUndoStep)
 	EXPECT_EQ(m_camera->GetPosition(), before);
 }
 
-TEST_F(ScriptWrites, WriteToDeletedObjectRaises)
+TEST_F(ScriptWrites, DetachedMeshRemainsWritableUntilRemovedFromThePool)
 {
 	const int uid = m_detached->GetObjectID();
-	const glm::vec3 before = m_detached->GetPosition();
-	RunCleanly("import neurus\nmesh = neurus.data.meshes['Detached']\n");
+	RunCleanly("import neurus\nmesh = neurus.data.meshes['Detached']\nmesh.position = (5, 5, 5)\n");
+	ASSERT_EQ(m_detached->GetPosition(), glm::vec3(5.0f));
 	m_resources.Remove(uid);
 
 	// `mesh` persists in __main__. The snippet asserts the failure itself, so a
@@ -327,7 +278,7 @@ else:
 )");
 
 	EXPECT_EQ(neurus::LogBuffer::instance().ErrorCount(), errors) << "the snippet's own assertion failed";
-	EXPECT_EQ(m_detached->GetPosition(), before);
+	EXPECT_EQ(m_detached->GetPosition(), glm::vec3(5.0f));
 }
 
 TEST_F(ScriptWrites, LoopSeesEachWrite)
@@ -339,6 +290,9 @@ for i in range(1, 6):
     mesh.position = (i, 0, 0)
     assert tuple(mesh.position)[0] == float(i), mesh.position
 )");
+	ASSERT_EQ(m_operations.GetUndoStack().size(), 1u);
+	m_operations.Undo();
+	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(0.0f));
 }
 
 TEST_F(ScriptWrites, TwoConfigWritesInOneRunBothApply)

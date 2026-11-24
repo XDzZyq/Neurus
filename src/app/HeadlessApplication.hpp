@@ -73,22 +73,22 @@ public:
 	command::CommandResult Execute(const command::CommandRequest& request) override;
 
 private:
-	AppArgs                     m_args;
-	std::chrono::steady_clock::time_point m_startTime;
+	AppArgs                     app_args;
+	std::chrono::steady_clock::time_point app_startTime;
 
 	// Declared so destruction runs in dependency order (reverse of this list):
 	// the render thread joins before the renderer, the renderer before the
-	// upload manager. m_core comes after the editor because it owns the script
+	// upload manager. app_core comes after the editor because it owns the script
 	// engine, which borrows the editor's event queue and script context: the
 	// engine must be finalized before the editor, so it must be declared later.
-	std::unique_ptr<VulkanContext>        m_vkContext;
-	std::unique_ptr<Editor>               m_editor;
-	std::unique_ptr<EditorCommandAdapter> m_commands;
-	std::unique_ptr<ApplicationCore>      m_core;
-	std::unique_ptr<SessionServer>        m_session;
-	std::unique_ptr<UploadManager>        m_uploader;
-	std::unique_ptr<DeferredRenderer>     m_renderer;
-	std::unique_ptr<RenderThread>         m_renderThread;
+	std::unique_ptr<VulkanContext>        app_vkContext;
+	std::unique_ptr<Editor>               app_editor;
+	std::unique_ptr<EditorCommandAdapter> app_commands;
+	std::unique_ptr<ApplicationCore>      app_core;
+	std::unique_ptr<SessionServer>        app_session;
+	std::unique_ptr<UploadManager>        app_uploader;
+	std::unique_ptr<DeferredRenderer>     app_renderer;
+	std::unique_ptr<RenderThread>         app_renderThread;
 };
 
 } // namespace neurus

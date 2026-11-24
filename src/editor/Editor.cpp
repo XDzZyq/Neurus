@@ -192,13 +192,13 @@ int PoolShader(neurus::ResourceManager& resources,
 } // anonymous namespace
 
 Editor::Editor(RenderRequestSink* renderer, std::shared_ptr<const BuiltInRenderData> renderDefaults)
-	: m_scene(std::make_unique<Scene>())
-	, m_resources(std::make_unique<ResourceManager>())
+	: ed_scene(std::make_unique<Scene>())
+	, ed_resources(std::make_unique<ResourceManager>())
 	, ed_operations(ed_eventBus)
 	, ed_renderer(renderer)
 {
-	m_renderManager = std::make_unique<RenderManager>(*m_resources, renderer, std::move(renderDefaults));
-	m_ctx.render = m_renderManager.get();
+	ed_renderManager = std::make_unique<RenderManager>(*ed_resources, renderer, std::move(renderDefaults));
+	ed_ctx.render = ed_renderManager.get();
 }
 
 Editor::~Editor()
@@ -270,9 +270,9 @@ void Editor::Initialize()
 	// undo drops the reference (the pool keeps the shader). No version bump: the
 	// per-mesh (objectId, version) pipeline cache handles the relink.
 	ed_eventBus.Subscribe<ShaderLinkRestored>([this](const ShaderLinkRestored& e) {
-		auto mesh = m_resources->Get<Mesh>(e.objectUid);
+		auto mesh = ed_resources->Get<Mesh>(e.objectUid);
 		if (!mesh) return;
-		auto shader = m_resources->Get<RenderShader>(e.shaderId);
+		auto shader = ed_resources->Get<RenderShader>(e.shaderId);
 		if (!shader)
 		{
 			NEURUS_ERR("[Editor] ShaderLinkRestored: shader " << e.shaderId << " not pooled");
@@ -282,7 +282,7 @@ void Editor::Initialize()
 		neurus::notify::Mutated(ed_eventBus);
 	});
 	ed_eventBus.Subscribe<ShaderUnlinkRestored>([this](const ShaderUnlinkRestored& e) {
-		auto mesh = m_resources->Get<Mesh>(e.objectUid);
+		auto mesh = ed_resources->Get<Mesh>(e.objectUid);
 		if (!mesh) return;
 		mesh->SetObjShader(nullptr);
 		neurus::notify::Mutated(ed_eventBus);
@@ -370,14 +370,14 @@ void Editor::Initialize()
 		// viewport, not of the scene, and the null-camera return below would
 		// otherwise swallow it. The viewport dirties its own gizmo guide from
 		// here - a live gesture follows the cursor through a pixel budget.
-		m_viewport.SetCursor(e.position);
+		ed_viewport.SetCursor(e.position);
 
-		const Camera* cam = m_viewport.GetCamera();
+		const Camera* cam = ed_viewport.GetCamera();
 		if (!cam) return;
 
 		// Orbit is suppressed for the duration of a modal gesture, which also keeps
 		// the drag's anchor math camera-invariant.
-		if (m_viewport.IsGizmoActive()) return;
+		if (ed_viewport.IsGizmoActive()) return;
 
 		if (e.middleHeld)
 		{
@@ -398,17 +398,17 @@ void Editor::Initialize()
 		if (e.button == Input::Left)  { ed_eventBus.Emit(GizmoConfirmed{}); return; }
 		if (e.button == Input::Right) { ed_eventBus.Emit(GizmoCancelled{}); return; }
 		if (e.button != Input::Middle) return;
-		if (const Camera* cam = m_viewport.GetCamera())
+		if (const Camera* cam = ed_viewport.GetCamera())
 			ed_eventBus.Emit(CameraDragBegin{cam->GetObjectID()});
 	});
 	ed_eventBus.Subscribe<MouseReleaseEvent>([this](const MouseReleaseEvent& e) {
 		if (e.button != Input::Middle) return;
-		if (const Camera* cam = m_viewport.GetCamera())
+		if (const Camera* cam = ed_viewport.GetCamera())
 			ed_eventBus.Emit(CameraDragEnd{cam->GetObjectID()});
 	});
 
 	ed_eventBus.Subscribe<MouseScrollEvent>([this](const MouseScrollEvent& e) {
-		const Camera* cam = m_viewport.GetCamera();
+		const Camera* cam = ed_viewport.GetCamera();
 		if (!cam) return;
 
 		if (std::abs(e.delta) > 0.001f)
@@ -471,11 +471,11 @@ void Editor::Initialize()
 		// stale. Marking is O(1); the rebuild happens once in Edit(). The gizmo
 		// guide rides the same broadcast, which is what makes it appear on arm,
 		// follow a drag and vanish on confirm or cancel.
-		m_viewport.MarkOverlaysDirty();
+		ed_viewport.MarkOverlaysDirty();
 	});
 
 	ed_eventBus.Subscribe<RenderGraphCommitRequested>([this](const RenderGraphCommitRequested& change) {
-		const auto diagnostics = m_renderManager->Diagnostics();
+		const auto diagnostics = ed_renderManager->Diagnostics();
 		if (!diagnostics.empty())
 		{
 			const auto& d = diagnostics.front();
@@ -484,15 +484,15 @@ void Editor::Initialize()
 		}
 
 		for (int uid : change.shaderUids)
-			if (const auto shader = m_resources->Get<ShaderData>(uid))
+			if (const auto shader = ed_resources->Get<ShaderData>(uid))
 				shader->BumpVersion();
 		if (change.topologyChanged)
-			m_renderManager->Publish();
+			ed_renderManager->Publish();
 		for (int uid : change.shaderUids)
-			if (const auto shader = m_resources->Get<ShaderData>(uid))
+			if (const auto shader = ed_resources->Get<ShaderData>(uid))
 			{
-				if (!change.topologyChanged || !m_renderManager->ReferencesShader(uid))
-					m_renderManager->UploadShader(*shader);
+				if (!change.topologyChanged || !ed_renderManager->ReferencesShader(uid))
+					ed_renderManager->UploadShader(*shader);
 				ed_eventBus.Emit(ShaderCompiled{uid, true});
 			}
 		notify::Mutated(ed_eventBus);
@@ -506,17 +506,17 @@ void Editor::Initialize()
 	// and no frame draws with the pass default. Keyed on the shader's object id.
 	ed_eventBus.Subscribe<ShaderCompiled>([this](const ShaderCompiled& e) {
 		if (!ed_renderer) return;
-		auto shader = m_resources->Get<ShaderData>(e.shaderObjectId);
+		auto shader = ed_resources->Get<ShaderData>(e.shaderObjectId);
 		if (!shader) return;
 		bool usedByMesh = false;
-		m_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
+		ed_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
 		{
 			if (mesh && mesh->o_shader && mesh->o_shader->GetObjectID() == e.shaderObjectId)
 				usedByMesh = true;
 		});
-		const bool usedByGraph = m_renderManager->ReferencesShader(e.shaderObjectId);
+		const bool usedByGraph = ed_renderManager->ReferencesShader(e.shaderObjectId);
 		if (usedByGraph && !e.uploaded)
-			m_renderManager->Publish();
+			ed_renderManager->Publish();
 		if (usedByMesh && shader->GetType() == ShaderType::VERTEX)
 		{
 			if (!usedByGraph && !e.uploaded)
@@ -533,13 +533,13 @@ void Editor::Initialize()
 	// All three paths are covered: a live click, an explicit deselect, and the
 	// absolute set an undo/redo replay applies.
 	ed_eventBus.Subscribe<ObjectSelected>([this](const ObjectSelected&) {
-		m_viewport.MarkGizmoDirty();
+		ed_viewport.MarkGizmoDirty();
 	});
 	ed_eventBus.Subscribe<ObjectDeselected>([this](const ObjectDeselected&) {
-		m_viewport.MarkGizmoDirty();
+		ed_viewport.MarkGizmoDirty();
 	});
 	ed_eventBus.Subscribe<SelectionChanged>([this](const SelectionChanged&) {
-		m_viewport.MarkGizmoDirty();
+		ed_viewport.MarkGizmoDirty();
 	});
 
 	// --- A native-window expose asks for one fresh present ---
@@ -547,18 +547,18 @@ void Editor::Initialize()
 	// nothing on its own, so the overlays are marked stale: Edit() then posts
 	// RedrawOverlaysRequest and the image already drawn is presented again.
 	ed_eventBus.Subscribe<ViewportExposed>([this](const ViewportExposed&) {
-		m_viewport.MarkOverlaysDirty();
+		ed_viewport.MarkOverlaysDirty();
 	});
 
 	// --- Scene mutation GPU-sync + dirty subscriptions (SceneController /
 	// ObjectController) ---
 	ed_eventBus.Subscribe<SceneModified>([this](const SceneModified&) {
-		m_dirty = true;
+		ed_dirty = true;
 	});
 
 	ed_eventBus.Subscribe<LightGpuChanged>([this](const LightGpuChanged& e) {
 		if (!ed_renderer) return;
-		auto light = m_resources->Get<Light>(e.objectUid);
+		auto light = ed_resources->Get<Light>(e.objectUid);
 		if (!light) return;
 		// Snapshot scene values; the renderer converts and rewrites the SSBO entry.
 		ed_renderer->Post(UpdateLightRequest{e.objectUid, MakeLightSnapshot(*light)});
@@ -573,50 +573,50 @@ void Editor::Initialize()
 
 Scene& Editor::GetScene()
 {
-	return *m_scene;
+	return *ed_scene;
 }
 
 const RenderConfig& Editor::GetRenderConfig()
 {
-	return m_renderManager->Config();
+	return ed_renderManager->Config();
 }
 
 RenderConfig& Editor::EditRenderConfig()
 {
-	return m_renderManager->EditConfig();
+	return ed_renderManager->EditConfig();
 }
 std::shared_ptr<RenderConfig>& Editor::GetRenderConfigData()
 {
-	return m_renderManager->ConfigData();
+	return ed_renderManager->ConfigData();
 }
 const std::shared_ptr<RenderConfig>& Editor::GetRenderConfigData() const
 {
-	return m_renderManager->ConfigData();
+	return ed_renderManager->ConfigData();
 }
 
 RenderConfig* Editor::ConfigForControllers()
 {
-	return &m_renderManager->EditConfig();
+	return &ed_renderManager->EditConfig();
 }
 
 const RenderConfig& Editor::GetRenderConfig() const
 {
-	return m_renderManager->Config();
+	return ed_renderManager->Config();
 }
 
 const RenderGraphData& Editor::GetRenderGraph() const
 {
-	return m_renderManager->Graph();
+	return ed_renderManager->Graph();
 }
 
 RenderManager& Editor::GetRenderManager()
 {
-	return *m_renderManager;
+	return *ed_renderManager;
 }
 
 const RenderManager& Editor::GetRenderManager() const
 {
-	return *m_renderManager;
+	return *ed_renderManager;
 }
 
 // =========================================================================
@@ -627,24 +627,24 @@ const Camera* Editor::ActiveCamera() const
 {
 	// The scene's activated camera wins; the viewport camera is the fallback. The
 	// two stay independent: this chooses one, it never copies state between them.
-	const Scene& scene = *m_scene;
+	const Scene& scene = *ed_scene;
 	if (const Camera* sceneCam = scene.GetActiveCamera())
 		return sceneCam;
-	return m_viewport.ViewportCamera();
+	return ed_viewport.ViewportCamera();
 }
 
 void Editor::PublishActiveCamera(bool extentChanged)
 {
 	const Camera* active = ActiveCamera();
-	const bool changed = active != m_viewport.GetCamera();
+	const bool changed = active != ed_viewport.GetCamera();
 
-	m_viewport.SetCamera(active);
+	ed_viewport.SetCamera(active);
 	if (!active) return;
 
 	// A camera becoming active needs the current viewport aspect once (a fresh
 	// Camera is 1x1); a resize needs it re-applied to the same camera. Both go
 	// through the same event, and CameraController is the only writer.
-	const glm::uvec2 size = m_viewport.Size();
+	const glm::uvec2 size = ed_viewport.Size();
 	if ((changed || extentChanged) && size.x != 0u && size.y != 0u)
 	{
 		ed_eventBus.Emit(CameraResizeEvent{
@@ -654,12 +654,12 @@ void Editor::PublishActiveCamera(bool extentChanged)
 
 	// A camera change rescales every fixed-pixel gizmo handle.
 	if (changed)
-		m_viewport.MarkGizmoDirty();
+		ed_viewport.MarkGizmoDirty();
 }
 
 void Editor::HandleViewportResize(glm::uvec2 logical, glm::uvec2 renderExtent)
 {
-	m_viewport.HandleResize(logical, renderExtent);
+	ed_viewport.HandleResize(logical, renderExtent);
 	PublishActiveCamera(true);
 }
 
@@ -673,11 +673,11 @@ void Editor::BuildSnapshot(RenderFrameSnapshot& out) const
 	// Supply the five sources and gate the debug list here, so production
 	// behaviour is unchanged: r_debug_draw decides whether the overlay is
 	// published.
-	BuildSnapshot(m_scene.get(),
-	              m_renderManager->Config(),
-	              m_viewport.GetCamera(),
-	              m_renderManager->Config().RequiresDebugDraw() ? &m_viewport.DebugList() : nullptr,
-	              &m_viewport.GizmoList(),
+	BuildSnapshot(ed_scene.get(),
+	              ed_renderManager->Config(),
+	              ed_viewport.GetCamera(),
+	              ed_renderManager->Config().RequiresDebugDraw() ? &ed_viewport.DebugList() : nullptr,
+	              &ed_viewport.GizmoList(),
 	              out);
 }
 
@@ -819,21 +819,21 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	// is handed over as its read-only interface so a script can resolve names
 	// and ids without reaching the Editor's mutable ResourceManager. Content
 	// creation is not exposed here: a script asks for it through typed events.
-	ctx.scene = m_scene.get();
-	ctx.config = &m_renderManager->Config();
+	ctx.scene = ed_scene.get();
+	ctx.config = &ed_renderManager->Config();
 	ctx.configProvider = [this]() { return &GetRenderConfig(); };
-	ctx.resources = m_resources.get();
+	ctx.resources = ed_resources.get();
 	ctx.graphDiagnostics = [this]() {
 		std::vector<CpuGraphDiagnostic> problems;
 		ed_eventBus.Emit(RenderGraphFlushRequested{&problems});
-		return problems.empty() ? m_renderManager->Diagnostics() : problems;
+		return problems.empty() ? ed_renderManager->Diagnostics() : problems;
 	};
 	ctx.graphProvider = [this]() {
 		ed_eventBus.Emit(RenderGraphFlushRequested{});
-		const auto& authored = m_renderManager->GraphData();
-		return ScriptGraphView{ &m_renderManager->Graph(),
+		const auto& authored = ed_renderManager->GraphData();
+		return ScriptGraphView{ &ed_renderManager->Graph(),
 		                        authored ? std::optional<int>(authored->GetObjectID()) : std::nullopt,
-		                        m_projectEpoch };
+		                        ed_projectEpoch };
 	};
 }
 
@@ -843,7 +843,7 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 
 void Editor::NewScene()
 {
-	++m_projectEpoch;
+	++ed_projectEpoch;
 	try
 	{
 		// The outgoing scene's GPU resources go with it (this drains the device
@@ -851,27 +851,27 @@ void Editor::NewScene()
 		ed_operations.Clear(); // Finish any pending edits against the outgoing resources.
 		DropSceneGpuResources();
 
-		m_scene = std::make_unique<Scene>();
-		m_resources->Clear();
-		m_renderManager->ResetConfig();
+		ed_scene = std::make_unique<Scene>();
+		ed_resources->Clear();
+		ed_renderManager->ResetConfig();
 
 		// The pool just lost the old viewport camera; a new document gets a new one
 		// at the default framing, already adopting the live viewport extent. This is
 		// what keeps an empty scene renderable: the viewport camera is the view, not
 		// scene content.
-		m_viewport.ForgetCamera();
-		m_viewport.EnsureCamera(*m_resources);
+		ed_viewport.ForgetCamera();
+		ed_viewport.EnsureCamera(*ed_resources);
 		PublishActiveCamera();
 
 		// An empty document is its own saved baseline, not an unsaved edit.
-		m_dirty = false;
+		ed_dirty = false;
 
 		// New scene => the old flattened overlay is stale, and so is the handle: it
 		// is anchored on the outgoing document's selection, and the builder only
 		// clears its list inside a dirty Rebuild().
-		m_viewport.MarkOverlaysDirty();
+		ed_viewport.MarkOverlaysDirty();
 
-		m_renderManager->ResetGraph();
+		ed_renderManager->ResetGraph();
 
 		NEURUS_LOG("[Editor] Created new scene.");
 	}
@@ -886,33 +886,33 @@ void Editor::CreateDefaultScene(const std::string& objPath)
 	// The starter scene ships a scene camera as demo content, deliberately left
 	// DEACTIVATED: the viewport looks through its own camera until the user
 	// activates one. A deactivated camera adopts the extent only when activated.
-	auto camera = m_resources->Load<Camera>();
+	auto camera = ed_resources->Load<Camera>();
 	camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
-	m_scene->UseCamera(camera);
+	ed_scene->UseCamera(camera);
 
-	auto meshData = m_resources->Load<MeshData>(objPath);
-	auto mesh = m_resources->Load<Mesh>(meshData);
+	auto meshData = ed_resources->Load<MeshData>(objPath);
+	auto mesh = ed_resources->Load<Mesh>(meshData);
 	mesh->SetScale(glm::vec3(kStarterMeshScale)); // see kStarterMeshScale
-	m_scene->UseMesh(mesh);
+	ed_scene->UseMesh(mesh);
 
-	auto light = m_resources->Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+	auto light = ed_resources->Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(3.0f, 3.0f, 3.0f));
 	light->SetRadius(0.01f);
-	m_scene->UseLight(light);
+	ed_scene->UseLight(light);
 
 	// Paths are relative ("res/...") so project files stay portable; the resource
 	// layer resolves them against the asset dir at load time.
-	auto imageData = m_resources->Load<ImageData>("res/tex/hdr/room.hdr");
-	auto env = m_resources->Load<Environment>(imageData);
-	m_scene->UseEnvironment(env);
+	auto imageData = ed_resources->Load<ImageData>("res/tex/hdr/room.hdr");
+	auto env = ed_resources->Load<Environment>(imageData);
+	ed_scene->UseEnvironment(env);
 
 	AddDefaultDebugObjects(meshData);
 
 	// This mutated a scene, so it is dirty by the same rule as any other edit; a
 	// caller for which this content IS the baseline rebases with ClearDirty().
-	m_dirty = true;
-	m_viewport.MarkOverlaysDirty();  // the flattened overlay predates these objects
+	ed_dirty = true;
+	ed_viewport.MarkOverlaysDirty();  // the flattened overlay predates these objects
 }
 
 /**
@@ -938,42 +938,42 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	//
 	// World axes, thick and solid: the depth-tested reference. They pass through
 	// the demo mesh, so the hidden halves are the depth-occlusion proof.
-	auto axes = m_resources->Load<DebugLine>();
+	auto axes = ed_resources->Load<DebugLine>();
 	axes->SetWidth(3.0f);
 	axes->SetColor(glm::vec4(0.95f, 0.75f, 0.15f, 1.0f));
 	axes->PushDebugLines(axisSpans);
-	m_scene->UseDebugLine(axes);
+	ed_scene->UseDebugLine(axes);
 
 	// The same spans as a thin dashed x-ray line: visible on top of the mesh
 	// exactly where the solid one is occluded, showing both modes at once.
-	auto xrayAxes = m_resources->Load<DebugLine>();
+	auto xrayAxes = ed_resources->Load<DebugLine>();
 	xrayAxes->SetWidth(1.0f);
 	xrayAxes->SetStipple(true);
 	xrayAxes->SetXRay(true);
 	xrayAxes->SetColor(glm::vec4(0.2f, 0.9f, 1.0f, 0.8f));
 	xrayAxes->PushDebugLines(axisSpans);
-	m_scene->UseDebugLine(xrayAxes);
+	ed_scene->UseDebugLine(xrayAxes);
 
 	// Circular sprites at the axis tips, screen-space sized so they stay legible
 	// at any zoom - the default projection mode, exercised here on purpose.
-	auto tips = m_resources->Load<DebugPoints>();
+	auto tips = ed_resources->Load<DebugPoints>();
 	tips->SetPointType(DebugPoints::PointType::CIR);
 	tips->SetScale(10.0f);
 	tips->SetColor(glm::vec4(1.0f, 0.35f, 0.35f, 1.0f));
 	tips->PushDebugPoints({
 		{4.0f, 0.0f, 0.0f}, {0.0f, 4.0f, 0.0f}, {0.0f, 0.0f, 4.0f},
 	});
-	m_scene->UseDebugPoints(tips);
+	ed_scene->UseDebugPoints(tips);
 
 	// A wireframe cube around the light, via the CUBE point type: this is the
 	// path that decomposes one point into 12 segments.
-	auto lightBox = m_resources->Load<DebugPoints>();
+	auto lightBox = ed_resources->Load<DebugPoints>();
 	lightBox->SetPointType(DebugPoints::PointType::CUBE);
 	lightBox->SetProjectionMode(1);  // world units - a cube has real extent
 	lightBox->SetScale(0.4f);
 	lightBox->SetColor(glm::vec4(1.0f, 1.0f, 0.6f, 1.0f));
 	lightBox->PushDebugPoint({3.0f, 3.0f, 3.0f});
-	m_scene->UseDebugPoints(lightBox);
+	ed_scene->UseDebugPoints(lightBox);
 
 	// A wireframe copy of the demo mesh, scaled slightly up and offset so it
 	// reads as a shell rather than z-fighting with the shaded original. This is
@@ -981,7 +981,7 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 	// default scene exercises all of lines, points and wire meshes.
 	if (meshData)
 	{
-		auto wire = m_resources->Load<DebugMesh>(meshData);
+		auto wire = ed_resources->Load<DebugMesh>(meshData);
 		wire->SetPosition(glm::vec3(2.5f, 0.0f, 0.0f));
 		// Same normalisation as the shaded copy (kStarterMeshScale), 2% larger so
 		// it reads as a shell. At 2.5 units out the two spheres (radius ~1) stay
@@ -989,26 +989,26 @@ void Editor::AddDefaultDebugObjects(const std::shared_ptr<MeshData>& meshData)
 		wire->SetScale(glm::vec3(kStarterMeshScale * 1.02f));
 		wire->SetColor(glm::vec4(0.4f, 1.0f, 0.5f, 1.0f));
 		wire->SetOpacity(0.9f);
-		m_scene->UseDebugMesh(wire);
+		ed_scene->UseDebugMesh(wire);
 	}
 }
 
 void Editor::BeginLoad()
 {
-	++m_projectEpoch;
+	++ed_projectEpoch;
 	// The outgoing scene's GPU resources go with it (this drains the device
 	// first); the project's own objects are uploaded by FinishLoad().
 	ed_operations.Clear(); // Finish any pending edits against the outgoing resources.
 	DropSceneGpuResources();
 
-	m_scene = std::make_unique<Scene>();
-	m_resources->Clear(); // Pool is restored from the project file next.
-	m_renderManager->ResetConfig();
-	m_renderManager->ResetGraph(false);
+	ed_scene = std::make_unique<Scene>();
+	ed_resources->Clear(); // Pool is restored from the project file next.
+	ed_renderManager->ResetConfig();
+	ed_renderManager->ResetGraph(false);
 	// The Clear() above dropped the viewport camera. It is NOT re-created here: the
 	// project file may name its own, and creating one now would leak an orphan into
 	// the pool. FinishLoad() resolves or creates it once the file has been read.
-	m_viewport.ForgetCamera();
+	ed_viewport.ForgetCamera();
 	// The caller restores the scene and optional render data before FinishLoad().
 }
 
@@ -1016,27 +1016,27 @@ void Editor::FinishLoad()
 {
 	// Pool restore happens during the project load: pooled resources are
 	// deserialized and wired, and the scene then resolves its ID references.
-	m_dirty = false;
+	ed_dirty = false;
 	// Resolve the viewport camera the project named, or create one for a project
 	// written before it existed. Both paths re-adopt the live extent rather than
 	// trusting the archived aspect.
-	m_viewport.EnsureCamera(*m_resources);
+	ed_viewport.EnsureCamera(*ed_resources);
 	PublishActiveCamera();
 	// Debug objects came back from the project file, and the restored selection
 	// anchors a new handle.
-	m_viewport.MarkOverlaysDirty();
+	ed_viewport.MarkOverlaysDirty();
 	UploadSceneResources(); // meshes, lights, debug meshes, IBL, light SSBO
 
 	// Publish once the project components have restored the graph and its shaders.
-	m_renderManager->Publish();
+	ed_renderManager->Publish();
 
 	// A loaded document is the saved baseline, not an unsaved edit.
-	m_dirty = false;
+	ed_dirty = false;
 }
 
 void Editor::SetRenderGraph(std::unique_ptr<RenderGraphData> graph)
 {
-	if (m_renderManager->SetGraph(std::move(graph)))
+	if (ed_renderManager->SetGraph(std::move(graph)))
 		MarkDirty();
 }
 
@@ -1083,7 +1083,7 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 			NEURUS_ERR("[Editor] Mesh import outside asset dir is stored as-is (non-portable): " << path);
 		}
 
-		auto meshData = m_resources->Load<MeshData>(storedPath);
+		auto meshData = ed_resources->Load<MeshData>(storedPath);
 		if (!meshData || meshData->GetVertexCount() == 0 || meshData->GetIndexCount() == 0)
 		{
 			// Project save serializes the whole pool, so a geometry-less MeshData
@@ -1091,15 +1091,15 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 			// creates a fresh UID, so removing this one cannot evict an earlier
 			// successful load from the same path.
 			if (meshData)
-				m_resources->Remove(meshData->GetObjectID());
+				ed_resources->Remove(meshData->GetObjectID());
 			error = "Mesh file contains no geometry: " + storedPath;
 			return 0;
 		}
-		auto mesh = m_resources->Load<Mesh>(meshData);
+		auto mesh = ed_resources->Load<Mesh>(meshData);
 
 		if (!name.empty())
 		{
-			const std::string unique = m_resources->SetName(mesh->GetObjectID(), name);
+			const std::string unique = ed_resources->SetName(mesh->GetObjectID(), name);
 			mesh->o_name = unique.empty() ? name : unique;
 		}
 
@@ -1124,7 +1124,7 @@ void Editor::OnShaderCreate(const ShaderCreateRequested& e)
 		neurus::notify::Repaint(ed_eventBus);
 	};
 
-	auto mesh = m_resources->Get<Mesh>(e.objectUid);
+	auto mesh = ed_resources->Get<Mesh>(e.objectUid);
 	if (!mesh)
 	{
 		fail("shader target is not a mesh");
@@ -1134,14 +1134,14 @@ void Editor::OnShaderCreate(const ShaderCreateRequested& e)
 	// Stage resolution/parsing lives in ShaderLibrary (via ShaderData for a
 	// pooled source); the pool write stays here, where the Editor owns it.
 	std::string error;
-	auto vert = ResolveShaderStage(*m_resources, e.vertexSourceUid, e.vertexPath,
+	auto vert = ResolveShaderStage(*ed_resources, e.vertexSourceUid, e.vertexPath,
 	                               ShaderType::VERTEX, kDefaultVertexPath, error);
 	if (!vert)
 	{
 		fail(error);
 		return;
 	}
-	auto frag = ResolveShaderStage(*m_resources, e.fragmentSourceUid, e.fragmentPath,
+	auto frag = ResolveShaderStage(*ed_resources, e.fragmentSourceUid, e.fragmentPath,
 	                               ShaderType::FRAGMENT, kDefaultFragmentPath, error);
 	if (!frag)
 	{
@@ -1161,7 +1161,7 @@ void Editor::OnShaderCreate(const ShaderCreateRequested& e)
 		return;
 	}
 
-	const int shaderUid = PoolShader(*m_resources, shader, shaderName);
+	const int shaderUid = PoolShader(*ed_resources, shader, shaderName);
 	result.shaderUid = shaderUid;
 
 	ed_eventBus.Emit(ObjectShaderAddRequested{ e.objectUid, shaderUid });
@@ -1223,7 +1223,7 @@ void Editor::OnShaderImportRequested(const ShaderImportRequested& e)
 			return;
 		}
 
-		result.shaderUid = PoolShader(*m_resources, shader, shaderName);
+		result.shaderUid = PoolShader(*ed_resources, shader, shaderName);
 	}
 	catch (const std::exception& ex)
 	{
@@ -1253,14 +1253,14 @@ void Editor::OnCameraAddRequested(const CameraAddRequested& e)
 int Editor::AddCameraObject(const std::string& name, std::string& error)
 {
 	try {
-		auto camera = m_resources->Load<Camera>();
+		auto camera = ed_resources->Load<Camera>();
 		camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 		// SetTarPos, not a raw cam_tar write: the view matrix is cached eagerly, so
 		// assigning the field would leave the cache looking at the old target.
 		camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		if (!name.empty())
 		{
-			const std::string unique = m_resources->SetName(camera->GetObjectID(), name);
+			const std::string unique = ed_resources->SetName(camera->GetObjectID(), name);
 			camera->o_name = unique.empty() ? name : unique;
 		}
 		ed_eventBus.Emit(SceneObjectAddRequested{camera->GetObjectID()});
@@ -1276,7 +1276,7 @@ int Editor::AddCameraObject(const std::string& name, std::string& error)
 int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string& error)
 {
 	try {
-		auto source = m_resources->Get<ObjectID>(sourceUid);
+		auto source = ed_resources->Get<ObjectID>(sourceUid);
 		if (!source)
 		{
 			error = "No pooled object with uid " + std::to_string(sourceUid) + ".";
@@ -1291,7 +1291,7 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 		int uid = 0;
 		if (auto* camera = dynamic_cast<Camera*>(source.get()))
 		{
-			auto copy = m_resources->Load<Camera>(
+			auto copy = ed_resources->Load<Camera>(
 				camera->cam_w, camera->cam_h, camera->cam_pers, camera->cam_near, camera->cam_far);
 			copy->SetPosition(camera->GetPosition());
 			copy->SetRotation(camera->GetRotation());
@@ -1301,7 +1301,7 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 		}
 		else if (auto* mesh = dynamic_cast<Mesh*>(source.get()))
 		{
-			auto copy = m_resources->Load<Mesh>(mesh->o_mesh);
+			auto copy = ed_resources->Load<Mesh>(mesh->o_mesh);
 			copy->SetPosition(mesh->GetPosition());
 			copy->SetRotation(mesh->GetRotation());
 			copy->SetScale(mesh->GetScale());
@@ -1320,14 +1320,14 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 			return 0;
 		}
 
-		auto pooled = m_resources->Get<ObjectID>(uid);
+		auto pooled = ed_resources->Get<ObjectID>(uid);
 		if (!pooled)
 		{
 			error = "The duplicate resource is missing.";
 			return 0;
 		}
 		const std::string resolvedName = name.empty() ? source->o_name + " Copy" : name;
-		const std::string unique = m_resources->SetName(uid, resolvedName);
+		const std::string unique = ed_resources->SetName(uid, resolvedName);
 		pooled->o_name = unique.empty() ? resolvedName : unique;
 
 		ed_eventBus.Emit(SceneObjectAddRequested{uid});
@@ -1351,7 +1351,7 @@ void Editor::OnObjectDuplicateRequested(const ObjectDuplicateRequested& e)
 void Editor::OnLightAdd()
 {
 	try {
-		auto light = m_resources->Load<Light>(
+		auto light = ed_resources->Load<Light>(
 			neurus::POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		light->SetPosition(glm::vec3(3.0f, 3.0f, 3.0f));
 		light->SetRadius(0.01f);
@@ -1369,7 +1369,7 @@ void Editor::OnLightAdd()
 void Editor::OnSunLightAdd()
 {
 	try {
-		auto light = m_resources->Load<Light>(
+		auto light = ed_resources->Load<Light>(
 			neurus::SUNLIGHT, 5.0f, glm::vec3(1.0f, 0.95f, 0.8f));
 		light->SetPosition(glm::vec3(0.0f, 0.0f, 10.0f));
 		light->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
@@ -1387,7 +1387,7 @@ void Editor::OnSunLightAdd()
 void Editor::OnSpotLightAdd()
 {
 	try {
-		auto light = m_resources->Load<Light>(
+		auto light = ed_resources->Load<Light>(
 			neurus::SPOTLIGHT, 30.0f, glm::vec3(1.0f, 0.75f, 0.4f));
 		light->SetPosition(glm::vec3(0.0f, 0.0f, 6.0f));
 		light->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
@@ -1417,21 +1417,21 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 {
 	if (!ed_renderer || objectUid == 0) return;
 
-	if (auto mesh = m_resources->Get<Mesh>(objectUid))
+	if (auto mesh = ed_resources->Get<Mesh>(objectUid))
 	{
 		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
 	}
-	else if (auto light = m_resources->Get<Light>(objectUid))
+	else if (auto light = ed_resources->Get<Light>(objectUid))
 	{
 		PostLightUpload(*ed_renderer, *light);
 	}
-	else if (auto env = m_resources->Get<Environment>(objectUid))
+	else if (auto env = ed_resources->Get<Environment>(objectUid))
 	{
 		// regenerate=true: an environment entering the scene is a change, and its
 		// cubemaps (if any cached under a reused id) are stale.
 		PostEnvironmentUpload(*ed_renderer, *env, true);
 	}
-	else if (auto dMesh = m_resources->Get<DebugMesh>(objectUid))
+	else if (auto dMesh = ed_resources->Get<DebugMesh>(objectUid))
 	{
 		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
 	}
@@ -1439,7 +1439,7 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 
 void Editor::UploadEnvironmentIBL()
 {
-	Scene* scene = m_scene.get();
+	Scene* scene = ed_scene.get();
 	if (!scene)
 	{
 		NEURUS_ERR("[Editor] UploadEnvironmentIBL: no scene available");
@@ -1487,7 +1487,7 @@ void Editor::UploadSceneResources()
 	// Scene-scoped upload: GPU resources mirror the SCENE, not the pool, so memory
 	// stays proportional to the scene. Pooled objects not in the scene are skipped
 	// and uploaded on demand when re-added.
-	for (const auto& [id, mesh] : m_scene->mesh_list)
+	for (const auto& [id, mesh] : ed_scene->mesh_list)
 	{
 		if (!mesh || !mesh->o_mesh) continue;
 		PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
@@ -1502,7 +1502,7 @@ void Editor::UploadSceneResources()
 		}
 	}
 
-	for (const auto& [uid, light] : m_scene->light_list)
+	for (const auto& [uid, light] : ed_scene->light_list)
 	{
 		if (!light) continue;
 		PostLightUpload(*ed_renderer, *light);
@@ -1510,7 +1510,7 @@ void Editor::UploadSceneResources()
 
 	// DebugMesh wireframes need a MeshGPU too: the consumer skips any wire mesh
 	// whose id resolves to no cached geometry.
-	for (const auto& [uid, dMesh] : m_scene->dMesh_list)
+	for (const auto& [uid, dMesh] : ed_scene->dMesh_list)
 	{
 		if (!dMesh || !dMesh->HasGeometry()) continue;
 		PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
@@ -1546,7 +1546,7 @@ void Editor::UploadLighting()
 {
 	if (!ed_renderer) return;
 	// Publish owned scene values; GPU layout conversion stays in the renderer.
-	ed_renderer->Post(MakeUpdateLightingRequest(m_scene->light_list));
+	ed_renderer->Post(MakeUpdateLightingRequest(ed_scene->light_list));
 }
 
 // =========================================================================
@@ -1569,7 +1569,7 @@ void Editor::Edit()
 	// After the queue is drained, so a scene change and its overlay consequences
 	// land in the same frame. Which overlays are dirty and what they anchor on are
 	// viewport questions - the Editor's part is only the timing.
-	if (m_scene && m_viewport.RebuildOverlays(*m_scene))
+	if (ed_scene && ed_viewport.RebuildOverlays(*ed_scene))
 	{
 		// The rebuilt payload only reaches the screen if the renderer draws again,
 		// and once accumulation has converged it draws nothing on its own. Posted

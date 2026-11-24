@@ -21,158 +21,59 @@ static std::string MakeObj(std::initializer_list<const char*> lines)
 	return oss.str();
 }
 
-// ---------------------------------------------------------------------------
-// 1. Simple triangle - all components (pos, uv, norm)
-// ---------------------------------------------------------------------------
-
-TEST(MeshDataTest, Triangle_AllComponents)
+TEST(MeshDataTest, TriangleFaceFormatsPreservePositionsNormalsAndUVs)
 {
-	const std::string obj = MakeObj({
-		"v 0.0 0.0 0.0",
-		"v 1.0 0.0 0.0",
-		"v 0.0 1.0 0.0",
-		"vt 0.0 0.0",
-		"vt 1.0 0.0",
-		"vt 0.0 1.0",
-		"vn 0.0 0.0 1.0",
-		"vn 0.0 0.0 1.0",
-		"vn 0.0 0.0 1.0",
-		"f 1/1/1 2/2/2 3/3/3"
-	});
-
-	MeshData mesh;
-	ASSERT_TRUE(mesh.LoadObjFromString(obj));
-
-	EXPECT_EQ(mesh.GetVertexCount(), 3u);
-	EXPECT_EQ(mesh.GetIndexCount(), 3u);
-
-	const auto& data = mesh.GetMeshData();
-	ASSERT_EQ(data.dataArray.size(), 3u * 14u);
-	ASSERT_EQ(data.indexArray.size(), 3u);
-
-	// Indices should be 0,1,2 for a simple triangle
-	EXPECT_EQ(data.indexArray[0], 0u);
-	EXPECT_EQ(data.indexArray[1], 1u);
-	EXPECT_EQ(data.indexArray[2], 2u);
-
-	// Check first vertex: position (0,0,0)
-	EXPECT_FLOAT_EQ(data.dataArray[0], 0.0f);
-	EXPECT_FLOAT_EQ(data.dataArray[1], 0.0f);
-	EXPECT_FLOAT_EQ(data.dataArray[2], 0.0f);
-
-	// UV (0,0)
-	EXPECT_FLOAT_EQ(data.dataArray[6], 0.0f);
-	EXPECT_FLOAT_EQ(data.dataArray[7], 0.0f);
-
-	// Normal (0,0,1)
-	EXPECT_FLOAT_EQ(data.dataArray[3], 0.0f);
-	EXPECT_FLOAT_EQ(data.dataArray[4], 0.0f);
-	EXPECT_FLOAT_EQ(data.dataArray[5], 1.0f);
-
-	// Check second vertex: position (1,0,0)
-	EXPECT_FLOAT_EQ(data.dataArray[14 + 0], 1.0f);
-	EXPECT_FLOAT_EQ(data.dataArray[14 + 1], 0.0f);
-	EXPECT_FLOAT_EQ(data.dataArray[14 + 2], 0.0f);
-
-	// Center should be roughly (0.33, 0.33, 0.0)
-	glm::vec3 center = mesh.GetMeshCenter();
-	EXPECT_NEAR(center.x, 0.33333f, 0.01f);
-	EXPECT_NEAR(center.y, 0.33333f, 0.01f);
-	EXPECT_NEAR(center.z, 0.0f, 0.01f);
-}
-
-// ---------------------------------------------------------------------------
-// 2. Triangle without UVs - format: f v//vn
-// ---------------------------------------------------------------------------
-
-TEST(MeshDataTest, Triangle_NoUVs)
-{
-	const std::string obj = MakeObj({
-		"v 0.0 0.0 0.0",
-		"v 1.0 0.0 0.0",
-		"v 0.0 1.0 0.0",
-		"vn 0.0 0.0 1.0",
-		"f 1//1 2//1 3//1"
-	});
-
-	MeshData mesh;
-	ASSERT_TRUE(mesh.LoadObjFromString(obj));
-
-	EXPECT_EQ(mesh.GetVertexCount(), 3u);
-	EXPECT_EQ(mesh.GetIndexCount(), 3u);
-
-	const auto& data = mesh.GetMeshData();
-	ASSERT_EQ(data.dataArray.size(), 3u * 14u);
-
-	// UVs should be zero for all vertices
-	for (int v = 0; v < 3; ++v)
+	struct FaceCase
 	{
-		EXPECT_FLOAT_EQ(data.dataArray[v * 14 + 6], 0.0f);
-		EXPECT_FLOAT_EQ(data.dataArray[v * 14 + 7], 0.0f);
-	}
-}
-
-// ---------------------------------------------------------------------------
-// 3. Triangle without normals - format: f v/vt
-// ---------------------------------------------------------------------------
-
-TEST(MeshDataTest, Triangle_NoNormals)
-{
-	const std::string obj = MakeObj({
-		"v 0.0 0.0 0.0",
-		"v 1.0 0.0 0.0",
-		"v 0.0 1.0 0.0",
-		"vt 0.0 0.0",
-		"vt 1.0 0.0",
-		"vt 0.0 1.0",
-		"f 1/1 2/2 3/3"
-	});
-
-	MeshData mesh;
-	ASSERT_TRUE(mesh.LoadObjFromString(obj));
-
-	EXPECT_EQ(mesh.GetVertexCount(), 3u);
-	EXPECT_EQ(mesh.GetIndexCount(), 3u);
-
-	const auto& data = mesh.GetMeshData();
-
-	// Normals should be computed: for this triangle (z-up), normal ≈ (0,0,1)
-	// Cross product: (1,0,0) x (0,1,0) = (0,0,1) for the 2nd and 3rd vertices vs 1st
-	for (int v = 0; v < 3; ++v)
+		const char* face;
+		bool hasUVs;
+		bool hasNormals;
+	};
+	constexpr FaceCase cases[] = {
+		{"f 1/1/1 2/2/1 3/3/1", true, true},
+		{"f 1//1 2//1 3//1", false, true},
+		{"f 1/1 2/2 3/3", true, false},
+		{"f 1 2 3", false, false},
+	};
+	for (const auto& sample : cases)
 	{
-		EXPECT_NEAR(data.dataArray[v * 14 + 3], 0.0f, 0.01f);
-		EXPECT_NEAR(data.dataArray[v * 14 + 4], 0.0f, 0.01f);
-		EXPECT_NEAR(data.dataArray[v * 14 + 5], 1.0f, 0.01f);
-	}
-}
+		SCOPED_TRACE(sample.face);
+		std::string obj = MakeObj({"o Triangle", "# triangle positions", "",
+			"v 0 0 0", "v 1 0 0", "v 0 1 0"});
+		if (sample.hasUVs)
+			obj += MakeObj({"vt 0 0", "vt 1 0", "vt 0 1"});
+		if (sample.hasNormals)
+			obj += MakeObj({"vn 0 0 -1"});
+		obj += MakeObj({sample.face});
 
-// ---------------------------------------------------------------------------
-// 4. Triangle with only positions - format: f v
-// ---------------------------------------------------------------------------
-
-TEST(MeshDataTest, Triangle_OnlyPositions)
-{
-	const std::string obj = MakeObj({
-		"v 0.0 0.0 0.0",
-		"v 1.0 0.0 0.0",
-		"v 0.0 1.0 0.0",
-		"f 1 2 3"
-	});
-
-	MeshData mesh;
-	ASSERT_TRUE(mesh.LoadObjFromString(obj));
-
-	EXPECT_EQ(mesh.GetVertexCount(), 3u);
-	EXPECT_EQ(mesh.GetIndexCount(), 3u);
-
-	const auto& data = mesh.GetMeshData();
-	ASSERT_EQ(data.dataArray.size(), 3u * 14u);
-
-	// Normals should be computed
-	for (int v = 0; v < 3; ++v)
-	{
-		float nz = data.dataArray[v * 14 + 5];
-		EXPECT_NEAR(std::abs(nz), 1.0f, 0.01f);
+		MeshData mesh;
+		ASSERT_TRUE(mesh.LoadObjFromString(obj));
+		EXPECT_EQ(mesh.GetMeshName(), "Triangle");
+		EXPECT_EQ(mesh.GetVertexCount(), 3u);
+		EXPECT_EQ(mesh.GetIndexCount(), 3u);
+		const auto& data = mesh.GetMeshData();
+		ASSERT_EQ(data.dataArray.size(), 3u * 14u);
+		ASSERT_EQ(data.indexArray.size(), 3u);
+		for (size_t i = 0; i < 3; ++i)
+		{
+			SCOPED_TRACE(i);
+			const float x = i == 1 ? 1.0f : 0.0f;
+			const float y = i == 2 ? 1.0f : 0.0f;
+			const auto* vertex = &data.dataArray[i * 14];
+			EXPECT_EQ(data.indexArray[i], i);
+			EXPECT_FLOAT_EQ(vertex[0], x);
+			EXPECT_FLOAT_EQ(vertex[1], y);
+			EXPECT_FLOAT_EQ(vertex[2], 0.0f);
+			EXPECT_NEAR(vertex[3], 0.0f, 0.01f);
+			EXPECT_NEAR(vertex[4], 0.0f, 0.01f);
+			EXPECT_NEAR(vertex[5], sample.hasNormals ? -1.0f : 1.0f, 0.01f);
+			EXPECT_FLOAT_EQ(vertex[6], sample.hasUVs ? x : 0.0f);
+			EXPECT_FLOAT_EQ(vertex[7], sample.hasUVs ? y : 0.0f);
+		}
+		const auto center = mesh.GetMeshCenter();
+		EXPECT_NEAR(center.x, 1.0f / 3.0f, 0.01f);
+		EXPECT_NEAR(center.y, 1.0f / 3.0f, 0.01f);
+		EXPECT_NEAR(center.z, 0.0f, 0.01f);
 	}
 }
 
@@ -211,32 +112,6 @@ TEST(MeshDataTest, Quad_Triangulation)
 	EXPECT_EQ(data.indexArray[3], 0u);
 	EXPECT_EQ(data.indexArray[4], 2u);
 	EXPECT_EQ(data.indexArray[5], 3u);
-}
-
-// ---------------------------------------------------------------------------
-// 6. Comments and empty lines - should be ignored
-// ---------------------------------------------------------------------------
-
-TEST(MeshDataTest, CommentsAndEmptyLines)
-{
-	const std::string obj = MakeObj({
-		"# This is a comment",
-		"",
-		"v 0.0 0.0 0.0",
-		"# Another comment",
-		"v 1.0 0.0 0.0",
-		"",
-		"v 0.0 1.0 0.0",
-		"vn 0.0 0.0 1.0",
-		"f 1//1 2//1 3//1",
-		""
-	});
-
-	MeshData mesh;
-	ASSERT_TRUE(mesh.LoadObjFromString(obj));
-
-	EXPECT_EQ(mesh.GetVertexCount(), 3u);
-	EXPECT_EQ(mesh.GetIndexCount(), 3u);
 }
 
 // ---------------------------------------------------------------------------
@@ -312,27 +187,6 @@ TEST(MeshDataTest, VertexDeduplication)
 			countZero++;
 	}
 	EXPECT_EQ(countZero, 1);
-}
-
-// ---------------------------------------------------------------------------
-// 9. Object name - parsed from 'o' line
-// ---------------------------------------------------------------------------
-
-TEST(MeshDataTest, ObjectName)
-{
-	const std::string obj = MakeObj({
-		"o TestCube",
-		"v 0.0 0.0 0.0",
-		"v 1.0 0.0 0.0",
-		"v 0.0 1.0 0.0",
-		"vn 0.0 0.0 1.0",
-		"f 1//1 2//1 3//1"
-	});
-
-	MeshData mesh;
-	ASSERT_TRUE(mesh.LoadObjFromString(obj));
-
-	EXPECT_EQ(mesh.GetMeshName(), "TestCube");
 }
 
 // ---------------------------------------------------------------------------

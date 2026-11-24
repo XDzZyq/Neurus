@@ -82,6 +82,12 @@ protected:
 
 TEST_F(RenderConfigControllerTest, DiscreteEdit_AppliesAndRecords_RoundTrip)
 {
+	// Writing the current (default) config back is a no-op: applied but not
+	// recorded, so the undo history stays empty.
+	m_eventBus.Enqueue(RenderConfigChangedEvent{ m_config });
+	Process();
+	EXPECT_FALSE(m_operations.CanUndo());
+
 	const float original = m_config.r_gamma;
 	const RenderConfig edited = ConfigWithGamma(2.2f);
 
@@ -102,15 +108,6 @@ TEST_F(RenderConfigControllerTest, DiscreteEdit_AppliesAndRecords_RoundTrip)
 	EXPECT_FALSE(m_operations.CanRedo());
 }
 
-TEST_F(RenderConfigControllerTest, NoOpEdit_RecordsNothing)
-{
-	// Writing the current (default) config back is a no-op: applied but not
-	// recorded, so the undo history stays empty.
-	m_eventBus.Enqueue(RenderConfigChangedEvent{ m_config });
-	Process();
-	EXPECT_FALSE(m_operations.CanUndo());
-}
-
 // --- Slider gesture ---------------------------------------------------------
 
 TEST_F(RenderConfigControllerTest, SliderGesture_CollapsesToOneUndoEntry)
@@ -124,6 +121,9 @@ TEST_F(RenderConfigControllerTest, SliderGesture_CollapsesToOneUndoEntry)
 	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(1.5f) });
 	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.0f) });
 	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(2.2f) });
+	Process();
+	EXPECT_FLOAT_EQ(m_config.r_gamma, 2.2f);
+	EXPECT_FALSE(m_operations.CanUndo());
 	m_eventBus.Enqueue(ConfigEditEnd{});
 	Process();
 
@@ -156,49 +156,7 @@ TEST_F(RenderConfigControllerTest, SliderGesture_NetNoChange_RecordsNothing)
 	EXPECT_FALSE(m_operations.CanUndo());
 }
 
-TEST_F(RenderConfigControllerTest, DuringGesture_NoIntermediateEntries)
-{
-	// Mid-gesture, before release, no op has been recorded yet even though the
-	// live config already reflects the latest intermediate value.
-	m_eventBus.Enqueue(ConfigEditBegin{});
-	m_eventBus.Enqueue(RenderConfigChangedEvent{ ConfigWithGamma(1.7f) });
-	Process();
-
-	EXPECT_FLOAT_EQ(m_config.r_gamma, 1.7f);
-	EXPECT_FALSE(m_operations.CanUndo());
-
-	m_eventBus.Enqueue(ConfigEditEnd{});
-	Process();
-	EXPECT_TRUE(m_operations.CanUndo());
-}
-
 // --- Operation involution ---------------------------------------------------
-
-TEST_F(RenderConfigControllerTest, SetRenderConfigOp_Inverse_IsInvolution)
-{
-	const RenderConfig before = ConfigWithGamma(1.0f);
-	const RenderConfig after = ConfigWithGamma(2.2f);
-	auto op = std::make_unique<SetRenderConfigOp>(before, after);
-	auto twice = op->Inverse()->Inverse();
-
-	EXPECT_EQ(twice->Label(), op->Label());
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	twice->Apply(ctx); // (g⁻¹)⁻¹ reproduces the original forward effect.
-	EXPECT_FLOAT_EQ(m_config.r_gamma, 2.2f);
-}
-
-TEST_F(RenderConfigControllerTest, SetRenderConfigOp_Inverse_AppliesBefore)
-{
-	const RenderConfig before = ConfigWithGamma(1.0f);
-	const RenderConfig after = ConfigWithGamma(2.2f);
-	auto op = std::make_unique<SetRenderConfigOp>(before, after);
-	auto inv = op->Inverse();
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	inv->Apply(ctx); // inverse applies the "before" config.
-	EXPECT_FLOAT_EQ(m_config.r_gamma, 1.0f);
-}
 
 class OptionalRenderConfigControllerTest : public ::testing::Test
 {
@@ -214,10 +172,20 @@ protected:
 	RenderConfigController m_controller;
 };
 
-TEST_F(OptionalRenderConfigControllerTest, GestureWithoutEditKeepsConfigAbsent)
+TEST_F(OptionalRenderConfigControllerTest, ConfigMaterializesOnlyWhenTheGestureChangesIt)
 {
 	m_events.Emit(ConfigEditBegin{});
 	m_events.Emit(ConfigEditEnd{});
+	EXPECT_FALSE(m_data);
+	EXPECT_FALSE(m_operations.CanUndo());
+
+	m_events.Emit(ConfigEditBegin{});
+	m_events.Emit(RenderConfigChangedEvent{ConfigWithGamma(1.5f)});
+	m_events.Emit(RenderConfigChangedEvent{ConfigWithGamma(2.2f)});
+	m_events.Emit(ConfigEditEnd{});
+	ASSERT_NE(m_data, nullptr);
+	EXPECT_FLOAT_EQ(m_data->r_gamma, 2.2f);
+	m_operations.Undo();
 	EXPECT_FALSE(m_data);
 	EXPECT_FALSE(m_operations.CanUndo());
 }
@@ -233,19 +201,6 @@ TEST_F(OptionalRenderConfigControllerTest, ExplicitDefaultEditIsUndoableToAbsenc
 	m_operations.Redo();
 	ASSERT_NE(m_data, nullptr);
 	EXPECT_EQ(*m_data, RenderConfig{});
-}
-
-TEST_F(OptionalRenderConfigControllerTest, GestureUndoRestoresAbsence)
-{
-	m_events.Emit(ConfigEditBegin{});
-	m_events.Emit(RenderConfigChangedEvent{ConfigWithGamma(1.5f)});
-	m_events.Emit(RenderConfigChangedEvent{ConfigWithGamma(2.2f)});
-	m_events.Emit(ConfigEditEnd{});
-	ASSERT_NE(m_data, nullptr);
-	EXPECT_FLOAT_EQ(m_data->r_gamma, 2.2f);
-	m_operations.Undo();
-	EXPECT_FALSE(m_data);
-	EXPECT_FALSE(m_operations.CanUndo());
 }
 
 TEST_F(OptionalRenderConfigControllerTest, SerializedOperationRetainsAbsentEndpoint)
@@ -284,18 +239,15 @@ std::string SaveOptionalConfig(std::shared_ptr<RenderConfig>& data)
 }
 }
 
-TEST(OptionalConfigPersistence, MissingConfigStaysAbsentOnSave)
+TEST(OptionalConfigPersistence, MissingNullAndMalformedConfigsStayAbsentOnSave)
 {
-	auto data = LoadOptionalConfig("{}");
-	EXPECT_FALSE(data);
-	EXPECT_EQ(SaveOptionalConfig(data).find("proj_config"), std::string::npos);
-}
-
-TEST(OptionalConfigPersistence, MalformedConfigStaysAbsentOnSave)
-{
-	auto data = LoadOptionalConfig(R"({"proj_config":42})");
-	EXPECT_FALSE(data);
-	EXPECT_EQ(SaveOptionalConfig(data).find("proj_config"), std::string::npos);
+	for (const char* document : { "{}", R"({"proj_config":42})", R"({"proj_config":null})" })
+	{
+		SCOPED_TRACE(document);
+		auto data = LoadOptionalConfig(document);
+		EXPECT_FALSE(data);
+		EXPECT_EQ(SaveOptionalConfig(data).find("proj_config"), std::string::npos);
+	}
 }
 
 TEST(OptionalConfigPersistence, PartialConfigKeepsFieldDefaultsAndIsSaved)
@@ -309,13 +261,6 @@ TEST(OptionalConfigPersistence, PartialConfigKeepsFieldDefaultsAndIsSaved)
 	auto restored = LoadOptionalConfig(saved);
 	ASSERT_NE(restored, nullptr);
 	EXPECT_EQ(*restored, *data);
-}
-
-TEST(OptionalConfigPersistence, ExplicitNullConfigStaysAbsentOnSave)
-{
-	auto data = LoadOptionalConfig(R"({"proj_config":null})");
-	EXPECT_FALSE(data);
-	EXPECT_EQ(SaveOptionalConfig(data).find("proj_config"), std::string::npos);
 }
 
 TEST_F(OptionalRenderConfigControllerTest, LegacyOperationWithoutPresenceFlagsLoads)

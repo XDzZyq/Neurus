@@ -4,7 +4,7 @@
  *
  * ComputeShader manages a single compute-stage shader. Unlike RenderShader
  * (which manages vertex + fragment pairs), ComputeShader owns exactly one
- * ShaderUnit in m_stages[COMPUTE].
+ * ShaderUnit in sh_stages[COMPUTE].
  *
  * Architecture:
  *   - Uses ShaderParser to populate ShaderStruct IR (single struct for compute).
@@ -147,7 +147,9 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<ShaderData>(this), CEREAL_NVP(m_compPath), CEREAL_NVP(m_defaults));
+		ar(cereal::base_class<ShaderData>(this),
+		   cereal::make_nvp("m_compPath", sh_compPath),
+		   cereal::make_nvp("m_defaults", sh_defaults));
 		if constexpr (Archive::is_saving::value)
 		{
 			SerializeStages(ar);
@@ -155,7 +157,7 @@ public:
 		else
 		{
 			DeserializeStages(ar);
-			if (m_stages[ShaderType::COMPUTE].code.empty())
+			if (sh_stages[ShaderType::COMPUTE].code.empty())
 			{
 				ReloadContent();
 			}
@@ -193,11 +195,11 @@ public:
 	 *
 	 * Each entry holds a uniform name, its GLSL type and default value.
 	 */
-	const std::vector<Default>& GetDefaults() const { return m_defaults; }
+	const std::vector<Default>& GetDefaults() const { return sh_defaults; }
 
 private:
-	std::string m_compPath;          ///< Path to the original GLSL source file
-	std::vector<Default> m_defaults; ///< Per-instance default uniform configs
+	std::string sh_compPath;          ///< Path to the original GLSL source file
+	std::vector<Default> sh_defaults; ///< Per-instance default uniform configs
 };
 
 } // namespace neurus

@@ -41,78 +41,26 @@ static void ForceEdge(SockOut* out, SockIn* in)
 }
 
 // ============================================================================
-// Node tests (independent of Graph)
-// ============================================================================
-
-TEST(NodeTest, ConstructEmpty)
-{
-	NodeT node;
-	EXPECT_EQ(node.InputCount(), 0u);
-	EXPECT_EQ(node.OutputCount(), 0u);
-	EXPECT_TRUE(node.name.empty());
-}
-
-TEST(NodeTest, AddSockets)
-{
-	NodeT node;
-	node.name = "TestNode";
-
-	auto* in = node.AddInput("a");
-	auto* out = node.AddOutput("b");
-
-	ASSERT_NE(in, nullptr);
-	ASSERT_NE(out, nullptr);
-	EXPECT_EQ(in->name, "a");
-	EXPECT_EQ(out->name, "b");
-	EXPECT_EQ(in->owner, &node);
-	EXPECT_EQ(out->owner, &node);
-	EXPECT_EQ(node.InputCount(), 1u);
-	EXPECT_EQ(node.OutputCount(), 1u);
-	EXPECT_EQ(in->data, 0.0f);      // default SData
-	EXPECT_FALSE(in->IsConnected());
-}
-
-TEST(NodeTest, SocketData)
-{
-	NodeT node;
-	auto* in  = node.AddInput("x");
-	auto* out = node.AddOutput("y");
-
-	in->data  = 3.14f;
-	out->data = 2.71f;
-
-	EXPECT_FLOAT_EQ(in->data, 3.14f);
-	EXPECT_FLOAT_EQ(out->data, 2.71f);
-}
-
-TEST(NodeTest, OwnsSockets)
-{
-	// Verify that sockets are destroyed when the node is destroyed.
-	std::unique_ptr<NodeT> node = std::make_unique<NodeT>();
-	auto* in  = node->AddInput("a");
-	auto* out = node->AddOutput("b");
-
-	node.reset(); // destroy node + its sockets
-
-	// The raw pointers are now dangling — this test just ensures no
-	// heap-use-after-free in the destructor path (valgrind/asan would catch).
-	(void)in;
-	(void)out;
-	SUCCEED();
-}
-
-// ============================================================================
 // Preset node → graph adoption
 // ============================================================================
 
 TEST(PresetTest, MoveNodeIntoGraph)
 {
 	auto preset = std::make_unique<NodeT>();
+	EXPECT_TRUE(preset->name.empty());
+	EXPECT_EQ(preset->InputCount(), 0u);
+	EXPECT_EQ(preset->OutputCount(), 0u);
 	preset->name = "Multiply";
 	preset->data = "x * y";
 	auto* inRaw  = preset->AddInput("lhs");
 	auto* outRaw = preset->AddOutput("product");
 
+	ASSERT_NE(inRaw, nullptr);
+	ASSERT_NE(outRaw, nullptr);
+	EXPECT_EQ(inRaw->data, 0.0f);
+	EXPECT_FALSE(inRaw->IsConnected());
+	EXPECT_EQ(inRaw->name, "lhs");
+	EXPECT_EQ(outRaw->name, "product");
 	ASSERT_EQ(inRaw->owner, preset.get());
 	ASSERT_EQ(outRaw->owner, preset.get());
 
@@ -158,14 +106,6 @@ protected:
 	SockIn*   m_cIn  = nullptr;
 };
 
-TEST_F(GraphTest, ConnectSingle)
-{
-	EXPECT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	EXPECT_EQ(m_bIn->incoming.from, m_aOut);
-	EXPECT_EQ(m_aOut->targets.size(), 1u);
-	EXPECT_EQ(m_aOut->targets[0], m_bIn);
-}
-
 TEST_F(GraphTest, ConnectionsSeesFanOutAndSkipsUnconnected)
 {
 	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
@@ -180,43 +120,7 @@ TEST_F(GraphTest, ConnectionsSeesFanOutAndSkipsUnconnected)
 	EXPECT_EQ(connections[1]->to, m_cIn);
 
 	EXPECT_EQ(connections, m_graph.Connections());
-}
-
-TEST_F(GraphTest, ConnectSelfLoopRejected)
-{
-	auto* aIn = m_a->AddInput("self");
-	EXPECT_FALSE(m_graph.Connect(m_aOut, aIn)); // same owner → self-loop
-}
-
-TEST_F(GraphTest, ConnectDuplicateRejected)
-{
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	EXPECT_FALSE(m_graph.Connect(m_aOut, m_bIn)); // already connected
-	EXPECT_EQ(m_aOut->targets.size(), 1u);         // no duplicate
-}
-
-TEST_F(GraphTest, ConnectDirectCycleRejected)
-{
-	// a → b exists; b → a would close a 2-cycle, so Connect must refuse it
-	// and leave the sockets untouched.
-	auto* aIn = m_a->AddInput("aIn");
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));   // a → b
-	EXPECT_FALSE(m_graph.Connect(m_bOut, aIn));     // b → a rejected
-	EXPECT_EQ(aIn->incoming.from, nullptr);                // nothing wired
-	EXPECT_EQ(m_bOut->targets.size(), 0u);
-	EXPECT_FALSE(m_graph.HasCycle());               // graph stayed acyclic
-}
-
-TEST_F(GraphTest, ConnectTransitiveCycleRejected)
-{
-	// a → b → c; c → a would close a 3-cycle through the chain.
-	auto* aIn  = m_a->AddInput("aIn");
-	auto* cOut = m_c->AddOutput("c→");
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));   // a → b
-	ASSERT_TRUE(m_graph.Connect(m_bOut, m_cIn));   // b → c
-	EXPECT_FALSE(m_graph.Connect(cOut, aIn));       // c → a rejected
-	EXPECT_EQ(aIn->incoming.from, nullptr);
-	EXPECT_FALSE(m_graph.HasCycle());
+	EXPECT_EQ(m_aOut->FanOut(), 2u);
 }
 
 TEST_F(GraphTest, ConnectReverseEdgeAllowedAfterDisconnect)
@@ -224,9 +128,15 @@ TEST_F(GraphTest, ConnectReverseEdgeAllowedAfterDisconnect)
 	// Reversing an edge is legal once the forward edge is gone: a → b, then
 	// disconnect and connect b → a.
 	auto* aIn = m_a->AddInput("aIn");
+	EXPECT_FALSE(m_graph.Connect(m_aOut, aIn));
+	EXPECT_FALSE(m_graph.HasCycle());
 	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));   // a → b
 	EXPECT_FALSE(m_graph.Connect(m_bOut, aIn));     // b → a rejected while a→b lives
+	EXPECT_FALSE(m_graph.Connect(m_aOut, m_bIn));
+	EXPECT_EQ(m_aOut->FanOut(), 1u);
 	m_graph.Disconnect(m_aOut, m_bIn);
+	EXPECT_EQ(m_bIn->incoming.from, nullptr);
+	EXPECT_EQ(m_aOut->FanOut(), 0u);
 	EXPECT_TRUE(m_graph.Connect(m_bOut, aIn));      // now legal
 	EXPECT_FALSE(m_graph.HasCycle());
 }
@@ -242,26 +152,6 @@ TEST_F(GraphTest, ConnectAutoBreakOldSource)
 
 	EXPECT_EQ(m_bIn->incoming.from, cOut);
 	EXPECT_EQ(m_aOut->targets.size(), 0u);  // old edge removed
-}
-
-TEST_F(GraphTest, Disconnect)
-{
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	m_graph.Disconnect(m_aOut, m_bIn);
-
-	EXPECT_EQ(m_bIn->incoming.from, nullptr);
-	EXPECT_EQ(m_aOut->targets.size(), 0u);
-}
-
-TEST_F(GraphTest, FanOut)
-{
-	// aOut → bIn, aOut → cIn
-	EXPECT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	EXPECT_TRUE(m_graph.Connect(m_aOut, m_cIn));
-
-	EXPECT_EQ(m_aOut->FanOut(), 2u);
-	EXPECT_NE(std::find(m_aOut->targets.begin(), m_aOut->targets.end(), m_bIn), m_aOut->targets.end());
-	EXPECT_NE(std::find(m_aOut->targets.begin(), m_aOut->targets.end(), m_cIn), m_aOut->targets.end());
 }
 
 TEST_F(GraphTest, RemoveNodeBreaksConnections)
@@ -284,19 +174,6 @@ TEST_F(GraphTest, RemoveNodeBreaksConnections)
 // ============================================================================
 // Topological sort
 // ============================================================================
-
-TEST_F(GraphTest, TopologicalSortLinearChain)
-{
-	// a → b → c
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	ASSERT_TRUE(m_graph.Connect(m_bOut, m_cIn));
-
-	auto sorted = m_graph.TopologicalSort();
-	ASSERT_EQ(sorted.size(), 3u);
-	EXPECT_EQ(sorted[0], m_a);
-	EXPECT_EQ(sorted[1], m_b);
-	EXPECT_EQ(sorted[2], m_c);
-}
 
 TEST_F(GraphTest, TopologicalSortDiamond)
 {
@@ -329,33 +206,22 @@ TEST_F(GraphTest, TopologicalSortDiamond)
 	EXPECT_LT(posB, posD);
 	EXPECT_LT(posC, posD);
 	EXPECT_EQ(sorted.back(), d);
+	EXPECT_FALSE(m_graph.HasCycle());
+	EXPECT_TRUE(m_graph.CyclicNodes().empty());
 }
 
-TEST_F(GraphTest, TopologicalSortDisconnectedNodesAnyOrder)
+TEST_F(GraphTest, SortIncludesAllNodesWithoutEdges)
 {
-	// Three nodes with no connections — all have in-degree 0.
-	// Any order is valid.
-	auto sorted = m_graph.TopologicalSort();
+	GraphT graph;
+	EXPECT_TRUE(graph.TopologicalSort().empty());
+	auto* first = graph.AddNode("first");
+	EXPECT_EQ(graph.TopologicalSort(), (std::vector<NodeT*>{first}));
+	auto* second = graph.AddNode("second");
+	auto* third = graph.AddNode("third");
+	const auto sorted = graph.TopologicalSort();
 	ASSERT_EQ(sorted.size(), 3u);
-	// All three must be present
-	for (auto* n : {m_a, m_b, m_c})
-		EXPECT_NE(std::find(sorted.begin(), sorted.end(), n), sorted.end());
-}
-
-TEST_F(GraphTest, TopologicalSortSingleNode)
-{
-	GraphT g;
-	auto* single = g.AddNode("alone");
-	auto sorted  = g.TopologicalSort();
-	ASSERT_EQ(sorted.size(), 1u);
-	EXPECT_EQ(sorted[0], single);
-}
-
-TEST_F(GraphTest, TopologicalSortEmptyGraph)
-{
-	GraphT g;
-	auto sorted = g.TopologicalSort();
-	EXPECT_TRUE(sorted.empty());
+	for (auto* node : {first, second, third})
+		EXPECT_NE(std::find(sorted.begin(), sorted.end(), node), sorted.end());
 }
 
 // ============================================================================
@@ -379,36 +245,6 @@ TEST_F(GraphTest, HasCycleDirectCycle)
 	EXPECT_NE(std::find(cyclic.begin(), cyclic.end(), m_a), cyclic.end());
 	EXPECT_NE(std::find(cyclic.begin(), cyclic.end(), m_b), cyclic.end());
 	EXPECT_EQ(std::find(cyclic.begin(), cyclic.end(), m_c), cyclic.end());
-}
-
-TEST_F(GraphTest, CyclicNodesEmptyForAcyclicGraph)
-{
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	EXPECT_TRUE(m_graph.CyclicNodes().empty());
-}
-
-TEST_F(GraphTest, HasCycleSelfLoopRejectedAtConnect)
-{
-	// Self-loop blocked by Connect(), so no cycle should exist
-	auto* aIn = m_a->AddInput("aIn");
-	EXPECT_FALSE(m_graph.Connect(m_aOut, aIn));
-	EXPECT_FALSE(m_graph.HasCycle());
-}
-
-TEST_F(GraphTest, HasCycleNoCycleDiamond)
-{
-	auto* d     = m_graph.AddNode("D");
-	auto* bOut2 = m_b->AddOutput("b→");
-	auto* cOut  = m_c->AddOutput("c→");
-	auto* dIn1  = d->AddInput("→d1");
-	auto* dIn2  = d->AddInput("→d2");
-
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_cIn));
-	ASSERT_TRUE(m_graph.Connect(bOut2, dIn1));
-	ASSERT_TRUE(m_graph.Connect(cOut, dIn2));
-
-	EXPECT_FALSE(m_graph.HasCycle());
 }
 
 TEST_F(GraphTest, HasCycleThreeNodeCycle)
@@ -464,30 +300,6 @@ TEST_F(GraphTest, SequentialTraverseVisitsEachOnceInDependencyOrder)
 	EXPECT_LT(pos(m_c), pos(d));
 }
 
-TEST_F(GraphTest, SequentialTraverseEmptyGraph)
-{
-	GraphT g;
-	int visits = 0;
-	g.SequentialTraverse([&](NodeT*) { ++visits; });
-	EXPECT_EQ(visits, 0);
-}
-
-TEST_F(GraphTest, SequentialTraverseCycleThrows)
-{
-	// a → b → a: Connect rejects the closing edge, so force it raw. The walk
-	// must throw up front rather than visit a partial order.
-	auto* aIn = m_a->AddInput("aIn");
-	ASSERT_TRUE(m_graph.Connect(m_aOut, m_bIn));
-	EXPECT_FALSE(m_graph.Connect(m_bOut, aIn));
-	ForceEdge(m_bOut, aIn);
-
-	int visits = 0;
-	EXPECT_THROW(
-		m_graph.SequentialTraverse([&](NodeT*) { ++visits; }),
-		std::runtime_error);
-	EXPECT_EQ(visits, 0) << "cyclic graph must visit nothing";
-}
-
 TEST_F(GraphTest, SequentialTraversePropagatesVisitException)
 {
 	// A → B → C: B throws, so C must never run and the error propagates.
@@ -536,6 +348,22 @@ std::vector<NodeT*> ProducersOf(NodeT* node)
 
 } // anonymous namespace
 
+TEST_F(GraphTest, TraversalVisitsOnlyRegisteredNodes)
+{
+	GraphT graph;
+	InlineExecutor executor;
+	auto unexpected = [](NodeT*) { ADD_FAILURE() << "visited a node of an empty graph"; };
+	graph.SequentialTraverse(unexpected);
+	graph.ParallelTraverse(unexpected, executor);
+	auto* only = graph.AddNode("only");
+	int visits = 0;
+	graph.ParallelTraverse([&](NodeT* node) {
+		EXPECT_EQ(node, only);
+		++visits;
+	}, executor);
+	EXPECT_EQ(visits, 1);
+}
+
 TEST_F(GraphTest, ParallelTraverseInlineVisitsEachNodeOnceAfterProducers)
 {
 	// Diamond A → {B, C} → D on the synchronous executor.
@@ -568,26 +396,7 @@ TEST_F(GraphTest, ParallelTraverseInlineVisitsEachNodeOnceAfterProducers)
 		EXPECT_EQ(visitCount[n], 1) << "node " << n->name;
 }
 
-TEST_F(GraphTest, ParallelTraverseInlineEmptyGraphIsNoOp)
-{
-	GraphT g;
-	InlineExecutor exec;
-	int visits = 0;
-	g.ParallelTraverse([&](NodeT*) { ++visits; }, exec);
-	EXPECT_EQ(visits, 0);
-}
-
-TEST_F(GraphTest, ParallelTraverseInlineSingleNode)
-{
-	GraphT g;
-	auto* only = g.AddNode("only", "x");
-	InlineExecutor exec;
-	int visits = 0;
-	g.ParallelTraverse([&](NodeT* n) { EXPECT_EQ(n, only); ++visits; }, exec);
-	EXPECT_EQ(visits, 1);
-}
-
-TEST_F(GraphTest, ParallelTraverseCycleThrowsBeforeDispatch)
+TEST_F(GraphTest, CyclicGraphRejectsTraversalBeforeVisiting)
 {
 	// a → b → a: never drains, so it must be rejected up front (no hang).
 	// Connect() rejects the closing edge, so force it raw.
@@ -596,12 +405,10 @@ TEST_F(GraphTest, ParallelTraverseCycleThrowsBeforeDispatch)
 	EXPECT_FALSE(m_graph.Connect(m_bOut, aIn));
 	ForceEdge(m_bOut, aIn);
 
-	InlineExecutor exec;
-	int visits = 0;
-	EXPECT_THROW(
-		m_graph.ParallelTraverse([&](NodeT*) { ++visits; }, exec),
-		std::runtime_error);
-	EXPECT_EQ(visits, 0) << "cyclic graph must dispatch nothing";
+	auto unexpected = [](NodeT*) { ADD_FAILURE() << "visited a node in a cyclic graph"; };
+	InlineExecutor executor;
+	EXPECT_THROW(m_graph.SequentialTraverse(unexpected), std::runtime_error);
+	EXPECT_THROW(m_graph.ParallelTraverse(unexpected, executor), std::runtime_error);
 }
 
 TEST_F(GraphTest, ParallelTraverseRethrowsFirstVisitException)

@@ -104,7 +104,10 @@ been removed.
 
 ## Architectural Invariants
 
-1. **No cross-layer direct coupling** - Use UIEvents/EventQueue/RenderRequest/Context only
+1. **Application wires the layers.** UI signals and script dispatch feed typed
+   editor events. Editor supplies owned snapshots and posts GPU requests.
+   Application publishes frames and posts render-thread controls. The concrete
+   event queue stays inside Editor. See [Data Flow](data-flow.md).
 2. **Renderer is stateless** - Application state lives in Editor
 3. **Renderer is the sole GPU submitter** - the Editor drives GPU state only by
    posting a `RenderRequest`; it never submits, waits the queue, or writes the

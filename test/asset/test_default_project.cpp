@@ -75,44 +75,15 @@ static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>&
 	return p;
 }
 
-// -----------------------------------------------------------------------
-// DefaultProject: Loads without exception
-// -----------------------------------------------------------------------
-
-/**
- * @test Opening the default project file does not throw.
- */
-TEST(DefaultProject, LoadsWithoutException)
+TEST(DefaultProject, LoadsExpectedSceneAndResources)
 {
 	const neurus::BuiltInRenderData catalog;
 	Scene scene;
 	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
-	EXPECT_NO_THROW({
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Load(DefaultProjectPath());
-	});
-}
+	auto project = MakeProject(scene, config, resources, catalog);
+	ASSERT_NO_THROW(project.Load(DefaultProjectPath()));
 
-// -----------------------------------------------------------------------
-// DefaultProject: Has camera
-// -----------------------------------------------------------------------
-
-/**
- * @test The default project contains at least one camera with valid FOV
- *       and near/far clip planes.
- */
-TEST(DefaultProject, HasCamera)
-{
-	const neurus::BuiltInRenderData catalog;
-	Scene scene;
-	auto config = std::make_shared<RenderConfig>();
-	ResourceManager resources;
-	{
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Load(DefaultProjectPath());
-	}
-	EXPECT_GE(scene.cam_list.size(), 1u);
 	ASSERT_GE(scene.cam_list.size(), 1u);
 	auto* cam = scene.cam_list.begin()->second.get();
 	ASSERT_NE(cam, nullptr);
@@ -120,27 +91,7 @@ TEST(DefaultProject, HasCamera)
 	EXPECT_GT(cam->cam_pers, 0.0f);
 	EXPECT_GT(cam->cam_near, 0.0f);
 	EXPECT_GT(cam->cam_far, cam->cam_near);
-}
 
-// -----------------------------------------------------------------------
-// DefaultProject: Has mesh with valid OBJ path
-// -----------------------------------------------------------------------
-
-/**
- * @test The default project contains at least one mesh with a non-empty
- *       OBJ path configured for rendering.
- */
-TEST(DefaultProject, HasMesh)
-{
-	const neurus::BuiltInRenderData catalog;
-	Scene scene;
-	auto config = std::make_shared<RenderConfig>();
-	ResourceManager resources;
-	{
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Load(DefaultProjectPath());
-	}
-	EXPECT_GE(scene.mesh_list.size(), 1u);
 	ASSERT_GE(scene.mesh_list.size(), 1u);
 	auto* mesh = scene.mesh_list.begin()->second.get();
 	ASSERT_NE(mesh, nullptr);
@@ -149,53 +100,14 @@ TEST(DefaultProject, HasMesh)
 	EXPECT_NE(mesh->o_meshDataId, 0);
 	ASSERT_NE(mesh->o_mesh, nullptr);
 	EXPECT_EQ(mesh->o_mesh->GetObjectID(), mesh->o_meshDataId);
-}
 
-// -----------------------------------------------------------------------
-// DefaultProject: Has light
-// -----------------------------------------------------------------------
-
-/**
- * @test The default project contains at least one light with positive power
- *       and a valid light type.
- */
-TEST(DefaultProject, HasLight)
-{
-	const neurus::BuiltInRenderData catalog;
-	Scene scene;
-	auto config = std::make_shared<RenderConfig>();
-	ResourceManager resources;
-	{
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Load(DefaultProjectPath());
-	}
-	EXPECT_GE(scene.light_list.size(), 1u);
 	ASSERT_GE(scene.light_list.size(), 1u);
 	auto* light = scene.light_list.begin()->second.get();
 	ASSERT_NE(light, nullptr);
 	EXPECT_EQ(light->o_type, ObjectID::GOType::GO_LIGHT);
 	EXPECT_GT(light->light_power, 0.0f);
-}
 
-// -----------------------------------------------------------------------
-// DefaultProject: Has environment in env_list
-// -----------------------------------------------------------------------
-
-/**
- * @test The default project file contains an Environment in env_list
- *       with the expected IBL equirect path.
- */
-TEST(DefaultProject, HasEnvironment)
-{
-	const neurus::BuiltInRenderData catalog;
-	Scene scene;
-	auto config = std::make_shared<RenderConfig>();
-	ResourceManager resources;
-	{
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Load(DefaultProjectPath());
-	}
-	EXPECT_FALSE(scene.env_list.empty());
+	ASSERT_FALSE(scene.env_list.empty());
 	auto env = scene.env_list.begin()->second;
 	ASSERT_NE(env, nullptr);
 	// The Environment wraps the pooled ImageData; the path lives in the

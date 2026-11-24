@@ -25,81 +25,29 @@
 using namespace neurus;
 
 // ============================================================================
-// Construction
-// ============================================================================
-
-TEST(SelectionsTest, DefaultConstruction_Empty)
-{
-	Selections<int> sel;
-	EXPECT_TRUE(sel.GetSelectedList().empty());
-	EXPECT_EQ(sel.GetSelectionCount(), 0u);
-	EXPECT_EQ(sel.GetActiveObject(), 0);
-	EXPECT_EQ(sel.GetSelectedObjects(), 0);
-}
-
-// ============================================================================
 // Select — single (increment=false)
 // ============================================================================
-
-TEST(SelectionsTest, Select_Single_AddsOne)
-{
-	Selections<int> sel;
-	sel.Select(42, false);
-
-	EXPECT_EQ(sel.GetSelectionCount(), 1u);
-	EXPECT_TRUE(sel.IsSelected(42));
-	EXPECT_EQ(sel.GetActiveObject(), 42);
-	EXPECT_EQ(sel.GetSelectedObjects(), 42);
-}
 
 TEST(SelectionsTest, Select_Single_ReplacesPrior)
 {
 	Selections<int> sel;
+	EXPECT_EQ(sel.GetSelectionCount(), 0u);
+	EXPECT_EQ(sel.GetActiveObject(), 0);
 	sel.Select(10, false);
+	sel.Select(20, false);
 	sel.Select(20, false);
 
 	EXPECT_EQ(sel.GetSelectionCount(), 1u);
 	EXPECT_TRUE(sel.IsSelected(20));
 	EXPECT_FALSE(sel.IsSelected(10));
+	EXPECT_FALSE(sel.IsSelected(0));
+	EXPECT_EQ(sel.GetSelectedObjects(), 20);
 	EXPECT_EQ(sel.GetActiveObject(), 20);
-}
-
-TEST(SelectionsTest, Select_Single_SameValueNoOp)
-{
-	Selections<int> sel;
-	sel.Select(7, false);
-	sel.Select(7, false); // same value again
-
-	EXPECT_EQ(sel.GetSelectionCount(), 1u);
-	EXPECT_TRUE(sel.IsSelected(7));
 }
 
 // ============================================================================
 // Select — multi (increment=true)
 // ============================================================================
-
-TEST(SelectionsTest, Select_Increment_AddsMultiple)
-{
-	Selections<int> sel;
-	sel.Select(1, true);
-	sel.Select(2, true);
-	sel.Select(3, true);
-
-	EXPECT_EQ(sel.GetSelectionCount(), 3u);
-	EXPECT_TRUE(sel.IsSelected(1));
-	EXPECT_TRUE(sel.IsSelected(2));
-	EXPECT_TRUE(sel.IsSelected(3));
-	EXPECT_EQ(sel.GetActiveObject(), 3);
-}
-
-TEST(SelectionsTest, Select_Increment_NoDuplicate)
-{
-	Selections<int> sel;
-	sel.Select(5, true);
-	sel.Select(5, true); // duplicate
-
-	EXPECT_EQ(sel.GetSelectionCount(), 1u);
-}
 
 TEST(SelectionsTest, Select_Increment_MovesToActive)
 {
@@ -108,6 +56,7 @@ TEST(SelectionsTest, Select_Increment_MovesToActive)
 	sel.Select(2, true);
 	sel.Select(3, true);
 
+	EXPECT_EQ(sel.GetSelectedList(), (std::vector<int>{1, 2, 3}));
 	// Re-select 1 — it becomes active (moved to end)
 	sel.Select(1, true);
 
@@ -120,6 +69,12 @@ TEST(SelectionsTest, Select_Increment_MovesToActive)
 	EXPECT_EQ(list[0], 3);
 	EXPECT_EQ(list[1], 2);
 	EXPECT_EQ(list[2], 1);
+	sel.Deselect(1, false);
+
+	EXPECT_EQ(sel.GetActiveObject(), 2);
+	EXPECT_EQ(sel.GetSelectionCount(), 2u);
+	EXPECT_TRUE(sel.IsSelected(2));
+	EXPECT_TRUE(sel.IsSelected(3));
 }
 
 // ============================================================================
@@ -130,54 +85,13 @@ TEST(SelectionsTest, Deselect_RemovesFromSelection)
 {
 	Selections<int> sel;
 	sel.Select(42, false);
+	sel.Deselect(99, false);
+	EXPECT_TRUE(sel.IsSelected(42));
 	sel.Deselect(42, false);
 
 	EXPECT_TRUE(sel.GetSelectedList().empty());
 	EXPECT_FALSE(sel.IsSelected(42));
 	EXPECT_EQ(sel.GetActiveObject(), 0);
-}
-
-TEST(SelectionsTest, Deselect_NotSelected_NoOp)
-{
-	Selections<int> sel;
-	sel.Select(1, false);
-	sel.Deselect(99, false); // not in selection
-
-	EXPECT_EQ(sel.GetSelectionCount(), 1u);
-	EXPECT_TRUE(sel.IsSelected(1));
-}
-
-TEST(SelectionsTest, Deselect_Active_FallsBackToLast)
-{
-	Selections<int> sel;
-	sel.Select(1, true);
-	sel.Select(2, true);
-	sel.Select(3, true);
-
-	sel.Deselect(3, false); // active was 3
-
-	EXPECT_EQ(sel.GetActiveObject(), 2);
-	EXPECT_EQ(sel.GetSelectionCount(), 2u);
-}
-
-TEST(SelectionsTest, Deselect_ActiveFromMiddle_FallsBackToLast)
-{
-	Selections<int> sel;
-	sel.Select(1, true);
-	sel.Select(2, true);
-	sel.Select(3, true);
-
-	// Promote 1 to active
-	sel.Select(1, true);
-
-	// Deselect active (1) — should fall back to the last element in list
-	// After the swap-to-end, list is [3, 2, 1], so last is 2
-	sel.Deselect(1, false);
-
-	EXPECT_EQ(sel.GetActiveObject(), 2);
-	EXPECT_EQ(sel.GetSelectionCount(), 2u);
-	EXPECT_TRUE(sel.IsSelected(2));
-	EXPECT_TRUE(sel.IsSelected(3));
 }
 
 // ============================================================================
@@ -192,49 +106,11 @@ TEST(SelectionsTest, ClearSelection_RemovesAll)
 	sel.Select(3, true);
 
 	sel.ClearSelection();
+	sel.ClearSelection();
 
 	EXPECT_TRUE(sel.GetSelectedList().empty());
 	EXPECT_EQ(sel.GetActiveObject(), 0);
 	EXPECT_FALSE(sel.IsSelected(1));
-}
-
-TEST(SelectionsTest, ClearSelection_Empty_NoOp)
-{
-	Selections<int> sel;
-	EXPECT_NO_THROW({ sel.ClearSelection(); });
-	EXPECT_TRUE(sel.GetSelectedList().empty());
-}
-
-// ============================================================================
-// IsSelected
-// ============================================================================
-
-TEST(SelectionsTest, IsSelected_ReturnsTrueForSelected)
-{
-	Selections<int> sel;
-	sel.Select(99, false);
-
-	EXPECT_TRUE(sel.IsSelected(99));
-	EXPECT_FALSE(sel.IsSelected(0));   // T{} sentinel, never selected
-	EXPECT_FALSE(sel.IsSelected(42));
-}
-
-// ============================================================================
-// GetSelectedList — order preservation
-// ============================================================================
-
-TEST(SelectionsTest, GetSelectedList_OrderMatchesInsertion)
-{
-	Selections<int> sel;
-	sel.Select(10, true);
-	sel.Select(20, true);
-	sel.Select(30, true);
-
-	const auto& list = sel.GetSelectedList();
-	ASSERT_EQ(list.size(), 3u);
-	EXPECT_EQ(list[0], 10);
-	EXPECT_EQ(list[1], 20);
-	EXPECT_EQ(list[2], 30);
 }
 
 // ============================================================================

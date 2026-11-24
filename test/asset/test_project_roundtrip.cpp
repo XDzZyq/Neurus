@@ -117,138 +117,6 @@ TEST(ProjectRoundtrip, EmptyScene)
 }
 
 // -----------------------------------------------------------------------
-// Roundtrip: Camera Only
-// -----------------------------------------------------------------------
-
-/**
- * @test Create scene with a camera, save, load -- camera data matches.
- */
-TEST(ProjectRoundtrip, CameraOnly)
-{
-	const neurus::BuiltInRenderData catalog;
-	TempFile tmp("test_rt_camera.neurus.json");
-	{
-		Scene scene;
-		auto config = std::make_shared<RenderConfig>();
-		ResourceManager resources;
-		auto camera = resources.Load<Camera>();
-		camera->cam_pers = 60.0f;
-		camera->cam_near = 0.1f;
-		camera->cam_far = 100.0f;
-		camera->cam_tar = glm::vec3(0.0f, 0.0f, 1.0f);
-		camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
-		scene.UseCamera(camera);
-		scene.ActivateCamera(camera->GetObjectID());
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Save(tmp.path);
-	}
-	Scene loadedScene;
-	auto loadedConfig = std::make_shared<RenderConfig>();
-	ResourceManager loadedResources;
-	{
-		auto p = MakeProject(loadedScene, loadedConfig, loadedResources, catalog);
-		p.Load(tmp.path);
-	}
-	ASSERT_EQ(loadedScene.cam_list.size(), 1u);
-	auto* loadedCam = loadedScene.cam_list.begin()->second.get();
-	ASSERT_NE(loadedCam, nullptr);
-	EXPECT_FLOAT_EQ(loadedCam->cam_pers, 60.0f);
-	EXPECT_FLOAT_EQ(loadedCam->cam_near, 0.1f);
-	EXPECT_FLOAT_EQ(loadedCam->cam_far, 100.0f);
-	EXPECT_EQ(loadedCam->cam_tar, glm::vec3(0.0f, 0.0f, 1.0f));
-	EXPECT_EQ(loadedCam->GetPosition(), glm::vec3(0.0f, -5.0f, 2.0f));
-	EXPECT_EQ(loadedCam->o_type, ObjectID::GOType::GO_CAM);
-}
-
-// -----------------------------------------------------------------------
-// Roundtrip: Mesh with pooled MeshData
-// -----------------------------------------------------------------------
-
-/**
- * @test Create scene with a mesh referencing pooled MeshData, save, load --
- *       o_meshDataId, flags and name match, and o_mesh re-wires to the pool.
- */
-TEST(ProjectRoundtrip, MeshWithOBJ)
-{
-	const neurus::BuiltInRenderData catalog;
-	TempFile tmp("test_rt_mesh.neurus.json");
-	int meshDataId = 0;
-	{
-		Scene scene;
-		auto config = std::make_shared<RenderConfig>();
-		ResourceManager resources;
-		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
-		meshDataId = meshData->GetObjectID();
-		auto mesh = resources.Load<Mesh>(meshData);
-		mesh->using_shadow = false;
-		mesh->using_sdf = false;
-		mesh->o_name = "TestSphere";
-		scene.UseMesh(mesh);
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Save(tmp.path);
-	}
-	Scene loadedScene;
-	auto loadedConfig = std::make_shared<RenderConfig>();
-	ResourceManager loadedResources;
-	{
-		auto p = MakeProject(loadedScene, loadedConfig, loadedResources, catalog);
-		p.Load(tmp.path);
-	}
-	ASSERT_EQ(loadedScene.mesh_list.size(), 1u);
-	auto* loadedMesh = loadedScene.mesh_list.begin()->second.get();
-	ASSERT_NE(loadedMesh, nullptr);
-	EXPECT_EQ(loadedMesh->o_meshDataId, meshDataId);
-	EXPECT_FALSE(loadedMesh->using_shadow);
-	EXPECT_FALSE(loadedMesh->using_sdf);
-	EXPECT_EQ(loadedMesh->o_name, "TestSphere");
-	EXPECT_EQ(loadedMesh->o_type, ObjectID::GOType::GO_MESH);
-	// The pooled MeshData is re-wired and its content reloaded from disk.
-	ASSERT_NE(loadedMesh->o_mesh, nullptr);
-	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), meshDataId);
-	EXPECT_TRUE(loadedMesh->o_mesh->GetVertexCount() > 0);
-}
-
-// -----------------------------------------------------------------------
-// Roundtrip: Point Light
-// -----------------------------------------------------------------------
-
-/**
- * @test Create scene with a point light, save, load -- light params match.
- */
-TEST(ProjectRoundtrip, LightPoint)
-{
-	const neurus::BuiltInRenderData catalog;
-	TempFile tmp("test_rt_light.neurus.json");
-	{
-		Scene scene;
-		auto config = std::make_shared<RenderConfig>();
-		ResourceManager resources;
-		auto light = resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f, 0.8f, 0.6f));
-		light->SetPosition(glm::vec3(3.0f, 3.0f, 3.0f));
-		light->SetRadius(0.01f);
-		scene.UseLight(light);
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Save(tmp.path);
-	}
-	Scene loadedScene;
-	auto loadedConfig = std::make_shared<RenderConfig>();
-	ResourceManager loadedResources;
-	{
-		auto p = MakeProject(loadedScene, loadedConfig, loadedResources, catalog);
-		p.Load(tmp.path);
-	}
-	ASSERT_EQ(loadedScene.light_list.size(), 1u);
-	auto* loadedLight = loadedScene.light_list.begin()->second.get();
-	ASSERT_NE(loadedLight, nullptr);
-	EXPECT_EQ(loadedLight->light_type, POINTLIGHT);
-	EXPECT_FLOAT_EQ(loadedLight->light_power, 10.0f);
-	EXPECT_EQ(loadedLight->light_color, glm::vec3(1.0f, 0.8f, 0.6f));
-	EXPECT_FLOAT_EQ(loadedLight->light_radius, 0.01f);
-	EXPECT_EQ(loadedLight->GetPosition(), glm::vec3(3.0f, 3.0f, 3.0f));
-	EXPECT_EQ(loadedLight->o_type, ObjectID::GOType::GO_LIGHT);
-}
-
-// -----------------------------------------------------------------------
 // Roundtrip: Full Scene (camera + mesh + light)
 // -----------------------------------------------------------------------
 
@@ -260,6 +128,7 @@ TEST(ProjectRoundtrip, FullScene)
 {
 	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_rt_full.neurus.json");
+	int meshDataId = 0;
 	{
 		Scene scene;
 		auto config = std::make_shared<RenderConfig>();
@@ -270,12 +139,18 @@ TEST(ProjectRoundtrip, FullScene)
 		camera->SetPosition(glm::vec3(0.0f, 10.0f, 3.0f));
 		camera->cam_tar = glm::vec3(0.0f, 0.0f, 1.0f);
 		camera->cam_pers = 45.0f;
+		camera->cam_near = 0.1f;
+		camera->cam_far = 100.0f;
 		scene.UseCamera(camera);
 		scene.ActivateCamera(camera->GetObjectID());
 
 		// Mesh
-		auto meshData = resources.Load<MeshData>("obj/cube.obj");
+		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
+		meshDataId = meshData->GetObjectID();
 		auto mesh = resources.Load<Mesh>(meshData);
+		mesh->using_shadow = false;
+		mesh->using_sdf = false;
+		mesh->o_name = "TestSphere";
 		mesh->SetPosition(glm::vec3(1.0f, 0.0f, 0.0f));
 		scene.UseMesh(mesh);
 
@@ -297,9 +172,9 @@ TEST(ProjectRoundtrip, FullScene)
 	}
 
 	// Pool sizes
-	EXPECT_EQ(loadedScene.cam_list.size(), 1u);
-	EXPECT_EQ(loadedScene.mesh_list.size(), 1u);
-	EXPECT_EQ(loadedScene.light_list.size(), 1u);
+	ASSERT_EQ(loadedScene.cam_list.size(), 1u);
+	ASSERT_EQ(loadedScene.mesh_list.size(), 1u);
+	ASSERT_EQ(loadedScene.light_list.size(), 1u);
 
 	// --- Camera validation ---
 	auto* loadedCam = loadedScene.cam_list.begin()->second.get();
@@ -307,12 +182,21 @@ TEST(ProjectRoundtrip, FullScene)
 	EXPECT_EQ(loadedCam->GetPosition(), glm::vec3(0.0f, 10.0f, 3.0f));
 	EXPECT_EQ(loadedCam->cam_tar, glm::vec3(0.0f, 0.0f, 1.0f));
 	EXPECT_FLOAT_EQ(loadedCam->cam_pers, 45.0f);
+	EXPECT_FLOAT_EQ(loadedCam->cam_near, 0.1f);
+	EXPECT_FLOAT_EQ(loadedCam->cam_far, 100.0f);
 	EXPECT_EQ(loadedCam->o_type, ObjectID::GOType::GO_CAM);
 
 	// --- Mesh validation ---
 	auto* loadedMesh = loadedScene.mesh_list.begin()->second.get();
 	ASSERT_NE(loadedMesh, nullptr);
-	EXPECT_NE(loadedMesh->o_meshDataId, 0);
+	EXPECT_EQ(loadedMesh->o_meshDataId, meshDataId);
+	EXPECT_NE(meshDataId, 0);
+	EXPECT_FALSE(loadedMesh->using_shadow);
+	EXPECT_FALSE(loadedMesh->using_sdf);
+	EXPECT_EQ(loadedMesh->o_name, "TestSphere");
+	ASSERT_NE(loadedMesh->o_mesh, nullptr);
+	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), meshDataId);
+	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u);
 	EXPECT_EQ(loadedMesh->GetPosition(), glm::vec3(1.0f, 0.0f, 0.0f));
 	EXPECT_EQ(loadedMesh->o_type, ObjectID::GOType::GO_MESH);
 
@@ -325,6 +209,9 @@ TEST(ProjectRoundtrip, FullScene)
 	EXPECT_FLOAT_EQ(loadedLight->light_radius, 0.1f);
 	EXPECT_EQ(loadedLight->GetPosition(), glm::vec3(-2.0f, 0.0f, 5.0f));
 	EXPECT_EQ(loadedLight->o_type, ObjectID::GOType::GO_LIGHT);
+
+	EXPECT_EQ(loadedScene.selections.GetSelectionCount(), 0u);
+	EXPECT_EQ(loadedScene.selections.GetActiveObject(), nullptr);
 }
 
 // -----------------------------------------------------------------------
@@ -384,33 +271,4 @@ TEST(ProjectRoundtrip, SelectionState)
 	const ObjectID* active = loadedScene.selections.GetActiveObject();
 	ASSERT_NE(active, nullptr);
 	EXPECT_EQ(active->GetObjectID(), lightUid);
-}
-
-/**
- * @test A scene with no selection roundtrips to an empty selection
- *       (the selection block is present but empty).
- */
-TEST(ProjectRoundtrip, EmptySelection)
-{
-	const neurus::BuiltInRenderData catalog;
-	TempFile tmp("test_rt_empty_selection.neurus.json");
-	{
-		Scene scene;
-		auto config = std::make_shared<RenderConfig>();
-		ResourceManager resources;
-		auto meshData = resources.Load<MeshData>("obj/cube.obj");
-		auto mesh = resources.Load<Mesh>(meshData);
-		scene.UseMesh(mesh);
-		auto p = MakeProject(scene, config, resources, catalog);
-		p.Save(tmp.path);
-	}
-	Scene loadedScene;
-	auto loadedConfig = std::make_shared<RenderConfig>();
-	ResourceManager loadedResources;
-	{
-		auto p = MakeProject(loadedScene, loadedConfig, loadedResources, catalog);
-		p.Load(tmp.path);
-	}
-	EXPECT_EQ(loadedScene.selections.GetSelectionCount(), 0u);
-	EXPECT_EQ(loadedScene.selections.GetActiveObject(), nullptr);
 }

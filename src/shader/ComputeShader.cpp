@@ -21,10 +21,10 @@ namespace neurus {
 
 ComputeShader::ComputeShader(std::string name, std::string compPath)
 	: ShaderData(std::move(name))
-	, m_compPath(std::move(compPath))
+	, sh_compPath(std::move(compPath))
 {
-	m_stages[ShaderType::COMPUTE] = ShaderUnit{m_compPath, {}, {}};
-	NEURUS_LOG("[ComputeShader] Created '" << m_name << "'");
+	sh_stages[ShaderType::COMPUTE] = ShaderUnit{sh_compPath, {}, {}};
+	NEURUS_LOG("[ComputeShader] Created '" << sh_name << "'");
 }
 
 // =========================================================================
@@ -33,40 +33,40 @@ ComputeShader::ComputeShader(std::string name, std::string compPath)
 
 bool ComputeShader::ParseAndGenerate()
 {
-	m_errorMessage.clear();
+	sh_errorMessage.clear();
 
-	auto& unit = m_stages[ShaderType::COMPUTE];
+	auto& unit = sh_stages[ShaderType::COMPUTE];
 	unit.parsed = ShaderParser::ParseShaderFile(unit.path, ShaderType::COMPUTE);
 	if (unit.parsed.IsEmpty())
 	{
-		m_errorMessage = "Failed to parse compute shader: " + unit.path;
-		NEURUS_ERR("[ComputeShader] " << m_errorMessage);
+		sh_errorMessage = "Failed to parse compute shader: " + unit.path;
+		NEURUS_ERR("[ComputeShader] " << sh_errorMessage);
 		return false;
 	}
 	unit.code = ShaderGenerator::Generate(unit.parsed);
 
-	NEURUS_LOG("[ComputeShader] '" << m_name << "' parsed and generated");
+	NEURUS_LOG("[ComputeShader] '" << sh_name << "' parsed and generated");
 	return true;
 }
 
 void ComputeShader::ReloadContent()
 {
-	if (m_compPath.empty()) return;
+	if (sh_compPath.empty()) return;
 
-	m_stages[ShaderType::COMPUTE].path = m_compPath;
+	sh_stages[ShaderType::COMPUTE].path = sh_compPath;
 	ParseAndGenerate();
 }
 
 bool ComputeShader::CompileToSpv()
 {
-	auto& unit = m_stages[ShaderType::COMPUTE];
+	auto& unit = sh_stages[ShaderType::COMPUTE];
 	if (!unit.spv.empty()) return true;
 	if (unit.code.empty()) return false;
 
-	unit.spv = ShaderLibrary::Compile(unit, ShaderType::COMPUTE, m_name);
+	unit.spv = ShaderLibrary::Compile(unit, ShaderType::COMPUTE, sh_name);
 	if (unit.spv.empty())
 	{
-		NEURUS_ERR("[ComputeShader] CompileToSpv failed for '" << m_name << "'");
+		NEURUS_ERR("[ComputeShader] CompileToSpv failed for '" << sh_name << "'");
 		return false;
 	}
 	unit.BumpVersion();
@@ -80,7 +80,7 @@ bool ComputeShader::CompileToSpv()
 
 void ComputeShader::GetWorkgroupSize(uint32_t& x, uint32_t& y, uint32_t& z) const
 {
-	const auto& s = m_stages.at(ShaderType::COMPUTE).parsed;
+	const auto& s = sh_stages.at(ShaderType::COMPUTE).parsed;
 	x = s.local_size_x;
 	y = s.local_size_y;
 	z = s.local_size_z;
@@ -88,12 +88,12 @@ void ComputeShader::GetWorkgroupSize(uint32_t& x, uint32_t& y, uint32_t& z) cons
 
 bool ComputeShader::Recompile()
 {
-	auto& unit = m_stages[ShaderType::COMPUTE];
+	auto& unit = sh_stages[ShaderType::COMPUTE];
 	unit.parsed = ShaderParser::ParseShaderFile(unit.path, ShaderType::COMPUTE);
 	if (unit.parsed.IsEmpty())
 	{
-		m_errorMessage = "Failed to re-parse: " + unit.path;
-		NEURUS_ERR("[ComputeShader] " << m_errorMessage);
+		sh_errorMessage = "Failed to re-parse: " + unit.path;
+		NEURUS_ERR("[ComputeShader] " << sh_errorMessage);
 		return false;
 	}
 	unit.code = ShaderGenerator::Generate(unit.parsed);
@@ -106,29 +106,29 @@ bool ComputeShader::Recompile()
 
 void ComputeShader::SetDefault(const std::string& name, int value)
 {
-	m_defaults.erase(
-		std::remove_if(m_defaults.begin(), m_defaults.end(),
+	sh_defaults.erase(
+		std::remove_if(sh_defaults.begin(), sh_defaults.end(),
 			[&](const Default& d) { return d.name == name; }),
-		m_defaults.end());
-	m_defaults.push_back({name, "int", std::to_string(value)});
+		sh_defaults.end());
+	sh_defaults.push_back({name, "int", std::to_string(value)});
 }
 
 void ComputeShader::SetDefault(const std::string& name, float value)
 {
-	m_defaults.erase(
-		std::remove_if(m_defaults.begin(), m_defaults.end(),
+	sh_defaults.erase(
+		std::remove_if(sh_defaults.begin(), sh_defaults.end(),
 			[&](const Default& d) { return d.name == name; }),
-		m_defaults.end());
-	m_defaults.push_back({name, "float", std::to_string(value)});
+		sh_defaults.end());
+	sh_defaults.push_back({name, "float", std::to_string(value)});
 }
 
 void ComputeShader::SetDefault(const std::string& name, bool value)
 {
-	m_defaults.erase(
-		std::remove_if(m_defaults.begin(), m_defaults.end(),
+	sh_defaults.erase(
+		std::remove_if(sh_defaults.begin(), sh_defaults.end(),
 			[&](const Default& d) { return d.name == name; }),
-		m_defaults.end());
-	m_defaults.push_back({name, "bool", value ? "true" : "false"});
+		sh_defaults.end());
+	sh_defaults.push_back({name, "bool", value ? "true" : "false"});
 }
 
 } // namespace neurus

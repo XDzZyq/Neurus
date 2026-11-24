@@ -82,10 +82,6 @@ private:
 
 } // anonymous namespace
 
-// ---------------------------------------------------------------------------
-// AddPass — materializes one socket per declared resource.
-// ---------------------------------------------------------------------------
-
 TEST(RenderGraphTest, AddPassDeclaresSockets)
 {
 	MockPass p("mock",
@@ -93,6 +89,7 @@ TEST(RenderGraphTest, AddPassDeclaresSockets)
 	           /*writes=*/ {AttachmentName::HDRColor});
 
 	RenderGraph g;
+	EXPECT_THROW(g.AddPass(nullptr), std::runtime_error);
 	auto* node = g.AddPass(&p);
 
 	ASSERT_NE(node, nullptr);
@@ -101,72 +98,17 @@ TEST(RenderGraphTest, AddPassDeclaresSockets)
 	EXPECT_EQ(node->data.pass, static_cast<Pass*>(&p));
 }
 
-TEST(RenderGraphTest, AddPassRejectsNullptr)
+TEST(RenderGraphTest, ConnectRequiresMatchingDeclaredAttachments)
 {
-	RenderGraph g;
-	EXPECT_THROW(g.AddPass(nullptr), std::runtime_error);
-}
-
-// ---------------------------------------------------------------------------
-// Connect — wires a producer's write into a consumer's read.
-// ---------------------------------------------------------------------------
-
-TEST(RenderGraphTest, ConnectWiresMatchingResource)
-{
-	MockPass producer("prod", {}, {AttachmentName::Position});
-	MockPass consumer("cons", {AttachmentName::Position}, {});
-
-	RenderGraph g;
-	auto* pn = g.AddPass(&producer);
-	auto* cn = g.AddPass(&consumer);
-
-	EXPECT_TRUE(g.Connect(pn, AttachmentName::Position, cn));
-
-	// Duplicate connection is rejected by the underlying Graph<>.
-	EXPECT_FALSE(g.Connect(pn, AttachmentName::Position, cn));
-}
-
-TEST(RenderGraphTest, ConnectRejectsMissingSocket)
-{
-	MockPass producer("prod", {}, {AttachmentName::Position});
-	MockPass consumer("cons", {AttachmentName::Normal}, {});
-
-	RenderGraph g;
-	auto* pn = g.AddPass(&producer);
-	auto* cn = g.AddPass(&consumer);
-
-	// Producer never declared Normal; consumer never declared Position.
-	// Either direction fails without side effects.
-	EXPECT_FALSE(g.Connect(pn, AttachmentName::Normal,   cn));
-	EXPECT_FALSE(g.Connect(pn, AttachmentName::Position, cn));
-}
-
-// ---------------------------------------------------------------------------
-// Compile — validates connectivity and produces a topological order.
-// ---------------------------------------------------------------------------
-
-TEST(RenderGraphTest, CompileLinearChain)
-{
-	// A(writes X) → B(reads X, writes Y) → C(reads Y)
-	MockPass a("A", {}, {AttachmentName::Position});
-	MockPass b("B", {AttachmentName::Position}, {AttachmentName::HDRColor});
-	MockPass c("C", {AttachmentName::HDRColor}, {});
-
-	RenderGraph g;
-	auto* na = g.AddPass(&a);
-	auto* nb = g.AddPass(&b);
-	auto* nc = g.AddPass(&c);
-
-	ASSERT_TRUE(g.Connect(na, AttachmentName::Position, nb));
-	ASSERT_TRUE(g.Connect(nb, AttachmentName::HDRColor, nc));
-
-	g.Compile();
-
-	const auto& order = g.CompiledOrder();
-	ASSERT_EQ(order.size(), 3u);
-	EXPECT_EQ(order[0], na);
-	EXPECT_EQ(order[1], nb);
-	EXPECT_EQ(order[2], nc);
+	MockPass producer("producer", {}, {AttachmentName::Position, AttachmentName::HDRColor});
+	MockPass consumer("consumer", {AttachmentName::Position, AttachmentName::Normal}, {});
+	RenderGraph graph;
+	auto* output = graph.AddPass(&producer);
+	auto* input = graph.AddPass(&consumer);
+	EXPECT_FALSE(graph.Connect(output, AttachmentName::Normal, input));
+	EXPECT_FALSE(graph.Connect(output, AttachmentName::HDRColor, input));
+	ASSERT_TRUE(graph.Connect(output, AttachmentName::Position, input));
+	EXPECT_FALSE(graph.Connect(output, AttachmentName::Position, input));
 }
 
 TEST(RenderGraphTest, CompileAllowsExternalInputs)
@@ -184,25 +126,6 @@ TEST(RenderGraphTest, CompileAllowsExternalInputs)
 	const auto& order = g.CompiledOrder();
 	ASSERT_EQ(order.size(), 1u);
 	EXPECT_EQ(order[0], cn);
-}
-
-TEST(RenderGraphTest, ConnectRejectsCycle)
-{
-	// Build a would-be 2-node cycle: A reads X and writes Y; B reads Y and
-	// writes X. Connect now rejects the edge that would close the cycle, so
-	// the graph stays acyclic and Compile() succeeds.
-	MockPass a("A", {AttachmentName::Position}, {AttachmentName::HDRColor});
-	MockPass b("B", {AttachmentName::HDRColor}, {AttachmentName::Position});
-
-	RenderGraph g;
-	auto* na = g.AddPass(&a);
-	auto* nb = g.AddPass(&b);
-
-	ASSERT_TRUE(g.Connect(na, AttachmentName::HDRColor, nb));   // A → B
-	EXPECT_FALSE(g.Connect(nb, AttachmentName::Position, na));  // B → A rejected
-
-	g.Compile();  // stays acyclic → no throw
-	EXPECT_EQ(g.CompiledOrder().size(), 2u);
 }
 
 // ---------------------------------------------------------------------------
@@ -225,47 +148,6 @@ TEST(RenderGraphTest, ExecuteThrowsIfNotCompiled)
 	             std::runtime_error);
 }
 
-TEST(RenderGraphTest, ClearRemovesAllNodes)
-{
-	// Rebuild-on-toggle relies on Clear() emptying the graph so it can be
-	// repopulated with the currently-active pass set.
-	MockPass a("A", {}, {AttachmentName::Position});
-	MockPass b("B", {AttachmentName::Position}, {});
-
-	RenderGraph g;
-	auto* na = g.AddPass(&a);
-	auto* nb = g.AddPass(&b);
-	g.Connect(na, AttachmentName::Position, nb);
-	g.Compile();
-	ASSERT_EQ(g.PassCount(), 2u);
-
-	g.Clear();
-	EXPECT_EQ(g.PassCount(), 0u);
-	EXPECT_TRUE(g.CompiledOrder().empty());
-
-	// Graph is reusable after Clear().
-	g.AddPass(&a);
-	g.Compile();
-	EXPECT_EQ(g.PassCount(), 1u);
-}
-
-// ---------------------------------------------------------------------------
-// Reset — invalidates the compiled order without dropping nodes.
-// ---------------------------------------------------------------------------
-
-TEST(RenderGraphTest, ResetInvalidatesCompiledOrder)
-{
-	MockPass a("A", {}, {});
-	RenderGraph g;
-	g.AddPass(&a);
-	g.Compile();
-
-	EXPECT_EQ(g.CompiledOrder().size(), 1u);
-
-	g.Reset();
-	EXPECT_TRUE(g.CompiledOrder().empty());
-}
-
 // ---------------------------------------------------------------------------
 // Topology shape coverage: fan-out, diamond, multi-resource edges.
 // ---------------------------------------------------------------------------
@@ -280,29 +162,6 @@ size_t OrderIndex(const RenderGraph& g, const RenderGraph::NodeT* node)
 	return SIZE_MAX;
 }
 } // anonymous namespace
-
-TEST(RenderGraphTest, FanOutOneProducerManyConsumers)
-{
-	// prod writes X; consA and consB both read X.
-	MockPass prod ("prod",  {},                        {AttachmentName::Position});
-	MockPass consA("consA", {AttachmentName::Position}, {});
-	MockPass consB("consB", {AttachmentName::Position}, {});
-
-	RenderGraph g;
-	auto* np = g.AddPass(&prod);
-	auto* na = g.AddPass(&consA);
-	auto* nb = g.AddPass(&consB);
-
-	ASSERT_TRUE(g.Connect(np, AttachmentName::Position, na));
-	ASSERT_TRUE(g.Connect(np, AttachmentName::Position, nb));
-
-	g.Compile();
-
-	// Producer must precede both consumers.
-	EXPECT_LT(OrderIndex(g, np), OrderIndex(g, na));
-	EXPECT_LT(OrderIndex(g, np), OrderIndex(g, nb));
-	EXPECT_EQ(g.CompiledOrder().size(), 3u);
-}
 
 TEST(RenderGraphTest, DiamondDependency)
 {
@@ -353,10 +212,6 @@ TEST(RenderGraphTest, MultipleResourceEdgesBetweenSamePair)
 	EXPECT_LT(OrderIndex(g, na), OrderIndex(g, nb));
 }
 
-// ---------------------------------------------------------------------------
-// Rebuild determinism + cycle diagnostics.
-// ---------------------------------------------------------------------------
-
 TEST(RenderGraphTest, RebuildProducesSameOrder)
 {
 	MockPass a("A", {},                         {AttachmentName::Position});
@@ -377,7 +232,12 @@ TEST(RenderGraphTest, RebuildProducesSameOrder)
 	std::vector<std::string> first;
 	for (auto* n : g.CompiledOrder()) first.push_back(n->name);
 
+	g.Reset();
+	EXPECT_EQ(g.PassCount(), 3u);
+	EXPECT_TRUE(g.CompiledOrder().empty());
 	g.Clear();
+	EXPECT_EQ(g.PassCount(), 0u);
+	EXPECT_TRUE(g.CompiledOrder().empty());
 	build(g);
 	std::vector<std::string> second;
 	for (auto* n : g.CompiledOrder()) second.push_back(n->name);
@@ -385,6 +245,7 @@ TEST(RenderGraphTest, RebuildProducesSameOrder)
 	EXPECT_EQ(first, second);
 	ASSERT_EQ(first.size(), 3u);
 	EXPECT_EQ(first[0], "A");
+	EXPECT_EQ(first[1], "B");
 	EXPECT_EQ(first[2], "C");
 }
 
@@ -402,6 +263,8 @@ TEST(RenderGraphTest, CycleErrorNamesInvolvedNodes)
 	auto* nb = g.AddPass(&b);
 	ASSERT_TRUE(g.Connect(na, AttachmentName::HDRColor, nb));   // A → B
 
+	EXPECT_FALSE(g.Connect(nb, AttachmentName::Position, na));
+	ASSERT_NO_THROW(g.Compile());
 	// Force B → A raw: each pass here has exactly one input/output socket.
 	ASSERT_EQ(na->inputs.size(), 1u);
 	ASSERT_EQ(nb->outputs.size(), 1u);
@@ -552,4 +415,3 @@ TEST(RenderGraphTest, CompileAllowsDeclaredExternalInput)
 	EXPECT_NO_THROW(g.Compile());
 	EXPECT_EQ(g.CompiledOrder().size(), 1u);
 }
-

@@ -11,62 +11,48 @@
 
 using namespace neurus::ipc;
 
-TEST(Frame, EncodesBigEndianLength)
-{
-	const auto frame = EncodeFrame("abc");
-	ASSERT_EQ(frame.size(), 7u);
-	EXPECT_EQ(static_cast<unsigned char>(frame[0]), 0u);
-	EXPECT_EQ(static_cast<unsigned char>(frame[1]), 0u);
-	EXPECT_EQ(static_cast<unsigned char>(frame[2]), 0u);
-	EXPECT_EQ(static_cast<unsigned char>(frame[3]), 3u);
-	EXPECT_EQ(frame.substr(4), "abc");
-}
-
-TEST(Frame, ReassemblesByteByByte)
+TEST(Frame, DecodesAStreamAcrossFragmentedAndCoalescedWrites)
 {
 	FrameDecoder decoder(1024);
-	const auto frame = EncodeFrame("hello");
+	const auto first = EncodeFrame("hello");
+	ASSERT_EQ(first.substr(0, 4), std::string("\0\0\0\5", 4));
+	EXPECT_EQ(first.substr(4), "hello");
+
 	std::string body;
-	for (std::size_t i = 0; i < frame.size(); ++i)
+	for (std::size_t i = 0; i + 1 < first.size(); ++i)
 	{
-		decoder.Append(std::string_view(frame).substr(i, 1));
-		const auto status = decoder.Next(body);
-		if (i + 1 < frame.size())
-			EXPECT_EQ(status, FrameStatus::NeedMore);
-		else
-			EXPECT_EQ(status, FrameStatus::Ok);
+		SCOPED_TRACE(i);
+		decoder.Append(std::string_view(first).substr(i, 1));
+		EXPECT_EQ(decoder.Next(body), FrameStatus::NeedMore);
 	}
 
+	decoder.Append(first.substr(first.size() - 1) + EncodeFrame("world"));
+	ASSERT_EQ(decoder.Next(body), FrameStatus::Ok);
 	EXPECT_EQ(body, "hello");
-	EXPECT_EQ(decoder.Buffered(), 0u);
-}
-
-TEST(Frame, TwoCoalescedFrames)
-{
-	FrameDecoder decoder(1024);
-	decoder.Append(EncodeFrame("one") + EncodeFrame("two"));
-
-	std::string body;
 	ASSERT_EQ(decoder.Next(body), FrameStatus::Ok);
-	EXPECT_EQ(body, "one");
-	ASSERT_EQ(decoder.Next(body), FrameStatus::Ok);
-	EXPECT_EQ(body, "two");
+	EXPECT_EQ(body, "world");
 	EXPECT_EQ(decoder.Next(body), FrameStatus::NeedMore);
-}
-
-TEST(Frame, OversizeBodyIsTooLarge)
-{
-	FrameDecoder decoder(16);
-	decoder.Append(EncodeFrame(std::string(17, 'x')));
-	std::string body;
-	EXPECT_EQ(decoder.Next(body), FrameStatus::TooLarge);
 	EXPECT_EQ(decoder.Buffered(), 0u);
 }
 
-TEST(Frame, ZeroLengthIsInvalid)
+TEST(Frame, RejectsInvalidFrameLengthsAndDiscardsBufferedData)
 {
-	FrameDecoder decoder(16);
-	decoder.Append(std::string("\0\0\0\0", 4));
-	std::string body;
-	EXPECT_EQ(decoder.Next(body), FrameStatus::Invalid);
+	struct InvalidFrame
+	{
+		std::string bytes;
+		FrameStatus status;
+	};
+	const InvalidFrame cases[] = {
+		{std::string(4, '\0'), FrameStatus::Invalid},
+		{EncodeFrame(std::string(17, 'x')), FrameStatus::TooLarge}
+	};
+	for (const auto& frame : cases)
+	{
+		SCOPED_TRACE(frame.bytes.size());
+		FrameDecoder decoder(16);
+		decoder.Append(frame.bytes);
+		std::string body;
+		EXPECT_EQ(decoder.Next(body), frame.status);
+		EXPECT_EQ(decoder.Buffered(), 0u);
+	}
 }

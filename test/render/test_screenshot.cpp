@@ -308,15 +308,11 @@ TEST_F(ScreenshotTest, ExportShadowDepth_UnwrittenMapReturnsEmpty)
 // ---------------------------------------------------------------------------
 // CaptureAttachment - non-copyable class check
 // ---------------------------------------------------------------------------
-TEST_F(ScreenshotTest, NonCopyable)
-{
-	static_assert(!std::is_copy_constructible_v<Screenshot>,
-	              "Screenshot must not be copy-constructible");
-	static_assert(!std::is_copy_assignable_v<Screenshot>,
-	              "Screenshot must not be copy-assignable");
-	static_assert(!std::is_move_constructible_v<Screenshot>,
-	              "Screenshot must not be move-constructible (stores references)");
-	static_assert(!std::is_move_assignable_v<Screenshot>,
-	              "Screenshot must not be move-assignable (stores references)");
-	SUCCEED();
-}
+static_assert(!std::is_copy_constructible_v<Screenshot>,
+              "Screenshot must not be copy-constructible");
+static_assert(!std::is_copy_assignable_v<Screenshot>,
+              "Screenshot must not be copy-assignable");
+static_assert(!std::is_move_constructible_v<Screenshot>,
+              "Screenshot must not be move-constructible (stores references)");
+static_assert(!std::is_move_assignable_v<Screenshot>,
+              "Screenshot must not be move-assignable (stores references)");

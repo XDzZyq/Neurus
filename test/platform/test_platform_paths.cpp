@@ -27,15 +27,12 @@ constexpr const char* kHomeEnv = "USERPROFILE";
 constexpr const char* kHomeEnv = "HOME";
 #endif
 
-TEST(PlatformPathsTest, HomeDirectoryIsNonEmptyAndAbsolute)
+TEST(PlatformPathsTest, HomeDirectoryUsesTheAbsoluteUserHome)
 {
 	const std::filesystem::path home = HomeDirectory();
 	EXPECT_FALSE(home.empty());
 	EXPECT_TRUE(home.is_absolute());
-}
 
-TEST(PlatformPathsTest, HomeDirectoryFollowsHomeEnvVar)
-{
 	const std::string env = neurus::EnvironmentValue(kHomeEnv);
 	if (env.empty())
 		return;  // Unset env: fallback path, nothing to compare against.
@@ -43,18 +40,12 @@ TEST(PlatformPathsTest, HomeDirectoryFollowsHomeEnvVar)
 	EXPECT_EQ(HomeDirectory().string(), env);
 }
 
-TEST(PlatformPathsTest, ConfigDirectoryIsBuiltOnHomeDirectory)
+TEST(PlatformPathsTest, UserFilesLiveUnderTheNeurusConfigDirectory)
 {
 	EXPECT_EQ(NeurusConfigDirectory(), HomeDirectory() / ".neurus");
-}
 
-TEST(PlatformPathsTest, SessionsDirectoryIsBuiltOnConfigDirectory)
-{
 	EXPECT_EQ(SessionsDirectory(), NeurusConfigDirectory() / "sessions");
-}
 
-TEST(PlatformPathsTest, PreferencesDefaultPathBuiltOnHomeDirectory)
-{
 	const std::filesystem::path expected =
 		HomeDirectory() / ".neurus" / "preferences.json";
 	EXPECT_EQ(Preferences::DefaultPath(), expected.generic_string());

@@ -32,6 +32,7 @@ TEST(PassBindings, BuildsImageInputsAndOutputs)
 {
 	PassPorts ports;
 	ports.ports = {
+		{"selfManaged", PortDirection::Input, "sampler2D", 1, 0},
 		{"gIn",   PortDirection::Input,  "sampler2D", 0, 0},
 		{"gOut",  PortDirection::Output, "image2D",   2, 0},
 		{"gFrag", PortDirection::Output, "vec4",      0, 0},
@@ -73,22 +74,6 @@ TEST(PassBindings, ConnectedPredicateFiltersInputs)
 	ASSERT_EQ(bindings.size(), 1u);
 	EXPECT_EQ(bindings[0].port, "gOut");
 	EXPECT_EQ(bindings[0].direction, PortDirection::Output);
-}
-
-TEST(PassBindings, SelfManagedBindingsAreSkipped)
-{
-	PassPorts ports;
-	ports.ports = {
-		{"gPosition", PortDirection::Input,  "sampler2D", 1, 0},
-		{"gOutput",   PortDirection::Output, "image2D",   2, 0},
-	};
-
-	SelfManagedPass pass;
-	const std::vector<GraphImageBinding> bindings =
-		BuildImageBindings(ports, pass);
-
-	ASSERT_EQ(bindings.size(), 1u);
-	EXPECT_EQ(bindings[0].port, "gOutput");
 }
 
 TEST(PassBindings, DefaultPassHasNoSelfManagedBindings)

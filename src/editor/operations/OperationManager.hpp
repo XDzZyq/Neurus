@@ -8,7 +8,7 @@
  * re-run handler performs is suppressed rather than corrupting the stacks.
  *
  * A third phase, Phase::Script, exists for script runs: opening the script scope
- * makes Submit() buffer into m_scriptOps instead of the undo stack, so the whole
+ * makes Submit() buffer into op_scriptOps instead of the undo stack, so the whole
  * run can be committed as one ScriptRunOp - one history entry carrying the run's
  * label - when the scope closes. Without it a single run would fragment into one
  * step per property write, which is not what "run script" means to a user.
@@ -92,8 +92,8 @@ public:
 	/** @brief Redoes the most recently undone operation (no-op if none). */
 	void Redo();
 
-	bool CanUndo() const { return !m_undo.empty(); }
-	bool CanRedo() const { return !m_redo.empty(); }
+	bool CanUndo() const { return !op_undo.empty(); }
+	bool CanRedo() const { return !op_redo.empty(); }
 
 	/**
 	 * @brief Builds a read-only snapshot of both stacks for display.
@@ -106,9 +106,9 @@ public:
 
 	// --- Persistence hooks ---
 	/** @brief Undo stack, oldest to newest (next-undo last). Read-only. */
-	const std::vector<std::unique_ptr<Operation>>& GetUndoStack() const { return m_undo; }
+	const std::vector<std::unique_ptr<Operation>>& GetUndoStack() const { return op_undo; }
 	/** @brief Redo stack, bottom to top (next-redo last). Read-only. */
-	const std::vector<std::unique_ptr<Operation>>& GetRedoStack() const { return m_redo; }
+	const std::vector<std::unique_ptr<Operation>>& GetRedoStack() const { return op_redo; }
 
 	/**
 	 * @brief Replaces both stacks wholesale (project load).
@@ -125,7 +125,7 @@ private:
 	 * @brief Recording phase.
 	 *
 	 * Idle records normally; Replaying suppresses Submit() because undo/redo
-	 * re-runs the originating handler; Script buffers Submit() into m_scriptOps
+	 * re-runs the originating handler; Script buffers Submit() into op_scriptOps
 	 * so one script run lands as a single history entry.
 	 */
 	enum class Phase { Idle, Replaying, Script };
@@ -150,25 +150,25 @@ private:
 	 */
 	void EnforceUndoLimit();
 
-	EventQueue& m_bus;
+	EventQueue& op_bus;
 
-	std::vector<std::unique_ptr<Operation>> m_undo;
-	std::vector<std::unique_ptr<Operation>> m_redo;
+	std::vector<std::unique_ptr<Operation>> op_undo;
+	std::vector<std::unique_ptr<Operation>> op_redo;
 
 	/// Ops recorded while a script scope is open; committed as one ScriptRunOp.
-	std::vector<std::unique_ptr<Operation>> m_scriptOps;
+	std::vector<std::unique_ptr<Operation>> op_scriptOps;
 
 	/// History label of the open script run; empty means "Run Script".
-	std::string m_scriptName;
-	std::string m_scopeError; ///< First rejected edit in the current scope.
+	std::string op_scriptName;
+	std::string op_scopeError; ///< First rejected edit in the current scope.
 
 	/// Maximum undo-stack depth; oldest entries evicted past this.
-	size_t m_maxUndoDepth = kDefaultMaxUndoDepth;
+	size_t op_maxUndoDepth = kDefaultMaxUndoDepth;
 
 	/// Monotonic counter bumped on every stack change; drives UI change detection.
-	uint64_t m_revision = 0;
+	uint64_t op_revision = 0;
 
-	Phase m_phase = Phase::Idle;
+	Phase op_phase = Phase::Idle;
 };
 
 } // namespace neurus

@@ -63,6 +63,8 @@ shader = neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl")
 mesh.shader.create(fragment=shader)
 assert mesh.shader.fragment is not None
 neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl", name="MyFrag")
+assert "MyFrag" in neurus.data.shaders
+assert neurus.data.shaders["MyFrag"].name == "MyFrag"
 mesh.shader.create(fragment=neurus.data.shaders["MyFrag"])
 )");
 }
@@ -83,18 +85,7 @@ frag.compile(by="struct")
 )");
 }
 
-TEST_F(ScriptShader, WrongStageIsRejected)
-{
-	Run(R"(
-import neurus
-mesh = neurus.scene.meshes["Ground"]
-compute = neurus.shader.load_shader("res/shaders/compute/dummy.comp.glsl")
-mesh.shader.create(fragment=compute)
-)");
-	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), 0);
-}
-
-TEST_F(ScriptShader, ComputeIsEditableAndCompilable)
+TEST_F(ScriptShader, CompiledComputeShaderCannotBeUsedAsAFragmentStage)
 {
 	RunCleanly(R"(
 import neurus
@@ -103,16 +94,14 @@ unit = compute.compute
 unit.code = unit.code
 unit.compile(by="code")
 )");
-}
 
-TEST_F(ScriptShader, PooledShaderNamesResolve)
-{
-	RunCleanly(R"(
+	const auto errors = neurus::LogBuffer::instance().ErrorCount();
+	Run(R"(
 import neurus
-neurus.shader.load_shader("res/shaders/render/gbuffer.frag.glsl", name="MyFrag")
-assert "MyFrag" in neurus.data.shaders
-assert neurus.data.shaders["MyFrag"].name == "MyFrag"
+mesh = neurus.scene.meshes["Ground"]
+mesh.shader.create(fragment=compute)
 )");
+	EXPECT_GT(neurus::LogBuffer::instance().ErrorCount(), errors);
 }
 
 TEST_F(ScriptShader, CompileFailureRaisesTheCompilerMessage)

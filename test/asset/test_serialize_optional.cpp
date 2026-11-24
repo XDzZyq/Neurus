@@ -434,22 +434,18 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 // 4. Identity and history stay strict
 // =======================================================================
 
-/**
- * @brief `UID::o_id` is never defaulted — a pool reference depends on it.
- *
- * Every cross-reference in a project (Scene's ID lists, Mesh::o_meshDataId,
- * the viewport camera's UID) is resolved by this number. Defaulting it would
- * produce an object that loads cleanly and then fails to resolve, which is far
- * worse to diagnose than a refused load.
- */
-TEST(SerializeOptional, AbsentIdentityFieldStillThrows)
+TEST(SerializeOptional, MissingLightIdentityOrDiscriminatorRejectsLoad)
 {
-	Light       light;
-	std::string json = SaveOne("light", light);
-	ASSERT_TRUE(RenameKey(json, "o_id")) << "stale anchor:\n" << json;
-
-	Light loaded;
-	EXPECT_THROW(LoadOne(json, "light", loaded), cereal::Exception);
+	Light light;
+	light.light_type = POINTLIGHT;
+	for (const char* required : {"o_id", "light_type"})
+	{
+		SCOPED_TRACE(required);
+		std::string json = SaveOne("light", light);
+		ASSERT_TRUE(RenameKey(json, required)) << json;
+		Light loaded;
+		EXPECT_THROW(LoadOne(json, "light", loaded), cereal::Exception);
+	}
 }
 
 /** @brief A pooled resource's source path is identity too, not a setting. */
@@ -461,24 +457,6 @@ TEST(SerializeOptional, AbsentResourcePathStillThrows)
 
 	MeshData loaded;
 	EXPECT_THROW(LoadOne(json, "mesh_data", loaded), cereal::Exception);
-}
-
-/**
- * @brief `light_type` discriminates point from sun, so it cannot be defaulted.
- *
- * `Light()` leaves it at NONELIGHT, which is a dead light the renderer skips —
- * defaulting it would turn a newer file's light into an invisible one with no
- * error anywhere.
- */
-TEST(SerializeOptional, AbsentLightTypeStillThrows)
-{
-	Light light;
-	light.light_type = POINTLIGHT;
-	std::string json = SaveOne("light", light);
-	ASSERT_TRUE(RenameKey(json, "light_type")) << "stale anchor:\n" << json;
-
-	Light loaded;
-	EXPECT_THROW(LoadOne(json, "light", loaded), cereal::Exception);
 }
 
 /**
@@ -791,13 +769,4 @@ TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 		EXPECT_TRUE(newKeys.count("m_editor") != 0) << name << " lost the m_editor node";
 	}
 }
-
-
-
-
-
-
-
-
-
 

@@ -166,17 +166,6 @@ protected:
 // A. The dirty gate — contract 1
 // ===========================================================================
 
-/// @test A fresh builder is dirty, so the very first Edit() populates the list.
-TEST_F(GizmoDrawBuilderTest, StartsDirtySoTheFirstEditPopulatesTheList)
-{
-	EXPECT_TRUE(m_builder.IsDirty());
-	EXPECT_TRUE(m_builder.List().Empty());
-
-	const TransformSnapshot live = Anchor();
-	m_builder.Rebuild(m_gizmo, m_vp, &live);
-	EXPECT_FALSE(m_builder.IsDirty());
-	EXPECT_FALSE(m_builder.List().Empty());
-}
 
 /**
  * @test A clean builder ignores everything, and MarkDirty is what lets it through.
@@ -187,6 +176,8 @@ TEST_F(GizmoDrawBuilderTest, StartsDirtySoTheFirstEditPopulatesTheList)
  */
 TEST_F(GizmoDrawBuilderTest, ACleanBuilderIgnoresEveryChangeUntilMarkedDirty)
 {
+	EXPECT_TRUE(m_builder.IsDirty());
+	EXPECT_TRUE(m_builder.List().Empty());
 	const TransformSnapshot live = Anchor();
 	m_builder.Rebuild(m_gizmo, m_vp, &live);
 	const size_t resting = m_builder.List().segments.size();
@@ -205,12 +196,6 @@ TEST_F(GizmoDrawBuilderTest, ACleanBuilderIgnoresEveryChangeUntilMarkedDirty)
 // B. Nothing to draw is an empty list, never a stale one
 // ===========================================================================
 
-/// @test Nothing armed and nothing selected: the list clears rather than persisting.
-TEST_F(GizmoDrawBuilderTest, NothingArmedAndNoAnchorIsAnEmptyList)
-{
-	m_builder.Rebuild(m_gizmo, m_vp, nullptr);
-	EXPECT_TRUE(m_builder.List().Empty());
-}
 
 /**
  * @test An invalid viewport clears the list instead of leaving the last frame's.
@@ -243,23 +228,6 @@ TEST_F(GizmoDrawBuilderTest, APivotBehindTheEyeDrawsNothing)
 // ===========================================================================
 
 /**
- * @test A selection with no gesture draws three Move guides and one pivot dot.
- *
- * The count is the assertion: three guides of nine segments and not one more. A ring
- * would add 48 at a stroke, which is what makes this the check that the resting handle
- * has not picked up a Rotate's decoration.
- */
-TEST_F(GizmoDrawBuilderTest, RestingHandleIsThreeMoveGuidesAndOnePivotDot)
-{
-	const TransformSnapshot live = Anchor();
-	m_builder.Rebuild(m_gizmo, m_vp, &live);
-
-	EXPECT_EQ(m_builder.List().segments.size(), 3u * kMoveGuideSegments);
-	EXPECT_EQ(m_builder.List().points.size(), 1u) << "the pivot dot, and no box handles";
-	EXPECT_EQ(CountPoints(m_builder.List(), OverlayPointShape::Circle), 1u);
-}
-
-/**
  * @test The pivot dot is pushed last and sits on the anchor.
  *
  * Depth testing is off and blending is alpha-over, so draw order is the only thing
@@ -276,6 +244,8 @@ TEST_F(GizmoDrawBuilderTest, PivotDotIsPushedLastAndSitsOnTheAnchor)
 	EXPECT_LT(glm::length(Pivot().p - live.position), 1e-5f);
 	EXPECT_TRUE((Pivot().flags & OverlayFlag::ScreenSpaceSize) != 0u)
 	    << "the dot is a fixed pixel size, not a world-space sphere";
+	EXPECT_EQ(m_builder.List().segments.size(), 3u * kMoveGuideSegments);
+	EXPECT_EQ(m_builder.List().points.size(), 1u);
 }
 
 // ===========================================================================
@@ -339,48 +309,27 @@ TEST_F(GizmoDrawBuilderTest, ARotateGuideDoesNotSpinWithTheObject)
 
 /// @test Move: one line and an arrowhead at each end. Both ends, because a modal
 /// constraint is a bidirectional line rather than a one-way grabbable arrow.
-TEST_F(GizmoDrawBuilderTest, ConstrainedMoveDecoratesBothEndsWithArrowheads)
+TEST_F(GizmoDrawBuilderTest, ConstrainedHandleGeometryReflectsTheActiveGesture)
 {
-	const glm::vec2 cursor = glm::vec2(kW, kH) * 0.5f;
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Move, kUid, m_target, cursor));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::X, m_vp, cursor));
-
-	const TransformSnapshot live = Anchor();
-	m_builder.Rebuild(m_gizmo, m_vp, &live);
-
-	EXPECT_EQ(m_builder.List().segments.size(), kMoveGuideSegments);
-	EXPECT_EQ(m_builder.List().points.size(), 1u) << "the pivot only: Move has no box handle";
-}
-
-/// @test Scale: one line and a box sprite at each end, per Blender.
-TEST_F(GizmoDrawBuilderTest, ConstrainedScaleDecoratesBothEndsWithBoxSprites)
-{
+	struct Case { GizmoMode mode; GizmoAxis axis; size_t segments; size_t squares; };
 	const glm::vec2 cursor = glm::vec2(kW, kH) * 0.5f + glm::vec2(100.0f, 0.0f);
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Scale, kUid, m_target, cursor));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::Z, m_vp, cursor));
-
 	const TransformSnapshot live = Anchor();
-	m_builder.Rebuild(m_gizmo, m_vp, &live);
-
-	EXPECT_EQ(m_builder.List().segments.size(), 1u) << "a bare line: no arrowhead barbs";
-	EXPECT_EQ(CountPoints(m_builder.List(), OverlayPointShape::Square), 2u);
-	EXPECT_EQ(m_builder.List().points.size(), 3u) << "two boxes and the pivot";
+	for (const Case row : { Case{GizmoMode::Move, GizmoAxis::X, kMoveGuideSegments, 0},
+	                        Case{GizmoMode::Scale, GizmoAxis::Z, 1, 2},
+	                        Case{GizmoMode::Rotate, GizmoAxis::Z, 1u + kChords, 0} })
+	{
+		SCOPED_TRACE(static_cast<int>(row.mode));
+		ASSERT_TRUE(m_gizmo.Arm(row.mode, kUid, m_target, cursor));
+		ASSERT_TRUE(m_gizmo.Constrain(row.axis, m_vp, cursor));
+		m_builder.MarkDirty();
+		m_builder.Rebuild(m_gizmo, m_vp, &live);
+		EXPECT_EQ(m_builder.List().segments.size(), row.segments);
+		EXPECT_EQ(CountPoints(m_builder.List(), OverlayPointShape::Square), row.squares);
+		EXPECT_EQ(m_builder.List().points.size(), 1u + row.squares);
+		m_gizmo.Disarm();
+	}
 }
 
-/// @test Rotate: the latched line plus the ring whose plane the cursor sweeps, and no
-/// end decoration at all — a tip would suggest a direction a rotation axis lacks.
-TEST_F(GizmoDrawBuilderTest, ConstrainedRotateAddsARingAndNoEndDecoration)
-{
-	const glm::vec2 cursor = glm::vec2(kW, kH) * 0.5f + glm::vec2(100.0f, 0.0f);
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Rotate, kUid, m_target, cursor));
-	ASSERT_TRUE(m_gizmo.Constrain(GizmoAxis::Z, m_vp, cursor));
-
-	const TransformSnapshot live = Anchor();
-	m_builder.Rebuild(m_gizmo, m_vp, &live);
-
-	EXPECT_EQ(m_builder.List().segments.size(), 1u + kChords);
-	EXPECT_EQ(m_builder.List().points.size(), 1u) << "no arrowhead, no box: the pivot only";
-}
 
 // ===========================================================================
 // F. No axis chosen: the free gestures — contract 2
@@ -434,11 +383,14 @@ TEST_F(GizmoDrawBuilderTest, AFreeScaleOffersThreeBoxedGuides)
  * rings is also what says no arrowhead crept in: a Move guide would add nine segments
  * that are not chords.
  */
-TEST_F(GizmoDrawBuilderTest, AFreeRotateDrawsThreeGimbalRingsAndOneEnclosingViewRing)
+TEST_F(GizmoDrawBuilderTest, FreeRotationEmphasizesTheOuterViewRing)
 {
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Rotate, kUid, m_target, glm::vec2(kW, kH) * 0.5f));
-
 	const TransformSnapshot live = Anchor();
+	m_builder.Rebuild(m_gizmo, m_vp, &live);
+	const float restingWidth = AxisLine(m_builder.List()).width;
+
+	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Rotate, kUid, m_target, glm::vec2(kW, kH) * 0.5f));
+	m_builder.MarkDirty();
 	m_builder.Rebuild(m_gizmo, m_vp, &live);
 
 	const GizmoDrawList& list = m_builder.List();
@@ -452,25 +404,6 @@ TEST_F(GizmoDrawBuilderTest, AFreeRotateDrawsThreeGimbalRingsAndOneEnclosingView
 	const float gimbal = RingRadius(list, live.position,
 	                                [](const OverlaySegment& s) { return s.rgba != kWhite; });
 	EXPECT_GT(view, gimbal) << "the view ring encloses the three it is offered beside";
-}
-
-/**
- * @test The resting handle stays full strength; a free Rotate's gimbal rings do not.
- *
- * Brightness answers exactly one question: will dragging right now drive this axis? At
- * rest a bare G would move along all three, so they are full strength. A bare R is live
- * but turns about the *view* axis, so none of the three gimbal rings is the one being
- * dragged — they are offers, and X/Y/Z take them up mid-gesture.
- */
-TEST_F(GizmoDrawBuilderTest, AFreeRotateDimsTheGimbalRingsButNotTheViewRing)
-{
-	const TransformSnapshot live = Anchor();
-	m_builder.Rebuild(m_gizmo, m_vp, &live);
-	const float restingWidth = AxisLine(m_builder.List()).width;
-
-	ASSERT_TRUE(m_gizmo.Arm(GizmoMode::Rotate, kUid, m_target, glm::vec2(kW, kH) * 0.5f));
-	m_builder.MarkDirty();
-	m_builder.Rebuild(m_gizmo, m_vp, &live);
 
 	for (const OverlaySegment& s : m_builder.List().segments)
 	{
@@ -542,14 +475,3 @@ TEST_F(GizmoDrawBuilderTest, TheGuideGrowsInWorldSpaceAsTheCameraPullsBack)
 
 	EXPECT_NEAR(far10, near5 * 2.0f, 1e-2f) << "a fixed pixel budget, not a fixed world length";
 }
-
-
-
-
-
-
-
-
-
-
-

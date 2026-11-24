@@ -63,7 +63,7 @@ struct ScriptEngine::Impl
 	 */
 	bool Init(const std::string& envPath)
 	{
-		if (m_ready)
+		if (sc_ready)
 		{
 			return true;
 		}
@@ -105,14 +105,14 @@ struct ScriptEngine::Impl
 
 		// An explicit path wins; otherwise the build-time default environment
 		// (the uv-managed lib/.venv) is attached, or skipped when it is absent.
-		m_envPath = envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath;
-		AttachEnvironment(m_envPath);
+		sc_envPath = envPath.empty() ? std::string(NEURUS_PYTHON_ENV) : envPath;
+		AttachEnvironment(sc_envPath);
 
 		// Keep the module handle: the views were registered once and resolve
 		// through the engine's ScriptView.
 		try
 		{
-			m_neuru = pybind11::module_::import("neurus");
+			sc_neuru = pybind11::module_::import("neurus");
 		}
 		catch (const pybind11::error_already_set& e)
 		{
@@ -123,50 +123,50 @@ struct ScriptEngine::Impl
 		// Create the interpreter's view instances once. They hold a pointer to
 		// the engine-owned view, whose address is stable for the interpreter's
 		// lifetime; only the document it exposes changes per run.
-		script::InstallNeurusViews(m_neuru, &m_view);
+		script::InstallNeurusViews(sc_neuru, &sc_view);
 
 		// Install the import recorder after the embedded module is ready: every
 		// import from here on (including a preload) is timed, and the recorder's
 		// finder wraps the loaders without replacing the import system.
-		m_imports.Install();
+		sc_imports.Install();
 
 		// Install the in-process guardrail once, after the module exists. A
 		// failure does not disable the engine: trusted runs keep working and a
 		// sandboxed run is refused rather than silently running unrestricted.
-		m_sandbox = std::make_unique<ScriptSandbox>();
-		if (!m_sandbox->Install())
+		sc_sandbox = std::make_unique<ScriptSandbox>();
+		if (!sc_sandbox->Install())
 		{
 			NEURUS_ERR("ScriptEngine: the script sandbox is unavailable; "
 			           "sandboxed runs will be refused");
 		}
 
-		m_ready = true;
+		sc_ready = true;
 		return true;
 	}
 
 	/// @brief Finalize CPython exactly once. Safe to call repeatedly.
 	void Shutdown()
 	{
-		if (!m_ready)
+		if (!sc_ready)
 		{
 			return;
 		}
 
-		m_ready = false;
+		sc_ready = false;
 		// Drop the sandbox first: its helper dict holds Python objects and a
 		// watchdog thread, neither of which may outlive the interpreter.
-		if (m_sandbox)
+		if (sc_sandbox)
 		{
-			m_sandbox->Reset();
-			m_sandbox.reset();
+			sc_sandbox->Reset();
+			sc_sandbox.reset();
 		}
 		// Then drop the recorder's helper namespace and every pybind11
 		// reference: their destructors decref, which must not happen after the
 		// interpreter is gone.
-		m_imports.Release();
+		sc_imports.Release();
 		// Drop the module handle before finalizing: its destructor decrefs, which
 		// must not happen after the interpreter is gone.
-		m_neuru = pybind11::module_();
+		sc_neuru = pybind11::module_();
 		// Never invoked from a finalizer/atexit path, and guarded above so a
 		// second call is a no-op (design section 8).
 		Py_FinalizeEx();
@@ -175,13 +175,13 @@ struct ScriptEngine::Impl
 	/// @brief True between a successful `Init()` and `Shutdown()`.
 	bool IsReady() const
 	{
-		return m_ready;
+		return sc_ready;
 	}
 
 	/// @return Python runtime version, or empty before initialization.
 	std::string PythonVersion() const
 	{
-		if (!m_ready)
+		if (!sc_ready)
 			return {};
 		std::string version(Py_GetVersion());
 		const std::size_t newline = version.find('\n');
@@ -193,7 +193,7 @@ struct ScriptEngine::Impl
 	/// @return Managed environment path requested at initialization.
 	std::string EnvironmentPath() const
 	{
-		return m_envPath;
+		return sc_envPath;
 	}
 
 	/**
@@ -206,7 +206,7 @@ struct ScriptEngine::Impl
 		results.reserve(packages.size());
 		for (const std::string& package : packages)
 		{
-			ScriptPreloadResult result = m_imports.Preload(package);
+			ScriptPreloadResult result = sc_imports.Preload(package);
 			if (!result.ok)
 			{
 				// Startup continues on failure, but the reason must not vanish.
@@ -221,19 +221,19 @@ struct ScriptEngine::Impl
 	/// @brief Report the modules resident in the interpreter, in load order.
 	std::vector<ScriptModuleInfo> LoadedModules()
 	{
-		return m_imports.LoadedModules();
+		return sc_imports.LoadedModules();
 	}
 
 	/// @brief Replace the directories whose modules may be hot-reloaded.
 	void SetReloadRoots(const std::vector<std::string>& roots)
 	{
-		m_imports.SetReloadRoots(roots);
+		sc_imports.SetReloadRoots(roots);
 	}
 
 	/// @return The normalized reload roots currently configured.
 	std::vector<std::string> ReloadRoots() const
 	{
-		return m_imports.ReloadRoots();
+		return sc_imports.ReloadRoots();
 	}
 
 	/**
@@ -247,7 +247,7 @@ struct ScriptEngine::Impl
 	                                             const ScriptContext* ctx,
 	                                             const ScriptPolicy* policy)
 	{
-		if (!m_ready)
+		if (!sc_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
 			RecordNotReady(policy);
@@ -257,49 +257,49 @@ struct ScriptEngine::Impl
 		std::optional<std::string> result;
 		// Declared before the GIL scope so its destructor runs after the GIL is
 		// released, including when an unexpected exception skips the return.
-		WatchdogJoin joinGuard(m_sandbox.get());
+		WatchdogJoin joinGuard(sc_sandbox.get());
 		{
 			pybind11::gil_scoped_acquire gil;
-			ContextScope scope(m_current, ctx);
-			RunScope runScope(m_dispatch.EventQueue());
+			ContextScope scope(sc_current, ctx);
+			RunScope runScope(sc_dispatch.EventQueue());
 
 			try
 			{
-				m_lastPolicy = PolicyOrDefault(policy);
+				sc_lastPolicy = PolicyOrDefault(policy);
 				runScope.Start({});
 				// Built while the run is still trusted: the redirect imports
 				// `types`, which the policy may not allow it to read.
-				StreamRedirect redirect(m_console);
-				SandboxScope sandboxScope(m_sandbox.get(), policy,
-				                          m_memoryLimitUnsupportedLogged);
+				StreamRedirect redirect(sc_console);
+				SandboxScope sandboxScope(sc_sandbox.get(), policy,
+				                          sc_memoryLimitUnsupportedLogged);
 
 				if (sandboxScope.ApplyFailed())
 				{
-					m_lastStatus = ScriptRunStatus::ScriptError;
-					m_lastMessage = "The sandbox policy could not be applied.";
+					sc_lastStatus = ScriptRunStatus::ScriptError;
+					sc_lastMessage = "The sandbox policy could not be applied.";
 				}
 				else if (!PrepareRun({}))
 				{
-					m_lastStatus = ScriptRunStatus::ScriptError;
-					m_lastMessage = "A changed project module could not be reloaded.";
+					sc_lastStatus = ScriptRunStatus::ScriptError;
+					sc_lastMessage = "A changed project module could not be reloaded.";
 				}
 				else
 				{
 					pybind11::object value =
 						pybind11::eval(expression, pybind11::globals(), pybind11::globals());
 					result = pybind11::repr(value).cast<std::string>();
-					m_lastStatus = ScriptRunStatus::Ok;
-					m_lastMessage.clear();
+					sc_lastStatus = ScriptRunStatus::Ok;
+					sc_lastMessage.clear();
 				}
 			}
 			catch (const pybind11::error_already_set& e)
 			{
 				// The SandboxScope destructor cleared the policy during
 				// unwinding, so formatting the traceback is unrestricted.
-				m_lastPolicy = PolicyOrDefault(policy);
-				m_lastStatus = m_sandbox ? m_sandbox->Classify(e)
+				sc_lastPolicy = PolicyOrDefault(policy);
+				sc_lastStatus = sc_sandbox ? sc_sandbox->Classify(e)
 				                         : ScriptRunStatus::ScriptError;
-				m_lastMessage = MessageOf(e);
+				sc_lastMessage = MessageOf(e);
 				ReportError(e, "ScriptEngine::EvalString");
 				result = std::nullopt;
 			}
@@ -310,7 +310,7 @@ struct ScriptEngine::Impl
 			if (!FinishRun(runScope, result.has_value()))
 				result.reset();
 			if (result)
-				m_console.Append(ScriptLineKind::Result, *result + "\n");
+				sc_console.Append(ScriptLineKind::Result, *result + "\n");
 		}
 		return result;
 	}
@@ -325,7 +325,7 @@ struct ScriptEngine::Impl
 	/// @brief Attach the queue scripted mutations are dispatched to.
 	void SetEventQueue(IEventQueue* queue)
 	{
-		m_dispatch.SetEventQueue(queue);
+		sc_dispatch.SetEventQueue(queue);
 	}
 
 	/**
@@ -336,7 +336,7 @@ struct ScriptEngine::Impl
 	bool RunStringChecked(const std::string& code, const ScriptContext* ctx,
 	                      const ScriptPolicy* policy)
 	{
-		if (!m_ready)
+		if (!sc_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
 			RecordNotReady(policy);
@@ -361,7 +361,7 @@ struct ScriptEngine::Impl
 	bool RunFileChecked(const std::string& path, const ScriptContext* ctx,
 	                    const ScriptPolicy* policy)
 	{
-		if (!m_ready)
+		if (!sc_ready)
 		{
 			NEURUS_ERR("scripting not initialized");
 			RecordNotReady(policy);
@@ -372,9 +372,9 @@ struct ScriptEngine::Impl
 		if (!file)
 		{
 			NEURUS_ERR("ScriptEngine::RunFile: cannot open '" << path << "'");
-			m_lastPolicy = PolicyOrDefault(policy);
-			m_lastStatus = ScriptRunStatus::ScriptError;
-			m_lastMessage = "The script file could not be opened.";
+			sc_lastPolicy = PolicyOrDefault(policy);
+			sc_lastStatus = ScriptRunStatus::ScriptError;
+			sc_lastMessage = "The script file could not be opened.";
 			return false;
 		}
 
@@ -409,7 +409,7 @@ struct ScriptEngine::Impl
 	/// @brief The buffer captured Python output and errors are written to.
 	ScriptConsoleBuffer& Console()
 	{
-		return m_console;
+		return sc_console;
 	}
 
 	/// @brief Queue a snippet for the next ExecutePending().
@@ -423,7 +423,7 @@ struct ScriptEngine::Impl
 			run.policy = *policy;
 			run.hasPolicy = true;
 		}
-		m_pending.push_back(std::move(run));
+		sc_pending.push_back(std::move(run));
 	}
 
 	/// @brief Queue a file for the next ExecutePending().
@@ -437,20 +437,20 @@ struct ScriptEngine::Impl
 			run.policy = *policy;
 			run.hasPolicy = true;
 		}
-		m_pending.push_back(std::move(run));
+		sc_pending.push_back(std::move(run));
 	}
 
 	/// @brief Run every queued script in order, then clear the queue.
 	void ExecutePending(const ScriptContext& ctx)
 	{
-		if (m_pending.empty())
+		if (sc_pending.empty())
 		{
 			return;
 		}
 
 		// Swap out so a script that submits another run cannot mutate this batch.
 		std::vector<PendingRun> batch;
-		batch.swap(m_pending);
+		batch.swap(sc_pending);
 
 		for (const PendingRun& run : batch)
 		{
@@ -469,19 +469,19 @@ struct ScriptEngine::Impl
 	/// @return Outcome of the most recent run.
 	ScriptRunStatus LastRunStatus() const
 	{
-		return m_lastStatus;
+		return sc_lastStatus;
 	}
 
 	/// @return Human-readable detail for the last run, empty on success.
 	std::string LastRunMessage() const
 	{
-		return m_lastMessage;
+		return sc_lastMessage;
 	}
 
 	/// @return The policy the last run executed under.
 	ScriptPolicy LastPolicy() const
 	{
-		return m_lastPolicy;
+		return sc_lastPolicy;
 	}
 
 private:
@@ -494,18 +494,18 @@ private:
 	 */
 	bool PrepareRun(const std::vector<std::string>& extraRoots)
 	{
-		if (m_imports.ReloadRoots().empty() && extraRoots.empty())
+		if (sc_imports.ReloadRoots().empty() && extraRoots.empty())
 		{
 			return true;
 		}
 
-		const ReloadOutcome outcome = m_imports.ReloadChanged(extraRoots);
+		const ReloadOutcome outcome = sc_imports.ReloadChanged(extraRoots);
 		if (!outcome.ok)
 		{
 			const std::string message = outcome.error.empty()
 				? std::string("reloading a changed project module failed")
 				: outcome.error;
-			m_console.Append(ScriptLineKind::Error, message + "\n");
+			sc_console.Append(ScriptLineKind::Error, message + "\n");
 			NEURUS_ERR("ScriptEngine: " << message);
 			return false;
 		}
@@ -515,7 +515,7 @@ private:
 			std::ostringstream line;
 			line << "reloaded module " << module.name << " in " << std::fixed
 			     << std::setprecision(3) << module.seconds << "s\n";
-			m_console.Append(ScriptLineKind::Output, line.str());
+			sc_console.Append(ScriptLineKind::Output, line.str());
 		}
 		return true;
 	}
@@ -534,59 +534,59 @@ private:
 		bool ok = false;
 		// Declared before the GIL scope so its destructor runs after the GIL is
 		// released, including when an unexpected exception skips the return.
-		WatchdogJoin joinGuard(m_sandbox.get());
+		WatchdogJoin joinGuard(sc_sandbox.get());
 		{
 			pybind11::gil_scoped_acquire gil;
 
 			// Publish this run's document view. The scope republishes
-			// `m_current` for the run and clears it on every exit path, so no
+			// `sc_current` for the run and clears it on every exit path, so no
 			// Python object can read a finished run's state.
-			ContextScope scope(m_current, ctx);
+			ContextScope scope(sc_current, ctx);
 
 			// Bracket the run so the operation sink compacts every write it
 			// makes into one undo step. Declared before the exec try-block and
 			// after the document is published, so it closes on every exit path -
 			// including a raising script - and the run's writes are recorded
 			// while the context is still live.
-			RunScope runScope(m_dispatch.EventQueue());
+			RunScope runScope(sc_dispatch.EventQueue());
 
 			try
 			{
-				m_lastPolicy = PolicyOrDefault(policy);
+				sc_lastPolicy = PolicyOrDefault(policy);
 				runScope.Start(runName);
 				// Redirect before running so `print` and tracebacks land in the
 				// buffer, and before the policy activates: installing it imports
 				// `types`, which the policy may not allow.
-				StreamRedirect redirect(m_console);
-				SandboxScope sandboxScope(m_sandbox.get(), policy,
-				                          m_memoryLimitUnsupportedLogged);
+				StreamRedirect redirect(sc_console);
+				SandboxScope sandboxScope(sc_sandbox.get(), policy,
+				                          sc_memoryLimitUnsupportedLogged);
 
 				if (sandboxScope.ApplyFailed())
 				{
-					m_lastStatus = ScriptRunStatus::ScriptError;
-					m_lastMessage = "The sandbox policy could not be applied.";
+					sc_lastStatus = ScriptRunStatus::ScriptError;
+					sc_lastMessage = "The sandbox policy could not be applied.";
 				}
 				else if (!PrepareRun(extraReloadRoots))
 				{
-					m_lastStatus = ScriptRunStatus::ScriptError;
-					m_lastMessage = "A changed project module could not be reloaded.";
+					sc_lastStatus = ScriptRunStatus::ScriptError;
+					sc_lastMessage = "A changed project module could not be reloaded.";
 				}
 				else
 				{
 					pybind11::exec(source, pybind11::globals(), pybind11::globals());
 					ok = true;
-					m_lastStatus = ScriptRunStatus::Ok;
-					m_lastMessage.clear();
+					sc_lastStatus = ScriptRunStatus::Ok;
+					sc_lastMessage.clear();
 				}
 			}
 			catch (const pybind11::error_already_set& e)
 			{
 				// The SandboxScope destructor cleared the policy during
 				// unwinding, so formatting the traceback is unrestricted.
-				m_lastPolicy = PolicyOrDefault(policy);
-				m_lastStatus = m_sandbox ? m_sandbox->Classify(e)
+				sc_lastPolicy = PolicyOrDefault(policy);
+				sc_lastStatus = sc_sandbox ? sc_sandbox->Classify(e)
 				                         : ScriptRunStatus::ScriptError;
-				m_lastMessage = MessageOf(e);
+				sc_lastMessage = MessageOf(e);
 				ReportError(e, entryName);
 			}
 			catch (const std::exception& e)
@@ -607,9 +607,9 @@ private:
 	/// @brief Records the "no interpreter" outcome for a rejected run.
 	void RecordNotReady(const ScriptPolicy* policy)
 	{
-		m_lastPolicy = PolicyOrDefault(policy);
-		m_lastStatus = ScriptRunStatus::NotReady;
-		m_lastMessage = "Scripting is not initialized.";
+		sc_lastPolicy = PolicyOrDefault(policy);
+		sc_lastStatus = ScriptRunStatus::NotReady;
+		sc_lastMessage = "Scripting is not initialized.";
 	}
 
 	/// @brief Extracts the exception's own message, without the traceback.
@@ -636,7 +636,7 @@ private:
 			trace = e.what();
 		}
 
-		m_console.Append(ScriptLineKind::Error, trace);
+		sc_console.Append(ScriptLineKind::Error, trace);
 		NEURUS_ERR(entryName << " failed:\n" << trace);
 	}
 
@@ -871,9 +871,9 @@ private:
 
 	void RecordHostError(std::string error)
 	{
-		m_lastStatus = ScriptRunStatus::ScriptError;
-		m_lastMessage = std::move(error);
-		m_console.Append(ScriptLineKind::Error, m_lastMessage + "\n");
+		sc_lastStatus = ScriptRunStatus::ScriptError;
+		sc_lastMessage = std::move(error);
+		sc_console.Append(ScriptLineKind::Error, sc_lastMessage + "\n");
 	}
 
 	/**
@@ -1003,20 +1003,20 @@ private:
 		ScriptPolicy policy;            ///< Copied at submission time.
 	};
 
-	bool m_ready = false;
-	std::string m_envPath;              ///< Environment requested at initialization.
-	pybind11::module_ m_neuru;           ///< Embedded module; views registered once.
-	ScriptImportRecorder m_imports;      ///< Import recording, preload and hot reload.
-	ScriptConsoleBuffer m_console;
-	ScriptDispatch m_dispatch;          ///< Funnel for scripted mutations; attached by SetEventQueue().
-	ScriptContext m_current;            ///< Document published for the run in progress.
-	script::ScriptView m_view{&m_current, &m_dispatch};  ///< Injected into the module once.
-	std::vector<PendingRun> m_pending;  ///< Runs queued for the next ExecutePending().
-	std::unique_ptr<ScriptSandbox> m_sandbox;  ///< Guardrail helper; installed at Init().
-	ScriptRunStatus m_lastStatus = ScriptRunStatus::NotReady;  ///< Last run outcome.
-	std::string m_lastMessage;          ///< Last run's message, empty on success.
-	ScriptPolicy m_lastPolicy;          ///< Policy the last run executed under.
-	bool m_memoryLimitUnsupportedLogged = false;  ///< Log the memory-limit warning once.
+	bool sc_ready = false;
+	std::string sc_envPath;              ///< Environment requested at initialization.
+	pybind11::module_ sc_neuru;           ///< Embedded module; views registered once.
+	ScriptImportRecorder sc_imports;      ///< Import recording, preload and hot reload.
+	ScriptConsoleBuffer sc_console;
+	ScriptDispatch sc_dispatch;          ///< Funnel for scripted mutations; attached by SetEventQueue().
+	ScriptContext sc_current;            ///< Document published for the run in progress.
+	script::ScriptView sc_view{&sc_current, &sc_dispatch};  ///< Injected into the module once.
+	std::vector<PendingRun> sc_pending;  ///< Runs queued for the next ExecutePending().
+	std::unique_ptr<ScriptSandbox> sc_sandbox;  ///< Guardrail helper; installed at Init().
+	ScriptRunStatus sc_lastStatus = ScriptRunStatus::NotReady;  ///< Last run outcome.
+	std::string sc_lastMessage;          ///< Last run's message, empty on success.
+	ScriptPolicy sc_lastPolicy;          ///< Policy the last run executed under.
+	bool sc_memoryLimitUnsupportedLogged = false;  ///< Log the memory-limit warning once.
 };
 
 }  // namespace neurus

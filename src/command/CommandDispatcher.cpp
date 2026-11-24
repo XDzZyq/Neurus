@@ -9,11 +9,11 @@ namespace neurus::command
 
 bool CommandDispatcher::Post(std::uint64_t id, CommandRequest request, CommandCompletion completion)
 {
-	std::lock_guard<std::mutex> lock(m_mutex);
-	if (m_pending.size() >= kCommandQueueCapacity)
+	std::lock_guard<std::mutex> lock(cmd_mutex);
+	if (cmd_pending.size() >= kCommandQueueCapacity)
 		return false;
 
-	m_pending.push_back(PendingCommand{id, std::move(request), std::move(completion)});
+	cmd_pending.push_back(PendingCommand{id, std::move(request), std::move(completion)});
 	return true;
 }
 
@@ -21,15 +21,15 @@ std::size_t CommandDispatcher::Drain(ICommandExecutor& executor)
 {
 	std::vector<PendingCommand> batch;
 	{
-		std::lock_guard<std::mutex> lock(m_mutex);
-		const std::size_t count = m_pending.size() < kCommandDrainBatch
-			? m_pending.size()
+		std::lock_guard<std::mutex> lock(cmd_mutex);
+		const std::size_t count = cmd_pending.size() < kCommandDrainBatch
+			? cmd_pending.size()
 			: kCommandDrainBatch;
 		batch.reserve(count);
 		for (std::size_t i = 0; i < count; ++i)
 		{
-			batch.push_back(std::move(m_pending.front()));
-			m_pending.pop_front();
+			batch.push_back(std::move(cmd_pending.front()));
+			cmd_pending.pop_front();
 		}
 	}
 
@@ -57,8 +57,8 @@ std::size_t CommandDispatcher::Drain(ICommandExecutor& executor)
 
 std::size_t CommandDispatcher::PendingCount() const
 {
-	std::lock_guard<std::mutex> lock(m_mutex);
-	return m_pending.size();
+	std::lock_guard<std::mutex> lock(cmd_mutex);
+	return cmd_pending.size();
 }
 
 } // namespace neurus::command

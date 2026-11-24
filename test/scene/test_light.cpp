@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "scene/Light.hpp"
+#include "scene/Sprite.hpp"
 
 using namespace neurus;
 
@@ -31,62 +32,26 @@ TEST(Light, DefaultConstructor)
 
 	// ObjectID type must be GO_LIGHT
 	EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);
+	EXPECT_EQ(light.GetTransform(), static_cast<Transform3D*>(&light));
 }
 
-// -----------------------------------------------------------------------
-// Typed constructors - all 4 types
-// -----------------------------------------------------------------------
-
-/**
- * @brief Construct Light with POINTLIGHT type (default power/color).
- */
-TEST(Light, TypedConstructor_Point)
+TEST(Light, TypedLightsStartCleanWithCommonDefaults)
 {
-	Light light(LightType::POINTLIGHT);
-
-	EXPECT_EQ(light.light_type, LightType::POINTLIGHT);
-	EXPECT_FLOAT_EQ(light.light_power, 10.0f);
-	EXPECT_EQ(light.light_color, glm::vec3(1.0f));
-	EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);
-}
-
-/**
- * @brief Construct Light with SUNLIGHT type (default power/color).
- */
-TEST(Light, TypedConstructor_Sun)
-{
-	Light light(LightType::SUNLIGHT);
-
-	EXPECT_EQ(light.light_type, LightType::SUNLIGHT);
-	EXPECT_FLOAT_EQ(light.light_power, 10.0f);
-	EXPECT_EQ(light.light_color, glm::vec3(1.0f));
-	EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);
-}
-
-/**
- * @brief Construct Light with SPOTLIGHT type (default power/color).
- */
-TEST(Light, TypedConstructor_Spot)
-{
-	Light light(LightType::SPOTLIGHT);
-
-	EXPECT_EQ(light.light_type, LightType::SPOTLIGHT);
-	EXPECT_FLOAT_EQ(light.light_power, 10.0f);
-	EXPECT_EQ(light.light_color, glm::vec3(1.0f));
-	EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);
-}
-
-/**
- * @brief Construct Light with AREALIGHT type (default power/color).
- */
-TEST(Light, TypedConstructor_Area)
-{
-	Light light(LightType::AREALIGHT);
-
-	EXPECT_EQ(light.light_type, LightType::AREALIGHT);
-	EXPECT_FLOAT_EQ(light.light_power, 10.0f);
-	EXPECT_EQ(light.light_color, glm::vec3(1.0f));
-	EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);
+	int previousUid = -1;
+	for (const auto type : {LightType::POINTLIGHT, LightType::SUNLIGHT,
+	                        LightType::SPOTLIGHT, LightType::AREALIGHT})
+	{
+		SCOPED_TRACE(static_cast<int>(type));
+		Light light(type);
+		EXPECT_GT(light.GetObjectID(), previousUid);
+		previousUid = light.GetObjectID();
+		EXPECT_TRUE(light.use_shadow);
+		EXPECT_EQ(light.light_type, type);
+		EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);
+		EXPECT_FLOAT_EQ(light.light_power, 10.0f);
+		EXPECT_EQ(light.light_color, glm::vec3(1.0f));
+		EXPECT_FALSE(light.is_light_changed);
+	}
 }
 
 /**
@@ -102,48 +67,10 @@ TEST(Light, TypedConstructor_CustomPowerAndColor)
 	EXPECT_EQ(light.light_color, blue);
 }
 
-// -----------------------------------------------------------------------
-// Type-specific members
-// -----------------------------------------------------------------------
-
-/**
- * @brief Point light radius has correct default.
- */
-TEST(Light, PointRadiusDefault)
+TEST(Light, ChangingEmissionMarksLightDirty)
 {
 	Light light(LightType::POINTLIGHT);
-	EXPECT_FLOAT_EQ(light.light_radius, 0.01f);
-}
 
-/**
- * @brief Spot light cutoffs have correct defaults.
- */
-TEST(Light, SpotCutoffDefaults)
-{
-	Light light(LightType::SPOTLIGHT);
-	EXPECT_FLOAT_EQ(light.spot_cutoff, 0.9f);
-	EXPECT_FLOAT_EQ(light.spot_outer_cutoff, 0.8f);
-}
-
-/**
- * @brief Area light ratio has correct default.
- */
-TEST(Light, AreaRatioDefault)
-{
-	Light light(LightType::AREALIGHT);
-	EXPECT_FLOAT_EQ(light.area_ratio, 1.0f);
-}
-
-// -----------------------------------------------------------------------
-// Setters
-// -----------------------------------------------------------------------
-
-/**
- * @brief SetColor updates light_color and marks dirty.
- */
-TEST(Light, SetColor)
-{
-	Light light(LightType::POINTLIGHT);
 	light.is_light_changed = false;
 
 	glm::vec3 red(1.0f, 0.0f, 0.0f);
@@ -151,14 +78,7 @@ TEST(Light, SetColor)
 
 	EXPECT_EQ(light.light_color, red);
 	EXPECT_TRUE(light.is_light_changed);
-}
 
-/**
- * @brief SetPower updates light_power and marks dirty.
- */
-TEST(Light, SetPower)
-{
-	Light light(LightType::POINTLIGHT);
 	light.is_light_changed = false;
 
 	light.SetPower(25.0f);
@@ -167,43 +87,23 @@ TEST(Light, SetPower)
 	EXPECT_TRUE(light.is_light_changed);
 }
 
-/**
- * @brief SetShadow disables shadow and marks dirty.
- */
-TEST(Light, SetShadow_Disable)
+TEST(Light, ShadowToggleMarksLightDirty)
 {
 	Light light(LightType::POINTLIGHT);
-	EXPECT_TRUE(light.use_shadow);
-	light.is_light_changed = false;
-
-	light.SetShadow(false);
-
-	EXPECT_FALSE(light.use_shadow);
-	EXPECT_TRUE(light.is_light_changed);
+	for (const bool enabled : {false, true})
+	{
+		SCOPED_TRACE(enabled);
+		light.is_light_changed = false;
+		light.SetShadow(enabled);
+		EXPECT_EQ(light.use_shadow, enabled);
+		EXPECT_TRUE(light.is_light_changed);
+	}
 }
 
-/**
- * @brief SetShadow enables shadow and marks dirty.
- */
-TEST(Light, SetShadow_Enable)
-{
-	Light light(LightType::POINTLIGHT);
-	light.SetShadow(false);
-	EXPECT_FALSE(light.use_shadow);
-	light.is_light_changed = false;
-
-	light.SetShadow(true);
-
-	EXPECT_TRUE(light.use_shadow);
-	EXPECT_TRUE(light.is_light_changed);
-}
-
-/**
- * @brief SetRadius updates light_radius and marks dirty.
- */
 TEST(Light, SetRadius)
 {
 	Light light(LightType::POINTLIGHT);
+	EXPECT_FLOAT_EQ(light.light_radius, 0.01f);
 	light.is_light_changed = false;
 
 	light.SetRadius(0.1f);
@@ -212,26 +112,19 @@ TEST(Light, SetRadius)
 	EXPECT_TRUE(light.is_light_changed);
 }
 
-/**
- * @brief SetCutoff updates spot_cutoff and marks dirty.
- */
-TEST(Light, SetCutoff)
+TEST(Light, ChangingEitherSpotCutoffMarksLightDirty)
 {
 	Light light(LightType::SPOTLIGHT);
+	EXPECT_FLOAT_EQ(light.spot_cutoff, 0.9f);
+	EXPECT_FLOAT_EQ(light.spot_outer_cutoff, 0.8f);
+
 	light.is_light_changed = false;
 
 	light.SetCutoff(0.85f);
 
 	EXPECT_FLOAT_EQ(light.spot_cutoff, 0.85f);
 	EXPECT_TRUE(light.is_light_changed);
-}
 
-/**
- * @brief SetOuterCutoff updates spot_outer_cutoff and marks dirty.
- */
-TEST(Light, SetOuterCutoff)
-{
-	Light light(LightType::SPOTLIGHT);
 	light.is_light_changed = false;
 
 	light.SetOuterCutoff(0.75f);
@@ -240,12 +133,10 @@ TEST(Light, SetOuterCutoff)
 	EXPECT_TRUE(light.is_light_changed);
 }
 
-/**
- * @brief SetRatio updates area_ratio and marks dirty.
- */
 TEST(Light, SetRatio)
 {
 	Light light(LightType::AREALIGHT);
+	EXPECT_FLOAT_EQ(light.area_ratio, 1.0f);
 	light.is_light_changed = false;
 
 	light.SetRatio(2.0f);
@@ -254,141 +145,38 @@ TEST(Light, SetRatio)
 	EXPECT_TRUE(light.is_light_changed);
 }
 
-// -----------------------------------------------------------------------
-// Dirty flag - initial state (setter dirty checks are in each setter test)
-// -----------------------------------------------------------------------
-
-/**
- * @brief Dirty flag starts false after construction.
- */
-TEST(Light, DirtyFlag_StartsFalse)
+TEST(Light, MapsEachLightToItsDisplayNameAndMarker)
 {
-	Light light(LightType::POINTLIGHT);
-	EXPECT_FALSE(light.is_light_changed);
-}
-
-// -----------------------------------------------------------------------
-// ParseLightName
-// -----------------------------------------------------------------------
-
-/**
- * @brief ParseLightName returns correct sprite type and name for POINTLIGHT.
- */
-TEST(Light, ParseLightName_Point)
-{
-	auto [sprite, name] = Light::ParseLightName(LightType::POINTLIGHT);
-	EXPECT_FALSE(name.empty());
-	// SpriteType is forward-declared; verify it's non-zero (not NONE)
-	EXPECT_NE(static_cast<int>(sprite), 0);
-}
-
-/**
- * @brief ParseLightName returns correct name for SUNLIGHT.
- */
-TEST(Light, ParseLightName_Sun)
-{
-	auto [sprite, name] = Light::ParseLightName(LightType::SUNLIGHT);
-	EXPECT_FALSE(name.empty());
-	EXPECT_NE(static_cast<int>(sprite), 0);
-}
-
-/**
- * @brief ParseLightName returns correct name for SPOTLIGHT.
- */
-TEST(Light, ParseLightName_Spot)
-{
-	auto [sprite, name] = Light::ParseLightName(LightType::SPOTLIGHT);
-	EXPECT_FALSE(name.empty());
-	EXPECT_NE(static_cast<int>(sprite), 0);
-}
-
-/**
- * @brief ParseLightName returns correct name for AREALIGHT.
- */
-TEST(Light, ParseLightName_Area)
-{
-	auto [sprite, name] = Light::ParseLightName(LightType::AREALIGHT);
-	EXPECT_FALSE(name.empty());
-	EXPECT_NE(static_cast<int>(sprite), 0);
-}
-
-/**
- * @brief ParseLightName handles NONELIGHT gracefully.
- */
-TEST(Light, ParseLightName_None)
-{
-	auto [sprite, name] = Light::ParseLightName(LightType::NONELIGHT);
-	EXPECT_FALSE(name.empty());
-}
-
-// -----------------------------------------------------------------------
-// GetTransform override
-// -----------------------------------------------------------------------
-
-/**
- * @brief GetTransform returns a valid non-null pointer.
- */
-TEST(Light, GetTransform_ReturnsNonNull)
-{
-	Light light(LightType::POINTLIGHT);
-	void* tf = light.GetTransform();
-	EXPECT_NE(tf, nullptr);
-}
-
-/**
- * @brief GetTransform pointer can be cast back to Transform*.
- */
-TEST(Light, GetTransform_CastToTransform)
-{
-	Light light(LightType::POINTLIGHT);
-	void* tf = light.GetTransform();
-	Transform* t = static_cast<Transform*>(tf);
-	EXPECT_NE(t, nullptr);
-	// Verify it's actually a Transform3D
-	EXPECT_NE(dynamic_cast<Transform3D*>(t), nullptr);
-}
-
-// -----------------------------------------------------------------------
-// Light is a scene object (inherits ObjectID)
-// -----------------------------------------------------------------------
-
-/**
- * @brief Light has ObjectID identity (unique per instance).
- */
-TEST(Light, HasUniqueObjectID)
-{
-	Light a(LightType::POINTLIGHT);
-	Light b(LightType::SUNLIGHT);
-	EXPECT_NE(a.GetObjectID(), b.GetObjectID());
-}
-
-/**
- * @brief Light object type is GO_LIGHT.
- */
-TEST(Light, ObjectTypeIsLight)
-{
-	Light light(LightType::SPOTLIGHT);
-	EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);
+	struct Mapping
+	{
+		LightType type;
+		const char* name;
+		SpriteType marker;
+	};
+	const Mapping mappings[] = {
+		{LightType::POINTLIGHT, "Point Light", SpriteType::POINT_LIGHT_SPRITE},
+		{LightType::SUNLIGHT, "Sun Light", SpriteType::SUN_LIGHT_SPRITE},
+		{LightType::SPOTLIGHT, "Spot Light", SpriteType::SPOT_LIGHT_SPRITE},
+		{LightType::NONELIGHT, "None", SpriteType::NONE_SPRITE}
+	};
+	for (const auto& mapping : mappings)
+	{
+		SCOPED_TRACE(mapping.name);
+		const auto [marker, name] = Light::ParseLightName(mapping.type);
+		EXPECT_EQ(name, mapping.name);
+		EXPECT_EQ(marker, mapping.marker);
+	}
+	// There is no dedicated area-light sprite. Any visible marker satisfies the contract.
+	const auto [areaMarker, areaName] = Light::ParseLightName(LightType::AREALIGHT);
+	EXPECT_EQ(areaName, "Area Light");
+	EXPECT_NE(areaMarker, SpriteType::NONE_SPRITE);
 }
 
 // -----------------------------------------------------------------------
 // Shadow parameters are static constexpr
 // -----------------------------------------------------------------------
 
-/**
- * @brief Static shadow parameters are accessible and have expected types.
- */
-TEST(Light, ShadowParams_AreStaticConstexpr)
-{
-	// Compile-time checks: values must be accessible
-	constexpr float field = Light::sun_shadow_field;
-	constexpr float p_near = Light::point_shadow_near;
-	constexpr float s_far = Light::spot_shadow_far;
-	constexpr float a_range = Light::area_blur_range;
-
-	// Verify they are positive/non-trivial values
-	EXPECT_GT(field, 0.0f);
-	EXPECT_GT(p_near, 0.0f);
-	EXPECT_GT(s_far, 0.0f);
-	EXPECT_GT(a_range, 0.0f);
-}
+static_assert(Light::sun_shadow_field > 0.0f);
+static_assert(Light::point_shadow_near > 0.0f);
+static_assert(Light::spot_shadow_far > 0.0f);
+static_assert(Light::area_blur_range > 0.0f);

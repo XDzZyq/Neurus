@@ -33,30 +33,10 @@ TEST(ResourceTag, Key)
 	EXPECT_EQ(neurus::ResourceKey("a", "b/c"), "a/b/c");
 }
 
-TEST(ResourceTag, Formats)
+TEST(ResourceTag, PhysicalImageConfiguration)
 {
-	EXPECT_EQ(neurus::FormatFromTag(Tag(neurus::GraphFormat::Rgba16f,
-	                                    neurus::GraphUsage::ColorSampled)),
-	          vk::Format::eR16G16B16A16Sfloat);
-	EXPECT_EQ(neurus::FormatFromTag(Tag(neurus::GraphFormat::Rgba8Srgb,
-	                                    neurus::GraphUsage::ColorSampled)),
-	          vk::Format::eR8G8B8A8Srgb);
-	EXPECT_EQ(neurus::FormatFromTag(Tag(neurus::GraphFormat::Rgba8Unorm,
-	                                    neurus::GraphUsage::ColorSampled)),
-	          vk::Format::eR8G8B8A8Unorm);
-	EXPECT_EQ(neurus::FormatFromTag(Tag(neurus::GraphFormat::R8Unorm,
-	                                    neurus::GraphUsage::StorageSampled)),
-	          vk::Format::eR8Unorm);
-	EXPECT_EQ(neurus::FormatFromTag(Tag(neurus::GraphFormat::R32Uint,
-	                                    neurus::GraphUsage::ColorSampled)),
-	          vk::Format::eR32Uint);
-	EXPECT_EQ(neurus::FormatFromTag(Tag(neurus::GraphFormat::D32Sfloat,
-	                                    neurus::GraphUsage::DepthSampled)),
-	          vk::Format::eD32Sfloat);
-}
-
-TEST(ResourceTag, Usages)
-{
+	using namespace neurus;
+	using ImageType = Image::ImageType;
 	const vk::ImageUsageFlags color =
 		vk::ImageUsageFlagBits::eColorAttachment
 		| vk::ImageUsageFlagBits::eSampled
@@ -71,53 +51,45 @@ TEST(ResourceTag, Usages)
 		| vk::ImageUsageFlagBits::eSampled
 		| vk::ImageUsageFlagBits::eTransferSrc;
 
-	EXPECT_EQ(neurus::UsageFromTag(Tag(neurus::GraphFormat::Rgba16f,
-	                                   neurus::GraphUsage::ColorSampled)), color);
-	EXPECT_EQ(neurus::UsageFromTag(Tag(neurus::GraphFormat::Rgba16f,
-	                                   neurus::GraphUsage::StorageSampled)), storage);
-	EXPECT_EQ(neurus::UsageFromTag(Tag(neurus::GraphFormat::D32Sfloat,
-	                                   neurus::GraphUsage::DepthSampled)), depth);
-	EXPECT_EQ(neurus::UsageFromTag(Tag(neurus::GraphFormat::None,
-	                                   neurus::GraphUsage::Logical)), vk::ImageUsageFlags{});
+	struct ImageCase
+	{
+		const char* name;
+		GraphOutputTag tag;
+		vk::Format format;
+		vk::ImageUsageFlags usage;
+		ImageType type;
+		uint32_t layers;
+	};
+	const ImageCase cases[] = {
+		{"hdr", Tag(GraphFormat::Rgba16f, GraphUsage::ColorSampled),
+		 vk::Format::eR16G16B16A16Sfloat, color, ImageType::e2D, 1},
+		{"sRGB", Tag(GraphFormat::Rgba8Srgb, GraphUsage::ColorSampled),
+		 vk::Format::eR8G8B8A8Srgb, color, ImageType::e2D, 1},
+		{"unorm", Tag(GraphFormat::Rgba8Unorm, GraphUsage::ColorSampled),
+		 vk::Format::eR8G8B8A8Unorm, color, ImageType::e2D, 1},
+		{"ID", Tag(GraphFormat::R32Uint, GraphUsage::ColorSampled),
+		 vk::Format::eR32Uint, color, ImageType::e2D, 1},
+		{"shadow array", Tag(GraphFormat::R8Unorm, GraphUsage::StorageSampled,
+		                     GraphExtent::Render, GraphLayers::Lights),
+		 vk::Format::eR8Unorm, storage, ImageType::eArray, RenderCache::MAX_SHADOW_LAYERS},
+		{"depth", Tag(GraphFormat::D32Sfloat, GraphUsage::DepthSampled),
+		 vk::Format::eD32Sfloat, depth, ImageType::eDepthStencil, 1},
+	};
+	for (const auto& entry : cases)
+	{
+		SCOPED_TRACE(entry.name);
+		EXPECT_FALSE(IsLogicalTag(entry.tag));
+		EXPECT_EQ(FormatFromTag(entry.tag), entry.format);
+		EXPECT_EQ(UsageFromTag(entry.tag), entry.usage);
+		EXPECT_EQ(ImageTypeFromTag(entry.tag), entry.type);
+		EXPECT_EQ(LayerCountFromTag(entry.tag), entry.layers);
+	}
 }
 
-TEST(ResourceTag, ImageTypes)
+TEST(ResourceTag, LogicalHasNoImageConfiguration)
 {
-	EXPECT_EQ(neurus::ImageTypeFromTag(Tag(neurus::GraphFormat::Rgba16f,
-	                                       neurus::GraphUsage::ColorSampled)),
-	          neurus::Image::ImageType::e2D);
-	EXPECT_EQ(neurus::ImageTypeFromTag(Tag(neurus::GraphFormat::D32Sfloat,
-	                                       neurus::GraphUsage::DepthSampled)),
-	          neurus::Image::ImageType::eDepthStencil);
-	EXPECT_EQ(neurus::ImageTypeFromTag(Tag(neurus::GraphFormat::R8Unorm,
-	                                       neurus::GraphUsage::StorageSampled,
-	                                       neurus::GraphExtent::Render,
-	                                       neurus::GraphLayers::Lights)),
-	          neurus::Image::ImageType::eArray);
-}
-
-TEST(ResourceTag, LayerCounts)
-{
-	EXPECT_EQ(neurus::LayerCountFromTag(Tag(neurus::GraphFormat::Rgba16f,
-	                                        neurus::GraphUsage::ColorSampled)), 1u);
-	EXPECT_EQ(neurus::LayerCountFromTag(Tag(neurus::GraphFormat::R8Unorm,
-	                                        neurus::GraphUsage::StorageSampled,
-	                                        neurus::GraphExtent::Render,
-	                                        neurus::GraphLayers::Lights)),
-	          neurus::RenderCache::MAX_SHADOW_LAYERS);
-}
-
-TEST(ResourceTag, Logical)
-{
-	EXPECT_TRUE(neurus::IsLogicalTag(Tag(neurus::GraphFormat::None,
-	                                     neurus::GraphUsage::Logical)));
-	EXPECT_FALSE(neurus::IsLogicalTag(Tag(neurus::GraphFormat::Rgba16f,
-	                                      neurus::GraphUsage::ColorSampled)));
-}
-
-TEST(ResourceTag, LogicalFormatThrows)
-{
-	EXPECT_THROW((void)neurus::FormatFromTag(Tag(neurus::GraphFormat::None,
-	                                             neurus::GraphUsage::Logical)),
-	             std::invalid_argument);
+	const auto tag = Tag(neurus::GraphFormat::None, neurus::GraphUsage::Logical);
+	EXPECT_TRUE(neurus::IsLogicalTag(tag));
+	EXPECT_EQ(neurus::UsageFromTag(tag), vk::ImageUsageFlags{});
+	EXPECT_THROW((void)neurus::FormatFromTag(tag), std::invalid_argument);
 }

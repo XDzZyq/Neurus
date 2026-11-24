@@ -124,7 +124,7 @@ void DeferredRenderer::InitializePipeline(std::shared_ptr<const BuiltInRenderDat
 	const vk::Extent2D extent = r_target->Extent();
 
 	// --- 0. Create the optional GPU timestamp query pool (no-op if unsupported) ---
-	m_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
+	r_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
 
 	// --- 2. Create G-Buffer attachment cache (lazy creation on first access) ---
 	r_renderCache = std::make_unique<RenderCache>(device, physicalDevice, renderDefaults);
@@ -133,28 +133,28 @@ void DeferredRenderer::InitializePipeline(std::shared_ptr<const BuiltInRenderDat
 	// Same Vulkan handles the renderer draws with; its capture methods sync the
 	// GPU themselves. Built after r_renderCache (an all-attachments capture reads
 	// it) and destroyed before it, per the member declaration order.
-	m_screenshot = std::make_unique<Screenshot>(
+	r_screenshot = std::make_unique<Screenshot>(
 		r_device, r_physicalDevice, graphicsQueue, r_queueFamilyIndex);
 
 	// --- 3. Wire the pass factory and graph uploader ---
-	m_passFactory = std::make_unique<PassFactory>(
+	r_passFactory = std::make_unique<PassFactory>(
 		device, physicalDevice, kMaxFramesInFlight, graphicsQueue, queueFamilyIndex, *r_renderCache);
 
 	NEURUS_LOG("[DeferredRenderer] Scene pass cache ready; GPU passes are created on demand");
 
 	// The cache retains the CPU defaults for the uploader's borrowed port catalog.
 	// Prepare them here on the caller thread before rendering starts.
-	m_graphUploader = std::make_unique<GraphUploader>(
-		*m_passFactory, renderDefaults->Ports(), renderDefaults->Graph());
+	r_graphUploader = std::make_unique<GraphUploader>(
+		*r_passFactory, renderDefaults->Ports(), renderDefaults->Graph());
 
 	// --- 4. Build the overlay graph (selection outline, debug overlay, gizmo) ---
 	// Separate from the scene graph so overlays can be redrawn over a converged
 	// scene image without re-running a single scene pass. The scene graph tells
 	// it which image to draw over once the Editor's document is compiled.
-	m_overlayEngine = std::make_unique<OverlayEngine>(
+	r_overlayEngine = std::make_unique<OverlayEngine>(
 		device, physicalDevice, kMaxFramesInFlight);
 	NEURUS_LOG("[DeferredRenderer] OverlayEngine created ("
-	           << m_overlayEngine->PassCount() << " overlay passes)");
+	           << r_overlayEngine->PassCount() << " overlay passes)");
 
 	// A null document selects the cached built-in topology. Explicit documents
 	// replace it through requests; GPU passes are instantiated during compilation.
@@ -212,20 +212,20 @@ void DeferredRenderer::InitializePipeline(std::shared_ptr<const BuiltInRenderDat
 	// destroying handler never idles the device. The two state callbacks are the
 	// accumulation iteration and the overlays-stale flag this renderer owns; the
 	// processor applies them in the same order the old per-frame drain did.
-	m_requests = std::make_unique<RenderRequestProcessor>(
+	r_requests = std::make_unique<RenderRequestProcessor>(
 		[this] { DrainInFlightFrames(); }, *r_renderCache, nullptr,
-		[this] { m_iteration = 0; }, [this] { m_overlaysDirty = true; },
+		[this] { r_iteration = 0; }, [this] { r_overlaysDirty = true; },
 		[this](const CompileRenderGraphRequest& request)
 		{
-			m_graphUploader->SetPending(request);
-		}, [this] { return m_passFactory->Geometry(); });
+			r_graphUploader->SetPending(request);
+		}, [this] { return r_passFactory->Geometry(); });
 }
 
 DeferredRenderer::~DeferredRenderer()
 {
 	WaitIdle();
 	// vk::raii destructors clean up automatically in reverse declaration order;
-	// m_passFactory destroys all passes before RenderCache. WaitIdle() is what makes
+	// r_passFactory destroys all passes before RenderCache. WaitIdle() is what makes
 	// the held tables safe to release: with the queue idle no submitted frame is
 	// still reading the meshes and environments they kept alive, and they are
 	// destroyed first (declared after r_renderCache) so nothing outlives the
@@ -314,16 +314,16 @@ FrameWork DeferredRenderer::NextWork() const
 	// A frame that drew nothing must not be treated as drawn: the caller has to
 	// wait for a new one (another sample would either draw the same nothing or
 	// reuse a snapshot the failed pass never consumed).
-	if (m_drewNothing)
+	if (r_drewNothing)
 		return FrameWork::Retry;
 
 	// Accumulation not converged: sample. This also covers iteration 0, which is
 	// what guarantees an Overlay frame never precedes a sample after a restart -
 	// the image it would draw over only exists because a sample produced it.
-	if (m_iteration < m_samplingCount)
+	if (r_iteration < r_samplingCount)
 		return FrameWork::Sample;
 
-	if (m_overlaysDirty)
+	if (r_overlaysDirty)
 		return FrameWork::Overlay;
 
 	return FrameWork::Idle;
@@ -337,8 +337,8 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// queued for the next frame, when the GPU is idle again.
 	if (!WaitForFrameSlot())
 	{
-		m_drewNothing = true;
-		return m_frameProfile;  // Timeout - requests stay queued for the next frame
+		r_drewNothing = true;
+		return r_frameProfile;  // Timeout - requests stay queued for the next frame
 	}
 
 	auto& fence = r_inFlightFences[r_currentFrame];
@@ -370,7 +370,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	//
 	// The drain runs before the no-camera early-out below, so a camera-less
 	// session still executes its queued requests instead of queueing forever.
-	m_requests->Drain();
+	r_requests->Drain();
 
 	// What this call performs, decided after the drain: a request handled above
 	// may have restarted accumulation or marked the overlays stale.
@@ -382,7 +382,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// the latch and asking again yields exactly the interrupted work.
 	if (work == FrameWork::Retry)
 	{
-		m_drewNothing = false;
+		r_drewNothing = false;
 		work = NextWork();
 	}
 
@@ -394,7 +394,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// frame of a camera-less session.
 	if (work == FrameWork::Idle)
 	{
-		return m_frameProfile;
+		return r_frameProfile;
 	}
 
 	// --- Precondition: we must have a camera to look through ---
@@ -405,35 +405,35 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// skip the frame.
 	if (!ctx.Frame().HasCamera())
 	{
-		if (!m_reportedNoCamera)
+		if (!r_reportedNoCamera)
 		{
-			m_reportedNoCamera = true;
+			r_reportedNoCamera = true;
 			NEURUS_ERR("[DeferredRenderer] No camera to render through - skipping frames "
 			           "until one exists");
 		}
-		m_drewNothing = true;
-		return m_frameProfile;
+		r_drewNothing = true;
+		return r_frameProfile;
 	}
-	m_reportedNoCamera = false;
+	r_reportedNoCamera = false;
 
 	// Compile changed documents on Sample frames. Overlay frames reuse the
 	// topology and attachments that produced the converged scene image.
 	if (work == FrameWork::Sample)
 	{
-		const GraphCompileKey key{m_graphUploader->DocumentHash(), r_renderCache->ShaderGeneration()};
-		if (!m_lastGraphCompile || *m_lastGraphCompile != key)
+		const GraphCompileKey key{r_graphUploader->DocumentHash(), r_renderCache->ShaderGeneration()};
+		if (!r_lastGraphCompile || *r_lastGraphCompile != key)
 		{
 			DrainInFlightFrames();
 			CompileDocument();
-			m_lastGraphCompile = key;
+			r_lastGraphCompile = key;
 		}
 	}
 
 	// --- Profiling: read back this slot's GPU timestamps (fence signaled) ---
 	// Resolve() reads the slot about to be reused; the resolved GPU ms are
-	// back-filled into m_frameProfile after recordFrame repopulates the pass
+	// back-filled into r_frameProfile after recordFrame repopulates the pass
 	// list below (GPU data lags the CPU/counter data by 1-2 frames, by design).
-	m_gpuResolved = m_profiler.Resolve();
+	r_gpuResolved = r_profiler.Resolve();
 
 	// --- Acquire next swapchain image ---
 	uint32_t imageIndex = 0;
@@ -475,8 +475,8 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	{
 		// Nothing was acquired, so nothing was drawn: NextWork() must report Retry
 		// rather than let the caller believe this frame consumed its work.
-		m_drewNothing = true;
-		return m_frameProfile;
+		r_drewNothing = true;
+		return r_frameProfile;
 	}
 
 	// Only reset fence after successful acquire
@@ -489,17 +489,17 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	recordFrame(r_commandBuffers[imageIndex], imageIndex, frameExtent, ctx, work);
 
 	// --- Profiling: back-fill resolved GPU ms now that passes are repopulated ---
-	// recordFrame just rewrote m_frameProfile.passes with gpuMs=0; match the
+	// recordFrame just rewrote r_frameProfile.passes with gpuMs=0; match the
 	// resolved sections to passes by index (the size guard covers a rare
 	// rebuild-in-flight case).
-	if (m_gpuResolved)
+	if (r_gpuResolved)
 	{
-		const auto& sections = m_profiler.Sections();
-		const size_t n = std::min(sections.size(), m_frameProfile.passes.size());
+		const auto& sections = r_profiler.Sections();
+		const size_t n = std::min(sections.size(), r_frameProfile.passes.size());
 		for (size_t i = 0; i < n; ++i)
-			m_frameProfile.passes[i].gpuMs = sections[i].gpuMs;
-		m_frameProfile.gpuTotalMs = m_profiler.FrameGpuMs();
-		m_frameProfile.gpuReady = true;
+			r_frameProfile.passes[i].gpuMs = sections[i].gpuMs;
+		r_frameProfile.gpuTotalMs = r_profiler.FrameGpuMs();
+		r_frameProfile.gpuReady = true;
 	}
 
 	// --- Frame timeline signal ---
@@ -595,27 +595,27 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 		// work is reported as Retry, and because the pending-work flags are only
 		// cleared below, the retry redraws the same thing (an Overlay frame
 		// redraws the overlays; a Sample frame samples the next iteration).
-		m_drewNothing = true;
-		return m_frameProfile;
+		r_drewNothing = true;
+		return r_frameProfile;
 	}
 
 	// --- Drawn and presented: this frame consumed its work ---
 	if (presents)
 		r_lastImageIndex = imageIndex;
-	m_drewNothing = false;
-	m_overlaysDirty = false;
+	r_drewNothing = false;
+	r_overlaysDirty = false;
 	r_currentFrame = (r_currentFrame + 1) % kMaxFramesInFlight;
-	return m_frameProfile;
+	return r_frameProfile;
 }
 
 void DeferredRenderer::ResetShadowAccumulation()
 {
-	m_iteration = 0;
+	r_iteration = 0;
 }
 
 void DeferredRenderer::Post(RenderRequest&& request)
 {
-	m_requests->Post(std::move(request));
+	r_requests->Post(std::move(request));
 	// The processor's queue is the only handoff: DrawFrame drains it after its
 	// own fence wait, so there is nothing to wake. RenderThread does not post
 	// into it at the moment of the Editor's call either - it attaches the request
@@ -633,7 +633,7 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
 	if (allAttachments)
 	{
 		const int count =
-			m_screenshot->TakeScreenshotAllAttachments(*r_renderCache, GetExtent(), 1024, directory);
+			r_screenshot->TakeScreenshotAllAttachments(*r_renderCache, GetExtent(), 1024, directory);
 		// Screenshot already reported the count and the destination directory.
 		(void)count;
 	}
@@ -642,7 +642,7 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
 		const vk::Image image = GetLastSwapchainImage();
 		if (!image)
 			throw std::runtime_error("[DeferredRenderer] No frame has been presented yet - nothing to capture");
-		if (!m_screenshot->TakeScreenshot(image, GetSwapchainFormat(),
+		if (!r_screenshot->TakeScreenshot(image, GetSwapchainFormat(),
 		                                  GetExtent(), directory))
 		{
 			NEURUS_ERR("[DeferredRenderer] Swapchain screenshot failed; see the [Screenshot] log line above.");
@@ -680,21 +680,21 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
 
 void DeferredRenderer::SetUploadManager(UploadManager* uploader)
 {
-	m_requests->SetUploadManager(uploader);
+	r_requests->SetUploadManager(uploader);
 }
 
 void DeferredRenderer::CompileDocument()
 {
-	GraphUploadResult upload = m_graphUploader->Compile(*r_renderCache);
+	GraphUploadResult upload = r_graphUploader->Compile(*r_renderCache);
 
-	const std::uint64_t graphHash = m_graphUploader->DocumentHash();
+	const std::uint64_t graphHash = r_graphUploader->DocumentHash();
 
-	m_graphReport = {};
-	m_graphReport.graphHash = graphHash;
+	r_graphReport = {};
+	r_graphReport.graphHash = graphHash;
 
 	if (!upload.graph)
 	{
-		m_graphReport.diagnostics = upload.errors;
+		r_graphReport.diagnostics = upload.errors;
 		for (const GraphDiagnostic& diagnostic : upload.errors)
 		{
 			NEURUS_ERR("[RenderGraph] "
@@ -705,14 +705,14 @@ void DeferredRenderer::CompileDocument()
 		return;
 	}
 
-	m_mainGraph = std::move(*upload.graph);
+	r_mainGraph = std::move(*upload.graph);
 
-	m_overlayEngine->SetSceneOutputs(upload.color, upload.depth, upload.objectId);
+	r_overlayEngine->SetSceneOutputs(upload.color, upload.depth, upload.objectId);
 
-	m_graphReport.compiled    = true;
-	m_graphReport.scenePasses = m_mainGraph.PassCount();
+	r_graphReport.compiled    = true;
+	r_graphReport.scenePasses = r_mainGraph.PassCount();
 
-	NEURUS_LOG("[RenderGraph] compiled " << m_mainGraph.PassCount()
+	NEURUS_LOG("[RenderGraph] compiled " << r_mainGraph.PassCount()
 	           << " passes, color=" << upload.color
 	           << ", hash=" << std::hex << graphHash << std::dec);
 }
@@ -743,7 +743,7 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 	// right after a resize, before a frame has drawn at the new extent, has no
 	// ID buffer to read because the resize dropped the screen-space attachments.
 	// The honest answer is "background", i.e. object 0.
-	if (!m_overlayEngine->HasObjectId() || !r_renderCache->HasAttachment(AttachmentName::IDBuffer))
+	if (!r_overlayEngine->HasObjectId() || !r_renderCache->HasAttachment(AttachmentName::IDBuffer))
 	{
 		NEURUS_LOG("[DeferredRenderer] ReadIDBufferPixel: no IDBuffer at "
 		           << extent.width << "x" << extent.height
@@ -847,7 +847,7 @@ void DeferredRenderer::recreateTarget()
 	// content changes), and a rebuild can also come from an out-of-date acquire
 	// the Editor never sees. A running average continued over a cleared history
 	// fades in slowly with EMA and never recovers in moving-average mode.
-	m_iteration = 0;
+	r_iteration = 0;
 
 	// Rebuild render-finished semaphores (one per presented image)
 	r_renderFinishedSemaphores.clear();
@@ -906,7 +906,7 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// 0 no sample has run since the last restart, so there is nothing to draw
 	// over: NextWork() never asks for it, but recordFrame is also reachable
 	// directly, so the invariant is checked here rather than assumed.
-	if (work == FrameWork::Overlay && m_iteration == 0)
+	if (work == FrameWork::Overlay && r_iteration == 0)
 	{
 		throw std::logic_error(
 			"DeferredRenderer::recordFrame: Overlay frame before any Sample frame");
@@ -928,33 +928,33 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	{
 		// --- Refresh the sampling budget ---
 		// Read on every sample frame, the only place it is compared against
-		// m_iteration. A new value always arrives with an accumulation restart, so
+		// r_iteration. A new value always arrives with an accumulation restart, so
 		// this read is what makes the cached copy authoritative for the run.
-		m_samplingCount = static_cast<uint32_t>(
+		r_samplingCount = static_cast<uint32_t>(
 			std::max(1, ctx.Frame().Settings().r_sampling_count));
 
 		// --- Temporal shadow accumulation: compute 3D random jitter direction ---
 		{
-			float x = 2.0f * HaltonSequence::Halton2(m_haltonIndex) - 1.0f;
-			float y = 2.0f * HaltonSequence::Halton3(m_haltonIndex) - 1.0f;
-			float z = 2.0f * HaltonSequence::Halton5(m_haltonIndex) - 1.0f;
+			float x = 2.0f * HaltonSequence::Halton2(r_haltonIndex) - 1.0f;
+			float y = 2.0f * HaltonSequence::Halton3(r_haltonIndex) - 1.0f;
+			float z = 2.0f * HaltonSequence::Halton5(r_haltonIndex) - 1.0f;
 			float len = std::sqrt(x * x + y * y + z * z);
 			ctx.jitter = (len > 1e-6f) ? glm::vec3(x / len, y / len, z / len) : glm::vec3(0.0f, 0.0f, 1.0f);
 		}
 
-		ctx.iteration = m_iteration;
+		ctx.iteration = r_iteration;
 
 		// Advance the temporal counters for the next sample. An Overlay frame
 		// draws no accumulation sample, so it must not touch either counter.
-		m_iteration++;
-		m_haltonIndex++;
+		r_iteration++;
+		r_haltonIndex++;
 	}
 	else
 	{
 		// Overlay: no jitter, no accumulation sample. iteration is reported so the
 		// passes that read it (and the profile) see how converged the image is;
 		// jitter stays zero, which is what the unused field means.
-		ctx.iteration = m_iteration;
+		ctx.iteration = r_iteration;
 	}
 
 	// --- Per-frame cache updates: one writer, before any pass records ---
@@ -984,14 +984,14 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// --- Profiling: bracket the whole pipeline with GPU frame timestamps ---
 	// One BeginFrame/EndFrame pair covers both graphs, so the overlay passes are
 	// timed by the same query pool and land after the scene passes in query and
-	// profile order (OverlayEngine appends them to m_frameProfile). GPU per-pass
+	// profile order (OverlayEngine appends them to r_frameProfile). GPU per-pass
 	// ms are back-filled in DrawFrame after Resolve().
-	m_profiler.BeginFrame(cmdBuf);
-	if (work == FrameWork::Sample && m_mainGraph.PassCount() > 0)
-		m_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
+	r_profiler.BeginFrame(cmdBuf);
+	if (work == FrameWork::Sample && r_mainGraph.PassCount() > 0)
+		r_mainGraph.Execute(cmdBuf, *r_renderCache, ctx, r_profiler, r_frameProfile);
 	else
-		m_frameProfile = FrameProfile{};  // Overlay-only, or no document yet.
-	m_overlayEngine->Execute(cmdBuf, *r_renderCache, ctx, m_profiler, m_frameProfile);
+		r_frameProfile = FrameProfile{};  // Overlay-only, or no document yet.
+	r_overlayEngine->Execute(cmdBuf, *r_renderCache, ctx, r_profiler, r_frameProfile);
 
 	// --- Blit the final image to the presented image (window target only) ---
 	// The overlay graph's output is always the end of the chain: the scene tail is
@@ -1053,16 +1053,16 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// --- Profiling: write the GPU frame-end timestamp (covers the final blit) ---
 	// EndFrame also advances the profiler's slot cursor, keeping it in lockstep
 	// with r_currentFrame.
-	m_profiler.EndFrame(cmdBuf);
+	r_profiler.EndFrame(cmdBuf);
 
 	// --- End command buffer ---
 	cmdBuf.end();
 
 	// --- Profiling: finalize CPU-side aggregate fields ---
 	// The graphs populated passes[], cpuRecordMs, drawCalls, dispatches and
-	// passCount (the scene graph's from m_mainGraph, the overlay passes appended by
+	// passCount (the scene graph's from r_mainGraph, the overlay passes appended by
 	// OverlayEngine); only gpuTimingAvailable is renderer-owned.
-	m_frameProfile.gpuTimingAvailable = m_profiler.Available();
+	r_frameProfile.gpuTimingAvailable = r_profiler.Available();
 }
 
 // ---------------------------------------------------------------------------

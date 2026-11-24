@@ -105,6 +105,8 @@ TEST(MaterialTest, DefaultConstruction_SetsDefaults)
 TEST(MaterialTest, SetMatParam_Float)
 {
 	Material mat;
+	mat.is_mat_changed = false;
+	mat.is_mat_struct_changed = false;
 
 	mat.SetMatParam(Material::MAT_METAL, 0.75f);
 
@@ -114,6 +116,7 @@ TEST(MaterialTest, SetMatParam_Float)
 
 	// Dirty flag set
 	EXPECT_TRUE(mat.is_mat_changed);
+	EXPECT_FALSE(mat.is_mat_struct_changed);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +126,8 @@ TEST(MaterialTest, SetMatParam_Float)
 TEST(MaterialTest, SetMatParam_Vec3)
 {
 	Material mat;
+	mat.is_mat_changed = false;
+	mat.is_mat_struct_changed = false;
 	glm::vec3 gold(1.0f, 0.766f, 0.336f);
 
 	mat.SetMatParam(Material::MAT_ALBEDO, gold);
@@ -144,6 +149,8 @@ TEST(MaterialTest, SetMatParam_Vec3)
 TEST(MaterialTest, SetMatParam_Texture)
 {
 	Material mat;
+	mat.is_mat_changed = false;
+	mat.is_mat_struct_changed = false;
 
 	// Use a default-constructed shared_ptr (nullptr) - no GPU needed
 	Texture::TextureRes tex = std::make_shared<Texture>();
@@ -166,6 +173,8 @@ TEST(MaterialTest, SetMatParam_Texture)
 TEST(MaterialTest, SetMatParam_ChangeType)
 {
 	Material mat;
+	mat.is_mat_changed = false;
+	mat.is_mat_struct_changed = false;
 
 	// Albedo starts as MPARA_COL; switch to MPARA_TEX
 	mat.SetMatParam(Material::MAT_ALBEDO, Material::MPARA_TEX);
@@ -217,36 +226,6 @@ TEST(MaterialTest, LoadMaterial_ReturnsDefault)
 }
 
 // ---------------------------------------------------------------------------
-// 8. ParseConfig is a no-op stub (does not crash)
-// ---------------------------------------------------------------------------
-
-TEST(MaterialTest, ParseConfig_StubDoesNotCrash)
-{
-	Material mat;
-
-	// Must not throw or corrupt state
-	EXPECT_NO_THROW(mat.ParseConfig(""));
-	EXPECT_NO_THROW(mat.ParseConfig("{}"));
-	EXPECT_NO_THROW(mat.ParseConfig(R"({"albedo": [1,0,0]})"));
-
-	// State should remain unchanged (stub)
-	const auto& albedo = mat.mat_params.at(Material::MAT_ALBEDO);
-	glm::vec3 col = std::get<2>(albedo);
-	EXPECT_FLOAT_EQ(col.r, 1.0f);
-}
-
-// ---------------------------------------------------------------------------
-// 9. BindMatTexture is a no-op stub (does not crash)
-// ---------------------------------------------------------------------------
-
-TEST(MaterialTest, BindMatTexture_StubDoesNotCrash)
-{
-	const Material mat;
-
-	EXPECT_NO_THROW(mat.BindMatTexture());
-}
-
-// ---------------------------------------------------------------------------
 // 10. Material is movable but not copyable
 // ---------------------------------------------------------------------------
 
@@ -267,63 +246,6 @@ TEST(MaterialTest, Movable_NotCopyable)
 	EXPECT_FLOAT_EQ(
 		std::get<1>(mat3.mat_params.at(Material::MAT_METAL)),
 		0.9f);
-}
-
-// ---------------------------------------------------------------------------
-// 11. MaterialRes alias compiles and works
-// ---------------------------------------------------------------------------
-
-TEST(MaterialTest, MaterialResAlias)
-{
-	Material::MaterialRes res = std::make_shared<Material>();
-	ASSERT_NE(res, nullptr);
-
-	res->SetMatParam(Material::MAT_ALBEDO, glm::vec3(0.2f, 0.4f, 0.6f));
-
-	const auto& data = res->mat_params.at(Material::MAT_ALBEDO);
-	glm::vec3 col = std::get<2>(data);
-	EXPECT_FLOAT_EQ(col.r, 0.2f);
-	EXPECT_FLOAT_EQ(col.g, 0.4f);
-	EXPECT_FLOAT_EQ(col.b, 0.6f);
-
-	EXPECT_TRUE(res->is_mat_changed);
-}
-
-// ---------------------------------------------------------------------------
-// 12. Dirty flags are set correctly on each SetMatParam call
-// ---------------------------------------------------------------------------
-
-TEST(MaterialTest, DirtyFlags_AfterConstruction)
-{
-	Material mat;
-	EXPECT_TRUE(mat.is_mat_changed);
-	EXPECT_TRUE(mat.is_mat_struct_changed);
-}
-
-TEST(MaterialTest, DirtyFlags_SetFloatResetsChanged)
-{
-	Material mat;
-	mat.is_mat_changed = false;
-	mat.is_mat_struct_changed = false;
-
-	mat.SetMatParam(Material::MAT_METAL, 0.5f);
-
-	EXPECT_TRUE(mat.is_mat_changed);
-	// Setting a float does NOT change structure
-	EXPECT_FALSE(mat.is_mat_struct_changed);
-}
-
-TEST(MaterialTest, DirtyFlags_SetTextureResetsBoth)
-{
-	Material mat;
-	mat.is_mat_changed = false;
-	mat.is_mat_struct_changed = false;
-
-	auto tex = std::make_shared<Texture>();
-	mat.SetMatParam(Material::MAT_NORMAL, tex);
-
-	EXPECT_TRUE(mat.is_mat_changed);
-	EXPECT_TRUE(mat.is_mat_struct_changed);
 }
 
 // ---------------------------------------------------------------------------

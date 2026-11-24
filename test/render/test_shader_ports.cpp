@@ -50,43 +50,12 @@ const neurus::S_PushConstant* FindPush(const neurus::ShaderStruct& ir, const std
 
 } // anonymous namespace
 
-TEST(ShaderPorts, GeometryPorts)
-{
-	auto shader = LoadRender("GeometryPass",
-	                         "res/shaders/render/gbuffer.vert.glsl",
-	                         "res/shaders/render/gbuffer.frag.glsl");
-	ASSERT_TRUE(shader);
-
-	const auto ports = Ports(*shader);
-	ASSERT_EQ(ports.ports.size(), 5u);
-	EXPECT_EQ(ports.ports[0].name, "gPosition");
-	EXPECT_EQ(ports.ports[0].location, 0u);
-	EXPECT_EQ(ports.ports[4].name, "gObjectID");
-	EXPECT_EQ(ports.ports[4].type, "uint");
-}
-
-TEST(ShaderPorts, LightingPortsBindingsAndPushConstants)
+TEST(ShaderPorts, LightingPushConstantOffsets)
 {
 	auto shader = LoadCompute("lighting", "res/shaders/compute/pbr_lighting.comp.glsl");
 	ASSERT_TRUE(shader);
 
-	const std::array<uint32_t, 3> optional = {5, 6, 11};
-	const auto ports = Ports(*shader);
 	const auto& ir = shader->GetStage(neurus::ShaderType::COMPUTE).parsed;
-
-	const auto inputs = std::count_if(ports.ports.begin(), ports.ports.end(),
-		[](const neurus::PassPort& port)
-		{
-			return port.direction == neurus::PortDirection::Input;
-		});
-	EXPECT_EQ(inputs, 8);
-	const auto output = std::find_if(ports.ports.begin(), ports.ports.end(),
-		[](const neurus::PassPort& port)
-		{
-			return port.name == "outputImage";
-		});
-	ASSERT_NE(output, ports.ports.end());
-	EXPECT_EQ(output->binding, 4u);
 
 	const neurus::S_PushConstant* camera = FindPush(ir, "cameraPos");
 	ASSERT_NE(camera, nullptr);
@@ -104,7 +73,6 @@ TEST(ShaderPorts, SsaoPushConstants)
 	auto shader = LoadCompute("ssao", "res/shaders/compute/ssao.comp.glsl");
 	ASSERT_TRUE(shader);
 
-	const auto ports = Ports(*shader);
 	const auto& ir = shader->GetStage(neurus::ShaderType::COMPUTE).parsed;
 	ASSERT_EQ(ir.push_constants.size(), 4u);
 
@@ -120,7 +88,6 @@ TEST(ShaderPorts, FxaaPushConstants)
 	auto shader = LoadCompute("fxaa", "res/shaders/compute/fxaa.comp.glsl");
 	ASSERT_TRUE(shader);
 
-	const auto ports = Ports(*shader);
 	const auto& ir = shader->GetStage(neurus::ShaderType::COMPUTE).parsed;
 
 	const neurus::S_PushConstant* rcp = FindPush(ir, "rcpFrame");

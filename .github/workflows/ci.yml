@@ -82,8 +82,25 @@ jobs:
       - name: Check layer include boundaries
         run: python3 scripts/check_layer_boundaries.py
 
+  translations:
+    name: Translations
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the translation extractor
+        run: python3 scripts/test_extract_i18n.py
+
+      - name: Check translations
+        run: python3 scripts/extract_i18n.py --check
+
   build:
-    needs: [changes, layer-boundaries]
+    needs: changes
     if: needs.changes.outputs.code == 'true'
 
     strategy:
@@ -147,23 +164,6 @@ jobs:
           grep -q "Using pre-compiled qtadvanceddocking" "${{ runner.temp }}/configure.log" \
             || { echo "::error::prebuilt ADS not used — Qt drift between producer and consumer CI"; tail -50 "${{ runner.temp }}/configure.log"; exit 1; }
 
-      # Blender-style i18n check: fail the build if any UI string in
-      # res/i18n/*.po is untranslated (run before the build for a fast fail).
-      # The extractor is tested first: a bug in it fails this job on every
-      # matrix leg regardless of the source change, so its own suite has to be
-      # the thing that reports the problem.
-      - name: Test the translation extractor
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then PY=python; else PY=python3; fi
-          $PY scripts/test_extract_i18n.py
-
-      - name: Check translations
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then PY=python; else PY=python3; fi
-          $PY scripts/extract_i18n.py --check
-
       - name: Build
         run: cmake --build build --config ${{ matrix.configuration }} --parallel
 
@@ -182,7 +182,7 @@ jobs:
   # Rendering on Linux is verified on a real GPU, not here.
   build-linux:
     name: build (ubuntu-22.04, headless)
-    needs: [changes, layer-boundaries]
+    needs: changes
     if: needs.changes.outputs.code == 'true'
 
     runs-on: ubuntu-22.04
@@ -235,12 +235,12 @@ jobs:
 
   # The single stable status check for branch protection. Reports success when
   # code checks were skipped for a documentation-only pull request, and fails when
-  # the boundary check or a build leg actually broke. `always()` is load-bearing:
+  # any required job fails. `always()` is load-bearing:
   # without it a skipped `build` would skip this job too, and the required check
   # would never report.
   ci-gate:
     name: ci-gate
-    needs: [changes, layer-boundaries, build, build-linux]
+    needs: [changes, layer-boundaries, translations, build, build-linux]
     if: always()
 
     runs-on: ubuntu-latest
@@ -248,52 +248,31 @@ jobs:
     steps:
       # Results arrive through `env` rather than inline `${{ }}` so nothing from
       # the event payload is ever interpolated into the shell.
-      - name: Report matrix result
+      - name: Check required job results
         env:
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           LAYERS_RESULT: ${{ needs.layer-boundaries.result }}
+          I18N_RESULT: ${{ needs.translations.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           LINUX_RESULT: ${{ needs.build-linux.result }}
         run: |
           echo "non-documentation changes: ${CODE_CHANGED:-<unset>}"
           echo "changes job:               $CHANGES_RESULT"
           echo "layer boundaries:          $LAYERS_RESULT"
+          echo "translations:              $I18N_RESULT"
           echo "build matrix:              $BUILD_RESULT"
           echo "linux headless:            $LINUX_RESULT"
 
-          # A broken gate must not read as a green build: `build` would be
-          # `skipped` and this job would otherwise wave it through.
-          case "$CHANGES_RESULT" in
-            failure | cancelled)
-              echo "::error::change detection reported $CHANGES_RESULT"
-              exit 1
-              ;;
+          case "$CHANGES_RESULT:$CODE_CHANGED" in
+            success:true)  expected=success ;;
+            success:false) expected=skipped ;;
+            *) echo "::error::Change detection did not produce a usable result"; exit 1 ;;
           esac
 
-          case "$LAYERS_RESULT" in
-            failure | cancelled)
-              echo "::error::layer boundary check reported $LAYERS_RESULT"
+          for result in "$LAYERS_RESULT" "$I18N_RESULT" "$BUILD_RESULT" "$LINUX_RESULT"; do
+            if [ "$result" != "$expected" ]; then
+              echo "::error::Expected all four job results above to be $expected"
               exit 1
-              ;;
-          esac
-
-          # `skipped` is the documentation-only path and is a pass. Only a real
-          # failure or a cancellation fails the gate.
-          case "$BUILD_RESULT" in
-            failure | cancelled)
-              echo "::error::C++ build matrix reported $BUILD_RESULT"
-              exit 1
-              ;;
-          esac
-
-          case "$LINUX_RESULT" in
-            failure | cancelled)
-              echo "::error::Linux headless leg reported $LINUX_RESULT"
-              exit 1
-              ;;
-          esac
-
-          if [ "$BUILD_RESULT" = "skipped" ]; then
-            echo "Documentation-only change — C++ matrix intentionally skipped."
-          fi
+            fi
+          done

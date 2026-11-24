@@ -131,9 +131,14 @@ TEST_F(DebugPropertiesTest, ProgrammaticSettersEmitNothing)
 	EXPECT_EQ(positions.count(), 0);
 }
 
-TEST_F(DebugPropertiesTest, SetPositionsFillsTheTable)
+// PLACEHOLDER_TESTS2
+
+// --- List editing emits the whole list --------------------------------------
+
+TEST_F(DebugPropertiesTest, TableEditsPublishAllDisplayedPositions)
 {
 	m_props->setPositions(MakePositions(3));
+	QSignalSpy spy(m_props, &DebugProperties::positionsChanged);
 
 	QTableWidget* table = Table(*m_props);
 	ASSERT_NE(table, nullptr);
@@ -142,39 +147,24 @@ TEST_F(DebugPropertiesTest, SetPositionsFillsTheTable)
 	EXPECT_DOUBLE_EQ(table->item(1, 0)->text().toDouble(), 1.0);
 	EXPECT_DOUBLE_EQ(table->item(1, 1)->text().toDouble(), 1.5);
 	EXPECT_DOUBLE_EQ(table->item(1, 2)->text().toDouble(), 1.25);
-}
-// PLACEHOLDER_TESTS2
 
-// --- List editing emits the whole list --------------------------------------
-
-TEST_F(DebugPropertiesTest, CellEditEmitsTheWholeList)
-{
-	m_props->setPositions(MakePositions(2));
-	QSignalSpy spy(m_props, &DebugProperties::positionsChanged);
-
-	Table(*m_props)->item(0, 0)->setText("9.5");
+	table->item(0, 1)->setText("not a number");
+	EXPECT_EQ(spy.count(), 0);
+	table->item(0, 0)->setText("9.5");
 
 	ASSERT_EQ(spy.count(), 1);
 	EXPECT_EQ(spy.at(0).at(0).toInt(), 7);
 	const auto emitted = spy.at(0).at(1).value<std::vector<glm::vec3>>();
-	ASSERT_EQ(emitted.size(), 2u);
+	ASSERT_EQ(emitted.size(), 3u);
 	EXPECT_FLOAT_EQ(emitted[0].x, 9.5f);
 	EXPECT_FLOAT_EQ(emitted[1].x, 1.0f); // the untouched row still travels
+	EXPECT_FLOAT_EQ(emitted[0].y, MakePositions(3)[0].y);
+	m_props->setObjectId(-1);
+	table->item(0, 0)->setText("4.0");
+	EXPECT_EQ(spy.count(), 1);
 }
 
-TEST_F(DebugPropertiesTest, UnparseableCellKeepsThePreviousCoordinate)
-{
-	m_props->setPositions(MakePositions(1));
-	QSignalSpy spy(m_props, &DebugProperties::positionsChanged);
-
-	// A typo mid-edit must not teleport the vertex to the origin: the cell reads
-	// back as the coordinate it replaced, so the list is unchanged and silent.
-	Table(*m_props)->item(0, 1)->setText("not a number");
-
-	EXPECT_EQ(spy.count(), 0);
-}
-
-TEST_F(DebugPropertiesTest, AddEmitsAListOneLonger)
+TEST_F(DebugPropertiesTest, AppendAndRemoveAtTheEndOfTheVertexList)
 {
 	m_props->setPositions(MakePositions(2));
 	QSignalSpy spy(m_props, &DebugProperties::positionsChanged);
@@ -189,33 +179,17 @@ TEST_F(DebugPropertiesTest, AddEmitsAListOneLonger)
 	// Seeded from the last entry, so appending continues the line instead of
 	// dropping a degenerate segment at the origin.
 	EXPECT_EQ(emitted[2], emitted[1]);
+
+	m_props->setPositions(emitted);
+	Table(*m_props)->clearSelection();
+	Table(*m_props)->setCurrentCell(-1, -1);
+	buttons[1]->click();
+	ASSERT_EQ(spy.count(), 2);
+	const auto shortened = spy.at(1).at(1).value<std::vector<glm::vec3>>();
+	ASSERT_EQ(shortened.size(), 2u);
+	EXPECT_FLOAT_EQ(shortened[1].x, 1.0f);
 }
 
-TEST_F(DebugPropertiesTest, RemoveWithNoSelectionDropsTheLastEntry)
-{
-	m_props->setPositions(MakePositions(3));
-	QSignalSpy spy(m_props, &DebugProperties::positionsChanged);
-
-	auto buttons = ListButtons(*m_props);
-	ASSERT_EQ(buttons.size(), 2u);
-	buttons[1]->click(); // Remove
-
-	ASSERT_EQ(spy.count(), 1);
-	const auto emitted = spy.at(0).at(1).value<std::vector<glm::vec3>>();
-	ASSERT_EQ(emitted.size(), 2u);
-	EXPECT_FLOAT_EQ(emitted[1].x, 1.0f);
-}
-
-TEST_F(DebugPropertiesTest, UnboundPanelEmitsNothingOnACellEdit)
-{
-	m_props->setPositions(MakePositions(2));
-	m_props->setObjectId(-1); // nothing selected
-	QSignalSpy spy(m_props, &DebugProperties::positionsChanged);
-
-	Table(*m_props)->item(0, 0)->setText("4.0");
-
-	EXPECT_EQ(spy.count(), 0);
-}
 // PLACEHOLDER_TESTS3
 
 // --- Row cap ----------------------------------------------------------------

@@ -60,6 +60,7 @@ TEST_F(SessionRegistryTest, WriteReadRemove)
 	std::string error;
 	ASSERT_TRUE(registry.Write(MakeRecord("build-1", neurus::CurrentProcessId()), error)) << error;
 
+	EXPECT_FALSE(std::filesystem::exists(m_directory / "build-1.json.tmp"));
 	auto loaded = registry.Read("build-1");
 	ASSERT_TRUE(loaded.has_value());
 	EXPECT_EQ(loaded->port, 51234);
@@ -68,14 +69,6 @@ TEST_F(SessionRegistryTest, WriteReadRemove)
 
 	EXPECT_TRUE(registry.Remove("build-1"));
 	EXPECT_FALSE(registry.Read("build-1").has_value());
-}
-
-TEST_F(SessionRegistryTest, WriteLeavesNoTemporaryFile)
-{
-	SessionRegistry registry(m_directory);
-	std::string error;
-	ASSERT_TRUE(registry.Write(MakeRecord("build-1", neurus::CurrentProcessId()), error)) << error;
-	EXPECT_FALSE(std::filesystem::exists(m_directory / "build-1.json.tmp"));
 }
 
 // The entry carries the IPC token, so it must never be readable by anyone but
@@ -148,7 +141,7 @@ TEST_F(SessionRegistryTest, ClaimIsExclusive)
 	EXPECT_TRUE(registry.TryClaim("build-1", error)) << error;
 }
 
-TEST_F(SessionRegistryTest, ClaimRefusesLiveSession)
+TEST_F(SessionRegistryTest, SessionClaimDependsOnRegisteredProcessLiveness)
 {
 	SessionRegistry registry(m_directory);
 	std::string error;
@@ -157,14 +150,7 @@ TEST_F(SessionRegistryTest, ClaimRefusesLiveSession)
 	EXPECT_FALSE(registry.TryClaim("build-1", error));
 	EXPECT_FALSE(std::filesystem::exists(m_directory / "build-1.claim"));
 	EXPECT_TRUE(registry.Read("build-1").has_value());
-}
-
-TEST_F(SessionRegistryTest, ClaimReplacesStaleSession)
-{
-	SessionRegistry registry(m_directory);
-	std::string error;
 	ASSERT_TRUE(registry.Write(MakeRecord("build-1", 0), error)) << error;
-
 	EXPECT_TRUE(registry.TryClaim("build-1", error)) << error;
 }
 
@@ -177,23 +163,21 @@ TEST_F(SessionRegistryTest, DeadClaimIsRecovered)
 	EXPECT_TRUE(registry.TryClaim("build-1", error)) << error;
 }
 
-TEST_F(SessionRegistryTest, AllocationMatchesGrammar)
-{
-	SessionRegistry registry(m_directory);
-	const auto name = AllocateSessionName("C:/work/MyProject.neurus.json", registry);
-	EXPECT_TRUE(IsValidSessionName(name));
-	EXPECT_EQ(name.rfind("MyProject-", 0), 0u);
-}
-
 TEST_F(SessionRegistryTest, AllocationAvoidsExistingNames)
 {
 	SessionRegistry registry(m_directory);
 	std::string error;
-	const auto name = AllocateSessionName("", registry);
+	const auto unnamed = AllocateSessionName("", registry);
+	ASSERT_TRUE(IsValidSessionName(unnamed));
+	EXPECT_EQ(unnamed.rfind("neurus-", 0), 0u);
+
+	const char* project = "work/MyProject.neurus.json";
+	const auto name = AllocateSessionName(project, registry);
+	EXPECT_EQ(name.rfind("MyProject-", 0), 0u);
 	ASSERT_TRUE(IsValidSessionName(name));
 	ASSERT_TRUE(registry.Write(MakeRecord(name, neurus::CurrentProcessId()), error)) << error;
 
-	const auto second = AllocateSessionName("", registry);
+	const auto second = AllocateSessionName(project, registry);
 	EXPECT_TRUE(IsValidSessionName(second));
 	EXPECT_NE(second, name);
 }

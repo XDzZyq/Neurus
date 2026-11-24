@@ -72,56 +72,11 @@ protected:
 	ads::CDockWidget*          m_dock = nullptr;
 };
 
-TEST_F(FloatingWindowTest, PanelsFloatFreelyWhenNotFullScreen)
+TEST_F(FloatingWindowTest, FullScreenDocksFloatingPanelsUntilNormalModeReturns)
 {
 	EXPECT_TRUE(CanFloat());
-
 	m_dock->setFloating();
-	EXPECT_TRUE(m_dock->isFloating());
 	EXPECT_EQ(FloatingWindowCount(), 1);
-}
-
-TEST_F(FloatingWindowTest, FullScreenClearsFloatableButKeepsMovable)
-{
-	m_win->showFullScreen();
-	ASSERT_TRUE(m_win->isFullScreen());
-
-	EXPECT_FALSE(CanFloat()) << "full screen must forbid tearing a panel off";
-	EXPECT_TRUE(CanMove()) << "re-docking inside the window must still work";
-}
-
-// The lock is what ADS consults at drop time, so this is the behavioural
-// equivalent of "drag it out and let go": nothing separates.
-TEST_F(FloatingWindowTest, TearingOffIsRefusedWhileFullScreen)
-{
-	m_win->showFullScreen();
-	ASSERT_TRUE(m_win->isFullScreen());
-
-	m_dock->setFloating();
-
-	EXPECT_FALSE(m_dock->isFloating());
-	EXPECT_EQ(FloatingWindowCount(), 0);
-	EXPECT_NE(m_dock->dockAreaWidget(), nullptr) << "the panel must stay docked";
-}
-
-TEST_F(FloatingWindowTest, LeavingFullScreenRestoresFloatability)
-{
-	m_win->showFullScreen();
-	ASSERT_FALSE(CanFloat());
-
-	m_win->showNormal();
-	ASSERT_FALSE(m_win->isFullScreen());
-
-	EXPECT_TRUE(CanFloat());
-	m_dock->setFloating();
-	EXPECT_TRUE(m_dock->isFloating());
-}
-
-// Entering full screen with a panel already in its own window: the window would
-// stay behind on the desktop Space, so the panel is docked back instead.
-TEST_F(FloatingWindowTest, EnteringFullScreenDocksAlreadyFloatingPanels)
-{
-	m_dock->setFloating();
 	ASSERT_TRUE(m_dock->isFloating());
 
 	m_win->showFullScreen();
@@ -129,6 +84,21 @@ TEST_F(FloatingWindowTest, EnteringFullScreenDocksAlreadyFloatingPanels)
 
 	EXPECT_FALSE(m_dock->isFloating());
 	EXPECT_NE(m_dock->dockAreaWidget(), nullptr);
+
+	EXPECT_FALSE(CanFloat()) << "full screen must forbid tearing a panel off";
+	EXPECT_TRUE(CanMove()) << "re-docking inside the window must still work";
+
+	const int windowsBeforeTearOff = FloatingWindowCount();
+	m_dock->setFloating();
+	EXPECT_FALSE(m_dock->isFloating());
+	EXPECT_EQ(FloatingWindowCount(), windowsBeforeTearOff);
+	EXPECT_NE(m_dock->dockAreaWidget(), nullptr) << "the panel must stay docked";
+
+	m_win->showNormal();
+	ASSERT_FALSE(m_win->isFullScreen());
+	EXPECT_TRUE(CanFloat());
+	m_dock->setFloating();
+	EXPECT_TRUE(m_dock->isFloating());
 }
 
 // The lock masks features rather than rewriting them, so a maximize/restore

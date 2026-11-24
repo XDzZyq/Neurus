@@ -85,15 +85,63 @@ class LayerBoundariesTest(unittest.TestCase):
 
     def test_controller_can_submit_history_or_call_an_unrelated_apply(self):
         result, errors = self.check(
+            '#include "editor/operations/IOperationSink.hpp"\n'
             '#include "editor/operations/GraphOperations.hpp"\n'
             'void Update(Filter& filter) { filter.Apply(); }\n',
             "editor/controllers")
         self.assertEqual(result, 0, errors)
 
+    def test_controller_uses_operation_sink_instead_of_concrete_manager(self):
+        self.write("editor/operations/OperationManager.hpp", "// history owner\n")
+        for header in ['"editor/operations/OperationManager.hpp"', '"../operations/OperationManager.hpp"',
+                       '<OperationManager.hpp>']:
+            with self.subTest(header=header):
+                result, errors = self.check(f'#include {header}\n', "editor/controllers")
+                self.assertEqual(result, 1)
+                self.assertIn("src/editor/controllers/Consumer.hpp:1: controllers record history through IOperationSink", errors)
+
     def test_forbidden_layer_include_is_rejected(self):
         result, errors = self.check('#include "editor/Editor.hpp"\n', "render")
         self.assertEqual(result, 1)
         self.assertIn("render must not include editor internals", errors)
+
+    def test_ui_and_script_can_use_their_editor_contracts(self):
+        self.write("editor/events/SceneEvents.hpp", "// event values\n")
+        for layer, extra in [("ui", "editor/operations/HistoryView.hpp"),
+                             ("script", "editor/events/IEventQueue.hpp")]:
+            with self.subTest(layer=layer):
+                self.write(extra, "// public contract\n")
+                result, errors = self.check(f'#include <SceneEvents.hpp>\n#include "../{extra}"\n', layer)
+                self.assertEqual(result, 0, errors)
+
+    def test_ui_and_script_reject_editor_internals_across_include_spellings(self):
+        self.write("editor/Editor.hpp", "// editor implementation\n")
+        for layer in ["ui", "script"]:
+            for header in ['"editor/Editor.hpp"', '"../editor/Editor.hpp"', '<Editor.hpp>',
+                           '"editor/events/EventBus.hpp"', '"editor/controllers/ControllerContext.hpp"']:
+                with self.subTest(layer=layer, header=header):
+                    result, errors = self.check(f'#include {header}\n', layer)
+                    self.assertEqual(result, 1)
+                    self.assertIn(f"src/{layer}/Consumer.hpp:1: {layer} must use a public Editor contract", errors)
+
+    def test_contracts_are_specific_to_the_consumer_and_full_header_path(self):
+        for layer, header in [("ui", "editor/events/IEventQueue.hpp"),
+                              ("script", "editor/operations/HistoryView.hpp"),
+                              ("ui", "editor/controllers/SceneEvents.hpp")]:
+            with self.subTest(layer=layer, header=header):
+                result, errors = self.check(f'#include "{header}"\n', layer)
+                self.assertEqual(result, 1)
+                self.assertIn("must use a public Editor contract", errors)
+
+    def test_application_wires_components_in_one_direction(self):
+        self.write("app/Application.hpp", '#include "editor/Editor.hpp"\n#include "render/RenderThread.hpp"\n')
+        result, errors = self.check('#include "app/Application.hpp"\n', "app")
+        self.assertEqual(result, 0, errors)
+        for layer in ["ui", "platform"]:
+            with self.subTest(layer=layer):
+                result, errors = self.check('#include "Application.hpp"\n', layer)
+                self.assertEqual(result, 1)
+                self.assertIn(f"{layer} must not include app internals", errors)
 
     def test_commented_include_is_ignored_and_lines_are_preserved(self):
         result, errors = self.check('// #include <QWidget>\n/* #include <vulkan/vulkan.hpp> */\n')

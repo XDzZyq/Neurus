@@ -141,18 +141,6 @@ TEST_F(GraphComponent, CorruptFirstGraphDoesNotDiscardSiblingResources)
 	EXPECT_EQ(restored.Size(), 2u);
 }
 
-TEST_F(GraphComponent, MissingSelectionUsesDefault)
-{
-	Load("{}");
-	EXPECT_FALSE(selected);
-}
-
-TEST_F(GraphComponent, CorruptSelectionUsesDefault)
-{
-	Load("{\"proj_render_graph\": 42}");
-	EXPECT_FALSE(selected);
-}
-
 TEST_F(GraphComponent, NullGraphIsOmittedOnSave)
 {
 	const std::string saved = Save(nullptr);

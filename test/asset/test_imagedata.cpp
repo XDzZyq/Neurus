@@ -3,81 +3,41 @@
 #include "asset/data/ImageData.hpp"
 #include "asset/PixelFormat.hpp"
 
+#include <numeric>
 #include <vector>
 
 using namespace neurus;
 
-// ---------------------------------------------------------------------------
-// 1. PixelByteSize
-// ---------------------------------------------------------------------------
-
-TEST(ImageDataTest, PixelByteSize_RGBA8_Returns4)
+TEST(ImageDataTest, PixelFormatMetadata)
 {
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::RGBA8U), 4u);
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::RGBA8S), 4u);
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::BGRA8U), 4u);
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::BGRA8S), 4u);
+	struct FormatCase
+	{
+		const char* name;
+		PixelFormat format;
+		uint32_t bytes;
+		uint32_t channels;
+		bool bgr;
+	};
+	constexpr FormatCase cases[] = {
+		{"RGBA8U", PixelFormat::RGBA8U, 4, 4, false},
+		{"RGBA8S", PixelFormat::RGBA8S, 4, 4, false},
+		{"BGRA8U", PixelFormat::BGRA8U, 4, 4, true},
+		{"BGRA8S", PixelFormat::BGRA8S, 4, 4, true},
+		{"RGBA16F", PixelFormat::RGBA16F, 8, 4, false},
+		{"RGBA16U", PixelFormat::RGBA16U, 8, 4, false},
+		{"RGBA16SN", PixelFormat::RGBA16SN, 8, 4, false},
+		{"R8U", PixelFormat::R8U, 1, 1, false},
+		{"R8S", PixelFormat::R8S, 1, 1, false},
+		{"Undefined", PixelFormat::Undefined, 0, 4, false},
+	};
+	for (const auto& sample : cases)
+	{
+		SCOPED_TRACE(sample.name);
+		EXPECT_EQ(PixelByteSize(sample.format), sample.bytes);
+		EXPECT_EQ(ChannelCount(sample.format), sample.channels);
+		EXPECT_EQ(IsBGRFormat(sample.format), sample.bgr);
+	}
 }
-
-TEST(ImageDataTest, PixelByteSize_RGBA16F_Returns8)
-{
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::RGBA16F), 8u);
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::RGBA16U), 8u);
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::RGBA16SN), 8u);
-}
-
-TEST(ImageDataTest, PixelByteSize_R8_Returns1)
-{
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::R8U), 1u);
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::R8S), 1u);
-}
-
-TEST(ImageDataTest, PixelByteSize_UnknownFormat_Returns0)
-{
-	EXPECT_EQ(neurus::PixelByteSize(PixelFormat::Undefined), 0u);
-}
-
-// ---------------------------------------------------------------------------
-// 2. ChannelCount
-// ---------------------------------------------------------------------------
-
-TEST(ImageDataTest, ChannelCount_R8_Returns1)
-{
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::R8U), 1u);
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::R8S), 1u);
-}
-
-TEST(ImageDataTest, ChannelCount_RGBA_Returns4)
-{
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::RGBA8U), 4u);
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::RGBA8S), 4u);
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::BGRA8U), 4u);
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::BGRA8S), 4u);
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::RGBA16F), 4u);
-	EXPECT_EQ(neurus::ChannelCount(PixelFormat::Undefined), 4u);
-}
-
-// ---------------------------------------------------------------------------
-// 3. IsBGRFormat
-// ---------------------------------------------------------------------------
-
-TEST(ImageDataTest, IsBGRFormat_BGRA_ReturnsTrue)
-{
-	EXPECT_TRUE(neurus::IsBGRFormat(PixelFormat::BGRA8U));
-	EXPECT_TRUE(neurus::IsBGRFormat(PixelFormat::BGRA8S));
-}
-
-TEST(ImageDataTest, IsBGRFormat_RGBA_ReturnsFalse)
-{
-	EXPECT_FALSE(neurus::IsBGRFormat(PixelFormat::RGBA8U));
-	EXPECT_FALSE(neurus::IsBGRFormat(PixelFormat::RGBA8S));
-	EXPECT_FALSE(neurus::IsBGRFormat(PixelFormat::RGBA16F));
-	EXPECT_FALSE(neurus::IsBGRFormat(PixelFormat::R8U));
-}
-
-// ---------------------------------------------------------------------------
-// 4. ConvertHalfToU8 (remapSigned=false)
-// ---------------------------------------------------------------------------
 
 TEST(ImageDataTest, ConvertHalfToU8_Unmapped)
 {
@@ -231,28 +191,14 @@ TEST(ImageDataTest, SwizzleBGRtoRGB_3Channel)
 	EXPECT_EQ(data[5], 40);
 }
 
-// ---------------------------------------------------------------------------
-// 7. Constructor and getters
-// ---------------------------------------------------------------------------
-
-TEST(ImageDataTest, ConstructorAndGetters)
+TEST(ImageDataTest, ConstructorPreservesDimensionsFormatAndPixels)
 {
-	const uint8_t pixelData[] = {255, 0, 0, 255};
-	ImageData img(pixelData, 1, 1, PixelFormat::RGBA8U);
+	std::vector<uint8_t> pixels(3 * 2 * 4);
+	std::iota(pixels.begin(), pixels.end(), uint8_t{1});
+	ImageData image(pixels.data(), 3, 2, PixelFormat::RGBA8S);
 
-	EXPECT_EQ(img.GetWidth(), 1u);
-	EXPECT_EQ(img.GetHeight(), 1u);
-	EXPECT_EQ(img.GetFormat(), PixelFormat::RGBA8U);
-	EXPECT_EQ(img.GetPixelData()[0], 255u);
-}
-
-TEST(ImageDataTest, Constructor_NonSquare)
-{
-	const std::vector<uint8_t> pixelData(4 * 4 * 4, 0); // 4 wide x 4 tall x RGBA
-	ImageData img(pixelData.data(), 4, 4, PixelFormat::RGBA8S);
-
-	EXPECT_EQ(img.GetWidth(), 4u);
-	EXPECT_EQ(img.GetHeight(), 4u);
-	EXPECT_EQ(img.GetFormat(), PixelFormat::RGBA8S);
-	EXPECT_FALSE(img.GetPixelData().empty());
+	EXPECT_EQ(image.GetWidth(), 3u);
+	EXPECT_EQ(image.GetHeight(), 2u);
+	EXPECT_EQ(image.GetFormat(), PixelFormat::RGBA8S);
+	EXPECT_EQ(image.GetPixelData(), pixels);
 }

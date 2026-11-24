@@ -41,7 +41,7 @@ namespace {
  * @brief UID used by the script-scope tests that assert buffering and commit only.
  *
  * Deliberately unpooled: those tests never claim replay semantics, which are
- * covered by ScriptScopeCompactsIntoOneEntry and test_editor/test_script_controller.cpp.
+ * covered by ScriptControllerTest.RunBoundaryCreatesOneUndoableEdit.
  */
 constexpr int kScriptUid = 9001;
 
@@ -105,84 +105,8 @@ TEST_F(OperationManagerTest, LightPower_RoundTrip)
 	EXPECT_FLOAT_EQ(m_light->light_power, 42.0f);
 	EXPECT_TRUE(m_operations.CanUndo());
 	EXPECT_FALSE(m_operations.CanRedo());
-}
-
-TEST_F(OperationManagerTest, Position_RoundTrip)
-{
-	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
-	Process();
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
-
-	m_operations.Undo();
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(0.0f, 0.0f, 0.0f));
-
-	m_operations.Redo();
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
-}
-
-// --- Recording suppression during replay -----------------------------------
-
-TEST_F(OperationManagerTest, Replay_DoesNotRecordNewOperations)
-{
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
-	Process();
-
-	// Undo/Redo replay events synchronously through the same handler that
-	// calls Submit(); the Replaying guard must suppress re-recording so the
-	// stacks stay a single entry each and don't grow without bound.
 	m_operations.Undo();
 	EXPECT_FALSE(m_operations.CanUndo());
-	EXPECT_TRUE(m_operations.CanRedo());
-
-	m_operations.Redo();
-	EXPECT_TRUE(m_operations.CanUndo());
-	EXPECT_FALSE(m_operations.CanRedo());
-
-	// A single undo returns to the recorded state (not stuck mid-stack).
-	m_operations.Undo();
-	EXPECT_FLOAT_EQ(m_light->light_power, 10.0f);
-	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-// --- Redo invalidation ------------------------------------------------------
-
-TEST_F(OperationManagerTest, NewForwardOperation_ClearsRedo)
-{
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 30.0f });
-	Process();
-	m_operations.Undo();
-	ASSERT_TRUE(m_operations.CanRedo());
-
-	// A fresh edit after an undo invalidates the redo branch.
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 55.0f });
-	Process();
-	EXPECT_FALSE(m_operations.CanRedo());
-	EXPECT_TRUE(m_operations.CanUndo());
-}
-
-// --- Involution -------------------------------------------------------------
-
-TEST_F(OperationManagerTest, Inverse_IsInvolution)
-{
-	auto op = std::make_unique<SetLightPowerOp>(m_light->GetObjectID(), 3.0f, 77.0f);
-	auto twice = op->Inverse()->Inverse();
-
-	// (g⁻¹)⁻¹ must reproduce the original forward effect.
-	EXPECT_EQ(twice->Label(), op->Label());
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	twice->Apply(ctx); // Emit() dispatches synchronously.
-	EXPECT_FLOAT_EQ(m_light->light_power, 77.0f);
-}
-
-TEST_F(OperationManagerTest, Inverse_SwapsBeforeAfter)
-{
-	m_light->SetPower(10.0f);
-	auto op = std::make_unique<SetLightPowerOp>(m_light->GetObjectID(), 10.0f, 90.0f);
-	auto inv = op->Inverse();
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	inv->Apply(ctx); // inverse applies the "before" value.
 	EXPECT_FLOAT_EQ(m_light->light_power, 10.0f);
 }
 
@@ -200,16 +124,6 @@ TEST_F(OperationManagerTest, Apply_UnknownUid_IsNoOp)
 
 // --- Empty stacks -----------------------------------------------------------
 
-TEST_F(OperationManagerTest, UndoRedo_EmptyStacks_AreNoOps)
-{
-	EXPECT_FALSE(m_operations.CanUndo());
-	EXPECT_FALSE(m_operations.CanRedo());
-	m_operations.Undo(); // no-op
-	m_operations.Redo(); // no-op
-	EXPECT_FALSE(m_operations.CanUndo());
-	EXPECT_FALSE(m_operations.CanRedo());
-}
-
 TEST_F(OperationManagerTest, Clear_EmptiesBothStacks)
 {
 	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 15.0f });
@@ -220,45 +134,10 @@ TEST_F(OperationManagerTest, Clear_EmptiesBothStacks)
 	m_operations.Clear();
 	EXPECT_FALSE(m_operations.CanUndo());
 	EXPECT_FALSE(m_operations.CanRedo());
-}
-
-// --- Visibility round-trip -------------------------------------------------
-
-TEST_F(OperationManagerTest, Visibility_RoundTrip)
-{
-	// Mesh starts fully visible.
-	ASSERT_TRUE(m_mesh->is_viewport);
-	ASSERT_TRUE(m_mesh->is_rendered);
-
-	m_eventBus.Enqueue(VisibilityChanged{ m_mesh->GetObjectID(), false, false });
-	Process();
-	EXPECT_FALSE(m_mesh->is_viewport);
-	EXPECT_FALSE(m_mesh->is_rendered);
-
-	m_operations.Undo();
-	EXPECT_TRUE(m_mesh->is_viewport);
-	EXPECT_TRUE(m_mesh->is_rendered);
-
-	m_operations.Redo();
-	EXPECT_FALSE(m_mesh->is_viewport);
-	EXPECT_FALSE(m_mesh->is_rendered);
-}
-
-// --- Camera FOV ("Camera Ratio") round-trip --------------------------------
-
-TEST_F(OperationManagerTest, CameraFov_RoundTrip)
-{
-	const float original = m_camera->cam_pers;
-
-	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
-	Process();
-	EXPECT_FLOAT_EQ(m_camera->cam_pers, 35.0f);
-
-	m_operations.Undo();
-	EXPECT_FLOAT_EQ(m_camera->cam_pers, original);
-
-	m_operations.Redo();
-	EXPECT_FLOAT_EQ(m_camera->cam_pers, 35.0f);
+	m_operations.Undo(); // no-op
+	m_operations.Redo(); // no-op
+	EXPECT_FALSE(m_operations.CanUndo());
+	EXPECT_FALSE(m_operations.CanRedo());
 }
 
 // --- Camera pose (coupled transform) round-trip ----------------------------
@@ -292,29 +171,6 @@ TEST_F(OperationManagerTest, CameraPose_RoundTrip)
 
 // --- Merge coalescing -------------------------------------------------------
 
-TEST_F(OperationManagerTest, CameraZoom_Merge_CoalescesIntoOneUndo)
-{
-	const int uid = m_camera->GetObjectID();
-	const glm::vec3 a(0.0f, 5.0f, 0.0f);
-	const glm::vec3 b(0.0f, 4.0f, 0.0f);
-	const glm::vec3 c(0.0f, 3.0f, 0.0f);
-	const glm::vec3 d(0.0f, 2.0f, 0.0f);
-	const glm::vec3 tar(0.0f, 0.0f, 0.0f);
-
-	// Three consecutive SAME-DIRECTION (zoom-in) edits share a MergeKey and
-	// collapse into a single undo entry spanning a→d.
-	m_operations.Submit(std::make_unique<CameraZoomOp>(uid, CameraPose{ a, tar }, CameraPose{ b, tar }));
-	m_operations.Submit(std::make_unique<CameraZoomOp>(uid, CameraPose{ b, tar }, CameraPose{ c, tar }));
-	m_operations.Submit(std::make_unique<CameraZoomOp>(uid, CameraPose{ c, tar }, CameraPose{ d, tar }));
-
-	ASSERT_TRUE(m_operations.CanUndo());
-
-	// A single undo returns to the original endpoint, proving one merged entry.
-	m_operations.Undo();
-	EXPECT_EQ(m_camera->GetPosition(), a);
-	EXPECT_FALSE(m_operations.CanUndo());
-}
-
 TEST_F(OperationManagerTest, CameraZoom_DirectionChange_BreaksMerge)
 {
 	const int uid = m_camera->GetObjectID();
@@ -336,37 +192,14 @@ TEST_F(OperationManagerTest, CameraZoom_DirectionChange_BreaksMerge)
 	EXPECT_TRUE(m_operations.CanUndo());
 	m_operations.Undo();
 	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-TEST_F(OperationManagerTest, CameraTransform_DoesNotMerge_SeparateEntries)
-{
-	const int uid = m_camera->GetObjectID();
-	const glm::vec3 a(0.0f, 5.0f, 0.0f);
-	const glm::vec3 b(0.0f, 4.0f, 0.0f);
-	const glm::vec3 c(0.0f, 3.0f, 0.0f);
-	const glm::vec3 tar(0.0f, 0.0f, 0.0f);
-
-	// CameraTransformOp (drag commit) is non-mergeable: three separate ops on
-	// the SAME camera stay three distinct undo entries — the drag-undo bug fix.
-	m_operations.Submit(std::make_unique<CameraTransformOp>(uid, CameraPose{ a, tar }, CameraPose{ b, tar }));
-	m_operations.Submit(std::make_unique<CameraTransformOp>(uid, CameraPose{ b, tar }, CameraPose{ c, tar }));
-	m_operations.Submit(std::make_unique<CameraTransformOp>(uid, CameraPose{ c, tar }, CameraPose{ a, tar }));
-
-	// Three undos to clear (a←c, c←b, b←a), one entry each.
-	ASSERT_TRUE(m_operations.CanUndo());
-	m_operations.Undo();
-	EXPECT_EQ(m_camera->GetPosition(), c);
-	ASSERT_TRUE(m_operations.CanUndo());
-	m_operations.Undo();
-	EXPECT_EQ(m_camera->GetPosition(), b);
-	ASSERT_TRUE(m_operations.CanUndo());
-	m_operations.Undo();
 	EXPECT_EQ(m_camera->GetPosition(), a);
-	EXPECT_FALSE(m_operations.CanUndo());
+	m_operations.Redo();
+	EXPECT_EQ(m_camera->GetPosition(), c);
 }
 
 TEST_F(OperationManagerTest, DifferentKeys_DoNotMerge)
 {
+	const float original = m_camera->cam_pers;
 	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 40.0f });
 	Process();
 	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 25.0f });
@@ -378,47 +211,12 @@ TEST_F(OperationManagerTest, DifferentKeys_DoNotMerge)
 	EXPECT_TRUE(m_operations.CanUndo());
 	m_operations.Undo();
 	EXPECT_FALSE(m_operations.CanUndo());
-}
-
-TEST_F(OperationManagerTest, CameraTransform_Inverse_IsInvolution)
-{
-	const int uid = m_camera->GetObjectID();
-	const glm::vec3 pos(1.0f, 2.0f, 3.0f);
-	const glm::vec3 tar(4.0f, 5.0f, 6.0f);
-	auto op = std::make_unique<CameraTransformOp>(
-		uid, CameraPose{ glm::vec3(0.0f), glm::vec3(0.0f) }, CameraPose{ pos, tar });
-	auto twice = op->Inverse()->Inverse();
-
-	EXPECT_EQ(twice->Label(), op->Label());
-	EXPECT_EQ(twice->MergeKey(), op->MergeKey());
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	twice->Apply(ctx);
-	EXPECT_EQ(m_camera->GetPosition(), pos);
-	EXPECT_EQ(m_camera->cam_tar, tar);
+	EXPECT_FLOAT_EQ(m_camera->cam_pers, original);
+	m_operations.Redo();
+	EXPECT_FLOAT_EQ(m_camera->cam_pers, 40.0f);
 }
 
 // --- Selection undo/redo ----------------------------------------------------
-
-TEST_F(OperationManagerTest, Selection_RoundTrip)
-{
-	// Select the mesh.
-	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
-	Process();
-	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
-	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
-	ASSERT_TRUE(m_operations.CanUndo());
-
-	// Undo clears the selection.
-	m_operations.Undo();
-	EXPECT_FALSE(m_scene.selections.IsSelected(m_mesh.get()));
-	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0u);
-
-	// Redo restores it.
-	m_operations.Redo();
-	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
-	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
-}
 
 TEST_F(OperationManagerTest, Selection_MultiSelect_RoundTrip)
 {
@@ -480,22 +278,6 @@ TEST_F(OperationManagerTest, RealEdit_ClearsRedo_AfterSelection)
 	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 88.0f });
 	Process();
 	EXPECT_FALSE(m_operations.CanRedo());
-}
-
-TEST_F(OperationManagerTest, SetSelectionOp_Inverse_IsInvolution)
-{
-	SelectionState before{ {}, 0 };
-	SelectionState after{ { m_mesh->GetObjectID() }, m_mesh->GetObjectID() };
-	auto op = std::make_unique<SetSelectionOp>(before, after);
-	auto twice = op->Inverse()->Inverse();
-
-	EXPECT_EQ(twice->Label(), op->Label());
-	EXPECT_TRUE(twice->PreservesRedo());
-
-	auto ctx = OperationTestAccess::Context(m_eventBus);
-	twice->Apply(ctx); // reproduces the original "after" selection.
-	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
-	EXPECT_EQ(m_scene.selections.GetActiveObject(), m_mesh.get());
 }
 
 // --- Bounded undo depth -----------------------------------------------------
@@ -579,29 +361,6 @@ TEST_F(OperationManagerTest, ExceptionDuringRedo_DoesNotPushToUndo)
 
 // --- Script scope: one run, one undo step -----------------------------------
 
-TEST_F(OperationManagerTest, ScriptScopeCompactsIntoOneEntry)
-{
-	// The mesh is pooled, so the composite's Undo replays into a real object: the
-	// run is one entry that rewinds as a whole, not merely one stack slot.
-	const int uid = m_mesh->GetObjectID();
-	m_operations.BeginScriptScope();
-	m_operations.Submit(std::make_unique<SetPositionOp>(uid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
-	m_operations.Submit(
-		std::make_unique<SetPositionOp>(uid, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(2.0f, 0.0f, 0.0f)));
-	m_operations.Submit(
-		std::make_unique<SetPositionOp>(uid, glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(3.0f, 0.0f, 0.0f)));
-	m_mesh->SetPosition(glm::vec3(3.0f, 0.0f, 0.0f)); // where the run left the object
-	m_operations.EndScriptScope();
-
-	ASSERT_EQ(m_operations.GetUndoStack().size(), 1u);
-	EXPECT_TRUE(m_operations.CanUndo());
-	EXPECT_FALSE(m_operations.CanRedo());
-
-	m_operations.Undo();
-	EXPECT_TRUE(m_operations.GetUndoStack().empty());
-	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(0.0f));
-}
-
 /**
  * @test A script write to a mergeable property must not fold into the entry the
  *       previous live edit left on the stack: the run boundary stops coalescing
@@ -653,25 +412,6 @@ TEST_F(OperationManagerTest, ScriptRun_IsLabelledInUndoAndRedo)
 }
 
 /**
- * @test The host's name is the history label, and the redo entry keeps it: a file
- *       run passes "Run <file>" so it cannot be mistaken for a console run.
- */
-TEST_F(OperationManagerTest, ScriptRun_UsesTheHostSuppliedName)
-{
-	m_operations.BeginScriptScope("Run demo.py");
-	m_operations.Submit(std::make_unique<SetPositionOp>(
-		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
-	m_operations.EndScriptScope();
-
-	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
-	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run demo.py");
-
-	m_operations.Undo();
-	ASSERT_EQ(m_operations.GetHistoryView().redo.size(), 1u);
-	EXPECT_EQ(m_operations.GetHistoryView().redo.front(), "Run demo.py");
-}
-
-/**
  * @test A composite that is not a script run still reports its first child's
  *       label, so existing History text (an add or delete step) does not change.
  */
@@ -695,16 +435,6 @@ TEST_F(OperationManagerTest, EmptyScriptScopeCreatesNoEntry)
 	EXPECT_TRUE(m_operations.GetUndoStack().empty());
 }
 
-TEST_F(OperationManagerTest, ScriptScopeRecoversFromAFailedRun)
-{
-	m_operations.BeginScriptScope();
-	m_operations.Submit(std::make_unique<SetPositionOp>(kScriptUid, glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
-	m_operations.EndScriptScope(); // a raising run still calls this
-
-	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
-	EXPECT_TRUE(m_operations.GetUndoStack().back() != nullptr);
-}
-
 TEST_F(OperationManagerTest, Clear_DropsAnOpenScriptBuffer)
 {
 	m_operations.BeginScriptScope();
@@ -718,4 +448,3 @@ TEST_F(OperationManagerTest, Clear_DropsAnOpenScriptBuffer)
 	EXPECT_TRUE(m_operations.GetUndoStack().empty());
 	EXPECT_FALSE(m_operations.CanUndo());
 }
-

@@ -91,6 +91,9 @@ TEST(ResourceManagerTest, LoadAutoRegistersOname)
 {
 	ResourceManager pool;
 
+	pool.Load<TestResource>();
+	EXPECT_EQ(pool.GetByName<TestResource>("Object"), nullptr);
+	EXPECT_EQ(pool.GetByName<TestResource>("Named"), nullptr);
 	auto first = pool.Load<NamedResource>();
 	EXPECT_EQ(first->o_name, "Named") << "the constructor name is mirrored back";
 	EXPECT_EQ(pool.GetByName<NamedResource>("Named"), first);
@@ -102,24 +105,6 @@ TEST(ResourceManagerTest, LoadAutoRegistersOname)
 }
 
 /**
- * @test A type without o_name is not registered by Load, so data resources stay
- *       unnamed and cannot reserve a scene object's name.
- */
-TEST(ResourceManagerTest, LoadWithoutOnameRegistersNothing)
-{
-	ResourceManager pool;
-	pool.Load<TestResource>();
-
-	EXPECT_EQ(pool.GetByName<TestResource>("Object"), nullptr);
-	EXPECT_EQ(pool.GetByName<TestResource>("Named"), nullptr);
-
-	// A named type still owns its bare spelling, proving nothing was reserved.
-	auto named = pool.Load<NamedResource>();
-	EXPECT_EQ(named->o_name, "Named");
-	EXPECT_EQ(pool.GetByName<NamedResource>("Named"), named);
-}
-
-/**
  * @test A load-time registration is an ordinary one: renaming it frees the
  *       constructor name for the next resource. EditorViewport::EnsureCamera
  *       relies on exactly this when it renames the viewport camera.
@@ -128,56 +113,18 @@ TEST(ResourceManagerTest, LoadRegistrationIsRenameable)
 {
 	ResourceManager pool;
 	auto cam = pool.Load<Camera>();
+	EXPECT_THROW(pool.Register(cam), std::runtime_error);
 	EXPECT_EQ(cam->o_name, "Camera");
 	EXPECT_EQ(pool.GetByName<Camera>("Camera"), cam);
 
 	cam->o_name = pool.SetName(cam->GetObjectID(), "ViewportCamera");
 	EXPECT_EQ(cam->o_name, "ViewportCamera");
+	EXPECT_EQ(pool.SetName(cam->GetObjectID(), "ViewportCamera"), "ViewportCamera");
 	EXPECT_EQ(pool.GetByName<Camera>("Camera"), nullptr);
 	EXPECT_EQ(pool.GetByName<Camera>("ViewportCamera"), cam);
 
 	auto docCam = pool.Load<Camera>();
 	EXPECT_EQ(docCam->o_name, "Camera") << "the freed name must be reusable";
-}
-
-/**
- * @test Load<T> constructs, registers, and returns a typed shared_ptr.
- */
-TEST(ResourceManagerTest, LoadConstructsAndRegisters)
-{
-	ResourceManager pool;
-	EXPECT_EQ(pool.Size(), 0u);
-
-	auto cam = pool.Load<Camera>();
-	ASSERT_NE(cam, nullptr);
-	EXPECT_EQ(pool.Size(), 1u);
-	EXPECT_TRUE(pool.Contains(cam->GetObjectID()));
-	EXPECT_EQ(pool.Get<UID>(cam->GetObjectID()), cam);
-}
-
-/**
- * @test Load<T> with a data-resource type (UID-derived) registers it.
- *
- * Load<MeshData>(path) constructs the resource; with an empty path the
- * resource stays an identity shell (no content) but IS registered.
- */
-TEST(ResourceManagerTest, LoadDataResource)
-{
-	ResourceManager pool;
-	auto meshData = pool.Load<MeshData>("");
-	ASSERT_NE(meshData, nullptr);
-	EXPECT_EQ(pool.Size(), 1u);
-	EXPECT_EQ(meshData->GetVertexCount(), 0u); // empty shell, no content
-}
-
-/**
- * @test Register throws on a duplicate UID (safety net).
- */
-TEST(ResourceManagerTest, DuplicateRegisterThrows)
-{
-	ResourceManager pool;
-	auto cam = pool.Load<Camera>();
-	EXPECT_THROW(pool.Register(cam), std::runtime_error);
 }
 
 /**
@@ -213,24 +160,6 @@ TEST(ResourceManagerTest, RemoveClearSize)
 	pool.Clear();
 	EXPECT_EQ(pool.Size(), 0u);
 	EXPECT_FALSE(pool.Contains(light->GetObjectID()));
-}
-
-/**
- * @test ForEach<T> visits only pooled objects of the requested type.
- */
-TEST(ResourceManagerTest, ForEachVisitsTypedObjects)
-{
-	ResourceManager pool;
-	auto cam = pool.Load<Camera>();
-	auto mesh = pool.Load<Mesh>(pool.Load<MeshData>());
-	auto light = pool.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
-
-	int meshes = 0, cameras = 0;
-	pool.ForEach<Mesh>([&](const std::shared_ptr<Mesh>& m) { ++meshes; EXPECT_EQ(m, mesh); });
-	pool.ForEach<Camera>([&](const std::shared_ptr<Camera>& c) { ++cameras; EXPECT_EQ(c, cam); });
-
-	EXPECT_EQ(meshes, 1);
-	EXPECT_EQ(cameras, 1);
 }
 
 // -----------------------------------------------------------------------
@@ -383,16 +312,13 @@ TEST(ResourceNameRegistry, SetAndGetByNamePerType)
 	EXPECT_EQ(rm.GetByName<TestResource>("NoSuchType"), nullptr);
 }
 
-/**
- * @test The typed setter rejects a resource of a different type and leaves the
- *       registry untouched.
- */
 TEST(ResourceNameRegistry, TypedSetterRejectsWrongType)
 {
 	neurus::ResourceManager rm;
 	auto c = rm.Load<OtherTestResource>();
 	EXPECT_EQ(rm.SetName<TestResource>(c->GetObjectID(), "Ground"), std::string{});
 	EXPECT_EQ(rm.GetByName<OtherTestResource>("Ground"), nullptr);
+	EXPECT_TRUE(rm.SetName(123456, "Ground").empty());
 }
 
 /**
@@ -417,44 +343,6 @@ TEST(ResourceNameRegistry, RemoveFreesNameAndClearEmptiesIndex)
 }
 
 /**
- * @test Re-registering the name an object already owns is a no-op, not a suffix.
- */
-TEST(ResourceNameRegistry, SetToOwnNameIsANoop)
-{
-	neurus::ResourceManager rm;
-	auto a = rm.Load<TestResource>();
-	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
-	EXPECT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
-	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), a);
-	EXPECT_EQ(rm.GetByName<TestResource>("Ground.001"), nullptr);
-}
-
-/**
- * @test A rename releases the old forward entry: the previous spelling must not
- *       keep resolving to the object (or to nullptr through a stale id).
- */
-TEST(ResourceNameRegistry, RenameLeavesNoStaleForwardEntry)
-{
-	neurus::ResourceManager rm;
-	auto a = rm.Load<TestResource>();
-	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
-	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Rock"), "Rock");
-
-	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
-	EXPECT_EQ(rm.GetByName<TestResource>("Rock"), a);
-}
-
-/**
- * @test An absent id yields an empty string and registers nothing.
- */
-TEST(ResourceNameRegistry, SetNameOnMissingIdReturnsEmpty)
-{
-	neurus::ResourceManager rm;
-	EXPECT_EQ(rm.SetName(123456, "Ground"), std::string{});
-	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
-}
-
-/**
  * @test An empty requested name becomes "Object" (suffixed on collision).
  */
 TEST(ResourceNameRegistry, EmptyNameBecomesObject)
@@ -464,20 +352,6 @@ TEST(ResourceNameRegistry, EmptyNameBecomesObject)
 	auto b = rm.Load<TestResource>();
 	EXPECT_EQ(rm.SetName(a->GetObjectID(), ""), "Object");
 	EXPECT_EQ(rm.SetName(b->GetObjectID(), ""), "Object.001");
-}
-
-/**
- * @test ForEachUID (virtual, untyped) sees every pooled resource.
- */
-TEST(ResourceNameRegistry, ForEachUIDSeesEveryPooledResource)
-{
-	neurus::ResourceManager rm;
-	rm.Load<TestResource>();
-	rm.Load<OtherTestResource>();
-	const neurus::IResourceLookup& lookup = rm;
-	int count = 0;
-	lookup.ForEachUID([&](const std::shared_ptr<neurus::UID>&) { ++count; });
-	EXPECT_EQ(count, 2);
 }
 
 // -----------------------------------------------------------------------

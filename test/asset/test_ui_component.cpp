@@ -38,58 +38,24 @@ struct TempFile
 
 } // namespace
 
-// -----------------------------------------------------------------------
-// Roundtrip: opaque UI blob preserved exactly
-// -----------------------------------------------------------------------
-
 TEST(UIComponentRoundtrip, PreservesBlob)
 {
 	TempFile tmp("test_rt_ui.neurus.json");
-
-	// A blob containing newlines, base64 padding, and XML-ish content,
-	// mimicking UIManager's packed geometry\ndockState format.
-	const std::string blob = "AAAAgQ==\n<Docking><Central/></Docking>";
-
+	for (const char* blob : {"AAAAgQ==\n<Docking><Central/></Docking>", ""})
 	{
-		std::string ui = blob;
-		project::Project p;
-		p.Register<project::UIComponent>(ui);
-		p.Save(tmp.path);
+		SCOPED_TRACE(blob);
+		{
+			std::string ui = blob;
+			project::Project project;
+			project.Register<project::UIComponent>(ui);
+			project.Save(tmp.path);
+		}
+		std::string loaded = "stale";
+		project::Project project;
+		project.Register<project::UIComponent>(loaded);
+		project.Load(tmp.path);
+		EXPECT_EQ(loaded, blob);
 	}
-
-	std::string loaded;
-	{
-		project::Project p;
-		p.Register<project::UIComponent>(loaded);
-		p.Load(tmp.path);
-	}
-
-	EXPECT_EQ(loaded, blob);
-}
-
-// -----------------------------------------------------------------------
-// Roundtrip: empty blob
-// -----------------------------------------------------------------------
-
-TEST(UIComponentRoundtrip, EmptyBlob)
-{
-	TempFile tmp("test_rt_ui_empty.neurus.json");
-
-	{
-		std::string ui;   // empty
-		project::Project p;
-		p.Register<project::UIComponent>(ui);
-		p.Save(tmp.path);
-	}
-
-	std::string loaded = "not-empty";
-	{
-		project::Project p;
-		p.Register<project::UIComponent>(loaded);
-		p.Load(tmp.path);
-	}
-
-	EXPECT_TRUE(loaded.empty());
 }
 
 // -----------------------------------------------------------------------

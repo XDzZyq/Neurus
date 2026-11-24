@@ -82,10 +82,6 @@ TEST_F(EditorCommandAdapterTest, SceneListReportsDefaultContent)
 	ASSERT_TRUE(lights.ok) << lights.message;
 	ASSERT_EQ(lights.details["count"], 1);
 	EXPECT_EQ(lights.details["objects"][0]["light_type"], "point");
-}
-
-TEST_F(EditorCommandAdapterTest, UnknownTypeFilterIsRejected)
-{
 	const auto result = m_adapter->Execute({kSceneList, {{"type", "bogus"}}});
 	EXPECT_FALSE(result.ok);
 	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
@@ -151,40 +147,6 @@ TEST_F(EditorCommandAdapterTest, ObjectLoadEmptyObjLeavesNoResource)
 	EXPECT_EQ(m_editor->GetResourceManager().Size(), poolBefore);
 }
 
-TEST_F(EditorCommandAdapterTest, ObjectSetUpdatesPositionAndReadBackAgrees)
-{
-	const auto set = m_adapter->Execute(
-		{kObjectSet, {{"name", "Mesh"}, {"position", {1.0f, 2.0f, 3.0f}}}});
-	ASSERT_TRUE(set.ok) << set.message;
-	EXPECT_EQ(set.details["object"]["position"][0], 1.0f);
-	EXPECT_EQ(set.details["object"]["position"][1], 2.0f);
-	EXPECT_EQ(set.details["object"]["position"][2], 3.0f);
-
-	Mesh* mesh = dynamic_cast<Mesh*>(FirstOfType(ObjectID::GOType::GO_MESH));
-	ASSERT_NE(mesh, nullptr);
-	EXPECT_EQ(mesh->GetPosition(), glm::vec3(1.0f, 2.0f, 3.0f));
-	EXPECT_TRUE(m_editor->IsDirty());
-
-	const auto get = m_adapter->Execute({kObjectGet, {{"name", "Mesh"}}});
-	ASSERT_TRUE(get.ok) << get.message;
-	EXPECT_EQ(get.details["object"]["position"][2], 3.0f);
-}
-
-TEST_F(EditorCommandAdapterTest, ObjectSetRenamesAndResolvesByTheNewName)
-{
-	const auto rename = m_adapter->Execute({kObjectSet, {{"name", "Mesh"}, {"rename", "Mesh A"}}});
-	ASSERT_TRUE(rename.ok) << rename.message;
-	EXPECT_EQ(rename.details["object"]["name"], "Mesh A");
-
-	const auto byOld = m_adapter->Execute({kObjectGet, {{"name", "Mesh"}}});
-	EXPECT_FALSE(byOld.ok);
-	EXPECT_EQ(byOld.code, CommandErrorCode::ObjectNotFound);
-
-	const auto byNew = m_adapter->Execute({kObjectGet, {{"name", "Mesh A"}}});
-	ASSERT_TRUE(byNew.ok) << byNew.message;
-	EXPECT_EQ(byNew.details["object"]["name"], "Mesh A");
-}
-
 TEST_F(EditorCommandAdapterTest, ObjectSetRenameIsUndoable)
 {
 	Mesh* mesh = dynamic_cast<Mesh*>(FirstOfType(ObjectID::GOType::GO_MESH));
@@ -200,13 +162,27 @@ TEST_F(EditorCommandAdapterTest, ObjectSetRenameIsUndoable)
 	EXPECT_EQ(mesh->o_name, "Mesh");
 	ASSERT_TRUE(m_adapter->Execute({kHistoryRedo, {}}).ok);
 	EXPECT_EQ(mesh->o_name, "Mesh A");
+	const auto byOld = m_adapter->Execute({kObjectGet, {{"name", "Mesh"}}});
+	EXPECT_FALSE(byOld.ok);
+	EXPECT_EQ(byOld.code, CommandErrorCode::ObjectNotFound);
+
+	const auto byNew = m_adapter->Execute({kObjectGet, {{"name", "Mesh A"}}});
+	ASSERT_TRUE(byNew.ok) << byNew.message;
+	EXPECT_EQ(byNew.details["object"]["name"], "Mesh A");
 }
 
-TEST_F(EditorCommandAdapterTest, TypeSpecificWriteOnTheWrongObjectIsRejected)
+TEST_F(EditorCommandAdapterTest, MalformedObjectCommandsReportInvalidArgument)
 {
-	const auto result = m_adapter->Execute({kObjectSet, {{"name", "Mesh"}, {"fov", 50.0f}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+	for (const CommandRequest& request : {
+	         CommandRequest{kObjectSet, {{"name", "Mesh"}, {"fov", 50.0f}}},
+	         CommandRequest{kObjectSet, {{"name", "Mesh"}}},
+	         CommandRequest{kObjectGet, {}} })
+	{
+		SCOPED_TRACE(request.name + " " + request.args.dump());
+		const auto result = m_adapter->Execute(request);
+		EXPECT_FALSE(result.ok);
+		EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument) << result.message;
+	}
 }
 
 TEST_F(EditorCommandAdapterTest, ObjectDeleteRemovesSceneMembershipButKeepsThePool)
@@ -219,7 +195,7 @@ TEST_F(EditorCommandAdapterTest, ObjectDeleteRemovesSceneMembershipButKeepsThePo
 	EXPECT_NE(m_editor->GetResourceManager().Get<Mesh>(uid), nullptr);
 }
 
-TEST_F(EditorCommandAdapterTest, MultiPropertySetIsOneUndoEntryAndUndoRevertsAll)
+TEST_F(EditorCommandAdapterTest, MultiPropertySetPublishesOneUndoableChange)
 {
 	Mesh* mesh = dynamic_cast<Mesh*>(FirstOfType(ObjectID::GOType::GO_MESH));
 	ASSERT_NE(mesh, nullptr);
@@ -238,11 +214,25 @@ TEST_F(EditorCommandAdapterTest, MultiPropertySetIsOneUndoEntryAndUndoRevertsAll
 	EXPECT_FALSE(mesh->is_viewport);
 	EXPECT_FALSE(mesh->is_rendered);
 
-	m_editor->GetOperations().Undo();
+	EXPECT_TRUE(m_editor->IsDirty());
+	const auto read = m_adapter->Execute({kObjectGet, {{"name", "Mesh"}}});
+	ASSERT_TRUE(read.ok) << read.message;
+	EXPECT_EQ(result.details["object"]["position"], Json::array({4.0f, 5.0f, 6.0f}));
+	EXPECT_EQ(read.details["object"]["position"], result.details["object"]["position"]);
+	const auto history = m_adapter->Execute({kHistoryGet, {}});
+	ASSERT_TRUE(history.ok) << history.message;
+	EXPECT_TRUE(history.details["can_undo"]);
+	EXPECT_EQ(history.details["undo"].back(), "Set Object");
+
+	const auto undone = m_adapter->Execute({kHistoryUndo, {}});
+	ASSERT_TRUE(undone.ok) << undone.message;
+	EXPECT_TRUE(undone.details["can_redo"]);
 	EXPECT_EQ(mesh->GetPosition(), glm::vec3(0.0f));
 	EXPECT_EQ(mesh->GetRotation(), glm::vec3(0.0f));
 	EXPECT_TRUE(mesh->is_viewport);
 	EXPECT_TRUE(mesh->is_rendered);
+	ASSERT_TRUE(m_adapter->Execute({kHistoryRedo, {}}).ok);
+	EXPECT_EQ(mesh->GetPosition(), glm::vec3(4.0f, 5.0f, 6.0f));
 }
 
 TEST_F(EditorCommandAdapterTest, SceneInfoReportsCountsAndSelection)
@@ -275,12 +265,20 @@ TEST_F(EditorCommandAdapterTest, ObjectAddCreatesNamedCameraAsOneUndoEntry)
 	EXPECT_EQ(m_editor->GetOperations().GetUndoStack().size(), before + 1);
 }
 
-TEST_F(EditorCommandAdapterTest, ObjectAddRejectsLightsWhileIssue60IsOpen)
+TEST_F(EditorCommandAdapterTest, UnsupportedLightCreationCommandsIdentifyIssue60)
 {
-	const auto result = m_adapter->Execute({kObjectAdd, {{"type", "point-light"}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-	EXPECT_NE(result.message.find("issue #60"), std::string::npos);
+	const auto* light = FirstOfType(ObjectID::GOType::GO_LIGHT);
+	ASSERT_NE(light, nullptr);
+	for (const CommandRequest& request : {
+	         CommandRequest{kObjectAdd, {{"type", "point-light"}}},
+	         CommandRequest{kObjectDuplicate, {{"uid", light->GetObjectID()}}} })
+	{
+		SCOPED_TRACE(request.name);
+		const auto result = m_adapter->Execute(request);
+		EXPECT_FALSE(result.ok);
+		EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
+		EXPECT_NE(result.message.find("issue #60"), std::string::npos);
+	}
 }
 
 TEST_F(EditorCommandAdapterTest, ObjectDuplicateCopiesMeshAndCamera)
@@ -306,17 +304,6 @@ TEST_F(EditorCommandAdapterTest, ObjectDuplicateCopiesMeshAndCamera)
 	EXPECT_EQ(cameraCopy.details["object"]["type"], "camera");
 	EXPECT_EQ(cameraCopy.details["object"]["name"], std::string("Camera Copy"));
 	EXPECT_EQ(m_editor->GetScene().cam_list.size(), cameraCount + 1);
-}
-
-TEST_F(EditorCommandAdapterTest, ObjectDuplicateRejectsLights)
-{
-	ObjectID* light = FirstOfType(ObjectID::GOType::GO_LIGHT);
-	ASSERT_NE(light, nullptr);
-	const auto result = m_adapter->Execute(
-		{kObjectDuplicate, {{"uid", light->GetObjectID()}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-	EXPECT_NE(result.message.find("issue #60"), std::string::npos);
 }
 
 TEST_F(EditorCommandAdapterTest, ObjectDeleteAcceptsAUidList)
@@ -345,7 +332,7 @@ TEST_F(EditorCommandAdapterTest, GraphStatusReportsBuiltInWithoutCreatingProject
 	EXPECT_FALSE(m_editor->IsDirty());
 }
 
-TEST_F(EditorCommandAdapterTest, RenderGetReportsTheDefaults)
+TEST_F(EditorCommandAdapterTest, RenderCommandsReadDefaultsAndPublishEdits)
 {
 	const auto result = m_adapter->Execute({kRenderGet, {}});
 	ASSERT_TRUE(result.ok) << result.message;
@@ -356,10 +343,7 @@ TEST_F(EditorCommandAdapterTest, RenderGetReportsTheDefaults)
 	EXPECT_EQ(config["shadow"], "shadow_mapping");
 	EXPECT_EQ(config["transparent"], false);
 	EXPECT_EQ(config["debug_draw"], true);
-}
 
-TEST_F(EditorCommandAdapterTest, RenderSetChangesAndReadsBack)
-{
 	const auto set = m_adapter->Execute(
 		{kRenderSet,
 		 {{"pipeline", "deferred"},
@@ -392,53 +376,9 @@ TEST_F(EditorCommandAdapterTest, RenderSetRejectsUnknownEnumAndBadRange)
 	EXPECT_EQ(badRange.code, CommandErrorCode::InvalidArgument);
 }
 
-TEST_F(EditorCommandAdapterTest, HistoryUndoRestoresThePreviousTransform)
-{
-	ASSERT_TRUE(m_adapter->Execute(
-		{kObjectSet, {{"name", "Mesh"}, {"position", {7.0f, 8.0f, 9.0f}}}}).ok);
-
-	const auto before = m_adapter->Execute({kHistoryGet, {}});
-	ASSERT_TRUE(before.ok) << before.message;
-	EXPECT_TRUE(before.details["can_undo"]);
-	EXPECT_EQ(before.details["undo"].back(), "Set Object");
-
-	const auto undone = m_adapter->Execute({kHistoryUndo, {}});
-	ASSERT_TRUE(undone.ok) << undone.message;
-	EXPECT_TRUE(undone.details["can_redo"]);
-
-	Mesh* mesh = dynamic_cast<Mesh*>(FirstOfType(ObjectID::GOType::GO_MESH));
-	ASSERT_NE(mesh, nullptr);
-	EXPECT_EQ(mesh->GetPosition(), glm::vec3(0.0f));
-
-	const auto redone = m_adapter->Execute({kHistoryRedo, {}});
-	ASSERT_TRUE(redone.ok) << redone.message;
-	EXPECT_EQ(mesh->GetPosition(), glm::vec3(7.0f, 8.0f, 9.0f));
-}
-
 TEST_F(EditorCommandAdapterTest, HistoryUndoOnAnEmptyStackIsRejected)
 {
 	const auto result = m_adapter->Execute({kHistoryUndo, {}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-}
-
-TEST_F(EditorCommandAdapterTest, MissingObjectIsReported)
-{
-	const auto result = m_adapter->Execute({kObjectGet, {{"name", "Does Not Exist"}}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::ObjectNotFound);
-}
-
-TEST_F(EditorCommandAdapterTest, NoTargetIsRejected)
-{
-	const auto result = m_adapter->Execute({kObjectGet, {}});
-	EXPECT_FALSE(result.ok);
-	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
-}
-
-TEST_F(EditorCommandAdapterTest, ObjectSetWithoutAPropertyIsRejected)
-{
-	const auto result = m_adapter->Execute({kObjectSet, {{"name", "Mesh"}}});
 	EXPECT_FALSE(result.ok);
 	EXPECT_EQ(result.code, CommandErrorCode::InvalidArgument);
 }

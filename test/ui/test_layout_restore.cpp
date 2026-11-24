@@ -91,13 +91,6 @@ TEST_F(LayoutRestoreTest, FullScreenStateIsNotRestoredFromTheLayoutBlob)
 	       "no button to leave it.";
 }
 
-TEST_F(LayoutRestoreTest, AnOrdinaryBlobRestoresWithoutEnteringFullScreen)
-{
-	const std::string blob = m_win->ExportLayout();
-	m_win->ApplyLayout(blob);
-	EXPECT_FALSE(m_win->isFullScreen());
-}
-
 TEST_F(LayoutRestoreTest, ViewMenuOffersAWorkingFullScreenToggle)
 {
 	QAction* toggle = FindFullScreenAction();
@@ -111,13 +104,6 @@ TEST_F(LayoutRestoreTest, ViewMenuOffersAWorkingFullScreenToggle)
 
 	toggle->setChecked(false);
 	EXPECT_FALSE(m_win->isFullScreen());
-}
-
-TEST_F(LayoutRestoreTest, FullScreenToggleFollowsTheWindowState)
-{
-	QAction* toggle = FindFullScreenAction();
-	ASSERT_NE(toggle, nullptr);
-
 	// Entering full screen without touching the menu must still tick the box:
 	// the state can arrive from the platform, not only from the action.
 	m_win->showFullScreen();

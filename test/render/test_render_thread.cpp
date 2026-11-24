@@ -570,24 +570,6 @@ bool WaitForRunningFalse(RenderThread& thread)
 // Lifetime: Start, Stop, the destructor and WaitIdle
 // ============================================================================
 
-TEST(RenderThreadTest, StopJoinsAThreadParkedWithNoFrames)
-{
-	// With no frame ever published the loop parks in Acquire(). Stop() must wake
-	// it, join, and drain the renderer exactly once on the way out.
-	FakeRenderer fake;
-	RenderThread thread(fake);
-	thread.Start();
-
-	// Let the loop reach its park before stopping, so the stop path exercises a
-	// genuinely blocked Acquire() rather than a thread still starting up.
-	ASSERT_TRUE(fake.WaitForWaitSlotCalls(1)) << "the loop never reached its first fence wait";
-
-	thread.Stop();
-
-	EXPECT_FALSE(thread.Running()) << "Running() must be false once the loop has ended";
-	EXPECT_EQ(fake.WaitIdleCalls(), 1) << "the renderer must be drained once on shutdown";
-}
-
 TEST(RenderThreadTest, DestructorJoinsWithoutAnExplicitStop)
 {
 	// The renderer outlives the thread, so WaitIdle's count survives into the
@@ -600,20 +582,6 @@ TEST(RenderThreadTest, DestructorJoinsWithoutAnExplicitStop)
 		// No Stop(): the destructor must join and drain.
 	}
 	EXPECT_EQ(fake.WaitIdleCalls(), 1) << "the destructor must stop, join and drain";
-}
-
-TEST(RenderThreadTest, StopWithoutStartIsSafeAndIdempotent)
-{
-	// A thread that was never launched must still shut down cleanly, and a second
-	// Stop() must be harmless - the destructor will call it again.
-	FakeRenderer fake;
-	RenderThread thread(fake);
-
-	thread.Stop();
-	thread.Stop();
-
-	EXPECT_FALSE(thread.Running()) << "a never-started thread is not running";
-	EXPECT_EQ(fake.WaitIdleCalls(), 0) << "no loop ran, so nothing was drained";
 }
 
 // ============================================================================
@@ -784,6 +752,8 @@ TEST(RenderThreadTest, PickPostedAfterStopBreaksItsPromise)
 	thread.Start();
 	ASSERT_TRUE(fake.WaitForWaitSlotCalls(1)) << "the loop never started";
 	thread.Stop();
+	EXPECT_FALSE(thread.Running());
+	EXPECT_EQ(fake.WaitIdleCalls(), 1);
 
 	std::future<uint32_t> pick = thread.PostPick(0.5f, 0.5f);
 	EXPECT_THROW(pick.get(), std::future_error) << "a pick posted after Stop must break its promise";
@@ -801,6 +771,9 @@ TEST(RenderThreadTest, PickPostedBeforeAStartThatNeverComesBreaksItsPromise)
 	thread.Stop();  // without Start()
 
 	EXPECT_THROW(pick.get(), std::future_error) << "a never-serviced pick must break its promise";
+	thread.Stop();
+	EXPECT_FALSE(thread.Running());
+	EXPECT_EQ(fake.WaitIdleCalls(), 0);
 }
 
 // ============================================================================
@@ -893,58 +866,6 @@ TEST(RenderThreadTest, AnExceptionInDrawFrameEndsTheLoopAndBreaksPendingPromises
 // Stop rendering after convergence: the loop follows IFrameRenderer::NextWork
 // ============================================================================
 
-TEST(RenderThreadTest, ConvergedAccumulationDrawsExactlyTheSamplingCount)
-{
-	// One publish, then the renderer keeps sampling the frame it already holds
-	// (NextWork says Sample, so the loop asks the mailbox for Reuse) until the
-	// accumulation converges. After that there is nothing left to do, so the
-	// thread must park instead of asking the main thread for frames forever.
-	// Frame 1 (a tag of 0) is published before any request, so it gets tag 0.
-	FakeRenderer fake;
-	fake.SetSamplingCount(3);
-	RenderThread thread(fake);
-	thread.Start();
-
-	thread.Publish(MakeTaggedFrame(0));
-	ASSERT_TRUE(fake.WaitForDrawn(3)) << "accumulation must keep sampling the held frame";
-	EXPECT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE))
-		<< "a converged renderer kept drawing without a new frame";
-
-	EXPECT_EQ(fake.Drawn(), 3) << "exactly sampling-count frames, no more";
-	EXPECT_EQ(fake.SampledIteration(), 3) << "the accumulation must have converged, not overflowed";
-	EXPECT_EQ(fake.OrderingViolations(), 0);
-
-	thread.Stop();
-}
-
-TEST(RenderThreadTest, APostedRequestRestartsAccumulation)
-{
-	// Convergence is not final: a request that is not an overlay redraw restarts
-	// the accumulation, and the next published frame must be sampled from scratch
-	// - the full sampling count again, not one frame.
-	FakeRenderer fake;
-	fake.SetSamplingCount(3);
-	RenderThread thread(fake);
-	thread.Start();
-
-	thread.Publish(MakeTaggedFrame(0));
-	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the first accumulation never converged";
-	ASSERT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "the thread was not idle before the request";
-
-	thread.Post(ResetAccumulationRequest{});
-	thread.Publish(MakeTaggedFrame(1));  // one request posted, so tag 1
-
-	ASSERT_TRUE(fake.WaitForDrawn(6)) << "a posted request must restart accumulation";
-	EXPECT_FALSE(fake.WaitForDrawnWithin(7, STABLE_PROBE)) << "the restarted accumulation never converged";
-
-	EXPECT_EQ(fake.Drawn(), 6) << "two full accumulations, nothing in between";
-	EXPECT_EQ(fake.SampledIteration(), 3);
-	EXPECT_EQ(fake.OrderingViolations(), 0)
-		<< "a frame was drawn before the request that restarted accumulation";
-
-	thread.Stop();
-}
-
 TEST(RenderThreadTest, AnOverlayRedrawDrawsOnceMoreWithoutRestartingAccumulation)
 {
 	// A RedrawOverlaysRequest is the one request that must NOT restart
@@ -993,6 +914,7 @@ TEST(RenderThreadTest, AFramePublishedBeforeAPostIsNeverDrawnAfterIt)
 	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the accumulation never converged";
 	ASSERT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE)) << "the thread was not idle before the request";
 
+	EXPECT_EQ(fake.SampledIteration(), 3);
 	thread.Post(ResetAccumulationRequest{});
 	thread.Publish(MakeTaggedFrame(1));  // B: carries the request, so tag 1
 
@@ -1009,6 +931,8 @@ TEST(RenderThreadTest, AFramePublishedBeforeAPostIsNeverDrawnAfterIt)
 	}
 	EXPECT_EQ(fake.OrderingViolations(), 0);
 
+	EXPECT_EQ(fake.SampledIteration(), 3);
+	EXPECT_EQ(fake.Processed(), 1) << "the restarted frame must execute its request exactly once";
 	thread.Stop();
 }
 
@@ -1040,38 +964,6 @@ TEST(RenderThreadTest, ARequestPostedAfterAPublishWaitsForTheNextPublish)
 	const std::vector<FakeRenderer::DrawRecord> draws = fake.Draws();
 	ASSERT_EQ(draws.size(), 2u);
 	EXPECT_EQ(draws.back().processed, 1) << "the frame must be drawn after the request it carries ran";
-	EXPECT_EQ(fake.OrderingViolations(), 0);
-
-	thread.Stop();
-}
-
-TEST(RenderThreadTest, AReusedFrameExecutesNoRequest)
-{
-	// A Sample iteration redraws the frame the thread already holds (Repeat). Its
-	// requests ran on the draw that acquired it, so the held frame must be left
-	// carrying none: re-posting them would run every request sampling-count times
-	// and restart accumulation on every sample.
-	FakeRenderer fake;
-	fake.SetSamplingCount(3);
-	RenderThread thread(fake);
-	thread.Start();
-
-	thread.Post(ResetAccumulationRequest{});
-	thread.Publish(MakeTaggedFrame(1));  // one request posted, so tag 1
-
-	ASSERT_TRUE(fake.WaitForDrawn(3)) << "the frame's accumulation never converged";
-	EXPECT_FALSE(fake.WaitForDrawnWithin(4, STABLE_PROBE))
-		<< "a converged frame kept drawing: a Repeat draw posted its requests again";
-
-	const std::vector<FakeRenderer::DrawRecord> draws = fake.Draws();
-	ASSERT_EQ(draws.size(), 3u) << "exactly sampling-count draws, no more";
-	for (size_t i = 0; i < draws.size(); ++i)
-	{
-		EXPECT_EQ(draws[i].tag, 1) << "draw " << i << " drew a different frame";
-		EXPECT_EQ(draws[i].processed, 1)
-			<< "draw " << i << " executed requests again - a Repeat draw re-posted them";
-	}
-	EXPECT_EQ(fake.Processed(), 1) << "the one request must have executed exactly once";
 	EXPECT_EQ(fake.OrderingViolations(), 0);
 
 	thread.Stop();

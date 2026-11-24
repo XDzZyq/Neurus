@@ -21,6 +21,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <vector>
 
 #include "ui/utils/POCatalog.hpp"
 
@@ -44,66 +45,53 @@ constexpr const char* kHeader =
 	"\"Content-Type: text/plain; charset=UTF-8\\n\"\n"
 	"\"X-Language-Name: 简体中文\\n\"\n";
 
-TEST(POCatalogTest, ParsesTranslatedEntriesAndSkipsTheHeader)
+TEST(POCatalogTest, CatalogCountsActiveEntriesAndExposesOnlyTranslatedKeys)
 {
-	const QByteArray data = QByteArray(kHeader) +
-		"\n"
-		"msgid \"Viewport\"\n"
-		"msgstr \"视口\"\n"
-		"\n"
-		"msgctxt \"Dock\"\n"
-		"msgid \"Log\"\n"
-		"msgstr \"日志\"\n";
-
-	po::Catalog cat;
-	const po::Stats stats = po::Parse(data, cat);
-
-	EXPECT_EQ(stats.total, 2) << "the header entry must not be counted";
-	EXPECT_EQ(stats.translated, 2);
-	EXPECT_EQ(Lookup(cat, "Viewport"), QStringLiteral("视口"));
-	EXPECT_EQ(Lookup(cat, "Log", "Dock"), QStringLiteral("日志"));
-	// A contexted entry must not answer a default-context lookup.
-	EXPECT_TRUE(Lookup(cat, "Log").isEmpty());
+	struct Entry { const char* key; const char* context; const char* translation; };
+	struct Case
+	{
+		const char* name;
+		QByteArray input;
+		int total;
+		int translated;
+		std::vector<Entry> entries;
+	};
+	const Case cases[] = {
+		{"translated", QByteArray(kHeader) +
+		    "\n"
+		    "msgid \"Viewport\"\n"
+		    "msgstr \"视口\"\n"
+		    "\n"
+		    "msgctxt \"Dock\"\n"
+		    "msgid \"Log\"\n"
+		    "msgstr \"日志\"\n", 2, 2, { {"Viewport", "", "视口"}, {"Log", "Dock", "日志"}, {"Log", "", ""} }},
+		{"untranslated and obsolete", "msgid \"Translated\"\n"
+		    "msgstr \"有\"\n"
+		    "\n"
+		    "msgid \"Untranslated\"\n"
+		    "msgstr \"\"\n"
+		    "# translator comment\n"
+		    "#~ msgid \"Removed\"\n"
+		    "#~ msgstr \"obsolete\"\n", 2, 1, { {"Translated", "", "有"}, {"Untranslated", "", ""}, {"Removed", "", ""} }},
+		{"empty", QByteArray{}, 0, 0, {}}
+	};
+	for (const auto& row : cases)
+	{
+		SCOPED_TRACE(row.name);
+		po::Catalog catalog;
+		const auto stats = po::Parse(row.input, catalog);
+		EXPECT_EQ(stats.total, row.total);
+		EXPECT_EQ(stats.translated, row.translated);
+		EXPECT_EQ(catalog.size(), row.translated);
+		for (const auto& entry : row.entries)
+			EXPECT_EQ(Lookup(catalog, entry.key, entry.context), QString::fromUtf8(entry.translation)) << entry.key;
+	}
 }
 
-TEST(POCatalogTest, UntranslatedEntriesAreCountedButNotStored)
-{
-	const QByteArray data =
-		"msgid \"Translated\"\n"
-		"msgstr \"有\"\n"
-		"\n"
-		"msgid \"Untranslated\"\n"
-		"msgstr \"\"\n";
-
-	po::Catalog cat;
-	const po::Stats stats = po::Parse(data, cat);
-
-	EXPECT_EQ(stats.total, 2);
-	EXPECT_EQ(stats.translated, 1);
-	EXPECT_EQ(cat.size(), 1) << "an empty msgstr must fall back to the English key";
-	EXPECT_TRUE(Lookup(cat, "Untranslated").isEmpty());
-}
-
-// The regression: no blank line after the header. Every key that followed used
-// to come back as the header's field block.
-TEST(POCatalogTest, HeaderDoesNotBleedIntoTheFirstEntry)
-{
-	const QByteArray data = QByteArray(kHeader) +
-		"msgid \"Viewport\"\n"
-		"msgstr \"视口\"\n";
-
-	po::Catalog cat;
-	const po::Stats stats = po::Parse(data, cat);
-
-	EXPECT_EQ(stats.total, 1);
-	EXPECT_EQ(Lookup(cat, "Viewport"), QStringLiteral("视口"));
-}
-
-// Same defect, between two ordinary entries: without the blank line the first
-// entry was dropped outright (its msgid was overwritten before any flush).
+// Entry boundaries must survive a missing blank line after the header or between keys.
 TEST(POCatalogTest, EntriesWithoutBlankSeparatorsAreAllKept)
 {
-	const QByteArray data =
+	const QByteArray data = QByteArray(kHeader) +
 		"msgid \"One\"\n"
 		"msgstr \"一\"\n"
 		"msgid \"Two\"\n"
@@ -172,24 +160,6 @@ TEST(POCatalogTest, ContinuationLinesAccumulateOnTheRightField)
 	EXPECT_EQ(Lookup(cat, "Plural"), QStringLiteral("ok"));
 }
 
-TEST(POCatalogTest, ObsoleteEntriesAndCommentsAreIgnored)
-{
-	const QByteArray data =
-		"# translator comment\n"
-		"msgid \"Live\"\n"
-		"msgstr \"在\"\n"
-		"\n"
-		"#~ msgid \"Removed\"\n"
-		"#~ msgstr \"已移除\"\n";
-
-	po::Catalog cat;
-	const po::Stats stats = po::Parse(data, cat);
-
-	EXPECT_EQ(stats.total, 1);
-	EXPECT_TRUE(Lookup(cat, "Removed").isEmpty())
-		<< "an obsolete entry is not an active translation";
-}
-
 TEST(POCatalogTest, EscapesAreDecoded)
 {
 	const QByteArray data =
@@ -214,16 +184,6 @@ TEST(POCatalogTest, HeaderFieldReadsMetadataAndStopsAtTheFirstEntry)
 	EXPECT_EQ(po::HeaderField(data, QLatin1String("X-Language-Name")),
 	          QStringLiteral("简体中文"));
 	EXPECT_TRUE(po::HeaderField(data, QLatin1String("X-Absent")).isEmpty());
-}
-
-TEST(POCatalogTest, EmptyInputYieldsNothing)
-{
-	po::Catalog cat;
-	const po::Stats stats = po::Parse(QByteArray(), cat);
-
-	EXPECT_EQ(stats.total, 0);
-	EXPECT_EQ(stats.translated, 0);
-	EXPECT_TRUE(cat.isEmpty());
 }
 
 } // namespace
