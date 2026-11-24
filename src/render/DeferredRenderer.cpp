@@ -45,6 +45,7 @@
 #include "scene/Scene.hpp"
 
 #include "core/Log.hpp"
+#include "ResizeProbe.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -81,14 +82,16 @@ DeferredRenderer::DeferredRenderer(const vk::raii::Device& device,
                                     const vk::raii::SurfaceKHR& surface,
                                     uint32_t width,
                                     uint32_t height,
-                                    std::shared_ptr<const BuiltInRenderData> renderDefaults)
+                                    std::shared_ptr<const BuiltInRenderData> renderDefaults,
+                                    bool swapchainMaintenanceEnabled)
 	: DeferredRenderer(device, physicalDevice, graphicsQueue, queueFamilyIndex)
 {
 	// --- 1. Window output target ---
 	// The swapchain validates that the surface grants TRANSFER_DST, which the
 	// final HDR composite blit needs.
+	r_swapchainMaintenanceEnabled = swapchainMaintenanceEnabled;
 	r_target = std::make_unique<SwapchainTarget>(
-		physicalDevice, device, graphicsQueue, surface, width, height);
+		physicalDevice, device, graphicsQueue, surface, width, height, r_swapchainMaintenanceEnabled);
 	InitializePipeline(std::move(renderDefaults));
 }
 
@@ -122,6 +125,13 @@ void DeferredRenderer::InitializePipeline(std::shared_ptr<const BuiltInRenderDat
 	const uint32_t queueFamilyIndex = r_queueFamilyIndex;
 
 	const vk::Extent2D extent = r_target->Extent();
+	if (r_target->Presents())
+	{
+		r_traceResize = resize_probe::Enabled();
+		r_fixedResizePadding = resize_probe::FixedPadding();
+		r_maxImageExtent = physicalDevice.getProperties().limits.maxImageDimension2D;
+	}
+	r_sceneExtent = sceneCapacity(extent);
 
 	// --- 0. Create the optional GPU timestamp query pool (no-op if unsupported) ---
 	r_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
@@ -317,6 +327,9 @@ FrameWork DeferredRenderer::NextWork() const
 	if (r_drewNothing)
 		return FrameWork::Retry;
 
+	if (r_resizePhase != ResizePhase::Settled)
+		return r_pendingPreview ? FrameWork::Sample : FrameWork::Idle;
+
 	// Accumulation not converged: sample. This also covers iteration 0, which is
 	// what guarantees an Overlay frame never precedes a sample after a restart -
 	// the image it would draw over only exists because a sample produced it.
@@ -371,6 +384,17 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// The drain runs before the no-camera early-out below, so a camera-less
 	// session still executes its queued requests instead of queueing forever.
 	r_requests->Drain();
+	if (r_pendingPreview)
+	{
+		auto size = *r_pendingPreview;
+		if (!r_target->ScalesToSurface())
+		{
+			resizeOutput(size.width, size.height);
+			size = r_target->Extent();
+		}
+		if (r_resizePhase == ResizePhase::MouseDrag && r_fixedResizePadding < 0)
+			resizeScene(size);
+	}
 
 	// What this call performs, decided after the drain: a request handled above
 	// may have restarted accumulation or marked the overlays stale.
@@ -485,8 +509,9 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// --- Record and submit (reuse pre-allocated command buffer) ---
 	vk::CommandBuffer cmdBufRaw = *r_commandBuffers[imageIndex];
 
-	const vk::Extent2D frameExtent = r_target->Extent();
-	recordFrame(r_commandBuffers[imageIndex], imageIndex, frameExtent, ctx, work);
+	const auto recordStart = resize_probe::Timestamp(r_traceResize);
+	recordFrame(r_commandBuffers[imageIndex], imageIndex, r_sceneExtent, ctx, work);
+	const auto recorded = resize_probe::Timestamp(r_traceResize);
 
 	// --- Profiling: back-fill resolved GPU ms now that passes are repopulated ---
 	// recordFrame just rewrote r_frameProfile.passes with gpuMs=0; match the
@@ -602,6 +627,16 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// --- Drawn and presented: this frame consumed its work ---
 	if (presents)
 		r_lastImageIndex = imageIndex;
+	r_pendingPreview.reset();
+	if (r_traceResize)
+	{
+		const auto presented = std::chrono::steady_clock::now();
+		using Milliseconds = std::chrono::duration<double, std::milli>;
+		// GPU timestamps resolve from the previous frame in flight.
+		std::fprintf(stdout, "resize_frame %u %.3f %.3f %.3f %.3f\n", r_targetGeneration,
+			Milliseconds(presented.time_since_epoch()).count(), Milliseconds(recorded - recordStart).count(),
+			Milliseconds(presented - recorded).count(), r_gpuResolved ? r_profiler.FrameGpuMs() : -1.0);
+	}
 	r_drewNothing = false;
 	r_overlaysDirty = false;
 	r_currentFrame = (r_currentFrame + 1) % kMaxFramesInFlight;
@@ -627,25 +662,26 @@ void DeferredRenderer::CaptureScreenshot(bool allAttachments,
                                           const std::filesystem::path& directory)
 {
 	// Mirrors the capture the Application used to drive: an all-attachments dump
-	// reads the whole render cache, a plain screenshot reads back the last
-	// presented swapchain image. The Screenshot methods sync the GPU themselves
+	// reads the whole render cache, a plain screenshot uses the overlay output
+	// that supplied the last present. The Screenshot methods sync the GPU themselves
 	// and log the saved path (or the reason they failed) as they go.
 	if (allAttachments)
 	{
 		const int count =
-			r_screenshot->TakeScreenshotAllAttachments(*r_renderCache, GetExtent(), 1024, directory);
+			r_screenshot->TakeScreenshotAllAttachments(*r_renderCache, r_sceneExtent, 1024, directory);
 		// Screenshot already reported the count and the destination directory.
 		(void)count;
 	}
 	else if (r_target->Presents())
 	{
-		const vk::Image image = GetLastSwapchainImage();
-		if (!image)
+		const auto output = OverlayEngine::OutputAttachment();
+		if (!r_lastImageIndex || !r_renderCache->HasAttachment(output))
 			throw std::runtime_error("[DeferredRenderer] No frame has been presented yet - nothing to capture");
+		Image& image = r_renderCache->GetAttachment(output, r_sceneExtent);
 		if (!r_screenshot->TakeScreenshot(image, GetSwapchainFormat(),
 		                                  GetExtent(), directory))
 		{
-			NEURUS_ERR("[DeferredRenderer] Swapchain screenshot failed; see the [Screenshot] log line above.");
+			throw std::runtime_error("[DeferredRenderer] Failed to capture the composited viewport");
 		}
 	}
 	else
@@ -754,7 +790,8 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 	const Image& idBuffer = r_renderCache->GetAttachment(AttachmentName::IDBuffer);
 
 	// Stale extent or never written: same answer, for the same reason.
-	if (idBuffer.Extent() != extent || idBuffer.State() == ImageState::Undefined)
+	if (idBuffer.Extent() != r_sceneExtent || idBuffer.State() == ImageState::Undefined ||
+	    (!r_lastImageIndex && r_target->Presents()))
 	{
 		NEURUS_LOG("[DeferredRenderer] ReadIDBufferPixel: IDBuffer holds no "
 		           << "content (extent " << idBuffer.Extent().width << "x"
@@ -764,6 +801,11 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 	}
 
 	// The image is left in its original state on return.
+	if (extent != r_sceneExtent)
+	{
+		x = static_cast<uint32_t>(((2ull * x + 1) * r_sceneExtent.width) / (2ull * extent.width));
+		y = static_cast<uint32_t>(((2ull * y + 1) * r_sceneExtent.height) / (2ull * extent.height));
+	}
 	auto bytes = idBuffer.PickPixel(r_device, r_physicalDevice,
 	                                 *r_graphicsQueue, r_queueFamilyIndex,
 	                                 x, y);
@@ -778,13 +820,45 @@ uint32_t DeferredRenderer::ReadIDBufferPixel(uint32_t x, uint32_t y)
 	return objectID;
 }
 
-void DeferredRenderer::HandleResize(uint32_t width, uint32_t height)
+void DeferredRenderer::HandleResize(uint32_t width, uint32_t height, ResizePhase phase)
 {
+	const bool wasActive = r_resizePhase != ResizePhase::Settled;
+	r_resizePhase = r_target->Presents() ? phase : ResizePhase::Settled;
+	r_drewNothing = false;
+	if (r_resizePhase != ResizePhase::Settled)
+	{
+		r_pendingPreview = vk::Extent2D{width, height};
+		r_iteration = 0;
+		return;
+	}
+
+	r_pendingPreview.reset();
+	const uint32_t generation = r_targetGeneration;
+	resizeOutput(width, height);
+	if (wasActive && generation == r_targetGeneration)
+		resizeScene(r_target->Extent());  // Release also trims padding when the swapchain already fits.
+}
+
+void DeferredRenderer::resizeOutput(uint32_t width, uint32_t height)
+{
+	const auto start = resize_probe::Timestamp(r_traceResize);
 	const uint32_t oldGen = r_target->Generation();
 	r_target->Recreate(width, height);
+	const auto recreated = resize_probe::Timestamp(r_traceResize);
 	if (r_target->Generation() != oldGen)
 	{
+		const vk::Extent2D previous = r_sceneExtent;
 		recreateTarget();
+		if (r_traceResize)
+		{
+			using Milliseconds = std::chrono::duration<double, std::milli>;
+			std::fprintf(stdout, "resize_target %u %u %u %u %u %d %.3f %.3f %.3f\n", r_targetGeneration,
+				GetExtent().width, GetExtent().height, r_sceneExtent.width, r_sceneExtent.height,
+				previous != r_sceneExtent,
+				Milliseconds(recreated - start).count(),
+				Milliseconds(std::chrono::steady_clock::now() - recreated).count(),
+				Milliseconds(start.time_since_epoch()).count());
+		}
 	}
 }
 
@@ -811,9 +885,11 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 
 	// Destroy the old target (which held a reference to the old surface)
 	r_target.reset();
+	r_pendingPreview.reset();
+	r_resizePhase = ResizePhase::Settled;
 
 	r_target = std::make_unique<SwapchainTarget>(
-		r_physicalDevice, r_device, *r_graphicsQueue, newSurface, width, height);
+		r_physicalDevice, r_device, *r_graphicsQueue, newSurface, width, height, r_swapchainMaintenanceEnabled);
 
 	recreateTarget();
 
@@ -825,29 +901,66 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 // Output target recreation
 // ---------------------------------------------------------------------------
 
+vk::Extent2D DeferredRenderer::sceneCapacity(vk::Extent2D viewport) const
+{
+	if (r_fixedResizePadding < 0 && r_resizePhase == ResizePhase::MouseDrag)
+	{
+		// Shrinking and reversing a drag reuse the high-water mark until release.
+		const auto grow = [this](uint32_t size, uint32_t capacity) {
+			constexpr uint32_t kDragPadding = 64;
+			if (size <= capacity)
+				return capacity;
+			size = std::min(size, r_maxImageExtent);
+			return size + std::min(kDragPadding, r_maxImageExtent - size);
+		};
+		return {grow(viewport.width, r_sceneExtent.width), grow(viewport.height, r_sceneExtent.height)};
+	}
+	if (r_fixedResizePadding <= 0)
+		return viewport;
+
+	// Keep a full band of slack after growth. Shrink only after leaving a
+	// second band, so reversing direction near an edge reuses the allocation.
+	const auto padding = static_cast<uint32_t>(r_fixedResizePadding);
+	const auto fit = [this, padding](uint32_t size, uint32_t capacity) {
+		if (size <= capacity && capacity - size <= 2 * padding)
+			return capacity;
+		return std::min(size + padding, r_maxImageExtent);
+	};
+	return {fit(viewport.width, r_sceneExtent.width), fit(viewport.height, r_sceneExtent.height)};
+}
+
+void DeferredRenderer::resizeScene(vk::Extent2D viewport)
+{
+	// Clear screen-space attachments (G-Buffer + shadow intensities).
+	// Shadow cubemaps survive resize.  Attachments are re-created lazily
+	// on first GetAttachment() call in the next frame.
+	const vk::Extent2D capacity = sceneCapacity(viewport);
+	if (capacity != r_sceneExtent)
+	{
+		r_renderCache->CleanScreenSpace();
+		if (r_traceResize)
+			std::fprintf(stdout, "scene_capacity %s %u %u %u %u\n",
+				r_resizePhase == ResizePhase::MouseDrag ? "drag" : "settled",
+				viewport.width, viewport.height, capacity.width, capacity.height);
+	}
+	r_sceneExtent = capacity;
+
+	// Resizing can change the camera projection even when the old images fit.
+	// Start a new history for the new view.
+	r_iteration = 0;
+}
+
 void DeferredRenderer::recreateTarget()
 {
 	// New swapchain images start undefined; none is a valid capture source yet.
 	r_lastImageIndex.reset();
-	// The target and the screen-space attachments it sizes are about to be
-	// replaced; a resize or an out-of-date present is rare, so holding the queue
-	// lock across the wait is accepted. A separate transfer queue is idle here
-	// because every upload waits its own submit.
+	// Finish submissions using the old per-image resources. Preview keeps the
+	// scene attachments live across swapchain generations.
 	r_graphicsQueue->WaitIdle();
 
 	const uint32_t newImageCount = r_target->ImageCount();
-	// Clear screen-space attachments (G-Buffer + shadow intensities).
-	// Shadow cubemaps survive resize.  Attachments are re-created lazily
-	// on first GetAttachment() call in the next frame.
-	r_renderCache->CleanScreenSpace();
-
-	// The shadow intensity history just went with the screen-space attachments,
-	// so accumulation must restart from frame 0 with it. Nothing else resets it
-	// on a resize (the Editor posts ResetAccumulationRequest only when scene
-	// content changes), and a rebuild can also come from an out-of-date acquire
-	// the Editor never sees. A running average continued over a cleared history
-	// fades in slowly with EMA and never recovers in moving-average mode.
-	r_iteration = 0;
+	if (r_resizePhase == ResizePhase::Settled)
+		resizeScene(r_target->Extent());
 
 	// Rebuild render-finished semaphores (one per presented image)
 	r_renderFinishedSemaphores.clear();
@@ -993,62 +1106,8 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 		r_frameProfile = FrameProfile{};  // Overlay-only, or no document yet.
 	r_overlayEngine->Execute(cmdBuf, *r_renderCache, ctx, r_profiler, r_frameProfile);
 
-	// --- Blit the final image to the presented image (window target only) ---
-	// The overlay graph's output is always the end of the chain: the scene tail is
-	// copied into OverlayOutput, the overlays draw into it, and nothing presents
-	// the scene image directly. That is also why the copy is mandatory - on an
-	// overlay frame the scene tail must survive so the next overlay redraw can
-	// start from it again.
-	//
-	// A headless target presents nothing, so there is no blit: OverlayOutput is
-	// the frame's final image and a capture reads it back from there.
 	if (r_target->Presents())
-	{
-		auto& blitSource = r_renderCache->GetAttachment(OverlayEngine::OutputAttachment(), extent);
-		const vk::Image overlayImage = *blitSource.ImageHandle();
-		const vk::Image swapchainImage = r_target->Image(imageIndex);
-
-		// Barrier 1: Blit source -> TRANSFER_SRC_OPTIMAL.
-		//
-		// The transition is issued here, by the consumer, not left to whichever pass
-		// wrote the image last. A producer that pre-transitions its output to the
-		// state it guesses the next consumer wants makes the following consumer's
-		// own barrier a no-op: its src scope becomes the guessed access (TransferRead),
-		// which names no writes, so the real producer writes are never made visible.
-		//
-		// Barrier 2: Swapchain image UNDEFINED -> TRANSFER_DST_OPTIMAL
-		Barrier::Transition(cmdBuf, blitSource, ImageState::TransferSrc);
-		{
-			Barrier::Transition(*cmdBuf, swapchainImage,
-				ImageState::Undefined, ImageState::TransferDst,
-				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-		}
-
-		// --- Blit the final image into the swapchain image ---
-		{
-			vk::ImageBlit blitRegion;
-			blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-			blitRegion.srcOffsets[0] = vk::Offset3D(0, 0, 0);
-			blitRegion.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
-			                                         static_cast<int32_t>(extent.height), 1);
-			blitRegion.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-			blitRegion.dstOffsets[0] = vk::Offset3D(0, 0, 0);
-			blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
-			                                         static_cast<int32_t>(extent.height), 1);
-
-			cmdBuf.blitImage(overlayImage,
-			                 vk::ImageLayout::eTransferSrcOptimal,
-			                 swapchainImage,
-			                 vk::ImageLayout::eTransferDstOptimal,
-			                 blitRegion,
-			                 vk::Filter::eLinear);
-		}
-
-		// --- Transition swapchain image to PRESENT_SRC_KHR ---
-		Barrier::Transition(*cmdBuf, swapchainImage,
-			ImageState::TransferDst, ImageState::Present,
-			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-	}
+		recordPresentBlit(cmdBuf, imageIndex, extent);
 
 	// --- Profiling: write the GPU frame-end timestamp (covers the final blit) ---
 	// EndFrame also advances the profiler's slot cursor, keeping it in lockstep
@@ -1063,6 +1122,55 @@ void DeferredRenderer::recordFrame(const vk::raii::CommandBuffer& cmdBuf, uint32
 	// passCount (the scene graph's from r_mainGraph, the overlay passes appended by
 	// OverlayEngine); only gpuTimingAvailable is renderer-owned.
 	r_frameProfile.gpuTimingAvailable = r_profiler.Available();
+}
+
+void DeferredRenderer::recordPresentBlit(const vk::raii::CommandBuffer& cmdBuf, uint32_t imageIndex, vk::Extent2D extent)
+{
+	auto& blitSource = r_renderCache->GetAttachment(OverlayEngine::OutputAttachment(), extent);
+	const vk::Image overlayImage = *blitSource.ImageHandle();
+	const vk::Image swapchainImage = r_target->Image(imageIndex);
+
+	// Barrier 1: Blit source -> TRANSFER_SRC_OPTIMAL.
+	//
+	// The transition is issued here, by the consumer, not left to whichever pass
+	// wrote the image last. A producer that pre-transitions its output to the
+	// state it guesses the next consumer wants makes the following consumer's
+	// own barrier a no-op: its src scope becomes the guessed access (TransferRead),
+	// which names no writes, so the real producer writes are never made visible.
+	//
+	// Barrier 2: Swapchain image UNDEFINED -> TRANSFER_DST_OPTIMAL
+	Barrier::Transition(cmdBuf, blitSource, ImageState::TransferSrc);
+	{
+		Barrier::Transition(*cmdBuf, swapchainImage,
+			ImageState::Undefined, ImageState::TransferDst,
+			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+	}
+
+	// --- Blit the final image into the swapchain image ---
+	{
+		vk::ImageBlit blitRegion;
+		blitRegion.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+		blitRegion.srcOffsets[0] = vk::Offset3D(0, 0, 0);
+		blitRegion.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(extent.width),
+		                                         static_cast<int32_t>(extent.height), 1);
+		blitRegion.dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+		blitRegion.dstOffsets[0] = vk::Offset3D(0, 0, 0);
+		const vk::Extent2D output = r_target->Extent();
+		blitRegion.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(output.width),
+		                                         static_cast<int32_t>(output.height), 1);
+
+		cmdBuf.blitImage(overlayImage,
+		                 vk::ImageLayout::eTransferSrcOptimal,
+		                 swapchainImage,
+		                 vk::ImageLayout::eTransferDstOptimal,
+		                 blitRegion,
+		                 vk::Filter::eLinear);
+	}
+
+	// --- Transition swapchain image to PRESENT_SRC_KHR ---
+	Barrier::Transition(*cmdBuf, swapchainImage,
+		ImageState::TransferDst, ImageState::Present,
+		vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 }
 
 // ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ public:
 	                SharedQueue& presentQueue,
 	                const vk::raii::SurfaceKHR& surface,
 	                uint32_t width,
-	                uint32_t height);
+	                uint32_t height, bool maintenanceEnabled = false);
 
 	~SwapchainTarget() override;
 
@@ -42,6 +42,7 @@ public:
 	uint32_t ImageCount() const override;
 	vk::Image Image(uint32_t index) const override;
 	bool Presents() const override { return true; }
+	bool ScalesToSurface() const override;
 	uint32_t Generation() const override;
 
 	std::optional<uint32_t> Acquire(const vk::raii::Semaphore* imageAvailable) override;

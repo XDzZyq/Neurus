@@ -107,25 +107,29 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 - Select the present mode (prefer `VK_PRESENT_MODE_FIFO_KHR` for VSync)
 - Clamp the extent to surface capabilities
 - Create image views for each swapchain image
-- Recreate on window resize (the old swapchain is destroyed, a new one is created)
+- Reuse the swapchain during live resize when the device, surface and selected present mode support compositor stretching. On other targets, resize the swapchain when the next preview frame needs it. Forced out-of-date recovery always checks the surface again.
+
+Each resize updates the active camera's aspect ratio and publishes a snapshot from the resize handler. The render thread draws one scene sample for the latest size. While the left mouse button is held, a growing dimension that exceeds the current scene allocation gets 64 extra physical pixels, limited by the device's maximum image dimension. Shrinking, reversing direction and pausing with the button held reuse the allocation. The final blit and presentation scale the sample to the drawable, so the horizontal field of view follows the window while the vertical lens angle stays fixed. On release the renderer fits the scene attachments to the actual drawable and resumes temporal accumulation. Resizes without a mouse gesture reuse the current attachments during motion and settle after 120 ms of quiet.
+
+For local measurements, set `NEURUS_RESIZE_PROBE=adaptive` before launching the Qt application to trace the default policy. Numeric values select the fixed-padding benchmark controls. Zero uses exact sizing at rest. A positive value reserves that many extra physical pixels on each axis when the settled scene target needs to grow or shrink. These controls hold the scene allocation throughout a drag. The renderer shades the full allocation. Trace output records target capacities, swapchain replacements, host frame timings and the most recently resolved GPU frame duration in milliseconds.
 
 ### Output target (`OutputTarget`)
 
 `DeferredRenderer` acquires and presents through an `OutputTarget`, not through
 `Swapchain` directly. The concrete targets live in `src/render/targets/`:
 
-- `SwapchainTarget` wraps `Swapchain` unchanged and is what the Qt application
-  constructs. Acquire, present and the out-of-date recovery behave exactly as
-  before.
+- The Qt application uses `SwapchainTarget` for image acquisition, presentation,
+  out-of-date recovery and detection of compositor stretching support.
 - `OffscreenTarget` owns no image: a headless frame's last image is the
   `OverlayOutput` attachment, so `Acquire` returns index 0, `Present` does
   nothing and the final blit into a presentation image is skipped.
 
 With one frame in flight the offscreen submit waits no semaphore and signals only
 the render timeline plus the slot fence; the presenting path keeps the
-`imageAvailable` / `renderFinished` pair and its final blit. A capture reads
-`OverlayOutput` through the tracked image state, never
-`Screenshot::CaptureSwapchain` (which assumes `PRESENT_SRC`).
+`imageAvailable` / `renderFinished` pair and its final blit. A window capture
+replays that blit from `OverlayOutput` into a renderer-owned image at the
+swapchain format and extent, then reads the result. A headless capture reads
+`OverlayOutput` directly.
 
 ## Drawing a frame
 
@@ -187,7 +191,7 @@ Release mode:
 - Recreate the swapchain with the new surface dimensions
 - `Swapchain::Recreate()` idles the present queue (`SharedQueue::WaitIdle`) before destroying the old swapchain: it also runs directly from `Present()`/`AcquireNextImage()`, while the frame just presented is still in flight, and on MoltenVK the present-completion handler dereferences the old swapchain until that frame completes. With the render thread presenting back-to-back during a window drag, skipping the wait is a use-after-free.
 - Continue rendering with the new swapchain
-- **`VK_SUBOPTIMAL_KHR` from `vkAcquireNextImageKHR` is a success**, not a failure: an image was acquired and the semaphore was signalled, so it must be rendered and presented like any other frame. Recreating on acquire would drop that image and leave its semaphore signalled for the next acquire to signal again. The present path is where a suboptimal swapchain is rebuilt.
+- **`VK_SUBOPTIMAL_KHR` from acquire** returns a usable image and signals the acquire semaphore. Submit and present that image. A stretch-capable swapchain can continue presenting at a different drawable size. An out-of-date result still forces a rebuild.
 - **`AcquireNextImage` returns `std::optional<uint32_t>`**: a nullopt means no image was acquired and no semaphore was signalled, so `DrawFrame` skips the frame. This matters when `Recreate()` defers - a zero-area surface (minimize/dock transition) or a lost surface leaves the old swapchain in place and does not bump its generation, and reporting index 0 as if it had been acquired made the renderer submit a frame waiting on an unsignalled semaphore (`VUID-vkQueueSubmit-pWaitSemaphores-03238`) and present an unacquired image (`VUID-VkPresentInfoKHR-pImageIndices-01430`). Only a successful acquire may reach the submit/present path.
 
 ### Surface lost (`VK_ERROR_SURFACE_LOST_KHR`)

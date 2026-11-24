@@ -48,19 +48,19 @@ public:
 	// -------------------------------------------------------------------
 
 	/**
-	 * @brief Captures a swapchain image to a PNG file.
+	 * @brief Captures the composited viewport at the displayed format and extent.
 	 *
-	 * Reads back the given swapchain image and writes a timestamped PNG under
+	 * Blits the renderer-owned overlay output and writes a timestamped PNG under
 	 * @p directory, logging the absolute path on success and the reason on
 	 * failure.
 	 *
-	 * @param swapchainImage  The VkImage handle of the swapchain image.
+	 * @param output          Final scene image including overlays.
 	 * @param swapchainFormat Format of the swapchain image.
 	 * @param swapchainExtent Extent of the swapchain image.
 	 * @param directory       Destination root, created on demand.
 	 * @return true on success.
 	 */
-	bool TakeScreenshot(vk::Image swapchainImage,
+	bool TakeScreenshot(Image& output,
 	                    vk::Format swapchainFormat,
 	                    vk::Extent2D swapchainExtent,
 	                    const std::filesystem::path& directory);
@@ -133,24 +133,6 @@ public:
 	 */
 	static std::string timestampedFilename(const std::string& prefix,
 	                                       const std::string& suffix);
-
-	/**
-	 * @brief Captures a swapchain image to a PNG file.
-	 *
-	 * Handles layout transitions (PRESENT_SRC to TRANSFER_SRC) and reads back
-	 * through a staging buffer.  BGR to RGB swizzle is applied automatically
-	 * for BGRA swapchain formats.
-	 *
-	 * @return true on success.
-	 */
-	static bool CaptureSwapchain(const vk::raii::Device& device,
-	                             const vk::raii::PhysicalDevice& physicalDevice,
-	                             SharedQueue& queue,
-	                             uint32_t queueFamilyIndex,
-	                             vk::Image image,
-	                             vk::Format format,
-	                             vk::Extent2D extent,
-	                             const std::string& path);
 
 	/**
 	 * @brief Captures an Image attachment to a PNG file.

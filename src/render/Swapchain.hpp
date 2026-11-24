@@ -34,7 +34,7 @@ public:
 	          SharedQueue& presentQueue,
 	          const vk::raii::SurfaceKHR& surface,
 	          uint32_t width,
-	          uint32_t height);
+	          uint32_t height, bool maintenanceEnabled = false);
 	~Swapchain();
 
 	// Non-copyable - owns GPU resources
@@ -77,6 +77,7 @@ public:
 
 	/** @brief Current swapchain extent (width × height). */
 	vk::Extent2D extent() const { return r_extent; }
+	bool scalesToSurface() const { return r_scalesToSurface; }
 
 	/** @brief Number of images in the swapchain. */
 	uint32_t imageCount() const { return r_imageCount; }
@@ -97,6 +98,9 @@ public:
 	uint32_t generation() const { return r_generation; }
 
 private:
+	void recreate(uint32_t width, uint32_t height, const char* reason);
+	bool supportsStretch(vk::PresentModeKHR mode, vk::Extent2D extent) const;
+
 	/**
 	 * @brief Selects the best available surface format.
 	 * Prefers sRGB color space with BGRA8 format.
@@ -114,8 +118,7 @@ private:
 	/**
 	 * @brief Clamps the desired extent to the surface's capabilities.
 	 */
-	static vk::Extent2D chooseExtent(const vk::raii::PhysicalDevice& physicalDevice,
-	                                  const vk::raii::SurfaceKHR& surface,
+	static vk::Extent2D chooseExtent(const vk::SurfaceCapabilitiesKHR& capabilities,
 	                                  uint32_t width, uint32_t height);
 
 	/**
@@ -129,6 +132,8 @@ private:
 	const vk::raii::Device& r_device;
 	const vk::raii::SurfaceKHR& r_surface;
 	SharedQueue* r_presentQueue = nullptr;
+	bool r_maintenanceEnabled = false;
+	bool r_scalesToSurface = false;
 
 	std::unique_ptr<vk::raii::SwapchainKHR> r_swapchain;
 	std::vector<vk::raii::ImageView> r_imageViews;

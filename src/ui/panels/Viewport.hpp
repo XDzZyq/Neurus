@@ -49,6 +49,9 @@ public:
 	 */
 	void Refresh(const UIContext& ctx) override;
 
+	/** @brief Vulkan supplies all pixels for the native window. */
+	QPaintEngine* paintEngine() const override { return nullptr; }
+
 	/** @brief Default destructor. */
 	~Viewport() override;
 

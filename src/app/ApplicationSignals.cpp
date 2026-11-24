@@ -228,6 +228,7 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     // A finished pick enters as a selection event, so this
 	                     // tick's Edit() handles it like any other UI event.
 	                     ResolvePendingPick();
+	                     FinishViewportResize();
 
 	                     // Process all enqueued events (camera, gizmo, ...). Every
 	                     // Post of this tick happens inside Edit(), before the

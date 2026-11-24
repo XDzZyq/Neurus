@@ -43,6 +43,9 @@ public:
 	/** @brief Creates a Vulkan instance with the extensions @p options asks for. */
 	static vk::raii::Instance CreateInstance(const Options& options);
 
+	/** @brief Creates a windowed instance and negotiates optional surface extensions. */
+	VulkanContext();
+
 	/** @brief Takes ownership of the instance (from CreateInstance). */
 	explicit VulkanContext(vk::raii::Instance&& instance);
 
@@ -85,9 +88,10 @@ public:
 	 * feature-gated pipeline state.
 	 */
 	const vk::PhysicalDeviceFeatures& enabledFeatures() const { return ctx_enabledFeatures; }
+	bool swapchainMaintenanceEnabled() const { return ctx_swapchainMaintenanceEnabled; }
 
 private:
-	static vk::raii::Instance createInstanceInternal();
+	static vk::raii::Instance createInstanceInternal(const Options& options, bool* surfaceMaintenance);
 	uint32_t selectPhysicalDeviceIndex();
 	uint32_t findGraphicsQueueFamily();
 	uint32_t findGraphicsQueueFamilyWithPresent(const vk::raii::SurfaceKHR& surface);
@@ -111,6 +115,8 @@ private:
 
 	std::string ctx_gpuName;
 	vk::PhysicalDeviceFeatures ctx_enabledFeatures;
+	bool ctx_surfaceMaintenanceEnabled = false;
+	bool ctx_swapchainMaintenanceEnabled = false;
 };
 
 } // namespace neurus

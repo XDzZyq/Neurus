@@ -24,10 +24,13 @@ layout(rgba16f, binding = 1) uniform writeonly image2D outputComposed;
 layout(push_constant) uniform PushConstants
 {
 	float gamma;     // gamma correction factor (default 2.2)
+	float halfViewWidth;
+	float halfViewHeight;
 };
 
 // Checkerboard background for transparent/empty regions
-const int kCheckerSize   = 8;
+// Tile width on a camera-facing plane at unit depth (about 32 px at 1080p, 60 degrees).
+const float kCheckerSize = 1.0 / 30.0;
 const vec3 kCheckerGray1 = vec3(0.0);
 const vec3 kCheckerGray2 = vec3(0.01);
 
@@ -47,9 +50,10 @@ void main()
 
 	if (isBackground)
 	{
-		// Checkerboard grid
-		ivec2 cell = pixelCoord / kCheckerSize;
-		bool isGray1 = (cell.x % 8 > 3) != (cell.y % 8 > 3);
+		vec2 ndc = (vec2(pixelCoord) + 0.5) * 2.0 / vec2(imgSize) - 1.0;
+		vec2 viewPosition = ndc * vec2(halfViewWidth, halfViewHeight);
+		ivec2 cell = ivec2(floor(viewPosition / kCheckerSize));
+		bool isGray1 = ((cell.x ^ cell.y) & 1) != 0;
 		vec3 bgColor = isGray1 ? kCheckerGray1 : kCheckerGray2;
 
 		// Gamma-correct the background too (consistent look)

@@ -12,7 +12,7 @@
  * last scene pass and knows nothing about overlays.
  *
  * @note No UBOs or per-frame uploads - all data is read from attachments.
- *       The only push constant is a single float (gamma).
+ *       Push constants carry gamma and the camera frustum size at unit depth.
  */
 
 #pragma once

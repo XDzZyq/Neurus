@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "RenderControl.hpp"
 #include "render_api/ProfilingData.hpp"
 #include "render_api/RenderRequestSink.hpp"
 
@@ -83,8 +84,8 @@ public:
 	 */
 	virtual FrameWork NextWork() const = 0;
 
-	/** @brief Recreate the swapchain for a new window size (physical pixels). */
-	virtual void HandleResize(uint32_t width, uint32_t height) = 0;
+	/** @brief Preview the new projection in retained attachments, or settle at native resolution. */
+	virtual void HandleResize(uint32_t width, uint32_t height, ResizePhase phase = ResizePhase::Settled) = 0;
 
 	/** @brief Rebuild the swapchain on a new surface the caller keeps alive. */
 	virtual void HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurface) = 0;
@@ -100,7 +101,7 @@ public:
 
 	/**
 	 * @brief Write the last presented image, or every attachment, to disk.
-	 * @param allAttachments  False: the swapchain image. True: every attachment.
+	 * @param allAttachments  Capture every attachment when true, or the composited viewport when false.
 	 * @param directory       Destination root, created on demand. Carried as a
 	 *                        value so this layer stays Qt-free (only the
 	 *                        Application knows the executable directory).

@@ -17,10 +17,14 @@ namespace neurus {
 Viewport::Viewport(QWidget* parent)
 	: UIPanel(PanelType::Viewport, nullptr, parent)
 {
-	// Dedicated native window handle for Vulkan surface creation.
+	// Only the viewport needs a native surface. Keeping the ADS containers
+	// non-native lets Qt resize the surrounding dock layout in its backing store.
+	setAttribute(Qt::WA_DontCreateNativeAncestors);
 	setAttribute(Qt::WA_NativeWindow);
 
-	// This widget paints all its pixels: no background fill is needed.
+	// Vulkan presents directly to this child window. Exclude it from Qt's
+	// backing-store flush when a splitter invalidates the dock layout.
+	setAttribute(Qt::WA_PaintOnScreen);
 	setAttribute(Qt::WA_OpaquePaintEvent);
 	setAttribute(Qt::WA_NoSystemBackground);
 	setAutoFillBackground(false);
@@ -40,10 +44,7 @@ void Viewport::Refresh(const UIContext& /*ctx*/)
 
 void Viewport::paintEvent(QPaintEvent* /*event*/)
 {
-	// No Qt painting here: the override stops the widget background from being
-	// filled over the presented image. The invalidation itself still needs an
-	// answer - the renderer presents only when it has work - so ask for one
-	// redraw of the image that is already there.
+	// A converged renderer is idle until the exposed image needs a redraw.
 	emit exposed();
 }
 

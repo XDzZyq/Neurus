@@ -346,8 +346,7 @@ bool Application::InitVulkan()
 
 	try
 	{
-		auto vkInstance = neurus::VulkanContext::CreateInstance();
-		app_vkContext = std::make_unique<neurus::VulkanContext>(std::move(vkInstance));
+		app_vkContext = std::make_unique<neurus::VulkanContext>();
 
 		// The window is seeded with plain preference values (language / FPS /
 		// file path); the UI layer never touches this type.
@@ -401,7 +400,7 @@ bool Application::InitRenderer()
 			*app_surface,
 			app_mainWindow->getViewportWidth(),
 			app_mainWindow->getViewportHeight(),
-			app_core->RenderDefaults());
+			app_core->RenderDefaults(), app_vkContext->swapchainMaintenanceEnabled());
 	}
 	catch (const std::exception& e)
 	{
@@ -414,14 +413,32 @@ bool Application::InitRenderer()
 
 void Application::ResizeViewport(int width, int height)
 {
+	if (width <= 0 || height <= 0)
+		return;
+	const bool preview = app_renderTimer->isActive();
+	if (preview)
+	{
+		app_lastResize = std::chrono::steady_clock::now();
+		app_resizeWithMouse = QApplication::mouseButtons().testFlag(Qt::LeftButton);
+	}
 	// AppKit must see the resize on the main thread; the swapchain itself is
 	// rebuilt on the render thread.
 	neurus::platform::OnResize(
 		app_mainWindow->getViewportHwnd(),
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-	app_renderThread->PostResize(
-		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+	const auto physical = UpdateViewportCamera(width, height);
+	auto phase = neurus::ResizePhase::Settled;
+	if (preview)
+		phase = app_resizeWithMouse ? neurus::ResizePhase::MouseDrag : neurus::ResizePhase::Preview;
+	app_renderThread->PostResize(physical.width, physical.height, phase);
+	// Native resizing can delay the next Qt frame tick. Publish the camera
+	// here so the render thread can draw the new view during the drag.
+	if (preview)
+		app_renderThread->Publish(app_editor->BuildSnapshot());
+}
 
+vk::Extent2D Application::UpdateViewportCamera(int width, int height)
+{
 	// The swapchain extent is no longer known synchronously, so the physical
 	// extent is estimated the way the platform layer sizes the Metal drawable:
 	// logical size times the widget's device pixel ratio. ReconcileRenderExtent()
@@ -443,14 +460,36 @@ void Application::ResizeViewport(int width, int height)
 	// thread; ReconcileRenderExtent() corrects the estimate once the thread
 	// reports the extent it actually got. The Editor forwards the logical extent
 	// to whichever camera is active.
+	const vk::Extent2D physical{toPhysical(width), toPhysical(height)};
 	app_editor->HandleViewportResize(
 		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
-		glm::uvec2{toPhysical(width), toPhysical(height)});
+		glm::uvec2{physical.width, physical.height});
+	return physical;
+}
+
+void Application::FinishViewportResize()
+{
+	if (!app_lastResize)
+		return;
+	// ADS handles a mouse release even if the splitter finished at the same
+	// size. For keyboard, native-window and programmatic resizes there may be
+	// no release event, so finish after a short quiet interval.
+	if (app_resizeWithMouse ? QApplication::mouseButtons().testFlag(Qt::LeftButton)
+	                        : std::chrono::steady_clock::now() - *app_lastResize < std::chrono::milliseconds(120))
+		return;
+	app_lastResize.reset();
+	const int width = app_mainWindow->getViewportWidth();
+	const int height = app_mainWindow->getViewportHeight();
+	if (width > 0 && height > 0)
+	{
+		const auto physical = app_editor->GetViewport().RenderExtent();
+		app_renderThread->PostResize(physical.x, physical.y);
+	}
 }
 
 void Application::ReconcileRenderExtent(const vk::Extent2D& actual)
 {
-	if (!app_editor || actual.width == 0 || actual.height == 0)
+	if (app_lastResize || !app_editor || actual.width == 0 || actual.height == 0)
 	{
 		return;
 	}
