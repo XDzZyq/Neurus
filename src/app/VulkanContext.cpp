@@ -4,6 +4,7 @@
 #include "platform/PlatformSurface.hpp"
 
 #include <stdexcept>
+#include <algorithm>
 #include <set>
 #include <cstring>
 #include <iostream>
@@ -41,6 +42,18 @@ vk::raii::Instance VulkanContext::CreateInstance()
 
 vk::raii::Instance VulkanContext::CreateInstance(const Options& options)
 {
+	return createInstanceInternal(options, nullptr);
+}
+
+static bool supportsExtension(const std::vector<vk::ExtensionProperties>& extensions, const char* name)
+{
+	return std::any_of(extensions.begin(), extensions.end(), [name](const auto& extension) {
+		return std::strcmp(extension.extensionName, name) == 0;
+	});
+}
+
+vk::raii::Instance VulkanContext::createInstanceInternal(const Options& options, bool* surfaceMaintenance)
+{
 	// The instance is the only place the API version is requested. 1.4 is what
 	// this codebase targets; a loader older than that answers
 	// VK_ERROR_INCOMPATIBLE_DRIVER, so fall back to 1.3 rather than fail.
@@ -53,6 +66,17 @@ vk::raii::Instance VulkanContext::CreateInstance(const Options& options)
 		std::vector<const char*> extensions =
 			options.surfaceExtensions ? platform::RequiredInstanceExtensions()
 			                          : std::vector<const char*>{};
+		if (options.surfaceExtensions && surfaceMaintenance)
+		{
+			const auto available = context.enumerateInstanceExtensionProperties();
+			*surfaceMaintenance = supportsExtension(available, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)
+			                   && supportsExtension(available, VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
+			if (*surfaceMaintenance)
+			{
+				extensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+				extensions.push_back(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME);
+			}
+		}
 		if constexpr (kEnableValidation)
 			extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
@@ -97,6 +121,12 @@ vk::raii::Instance VulkanContext::CreateInstance(const Options& options)
 		NEURUS_ERR("[VulkanContext] Loader rejects Vulkan 1.4; retrying with 1.3");
 		return makeInstance(VK_API_VERSION_1_3);
 	}
+}
+
+VulkanContext::VulkanContext()
+{
+	ctx_instance = std::make_unique<vk::raii::Instance>(
+		createInstanceInternal(Options{}, &ctx_surfaceMaintenanceEnabled));
 }
 
 VulkanContext::VulkanContext(vk::raii::Instance&& instance)
@@ -202,6 +232,18 @@ void VulkanContext::InitDevice(const Options& options)
 	// VK_KHR_portability_subset is required when a profile layer simulates
 	// portability (e.g. VP_LUNARG_desktop_baseline): add it when advertised.
 	auto availableDevExtensions = pd.enumerateDeviceExtensionProperties();
+	vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance;
+	if (options.swapchain && ctx_surfaceMaintenanceEnabled &&
+	    supportsExtension(availableDevExtensions, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME))
+	{
+		const auto features = pd.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT>();
+		if (features.get<vk::PhysicalDeviceSwapchainMaintenance1FeaturesEXT>().swapchainMaintenance1)
+		{
+			devExts.push_back(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);
+			maintenance.swapchainMaintenance1 = VK_TRUE;
+			multiviewFeature.pNext = &maintenance;
+		}
+	}
 	for (const auto& ext : availableDevExtensions)
 	{
 		if (strcmp(ext.extensionName, "VK_KHR_portability_subset") == 0)
@@ -214,6 +256,7 @@ void VulkanContext::InitDevice(const Options& options)
 	vk::DeviceCreateInfo devCI({}, queueCIs, {}, devExts, &ctx_enabledFeatures, &descriptorIndexing);
 
 	ctx_device = std::make_unique<vk::raii::Device>(pd, devCI);
+	ctx_swapchainMaintenanceEnabled = maintenance.swapchainMaintenance1;
 
 	// Get transfer queue handle immediately (does not need present check)
 	ctx_transferQueueOwned = std::make_unique<SharedQueue>(

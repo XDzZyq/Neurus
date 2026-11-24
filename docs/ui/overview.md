@@ -58,7 +58,7 @@ Docks that host a `UIPanel` are created through `UIManager::MakeDock()`, which t
 
 ## Viewport embedding
 
-The `Viewport` is a `QWidget` that sets `WA_NativeWindow` and `WA_OpaquePaintEvent`, overrides `paintEvent()` to a no-op, and forces native window creation with `winId()`. It owns no Vulkan resources: it provides the native window handle only, and emits `resized(int, int)` so the renderer can recreate the swapchain. `UIManager::getViewportHwnd()` / `getViewportWidth()` / `getViewportHeight()` expose it to the Application.
+The `Viewport` is a native `QWidget` that gives the Application a window handle for Vulkan presentation. It bypasses Qt's raster backing store and emits `exposed()` from `paintEvent()` so the renderer can redraw a converged frame. Its `resized(width, height, mouseDrag)` signal carries logical dimensions and drag state. The widget emits `resizeSettled()` when the gesture ends. `UIManager::getViewportHwnd()`, `getViewportWidth()` and `getViewportHeight()` expose the handle and dimensions to the Application.
 
 `CreateDocks()` requests surface recreation through `UIEvents::requestUIRecreation()` with the new native handle.
 
@@ -93,7 +93,7 @@ The app loads and writes back the *build* copy (`build/debug/res/shadow.neurus.j
 ## Dock features
 
 - Viewport: closable disabled; the other docks keep closable + movable + floatable.
-- Config flags: `OpaqueSplitterResize=false` (better native-window container behaviour), `FocusHighlighting=true`.
+- ADS uses `OpaqueSplitterResize=true` for live dock resizing and `FocusHighlighting=true` to show which dock has focus.
 
 **Full screen forbids tearing panels off.** A torn-off panel is a separate top-level window, and a separate window cannot be used inside another window's full-screen space: macOS gives ADS's plain `Qt::Window` floating container `NSWindowCollectionBehaviorFullScreenPrimary` and the window server then refuses to let the user move it - the panel appears and is frozen. Full screen is entered from **View -> Full Screen** (F11) or the OS's native full-screen control, so the source of the state is not always ours. `UIManager::changeEvent()` watches `QEvent::WindowStateChange` (the only signal Qt gives for a native full-screen transition) and calls `SetFloatingLocked()` while full screen, after docking any already-floating panel back via `DockFloatingPanels()`.
 

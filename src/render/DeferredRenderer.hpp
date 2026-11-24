@@ -107,7 +107,8 @@ public:
 	                 const vk::raii::SurfaceKHR& surface,
 	                 uint32_t width,
 	                 uint32_t height,
-	                 std::shared_ptr<const BuiltInRenderData> renderDefaults = {});
+	                 std::shared_ptr<const BuiltInRenderData> renderDefaults = {},
+	                 bool swapchainMaintenanceEnabled = false);
 
 	/**
 	 * @brief Creates the pipeline for a windowless (headless) renderer.
@@ -198,9 +199,8 @@ public:
 	/**
 	 * @brief Returns the last presented swapchain image, or null before presentation.
 	 *
-	 * The returned image is in PRESENT_SRC layout from the most recent frame.
-	 * A caller's readback is submitted after the frame on the same queue and
-	 * waits its own submit, so no idle wait is needed.
+	 * Presentation owns this image until the swapchain acquires it again.
+	 * Use CaptureScreenshot for readback of the composited frame.
 	 *
 	 * @return vk::Image handle, or VK_NULL_HANDLE when the current swapchain
 	 *         has no successfully presented frame.
@@ -248,20 +248,13 @@ public:
 	uint32_t ReadIDBufferPixel(uint32_t x, uint32_t y) override;
 
 	/**
-	 * @brief Handles viewport resize by proactively recreating swapchain and
-	 *        dependent resources.
-	 *
-	 * Recreates the swapchain with the new dimensions and rebuilds attachments,
-	 * semaphores and command buffers, avoiding a one-frame rendering glitch at
-	 * the wrong size.
-	 *
-	 * Safe to call multiple times (idempotent for same dimensions).
-	 * No-op if the window is minimized (zero-area surface).
+	 * @brief Queue a live preview or apply a settled viewport size.
 	 *
 	 * @param width  New window width in pixels.
 	 * @param height New window height in pixels.
+	 * @param phase Mouse drags may grow the scene allocation before settling.
 	 */
-	void HandleResize(uint32_t width, uint32_t height) override;
+	void HandleResize(uint32_t width, uint32_t height, ResizePhase phase = ResizePhase::Settled) override;
 
 	/**
 	 * @brief Handles viewport recreation by rebuilding the swapchain with a new surface.
@@ -298,7 +291,7 @@ public:
 	 * device, queue and family the renderer draws with; the Screenshot's own
 	 * capture methods do the GPU sync (a blocking submit per readback) internally.
 	 *
-	 * @param allAttachments  False: the swapchain image. True: every attachment.
+	 * @param allAttachments  Capture every attachment when true, or the composited viewport when false.
 	 * @param directory       Destination root, created on demand.
 	 */
 	void CaptureScreenshot(bool allAttachments,
@@ -336,6 +329,10 @@ private:
 
 	/** @brief Rebuilds sync objects and command buffers after a target resize. */
 	void recreateTarget();
+	void resizeOutput(uint32_t width, uint32_t height);
+	void resizeScene(vk::Extent2D viewport);
+	void recordPresentBlit(const vk::raii::CommandBuffer& cmdBuf, uint32_t imageIndex, vk::Extent2D extent);
+	vk::Extent2D sceneCapacity(vk::Extent2D viewport) const;
 
 	/**
 	 * @brief Common pipeline construction shared by both constructors.
@@ -475,6 +472,11 @@ private:
 	std::vector<vk::raii::Semaphore> r_renderFinishedSemaphores;
 	uint32_t r_currentFrame = 0;
 	uint32_t r_targetGeneration = 0;
+	vk::Extent2D r_sceneExtent{};
+	std::optional<vk::Extent2D> r_pendingPreview;
+	ResizePhase r_resizePhase = ResizePhase::Settled;
+	bool r_swapchainMaintenanceEnabled = false;
+	uint32_t r_maxImageExtent = 0;
 
 	/**
 	 * @brief The scene tables one submitted frame drew with.

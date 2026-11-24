@@ -92,7 +92,8 @@ private:
 	void InitEditor();
 	void InitScripting();
 
-	void ResizeViewport(int width, int height);
+	void ResizeViewport(int width, int height, ResizePhase phase);
+	vk::Extent2D UpdateViewportCamera(int width, int height);
 
 	/**
 	 * @brief Aligns the viewport's physical extent with the swapchain's.

@@ -42,6 +42,9 @@ public:
 	 */
 	virtual bool Presents() const = 0;
 
+	/** @brief True when the presentation engine stretches this swapchain to a resized surface. */
+	virtual bool ScalesToSurface() const { return false; }
+
 	/** @brief Monotonic generation; changes when the target rebuilt itself. */
 	virtual uint32_t Generation() const = 0;
 

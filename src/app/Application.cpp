@@ -291,7 +291,7 @@ int Application::Run()
 	}
 
 	app_mainWindow->show();
-	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight());
+	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight(), ResizePhase::Settled);
 
 	// show() can normalise the window geometry after the load-time rebase (for
 	// example when the saved layout came from another screen). Rebase again on
@@ -346,8 +346,7 @@ bool Application::InitVulkan()
 
 	try
 	{
-		auto vkInstance = neurus::VulkanContext::CreateInstance();
-		app_vkContext = std::make_unique<neurus::VulkanContext>(std::move(vkInstance));
+		app_vkContext = std::make_unique<neurus::VulkanContext>();
 
 		// The window is seeded with plain preference values (language / FPS /
 		// file path); the UI layer never touches this type.
@@ -401,7 +400,7 @@ bool Application::InitRenderer()
 			*app_surface,
 			app_mainWindow->getViewportWidth(),
 			app_mainWindow->getViewportHeight(),
-			app_core->RenderDefaults());
+			app_core->RenderDefaults(), app_vkContext->swapchainMaintenanceEnabled());
 	}
 	catch (const std::exception& e)
 	{
@@ -412,16 +411,25 @@ bool Application::InitRenderer()
 	return true;
 }
 
-void Application::ResizeViewport(int width, int height)
+void Application::ResizeViewport(int width, int height, ResizePhase phase)
 {
+	if (width <= 0 || height <= 0)
+		return;
 	// AppKit must see the resize on the main thread; the swapchain itself is
 	// rebuilt on the render thread.
 	neurus::platform::OnResize(
 		app_mainWindow->getViewportHwnd(),
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-	app_renderThread->PostResize(
-		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+	const auto physical = UpdateViewportCamera(width, height);
+	app_renderThread->PostResize(physical.width, physical.height, phase);
+	// Native resizing can delay the next Qt frame tick. Publish the camera
+	// here so the render thread can draw the new view during the drag.
+	if (phase != ResizePhase::Settled)
+		app_renderThread->Publish(app_editor->BuildSnapshot());
+}
 
+vk::Extent2D Application::UpdateViewportCamera(int width, int height)
+{
 	// The swapchain extent is no longer known synchronously, so the physical
 	// extent is estimated the way the platform layer sizes the Metal drawable:
 	// logical size times the widget's device pixel ratio. ReconcileRenderExtent()
@@ -443,14 +451,17 @@ void Application::ResizeViewport(int width, int height)
 	// thread; ReconcileRenderExtent() corrects the estimate once the thread
 	// reports the extent it actually got. The Editor forwards the logical extent
 	// to whichever camera is active.
+	const vk::Extent2D physical{toPhysical(width), toPhysical(height)};
 	app_editor->HandleViewportResize(
 		glm::uvec2{static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
-		glm::uvec2{toPhysical(width), toPhysical(height)});
+		glm::uvec2{physical.width, physical.height});
+	return physical;
 }
 
 void Application::ReconcileRenderExtent(const vk::Extent2D& actual)
 {
-	if (!app_editor || actual.width == 0 || actual.height == 0)
+	const auto* panel = app_mainWindow->GetPanel<Viewport>();
+	if ((panel && panel->IsResizing()) || !app_editor || actual.width == 0 || actual.height == 0)
 	{
 		return;
 	}

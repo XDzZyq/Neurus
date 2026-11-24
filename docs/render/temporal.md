@@ -12,20 +12,22 @@ What the next frame is worth is published by `IFrameRenderer::NextWork()` before
 flowchart LR
     next["NextWork()"] --> sample["Sample<br/>budget unspent"]
     next --> overlay["Overlay<br/>overlay content changed"]
+    next -->|new preview size| sample
     next --> idle["Idle<br/>nothing stale"]
     next --> retry["Retry<br/>the last draw drew nothing"]
 
-    sample --> reuse["later samples reuse<br/>the snapshot"]
+    sample --> reuse["reuse the held snapshot"]
 ```
 
 - **Sample**: the budget is unspent - run the scene graph, then the overlay graph. The remaining samples reuse the last snapshot (`AcquireMode::Reuse`); they do not need a new publish.
 - **Overlay**: converged, but overlay content changed (`RedrawOverlaysRequest`) - redraw the overlay graph over the converged scene image, no scene pass.
+- During a resize, **Sample** draws once with the latest camera projection and the thread parks until the size changes or the resize settles.
 - **Idle**: converged and nothing stale - draw nothing and acquire no swapchain image. The thread parks on the mailbox (`AcquireMode::Idle`) until a control message or a request-carrying frame arrives.
 - **Retry**: the last `DrawFrame()` drew nothing (no camera, failed acquire/present) - wait for a new frame instead of redrawing a stale one.
 
 The main thread never waits for the budget: publishing is latest-wins and non-blocking, and the renderer's state is not read back to decide when to stop.
 
-A **restart** is anything that invalidates the accumulated average: any `RenderRequest` except `RedrawOverlaysRequest`, a resize, or a surface change. A request needs nothing beyond its own handoff: it rides the next published frame and executes before that frame is drawn, so the run it restarts begins with a snapshot that already includes it - `Post` neither wakes nor invalidates. A resize or a surface change goes further and `FrameMailbox::Invalidate()`s the held snapshot, which drops a frame published before it (keeping its requests for the next publish) and forces the next `Acquire` to wait for a fresh `Publish` - so a restarted run can never bake a camera or an extent it replaced. Pick and screenshot only `Wake()`: they read what was drawn last and must neither discard nor force a frame.
+Scene-changing requests restart the accumulated average. They ride the next published frame and execute before the renderer draws it. A resize or surface change also invalidates the held snapshot through `FrameMailbox::Invalidate()`. The mailbox carries pending requests forward to the fresh snapshot. Picking and screenshots wake the renderer to read the last drawn frame.
 
 ## Shadow accumulation
 
@@ -38,13 +40,13 @@ The shadow intensity pass accumulates per-light shadow samples over time, and th
   - Moving Average (1): `alpha = 1/(iteration + 1)` - true averaging, resets on scene change
 - **Iteration**: `r_iteration` in `DeferredRenderer`, exposed via `RenderContext::iteration`. The Editor triggers a restart through the event system when the scene changes - see `RenderResetEvent`.
 - **Reset**: any scene-changing event (camera move, light change, object transform, visibility toggle, config change, project load, asset import) enqueues a `RenderResetEvent`. The Editor subscribes and posts a `ResetAccumulationRequest`; the renderer zeros `r_iteration` when it drains any request other than `RedrawOverlaysRequest` (the reset request is simply the one that asks for exactly that).
-- **Swapchain rebuild**: the renderer also zeros `r_iteration` itself whenever it rebuilds the swapchain (a resize, a surface change or an out-of-date acquire), and the posting side invalidates the held snapshot for the same reason. The rebuild drops the `ShadowIntensity` history together with the other screen-space attachments, and the Editor never sees an out-of-date acquire. Continuing the count over a cleared history would make shadows fade in slowly with Fixed EMA and stay wrong with Moving Average.
+- **Viewport resize.** Live preview reuses scene allocations while the new size fits. A mouse drag can grow the scene allocation with temporary padding. Each new projection starts from iteration zero so old shadow samples do not bleed into the new view. Settling the resize starts the normal accumulation run. A target rebuild outside preview also resets the iteration, including recovery from an out-of-date swapchain.
 
 ## Accumulation convention
 
 The renderer's temporal accumulation follows one convention across the pipeline:
 
-- **Iteration** (`DrawFrame()` counter): `DeferredRenderer::r_iteration`, restarted (to 0) when the renderer drains any request except `RedrawOverlaysRequest`, and whenever it rebuilds the swapchain.
+- **Iteration.** `DeferredRenderer::r_iteration` starts at zero after a scene-changing request, a viewport resize, or a target rebuild outside preview.
 - **Budget**: `N = max(1, r_sampling_count)` scene frames per run, refreshed on each sample frame; `ctx.iteration` is the frame's index in `[0, N)`.
 - **Jitter**: 3D jitter (`RenderContext::jitter`). Point: `pos + radius*jitter`. Sun: UV-space `shadowUV + (jitter.x, jitter.y) * uvRadius`.
 - **Accumulation**: in-place read-modify-write on `ShadowIntensity` with EMA blend: `mix(prev, sample, alpha)`.

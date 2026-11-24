@@ -18,6 +18,7 @@
 
 #include "core/Log.hpp"
 
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -101,7 +102,7 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 
 	// Settings() is never null; with no published config it resolves to
 	// RenderConfig's own declared default.
-	const float gamma = frame.ctx.Frame().Settings().r_gamma;
+	const auto& snapshot = frame.ctx.Frame();
 
 	Image* input  = frame.resources.Input("gHDRColor");
 	Image* output = frame.resources.Output("outputComposed");
@@ -122,11 +123,17 @@ PassStats ComposePass::Record(vk::CommandBuffer cmdBuf, const PassFrame& frame)
 	                          {p_descriptorSets[frameIndex].handle()},
 	                          {});
 
-	cmdBuf.pushConstants<float>(
+	// At unit view depth these are the distances from the optical axis to
+	// each frustum edge. Geometry uses this same projection in the G-buffer.
+	const auto& projection = snapshot.camera.projection;
+	struct ComposeConstants { float gamma, halfViewWidth, halfViewHeight; };
+	const ComposeConstants constants{snapshot.Settings().r_gamma,
+		1.0f / std::abs(projection[0][0]), 1.0f / std::abs(projection[1][1])};
+	cmdBuf.pushConstants<ComposeConstants>(
 		*p_pipelines[0].pipelineLayout,
 		vk::ShaderStageFlagBits::eCompute,
 		0,
-		gamma);
+		constants);
 
 	const uint32_t groupCountX = (renderExtent.width  + 15) / 16;
 	const uint32_t groupCountY = (renderExtent.height + 15) / 16;
