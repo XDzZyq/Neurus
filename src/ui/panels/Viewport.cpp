@@ -59,7 +59,14 @@ bool Viewport::eventFilter(QObject* watched, QEvent* event)
 		// native child window at the corresponding position in the native parent.
 		auto* moved = qobject_cast<QWidget*>(watched);
 		if (moved && !moved->internalWinId() && moved->isAncestorOf(this))
-			SyncNativePosition();
+		{
+			// A left-edge drag moves the dock before its layout shrinks the
+			// viewport. Let Qt apply that move and resize together if moving
+			// the current native window would put it outside the new dock.
+			auto* native = windowHandle();
+			if (native && moved->rect().contains(QRect(mapTo(moved, QPoint{}), native->size())))
+				SyncNativePosition();
+		}
 	}
 	return UIPanel::eventFilter(watched, event);
 }
