@@ -97,9 +97,9 @@ TEST(DefaultProject, LoadsExpectedSceneAndResources)
 	ASSERT_NE(mesh, nullptr);
 	EXPECT_EQ(mesh->o_type, ObjectID::GOType::GO_MESH);
 	// Geometry is a pooled MeshData reference in the new format.
-	EXPECT_NE(mesh->o_meshDataId, 0);
-	ASSERT_NE(mesh->o_mesh, nullptr);
-	EXPECT_EQ(mesh->o_mesh->GetObjectID(), mesh->o_meshDataId);
+	EXPECT_NE(mesh->o_mesh.id(), 0);
+	ASSERT_NE(mesh->o_mesh.shared(), nullptr);
+	EXPECT_EQ(mesh->o_mesh->GetObjectID(), mesh->o_mesh.id());
 
 	ASSERT_GE(scene.light_list.size(), 1u);
 	auto* light = scene.light_list.begin()->second.get();
@@ -109,7 +109,7 @@ TEST(DefaultProject, LoadsExpectedSceneAndResources)
 
 	ASSERT_FALSE(scene.env_list.empty());
 	auto env = scene.env_list.begin()->second;
-	ASSERT_NE(env, nullptr);
+	ASSERT_TRUE(env);
 	// The Environment wraps the pooled ImageData; the path lives in the
 	// data layer (ImageData::GetPath), not on the scene object.
 	ASSERT_NE(env->GetEquirectData(), nullptr);

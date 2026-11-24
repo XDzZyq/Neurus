@@ -372,10 +372,8 @@ TEST(ResourceManagerTest, PoolSaveLoadRoundtrip)
 	ASSERT_NE(mesh2, nullptr);
 	EXPECT_EQ(mesh2->o_name, "Mesh1");
 	EXPECT_FALSE(mesh2->using_shadow);
-	// The data-resource ID reference survives the round-trip. The o_mesh
-	// pointer is wired by Scene::ResolveDataReferences (Scene-level), not by
-	// the pool's own deserialization, so it stays null in a raw pool test.
-	EXPECT_EQ(mesh2->o_meshDataId, meshData->GetObjectID());
+	EXPECT_EQ(mesh2->o_mesh.shared(), loaded.Get<MeshData>(meshData->GetObjectID()));
+	EXPECT_EQ(mesh2->o_mesh.id(), meshData->GetObjectID());
 
 	auto light2 = loaded.Get<Light>(light->GetObjectID());
 	ASSERT_NE(light2, nullptr);

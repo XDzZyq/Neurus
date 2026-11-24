@@ -20,6 +20,7 @@
 #include "core/Serialize.hpp"
 #include "asset/ResourceRef.hpp"
 #include "asset/data/ShaderData.hpp"
+#include "asset/data/MeshData.hpp"
 #include "scene/ObjectID.hpp"
 #include "Transform.hpp"
 
@@ -29,7 +30,7 @@ namespace neurus
 // --- Forward declarations -------------------------------------------------
 
 class Material;
-class MeshData;
+
 /**
  * @brief 3D mesh object representing renderable geometry with material and transform.
  *
@@ -49,7 +50,7 @@ public:
 	std::shared_ptr<Material> o_material;
 
 	/// High-resolution geometry (vertex/index buffers)
-	std::shared_ptr<MeshData> o_mesh;
+	ResourceRef<MeshData, nullptr, MissingResource::KeepUid> o_mesh;
 
 	/// CPU-side shader for rendering this mesh (null = use default pass shader)
 	ResourceRef<ShaderData, AcceptShader> o_shader;
@@ -59,13 +60,10 @@ public:
 	bool using_sdf      = true;
 	bool is_closure     = true;
 
-	int o_meshDataId = 0;      ///< Pooled MeshData UID (geometry source)
-
 	Mesh();
 	/**
 	 * @brief Constructs a mesh referencing pooled geometry.
 	 * @param meshData Shared MeshData (pooled resource) to reference.
-	 * @note Sets o_mesh and o_meshDataId.
 	 * @note No path is accepted; file paths belong to the data layer
 	 *       (MeshData holds the source OBJ path).
 	 */
@@ -79,7 +77,7 @@ public:
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		// Missing shader references remain null and select the runtime built-in.
 		// Save omits that reference rather than materializing a fallback resource.
-		archive::Optional(ar, CEREAL_NVP(o_meshDataId));
+		archive::Optional(ar, cereal::make_nvp("o_meshDataId", o_mesh));
 		archive::OptionalRef(ar, "o_shaderId", o_shader);
 		archive::Optional(ar, CEREAL_NVP(using_shadow), CEREAL_NVP(using_material),
 		                  CEREAL_NVP(using_sdf), CEREAL_NVP(is_closure));

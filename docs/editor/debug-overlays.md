@@ -167,7 +167,6 @@ behind the scenes). Three places must stay in step:
 | `Editor::UploadSceneResources()` | `dMesh_list` loop, for objects present at project load |
 | `Editor::OnSceneObjectGpuUpload()` | `Get<DebugMesh>` branch, for on-demand upload of an object entering the scene |
 
-`ResourceComponent::Load` needs a matching `ForEach<DebugMesh>` block to re-wire
-`o_mesh` from `o_meshDataId`: the `ForEach<Mesh>` block above it does not reach a
-`DebugMesh`, so without it a reloaded project leaves the wireframe geometry-less
-and the upload is skipped for a reason that looks like a rendering bug.
+The debug mesh stores its geometry as a typed resource reference. Project load
+restores the shared `MeshData` from the `m_meshDataId` field before the editor
+posts the upload.

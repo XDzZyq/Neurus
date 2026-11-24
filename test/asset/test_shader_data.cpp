@@ -512,7 +512,7 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 		ASSERT_NE(restoredMesh, nullptr);
 		EXPECT_FALSE(restoredMesh->o_shader);
 		EXPECT_EQ(restoredMesh->o_shader.id(), 0);
-		EXPECT_EQ(restoredMesh->o_mesh, restored.Get<neurus::MeshData>(geometry->GetObjectID()));
+		EXPECT_EQ(restoredMesh->o_mesh.shared(), restored.Get<neurus::MeshData>(geometry->GetObjectID()));
 	}
 	loaded.Save(path.string());
 	std::ifstream file(path);

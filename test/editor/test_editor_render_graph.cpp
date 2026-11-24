@@ -428,7 +428,7 @@ TEST(EditorRenderGraph, PublicationRetainsShaderIdentityAndUploadsBeforeMapping)
 	EXPECT_EQ(firstUpload->primaryType, neurus::ShaderType::COMPUTE);
 	const auto first = sink.LastGraphRequest()->graph;
 	ASSERT_TRUE(first);
-	EXPECT_EQ(first->nodes[5]->data.shader, shader);
+	EXPECT_EQ(first->nodes[5]->data.shader.get(), shader.get());
 	EXPECT_NE(first.get(), editor.GetRenderManager().GraphData().get());
 	const auto firstHash = first->Hash();
 
@@ -440,7 +440,7 @@ TEST(EditorRenderGraph, PublicationRetainsShaderIdentityAndUploadsBeforeMapping)
 	const auto* secondUpload = std::get_if<neurus::UploadShaderRequest>(&sink.posted[2]);
 	ASSERT_NE(secondUpload, nullptr);
 	EXPECT_NE(secondUpload->stages.at(neurus::ShaderType::COMPUTE).spv, firstBytes);
-	EXPECT_EQ(sink.LastGraphRequest()->graph->nodes[5]->data.shader, shader);
+	EXPECT_EQ(sink.LastGraphRequest()->graph->nodes[5]->data.shader.get(), shader.get());
 
 	// Publication owns the shared reference even after the project drops it.
 	editor.GetRenderManager().ResetGraph();
@@ -743,7 +743,7 @@ TEST(EditorRenderGraph, SavedRedoRecreatesGraphAndEditedShaderWithOriginalIdenti
 	EXPECT_EQ(graph->GetObjectID(), graphUid);
 	const auto restoredShader = reopened.GetResourceManager().Get<neurus::ShaderData>(shaderUid);
 	ASSERT_TRUE(restoredShader);
-	EXPECT_EQ(graph->nodes[5]->data.shader, restoredShader);
+	EXPECT_EQ(graph->nodes[5]->data.shader.get(), restoredShader.get());
 	EXPECT_EQ(restoredShader->GetStage(stage).code, code);
 	EXPECT_TRUE(restoredShader->IsValid());
 }

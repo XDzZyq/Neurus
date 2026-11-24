@@ -40,7 +40,7 @@ TEST(Mesh, DefaultConstruction)
 	EXPECT_EQ(mesh.o_name, "Mesh");
 
 	EXPECT_EQ(mesh.o_material, nullptr);
-	EXPECT_EQ(mesh.o_mesh, nullptr);
+	EXPECT_EQ(mesh.o_mesh.shared(), nullptr);
 	EXPECT_FALSE(mesh.o_shader);
 
 	EXPECT_TRUE(mesh.using_shadow);
@@ -48,12 +48,12 @@ TEST(Mesh, DefaultConstruction)
 	EXPECT_TRUE(mesh.using_sdf);
 	EXPECT_TRUE(mesh.is_closure);
 
-	EXPECT_EQ(mesh.o_meshDataId, 0);
+	EXPECT_EQ(mesh.o_mesh.id(), 0);
 	auto data = std::make_shared<MeshData>();
 	Mesh empty(data);
 	EXPECT_EQ(empty.o_type, mesh.o_type);
-	EXPECT_EQ(empty.o_mesh, data);
-	EXPECT_EQ(empty.o_meshDataId, data->GetObjectID());
+	EXPECT_EQ(empty.o_mesh.shared(), data);
+	EXPECT_EQ(empty.o_mesh.id(), data->GetObjectID());
 	EXPECT_EQ(mesh.GetMaterial(), nullptr);
 
 	EXPECT_EQ(mesh.GetShader(), nullptr);

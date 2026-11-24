@@ -358,7 +358,7 @@ each `RenderShader` re-parses and recompiles inside its own `serialize`.
 
 ## Graph shader publication
 
-Live graph nodes own pooled shaders through `shared_ptr<const ShaderData>`;
+Live graph nodes own pooled shaders through `PassShaderRef`;
 null selects a built-in recipe. Script and Editor edits still target the mutable
 pooled resource. `MakeUploadShaderRequest` copies compiled SPIR-V and required
 reflection/port metadata on the CPU before an upload request crosses the boundary.

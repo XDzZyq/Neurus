@@ -4,6 +4,8 @@
 #pragma once
 
 #include "asset/data/render_graph/GraphOutputTag.hpp"
+#include "asset/ResourceRef.hpp"
+#include "asset/data/ShaderData.hpp"
 #include "core/Serialize.hpp"
 
 #include <cereal/types/optional.hpp>
@@ -23,7 +25,7 @@ namespace cereal { class JSONInputArchive; }
 namespace neurus
 {
 class IPassShaderCatalog;
-class ShaderData;
+using PassShaderRef = ResourceRef<const ShaderData>;
 class IPortSource;
 class IResourceLookup;
 class RenderGraphData;
@@ -81,7 +83,7 @@ struct RenderGraphNodeRecord
 {
 	std::string                        name;
 	std::string                        pass;
-	int                                shaderUid = 0;
+	PassShaderRef                      shader;
 	float                              x = 0.0f;
 	float                              y = 0.0f;
 	std::vector<RenderGraphPortRecord> outputs;
@@ -98,10 +100,7 @@ struct RenderGraphNodeRecord
 	{
 		ar(cereal::make_nvp("name", name),
 		   cereal::make_nvp("pass", pass));
-		if constexpr (Archive::is_loading::value)
-			archive::OptionalField(ar, cereal::make_nvp("shader", shaderUid));
-		else if (shaderUid != 0)
-			ar(cereal::make_nvp("shader", shaderUid));
+		archive::OptionalRefId(ar, "shader", shader);
 		ar(cereal::make_nvp("x", x),
 		   cereal::make_nvp("y", y),
 		   cereal::make_nvp("outputs", outputs));

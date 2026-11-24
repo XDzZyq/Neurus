@@ -18,10 +18,10 @@ EditorComponent::EditorComponent(EditorViewport& viewport)
 
 void EditorComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	const int camUid = m_viewport->CameraID();
+	const auto& camera = m_viewport->CameraReference();
 	ar.setNextName("m_editor");
 	ar.startNode();
-	ar(cereal::make_nvp("viewportCamUid", camUid));
+	archive::RefId(ar, "viewportCamUid", camera);
 	ar.finishNode();
 }
 
@@ -29,7 +29,7 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 {
 	// 0 means "no saved id": the viewport mints a fresh camera for it, so no
 	// default pose or framing is restated here.
-	int camUid = 0;
+	ResourceRef<Camera> camera;
 
 	try
 	{
@@ -38,10 +38,9 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 
 		// "viewportCamUid" is what this build writes; "editorCamUid" is the
 		// pre-rename spelling, still read so an older project keeps its saved
-		// view. Note that archive::Optional returns how many fields were
-		// ABSENT, so the legacy read is gated on != 0.
-		if (archive::Optional(ar, cereal::make_nvp("viewportCamUid", camUid)) != 0)
-			archive::Optional(ar, cereal::make_nvp("editorCamUid", camUid));
+		// view.
+		if (!archive::RefId(ar, "viewportCamUid", camera))
+			archive::RefId(ar, "editorCamUid", camera);
 
 		ar.finishNode();
 	}
@@ -50,10 +49,10 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 		// Missing "m_editor" node: a project saved before the viewport camera
 		// was persisted. Expected, so logged at info level.
 		NEURUS_LOG("EditorComponent::Load: " << e.what() << " - using a fresh viewport camera.");
-		camUid = 0;
+		camera.reset();
 	}
 
-	m_viewport->RestoreCameraID(camUid);
+	m_viewport->RestoreCamera(std::move(camera));
 }
 
 } // namespace neurus::project

@@ -39,7 +39,7 @@ TEST(RenderRequestValues, LightingBatchOnlyIncludesVisibleRenderedLights)
 	hidden->is_viewport = false;
 	auto excluded = std::make_shared<Light>();
 	excluded->is_rendered = false;
-	const std::unordered_map<int, std::shared_ptr<Light>> lights = {
+	const std::unordered_map<int, ResourceRef<Light>> lights = {
 		{visible->GetObjectID(), visible},
 		{hidden->GetObjectID(), hidden},
 		{excluded->GetObjectID(), excluded},

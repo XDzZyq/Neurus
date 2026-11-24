@@ -19,20 +19,19 @@
 #include <cereal/types/base_class.hpp>
 #include <glm/glm.hpp>
 
-#include "core/Serialize.hpp"
+#include "asset/ResourceRef.hpp"
+#include "asset/data/MeshData.hpp"
 #include "scene/ObjectID.hpp"
 #include "Transform.hpp"
 
 namespace neurus
 {
 
-class MeshData;
-
 /**
  * @brief Debug wireframe overlay drawn from pooled mesh geometry.
  *
  * Has no material and no shader of its own; the serialized geometry
- * reference is o_meshDataId.
+ * reference is stored as m_meshDataId.
  *
  * Object type: GO_DM
  */
@@ -41,13 +40,8 @@ class DebugMesh : public ObjectID, public Transform3D
 public:
 	/**
 	 * @brief Pooled geometry drawn as wireframe (null = nothing to draw).
-	 *
-	 * Public so it can be re-wired from o_meshDataId after deserialization.
 	 */
-	std::shared_ptr<MeshData> o_mesh;
-
-	/// @brief Pooled MeshData UID (0 = none); the serialized form of o_mesh.
-	int o_meshDataId = 0;
+	ResourceRef<MeshData, nullptr, MissingResource::KeepUid> o_mesh;
 
 	/** @brief Constructs an empty DebugMesh (no geometry). */
 	DebugMesh();
@@ -64,14 +58,13 @@ public:
 	 * @brief Cereal serialization for debug meshes.
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
-	 * @note Stores o_meshDataId, not o_mesh.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
-		archive::Optional(ar, cereal::make_nvp("m_meshDataId", o_meshDataId),
+		archive::Optional(ar, cereal::make_nvp("m_meshDataId", o_mesh),
 		                  cereal::make_nvp("m_color", o_color),
 		                  cereal::make_nvp("m_opacity", o_opacity),
 		                  cereal::make_nvp("m_xray", o_xray));
@@ -91,12 +84,11 @@ public:
 	/**
 	 * @brief Points this DebugMesh at pooled geometry.
 	 * @param meshData Shared MeshData to draw, or null to clear the reference.
-	 * @note Keeps o_meshDataId in sync so the change survives a save/load.
 	 */
 	void SetMeshData(std::shared_ptr<MeshData> meshData);
 
 	/** @brief Returns true when this object references geometry to draw. */
-	bool HasGeometry() const { return o_mesh != nullptr; }
+	bool HasGeometry() const { return static_cast<bool>(o_mesh); }
 
 	// -----------------------------------------------------------------------
 	// Properties

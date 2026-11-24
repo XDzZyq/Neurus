@@ -70,7 +70,8 @@ RenderGraphNodeRecord ToRecord(const NodeType& node)
 	RenderGraphNodeRecord saved;
 	saved.name      = node.name;
 	saved.pass      = node.data.pass;
-	saved.shaderUid = node.data.shader ? node.data.shader->GetObjectID() : 0;
+	if (const int uid = node.data.shader.id(); uid != 0)
+		saved.shader = PassShaderRef::FromId(uid);
 	saved.x         = node.data.x;
 	saved.y         = node.data.y;
 
@@ -124,9 +125,10 @@ std::unique_ptr<NodeType> FromRecord(
 	node->data.pass = saved.pass;
 	node->data.x = saved.x;
 	node->data.y = saved.y;
-	if (resources && saved.shaderUid)
+	if (resources && saved.shader.id())
 	{
-		auto shader = resources->Get<ShaderData>(saved.shaderUid);
+		auto shader = saved.shader;
+		shader.Resolve(*resources);
 		if (shader && shader->IsValid() && (!acceptsShader || acceptsShader(saved.pass, *shader)))
 			node->data.shader = std::move(shader);
 	}
@@ -156,7 +158,7 @@ std::unique_ptr<RenderGraphData> FromRecord(
 		if (FindNode(*graph, saved.name))
 			problems.push_back("duplicate node name '" + saved.name + "'");
 		auto* node = graph->AddNode(FromRecord(saved, ports, problems, resources, acceptsShader));
-		if (saved.shaderUid && !node->data.shader)
+		if (saved.shader.id() && !node->data.shader)
 			useFallback.insert(node);
 	}
 

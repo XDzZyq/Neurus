@@ -1,5 +1,7 @@
 #pragma once
 
+#include "asset/ResourceRef.hpp"
+
 #include <vulkan/vulkan_raii.hpp>
 
 #include "resources/LightingCache.hpp"
@@ -141,7 +143,7 @@ enum LightType : int;    // scene/Light.hpp
 	 * @return Map: light UID -> variant<PointLightStruct, SunLightStruct, SpotLightStruct>.
 	 */
 	static std::unordered_map<int, std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>
-	UploadLighting(const std::unordered_map<int, std::shared_ptr<Light>>& lights);
+	UploadLighting(const std::unordered_map<int, ResourceRef<Light>>& lights);
 
 	/**
 	 * @brief Convert a single light to its GPU struct (variant-based).

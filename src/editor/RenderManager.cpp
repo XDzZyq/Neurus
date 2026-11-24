@@ -55,7 +55,7 @@ void CheckTopology(RenderGraphData& graph, const IPortSource& ports, std::vector
 	for (const auto& node : graph.nodes)
 	{
 		if (node->data.shader && !node->data.shader->IsValid())
-			node->data.shader.reset();
+			node->data.shader = nullptr;
 	}
 	for (const auto& diagnostic : ValidateCpuGraph(graph, ports))
 		problems.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
@@ -87,12 +87,12 @@ std::shared_ptr<RenderGraphData> RenderManager::CreateGraph(bool publish)
 {
 	if (!m_graph)
 		RestoreCreatedGraph(std::make_shared<RenderGraphData>(), publish);
-	return m_graph;
+	return m_graph.shared();
 }
 
 void RenderManager::RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish)
 {
-	if (graph && m_graph == graph)
+	if (graph && m_graph.get() == graph.get())
 	{
 		m_resources.Remove(graph->GetObjectID());
 		ResetGraph(publish);
@@ -132,8 +132,8 @@ bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 		m_graph->SwapContents(*graph);
 	else
 	{
-		m_graph = std::move(graph);
-		m_resources.Register(m_graph);
+		m_graph = std::shared_ptr<RenderGraphData>(std::move(graph));
+		m_resources.Register(m_graph.shared());
 	}
 	Publish();
 	return true;
@@ -150,7 +150,7 @@ std::shared_ptr<ShaderData> RenderManager::RemoveUnusedShader(int uid)
 	bool used = false;
 	m_resources.ForEach<RenderGraphData>([&](const std::shared_ptr<RenderGraphData>& graph) {
 		for (const auto& node : graph->nodes)
-			if (node->data.shader && node->data.shader->GetObjectID() == uid)
+			if (node->data.shader && node->data.shader.id() == uid)
 				used = true;
 	});
 	m_resources.ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh) {
@@ -197,7 +197,7 @@ bool RenderManager::ReferencesShader(const int uid) const
 		return false;
 	for (const auto& node : m_graph->nodes)
 	{
-		if (node->data.shader && node->data.shader->GetObjectID() == uid)
+		if (node->data.shader && node->data.shader.id() == uid)
 			return true;
 	}
 	return false;

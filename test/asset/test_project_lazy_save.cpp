@@ -117,7 +117,9 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 		const auto geometry = source.Load<MeshData>(obj.generic_string());
 		ASSERT_EQ(geometry->GetVertexCount(), 3u);
 		geometryId = geometry->GetObjectID();
-		firstMeshId = source.Load<Mesh>(geometry)->GetObjectID();
+		const auto firstMesh = source.Load<Mesh>();
+		firstMesh->o_mesh = geometry;
+		firstMeshId = firstMesh->GetObjectID();
 		secondMeshId = source.Load<Mesh>(geometry)->GetObjectID();
 		plainId = source.Load<UID>()->GetObjectID();
 		project::Project writer;
@@ -177,8 +179,8 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 		const auto second = restored.Get<Mesh>(secondMeshId);
 		ASSERT_TRUE(first && second);
 		ASSERT_TRUE(first->o_mesh);
-		EXPECT_EQ(first->o_mesh, second->o_mesh);
-		EXPECT_EQ(first->o_mesh, restored.Get<MeshData>(geometryId));
+		EXPECT_EQ(first->o_mesh.get(), second->o_mesh.get());
+		EXPECT_EQ(first->o_mesh.shared(), restored.Get<MeshData>(geometryId));
 		EXPECT_EQ(first->o_mesh->GetVertexCount(), 3u);
 		ASSERT_TRUE(restored.Get<UID>(plainId));
 	};

@@ -16,8 +16,6 @@ Mesh::Mesh(std::shared_ptr<MeshData> meshData)
 	: Mesh()
 {
 	o_mesh = std::move(meshData);
-	if (o_mesh)
-		o_meshDataId = o_mesh->GetObjectID();
 }
 
 Mesh::~Mesh()

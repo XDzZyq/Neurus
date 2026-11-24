@@ -70,7 +70,7 @@ LightSnapshot MakeLightSnapshot(const Light& light)
 }
 
 UpdateLightingRequest MakeUpdateLightingRequest(
-	const std::unordered_map<int, std::shared_ptr<Light>>& lights)
+	const std::unordered_map<int, ResourceRef<Light>>& lights)
 {
 	UpdateLightingRequest request;
 	for (const auto& [uid, light] : lights)

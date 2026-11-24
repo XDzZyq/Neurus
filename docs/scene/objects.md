@@ -78,8 +78,8 @@ A scene containing zero cameras is a legal document, and deleting the last camer
 Scene objects reference pooled resources. The project stores those references as integer UIDs.
 
 - `Mesh` holds its geometry in `o_mesh` and saves its UID as `o_meshDataId`. Its shader field, `o_shader`, is a typed `ResourceRef`. Assigning a shader also determines the value of the project key `o_shaderId`. An empty shader reference selects the default pass shader.
-- `Environment` - `o_imageDataId` (pooled `ImageData`); `o_equirectData` is the live pointer.
-- `DebugMesh` - `o_meshDataId` (pooled `MeshData`); `o_mesh` is the live pointer.
+- `Environment` stores its image reference as `o_imageDataId`. `GetEquirectData()` returns the shared image.
+- `DebugMesh` stores its geometry reference as `m_meshDataId`. Mesh geometry and environment image references retain a missing target's UID across saves.
 
 A zero id is an already-handled, reported state, so an absent id costs that object its data and nothing else in the pool. The project readers resolve pointers when each resource is materialized; see [Project Serialization](../asset/project-serialization.md) and [Data Resources](../asset/data-resources.md).
 

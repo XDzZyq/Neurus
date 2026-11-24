@@ -21,8 +21,8 @@ provider after edits or undo can replace the stored pointer.
 
 ## Graph shader ownership
 
-An authoring `CpuNode::shader` is a `shared_ptr<const ShaderData>` owning its
-pooled CPU shader; null selects the pass default. The Editor retains mutable
+An authoring `CpuNode::shader` is a `PassShaderRef` with shared ownership of its
+pooled CPU shader. An empty reference selects the pass default. The Editor retains mutable
 access to that resource. Publication clones graph topology, preserving shared
 shader ownership. The graph mapper reads only the stable shader UID from these
 references, never mutable source, parsed IR, SPIR-V or version fields.

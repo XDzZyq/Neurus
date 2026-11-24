@@ -38,7 +38,7 @@ not overwrite editable/generated stage code or trigger compilation. Shader tooli
 consumes source text; existing file-loading convenience methods remain
 compatibility facades that delegate IO to Asset.
 
-Authoring graph nodes own pooled shaders through `shared_ptr<const ShaderData>`;
+Authoring graph nodes own pooled shaders through `PassShaderRef`;
 the Editor retains mutable access to the originals. Publication clones topology
 and shares those references. The render thread reads only their stable shader
 UIDs, never mutable source, parsed IR, bytecode or version fields. Ordinary UID

@@ -55,21 +55,19 @@ bool ValidTag(const Json& tag)
 // This adapter preserves the flat legacy shape while saving only an active UID.
 struct SavedSelection
 {
-	std::variant<int, RenderGraphRecord> selection;
+	using GraphRef = ResourceRef<RenderGraphData>;
+	std::variant<GraphRef, RenderGraphRecord> selection;
 
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
 		if constexpr (Archive::is_saving::value)
 		{
-			ar(cereal::make_nvp("uid", std::get<int>(selection)));
+			archive::RefId(ar, "uid", std::get<GraphRef>(selection));
 		}
 		else
 		{
-			int uid = 0;
-			if (archive::OptionalField(ar, cereal::make_nvp("uid", uid)))
-				selection = uid;
-			else
+			if (!archive::RefId(ar, "uid", std::get<GraphRef>(selection)))
 				selection.emplace<RenderGraphRecord>().serialize(ar);
 		}
 	}
@@ -120,7 +118,7 @@ bool ValidGraphShape(const Json& graph)
 	return true;
 }
 
-GraphComponent::GraphComponent(std::shared_ptr<RenderGraphData>& graph, ResourceManager& resources,
+GraphComponent::GraphComponent(ResourceRef<RenderGraphData>& graph, ResourceManager& resources,
                                const IPassShaderCatalog& catalog, std::vector<std::string>& diagnostics)
 	: m_graph(graph), m_resources(resources), m_catalog(catalog), m_diagnostics(diagnostics)
 {
@@ -130,7 +128,7 @@ void GraphComponent::Save(cereal::JSONOutputArchive& ar) const
 {
 	if (!m_graph)
 		return;
-	SavedSelection active{m_graph->GetObjectID()};
+	SavedSelection active{m_graph};
 	ar(cereal::make_nvp("proj_render_graph", active));
 }
 
@@ -183,12 +181,14 @@ void GraphComponent::Load(cereal::JSONInputArchive& ar)
 		return;
 	}
 
-	if (const int* uid = std::get_if<int>(&loaded.selection))
+	if (auto* graph = std::get_if<SavedSelection::GraphRef>(&loaded.selection))
 	{
-		m_graph = m_resources.Get<RenderGraphData>(*uid);
-		if (!m_graph)
+		const int uid = graph->id();
+		if (graph->Resolve(m_resources))
+			m_graph = std::move(*graph);
+		else
 		{
-			m_diagnostics.push_back("Missing render graph UID " + std::to_string(*uid));
+			m_diagnostics.push_back("Missing render graph UID " + std::to_string(uid));
 			NEURUS_LOG("[GraphComponent] " << m_diagnostics.back());
 		}
 		return;

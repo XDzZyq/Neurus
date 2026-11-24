@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "asset/ResourceRef.hpp"
+
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -214,7 +216,7 @@ LightSnapshot MakeLightSnapshot(const Light& light);
 
 /** @brief Snapshots visible, rendered lights for an ordered GPU update. */
 UpdateLightingRequest MakeUpdateLightingRequest(
-	const std::unordered_map<int, std::shared_ptr<Light>>& lights);
+	const std::unordered_map<int, ResourceRef<Light>>& lights);
 
 /// @brief Any request the renderer executes on the Editor's behalf.
 using RenderRequest = std::variant<UploadShaderRequest,

@@ -17,6 +17,7 @@
 #pragma once
 
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/ResourceRef.hpp"
 #include "core/RenderConfig.hpp"
 
 #include <memory>
@@ -88,8 +89,8 @@ public:
 
 	/// @brief Effective read-only graph; reading a default never materializes project data.
 	const RenderGraphData& Graph() const;
-	std::shared_ptr<RenderGraphData>& GraphData() { return m_graph; }
-	const std::shared_ptr<RenderGraphData>& GraphData() const { return m_graph; }
+	ResourceRef<RenderGraphData>& GraphData() { return m_graph; }
+	const ResourceRef<RenderGraphData>& GraphData() const { return m_graph; }
 
 	/// @brief Uploads distinct selected shaders, then publishes cloned topology with shared references.
 	void Publish();
@@ -112,7 +113,7 @@ private:
 	RenderRequestSink* m_sink;
 	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::shared_ptr<RenderConfig> m_config;
-	std::shared_ptr<RenderGraphData> m_graph;
+	ResourceRef<RenderGraphData> m_graph;
 	std::vector<std::string> m_problems;
 };
 

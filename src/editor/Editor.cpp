@@ -740,7 +740,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 		inst.objectId          = mesh->GetObjectID();
 		inst.model             = mesh->GetModelMatrix();
 		inst.normalMatrix      = mesh->GetNormalMatrix();
-		inst.hasGeometry       = (mesh->o_mesh != nullptr);
+		inst.hasGeometry       = static_cast<bool>(mesh->o_mesh);
 		inst.visibleInViewport = mesh->is_viewport;
 		inst.rendered          = mesh->is_rendered;
 		// The per-mesh pipeline is cached under the shader id plus the shader
@@ -1301,7 +1301,8 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 		}
 		else if (auto* mesh = dynamic_cast<Mesh*>(source.get()))
 		{
-			auto copy = ed_resources->Load<Mesh>(mesh->o_mesh);
+			auto copy = ed_resources->Load<Mesh>();
+			copy->o_mesh = mesh->o_mesh;
 			copy->SetPosition(mesh->GetPosition());
 			copy->SetRotation(mesh->GetRotation());
 			copy->SetScale(mesh->GetScale());
@@ -1418,7 +1419,7 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 
 	if (auto mesh = ed_resources->Get<Mesh>(objectUid))
 	{
-		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
+		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh.shared());
 	}
 	else if (auto light = ed_resources->Get<Light>(objectUid))
 	{
@@ -1432,7 +1433,7 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 	}
 	else if (auto dMesh = ed_resources->Get<DebugMesh>(objectUid))
 	{
-		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
+		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh.shared());
 	}
 }
 
@@ -1489,7 +1490,7 @@ void Editor::UploadSceneResources()
 	for (const auto& [id, mesh] : ed_scene->mesh_list)
 	{
 		if (!mesh || !mesh->o_mesh) continue;
-		PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
+		PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh.shared());
 
 		// Scene load compiles shaders inside cereal's hook, which cannot reach
 		// the event bus, so no ShaderCompiled fires. Warm each mesh's pipeline
@@ -1512,7 +1513,7 @@ void Editor::UploadSceneResources()
 	for (const auto& [uid, dMesh] : ed_scene->dMesh_list)
 	{
 		if (!dMesh || !dMesh->HasGeometry()) continue;
-		PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
+		PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh.shared());
 	}
 
 	// The environment is scene content as well: without its cubemaps the scene

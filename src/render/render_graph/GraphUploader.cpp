@@ -118,7 +118,7 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 			return nullptr;
 		}
 		const std::optional<int> shaderId = node.data.shader
-			? std::optional<int>(node.data.shader->GetObjectID()) : std::nullopt;
+			? std::optional<int>(node.data.shader.id()) : std::nullopt;
 		auto owned = factory.Acquire(node.data.pass, node.name, shaderId);
 		Pass* pass = owned.get();
 		if (!pass)
@@ -203,7 +203,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 		}
 		try
 		{
-			const int shaderId = node->data.shader->GetObjectID();
+			const int shaderId = node->data.shader.id();
 			const auto selected = m_factory.ShaderFor(node->data.pass, shaderId);
 			const auto expected = m_factory.ShaderFor(node->data.pass);
 			if (!selected || !expected)
@@ -251,7 +251,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	const auto resolve = [&](const CpuNode& node)
 	{
 		const PassPorts& builtin = *m_portCatalog.FindPassPorts(node.pass);
-		return node.shader ? WithShaderPortNames(builtin, contracts.at(node.shader->GetObjectID())) : builtin;
+		return node.shader ? WithShaderPortNames(builtin, contracts.at(node.shader.id())) : builtin;
 	};
 	for (const auto& diagnostic : ValidateCpuGraph(document, m_portCatalog, resolve))
 		result.errors.push_back({diagnostic.node, diagnostic.port, diagnostic.message});

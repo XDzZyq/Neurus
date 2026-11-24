@@ -12,14 +12,8 @@
 #include "asset/ResourceManager.hpp"
 #include "asset/ResourceType.hpp"
 
-// Types needed for the pooled data-reference wiring in Load().
-#include "asset/data/ImageData.hpp"
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/PassShaderCatalog.hpp"
-#include "asset/data/MeshData.hpp"
-#include "scene/Environment.hpp"
-#include "scene/DebugMesh.hpp"
-#include "scene/Mesh.hpp"
 #include "scene/ObjectID.hpp"
 #include "asset/data/ShaderData.hpp"
 
@@ -185,32 +179,6 @@ std::string legacyName(const std::string& typeName)
 	return {};
 }
 
-void restoreDependencies(ResourceManager& pool, const std::shared_ptr<UID>& resource)
-{
-	if (auto mesh = std::dynamic_pointer_cast<Mesh>(resource))
-	{
-		if (mesh->o_meshDataId != 0)
-		{
-			mesh->o_mesh = pool.Get<MeshData>(mesh->o_meshDataId);
-			if (!mesh->o_mesh)
-				NEURUS_ERR("[ResourceComponent] stale MeshData UID " << mesh->o_meshDataId);
-		}
-	}
-	else if (auto debug = std::dynamic_pointer_cast<DebugMesh>(resource); debug && debug->o_meshDataId != 0)
-	{
-		debug->o_mesh = pool.Get<MeshData>(debug->o_meshDataId);
-		if (!debug->o_mesh)
-			NEURUS_ERR("[ResourceComponent] stale MeshData UID " << debug->o_meshDataId << " on DebugMesh");
-	}
-	else if (auto env = std::dynamic_pointer_cast<Environment>(resource); env && env->o_imageDataId != 0)
-	{
-		if (auto image = pool.Get<ImageData>(env->o_imageDataId))
-			env->SetEquirectData(std::move(image));
-		else
-			NEURUS_ERR("[ResourceComponent] stale ImageData UID " << env->o_imageDataId);
-	}
-}
-
 using DiagnosticList = std::reference_wrapper<std::vector<std::string>>;
 
 void reportGraphDiagnostics(int id, const std::vector<std::string>& messages,
@@ -271,7 +239,7 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 				NEURUS_LOG("[ResourceComponent] Unusable shader UID " << id);
 				return nullptr;
 			}
-			restoreDependencies(pool, resource);
+
 			applyRegisteredName(resource, pool.RegisteredName(id));
 			return resource;
 		}
@@ -338,7 +306,7 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 	for (const int id : ids)
 	{
 		const auto resource = m_resources->Get(id);
-		restoreDependencies(*m_resources, resource);
+
 		std::string name;
 		if (auto object = std::dynamic_pointer_cast<ObjectID>(resource))
 			name = object->o_name;

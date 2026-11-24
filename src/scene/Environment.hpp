@@ -17,14 +17,14 @@
 #include <memory>
 #include <string>
 
+#include "asset/ResourceRef.hpp"
+#include "asset/data/ImageData.hpp"
 #include "scene/ObjectID.hpp"
 #include "Transform.hpp"
 
 namespace neurus
 {
 	
-class ImageData;
-
 /**
  * @brief IBL environment map providing image-based lighting for the scene.
  *
@@ -67,13 +67,11 @@ public:
 	/**
 	 * @brief Returns the CPU-side equirectangular pixel data (shared).
 	 */
-	std::shared_ptr<ImageData> GetEquirectData() const { return o_equirectData; }
+	std::shared_ptr<ImageData> GetEquirectData() const { return o_equirectData.shared(); }
 
 	/**
 	 * @brief Sets the CPU-side equirectangular pixel data.
 	 * @param data Shared ImageData to reference (pooled resource).
-	 * @note Records the pooled ID for persistence.
-	 * @note Out-of-line: needs the complete ImageData type (GetObjectID).
 	 */
 	void SetEquirectData(std::shared_ptr<ImageData> data);
 
@@ -140,8 +138,8 @@ public:
 		return nullptr;
 	}
 
-	/// Pooled ImageData UID (0 = none); the serialized form of o_equirectData.
-	int o_imageDataId = 0;
+	/// Source UID, including a missing image referenced by the project.
+	int GetEquirectDataId() const { return o_equirectData.id(); }
 
 	// -----------------------------------------------------------------------
 	// Serialization (Cereal)
@@ -159,7 +157,7 @@ public:
 	{
 		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
-		archive::Optional(ar, CEREAL_NVP(o_imageDataId),
+		archive::Optional(ar, cereal::make_nvp("o_imageDataId", o_equirectData),
 		                  cereal::make_nvp("m_intensity", o_intensity),
 		                  cereal::make_nvp("m_rotation", o_rotation));
 	}
@@ -168,7 +166,7 @@ private:
 	float       o_intensity = 1.0f;   ///< IBL intensity multiplier
 	float       o_rotation  = 0.0f;   ///< Y-axis rotation in degrees
 
-	std::shared_ptr<ImageData> o_equirectData;  ///< CPU-side equirectangular pixel data
+	ResourceRef<ImageData, nullptr, MissingResource::KeepUid> o_equirectData;  ///< CPU-side equirectangular pixel data
 };
 
 } // namespace neurus

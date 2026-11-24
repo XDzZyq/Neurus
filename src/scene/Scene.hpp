@@ -13,10 +13,12 @@
 #pragma once
 
 #include <memory>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
 #include "scene/ObjectID.hpp"
+#include "asset/ResourceRef.hpp"
 #include "core/Selections.hpp"
 
 #include "Camera.hpp"
@@ -69,12 +71,12 @@ public:
 	 * @tparam Object Scene object type (Camera, Mesh, Light, etc.)
 	 */
 	template<class Object>
-	using Resource = std::shared_ptr<Object>;
+	using Resource = ResourceRef<Object>;
 
 	/**
 	 * @brief Typed object pool indexed by unique object ID.
 	 *
-	 * Maps an object's UID to its shared_ptr, enabling O(1) lookup and removal.
+	 * Maps an object's UID to its pooled reference, enabling O(1) lookup and removal.
 	 *
 	 * @tparam Object Scene object type stored in this pool.
 	 */
@@ -404,16 +406,16 @@ private:
 	 * @tparam T Object type (Camera, Mesh, Light, Sprite, DebugLine, DebugPoints).
 	 * @param obj Shared pointer to the object.
 	 * @param typePool Type-specific pool to register in.
-	 * @note Stores an aliasing shared_ptr<ObjectID> in obj_list, sharing
-	 *       ownership with the typed shared_ptr.
+	 * @note The typed and master maps refer to the same pooled object.
 	 */
 	template<typename T>
 	void RegisterObject(Resource<T> obj, ResPool<T>& typePool)
 	{
-		auto* basePtr = static_cast<ObjectID*>(obj.get());
-		int id = basePtr->GetObjectID();
-		typePool[id] = obj;
-		obj_list[id] = Resource<ObjectID>(obj, basePtr);
+		if (!obj)
+			throw std::invalid_argument("Scene membership requires a live object");
+		const int id = obj.id();
+		obj_list[id] = obj.shared();
+		typePool[id] = std::move(obj);
 	}
 };
 

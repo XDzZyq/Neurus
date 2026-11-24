@@ -143,13 +143,15 @@ TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
 	data.shader = shader;
 	graph.AddNode("custom", data);
 	auto copy = graph.Clone();
-	data.shader.reset();
+	const auto record = neurus::project::ToRecord(graph);
+	data.shader = nullptr;
 	shader.reset();
 	resources.Clear();
 	graph.nodes.clear();
 	EXPECT_FALSE(lifetime.expired());
 	copy->nodes.clear();
-	EXPECT_TRUE(lifetime.expired());
+	EXPECT_TRUE(lifetime.expired()) << "A saved node keeps the shader UID without owning the shader";
+	EXPECT_FALSE(record.nodes.front().shader);
 }
 
 TEST(RenderGraphData, HashIncludesShaderIdentityButExcludesShaderContentAndLayout)
@@ -173,13 +175,13 @@ TEST(RenderGraphData, HashIncludesShaderIdentityButExcludesShaderContentAndLayou
 	// Graph publication preserves ownership and identity. GPU upload values,
 	// rather than graph copies, isolate queued bytes from later CPU edits.
 	auto published = graph.Clone();
-	EXPECT_EQ(published->nodes[0]->data.shader, shader);
+	EXPECT_EQ(published->nodes[0]->data.shader.get(), shader.get());
 	stage.spv.back() = 4;
 	EXPECT_EQ(graph.Hash(), selectedHash);
 	EXPECT_EQ(published->Hash(), selectedHash);
 
 	node->data.shader = std::make_shared<TestShader>();
 	EXPECT_NE(graph.Hash(), selectedHash);
-	node->data.shader.reset();
+	node->data.shader = nullptr;
 	EXPECT_EQ(graph.Hash(), defaultHash);
 }

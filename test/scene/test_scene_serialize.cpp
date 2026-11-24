@@ -27,6 +27,7 @@
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/ResourceManager.hpp"
+#include "core/ArchiveUID.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
@@ -56,6 +57,30 @@ struct TempFile
 };
 
 } // anonymous namespace
+
+TEST(SceneSerialize, MembershipIncludesPooledUidZero)
+{
+	ResourceManager resources;
+	Scene source;
+	std::shared_ptr<Light> light;
+	{
+		const ArchiveUID identity(0);
+		light = resources.Load<Light>();
+	}
+	ASSERT_EQ(light->GetObjectID(), 0);
+	source.UseLight(light);
+	std::stringstream document;
+	{
+		cereal::JSONOutputArchive archive(document);
+		project::SceneComponent(source, resources).Save(archive);
+	}
+	Scene restored;
+	cereal::JSONInputArchive archive(document);
+	project::SceneComponent(restored, resources).Load(archive);
+	ASSERT_TRUE(restored.light_list.contains(0));
+	EXPECT_EQ(restored.light_list.at(0).get(), light.get());
+	EXPECT_EQ(restored.GetObjectID(0), light.get());
+}
 
 // -----------------------------------------------------------------------
 // Full round-trip: pool first, then Scene references
@@ -148,10 +173,10 @@ TEST(SceneSerialize, FullRoundtrip)
 	// Mesh data-resource wiring: MeshData + Shader by pooled ID.
 	auto* loadedMesh = loadedScene.mesh_list.begin()->second.get();
 	ASSERT_NE(loadedMesh, nullptr);
-	EXPECT_EQ(loadedMesh->o_meshDataId, meshDataUid);
-	EXPECT_NE(loadedMesh->o_meshDataId, 0);
-	ASSERT_NE(loadedMesh->o_mesh, nullptr);
-	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), loadedMesh->o_meshDataId);
+	EXPECT_EQ(loadedMesh->o_mesh.id(), meshDataUid);
+	EXPECT_NE(loadedMesh->o_mesh.id(), 0);
+	ASSERT_NE(loadedMesh->o_mesh.shared(), nullptr);
+	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), loadedMesh->o_mesh.id());
 	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u); // content reloaded from res/
 
 	// Transform: the raw TRS round-trips as data, and the cached model matrix -
@@ -184,7 +209,7 @@ TEST(SceneSerialize, FullRoundtrip)
 	// Environment data-resource wiring: ImageData by pooled ID.
 	auto* loadedEnv = loadedScene.env_list.begin()->second.get();
 	ASSERT_NE(loadedEnv, nullptr);
-	EXPECT_EQ(loadedEnv->o_imageDataId, imageDataUid);
+	EXPECT_EQ(loadedEnv->GetEquirectDataId(), imageDataUid);
 	ASSERT_NE(loadedEnv->GetEquirectData(), nullptr);
 	EXPECT_EQ(loadedEnv->GetEquirectData()->GetObjectID(), imageDataUid);
 	EXPECT_TRUE(loadedEnv->GetEquirectData()->IsValid()); // reloaded from res/
@@ -220,9 +245,9 @@ TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
 	{
 		ASSERT_EQ(scene.env_list.size(), 1u);
 		const auto& restored = scene.env_list.begin()->second;
-		ASSERT_NE(restored, nullptr);
+		ASSERT_TRUE(restored);
 		EXPECT_EQ(restored->GetEquirectData(), nullptr);
-		EXPECT_EQ(restored->o_imageDataId, imageUid);
+		EXPECT_EQ(restored->GetEquirectDataId(), imageUid);
 		EXPECT_FALSE(resources.Contains(imageUid));
 	};
 	document.Load(first.path);
@@ -326,9 +351,9 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	ASSERT_TRUE(loadedScene.mesh_list.empty()); // orphan is NOT in the scene
 	auto orphan = loadedResources.Get<Mesh>(orphanUid);
 	ASSERT_NE(orphan, nullptr);
-	EXPECT_NE(orphan->o_meshDataId, 0);        // persisted by the pool
-	ASSERT_NE(orphan->o_mesh, nullptr);        // wired by the pool scan
-	EXPECT_EQ(orphan->o_mesh->GetObjectID(), orphan->o_meshDataId);
+	EXPECT_NE(orphan->o_mesh.id(), 0);        // persisted by the pool
+	ASSERT_TRUE(orphan->o_mesh);
+	EXPECT_EQ(orphan->o_mesh->GetObjectID(), orphan->o_mesh.id());
 }
 
 // -----------------------------------------------------------------------

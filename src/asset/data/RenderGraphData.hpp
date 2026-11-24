@@ -59,7 +59,7 @@ struct CpuPort
 struct CpuNode
 {
 	std::string pass;
-	std::shared_ptr<const ShaderData> shader;
+	PassShaderRef shader;
 	float       x = 0.0f;
 	float       y = 0.0f;
 

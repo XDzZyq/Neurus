@@ -200,12 +200,12 @@ TEST(ProjectRoundtrip, FullScene)
 	// --- Mesh validation ---
 	auto* loadedMesh = loadedScene.mesh_list.begin()->second.get();
 	ASSERT_NE(loadedMesh, nullptr);
-	EXPECT_EQ(loadedMesh->o_meshDataId, meshDataId);
+	EXPECT_EQ(loadedMesh->o_mesh.id(), meshDataId);
 	EXPECT_NE(meshDataId, 0);
 	EXPECT_FALSE(loadedMesh->using_shadow);
 	EXPECT_FALSE(loadedMesh->using_sdf);
 	EXPECT_EQ(loadedMesh->o_name, "TestSphere");
-	ASSERT_NE(loadedMesh->o_mesh, nullptr);
+	ASSERT_NE(loadedMesh->o_mesh.shared(), nullptr);
 	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), meshDataId);
 	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u);
 	EXPECT_EQ(loadedMesh->GetPosition(), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -415,7 +415,7 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 	const auto& firstGeometry = restored.mesh_list.at(first->GetObjectID())->o_mesh;
 	ASSERT_TRUE(firstGeometry);
 	EXPECT_GT(firstGeometry->GetVertexCount(), 0u);
-	EXPECT_EQ(firstGeometry, restored.mesh_list.at(second->GetObjectID())->o_mesh);
+	EXPECT_EQ(firstGeometry.get(), restored.mesh_list.at(second->GetObjectID())->o_mesh.get());
 	EXPECT_EQ(restored.ActiveCameraID(), camera->GetObjectID());
 	EXPECT_EQ(restored.selections.GetActiveObject(), restored.mesh_list.at(second->GetObjectID()).get());
 	ASSERT_TRUE(sink.publishedGraph);
@@ -442,7 +442,7 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 	const auto loadedShader = pool.Get<ComputeShader>(shader->GetObjectID());
 	ASSERT_TRUE(loadedShader);
 	EXPECT_FALSE(loadedShader->GetStage(ShaderType::COMPUTE).spv.empty());
-	EXPECT_EQ(graph->nodes.at(5)->data.shader, loadedShader);
+	EXPECT_EQ(graph->nodes.at(5)->data.shader.get(), loadedShader.get());
 #if defined(_DEBUG) || !defined(NDEBUG)
 	ExpectContentLoads(since, "lookup", {0, 1, 1, 1});
 #endif

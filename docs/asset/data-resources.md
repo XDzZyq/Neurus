@@ -137,8 +137,10 @@ include; undo may restore null.
 
 ## Graph shader ownership
 
-Each `CpuNode` owns a `shared_ptr<const ShaderData>`; null selects a built-in
-recipe for its pass kind. The Editor may hold a mutable alias to the pooled
+Each `CpuNode` holds a `PassShaderRef` (`ResourceRef<const ShaderData>`).
+An empty reference selects the built-in recipe for its pass kind. Portable graph
+and undo records keep the shader UID until the graph is restored against a pool.
+The Editor may hold a mutable alias to the pooled
 shader. Cloning a graph copies topology and shares shader ownership, so pool
 removal cannot leave dangling graph references. It does not capture shader
 contents or allocate another identity.

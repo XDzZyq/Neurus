@@ -99,7 +99,7 @@ responsibility shared by callers, and keep it with the family that uses it.
   `shader/` in `neurus_shader`.
 - Keep authored `RenderGraphData` in the resource pool. `proj_render_graph` saves
   its active UID. Publish an unpooled clone of the document. Nodes hold
-  `shared_ptr<const ShaderData>` references, with null selecting a built-in. The
+  `PassShaderRef` references, with null selecting a built-in. The
   render thread reads the shader UID and consumes the uploaded GPU resource.
   CPU `MakeUploadShaderRequest` copies SPIR-V and required reflection/port metadata
   into owned typed requests before FIFO graph mapping. UploadManager constructs

@@ -112,7 +112,7 @@ TEST(RenderGraphDocument, DefaultGraph)
 
 	for (const auto& node : graph.nodes)
 	{
-		EXPECT_EQ(node->data.shader, nullptr);
+		EXPECT_EQ(node->data.shader.get(), nullptr);
 		for (const auto& output : node->outputs)
 		{
 			EXPECT_TRUE(output->data.tag.has_value())
@@ -307,15 +307,15 @@ TEST(RenderGraphDocument, SavedShaderUidResolvesToOwnedPoolResource)
 	RenderGraphData graph(ports);
 	graph.nodes[3]->data.shader = shader;
 	const auto record = Deserialize(Serialize(neurus::project::ToRecord(graph)));
-	EXPECT_EQ(record.nodes[3].shaderUid, shader->GetObjectID());
-	EXPECT_EQ(record.nodes[0].shaderUid, 0);
+	EXPECT_EQ(record.nodes[3].shader.id(), shader->GetObjectID());
+	EXPECT_EQ(record.nodes[0].shader.id(), 0);
 
 	std::vector<std::string> problems;
 	const auto restored = neurus::project::FromRecord(record, ports, problems, &resources);
 	EXPECT_TRUE(problems.empty());
 	ASSERT_EQ(restored->nodes.size(), graph.nodes.size());
-	EXPECT_EQ(restored->nodes[3]->data.shader, shader);
-	EXPECT_EQ(restored->nodes[0]->data.shader, nullptr);
+	EXPECT_EQ(restored->nodes[3]->data.shader.get(), shader.get());
+	EXPECT_EQ(restored->nodes[0]->data.shader.get(), nullptr);
 	EXPECT_EQ(restored->Hash(), graph.Hash());
 	EXPECT_EQ(neurus::project::ToRecord(*restored), record);
 }
@@ -327,23 +327,23 @@ TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
 	const auto invalid = resources.Load<TestShader>();
 	const auto wrongType = resources.Load<neurus::UID>();
 	auto record = neurus::project::ToRecord(RenderGraphData(ports));
-	record.nodes[0].shaderUid = invalid->GetObjectID();
-	record.nodes[1].shaderUid = wrongType->GetObjectID();
-	record.nodes[2].shaderUid = 2147483647;
+	record.nodes[0].shader = neurus::PassShaderRef::FromId(invalid->GetObjectID());
+	record.nodes[1].shader = neurus::PassShaderRef::FromId(wrongType->GetObjectID());
+	record.nodes[2].shader = neurus::PassShaderRef::FromId(2147483647);
 
 	std::vector<std::string> problems;
 	const auto restored = neurus::project::FromRecord(record, ports, problems, &resources);
 	EXPECT_TRUE(problems.empty());
 	ASSERT_EQ(restored->nodes.size(), 7u);
 	for (const auto& node : restored->nodes)
-		EXPECT_EQ(node->data.shader, nullptr);
+		EXPECT_EQ(node->data.shader.get(), nullptr);
 	for (const auto& node : neurus::project::ToRecord(*restored).nodes)
-		EXPECT_EQ(node.shaderUid, 0);
+		EXPECT_EQ(node.shader.id(), 0);
 	EXPECT_EQ(resources.Get<TestShader>(invalid->GetObjectID()), invalid);
 
 	const auto withoutPool = neurus::project::FromRecord(record, ports, problems);
 	for (const auto& node : withoutPool->nodes)
-		EXPECT_EQ(node->data.shader, nullptr);
+		EXPECT_EQ(node->data.shader.get(), nullptr);
 }
 
 TEST(RenderGraphDocument, LegacyDocumentsInferOutputsOnceAndExplicitEmptyOutputsStayEmpty)
@@ -393,7 +393,7 @@ TEST(RenderGraphDocument, MissingCustomShaderRecoversRenamedInputsAndSelectedOut
 	auto* fxaa = FindNode(*recovered, "fxaa");
 	ASSERT_TRUE(fxaa->inputs.front()->incoming.from);
 	EXPECT_EQ(fxaa->inputs.front()->incoming.from->name, "outputComposed");
-	EXPECT_EQ(FindNode(*recovered, "compose")->data.shader, nullptr);
+	EXPECT_EQ(FindNode(*recovered, "compose")->data.shader.get(), nullptr);
 }
 
 TEST(CpuGraphValidation, EditingThePublicProducerChangesReachabilityAndHash)

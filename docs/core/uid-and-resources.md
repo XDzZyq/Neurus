@@ -111,7 +111,7 @@ string that the editor mirrors from it.
 
 The Scene's typed containers are defined in the scene layer:
 
-- `Scene::Resource<Object>` is an alias for `std::shared_ptr<Object>`.
+- `Scene::Resource<Object>` is an alias for `ResourceRef<Object>`.
 - `Scene::ResPool<Object>` is `std::unordered_map<int, Resource<Object>>`, mapping a UID to its shared pointer for O(1) lookup and removal.
 
 Each object category has a dedicated `ResPool` (`cam_list`, `mesh_list`, and so on), and a master `obj_list` holds all `ObjectID` instances for global lookup. Objects are owned via `shared_ptr`, so removing from a map destroys an object only when no other reference exists. See [Scene Objects](../scene/objects.md).

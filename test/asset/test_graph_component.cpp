@@ -37,10 +37,10 @@ class GraphComponent : public ::testing::Test
 protected:
 	neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
-	std::shared_ptr<neurus::RenderGraphData> selected;
+	neurus::ResourceRef<neurus::RenderGraphData> selected;
 	std::vector<std::string> diagnostics;
 
-	std::string Save(std::shared_ptr<neurus::RenderGraphData> graph)
+	std::string Save(neurus::ResourceRef<neurus::RenderGraphData> graph)
 	{
 		std::ostringstream stream;
 		{
@@ -218,8 +218,8 @@ TEST_F(GraphComponent, InactiveGraphResolvesShadersStoredLaterInPool)
 	const auto loadedShader = restored.Get<neurus::ComputeShader>(shader->GetObjectID());
 	ASSERT_TRUE(loadedShader);
 	ASSERT_EQ(loaded->nodes.size(), 8u);
-	EXPECT_EQ(loaded->nodes[5]->data.shader, loadedShader);
-	EXPECT_EQ(loaded->nodes[7]->data.shader, loadedShader);
+	EXPECT_EQ(loaded->nodes[5]->data.shader.get(), loadedShader.get());
+	EXPECT_EQ(loaded->nodes[7]->data.shader.get(), loadedShader.get());
 	EXPECT_TRUE(neurus::ValidateCpuGraph(*loaded, ports).empty());
 	EXPECT_FALSE(loaded->nodes[4]->data.shader);
 }
@@ -242,7 +242,7 @@ TEST_F(GraphComponent, StandaloneArchiveRestoresGraphAndShaderTogether)
 	ASSERT_EQ(loadedGraph->nodes.size(), graph->nodes.size());
 	const auto loadedShader = restored.Get<neurus::ShaderData>(shader->GetObjectID());
 	ASSERT_TRUE(loadedShader);
-	EXPECT_EQ(loadedGraph->nodes[5]->data.shader, loadedShader);
+	EXPECT_EQ(loadedGraph->nodes[5]->data.shader.get(), loadedShader.get());
 	EXPECT_EQ(neurus::project::ToRecord(*loadedGraph), neurus::project::ToRecord(*graph));
 }
 

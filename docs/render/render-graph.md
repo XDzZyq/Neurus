@@ -6,13 +6,13 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 The CPU document, `RenderGraphData`, derives from `UID` and `Graph<CpuPort, CpuNode>`. The editor keeps the authored graph in the resource pool. The built-in default and published snapshots use the same type and stay outside the pool.
 
-- a node payload, `CpuNode`, holds the pass kind, a `shared_ptr<const ShaderData>` shader reference and the graph-editor position; `Graph::Node::name` is the document id;
+- a node payload, `CpuNode`, holds the pass kind, a `PassShaderRef` and the graph-editor position. `Graph::Node::name` is the document id.
 - a socket payload, `CpuPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
 - an edge is an ordinary `Graph` connection, so there is no string reference between nodes. The saved form keys each edge by node name and port.
 
 `GraphOutputTag` (`src/asset/data/render_graph/GraphOutputTag.hpp`) is the closed set described in [Resources](#resources).
 
-`RenderManager` holds a nullable `shared_ptr<RenderGraphData>` selecting the active graph. Without an authored graph, the effective topology comes from `BuiltInRenderData`. Reading the graph leaves the pointer null. Calling `neurus.render.graph.create()` copies the built-in topology into the pool and selects it. Its nodes initially use built-in shaders.
+`RenderManager` holds a nullable `ResourceRef<RenderGraphData>` selecting the active graph. Without an authored graph, the effective topology comes from `BuiltInRenderData`. Reading the graph leaves the pointer null. Calling `neurus.render.graph.create()` copies the built-in topology into the pool and selects it. Its nodes initially use built-in shaders.
 
 The pool stores each authored graph's nodes, output tags, edges and selected scene outputs in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. `ResourceComponent` resolves shader UIDs and derives input sockets from the pass contracts after restoring the pool. `GraphComponent` selects the resolved graph by UID. The editor publishes it at the end of loading. Loading a valid legacy inline graph creates a pooled resource, including when the graph is explicitly empty. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
 

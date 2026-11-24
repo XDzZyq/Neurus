@@ -41,18 +41,18 @@ TEST(SceneIntegrationTest, RegisterAllObjectTypes)
 
 	// --- Master obj_list contains all six ---
 	EXPECT_EQ(scene.obj_list.size(), 6u);
-	EXPECT_EQ(scene.obj_list.at(camId), cam);
-	EXPECT_EQ(scene.cam_list.at(camId), cam);
-	EXPECT_EQ(scene.obj_list.at(lightId), light);
-	EXPECT_EQ(scene.light_list.at(lightId), light);
-	EXPECT_EQ(scene.obj_list.at(meshId), mesh);
-	EXPECT_EQ(scene.mesh_list.at(meshId), mesh);
-	EXPECT_EQ(scene.obj_list.at(spriteId), sprite);
-	EXPECT_EQ(scene.sprite_list.at(spriteId), sprite);
-	EXPECT_EQ(scene.obj_list.at(dLineId), dLine);
-	EXPECT_EQ(scene.dLine_list.at(dLineId), dLine);
-	EXPECT_EQ(scene.obj_list.at(dPointsId), dPoints);
-	EXPECT_EQ(scene.dPoints_list.at(dPointsId), dPoints);
+	EXPECT_EQ(scene.obj_list.at(camId).shared(), cam);
+	EXPECT_EQ(scene.cam_list.at(camId).shared(), cam);
+	EXPECT_EQ(scene.obj_list.at(lightId).shared(), light);
+	EXPECT_EQ(scene.light_list.at(lightId).shared(), light);
+	EXPECT_EQ(scene.obj_list.at(meshId).shared(), mesh);
+	EXPECT_EQ(scene.mesh_list.at(meshId).shared(), mesh);
+	EXPECT_EQ(scene.obj_list.at(spriteId).shared(), sprite);
+	EXPECT_EQ(scene.sprite_list.at(spriteId).shared(), sprite);
+	EXPECT_EQ(scene.obj_list.at(dLineId).shared(), dLine);
+	EXPECT_EQ(scene.dLine_list.at(dLineId).shared(), dLine);
+	EXPECT_EQ(scene.obj_list.at(dPointsId).shared(), dPoints);
+	EXPECT_EQ(scene.dPoints_list.at(dPointsId).shared(), dPoints);
 
 	// --- Each type-specific pool has exactly one entry ---
 	EXPECT_EQ(scene.cam_list.size(),      1u);
