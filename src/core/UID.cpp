@@ -4,29 +4,12 @@
  */
 
 #include "core/UID.hpp"
-#include "core/ArchiveUID.hpp"
 
 #include <limits>
 #include <stdexcept>
-#include <utility>
 
 namespace neurus
 {
-namespace
-{
-thread_local int archiveId = -1;
-}
-
-ArchiveUID::ArchiveUID(int id)
-	: m_previous(std::exchange(archiveId, id))
-{
-}
-
-ArchiveUID::~ArchiveUID()
-{
-	archiveId = m_previous;
-}
-
 // --- Static member definition --------------------------------------------
 
 int UID::s_count = 0;
@@ -34,13 +17,16 @@ int UID::s_count = 0;
 // --- UID -----------------------------------------------------------------
 
 UID::UID()
-	: o_id(std::exchange(archiveId, -1))
 {
-	if (o_id >= 0)
-		return;
 	if (s_count == std::numeric_limits<int>::max())
 		throw std::overflow_error("UID allocator exhausted");
 	o_id = s_count++;
+}
+
+UID::UID(RestoredId id)
+	: o_id(id.value)
+{
+	ReserveThrough(o_id);
 }
 
 void UID::ReserveThrough(int id)

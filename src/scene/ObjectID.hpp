@@ -122,6 +122,13 @@ public:
 	 * @brief Constructs an ObjectID with default values.
 	 */
 	ObjectID() = default;
+	explicit ObjectID(RestoredId id) : UID(id) {}
+
+protected:
+	ObjectID(GOType type, const char* name) : o_name(name), o_type(type) {}
+	ObjectID(RestoredId id, GOType type, const char* name) : UID(id), o_name(name), o_type(type) {}
+
+public:
 
 	/**
 	 * @brief Destroys the ObjectID.
@@ -138,10 +145,10 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive>
+	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<UID>(this));
+		ar(ArchiveBase<UID>(this));
 		archive::Optional(ar, CEREAL_NVP(o_name), CEREAL_NVP(o_type),
 		                  CEREAL_NVP(is_viewport), CEREAL_NVP(is_rendered));
 	}

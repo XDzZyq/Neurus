@@ -21,13 +21,6 @@ auto& liveTypes()
 	return types;
 }
 
-const ResourceTypeRegistration* findLiveType(const UID& resource)
-{
-	const auto& types = liveTypes();
-	const auto it = types.find(typeid(resource));
-	return it == types.end() ? nullptr : it->second;
-}
-
 } // namespace
 
 void ResourceTypeRegistration::Register(const char* archiveName) const
@@ -36,56 +29,34 @@ void ResourceTypeRegistration::Register(const char* archiveName) const
 	liveTypes().emplace(type, this);
 }
 
-std::optional<std::type_index> FindResourceType(std::string_view archiveName)
+const ResourceTypeRegistration* ResourceTypeRegistration::Find(std::string_view name)
 {
-	const auto& types = resourceTypes();
-	const auto it = types.find(archiveName);
-	if (it == types.end())
-		return std::nullopt;
-	return it->second->type;
+	const auto it = resourceTypes().find(name);
+	return it == resourceTypes().end() ? nullptr : it->second;
 }
 
-const char* ResourceArchiveName(std::string_view archiveName)
+const ResourceTypeRegistration* ResourceTypeRegistration::Find(std::type_index type)
 {
-	const auto& types = resourceTypes();
-	auto it = types.find(archiveName);
-	return it == types.end() ? nullptr : it->first.data();
-}
-
-const char* ResourceNameField(std::string_view archiveName)
-{
-	const auto& types = resourceTypes();
-	auto it = types.find(archiveName);
-	return it == types.end() ? nullptr : it->second->nameField;
-}
-
-int ResourceIdentityDepth(std::string_view archiveName)
-{
-	return resourceTypes().at(archiveName)->identityDepth;
+	const auto it = liveTypes().find(type);
+	return it == liveTypes().end() ? nullptr : it->second;
 }
 
 std::string ReadResourceName(const UID& resource)
 {
-	const auto* info = findLiveType(resource);
+	const auto* info = ResourceTypeRegistration::Find(typeid(resource));
 	return info && info->readName ? info->readName(resource) : std::string{};
 }
 
 void WriteResourceName(UID& resource, const std::string& name)
 {
-	if (const auto* info = findLiveType(resource); info && info->writeName)
+	if (const auto* info = ResourceTypeRegistration::Find(typeid(resource)); info && info->writeName)
 		info->writeName(resource, name);
 }
 
 bool IsUsableResource(const UID& resource)
 {
-	const auto* info = findLiveType(resource);
+	const auto* info = ResourceTypeRegistration::Find(typeid(resource));
 	return !info || !info->usable || info->usable(resource);
-}
-
-bool ValidResourcePayload(std::string_view archiveName, const nlohmann::ordered_json& data)
-{
-	const auto check = resourceTypes().at(archiveName)->validPayload;
-	return !check || check(data);
 }
 
 } // namespace neurus

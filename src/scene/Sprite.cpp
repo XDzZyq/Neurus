@@ -13,9 +13,13 @@ namespace neurus
 // -----------------------------------------------------------------------
 
 Sprite::Sprite()
-	: ObjectID()
+	: ObjectID(GOType::GO_SPRITE, "")
 {
-	o_type = ObjectID::GOType::GO_SPRITE;
+}
+
+Sprite::Sprite(RestoredId id)
+	: ObjectID(id, GOType::GO_SPRITE, "")
+{
 }
 
 // -----------------------------------------------------------------------

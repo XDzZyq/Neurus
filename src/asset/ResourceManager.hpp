@@ -44,6 +44,8 @@
 #include "asset/ResourceRef.hpp"
 #include "core/UID.hpp"
 
+namespace cereal { class JSONOutputArchive; class JSONInputArchive; }
+
 namespace neurus
 {
 
@@ -222,39 +224,14 @@ public:
 	/**
 	 * @brief Cereal serialization of the whole pool.
 	 *
-	 * Save writes every pooled UID object polymorphically; load restores them,
-	 * and each object's own serialize(load) restores its content. Names and the
-	 * per-type index are derived state, never serialized: a load replaces the
-	 * pool, so it drops the old registry, rebuilds the type index from the
-	 * restored objects, and leaves names for the caller to re-seed.
+	 * Each record contains a UID key, the concrete resource type and its fields.
+	 * Saving retains deferred records. Direct archive loading constructs the
+	 * objects, rebuilds the type index and then resolves their references.
 	 *
-	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive>
-	void serialize(Archive& ar)
-	{
-		if constexpr (Archive::is_saving::value)
-		{
-			// The standalone cereal archive encodes complete objects.
-			while (!m_loaders.empty())
-				Get(m_loaders.begin()->first);
-			ar(CEREAL_NVP(resources_));
-		}
-		else
-		{
-			decltype(resources_) restored;
-			ArchiveResourceRefs refs(ar);
-			ar(cereal::make_nvp("resources_", restored));
-			// Null pointers stand for runtime defaults and have no pool entry.
-			std::erase_if(restored, [](const auto& entry) { return !entry.second; });
-			Clear();
-			resources_.swap(restored);
-			RebuildTypeIndex();
-			for (int uid : refs.Resolve(*this))
-				Remove(uid);
-		}
-	}
+	void save(cereal::JSONOutputArchive& ar) const;
+	void load(cereal::JSONInputArchive& ar);
 
 private:
 	/// Reverse entry for one registered name: the object's dynamic type + name.

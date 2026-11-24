@@ -329,8 +329,8 @@ the executor drains the in-flight frames first
 the last frame may still read) and then `RenderCache::RemoveSceneResources()`.
 What the Editor still guarantees is ORDER - this post precedes the new scene's upload
 posts, and FIFO execution evicts the old scene before the new one uploads. This
-is not housekeeping: the caches are keyed by object UID and `UID::serialize()`
-restores `o_id` from the file, so an entry left behind shadows whatever returns
+is not housekeeping: the caches are keyed by object UID and the pool
+restores that identity from its record key, so an entry left behind shadows whatever returns
 under the same id. Load project A, then project B, and B draws A's geometry,
 shadow maps and cubemaps while its own properties are displayed correctly beside
 them. The same reasoning is why the scene-upload environment post is

@@ -200,11 +200,11 @@ TEST(ShaderDataPersistence, ResourceComponentPreservesRenderAndComputeShadersByN
 		neurus::project::ResourceComponent save(resources);
 		save.Save(out);
 	}
-	// These keys must remain readable by earlier Neurus versions.
+	// Both shader types persist their name and concrete shader fields.
 	const auto saved = nlohmann::ordered_json::parse(ss.str());
 	for (const auto& entry : saved.at("m_resources").at("resources_"))
 	{
-		const auto& data = entry.at("value").at("ptr_wrapper").at("data");
+		const auto& data = entry.at("data");
 		if (entry.at("key") == compute->GetObjectID())
 		{
 			EXPECT_EQ(data.at("value0").at("m_name"), "Comp");
@@ -369,7 +369,7 @@ TEST(ShaderDataPersistence, NullPoolEntriesDoNotSurviveLoadOrSave)
 
 	neurus::ResourceManager restored;
 	std::stringstream serialized(
-		R"({"m_resources":{"resources_":[{"key":9123,"value":{"polymorphic_id":0}}]}})");
+		R"({"m_resources":{"resources_":[{"key":9123,"type":"neurus::RenderShader","data":null}]}})");
 	{
 		cereal::JSONInputArchive archive(serialized);
 		neurus::project::ResourceComponent load(restored);
@@ -469,13 +469,11 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 	int brokenId = 0;
 	for (auto& entry : entries)
 	{
-		auto& value = entry["value"];
-		if (value.value("polymorphic_name", "") == "neurus::RenderShader")
+		if (entry.at("type") == "neurus::RenderShader")
 		{
-			// Corrupt the type-defining entry. The following shader of that same
-			// type still uses Cereal's short type ID and must remain loadable.
+			// A malformed shader must leave its sibling of the same type loadable.
 			brokenId = entry["key"].get<int>();
-			value["ptr_wrapper"]["data"] = nlohmann::ordered_json::object();
+			entry["data"] = nlohmann::ordered_json::object();
 			break;
 		}
 	}
@@ -483,7 +481,7 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 	for (auto& entry : entries)
 	{
 		if (entry["key"] == mesh->GetObjectID() || entry["key"] == otherMesh->GetObjectID())
-			entry["value"]["ptr_wrapper"]["data"]["o_shaderId"] = brokenId;
+			entry["data"]["o_shaderId"] = brokenId;
 	}
 	{ std::ofstream file(path); file << document.dump(); }
 
@@ -559,7 +557,7 @@ TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
 	for (auto& entry : document["m_resources"]["resources_"])
 	{
 		if (entry["key"] == shader->GetObjectID())
-			entry["value"]["ptr_wrapper"]["data"]["m_vertPath"] = 42;
+			entry["data"]["m_vertPath"] = 42;
 	}
 	neurus::ResourceManager restored;
 	neurus::project::ResourceComponent load(restored);

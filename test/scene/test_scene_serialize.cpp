@@ -27,7 +27,6 @@
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/ResourceManager.hpp"
-#include "core/ArchiveUID.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
@@ -62,12 +61,10 @@ TEST(SceneSerialize, MembershipIncludesPooledUidZero)
 {
 	ResourceManager resources;
 	Scene source;
-	std::shared_ptr<Light> light;
-	{
-		const ArchiveUID identity(0);
-		light = resources.Load<Light>();
-	}
+	const int nextId = UID::GetTotalAllocated();
+	const auto light = resources.Load<Light>(RestoredId{0});
 	ASSERT_EQ(light->GetObjectID(), 0);
+	EXPECT_EQ(UID::GetTotalAllocated(), nextId);
 	source.UseLight(light);
 	std::stringstream document;
 	{

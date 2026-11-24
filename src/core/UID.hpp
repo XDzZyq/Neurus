@@ -15,6 +15,12 @@
 namespace neurus
 {
 
+/// An identity supplied by a persisted resource record.
+struct RestoredId
+{
+	int value;
+};
+
 /**
  * @brief Base class providing globally unique integer IDs.
  *
@@ -37,6 +43,7 @@ public:
 	 * @brief Constructs a UID and assigns a unique ID.
 	 */
 	UID();
+	explicit UID(RestoredId id);
 
 	/**
 	 * @brief Virtual destructor for polymorphic use.

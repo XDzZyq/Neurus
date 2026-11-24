@@ -176,32 +176,18 @@ std::set<std::string> KeyNames(const std::string& json)
 	return keys;
 }
 
-void CollectAuthoredShaderBindings(const nlohmann::json& value, std::map<int, int>& bindings)
+std::map<int, int> AuthoredShaderBindings(const nlohmann::json& document)
 {
-	if (value.is_object())
+	std::map<int, int> bindings;
+	for (const auto& record : document.at("project").at("m_resources").at("resources_"))
 	{
-		if (const auto shader = value.find("o_shaderId"); shader != value.end())
-		{
-			EXPECT_TRUE(shader->is_number_integer());
-			if (shader->is_number_integer() && shader->get<int>() != 0)
-			{
-				const nlohmann::json* identity = &value;
-				while (!identity->contains("o_id") && identity->contains("value0")
-				       && (*identity)["value0"].is_object())
-					identity = &(*identity)["value0"];
-				EXPECT_TRUE(identity->contains("o_id")) << "nonzero shader reference has no owning mesh UID";
-				if (identity->contains("o_id"))
-					bindings.emplace((*identity)["o_id"].get<int>(), shader->get<int>());
-			}
-		}
-		for (const auto& child : value.items())
-			CollectAuthoredShaderBindings(child.value(), bindings);
+		if (record.at("type") != "neurus::Mesh")
+			continue;
+		const int shader = record.at("data").value("o_shaderId", 0);
+		if (shader != 0)
+			bindings.emplace(record.at("key").get<int>(), shader);
 	}
-	else if (value.is_array())
-	{
-		for (const auto& child : value)
-			CollectAuthoredShaderBindings(child, bindings);
-	}
+	return bindings;
 }
 
 } // namespace
@@ -681,26 +667,15 @@ TEST(SerializeOptional, PreferencesCorruptFileKeepsLiveValues)
 }
 
 // =======================================================================
-// 8. A real file written by an earlier build survives a write round trip
+// 8. Current-format project files survive a write round trip
 // =======================================================================
 
 /**
- * @test Re-saving a shipped example project drops none of the keys it arrived with.
- *
- * Every other test here builds its archive in memory, so none of them can tell
- * whether a *file on disk* comes back out intact - the whole
- * backward-compatibility claim: open an older project, save it, and the file is
- * still the same format rather than one quietly short a field.
- *
- * The examples are fixed, test-only files under test/asset/projects/ (an
- * application run cannot perturb them): one already carries the trailing
- * `m_editor` node, one predates it. The comparison is one-directional on
- * purpose - the new file may have *more* keys (it may gain a field a newer
- * build writes). Only old zero shader bindings may disappear; every nonzero
- * binding must survive on the same mesh. EditorComponent is registered (last, as the
- * application does) so the `m_editor` node round-trips either way.
+ * @test Files with and without optional editor state preserve their authored
+ * fields. Null shader bindings may be omitted. Nonzero bindings must still
+ * refer to the same shader from the same mesh after a save.
  */
-TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
+TEST(SerializeOptional, ShippedProjectResavesWithAuthoredKeys)
 {
 
 	const std::string base = std::string(TEST_SOURCE_DIR) + "/test/asset/projects/";
@@ -744,10 +719,8 @@ TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 		const auto oldKeys = KeyNames(before);
 		const auto newKeys = KeyNames(after);
 		ASSERT_FALSE(oldKeys.empty());
-		std::map<int, int> oldShaderBindings;
-		std::map<int, int> newShaderBindings;
-		CollectAuthoredShaderBindings(nlohmann::json::parse(before), oldShaderBindings);
-		CollectAuthoredShaderBindings(nlohmann::json::parse(after), newShaderBindings);
+		const auto oldShaderBindings = AuthoredShaderBindings(nlohmann::json::parse(before));
+		const auto newShaderBindings = AuthoredShaderBindings(nlohmann::json::parse(after));
 		for (const auto& [meshUid, shaderUid] : oldShaderBindings)
 		{
 			const auto restored = newShaderBindings.find(meshUid);

@@ -21,6 +21,13 @@ namespace neurus {
 // Constructor
 // =========================================================================
 
+RenderShader::RenderShader(RestoredId id)
+	: ShaderData(id)
+{
+	sh_stages.try_emplace(ShaderType::VERTEX);
+	sh_stages.try_emplace(ShaderType::FRAGMENT);
+}
+
 RenderShader::RenderShader(std::string name, std::string vertPath, std::string fragPath)
 	: ShaderData(std::move(name))
 	, sh_vertPath(std::move(vertPath))

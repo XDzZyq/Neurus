@@ -88,7 +88,7 @@ TEST_F(GraphComponent, ActiveUidSelectsOnePooledPayload)
 	const auto savedPool = SavePool(pool);
 	const auto& entries = savedPool.at("m_resources").at("resources_");
 	ASSERT_EQ(entries.size(), 1u);
-	const auto& payload = entries[0].at("value").at("ptr_wrapper").at("data").at("topology");
+	const auto& payload = entries[0].at("data").at("topology");
 	EXPECT_EQ(payload.at("nodes").size(), expected.nodes.size());
 	EXPECT_EQ(payload.at("edges").size(), expected.edges.size());
 
@@ -101,7 +101,7 @@ TEST_F(GraphComponent, ActiveUidSelectsOnePooledPayload)
 	// A save after editing must read the live topology, not the original record.
 	selected->nodes.front()->data.x = 32.0f;
 	const auto edited = SavePool(resources);
-	EXPECT_EQ(edited.at("m_resources").at("resources_")[0].at("value").at("ptr_wrapper")
+	EXPECT_EQ(edited.at("m_resources").at("resources_")[0]
 	              .at("data").at("topology").at("nodes")[0].at("x"), 32.0f);
 }
 
@@ -116,11 +116,10 @@ TEST_F(GraphComponent, CorruptFirstGraphDoesNotDiscardSiblingResources)
 	int rejected = -1;
 	for (auto& entry : saved.at("m_resources").at("resources_"))
 	{
-		auto& value = entry.at("value");
-		if (value.value("polymorphic_name", "") == "neurus::RenderGraphData")
+		if (entry.at("type") == "neurus::RenderGraphData")
 		{
 			rejected = entry.at("key").get<int>();
-			value.at("ptr_wrapper").at("data").at("topology")["edges"] = 42;
+			entry.at("data").at("topology")["edges"] = 42;
 			break;
 		}
 	}
@@ -277,7 +276,7 @@ TEST_F(GraphComponent, PoolReaderRejectsMalformedTopology)
 	const auto graph = source.Load<neurus::RenderGraphData>(catalog.Ports());
 	const auto saved = SavePool(source);
 	auto topology = [](auto& pool) -> auto& {
-		return pool.at("m_resources").at("resources_")[0].at("value").at("ptr_wrapper").at("data").at("topology");
+		return pool.at("m_resources").at("resources_")[0].at("data").at("topology");
 	};
 	std::vector<nlohmann::ordered_json> corrupt;
 	corrupt.push_back(saved);

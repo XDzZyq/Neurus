@@ -17,9 +17,9 @@
 #include "core/UID.hpp"
 
 // --- Derived data-resource registration ---
-NEURUS_REGISTER_RESOURCE_TYPE(MeshData, 1)
-NEURUS_REGISTER_RESOURCE_TYPE(ImageData, 1)
-NEURUS_REGISTER_RESOURCE_TYPE(RenderGraphData, 1, [](const nlohmann::ordered_json& data) {
+NEURUS_REGISTER_RESOURCE_TYPE(MeshData, 0)
+NEURUS_REGISTER_RESOURCE_TYPE(ImageData, 0)
+NEURUS_REGISTER_RESOURCE_TYPE(RenderGraphData, 0, [](const nlohmann::ordered_json& data) {
 	return data.contains("topology") && neurus::project::ValidGraphShape(data.at("topology"));
 })
 

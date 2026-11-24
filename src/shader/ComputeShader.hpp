@@ -78,6 +78,7 @@ public:
 	 * @param compPath Path to the compute shader GLSL source file (.comp.glsl).
 	 */
 	ComputeShader(std::string name = "", std::string compPath = "");
+	explicit ComputeShader(RestoredId id);
 
 	~ComputeShader() override = default;
 
@@ -144,10 +145,10 @@ public:
 	 * A source-backed stage with empty code reloads from its path.
 	 * CompileToSpv() then rebuilds the runtime SPIR-V.
 	 */
-	template<class Archive>
+	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<ShaderData>(this),
+		ar(ArchiveBase<ShaderData>(this),
 		   cereal::make_nvp("m_compPath", sh_compPath),
 		   cereal::make_nvp("m_defaults", sh_defaults),
 		   cereal::make_nvp("stages", sh_stages));

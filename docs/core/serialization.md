@@ -45,7 +45,7 @@ An `OptionalField` note: either the whole field is in the file or none of it is.
 
 Value fields are optional; identity and history are not. Absence there means a broken reference or a replay that would corrupt the scene, which must surface instead of being papered over:
 
-- `UID::o_id` - every cross-reference resolves through it.
+- The pool record key identifies the object for every cross-reference. Standalone cereal objects carry `UID::o_id`.
 - The `cereal::base_class<>` hooks.
 - Resource identities and the Scene's ID lists. Individual disk pool entries are
   isolated: a malformed or unknown entry is skipped and reported without losing
@@ -89,7 +89,7 @@ into the saved project. These disk policies are distinct from the lower-level
 
 ## `base_class` adds a node
 
-`cereal::base_class<ObjectID>(this)` writes a `"value0"` object, so a `Mesh`'s `o_id` sits two `"value0"` levels deep (`value0.value0.o_id`) and the mesh's own fields are flat beside `"transform"`. Hand-writing a legacy archive for a test means reproducing that nesting; saving a real object and patching the text is the safer idiom.
+`cereal::base_class<ObjectID>(this)` writes a `"value0"` object, so a standalone `Mesh`'s `o_id` sits two `"value0"` levels deep (`value0.value0.o_id`) and the mesh's own fields are flat beside `"transform"`. In a pooled mesh, the surrounding record supplies the identity through its `key`.
 
 ## Project and Serializable
 

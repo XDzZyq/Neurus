@@ -24,9 +24,14 @@ Camera::Camera(float w, float h, float per, float n, float f)
 }
 
 Camera::Camera()
+	: ObjectID(Type, "Camera")
 {
-	o_type = ObjectID::GOType::GO_CAM;
-	o_name = "Camera";
+	RecomputeMatrices();
+}
+
+Camera::Camera(RestoredId id)
+	: ObjectID(id, Type, "Camera")
+{
 	RecomputeMatrices();
 }
 

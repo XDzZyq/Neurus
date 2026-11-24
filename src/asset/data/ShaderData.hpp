@@ -39,6 +39,7 @@ public:
 	 * @param name Human-readable name (for logging and the pool registry).
 	 */
 	explicit ShaderData(std::string name = "");
+	explicit ShaderData(RestoredId id) : UID(id) {}
 	virtual ~ShaderData() = default;
 
 	// Non-copyable / non-movable (inherits UID semantics).
@@ -62,10 +63,10 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive>
+	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<UID>(this), cereal::make_nvp("m_name", sh_name));
+		ar(ArchiveBase<UID>(this), cereal::make_nvp("m_name", sh_name));
 	}
 
 	/**

@@ -4,7 +4,8 @@
 #include <nlohmann/json_fwd.hpp>
 #include "core/UID.hpp"
 
-#include <optional>
+#include <cereal/archives/json.hpp>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <typeindex>
@@ -13,27 +14,38 @@
 namespace neurus
 {
 
-/// Returns the concrete type named in a pooled cereal record, without constructing it.
-std::optional<std::type_index> FindResourceType(std::string_view archiveName);
-
-/// Cereal uses the stable address of a registered name as its output-archive key.
-const char* ResourceArchiveName(std::string_view archiveName);
-const char* ResourceNameField(std::string_view archiveName);
-int ResourceIdentityDepth(std::string_view archiveName);
 std::string ReadResourceName(const UID& resource);
 void WriteResourceName(UID& resource, const std::string& name);
 bool IsUsableResource(const UID& resource);
-bool ValidResourcePayload(std::string_view archiveName, const nlohmann::ordered_json& data);
+/// Serializes the concrete fields using the same functions as standalone cereal
+/// objects. In a pool the record key already carries the UID base's only field.
+template<class T>
+struct PooledFields
+{
+	T* object;
+
+	template<class Archive>
+	void serialize(Archive& ar)
+	{
+		if constexpr (!std::is_same_v<T, UID>)
+			object->template serialize<Archive, PooledFields>(ar);
+	}
+};
 
 /// Static metadata installed by the translation unit that registers the concrete
-/// type with cereal. Depth counts unnamed serialized bases down to UID.
+/// type with cereal.
 struct ResourceTypeRegistration
 {
 	using PayloadCheck = bool (*)(const nlohmann::ordered_json&);
 	using ObjectCheck = bool (*)(const UID&);
 
 	std::type_index type;
-	int identityDepth;
+	const char* name;
+	int nameDepth;
+	void (*writeBody)(cereal::JSONOutputArchive&, const UID&);
+	std::shared_ptr<UID> (*readBody)(cereal::JSONInputArchive&, RestoredId);
+	static const ResourceTypeRegistration* Find(std::string_view archiveName);
+	static const ResourceTypeRegistration* Find(std::type_index type);
 	PayloadCheck validPayload;
 	ObjectCheck usable;
 	const char* nameField = nullptr;
@@ -41,10 +53,21 @@ struct ResourceTypeRegistration
 	void (*writeName)(UID&, const std::string&) = nullptr;
 
 	template<class T>
-	ResourceTypeRegistration(std::type_identity<T>, const char* archiveName, int depth,
+	ResourceTypeRegistration(std::type_identity<T>, const char* archiveName, int nameDepth,
 	                         PayloadCheck valid = nullptr, ObjectCheck check = nullptr)
-		: type(typeid(T)), identityDepth(depth), validPayload(valid), usable(check)
+		: type(typeid(T)), name(archiveName), nameDepth(nameDepth), validPayload(valid), usable(check)
 	{
+		writeBody = [](cereal::JSONOutputArchive& ar, const UID& object) {
+			// Cereal's shared save/load member is non-const even on output.
+			PooledFields<T> fields{&const_cast<T&>(static_cast<const T&>(object))};
+			ar(cereal::make_nvp("data", fields));
+		};
+		readBody = [](cereal::JSONInputArchive& ar, RestoredId id) -> std::shared_ptr<UID> {
+			auto object = std::make_shared<T>(id);
+			PooledFields<T> fields{object.get()};
+			ar(cereal::make_nvp("data", fields));
+			return object;
+		};
 		if constexpr (requires(T object) { object.o_name; })
 		{
 			nameField = "o_name";

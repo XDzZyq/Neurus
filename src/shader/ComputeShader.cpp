@@ -19,6 +19,12 @@ namespace neurus {
 // Construction
 // =========================================================================
 
+ComputeShader::ComputeShader(RestoredId id)
+	: ShaderData(id)
+{
+	sh_stages.try_emplace(ShaderType::COMPUTE);
+}
+
 ComputeShader::ComputeShader(std::string name, std::string compPath)
 	: ShaderData(std::move(name))
 	, sh_compPath(std::move(compPath))

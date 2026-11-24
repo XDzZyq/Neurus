@@ -4,9 +4,7 @@
  */
 
 #include "asset/components/ResourceComponent.hpp"
-#include "asset/components/ResourceArchiveWriter.hpp"
 
-#include "core/ArchiveUID.hpp"
 #include "core/Log.hpp"
 #include "asset/ResourceManager.hpp"
 #include "asset/ResourceType.hpp"
@@ -19,12 +17,10 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <cstdint>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <map>
-#include <unordered_map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,88 +35,41 @@ using Json = nlohmann::ordered_json;
 
 struct ResourceRecord
 {
-	std::type_index type;
+	const ResourceTypeRegistration* type;
 	std::string name;
 	std::string payload;
 };
 
-// Cereal writes the concrete type name once per archive. Make each retained
-// pointer self-contained before the archive and its type dictionary go away.
-std::string normalizeType(Json& value, std::unordered_map<uint32_t, std::string>& typeNames)
+std::pair<int, ResourceRecord> readRecord(const Json& entry)
 {
-	constexpr uint32_t definition = 0x80000000u;
-	constexpr uint32_t staticType = 0x40000000u;
-	const auto& encoded = value.at("polymorphic_id");
-	if (!encoded.is_number_unsigned() || encoded.get<uint64_t>() > std::numeric_limits<uint32_t>::max())
-		throw std::runtime_error("invalid resource type ID");
-	const uint32_t type = encoded.get<uint32_t>();
-	if (type == 0)
-		return {}; // Cereal's null pointer marker.
-	if (type == staticType)
-		return "neurus::UID";
-
-	const uint32_t typeId = type & ~definition;
-	if (typeId == 0 || (typeId & staticType) != 0)
-		throw std::runtime_error("invalid resource type ID");
-	if ((type & definition) != 0)
-		typeNames[typeId] = value.at("polymorphic_name").get<std::string>();
-	else
-	{
-		value["polymorphic_id"] = typeId | definition;
-		value["polymorphic_name"] = typeNames.at(typeId);
-	}
-	return typeNames.at(typeId);
-}
-
-std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeName)
-{
-	const auto type = FindResourceType(typeName);
+	const auto& key = entry.at("key");
+	if (!key.is_number_integer() || key < 0 || key >= std::numeric_limits<int>::max())
+		throw std::runtime_error("invalid resource UID");
+	const auto& typeName = entry.at("type").get_ref<const std::string&>();
+	const auto* type = ResourceTypeRegistration::Find(typeName);
 	if (!type)
 		throw std::runtime_error("unknown resource type: " + typeName);
-
-	auto& value = entry.at("value");
-	const auto& wrapper = value.at("ptr_wrapper");
-	const auto& pointer = wrapper.at("id");
-	if (!pointer.is_number_unsigned() || pointer.get<uint64_t>() > std::numeric_limits<uint32_t>::max()
-		|| (pointer.get<uint32_t>() & 0x80000000u) == 0)
-		throw std::runtime_error("invalid resource pointer payload");
-	const auto& data = wrapper.at("data");
-	if (!ValidResourcePayload(typeName, data))
+	const auto& data = entry.at("data");
+	if (!data.is_object() || (type->validPayload && !type->validPayload(data)))
 		throw std::runtime_error("invalid pooled resource payload");
 
-	// Cereal puts each unnamed base at value0. Scene objects and concrete
-	// shaders each have a named base between their own fields and UID.
-	const char* nameField = ResourceNameField(typeName);
-	const Json* base = &data;
-	const Json* parent = nullptr;
-	const int depth = ResourceIdentityDepth(typeName);
-	for (int i = 0; i < depth; ++i)
-	{
-		if (base->contains("o_id"))
-			throw std::runtime_error("misplaced resource identity");
-		parent = base;
-		base = &base->at("value0");
-	}
-	if (base->contains("value0"))
-		throw std::runtime_error("invalid resource identity base");
 	std::string name;
-	if (nameField && parent && parent->contains(nameField))
-		name = parent->at(nameField).get<std::string>();
-	const auto& key = entry.at("key");
-	const auto& identity = base->at("o_id");
-	if (!key.is_number_integer() || key < 0 || key >= std::numeric_limits<int>::max()
-		|| !identity.is_number_integer() || identity != key)
-		throw std::runtime_error("invalid resource identity");
-	Json isolated;
-	isolated["value"] = std::move(value);
-	return {key.get<int>(), {*type, std::move(name), isolated.dump()}};
+	if (type->nameField)
+	{
+		const auto& fields = type->nameDepth == 0 ? data : data.at("value0");
+		if (!fields.is_object())
+			throw std::runtime_error("invalid pooled name fields");
+		if (fields.contains(type->nameField))
+			name = fields.at(type->nameField).get<std::string>();
+	}
+	return {key.get<int>(), {type, std::move(name), entry.dump()}};
 }
 
 void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
                     const std::shared_ptr<const ResourceReadServices>& services)
 {
 	auto payload = std::make_shared<const std::string>(std::move(record.payload));
-	auto load = [&pool, id, payload, services]() -> std::shared_ptr<UID>
+	auto load = [&pool, id, payload, services, type = record.type]() -> std::shared_ptr<UID>
 	{
 		try
 		{
@@ -129,12 +78,9 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 				std::istringstream stream(*payload);
 				cereal::JSONInputArchive archive(stream);
 				ArchiveResourceRefs refs(archive, services.get());
-				const ArchiveUID identity(id);
-				archive(cereal::make_nvp("value", resource));
+				resource = type->readBody(archive, RestoredId{id});
 				if (!refs.Resolve(pool).empty()) return nullptr;
 			}
-			if (!resource || resource->GetObjectID() != id)
-				throw std::runtime_error("restored resource identity differs from its indexed UID");
 			if (!IsUsableResource(*resource))
 				return nullptr;
 			WriteResourceName(*resource, pool.RegisteredName(id));
@@ -146,7 +92,7 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 			return nullptr;
 		}
 	};
-	pool.RegisterDeferred(id, record.type, std::move(load), payload);
+	pool.RegisterDeferred(id, record.type->type, std::move(load), payload);
 }
 
 } // namespace
@@ -158,7 +104,7 @@ ResourceComponent::ResourceComponent(ResourceManager& resources, std::shared_ptr
 
 void ResourceComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	WriteResourcePool(ar, m_resources);
+	ar(cereal::make_nvp("m_resources", m_resources));
 }
 
 void ResourceComponent::Load(cereal::JSONInputArchive& ar)
@@ -168,7 +114,7 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 	{
 		ar(cereal::make_nvp("m_resources", m_resources));
 	}
-	catch (const cereal::Exception& e)
+	catch (const std::exception& e)
 	{
 		// A broken pool must not leave objects from the previous project active.
 		NEURUS_ERR("ResourceComponent::Load: " << e.what() << " - using empty resource pool.");
@@ -206,19 +152,13 @@ void ResourceComponent::LoadJson(const std::string& object)
 		return;
 	}
 
-	// A broken defining entry can still name the type of a valid sibling.
-	std::unordered_map<uint32_t, std::string> typeNames;
 	std::map<int, std::vector<ResourceRecord>> records;
 	for (auto& entry : pool->at("resources_"))
 	{
 		try
 		{
-			const auto typeName = normalizeType(entry.at("value"), typeNames);
-			if (!typeName.empty())
-			{
-				auto [id, record] = readRecord(entry, typeName);
-				records[id].push_back(std::move(record));
-			}
+			auto [id, record] = readRecord(entry);
+			records[id].push_back(std::move(record));
 		}
 		catch (const std::exception& error)
 		{

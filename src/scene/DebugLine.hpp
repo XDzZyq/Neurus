@@ -35,6 +35,7 @@ class DebugLine : public ObjectID, public Transform3D
 public:
 	/** @brief Constructs a DebugLine with default properties. */
 	DebugLine();
+	explicit DebugLine(RestoredId id);
 
 	/** @brief Destroys the DebugLine. */
 	~DebugLine() override = default;
@@ -44,10 +45,10 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive>
+	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<ObjectID>(this),
+		ar(ArchiveBase<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		archive::Optional(ar, cereal::make_nvp("m_color", o_color),
 		                  cereal::make_nvp("m_width", o_width),

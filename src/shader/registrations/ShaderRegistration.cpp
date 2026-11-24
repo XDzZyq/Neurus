@@ -32,8 +32,6 @@ bool ValidShaderPayloadTypes(const nlohmann::ordered_json& value)
 		if ((name == "m_name" || name == "m_vertPath" || name == "m_fragPath"
 			|| name == "m_compPath" || name == "path" || name == "code") && !child.is_string())
 			return false;
-		if (name == "o_id" && !child.is_number_integer())
-			return false;
 		if (name == "parsed" && !child.is_object())
 			return false;
 		if (name == "stages")
@@ -69,8 +67,8 @@ bool ValidShaderRecord(const nlohmann::ordered_json& data)
 } // namespace
 
 // --- Derived shader registration (concrete leaves only) ---
-NEURUS_REGISTER_RESOURCE_TYPE(RenderShader, 2, ValidShaderRecord, UsableShader)
-NEURUS_REGISTER_RESOURCE_TYPE(ComputeShader, 2, ValidShaderRecord, UsableShader)
+NEURUS_REGISTER_RESOURCE_TYPE(RenderShader, 1, ValidShaderRecord, UsableShader)
+NEURUS_REGISTER_RESOURCE_TYPE(ComputeShader, 1, ValidShaderRecord, UsableShader)
 
 // --- Polymorphic relations (UID base -> shader leaves) ---
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::RenderShader)

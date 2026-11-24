@@ -73,6 +73,7 @@ public:
 	using GraphT = Graph<CpuPort, CpuNode>;
 
 	RenderGraphData() = default;
+	explicit RenderGraphData(RestoredId id) : UID(id) {}
 	/// Builds the built-in scene graph from the declared pass ports.
 	explicit RenderGraphData(const IPortSource& ports);
 
@@ -99,10 +100,10 @@ public:
 	 */
 	std::uint64_t Hash() const;
 
-	template<class Archive>
+	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<UID>(this));
+		ar(ArchiveBase<UID>(this));
 		if constexpr (Archive::is_loading::value)
 		{
 			// Pass shader bindings target fields in this record until the archive

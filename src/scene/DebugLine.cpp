@@ -13,10 +13,13 @@ namespace neurus
 // ---------------------------------------------------------------------------
 
 DebugLine::DebugLine()
-	: ObjectID()
+	: ObjectID(GOType::GO_DL, "DebugLine")
 {
-	o_type = GOType::GO_DL;
-	o_name = "DebugLine";
+}
+
+DebugLine::DebugLine(RestoredId id)
+	: ObjectID(id, GOType::GO_DL, "DebugLine")
+{
 }
 
 // ---------------------------------------------------------------------------

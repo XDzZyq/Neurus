@@ -15,9 +15,13 @@ namespace neurus
 // -----------------------------------------------------------------------
 
 Environment::Environment()
+	: ObjectID(Type, "Environment")
 {
-	o_type = ObjectID::GOType::GO_ENVIR;
-	o_name = "Environment";
+}
+
+Environment::Environment(RestoredId id)
+	: ObjectID(id, Type, "Environment")
+{
 }
 
 Environment::Environment(std::shared_ptr<ImageData> data)

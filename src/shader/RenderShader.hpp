@@ -44,6 +44,7 @@ public:
 	 * @param fragPath Path to the fragment shader GLSL source file.
 	 */
 	RenderShader(std::string name = "", std::string vertPath = "", std::string fragPath = "");
+	explicit RenderShader(RestoredId id);
 
 	/**
 	 * @brief Constructs a render shader from already resolved stage units.
@@ -92,10 +93,10 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive>
+	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
 	void serialize(Archive& ar)
 	{
-		ar(cereal::base_class<ShaderData>(this),
+		ar(ArchiveBase<ShaderData>(this),
 		   cereal::make_nvp("m_vertPath", sh_vertPath),
 		   cereal::make_nvp("m_fragPath", sh_fragPath),
 		   cereal::make_nvp("stages", sh_stages));

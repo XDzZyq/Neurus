@@ -6,7 +6,6 @@ find_package(Threads REQUIRED)
 add_library(neurus_core STATIC
 	UID.hpp
 	UID.cpp
-	ArchiveUID.hpp
 	Serialize.hpp
 	RenderConfig.hpp
 	GraphMorphism.hpp

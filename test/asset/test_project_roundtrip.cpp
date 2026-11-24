@@ -337,7 +337,6 @@ void ExpectContentLoads(uint64_t since, const char* phase, const std::array<int,
 
 } // namespace
 
-// Cereal writes an exact shared_ptr<UID> with a static-type marker and no type name.
 TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 {
 	const BuiltInRenderData catalog;
@@ -361,6 +360,14 @@ TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 	const auto named = restored.GetByName<Camera>(camera->o_name);
 	ASSERT_TRUE(named);
 	EXPECT_EQ(named->GetObjectID(), camera->GetObjectID());
+	EXPECT_EQ(UID::GetTotalAllocated(), nextUid);
+
+	ResourceManager direct;
+	std::istringstream stream(serialized.str());
+	cereal::JSONInputArchive archive(stream);
+	project::ResourceComponent(direct).Load(archive);
+	ASSERT_TRUE(direct.Get<UID>(plain->GetObjectID()));
+	ASSERT_TRUE(direct.Get<Camera>(camera->GetObjectID()));
 	EXPECT_EQ(UID::GetTotalAllocated(), nextUid);
 }
 

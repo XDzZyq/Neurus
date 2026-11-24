@@ -51,12 +51,11 @@ TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 	auto shaderRecord = std::find_if(records.begin(), records.end(),
 		[&](const Json& entry) { return entry.at("key") == shaderId; });
 	ASSERT_NE(shaderRecord, records.end());
-	// Force forward references while preserving cereal's type-definition order
-	// among the three meshes.
+	// Place the shader after the meshes that reference it.
 	std::rotate(shaderRecord, std::next(shaderRecord), records.end());
 	for (auto record = records.begin(); record != std::prev(records.end()); ++record)
 	{
-		const auto& data = record->at("value").at("ptr_wrapper").at("data");
+		const auto& data = record->at("data");
 		if (record->at("key") == unbound->GetObjectID())
 			EXPECT_FALSE(data.contains("o_shaderId"));
 		else
@@ -183,11 +182,13 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 	Json saved;
 	std::ifstream(copy) >> saved;
 	const auto& component = saved.at("project");
-	std::set<std::uint32_t> pointerIds;
+	std::set<int> keys;
 	for (const auto& entry : component.at("m_resources").at("resources_"))
 	{
-		const auto id = entry.at("value").at("ptr_wrapper").at("id").get<std::uint32_t>();
-		EXPECT_TRUE(pointerIds.insert(id).second);
+		EXPECT_EQ(entry.size(), 3u);
+		EXPECT_TRUE(entry.at("type").is_string());
+		EXPECT_EQ(entry.at("data").dump().find("\"o_id\""), std::string::npos);
+		EXPECT_TRUE(keys.insert(entry.at("key").get<int>()).second);
 	}
 	std::istringstream stream(component.dump());
 	cereal::JSONInputArchive archive(stream);
@@ -196,7 +197,7 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 	checkRestored(raw);
 }
 
-TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithMisplacedIdentity)
+TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithInvalidKey)
 {
 
 	ResourceManager source;
@@ -210,7 +211,7 @@ TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithMisplacedIdentity)
 	auto document = Json::parse(original.str());
 	for (auto& entry : document.at("m_resources").at("resources_"))
 		if (entry.at("key") == broken)
-			entry.at("value").at("ptr_wrapper").at("data") = Json{{"o_id", broken}};
+			entry.at("key") = -1;
 
 	ResourceManager pool;
 	project::ResourceComponent restored(pool);

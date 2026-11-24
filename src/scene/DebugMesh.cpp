@@ -6,10 +6,13 @@ namespace neurus
 {
 
 DebugMesh::DebugMesh()
-	: ObjectID()
+	: ObjectID(GOType::GO_DM, "DebugMesh")
 {
-	o_type = ObjectID::GOType::GO_DM;
-	o_name = "DebugMesh";
+}
+
+DebugMesh::DebugMesh(RestoredId id)
+	: ObjectID(id, GOType::GO_DM, "DebugMesh")
+{
 }
 
 DebugMesh::DebugMesh(std::shared_ptr<MeshData> meshData)
