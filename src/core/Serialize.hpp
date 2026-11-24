@@ -14,7 +14,7 @@
  *
  * For "absent" to mean "default", the object must start at its defaults: its
  * in-class member initializers are the only place a default is written, and
- * nothing in a load path restates it. Value fields, not identity: UID::o_id,
+ * nothing in a load path restates it. Pool entry keys,
  * the base_class hooks, the resource pool, ID lists and operations stay
  * strict, because absence there means a broken reference.
  *

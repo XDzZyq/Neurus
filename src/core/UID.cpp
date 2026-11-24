@@ -1,40 +1,22 @@
-/**
- * @file UID.cpp
- * @brief Implementation of the UID base class.
- */
-
 #include "core/UID.hpp"
 
-#include <limits>
 #include <stdexcept>
 
 namespace neurus
 {
-// --- Static member definition --------------------------------------------
 
-int UID::s_count = 0;
-
-// --- UID -----------------------------------------------------------------
-
-UID::UID()
+std::optional<int> UID::GetObjectID() const noexcept
 {
-	if (s_count == std::numeric_limits<int>::max())
-		throw std::overflow_error("UID allocator exhausted");
-	o_id = s_count++;
+	if (const auto membership = m_membership.lock())
+		return *membership;
+	return std::nullopt;
 }
 
-UID::UID(RestoredId id)
-	: o_id(id.value)
+int UID::RequireObjectID() const
 {
-	ReserveThrough(o_id);
-}
-
-void UID::ReserveThrough(int id)
-{
-	if (id < 0 || id == std::numeric_limits<int>::max())
-		throw std::out_of_range("Invalid persisted UID");
-	if (id >= s_count)
-		s_count = id + 1;
+	if (const auto id = GetObjectID())
+		return *id;
+	throw std::logic_error("Object has no resource pool membership");
 }
 
 } // namespace neurus

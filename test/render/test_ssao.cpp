@@ -96,7 +96,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	// Step 1: Load Cornell Box scene
 	// -------------------------------------------------------------------
-	auto cb = test::LoadCornellBox(*m_device, pd, *m_queue, m_graphicsQueueFamily);
+	auto cb = test::LoadCornellBox(m_resources, *m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_GT(cb.scene->mesh_list.size(), 0u) << "No meshes loaded for Cornell Box";
 
 	// Adjust camera aspect ratio to match the render target
@@ -113,7 +113,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *cb.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	cb.scene->UseCamera(cb.camera);
-	cb.scene->ActivateCamera(cb.camera->GetObjectID());
+	cb.scene->ActivateCamera(cb.camera->RequireObjectID());
 
 	RenderFrameSnapshot frameSnapshot;
 	RenderContext ctx{

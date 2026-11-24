@@ -79,7 +79,7 @@ void SubmitGesture(const neurus::TransformGizmo& gizmo, neurus::ObjectID& obj,
                    const neurus::Transform3D& transform, const neurus::ControllerContext& ctx)
 {
 	const neurus::TransformSnapshot& before = gizmo.Before();
-	const int uid = obj.GetObjectID();
+	const int uid = obj.RequireObjectID();
 
 	switch (gizmo.Mode())
 	{

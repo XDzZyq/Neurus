@@ -165,7 +165,6 @@
                             }
                         },
                         "o_meshDataId": 102,
-                        "o_shaderId": 0,
                         "using_shadow": true,
                         "using_material": true,
                         "using_sdf": true,
@@ -243,7 +242,6 @@
                             }
                         },
                         "o_meshDataId": 101,
-                        "o_shaderId": 0,
                         "using_shadow": true,
                         "using_material": true,
                         "using_sdf": true,
@@ -328,7 +326,6 @@
                             }
                         },
                         "o_meshDataId": 100,
-                        "o_shaderId": 0,
                         "using_shadow": true,
                         "using_material": true,
                         "using_sdf": true,

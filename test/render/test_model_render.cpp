@@ -151,7 +151,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	std::string objPath = ResolveAssetPath("res/obj/sphere.obj");
 
-	auto meshData = std::make_shared<MeshData>();
+	auto meshData = m_resources.Load<MeshData>();
 	const bool loaded = meshData->LoadObj(objPath);
 	ASSERT_TRUE(loaded) << "Failed to load OBJ: " << objPath;
 
@@ -197,7 +197,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	// Step 4: Create Camera (position above-back, looking at origin — Z-up)
 	// -----------------------------------------------------------------------
-	auto camera = std::make_shared<Camera>(
+	auto camera = m_resources.Load<Camera>(
 		800.0f, 600.0f,  // viewport size
 		60.0f,            // FOV
 		0.1f,             // near
@@ -209,7 +209,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	// Step 5: Create PointLight at position (3, 3, 3) with white color
 	// -----------------------------------------------------------------------
-	auto light = std::make_shared<Light>(
+	auto light = m_resources.Load<Light>(
 		LightType::POINTLIGHT,
 		10.0f,
 		glm::vec3(1.0f, 1.0f, 1.0f));
@@ -220,7 +220,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	// Step 6: Create Mesh from loaded data, assign material
 	// -----------------------------------------------------------------------
-	auto mesh = std::make_shared<Mesh>();
+	auto mesh = m_resources.Load<Mesh>();
 	mesh->o_name = "SphereMesh";
 	mesh->o_mesh = meshData;  // share ownership (no move - we copied data above)
 	mesh->o_material = material;
@@ -230,7 +230,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	Scene scene;
 	scene.UseCamera(camera);
-	scene.ActivateCamera(camera->GetObjectID());
+	scene.ActivateCamera(camera->RequireObjectID());
 	scene.UseMesh(mesh);
 	scene.UseLight(light);
 

@@ -42,7 +42,6 @@ public:
 
 	/** @brief Constructs a DebugPoints with default properties. */
 	DebugPoints();
-	explicit DebugPoints(RestoredId id);
 
 	/** @brief Destroys the DebugPoints. */
 	~DebugPoints() override = default;
@@ -52,10 +51,10 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<ObjectID>(this),
+		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		archive::Optional(ar, cereal::make_nvp("m_pointType", o_pointType),
 		                  cereal::make_nvp("m_color", o_color),

@@ -150,11 +150,11 @@ struct SceneCollection
 			return py::none();
 		}
 		const Pool& objects = scene->*(pool);
-		if (objects.find(obj->GetObjectID()) == objects.end())
+		if (objects.find(obj->RequireObjectID()) == objects.end())
 		{
 			return py::none(); // pooled, but the scene does not use it
 		}
-		return py::cast(Proxy{obj->GetObjectID(), view});
+		return py::cast(Proxy{obj->RequireObjectID(), view});
 	}
 };
 
@@ -261,7 +261,7 @@ struct ContextProxy
 			return py::none();
 		}
 		// The object itself resolves through the run's pool.
-		const int activeId = active->GetObjectID();
+		const int activeId = active->RequireObjectID();
 		const IResourceLookup* pool = PoolOf(view);
 		if (pool == nullptr || !pool->Get<Camera>(activeId))
 		{

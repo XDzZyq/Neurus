@@ -42,6 +42,7 @@
 #include "scene/DebugLine.hpp"
 #include "scene/DebugPoints.hpp"
 #include "scene/Light.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
 
@@ -61,26 +62,26 @@ namespace
  * @brief Registers a mesh with a distinguishable transform.
  * @return The mesh's UID — the stable key the renderer resolves MeshGPU through.
  */
-int AddMesh(Scene& scene, const glm::vec3& pos, float scale)
+int AddMesh(ResourceManager& resources, Scene& scene, const glm::vec3& pos, float scale)
 {
-	auto mesh = std::make_shared<Mesh>();
+	auto mesh = resources.Load<Mesh>();
 	mesh->SetPosition(pos);
 	mesh->SetScale(glm::vec3(scale));
 	scene.UseMesh(mesh);
-	return mesh->GetObjectID();
+	return mesh->RequireObjectID();
 }
 
 /**
  * @brief Registers a light with a distinguishable position and radius.
  * @return The light's UID — the stable key for LightGPU and its shadow layer.
  */
-int AddLight(Scene& scene, LightType type, const glm::vec3& pos, float radius)
+int AddLight(ResourceManager& resources, Scene& scene, LightType type, const glm::vec3& pos, float radius)
 {
-	auto light = std::make_shared<Light>(type);
+	auto light = resources.Load<Light>(type);
 	light->SetPosition(pos);
 	light->SetRadius(radius);
 	scene.UseLight(light);
-	return light->GetObjectID();
+	return light->RequireObjectID();
 }
 
 /// @brief The snapshot's record for @p uid, or nullptr when it carries none.
@@ -127,14 +128,14 @@ struct Populated
 		editor.NewScene();
 		Scene& scene = editor.GetScene();
 
-		meshA = AddMesh(scene, glm::vec3(1.0f, 2.0f, 3.0f), 1.0f);
-		meshB = AddMesh(scene, glm::vec3(-4.0f, 0.5f, 7.0f), 2.0f);
+		meshA = AddMesh(editor.GetResourceManager(), scene, glm::vec3(1.0f, 2.0f, 3.0f), 1.0f);
+		meshB = AddMesh(editor.GetResourceManager(), scene, glm::vec3(-4.0f, 0.5f, 7.0f), 2.0f);
 
 		// One of each shadow-casting type the passes branch on, so a snapshot
 		// that collapses the type field cannot pass.
-		lightPoint = AddLight(scene, LightType::POINTLIGHT, glm::vec3(0.0f, 0.0f, 5.0f), 0.25f);
-		lightSun   = AddLight(scene, LightType::SUNLIGHT, glm::vec3(10.0f, 0.0f, 10.0f), 0.5f);
-		lightSpot  = AddLight(scene, LightType::SPOTLIGHT, glm::vec3(-2.0f, -3.0f, 4.0f), 0.75f);
+		lightPoint = AddLight(editor.GetResourceManager(), scene, LightType::POINTLIGHT, glm::vec3(0.0f, 0.0f, 5.0f), 0.25f);
+		lightSun   = AddLight(editor.GetResourceManager(), scene, LightType::SUNLIGHT, glm::vec3(10.0f, 0.0f, 10.0f), 0.5f);
+		lightSpot  = AddLight(editor.GetResourceManager(), scene, LightType::SPOTLIGHT, glm::vec3(-2.0f, -3.0f, 4.0f), 0.75f);
 	}
 
 	int meshA = 0;
@@ -270,7 +271,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_SurvivesLaterSceneMutation)
 	scene.light_list.at(ids.lightSun)->SetShadow(false);
 	cam->SetPosition(glm::vec3(0.0f, -80.0f, 40.0f));    // the eye moves too
 	cam->SetTarPos(glm::vec3(7.0f, 1.0f, -2.0f));
-	AddMesh(scene, glm::vec3(5.0f, 5.0f, 5.0f), 3.0f);   // a whole new object
+	AddMesh(editor.GetResourceManager(), scene, glm::vec3(5.0f, 5.0f, 5.0f), 3.0f);   // a whole new object
 	scene.RemoveLight(ids.lightSpot);                     // and one gone
 	editor.EditRenderConfig().r_shadow_bias = 0.5f;
 
@@ -356,12 +357,12 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_GatesDebugDrawAndCopiesOverlays)
 
 	// Two segments and three points of debug geometry, at the identity transform
 	// so the world-space positions the builder bakes are the ones pushed here.
-	auto line = std::make_shared<DebugLine>();
+	auto line = editor.GetResourceManager().Load<DebugLine>();
 	line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 	line->PushDebugLine(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	scene.UseDebugLine(line);
 
-	auto points = std::make_shared<DebugPoints>();
+	auto points = editor.GetResourceManager().Load<DebugPoints>();
 	points->PushDebugPoint(glm::vec3(2.0f, 0.0f, 0.0f));
 	points->PushDebugPoint(glm::vec3(3.0f, 0.0f, 0.0f));
 	points->PushDebugPoint(glm::vec3(4.0f, 0.0f, 0.0f));
@@ -408,7 +409,7 @@ TEST(RenderFrameSnapshotTest, BuildSnapshot_GatesDebugDrawAndCopiesOverlays)
 	EXPECT_EQ(on.gizmoDraw.points.back().p, gizmoPivotBefore);
 
 	// --- And it is a copy: re-flattening both lists differently leaves it alone
-	auto extra = std::make_shared<DebugLine>();
+	auto extra = editor.GetResourceManager().Load<DebugLine>();
 	extra->PushDebugLine(glm::vec3(9.0f, 0.0f, 0.0f), glm::vec3(9.0f, 1.0f, 0.0f));
 	scene.UseDebugLine(extra);
 	scene.mesh_list.at(ids.meshA)->SetPosition(glm::vec3(1.0f, 20.0f, 3.0f));   // moves the pivot

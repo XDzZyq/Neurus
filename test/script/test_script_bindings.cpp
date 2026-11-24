@@ -66,7 +66,7 @@ TEST(ScriptBindings, ProxyAndViewSurviveAcrossRuns)
 	auto mesh = resources.Load<neurus::Mesh>();
 	// The registry name is authoritative; mirror the unique result into the
 	// display name so the scene index and Python agree.
-	mesh->o_name = resources.SetName(mesh->GetObjectID(), "Probe");
+	mesh->o_name = resources.SetName(mesh->RequireObjectID(), "Probe");
 	scene.UseMesh(mesh);
 
 	neurus::ScriptContext ctx;
@@ -74,7 +74,7 @@ TEST(ScriptBindings, ProxyAndViewSurviveAcrossRuns)
 	ctx.config    = &cfg;
 	ctx.resources = &resources;
 
-	const std::string meshUid = std::to_string(mesh->GetObjectID());
+	const std::string meshUid = std::to_string(mesh->RequireObjectID());
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
@@ -105,18 +105,18 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 	neurus::ResourceManager resources;
 
 	auto mesh = resources.Load<neurus::Mesh>();
-	mesh->o_name = resources.SetName(mesh->GetObjectID(), "Ground");
+	mesh->o_name = resources.SetName(mesh->RequireObjectID(), "Ground");
 	mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
 	mesh->SetRotation(glm::vec3(10.0f, 20.0f, 30.0f));
 	mesh->SetScale(glm::vec3(4.0f, 5.0f, 6.0f));
 
 	// Two meshes keep their default name: the registry suffixes the second one.
 	auto second = resources.Load<neurus::Mesh>();
-	second->o_name = resources.SetName(second->GetObjectID(), "Mesh");
+	second->o_name = resources.SetName(second->RequireObjectID(), "Mesh");
 	auto third = resources.Load<neurus::Mesh>();
-	third->o_name = resources.SetName(third->GetObjectID(), "Mesh");
+	third->o_name = resources.SetName(third->RequireObjectID(), "Mesh");
 	auto camera = resources.Load<neurus::Camera>();
-	camera->o_name = resources.SetName(camera->GetObjectID(), "Cam");
+	camera->o_name = resources.SetName(camera->RequireObjectID(), "Cam");
 
 	scene.UseMesh(mesh);
 	scene.UseMesh(second);
@@ -133,7 +133,7 @@ TEST(ScriptBindings, NameLookupIsTypedAndExposesTransform)
 
 	// The Python UID has to be the C++ identity, not merely self-consistent
 	// with another proxy taken from the same source.
-	const std::string meshUid = std::to_string(mesh->GetObjectID());
+	const std::string meshUid = std::to_string(mesh->RequireObjectID());
 
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
@@ -174,9 +174,9 @@ TEST(ScriptBindings, ResourceCollectionsIncludeDetachedObjects)
 	// by undo history would. Both are named through the registry, mirrored into
 	// the display name so the proxy's `.name` agrees.
 	auto meshA = resources.Load<neurus::Mesh>();
-	meshA->o_name = resources.SetName(meshA->GetObjectID(), "Attached");
+	meshA->o_name = resources.SetName(meshA->RequireObjectID(), "Attached");
 	auto meshB = resources.Load<neurus::Mesh>();
-	meshB->o_name = resources.SetName(meshB->GetObjectID(), "Detached");
+	meshB->o_name = resources.SetName(meshB->RequireObjectID(), "Detached");
 	scene.UseMesh(meshA);
 
 	neurus::ScriptContext ctx;
@@ -184,8 +184,8 @@ TEST(ScriptBindings, ResourceCollectionsIncludeDetachedObjects)
 	ctx.config    = &cfg;
 	ctx.resources = &resources;
 
-	const std::string uidA = std::to_string(meshA->GetObjectID());
-	const std::string uidB = std::to_string(meshB->GetObjectID());
+	const std::string uidA = std::to_string(meshA->RequireObjectID());
+	const std::string uidB = std::to_string(meshB->RequireObjectID());
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
@@ -246,12 +246,12 @@ TEST(ScriptBindings, SceneCollectionsMapEachScenePool)
 	// One named object per typed scene pool: a collection wired to the wrong
 	// pool member would report another pool's length or resolve its name to None.
 	auto camera = resources.Load<neurus::Camera>();
-	camera->o_name = resources.SetName(camera->GetObjectID(), "SceneCam");
+	camera->o_name = resources.SetName(camera->RequireObjectID(), "SceneCam");
 	auto light = resources.Load<neurus::Light>(
 		neurus::LightType::POINTLIGHT, 3.0f, glm::vec3(1.0f));
-	light->o_name = resources.SetName(light->GetObjectID(), "SceneLight");
+	light->o_name = resources.SetName(light->RequireObjectID(), "SceneLight");
 	auto env = resources.Load<neurus::Environment>();
-	env->o_name = resources.SetName(env->GetObjectID(), "SceneEnv");
+	env->o_name = resources.SetName(env->RequireObjectID(), "SceneEnv");
 
 	scene.UseCamera(camera);
 	scene.UseLight(light);
@@ -262,9 +262,9 @@ TEST(ScriptBindings, SceneCollectionsMapEachScenePool)
 	ctx.config    = &cfg;
 	ctx.resources = &resources;
 
-	const std::string camUid   = std::to_string(camera->GetObjectID());
-	const std::string lightUid = std::to_string(light->GetObjectID());
-	const std::string envUid   = std::to_string(env->GetObjectID());
+	const std::string camUid   = std::to_string(camera->RequireObjectID());
+	const std::string lightUid = std::to_string(light->RequireObjectID());
+	const std::string envUid   = std::to_string(env->RequireObjectID());
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
@@ -308,8 +308,8 @@ TEST(ScriptBindings, SceneFunctionsReadLiveState)
 	ctx.config    = &cfg;
 	ctx.resources = &resources;
 
-	const std::string meshUid = std::to_string(mesh->GetObjectID());
-	const std::string camUid  = std::to_string(camera->GetObjectID());
+	const std::string meshUid = std::to_string(mesh->RequireObjectID());
+	const std::string camUid  = std::to_string(camera->RequireObjectID());
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
@@ -324,7 +324,7 @@ TEST(ScriptBindings, SceneFunctionsReadLiveState)
 		"assert isinstance(selection[0], neurus.data.Object)\n", ctx));
 
 	// An activation made between runs is visible to the next call.
-	scene.ActivateCamera(camera->GetObjectID());
+	scene.ActivateCamera(camera->RequireObjectID());
 	EXPECT_TRUE(RunCleanly(engine,
 		"assert neurus.scene.active_camera().uid == " + camUid + "\n"
 		"assert neurus.scene.active_camera().is_active\n", ctx));
@@ -359,7 +359,7 @@ TEST(ScriptBindings, ObjectsCollectionEnumeratesEveryPooledObjectId)
 	ctx.config    = &cfg;
 	ctx.resources = &resources;
 
-	const std::string baseUid = std::to_string(base->GetObjectID());
+	const std::string baseUid = std::to_string(base->RequireObjectID());
 
 	neurus::ScriptEngine engine;
 	ASSERT_TRUE(engine.Initialize());
@@ -370,8 +370,8 @@ TEST(ScriptBindings, ObjectsCollectionEnumeratesEveryPooledObjectId)
 		"assert " + baseUid + " in neurus.data.objects\n"
 		"objs = neurus.data.objects\n"
 		"assert objs[" + baseUid + "].transform is None\n"
-		"assert {o.uid for o in objs} == {" + std::to_string(camera->GetObjectID())
-		    + ", " + std::to_string(light->GetObjectID()) + ", " + baseUid + "}\n", ctx));
+		"assert {o.uid for o in objs} == {" + std::to_string(camera->RequireObjectID())
+		    + ", " + std::to_string(light->RequireObjectID()) + ", " + baseUid + "}\n", ctx));
 
 	engine.Shutdown();
 }
@@ -422,15 +422,15 @@ TEST(ScriptBindings, ReadsTypedPropertiesAndConfig)
 	scene.UseLight(light);
 	scene.UseCamera(camera);
 	scene.UseEnvironment(env);
-	scene.ActivateCamera(camera->GetObjectID());
+	scene.ActivateCamera(camera->RequireObjectID());
 
 	neurus::ScriptContext ctx;
 	ctx.scene     = &scene;
 	ctx.config    = &cfg;
 	ctx.resources = &resources;
 
-	const std::string lightUid  = std::to_string(light->GetObjectID());
-	const std::string camUid    = std::to_string(camera->GetObjectID());
+	const std::string lightUid  = std::to_string(light->RequireObjectID());
+	const std::string camUid    = std::to_string(camera->RequireObjectID());
 	const std::string pointType = std::to_string(static_cast<int>(neurus::LightType::POINTLIGHT));
 
 	neurus::ScriptEngine engine;
@@ -472,15 +472,15 @@ TEST(ScriptBindings, ProxiesResolveFromThePoolWithoutAScene)
 	ctx.resources = &resources;
 	neurus::script::ScriptView view{&ctx, nullptr};
 
-	neurus::script::ObjectProxy object{mesh->GetObjectID(), &view};
+	neurus::script::ObjectProxy object{mesh->RequireObjectID(), &view};
 	EXPECT_EQ(object.Resolve(), mesh.get());
 
-	neurus::script::Transform3DProxy transform{mesh->GetObjectID(), &view};
+	neurus::script::Transform3DProxy transform{mesh->RequireObjectID(), &view};
 	EXPECT_EQ(transform.Resolve(), static_cast<const neurus::Transform3D*>(mesh.get()));
 
 	// A null lookup is a clean error, not a null dereference.
 	neurus::ScriptContext empty;
 	neurus::script::ScriptView emptyView{&empty, nullptr};
-	neurus::script::ObjectProxy orphan{mesh->GetObjectID(), &emptyView};
+	neurus::script::ObjectProxy orphan{mesh->RequireObjectID(), &emptyView};
 	EXPECT_THROW(orphan.Resolve(), std::runtime_error);
 }

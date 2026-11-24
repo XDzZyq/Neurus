@@ -45,7 +45,6 @@ public:
 
 	/** @brief Constructs an empty DebugMesh (no geometry). */
 	DebugMesh();
-	explicit DebugMesh(RestoredId id);
 
 	/**
 	 * @brief Constructs a DebugMesh referencing pooled geometry.
@@ -60,10 +59,10 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<ObjectID>(this),
+		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		archive::Optional(ar, cereal::make_nvp("m_meshDataId", o_mesh),
 		                  cereal::make_nvp("m_color", o_color),

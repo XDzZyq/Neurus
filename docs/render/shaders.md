@@ -141,8 +141,9 @@ The renderer applies the same interface requirements to uploaded stage data
 before creating dependent GPU pipelines.
 
 `BuiltInRenderData` uses `ShaderLibrary` to load and compile the recipes in
-`PassKinds`, then owns the results directly by recipe name. It builds the port
-catalog from those shaders and uses the catalog to construct the fallback graph.
+`PassKinds`. Its private resource pool owns the compiled shaders and fallback
+graph, giving them stable UIDs for the lifetime of the catalog. Recipe names
+select those shaders independently of project resources.
 Default and custom scene passes get their GPU shader modules from `RenderCache`.
 Pass reuse depends on the selected shader UID and GPU cache revision. Scene
 replacement invalidates project shader and pipeline cache entries because

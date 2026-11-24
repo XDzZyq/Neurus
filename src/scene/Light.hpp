@@ -140,10 +140,10 @@ public:
 	 *       `NONELIGHT`, so defaulting it would load a dead light rather than a
 	 *       slightly wrong one.
 	 */
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<ObjectID>(this),
+		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		// Split around light_type only to keep the written key order unchanged;
 		// the reader is name-keyed, so the split costs nothing on load.
@@ -157,7 +157,6 @@ public:
 public:
 	/** @brief Constructs a light with default values (type NONELIGHT). */
 	Light();
-	explicit Light(RestoredId id);
 
 	/**
 	 * @brief Constructs a light with specified type, power, and color.

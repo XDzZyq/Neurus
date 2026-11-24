@@ -88,10 +88,11 @@ TEST_F(PassFactoryTest, CustomNodeInstancesCacheOnlyWhileOwned)
 	const auto defaults = std::make_shared<const BuiltInRenderData>();
 	RenderCache cache(*m_device, PhysicalDevice(), defaults);
 	PassFactory factory(*m_device, PhysicalDevice(), 2, *m_queue, m_graphicsQueueFamily, cache);
-	auto shader = neurus::ShaderLibrary::LoadComputeShader("custom compose", "res/shaders/compute/compose.comp.glsl");
+	std::shared_ptr<neurus::ComputeShader> shader = neurus::ShaderLibrary::LoadComputeShader("custom compose", "res/shaders/compute/compose.comp.glsl");
 	ASSERT_NE(shader, nullptr);
+	m_resources.Register(shader);
 	ASSERT_TRUE(shader->CompileToSpv());
-	const int shaderId = shader->GetObjectID();
+	const int shaderId = shader->RequireObjectID();
 	// UID zero is valid; absence is represented by nullopt.
 	auto builtin = factory.Acquire("ComposePass", "first", std::nullopt);
 	auto otherBuiltin = factory.Acquire("ComposePass", "second", std::nullopt);

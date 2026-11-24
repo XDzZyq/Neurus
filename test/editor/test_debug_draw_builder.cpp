@@ -36,6 +36,8 @@
 
 #include <glm/glm.hpp>
 
+#include "asset/ResourceManager.hpp"
+
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -46,9 +48,9 @@ using namespace neurus;
 namespace {
 
 /// @brief A DebugLine holding `pairs` unit segments laid end to end along +X.
-std::shared_ptr<DebugLine> MakeLine(size_t pairs, bool xray)
+std::shared_ptr<DebugLine> MakeLine(ResourceManager& resources, size_t pairs, bool xray)
 {
-	auto line = std::make_shared<DebugLine>();
+	auto line = resources.Load<DebugLine>();
 	for (size_t i = 0; i < pairs; ++i)
 	{
 		const float f = static_cast<float>(i);
@@ -59,9 +61,9 @@ std::shared_ptr<DebugLine> MakeLine(size_t pairs, bool xray)
 }
 
 /// @brief A DebugPoints holding `n` points, one per unit along +X.
-std::shared_ptr<DebugPoints> MakePoints(size_t n, bool xray)
+std::shared_ptr<DebugPoints> MakePoints(ResourceManager& resources, size_t n, bool xray)
 {
-	auto pts = std::make_shared<DebugPoints>();
+	auto pts = resources.Load<DebugPoints>();
 	for (size_t i = 0; i < n; ++i)
 		pts->PushDebugPoint(glm::vec3(static_cast<float>(i), 0.0f, 0.0f));
 	pts->SetXRay(xray);
@@ -85,8 +87,9 @@ bool Has(uint32_t flags, uint32_t bit) { return (flags & bit) != 0u; }
  */
 TEST(DebugDrawBuilder, CleanRebuild_IsNoOp)
 {
+	ResourceManager resources;
 	Scene scene;
-	scene.UseDebugLine(MakeLine(1, false));
+	scene.UseDebugLine(MakeLine(resources, 1, false));
 
 	DebugDrawBuilder b;
 	EXPECT_TRUE(b.IsDirty());
@@ -98,7 +101,7 @@ TEST(DebugDrawBuilder, CleanRebuild_IsNoOp)
 	const uint64_t rev = b.List().revision;
 	ASSERT_EQ(b.List().segments.size(), 1u);
 
-	scene.UseDebugLine(MakeLine(3, false));   // 3 more segments, but no MarkDirty
+	scene.UseDebugLine(MakeLine(resources, 3, false));   // 3 more segments, but no MarkDirty
 	b.Rebuild(scene);
 
 	EXPECT_EQ(b.List().segments.size(), 1u) << "A clean builder must not re-flatten";
@@ -121,8 +124,9 @@ TEST(DebugDrawBuilder, CleanRebuild_IsNoOp)
  */
 TEST(DebugDrawBuilder, Revision_IsMonotonicAcrossIdenticalRebuilds)
 {
+	ResourceManager resources;
 	Scene scene;
-	scene.UseDebugLine(MakeLine(2, false));
+	scene.UseDebugLine(MakeLine(resources, 2, false));
 
 	DebugDrawBuilder b;
 	uint64_t prev = b.List().revision;
@@ -177,10 +181,11 @@ TEST(DebugDrawList, PackDebugColor_LayoutAndClamping)
  */
 TEST(DebugDrawBuilder, LinesEmitOnlyCompleteVertexPairs)
 {
+	ResourceManager resources;
 	for (const unsigned count : { 1u, 2u, 5u })
 	{
 		SCOPED_TRACE(count);
-		auto line = std::make_shared<DebugLine>();
+		auto line = resources.Load<DebugLine>();
 		std::vector<glm::vec3> vertices;
 		for (unsigned i = 0; i < count; ++i)
 			vertices.emplace_back(static_cast<float>(i), 0.0f, 0.0f);
@@ -201,7 +206,8 @@ TEST(DebugDrawBuilder, LinesEmitOnlyCompleteVertexPairs)
  */
 TEST(DebugDrawBuilder, Line_CarriesWidthFlagsAndTintedColor)
 {
-	auto line = std::make_shared<DebugLine>();
+	ResourceManager resources;
+	auto line = resources.Load<DebugLine>();
 	line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 	line->SetPosition(glm::vec3(10.0f, -3.0f, 2.0f));
 	line->SetWidth(4.0f);
@@ -237,10 +243,11 @@ TEST(DebugDrawBuilder, Line_CarriesWidthFlagsAndTintedColor)
  */
 TEST(DebugDrawBuilder, Line_SmoothingFollowsTheLineStyle)
 {
-	auto solid = std::make_shared<DebugLine>();
+	ResourceManager resources;
+	auto solid = resources.Load<DebugLine>();
 	solid->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
-	auto dashed = std::make_shared<DebugLine>();
+	auto dashed = resources.Load<DebugLine>();
 	dashed->PushDebugLine(glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	dashed->SetStipple(true);
 
@@ -280,14 +287,15 @@ TEST(DebugDrawBuilder, Line_SmoothingFollowsTheLineStyle)
  */
 TEST(DebugDrawBuilder, MixedDepthModesPartitionBothSegmentsAndPoints)
 {
+	ResourceManager resources;
 	Scene scene;
-	scene.UseDebugLine(MakeLine(3, /*xray=*/false));
-	scene.UseDebugLine(MakeLine(2, /*xray=*/true));
-	scene.UseDebugLine(MakeLine(4, /*xray=*/false));
-	scene.UseDebugLine(MakeLine(1, /*xray=*/true));
+	scene.UseDebugLine(MakeLine(resources, 3, /*xray=*/false));
+	scene.UseDebugLine(MakeLine(resources, 2, /*xray=*/true));
+	scene.UseDebugLine(MakeLine(resources, 4, /*xray=*/false));
+	scene.UseDebugLine(MakeLine(resources, 1, /*xray=*/true));
 
-	scene.UseDebugPoints(MakePoints(3, false));
-	scene.UseDebugPoints(MakePoints(5, true));
+	scene.UseDebugPoints(MakePoints(resources, 3, false));
+	scene.UseDebugPoints(MakePoints(resources, 5, true));
 
 	DebugDrawBuilder b;
 	b.Rebuild(scene);
@@ -316,12 +324,13 @@ TEST(DebugDrawBuilder, MixedDepthModesPartitionBothSegmentsAndPoints)
  */
 TEST(DebugDrawBuilder, HomogeneousDepthModeSetsPartitionBoundary)
 {
+	ResourceManager resources;
 	for (const bool xray : { false, true })
 	{
 		SCOPED_TRACE(xray);
 		Scene scene;
-		scene.UseDebugLine(MakeLine(3, xray));
-		scene.UseDebugPoints(MakePoints(2, xray));
+		scene.UseDebugLine(MakeLine(resources, 3, xray));
+		scene.UseDebugPoints(MakePoints(resources, 2, xray));
 		DebugDrawBuilder builder;
 		builder.Rebuild(scene);
 		const auto& list = builder.List();
@@ -343,9 +352,10 @@ TEST(DebugDrawBuilder, HomogeneousDepthModeSetsPartitionBoundary)
  */
 TEST(DebugDrawBuilder, Rebuild_DoesNotLeakXrayScratch)
 {
+	ResourceManager resources;
 	Scene scene;
-	scene.UseDebugLine(MakeLine(2, true));
-	scene.UseDebugPoints(MakePoints(2, true));
+	scene.UseDebugLine(MakeLine(resources, 2, true));
+	scene.UseDebugPoints(MakePoints(resources, 2, true));
 
 	DebugDrawBuilder b;
 	b.Rebuild(scene);
@@ -367,6 +377,7 @@ TEST(DebugDrawBuilder, Rebuild_DoesNotLeakXrayScratch)
 /// @test PointType maps onto the shader's shape ids, and scale reaches the sprite.
 TEST(DebugDrawBuilder, Point_ShapeMatchesPointType)
 {
+	ResourceManager resources;
 	const std::pair<DebugPoints::PointType, uint32_t> cases[] = {
 		{DebugPoints::PointType::SQUARE,  DebugPointShape::Square},
 		{DebugPoints::PointType::RHOMBUS, DebugPointShape::Rhombus},
@@ -375,7 +386,7 @@ TEST(DebugDrawBuilder, Point_ShapeMatchesPointType)
 
 	for (const auto& [type, shape] : cases)
 	{
-		auto pts = MakePoints(1, false);
+		auto pts = MakePoints(resources, 1, false);
 		pts->SetPointType(type);
 		pts->SetScale(7.0f);
 		Scene scene;
@@ -400,7 +411,8 @@ TEST(DebugDrawBuilder, Point_ShapeMatchesPointType)
 /// @test Sprite positions are baked to world space, exactly like segment endpoints.
 TEST(DebugDrawBuilder, Point_BakesModelMatrixIntoWorldSpace)
 {
-	auto pts = std::make_shared<DebugPoints>();
+	ResourceManager resources;
+	auto pts = resources.Load<DebugPoints>();
 	pts->PushDebugPoint(glm::vec3(1.0f, 2.0f, 3.0f));
 	pts->SetPosition(glm::vec3(0.0f, 0.0f, 10.0f));
 
@@ -429,7 +441,8 @@ TEST(DebugDrawBuilder, Point_BakesModelMatrixIntoWorldSpace)
  */
 TEST(DebugDrawBuilder, CubePoint_DecomposesInto12Edges)
 {
-	auto pts = std::make_shared<DebugPoints>();
+	ResourceManager resources;
+	auto pts = resources.Load<DebugPoints>();
 	pts->PushDebugPoint(glm::vec3(0.0f));
 	pts->SetPointType(DebugPoints::PointType::CUBE);
 	pts->SetScale(2.0f);   // scale is the full side, so the half extent is 1.0
@@ -470,11 +483,12 @@ TEST(DebugDrawBuilder, CubePoint_DecomposesInto12Edges)
 /// @test An x-ray cube's edges join the x-ray half rather than the depth-tested one.
 TEST(DebugDrawBuilder, CubePoint_XrayEdgesJoinTheXrayPartition)
 {
-	auto pts = MakePoints(2, /*xray=*/true);          // 2 cubes = 24 edges
+	ResourceManager resources;
+	auto pts = MakePoints(resources, 2, /*xray=*/true);          // 2 cubes = 24 edges
 	pts->SetPointType(DebugPoints::PointType::CUBE);
 
 	Scene scene;
-	scene.UseDebugLine(MakeLine(1, /*xray=*/false));  // 1 depth-tested segment
+	scene.UseDebugLine(MakeLine(resources, 1, /*xray=*/false));  // 1 depth-tested segment
 	scene.UseDebugPoints(pts);
 
 	DebugDrawBuilder b;
@@ -501,14 +515,15 @@ TEST(DebugDrawBuilder, CubePoint_XrayEdgesJoinTheXrayPartition)
  */
 TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
 {
-	auto mesh = std::make_shared<DebugMesh>();
-	mesh->SetMeshData(std::make_shared<MeshData>());
+	ResourceManager resources;
+	auto mesh = resources.Load<DebugMesh>();
+	mesh->SetMeshData(resources.Load<MeshData>());
 	mesh->SetPosition(glm::vec3(4.0f, 0.0f, 0.0f));
 	mesh->SetColor(glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
 	mesh->SetXRay(true);
 
 	Scene scene;
-	scene.UseDebugMesh(std::make_shared<DebugMesh>()); // no geometry to upload
+	scene.UseDebugMesh(resources.Load<DebugMesh>()); // no geometry to upload
 	scene.UseDebugMesh(mesh);
 
 	DebugDrawBuilder b;
@@ -516,7 +531,7 @@ TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
 
 	ASSERT_EQ(b.List().wireMeshes.size(), 1u);
 	const DebugWireMesh& w = b.List().wireMeshes[0];
-	EXPECT_EQ(w.meshObjectId, mesh->GetObjectID());
+	EXPECT_EQ(w.meshObjectId, mesh->RequireObjectID());
 	EXPECT_EQ(glm::vec3(w.model[3]), glm::vec3(4.0f, 0.0f, 0.0f));
 	EXPECT_EQ(w.rgba, 0xFF00FF00u) << "0xAABBGGRR: opaque green";
 	EXPECT_TRUE(Has(w.flags, DebugFlag::XRay));
@@ -534,10 +549,11 @@ TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
  */
 TEST(DebugDrawBuilder, WireMesh_MixedDepthModesStayInAuthoringOrder)
 {
-	auto opaque = std::make_shared<DebugMesh>();
-	opaque->SetMeshData(std::make_shared<MeshData>());
-	auto xray = std::make_shared<DebugMesh>();
-	xray->SetMeshData(std::make_shared<MeshData>());
+	ResourceManager resources;
+	auto opaque = resources.Load<DebugMesh>();
+	opaque->SetMeshData(resources.Load<MeshData>());
+	auto xray = resources.Load<DebugMesh>();
+	xray->SetMeshData(resources.Load<MeshData>());
 	xray->SetXRay(true);
 
 	Scene scene;
@@ -576,15 +592,16 @@ TEST(DebugDrawBuilder, WireMesh_MixedDepthModesStayInAuthoringOrder)
 /// @test A hidden DebugLine contributes no segments.
 TEST(DebugDrawBuilder, HiddenDebugObjectsDoNotEmitGeometry)
 {
+	ResourceManager resources;
 	for (const bool viewportVisible : { false, true })
 	{
 		SCOPED_TRACE(viewportVisible);
-		auto line = MakeLine(3, false);
+		auto line = MakeLine(resources, 3, false);
 		line->SetVisible(viewportVisible, !viewportVisible);
-		auto points = MakePoints(4, false);
+		auto points = MakePoints(resources, 4, false);
 		points->SetVisible(viewportVisible, !viewportVisible);
-		auto mesh = std::make_shared<DebugMesh>();
-		mesh->SetMeshData(std::make_shared<MeshData>());
+		auto mesh = resources.Load<DebugMesh>();
+		mesh->SetMeshData(resources.Load<MeshData>());
 		mesh->SetVisible(viewportVisible, !viewportVisible);
 		Scene scene;
 		scene.UseDebugPoints(points);
@@ -608,13 +625,14 @@ TEST(DebugDrawBuilder, HiddenDebugObjectsDoNotEmitGeometry)
  */
 TEST(DebugDrawBuilder, Visibility_HidingOneObjectKeepsThePartitionExact)
 {
-	auto hiddenOpaque = MakeLine(2, false);  // 2 depth-tested segments, hidden
+	ResourceManager resources;
+	auto hiddenOpaque = MakeLine(resources, 2, false);  // 2 depth-tested segments, hidden
 	hiddenOpaque->SetVisible(false, true);
 
 	Scene scene;
 	scene.UseDebugLine(hiddenOpaque);
-	scene.UseDebugLine(MakeLine(3, false));  // 3 depth-tested
-	scene.UseDebugLine(MakeLine(1, true));   // 1 x-ray
+	scene.UseDebugLine(MakeLine(resources, 3, false));  // 3 depth-tested
+	scene.UseDebugLine(MakeLine(resources, 1, true));   // 1 x-ray
 
 	DebugDrawBuilder b;
 	b.Rebuild(scene);

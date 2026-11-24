@@ -121,15 +121,15 @@ TEST(SceneCameraActivation, ActivateCamera_PutsThatExactCameraInUse)
 	EXPECT_EQ(view.GetActiveCamera(), nullptr);
 	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
 
-	ASSERT_TRUE(scene.ActivateCamera(second->GetObjectID()));
-	EXPECT_EQ(scene.ActiveCameraID(), second->GetObjectID());
+	ASSERT_TRUE(scene.ActivateCamera(second->RequireObjectID()));
+	EXPECT_EQ(scene.ActiveCameraID(), second->RequireObjectID());
 	EXPECT_EQ(scene.GetActiveCamera(), second.get());
 	EXPECT_EQ(view.GetActiveCamera(), second.get());
 
 	// Replacing, not accumulating: the previous activation is simply dropped.
-	ASSERT_TRUE(scene.ActivateCamera(first->GetObjectID()));
+	ASSERT_TRUE(scene.ActivateCamera(first->RequireObjectID()));
 	EXPECT_EQ(scene.GetActiveCamera(), first.get());
-	ASSERT_TRUE(scene.RemoveCamera(second->GetObjectID()));
+	ASSERT_TRUE(scene.RemoveCamera(second->RequireObjectID()));
 	EXPECT_EQ(scene.GetActiveCamera(), first.get());
 	scene.DeactivateCamera();
 	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
@@ -144,15 +144,15 @@ TEST(SceneCameraActivation, ActivateCamera_RejectsAPooledNonSceneCamera)
 
 	auto sceneCam = resources.Load<Camera>();
 	scene.UseCamera(sceneCam);
-	ASSERT_TRUE(scene.ActivateCamera(sceneCam->GetObjectID()));
+	ASSERT_TRUE(scene.ActivateCamera(sceneCam->RequireObjectID()));
 
 	auto editorCam = resources.Load<Camera>(); // pooled, never registered
-	EXPECT_FALSE(scene.ActivateCamera(editorCam->GetObjectID()));
+	EXPECT_FALSE(scene.ActivateCamera(editorCam->RequireObjectID()));
 	EXPECT_FALSE(scene.ActivateCamera(0));
 	EXPECT_FALSE(scene.ActivateCamera(999999));
 
 	// A refused activation changes nothing.
-	EXPECT_EQ(scene.ActiveCameraID(), sceneCam->GetObjectID());
+	EXPECT_EQ(scene.ActiveCameraID(), sceneCam->RequireObjectID());
 	EXPECT_EQ(scene.GetActiveCamera(), sceneCam.get());
 }
 
@@ -162,10 +162,12 @@ TEST(SceneCameraActivation, ReAddingTheRemovedCamera_RestoresTheActivation)
 	ResourceManager resources;
 
 	auto cam = resources.Load<Camera>();
-	const int uid = cam->GetObjectID();
+	const int uid = cam->RequireObjectID();
 	scene.UseCamera(cam);
 	ASSERT_TRUE(scene.ActivateCamera(uid));
 	ASSERT_TRUE(scene.RemoveCamera(uid));
+	EXPECT_EQ(resources.Get<Camera>(uid), cam);
+	EXPECT_EQ(cam->GetObjectID(), uid);
 	EXPECT_TRUE(scene.cam_list.empty());
 	EXPECT_EQ(scene.ActiveCameraID(), uid);
 	ASSERT_EQ(scene.GetActiveCamera(), nullptr);
@@ -195,14 +197,14 @@ TEST(SceneCameraActivation, SelectionAndActivationDoNotFollowEachOther)
 	auto inspected = resources.Load<Camera>();
 	scene.UseCamera(viewed);
 	scene.UseCamera(inspected);
-	ASSERT_TRUE(scene.ActivateCamera(viewed->GetObjectID()));
+	ASSERT_TRUE(scene.ActivateCamera(viewed->RequireObjectID()));
 
 	scene.selections.Select(inspected.get(), false);
 
 	EXPECT_EQ(scene.GetActiveCamera(), viewed.get()) << "selection must not steal the view";
 	const ObjectID* active = scene.selections.GetActiveObject();
 	ASSERT_NE(active, nullptr);
-	EXPECT_EQ(active->GetObjectID(), inspected->GetObjectID())
+	EXPECT_EQ(active->RequireObjectID(), inspected->RequireObjectID())
 		<< "activation must not move the selection";
 }
 
@@ -226,8 +228,8 @@ void SaveTwoCameraScene(const std::string& path, bool activateSecond,
 	auto second = resources.Load<Camera>();
 	scene.UseCamera(first);
 	scene.UseCamera(second);
-	outFirstUid = first->GetObjectID();
-	outSecondUid = second->GetObjectID();
+	outFirstUid = first->RequireObjectID();
+	outSecondUid = second->RequireObjectID();
 
 	if (activateSecond)
 		ASSERT_TRUE(scene.ActivateCamera(outSecondUid));
@@ -273,7 +275,7 @@ TEST(SceneCameraActivation, ActivationRoundTripsThroughAProjectFile)
 	EXPECT_EQ(loaded.ActiveCameraID(), secondUid);
 	Camera* cam = loaded.GetActiveCamera();
 	ASSERT_NE(cam, nullptr);
-	EXPECT_EQ(cam->GetObjectID(), secondUid);
+	EXPECT_EQ(cam->RequireObjectID(), secondUid);
 }
 
 /// An explicitly unselected scene camera keeps the viewport active.

@@ -8,9 +8,9 @@
  *
  * Usage:
  * @code
- *   auto res = LoadMultiShadow(device, pd, queue, qfi);                  // 3 point lights (default)
- *   auto res = LoadMultiShadow(device, pd, queue, qfi, 4);               // 4 point lights
- *   auto res = LoadMultiShadow(device, pd, queue, qfi, 3, LightType::SUNLIGHT); // 3 sun lights
+ *   auto res = LoadMultiShadow(resources, device, pd, queue, qfi);                  // 3 point lights (default)
+ *   auto res = LoadMultiShadow(resources, device, pd, queue, qfi, 4);               // 4 point lights
+ *   auto res = LoadMultiShadow(resources, device, pd, queue, qfi, 3, LightType::SUNLIGHT); // 3 sun lights
  * @endcode
  *
  * Light placement:
@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include "asset/ResourceManager.hpp"
 #include "core/Log.hpp"
 #include "scene/Scene.hpp"
 #include "scene/Mesh.hpp"
@@ -98,6 +99,7 @@ struct MultiShadowResources
  *         and lightUIDs.
  */
 inline MultiShadowResources LoadMultiShadow(
+	ResourceManager& resources,
 	const vk::raii::Device& device,
 	const vk::raii::PhysicalDevice& physicalDevice,
 	neurus::SharedQueue& graphicsQueue,
@@ -114,10 +116,10 @@ inline MultiShadowResources LoadMultiShadow(
 	// ===================================================================
 
 	{
-		auto cubeMeshData = MakeShadowTestCubeMeshData("[LoadMultiShadow]");
+		auto cubeMeshData = MakeShadowTestCubeMeshData(resources, "[LoadMultiShadow]");
 		if (!cubeMeshData) return res;
 
-		auto cubeMesh = std::make_shared<Mesh>();
+		auto cubeMesh = resources.Load<Mesh>();
 		cubeMesh->o_name = "MultiShadowCube";
 		cubeMesh->o_mesh = cubeMeshData;
 		cubeMesh->SetPosition(glm::vec3(0.0f, 0.0f, 0.5f));  // cube bottom at z=0, rests on plane
@@ -131,10 +133,10 @@ inline MultiShadowResources LoadMultiShadow(
 	// ===================================================================
 
 	{
-		auto planeMeshData = MakeShadowTestPlaneMeshData("[LoadMultiShadow]");
+		auto planeMeshData = MakeShadowTestPlaneMeshData(resources, "[LoadMultiShadow]");
 		if (!planeMeshData) return res;
 
-		auto planeMesh = std::make_shared<Mesh>();
+		auto planeMesh = resources.Load<Mesh>();
 		planeMesh->o_name = "MultiShadowPlane";
 		planeMesh->o_mesh = planeMeshData;
 
@@ -192,7 +194,7 @@ inline MultiShadowResources LoadMultiShadow(
 			//   d.y =  cos(p) * cos(y)  →  cos(y) =  dir.y / cos(p)
 			const float yawRad   = atan2(-dir.x, dir.y);
 
-			auto light = std::make_shared<Light>(LightType::SUNLIGHT, 5.0f, glm::vec3(1.0f));
+			auto light = resources.Load<Light>(LightType::SUNLIGHT, 5.0f, glm::vec3(1.0f));
 			light->o_name    = "MultiShadowSunLight_" + std::to_string(i);
 			light->SetPower(0.5f);
 			// m_rotation = (pitch=X, roll=Y, yaw=Z)
@@ -207,11 +209,11 @@ inline MultiShadowResources LoadMultiShadow(
 			const glm::vec3 updated_dir = light->GetDirection();
 			NEURUS_LOG("[LoadMultiShadow] Sunlight " << i << " origin dir=" << dir.x << ", " << dir.y << ", " << dir.z << " updated=" << updated_dir.x << ", " << updated_dir.y << ", " << updated_dir.z);
 			res.scene->UseLight(light);
-			res.lightUIDs.push_back(light->GetObjectID());
+			res.lightUIDs.push_back(light->RequireObjectID());
 		}
 		else
 		{
-			auto light = std::make_shared<Light>(LightType::POINTLIGHT, 5.0f, glm::vec3(1.0f));
+			auto light = resources.Load<Light>(LightType::POINTLIGHT, 5.0f, glm::vec3(1.0f));
 			light->o_name = "MultiShadowLight_" + std::to_string(i);
 
 			light->SetPosition(pos);
@@ -221,7 +223,7 @@ inline MultiShadowResources LoadMultiShadow(
 			light->SetShadow(true);
 
 			res.scene->UseLight(light);
-			res.lightUIDs.push_back(light->GetObjectID());
+			res.lightUIDs.push_back(light->RequireObjectID());
 		}
 	}
 
@@ -231,14 +233,14 @@ inline MultiShadowResources LoadMultiShadow(
 	// ===================================================================
 
 	{
-		auto cam = std::make_shared<Camera>(256.0f, 256.0f, 75.0f, 0.1f, 100.0f);
+		auto cam = resources.Load<Camera>(256.0f, 256.0f, 75.0f, 0.1f, 100.0f);
 		cam->o_name = "MultiShadowCamera";
 		cam->SetPosition(glm::vec3(0.0f, 1.0f, 3.0f));  // looking down at origin from above (Z-up)
 		cam->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		res.scene->UseCamera(cam);
 		// Registration no longer implies activation; the fixture renders through
 		// this camera, so it activates it explicitly.
-		res.scene->ActivateCamera(cam->GetObjectID());
+		res.scene->ActivateCamera(cam->RequireObjectID());
 	}
 
 	NEURUS_LOG("[LoadMultiShadow] Built 2 meshes (cube + plane) + "

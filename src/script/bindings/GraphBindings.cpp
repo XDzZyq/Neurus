@@ -258,7 +258,7 @@ void RegisterGraphBindings(py::module_& render)
 		.def_property("shader", [](const NodeProxy& n) -> std::optional<ShaderProxy> {
 			const auto& shader = n.Get().data.shader;
 			if (shader)
-				return ShaderProxy(shader->GetObjectID(), n.graph.view);
+				return ShaderProxy(shader->RequireObjectID(), n.graph.view);
 			return std::nullopt;
 		}, [](const NodeProxy& n, const std::optional<ShaderProxy>& shader) {
 			n.graph.RequireEditable();

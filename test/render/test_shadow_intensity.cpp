@@ -131,7 +131,7 @@ TEST_F(ShadowIntensityTest, ShadowIntensity_MatchesExpectedAndReference)
 	// -------------------------------------------------------------------
 	// Step 1: Load test scene
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadSimpleShadow(
+	auto shadowRes = neurus::test::LoadSimpleShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u);
 

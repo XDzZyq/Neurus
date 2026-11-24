@@ -7,6 +7,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "asset/ResourceManager.hpp"
 
 #include <glm/glm.hpp>
 
@@ -34,6 +35,7 @@ public:
 
 TEST(Mesh, DefaultConstruction)
 {
+	neurus::ResourceManager resources;
 	Mesh mesh;
 
 	EXPECT_EQ(mesh.o_type, ObjectID::GOType::GO_MESH);
@@ -49,17 +51,31 @@ TEST(Mesh, DefaultConstruction)
 	EXPECT_TRUE(mesh.is_closure);
 
 	EXPECT_EQ(mesh.o_mesh.id(), 0);
-	auto data = std::make_shared<MeshData>();
+	auto data = resources.Load<MeshData>();
 	Mesh empty(data);
 	EXPECT_EQ(empty.o_type, mesh.o_type);
 	EXPECT_EQ(empty.o_mesh.shared(), data);
-	EXPECT_EQ(empty.o_mesh.id(), data->GetObjectID());
+	EXPECT_EQ(empty.o_mesh.id(), data->RequireObjectID());
 	EXPECT_EQ(mesh.GetMaterial(), nullptr);
 
 	EXPECT_EQ(mesh.GetShader(), nullptr);
 
 	void* t = mesh.GetTransform();
 	EXPECT_NE(t, nullptr);
+}
+
+TEST(Mesh, PersistentGeometryRequiresPoolMembership)
+{
+	ResourceManager resources;
+	Mesh mesh;
+	const auto geometry = std::make_shared<MeshData>();
+	EXPECT_THROW(mesh.o_mesh = geometry, std::invalid_argument);
+	EXPECT_FALSE(mesh.o_mesh);
+	const int uid = resources.Register(geometry);
+	mesh.o_mesh = geometry;
+	EXPECT_EQ(mesh.o_mesh.identity(), uid);
+	resources.Clear();
+	EXPECT_FALSE(mesh.o_mesh.identity());
 }
 
 TEST(Mesh, AssignedMaterialReceivesTypedColorParameters)
@@ -132,10 +148,11 @@ TEST(Mesh, MaterialEditsOnAnUnassignedMeshAreSafe)
  */
 TEST(Mesh, SetObjShader)
 {
+	neurus::ResourceManager resources;
 	Mesh mesh;
 	EXPECT_FALSE(mesh.o_shader);
 
-	auto shader = std::make_shared<TestShader>();
+	auto shader = resources.Load<TestShader>();
 	mesh.SetObjShader(shader);
 	EXPECT_EQ(mesh.o_shader.get(), shader.get());
 	EXPECT_EQ(mesh.GetShader(), shader.get());

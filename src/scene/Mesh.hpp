@@ -61,7 +61,6 @@ public:
 	bool is_closure     = true;
 
 	Mesh();
-	explicit Mesh(RestoredId id);
 	/**
 	 * @brief Constructs a mesh referencing pooled geometry.
 	 * @param meshData Shared MeshData (pooled resource) to reference.
@@ -71,10 +70,10 @@ public:
 	explicit Mesh(std::shared_ptr<MeshData> meshData);
 	~Mesh() override;
 
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<ObjectID>(this),
+		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		// Missing shader references remain null and select the runtime built-in.
 		// Save omits that reference rather than materializing a fallback resource.

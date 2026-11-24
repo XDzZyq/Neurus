@@ -85,7 +85,6 @@ public:
 
 	/** @brief Constructs a Sprite with default values (GO_SPRITE, null texture). */
 	Sprite();
-	explicit Sprite(RestoredId id);
 
 	/**
 	 * @brief Default virtual destructor.
@@ -102,10 +101,10 @@ public:
 	 * @note spr_tex is not serialized; it must be re-resolved after
 	 *       deserialization.
 	 */
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<ObjectID>(this));
+		ar(cereal::base_class<ObjectID>(this));
 		archive::Optional(ar, CEREAL_NVP(spr_opacity), CEREAL_NVP(spr_type));
 	}
 

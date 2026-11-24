@@ -100,7 +100,7 @@ TEST(DefaultProject, LoadsExpectedSceneAndResources)
 	// Geometry is a pooled MeshData reference in the new format.
 	EXPECT_NE(mesh->o_mesh.id(), 0);
 	ASSERT_NE(mesh->o_mesh.shared(), nullptr);
-	EXPECT_EQ(mesh->o_mesh->GetObjectID(), mesh->o_mesh.id());
+	EXPECT_EQ(mesh->o_mesh->RequireObjectID(), mesh->o_mesh.id());
 
 	ASSERT_GE(scene.light_list.size(), 1u);
 	auto* light = scene.light_list.begin()->second.get();

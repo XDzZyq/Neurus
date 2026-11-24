@@ -19,11 +19,6 @@ Environment::Environment()
 {
 }
 
-Environment::Environment(RestoredId id)
-	: ObjectID(id, Type, "Environment")
-{
-}
-
 Environment::Environment(std::shared_ptr<ImageData> data)
 {
 	o_type = ObjectID::GOType::GO_ENVIR;

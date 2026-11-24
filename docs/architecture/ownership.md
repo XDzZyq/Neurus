@@ -4,6 +4,10 @@ Vulkan resources are owned by exactly one layer: the Application owns the
 instance, device, queues and surface, the Renderer owns the swapchain and every
 resource below it, and the UI owns only the native window.
 
+## Pooled object identity
+
+`ResourceManager` owns the identity of each registered object. A scene owns references to the pooled objects it currently uses. Removing a scene member releases that reference while the manager retains the object under its original key. Undo resolves the key and restores scene membership. A standalone object, including a render graph clone used for publication, can exist without any pool identity.
+
 ## Optional project render data
 
 Editor owns nullable `shared_ptr` config and graph slots; explicit shader data

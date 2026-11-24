@@ -75,22 +75,14 @@ protected:
 		m_controller.Init(m_ctx);
 		m_objectController.Init(m_ctx);
 
-		m_mesh   = std::make_shared<Mesh>();
-		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+		m_mesh   = m_resources.Load<Mesh>();
+		m_light  = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_camera = m_resources.Load<Camera>();
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseCamera(m_camera);
-		m_scene.ActivateCamera(m_camera->GetObjectID());
+		m_scene.ActivateCamera(m_camera->RequireObjectID());
 
-		// The ShaderLinkOp restore handlers resolve the mesh via the POOL (the
-		// Editor pattern), so the fixture mesh must also be pooled. The camera is
-		// pooled the same way, for the same reason: camera-property ops replay
-		// through ctx.resources. The light joins them because ObjectController
-		// resolves every property write - and therefore every op replay - through
-		// the pool.
-		m_resources.Register(m_mesh);
-		m_resources.Register(m_light);
 	}
 
 	void Process() { m_eventBus.Process(); }
@@ -128,8 +120,8 @@ TEST_F(OperationSerializationTest, PropertyOperationsPreserveTheirConcreteTypeAn
 		restored->Inverse()->Apply(ctx);
 		EXPECT_EQ(readValue(), before);
 	};
-	const int light = m_light->GetObjectID();
-	const int mesh = m_mesh->GetObjectID();
+	const int light = m_light->RequireObjectID();
+	const int mesh = m_mesh->RequireObjectID();
 	check("light power", std::make_unique<SetLightPowerOp>(light, 10.0f, 42.0f),
 	      [&] { return m_light->light_power; }, 10.0f, 42.0f);
 	check("light shadow", std::make_unique<SetLightShadowOp>(light, true, false),
@@ -143,7 +135,7 @@ TEST_F(OperationSerializationTest, PropertyOperationsPreserveTheirConcreteTypeAn
 
 TEST_F(OperationSerializationTest, CameraPoseOp_RoundTrip)
 {
-	const int uid = m_camera->GetObjectID();
+	const int uid = m_camera->RequireObjectID();
 	const glm::vec3 pos(2.0f, 5.0f, 1.0f);
 	const glm::vec3 tar(1.0f, 0.0f, 0.0f);
 	std::unique_ptr<Operation> op = std::make_unique<CameraTransformOp>(
@@ -162,8 +154,8 @@ TEST_F(OperationSerializationTest, CameraPoseOp_RoundTrip)
 TEST_F(OperationSerializationTest, SelectionStateOp_RoundTrip)
 {
 	SelectionState before{ {}, 0 };
-	SelectionState after{ { m_mesh->GetObjectID(), m_light->GetObjectID() },
-	                      m_light->GetObjectID() };
+	SelectionState after{ { m_mesh->RequireObjectID(), m_light->RequireObjectID() },
+	                      m_light->RequireObjectID() };
 	std::unique_ptr<Operation> op = std::make_unique<SetSelectionOp>(before, after);
 
 	auto restored = RoundTrip(op);
@@ -181,7 +173,7 @@ TEST_F(OperationSerializationTest, SelectionStateOp_RoundTrip)
 TEST_F(OperationSerializationTest, SceneObjectAddOp_RoundTrip)
 {
 	auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
-	const int uid = mesh->GetObjectID();
+	const int uid = mesh->RequireObjectID();
 	std::unique_ptr<Operation> op = std::make_unique<SceneObjectAddOp>(std::vector<int>{uid}, true);
 
 	auto restored = RoundTrip(op);
@@ -212,9 +204,9 @@ TEST_F(OperationSerializationTest, ShaderLinkOp_RoundTrip)
 	});
 
 	auto shader = m_resources.Load<RenderShader>("MeshShader_2", "v.vert.glsl", "f.frag.glsl");
-	const int shaderId = shader->GetObjectID();
+	const int shaderId = shader->RequireObjectID();
 	std::unique_ptr<Operation> op =
-		std::make_unique<ShaderLinkOp>(m_mesh->GetObjectID(), shaderId, true);
+		std::make_unique<ShaderLinkOp>(m_mesh->RequireObjectID(), shaderId, true);
 
 	auto restored = RoundTrip(op);
 	ASSERT_NE(restored, nullptr);
@@ -233,7 +225,7 @@ TEST_F(OperationSerializationTest, ShaderLinkOp_RoundTrip)
 TEST_F(OperationSerializationTest, CompositeOp_RoundTrip)
 {
 	auto mesh = m_resources.Load<Mesh>(m_resources.Load<MeshData>());
-	const int uid = mesh->GetObjectID();
+	const int uid = mesh->RequireObjectID();
 	SelectionState before{ {}, 0 };
 	SelectionState after{ { uid }, uid };
 
@@ -262,11 +254,11 @@ TEST_F(OperationSerializationTest, CompositeOp_RoundTrip)
 TEST_F(OperationSerializationTest, HistoryComponent_SaveLoad_BothStacks)
 {
 	// Record three edits, then undo one so BOTH stacks are populated.
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 20.0f });
 	Process();
-	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->RequireObjectID(), 1.0f, 2.0f, 3.0f });
 	Process();
-	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 35.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->RequireObjectID(), 35.0f });
 	Process();
 	m_operations.Undo(); // camera fov edit → redo stack
 
@@ -310,12 +302,12 @@ TEST_F(OperationSerializationTest, ScriptRunOp_SurvivesHistorySaveLoad)
 {
 	// One file run (custom label) and one console run (default label).
 	m_operations.BeginScriptScope("Run demo.py");
-	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->RequireObjectID(), 4.0f, 5.0f, 6.0f });
 	Process();
 	m_operations.EndScriptScope();
 
 	m_operations.BeginScriptScope();
-	m_eventBus.Enqueue(PositionChanged{ m_mesh->GetObjectID(), 7.0f, 8.0f, 9.0f });
+	m_eventBus.Enqueue(PositionChanged{ m_mesh->RequireObjectID(), 7.0f, 8.0f, 9.0f });
 	Process();
 	m_operations.EndScriptScope();
 
@@ -360,7 +352,7 @@ TEST_F(OperationSerializationTest, HistoryComponent_Load_MissingNode_ClearsHisto
 {
 	// A project file without an "m_history" node (older format) must not throw
 	// and must leave the manager with empty stacks.
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 20.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 20.0f });
 	Process();
 	ASSERT_TRUE(m_operations.CanUndo());
 

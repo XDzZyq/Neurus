@@ -1,3 +1,4 @@
+#include "asset/ResourceManager.hpp"
 #include "render_api/RenderRequests.hpp"
 #include "asset/data/ShaderData.hpp"
 
@@ -10,16 +11,18 @@ namespace neurus {
 
 TEST(RenderRequestValues, LightSnapshotSurvivesSourceEditsAndDeletion)
 {
-	auto light = std::make_shared<Light>(LightType::SPOTLIGHT, 7.0f, glm::vec3(0.2f, 0.4f, 0.6f));
+	ResourceManager resources;
+	auto light = resources.Load<Light>(LightType::SPOTLIGHT, 7.0f, glm::vec3(0.2f, 0.4f, 0.6f));
 	light->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
 	light->spot_cutoff = 0.75f;
 	light->spot_outer_cutoff = 0.5f;
 	light->use_shadow = false;
-	const int uid = light->GetObjectID();
+	const int uid = light->RequireObjectID();
 	const UpdateLightRequest request{uid, MakeLightSnapshot(*light)};
 
 	light->SetPosition(glm::vec3(9.0f));
 	light->light_power = 99.0f;
+	resources.Clear();
 	light.reset();
 
 	EXPECT_EQ(request.light.objectId, uid);
@@ -34,20 +37,21 @@ TEST(RenderRequestValues, LightSnapshotSurvivesSourceEditsAndDeletion)
 
 TEST(RenderRequestValues, LightingBatchOnlyIncludesVisibleRenderedLights)
 {
-	auto visible = std::make_shared<Light>(LightType::SUNLIGHT, 2.0f, glm::vec3(1.0f));
-	auto hidden = std::make_shared<Light>();
+	ResourceManager resources;
+	auto visible = resources.Load<Light>(LightType::SUNLIGHT, 2.0f, glm::vec3(1.0f));
+	auto hidden = resources.Load<Light>();
 	hidden->is_viewport = false;
-	auto excluded = std::make_shared<Light>();
+	auto excluded = resources.Load<Light>();
 	excluded->is_rendered = false;
 	const std::unordered_map<int, ResourceRef<Light>> lights = {
-		{visible->GetObjectID(), visible},
-		{hidden->GetObjectID(), hidden},
-		{excluded->GetObjectID(), excluded},
+		{visible->RequireObjectID(), visible},
+		{hidden->RequireObjectID(), hidden},
+		{excluded->RequireObjectID(), excluded},
 		{-1, nullptr},
 	};
 	const UpdateLightingRequest request = MakeUpdateLightingRequest(lights);
 	ASSERT_EQ(request.lights.size(), 1u);
-	EXPECT_EQ(request.lights.at(visible->GetObjectID()).type, LightType::SUNLIGHT);
+	EXPECT_EQ(request.lights.at(visible->RequireObjectID()).type, LightType::SUNLIGHT);
 }
 
 namespace {
@@ -63,7 +67,8 @@ public:
 
 TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDeletion)
 {
-	auto shader = std::make_shared<UploadTestShader>();
+	ResourceManager resources;
+	auto shader = resources.Load<UploadTestShader>();
 	auto& stage = shader->GetStage(ShaderType::COMPUTE);
 	stage.spv = {0x07230203, 11, 22};
 	stage.parsed.uniform_list.push_back({.name = "target", .type = ParaType::NONE,
@@ -72,10 +77,10 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	stage.code = "editable source";
 	stage.parsed.Main = "editable function body";
 	shader->BumpVersion();
-	const int uid = shader->GetObjectID();
-	const int allocations = UID::GetTotalAllocated();
+	const int uid = shader->RequireObjectID();
+	const int allocations = ResourceManager::NextId();
 	const UploadShaderRequest upload = MakeUploadShaderRequest(*shader);
-	EXPECT_EQ(UID::GetTotalAllocated(), allocations);
+	EXPECT_EQ(ResourceManager::NextId(), allocations);
 
 	stage.spv[1] = 99;
 	stage.parsed.uniform_list[0].name = "edited";
@@ -84,6 +89,7 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	EXPECT_EQ(edited.shaderId, upload.shaderId);
 	EXPECT_GT(edited.version, upload.version);
 	EXPECT_EQ(edited.stages.at(ShaderType::COMPUTE).spv, (std::vector<uint32_t>{0x07230203, 99, 22}));
+	resources.Clear();
 	shader.reset();
 
 	EXPECT_EQ(upload.shaderId, uid);

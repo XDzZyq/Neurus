@@ -187,7 +187,7 @@ TEST_F(EditorCommandAdapterTest, MalformedObjectCommandsReportInvalidArgument)
 
 TEST_F(EditorCommandAdapterTest, ObjectDeleteRemovesSceneMembershipButKeepsThePool)
 {
-	const int uid = FirstOfType(ObjectID::GOType::GO_MESH)->GetObjectID();
+	const int uid = FirstOfType(ObjectID::GOType::GO_MESH)->RequireObjectID();
 	const auto deleted = m_adapter->Execute({kObjectDelete, {{"uid", uid}}});
 	ASSERT_TRUE(deleted.ok) << deleted.message;
 	EXPECT_EQ(deleted.details["count"], 1);
@@ -271,7 +271,7 @@ TEST_F(EditorCommandAdapterTest, UnsupportedLightCreationCommandsIdentifyIssue60
 	ASSERT_NE(light, nullptr);
 	for (const CommandRequest& request : {
 	         CommandRequest{kObjectAdd, {{"type", "point-light"}}},
-	         CommandRequest{kObjectDuplicate, {{"uid", light->GetObjectID()}}} })
+	         CommandRequest{kObjectDuplicate, {{"uid", light->RequireObjectID()}}} })
 	{
 		SCOPED_TRACE(request.name);
 		const auto result = m_adapter->Execute(request);
@@ -291,7 +291,7 @@ TEST_F(EditorCommandAdapterTest, ObjectDuplicateCopiesMeshAndCamera)
 	mesh->SetPosition(glm::vec3(4.0f, 5.0f, 6.0f));
 	const std::size_t meshCount = m_editor->GetScene().mesh_list.size();
 	const auto meshCopy = m_adapter->Execute(
-		{kObjectDuplicate, {{"uid", mesh->GetObjectID()}, {"rename", "Mesh Copy"}}});
+		{kObjectDuplicate, {{"uid", mesh->RequireObjectID()}, {"rename", "Mesh Copy"}}});
 	ASSERT_TRUE(meshCopy.ok) << meshCopy.message;
 	EXPECT_EQ(meshCopy.details["object"]["name"], "Mesh Copy");
 	EXPECT_EQ(meshCopy.details["object"]["position"][0], 4.0f);
@@ -299,7 +299,7 @@ TEST_F(EditorCommandAdapterTest, ObjectDuplicateCopiesMeshAndCamera)
 
 	const std::size_t cameraCount = m_editor->GetScene().cam_list.size();
 	const auto cameraCopy = m_adapter->Execute(
-		{kObjectDuplicate, {{"uid", camera->GetObjectID()}}});
+		{kObjectDuplicate, {{"uid", camera->RequireObjectID()}}});
 	ASSERT_TRUE(cameraCopy.ok) << cameraCopy.message;
 	EXPECT_EQ(cameraCopy.details["object"]["type"], "camera");
 	EXPECT_EQ(cameraCopy.details["object"]["name"], std::string("Camera Copy"));
@@ -307,8 +307,8 @@ TEST_F(EditorCommandAdapterTest, ObjectDuplicateCopiesMeshAndCamera)
 }
 
 TEST_F(EditorCommandAdapterTest, ObjectDeleteAcceptsAUidList)
-{	const int mesh = FirstOfType(ObjectID::GOType::GO_MESH)->GetObjectID();
-	const int light = FirstOfType(ObjectID::GOType::GO_LIGHT)->GetObjectID();
+{	const int mesh = FirstOfType(ObjectID::GOType::GO_MESH)->RequireObjectID();
+	const int light = FirstOfType(ObjectID::GOType::GO_LIGHT)->RequireObjectID();
 	const auto deleted = m_adapter->Execute(
 		{kObjectDelete, {{"uids", {mesh, light}}}});
 	ASSERT_TRUE(deleted.ok) << deleted.message;

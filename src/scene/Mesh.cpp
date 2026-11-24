@@ -11,11 +11,6 @@ Mesh::Mesh()
 {
 }
 
-Mesh::Mesh(RestoredId id)
-	: ObjectID(id, Type, "Mesh")
-{
-}
-
 Mesh::Mesh(std::shared_ptr<MeshData> meshData)
 	: Mesh()
 {

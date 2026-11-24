@@ -56,6 +56,13 @@ void GraphOperationBatch::FlushDrafts(IEventQueue& events, std::vector<CpuGraphD
 	}
 }
 
+void GraphOperationBatch::DiscardCreations(IEventQueue& events) const
+{
+	for (const auto* edit : m_edits)
+		if (const auto uid = edit->CreatedResource())
+			events.Emit(GraphCreationDiscarded{*uid});
+}
+
 void GraphOperationBatch::Commit(IEventQueue& events) const
 {
 	if (Empty())

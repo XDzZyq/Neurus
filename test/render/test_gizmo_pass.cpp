@@ -83,12 +83,12 @@ protected:
 		m_cache = std::make_unique<RenderCache>(*m_device, PhysicalDevice());
 		m_pass  = std::make_unique<GizmoPass>(*m_device, PhysicalDevice(), 2);
 
-		m_camera = std::make_shared<Camera>();
+		m_camera = m_resources.Load<Camera>();
 		m_camera->SetPosition(glm::vec3(0.0f, -5.0f, 0.0f));
 		m_camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		m_camera->ChangeCamRatio(static_cast<float>(kRes), static_cast<float>(kRes));
 		m_scene.UseCamera(m_camera);
-		m_scene.ActivateCamera(m_camera->GetObjectID());
+		m_scene.ActivateCamera(m_camera->RequireObjectID());
 	}
 
 	void TearDown() override

@@ -37,14 +37,12 @@ TEST(Light, DefaultConstructor)
 
 TEST(Light, TypedLightsStartCleanWithCommonDefaults)
 {
-	int previousUid = -1;
 	for (const auto type : {LightType::POINTLIGHT, LightType::SUNLIGHT,
 	                        LightType::SPOTLIGHT, LightType::AREALIGHT})
 	{
 		SCOPED_TRACE(static_cast<int>(type));
 		Light light(type);
-		EXPECT_GT(light.GetObjectID(), previousUid);
-		previousUid = light.GetObjectID();
+		EXPECT_FALSE(light.GetObjectID().has_value());
 		EXPECT_TRUE(light.use_shadow);
 		EXPECT_EQ(light.light_type, type);
 		EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);

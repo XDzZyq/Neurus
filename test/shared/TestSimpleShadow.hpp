@@ -10,7 +10,7 @@
  *
  * Usage:
  * @code
- *   auto scene = LoadSimpleShadow(device, pd, queue, qfi);
+ *   auto scene = LoadSimpleShadow(resources, device, pd, queue, qfi);
  *   // Light position is read from ctx.scene->light_list at Record() time.
  *   m_shadowPass->Record(cmd, ctx);  // uses scene.renderItems internally
  * @endcode
@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include "asset/ResourceManager.hpp"
 #include "core/Log.hpp"
 #include "scene/Scene.hpp"
 #include "scene/Mesh.hpp"
@@ -81,6 +82,7 @@ struct SimpleShadowResources
  *         shadowCamera, and cubePos.
  */
 inline SimpleShadowResources LoadSimpleShadow(
+	ResourceManager& resources,
 	const vk::raii::Device& device,
 	const vk::raii::PhysicalDevice& physicalDevice,
 	neurus::SharedQueue& graphicsQueue,
@@ -95,10 +97,10 @@ inline SimpleShadowResources LoadSimpleShadow(
 	// ===================================================================
 
 	{
-		auto cubeMeshData = MakeShadowTestCubeMeshData("[LoadSimpleShadow]");
+		auto cubeMeshData = MakeShadowTestCubeMeshData(resources, "[LoadSimpleShadow]");
 		if (!cubeMeshData) return res;
 
-		auto cubeMesh = std::make_shared<Mesh>();
+		auto cubeMesh = resources.Load<Mesh>();
 		cubeMesh->o_name = "SimpleShadowCube";
 		cubeMesh->o_mesh = cubeMeshData;
 		cubeMesh->SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));  // raise cube above plane (Z-up)
@@ -113,10 +115,10 @@ inline SimpleShadowResources LoadSimpleShadow(
 	// ===================================================================
 
 	{
-		auto planeMeshData = MakeShadowTestPlaneMeshData("[LoadSimpleShadow]");
+		auto planeMeshData = MakeShadowTestPlaneMeshData(resources, "[LoadSimpleShadow]");
 		if (!planeMeshData) return res;
 
-		auto planeMesh = std::make_shared<Mesh>();
+		auto planeMesh = resources.Load<Mesh>();
 		planeMesh->o_name = "SimpleShadowPlane";
 		planeMesh->o_mesh = planeMeshData;
 
@@ -129,7 +131,7 @@ inline SimpleShadowResources LoadSimpleShadow(
 	// ===================================================================
 
 	{
-		auto light = std::make_shared<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
+		auto light = resources.Load<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		light->o_name = "SimpleShadowLight";
 		light->SetPosition(glm::vec3(0.0f, 0.0f, 6.0f));
 		res.scene->UseLight(light);
@@ -142,14 +144,14 @@ inline SimpleShadowResources LoadSimpleShadow(
 	// ===================================================================
 
 	{
-		auto cam = std::make_shared<Camera>(256.0f, 256.0f, 75.0f, 0.1f, 100.0f);
+		auto cam = resources.Load<Camera>(256.0f, 256.0f, 75.0f, 0.1f, 100.0f);
 		cam->o_name = "SimpleShadowCamera";
 		cam->SetPosition(glm::vec3(0.0f, 0.001f, 2.0f));  // small Y offset avoids degenerate lookAt
 		cam->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		res.scene->UseCamera(cam);
 		// Registration no longer implies activation; the fixture renders through
 		// this camera, so it activates it explicitly.
-		res.scene->ActivateCamera(cam->GetObjectID());
+		res.scene->ActivateCamera(cam->RequireObjectID());
 	}
 
 	NEURUS_LOG("[LoadSimpleShadow] Built 2 meshes (cube + plane) + 1 point light + 1 camera");

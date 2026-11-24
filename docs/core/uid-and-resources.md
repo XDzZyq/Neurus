@@ -4,21 +4,20 @@
 
 ## UID (`core/UID.hpp`)
 
-`UID` provides globally unique logical resource IDs:
+A default-constructed `UID` or derived object is ephemeral. It acquires a key when a `ResourceManager` registers it. A live object can belong to only one pool, and membership lasts until that pool removes the entry or is cleared or destroyed.
 
-- IDs are sequential and allocated from a static counter (`s_count`).
-- Not thread-safe: IDs should be allocated on the main thread.
-- IDs are never reused, even after object destruction.
-- Value semantics are deleted - `UID` is non-copyable and non-movable, because identity must not be duplicated or transferred. Objects are held via `shared_ptr`, and every UID-derived type (`ObjectID`, `Camera`, `Mesh`, `Light`, `Environment`, `Sprite`, the debug objects, `Scene`, `MeshData`, `ImageData`, `ShaderData`) repeats the ban so the contract is visible where it is inherited.
-- Independent resource duplication goes through the pool: `ResourceManager::Load<T>` constructs a fresh object with a new id and the caller copies the fields it wants (`Editor::DuplicateObject`). A copy or move constructor is never the answer, because every id already handed out - scene references, undo records, GPU caches, the pool's own indexes - would silently name a different object.
-- `GetObjectID()` returns the unique integer; `GetTotalAllocated()` returns the total allocation count, including destroyed objects.
-- The pool reserves each record key during indexing. Its typed factory passes `RestoredId{key}` to the concrete constructor, so restoring an indexed object leaves the next fresh UID available. Standalone cereal objects store their identity in `o_id`.
+- `GetObjectID()` returns `std::optional<int>`. `RequireObjectID()` returns the stored integer for callers that require a pooled object.
+- Each entry owns its identity. The object observes membership through a weak reference, so external shared ownership can keep the object alive after its key expires.
+- `ResourceManager::Load<T>()` constructs and registers a fresh object. Fresh keys begin at one and increase across managers. A saved key can be zero. Managers reserve the saved keys when indexing a project.
+- Removing an object from a scene only releases its scene reference. The pool retains the object and its key for undo and project save.
+- Standalone cereal payloads contain only object fields. Reading a standalone payload into a newly constructed object leaves it ephemeral.
+- A UID-bearing object cannot be copied or moved. To duplicate one, create another pooled object and copy the required fields. Resource registration and lookup run on the main thread.
 
 ```mermaid
 classDiagram
     class UID {
-        +GetObjectID() int
-        +GetTotalAllocated() int
+        +GetObjectID() optional~int~
+        +RequireObjectID() int
         +serialize(ar)
     }
     class ObjectID {
@@ -42,7 +41,7 @@ classDiagram
     ShaderData <|-- ComputeShader
 ```
 
-`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, constructed from a UID and registered type name in the `ResourceManager` pool. `ShaderData`'s concrete leaves are the CPU Shader module's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
+`ObjectID` (scene layer) extends `UID` with scene metadata, and data resources such as `MeshData`, `ImageData` and `ShaderData` inherit `UID` directly and serialize themselves, using ordinary constructors during pool restoration. `ShaderData`'s concrete leaves are the CPU Shader module's `RenderShader` and `ComputeShader`. See [Scene Objects](../scene/objects.md).
 
 A graph clone shares ownership of selected CPU shaders rather than copying
 identity-bearing objects. Owned upload payloads carry a shader UID plus copied
@@ -61,7 +60,7 @@ deleted, with no special revision-copy path.
 - `IsLight()` - true for `GO_LIGHT` and `GO_POLYLIGHT`, the two types that project into the light SSBO. It is a member rather than a predicate repeated in each caller, so the second answer is never forgotten.
 - Polymorphic accessors `GetShader()`, `GetShaderUnit(int)`, `GetTransform()` and `GetMaterial()`, all returning `nullptr` by default and overridden by the classes that own those components. `GetShader()` returns the typed `ShaderData*` and `GetShaderUnit(int)` returns `const ShaderUnit*`; a `Mesh` overrides both.
 
-`ObjectID::serialize` keeps the `base_class<UID>` hook strict but reads its own metadata fields through `archive::Optional` - the concrete default constructor already sets `o_type` and `o_name`, so a field a file lacks keeps the right value.
+`ObjectID::serialize` visits the empty `UID` base and reads its own metadata fields through `archive::Optional` - the concrete default constructor already sets `o_type` and `o_name`, so a field a file lacks keeps the right value.
 
 ## ResourceManager (`asset/ResourceManager.hpp`)
 
@@ -75,9 +74,9 @@ Design:
 
 - `UID` is the only resource base. Every pooled object derives from it and serializes its own fields under its pool key; there is no reload-hook interface, because each object's `serialize(load)` restores its own state.
 - `Load<T>(args...)` constructs and registers in one step, returning a typed `shared_ptr<T>`. It `static_assert`s that `T` derives from `UID`, and - when `T` has a public `o_name` - registers that name and mirrors the unique result back into `o_name` (see [Resource names](#resource-names)).
-- `Register(shared_ptr<UID>)` registers an already-constructed object (tests, legacy paths).
+- `Register(shared_ptr<UID>)` adopts an already-constructed ephemeral object.
 - `RegisterDeferred` reserves a UID and records the concrete type and a loader. Project persistence supplies the loader and owns the interpretation of its serialized record.
-- `Contains` and `Size` include deferred entries. The first `Get(id)` runs the loader on the main thread, validates the returned object's UID and concrete type, and caches the shared pointer. Recursive requests can load dependencies. A loader exception clears the in-progress flag so the lookup can be retried. If project persistence rejects a record and returns null, the pool drops its UID and name. `Get<T>` casts the result and name lookup uses the same cache.
+- `Contains` and `Size` include deferred entries. The first `Get(id)` creates the concrete object, attaches membership for its reserved key, reads the fields, then caches the completed shared pointer. Recursive requests can load dependencies. A loader exception clears the in-progress flag so the lookup can be retried. If project persistence rejects a record and returns null, the pool drops its UID and name. `Get<T>` casts the result and name lookup uses the same cache.
 - `ForEach<T>(fn)` visits every pooled object whose **exact dynamic type** is `T`; this is how UID-keyed GPU caches follow the pool rather than the scene (pooled objects stay referenced by undo history after deletion). It is not a base-class walk: once a base instance (`ObjectID`, `UID`) is itself pooled, the per-type index holds only that instance and derived types are skipped. Base-class enumeration uses `ForEachUID(fn)` plus a cast. Neither callback may `Load` / `Register` / `Remove` / `Clear`, because mutating the pool during iteration invalidates the walk.
 - `Remove(int)` and `Clear()` mutate the pool; `Size()` reports its size.
 - `SetName(id, name)` / `GetByName(...)` own the display-name registry; names are unique per concrete dynamic type and are derived state, never serialized (see [Resource names](#resource-names)).
@@ -87,7 +86,7 @@ Design:
 Two rules keep the pool decoupled:
 
 - The scene holds typed maps of its members. During project open, `SceneComponent` looks up their UIDs and restores the maps, camera and selection.
-- No UID object knows the `ResourceManager`, and no UID object constructs another UID object internally - construction happens through `Load<T>`.
+- A UID object stores only a weak reference to its key. Only the pool can attach membership.
 
 Scene membership is stored as UID references, so project open must index the pool before reading the scene. See [Serialization](serialization.md) and [Project Serialization](../asset/project-serialization.md).
 
@@ -136,7 +135,7 @@ Selection is held at runtime as `const ObjectID*` pointers but written as UIDs (
 
 The pool stores `shared_ptr<UID>`. Each registered concrete type provides a factory for restoring its own fields.
 
-- Each pooled type uses `NEURUS_REGISTER_RESOURCE_TYPE` in its owning registration translation unit. Registration binds the archive name to the C++ type, its field writer and its `RestoredId` factory.
+- Each pooled type uses `NEURUS_REGISTER_RESOURCE_TYPE` in its owning registration translation unit. Registration binds the archive name to the C++ type, its field writer its reader, and its default constructor factory.
 - Scene types: `scene/registrations/TypeRegistration.cpp` registers the `UID` and `ObjectID` bases and every derived scene type, with factories for pool records and cereal polymorphic relations for standalone pointers.
 - Data resources: `asset/registrations/DataRegistration.cpp` registers `MeshData`, `ImageData` and `RenderGraphData`. The shader module registers `ComputeShader` and `RenderShader`.
 

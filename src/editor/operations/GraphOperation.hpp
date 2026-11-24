@@ -2,6 +2,7 @@
 
 #include "editor/operations/Operation.hpp"
 
+#include <optional>
 #include <span>
 
 namespace neurus {
@@ -10,6 +11,7 @@ namespace neurus {
 class GraphOperation : public Operation
 {
 public:
+	virtual std::optional<int> CreatedResource() const { return {}; }
 	virtual bool ChangesTopology() const { return true; }
 };
 
@@ -25,6 +27,7 @@ public:
 	bool Empty() const { return m_edits.empty(); }
 	void FlushDrafts(IEventQueue& events, std::vector<CpuGraphDiagnostic>* diagnostics = nullptr) const;
 	void Commit(IEventQueue& events) const;
+	void DiscardCreations(IEventQueue& events) const;
 	static bool IsNoOp(const Operation& op);
 
 private:

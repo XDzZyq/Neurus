@@ -37,7 +37,6 @@ public:
 	};
 
 	MeshData() = default;
-	using UID::UID;
 
 	/**
 	 * @brief Stores the source path and loads the OBJ immediately.
@@ -78,10 +77,10 @@ public:
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
 	 */
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<UID>(this), CEREAL_NVP(m_path));
+		ar(cereal::base_class<UID>(this), CEREAL_NVP(m_path));
 		if constexpr (Archive::is_loading::value)
 		{
 			ReloadContent();

@@ -74,7 +74,6 @@ public:
 	 * @note Defaults: FOV=60°, near=0.1f, far=100.0f, w=1, h=1.
 	 */
 	Camera();
-	explicit Camera(RestoredId id);
 
 	/**
 	 * @brief Deleted copy constructor - Camera identity must be unique.
@@ -114,10 +113,10 @@ public:
 	 *       serialized: they are computed values, rebuilt by the `load` branch
 	 *       below.
 	 */
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<ObjectID>(this),
+		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		archive::Optional(ar, CEREAL_NVP(cam_w), CEREAL_NVP(cam_h),
 		                  CEREAL_NVP(cam_pers), CEREAL_NVP(cam_near),

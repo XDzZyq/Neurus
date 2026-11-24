@@ -5,74 +5,104 @@
 
 #include "asset/ResourceManager.hpp"
 
+#include <algorithm>
+#include <limits>
+
 namespace neurus
 {
 
+int ResourceManager::res_nextId = 1;
+
 int ResourceManager::Register(std::shared_ptr<UID> obj)
 {
-	if (!obj)
-		throw std::runtime_error("ResourceManager::Register: null resource");
+	if (res_nextId == std::numeric_limits<int>::max())
+		throw std::overflow_error("Resource UID allocator exhausted");
+	return RegisterAt(res_nextId, obj);
+}
 
-	const int id = obj->GetObjectID();
-	if (Contains(id))
-		throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
-	const UID& pooled = *obj;
-	IndexType(id, typeid(pooled));
-	resources_.emplace(id, std::move(obj));
+int ResourceManager::RegisterAt(int id, const std::shared_ptr<UID>& object)
+{
+	if (!object || object->GetObjectID())
+		throw std::runtime_error("Registration requires an unpooled object");
+	const UID& resource = *object;
+	IndexType(id, typeid(resource));
+	try
+	{
+		res_live.emplace(id, object);
+	}
+	catch (...)
+	{
+		EraseResource(id);
+		throw;
+	}
+	object->m_membership = res_entries.at(id).membership;
 	return id;
 }
 
 void ResourceManager::RegisterDeferred(int id, std::type_index type, std::function<std::shared_ptr<UID>()> loader,
-                                       std::shared_ptr<const std::string> archivedRecord)
+                                       std::shared_ptr<const std::string> archivedRecord, std::function<bool(UID&)> populate)
 {
 	if (!loader)
 		throw std::invalid_argument("Missing resource loader for UID " + std::to_string(id));
-	if (Contains(id))
-		throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
-	UID::ReserveThrough(id);
 	IndexType(id, type);
-	m_loaders.emplace(id, DeferredResource{std::move(loader), std::move(archivedRecord)});
+	try
+	{
+		res_deferred.emplace(id, DeferredResource{std::move(loader), std::move(archivedRecord), std::move(populate)});
+	}
+	catch (...)
+	{
+		EraseResource(id);
+		throw;
+	}
 }
 
 std::shared_ptr<UID> ResourceManager::GetLive(int id) const
 {
-	auto live = resources_.find(id);
-	return live == resources_.end() ? nullptr : live->second;
+	auto live = res_live.find(id);
+	return live == res_live.end() ? nullptr : live->second;
 }
 
 std::shared_ptr<UID> ResourceManager::Get(int id) const
 {
 	if (auto live = GetLive(id))
 		return live;
-	auto deferred = m_loaders.find(id);
-	if (deferred == m_loaders.end())
+	auto deferred = res_deferred.find(id);
+	if (deferred == res_deferred.end())
 		return nullptr;
 	auto& record = deferred->second;
 	if (record.loading)
 		throw std::runtime_error("Cyclic resource dependency at UID " + std::to_string(id));
 
 	record.loading = true;
+	std::shared_ptr<UID> object;
+	bool attached = false;
 	try
 	{
-		auto object = record.load();
-		if (!object && record.archivedRecord)
+		object = record.load();
+		const auto& entry = res_entries.at(id);
+		if (object)
 		{
-			// Persistence rejected this record. Drop it so a later save cannot revive it.
+			const UID& resource = *object;
+			if (object->GetObjectID() || std::type_index(typeid(resource)) != entry.type)
+				throw std::runtime_error("Deferred resource has invalid membership or type");
+			object->m_membership = entry.membership;
+			attached = true;
+		}
+		if (!object || (record.populate && !record.populate(*object)))
+		{
+			if (!record.archivedRecord)
+				throw std::runtime_error("Deferred resource could not be loaded");
 			record.loading = false;
 			EraseResource(id);
 			return nullptr;
 		}
-		if (!object || object->GetObjectID() != id)
-			throw std::runtime_error("Restored resource identity mismatch for UID " + std::to_string(id));
-		const UID& pooled = *object;
-		if (std::type_index(typeid(pooled)) != m_typeOf.at(id))
-			throw std::runtime_error("Restored resource type mismatch for UID " + std::to_string(id));
-		resources_.emplace(id, object);
-		m_loaders.erase(id);
+		res_live.emplace(id, object);
+		res_deferred.erase(id);
 		return object;
 	}
 	catch (...)
 	{
+		if (attached) object->m_membership.reset();
 		record.loading = false;
 		throw;
 	}
@@ -80,8 +110,8 @@ std::shared_ptr<UID> ResourceManager::Get(int id) const
 
 std::shared_ptr<UID> ResourceManager::GetByName(std::type_index type, const std::string& name) const
 {
-	auto names = m_names.find(type);
-	if (names == m_names.end())
+	auto names = res_namesByType.find(type);
+	if (names == res_namesByType.end())
 		return nullptr;
 
 	auto entry = names->second.find(name);
@@ -93,40 +123,40 @@ std::shared_ptr<UID> ResourceManager::GetByName(std::type_index type, const std:
 
 std::string ResourceManager::SetName(int id, const std::string& name)
 {
-	auto metadata = m_typeOf.find(id);
-	if (metadata == m_typeOf.end())
+	auto metadata = res_entries.find(id);
+	if (metadata == res_entries.end())
 		return std::string{};
 
 	// Drop the previous name first: renaming to the name the object already
 	// owns then finds it free and stays a no-op instead of gaining a suffix.
 	EraseName(id);
 
-	const std::type_index type = metadata->second;
+	const std::type_index type = metadata->second.type;
 	const std::string unique = UniqueName(type, name);
-	m_names[type][unique] = id;
-	m_nameOf.insert_or_assign(id, NameEntry{type, unique});
+	res_namesByType[type][unique] = id;
+	res_nameById.insert_or_assign(id, NameEntry{type, unique});
 	return unique;
 }
 
 std::string ResourceManager::RegisteredName(int id) const
 {
-	const auto found = m_nameOf.find(id);
-	return found == m_nameOf.end() ? std::string{} : found->second.name;
+	const auto found = res_nameById.find(id);
+	return found == res_nameById.end() ? std::string{} : found->second.name;
 }
 
 std::vector<int> ResourceManager::RegisteredIds() const
 {
 	std::vector<int> ids;
 	ids.reserve(Size());
-	for (const auto& entry : m_typeOf)
+	for (const auto& entry : res_entries)
 		ids.push_back(entry.first);
 	return ids;
 }
 
 std::shared_ptr<const std::string> ResourceManager::ArchivedRecord(int id) const
 {
-	const auto found = m_loaders.find(id);
-	return found == m_loaders.end() ? nullptr : found->second.archivedRecord;
+	const auto found = res_deferred.find(id);
+	return found == res_deferred.end() ? nullptr : found->second.archivedRecord;
 }
 
 void ResourceManager::ForEachUID(const std::function<void(const std::shared_ptr<UID>&)>& fn) const
@@ -140,8 +170,8 @@ void ResourceManager::ForEachOfType(
 	std::type_index type,
 	const std::function<void(const std::shared_ptr<UID>&)>& fn) const
 {
-	auto tracked = m_byType.find(type);
-	if (tracked == m_byType.end())
+	auto tracked = res_idsByType.find(type);
+	if (tracked == res_idsByType.end())
 	{
 		// Base types (UID, ObjectID) are never indexed - that would duplicate
 		// every id. Fall back to the pool and let the typed template filter.
@@ -162,43 +192,43 @@ bool ResourceManager::Remove(int id)
 
 bool ResourceManager::EraseResource(int id) const
 {
-	const auto type = m_typeOf.find(id);
-	if (type == m_typeOf.end())
+	const auto type = res_entries.find(id);
+	if (type == res_entries.end())
 		return false;
-	const auto deferred = m_loaders.find(id);
-	if (deferred != m_loaders.end() && deferred->second.loading)
+	const auto deferred = res_deferred.find(id);
+	if (deferred != res_deferred.end() && deferred->second.loading)
 		throw std::logic_error("Cannot remove a loading resource: " + std::to_string(id));
 
 	EraseName(id);
-	auto tracked = m_byType.find(type->second);
+	auto tracked = res_idsByType.find(type->second.type);
 	std::erase(tracked->second, id);
 	if (tracked->second.empty())
-		m_byType.erase(tracked);
-	m_typeOf.erase(type);
-	m_loaders.erase(id);
-	resources_.erase(id);
+		res_idsByType.erase(tracked);
+	res_entries.erase(type);
+	res_deferred.erase(id);
+	res_live.erase(id);
 	return true;
 }
 
 void ResourceManager::Clear()
 {
-	for (const auto& entry : m_loaders)
+	for (const auto& entry : res_deferred)
 		if (entry.second.loading)
 			throw std::logic_error("Cannot clear the resource pool during a lookup");
-	m_loaders.clear();
-	resources_.clear();
-	m_names.clear();
-	m_nameOf.clear();
-	m_byType.clear();
-	m_typeOf.clear();
+	res_deferred.clear();
+	res_live.clear();
+	res_namesByType.clear();
+	res_nameById.clear();
+	res_idsByType.clear();
+	res_entries.clear();
 }
 
 std::string ResourceManager::UniqueName(std::type_index type, const std::string& base) const
 {
 	const std::string stem = base.empty() ? std::string("Object") : base;
 
-	auto names = m_names.find(type);
-	if (names == m_names.end() || names->second.count(stem) == 0)
+	auto names = res_namesByType.find(type);
+	if (names == res_namesByType.end() || names->second.count(stem) == 0)
 		return stem;
 
 	// "Stem.001", "Stem.002", ... - the first free suffix wins.
@@ -216,31 +246,32 @@ std::string ResourceManager::UniqueName(std::type_index type, const std::string&
 
 void ResourceManager::IndexType(int id, std::type_index type)
 {
-	m_typeOf.insert_or_assign(id, type);
-	m_byType[type].push_back(id);
+	if (id < 0 || id == std::numeric_limits<int>::max())
+		throw std::out_of_range("Invalid resource UID");
+	if (!res_entries.emplace(id, Entry{type, std::make_shared<const int>(id)}).second)
+		throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
+	try
+	{
+		res_idsByType[type].push_back(id);
+	}
+	catch (...)
+	{
+		res_entries.erase(id);
+		throw;
+	}
+	res_nextId = std::max(res_nextId, id + 1);
 }
 
 void ResourceManager::EraseName(int id) const
 {
-	auto entry = m_nameOf.find(id);
-	if (entry == m_nameOf.end())
+	auto entry = res_nameById.find(id);
+	if (entry == res_nameById.end())
 		return;
 
-	auto names = m_names.find(entry->second.type);
-	if (names != m_names.end())
+	auto names = res_namesByType.find(entry->second.type);
+	if (names != res_namesByType.end())
 		names->second.erase(entry->second.name);
-	m_nameOf.erase(entry);
-}
-
-void ResourceManager::RebuildTypeIndex()
-{
-	m_byType.clear();
-	m_typeOf.clear();
-	for (const auto& entry : resources_)
-	{
-		const UID& pooled = *entry.second;
-		IndexType(entry.first, typeid(pooled));
-	}
+	res_nameById.erase(entry);
 }
 
 } // namespace neurus

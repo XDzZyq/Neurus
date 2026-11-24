@@ -121,7 +121,6 @@
                             }
                         },
                         "o_meshDataId": 115,
-                        "o_shaderId": 0,
                         "using_shadow": true,
                         "using_material": true,
                         "using_sdf": true,

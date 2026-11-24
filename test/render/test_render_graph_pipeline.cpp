@@ -107,7 +107,7 @@ protected:
 		neurus::Scene scene;
 		auto camera = CreateTestCamera(kWidth, kHeight);
 		scene.UseCamera(camera);
-		scene.ActivateCamera(camera->GetObjectID());
+		scene.ActivateCamera(camera->RequireObjectID());
 
 		neurus::RenderFrameSnapshot snapshot{};
 		neurus::RenderContext context{};
@@ -264,6 +264,7 @@ TEST_F(RenderGraphPipelineTest, UploadedCustomComposeShaderChangesPixelsAndRetai
 	std::shared_ptr<neurus::ComputeShader> shader = neurus::ShaderLibrary::LoadComputeShader(
 		"custom compose", "res/shaders/compute/compose.comp.glsl");
 	ASSERT_NE(shader, nullptr);
+	m_resources.Register(shader);
 	auto& unit = shader->GetStage(neurus::ShaderType::COMPUTE);
 	const std::string declarations = unit.code.substr(0, unit.code.find("void main("));
 	const auto compileColor = [&](const char* color)

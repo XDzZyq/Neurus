@@ -62,6 +62,7 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 	catch (...)
 	{
 		Apply(*op->Inverse(), false);
+		GraphOperationBatch(*op).DiscardCreations(op_bus);
 		throw;
 	}
 	if (!GraphOperationBatch::IsNoOp(*op))
@@ -212,6 +213,7 @@ void OperationManager::RollbackGraphRequests()
 		if (GraphOperationBatch(**it).Empty())
 			continue;
 		Apply(*(*it)->Inverse(), false);
+		GraphOperationBatch(**it).DiscardCreations(op_bus);
 		it->reset();
 	}
 	std::erase(op_scriptOps, nullptr);

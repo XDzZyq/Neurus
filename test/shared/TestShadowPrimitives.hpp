@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "asset/ResourceManager.hpp"
 #include "asset/data/MeshData.hpp"
 #include "core/Log.hpp"
 
@@ -58,9 +59,9 @@ f 1 2 3 4
  * @return Non-null MeshData on success; caller should check LoadObjFromString succeeded
  *         via the returned validity if strict checking is needed (this helper logs on failure).
  */
-inline std::shared_ptr<MeshData> MakeShadowTestCubeMeshData(const char* callerTag)
+inline std::shared_ptr<MeshData> MakeShadowTestCubeMeshData(ResourceManager& resources, const char* callerTag)
 {
-	auto meshData = std::make_shared<MeshData>();
+	auto meshData = resources.Load<MeshData>();
 	if (!meshData->LoadObjFromString(kShadowTestCubeObj))
 	{
 		NEURUS_ERR(callerTag << " Failed to parse cube OBJ string");
@@ -72,9 +73,9 @@ inline std::shared_ptr<MeshData> MakeShadowTestCubeMeshData(const char* callerTa
  * @brief Loads the shared ground-plane OBJ into a new MeshData.
  * @param callerTag Short tag used in the error log if parsing fails (e.g. "[LoadSimpleShadow]").
  */
-inline std::shared_ptr<MeshData> MakeShadowTestPlaneMeshData(const char* callerTag)
+inline std::shared_ptr<MeshData> MakeShadowTestPlaneMeshData(ResourceManager& resources, const char* callerTag)
 {
-	auto meshData = std::make_shared<MeshData>();
+	auto meshData = resources.Load<MeshData>();
 	if (!meshData->LoadObjFromString(kShadowTestPlaneObj))
 	{
 		NEURUS_ERR(callerTag << " Failed to parse plane OBJ string");

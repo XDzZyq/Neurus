@@ -29,12 +29,6 @@ Camera::Camera()
 	RecomputeMatrices();
 }
 
-Camera::Camera(RestoredId id)
-	: ObjectID(id, Type, "Camera")
-{
-	RecomputeMatrices();
-}
-
 // -----------------------------------------------------------------------
 // Internal: recompute view + projection matrices eagerly
 // -----------------------------------------------------------------------

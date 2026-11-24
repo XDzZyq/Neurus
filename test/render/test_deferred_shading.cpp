@@ -135,7 +135,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
  	// -------------------------------------------------------------------
 	// Step 1: Load sphere scene (shared helper)
 	// -------------------------------------------------------------------
-	auto resources = neurus::test::BuildDeferredScene(
+	auto resources = neurus::test::BuildDeferredScene(m_resources,
 		ResolveAssetPath("res/obj/sphere.obj"));
 
 	// -------------------------------------------------------------------
@@ -148,7 +148,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	resources.scene->UseCamera(resources.camera);
-	resources.scene->ActivateCamera(resources.camera->GetObjectID());
+	resources.scene->ActivateCamera(resources.camera->RequireObjectID());
 
 	// Snapshot storage must outlive ctx - the renderer half only; PublishFrame
 	// fills the Editor half and publishes the owned snapshot below.

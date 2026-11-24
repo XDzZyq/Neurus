@@ -189,7 +189,7 @@ TEST(ViewportCameraTest, ViewportCameraIsPooledButNotSceneContent)
 	const Camera* view = vp.GetCamera();
 	ASSERT_NE(view, nullptr);
 	EXPECT_EQ(view, vp.ViewportCamera()) << "no scene camera is activated";
-	EXPECT_EQ(view->GetObjectID(), uid);
+	EXPECT_EQ(view->RequireObjectID(), uid);
 
 	// In the pool...
 	EXPECT_NE(editor.GetResourceManager().Get<Camera>(uid), nullptr);
@@ -203,7 +203,7 @@ TEST(ViewportCameraTest, ViewportCameraIsPooledButNotSceneContent)
 	editor.NewScene();
 	EXPECT_NE(vp.CameraID(), uid);
 	ASSERT_NE(vp.GetCamera(), nullptr);
-	EXPECT_EQ(vp.GetCamera()->GetObjectID(), vp.CameraID());
+	EXPECT_EQ(vp.GetCamera()->RequireObjectID(), vp.CameraID());
 	EXPECT_EQ(vp.GetCamera()->GetPosition(), EditorViewport::kDefaultEye);
 }
 
@@ -232,7 +232,7 @@ TEST(ViewportCameraTest, DeletingEverySceneCamera_LeavesAWorkingViewCamera)
 	const EditorViewport& vp = editor.GetViewport();
 	const Camera* cam = vp.GetCamera();
 	ASSERT_NE(cam, nullptr) << "a camera-less scene must still be renderable";
-	EXPECT_EQ(cam->GetObjectID(), vp.CameraID());
+	EXPECT_EQ(cam->RequireObjectID(), vp.CameraID());
 }
 
 // ---------------------------------------------------------------------------
@@ -262,12 +262,12 @@ TEST(ViewportCameraTest, ActivationSwitchesTheViewAndDeactivationRestoresThePose
 	scene.selections.Select(sceneCam, false);
 	PublishFrame(editor);
 	EXPECT_EQ(editor.GetViewport().GetCamera(), viewportCam);
-	ASSERT_TRUE(scene.ActivateCamera(sceneCam->GetObjectID()));
+	ASSERT_TRUE(scene.ActivateCamera(sceneCam->RequireObjectID()));
 	PublishFrame(editor);
 
 	const EditorViewport& vp = editor.GetViewport();
 	EXPECT_EQ(vp.GetCamera(), sceneCam) << "an activated scene camera takes the view";
-	EXPECT_NE(vp.GetCamera()->GetObjectID(), vp.CameraID());
+	EXPECT_NE(vp.GetCamera()->RequireObjectID(), vp.CameraID());
 
 	scene.DeactivateCamera();
 	PublishFrame(editor);
@@ -318,7 +318,7 @@ TEST(ViewportCameraTest, ViewportCameraSurvivesSaveAndReopen)
 	EXPECT_EQ(vp.CameraID(), savedUid);
 	const Camera* cam = vp.GetCamera();
 	ASSERT_NE(cam, nullptr);
-	EXPECT_EQ(cam->GetObjectID(), savedUid);
+	EXPECT_EQ(cam->RequireObjectID(), savedUid);
 	EXPECT_EQ(cam->GetPosition(), pose);
 
 	// The document camera keeps its own "Camera" name, and the pooled viewport
@@ -397,7 +397,7 @@ TEST(ViewportCameraTest, ProjectWithoutTheSavedUid_MintsAFreshViewportCamera)
 	EXPECT_NE(vp.CameraID(), 0);
 	const Camera* cam = vp.GetCamera();
 	ASSERT_NE(cam, nullptr);
-	EXPECT_EQ(cam->GetObjectID(), vp.CameraID());
+	EXPECT_EQ(cam->RequireObjectID(), vp.CameraID());
 	EXPECT_EQ(cam->GetPosition(), EditorViewport::kDefaultEye);
 }
 
@@ -434,7 +434,7 @@ TEST(ViewportCameraTest, CameraLessProjectLoads_WithNothingInjected)
 	const EditorViewport& vp = editor.GetViewport();
 	const Camera* cam = vp.GetCamera();
 	ASSERT_NE(cam, nullptr);
-	EXPECT_EQ(cam->GetObjectID(), vp.CameraID());
+	EXPECT_EQ(cam->RequireObjectID(), vp.CameraID());
 	EXPECT_EQ(scene.mesh_list.size(), 1u) << "the rest of the document must still load";
 }
 
@@ -469,7 +469,7 @@ TEST(ViewportCameraTest, ActiveCameraFollowsViewportResizesAndActivation)
 		<< "the inactive scene camera must be untouched";
 	EXPECT_FLOAT_EQ(sceneCam->cam_h, 1.0f);
 
-	editor.OnUIEvent(ActiveCameraChanged{sceneCam->GetObjectID()});
+	editor.OnUIEvent(ActiveCameraChanged{sceneCam->RequireObjectID()});
 	editor.Edit();
 
 	EXPECT_FLOAT_EQ(sceneCam->cam_w, 800.0f);

@@ -65,11 +65,11 @@ protected:
 		// would hold it. Both are named through the pool's registry, which is
 		// what `neurus.data.meshes[...]` resolves against.
 		m_mesh = m_resources.Load<neurus::Mesh>();
-		m_mesh->o_name = m_resources.SetName(m_mesh->GetObjectID(), "Ground");
+		m_mesh->o_name = m_resources.SetName(m_mesh->RequireObjectID(), "Ground");
 		m_scene.UseMesh(m_mesh);
 
 		m_detached = m_resources.Load<neurus::Mesh>();
-		m_detached->o_name = m_resources.SetName(m_detached->GetObjectID(), "Detached");
+		m_detached->o_name = m_resources.SetName(m_detached->RequireObjectID(), "Detached");
 
 		// Pooled and scene-detached, like the meshes above: `Load` names the
 		// first camera "Camera", which is how the script addresses it.
@@ -147,7 +147,7 @@ assert mesh.name == "Ground Renamed"
 
 TEST_F(ScriptWrites, DeletingViaObjectOrSceneIsUndoable)
 {
-	const int uid = m_mesh->GetObjectID();
+	const int uid = m_mesh->RequireObjectID();
 	for (const char* operation : {"mesh.delete()", "neurus.scene.delete(mesh)"})
 	{
 		SCOPED_TRACE(operation);
@@ -260,7 +260,7 @@ TEST_F(ScriptWrites, CameraPositionIsOneUndoStep)
 
 TEST_F(ScriptWrites, DetachedMeshRemainsWritableUntilRemovedFromThePool)
 {
-	const int uid = m_detached->GetObjectID();
+	const int uid = m_detached->RequireObjectID();
 	RunCleanly("import neurus\nmesh = neurus.data.meshes['Detached']\nmesh.position = (5, 5, 5)\n");
 	ASSERT_EQ(m_detached->GetPosition(), glm::vec3(5.0f));
 	m_resources.Remove(uid);
@@ -309,7 +309,7 @@ neurus.render.config.gamma = 3.0
 
 TEST_F(ScriptWrites, QueuedUiEventStillAppliesAfterTheRun)
 {
-	m_eventBus.Enqueue(neurus::PositionChanged{ m_mesh->GetObjectID(), 9.0f, 9.0f, 9.0f });
+	m_eventBus.Enqueue(neurus::PositionChanged{ m_mesh->RequireObjectID(), 9.0f, 9.0f, 9.0f });
 	RunCleanly("import neurus\nneurus.data.meshes['Ground'].position = (1, 1, 1)\n");
 
 	EXPECT_EQ(m_mesh->GetPosition(), glm::vec3(1.0f));

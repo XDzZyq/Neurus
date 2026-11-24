@@ -19,7 +19,7 @@
  *     against a *default-constructed object*, never against a literal, so the
  *     test cannot drift from the member initializer the way a second copy of
  *     the value could.
- *  4. Identity and history stay strict. `UID::o_id`, a resource path, a scene
+ *  4. Identity and history stay strict. the pool key, a resource path, a scene
  *     object's discriminator and an operation's endpoint nodes still throw when
  *     missing, because defaulting them would silently corrupt cross-references
  *     or replay a wrong undo step.
@@ -208,7 +208,7 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 {
 	Light             light;
 	const std::string lightJson = SaveOne("light", light);
-	for (const char* key : {"o_id", "o_name", "o_type", "is_viewport", "is_rendered",
+	for (const char* key : {"o_name", "o_type", "is_viewport", "is_rendered",
 	                        "transform", "m_position", "m_rotation", "m_scale",
 	                        "use_shadow", "light_type", "light_power", "light_color",
 	                        "light_radius", "spot_cutoff", "spot_outer_cutoff",
@@ -222,7 +222,7 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 
 	Mesh              mesh;
 	const std::string meshJson = SaveOne("mesh", mesh);
-	for (const char* key : {"o_id", "o_name", "o_type", "is_viewport", "is_rendered",
+	for (const char* key : {"o_name", "o_type", "is_viewport", "is_rendered",
 	                        "transform", "m_position", "m_rotation", "m_scale",
 	                        "o_meshDataId", "using_shadow",
 	                        "using_material", "using_sdf", "is_closure"})
@@ -234,15 +234,17 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 		"res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_NE(shader, nullptr);
 	ASSERT_TRUE(shader->CompileToSpv());
-	const int shaderUid = shader->GetObjectID();
-	mesh.SetObjShader(std::shared_ptr<RenderShader>(std::move(shader)));
+	ResourceManager resources;
+	auto pooledShader = std::shared_ptr<RenderShader>(std::move(shader));
+	const int shaderUid = resources.Register(pooledShader);
+	mesh.SetObjShader(pooledShader);
 	const std::string authoredMeshJson = SaveOne("mesh", mesh);
 	ExpectKey(authoredMeshJson, "o_shaderId");
 	EXPECT_EQ(nlohmann::json::parse(authoredMeshJson)["mesh"]["o_shaderId"], shaderUid);
 
 	Camera            camera;
 	const std::string cameraJson = SaveOne("camera", camera);
-	for (const char* key : {"o_id", "transform", "m_position", "cam_w", "cam_h",
+	for (const char* key : {"transform", "m_position", "cam_w", "cam_h",
 	                        "cam_pers", "cam_near", "cam_far", "cam_tar",
 	                        "cam_floatData"})
 		ExpectKey(cameraJson, key);
@@ -362,8 +364,7 @@ TEST(SerializeOptional, AbsentMiddleAndTrailingFieldsKeepDefaults)
  * disagrees with the member initializer, this fails.
  *
  * The archive is produced by a real save rather than hand-written, so the test
- * does not depend on the nesting cereal gives `base_class` (`o_id` actually
- * lives two "value0" nodes deep).
+ * does not depend on the nesting cereal gives `base_class`.
  */
 TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 {
@@ -383,7 +384,7 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 	light.spot_outer_cutoff = 0.44f;
 	light.area_ratio        = 1.75f;
 
-	// Everything except the three strict keys: UID's o_id, the transform node
+	// Everything except the two strict keys: the transform node
 	// (its own contents are renamed below) and Light's discriminator.
 	std::string json = SaveOne("light", light);
 	for (const char* key : {"o_name", "o_type", "is_viewport", "is_rendered",
@@ -412,7 +413,7 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 	EXPECT_FLOAT_EQ(loaded.area_ratio, fresh.area_ratio);
 
 	// The two keys the archive kept still land.
-	EXPECT_EQ(loaded.GetObjectID(), light.GetObjectID());
+	EXPECT_FALSE(loaded.GetObjectID().has_value());
 	EXPECT_EQ(loaded.light_type, SUNLIGHT);
 }
 
@@ -420,11 +421,11 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 // 4. Identity and history stay strict
 // =======================================================================
 
-TEST(SerializeOptional, MissingLightIdentityOrDiscriminatorRejectsLoad)
+TEST(SerializeOptional, MissingLightDiscriminatorRejectsLoad)
 {
 	Light light;
 	light.light_type = POINTLIGHT;
-	for (const char* required : {"o_id", "light_type"})
+	for (const char* required : {"light_type"})
 	{
 		SCOPED_TRACE(required);
 		std::string json = SaveOne("light", light);

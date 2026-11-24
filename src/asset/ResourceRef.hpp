@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -66,10 +67,12 @@ public:
 	ResourceRef() = default;
 	ResourceRef(std::nullptr_t) {}
 	template<class U> requires std::is_convertible_v<U*, T*>
-	ResourceRef(std::shared_ptr<U> value) : m_value(std::move(value)) {}
+	ResourceRef(std::shared_ptr<U> value) { *this = std::move(value); }
 
 	ResourceRef& operator=(std::shared_ptr<T> value)
 	{
+		if (value && !value->GetObjectID().has_value())
+			throw std::invalid_argument("A resource reference requires a pooled object");
 		m_uid.reset();
 		m_value = std::move(value);
 		return *this;
@@ -106,21 +109,22 @@ public:
 	T* operator->() const { return get(); }
 	T& operator*() const { return *m_value; }
 	explicit operator bool() const { return static_cast<bool>(m_value); }
-	int id() const { return m_value ? m_value->GetObjectID() : m_uid.value_or(0); }
+	std::optional<int> identity() const { return m_value ? m_value->GetObjectID() : m_uid; }
+	int id() const { return identity().value_or(0); }
 	bool operator==(const ResourceRef& other) const
 	{
-		return id() == other.id() && HasIdentity() == other.HasIdentity();
+		return identity() == other.identity();
 	}
 	bool operator==(std::nullptr_t) const { return !m_value; }
 
 	template<class Archive>
-	int save_minimal(const Archive&) const { return id(); }
+	int save_minimal(const Archive&) const { return identity().value_or(-1); }
 
 	template<class Archive>
 	void load_minimal(const Archive& ar, const int& uid)
 	{
 		reset();
-		if (uid == 0) return;
+		if (uid < 0) return;
 		m_uid = uid;
 		// History records are read outside a pool and rebound when replayed.
 		if (!ArchiveResourceRefs::IsBound(ar)) return;
@@ -129,8 +133,9 @@ public:
 		});
 	}
 
+	bool HasIdentity() const { return identity().has_value(); }
+
 private:
-	bool HasIdentity() const { return m_value || m_uid.has_value(); }
 	void BindValue(const std::shared_ptr<UID>& resource, int uid)
 	{
 		auto value = std::dynamic_pointer_cast<T>(resource);
@@ -160,7 +165,7 @@ void OptionalRef(Archive& ar, const char* key, Ref& ref)
 {
 	if constexpr (Archive::is_saving::value)
 	{
-		if (ref || ref.id() != 0) ar(cereal::make_nvp(key, ref));
+		if (ref.HasIdentity()) ar(cereal::make_nvp(key, ref));
 	}
 	else if (!OptionalField(ar, cereal::make_nvp(key, ref)))
 		ref = nullptr;

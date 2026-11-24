@@ -43,7 +43,6 @@ public:
 	 * @brief Constructs an Environment with default IBL parameters.
 	 */
 	Environment();
-	explicit Environment(RestoredId id);
 
 	/**
 	 * @brief Constructs an environment wrapping pooled equirect data.
@@ -153,10 +152,10 @@ public:
 	 * @param ar Archive to serialize to/from.
 	 * @note Stores the pooled ImageData UID, not texture data.
 	 */
-	template<class Archive, template<class> class ArchiveBase = cereal::base_class>
+	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(ArchiveBase<ObjectID>(this),
+		ar(cereal::base_class<ObjectID>(this),
 		   cereal::make_nvp("transform", cereal::base_class<Transform3D>(this)));
 		archive::Optional(ar, cereal::make_nvp("o_imageDataId", o_equirectData),
 		                  cereal::make_nvp("m_intensity", o_intensity),

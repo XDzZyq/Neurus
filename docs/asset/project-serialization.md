@@ -69,7 +69,7 @@ See [Scene Objects](../scene/objects.md) and [Serialization](../core/serializati
 
 ## Resource pool persistence
 
-`ResourceComponent` saves each pooled resource as a record with a UID (`key`), a registered concrete type name (`type`), and cereal-serialized fields (`data`). On open the reader reserves every indexed UID. The first lookup calls the registered factory with `RestoredId{key}` and then reads the fields into that object. The scene, viewport camera and active graph request their dependencies through the pool. Unrelated resources stay deferred until a caller requests or enumerates them. A malformed record leaves independent entries readable. Null entries and shaders whose content cannot restore or compile are excluded from the live project pool.
+`ResourceComponent` saves each pooled resource as a record with a UID (`key`), a registered concrete type name (`type`), and cereal-serialized fields (`data`). On open the reader reserves every indexed UID. The first lookup calls the registered default constructor. The pool attaches the reserved key before reading the fields, so references and completion callbacks see the restored identity. The scene, viewport camera and active graph request their dependencies through the pool. Unrelated resources stay deferred until a caller requests or enumerates them. A malformed record leaves independent entries readable. Null entries and shaders whose content cannot restore or compile are excluded from the live project pool.
 
 The pool reader uses registered type metadata for names and validation. Each object declares its own references. Render graphs also register a completion step during deserialization to rebuild their connections once pooled dependencies are available. The application supplies the pass catalog at load time. It provides built-in ports and reference shaders for CPU graph validation.
 
@@ -81,7 +81,7 @@ References in scene membership lists, graph records and viewport settings can be
 
 ### Saving a mixed pool
 
-Project save walks the registry's UIDs. For a live entry it writes the object's current fields. For a deferred entry it writes the owned record and applies its current registered name. Each entry carries its own type name, so a retained record can be written independently. Removed UIDs have no entry to write. Save As can write the document after the original project file has been moved or deleted. External assets continue to use the normal asset path resolver.
+Project save walks the registry's UIDs. For a live entry it writes the object's current fields. For a deferred entry it writes the owned record and applies its current registered name. Each entry carries its own type name, so a retained record can be written independently. Removing an object from the scene leaves its resource entry available for undo and save. Save As can write the document after the original project file has been moved or deleted. External assets continue to use the normal asset path resolver.
 
 ## Optional config and render graph
 

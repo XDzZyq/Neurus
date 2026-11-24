@@ -211,17 +211,17 @@ protected:
 
 	std::shared_ptr<Mesh> CreateAndUploadTriangleMesh()
 	{
-		auto md = std::make_shared<MeshData>();
+		auto md = m_resources.Load<MeshData>();
 		EXPECT_TRUE(md->LoadObjFromString(kTriangleObj));
 
-		auto mesh = std::make_shared<Mesh>();
+		auto mesh = m_resources.Load<Mesh>();
 		mesh->o_mesh = md;
 		return mesh;
 	}
 
 	std::shared_ptr<Camera> CreateDefaultCamera()
 	{
-		auto cam = std::make_shared<Camera>();
+		auto cam = m_resources.Load<Camera>();
 		cam->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 		cam->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		cam->ChangeCamRatio(static_cast<float>(kRenderWidth), static_cast<float>(kRenderHeight));
@@ -253,7 +253,7 @@ TEST_F(SceneWiringTest, DrawFrame_EmptyScene_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->GetObjectID());
+	scene.ActivateCamera(cam->RequireObjectID());
 
 	// A snapshot pointer cannot live in a temporary that dies at the semicolon,
 	// so publish into named storage that outlives the DrawFrame call.
@@ -280,7 +280,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithOnlyCamera_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->GetObjectID());
+	scene.ActivateCamera(cam->RequireObjectID());
 
 	ASSERT_NE(scene.GetActiveCamera(), nullptr);
 
@@ -309,13 +309,13 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->GetObjectID());
+	scene.ActivateCamera(cam->RequireObjectID());
 
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
 
-	auto light = std::make_shared<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
+	auto light = m_resources.Load<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
@@ -347,11 +347,11 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->GetObjectID());
+	scene.ActivateCamera(cam->RequireObjectID());
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
-	auto light = std::make_shared<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
+	auto light = m_resources.Load<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
@@ -422,12 +422,12 @@ TEST_F(SceneWiringTest, AFrameHoldsItsMeshTableUntilItsFence)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->GetObjectID());
+	scene.ActivateCamera(cam->RequireObjectID());
 
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
-	const int meshId = mesh->GetObjectID();
+	const int meshId = mesh->RequireObjectID();
 
 	RenderFrameSnapshot snap{};
 	RenderContext ctx{};

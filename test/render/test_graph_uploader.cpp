@@ -180,7 +180,7 @@ TEST_F(GraphUploaderTest, UncompiledSelectedShaderIsNamed)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto document = DefaultDocument();
-	FindNode(*document, "lighting")->data.shader = std::make_shared<const neurus::ComputeShader>("uncompiled");
+	FindNode(*document, "lighting")->data.shader = m_resources.Load<neurus::ComputeShader>("uncompiled");
 
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 
@@ -194,6 +194,7 @@ TEST_F(GraphUploaderTest, CustomGeometryShaderPreservesPassDepthOutput)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = m_defaults->CreatePassShader("GeometryPass", "CustomGeometry");
+	m_resources.Register(shader);
 	const auto request = neurus::MakeUploadShaderRequest(*shader);
 	EXPECT_EQ(request.ports.Find("depth", neurus::PortDirection::Output), nullptr);
 	m_cache->UseShader(neurus::UploadManager::UploadShader(*m_device, request));
@@ -215,6 +216,7 @@ TEST_F(GraphUploaderTest, UploadedShaderRenamesSocketByRoleAndPreservesItsUsers)
 	auto shader = std::shared_ptr<neurus::ComputeShader>(
 		neurus::ShaderLibrary::LoadComputeShader("RenamedComposePort", "res/shaders/compute/compose.comp.glsl"));
 	ASSERT_NE(shader, nullptr);
+	m_resources.Register(shader);
 
 	auto& stage = shader->GetStage(neurus::ShaderType::COMPUTE);
 	constexpr std::string_view original = "outputComposed";

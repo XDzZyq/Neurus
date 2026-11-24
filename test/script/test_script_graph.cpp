@@ -83,7 +83,7 @@ g.connect(g.nodes["fxaa"].outputs["outputFXAA"], g.outputs["color"])
 TEST_F(ScriptGraphTest, InvalidFinalWiringAndScriptExceptionsDiscardGraphWrites)
 {
 	ASSERT_TRUE(Run("g.create()"));
-	const auto uid = editor.GetRenderManager().GraphData()->GetObjectID();
+	const auto uid = editor.GetRenderManager().GraphData()->RequireObjectID();
 	const auto history = editor.GetHistory().undo.size();
 	EXPECT_FALSE(engine.EvalStringChecked("g.disconnect(g.outputs['color'])", &context, nullptr));
 	EXPECT_NE(engine.LastRunMessage().find("color"), std::string::npos) << engine.LastRunMessage();
@@ -92,7 +92,7 @@ g.connect(g.nodes["compose"].outputs["outputComposed"], g.outputs["color"])
 raise RuntimeError("discard this graph edit")
 )PY"));
 	EXPECT_TRUE(Run("assert g.outputs['color'].source.node == 'fxaa'")) << engine.LastRunMessage();
-	EXPECT_EQ(editor.GetRenderManager().GraphData()->GetObjectID(), uid);
+	EXPECT_EQ(editor.GetRenderManager().GraphData()->RequireObjectID(), uid);
 	EXPECT_EQ(editor.GetHistory().undo.size(), history);
 }
 

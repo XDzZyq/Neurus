@@ -71,7 +71,7 @@ A scene containing zero cameras is a legal document, and deleting the last camer
 
 ## Display names
 
-`o_name` is the display name shown by the editor UI. Name uniqueness, suffixing and lookup are owned by the `ResourceManager` name registry, not by the scene: see [Resource names](../core/uid-and-resources.md#resource-names). Registering or removing a scene object only updates the typed pools and `obj_list`.
+`o_name` is the display name shown by the editor UI. Name uniqueness, suffixing and lookup are owned by the `ResourceManager` name registry, not by the scene: see [Resource names](../core/uid-and-resources.md#resource-names). Adding or removing a scene member updates the typed maps and `obj_list`. The resource manager retains removed scene objects under the same UID for save and undo.
 
 ## Pooled data references
 

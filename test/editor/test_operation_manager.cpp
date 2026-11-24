@@ -55,18 +55,13 @@ protected:
 		m_controller.Init(m_ctx);
 		m_objectController.Init(m_ctx);
 
-		m_mesh   = std::make_shared<Mesh>();
-		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-		// Pooled: property writes and their op replay resolve through
-		// ctx.resources, so a non-pooled object would drop every edit.
-		m_resources.Register(m_mesh);
-		m_resources.Register(m_light);
-		// Pooled: camera ops are replayed against ctx.resources, not cam_list.
+		m_mesh   = m_resources.Load<Mesh>();
+		m_light  = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_camera = m_resources.Load<Camera>();
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseCamera(m_camera);
-		m_scene.ActivateCamera(m_camera->GetObjectID());
+		m_scene.ActivateCamera(m_camera->RequireObjectID());
 	}
 
 	void Process() { m_eventBus.Process(); }
@@ -90,7 +85,7 @@ protected:
 
 TEST_F(OperationManagerTest, LightPower_RoundTrip)
 {
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 42.0f });
 	Process();
 	EXPECT_FLOAT_EQ(m_light->light_power, 42.0f);
 	ASSERT_TRUE(m_operations.CanUndo());
@@ -126,7 +121,7 @@ TEST_F(OperationManagerTest, Apply_UnknownUid_IsNoOp)
 
 TEST_F(OperationManagerTest, Clear_EmptiesBothStacks)
 {
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 15.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 15.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
@@ -156,7 +151,7 @@ TEST_F(OperationManagerTest, CameraPose_RoundTrip)
 	m_camera->SetPosition(endPos);
 	m_camera->SetTarPos(endTar);
 	m_operations.Submit(std::make_unique<CameraTransformOp>(
-		m_camera->GetObjectID(),
+		m_camera->RequireObjectID(),
 		CameraPose{ startPos, startTar },
 		CameraPose{ endPos, endTar }));
 
@@ -173,7 +168,7 @@ TEST_F(OperationManagerTest, CameraPose_RoundTrip)
 
 TEST_F(OperationManagerTest, CameraZoom_DirectionChange_BreaksMerge)
 {
-	const int uid = m_camera->GetObjectID();
+	const int uid = m_camera->RequireObjectID();
 	const glm::vec3 a(0.0f, 5.0f, 0.0f);
 	const glm::vec3 b(0.0f, 4.0f, 0.0f);
 	const glm::vec3 c(0.0f, 3.0f, 0.0f);
@@ -200,9 +195,9 @@ TEST_F(OperationManagerTest, CameraZoom_DirectionChange_BreaksMerge)
 TEST_F(OperationManagerTest, DifferentKeys_DoNotMerge)
 {
 	const float original = m_camera->cam_pers;
-	m_eventBus.Enqueue(CameraFovChanged{ m_camera->GetObjectID(), 40.0f });
+	m_eventBus.Enqueue(CameraFovChanged{ m_camera->RequireObjectID(), 40.0f });
 	Process();
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 25.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 25.0f });
 	Process();
 
 	// Two different-key edits are two entries: two undos to clear.
@@ -221,9 +216,9 @@ TEST_F(OperationManagerTest, DifferentKeys_DoNotMerge)
 TEST_F(OperationManagerTest, Selection_MultiSelect_RoundTrip)
 {
 	// Select mesh, then shift-add the light.
-	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->RequireObjectID(), 0 });
 	Process();
-	m_eventBus.Enqueue(ObjectSelected{ m_light->GetObjectID(), Input::Mod_Shift });
+	m_eventBus.Enqueue(ObjectSelected{ m_light->RequireObjectID(), Input::Mod_Shift });
 	Process();
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 2u);
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
@@ -244,7 +239,7 @@ TEST_F(OperationManagerTest, Selection_MultiSelect_RoundTrip)
 TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 {
 	// Record a real edit, then undo it so a redo is pending.
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 42.0f });
 	Process();
 	m_operations.Undo();
 	EXPECT_FLOAT_EQ(m_light->light_power, 10.0f);
@@ -252,7 +247,7 @@ TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 
 	// A selection change is transparent: it appends to undo but MUST keep the
 	// pending redo intact (the key property of PreservesRedo()).
-	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->RequireObjectID(), 0 });
 	Process();
 	EXPECT_TRUE(m_scene.selections.IsSelected(m_mesh.get()));
 	ASSERT_TRUE(m_operations.CanRedo());
@@ -265,17 +260,17 @@ TEST_F(OperationManagerTest, Selection_DoesNotClearRedo)
 TEST_F(OperationManagerTest, RealEdit_ClearsRedo_AfterSelection)
 {
 	// Undo a real edit (redo pending), interleave a selection, then a real edit.
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 42.0f });
 	Process();
 	m_operations.Undo();
 	ASSERT_TRUE(m_operations.CanRedo());
 
-	m_eventBus.Enqueue(ObjectSelected{ m_mesh->GetObjectID(), 0 });
+	m_eventBus.Enqueue(ObjectSelected{ m_mesh->RequireObjectID(), 0 });
 	Process();
 	ASSERT_TRUE(m_operations.CanRedo()); // selection preserved redo
 
 	// A branching edit still discards the redo timeline.
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 88.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 88.0f });
 	Process();
 	EXPECT_FALSE(m_operations.CanRedo());
 }
@@ -288,7 +283,7 @@ TEST_F(OperationManagerTest, BoundedUndoDepth_EvictsOldestEntries)
 	// newest 3; the two oldest are evicted from the front.
 	OperationManager capped{ m_eventBus, 3 };
 
-	const int uid = m_light->GetObjectID();
+	const int uid = m_light->RequireObjectID();
 	for (int i = 1; i <= 5; ++i)
 		capped.Submit(std::make_unique<SetLightPowerOp>(
 			uid, static_cast<float>(i), static_cast<float>(i + 1)));
@@ -336,7 +331,7 @@ TEST_F(OperationManagerTest, ExceptionDuringUndo_DoesNotKillRecording)
 	EXPECT_FALSE(m_operations.CanRedo()); // failed op dropped, not moved to redo
 
 	// A fresh edit must still record after the failed undo.
-	m_eventBus.Enqueue(LightPowerChanged{ m_light->GetObjectID(), 7.0f });
+	m_eventBus.Enqueue(LightPowerChanged{ m_light->RequireObjectID(), 7.0f });
 	Process();
 	EXPECT_TRUE(m_operations.CanUndo());
 
@@ -368,7 +363,7 @@ TEST_F(OperationManagerTest, ExceptionDuringRedo_DoesNotPushToUndo)
  */
 TEST_F(OperationManagerTest, ScriptScopeDoesNotMergeWithThePreviousEntry)
 {
-	const int uid = m_camera->GetObjectID();
+	const int uid = m_camera->RequireObjectID();
 	const float original = m_camera->cam_pers;
 
 	// A live panel edit on the same camera, same op type, same MergeKey.
@@ -400,7 +395,7 @@ TEST_F(OperationManagerTest, ScriptRun_IsLabelledInUndoAndRedo)
 {
 	m_operations.BeginScriptScope();
 	m_operations.Submit(std::make_unique<SetPositionOp>(
-		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+		m_mesh->RequireObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
 	m_operations.EndScriptScope();
 
 	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);
@@ -419,9 +414,9 @@ TEST_F(OperationManagerTest, Composite_KeepsTheFirstChildLabel)
 {
 	std::vector<std::unique_ptr<Operation>> edits;
 	edits.push_back(std::make_unique<SetPositionOp>(
-		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
+		m_mesh->RequireObjectID(), glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f)));
 	edits.push_back(std::make_unique<SetRotationOp>(
-		m_mesh->GetObjectID(), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 45.0f)));
+		m_mesh->RequireObjectID(), glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 45.0f)));
 	m_operations.Submit(std::make_unique<CompositeOp>(std::move(edits)));
 
 	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);

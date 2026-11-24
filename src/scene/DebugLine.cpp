@@ -17,11 +17,6 @@ DebugLine::DebugLine()
 {
 }
 
-DebugLine::DebugLine(RestoredId id)
-	: ObjectID(id, GOType::GO_DL, "DebugLine")
-{
-}
-
 // ---------------------------------------------------------------------------
 // Vertex management
 // ---------------------------------------------------------------------------

@@ -88,8 +88,8 @@ protected:
 		m_viewport.SetViewportSize(glm::uvec2(kW, kH), glm::uvec2(kW, kH));
 		m_viewport.SetCamera(&m_cam);
 
-		m_mesh = std::make_shared<Mesh>();
-		m_light = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+		m_mesh = m_resources.Load<Mesh>();
+		m_light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 
@@ -159,7 +159,7 @@ TEST_F(TransformGizmoControllerTest, CancelledGestureNeverDirtiesTheProject)
 {
 	const glm::vec3 start = MeshTransform().GetPosition();
 
-	Arm(GizmoMode::Move, m_mesh->GetObjectID());
+	Arm(GizmoMode::Move, m_mesh->RequireObjectID());
 	DragTo(kW * 0.75f);
 	DragTo(kW * 0.90f);
 	ASSERT_NE(MeshTransform().GetPosition(), start) << "the drag must have moved something";
@@ -179,9 +179,9 @@ TEST_F(TransformGizmoControllerTest, ReArmingMidGestureStaysTransient)
 {
 	const glm::vec3 start = MeshTransform().GetPosition();
 
-	Arm(GizmoMode::Move, m_mesh->GetObjectID());
+	Arm(GizmoMode::Move, m_mesh->RequireObjectID());
 	DragTo(kW * 0.75f);
-	Arm(GizmoMode::Rotate, m_mesh->GetObjectID());
+	Arm(GizmoMode::Rotate, m_mesh->RequireObjectID());
 
 	EXPECT_EQ(MeshTransform().GetPosition(), start) << "the abandoned move was undone";
 	EXPECT_EQ(m_tally.modified, 0);
@@ -196,7 +196,7 @@ TEST_F(TransformGizmoControllerTest, ReArmingMidGestureStaysTransient)
 /// @test Many drag frames, one undo entry, one SceneModified.
 TEST_F(TransformGizmoControllerTest, ConfirmedGestureIsOneOpAndOneDirtyMark)
 {
-	Arm(GizmoMode::Move, m_mesh->GetObjectID());
+	Arm(GizmoMode::Move, m_mesh->RequireObjectID());
 	DragTo(kW * 0.60f);
 	DragTo(kW * 0.70f);
 	DragTo(kW * 0.80f);
@@ -216,7 +216,7 @@ TEST_F(TransformGizmoControllerTest, ConfirmedGestureIsOneOpAndOneDirtyMark)
 /// @test Dragging a light syncs the cheap single struct, never the dict.
 TEST_F(TransformGizmoControllerTest, DraggingALightUsesTheCheapSync)
 {
-	Arm(GizmoMode::Move, m_light->GetObjectID());
+	Arm(GizmoMode::Move, m_light->RequireObjectID());
 	DragTo(kW * 0.70f);
 	DragTo(kW * 0.80f);
 
@@ -242,7 +242,7 @@ TEST_F(TransformGizmoControllerTest, DraggingALightUsesTheCheapSync)
  */
 TEST_F(TransformGizmoControllerTest, DebugLineIsGizmoTargetable)
 {
-	auto line = std::make_shared<DebugLine>();
+	auto line = m_resources.Load<DebugLine>();
 	line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 	m_scene.UseDebugLine(line);
 
@@ -250,7 +250,7 @@ TEST_F(TransformGizmoControllerTest, DebugLineIsGizmoTargetable)
 	ASSERT_NE(xf, nullptr) << "a DebugLine must expose a transform to be targetable";
 	const glm::vec3 start = xf->GetPosition();
 
-	Arm(GizmoMode::Move, line->GetObjectID());
+	Arm(GizmoMode::Move, line->RequireObjectID());
 	DragTo(kW * 0.75f);
 
 	EXPECT_NE(xf->GetPosition(), start) << "the drag must move the debug line";
@@ -267,7 +267,7 @@ TEST_F(TransformGizmoControllerTest, DebugLineIsGizmoTargetable)
 /// @test G then Enter with no cursor motion: dirty, but no undo entry.
 TEST_F(TransformGizmoControllerTest, GestureThatMovedNothingRecordsNoOp)
 {
-	Arm(GizmoMode::Move, m_mesh->GetObjectID());
+	Arm(GizmoMode::Move, m_mesh->RequireObjectID());
 	Confirm();
 
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 0u)

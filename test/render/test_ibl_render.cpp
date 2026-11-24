@@ -114,9 +114,9 @@ static std::vector<float> GenerateColorfulGradient(uint32_t width, uint32_t heig
 // Loads sphere.obj and scales positions 0.25x (matches original manual
 // vertex extraction scaling). Shared by both tests in this file.
 // ---------------------------------------------------------------------------
-static std::shared_ptr<MeshData> LoadScaledSphere(const std::string& objPath)
+static std::shared_ptr<MeshData> LoadScaledSphere(ResourceManager& resources, const std::string& objPath)
 {
-	auto meshData = std::make_shared<MeshData>();
+	auto meshData = resources.Load<MeshData>();
 	if (!meshData->LoadObj(objPath))
 		return nullptr;
 
@@ -175,17 +175,17 @@ protected:
 			dev, pd);
 
 	// --- Create Environment (CPU-only) and generate IBL cubemaps ---
-	m_env = std::make_shared<Environment>();
+	m_env = m_resources.Load<Environment>();
 
 	// Set up procedural colourful gradient equirect data
 	auto gradientPixels = GenerateColorfulGradient(kEquiWidth, kEquiHeight);
-	auto imgData = std::make_shared<ImageData>(
+	auto imgData = m_resources.Load<ImageData>(
 		gradientPixels.data(), kEquiWidth, kEquiHeight, PixelFormat::RGBA32F);
 	m_env->SetEquirectData(imgData);
 
 	// Inline EnvironmentGPU creation (was RenderCache::CreateEnvironmentGPU)
 	{
-		const int envId = m_env->GetObjectID();
+		const int envId = m_env->RequireObjectID();
 
 		// 1. Upload equirect to GPU
 		auto equirectImage = std::make_shared<Image>(Image::FromImageData(
@@ -273,7 +273,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	// Step 1: Load sphere OBJ (scaled 0.25x)
 	// -------------------------------------------------------------------
 	std::string objPath = ResolveAssetPath("res/obj/sphere.obj");
-	auto meshData = LoadScaledSphere(objPath);
+	auto meshData = LoadScaledSphere(m_resources, objPath);
 	ASSERT_NE(meshData, nullptr) << "Failed to load OBJ: " << objPath;
 	ASSERT_GT(meshData->GetMeshData().dataArray.size() / 14, 0u);
 	ASSERT_GT(meshData->GetMeshData().indexArray.size(), 0u);
@@ -281,7 +281,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	// Step 2: Create camera (60fov, pos (0, -5, 2), looking at origin — Z-up)
 	// -------------------------------------------------------------------
-	auto camera = std::make_shared<Camera>(
+	auto camera = m_resources.Load<Camera>(
 		static_cast<float>(kRenderWidth),
 		static_cast<float>(kRenderHeight),
 		60.0f, 0.1f, 100.0f);
@@ -293,7 +293,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	// Step 3: Create point light (for mixed direct + IBL lighting)
 	// -------------------------------------------------------------------
-	auto light = std::make_shared<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
+	auto light = m_resources.Load<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 2.0f));
 	light->light_radius = 10.0f;
 
@@ -305,7 +305,7 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 	material->SetMatParam(Material::MAT_ROUGH, 0.5f);
 	material->SetMatParam(Material::MAT_ALBEDO, glm::vec3(1.0f, 1.0f, 1.0f));
 
-	auto mesh = std::make_shared<Mesh>();
+	auto mesh = m_resources.Load<Mesh>();
 	mesh->o_mesh = meshData;
 	mesh->o_material = material;
 
@@ -318,8 +318,8 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
-				scene.ActivateCamera(camera->GetObjectID());
-				scene.env_list[m_env->GetObjectID()] = m_env;
+				scene.ActivateCamera(camera->RequireObjectID());
+				scene.env_list[m_env->RequireObjectID()] = m_env;
 
 	// Pre-register GPU resources before pass recording
 	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
@@ -394,13 +394,13 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 
 	// --- Load sphere OBJ (scaled 0.25x) ---
 	std::string objPath = ResolveAssetPath("res/obj/sphere.obj");
-	auto meshData = LoadScaledSphere(objPath);
+	auto meshData = LoadScaledSphere(m_resources, objPath);
 	ASSERT_NE(meshData, nullptr) << "Failed to load OBJ: " << objPath;
 	ASSERT_GT(meshData->GetMeshData().dataArray.size() / 14, 0u);
 	ASSERT_GT(meshData->GetMeshData().indexArray.size(), 0u);
 
 	// --- Camera (60fov, pos (0,-5,2), looking at origin — Z-up) ---
-	auto camera = std::make_shared<Camera>(
+	auto camera = m_resources.Load<Camera>(
 		static_cast<float>(kRenderWidth),
 		static_cast<float>(kRenderHeight),
 		60.0f, 0.1f, 100.0f);
@@ -408,7 +408,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 	camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 
 	// --- Light ---
-	auto light = std::make_shared<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
+	auto light = m_resources.Load<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 2.0f));
 	light->light_radius = 10.0f;
 
@@ -419,7 +419,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 	material->SetMatParam(Material::MAT_ALBEDO, glm::vec3(1.0f, 1.0f, 1.0f));
 
 	// --- Mesh ---
-	auto mesh = std::make_shared<Mesh>();
+	auto mesh = m_resources.Load<Mesh>();
 	mesh->o_mesh = meshData;
 	mesh->o_material = material;
 
@@ -431,8 +431,8 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
-				scene.ActivateCamera(camera->GetObjectID());
-				scene.env_list[m_env->GetObjectID()] = m_env;
+				scene.ActivateCamera(camera->RequireObjectID());
+				scene.env_list[m_env->RequireObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
 				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
@@ -498,11 +498,11 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 
 	// 2f. Re-create Environment (CPU-only) + generate IBL cubemaps.
 	SCOPED_TRACE("Recreate IBL resources");
-	m_env = std::make_shared<Environment>();
+	m_env = m_resources.Load<Environment>();
 	std::shared_ptr<ImageData> imgData; // moved out of narrow scope for inline IBL creation below
 	{
 		auto gradientPixels = GenerateColorfulGradient(kEquiWidth, kEquiHeight);
-		imgData = std::make_shared<ImageData>(
+		imgData = m_resources.Load<ImageData>(
 			gradientPixels.data(), kEquiWidth, kEquiHeight, PixelFormat::RGBA32F);
 		m_env->SetEquirectData(imgData);
 	}
@@ -512,7 +512,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 	{
 		auto& device = *m_device;
 		auto& physDev = PhysicalDevice();
-		const int envId = m_env->GetObjectID();
+		const int envId = m_env->RequireObjectID();
 
 		// 1. Upload equirect to GPU
 		auto equirectImage = std::make_shared<Image>(Image::FromImageData(
@@ -579,8 +579,8 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
-				scene.ActivateCamera(camera->GetObjectID());
-				scene.env_list[m_env->GetObjectID()] = m_env;
+				scene.ActivateCamera(camera->RequireObjectID());
+				scene.env_list[m_env->RequireObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
 				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);

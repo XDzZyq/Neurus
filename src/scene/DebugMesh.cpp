@@ -10,11 +10,6 @@ DebugMesh::DebugMesh()
 {
 }
 
-DebugMesh::DebugMesh(RestoredId id)
-	: ObjectID(id, GOType::GO_DM, "DebugMesh")
-{
-}
-
 DebugMesh::DebugMesh(std::shared_ptr<MeshData> meshData)
 	: DebugMesh()
 {

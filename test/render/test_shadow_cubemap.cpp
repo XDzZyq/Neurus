@@ -269,7 +269,7 @@ TEST_F(ShadowCubemapTest, AllFacesDepth)
 	// -------------------------------------------------------------------
 	// Step 1: Build scene geometry
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadSimpleShadow(
+	auto shadowRes = neurus::test::LoadSimpleShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected 2 meshes (cube + plane)";

@@ -130,7 +130,7 @@ protected:
 	// Editor's create-shader flow runs. Mirrors GeometryPipelineWarmTest.
 	std::shared_ptr<RenderShader> MakeShader(const char* name)
 	{
-		auto shader = std::make_shared<RenderShader>(
+		auto shader = m_resources.Load<RenderShader>(
 			name,
 			ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl"),
 			ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl"));
@@ -382,7 +382,7 @@ TEST_F(RenderRequestExecutorTest, EnsurePipeline_BuildsSnapshottedVersion)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = MakeShader("SnapshotShader");
-	const int shaderId   = shader->GetObjectID();
+	const int shaderId   = shader->RequireObjectID();
 	const int oldVersion = shader->GetVersion();
 
 	// Upload owns the compiled bytes; the ensure request selects that uploaded version.
@@ -513,14 +513,14 @@ TEST_F(RenderRequestExecutorTest, EnsurePipeline_FirstInsert_DoesNotDrain)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = MakeShader("FirstInsertShader");
-	ASSERT_EQ(m_cache->GetPipelineCache().Get(shader->GetObjectID()), nullptr);
+	ASSERT_EQ(m_cache->GetPipelineCache().Get(shader->RequireObjectID()), nullptr);
 
 	m_executor->Execute(MakeUploadShaderRequest(*shader));
 	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
 
 	// The pipeline landed ...
 	EXPECT_NE(m_cache->GetPipelineCache().GetPipeline(
-		shader->GetObjectID(), shader->GetVersion()), nullptr);
+		shader->RequireObjectID(), shader->GetVersion()), nullptr);
 	// ... without waiting the frames: nothing was destroyed to wait for.
 	EXPECT_EQ(m_drains, 0u);
 }
@@ -549,7 +549,7 @@ TEST_F(RenderRequestExecutorTest, EnsurePipeline_ReplaceVersion_DrainsOnce)
 	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
 
 	EXPECT_NE(m_cache->GetPipelineCache().GetPipeline(
-		shader->GetObjectID(), newVersion), nullptr);
+		shader->RequireObjectID(), newVersion), nullptr);
 	// Shader modules are retained by owners; replacing the mesh pipeline drains once.
 	EXPECT_EQ(m_drains, 1u);
 }
@@ -667,7 +667,7 @@ TEST_F(RenderRequestExecutorTest, EnsurePipeline_SameVersionTwice_DoesNotDrain)
 	m_executor->Execute(MakeEnsurePipelineRequest(*shader));
 
 	EXPECT_NE(m_cache->GetPipelineCache().GetPipeline(
-		shader->GetObjectID(), shader->GetVersion()), nullptr);
+		shader->RequireObjectID(), shader->GetVersion()), nullptr);
 	EXPECT_EQ(m_drains, 0u);
 }
 
@@ -882,7 +882,7 @@ TEST_F(RenderRequestExecutorTest, ShaderUpload_ReplacesVersionAndRetainsHeldOldR
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	auto shader = MakeShader("GpuOwnedShader");
 	m_executor->Execute(MakeUploadShaderRequest(*shader));
-	auto first = m_cache->GetShader(shader->GetObjectID());
+	auto first = m_cache->GetShader(shader->RequireObjectID());
 	ASSERT_TRUE(first);
 	const auto oldVersion = first->GetVersion();
 	const auto generation = m_cache->ShaderGeneration();
@@ -893,11 +893,11 @@ TEST_F(RenderRequestExecutorTest, ShaderUpload_ReplacesVersionAndRetainsHeldOldR
 	// Same UID/version is idempotent and does not invalidate graph mapping.
 	m_executor->Execute(MakeUploadShaderRequest(*shader));
 	EXPECT_EQ(m_cache->ShaderGeneration(), generation);
-	EXPECT_EQ(m_cache->GetShader(shader->GetObjectID()), first);
+	EXPECT_EQ(m_cache->GetShader(shader->RequireObjectID()), first);
 
 	shader->BumpVersion();
 	m_executor->Execute(MakeUploadShaderRequest(*shader));
-	const auto replacement = m_cache->GetShader(shader->GetObjectID());
+	const auto replacement = m_cache->GetShader(shader->RequireObjectID());
 	ASSERT_TRUE(replacement);
 	EXPECT_NE(replacement, first);
 	EXPECT_EQ(replacement->GetVersion(), shader->GetVersion());
@@ -916,19 +916,19 @@ TEST_F(RenderRequestExecutorTest, RejectedShaderUploadPreservesResidentAndGenera
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 	auto shader = MakeShader("PreservedGpuShader");
 	m_executor->Execute(MakeUploadShaderRequest(*shader));
-	const auto first = m_cache->GetShader(shader->GetObjectID());
+	const auto first = m_cache->GetShader(shader->RequireObjectID());
 	ASSERT_TRUE(first);
 	const auto generation = m_cache->ShaderGeneration();
 	auto invalid = MakeUploadShaderRequest(*shader);
 	++invalid.version;
 	invalid.stages.at(ShaderType::VERTEX).spv.clear();
 	m_executor->Execute(invalid);
-	EXPECT_EQ(m_cache->GetShader(shader->GetObjectID()), first);
+	EXPECT_EQ(m_cache->GetShader(shader->RequireObjectID()), first);
 	EXPECT_EQ(m_cache->ShaderGeneration(), generation);
 	EXPECT_EQ(m_drains, 0u);
 
 	// A rejected first upload must not create an empty resident entry either.
-	invalid.shaderId = shader->GetObjectID() + 100000;
+	invalid.shaderId = shader->RequireObjectID() + 100000;
 	m_executor->Execute(invalid);
 	EXPECT_EQ(m_cache->GetShader(invalid.shaderId), nullptr);
 	EXPECT_EQ(m_cache->ShaderGeneration(), generation);
@@ -941,11 +941,11 @@ TEST_F(RenderRequestExecutorTest, SceneDropClearsCustomShadersAndKeepsCachedDefa
 	ASSERT_TRUE(builtIn);
 	auto shader = MakeShader("OutgoingGpuShader");
 	m_executor->Execute(MakeUploadShaderRequest(*shader));
-	ASSERT_TRUE(m_cache->GetShader(shader->GetObjectID()));
+	ASSERT_TRUE(m_cache->GetShader(shader->RequireObjectID()));
 	const auto generation = m_cache->ShaderGeneration();
 
 	m_executor->Execute(DropSceneResourcesRequest{});
-	EXPECT_EQ(m_cache->GetShader(shader->GetObjectID()), nullptr);
+	EXPECT_EQ(m_cache->GetShader(shader->RequireObjectID()), nullptr);
 	EXPECT_GT(m_cache->ShaderGeneration(), generation);
 	EXPECT_EQ(m_cache->EnsureDefaultShader("GeometryPass"), builtIn);
 	EXPECT_EQ(m_drains, 1u);

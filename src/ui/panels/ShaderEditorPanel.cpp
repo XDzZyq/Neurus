@@ -319,7 +319,7 @@ void ShaderEditorPanel::Refresh(const UIContext& ctx)
 		return;
 	}
 
-	const int objectId = activeObj->GetObjectID();
+	const int objectId = activeObj->RequireObjectID();
 
 	// Get shader unit and its version (-1 if no shader)
 	int unitVersion = -1;

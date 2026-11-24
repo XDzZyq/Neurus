@@ -82,12 +82,12 @@ protected:
 	TS BuildScene() {
 		TS r; r.s=std::make_shared<Scene>();
 		// Camera at origin targeting (0,0,0) - used for orthographic center computation
-		auto cam=std::make_shared<Camera>();
+		auto cam=m_resources.Load<Camera>();
 		cam->SetPosition(glm::vec3(0.f, -5.f, 2.f));
 		cam->SetTarPos(glm::vec3(0.f, 0.f, 0.f));
 		cam->ChangeCamRatio(static_cast<float>(kRes), static_cast<float>(kRes));
 		r.s->UseCamera(cam);
-		r.s->ActivateCamera(cam->GetObjectID());
+		r.s->ActivateCamera(cam->RequireObjectID());
 		// Quad at y=-5 in XZ plane, 5 units forward from the sun shadow camera at (0,-10,0)
 		// (eye distance = sun_depth_range = 10, decoupled from far plane = 30)
 		const char* ob =
@@ -96,11 +96,11 @@ protected:
 			"v  2.5 -5  2.5\n"
 			"v -2.5 -5  2.5\n"
 			"f 1 2 3 4\n";
-		auto md=std::make_shared<MeshData>(); md->LoadObjFromString(ob);
-		auto m=std::make_shared<Mesh>(); m->o_name="Q"; m->o_mesh=md;
+		auto md=m_resources.Load<MeshData>(); md->LoadObjFromString(ob);
+		auto m=m_resources.Load<Mesh>(); m->o_name="Q"; m->o_mesh=md;
 		// GPU buffers created lazily by RenderCache::GetMeshGPU()
 		r.s->UseMesh(m);
-		auto l=std::make_shared<Light>(LightType::SUNLIGHT,10.f,glm::vec3(1.f));
+		auto l=m_resources.Load<Light>(LightType::SUNLIGHT,10.f,glm::vec3(1.f));
 		l->o_name="S"; l->use_shadow=true;
 		r.s->UseLight(l); r.uid=r.s->light_list.begin()->first;
 		return r;

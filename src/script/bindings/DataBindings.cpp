@@ -87,7 +87,7 @@ struct ResourceCollection
 		}
 		pool->ForEach<T>([this, &result](const std::shared_ptr<T>& obj)
 		{
-			result.append(py::cast(Proxy{obj->GetObjectID(), view}));
+			result.append(py::cast(Proxy{obj->RequireObjectID(), view}));
 		});
 		return result;
 	}
@@ -135,7 +135,7 @@ struct ResourceCollection
 		{
 			return py::none();
 		}
-		return py::cast(Proxy{obj->GetObjectID(), view});
+		return py::cast(Proxy{obj->RequireObjectID(), view});
 	}
 };
 

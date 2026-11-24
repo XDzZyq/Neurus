@@ -75,7 +75,7 @@ inline void ObjectMutated(const ObjectID& obj, IEventQueue& events)
 inline void ObjectPreviewed(const ObjectID& obj, IEventQueue& events)
 {
 	if (obj.IsLight())
-		events.Emit(LightGpuChanged{obj.GetObjectID()});
+		events.Emit(LightGpuChanged{obj.RequireObjectID()});
 	Repaint(events);
 }
 

@@ -98,7 +98,7 @@ void ResourceManager::save(cereal::JSONOutputArchive& ar) const
 
 void ResourceManager::load(cereal::JSONInputArchive& ar)
 {
-	decltype(resources_) restored;
+	ResourceManager restored;
 	ArchiveResourceRefs refs(ar);
 	ar.setNextName("resources_");
 	ar.startNode();
@@ -113,18 +113,19 @@ void ResourceManager::load(cereal::JSONInputArchive& ar)
 		const auto* type = ResourceTypeRegistration::Find(typeName);
 		if (!type)
 			throw cereal::Exception("Unknown pooled resource type: " + typeName);
-		if (restored.contains(id))
-			throw cereal::Exception("Duplicate pooled resource UID " + std::to_string(id));
-		restored.emplace(id, type->readBody(ar, RestoredId{id}));
+		auto resource = type->create();
+		restored.RegisterAt(id, resource);
+		type->readBody(ar, *resource);
 		ar.finishNode();
 	}
 	ar.finishNode();
 
+	for (int uid : refs.Resolve(restored))
+		restored.Remove(uid);
 	Clear();
-	resources_.swap(restored);
-	RebuildTypeIndex();
-	for (int uid : refs.Resolve(*this))
-		Remove(uid);
+	res_live.swap(restored.res_live);
+	res_entries.swap(restored.res_entries);
+	res_idsByType.swap(restored.res_idsByType);
 }
 
 } // namespace neurus

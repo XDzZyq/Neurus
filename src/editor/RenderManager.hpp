@@ -71,10 +71,6 @@ public:
 	const BuiltInRenderData& Defaults() const { return *m_renderDefaults; }
 	std::vector<CpuGraphDiagnostic> Diagnostics() const;
 
-	/// @brief Replays membership of the resource retained by a graph creation operation.
-	void RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish = true);
-	void RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish = true);
-
 	/**
 	 * @brief Replaces the document and publishes it.
 	 *
@@ -98,8 +94,7 @@ public:
 
 	/// Takes ownership of a pass shader created by an edit or restored from history.
 	void RegisterShader(const std::shared_ptr<ShaderData>& shader);
-	/// Releases a shader only after no pooled graph or mesh references it.
-	std::shared_ptr<ShaderData> RemoveUnusedShader(int uid);
+	void DiscardCreation(int uid);
 
 	/// @brief Whether an explicit graph node references this pooled shader.
 	bool ReferencesShader(int uid) const;

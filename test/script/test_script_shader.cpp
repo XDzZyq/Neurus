@@ -26,7 +26,7 @@ protected:
 		m_editor.Initialize();
 
 		auto mesh = m_editor.GetResourceManager().Load<neurus::Mesh>();
-		mesh->o_name = m_editor.GetResourceManager().SetName(mesh->GetObjectID(), "Ground");
+		mesh->o_name = m_editor.GetResourceManager().SetName(mesh->RequireObjectID(), "Ground");
 		m_editor.GetScene().UseMesh(mesh);
 		m_editor.UpdateScriptContext(m_ctx);
 

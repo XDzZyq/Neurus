@@ -114,7 +114,7 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_VerifyNonZero)
 	// -------------------------------------------------------------------
 	// Step 1: Load multi-shadow scene with SUNLIGHT (3 lights)
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		3, LightType::SUNLIGHT);
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 sun lights";
@@ -249,7 +249,7 @@ TEST_F(SunShadowIntensityTest, SunMultiShadowIntensity_ReferenceImage)
 	// -------------------------------------------------------------------
 	// Step 1: Load scene
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		3, LightType::SUNLIGHT);
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u);

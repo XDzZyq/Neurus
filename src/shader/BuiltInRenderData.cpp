@@ -4,6 +4,7 @@
 #include "shader/RenderShader.hpp"
 #include "shader/ShaderLibrary.hpp"
 
+#include "asset/ResourceManager.hpp"
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
@@ -19,7 +20,7 @@ namespace neurus {
 
 namespace {
 
-std::shared_ptr<const ShaderData> LoadDefaultShader(const PassShaderSource& source)
+std::shared_ptr<ShaderData> LoadDefaultShader(const PassShaderSource& source)
 {
 	const std::string name(source.name);
 	if (!source.computePath.empty())
@@ -27,7 +28,7 @@ std::shared_ptr<const ShaderData> LoadDefaultShader(const PassShaderSource& sour
 		auto shader = ShaderLibrary::LoadComputeShader(name, std::string(source.computePath));
 		if (shader && shader->CompileToSpv())
 		{
-			return std::shared_ptr<const ShaderData>(std::move(shader));
+			return shader;
 		}
 	}
 	else
@@ -36,7 +37,7 @@ std::shared_ptr<const ShaderData> LoadDefaultShader(const PassShaderSource& sour
 		                                              std::string(source.fragmentPath));
 		if (shader && shader->CompileToSpv())
 		{
-			return std::shared_ptr<const ShaderData>(std::move(shader));
+			return shader;
 		}
 	}
 	throw std::runtime_error("Cannot construct built-in shader '" + name + "'");
@@ -59,6 +60,7 @@ struct BuiltInRenderData::Impl final : IPortSource
 		return PassExternalInputs(passKind);
 	}
 
+	ResourceManager resources;
 	std::shared_ptr<const RenderGraphData> graph;
 	std::unordered_map<std::string, std::shared_ptr<const ShaderData>> shaders;
 	std::unordered_map<std::string, PassPorts> ports;
@@ -75,7 +77,9 @@ BuiltInRenderData::Impl::Impl()
 			auto [entry, inserted] = shaders.try_emplace(std::string(source.name));
 			if (inserted)
 			{
-				entry->second = LoadDefaultShader(source);
+				auto shader = LoadDefaultShader(source);
+				resources.Register(shader);
+				entry->second = std::move(shader);
 			}
 			passShaders.push_back(entry->second.get());
 		}
@@ -88,7 +92,7 @@ BuiltInRenderData::Impl::Impl()
 		}
 		ports.emplace(std::string(kind.name), std::move(contract));
 	}
-	graph = std::make_shared<const RenderGraphData>(*this);
+	graph = resources.Load<RenderGraphData>(*this);
 }
 
 struct BuiltInRenderData::SharedState

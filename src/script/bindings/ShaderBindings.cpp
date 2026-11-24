@@ -263,7 +263,7 @@ struct ShaderCollection
 		{
 			if (auto shader = std::dynamic_pointer_cast<ShaderData>(resource))
 			{
-				result.append(py::cast(ShaderProxy{shader->GetObjectID(), view}));
+				result.append(py::cast(ShaderProxy{shader->RequireObjectID(), view}));
 			}
 		});
 		return result;
@@ -312,7 +312,7 @@ struct ShaderCollection
 			{
 				if (shader->GetName() == name)
 				{
-					result = py::cast(ShaderProxy{shader->GetObjectID(), view});
+					result = py::cast(ShaderProxy{shader->RequireObjectID(), view});
 				}
 			}
 		});
@@ -551,7 +551,7 @@ void RegisterShaderBindings(py::module_& shader)
 		     "Compile the stage by 'code' or 'struct'; raises RuntimeError with the shaderc message on failure.");
 
 	py::class_<ShaderProxy>(shader, "Shader", "A pooled RenderShader or ComputeShader bundle.")
-		.def_property_readonly("uid", [](const ShaderProxy& s) { return s.Resolve()->GetObjectID(); })
+		.def_property_readonly("uid", [](const ShaderProxy& s) { return s.Resolve()->RequireObjectID(); })
 		.def_property_readonly("name", [](const ShaderProxy& s) { return s.Resolve()->GetName(); })
 		.def_property_readonly("stage",
 			[](const ShaderProxy& s) { return static_cast<int>(s.Resolve()->GetType()); })

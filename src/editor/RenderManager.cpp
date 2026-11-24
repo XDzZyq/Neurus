@@ -56,31 +56,16 @@ std::vector<CpuGraphDiagnostic> RenderManager::Diagnostics() const
 std::shared_ptr<RenderGraphData> RenderManager::CreateGraph(bool publish)
 {
 	if (!m_graph)
-		RestoreCreatedGraph(std::make_shared<RenderGraphData>(), publish);
-	return m_graph.shared();
-}
-
-void RenderManager::RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish)
-{
-	if (graph && m_graph.get() == graph.get())
 	{
-		m_resources.Remove(graph->GetObjectID());
-		ResetGraph(publish);
+		auto graph = m_renderDefaults->Graph()->Clone();
+		auto pooled = std::shared_ptr<RenderGraphData>(std::move(graph));
+		m_resources.Register(pooled);
+		m_graph = pooled;
+		m_problems->clear();
+		if (publish)
+			Publish();
 	}
-}
-
-void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish)
-{
-	if (!graph || m_graph)
-		return;
-	// A creation restored from redo history carries only its original UID.
-	if (graph->nodes.empty())
-		graph->SwapContents(*m_renderDefaults->Graph()->Clone());
-	m_resources.Register(graph);
-	m_graph = graph;
-	m_problems->clear();
-	if (publish)
-		Publish();
+	return m_graph.shared();
 }
 
 bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
@@ -104,8 +89,9 @@ bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 		m_graph->SwapContents(*graph);
 	else
 	{
-		m_graph = std::shared_ptr<RenderGraphData>(std::move(graph));
-		m_resources.Register(m_graph.shared());
+		auto pooled = std::shared_ptr<RenderGraphData>(std::move(graph));
+		m_resources.Register(pooled);
+		m_graph = std::move(pooled);
 	}
 	Publish();
 	return true;
@@ -117,24 +103,30 @@ void RenderManager::RegisterShader(const std::shared_ptr<ShaderData>& shader)
 	shader->SetName(m_resources.SetName(uid, shader->GetName()));
 }
 
-std::shared_ptr<ShaderData> RenderManager::RemoveUnusedShader(int uid)
+void RenderManager::DiscardCreation(int uid)
 {
-	bool used = false;
-	m_resources.ForEach<RenderGraphData>([&](const std::shared_ptr<RenderGraphData>& graph) {
-		for (const auto& node : graph->nodes)
-			if (node->data.shader && node->data.shader.id() == uid)
-				used = true;
-	});
-	m_resources.ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh) {
-		if (mesh->o_shader && mesh->o_shader->GetObjectID() == uid)
-			used = true;
-	});
-	if (used)
-		return nullptr;
-	auto shader = m_resources.Get<ShaderData>(uid);
-	if (shader)
+	if (m_resources.Get<RenderGraphData>(uid))
+	{
 		m_resources.Remove(uid);
-	return shader;
+		return;
+	}
+	// Only live objects could have acquired this new shader during the failed edit.
+	for (const int id : m_resources.RegisteredIds())
+	{
+		const auto object = m_resources.GetLive(id);
+		if (const auto graph = std::dynamic_pointer_cast<RenderGraphData>(object))
+		{
+			for (const auto& node : graph->nodes)
+				if (node->data.shader && node->data.shader.id() == uid)
+					return;
+		}
+		else if (const auto mesh = std::dynamic_pointer_cast<Mesh>(object))
+		{
+			if (mesh->o_shader && mesh->o_shader.id() == uid)
+				return;
+		}
+	}
+	m_resources.Remove(uid);
 }
 
 void RenderManager::UploadShader(const ShaderData& shader)
@@ -155,7 +147,7 @@ void RenderManager::Publish()
 		for (const auto& node : graph->nodes)
 		{
 			if (const auto& shader = node->data.shader;
-			    shader && uploaded.insert(shader->GetObjectID()).second)
+			    shader && uploaded.insert(shader->RequireObjectID()).second)
 				m_sink->Post(MakeUploadShaderRequest(*shader));
 		}
 		published = std::move(graph);

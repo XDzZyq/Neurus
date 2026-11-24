@@ -17,11 +17,6 @@ DebugPoints::DebugPoints()
 {
 }
 
-DebugPoints::DebugPoints(RestoredId id)
-	: ObjectID(id, GOType::GO_DP, "DebugPoints")
-{
-}
-
 // ---------------------------------------------------------------------------
 // Point management
 // ---------------------------------------------------------------------------

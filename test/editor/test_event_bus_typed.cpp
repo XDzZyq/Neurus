@@ -6,7 +6,6 @@
 
 #include "editor/events/EventBus.hpp"
 #include "editor/events/SceneEvents.hpp"
-#include "scene/ObjectID.hpp"
 
 using namespace neurus;
 
@@ -44,22 +43,10 @@ concept DeferredEnqueue = requires(Queue& q, const LocalPing& e) { q.Enqueue(e);
  *
  * These tests validate the typed event dispatch system: Subscribe, Emit,
  * deferred Process(), independent event channels, and handler ordering.
- *
- * ObjectSelected / ObjectDeselected carry integer object UIDs; NewObject()
- * supplies fresh ObjectIDs (held by the fixture so their UIDs stay stable).
  */
 class TypedEventQueueTest : public ::testing::Test
 {
 protected:
-	/** @brief Creates a fresh ObjectID held by the fixture (ObjectID is non-copyable). */
-	ObjectID* NewObject()
-	{
-		m_objects.push_back(std::make_unique<ObjectID>());
-		return m_objects.back().get();
-	}
-
-
-	std::vector<std::unique_ptr<ObjectID>> m_objects;
 	EventQueue m_eventBus;
 	class EventQueue* m_queue = &m_eventBus;
 };
@@ -76,7 +63,7 @@ TEST_F(TypedEventQueueTest, Emit_MultipleHandlersAllReceive)
 	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) { callCount++; });
 	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) { callCount++; });
 
-	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
+	m_queue->Enqueue(ObjectSelected{1, 0});
 	m_queue->Process();
 
 	EXPECT_EQ(callCount, 3);
@@ -88,7 +75,7 @@ TEST_F(TypedEventQueueTest, ProcessingWithoutConsumersIsHarmless)
 	EXPECT_NO_THROW({ m_queue->Process(0); });
 
 	EXPECT_NO_THROW({
-		m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
+		m_queue->Enqueue(ObjectSelected{1, 0});
 		m_queue->Process();
 	});
 }
@@ -105,13 +92,13 @@ TEST_F(TypedEventQueueTest, DifferentEventTypes_IndependentChannels)
 	m_queue->Subscribe<ObjectSelected>([&](const ObjectSelected&) { objectSelectedCount++; });
 	m_queue->Subscribe<ObjectDeselected>([&](const ObjectDeselected& e) { deselectedUid = e.objectUid; });
 
-	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
-	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
+	m_queue->Enqueue(ObjectSelected{1, 0});
+	m_queue->Enqueue(ObjectSelected{1, 0});
 	m_queue->Process();
 
 	EXPECT_EQ(objectSelectedCount, 2);
 	EXPECT_EQ(deselectedUid, 0);
-	const int uid = NewObject()->GetObjectID();
+	const int uid = 1;
 	m_queue->Enqueue(ObjectDeselected{uid});
 	m_queue->Process();
 	EXPECT_EQ(deselectedUid, uid);
@@ -124,24 +111,21 @@ TEST_F(TypedEventQueueTest, DifferentEventTypes_IndependentChannels)
 
 TEST_F(TypedEventQueueTest, MultipleEmits_ProcessedInOrder)
 {
-	ObjectID* o1 = NewObject();
-	ObjectID* o2 = NewObject();
-	ObjectID* o3 = NewObject();
 	std::vector<int> receivedIds;
 
 	m_queue->Subscribe<ObjectSelected>(
 		[&](const ObjectSelected& e) { receivedIds.push_back(e.objectUid); });
 
-	m_queue->Enqueue(ObjectSelected{o1->GetObjectID(), 0});
-	m_queue->Enqueue(ObjectSelected{o2->GetObjectID(), 0});
-	m_queue->Enqueue(ObjectSelected{o3->GetObjectID(), 0});
+	m_queue->Enqueue(ObjectSelected{1, 0});
+	m_queue->Enqueue(ObjectSelected{2, 0});
+	m_queue->Enqueue(ObjectSelected{3, 0});
 
 	m_queue->Process();
 
 	ASSERT_EQ(receivedIds.size(), 3);
-	EXPECT_EQ(receivedIds[0], o1->GetObjectID());
-	EXPECT_EQ(receivedIds[1], o2->GetObjectID());
-	EXPECT_EQ(receivedIds[2], o3->GetObjectID());
+	EXPECT_EQ(receivedIds[0], 1);
+	EXPECT_EQ(receivedIds[1], 2);
+	EXPECT_EQ(receivedIds[2], 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +140,7 @@ TEST_F(TypedEventQueueTest, ProcessingAReentrantQueueHonorsTheDrainLimit)
 		if (handled < 20)
 			m_queue->Enqueue(ObjectSelected{0, 0});
 	});
-	m_queue->Enqueue(ObjectSelected{NewObject()->GetObjectID(), 0});
+	m_queue->Enqueue(ObjectSelected{1, 0});
 	m_queue->Process(10);
 	EXPECT_EQ(handled, 10);
 	m_queue->Process();

@@ -21,6 +21,7 @@
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"
 #include "render/passes/GeometryPass.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "render_api/RenderContext.hpp"
 #include "render/render_graph/PassBindings.hpp"
@@ -114,7 +115,7 @@ protected:
 	 * @param width  Render target width (for aspect ratio).
 	 * @param height Render target height (for aspect ratio).
 	 */
-	static neurus::CameraUBOData MakeTestCamera(uint32_t width, uint32_t height);
+	neurus::CameraUBOData MakeTestCamera(uint32_t width, uint32_t height);
 
 	/**
 	 * @brief Creates a test Camera object with 60° FOV, positioned at (0,-2,0)
@@ -123,7 +124,7 @@ protected:
 	 * @param height Render target height (for aspect ratio).
 	 * @return Non-null shared_ptr to a configured Camera.
 	 */
-	static std::shared_ptr<neurus::Camera> CreateTestCamera(uint32_t width, uint32_t height);
+	std::shared_ptr<neurus::Camera> CreateTestCamera(uint32_t width, uint32_t height);
 
 	/**
 	 * @brief Creates a test triangle in the XY plane facing +Z.
@@ -428,6 +429,8 @@ protected:
 	vk::raii::PhysicalDevices m_physicalDevices = nullptr;
 	uint32_t m_selectedPdIndex = 0;
 	std::unique_ptr<vk::raii::Device> m_device;
+	// Pooled materials may own texture samplers. Release them before the device.
+	neurus::ResourceManager m_resources;
 	uint32_t m_graphicsQueueFamily = 0;
 
 	/**

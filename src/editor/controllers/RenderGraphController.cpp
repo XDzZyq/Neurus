@@ -48,7 +48,7 @@ RenderGraphData& Document(const ControllerContext& ctx)
 RenderGraphData& Document(const ControllerContext& ctx, int uid)
 {
 	auto& graph = Document(ctx);
-	if (graph.GetObjectID() != uid)
+	if (graph.RequireObjectID() != uid)
 		throw std::invalid_argument("Graph history refers to a different active document");
 	return graph;
 }
@@ -153,7 +153,7 @@ void SetProducer(const ControllerContext& ctx, const GraphEndpoint& destination,
 		return;
 
 	// A replacement emits one producer change. History records unlink then link so undo restores the old producer.
-	const int uid = graph.GetObjectID();
+	const int uid = graph.RequireObjectID();
 	std::vector<std::unique_ptr<Operation>> edits;
 	if (old)
 		edits.push_back(std::make_unique<GraphConnectionOp>(uid, *old, destination, false));
@@ -180,7 +180,7 @@ void ChangeNodeMembership(const ControllerContext& ctx, const GraphNodeMembershi
 	auto node = project::FromRecord(e.node, ctx.render->Defaults().Ports(), errors, &ctx.resources);
 	if (!errors.empty())
 		throw std::invalid_argument(errors.front());
-	if (e.node.shader.id() && !node->data.shader)
+	if (e.node.shader.HasIdentity() && !node->data.shader)
 		throw std::invalid_argument("Missing or invalid pooled shader UID " + std::to_string(e.node.shader.id()));
 	if (node->data.shader)
 		ValidatePassShader(node->data.pass, *node->data.shader, ctx.render->Defaults());
@@ -191,7 +191,7 @@ void RemoveNode(const ControllerContext& ctx, const std::string& name)
 {
 	auto& graph = Document(ctx);
 	const auto& node = FindNode(graph, name);
-	const int uid = graph.GetObjectID();
+	const int uid = graph.RequireObjectID();
 	// Record the disconnects first so undo recreates the node before restoring its links.
 	std::vector<std::unique_ptr<Operation>> ops;
 	for (const auto& input : node.inputs)
@@ -267,8 +267,8 @@ void RenderGraphController::Init(ControllerContext& ctx)
 		}
 		node.name = id;
 		const auto index = graph.nodes.size();
-		ctx.events.Emit(GraphNodeMembershipChanged{graph.GetObjectID(), node, index, true});
-		ctx.ops.Submit(std::make_unique<GraphNodeOp>(graph.GetObjectID(), std::move(node), index, true));
+		ctx.events.Emit(GraphNodeMembershipChanged{graph.RequireObjectID(), node, index, true});
+		ctx.ops.Submit(std::make_unique<GraphNodeOp>(graph.RequireObjectID(), std::move(node), index, true));
 		if (e.createdId)
 			*e.createdId = std::move(id);
 	});
@@ -278,8 +278,8 @@ void RenderGraphController::Init(ControllerContext& ctx)
 		FindNode(graph, e.node);
 		if (e.node == e.name)
 			return;
-		ctx.events.Emit(GraphNodeRenamed{graph.GetObjectID(), e.node, e.name});
-		ctx.ops.Submit(std::make_unique<RenameGraphNodeOp>(graph.GetObjectID(), e.node, e.name));
+		ctx.events.Emit(GraphNodeRenamed{graph.RequireObjectID(), e.node, e.name});
+		ctx.ops.Submit(std::make_unique<RenameGraphNodeOp>(graph.RequireObjectID(), e.node, e.name));
 	});
 	SubscribeGraphEdit<RenderGraphConnectRequested>(ctx, [&ctx](const auto& e) { SetProducer(ctx, e.destination, e.source); });
 	SubscribeGraphEdit<RenderGraphDisconnectRequested>(ctx, [&ctx](const auto& e) { SetProducer(ctx, e.destination, {}); });
@@ -288,8 +288,8 @@ void RenderGraphController::Init(ControllerContext& ctx)
 		const auto previous = Output(graph, e.output).data.tag;
 		if (previous == e.tag)
 			return;
-		ctx.events.Emit(GraphOutputTagChanged{graph.GetObjectID(), e.output, e.tag});
-		ctx.ops.Submit(std::make_unique<SetGraphOutputTagOp>(graph.GetObjectID(), e.output, previous, e.tag));
+		ctx.events.Emit(GraphOutputTagChanged{graph.RequireObjectID(), e.output, e.tag});
+		ctx.ops.Submit(std::make_unique<SetGraphOutputTagOp>(graph.RequireObjectID(), e.output, previous, e.tag));
 	});
 	SubscribeGraphEdit<RenderGraphShaderRequested>(ctx, [&ctx](const auto& e) {
 		const auto& graph = Document(ctx);
@@ -301,17 +301,14 @@ void RenderGraphController::Init(ControllerContext& ctx)
 			return;
 		const int before = node.data.shader.id();
 		const int after = e.uid.value_or(0);
-		ctx.events.Emit(GraphNodeShaderChanged{graph.GetObjectID(), e.node, after});
-		ctx.ops.Submit(std::make_unique<SetGraphShaderOp>(graph.GetObjectID(), e.node, before, after));
+		ctx.events.Emit(GraphNodeShaderChanged{graph.RequireObjectID(), e.node, after});
+		ctx.ops.Submit(std::make_unique<SetGraphShaderOp>(graph.RequireObjectID(), e.node, before, after));
 	});
 	SubscribeGraphEdit<RenderGraphCreateRequested>(ctx, [&ctx](const auto&) {
 		if (!ctx.render->GraphData())
 		{
-			auto graph = std::make_shared<RenderGraphData>();
-			const int uid = graph->GetObjectID();
-			auto history = std::make_unique<CreateRenderGraphOp>(uid);
-			ctx.events.Emit(RenderGraphMembershipChanged{uid, true, graph});
-			ctx.ops.Submit(std::move(history));
+			auto graph = ctx.render->CreateGraph(false);
+			ctx.ops.Submit(std::make_unique<CreateRenderGraphOp>(graph->RequireObjectID()));
 		}
 	});
 	SubscribeGraphEdit<RenderGraphCreateShaderRequested>(ctx, [&ctx](const auto& request) {
@@ -320,62 +317,43 @@ void RenderGraphController::Init(ControllerContext& ctx)
 		if (!node.data.shader)
 		{
 			auto shader = ctx.render->Defaults().CreatePassShader(node.data.pass, node.name + " Shader");
-			const int uid = shader->GetObjectID();
-			std::vector<std::unique_ptr<Operation>> edits;
-			edits.push_back(std::make_unique<CreatePassShaderOp>(uid));
-			edits.push_back(std::make_unique<SetGraphShaderOp>(graph.GetObjectID(), node.name, 0, uid));
-			auto history = std::make_unique<NamedCompositeOp>(std::move(edits), "Create Pass Shader");
-
-			// Assignment resolves the UID from the pool. Release the new entry if assignment fails.
-			ctx.events.Emit(PassShaderMembershipChanged{uid, true, shader});
+			ctx.render->RegisterShader(shader);
+			const int uid = shader->RequireObjectID();
 			try
 			{
-				ctx.events.Emit(GraphNodeShaderChanged{graph.GetObjectID(), node.name, uid});
+				ctx.events.Emit(GraphNodeShaderChanged{graph.RequireObjectID(), node.name, uid});
 			}
 			catch (...)
 			{
-				ctx.events.Emit(PassShaderMembershipChanged{uid, false, shader});
+				ctx.render->DiscardCreation(uid);
 				throw;
 			}
-			ctx.ops.Submit(std::move(history));
+			ctx.ops.Submit(std::make_unique<SetGraphShaderOp>(graph.RequireObjectID(), node.name, 0, uid, true));
 		}
 		if (request.uid)
 			*request.uid = node.data.shader.id();
 	});
 
+	ctx.events.Subscribe<GraphCreationDiscarded>([&ctx](const auto& e) { ctx.render->DiscardCreation(e.uid); });
 	ctx.events.Subscribe<RenderGraphMembershipChanged>([&ctx](const RenderGraphMembershipChanged& e) {
 		const auto active = ctx.render->GraphData();
-		if (active && active->GetObjectID() != e.uid)
+		if (active && active->RequireObjectID() != e.uid)
 			throw std::runtime_error("Graph creation history refers to a different active graph");
 		if (e.present)
 		{
 			if (active)
 				return;
-			if (!e.detached || e.detached->GetObjectID() != e.uid)
+			auto graph = ctx.resources.Get<RenderGraphData>(e.uid);
+			if (!graph)
 				throw std::runtime_error("Graph creation history refers to a missing resource");
-			ctx.render->RestoreCreatedGraph(e.detached, false);
-			e.detached.reset();
+			ctx.render->GraphData() = std::move(graph);
 		}
 		else
 		{
 			if (!active)
 				throw std::runtime_error("Cannot undo graph creation without its active resource");
-			ctx.render->RemoveCreatedGraph(active.shared(), false);
-			e.detached = active.shared();
+			ctx.render->ResetGraph(false);
 		}
-	});
-	ctx.events.Subscribe<PassShaderMembershipChanged>([&ctx](const PassShaderMembershipChanged& e) {
-		if (!e.present)
-		{
-			e.detached = ctx.render->RemoveUnusedShader(e.uid);
-			return;
-		}
-		if (!e.detached && ctx.resources.Get<ShaderData>(e.uid))
-			return; // Another mesh or graph kept the shader in the pool.
-		if (!e.detached || e.detached->GetObjectID() != e.uid || ctx.resources.Get(e.uid))
-			throw std::runtime_error("Invalid shader identity in graph history");
-		ctx.render->RegisterShader(e.detached);
-		e.detached.reset();
 	});
 }
 

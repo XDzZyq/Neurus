@@ -25,7 +25,7 @@ TEST(DebugLine, DefaultConstruction)
 	DebugLine dl;
 
 	// Inherits ObjectID with valid ID
-	EXPECT_GE(dl.GetObjectID(), 0);
+	EXPECT_FALSE(dl.GetObjectID().has_value());
 
 	// Object type is GO_DL
 	EXPECT_EQ(dl.o_type, ObjectID::GOType::GO_DL);
@@ -95,7 +95,7 @@ TEST(DebugPoints, DefaultConstruction)
 	DebugPoints dp;
 
 	// Inherits ObjectID with valid ID
-	EXPECT_GE(dp.GetObjectID(), 0);
+	EXPECT_FALSE(dp.GetObjectID().has_value());
 
 	// Object type is GO_DP
 	EXPECT_EQ(dp.o_type, ObjectID::GOType::GO_DP);

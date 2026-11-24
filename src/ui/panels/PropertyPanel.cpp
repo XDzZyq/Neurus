@@ -141,7 +141,7 @@ void PropertyPanel::Refresh(const UIContext& ctx)
 		return;
 	}
 
-	int objectId = activeObj->GetObjectID();
+	int objectId = activeObj->RequireObjectID();
 
 	// --- Header: icon + name (lazy: only when the active UID changed) ---
 	if (m_activeObjectId != objectId){

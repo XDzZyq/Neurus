@@ -17,21 +17,6 @@ namespace neurus
 std::string ReadResourceName(const UID& resource);
 void WriteResourceName(UID& resource, const std::string& name);
 bool IsUsableResource(const UID& resource);
-/// Serializes the concrete fields using the same functions as standalone cereal
-/// objects. In a pool the record key already carries the UID base's only field.
-template<class T>
-struct PooledFields
-{
-	T* object;
-
-	template<class Archive>
-	void serialize(Archive& ar)
-	{
-		if constexpr (!std::is_same_v<T, UID>)
-			object->template serialize<Archive, PooledFields>(ar);
-	}
-};
-
 /// Static metadata installed by the translation unit that registers the concrete
 /// type with cereal.
 struct ResourceTypeRegistration
@@ -43,7 +28,8 @@ struct ResourceTypeRegistration
 	const char* name;
 	int nameDepth;
 	void (*writeBody)(cereal::JSONOutputArchive&, const UID&);
-	std::shared_ptr<UID> (*readBody)(cereal::JSONInputArchive&, RestoredId);
+	std::shared_ptr<UID> (*create)();
+	void (*readBody)(cereal::JSONInputArchive&, UID&);
 	static const ResourceTypeRegistration* Find(std::string_view archiveName);
 	static const ResourceTypeRegistration* Find(std::type_index type);
 	PayloadCheck validPayload;
@@ -57,16 +43,12 @@ struct ResourceTypeRegistration
 	                         PayloadCheck valid = nullptr, ObjectCheck check = nullptr)
 		: type(typeid(T)), name(archiveName), nameDepth(nameDepth), validPayload(valid), usable(check)
 	{
+		create = []() -> std::shared_ptr<UID> { return std::make_shared<T>(); };
 		writeBody = [](cereal::JSONOutputArchive& ar, const UID& object) {
-			// Cereal's shared save/load member is non-const even on output.
-			PooledFields<T> fields{&const_cast<T&>(static_cast<const T&>(object))};
-			ar(cereal::make_nvp("data", fields));
+			ar(cereal::make_nvp("data", static_cast<const T&>(object)));
 		};
-		readBody = [](cereal::JSONInputArchive& ar, RestoredId id) -> std::shared_ptr<UID> {
-			auto object = std::make_shared<T>(id);
-			PooledFields<T> fields{object.get()};
-			ar(cereal::make_nvp("data", fields));
-			return object;
+		readBody = [](cereal::JSONInputArchive& ar, UID& object) {
+			ar(cereal::make_nvp("data", static_cast<T&>(object)));
 		};
 		if constexpr (requires(T object) { object.o_name; })
 		{

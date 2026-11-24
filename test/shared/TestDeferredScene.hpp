@@ -9,7 +9,7 @@
  * Usage:
  * @code
  *   auto path = ResolveAssetPath("res/obj/sphere.obj");
- *   auto scene = BuildDeferredScene(device, pd, queue, qfi, path);
+ *   auto scene = BuildDeferredScene(resources, path);
  *   // Meshes registered in scene.mesh_list — GeometryPass and ShadowDepthPass
  *   // iterate mesh_list directly via RenderCache::GetMeshGPU().
  *   m_geometryPass->Record(cmd, cache, ctx);
@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include "asset/ResourceManager.hpp"
 #include "core/Log.hpp"
 
 #include "asset/data/MeshData.hpp"
@@ -72,6 +73,7 @@ struct DeferredSceneResources
  * @return Fully populated DeferredSceneResources.
  */
 inline DeferredSceneResources BuildDeferredScene(
+	ResourceManager& resources,
 	const std::string& meshPath,
 	float width = 256.0f,
 	float height = 256.0f)
@@ -79,7 +81,7 @@ inline DeferredSceneResources BuildDeferredScene(
 	DeferredSceneResources res;
 
 	// --- Load sphere OBJ ---
-	auto meshData = std::make_shared<MeshData>();
+	auto meshData = resources.Load<MeshData>();
 	if (!meshData->LoadObj(meshPath))
 	{
 		NEURUS_ERR("BuildDeferredScene: Failed to load " << meshPath);
@@ -100,7 +102,7 @@ inline DeferredSceneResources BuildDeferredScene(
 	res.material->SetMatParam(Material::MAT_ALBEDO, glm::vec3(1.0f));
 
 	// --- Create mesh with 0.25x scale transform ---
-	res.mesh = std::make_shared<Mesh>();
+	res.mesh = resources.Load<Mesh>();
 	res.mesh->o_mesh = meshData;
 	res.mesh->o_material = res.material;
 	res.mesh->SetScale(glm::vec3(0.25f));
@@ -110,12 +112,12 @@ inline DeferredSceneResources BuildDeferredScene(
 	res.scene->UseMesh(res.mesh);
 
 	// --- Create camera (pos 0,-5,2, target origin, 60° FOV, Z-up) ---
-	res.camera = std::make_shared<Camera>(width, height, 60.0f, 0.1f, 100.0f);
+	res.camera = resources.Load<Camera>(width, height, 60.0f, 0.1f, 100.0f);
 	res.camera->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 	res.camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 
 	// --- Create point light (pos 2,2,2, power 10, radius 10, white) ---
-	res.light = std::make_shared<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
+	res.light = resources.Load<Light>(LightType::POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	res.light->SetPosition(glm::vec3(2.0f, 2.0f, 2.0f));
 	res.light->light_radius = 10.0f;
 

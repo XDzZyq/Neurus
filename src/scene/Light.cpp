@@ -13,11 +13,6 @@ Light::Light()
 {
 }
 
-Light::Light(RestoredId id)
-	: ObjectID(id, Type, "Light")
-{
-}
-
 Light::Light(LightType type, float power, glm::vec3 color)
 	: ObjectID()
 	, Transform3D()

@@ -69,30 +69,29 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
                     const std::shared_ptr<const ResourceReadServices>& services)
 {
 	auto payload = std::make_shared<const std::string>(std::move(record.payload));
-	auto load = [&pool, id, payload, services, type = record.type]() -> std::shared_ptr<UID>
+	auto populate = [&pool, id, payload, services, type = record.type](UID& resource)
 	{
 		try
 		{
-			std::shared_ptr<UID> resource;
 			{
 				std::istringstream stream(*payload);
 				cereal::JSONInputArchive archive(stream);
 				ArchiveResourceRefs refs(archive, services.get());
-				resource = type->readBody(archive, RestoredId{id});
-				if (!refs.Resolve(pool).empty()) return nullptr;
+				type->readBody(archive, resource);
+				if (!refs.Resolve(pool).empty()) return false;
 			}
-			if (!IsUsableResource(*resource))
-				return nullptr;
-			WriteResourceName(*resource, pool.RegisteredName(id));
-			return resource;
+			if (!IsUsableResource(resource))
+				return false;
+			WriteResourceName(resource, pool.RegisteredName(id));
+			return true;
 		}
 		catch (const std::exception& error)
 		{
 			NEURUS_LOG("[ResourceComponent] Could not restore UID " << id << ": " << error.what());
-			return nullptr;
+			return false;
 		}
 	};
-	pool.RegisterDeferred(id, record.type->type, std::move(load), payload);
+	pool.RegisterDeferred(id, record.type->type, record.type->create, payload, std::move(populate));
 }
 
 } // namespace
