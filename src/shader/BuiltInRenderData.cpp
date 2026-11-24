@@ -8,6 +8,7 @@
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -90,21 +91,32 @@ BuiltInRenderData::Impl::Impl()
 	graph = std::make_shared<const RenderGraphData>(*this);
 }
 
-BuiltInRenderData::BuiltInRenderData() = default;
+struct BuiltInRenderData::SharedState
+{
+	std::once_flag initialize;
+	std::unique_ptr<const Impl> data;
+};
+
+BuiltInRenderData::BuiltInRenderData() : m_state(std::make_shared<SharedState>()) {}
 BuiltInRenderData::~BuiltInRenderData() = default;
 
 const BuiltInRenderData::Impl& BuiltInRenderData::Data() const
 {
-	std::call_once(m_initialize, [this]
+	std::call_once(m_state->initialize, [this]
 	{
-		m_impl = std::make_unique<const Impl>();
+		m_state->data = std::make_unique<const Impl>();
 	});
-	return *m_impl;
+	return *m_state->data;
 }
 
 const std::shared_ptr<const RenderGraphData>& BuiltInRenderData::Graph() const
 {
 	return Data().graph;
+}
+
+std::shared_ptr<const IPassShaderCatalog> BuiltInRenderData::Share() const
+{
+	return std::make_shared<const BuiltInRenderData>(*this);
 }
 
 const IPortSource& BuiltInRenderData::Ports() const

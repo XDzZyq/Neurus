@@ -62,3 +62,7 @@ Project open indexes concrete types and reserves every accepted UID before it re
 The pool tests cover metadata queries, rename by UID, shared lookup results, typed enumeration, duplicate registrations, removal, project replacement, cycle recovery, and rejection of loaders returning the wrong object. The current project reader still requests every indexed record for the reference-wiring pass. It assigns unique names in UID order after validation so legacy records with omitted names participate using their constructor defaults. Phase 3 must preserve that ordering when it moves name assignment ahead of root restoration.
 
 The full Windows Debug build succeeded. `make check` reported 1,004 passes, zero failures and one platform skip for POSIX permission reporting. The translation check passed. The reference-image files are unchanged, including the constant-depth sun shadow reference.
+
+## Phase 3 checkpoint
+
+Project open now resolves the scene, viewport camera and active graph through the indexed pool. The mixed fixture reads the shared OBJ once and does zero unused OBJ reads, image decodes or inactive shader compilations through first publication. Scene membership and graph topology are restored from local records. Scene and RenderGraphData no longer carry pending state. The full Debug build and 99 targeted CTest cases passed.

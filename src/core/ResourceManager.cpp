@@ -22,7 +22,8 @@ int ResourceManager::Register(std::shared_ptr<UID> obj)
 	return id;
 }
 
-void ResourceManager::RegisterDeferred(int id, std::type_index type, std::function<std::shared_ptr<UID>()> loader)
+void ResourceManager::RegisterDeferred(int id, std::type_index type, std::function<std::shared_ptr<UID>()> loader,
+                                       std::shared_ptr<const std::string> archivedRecord)
 {
 	if (!loader)
 		throw std::invalid_argument("Missing resource loader for UID " + std::to_string(id));
@@ -30,14 +31,19 @@ void ResourceManager::RegisterDeferred(int id, std::type_index type, std::functi
 		throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
 	UID::ReserveThrough(id);
 	IndexType(id, type);
-	m_loaders.emplace(id, DeferredResource{std::move(loader)});
+	m_loaders.emplace(id, DeferredResource{std::move(loader), std::move(archivedRecord)});
+}
+
+std::shared_ptr<UID> ResourceManager::GetLive(int id) const
+{
+	auto live = resources_.find(id);
+	return live == resources_.end() ? nullptr : live->second;
 }
 
 std::shared_ptr<UID> ResourceManager::Get(int id) const
 {
-	auto live = resources_.find(id);
-	if (live != resources_.end())
-		return live->second;
+	if (auto live = GetLive(id))
+		return live;
 	auto deferred = m_loaders.find(id);
 	if (deferred == m_loaders.end())
 		return nullptr;
@@ -49,6 +55,13 @@ std::shared_ptr<UID> ResourceManager::Get(int id) const
 	try
 	{
 		auto object = record.load();
+		if (!object && record.archivedRecord)
+		{
+			// Persistence rejected this record. Drop it so a later save cannot revive it.
+			record.loading = false;
+			EraseResource(id);
+			return nullptr;
+		}
 		if (!object || object->GetObjectID() != id)
 			throw std::runtime_error("Restored resource identity mismatch for UID " + std::to_string(id));
 		const UID& pooled = *object;
@@ -95,6 +108,12 @@ std::string ResourceManager::SetName(int id, const std::string& name)
 	return unique;
 }
 
+std::string ResourceManager::RegisteredName(int id) const
+{
+	const auto found = m_nameOf.find(id);
+	return found == m_nameOf.end() ? std::string{} : found->second.name;
+}
+
 void ResourceManager::ForEachUID(const std::function<void(const std::shared_ptr<UID>&)>& fn) const
 {
 	std::vector<int> ids;
@@ -102,7 +121,8 @@ void ResourceManager::ForEachUID(const std::function<void(const std::shared_ptr<
 	for (const auto& entry : m_typeOf)
 		ids.push_back(entry.first);
 	for (int id : ids)
-		fn(Get(id));
+		if (auto resource = Get(id))
+			fn(resource);
 }
 
 void ResourceManager::ForEachOfType(
@@ -120,10 +140,16 @@ void ResourceManager::ForEachOfType(
 
 	const auto ids = tracked->second;
 	for (int id : ids)
-		fn(Get(id));
+		if (auto resource = Get(id))
+			fn(resource);
 }
 
 bool ResourceManager::Remove(int id)
+{
+	return EraseResource(id);
+}
+
+bool ResourceManager::EraseResource(int id) const
 {
 	const auto type = m_typeOf.find(id);
 	if (type == m_typeOf.end())
@@ -180,7 +206,7 @@ void ResourceManager::IndexType(int id, std::type_index type)
 	m_byType[type].push_back(id);
 }
 
-void ResourceManager::EraseName(int id)
+void ResourceManager::EraseName(int id) const
 {
 	auto entry = m_nameOf.find(id);
 	if (entry == m_nameOf.end())

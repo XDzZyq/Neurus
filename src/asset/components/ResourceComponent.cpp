@@ -14,6 +14,7 @@
 // Types needed for the pooled data-reference wiring in Load().
 #include "asset/data/ImageData.hpp"
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/PassShaderCatalog.hpp"
 #include "asset/data/MeshData.hpp"
 #include "scene/Environment.hpp"
 #include "scene/DebugMesh.hpp"
@@ -120,6 +121,8 @@ std::string normalizeType(Json& value, std::unordered_map<uint32_t, std::string>
 	return typeNames.at(typeId);
 }
 
+std::string legacyName(const std::string& typeName);
+
 std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeName)
 {
 	const auto type = FindResourceType(typeName);
@@ -152,6 +155,8 @@ std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeNa
 	std::string name;
 	if (parent && parent->contains(nameField))
 		name = parent->at(nameField).get<std::string>();
+	else
+		name = legacyName(typeName);
 	const auto& key = entry.at("key");
 	const auto& identity = base->at("o_id");
 	if (!key.is_number_integer() || key < 0 || key >= std::numeric_limits<int>::max()
@@ -162,42 +167,124 @@ std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeNa
 	return {key.get<int>(), {*type, std::move(name), isolated.dump()}};
 }
 
-void registerRecord(ResourceManager& pool, int id, ResourceRecord& record)
+// These scene leaves use their unqualified type name as the constructor's
+// display name when a legacy archive omits o_name. Sprite and ObjectID default
+// to an empty string. Indexing legacy names must not construct pooled objects.
+std::string legacyName(const std::string& typeName)
 {
-	pool.RegisterDeferred(id, record.type, [id, payload = std::move(record.payload)]
-	{
-		std::istringstream stream(payload);
-		cereal::JSONInputArchive archive(stream);
-		std::shared_ptr<UID> resource;
-		const ArchiveUid identity(id);
-		archive(cereal::make_nvp("value", resource));
-		return resource;
-	});
+	for (const auto* namedType : {"neurus::Camera", "neurus::Light", "neurus::Mesh",
+	     "neurus::Environment", "neurus::DebugLine", "neurus::DebugPoints", "neurus::DebugMesh"})
+		if (typeName == namedType)
+			return typeName.substr(sizeof("neurus::") - 1);
+	return {};
 }
 
-// The legacy archive reader has only live objects. A project record may also
-// omit an optional name, in which case its constructor supplies the default.
-void seedName(ResourceManager& pool, const std::shared_ptr<UID>& resource, const std::string& recorded = {})
+void restoreDependencies(ResourceManager& pool, const std::shared_ptr<UID>& resource)
+{
+	if (auto mesh = std::dynamic_pointer_cast<Mesh>(resource))
+	{
+		if (mesh->o_meshDataId != 0)
+		{
+			mesh->o_mesh = pool.Get<MeshData>(mesh->o_meshDataId);
+			if (!mesh->o_mesh)
+				NEURUS_ERR("[ResourceComponent] stale MeshData UID " << mesh->o_meshDataId);
+		}
+		auto shader = mesh->o_shaderId == 0 ? nullptr : pool.Get<ShaderData>(mesh->o_shaderId);
+		if (shader && shader->GetType() != ShaderType::VERTEX)
+			shader.reset();
+		mesh->SetObjShader(shader);
+	}
+	else if (auto debug = std::dynamic_pointer_cast<DebugMesh>(resource); debug && debug->o_meshDataId != 0)
+	{
+		debug->o_mesh = pool.Get<MeshData>(debug->o_meshDataId);
+		if (!debug->o_mesh)
+			NEURUS_ERR("[ResourceComponent] stale MeshData UID " << debug->o_meshDataId << " on DebugMesh");
+	}
+	else if (auto env = std::dynamic_pointer_cast<Environment>(resource); env && env->o_imageDataId != 0)
+	{
+		if (auto image = pool.Get<ImageData>(env->o_imageDataId))
+			env->SetEquirectData(std::move(image));
+		else
+			NEURUS_ERR("[ResourceComponent] stale ImageData UID " << env->o_imageDataId);
+	}
+}
+
+using DiagnosticList = std::reference_wrapper<std::vector<std::string>>;
+
+void reportGraphDiagnostics(int id, const std::vector<std::string>& messages,
+                            const std::weak_ptr<DiagnosticList>& sink)
+{
+	for (const auto& message : messages)
+	{
+		const auto text = "Graph UID " + std::to_string(id) + ": " + message;
+		NEURUS_LOG("[ResourceComponent] " << text);
+		if (const auto list = sink.lock())
+			list->get().push_back(text);
+	}
+}
+
+void applyRegisteredName(const std::shared_ptr<UID>& resource, const std::string& name)
 {
 	if (auto object = std::dynamic_pointer_cast<ObjectID>(resource))
-	{
-		const auto& name = recorded.empty() ? object->o_name : recorded;
-		if (!name.empty())
-			object->o_name = pool.SetName(object->GetObjectID(), name);
-	}
+		object->o_name = name;
 	else if (auto shader = std::dynamic_pointer_cast<ShaderData>(resource))
+		shader->SetName(name);
+}
+
+void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
+                    const std::shared_ptr<const IPassShaderCatalog>& catalog,
+                    std::weak_ptr<DiagnosticList> diagnostics)
+{
+	auto payload = std::make_shared<const std::string>(std::move(record.payload));
+	const bool isGraph = record.type == typeid(RenderGraphData);
+	auto load = [&pool, id, payload, isGraph, catalog, diagnostics]() -> std::shared_ptr<UID>
 	{
-		const auto& name = recorded.empty() ? shader->GetName() : recorded;
-		if (!name.empty())
-			shader->SetName(pool.SetName(shader->GetObjectID(), name));
-	}
+		try
+		{
+			if (isGraph)
+			{
+				const auto document = Json::parse(*payload);
+				std::istringstream stream(document.at("value").at("ptr_wrapper").at("data").dump());
+				cereal::JSONInputArchive archive(stream);
+				RenderGraphRecord topology;
+				archive(cereal::make_nvp("topology", topology));
+				std::vector<std::string> messages;
+				auto graph = RestoreGraph(topology, *catalog, pool, messages, id);
+				reportGraphDiagnostics(id, messages, diagnostics);
+				return graph;
+			}
+			std::shared_ptr<UID> resource;
+			{
+				std::istringstream stream(*payload);
+				cereal::JSONInputArchive archive(stream);
+				const ArchiveUid identity(id);
+				archive(cereal::make_nvp("value", resource));
+			}
+			if (!resource || resource->GetObjectID() != id)
+				throw std::runtime_error("restored resource identity differs from its indexed UID");
+			if (const auto shader = std::dynamic_pointer_cast<ShaderData>(resource); shader && !shader->IsValid())
+			{
+				NEURUS_LOG("[ResourceComponent] Unusable shader UID " << id);
+				return nullptr;
+			}
+			restoreDependencies(pool, resource);
+			applyRegisteredName(resource, pool.RegisteredName(id));
+			return resource;
+		}
+		catch (const std::exception& error)
+		{
+			NEURUS_LOG("[ResourceComponent] Could not restore UID " << id << ": " << error.what());
+			return nullptr;
+		}
+	};
+	pool.RegisterDeferred(id, record.type, std::move(load), payload);
 }
 
 } // namespace
 
 ResourceComponent::ResourceComponent(ResourceManager& resources, const IPassShaderCatalog& catalog,
                                      std::vector<std::string>* diagnostics)
-	: m_resources(&resources), m_catalog(catalog), m_diagnostics(diagnostics)
+	: m_resources(&resources), m_catalog(catalog), m_diagnostics(diagnostics ? std::make_shared<DiagnosticList>(*diagnostics) : nullptr)
 {
 }
 
@@ -208,6 +295,7 @@ void ResourceComponent::Save(cereal::JSONOutputArchive& ar) const
 
 void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 {
+	GraphArchiveRecords graphs(ar);
 	try
 	{
 		ar(cereal::make_nvp("m_resources", *m_resources));
@@ -219,12 +307,42 @@ void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 		m_resources->Clear();
 	}
 
-	RestoreReferences();
+	// Direct cereal callers already supplied an archive of live objects. Complete
+	// those objects in dependency order using the same wiring as indexed reads.
 	std::vector<int> ids;
-	m_resources->ForEachUID([&](const std::shared_ptr<UID>& resource) { ids.push_back(resource->GetObjectID()); });
+	m_resources->ForEachUID([&](const auto& resource) { ids.push_back(resource->GetObjectID()); });
 	std::sort(ids.begin(), ids.end());
 	for (const int id : ids)
-		seedName(*m_resources, m_resources->Get(id));
+	{
+		const auto shader = m_resources->Get<ShaderData>(id);
+		if (shader && !shader->IsValid())
+			m_resources->Remove(id);
+	}
+	for (const auto& [id, topology] : graphs.topologies)
+	{
+		const auto graph = m_resources->Get<RenderGraphData>(id);
+		if (!graph)
+			continue;
+		std::vector<std::string> messages;
+		auto restored = RestoreGraph(topology, m_catalog, *m_resources, messages, id);
+		reportGraphDiagnostics(id, messages, m_diagnostics);
+		if (restored)
+			graph->SwapContents(*restored);
+		else
+			m_resources->Remove(id);
+	}
+	for (const int id : ids)
+	{
+		const auto resource = m_resources->Get(id);
+		restoreDependencies(*m_resources, resource);
+		std::string name;
+		if (auto object = std::dynamic_pointer_cast<ObjectID>(resource))
+			name = object->o_name;
+		else if (auto shader = std::dynamic_pointer_cast<ShaderData>(resource))
+			name = shader->GetName();
+		if (!name.empty())
+			applyRegisteredName(resource, m_resources->SetName(id, name));
+	}
 }
 
 void ResourceComponent::LoadJson(const std::string& object)
@@ -259,126 +377,36 @@ void ResourceComponent::LoadJson(const std::string& object)
 		}
 	}
 
-	// Reserve every identity and seed the type index in UID order
-	// before a constructor can allocate another ID or a lookup can run.
+	// Every loader is registered before a duplicate check or root lookup can
+	// recursively request a dependency. Names are claimed in ascending UID order.
+	const auto catalog = m_catalog.Share();
 	for (auto& [id, candidates] : records)
-		registerRecord(*m_resources, id, candidates.front());
-
-	// The current whole-pool fixup needs all records materialized. Isolate
-	// failures here and retain the first readable entry for a duplicate UID.
+		registerRecord(*m_resources, id, candidates.front(), catalog, m_diagnostics);
+	// Only ambiguous records require a probe to select the first usable entry.
 	for (auto& [id, candidates] : records)
 	{
-		for (auto& candidate : candidates)
+		const ResourceRecord* accepted = &candidates.front();
+		if (candidates.size() > 1)
 		{
-			try
+			accepted = nullptr;
+			for (auto& candidate : candidates)
 			{
-				if (!m_resources->Contains(id))
-					registerRecord(*m_resources, id, candidate);
-				m_resources->Get(id);
-				// Keep the accepted candidate's name for the ordered name index.
 				if (&candidate != &candidates.front())
-					candidates.front().name = std::move(candidate.name);
-				break;
+					registerRecord(*m_resources, id, candidate, catalog, m_diagnostics);
+				if (m_resources->Get(id))
+				{
+					accepted = &candidate;
+					break;
+				}
 			}
-			catch (const std::exception& error)
-			{
-				m_resources->Remove(id);
-				NEURUS_LOG("[ResourceComponent] Skipped unusable resource " << id << ": " << error.what());
-			}
+		}
+		if (accepted && !accepted->name.empty())
+		{
+			const auto name = m_resources->SetName(id, accepted->name);
+			if (const auto resource = m_resources->GetLive(id))
+				applyRegisteredName(resource, name);
 		}
 	}
-	RestoreReferences();
-	// Claim names only after rejecting bad records. A legacy constructor default
-	// participates in UID order alongside explicitly named records.
-	for (const auto& [id, candidates] : records)
-		seedName(*m_resources, m_resources->Get(id), candidates.front().name);
-}
-
-void ResourceComponent::RestoreReferences()
-{
-	// A shader that could not restore its source or compile is absent project
-	// data. Drop it before wiring consumers; the renderer supplies cached built-ins
-	// without inserting a replacement into this pool.
-	std::vector<int> invalidShaders;
-	m_resources->ForEachUID([&invalidShaders](const std::shared_ptr<UID>& resource)
-	{
-		const auto shader = std::dynamic_pointer_cast<ShaderData>(resource);
-		if (shader && !shader->IsValid())
-			invalidShaders.push_back(shader->GetObjectID());
-	});
-	for (const int uid : invalidShaders)
-	{
-		NEURUS_LOG("[ResourceComponent] Shader " << uid
-		           << " could not be restored; using the built-in fallback");
-		m_resources->Remove(uid);
-	}
-
-	// Resolve inactive graphs too. A graph may appear before its shaders in the archive.
-	std::vector<int> invalidGraphs;
-	m_resources->ForEach<RenderGraphData>([&](const std::shared_ptr<RenderGraphData>& graph)
-	{
-		std::vector<std::string> diagnostics;
-		if (!graph->Resolve(m_catalog, *m_resources, diagnostics))
-			invalidGraphs.push_back(graph->GetObjectID());
-		for (const auto& diagnostic : diagnostics)
-		{
-			const auto message = "Graph UID " + std::to_string(graph->GetObjectID()) + ": " + diagnostic;
-			NEURUS_LOG("[ResourceComponent] " << message);
-			if (m_diagnostics)
-				m_diagnostics->push_back(message);
-		}
-	});
-	for (const int uid : invalidGraphs)
-		m_resources->Remove(uid);
-
-	// Wire data references for EVERY pooled mesh/environment, not just the
-	// scene members: a pooled object can stay referenced elsewhere after
-	// deletion, so its data refs must be wired for on-demand GPU uploads
-	// after a reload. Pure pointer wiring - the pool's data-resource entries
-	// have already reloaded their content via their own serialize(load).
-	m_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh) {
-		if (!mesh) return;
-		if (mesh->o_meshDataId != 0)
-		{
-			auto meshData = m_resources->Get<MeshData>(mesh->o_meshDataId);
-			if (meshData)
-				mesh->o_mesh = meshData;
-			else
-				NEURUS_ERR("[ResourceComponent] stale MeshData UID " << mesh->o_meshDataId);
-		}
-		// SetObjShader also clears a missing/failed reference's serialized UID.
-		auto shader = mesh->o_shaderId == 0
-			? nullptr : m_resources->Get<ShaderData>(mesh->o_shaderId);
-		if (shader && shader->GetType() != ShaderType::VERTEX)
-			shader.reset();
-		if (mesh->o_shaderId != 0 && !shader)
-			NEURUS_LOG("[ResourceComponent] Shader " << mesh->o_shaderId
-			           << " is absent; mesh uses the built-in fallback");
-		mesh->SetObjShader(shader);
-	});
-	// DebugMesh carries the same MeshData reference as Mesh but is not a Mesh,
-	// so ForEach<Mesh> above never reaches it.
-	m_resources->ForEach<DebugMesh>([&](const std::shared_ptr<DebugMesh>& dMesh) {
-		if (!dMesh || dMesh->o_meshDataId == 0) return;
-		auto meshData = m_resources->Get<MeshData>(dMesh->o_meshDataId);
-		if (meshData)
-			dMesh->o_mesh = meshData;
-		else
-			NEURUS_ERR("[ResourceComponent] stale MeshData UID " << dMesh->o_meshDataId
-			           << " on DebugMesh");
-	});
-	m_resources->ForEach<Environment>([&](const std::shared_ptr<Environment>& env) {
-		if (!env || env->o_imageDataId == 0) return;
-		auto imageData = m_resources->Get<ImageData>(env->o_imageDataId);
-		if (!imageData)
-		{
-			// Keep o_imageDataId (do not zero it) so the broken reference
-			// stays visible and reported instead of being silently dropped.
-			NEURUS_ERR("[ResourceComponent] stale ImageData UID " << env->o_imageDataId);
-			return;
-		}
-		env->SetEquirectData(imageData);
-	});
 }
 
 } // namespace neurus::project

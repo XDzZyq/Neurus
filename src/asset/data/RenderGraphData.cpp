@@ -4,11 +4,11 @@
  */
 
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 #include "asset/data/ShaderData.hpp"
 
 #include "asset/data/render_graph/PassKinds.hpp"
-#include "asset/data/render_graph/PassShaderCatalog.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -255,7 +255,6 @@ std::unique_ptr<RenderGraphData> RenderGraphData::Clone() const
 	auto copy = std::make_unique<RenderGraphData>();
 	copy->nodes = CloneGraph<GraphT>(*this).nodes;
 	copy->sceneOutputs = sceneOutputs;
-	copy->m_pending = m_pending;
 	return copy;
 }
 
@@ -263,7 +262,6 @@ void RenderGraphData::SwapContents(RenderGraphData& other) noexcept
 {
 	nodes.swap(other.nodes);
 	sceneOutputs.swap(other.sceneOutputs);
-	m_pending.swap(other.m_pending);
 }
 
 void RenderGraphData::InferLegacyOutputs()
@@ -371,51 +369,6 @@ void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node,
 	};
 	reconcile(node.inputs);
 	reconcile(node.outputs);
-}
-
-RenderGraphData::RenderGraphData(project::RenderGraphRecord record)
-	: m_pending(std::move(record))
-{
-}
-
-bool RenderGraphData::Resolve(const IPassShaderCatalog& catalog, const IResourceLookup& resources,
-                              std::vector<std::string>& diagnostics)
-{
-	if (!m_pending)
-		return true;
-
-	const auto acceptsShader = [&](const std::string& kind, const ShaderData& shader)
-	{
-		try
-		{
-			catalog.ValidatePassShader(kind, shader);
-			return true;
-		}
-		catch (const std::exception& error)
-		{
-			diagnostics.push_back(kind + " shader UID " + std::to_string(shader.GetObjectID())
-			                      + " uses its built-in fallback: " + error.what());
-			return false;
-		}
-	};
-
-	const auto& ports = catalog.Ports();
-	std::vector<std::string> errors;
-	auto topology = project::FromRecord(*m_pending, ports, errors, &resources, acceptsShader);
-	if (errors.empty())
-	{
-		for (const auto& diagnostic : ValidateCpuGraph(*topology, ports))
-			errors.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
-	}
-	if (!errors.empty())
-	{
-		diagnostics.insert(diagnostics.end(), errors.begin(), errors.end());
-		return false;
-	}
-
-	// The resolved document has no pending record. The old record leaves with the temporary.
-	SwapContents(*topology);
-	return true;
 }
 
 } // namespace neurus

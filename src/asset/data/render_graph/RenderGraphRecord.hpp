@@ -12,13 +12,17 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+namespace cereal { class JSONInputArchive; }
+
 namespace neurus
 {
+class IPassShaderCatalog;
 class ShaderData;
 class IPortSource;
 class IResourceLookup;
@@ -186,6 +190,29 @@ struct RenderGraphRecord
 			ar(cereal::make_nvp("outputs", *outputs));
 	}
 };
+
+/// Collects topology records during a standalone cereal pool read. Shaders
+/// may follow their graphs in that archive. Project files use indexed readers.
+class GraphArchiveRecords
+{
+public:
+	explicit GraphArchiveRecords(const cereal::JSONInputArchive& archive);
+	~GraphArchiveRecords();
+	GraphArchiveRecords(const GraphArchiveRecords&) = delete;
+	GraphArchiveRecords& operator=(const GraphArchiveRecords&) = delete;
+
+	static void Store(const cereal::JSONInputArchive& archive, int uid, RenderGraphRecord record);
+	std::map<int, RenderGraphRecord> topologies;
+
+private:
+	const cereal::JSONInputArchive& m_archive;
+	GraphArchiveRecords* m_previous;
+};
+
+/// Builds and validates a complete pooled or legacy inline graph.
+/// A reserved UID belongs to an indexed record whose identity was validated at open.
+std::unique_ptr<RenderGraphData> RestoreGraph(const RenderGraphRecord& record, const IPassShaderCatalog& catalog,
+	const IResourceLookup& resources, std::vector<std::string>& diagnostics, std::optional<int> reservedUid = {});
 
 /// Captures one node, including its shader UID, position and tagged outputs.
 RenderGraphNodeRecord ToRecord(const Node<CpuPort, CpuNode>& node);

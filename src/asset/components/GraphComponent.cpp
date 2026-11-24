@@ -195,9 +195,10 @@ void GraphComponent::Load(cereal::JSONInputArchive& ar)
 	}
 
 	// Older projects store the selected graph inline. Adopt it only after resolution succeeds.
-	auto graph = std::make_shared<RenderGraphData>(std::move(std::get<RenderGraphRecord>(loaded.selection)));
 	std::vector<std::string> diagnostics;
-	if (graph->Resolve(m_catalog, m_resources, diagnostics))
+	std::shared_ptr<RenderGraphData> graph = RestoreGraph(std::get<RenderGraphRecord>(loaded.selection),
+		m_catalog, m_resources, diagnostics);
+	if (graph)
 	{
 		m_resources.Register(graph);
 		m_graph = std::move(graph);

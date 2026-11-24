@@ -3,6 +3,9 @@
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
+#include "asset/data/render_graph/PassShaderCatalog.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "core/ArchiveUid.hpp"
 #include "core/IResourceLookup.hpp"
 
 #include <set>
@@ -230,6 +233,66 @@ std::unique_ptr<RenderGraphData> FromRecord(
 		}
 	}
 	return graph;
+}
+
+namespace
+{
+thread_local GraphArchiveRecords* currentGraphRecords = nullptr;
+}
+
+GraphArchiveRecords::GraphArchiveRecords(const cereal::JSONInputArchive& archive)
+	: m_archive(archive), m_previous(std::exchange(currentGraphRecords, this))
+{
+}
+
+GraphArchiveRecords::~GraphArchiveRecords()
+{
+	currentGraphRecords = m_previous;
+}
+
+void GraphArchiveRecords::Store(const cereal::JSONInputArchive& archive, int uid, RenderGraphRecord record)
+{
+	if (!currentGraphRecords || &archive != &currentGraphRecords->m_archive)
+		throw cereal::Exception("Loading a render graph requires a project resource reader");
+	currentGraphRecords->topologies.emplace(uid, std::move(record));
+}
+
+std::unique_ptr<RenderGraphData> RestoreGraph(const RenderGraphRecord& record, const IPassShaderCatalog& catalog,
+	const IResourceLookup& resources, std::vector<std::string>& diagnostics, std::optional<int> reservedUid)
+{
+	const auto acceptsShader = [&](const std::string& kind, const ShaderData& shader)
+	{
+		try
+		{
+			catalog.ValidatePassShader(kind, shader);
+			return true;
+		}
+		catch (const std::exception& error)
+		{
+			diagnostics.push_back(kind + " shader UID " + std::to_string(shader.GetObjectID())
+			                      + " uses its built-in fallback: " + error.what());
+			return false;
+		}
+	};
+
+	const auto& ports = catalog.Ports();
+	std::vector<std::string> errors;
+	std::optional<ArchiveUid> identity;
+	if (reservedUid)
+		identity.emplace(*reservedUid);
+	auto topology = FromRecord(record, ports, errors, &resources, acceptsShader);
+	if (errors.empty())
+	{
+		for (const auto& diagnostic : ValidateCpuGraph(*topology, ports))
+			errors.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
+	}
+	if (!errors.empty())
+	{
+		diagnostics.insert(diagnostics.end(), errors.begin(), errors.end());
+		return nullptr;
+	}
+
+	return topology;
 }
 
 } // namespace neurus::project

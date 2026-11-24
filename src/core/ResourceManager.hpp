@@ -11,8 +11,7 @@
  * - UID is the ONLY resource base - every pooled object derives from it and
  *   serializes itself (identity + own fields); no reload hook interface.
  * - Load<T>(args...) constructs + registers in one step.
- * - Scene neither owns nor references the pool; it holds plain typed pools and
- *   resolves references against the pool via Scene::ResolveReferences.
+ * - Scene holds typed collections. SceneComponent resolves their members by UID.
  * - No UID object knows the ResourceManager and no UID object constructs
  *   another UID object internally - construction happens through Load<T>.
  * - The pool serializes the real objects (polymorphically); Scene serializes
@@ -115,9 +114,18 @@ public:
 	/**
 	 * @brief Reserves an identity and exact type until Get first needs the object.
 	 * The loader may request dependencies through Get. It must return a complete
-	 * object with the registered identity and type. Failure leaves it retryable.
+	 * object with the registered identity and type. A thrown exception leaves
+	 * the entry retryable. A project reader can return null to discard an
+	 * unusable archived record and remove its name and type entries.
 	 */
-	void RegisterDeferred(int id, std::type_index type, std::function<std::shared_ptr<UID>()> loader);
+	void RegisterDeferred(int id, std::type_index type, std::function<std::shared_ptr<UID>()> loader,
+	                      std::shared_ptr<const std::string> archivedRecord = {});
+
+	/// Registry name of a live or deferred resource, or an empty string for an unnamed UID.
+	std::string RegisteredName(int id) const;
+
+	/// Returns a cached object without invoking a loader.
+	std::shared_ptr<UID> GetLive(int id) const;
 
 	// --- IResourceLookup ---
 
@@ -249,18 +257,19 @@ private:
 	};
 
 	/// Per-type name -> UID registry, keyed by the object's dynamic type.
-	std::unordered_map<std::type_index, std::unordered_map<std::string, int>> m_names;
+	mutable std::unordered_map<std::type_index, std::unordered_map<std::string, int>> m_names;
 
 	/// Reverse lookup: UID -> (dynamic type, registered name).
-	std::unordered_map<int, NameEntry> m_nameOf;
+	mutable std::unordered_map<int, NameEntry> m_nameOf;
 
 	/// Per-type enumeration, so ForEach<Mesh> does not scan every UID object.
-	std::unordered_map<std::type_index, std::vector<int>> m_byType;
-	std::unordered_map<int, std::type_index> m_typeOf;
+	mutable std::unordered_map<std::type_index, std::vector<int>> m_byType;
+	mutable std::unordered_map<int, std::type_index> m_typeOf;
 
 	struct DeferredResource
 	{
 		std::function<std::shared_ptr<UID>()> load;
+		std::shared_ptr<const std::string> archivedRecord;
 		bool loading = false;
 	};
 
@@ -283,7 +292,8 @@ private:
 	/**
 	 * @brief Drops the registered name of @p id, if any.
 	 */
-	void EraseName(int id);
+	void EraseName(int id) const;
+	bool EraseResource(int id) const;
 
 	/**
 	 * @brief Rebuilds the per-type index from the current pool (after load).

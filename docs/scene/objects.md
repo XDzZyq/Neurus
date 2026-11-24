@@ -81,7 +81,7 @@ Scene objects never hold file paths. They reference pooled data resources throug
 - `Environment` - `o_imageDataId` (pooled `ImageData`); `o_equirectData` is the live pointer.
 - `DebugMesh` - `o_meshDataId` (pooled `MeshData`); `o_mesh` is the live pointer.
 
-A zero id is an already-handled, reported state, so an absent id costs that object its data and nothing else in the pool. `Scene::ResolveReferences` / `ResolveDataReferences` restore the pointers on load; see [Project Serialization](../asset/project-serialization.md) and [Data Resources](../asset/data-resources.md).
+A zero id is an already-handled, reported state, so an absent id costs that object its data and nothing else in the pool. The project readers resolve pointers when each resource is materialized; see [Project Serialization](../asset/project-serialization.md) and [Data Resources](../asset/data-resources.md).
 
 ## Serialization and registration
 

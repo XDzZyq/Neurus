@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string_view>
 
 namespace neurus {
@@ -12,6 +13,8 @@ class IPassShaderCatalog
 {
 public:
 	virtual ~IPassShaderCatalog() = default;
+	/// Retains the same catalog for readers that outlive the project components.
+	virtual std::shared_ptr<const IPassShaderCatalog> Share() const = 0;
 	virtual const IPortSource& Ports() const = 0;
 	virtual void ValidatePassShader(std::string_view kind, const ShaderData& shader) const = 0;
 };

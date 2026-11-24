@@ -494,3 +494,42 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	loadedResources.ForEach<Mesh>([&](const std::shared_ptr<Mesh>&) { ++meshCount; });
 	EXPECT_EQ(meshCount, 2);
 }
+
+TEST(SceneSerialize, BrokenMemberDoesNotHideSiblingOrPreservePreviousMembership)
+{
+	ResourceManager resources;
+	const auto broken = resources.Load<Mesh>();
+	const auto retained = resources.Load<Mesh>();
+	Scene source;
+	source.UseMesh(broken);
+	source.UseMesh(retained);
+	source.selections.Select(broken.get(), false);
+	source.selections.Select(retained.get(), true);
+	std::ostringstream stream;
+	{
+		cereal::JSONOutputArchive archive(stream);
+		project::SceneComponent(source, resources).Save(archive);
+	}
+
+	const int brokenUid = broken->GetObjectID();
+	ASSERT_TRUE(resources.Remove(brokenUid));
+	resources.RegisterDeferred(brokenUid, typeid(Mesh), []() -> std::shared_ptr<UID>
+	{
+		throw std::runtime_error("Unreadable test mesh");
+	});
+
+	Scene restored;
+	const auto oldCamera = resources.Load<Camera>();
+	restored.UseCamera(oldCamera);
+	restored.ActivateCamera(oldCamera->GetObjectID());
+	project::SceneComponent(restored, resources).LoadJson(stream.str());
+
+	EXPECT_TRUE(restored.cam_list.empty());
+	EXPECT_EQ(restored.GetActiveCamera(), nullptr);
+	EXPECT_EQ(restored.GetObjectID(oldCamera->GetObjectID()), nullptr);
+	EXPECT_EQ(restored.GetObjectID(brokenUid), nullptr);
+	ASSERT_EQ(restored.mesh_list.size(), 1u);
+	EXPECT_EQ(restored.GetObjectID(retained->GetObjectID()), retained.get());
+	EXPECT_EQ(restored.selections.GetSelectionCount(), 1u);
+	EXPECT_EQ(restored.selections.GetActiveObject(), retained.get());
+}

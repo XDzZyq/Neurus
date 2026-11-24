@@ -66,8 +66,6 @@ struct CpuNode
 	bool operator==(const CpuNode&) const = default;
 };
 
-class IPassShaderCatalog;
-
 /** @brief CPU scene graph for editing, persistence and renderer publication. */
 class RenderGraphData : public UID, public Graph<CpuPort, CpuNode>
 {
@@ -77,7 +75,6 @@ public:
 	RenderGraphData() = default;
 	/// Builds the built-in scene graph from the declared pass ports.
 	explicit RenderGraphData(const IPortSource& ports);
-	explicit RenderGraphData(project::RenderGraphRecord record);
 
 	RenderGraphData(const RenderGraphData&) = delete;
 	RenderGraphData& operator=(const RenderGraphData&) = delete;
@@ -103,21 +100,15 @@ public:
 	 */
 	std::uint64_t Hash() const;
 
-	/// Restores sockets and shader references once the entire pool is available.
-	bool Resolve(const IPassShaderCatalog& catalog, const IResourceLookup& resources,
-	             std::vector<std::string>& diagnostics);
-
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<UID>(this));
 		if constexpr (Archive::is_loading::value)
 		{
-			ar(cereal::make_nvp("topology", m_pending.emplace()));
-		}
-		else if (m_pending)
-		{
-			ar(cereal::make_nvp("topology", *m_pending));
+			project::RenderGraphRecord record;
+			ar(cereal::make_nvp("topology", record));
+			project::GraphArchiveRecords::Store(ar, GetObjectID(), std::move(record));
 		}
 		else
 		{
@@ -125,8 +116,6 @@ public:
 		}
 	}
 
-private:
-	std::optional<project::RenderGraphRecord> m_pending;
 };
 
 std::optional<GraphOutputTag> BuiltInOutputTag(std::string_view kind, std::string_view port);

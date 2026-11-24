@@ -408,7 +408,7 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 	const auto elapsed = std::chrono::steady_clock::now() - start;
 	RecordProperty("open_us", std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count()));
 #if defined(_DEBUG) || !defined(NDEBUG)
-	ExpectContentLoads(since, "open", {1, 1, 1, 1});
+	ExpectContentLoads(since, "open", {1, 0, 0, 0});
 #endif
 	const auto& restored = reader.GetScene();
 	ASSERT_EQ(restored.mesh_list.size(), 2u);
@@ -426,7 +426,7 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 	since = log.HeadSeq();
 	ASSERT_TRUE(app.SaveProject(savedCopy.path, reader, layout, error)) << error;
 #if defined(_DEBUG) || !defined(NDEBUG)
-	ExpectContentLoads(since, "save", {0, 0, 0, 0});
+	ExpectContentLoads(since, "save", {0, 1, 1, 1});
 #endif
 	since = log.HeadSeq();
 	const auto& pool = reader.GetResourceManager();

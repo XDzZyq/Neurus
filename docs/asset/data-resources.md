@@ -62,8 +62,7 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
 - `ShaderStage.hpp` holds `ShaderType`, `ShaderTypeFromPath` and the default
   G-buffer source paths.
 - Pooled shader names are addressed by name (`neurus.data.shaders["Name"]`),
-  so `ResourceComponent::Load` re-seeds the registry from `ShaderData::GetName`
-  after loading the pool.
+  so project open indexes the serialized shader names before compiling any requested shader.
 
 The Script Console exposes the data as `neurus.shader` (stage constants,
 `load_shader`, IR classes), `neurus.data.shaders` (pooled shaders by UID/name)

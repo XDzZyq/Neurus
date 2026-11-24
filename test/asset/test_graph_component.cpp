@@ -208,7 +208,10 @@ TEST_F(GraphComponent, InactiveGraphResolvesShadersStoredLaterInPool)
 	ASSERT_EQ(entries.size(), 2u);
 	if (entries[0].at("key") != graph->GetObjectID())
 		std::swap(entries[0], entries[1]);
-	neurus::project::ResourceComponent(restored, catalog).LoadJson(saved.dump());
+	{
+		const neurus::BuiltInRenderData temporaryCatalog;
+		neurus::project::ResourceComponent(restored, temporaryCatalog).LoadJson(saved.dump());
+	}
 	ASSERT_EQ(restored.Size(), 2u);
 	const auto loaded = restored.Get<neurus::RenderGraphData>(graph->GetObjectID());
 	ASSERT_TRUE(loaded);
@@ -219,6 +222,28 @@ TEST_F(GraphComponent, InactiveGraphResolvesShadersStoredLaterInPool)
 	EXPECT_EQ(loaded->nodes[7]->data.shader, loadedShader);
 	EXPECT_TRUE(neurus::ValidateCpuGraph(*loaded, ports).empty());
 	EXPECT_FALSE(loaded->nodes[4]->data.shader);
+}
+
+TEST_F(GraphComponent, StandaloneArchiveRestoresGraphAndShaderTogether)
+{
+	neurus::ResourceManager source;
+	const auto graph = source.Load<neurus::RenderGraphData>(catalog.Ports());
+	const auto shader = catalog.CreatePassShader(graph->nodes.at(5)->data.pass, "ArchivedCompose");
+	source.Register(shader);
+	graph->nodes[5]->data.shader = shader;
+
+	neurus::ResourceManager restored;
+	std::istringstream stream(SavePool(source).dump());
+	cereal::JSONInputArchive archive(stream);
+	neurus::project::ResourceComponent(restored, catalog).Load(archive);
+
+	const auto loadedGraph = restored.Get<neurus::RenderGraphData>(graph->GetObjectID());
+	ASSERT_TRUE(loadedGraph);
+	ASSERT_EQ(loadedGraph->nodes.size(), graph->nodes.size());
+	const auto loadedShader = restored.Get<neurus::ShaderData>(shader->GetObjectID());
+	ASSERT_TRUE(loadedShader);
+	EXPECT_EQ(loadedGraph->nodes[5]->data.shader, loadedShader);
+	EXPECT_EQ(neurus::project::ToRecord(*loadedGraph), neurus::project::ToRecord(*graph));
 }
 
 TEST_F(GraphComponent, ProjectLoadRejectsMalformedNodeWithoutDiscardingLaterConfig)
