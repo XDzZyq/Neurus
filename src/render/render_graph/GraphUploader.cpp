@@ -10,7 +10,7 @@
 #include "render/render_graph/RenderGraph.hpp"
 #include "render/render_graph/ResourceTag.hpp"
 #include "render/resources/ShaderGPU.hpp"
-#include "shader/ShaderInterface.hpp"
+#include "asset/data/shader/ShaderInterface.hpp"
 #include "render_api/RenderRequests.hpp"
 
 #include "asset/data/RenderGraphData.hpp"

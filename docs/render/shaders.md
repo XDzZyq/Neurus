@@ -123,8 +123,8 @@ Mesh startup and successful compilation use the same owned shader upload path.
 two source paths; `ComputeShader` adds its source path and default-uniform
 entries. SPIR-V and versions are runtime state and are rebuilt on load.
 
-A stage with restored code keeps it; a legacy path-only shader (no `stages`
-key) re-parses from disk. Pooled shader names are re-seeded after a project
+The project stores a required `stages` map. A source-backed shader whose
+saved stages have empty code re-parses its files. Pooled shader names are re-seeded after a project
 load, so `neurus.data.shaders["Name"]` still resolves.
 
 ApplicationCore force-links Shader module registration before project loading.

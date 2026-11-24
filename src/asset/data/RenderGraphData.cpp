@@ -152,7 +152,9 @@ RenderGraphData::RenderGraphData(const IPortSource& ports)
 	connect(*lighting, "outputImage", *compose, "gHDRColor");
 	connect(*compose, "outputComposed", *fxaa, "gInput");
 
-	InferLegacyOutputs();
+	sceneOutputs["color"] = {fxaa->name, "outputFXAA"};
+	sceneOutputs["depth"] = {geometry->name, "depth"};
+	sceneOutputs["object_id"] = {geometry->name, "gObjectID"};
 }
 
 std::uint64_t RenderGraphData::Hash() const
@@ -262,23 +264,6 @@ void RenderGraphData::SwapContents(RenderGraphData& other) noexcept
 {
 	nodes.swap(other.nodes);
 	sceneOutputs.swap(other.sceneOutputs);
-}
-
-void RenderGraphData::InferLegacyOutputs()
-{
-	sceneOutputs.clear();
-	for (const auto& node : nodes)
-	{
-		if (node->data.pass == "FXAAPass")
-			sceneOutputs["color"] = {node->name, "outputFXAA"};
-		else if (node->data.pass == "ComposePass")
-			sceneOutputs.try_emplace("color", GraphEndpoint{node->name, "outputComposed"});
-		else if (node->data.pass == "GeometryPass")
-		{
-			sceneOutputs["depth"] = {node->name, "depth"};
-			sceneOutputs["object_id"] = {node->name, "gObjectID"};
-		}
-	}
 }
 
 std::set<std::string> RenderGraphData::ActiveNodes() const

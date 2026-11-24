@@ -5,7 +5,7 @@
 #include "asset/data/render_graph/PortSource.hpp"
 #include "asset/data/render_graph/PassShaderCatalog.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
-#include "core/ArchiveUID.hpp"
+#include "core/Log.hpp"
 #include "core/IResourceLookup.hpp"
 
 #include <set>
@@ -70,8 +70,7 @@ RenderGraphNodeRecord ToRecord(const NodeType& node)
 	RenderGraphNodeRecord saved;
 	saved.name      = node.name;
 	saved.pass      = node.data.pass;
-	if (const int uid = node.data.shader.id(); uid != 0)
-		saved.shader = PassShaderRef::FromId(uid);
+	saved.shader    = node.data.shader.IdentityOnly();
 	saved.x         = node.data.x;
 	saved.y         = node.data.y;
 
@@ -109,15 +108,15 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph)
 		record.edges.push_back(std::move(edge));
 	}
 
-	record.outputs.emplace();
 	for (const auto& [name, endpoint] : graph.sceneOutputs)
-		record.outputs->push_back({name, endpoint.node, endpoint.port});
+		record.outputs.push_back({name, endpoint.node, endpoint.port});
 	return record;
 }
 
-std::unique_ptr<NodeType> FromRecord(
+namespace
+{
+std::unique_ptr<NodeType> RestoreNode(
 	const RenderGraphNodeRecord& saved, const IPortSource& ports, std::vector<std::string>& problems,
-	const IResourceLookup* resources,
 	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
 {
 	auto node = std::make_unique<NodeType>();
@@ -125,13 +124,8 @@ std::unique_ptr<NodeType> FromRecord(
 	node->data.pass = saved.pass;
 	node->data.x = saved.x;
 	node->data.y = saved.y;
-	if (resources && saved.shader.id())
-	{
-		auto shader = saved.shader;
-		shader.Resolve(*resources);
-		if (shader && shader->IsValid() && (!acceptsShader || acceptsShader(saved.pass, *shader)))
-			node->data.shader = std::move(shader);
-	}
+	if (saved.shader && saved.shader->IsValid() && (!acceptsShader || acceptsShader(saved.pass, *saved.shader)))
+		node->data.shader = saved.shader;
 
 	for (const auto& port : saved.outputs)
 		node->AddOutput(port.name)->data = {port.name, PortDirection::Output, port.type,
@@ -144,28 +138,31 @@ std::unique_ptr<NodeType> FromRecord(
 	return node;
 }
 
-std::unique_ptr<RenderGraphData> FromRecord(
-	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
-	const IResourceLookup* resources,
+struct GraphReadServices final : ResourceReadServices
+{
+	std::shared_ptr<const IPassShaderCatalog> catalog;
+	std::weak_ptr<std::vector<std::string>> diagnostics;
+};
+
+void RestoreTopology(RenderGraphData& graph, const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
 	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
 {
-	auto graph = std::make_unique<RenderGraphData>();
-	graph->nodes.reserve(record.nodes.size());
+	graph.nodes.reserve(record.nodes.size());
 
 	std::set<NodeType*> useFallback;
 	for (const auto& saved : record.nodes)
 	{
-		if (FindNode(*graph, saved.name))
+		if (FindNode(graph, saved.name))
 			problems.push_back("duplicate node name '" + saved.name + "'");
-		auto* node = graph->AddNode(FromRecord(saved, ports, problems, resources, acceptsShader));
+		auto* node = graph.AddNode(RestoreNode(saved, ports, problems, acceptsShader));
 		if (saved.shader.id() && !node->data.shader)
 			useFallback.insert(node);
 	}
 
 	for (const RenderGraphEdgeRecord& edge : record.edges)
 	{
-		NodeType* from = FindNode(*graph, edge.from);
-		NodeType* to   = FindNode(*graph, edge.to);
+		NodeType* from = FindNode(graph, edge.from);
+		NodeType* to   = FindNode(graph, edge.to);
 		if (!from || !to)
 		{
 			problems.push_back("edge '" + edge.from + "." + edge.fromPort + " -> "
@@ -204,7 +201,7 @@ std::unique_ptr<RenderGraphData> FromRecord(
 			continue;
 		}
 
-		if (!graph->Connect(output, input))
+		if (!graph.Connect(output, input))
 		{
 			problems.push_back("connection '" + edge.from + "." + edge.fromPort
 			                   + " -> " + edge.to + "." + edge.toPort
@@ -212,21 +209,16 @@ std::unique_ptr<RenderGraphData> FromRecord(
 		}
 	}
 
-	if (record.outputs)
-	{
-		for (const auto& output : *record.outputs)
-			if (!graph->sceneOutputs.emplace(output.name, GraphEndpoint{output.node, output.port}).second)
-				problems.push_back("duplicate scene output '" + output.name + "'");
-	}
-	else
-		graph->InferLegacyOutputs();
+	for (const auto& output : record.outputs)
+		if (!graph.sceneOutputs.emplace(output.name, GraphEndpoint{output.node, output.port}).second)
+			problems.push_back("duplicate scene output '" + output.name + "'");
 	for (auto* node : useFallback)
 	{
 		if (const auto* builtin = ports.FindPassPorts(node->data.pass))
 		{
 			try
 			{
-				ReconcilePassPorts(*graph, *node, *builtin);
+				ReconcilePassPorts(graph, *node, *builtin);
 			}
 			catch (const std::invalid_argument& error)
 			{
@@ -234,39 +226,52 @@ std::unique_ptr<RenderGraphData> FromRecord(
 			}
 		}
 	}
+}
+} // namespace
+
+// Portable records (undo, scripting) rebind against the pool at replay.
+std::unique_ptr<NodeType> FromRecord(
+	const RenderGraphNodeRecord& saved, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources, const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
+{
+	auto record = saved;
+	if (resources) record.shader.Resolve(*resources);
+	return RestoreNode(record, ports, problems, acceptsShader);
+}
+
+std::unique_ptr<RenderGraphData> FromRecord(
+	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems)
+{
+	auto graph = std::make_unique<RenderGraphData>();
+	RestoreTopology(*graph, record, ports, problems, {});
 	return graph;
 }
 
-namespace
+std::shared_ptr<const ResourceReadServices> MakeGraphReadServices(
+	const IPassShaderCatalog& catalog, std::weak_ptr<std::vector<std::string>> diagnostics)
 {
-thread_local GraphArchiveRecords* currentGraphRecords = nullptr;
+	auto services = std::make_shared<GraphReadServices>();
+	services->catalog = catalog.Share();
+	services->diagnostics = std::move(diagnostics);
+	return services;
 }
 
-GraphArchiveRecords::GraphArchiveRecords(const cereal::JSONInputArchive& archive)
-	: m_archive(archive), m_previous(std::exchange(currentGraphRecords, this))
+bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
+                  const ResourceReadServices* services)
 {
-}
-
-GraphArchiveRecords::~GraphArchiveRecords()
-{
-	currentGraphRecords = m_previous;
-}
-
-void GraphArchiveRecords::Store(const cereal::JSONInputArchive& archive, int uid, RenderGraphRecord record)
-{
-	if (!currentGraphRecords || &archive != &currentGraphRecords->m_archive)
-		throw cereal::Exception("Loading a render graph requires a project resource reader");
-	currentGraphRecords->topologies.emplace(uid, std::move(record));
-}
-
-std::unique_ptr<RenderGraphData> RestoreGraph(const RenderGraphRecord& record, const IPassShaderCatalog& catalog,
-	const IResourceLookup& resources, std::vector<std::string>& diagnostics, std::optional<int> reservedUid)
-{
+	const auto* graphServices = dynamic_cast<const GraphReadServices*>(services);
+	if (!graphServices)
+	{
+		NEURUS_ERR("Missing pass catalog for graph UID " << graph.GetObjectID());
+		return false;
+	}
+	const auto& catalog = *graphServices->catalog;
+	std::vector<std::string> diagnostics;
 	const auto acceptsShader = [&](const std::string& kind, const ShaderData& shader)
 	{
 		try
 		{
-			catalog.ValidatePassShader(kind, shader);
+			ValidatePassShader(kind, shader, catalog);
 			return true;
 		}
 		catch (const std::exception& error)
@@ -279,22 +284,19 @@ std::unique_ptr<RenderGraphData> RestoreGraph(const RenderGraphRecord& record, c
 
 	const auto& ports = catalog.Ports();
 	std::vector<std::string> errors;
-	std::optional<ArchiveUID> identity;
-	if (reservedUid)
-		identity.emplace(*reservedUid);
-	auto topology = FromRecord(record, ports, errors, &resources, acceptsShader);
+	RestoreTopology(graph, record, ports, errors, acceptsShader);
 	if (errors.empty())
-	{
-		for (const auto& diagnostic : ValidateCpuGraph(*topology, ports))
+		for (const auto& diagnostic : ValidateCpuGraph(graph, ports))
 			errors.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
-	}
-	if (!errors.empty())
+	diagnostics.insert(diagnostics.end(), errors.begin(), errors.end());
+	const auto sink = graphServices->diagnostics.lock();
+	for (const auto& message : diagnostics)
 	{
-		diagnostics.insert(diagnostics.end(), errors.begin(), errors.end());
-		return nullptr;
+		const auto text = "Graph UID " + std::to_string(graph.GetObjectID()) + ": " + message;
+		NEURUS_LOG("[RenderGraphData] " << text);
+		if (sink) sink->push_back(text);
 	}
-
-	return topology;
+	return errors.empty();
 }
 
 } // namespace neurus::project

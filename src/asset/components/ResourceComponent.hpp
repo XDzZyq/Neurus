@@ -4,19 +4,16 @@
  *
  * Opening a project registers each pooled UID with its name, concrete type
  * and serialized record. A lookup restores the CPU object and its dependencies.
- * An unusable optional shader selects the existing built-in fallback.
  */
 
 #pragma once
 
 #include "asset/Serializable.hpp"
 
-#include <functional>
 #include <memory>
 #include <string>
-#include <vector>
 
-namespace neurus { class ResourceManager; class IPassShaderCatalog; }
+namespace neurus { class ResourceManager; struct ResourceReadServices; }
 
 namespace neurus::project
 {
@@ -27,8 +24,7 @@ namespace neurus::project
 class ResourceComponent : public Serializable
 {
 public:
-	ResourceComponent(ResourceManager& resources, const IPassShaderCatalog& catalog,
-	                  std::vector<std::string>* diagnostics = nullptr);
+	explicit ResourceComponent(ResourceManager& resources, std::shared_ptr<const ResourceReadServices> services = {});
 
 	const char* Key() const noexcept override { return "m_resources"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
@@ -36,11 +32,8 @@ public:
 	void LoadJson(const std::string& object) override;
 
 private:
-	ResourceManager* m_resources;
-	const IPassShaderCatalog& m_catalog;
-	// Deferred readers use a weak handle so later lookups only append to a
-	// borrowed diagnostics list while its project component is alive.
-	std::shared_ptr<std::reference_wrapper<std::vector<std::string>>> m_diagnostics;
+	ResourceManager& m_resources;
+	std::shared_ptr<const ResourceReadServices> m_services;
 };
 
 } // namespace neurus::project

@@ -63,13 +63,15 @@ Components borrow their owners' data or shared-pointer slots; the serializer doe
 
 - Selection is held at runtime as `const ObjectID*` pointers but written as UIDs (`selectedUids` plus `activeUid`), mirroring `SelectionState`. On load the UIDs are resolved back to pointers via `Scene::GetObjectID()` after restoring scene membership.
 - The selection block is optional: legacy files without it load with an empty selection.
-- A positive `activeCamUid` activates that scene camera. Zero explicitly selects the viewport camera. When a legacy file omits the field, the reader activates the first restored scene camera if one exists. The next save records the choice.
+- A positive `activeCamUid` activates that scene camera. Zero or an absent field selects the viewport camera.
 
 See [Scene Objects](../scene/objects.md) and [Serialization](../core/serialization.md).
 
-## ResourceComponent: pool and data wiring
+## Resource pool persistence
 
 `ResourceComponent` saves the explicit `ResourceManager` pool polymorphically. On open it expands cereal's archive-local type names, validates each record's identity, and registers an owned payload and loader under that UID. All indexed UIDs are reserved before any loader runs. Each loader reads one pointer through its own archive. The scene, viewport camera and active graph request their dependencies through the pool. Unrelated resources stay deferred until a caller requests or enumerates them. A malformed record leaves independent entries readable. Null entries and shaders whose content cannot restore or compile are excluded from the live project pool.
+
+The pool reader uses registered type metadata for names and validation. Each object declares its own references. Render graphs also register a completion step during deserialization to rebuild their connections once pooled dependencies are available. The application supplies the pass catalog at load time. It provides built-in ports and reference shaders for CPU graph validation.
 
 Mesh and debug-mesh geometry, environment images, and mesh shaders use typed `ResourceRef` fields. Geometry and image references retain the saved UID when the target is missing, so another save preserves the link. Shader references fall back to the default when their target is missing or incompatible. Surviving names are restored deterministically by UID. See [UID and Resources](../core/uid-and-resources.md) and [Data Resources](data-resources.md).
 
@@ -85,9 +87,9 @@ Project save walks the registry's UIDs. For a live entry it writes the object's 
 
 A missing, null or unusable whole config stays null and is omitted on save. A present config is constructed with declared defaults, then valid fields are restored independently; malformed fields keep their defaults without discarding valid neighbors. Read-only queries use effective defaults without creating project data. Explicit edits materialize stored config, and undo can restore absence.
 
-`GraphComponent` writes the active graph selection as `"proj_render_graph": {"uid": 42}`. The corresponding `RenderGraphData` entry under `m_resources` owns the `topology` record containing the nodes, output tags, edges and selected scene outputs. The `outputs` array records the name of each scene destination and its producer node and port. Older graphs without this array derive the scene outputs from their pass kinds. A graph lookup resolves its shaders and socket connections from its own topology record. An inactive graph stays deferred until its UID is requested. `GraphComponent` then looks up the active UID in the restored pool. A missing or unusable shader selects the built-in shader for that node. A null node shader omits its `shader` field on save.
+`GraphComponent` writes the active graph selection as `"proj_render_graph": {"uid": 42}`. The corresponding `RenderGraphData` entry under `m_resources` owns the `topology` record containing the nodes, output tags, edges and selected scene outputs. The `outputs` array records the name of each scene destination and its producer node and port. A graph lookup resolves its shaders and socket connections from its own topology record. An inactive graph stays deferred until its UID is requested. `GraphComponent` then looks up the active UID in the restored pool. A missing or unusable shader selects the built-in shader for that node. A null node shader omits its `shader` field on save.
 
-A valid legacy inline `proj_render_graph` with `nodes` and `edges` is adopted into the pool, including a graph with both lists empty. The next save writes the active UID. An absent graph key, unusable graph or unresolved active UID leaves the graph pointer null. A read or render uses the cached built-in topology and preserves the missing key on save. See [Render Graph](../render/render-graph.md).
+An absent graph key, unusable graph or unresolved active UID leaves the graph pointer null. A read or render uses the cached built-in topology and preserves the missing key on save. See [Render Graph](../render/render-graph.md).
 
 ## UIComponent: opaque layout blob
 
@@ -103,7 +105,7 @@ A valid legacy inline `proj_render_graph` with `nodes` and `edges` is adopted in
 
 - The camera *object* needs no adapter, because it is pooled and `ResourceComponent` serializes the pool wholesale. Only the viewport's claim on which pooled camera is its own has to be recorded. Without it the identity is lost and the viewpoint snaps back to the default framing on every open.
 - It binds to `EditorViewport`, not to the Editor, which has no camera API.
-- A file written before the rename carries the field as `editorCamUid`; `Load()` reads either name as an explicit migration rather than a default.
+- The viewport camera is stored under `viewportCamUid`.
 
 See [Viewport](../editor/viewport.md).
 

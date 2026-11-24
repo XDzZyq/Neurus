@@ -14,7 +14,7 @@ The CPU document, `RenderGraphData`, derives from `UID` and `Graph<CpuPort, CpuN
 
 `RenderManager` holds a nullable `ResourceRef<RenderGraphData>` selecting the active graph. Without an authored graph, the effective topology comes from `BuiltInRenderData`. Reading the graph leaves the pointer null. Calling `neurus.render.graph.create()` copies the built-in topology into the pool and selects it. Its nodes initially use built-in shaders.
 
-The pool stores each authored graph's nodes, output tags, edges and selected scene outputs in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. `ResourceComponent` resolves shader UIDs and derives input sockets from the pass contracts after restoring the pool. `GraphComponent` selects the resolved graph by UID. The editor publishes it at the end of loading. Loading a valid legacy inline graph creates a pooled resource, including when the graph is explicitly empty. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
+The pool stores each authored graph's nodes, output tags, edges and selected scene outputs in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. When the pool reads a graph, the archive binds each pass shader field to the pooled resource. Once those bindings complete, `RenderGraphData` derives input sockets from the pass contracts, reconnects edges and validates the selected outputs. `GraphComponent` selects the resolved graph by UID. The editor publishes it at the end of loading. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
 
 `RenderManager::ResetConfig()` clears the stored config pointer. `ResetGraph()`
 clears the stored graph pointer while preserving config. New-scene creation calls
@@ -24,6 +24,8 @@ saved graph or keeps it null. Read-only queries and rendering never materialize
 project defaults. Explicit edits create stored data, and undo can restore absence.
 
 Explicit project shaders remain pooled, and live nodes own references to them. Publication clones the document with a fresh UID and shares its CPU shader references. The project selection keeps its original UID. CPU preparation deduplicates selected shaders by UID and posts owned `MakeUploadShaderRequest` payloads before graph compilation. The mapper reads only stable UIDs from the node references. The GPU cache supplies the selected shader modules and their uploaded metadata for compatibility checks. Null shader selections follow built-in recipes through CPU preparation, upload and caching. Rendering never calls back into the Editor or changes which project values are serialized.
+
+On project load the archive resolves each pass shader UID before the CPU graph rebuilds its sockets and edges. CPU graph validation compares the resolved shader to the pass contract supplied by the catalog. An incompatible shader selects the built-in ports during load. The editor uses the same compatibility check when assigning a shader.
 
 ## Ports from the shader
 

@@ -17,7 +17,7 @@ The namespace is `archive`, not `serialize`: several headers declare free `neuru
 
 - `archive::Optional(ar, CEREAL_NVP(a), CEREAL_NVP(b), ...)` - the default. Each field is transferred independently, so one absent name does not stop the ones around it. On absence it **leaves the member alone**, and returns how many fields were absent.
 - `archive::LoadFresh(ar, "key", live)` - load-side only. It reads into a default-constructed temporary and assigns it over the live value, so missing fields use declared defaults instead of the previous session. Optional components use the return value to retain a null slot when the whole node is absent or unusable.
-- `archive::OptionalBlock(ar, ...)` - all-or-nothing: saving writes the fields and returns `true`, loading reads them and returns `false` if the whole block was missing. Use it when the group genuinely is a unit, for recognising a whole legacy format (the Scene's pre-pool ID lists, its selection block), or when "absent" must stay distinguishable from any value the field can hold (the Scene's three-state `activeCamUid`).
+- `archive::OptionalBlock(ar, ...)` - all-or-nothing: saving writes the fields and returns `true`, loading reads them and returns `false` if the whole block was missing. Scene membership arrays and its selection block use this form so a partial group cannot restore a partial selection or membership list.
 
 `OptionalField(ar, field)` is the single-field primitive underneath all three. `NEURUS_OPTIONAL(ar, field)` is sugar over `Optional` for the common case where the archive key is spelled exactly like the member.
 

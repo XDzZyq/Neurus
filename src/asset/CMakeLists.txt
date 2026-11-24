@@ -7,6 +7,8 @@ add_library(neurus_asset_data STATIC
 	ResourceType.hpp
 	ResourceType.cpp
 	PixelFormat.hpp
+	components/GraphRecordJson.hpp
+	components/GraphRecordJson.cpp
 	registrations/DataRegistration.hpp
 	registrations/DataRegistration.cpp
 	data/ImageData.hpp
@@ -29,6 +31,8 @@ add_library(neurus_asset_data STATIC
 	data/render_graph/PassPorts.cpp
 	data/render_graph/PassKinds.hpp
 	data/shader/ShaderStage.hpp
+	data/shader/ShaderInterface.hpp
+	data/shader/ShaderInterface.cpp
 	data/shader/ShaderStruct.hpp
 	data/shader/ShaderStruct.cpp
 	data/shader/ShaderStructSerialize.hpp
@@ -36,9 +40,9 @@ add_library(neurus_asset_data STATIC
 	data/ShaderData.hpp
 	data/ShaderData.cpp
 )
-target_link_libraries(neurus_asset_data PUBLIC glm stb neurus_core cereal)
+target_link_libraries(neurus_asset_data PUBLIC glm stb neurus_core cereal nlohmann_json)
 target_include_directories(neurus_asset_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(neurus_asset_data PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_include_directories(neurus_asset_data PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.. ${Vulkan_INCLUDE_DIRS}) # SPIR-V enums
 target_compile_definitions(neurus_asset_data PRIVATE
 	NEURUS_RES_DIR="${CMAKE_SOURCE_DIR}/res/"
 	NEURUS_SHADER_DIR="${CMAKE_SOURCE_DIR}/res/shaders/"
@@ -53,7 +57,6 @@ add_library(neurus_asset STATIC
 	components/ConfigComponent.hpp
 	components/ConfigComponent.cpp
 	components/GraphComponent.hpp
-	components/GraphRecordJson.hpp
 	components/GraphComponent.cpp
 	components/SceneComponent.hpp
 	components/SceneComponent.cpp

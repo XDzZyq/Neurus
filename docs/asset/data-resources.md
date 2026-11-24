@@ -55,8 +55,8 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
   each leaf then serializes the stage map (`path`/`code`/`parsed`) through the
   `ShaderData` helpers.
 - SPIR-V and the version are runtime state: they are never serialized and are
-  rebuilt on load. A stage with restored code keeps it; a path-only legacy
-  shader re-parses from disk.
+  rebuilt on load. The saved `stages` map is required. A source-backed shader
+  whose saved stages have empty code re-parses its files.
 - `ShaderUnit` is a stage value, not a pooled resource. `ShaderStruct` is the
   parsed GLSL IR; `ShaderStructSerialize.hpp` provides its cereal overloads.
 - `ShaderStage.hpp` holds `ShaderType`, `ShaderTypeFromPath` and the default

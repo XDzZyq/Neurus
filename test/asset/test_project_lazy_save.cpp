@@ -27,7 +27,7 @@ namespace fs = std::filesystem;
 
 TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 {
-	const BuiltInRenderData catalog;
+
 	ResourceManager source;
 	const auto first = source.Load<Mesh>();
 	const auto second = source.Load<Mesh>();
@@ -43,7 +43,7 @@ TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 	std::ostringstream output;
 	{
 		cereal::JSONOutputArchive archive(output);
-		project::ResourceComponent(source, catalog).Save(archive);
+		project::ResourceComponent(source).Save(archive);
 	}
 	auto document = Json::parse(output.str());
 	auto& records = document.at("m_resources").at("resources_");
@@ -75,14 +75,14 @@ TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 		EXPECT_EQ(c->GetShader(), nullptr);
 	};
 	ResourceManager indexed;
-	project::ResourceComponent(indexed, catalog).LoadJson(saved);
+	project::ResourceComponent(indexed).LoadJson(saved);
 	EXPECT_FALSE(indexed.GetLive(shaderId));
 	check(indexed);
 
 	ResourceManager direct;
 	std::istringstream stream(saved);
 	cereal::JSONInputArchive archive(stream);
-	project::ResourceComponent(direct, catalog).Load(archive);
+	project::ResourceComponent(direct).Load(archive);
 	check(direct);
 }
 
@@ -106,7 +106,6 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 		ASSERT_TRUE(file);
 	}
 
-	const BuiltInRenderData catalog;
 	int editedId, renamedId, removedLiveId, removedDeferredId, firstMeshId, secondMeshId, geometryId, plainId;
 	{
 		ResourceManager source;
@@ -123,24 +122,13 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 		secondMeshId = source.Load<Mesh>(geometry)->GetObjectID();
 		plainId = source.Load<UID>()->GetObjectID();
 		project::Project writer;
-		writer.Register<project::ResourceComponent>(source, catalog);
+		writer.Register<project::ResourceComponent>(source);
 		writer.Save(original.string());
 	}
-	// Older files omit the optional display name. A deferred rename must add
-	// that field to the retained record when saving.
-	{
-		Json document;
-		std::ifstream(original) >> document;
-		for (auto& entry : document.at("project").at("m_resources").at("resources_"))
-			if (entry.at("key") == renamedId)
-				ASSERT_EQ(entry.at("value").at("ptr_wrapper").at("data").at("value0").erase("o_name"), 1u);
-		std::ofstream(original) << document.dump();
-	}
-
 	ResourceManager pool;
 	{
 		project::Project reader;
-		reader.Register<project::ResourceComponent>(pool, catalog);
+		reader.Register<project::ResourceComponent>(pool);
 		reader.Load(original.string());
 	}
 	ASSERT_TRUE(fs::remove(original));
@@ -156,7 +144,7 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 		EXPECT_FALSE(pool.GetLive(id));
 	{
 		project::Project writer;
-		writer.Register<project::ResourceComponent>(pool, catalog);
+		writer.Register<project::ResourceComponent>(pool);
 		writer.Save(copy.string());
 	}
 	for (int id : {renamedId, firstMeshId, secondMeshId, geometryId, plainId})
@@ -187,7 +175,7 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 	ResourceManager reopened;
 	{
 		project::Project reader;
-		reader.Register<project::ResourceComponent>(reopened, catalog);
+		reader.Register<project::ResourceComponent>(reopened);
 		reader.Load(copy.string());
 	}
 	checkRestored(reopened);
@@ -204,20 +192,20 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 	std::istringstream stream(component.dump());
 	cereal::JSONInputArchive archive(stream);
 	ResourceManager raw;
-	project::ResourceComponent(raw, catalog).Load(archive);
+	project::ResourceComponent(raw).Load(archive);
 	checkRestored(raw);
 }
 
 TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithMisplacedIdentity)
 {
-	const BuiltInRenderData catalog;
+
 	ResourceManager source;
 	const int broken = source.Load<Camera>()->GetObjectID();
 	const int valid = source.Load<Camera>()->GetObjectID();
 	std::ostringstream original;
 	{
 		cereal::JSONOutputArchive archive(original);
-		project::ResourceComponent(source, catalog).Save(archive);
+		project::ResourceComponent(source).Save(archive);
 	}
 	auto document = Json::parse(original.str());
 	for (auto& entry : document.at("m_resources").at("resources_"))
@@ -225,7 +213,7 @@ TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithMisplacedIdentity)
 			entry.at("value").at("ptr_wrapper").at("data") = Json{{"o_id", broken}};
 
 	ResourceManager pool;
-	project::ResourceComponent restored(pool, catalog);
+	project::ResourceComponent restored(pool);
 	restored.LoadJson(document.dump());
 	EXPECT_FALSE(pool.Contains(broken));
 	EXPECT_TRUE(pool.Contains(valid));
@@ -237,7 +225,7 @@ TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithMisplacedIdentity)
 	}
 	EXPECT_FALSE(pool.GetLive(valid));
 	ResourceManager reopened;
-	project::ResourceComponent(reopened, catalog).LoadJson(saved.str());
+	project::ResourceComponent(reopened).LoadJson(saved.str());
 	ASSERT_EQ(reopened.Size(), 1u);
 	EXPECT_TRUE(reopened.Get<Camera>(valid));
 }

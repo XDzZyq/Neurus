@@ -1,5 +1,5 @@
 /** @file RenderGraphRecord.hpp
- *  @brief Portable node and edge records for a pooled graph or a legacy inline document.
+ *  @brief Portable node and edge records for a pooled graph.
  */
 #pragma once
 
@@ -14,7 +14,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -25,7 +24,7 @@ namespace cereal { class JSONInputArchive; }
 namespace neurus
 {
 class IPassShaderCatalog;
-using PassShaderRef = ResourceRef<const ShaderData>;
+using PassShaderRef = ResourceRef<const ShaderData, nullptr, MissingResource::KeepUid>;
 class IPortSource;
 class IResourceLookup;
 class RenderGraphData;
@@ -100,7 +99,7 @@ struct RenderGraphNodeRecord
 	{
 		ar(cereal::make_nvp("name", name),
 		   cereal::make_nvp("pass", pass));
-		archive::OptionalRefId(ar, "shader", shader);
+		archive::OptionalRef(ar, "shader", shader);
 		ar(cereal::make_nvp("x", x),
 		   cereal::make_nvp("y", y),
 		   cereal::make_nvp("outputs", outputs));
@@ -166,7 +165,7 @@ struct RenderGraphRecord
 {
 	std::vector<RenderGraphNodeRecord> nodes;
 	std::vector<RenderGraphEdgeRecord> edges;
-	std::optional<std::vector<SceneOutputRecord>> outputs;
+	std::vector<SceneOutputRecord> outputs;
 
 	bool operator==(const RenderGraphRecord&) const = default;
 
@@ -179,39 +178,18 @@ struct RenderGraphRecord
 	void serialize(Archive& ar)
 	{
 		ar(cereal::make_nvp("nodes", nodes),
-		   cereal::make_nvp("edges", edges));
-		if constexpr (Archive::is_loading::value)
-		{
-			if (!archive::OptionalField(ar, cereal::make_nvp("outputs", outputs.emplace())))
-				outputs.reset();
-		}
-		else if (outputs)
-			ar(cereal::make_nvp("outputs", *outputs));
+		   cereal::make_nvp("edges", edges),
+		   cereal::make_nvp("outputs", outputs));
 	}
 };
 
-/// Collects topology records during a standalone cereal pool read. Shaders
-/// may follow their graphs in that archive. Project files use indexed readers.
-class GraphArchiveRecords
-{
-public:
-	explicit GraphArchiveRecords(const cereal::JSONInputArchive& archive);
-	~GraphArchiveRecords();
-	GraphArchiveRecords(const GraphArchiveRecords&) = delete;
-	GraphArchiveRecords& operator=(const GraphArchiveRecords&) = delete;
+/// Supplies the pass catalog to graph records loaded from this project.
+std::shared_ptr<const ResourceReadServices> MakeGraphReadServices(
+	const IPassShaderCatalog& catalog, std::weak_ptr<std::vector<std::string>> diagnostics = {});
 
-	static void Store(const cereal::JSONInputArchive& archive, int uid, RenderGraphRecord record);
-	std::map<int, RenderGraphRecord> topologies;
-
-private:
-	const cereal::JSONInputArchive& m_archive;
-	GraphArchiveRecords* m_previous;
-};
-
-/// Builds and validates a complete pooled or legacy inline graph.
-/// A reserved UID belongs to an indexed record whose identity was validated at open.
-std::unique_ptr<RenderGraphData> RestoreGraph(const RenderGraphRecord& record, const IPassShaderCatalog& catalog,
-	const IResourceLookup& resources, std::vector<std::string>& diagnostics, std::optional<int> reservedUid = {});
+/// Rebuilds a freshly deserialized graph once its references can resolve.
+bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
+                  const ResourceReadServices* services);
 
 /// Captures one node, including its shader UID, position and tagged outputs.
 RenderGraphNodeRecord ToRecord(const Node<CpuPort, CpuNode>& node);
@@ -243,11 +221,8 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph);
  * @param record    Saved document.
  * @param ports     Pass-kind port source.
  * @param problems  Receives one message per recoverable inconsistency.
- * @param resources Optional restored pool; missing or invalid shaders select defaults.
  */
 std::unique_ptr<RenderGraphData> FromRecord(
-	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
-	const IResourceLookup* resources = nullptr,
-	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader = {});
+	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems);
 
 } // namespace neurus::project

@@ -3,7 +3,7 @@
 #include "shader/ComputeShader.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/ShaderLibrary.hpp"
-#include "shader/ShaderInterface.hpp"
+
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
@@ -150,33 +150,6 @@ std::shared_ptr<ShaderData> BuiltInRenderData::CreatePassShader(std::string_view
 		return shader;
 	}
 	return std::make_shared<RenderShader>(name, copyUnit(ShaderType::VERTEX), copyUnit(ShaderType::FRAGMENT));
-}
-
-void BuiltInRenderData::ValidatePassShader(std::string_view passKind, const ShaderData& shader) const
-{
-	const auto* kind = FindPassKind(passKind);
-	if (!kind || kind->shaders.empty())
-		throw std::invalid_argument("Unknown pass shader recipe: " + std::string(passKind));
-	const auto expected = ShaderFor(kind->shaders.front().name);
-	if (shader.GetType() != expected->GetType() || !shader.IsValid())
-		throw std::invalid_argument(std::string(passKind) + ": incompatible or uncompiled shader stages");
-	for (const auto stage : {ShaderType::VERTEX, ShaderType::FRAGMENT, ShaderType::COMPUTE})
-	{
-		const auto* ref = expected->FindStage(stage);
-		if (!ref)
-			continue;
-		const auto& selected = shader.GetStage(stage);
-		const auto problem = PassShaderInterfaceProblem(*ref, selected, stage);
-		if (!problem.empty())
-			throw std::invalid_argument(std::string(passKind) + " " + ShaderData::TypeToString(stage) + ": " + problem);
-	}
-	if (shader.GetType() == ShaderType::VERTEX)
-	{
-		std::string error;
-		if (!ValidateRenderShaderInterface(shader.GetStage(ShaderType::VERTEX).spv,
-		                                  shader.GetStage(ShaderType::FRAGMENT).spv, error))
-			throw std::invalid_argument(std::string(passKind) + ": " + error);
-	}
 }
 
 } // namespace neurus

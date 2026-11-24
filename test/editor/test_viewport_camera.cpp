@@ -22,7 +22,7 @@
  *   constructor; EditorViewport::EnsureCamera() runs on each of them.
  * - Its identity survives save/load, via EditorComponent recording the UID while
  *   ResourceComponent serializes the camera object with the rest of the pool —
- *   including from a file written under the pre-rename `editorCamUid` key.
+ *   using the saved viewport camera UID.
  * - An activated scene camera takes the view, and deactivating hands it back to
  *   the viewport camera *at the pose it was left at*. The two cameras stay
  *   independent: activation copies no pose or aspect between them.
@@ -47,6 +47,7 @@
 #include "shader/BuiltInRenderData.hpp"
 #include "editor/RenderManager.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
@@ -115,7 +116,7 @@ struct TempFile
  */
 void BuildProject(project::Project& proj, Editor& editor)
 {
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), editor.GetRenderManager().Defaults());
+	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(editor.GetRenderManager().Defaults()));
 	proj.Register<project::SceneComponent>(editor.GetScene(),
 	                                       editor.GetResourceManager());
 	proj.Register<project::EditorComponent>(editor.GetViewport());
@@ -338,14 +339,9 @@ TEST(ViewportCameraTest, ViewportCameraSurvivesSaveAndReopen)
 }
 
 /**
- * @test A project written under the pre-rename key still restores the saved
- *       camera. The field moved from `editorCamUid` to `viewportCamUid` when the
- *       camera moved from the Editor into the EditorViewport, and the id on either
- *       side names the same pooled object — so this is a migration, not a default:
- *       falling back to a fresh camera here would silently snap the user's
- *       viewpoint back to the seeded pose the first time they opened an older file.
+ * @test An unrecognized camera field leaves the viewport free to create a fresh camera.
  */
-TEST(ViewportCameraTest, LegacyEditorCamUidKey_StillRestoresTheSavedCamera)
+TEST(ViewportCameraTest, UnrecognizedCameraKeyCreatesFreshCamera)
 {
 	TempFile tmp("test_viewport_camera_legacykey.neurus.json");
 	const glm::vec3 pose(-4.0f, -2.0f, 5.0f);
@@ -368,9 +364,9 @@ TEST(ViewportCameraTest, LegacyEditorCamUidKey_StillRestoresTheSavedCamera)
 	LoadProject(tmp.path, editor);
 
 	const EditorViewport& vp = editor.GetViewport();
-	EXPECT_EQ(vp.CameraID(), savedUid) << "the legacy key must still be read";
+	EXPECT_NE(vp.CameraID(), savedUid);
 	ASSERT_NE(vp.GetCamera(), nullptr);
-	EXPECT_EQ(vp.GetCamera()->GetPosition(), pose);
+	EXPECT_NE(vp.GetCamera()->GetPosition(), pose);
 }
 
 /**
@@ -387,7 +383,7 @@ TEST(ViewportCameraTest, ProjectWithoutTheSavedUid_MintsAFreshViewportCamera)
 		Editor editor(nullptr);
 		NewProject(editor);
 		project::Project proj;
-		proj.Register<project::ResourceComponent>(editor.GetResourceManager(), editor.GetRenderManager().Defaults());
+		proj.Register<project::ResourceComponent>(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(editor.GetRenderManager().Defaults()));
 		proj.Register<project::SceneComponent>(editor.GetScene(),
 		                                       editor.GetResourceManager());
 		proj.Save(tmp.path); // no EditorComponent: the node never gets written

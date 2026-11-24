@@ -702,7 +702,7 @@ TEST(SerializeOptional, PreferencesCorruptFileKeepsLiveValues)
  */
 TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	const std::string base = std::string(TEST_SOURCE_DIR) + "/test/asset/projects/";
 	const std::vector<std::string> fixtures = {
 		"with_editor.neurus.json",
@@ -728,7 +728,7 @@ TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 		ScratchFile out("test_serialize_optional_resave.neurus.json");
 		{
 			project::Project p;
-			p.Register<project::ResourceComponent>(resources, catalog);
+			p.Register<project::ResourceComponent>(resources);
 			p.Register<project::SceneComponent>(scene, resources);
 			p.Register<project::ConfigComponent>(config);
 			p.Register<project::UIComponent>(ui);

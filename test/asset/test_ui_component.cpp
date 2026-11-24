@@ -64,7 +64,7 @@ TEST(UIComponentRoundtrip, PreservesBlob)
 
 TEST(UIComponentRoundtrip, CoexistsWithSceneAndConfig)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_rt_ui_full.neurus.json");
 
 	const std::string blob = "GEOM==\nSTATE==";
@@ -75,7 +75,7 @@ TEST(UIComponentRoundtrip, CoexistsWithSceneAndConfig)
 		ResourceManager resources;
 		std::string ui = blob;
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Register<project::UIComponent>(ui);
@@ -88,7 +88,7 @@ TEST(UIComponentRoundtrip, CoexistsWithSceneAndConfig)
 	std::string loadedUi;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Register<project::UIComponent>(loadedUi);
@@ -104,7 +104,7 @@ TEST(UIComponentRoundtrip, CoexistsWithSceneAndConfig)
 
 TEST(UIComponentRoundtrip, OldFormatMissingUiNode)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_rt_ui_oldfmt.neurus.json");
 
 	// Save a project WITHOUT a UIComponent (simulates an old file).
@@ -113,7 +113,7 @@ TEST(UIComponentRoundtrip, OldFormatMissingUiNode)
 		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -127,7 +127,7 @@ TEST(UIComponentRoundtrip, OldFormatMissingUiNode)
 		auto loadedConfig = std::make_shared<RenderConfig>();
 		ResourceManager loadedResources;
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Register<project::UIComponent>(loadedUi);

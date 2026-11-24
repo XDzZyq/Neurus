@@ -5,17 +5,11 @@
 
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/ResourceArchiveWriter.hpp"
-#include "asset/components/GraphRecordJson.hpp"
 
 #include "core/ArchiveUID.hpp"
 #include "core/Log.hpp"
 #include "asset/ResourceManager.hpp"
 #include "asset/ResourceType.hpp"
-
-#include "asset/data/RenderGraphData.hpp"
-#include "asset/data/render_graph/PassShaderCatalog.hpp"
-#include "scene/ObjectID.hpp"
-#include "asset/data/ShaderData.hpp"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
 // UID-derived types are registered before serialization runs.
@@ -40,44 +34,6 @@ namespace neurus::project
 
 namespace
 {
-
-bool ValidShaderPayloadTypes(const nlohmann::ordered_json& value)
-{
-	if (value.is_array())
-	{
-		return std::all_of(value.begin(), value.end(), ValidShaderPayloadTypes);
-	}
-	if (!value.is_object())
-		return true;
-	for (const auto& [name, child] : value.items())
-	{
-		if ((name == "m_name" || name == "m_vertPath" || name == "m_fragPath"
-			|| name == "m_compPath" || name == "path" || name == "code") && !child.is_string())
-			return false;
-		if (name == "o_id" && !child.is_number_integer())
-			return false;
-		if (name == "parsed" && !child.is_object())
-			return false;
-		if (name == "stages")
-		{
-			if (!child.is_array()) return false;
-			for (const auto& stage : child)
-				if (!stage.is_object() || !stage.contains("key") || !stage["key"].is_number_integer()
-					|| !stage.contains("value") || !stage["value"].is_object()) return false;
-		}
-		if (name == "m_defaults")
-		{
-			if (!child.is_array()) return false;
-			for (const auto& entry : child)
-				if (!entry.is_object() || !entry.contains("name") || !entry["name"].is_string()
-					|| !entry.contains("type") || !entry["type"].is_string()
-					|| !entry.contains("value") || !entry["value"].is_string()) return false;
-		}
-		if (!ValidShaderPayloadTypes(child))
-			return false;
-	}
-	return true;
-}
 
 using Json = nlohmann::ordered_json;
 
@@ -116,8 +72,6 @@ std::string normalizeType(Json& value, std::unordered_map<uint32_t, std::string>
 	return typeNames.at(typeId);
 }
 
-std::string legacyName(const std::string& typeName);
-
 std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeName)
 {
 	const auto type = FindResourceType(typeName);
@@ -131,18 +85,15 @@ std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeNa
 		|| (pointer.get<uint32_t>() & 0x80000000u) == 0)
 		throw std::runtime_error("invalid resource pointer payload");
 	const auto& data = wrapper.at("data");
-	const bool shader = typeName == "neurus::RenderShader" || typeName == "neurus::ComputeShader";
-	if (shader && !ValidShaderPayloadTypes(data))
-		throw std::runtime_error("invalid shader payload field type");
-	if (*type == typeid(RenderGraphData) && !ValidGraphShape(data.at("topology")))
-		throw std::runtime_error("invalid render graph topology");
+	if (!ValidResourcePayload(typeName, data))
+		throw std::runtime_error("invalid pooled resource payload");
 
 	// Cereal puts each unnamed base at value0. Scene objects and concrete
 	// shaders each have a named base between their own fields and UID.
 	const char* nameField = ResourceNameField(typeName);
 	const Json* base = &data;
 	const Json* parent = nullptr;
-	const int depth = *type == typeid(UID) ? 0 : (nameField && *type != typeid(ObjectID) ? 2 : 1);
+	const int depth = ResourceIdentityDepth(typeName);
 	for (int i = 0; i < depth; ++i)
 	{
 		if (base->contains("o_id"))
@@ -155,8 +106,6 @@ std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeNa
 	std::string name;
 	if (nameField && parent && parent->contains(nameField))
 		name = parent->at(nameField).get<std::string>();
-	else
-		name = legacyName(typeName);
 	const auto& key = entry.at("key");
 	const auto& identity = base->at("o_id");
 	if (!key.is_number_integer() || key < 0 || key >= std::numeric_limits<int>::max()
@@ -167,80 +116,28 @@ std::pair<int, ResourceRecord> readRecord(Json& entry, const std::string& typeNa
 	return {key.get<int>(), {*type, std::move(name), isolated.dump()}};
 }
 
-// These scene leaves use their unqualified type name as the constructor's
-// display name when a legacy archive omits o_name. Sprite and ObjectID default
-// to an empty string. Indexing legacy names must not construct pooled objects.
-std::string legacyName(const std::string& typeName)
-{
-	for (const auto* namedType : {"neurus::Camera", "neurus::Light", "neurus::Mesh",
-	     "neurus::Environment", "neurus::DebugLine", "neurus::DebugPoints", "neurus::DebugMesh"})
-		if (typeName == namedType)
-			return typeName.substr(sizeof("neurus::") - 1);
-	return {};
-}
-
-using DiagnosticList = std::reference_wrapper<std::vector<std::string>>;
-
-void reportGraphDiagnostics(int id, const std::vector<std::string>& messages,
-                            const std::weak_ptr<DiagnosticList>& sink)
-{
-	for (const auto& message : messages)
-	{
-		const auto text = "Graph UID " + std::to_string(id) + ": " + message;
-		NEURUS_LOG("[ResourceComponent] " << text);
-		if (const auto list = sink.lock())
-			list->get().push_back(text);
-	}
-}
-
-void applyRegisteredName(const std::shared_ptr<UID>& resource, const std::string& name)
-{
-	if (auto object = std::dynamic_pointer_cast<ObjectID>(resource))
-		object->o_name = name;
-	else if (auto shader = std::dynamic_pointer_cast<ShaderData>(resource))
-		shader->SetName(name);
-}
-
 void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
-                    const std::shared_ptr<const IPassShaderCatalog>& catalog,
-                    std::weak_ptr<DiagnosticList> diagnostics)
+                    const std::shared_ptr<const ResourceReadServices>& services)
 {
 	auto payload = std::make_shared<const std::string>(std::move(record.payload));
-	const bool isGraph = record.type == typeid(RenderGraphData);
-	auto load = [&pool, id, payload, isGraph, catalog, diagnostics]() -> std::shared_ptr<UID>
+	auto load = [&pool, id, payload, services]() -> std::shared_ptr<UID>
 	{
 		try
 		{
-			if (isGraph)
-			{
-				const auto document = Json::parse(*payload);
-				std::istringstream stream(document.at("value").at("ptr_wrapper").at("data").dump());
-				cereal::JSONInputArchive archive(stream);
-				RenderGraphRecord topology;
-				archive(cereal::make_nvp("topology", topology));
-				std::vector<std::string> messages;
-				auto graph = RestoreGraph(topology, *catalog, pool, messages, id);
-				reportGraphDiagnostics(id, messages, diagnostics);
-				return graph;
-			}
 			std::shared_ptr<UID> resource;
 			{
 				std::istringstream stream(*payload);
 				cereal::JSONInputArchive archive(stream);
-				ArchiveResourceRefs refs(archive);
+				ArchiveResourceRefs refs(archive, services.get());
 				const ArchiveUID identity(id);
 				archive(cereal::make_nvp("value", resource));
-				refs.Resolve(pool);
+				if (!refs.Resolve(pool).empty()) return nullptr;
 			}
 			if (!resource || resource->GetObjectID() != id)
 				throw std::runtime_error("restored resource identity differs from its indexed UID");
-			if (const auto shader = std::dynamic_pointer_cast<ShaderData>(resource); shader && !shader->IsValid())
-			{
-				NEURUS_LOG("[ResourceComponent] Unusable shader UID " << id);
+			if (!IsUsableResource(*resource))
 				return nullptr;
-			}
-
-			applyRegisteredName(resource, pool.RegisteredName(id));
+			WriteResourceName(*resource, pool.RegisteredName(id));
 			return resource;
 		}
 		catch (const std::exception& error)
@@ -254,72 +151,52 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 
 } // namespace
 
-ResourceComponent::ResourceComponent(ResourceManager& resources, const IPassShaderCatalog& catalog,
-                                     std::vector<std::string>* diagnostics)
-	: m_resources(&resources), m_catalog(catalog), m_diagnostics(diagnostics ? std::make_shared<DiagnosticList>(*diagnostics) : nullptr)
+ResourceComponent::ResourceComponent(ResourceManager& resources, std::shared_ptr<const ResourceReadServices> services)
+	: m_resources(resources), m_services(std::move(services))
 {
 }
 
 void ResourceComponent::Save(cereal::JSONOutputArchive& ar) const
 {
-	WriteResourcePool(ar, *m_resources);
+	WriteResourcePool(ar, m_resources);
 }
 
 void ResourceComponent::Load(cereal::JSONInputArchive& ar)
 {
-	GraphArchiveRecords graphs(ar);
+	ArchiveResourceRefs scope(ar, m_services.get());
 	try
 	{
-		ar(cereal::make_nvp("m_resources", *m_resources));
+		ar(cereal::make_nvp("m_resources", m_resources));
 	}
 	catch (const cereal::Exception& e)
 	{
-		// Legacy project file (no "m_resources" node): leave the pool empty.
+		// A broken pool must not leave objects from the previous project active.
 		NEURUS_ERR("ResourceComponent::Load: " << e.what() << " - using empty resource pool.");
-		m_resources->Clear();
+		m_resources.Clear();
 	}
 
-	// Direct cereal callers already supplied an archive of live objects. Complete
-	// those objects in dependency order using the same wiring as indexed reads.
-	std::vector<int> ids;
-	m_resources->ForEachUID([&](const auto& resource) { ids.push_back(resource->GetObjectID()); });
+	// The direct cereal reader already constructed these objects. Claim names
+	// in the same UID order as the deferred project reader.
+	auto ids = m_resources.RegisteredIds();
 	std::sort(ids.begin(), ids.end());
 	for (const int id : ids)
 	{
-		const auto shader = m_resources->Get<ShaderData>(id);
-		if (shader && !shader->IsValid())
-			m_resources->Remove(id);
-	}
-	for (const auto& [id, topology] : graphs.topologies)
-	{
-		const auto graph = m_resources->Get<RenderGraphData>(id);
-		if (!graph)
+		const auto resource = m_resources.GetLive(id);
+		if (!resource) continue;
+		if (!IsUsableResource(*resource))
+		{
+			m_resources.Remove(id);
 			continue;
-		std::vector<std::string> messages;
-		auto restored = RestoreGraph(topology, m_catalog, *m_resources, messages, id);
-		reportGraphDiagnostics(id, messages, m_diagnostics);
-		if (restored)
-			graph->SwapContents(*restored);
-		else
-			m_resources->Remove(id);
-	}
-	for (const int id : ids)
-	{
-		const auto resource = m_resources->Get(id);
-
-		std::string name;
-		if (auto object = std::dynamic_pointer_cast<ObjectID>(resource))
-			name = object->o_name;
-		else if (auto shader = std::dynamic_pointer_cast<ShaderData>(resource))
-			name = shader->GetName();
+		}
+		const auto name = ReadResourceName(*resource);
 		if (!name.empty())
-			applyRegisteredName(resource, m_resources->SetName(id, name));
+			WriteResourceName(*resource, m_resources.SetName(id, name));
 	}
 }
 
 void ResourceComponent::LoadJson(const std::string& object)
 {
-	m_resources->Clear();
+	m_resources.Clear();
 	auto document = Json::parse(object);
 	const auto pool = document.find("m_resources");
 	if (pool == document.end() || !pool->is_object()
@@ -351,9 +228,8 @@ void ResourceComponent::LoadJson(const std::string& object)
 
 	// Every loader is registered before a duplicate check or root lookup can
 	// recursively request a dependency. Names are claimed in ascending UID order.
-	const auto catalog = m_catalog.Share();
 	for (auto& [id, candidates] : records)
-		registerRecord(*m_resources, id, candidates.front(), catalog, m_diagnostics);
+		registerRecord(m_resources, id, candidates.front(), m_services);
 	// Only ambiguous records require a probe to select the first usable entry.
 	for (auto& [id, candidates] : records)
 	{
@@ -364,8 +240,8 @@ void ResourceComponent::LoadJson(const std::string& object)
 			for (auto& candidate : candidates)
 			{
 				if (&candidate != &candidates.front())
-					registerRecord(*m_resources, id, candidate, catalog, m_diagnostics);
-				if (m_resources->Get(id))
+					registerRecord(m_resources, id, candidate, m_services);
+				if (m_resources.Get(id))
 				{
 					accepted = &candidate;
 					break;
@@ -374,9 +250,9 @@ void ResourceComponent::LoadJson(const std::string& object)
 		}
 		if (accepted && !accepted->name.empty())
 		{
-			const auto name = m_resources->SetName(id, accepted->name);
-			if (const auto resource = m_resources->GetLive(id))
-				applyRegisteredName(resource, name);
+			const auto name = m_resources.SetName(id, accepted->name);
+			if (const auto resource = m_resources.GetLive(id))
+				WriteResourceName(*resource, name);
 		}
 	}
 }

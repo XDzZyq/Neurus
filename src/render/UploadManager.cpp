@@ -5,7 +5,7 @@
 
 #include "UploadManager.hpp"
 #include "resources/ShaderGPU.hpp"
-#include "shader/ShaderInterface.hpp"
+#include "asset/data/shader/ShaderInterface.hpp"
 #include "render_api/RenderRequests.hpp"
 
 #include "Image.hpp"

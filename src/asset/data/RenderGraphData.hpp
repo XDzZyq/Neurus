@@ -89,7 +89,6 @@ public:
 
 	std::map<std::string, GraphEndpoint> sceneOutputs;
 	std::set<std::string> ActiveNodes() const;
-	void InferLegacyOutputs();
 
 	/**
 	 * @brief Stable hash of the topology-affecting content.
@@ -106,9 +105,14 @@ public:
 		ar(cereal::base_class<UID>(this));
 		if constexpr (Archive::is_loading::value)
 		{
-			project::RenderGraphRecord record;
-			ar(cereal::make_nvp("topology", record));
-			project::GraphArchiveRecords::Store(ar, GetObjectID(), std::move(record));
+			// Pass shader bindings target fields in this record until the archive
+			// completes. Keep the node storage alive through that callback.
+			auto record = std::make_shared<project::RenderGraphRecord>();
+			ar(cereal::make_nvp("topology", *record));
+			ArchiveResourceRefs::AfterLoad(ar, GetObjectID(),
+				[this, record = std::move(record)](const IResourceLookup&, const ResourceReadServices* services) {
+					return project::RestoreGraph(*this, *record, services);
+				});
 		}
 		else
 		{

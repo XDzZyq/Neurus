@@ -345,8 +345,7 @@ return null unless a scene-mutation path broke the viewport contract (see
 [Viewport](viewport.md)), and that path is the bug.
 `test/editor/test_viewport_camera.cpp` pins the whole contract (GPU-free, runs in
 CI): pooled-but-not-scene-content, seeded with a usable pose, rebuilt after every
-pool clear, identity and pose surviving save/reopen (including from a file
-written under the pre-rename `editorCamUid` key), a camera-less project loading
+pool clear, identity and pose surviving save/reopen, a camera-less project loading
 with nothing injected, deleting every scene camera, activation taking the view
 with deactivation handing it back at the pose it was left at, and the resize path.
 

@@ -251,7 +251,8 @@ public:
 			Clear();
 			resources_.swap(restored);
 			RebuildTypeIndex();
-			refs.Resolve(*this);
+			for (int uid : refs.Resolve(*this))
+				Remove(uid);
 		}
 	}
 

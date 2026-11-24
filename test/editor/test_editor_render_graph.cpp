@@ -12,6 +12,7 @@
 #include "asset/components/GraphComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "shader/BuiltInRenderData.hpp"
@@ -76,18 +77,6 @@ neurus::RenderConfig NonDefaultConfig()
 	return config;
 }
 
-void LoadInlineGraph(neurus::Editor& editor, const neurus::project::RenderGraphRecord& record)
-{
-	std::stringstream stream;
-	{
-		cereal::JSONOutputArchive archive(stream);
-		archive(cereal::make_nvp("proj_render_graph", record));
-	}
-	auto& render = editor.GetRenderManager();
-	neurus::project::GraphComponent(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems())
-		.LoadJson(stream.str());
-}
-
 } // anonymous namespace
 
 TEST(EditorRenderGraph, NewScenePublishesNullWithoutPoolingDefaults)
@@ -118,18 +107,14 @@ TEST(EditorRenderGraph, GraphComponentResolvesBeforeFinishLoadPublishes)
 	neurus::Editor editor(&sink);
 	editor.NewScene();
 
-	neurus::project::RenderGraphRecord record = neurus::project::ToRecord(editor.GetRenderGraph());
-	record.nodes.pop_back();
-	record.outputs.reset(); // Historic inline format inferred the final pass.
-	record.edges.erase(
-		std::remove_if(record.edges.begin(), record.edges.end(),
-			[](const neurus::project::RenderGraphEdgeRecord& edge)
-			{
-				return edge.from == "fxaa" || edge.to == "fxaa";
-			}),
-		record.edges.end());
+	auto& render = editor.GetRenderManager();
+	auto& resources = editor.GetResourceManager();
+	auto graph = resources.Load<neurus::RenderGraphData>(render.Defaults().Ports());
+	graph->RemoveNode(graph->nodes.back().get());
+	graph->sceneOutputs["color"] = {"compose", "outputComposed"};
 	sink.posted.clear();
-	LoadInlineGraph(editor, record);
+	neurus::project::GraphComponent(render.GraphData(), resources, render.Problems())
+		.LoadJson("{\"proj_render_graph\":{\"uid\":" + std::to_string(graph->GetObjectID()) + "}}");
 	ASSERT_TRUE(editor.GetRenderManager().GraphData());
 	EXPECT_EQ(editor.GetRenderGraph().nodes.size(), 6u);
 	EXPECT_TRUE(sink.posted.empty());
@@ -173,7 +158,7 @@ TEST(EditorRenderGraph, FinishLoadWithoutGraphPreservesDeserializedConfig)
 		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
 		config.Load(archive);
 		neurus::RenderManager& render = editor.GetRenderManager();
-		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
+		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Problems());
 		graph.Load(archive);
 	}
 	ASSERT_EQ(editor.GetRenderConfig(), expected);
@@ -249,9 +234,9 @@ std::string SaveOptionalRenderState(neurus::Editor& editor)
 		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
 		config.Save(archive);
 		auto& render = editor.GetRenderManager();
-		neurus::project::ResourceComponent resources(editor.GetResourceManager(), render.Defaults(), &render.Problems());
+		neurus::project::ResourceComponent resources(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(render.Defaults(), render.GraphDiagnostics()));
 		resources.Save(archive);
-		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
+		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Problems());
 		graph.Save(archive);
 	}
 	return stream.str();
@@ -266,9 +251,9 @@ void LoadOptionalRenderState(neurus::Editor& editor, const std::string& text)
 		neurus::project::ConfigComponent config(editor.GetRenderConfigData());
 		config.Load(archive);
 		auto& render = editor.GetRenderManager();
-		neurus::project::ResourceComponent resources(editor.GetResourceManager(), render.Defaults(), &render.Problems());
+		neurus::project::ResourceComponent resources(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(render.Defaults(), render.GraphDiagnostics()));
 		resources.LoadJson(text);
-		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
+		neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Problems());
 		graph.LoadJson(text);
 	}
 	editor.FinishLoad();
@@ -400,7 +385,7 @@ TEST(EditorRenderGraph, MissingActiveUidPreservesTheRestOfThePool)
 	editor.NewScene();
 	auto resource = editor.GetResourceManager().Load<neurus::Mesh>();
 	auto& render = editor.GetRenderManager();
-	neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
+	neurus::project::GraphComponent graph(render.GraphData(), editor.GetResourceManager(), render.Problems());
 	graph.LoadJson("{\"proj_render_graph\":{\"uid\":" + std::to_string(resource->GetObjectID()) + "}}");
 	EXPECT_FALSE(render.GraphData());
 	EXPECT_FALSE(render.Problems().empty());
@@ -797,6 +782,22 @@ TEST(EditorRenderGraph, ReplaysAShaderPortRenameBeforeConnectionsUsingTheNewName
 	EXPECT_GT(unit.GetVersion(), undoneVersion);
 	EXPECT_EQ(unit.code, renamedCode);
 	EXPECT_EQ(neurus::project::ToRecord(editor.GetRenderGraph()), after);
+}
+
+TEST(EditorRenderGraph, RejectsGraphReplacementWithIncompatiblePassShader)
+{
+	neurus::Editor editor(nullptr);
+	editor.NewScene();
+	auto& render = editor.GetRenderManager();
+	const auto shader = editor.GetResourceManager().Load<neurus::ComputeShader>(
+		"FXAA", "res/shaders/compute/fxaa.comp.glsl");
+	ASSERT_TRUE(shader->ParseAndGenerate());
+	ASSERT_TRUE(shader->CompileToSpv());
+	auto graph = render.Graph().Clone();
+	graph->nodes[5]->data.shader = shader;
+	EXPECT_FALSE(render.SetGraph(std::move(graph)));
+	EXPECT_FALSE(render.GraphData());
+	EXPECT_FALSE(render.Problems().empty());
 }
 
 TEST(EditorRenderGraph, LoadingIncompatiblePooledShaderUsesOnlyThatPassDefault)

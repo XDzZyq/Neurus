@@ -93,7 +93,7 @@ TEST(SceneSerialize, MembershipIncludesPooledUidZero)
  */
 TEST(SceneSerialize, FullRoundtrip)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_rt.neurus.json");
 
 	int meshUid = 0;
@@ -142,7 +142,7 @@ TEST(SceneSerialize, FullRoundtrip)
 		scene.selections.Select(mesh.get(), false);
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -154,7 +154,7 @@ TEST(SceneSerialize, FullRoundtrip)
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -224,13 +224,13 @@ TEST(SceneSerialize, FullRoundtrip)
 // A missing image can still be identified when the project is saved again.
 TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
 {
-	const BuiltInRenderData catalog;
+
 	TempFile first("test_scene_missing_image.neurus.json");
 	TempFile second("test_scene_missing_image_resaved.neurus.json");
 	Scene scene;
 	ResourceManager resources;
 	project::Project document;
-	document.Register<project::ResourceComponent>(resources, catalog);
+	document.Register<project::ResourceComponent>(resources);
 	document.Register<project::SceneComponent>(scene, resources);
 
 	auto environment = resources.Load<Environment>();
@@ -270,7 +270,7 @@ TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
  */
 TEST(SceneSerialize, LegacyFileDegrades)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_legacy.neurus.json");
 
 	// Simulate an old-format file: no m_resources, m_scene with old keys.
@@ -291,7 +291,7 @@ TEST(SceneSerialize, LegacyFileDegrades)
 	ResourceManager loadedResources;
 	EXPECT_NO_THROW({
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -315,7 +315,7 @@ TEST(SceneSerialize, LegacyFileDegrades)
  */
 TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_orphan.neurus.json");
 
 	int orphanUid = 0;
@@ -331,7 +331,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 		// simulating a deleted object whose pooled resource survives.
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -342,7 +342,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -377,7 +377,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
  */
 TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_legacy_smooth.neurus.json");
 
 	int lineUid = 0;
@@ -394,7 +394,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 		scene.UseDebugLine(line);
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -424,7 +424,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		ASSERT_NO_THROW(p.Load(tmp.path));
@@ -453,7 +453,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
  */
 TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_duplicate_names.neurus.json");
 
 	int firstUid = 0;
@@ -478,7 +478,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 		// longer touches names); the load path's registry seeding must
 		// disambiguate them.
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -490,7 +490,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	project::Project p;
-	p.Register<project::ResourceComponent>(loadedResources, catalog);
+	p.Register<project::ResourceComponent>(loadedResources);
 	p.Register<project::SceneComponent>(loadedScene, loadedResources);
 	p.Register<project::ConfigComponent>(loadedConfig);
 	ASSERT_NO_THROW(p.Load(tmp.path));

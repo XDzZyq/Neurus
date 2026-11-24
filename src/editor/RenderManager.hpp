@@ -105,8 +105,9 @@ public:
 	bool ReferencesShader(int uid) const;
 
 	/// @brief Diagnostics shared with the project loader and graph status queries.
-	std::vector<std::string>& Problems() { return m_problems; }
-	const std::vector<std::string>& Problems() const { return m_problems; }
+	std::weak_ptr<std::vector<std::string>> GraphDiagnostics() const { return m_problems; }
+	std::vector<std::string>& Problems() { return *m_problems; }
+	const std::vector<std::string>& Problems() const { return *m_problems; }
 
 private:
 	ResourceManager&   m_resources;
@@ -114,7 +115,7 @@ private:
 	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::shared_ptr<RenderConfig> m_config;
 	ResourceRef<RenderGraphData> m_graph;
-	std::vector<std::string> m_problems;
+	std::shared_ptr<std::vector<std::string>> m_problems = std::make_shared<std::vector<std::string>>();
 };
 
 } // namespace neurus

@@ -15,25 +15,44 @@ namespace cereal { class JSONInputArchive; }
 namespace neurus
 {
 
+/// Project-owned services used by resource types while reading their fields.
+struct ResourceReadServices
+{
+	virtual ~ResourceReadServices() = default;
+};
+
 /// Collects UID references while cereal constructs pooled objects. The reader
 /// resolves the fields once all targets are available. Fields must belong to
 /// objects with stable addresses until Resolve returns (as pooled UIDs do).
 class ArchiveResourceRefs
 {
 public:
-	explicit ArchiveResourceRefs(const cereal::JSONInputArchive& archive);
+	explicit ArchiveResourceRefs(const cereal::JSONInputArchive& archive, const ResourceReadServices* services = nullptr);
 	~ArchiveResourceRefs();
 	ArchiveResourceRefs(const ArchiveResourceRefs&) = delete;
 	ArchiveResourceRefs& operator=(const ArchiveResourceRefs&) = delete;
 
 	using Assign = std::function<void(const std::shared_ptr<UID>&)>;
 	static void Bind(const cereal::JSONInputArchive& archive, int id, Assign assign);
-	void Resolve(const IResourceLookup& pool);
+	static bool IsBound(const cereal::JSONInputArchive& archive);
+	static void BindOptional(const cereal::JSONInputArchive& archive, int id, Assign assign);
+	using Complete = std::function<bool(const IResourceLookup&, const ResourceReadServices*)>;
+	static void AfterLoad(const cereal::JSONInputArchive& archive, int ownerUid, Complete complete);
+	std::vector<int> Resolve(const IResourceLookup& pool);
 
 private:
 	const cereal::JSONInputArchive& m_archive;
 	ArchiveResourceRefs* m_previous;
-	std::vector<std::pair<int, Assign>> m_bindings;
+	struct Binding
+	{
+		int id;
+		Assign assign;
+		bool optional;
+	};
+	static ArchiveResourceRefs& For(const cereal::JSONInputArchive& archive);
+	std::vector<Binding> m_bindings;
+	std::vector<std::pair<int, Complete>> m_completions;
+	const ResourceReadServices* m_services;
 };
 
 enum class MissingResource { Clear, KeepUid };
@@ -71,6 +90,8 @@ public:
 		ref.m_uid = uid;
 		return ref;
 	}
+	/// Capture a UID for undo without prolonging the resource's lifetime.
+	ResourceRef IdentityOnly() const { return HasIdentity() ? FromId(id()) : ResourceRef{}; }
 	bool Resolve(const IResourceLookup& pool)
 	{
 		if (HasIdentity())
@@ -101,6 +122,8 @@ public:
 		reset();
 		if (uid == 0) return;
 		m_uid = uid;
+		// History records are read outside a pool and rebound when replayed.
+		if (!ArchiveResourceRefs::IsBound(ar)) return;
 		ArchiveResourceRefs::Bind(ar, uid, [this, uid](const std::shared_ptr<UID>& resource) {
 			BindValue(resource, uid);
 		});
@@ -132,8 +155,8 @@ private:
 namespace archive
 {
 /// Omit a null reference on save and restore a missing field as null on load.
-template<class Archive, class T, bool (*Accept)(const T&), MissingResource Missing>
-void OptionalRef(Archive& ar, const char* key, ResourceRef<T, Accept, Missing>& ref)
+template<class Archive, class Ref>
+void OptionalRef(Archive& ar, const char* key, Ref& ref)
 {
 	if constexpr (Archive::is_saving::value)
 	{
@@ -155,14 +178,13 @@ bool RefId(Archive& ar, const char* key, Ref& ref)
 }
 
 template<class Archive, class Ref>
-void OptionalRefId(Archive& ar, const char* key, Ref& ref)
+std::optional<int> PoolRefId(Archive& ar, const char* key, Ref& ref, const IResourceLookup& pool)
 {
-	if constexpr (Archive::is_saving::value)
-	{
-		if (ref.id() != 0) RefId(ar, key, ref);
-	}
-	else if (!RefId(ar, key, ref) || ref.id() == 0)
-		ref = nullptr;
+	if (!RefId(ar, key, ref)) return std::nullopt;
+	const int uid = ref.id();
+	if constexpr (Archive::is_loading::value) ref.Resolve(pool);
+	return uid;
 }
+
 } // namespace archive
 } // namespace neurus

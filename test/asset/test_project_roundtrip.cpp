@@ -38,6 +38,7 @@
 #include "asset/components/SceneComponent.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/data/MeshData.hpp"
 #include "asset/ResourceManager.hpp"
@@ -83,7 +84,7 @@ static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>&
                                     const BuiltInRenderData& catalog)
 {
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources, catalog);
+	p.Register<project::ResourceComponent>(resources, neurus::project::MakeGraphReadServices(catalog));
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Register<project::ConfigComponent>(config);
 	return p;
@@ -346,12 +347,12 @@ TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 	std::ostringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		project::ResourceComponent(source, catalog).Save(archive);
+		project::ResourceComponent(source, neurus::project::MakeGraphReadServices(catalog)).Save(archive);
 	}
 
 	ResourceManager restored;
 	const int nextUid = UID::GetTotalAllocated();
-	project::ResourceComponent(restored, catalog).LoadJson(serialized.str());
+	project::ResourceComponent(restored, neurus::project::MakeGraphReadServices(catalog)).LoadJson(serialized.str());
 	ASSERT_EQ(restored.Size(), 2u);
 	const auto base = restored.Get(plain->GetObjectID());
 	ASSERT_TRUE(base);
@@ -448,29 +449,21 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 #endif
 }
 
-TEST(ProjectRoundtrip, LegacyCameraNameClaimsItsDefaultInUidOrder)
+TEST(ProjectRoundtrip, DuplicateCameraNamesAreClaimedInUidOrder)
 {
-	const BuiltInRenderData catalog;
 	ResourceManager source;
 	const auto older = source.Load<Camera>();
 	const auto newer = source.Load<Camera>();
-	older->o_name = "NameFieldToOmit";
+	older->o_name = "Camera";
 	newer->o_name = "Camera";
 
 	std::ostringstream stream;
 	{
 		cereal::JSONOutputArchive archive(stream);
-		project::ResourceComponent(source, catalog).Save(archive);
+		project::ResourceComponent(source).Save(archive);
 	}
-	auto document = stream.str();
-	const auto oldName = document.find("\"NameFieldToOmit\"");
-	ASSERT_NE(oldName, std::string::npos);
-	const auto key = document.rfind("\"o_name\"", oldName);
-	ASSERT_NE(key, std::string::npos);
-	document.replace(key, sizeof("\"o_name\"") - 1, "\"legacy_name\"");
-
 	ResourceManager restored;
-	project::ResourceComponent(restored, catalog).LoadJson(document);
+	project::ResourceComponent(restored).LoadJson(stream.str());
 	const auto first = restored.GetByName<Camera>("Camera");
 	const auto second = restored.GetByName<Camera>("Camera.001");
 	ASSERT_TRUE(first);

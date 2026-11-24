@@ -16,6 +16,7 @@
 #include "shader/BuiltInRenderData.hpp"
 #include "editor/RenderManager.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "editor/Editor.hpp"
 #include "editor/events/AssetEvents.hpp"
@@ -103,13 +104,13 @@ TEST_F(ShaderCreateTest, LoadedNameSurvivesResourceComponentRoundTrip)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive out(ss);
-		neurus::project::ResourceComponent save(m_editor.GetResourceManager(), m_editor.GetRenderManager().Defaults());
+		neurus::project::ResourceComponent save(m_editor.GetResourceManager(), neurus::project::MakeGraphReadServices(m_editor.GetRenderManager().Defaults()));
 		save.Save(out);
 	}
 	neurus::ResourceManager restored;
 	{
 		cereal::JSONInputArchive in(ss);
-		neurus::project::ResourceComponent load(restored, m_editor.GetRenderManager().Defaults());
+		neurus::project::ResourceComponent load(restored, neurus::project::MakeGraphReadServices(m_editor.GetRenderManager().Defaults()));
 		load.Load(in);
 	}
 

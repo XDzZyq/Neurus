@@ -6,6 +6,7 @@
 #include "editor/events/GraphEvents.hpp"
 #include "editor/operations/GraphOperations.hpp"
 #include "editor/operations/GraphTopologyOperations.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "shader/BuiltInRenderData.hpp"
 
 #include <algorithm>
@@ -181,6 +182,8 @@ void ChangeNodeMembership(const ControllerContext& ctx, const GraphNodeMembershi
 		throw std::invalid_argument(errors.front());
 	if (e.node.shader.id() && !node->data.shader)
 		throw std::invalid_argument("Missing or invalid pooled shader UID " + std::to_string(e.node.shader.id()));
+	if (node->data.shader)
+		ValidatePassShader(node->data.pass, *node->data.shader, ctx.render->Defaults());
 	graph.nodes.insert(graph.nodes.begin() + e.index, std::move(node));
 }
 
@@ -222,7 +225,7 @@ void ChangeNodeShader(const ControllerContext& ctx, const GraphNodeShaderChanged
 			throw std::invalid_argument("Unknown pooled shader UID " + std::to_string(e.shaderUid));
 	}
 	if (data.shader)
-		ctx.render->Defaults().ValidatePassShader(data.pass, *data.shader);
+		ValidatePassShader(data.pass, *data.shader, ctx.render->Defaults());
 	ReconcilePassPorts(graph, node, EffectivePassPorts(data, ctx.render->Defaults().Ports()));
 	node.data.shader = std::move(data.shader);
 }

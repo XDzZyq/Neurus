@@ -10,6 +10,7 @@
 #include "asset/components/GraphComponent.hpp"
 #include "editor/project/HistoryComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/components/UIComponent.hpp"
 #include "command/Commands.hpp"
@@ -60,11 +61,11 @@ void RegisterProjectComponents(project::Project& proj, Editor& editor, std::stri
 	// Resource pool first: the Scene's ID references resolve against it.
 	auto& render = editor.GetRenderManager();
 	auto& resources = editor.GetResourceManager();
-	proj.Register<project::ResourceComponent>(resources, render.Defaults(), &render.Problems());
+	proj.Register<project::ResourceComponent>(resources, neurus::project::MakeGraphReadServices(render.Defaults(), render.GraphDiagnostics()));
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::ConfigComponent>(editor.GetRenderConfigData());
 
-	proj.Register<project::GraphComponent>(render.GraphData(), resources, render.Defaults(), render.Problems());
+	proj.Register<project::GraphComponent>(render.GraphData(), resources, render.Problems());
 	proj.Register<project::UIComponent>(uiLayout);
 	// History, then editor view state: both are appended-last nodes, so legacy
 	// files that lack them load cleanly (each Load() falls back).

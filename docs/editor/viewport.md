@@ -114,9 +114,7 @@ the Editor has no camera API left to ask, which also narrows the sanctioned
 reverse asset-to-editor dependency to `editor/viewport/EditorViewport.hpp`. Without
 that uid, `FinishLoad()` would mint a fresh camera at the default framing and the
 view would snap back on every open. A project written before the component
-existed simply lacks the node; `Load()` falls back rather than throwing, and a
-project written before the rename carries the field as `editorCamUid`, which
-`Load()` still reads (an explicit migration, spelled as a second `Optional()`).
+existed lacks this node. A missing viewport camera selects a fresh camera.
 
 ## Resize and framing
 

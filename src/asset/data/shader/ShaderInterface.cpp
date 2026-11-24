@@ -2,7 +2,7 @@
  * @file ShaderInterface.cpp
  * @brief Reflects SPIR-V stage locations without GPU or renderer dependencies.
  */
-#include "shader/ShaderInterface.hpp"
+#include "asset/data/shader/ShaderInterface.hpp"
 #include "asset/data/ShaderData.hpp"
 
 #include <glslang/SPIRV/spirv.hpp11>

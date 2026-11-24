@@ -43,44 +43,14 @@ void RenderManager::ResetConfig()
 void RenderManager::ResetGraph(bool publish)
 {
 	m_graph.reset();
-	m_problems.clear();
+	m_problems->clear();
 	if (publish)
 		Publish();
 }
 
-namespace {
-
-void CheckTopology(RenderGraphData& graph, const IPortSource& ports, std::vector<std::string>& problems)
-{
-	for (const auto& node : graph.nodes)
-	{
-		if (node->data.shader && !node->data.shader->IsValid())
-			node->data.shader = nullptr;
-	}
-	for (const auto& diagnostic : ValidateCpuGraph(graph, ports))
-		problems.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
-}
-
-} // namespace
-
 std::vector<CpuGraphDiagnostic> RenderManager::Diagnostics() const
 {
-	const auto& graph = Graph();
-	auto diagnostics = ValidateCpuGraph(graph, m_renderDefaults->Ports());
-	for (const auto& node : graph.nodes)
-	{
-		if (!node->data.shader)
-			continue;
-		try
-		{
-			m_renderDefaults->ValidatePassShader(node->data.pass, *node->data.shader);
-		}
-		catch (const std::exception& error)
-		{
-			diagnostics.push_back({node->name, {}, error.what()});
-		}
-	}
-	return diagnostics;
+	return ValidateCpuGraph(Graph(), *m_renderDefaults);
 }
 
 std::shared_ptr<RenderGraphData> RenderManager::CreateGraph(bool publish)
@@ -108,7 +78,7 @@ void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& 
 		graph->SwapContents(*m_renderDefaults->Graph()->Clone());
 	m_resources.Register(graph);
 	m_graph = graph;
-	m_problems.clear();
+	m_problems->clear();
 	if (publish)
 		Publish();
 }
@@ -120,11 +90,13 @@ bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 		ResetGraph();
 		return true;
 	}
-	m_problems.clear();
-	CheckTopology(*graph, m_renderDefaults->Ports(), m_problems);
-	if (!m_problems.empty())
+	m_problems->clear();
+	for (const auto& diagnostic : ValidateCpuGraph(*graph, *m_renderDefaults))
+		m_problems->push_back(diagnostic.node + (diagnostic.port.empty() ? "" : "." + diagnostic.port)
+		                      + ": " + diagnostic.message);
+	if (!m_problems->empty())
 	{
-		for (const auto& problem : m_problems)
+		for (const auto& problem : *m_problems)
 			NEURUS_LOG("[RenderManager] Rejected graph edit: " << problem);
 		return false;
 	}

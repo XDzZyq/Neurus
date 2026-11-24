@@ -141,22 +141,18 @@ public:
 	/**
 	 * @brief Cereal serialization - base content + source path + defaults.
 	 *
-	 * On load, a restored stage with code keeps it; a legacy path-only shader
-	 * reloads from disk. CompileToSpv() then rebuilds the runtime SPIR-V.
+	 * A source-backed stage with empty code reloads from its path.
+	 * CompileToSpv() then rebuilds the runtime SPIR-V.
 	 */
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<ShaderData>(this),
 		   cereal::make_nvp("m_compPath", sh_compPath),
-		   cereal::make_nvp("m_defaults", sh_defaults));
-		if constexpr (Archive::is_saving::value)
+		   cereal::make_nvp("m_defaults", sh_defaults),
+		   cereal::make_nvp("stages", sh_stages));
+		if constexpr (Archive::is_loading::value)
 		{
-			SerializeStages(ar);
-		}
-		else
-		{
-			DeserializeStages(ar);
 			if (sh_stages[ShaderType::COMPUTE].code.empty())
 			{
 				ReloadContent();

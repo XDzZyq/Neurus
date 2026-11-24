@@ -21,6 +21,7 @@
 #include "asset/components/SceneComponent.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
@@ -69,7 +70,7 @@ static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>&
                                     const BuiltInRenderData& catalog)
 {
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources, catalog);
+	p.Register<project::ResourceComponent>(resources, neurus::project::MakeGraphReadServices(catalog));
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Register<project::ConfigComponent>(config);
 	return p;

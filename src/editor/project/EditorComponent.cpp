@@ -36,11 +36,7 @@ void EditorComponent::Load(cereal::JSONInputArchive& ar)
 		ar.setNextName("m_editor");
 		ar.startNode();
 
-		// "viewportCamUid" is what this build writes; "editorCamUid" is the
-		// pre-rename spelling, still read so an older project keeps its saved
-		// view.
-		if (!archive::RefId(ar, "viewportCamUid", camera))
-			archive::RefId(ar, "editorCamUid", camera);
+		archive::RefId(ar, "viewportCamUid", camera);
 
 		ar.finishNode();
 	}

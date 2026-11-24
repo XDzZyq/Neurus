@@ -75,6 +75,17 @@ RenderGraphRecord Deserialize(const std::string& text)
 	return record;
 }
 
+RenderGraphRecord DeserializeWithPool(const std::string& text, const neurus::ResourceManager& pool)
+{
+	std::istringstream input(text);
+	cereal::JSONInputArchive ar(input);
+	neurus::ArchiveResourceRefs refs(ar);
+	RenderGraphRecord bound;
+	ar(cereal::make_nvp("graph", bound));
+	EXPECT_TRUE(refs.Resolve(pool).empty());
+	return bound;
+}
+
 bool HasDiagnostic(const std::vector<CpuGraphDiagnostic>& diagnostics,
                    const std::string& node, const std::string& fragment)
 {
@@ -306,12 +317,16 @@ TEST(RenderGraphDocument, SavedShaderUidResolvesToOwnedPoolResource)
 	stage.spv = {1, 2, 3};
 	RenderGraphData graph(ports);
 	graph.nodes[3]->data.shader = shader;
-	const auto record = Deserialize(Serialize(neurus::project::ToRecord(graph)));
+	const auto saved = Serialize(neurus::project::ToRecord(graph));
+	const auto record = Deserialize(saved);
+	EXPECT_FALSE(record.nodes[3].shader);
 	EXPECT_EQ(record.nodes[3].shader.id(), shader->GetObjectID());
 	EXPECT_EQ(record.nodes[0].shader.id(), 0);
 
 	std::vector<std::string> problems;
-	const auto restored = neurus::project::FromRecord(record, ports, problems, &resources);
+	const auto bound = DeserializeWithPool(saved, resources);
+	ASSERT_EQ(bound.nodes[3].shader.get(), shader.get());
+	const auto restored = neurus::project::FromRecord(bound, ports, problems);
 	EXPECT_TRUE(problems.empty());
 	ASSERT_EQ(restored->nodes.size(), graph.nodes.size());
 	EXPECT_EQ(restored->nodes[3]->data.shader.get(), shader.get());
@@ -332,7 +347,8 @@ TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
 	record.nodes[2].shader = neurus::PassShaderRef::FromId(2147483647);
 
 	std::vector<std::string> problems;
-	const auto restored = neurus::project::FromRecord(record, ports, problems, &resources);
+	const auto bound = DeserializeWithPool(Serialize(record), resources);
+	const auto restored = neurus::project::FromRecord(bound, ports, problems);
 	EXPECT_TRUE(problems.empty());
 	ASSERT_EQ(restored->nodes.size(), 7u);
 	for (const auto& node : restored->nodes)
@@ -346,24 +362,16 @@ TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
 		EXPECT_EQ(node->data.shader.get(), nullptr);
 }
 
-TEST(RenderGraphDocument, LegacyDocumentsInferOutputsOnceAndExplicitEmptyOutputsStayEmpty)
+TEST(RenderGraphDocument, SceneOutputsRoundTripAndExplicitEmptyOutputsStayEmpty)
 {
 	const auto ports = neurus::test::MakeRealPortSource();
 	RenderGraphData graph(ports);
 	auto record = neurus::project::ToRecord(graph);
-	record.outputs.reset();
 	std::vector<std::string> problems;
 	auto restored = neurus::project::FromRecord(Deserialize(Serialize(record)), ports, problems);
 	EXPECT_TRUE(problems.empty());
 	EXPECT_EQ(restored->sceneOutputs, graph.sceneOutputs);
-	ASSERT_TRUE(graph.RemoveNode(FindNode(graph, "fxaa")));
-	record = neurus::project::ToRecord(graph);
-	record.outputs.reset();
-	auto compose = neurus::project::FromRecord(record, ports, problems);
-	EXPECT_EQ(compose->sceneOutputs.at("color"), (neurus::GraphEndpoint{"compose", "outputComposed"}));
-	EXPECT_TRUE(neurus::ValidateCpuGraph(*compose, ports).empty());
-
-	record.outputs.emplace();
+	record.outputs.clear();
 	auto disconnected = neurus::project::FromRecord(Deserialize(Serialize(record)), ports, problems);
 	EXPECT_TRUE(disconnected->sceneOutputs.empty());
 	EXPECT_TRUE(HasDiagnostic(neurus::ValidateCpuGraph(*disconnected, ports), "", "color"));

@@ -57,7 +57,7 @@ public:
 	 * @brief Cereal serialization - identity plus the human-readable name.
 	 *
 	 * Concrete leaves forward this base, serialize their own source paths, then
-	 * call SerializeStages/DeserializeStages for the per-stage content.
+	 * serialize the per-stage content.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
 	 * @param ar Archive to serialize to/from.
@@ -123,34 +123,6 @@ public:
 	void BumpVersion() { sh_version++; }
 
 protected:
-	/**
-	 * @brief Writes the per-stage content map (leaf save path).
-	 * @param ar Output archive.
-	 */
-	template<class Archive>
-	void SerializeStages(Archive& ar)
-	{
-		ar(cereal::make_nvp("stages", sh_stages));
-	}
-
-	/**
-	 * @brief Reads the per-stage content map, keeping the constructor stages
-	 *        when the key is absent (legacy path-only project).
-	 * @param ar Input archive.
-	 * @return true when the map was present and restored.
-	 */
-	template<class Archive>
-	bool DeserializeStages(Archive& ar)
-	{
-		std::unordered_map<ShaderType, ShaderUnit> stages;
-		if (archive::OptionalField(ar, cereal::make_nvp("stages", stages)))
-		{
-			sh_stages = std::move(stages);
-			return true;
-		}
-		return false;
-	}
-
 	std::string sh_name;          ///< Human-readable shader name
 	std::string sh_errorMessage;  ///< Last error message
 	int         sh_version = 0;   ///< Version counter for pipeline invalidation

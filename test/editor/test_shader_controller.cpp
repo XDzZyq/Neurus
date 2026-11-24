@@ -51,6 +51,7 @@
 #include "asset/data/ShaderData.hpp"
 #include "shader/ShaderLibrary.hpp"
 #include "shader/ShaderParser.hpp"
+#include "asset/data/render_graph/CpuGraphValidation.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
@@ -628,7 +629,7 @@ TEST(PassShaderEditing, MaterializedPrimaryShadersPreserveAllSevenPassInterfaces
 		const auto builtIn = catalog.ShaderFor(pass.shaders.front().name);
 		const auto editable = catalog.CreatePassShader(pass.name, "editable");
 		EXPECT_NE(editable->GetObjectID(), builtIn->GetObjectID());
-		EXPECT_NO_THROW(catalog.ValidatePassShader(pass.name, *editable));
+		EXPECT_NO_THROW(neurus::ValidatePassShader(pass.name, *editable, catalog));
 	}
 }
 
@@ -636,7 +637,7 @@ TEST(PassShaderEditing, RejectsIncompatibleCompiledInterfacesAndAcceptsRenamedIm
 {
 	BuiltInRenderData catalog;
 	const auto shader = catalog.CreatePassShader("ComposePass", "editable");
-	EXPECT_THROW(catalog.ValidatePassShader("GeometryPass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("GeometryPass", *shader, catalog), std::invalid_argument);
 	auto& compute = shader->GetStage(ShaderType::COMPUTE);
 	const auto source = compute.code;
 	auto edit = [&](std::string_view before, std::string_view after) {
@@ -651,17 +652,17 @@ TEST(PassShaderEditing, RejectsIncompatibleCompiledInterfacesAndAcceptsRenamedIm
 		ShaderLibrary::CompileEditedUnit(compute, ShaderType::COMPUTE, "editable", false);
 	};
 	edit("outputComposed", "tintedOutput");
-	EXPECT_NO_THROW(catalog.ValidatePassShader("ComposePass", *shader));
+	EXPECT_NO_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog));
 	edit("local_size_x = 16", "local_size_x = 8");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("local_size_x = 16", "local_size_x = 16 / 2");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("rgba16f", "rgba32f");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("float gamma;", "layout(offset = 16) float gamma;");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("binding = 0", "set = 1, binding = 0");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	const auto original = catalog.ShaderFor(FindPassKind("ComposePass")->shaders.front().name);
 	ASSERT_TRUE(original);
 	EXPECT_EQ(original->GetStage(ShaderType::COMPUTE).code, source);

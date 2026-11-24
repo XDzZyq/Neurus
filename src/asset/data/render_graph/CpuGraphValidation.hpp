@@ -14,9 +14,15 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace neurus {
+
+class IPassShaderCatalog;
+
+/// Throws if the selected shader cannot satisfy the pass's compiled interface.
+void ValidatePassShader(std::string_view passKind, const ShaderData& shader, const IPassShaderCatalog& catalog);
 
 /**
  * @brief One named problem in the document.
@@ -44,5 +50,8 @@ struct CpuGraphDiagnostic
 std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
                                                  const std::function<PassPorts(const CpuNode&)>& shaderPorts = {});
+
+/// Checks the document topology and each assigned shader against its pass.
+std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog);
 
 } // namespace neurus

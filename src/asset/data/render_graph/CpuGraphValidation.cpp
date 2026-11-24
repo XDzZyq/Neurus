@@ -5,7 +5,13 @@
 
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
 
+#include "asset/data/render_graph/PassShaderCatalog.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
+#include "asset/data/shader/ShaderInterface.hpp"
+#include "asset/data/ShaderData.hpp"
+
 #include <algorithm>
+#include <stdexcept>
 #include <set>
 #include <string>
 #include <vector>
@@ -157,6 +163,52 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 		diagnostics.push_back({{}, {}, "cycle detected involving: " + names});
 	}
 
+	return diagnostics;
+}
+
+void ValidatePassShader(std::string_view passKind, const ShaderData& shader, const IPassShaderCatalog& catalog)
+{
+	const auto* kind = FindPassKind(passKind);
+	if (!kind || kind->shaders.empty())
+		throw std::invalid_argument("Unknown pass shader recipe: " + std::string(passKind));
+	const auto expected = catalog.ShaderFor(kind->shaders.front().name);
+	if (!expected || shader.GetType() != expected->GetType() || !shader.IsValid())
+		throw std::invalid_argument(std::string(passKind) + ": incompatible or uncompiled shader stages");
+	for (const auto stage : {ShaderType::VERTEX, ShaderType::FRAGMENT, ShaderType::COMPUTE})
+	{
+		const auto* ref = expected->FindStage(stage);
+		if (!ref)
+			continue;
+		const auto& selected = shader.GetStage(stage);
+		const auto problem = PassShaderInterfaceProblem(*ref, selected, stage);
+		if (!problem.empty())
+			throw std::invalid_argument(std::string(passKind) + " " + ShaderData::TypeToString(stage) + ": " + problem);
+	}
+	if (shader.GetType() == ShaderType::VERTEX)
+	{
+		std::string error;
+		if (!ValidateRenderShaderInterface(shader.GetStage(ShaderType::VERTEX).spv,
+		                                  shader.GetStage(ShaderType::FRAGMENT).spv, error))
+			throw std::invalid_argument(std::string(passKind) + ": " + error);
+	}
+}
+
+std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog)
+{
+	auto diagnostics = ValidateCpuGraph(graph, catalog.Ports());
+	for (const auto& node : graph.nodes)
+	{
+		if (!node->data.shader)
+			continue;
+		try
+		{
+			ValidatePassShader(node->data.pass, *node->data.shader, catalog);
+		}
+		catch (const std::exception& error)
+		{
+			diagnostics.push_back({node->name, {}, error.what()});
+		}
+	}
 	return diagnostics;
 }
 

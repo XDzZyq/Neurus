@@ -30,6 +30,7 @@
 #include "editor/project/HistoryComponent.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/components/GraphComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/ResourceManager.hpp"
@@ -79,8 +80,8 @@ struct TempFile
 void BuildProject(project::Project& proj, Editor& editor)
 {
 	auto& render = editor.GetRenderManager();
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), render.Defaults(), &render.Problems());
-	proj.Register<project::GraphComponent>(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
+	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(render.Defaults(), render.GraphDiagnostics()));
+	proj.Register<project::GraphComponent>(render.GraphData(), editor.GetResourceManager(), render.Problems());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::HistoryComponent>(editor.GetOperations());
 	proj.Register<project::EditorComponent>(editor.GetViewport());
