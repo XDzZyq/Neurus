@@ -162,6 +162,163 @@ TEST(ResourceManagerTest, RemoveClearSize)
 	EXPECT_FALSE(pool.Contains(light->GetObjectID()));
 }
 
+TEST(ResourceManagerTest, DeferredMetadataAndNamedLookup)
+{
+	ResourceManager pool;
+	auto resource = std::make_shared<TestResource>();
+	const int id = resource->GetObjectID();
+	int loads = 0;
+	pool.RegisterDeferred(id, typeid(TestResource), [&] { ++loads; return resource; });
+
+	EXPECT_TRUE(pool.Contains(id));
+	EXPECT_EQ(pool.Size(), 1u);
+	EXPECT_EQ(pool.SetName(id, "Original"), "Original");
+	EXPECT_EQ(pool.SetName(id, "Renamed"), "Renamed");
+	EXPECT_EQ(pool.GetByName<TestResource>("Original"), nullptr);
+	EXPECT_EQ(pool.GetByName<OtherTestResource>("Renamed"), nullptr);
+	EXPECT_EQ(pool.Get(-1), nullptr);
+	EXPECT_EQ(loads, 0);
+
+	const IResourceLookup& lookup = pool;
+	EXPECT_EQ(lookup.GetByName<TestResource>("Renamed"), resource);
+	EXPECT_EQ(lookup.Get<TestResource>(id), resource);
+	EXPECT_EQ(lookup.Get<OtherTestResource>(id), nullptr);
+	EXPECT_EQ(pool.Size(), 1u);
+	EXPECT_EQ(loads, 1);
+}
+
+TEST(ResourceManagerTest, DeferredEnumerationLoadsMatchingResourcesOnce)
+{
+	ResourceManager pool;
+	auto first = std::make_shared<TestResource>();
+	auto second = std::make_shared<OtherTestResource>();
+	int firstLoads = 0;
+	int secondLoads = 0;
+	pool.RegisterDeferred(first->GetObjectID(), typeid(TestResource), [&] { ++firstLoads; return first; });
+	pool.RegisterDeferred(second->GetObjectID(), typeid(OtherTestResource), [&] { ++secondLoads; return second; });
+
+	int visits = 0;
+	pool.ForEach<TestResource>([&](const std::shared_ptr<TestResource>& obj) {
+		EXPECT_EQ(obj, first);
+		++visits;
+	});
+	EXPECT_EQ(visits, 1);
+	EXPECT_EQ(firstLoads, 1);
+	EXPECT_EQ(secondLoads, 0);
+
+	std::vector<std::shared_ptr<UID>> seen;
+	pool.ForEachUID([&](const std::shared_ptr<UID>& obj) { seen.push_back(obj); });
+	EXPECT_EQ(seen.size(), 2u);
+	EXPECT_EQ(std::count(seen.begin(), seen.end(), first), 1);
+	EXPECT_EQ(std::count(seen.begin(), seen.end(), second), 1);
+	EXPECT_EQ(firstLoads, 1);
+	EXPECT_EQ(secondLoads, 1);
+}
+
+TEST(ResourceManagerTest, DeferredIdsAreReservedUntilRemoveOrClear)
+{
+	ResourceManager pool;
+	const int futureId = UID::GetTotalAllocated() + 20;
+	int loads = 0;
+	auto loader = [&]() -> std::shared_ptr<UID> { ++loads; return nullptr; };
+	pool.RegisterDeferred(futureId, typeid(TestResource), loader);
+	EXPECT_GT(pool.Load<TestResource>()->GetObjectID(), futureId);
+	EXPECT_THROW(pool.RegisterDeferred(futureId, typeid(TestResource), loader), std::exception);
+	auto live = std::make_shared<TestResource>();
+	pool.RegisterDeferred(live->GetObjectID(), typeid(TestResource), loader);
+	EXPECT_THROW(pool.Register(live), std::exception);
+	EXPECT_EQ(pool.SetName(live->GetObjectID(), "Spare"), "Spare");
+	EXPECT_TRUE(pool.Remove(live->GetObjectID()));
+	EXPECT_EQ(pool.GetByName<TestResource>("Spare"), nullptr);
+	EXPECT_EQ(pool.Register(live), live->GetObjectID());
+	EXPECT_THROW(pool.RegisterDeferred(live->GetObjectID(), typeid(TestResource), loader), std::exception);
+	pool.Clear();
+	EXPECT_EQ(pool.Size(), 0u);
+	EXPECT_EQ(pool.Get(futureId), nullptr);
+	EXPECT_EQ(loads, 0);
+}
+
+TEST(ResourceManagerTest, RejectsIncompleteOrMismatchedDeferredObjects)
+{
+	ResourceManager pool;
+	auto expected = std::make_shared<TestResource>();
+	auto other = std::make_shared<TestResource>();
+	auto wrongType = std::make_shared<OtherTestResource>();
+	std::shared_ptr<UID> result;
+	const int id = expected->GetObjectID();
+	int attempts = 0;
+	pool.RegisterDeferred(id, typeid(TestResource), [&] { ++attempts; return result; });
+	EXPECT_THROW(pool.Get(id), std::exception);
+	result = other;
+	EXPECT_THROW(pool.Get(id), std::exception);
+	result = expected;
+	EXPECT_EQ(pool.Get(id), expected);
+	EXPECT_EQ(pool.Get(id), expected);
+	EXPECT_EQ(attempts, 3);
+
+	pool.RegisterDeferred(wrongType->GetObjectID(), typeid(TestResource), [&] { return wrongType; });
+	EXPECT_THROW(pool.Get(wrongType->GetObjectID()), std::exception);
+}
+
+TEST(ResourceManagerTest, DeferredCycleUnwindsAndDependenciesCanBeRetried)
+{
+	ResourceManager pool;
+	auto parent = std::make_shared<TestResource>();
+	auto child = std::make_shared<OtherTestResource>();
+	auto independent = pool.Load<TestResource>();
+	int parentLoads = 0;
+	int childLoads = 0;
+	bool cyclic = true;
+	pool.RegisterDeferred(parent->GetObjectID(), typeid(TestResource), [&] {
+		++parentLoads;
+		EXPECT_EQ(pool.Get(child->GetObjectID()), child);
+		return parent;
+	});
+	pool.RegisterDeferred(child->GetObjectID(), typeid(OtherTestResource), [&] {
+		++childLoads;
+		if (cyclic)
+			pool.Get(parent->GetObjectID());
+		return child;
+	});
+	EXPECT_THROW(pool.Get(parent->GetObjectID()), std::exception);
+	EXPECT_EQ(pool.Get(independent->GetObjectID()), independent);
+	cyclic = false;
+	EXPECT_EQ(pool.Get(parent->GetObjectID()), parent);
+	EXPECT_EQ(pool.Get(child->GetObjectID()), child);
+	EXPECT_EQ(parentLoads, 2);
+	EXPECT_EQ(childLoads, 2);
+}
+
+TEST(ResourceManagerTest, RawArchiveIncludesDeferredEntriesAndReplacesOldRegistry)
+{
+	ResourceManager source;
+	auto camera = std::make_shared<Camera>();
+	camera->cam_pers = 42.0f;
+	source.RegisterDeferred(camera->GetObjectID(), typeid(Camera), [camera] { return camera; });
+	std::stringstream stream;
+	{
+		cereal::JSONOutputArchive archive(stream);
+		archive(source);
+	}
+
+	ResourceManager target;
+	auto stale = std::make_shared<Camera>();
+	int staleLoads = 0;
+	target.RegisterDeferred(stale->GetObjectID(), typeid(Camera), [&] { ++staleLoads; return stale; });
+	target.SetName(stale->GetObjectID(), "Previous");
+	{
+		cereal::JSONInputArchive archive(stream);
+		archive(target);
+	}
+	EXPECT_EQ(target.Size(), 1u);
+	EXPECT_FALSE(target.Contains(stale->GetObjectID()));
+	EXPECT_EQ(target.GetByName<Camera>("Previous"), nullptr);
+	EXPECT_EQ(staleLoads, 0);
+	auto restored = target.Get<Camera>(camera->GetObjectID());
+	ASSERT_NE(restored, nullptr);
+	EXPECT_FLOAT_EQ(restored->cam_pers, 42.0f);
+}
+
 // -----------------------------------------------------------------------
 // Polymorphic save/load round-trip
 // -----------------------------------------------------------------------

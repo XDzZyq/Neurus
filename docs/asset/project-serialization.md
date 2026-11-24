@@ -69,7 +69,7 @@ See [Scene Objects](../scene/objects.md) and [Serialization](../core/serializati
 
 ## ResourceComponent: pool and data wiring
 
-`ResourceComponent` saves the explicit `ResourceManager` pool polymorphically. Its `LoadJson` validates and deserializes each entry in a separate archive, carrying cereal's polymorphic type dictionary forward. A malformed shader entry is skipped without losing later valid resources. Null entries and shaders whose content cannot restore or compile are excluded from the live project pool.
+`ResourceComponent` saves the explicit `ResourceManager` pool polymorphically. On open it expands cereal's archive-local type names, validates each record's identity, and registers an owned payload and loader under that UID. All indexed UIDs are reserved before any loader runs. Each loader reads one pointer through its own archive. The existing reference-wiring pass requests the full pool before the scene loads. A malformed record leaves independent entries readable. Null entries and shaders whose content cannot restore or compile are excluded from the live project pool.
 
 Load then wires `Mesh` to `MeshData` / `ShaderData`, `Environment` to `ImageData`, and `DebugMesh` to `MeshData`. Missing or unusable mesh shaders become null references with UID `0`, selecting cached renderer defaults without inserting replacement resources. Surviving names are restored deterministically by UID. See [UID and Resources](../core/uid-and-resources.md) and [Data Resources](data-resources.md).
 

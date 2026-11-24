@@ -53,4 +53,12 @@ Measured on Windows x64, MSVC Debug, using `ProjectRoundtrip.MixedPoolContentLoa
 
 All three runs produced these counts. After lazy loading lands, move the last three counts from the open column to the explicit lookup column. Keep the shared geometry pointer, restored selection, active camera and published graph assertions in place.
 
-Added a separate round-trip regression for a missing environment image UID. Both Debug test executables built against the worktree's Python environment. The focused CTest run passed all 98 tests, including the layer-boundary check. Phase 1 is ready for user verification before starting Phase 2.
+Added a separate round-trip regression for a missing environment image UID. Both Debug test executables built against the worktree's Python environment. The focused CTest run passed all 98 tests, including the layer-boundary check. Phase 1 was committed as `5a3d220`.
+
+## Phase 2 checkpoint
+
+Project open indexes concrete types and reserves every accepted UID before it requests objects. Each loader owns its normalized cereal record. Reading an indexed record reuses its reserved UID, so reopening the document does not consume a temporary identity for each pooled resource.
+
+The pool tests cover metadata queries, rename by UID, shared lookup results, typed enumeration, duplicate registrations, removal, project replacement, cycle recovery, and rejection of loaders returning the wrong object. The current project reader still requests every indexed record for the reference-wiring pass. It assigns unique names in UID order after validation so legacy records with omitted names participate using their constructor defaults. Phase 3 must preserve that ordering when it moves name assignment ahead of root restoration.
+
+The full Windows Debug build succeeded. `make check` reported 1,004 passes, zero failures and one platform skip for POSIX permission reporting. The translation check passed. The reference-image files are unchanged, including the constant-depth sun shadow reference.

@@ -9,15 +9,15 @@
  */
 
 #include <cereal/archives/json.hpp>
-#include <cereal/types/polymorphic.hpp>
+#include "core/ResourceType.hpp"
 
 #include "core/UID.hpp"
 #include "shader/ComputeShader.hpp"
 #include "shader/RenderShader.hpp"
 
 // --- Derived shader registration (concrete leaves only) ---
-CEREAL_REGISTER_TYPE(neurus::RenderShader)
-CEREAL_REGISTER_TYPE(neurus::ComputeShader)
+NEURUS_REGISTER_RESOURCE_TYPE(RenderShader)
+NEURUS_REGISTER_RESOURCE_TYPE(ComputeShader)
 
 // --- Polymorphic relations (UID base -> shader leaves) ---
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::RenderShader)

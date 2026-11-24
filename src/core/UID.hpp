@@ -73,6 +73,9 @@ public:
 		return s_count;
 	}
 
+	/** @brief Advances the allocator past a valid persisted identity. */
+	static void ReserveThrough(int id);
+
 	/**
 	 * @brief Cereal serialization for the unique ID.
 	 *
@@ -88,8 +91,7 @@ public:
 		ar(CEREAL_NVP(o_id));
 		if constexpr (Archive::is_loading::value)
 		{
-			if (o_id >= s_count)
-				s_count = o_id + 1;
+			ReserveThrough(o_id);
 		}
 	}
 };

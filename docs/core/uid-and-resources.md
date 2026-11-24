@@ -76,7 +76,8 @@ Design:
 - `UID` is the only resource base. Every pooled object derives from it and serializes itself (identity plus its own fields); there is no reload-hook interface, because each object's `serialize(load)` restores its own state.
 - `Load<T>(args...)` constructs and registers in one step, returning a typed `shared_ptr<T>`. It `static_assert`s that `T` derives from `UID`, and - when `T` has a public `o_name` - registers that name and mirrors the unique result back into `o_name` (see [Resource names](#resource-names)).
 - `Register(shared_ptr<UID>)` registers an already-constructed object (tests, legacy paths).
-- `Get(int)` returns the untyped base, `Get<T>(int)` casts it, and `Contains(int)` tests membership.
+- `RegisterDeferred` reserves a UID and records the concrete type and a loader. Project persistence supplies the loader and owns the interpretation of its serialized record.
+- `Contains` and `Size` include deferred entries. The first `Get(id)` runs the loader on the main thread, validates the returned object's UID and concrete type, and caches the shared pointer. Recursive requests can load dependencies. A cycle or a failed load produces a diagnostic and leaves the entry available for a retry. `Get<T>` casts the result and name lookup uses the same cache.
 - `ForEach<T>(fn)` visits every pooled object whose **exact dynamic type** is `T`; this is how UID-keyed GPU caches follow the pool rather than the scene (pooled objects stay referenced by undo history after deletion). It is not a base-class walk: once a base instance (`ObjectID`, `UID`) is itself pooled, the per-type index holds only that instance and derived types are skipped. Base-class enumeration uses `ForEachUID(fn)` plus a cast. Neither callback may `Load` / `Register` / `Remove` / `Clear`, because mutating the pool during iteration invalidates the walk.
 - `Remove(int)` and `Clear()` mutate the pool; `Size()` reports its size.
 - `SetName(id, name)` / `GetByName(...)` own the display-name registry; names are unique per concrete dynamic type and are derived state, never serialized (see [Resource names](#resource-names)).
@@ -135,6 +136,7 @@ Selection is held at runtime as `const ObjectID*` pointers but written as UIDs (
 
 The pool stores `shared_ptr<UID>`, so every reachable type must be registered with cereal's polymorphic system:
 
+- Each pooled type uses `NEURUS_REGISTER_RESOURCE_TYPE` in its owning registration translation unit. This binds cereal's archive name to the concrete C++ type so project open can identify the record before constructing its object.
 - Scene types: `scene/registrations/TypeRegistration.cpp` registers the `UID` and `ObjectID` bases and every derived scene type, plus the `UID`-level and `ObjectID`-level polymorphic relations that make pool serialization load-bearing.
 - Data resources: `asset/registrations/DataRegistration.cpp` registers `MeshData` and `ImageData` as polymorphic leaves of `UID`.
 

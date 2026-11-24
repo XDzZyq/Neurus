@@ -9,8 +9,11 @@ find_package(Threads REQUIRED)
 add_library(neurus_core STATIC
 	UID.hpp
 	UID.cpp
+	ArchiveUid.hpp
 	ResourceManager.hpp
 	ResourceManager.cpp
+	ResourceType.hpp
+	ResourceType.cpp
 	Serialize.hpp
 	RenderConfig.hpp
 	GraphMorphism.hpp

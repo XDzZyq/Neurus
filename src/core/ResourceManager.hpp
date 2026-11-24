@@ -91,14 +91,7 @@ public:
 		static_assert(std::is_base_of_v<UID, T>, "Load<T>: T must derive from UID");
 
 		auto resource = std::make_shared<T>(std::forward<Args>(args)...);
-		const int id = resource->GetObjectID();
-		// The copy stays alive for the naming step below; the map is the owner.
-		auto [it, inserted] = resources_.emplace(id, resource);
-		if (!inserted)
-		{
-			throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
-		}
-		IndexType(it->second.get());
+		const int id = Register(resource);
 
 		// Registry-owned uniqueness, mirrored back so the Outliner, the project
 		// file and name lookups agree. Duck-typed on o_name to keep core free of
@@ -119,6 +112,13 @@ public:
 	 */
 	int Register(std::shared_ptr<UID> obj);
 
+	/**
+	 * @brief Reserves an identity and exact type until Get first needs the object.
+	 * The loader may request dependencies through Get. It must return a complete
+	 * object with the registered identity and type. Failure leaves it retryable.
+	 */
+	void RegisterDeferred(int id, std::type_index type, std::function<std::shared_ptr<UID>()> loader);
+
 	// --- IResourceLookup ---
 
 	using IResourceLookup::Get;
@@ -130,18 +130,12 @@ public:
 	 * @param id Resource UID.
 	 * @return Shared pointer to the UID base, or nullptr if absent.
 	 */
-	std::shared_ptr<UID> Get(int id) const override
-	{
-		auto it = resources_.find(id);
-		if (it == resources_.end())
-			return nullptr;
-		return it->second;
-	}
+	std::shared_ptr<UID> Get(int id) const override;
 
 	/**
 	 * @brief True if a resource with the given ID is registered.
 	 */
-	bool Contains(int id) const override { return resources_.count(id) != 0; }
+	bool Contains(int id) const override { return m_typeOf.contains(id); }
 
 	/**
 	 * @brief Looks up a resource by its registered name within one concrete type.
@@ -210,7 +204,7 @@ public:
 	/**
 	 * @brief Number of pooled resources.
 	 */
-	size_t Size() const { return resources_.size(); }
+	size_t Size() const { return m_typeOf.size(); }
 
 	/**
 	 * @brief Cereal serialization of the whole pool.
@@ -227,17 +221,21 @@ public:
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		ar(CEREAL_NVP(resources_));
-		if constexpr (Archive::is_loading::value)
+		if constexpr (Archive::is_saving::value)
 		{
-			// Null references select runtime defaults; they are not pooled project
-			// objects and must not survive into a later save.
-			std::erase_if(resources_, [](const auto& entry) { return !entry.second; });
-			// Not derived state a rebuild can recover: names are only in the
-			// registry, so an old entry would survive its object and keep
-			// stealing the bare name from a later resource.
-			m_names.clear();
-			m_nameOf.clear();
+			// The standalone cereal archive encodes complete objects.
+			while (!m_loaders.empty())
+				Get(m_loaders.begin()->first);
+			ar(CEREAL_NVP(resources_));
+		}
+		else
+		{
+			decltype(resources_) restored;
+			ar(cereal::make_nvp("resources_", restored));
+			// Null pointers stand for runtime defaults and have no pool entry.
+			std::erase_if(restored, [](const auto& entry) { return !entry.second; });
+			Clear();
+			resources_.swap(restored);
 			RebuildTypeIndex();
 		}
 	}
@@ -260,8 +258,15 @@ private:
 	std::unordered_map<std::type_index, std::vector<int>> m_byType;
 	std::unordered_map<int, std::type_index> m_typeOf;
 
-	/// Pool of every registered UID object, keyed by UID.
-	std::unordered_map<int, std::shared_ptr<UID>> resources_;
+	struct DeferredResource
+	{
+		std::function<std::shared_ptr<UID>()> load;
+		bool loading = false;
+	};
+
+	/// Logical-const Get materializes a deferred resource on the main thread.
+	mutable std::unordered_map<int, DeferredResource> m_loaders;
+	mutable std::unordered_map<int, std::shared_ptr<UID>> resources_;
 
 	/**
 	 * @brief Returns @p base or the first free "base.NNN" for @p type.
@@ -271,9 +276,9 @@ private:
 	std::string UniqueName(std::type_index type, const std::string& base) const;
 
 	/**
-	 * @brief Records @p obj's dynamic type in the per-type index.
+	 * @brief Records the exact dynamic type in the per-type index.
 	 */
-	void IndexType(UID* obj);
+	void IndexType(int id, std::type_index type);
 
 	/**
 	 * @brief Drops the registered name of @p id, if any.

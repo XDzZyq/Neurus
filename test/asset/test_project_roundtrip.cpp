@@ -22,6 +22,7 @@
 #include <array>
 #include <chrono>
 #include <memory>
+#include <sstream>
 
 #include <cstdio>   // std::remove
 
@@ -335,6 +336,33 @@ void ExpectContentLoads(uint64_t since, const char* phase, const std::array<int,
 
 } // namespace
 
+// Cereal writes an exact shared_ptr<UID> with a static-type marker and no type name.
+TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
+{
+	const BuiltInRenderData catalog;
+	ResourceManager source;
+	auto plain = source.Load<UID>();
+	auto camera = source.Load<Camera>();
+	std::ostringstream serialized;
+	{
+		cereal::JSONOutputArchive archive(serialized);
+		project::ResourceComponent(source, catalog).Save(archive);
+	}
+
+	ResourceManager restored;
+	const int nextUid = UID::GetTotalAllocated();
+	project::ResourceComponent(restored, catalog).LoadJson(serialized.str());
+	ASSERT_EQ(restored.Size(), 2u);
+	const auto base = restored.Get(plain->GetObjectID());
+	ASSERT_TRUE(base);
+	const UID& object = *base;
+	EXPECT_TRUE(typeid(object) == typeid(UID));
+	const auto named = restored.GetByName<Camera>(camera->o_name);
+	ASSERT_TRUE(named);
+	EXPECT_EQ(named->GetObjectID(), camera->GetObjectID());
+	EXPECT_EQ(UID::GetTotalAllocated(), nextUid);
+}
+
 TEST(ProjectRoundtrip, MixedPoolContentLoads)
 {
 	TempFile projectFile("test_mixed_pool.neurus.json");
@@ -418,4 +446,37 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 #if defined(_DEBUG) || !defined(NDEBUG)
 	ExpectContentLoads(since, "lookup", {0, 0, 0, 0});
 #endif
+}
+
+TEST(ProjectRoundtrip, LegacyCameraNameClaimsItsDefaultInUidOrder)
+{
+	const BuiltInRenderData catalog;
+	ResourceManager source;
+	const auto older = source.Load<Camera>();
+	const auto newer = source.Load<Camera>();
+	older->o_name = "NameFieldToOmit";
+	newer->o_name = "Camera";
+
+	std::ostringstream stream;
+	{
+		cereal::JSONOutputArchive archive(stream);
+		project::ResourceComponent(source, catalog).Save(archive);
+	}
+	auto document = stream.str();
+	const auto oldName = document.find("\"NameFieldToOmit\"");
+	ASSERT_NE(oldName, std::string::npos);
+	const auto key = document.rfind("\"o_name\"", oldName);
+	ASSERT_NE(key, std::string::npos);
+	document.replace(key, sizeof("\"o_name\"") - 1, "\"legacy_name\"");
+
+	ResourceManager restored;
+	project::ResourceComponent(restored, catalog).LoadJson(document);
+	const auto first = restored.GetByName<Camera>("Camera");
+	const auto second = restored.GetByName<Camera>("Camera.001");
+	ASSERT_TRUE(first);
+	ASSERT_TRUE(second);
+	EXPECT_EQ(first->GetObjectID(), older->GetObjectID());
+	EXPECT_EQ(second->GetObjectID(), newer->GetObjectID());
+	EXPECT_EQ(first->o_name, "Camera");
+	EXPECT_EQ(second->o_name, "Camera.001");
 }
