@@ -196,6 +196,42 @@ TEST(SceneSerialize, FullRoundtrip)
 	EXPECT_EQ(selected->GetObjectID(), meshUid);
 }
 
+// A missing image can still be identified when the project is saved again.
+TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
+{
+	const BuiltInRenderData catalog;
+	TempFile first("test_scene_missing_image.neurus.json");
+	TempFile second("test_scene_missing_image_resaved.neurus.json");
+	Scene scene;
+	ResourceManager resources;
+	project::Project document;
+	document.Register<project::ResourceComponent>(resources, catalog);
+	document.Register<project::SceneComponent>(scene, resources);
+
+	auto environment = resources.Load<Environment>();
+	auto image = resources.Load<ImageData>();
+	const int imageUid = image->GetObjectID();
+	environment->SetEquirectData(image);
+	scene.UseEnvironment(environment);
+	ASSERT_TRUE(resources.Remove(imageUid));
+	document.Save(first.path);
+
+	auto checkMissingImage = [&]()
+	{
+		ASSERT_EQ(scene.env_list.size(), 1u);
+		const auto& restored = scene.env_list.begin()->second;
+		ASSERT_NE(restored, nullptr);
+		EXPECT_EQ(restored->GetEquirectData(), nullptr);
+		EXPECT_EQ(restored->o_imageDataId, imageUid);
+		EXPECT_FALSE(resources.Contains(imageUid));
+	};
+	document.Load(first.path);
+	checkMissingImage();
+	document.Save(second.path);
+	document.Load(second.path);
+	checkMissingImage();
+}
+
 // -----------------------------------------------------------------------
 // Legacy project file degrades gracefully
 // -----------------------------------------------------------------------

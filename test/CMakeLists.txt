@@ -253,7 +253,7 @@ if(WIN32 AND WINDEPLOYQT)
 			--no-system-d3d-compiler
 			--no-compiler-runtime
 			--verbose 0
-			$<TARGET_FILE_DIR:neurus_test>
+			$<TARGET_FILE:neurus_test>
 		COMMAND ${CMAKE_COMMAND} -E copy
 			"${_qt6_bin_dir}/$<IF:$<CONFIG:Debug>,Qt6Testd.dll,Qt6Test.dll>"
 			$<TARGET_FILE_DIR:neurus_test>
