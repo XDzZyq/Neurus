@@ -1310,8 +1310,7 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 			copy->using_sdf = mesh->using_sdf;
 			copy->is_closure = mesh->is_closure;
 			copy->o_material = mesh->o_material;
-			if (mesh->o_shader)
-				copy->SetObjShader(mesh->o_shader);
+			copy->o_shader = mesh->o_shader;
 			uid = copy->GetObjectID();
 		}
 		else

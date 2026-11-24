@@ -195,10 +195,6 @@ void restoreDependencies(ResourceManager& pool, const std::shared_ptr<UID>& reso
 			if (!mesh->o_mesh)
 				NEURUS_ERR("[ResourceComponent] stale MeshData UID " << mesh->o_meshDataId);
 		}
-		auto shader = mesh->o_shaderId == 0 ? nullptr : pool.Get<ShaderData>(mesh->o_shaderId);
-		if (shader && shader->GetType() != ShaderType::VERTEX)
-			shader.reset();
-		mesh->SetObjShader(shader);
 	}
 	else if (auto debug = std::dynamic_pointer_cast<DebugMesh>(resource); debug && debug->o_meshDataId != 0)
 	{
@@ -263,8 +259,10 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 			{
 				std::istringstream stream(*payload);
 				cereal::JSONInputArchive archive(stream);
+				ArchiveResourceRefs refs(archive);
 				const ArchiveUID identity(id);
 				archive(cereal::make_nvp("value", resource));
+				refs.Resolve(pool);
 			}
 			if (!resource || resource->GetObjectID() != id)
 				throw std::runtime_error("restored resource identity differs from its indexed UID");

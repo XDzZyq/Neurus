@@ -223,11 +223,11 @@ TEST_F(OperationSerializationTest, ShaderLinkOp_RoundTrip)
 
 	auto ctx = OperationTestAccess::Context(m_eventBus);
 	restored->Apply(ctx);
-	EXPECT_EQ(m_mesh->o_shaderId, shaderId); // link + shaderId survived
+	EXPECT_EQ(m_mesh->o_shader.id(), shaderId); // link + shaderId survived
 
 	restored->Inverse()->Apply(ctx);
-	EXPECT_EQ(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, 0);        // uid + flag survived
+	EXPECT_FALSE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), 0);        // uid + flag survived
 }
 
 TEST_F(OperationSerializationTest, CompositeOp_RoundTrip)

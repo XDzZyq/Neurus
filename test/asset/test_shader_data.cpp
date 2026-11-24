@@ -300,8 +300,8 @@ TEST(ShaderDataPersistence, FailedShaderLoadClearsMeshReferenceAndIsOmittedOnSav
 	EXPECT_FALSE(restored.Contains(brokenId));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(meshId);
 	ASSERT_NE(restoredMesh, nullptr);
-	EXPECT_EQ(restoredMesh->o_shader, nullptr);
-	EXPECT_EQ(restoredMesh->o_shaderId, 0);
+	EXPECT_FALSE(restoredMesh->o_shader);
+	EXPECT_EQ(restoredMesh->o_shader.id(), 0);
 	const auto restoredGood = restored.Get<neurus::ShaderData>(goodId);
 	ASSERT_NE(restoredGood, nullptr);
 	EXPECT_TRUE(restoredGood->IsValid());
@@ -342,8 +342,8 @@ TEST(ShaderDataPersistence, MissingShaderSourceDoesNotCreatePersistedFallback)
 	EXPECT_FALSE(restored.Contains(shaderId));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(meshId);
 	ASSERT_NE(restoredMesh, nullptr);
-	EXPECT_EQ(restoredMesh->o_shader, nullptr);
-	EXPECT_EQ(restoredMesh->o_shaderId, 0);
+	EXPECT_FALSE(restoredMesh->o_shader);
+	EXPECT_EQ(restoredMesh->o_shader.id(), 0);
 	int shaderCount = 0;
 	restored.ForEachUID([&shaderCount](const std::shared_ptr<neurus::UID>& resource)
 	{
@@ -510,8 +510,8 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 	{
 		const auto restoredMesh = restored.Get<neurus::Mesh>(id);
 		ASSERT_NE(restoredMesh, nullptr);
-		EXPECT_EQ(restoredMesh->o_shader, nullptr);
-		EXPECT_EQ(restoredMesh->o_shaderId, 0);
+		EXPECT_FALSE(restoredMesh->o_shader);
+		EXPECT_EQ(restoredMesh->o_shader.id(), 0);
 		EXPECT_EQ(restoredMesh->o_mesh, restored.Get<neurus::MeshData>(geometry->GetObjectID()));
 	}
 	loaded.Save(path.string());
@@ -544,8 +544,8 @@ TEST(ShaderDataPersistence, ComputeShaderRemainsPooledButCannotBindToAMesh)
 	EXPECT_TRUE(restored.Get<neurus::ComputeShader>(compute->GetObjectID())->IsValid());
 	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
 	ASSERT_NE(restoredMesh, nullptr);
-	EXPECT_EQ(restoredMesh->o_shader, nullptr);
-	EXPECT_EQ(restoredMesh->o_shaderId, 0);
+	EXPECT_FALSE(restoredMesh->o_shader);
+	EXPECT_EQ(restoredMesh->o_shader.id(), 0);
 }
 
 TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
@@ -575,8 +575,8 @@ TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
 	EXPECT_FALSE(restored.Contains(shader->GetObjectID()));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
 	ASSERT_NE(restoredMesh, nullptr);
-	EXPECT_EQ(restoredMesh->o_shader, nullptr);
-	EXPECT_EQ(restoredMesh->o_shaderId, 0);
+	EXPECT_FALSE(restoredMesh->o_shader);
+	EXPECT_EQ(restoredMesh->o_shader.id(), 0);
 }
 
 TEST(ShaderInterface, IndependentlyCompiledStagesWithMissingOutputAreRejected)
@@ -668,8 +668,8 @@ TEST(ShaderDataPersistence, IncompatibleCompiledStagesAreDiscardedOnLoad)
 	EXPECT_FALSE(restored.Contains(shader->GetObjectID()));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
 	ASSERT_NE(restoredMesh, nullptr);
-	EXPECT_EQ(restoredMesh->o_shader, nullptr);
-	EXPECT_EQ(restoredMesh->o_shaderId, 0);
+	EXPECT_FALSE(restoredMesh->o_shader);
+	EXPECT_EQ(restoredMesh->o_shader.id(), 0);
 	std::stringstream saved;
 	{
 		cereal::JSONOutputArchive archive(saved);

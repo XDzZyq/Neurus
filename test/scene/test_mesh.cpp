@@ -41,7 +41,7 @@ TEST(Mesh, DefaultConstruction)
 
 	EXPECT_EQ(mesh.o_material, nullptr);
 	EXPECT_EQ(mesh.o_mesh, nullptr);
-	EXPECT_EQ(mesh.o_shader, nullptr);
+	EXPECT_FALSE(mesh.o_shader);
 
 	EXPECT_TRUE(mesh.using_shadow);
 	EXPECT_TRUE(mesh.using_material);
@@ -133,10 +133,10 @@ TEST(Mesh, MaterialEditsOnAnUnassignedMeshAreSafe)
 TEST(Mesh, SetObjShader)
 {
 	Mesh mesh;
-	EXPECT_EQ(mesh.o_shader, nullptr);
+	EXPECT_FALSE(mesh.o_shader);
 
 	auto shader = std::make_shared<TestShader>();
 	mesh.SetObjShader(shader);
-	EXPECT_EQ(mesh.o_shader, shader);
+	EXPECT_EQ(mesh.o_shader.get(), shader.get());
 	EXPECT_EQ(mesh.GetShader(), shader.get());
 }

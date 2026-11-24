@@ -227,7 +227,7 @@ void OnObjectShaderAddRequested(const neurus::ObjectShaderAddRequested& e,
 	auto shader = ctx.resources.Get<neurus::ShaderData>(e.shaderId);
 	if (!mesh || !shader) return;
 
-	const int oldShaderId = mesh->o_shaderId;
+	const int oldShaderId = mesh->o_shader.id();
 	mesh->SetObjShader(shader);
 	ctx.ops.Submit(std::make_unique<neurus::ShaderReplaceOp>(
 		e.objectUid, oldShaderId, e.shaderId));
@@ -241,7 +241,7 @@ void OnShaderRemoveRequested(const neurus::ShaderRemoveRequested& e,
 	auto mesh = ctx.resources.Get<neurus::Mesh>(e.objectUid);
 	if (!mesh || !mesh->o_shader) return;
 
-	const int oldShaderId = mesh->o_shaderId;
+	const int oldShaderId = mesh->o_shader.id();
 	mesh->SetObjShader(nullptr);
 	ctx.ops.Submit(std::make_unique<neurus::ShaderReplaceOp>(
 		e.objectUid, oldShaderId, 0));

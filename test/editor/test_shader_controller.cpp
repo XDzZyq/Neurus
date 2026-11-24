@@ -474,18 +474,18 @@ TEST_F(ShaderCreateUndoTest, UndoDropsRedoRelinksSamePooledShader)
 	EXPECT_EQ(restored->Label(), "Create Shader");
 	m_operations.Submit(std::move(restored));
 
-	EXPECT_EQ(m_mesh->o_shaderId, shaderId);
+	EXPECT_EQ(m_mesh->o_shader.id(), shaderId);
 
 	// Undo: reference dropped, pool keeps the shader.
 	m_operations.Undo();
-	EXPECT_EQ(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, 0);
+	EXPECT_FALSE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), 0);
 	EXPECT_NE(m_pool.Get<RenderShader>(shaderId), nullptr);
 
 	// Redo: same pooled shader relinked (no new pooled object minted).
 	m_operations.Redo();
-	ASSERT_NE(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, shaderId);
+	ASSERT_TRUE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), shaderId);
 	EXPECT_EQ(m_mesh->o_shader->GetObjectID(), shaderId);
 }
 
@@ -499,8 +499,8 @@ TEST_F(ShaderCreateUndoTest, StaleMeshUidNoOps)
 	// the unresolved mesh is never linked.
 	EXPECT_TRUE(m_operations.CanUndo());
 	EXPECT_FALSE(m_operations.CanRedo());
-	EXPECT_EQ(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, 0);
+	EXPECT_FALSE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), 0);
 }
 
 // --- Compile emits ShaderCompiled (device-free: shaderc only, no GPU) --------

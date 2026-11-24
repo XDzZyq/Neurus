@@ -27,7 +27,11 @@ Mesh::~Mesh()
 void Mesh::SetObjShader(std::shared_ptr<ShaderData> shader)
 {
 	o_shader = std::move(shader);
-	o_shaderId = o_shader ? o_shader->GetObjectID() : 0;
+}
+
+bool Mesh::AcceptShader(const ShaderData& shader)
+{
+	return shader.GetType() == ShaderType::VERTEX && shader.IsValid();
 }
 
 const ShaderUnit* Mesh::GetShaderUnit(int shaderType) const

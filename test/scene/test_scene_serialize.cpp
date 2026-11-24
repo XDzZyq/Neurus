@@ -176,8 +176,8 @@ TEST(SceneSerialize, FullRoundtrip)
 	                      glm::vec3(0.0f, 0.0f, 1.0f)))
 	    << "the loaded camera's view matrix must match its loaded position/target";
 
-	EXPECT_EQ(loadedMesh->o_shaderId, shaderUid);
-	ASSERT_NE(loadedMesh->o_shader, nullptr);
+	EXPECT_EQ(loadedMesh->o_shader.id(), shaderUid);
+	ASSERT_TRUE(loadedMesh->o_shader);
 	EXPECT_EQ(loadedMesh->o_shader->GetObjectID(), shaderUid);
 	EXPECT_EQ(loadedMesh->o_shader->GetName(), "TestShader");
 

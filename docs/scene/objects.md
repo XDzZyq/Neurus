@@ -75,9 +75,9 @@ A scene containing zero cameras is a legal document, and deleting the last camer
 
 ## Pooled data references
 
-Scene objects never hold file paths. They reference pooled data resources through integer IDs, which the loader re-wires after deserialization:
+Scene objects reference pooled resources. The project stores those references as integer UIDs.
 
-- `Mesh` - `o_meshDataId` (pooled `MeshData`) and `o_shaderId` (pooled `Shader` / `RenderShader`); `o_mesh` and `o_shader` are the live pointers.
+- `Mesh` holds its geometry in `o_mesh` and saves its UID as `o_meshDataId`. Its shader field, `o_shader`, is a typed `ResourceRef`. Assigning a shader also determines the value of the project key `o_shaderId`. An empty shader reference selects the default pass shader.
 - `Environment` - `o_imageDataId` (pooled `ImageData`); `o_equirectData` is the live pointer.
 - `DebugMesh` - `o_meshDataId` (pooled `MeshData`); `o_mesh` is the live pointer.
 

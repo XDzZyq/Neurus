@@ -5,13 +5,17 @@
 #include "scene/Camera.hpp"
 #include "scene/Mesh.hpp"
 #include "shader/BuiltInRenderData.hpp"
+#include "shader/RenderShader.hpp"
+#include "shader/registrations/ShaderRegistration.hpp"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <set>
 #include <sstream>
 
@@ -20,6 +24,67 @@ namespace
 using namespace neurus;
 using Json = nlohmann::ordered_json;
 namespace fs = std::filesystem;
+
+TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
+{
+	const BuiltInRenderData catalog;
+	ResourceManager source;
+	const auto first = source.Load<Mesh>();
+	const auto second = source.Load<Mesh>();
+	const auto unbound = source.Load<Mesh>();
+	const auto shader = source.Load<RenderShader>("Shared",
+		ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.vert.glsl"),
+		ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.frag.glsl"));
+	ASSERT_TRUE(shader->ParseAndGenerate());
+	ASSERT_TRUE(shader->CompileToSpv());
+	first->o_shader = shader;
+	second->o_shader = shader;
+
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source, catalog).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	auto& records = document.at("m_resources").at("resources_");
+	const int shaderId = shader->GetObjectID();
+	auto shaderRecord = std::find_if(records.begin(), records.end(),
+		[&](const Json& entry) { return entry.at("key") == shaderId; });
+	ASSERT_NE(shaderRecord, records.end());
+	// Force forward references while preserving cereal's type-definition order
+	// among the three meshes.
+	std::rotate(shaderRecord, std::next(shaderRecord), records.end());
+	for (auto record = records.begin(); record != std::prev(records.end()); ++record)
+	{
+		const auto& data = record->at("value").at("ptr_wrapper").at("data");
+		if (record->at("key") == unbound->GetObjectID())
+			EXPECT_FALSE(data.contains("o_shaderId"));
+		else
+			EXPECT_EQ(data.at("o_shaderId"), shaderId);
+	}
+	const std::string saved = document.dump();
+	auto check = [&](const ResourceManager& pool)
+	{
+		const auto a = pool.Get<Mesh>(first->GetObjectID());
+		const auto b = pool.Get<Mesh>(second->GetObjectID());
+		const auto c = pool.Get<Mesh>(unbound->GetObjectID());
+		ASSERT_TRUE(a && b && c);
+		ASSERT_NE(a->GetShader(), nullptr);
+		EXPECT_EQ(a->GetShader(), b->GetShader());
+		EXPECT_EQ(a->GetShader(), pool.Get<RenderShader>(shaderId).get());
+		EXPECT_EQ(c->GetShader(), nullptr);
+	};
+	ResourceManager indexed;
+	project::ResourceComponent(indexed, catalog).LoadJson(saved);
+	EXPECT_FALSE(indexed.GetLive(shaderId));
+	check(indexed);
+
+	ResourceManager direct;
+	std::istringstream stream(saved);
+	cereal::JSONInputArchive archive(stream);
+	project::ResourceComponent(direct, catalog).Load(archive);
+	check(direct);
+}
 
 TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 {

@@ -41,6 +41,7 @@
 #include <cereal/types/unordered_map.hpp>
 
 #include "core/IResourceLookup.hpp"
+#include "asset/ResourceRef.hpp"
 #include "core/UID.hpp"
 
 namespace neurus
@@ -243,12 +244,14 @@ public:
 		else
 		{
 			decltype(resources_) restored;
+			ArchiveResourceRefs refs(ar);
 			ar(cereal::make_nvp("resources_", restored));
 			// Null pointers stand for runtime defaults and have no pool entry.
 			std::erase_if(restored, [](const auto& entry) { return !entry.second; });
 			Clear();
 			resources_.swap(restored);
 			RebuildTypeIndex();
+			refs.Resolve(*this);
 		}
 	}
 

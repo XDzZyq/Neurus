@@ -71,7 +71,9 @@ See [Scene Objects](../scene/objects.md) and [Serialization](../core/serializati
 
 `ResourceComponent` saves the explicit `ResourceManager` pool polymorphically. On open it expands cereal's archive-local type names, validates each record's identity, and registers an owned payload and loader under that UID. All indexed UIDs are reserved before any loader runs. Each loader reads one pointer through its own archive. The scene, viewport camera and active graph request their dependencies through the pool. Unrelated resources stay deferred until a caller requests or enumerates them. A malformed record leaves independent entries readable. Null entries and shaders whose content cannot restore or compile are excluded from the live project pool.
 
-Each object's loader wires `Mesh` to `MeshData` / `ShaderData`, `Environment` to `ImageData`, and `DebugMesh` to `MeshData`. Missing or unusable mesh shaders become null references with UID `0`, selecting cached renderer defaults without inserting replacement resources. Surviving names are restored deterministically by UID. See [UID and Resources](../core/uid-and-resources.md) and [Data Resources](data-resources.md).
+The loader connects meshes and debug meshes to their geometry and environments to their images. Surviving names are restored deterministically by UID. See [UID and Resources](../core/uid-and-resources.md) and [Data Resources](data-resources.md).
+
+`Mesh::o_shader` is a `ResourceRef`. Its single archive declaration, `archive::OptionalRef(ar, "o_shaderId", o_shader)`, writes the referenced UID on save and restores the shared object on load. An empty shader omits the key. Both readers collect bindings as cereal reads the object. The indexed reader resolves them before publishing that object. The direct cereal pool reader resolves them after all objects are registered, so a mesh can precede its shader in the file. Missing, invalid and compute shaders leave the field empty and select the renderer default.
 
 ### Saving a mixed pool
 

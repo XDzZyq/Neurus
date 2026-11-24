@@ -18,6 +18,8 @@
 #include <cereal/types/base_class.hpp>
 
 #include "core/Serialize.hpp"
+#include "asset/ResourceRef.hpp"
+#include "asset/data/ShaderData.hpp"
 #include "scene/ObjectID.hpp"
 #include "Transform.hpp"
 
@@ -28,7 +30,6 @@ namespace neurus
 
 class Material;
 class MeshData;
-class ShaderData;
 /**
  * @brief 3D mesh object representing renderable geometry with material and transform.
  *
@@ -38,6 +39,8 @@ class ShaderData;
  */
 class Mesh : public ObjectID, public Transform3D
 {
+	static bool AcceptShader(const ShaderData& shader);
+
 public:
 	/** @brief GOType tag for runtime type discrimination. */
 	static constexpr ObjectID::GOType Type = ObjectID::GOType::GO_MESH;
@@ -49,17 +52,14 @@ public:
 	std::shared_ptr<MeshData> o_mesh;
 
 	/// CPU-side shader for rendering this mesh (null = use default pass shader)
-	std::shared_ptr<ShaderData> o_shader;
+	ResourceRef<ShaderData, AcceptShader> o_shader;
 
 	bool using_shadow   = true;
 	bool using_material = true;
 	bool using_sdf      = true;
 	bool is_closure     = true;
 
-	/// Pooled-resource references (0 = none): the serialized forms of the
-	/// o_mesh / o_shader pointers, re-wired from these IDs on load.
 	int o_meshDataId = 0;      ///< Pooled MeshData UID (geometry source)
-	int o_shaderId   = 0;      ///< Pooled Shader (RenderShader) UID
 
 	Mesh();
 	/**
@@ -80,16 +80,7 @@ public:
 		// Missing shader references remain null and select the runtime built-in.
 		// Save omits that reference rather than materializing a fallback resource.
 		archive::Optional(ar, CEREAL_NVP(o_meshDataId));
-		if constexpr (Archive::is_saving::value)
-		{
-			if (o_shader)
-				ar(CEREAL_NVP(o_shaderId));
-		}
-		else
-		{
-			o_shaderId = 0;
-			archive::OptionalField(ar, CEREAL_NVP(o_shaderId));
-		}
+		archive::OptionalRef(ar, "o_shaderId", o_shader);
 		archive::Optional(ar, CEREAL_NVP(using_shadow), CEREAL_NVP(using_material),
 		                  CEREAL_NVP(using_sdf), CEREAL_NVP(is_closure));
 	}

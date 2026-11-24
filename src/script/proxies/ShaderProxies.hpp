@@ -77,10 +77,10 @@ struct ShaderSlotProxy : ProxyBase
 	}
 
 	/// @brief True when the mesh currently has a shader.
-	bool Attached() const { return ResolveMesh()->o_shaderId != 0; }
+	bool Attached() const { return ResolveMesh()->o_shader.id() != 0; }
 
 	/// @brief The attached shader's pooled UID, or 0.
-	int ShaderUid() const { return ResolveMesh()->o_shaderId; }
+	int ShaderUid() const { return ResolveMesh()->o_shader.id(); }
 };
 
 /// @brief A pooled RenderShader or ComputeShader bundle.

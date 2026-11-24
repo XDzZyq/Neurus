@@ -172,16 +172,16 @@ TEST_F(ShaderCreateTest, ReplaceIsOneUndoEntryAndRestoresTheOldShader)
 	ASSERT_TRUE(replacement);
 	EXPECT_EQ(replacement->GetFragPath(), "res/shaders/render/gbuffer.frag.glsl");
 
-	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shaderId,
+	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shader.id(),
 	          second.shaderUid);
 	EXPECT_TRUE(m_editor.GetResourceManager().Get<neurus::RenderShader>(first.shaderUid));
 
 	m_editor.GetEventQueue().Emit(neurus::UndoRequested{});
-	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shaderId,
+	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shader.id(),
 	          first.shaderUid);
 
 	m_editor.GetEventQueue().Emit(neurus::RedoRequested{});
-	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shaderId,
+	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shader.id(),
 	          second.shaderUid);
 }
 
@@ -222,7 +222,7 @@ TEST_F(ShaderCreateTest, RemoveDropsTheReferenceAndUndoRelinks)
 	EXPECT_TRUE(m_editor.GetResourceManager().Get<neurus::RenderShader>(created.shaderUid));
 
 	m_editor.GetEventQueue().Emit(neurus::UndoRequested{});
-	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shaderId,
+	EXPECT_EQ(m_editor.GetResourceManager().Get<neurus::Mesh>(GroundUid())->o_shader.id(),
 	          created.shaderUid);
 }
 
