@@ -34,7 +34,7 @@ public:
 	 * @brief Default constructor. Creates an invalid/empty ImageData.
 	 */
 	ImageData() = default;
-	explicit ImageData(RestoredId id) : UID(id) {}
+	using UID::UID;
 
 	/**
 	 * @brief Loads an image from a file path.

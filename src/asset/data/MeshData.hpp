@@ -37,7 +37,7 @@ public:
 	};
 
 	MeshData() = default;
-	explicit MeshData(RestoredId id) : UID(id) {}
+	using UID::UID;
 
 	/**
 	 * @brief Stores the source path and loads the OBJ immediately.

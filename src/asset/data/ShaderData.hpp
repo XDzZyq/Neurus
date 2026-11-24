@@ -39,7 +39,7 @@ public:
 	 * @param name Human-readable name (for logging and the pool registry).
 	 */
 	explicit ShaderData(std::string name = "");
-	explicit ShaderData(RestoredId id) : UID(id) {}
+	using UID::UID;
 	virtual ~ShaderData() = default;
 
 	// Non-copyable / non-movable (inherits UID semantics).

@@ -122,7 +122,7 @@ public:
 	 * @brief Constructs an ObjectID with default values.
 	 */
 	ObjectID() = default;
-	explicit ObjectID(RestoredId id) : UID(id) {}
+	using UID::UID;
 
 protected:
 	ObjectID(GOType type, const char* name) : o_name(name), o_type(type) {}

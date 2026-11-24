@@ -73,7 +73,7 @@ public:
 	using GraphT = Graph<CpuPort, CpuNode>;
 
 	RenderGraphData() = default;
-	explicit RenderGraphData(RestoredId id) : UID(id) {}
+	using UID::UID;
 	/// Builds the built-in scene graph from the declared pass ports.
 	explicit RenderGraphData(const IPortSource& ports);
 
