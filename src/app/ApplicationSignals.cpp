@@ -228,7 +228,6 @@ void Application::NewFrameSignals(neurus::UIEvents& uiEvents)
 	                     // A finished pick enters as a selection event, so this
 	                     // tick's Edit() handles it like any other UI event.
 	                     ResolvePendingPick();
-	                     FinishViewportResize();
 
 	                     // Process all enqueued events (camera, gizmo, ...). Every
 	                     // Post of this tick happens inside Edit(), before the
@@ -335,8 +334,15 @@ void Application::PanelSignals(neurus::UIEvents& uiEvents)
 	if (auto* viewport = app_mainWindow->GetPanel<neurus::Viewport>())
 	{
 		QObject::connect(viewport, &neurus::Viewport::resized,
-		                 [this](int width, int height) {
-		                     ResizeViewport(width, height);
+		                 [this](int width, int height, bool mouseDrag) {
+		                     ResizeViewport(width, height, mouseDrag ? ResizePhase::MouseDrag : ResizePhase::Preview);
+		                 });
+		QObject::connect(viewport, &neurus::Viewport::resizeSettled,
+		                 [this, viewport] {
+		                     if (viewport->size().isEmpty())
+		                         return;
+		                     const auto physical = app_editor->GetViewport().RenderExtent();
+		                     app_renderThread->PostResize(physical.x, physical.y);
 		                 });
 
 		// Forward mouse movement to Editor for camera orbit/pan/dolly

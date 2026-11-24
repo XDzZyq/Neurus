@@ -476,9 +476,7 @@ private:
 	std::optional<vk::Extent2D> r_pendingPreview;
 	ResizePhase r_resizePhase = ResizePhase::Settled;
 	bool r_swapchainMaintenanceEnabled = false;
-	int r_fixedResizePadding = -1;
 	uint32_t r_maxImageExtent = 0;
-	bool r_traceResize = false;
 
 	/**
 	 * @brief The scene tables one submitted frame drew with.

@@ -5,12 +5,14 @@
 #include "editor/Input.hpp"
 #include "ui/events/UIEvents.hpp"
 
+#include <QApplication>
 #include <QFocusEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QResizeEvent>
 #include <QWheelEvent>
+#include <QWindow>
 
 namespace neurus {
 
@@ -33,9 +35,52 @@ Viewport::Viewport(QWidget* parent)
 
 	// Deliver moves even when no button is held.
 	setMouseTracking(true);
+	qApp->installEventFilter(this);
+
+	m_resizeTimer.setSingleShot(true);
+	m_resizeTimer.setTimerType(Qt::PreciseTimer);
+	connect(&m_resizeTimer, &QTimer::timeout, this, [this] {
+		// The splitter receives the release even when its final size is unchanged.
+		if (m_resizeWithMouse && QApplication::mouseButtons().testFlag(Qt::LeftButton))
+			m_resizeTimer.start();
+		else
+			emit resizeSettled();
+	});
 }
 
 Viewport::~Viewport() = default;
+
+bool Viewport::eventFilter(QObject* watched, QEvent* event)
+{
+	if (event->type() == QEvent::Move && isVisible())
+	{
+		// At minimum size the splitter can translate a non-native dock ancestor
+		// without moving or resizing the viewport widget inside it. Keep its
+		// native child window at the corresponding position in the native parent.
+		auto* moved = qobject_cast<QWidget*>(watched);
+		if (moved && !moved->internalWinId() && moved->isAncestorOf(this))
+			SyncNativePosition();
+	}
+	return UIPanel::eventFilter(watched, event);
+}
+
+void Viewport::showEvent(QShowEvent* event)
+{
+	UIPanel::showEvent(event);
+	SyncNativePosition();
+}
+
+void Viewport::SyncNativePosition()
+{
+	auto* native = windowHandle();
+	auto* parent = nativeParentWidget();
+	if (!native || !parent || native->parent() != parent->windowHandle())
+		return;
+
+	const QPoint position = mapTo(parent, QPoint{});
+	if (native->position() != position)
+		native->setPosition(position);
+}
 
 void Viewport::Refresh(const UIContext& /*ctx*/)
 {
@@ -50,8 +95,14 @@ void Viewport::paintEvent(QPaintEvent* /*event*/)
 
 void Viewport::resizeEvent(QResizeEvent* event)
 {
-	// Publish the new dimensions so the swapchain can be recreated.
-	emit resized(event->size().width(), event->size().height());
+	if (!event->size().isEmpty())
+	{
+		m_resizeWithMouse = QApplication::mouseButtons().testFlag(Qt::LeftButton);
+		constexpr int kReleasePollMs = 16;
+		constexpr int kResizeQuietMs = 120;
+		m_resizeTimer.start(m_resizeWithMouse ? kReleasePollMs : kResizeQuietMs);
+		emit resized(event->size().width(), event->size().height(), m_resizeWithMouse);
+	}
 
 	QWidget::resizeEvent(event);
 }

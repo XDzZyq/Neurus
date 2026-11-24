@@ -45,11 +45,9 @@
 #include "scene/Scene.hpp"
 
 #include "core/Log.hpp"
-#include "ResizeProbe.hpp"
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
 #include <optional>
 #include <stdexcept>
 #include <unordered_map>
@@ -126,12 +124,8 @@ void DeferredRenderer::InitializePipeline(std::shared_ptr<const BuiltInRenderDat
 
 	const vk::Extent2D extent = r_target->Extent();
 	if (r_target->Presents())
-	{
-		r_traceResize = resize_probe::Enabled();
-		r_fixedResizePadding = resize_probe::FixedPadding();
 		r_maxImageExtent = physicalDevice.getProperties().limits.maxImageDimension2D;
-	}
-	r_sceneExtent = sceneCapacity(extent);
+	r_sceneExtent = extent;
 
 	// --- 0. Create the optional GPU timestamp query pool (no-op if unsupported) ---
 	r_profiler.Initialize(device, physicalDevice, queueFamilyIndex, kMaxFramesInFlight);
@@ -392,7 +386,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 			resizeOutput(size.width, size.height);
 			size = r_target->Extent();
 		}
-		if (r_resizePhase == ResizePhase::MouseDrag && r_fixedResizePadding < 0)
+		if (r_resizePhase == ResizePhase::MouseDrag)
 			resizeScene(size);
 	}
 
@@ -509,9 +503,7 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	// --- Record and submit (reuse pre-allocated command buffer) ---
 	vk::CommandBuffer cmdBufRaw = *r_commandBuffers[imageIndex];
 
-	const auto recordStart = resize_probe::Timestamp(r_traceResize);
 	recordFrame(r_commandBuffers[imageIndex], imageIndex, r_sceneExtent, ctx, work);
-	const auto recorded = resize_probe::Timestamp(r_traceResize);
 
 	// --- Profiling: back-fill resolved GPU ms now that passes are repopulated ---
 	// recordFrame just rewrote r_frameProfile.passes with gpuMs=0; match the
@@ -628,15 +620,6 @@ const FrameProfile& DeferredRenderer::DrawFrame(const RenderContext& ctx)
 	if (presents)
 		r_lastImageIndex = imageIndex;
 	r_pendingPreview.reset();
-	if (r_traceResize)
-	{
-		const auto presented = std::chrono::steady_clock::now();
-		using Milliseconds = std::chrono::duration<double, std::milli>;
-		// GPU timestamps resolve from the previous frame in flight.
-		std::fprintf(stdout, "resize_frame %u %.3f %.3f %.3f %.3f\n", r_targetGeneration,
-			Milliseconds(presented.time_since_epoch()).count(), Milliseconds(recorded - recordStart).count(),
-			Milliseconds(presented - recorded).count(), r_gpuResolved ? r_profiler.FrameGpuMs() : -1.0);
-	}
 	r_drewNothing = false;
 	r_overlaysDirty = false;
 	r_currentFrame = (r_currentFrame + 1) % kMaxFramesInFlight;
@@ -841,25 +824,10 @@ void DeferredRenderer::HandleResize(uint32_t width, uint32_t height, ResizePhase
 
 void DeferredRenderer::resizeOutput(uint32_t width, uint32_t height)
 {
-	const auto start = resize_probe::Timestamp(r_traceResize);
 	const uint32_t oldGen = r_target->Generation();
 	r_target->Recreate(width, height);
-	const auto recreated = resize_probe::Timestamp(r_traceResize);
 	if (r_target->Generation() != oldGen)
-	{
-		const vk::Extent2D previous = r_sceneExtent;
 		recreateTarget();
-		if (r_traceResize)
-		{
-			using Milliseconds = std::chrono::duration<double, std::milli>;
-			std::fprintf(stdout, "resize_target %u %u %u %u %u %d %.3f %.3f %.3f\n", r_targetGeneration,
-				GetExtent().width, GetExtent().height, r_sceneExtent.width, r_sceneExtent.height,
-				previous != r_sceneExtent,
-				Milliseconds(recreated - start).count(),
-				Milliseconds(std::chrono::steady_clock::now() - recreated).count(),
-				Milliseconds(start.time_since_epoch()).count());
-		}
-	}
 }
 
 void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurface)
@@ -903,30 +871,18 @@ void DeferredRenderer::HandleSurfaceChange(const vk::raii::SurfaceKHR& newSurfac
 
 vk::Extent2D DeferredRenderer::sceneCapacity(vk::Extent2D viewport) const
 {
-	if (r_fixedResizePadding < 0 && r_resizePhase == ResizePhase::MouseDrag)
-	{
-		// Shrinking and reversing a drag reuse the high-water mark until release.
-		const auto grow = [this](uint32_t size, uint32_t capacity) {
-			constexpr uint32_t kDragPadding = 64;
-			if (size <= capacity)
-				return capacity;
-			size = std::min(size, r_maxImageExtent);
-			return size + std::min(kDragPadding, r_maxImageExtent - size);
-		};
-		return {grow(viewport.width, r_sceneExtent.width), grow(viewport.height, r_sceneExtent.height)};
-	}
-	if (r_fixedResizePadding <= 0)
+	if (r_resizePhase != ResizePhase::MouseDrag)
 		return viewport;
 
-	// Keep a full band of slack after growth. Shrink only after leaving a
-	// second band, so reversing direction near an edge reuses the allocation.
-	const auto padding = static_cast<uint32_t>(r_fixedResizePadding);
-	const auto fit = [this, padding](uint32_t size, uint32_t capacity) {
-		if (size <= capacity && capacity - size <= 2 * padding)
+	// Shrinking and reversing a drag reuse the high-water mark until release.
+	const auto grow = [this](uint32_t size, uint32_t capacity) {
+		constexpr uint32_t kDragPadding = 64;
+		if (size <= capacity)
 			return capacity;
-		return std::min(size + padding, r_maxImageExtent);
+		size = std::min(size, r_maxImageExtent);
+		return size + std::min(kDragPadding, r_maxImageExtent - size);
 	};
-	return {fit(viewport.width, r_sceneExtent.width), fit(viewport.height, r_sceneExtent.height)};
+	return {grow(viewport.width, r_sceneExtent.width), grow(viewport.height, r_sceneExtent.height)};
 }
 
 void DeferredRenderer::resizeScene(vk::Extent2D viewport)
@@ -936,13 +892,7 @@ void DeferredRenderer::resizeScene(vk::Extent2D viewport)
 	// on first GetAttachment() call in the next frame.
 	const vk::Extent2D capacity = sceneCapacity(viewport);
 	if (capacity != r_sceneExtent)
-	{
 		r_renderCache->CleanScreenSpace();
-		if (r_traceResize)
-			std::fprintf(stdout, "scene_capacity %s %u %u %u %u\n",
-				r_resizePhase == ResizePhase::MouseDrag ? "drag" : "settled",
-				viewport.width, viewport.height, capacity.width, capacity.height);
-	}
 	r_sceneExtent = capacity;
 
 	// Resizing can change the camera projection even when the old images fit.

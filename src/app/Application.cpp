@@ -291,7 +291,7 @@ int Application::Run()
 	}
 
 	app_mainWindow->show();
-	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight());
+	ResizeViewport(app_mainWindow->getViewportWidth(), app_mainWindow->getViewportHeight(), ResizePhase::Settled);
 
 	// show() can normalise the window geometry after the load-time rebase (for
 	// example when the saved layout came from another screen). Rebase again on
@@ -411,29 +411,20 @@ bool Application::InitRenderer()
 	return true;
 }
 
-void Application::ResizeViewport(int width, int height)
+void Application::ResizeViewport(int width, int height, ResizePhase phase)
 {
 	if (width <= 0 || height <= 0)
 		return;
-	const bool preview = app_renderTimer->isActive();
-	if (preview)
-	{
-		app_lastResize = std::chrono::steady_clock::now();
-		app_resizeWithMouse = QApplication::mouseButtons().testFlag(Qt::LeftButton);
-	}
 	// AppKit must see the resize on the main thread; the swapchain itself is
 	// rebuilt on the render thread.
 	neurus::platform::OnResize(
 		app_mainWindow->getViewportHwnd(),
 		static_cast<uint32_t>(width), static_cast<uint32_t>(height));
 	const auto physical = UpdateViewportCamera(width, height);
-	auto phase = neurus::ResizePhase::Settled;
-	if (preview)
-		phase = app_resizeWithMouse ? neurus::ResizePhase::MouseDrag : neurus::ResizePhase::Preview;
 	app_renderThread->PostResize(physical.width, physical.height, phase);
 	// Native resizing can delay the next Qt frame tick. Publish the camera
 	// here so the render thread can draw the new view during the drag.
-	if (preview)
+	if (phase != ResizePhase::Settled)
 		app_renderThread->Publish(app_editor->BuildSnapshot());
 }
 
@@ -467,29 +458,10 @@ vk::Extent2D Application::UpdateViewportCamera(int width, int height)
 	return physical;
 }
 
-void Application::FinishViewportResize()
-{
-	if (!app_lastResize)
-		return;
-	// ADS handles a mouse release even if the splitter finished at the same
-	// size. For keyboard, native-window and programmatic resizes there may be
-	// no release event, so finish after a short quiet interval.
-	if (app_resizeWithMouse ? QApplication::mouseButtons().testFlag(Qt::LeftButton)
-	                        : std::chrono::steady_clock::now() - *app_lastResize < std::chrono::milliseconds(120))
-		return;
-	app_lastResize.reset();
-	const int width = app_mainWindow->getViewportWidth();
-	const int height = app_mainWindow->getViewportHeight();
-	if (width > 0 && height > 0)
-	{
-		const auto physical = app_editor->GetViewport().RenderExtent();
-		app_renderThread->PostResize(physical.x, physical.y);
-	}
-}
-
 void Application::ReconcileRenderExtent(const vk::Extent2D& actual)
 {
-	if (app_lastResize || !app_editor || actual.width == 0 || actual.height == 0)
+	const auto* panel = app_mainWindow->GetPanel<Viewport>();
+	if ((panel && panel->IsResizing()) || !app_editor || actual.width == 0 || actual.height == 0)
 	{
 		return;
 	}

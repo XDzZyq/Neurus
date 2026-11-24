@@ -98,7 +98,7 @@ public:
 	uint32_t generation() const { return r_generation; }
 
 private:
-	void recreate(uint32_t width, uint32_t height, const char* reason);
+	void recreate(uint32_t width, uint32_t height, bool force);
 	bool supportsStretch(vk::PresentModeKHR mode, vk::Extent2D extent) const;
 
 	/**

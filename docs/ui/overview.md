@@ -58,7 +58,7 @@ Docks that host a `UIPanel` are created through `UIManager::MakeDock()`, which t
 
 ## Viewport embedding
 
-The `Viewport` is a native `QWidget` that gives the Application a window handle for Vulkan presentation. It bypasses Qt's raster backing store and emits `exposed()` from `paintEvent()` so the renderer can redraw a converged frame. Its `resized(int, int)` signal carries logical dimensions. `UIManager::getViewportHwnd()`, `getViewportWidth()` and `getViewportHeight()` expose the handle and dimensions to the Application.
+The `Viewport` is a native `QWidget` that gives the Application a window handle for Vulkan presentation. It bypasses Qt's raster backing store and emits `exposed()` from `paintEvent()` so the renderer can redraw a converged frame. Its `resized(width, height, mouseDrag)` signal carries logical dimensions and drag state. The widget emits `resizeSettled()` when the gesture ends. `UIManager::getViewportHwnd()`, `getViewportWidth()` and `getViewportHeight()` expose the handle and dimensions to the Application.
 
 `CreateDocks()` requests surface recreation through `UIEvents::requestUIRecreation()` with the new native handle.
 

@@ -3,6 +3,7 @@
 #include "platform/NativeWindow.hpp"
 #include "UIPanel.hpp"
 
+#include <QTimer>
 #include <glm/glm.hpp>
 
 #include "editor/events/InputEvents.hpp"
@@ -21,7 +22,7 @@ namespace neurus {
  *
  * Sets WA_NativeWindow and WA_OpaquePaintEvent so the widget has a dedicated
  * native window handle and Qt draws no background over the rendered content.
- * The widget is focusable (Qt::StrongFocus) and emits resized(int, int) when
+ * The widget is focusable (Qt::StrongFocus) and emits resized when
  * its dimensions change.
  *
  * Mouse and keyboard events are translated to typed event structs and emitted
@@ -66,13 +67,19 @@ public:
 	 */
 	NativeWindowHandle hwnd() const { return reinterpret_cast<NativeWindowHandle>(winId()); }
 
+	bool IsResizing() const { return m_resizeTimer.isActive(); }
+
 signals:
 	/**
 	 * @brief Emitted when the widget is resized.
 	 * @param width New width in pixels.
 	 * @param height New height in pixels.
+	 * @param mouseDrag Whether the left mouse button is held.
 	 */
-	void resized(int width, int height);
+	void resized(int width, int height, bool mouseDrag);
+
+	/** @brief Emitted on splitter release or after a quiet buttonless resize. */
+	void resizeSettled();
 
 	/**
 	 * @brief Emitted when the mouse cursor moves over the viewport.
@@ -136,6 +143,9 @@ signals:
 	void exposed();
 
 protected:
+	bool eventFilter(QObject* watched, QEvent* event) override;
+	void showEvent(QShowEvent* event) override;
+
 	/**
 	 * @brief Override to prevent Qt from drawing a background.
 	 * @param event The paint event (ignored).
@@ -211,6 +221,9 @@ protected:
 	void wheelEvent(QWheelEvent* event) override;
 
 private:
+	void SyncNativePosition();
+	QTimer m_resizeTimer;
+	bool m_resizeWithMouse = false;
 	QPointF m_lastPos;        ///< Last mouse position for delta computation.
 	bool    m_leftHeld = false;   ///< Left mouse button held.
 	bool    m_middleHeld = false; ///< Middle mouse button held.

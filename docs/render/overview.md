@@ -111,8 +111,6 @@ Once progressive accumulation converges the thread stops drawing on its own: it 
 
 Each resize updates the active camera's aspect ratio and publishes a snapshot from the resize handler. The render thread draws one scene sample for the latest size. While the left mouse button is held, a growing dimension that exceeds the current scene allocation gets 64 extra physical pixels, limited by the device's maximum image dimension. Shrinking, reversing direction and pausing with the button held reuse the allocation. The final blit and presentation scale the sample to the drawable, so the horizontal field of view follows the window while the vertical lens angle stays fixed. On release the renderer fits the scene attachments to the actual drawable and resumes temporal accumulation. Resizes without a mouse gesture reuse the current attachments during motion and settle after 120 ms of quiet.
 
-For local measurements, set `NEURUS_RESIZE_PROBE=adaptive` before launching the Qt application to trace the default policy. Numeric values select the fixed-padding benchmark controls. Zero uses exact sizing at rest. A positive value reserves that many extra physical pixels on each axis when the settled scene target needs to grow or shrink. These controls hold the scene allocation throughout a drag. The renderer shades the full allocation. Trace output records target capacities, swapchain replacements, host frame timings and the most recently resolved GPU frame duration in milliseconds.
-
 ### Output target (`OutputTarget`)
 
 `DeferredRenderer` acquires and presents through an `OutputTarget`, not through

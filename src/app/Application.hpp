@@ -92,11 +92,8 @@ private:
 	void InitEditor();
 	void InitScripting();
 
-	void ResizeViewport(int width, int height);
+	void ResizeViewport(int width, int height, ResizePhase phase);
 	vk::Extent2D UpdateViewportCamera(int width, int height);
-	void FinishViewportResize();
-	std::optional<std::chrono::steady_clock::time_point> app_lastResize;
-	bool app_resizeWithMouse = false;
 
 	/**
 	 * @brief Aligns the viewport's physical extent with the swapchain's.

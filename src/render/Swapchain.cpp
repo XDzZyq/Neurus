@@ -1,11 +1,9 @@
 #include "Swapchain.hpp"
 
 #include "SharedQueue.hpp"
-#include "ResizeProbe.hpp"
 #include "core/Log.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <stdexcept>
 
 namespace neurus {
@@ -91,7 +89,7 @@ Swapchain::~Swapchain()
 
 void Swapchain::Recreate(uint32_t width, uint32_t height)
 {
-	recreate(width, height, nullptr);
+	recreate(width, height, false);
 }
 
 bool Swapchain::supportsStretch(vk::PresentModeKHR mode, vk::Extent2D extent) const
@@ -108,11 +106,8 @@ bool Swapchain::supportsStretch(vk::PresentModeKHR mode, vk::Extent2D extent) co
 	       extent.height >= scaling.minScaledImageExtent.height && extent.height <= scaling.maxScaledImageExtent.height;
 }
 
-void Swapchain::recreate(uint32_t width, uint32_t height, const char* reason)
+void Swapchain::recreate(uint32_t width, uint32_t height, bool force)
 {
-	const bool trace = resize_probe::Enabled();
-	const auto start = resize_probe::Timestamp(trace);
-	const auto previous = r_extent;
 	r_recreateWidth = width;
 	r_recreateHeight = height;
 
@@ -140,7 +135,7 @@ void Swapchain::recreate(uint32_t width, uint32_t height, const char* reason)
 	const auto newExtent = chooseExtent(capabilities, width, height);
 	// An acquire or present may have already recovered at this exact size.
 	// Vulkan-requested rebuilds still run even when the dimensions match.
-	if (!reason && newExtent == r_extent)
+	if (!force && newExtent == r_extent)
 		return;
 
 	vk::PresentModeKHR presentMode;
@@ -160,9 +155,7 @@ void Swapchain::recreate(uint32_t width, uint32_t height, const char* reason)
 	// while the frame just presented is still in flight: the old swapchain may
 	// only go once every queue operation on its images has completed, and
 	// MoltenVK's present-completion handler still dereferences it until then.
-	const auto waitStart = resize_probe::Timestamp(trace);
 	r_presentQueue->WaitIdle();
-	const auto waitEnd = resize_probe::Timestamp(trace);
 	r_imageViews.clear();
 	r_swapchain.reset();
 
@@ -209,14 +202,6 @@ void Swapchain::recreate(uint32_t width, uint32_t height, const char* reason)
 	r_imageViews = createImageViews(r_device, *r_swapchain, r_format);
 
 	++r_generation;
-	if (trace)
-	{
-		using resize_probe::Milliseconds;
-		std::fprintf(stdout, "swapchain_rebuild %u %s %u %u %u %u %.3f %.3f %.3f\n",
-			r_generation, reason ? reason : "resize", previous.width, previous.height, r_extent.width, r_extent.height,
-			Milliseconds(start.time_since_epoch()).count(), Milliseconds(waitEnd - waitStart).count(),
-			Milliseconds(resize_probe::Clock::now() - start).count());
-	}
 }
 
 std::optional<uint32_t> Swapchain::AcquireNextImage(const vk::raii::Semaphore& signalSemaphore)
@@ -239,7 +224,7 @@ std::optional<uint32_t> Swapchain::AcquireNextImage(const vk::raii::Semaphore& s
 
 		if (result == vk::Result::eErrorOutOfDateKHR)
 		{
-			recreate(r_recreateWidth, r_recreateHeight, "acquire_out_of_date");
+			recreate(r_recreateWidth, r_recreateHeight, true);
 			return std::nullopt;
 		}
 
@@ -260,7 +245,7 @@ std::optional<uint32_t> Swapchain::AcquireNextImage(const vk::raii::Semaphore& s
 	catch (const vk::OutOfDateKHRError&)
 	{
 		// vk::raii wrapper may throw instead of returning the error result
-		recreate(r_recreateWidth, r_recreateHeight, "acquire_out_of_date");
+		recreate(r_recreateWidth, r_recreateHeight, true);
 		return std::nullopt;
 	}
 	catch (const vk::SurfaceLostKHRError&)
@@ -291,13 +276,12 @@ void Swapchain::Present(const vk::raii::Semaphore& waitSemaphore, uint32_t image
 		if (result == vk::Result::eErrorOutOfDateKHR ||
 		    (result == vk::Result::eSuboptimalKHR && !r_scalesToSurface))
 		{
-			recreate(r_recreateWidth, r_recreateHeight,
-			         result == vk::Result::eSuboptimalKHR ? "present_suboptimal" : "present_out_of_date");
+			recreate(r_recreateWidth, r_recreateHeight, true);
 		}
 	}
 	catch (const vk::OutOfDateKHRError&)
 	{
-		recreate(r_recreateWidth, r_recreateHeight, "present_out_of_date");
+		recreate(r_recreateWidth, r_recreateHeight, true);
 	}
 	catch (const vk::SurfaceLostKHRError&)
 	{

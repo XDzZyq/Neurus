@@ -8,14 +8,12 @@
  */
 
 #include "RenderThread.hpp"
-#include "ResizeProbe.hpp"
 
 #include "render_api/RenderContext.hpp"
 
 #include "core/Log.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <exception>
 #include <stdexcept>
 #include <utility>
@@ -90,11 +88,6 @@ void RenderThread::Publish(RenderFrameSnapshot&& snapshot)
 	}
 
 	m_mailbox.Publish(std::move(frame));
-	if (resize_probe::Enabled())
-	{
-		const auto now = resize_probe::Clock::now().time_since_epoch();
-		std::fprintf(stdout, "resize_publish %.3f\n", resize_probe::Milliseconds(now).count());
-	}
 }
 
 void RenderThread::Post(RenderRequest&& request)
