@@ -21,7 +21,7 @@ The dock title is stored as a translation *key* (`nameKey`, default derived from
 `Viewport` (`src/ui/panels/Viewport.hpp`) is a `QWidget` that exposes a native window handle, which the Application uses to create the surface:
 
 - Uses `WA_NativeWindow` for its Vulkan surface and `WA_DontCreateNativeAncestors` to keep the surrounding dock containers in Qt's backing store. Splitter motion then needs to resize only the viewport's native child window.
-- When a splitter moves a dock at its minimum size, the viewport synchronizes its native child window's position with the dock layout, including moves that leave the viewport dimensions unchanged.
+- When a splitter moves a dock at its minimum size, the viewport synchronizes its native child window's position with the dock layout. If the dock is shrinking and the current native window would extend past its edge, Qt's layout applies the new position and size together.
 - Uses `WA_PaintOnScreen` with a null Qt paint engine so dock repaints bypass the viewport's raster backing store. Its `paintEvent()` emits `exposed()` to request a Vulkan redraw.
 - Is focusable (`Qt::StrongFocus`) to receive keyboard input.
 - Owns no Vulkan resources. `hwnd()` returns the native handle; the Application
