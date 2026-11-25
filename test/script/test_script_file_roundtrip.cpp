@@ -27,8 +27,8 @@
 #include "glm/glm.hpp"
 
 #include "asset/Project.hpp"
-#include "editor/project/EditorComponent.hpp"
-#include "editor/project/HistoryComponent.hpp"
+#include "editor/components/EditorComponent.hpp"
+#include "editor/components/HistoryComponent.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/data/render_graph/RenderGraphRecord.hpp"

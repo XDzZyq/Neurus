@@ -30,7 +30,7 @@
 #include "editor/events/EventBus.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/Input.hpp"
-#include "editor/project/HistoryComponent.hpp"
+#include "editor/components/HistoryComponent.hpp"
 #include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/data/MeshData.hpp"

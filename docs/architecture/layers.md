@@ -97,7 +97,7 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
   `RenderRequest`s posted through a `RenderRequestSink*`
 - Must NOT directly manipulate GPU resources
 - Owns the project adapters for undo history and viewport state under
-  `editor/project/`; asset persistence does not include Editor internals
+  `editor/components/`; asset persistence does not include Editor internals
 - Controller registry pattern: `Editor::RegisterController<T>()` creates the
   controller, calls `Init(ed_ctx)` and stores it in `ed_controllers`
 - Event-driven controller communication: a UI signal reaches

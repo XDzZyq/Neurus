@@ -204,7 +204,7 @@ duplicate pooled shader). Compile stays non-undoable.
 ## Persisting the history stacks
 
 The undo/redo stacks are saved into the project file via `HistoryComponent`
-(`src/editor/project/HistoryComponent.hpp/cpp`), a `project::Serializable` adapter
+(`src/editor/components/HistoryComponent.hpp/cpp`), a `project::Serializable` adapter
 keyed `"m_history"` that wraps `OperationManager`. `Save` writes the `undo`/`redo`
 vectors of `std::unique_ptr<Operation>`; `Load` decodes them and calls
 `OperationManager::RestoreHistory`. `Application::BuildProject` registers it last,

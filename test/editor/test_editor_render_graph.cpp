@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "editor/Editor.hpp"
-#include "editor/project/HistoryComponent.hpp"
+#include "editor/components/HistoryComponent.hpp"
 #include "asset/ResourceManager.hpp"
 #include "editor/RenderManager.hpp"
 #include "asset/components/GraphComponent.hpp"

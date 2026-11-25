@@ -3,7 +3,7 @@
  * @brief Editor viewport view-state (viewport camera UID) persistence.
  */
 
-#include "editor/project/EditorComponent.hpp"
+#include "editor/components/EditorComponent.hpp"
 
 #include "core/Log.hpp"
 #include "core/Serialize.hpp"

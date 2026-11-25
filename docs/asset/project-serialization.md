@@ -55,7 +55,7 @@ flowchart LR
 
 `ResourceComponent` is registered **first** so every pooled UID is indexed before the scene or active graph requests dependencies. `HistoryComponent` and `EditorComponent` are registered last, in that order, so legacy files without their nodes load cleanly: `HistoryComponent` clears the stacks instead of throwing, and `EditorComponent` leaves its uid at `0`, which makes the finish-load step mint a fresh viewport camera.
 
-Components borrow their owners' data or shared-pointer slots; the serializer does not own application state. Application composition force-links concrete shader registrations. The Editor-owned history and viewport adapters live under `src/editor/project/`, keeping Asset independent of Editor implementation.
+Components borrow their owners' data or shared-pointer slots; the serializer does not own application state. Application composition force-links concrete shader registrations. The Editor-owned history and viewport adapters live under `src/editor/components/`, keeping Asset independent of Editor implementation.
 
 ## Scene persistence
 

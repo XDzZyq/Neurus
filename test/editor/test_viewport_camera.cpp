@@ -43,7 +43,7 @@
 #include <string>
 
 #include "asset/Project.hpp"
-#include "editor/project/EditorComponent.hpp"
+#include "editor/components/EditorComponent.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "editor/RenderManager.hpp"
 #include "asset/components/ResourceComponent.hpp"

@@ -38,7 +38,7 @@ responsibility shared by callers, and keep it with the family that uses it.
 | Editor events | Group related typed payloads in a domain header such as [SceneEvents.hpp](../../src/editor/events/SceneEvents.hpp). Plain event structs need no base class. |
 | Undo operations | [Operation.hpp](../../src/editor/operations/Operation.hpp) defines the replay contract. Group related concrete edits in a domain header such as [SceneOperations.hpp](../../src/editor/operations/SceneOperations.hpp). |
 | CLI commands | [SubCommand.hpp](../../src/cli/SubCommand.hpp) defines the CLI interface. Each command family has a sibling implementation under `src/cli/subcommands/`, such as [SceneCommand.hpp](../../src/cli/subcommands/SceneCommand.hpp). |
-| Project components | Keep persistence with the layer that owns the data. Asset components include [SceneComponent.hpp](../../src/asset/components/SceneComponent.hpp). Editor-owned history lives in [HistoryComponent.hpp](../../src/editor/project/HistoryComponent.hpp). |
+| Project components | Keep persistence with the layer that owns the data. Asset components include [SceneComponent.hpp](../../src/asset/components/SceneComponent.hpp). Editor-owned history lives in [HistoryComponent.hpp](../../src/editor/components/HistoryComponent.hpp). |
 | Type registrations | Add serialization registrations to the owning family's `registrations/` directory. For an undo operation, extend [OperationRegistration.cpp](../../src/editor/operations/registrations/OperationRegistration.cpp). |
 
 ## Naming
@@ -114,7 +114,7 @@ responsibility shared by callers, and keep it with the family that uses it.
 - Editor light requests carry scene-light snapshots; GPU layout conversion
   belongs to the Renderer. Never include UploadManager just to prepare a request.
 - Asset and scene targets must not link Renderer. Editor-specific persistence
-  adapters live under `editor/project/`; Qt UIEvents and input translations live
+  adapters live under `editor/components/`; Qt UIEvents and input translations live
   under `ui/`.
 - Run `python scripts/check_layer_boundaries.py` when changing layer includes;
   `neurus_cpu_test` verifies CPU document/shader/Editor behavior without GPU or
