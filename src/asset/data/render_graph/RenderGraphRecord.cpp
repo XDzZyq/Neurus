@@ -70,7 +70,7 @@ RenderGraphNodeRecord ToRecord(const NodeType& node)
 	RenderGraphNodeRecord saved;
 	saved.name      = node.name;
 	saved.pass      = node.data.pass;
-	saved.shader    = node.data.shader.IdentityOnly();
+	saved.shaderUid = node.data.shader.identity();
 	saved.x         = node.data.x;
 	saved.y         = node.data.y;
 
@@ -117,6 +117,7 @@ namespace
 {
 std::unique_ptr<NodeType> RestoreNode(
 	const RenderGraphNodeRecord& saved, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources,
 	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
 {
 	auto node = std::make_unique<NodeType>();
@@ -124,8 +125,12 @@ std::unique_ptr<NodeType> RestoreNode(
 	node->data.pass = saved.pass;
 	node->data.x = saved.x;
 	node->data.y = saved.y;
-	if (saved.shader && saved.shader->IsValid() && (!acceptsShader || acceptsShader(saved.pass, *saved.shader)))
-		node->data.shader = saved.shader;
+	if (resources && saved.shaderUid)
+	{
+		auto shader = resources->Get<const ShaderData>(*saved.shaderUid);
+		if (shader && shader->IsValid() && (!acceptsShader || acceptsShader(saved.pass, *shader)))
+			node->data.shader = std::move(shader);
+	}
 
 	for (const auto& port : saved.outputs)
 		node->AddOutput(port.name)->data = {port.name, PortDirection::Output, port.type,
@@ -145,6 +150,7 @@ struct GraphReadServices final : ResourceReadServices
 };
 
 void RestoreTopology(RenderGraphData& graph, const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources,
 	const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
 {
 	graph.nodes.reserve(record.nodes.size());
@@ -154,8 +160,8 @@ void RestoreTopology(RenderGraphData& graph, const RenderGraphRecord& record, co
 	{
 		if (FindNode(graph, saved.name))
 			problems.push_back("duplicate node name '" + saved.name + "'");
-		auto* node = graph.AddNode(RestoreNode(saved, ports, problems, acceptsShader));
-		if (saved.shader.HasIdentity() && !node->data.shader)
+		auto* node = graph.AddNode(RestoreNode(saved, ports, problems, resources, acceptsShader));
+		if (saved.shaderUid && !node->data.shader)
 			useFallback.insert(node);
 	}
 
@@ -234,16 +240,15 @@ std::unique_ptr<NodeType> FromRecord(
 	const RenderGraphNodeRecord& saved, const IPortSource& ports, std::vector<std::string>& problems,
 	const IResourceLookup* resources, const std::function<bool(const std::string&, const ShaderData&)>& acceptsShader)
 {
-	auto record = saved;
-	if (resources) record.shader.Resolve(*resources);
-	return RestoreNode(record, ports, problems, acceptsShader);
+	return RestoreNode(saved, ports, problems, resources, acceptsShader);
 }
 
 std::unique_ptr<RenderGraphData> FromRecord(
-	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems)
+	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources)
 {
 	auto graph = std::make_unique<RenderGraphData>();
-	RestoreTopology(*graph, record, ports, problems, {});
+	RestoreTopology(*graph, record, ports, problems, resources, {});
 	return graph;
 }
 
@@ -257,7 +262,7 @@ std::shared_ptr<const ResourceReadServices> MakeGraphReadServices(
 }
 
 bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
-                  const ResourceReadServices* services)
+                  const IResourceLookup& pool, const ResourceReadServices* services)
 {
 	const auto* graphServices = dynamic_cast<const GraphReadServices*>(services);
 	if (!graphServices)
@@ -284,7 +289,7 @@ bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
 
 	const auto& ports = catalog.Ports();
 	std::vector<std::string> errors;
-	RestoreTopology(graph, record, ports, errors, acceptsShader);
+	RestoreTopology(graph, record, ports, errors, &pool, acceptsShader);
 	if (errors.empty())
 		for (const auto& diagnostic : ValidateCpuGraph(graph, ports))
 			errors.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);

@@ -220,8 +220,7 @@ TEST(SceneSerialize, FullRoundtrip)
 	EXPECT_EQ(selected->GetObjectID(), meshUid);
 }
 
-// A missing image can still be identified when the project is saved again.
-TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
+TEST(SceneSerialize, MissingEnvironmentResourceClearsItsReferenceAcrossSaveAndReopen)
 {
 
 	TempFile first("test_scene_missing_image.neurus.json");
@@ -255,7 +254,7 @@ TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
 		const auto& restored = scene.env_list.begin()->second;
 		ASSERT_TRUE(restored);
 		EXPECT_EQ(restored->GetEquirectData(), nullptr);
-		EXPECT_EQ(restored->GetEquirectDataId(), imageUid);
+		EXPECT_EQ(restored->GetEquirectDataId(), 0);
 		EXPECT_FALSE(resources.Contains(imageUid));
 	};
 	document.Load(first.path);
@@ -263,6 +262,55 @@ TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
 	document.Save(second.path);
 	document.Load(second.path);
 	checkMissingImage();
+}
+
+TEST(SceneSerialize, MissingAssetFilesKeepPooledResourcesAcrossSaveAndReopen)
+{
+	TempFile first("test_scene_missing_asset_files.neurus.json");
+	TempFile second("test_scene_missing_asset_files_resaved.neurus.json");
+	Scene scene;
+	ResourceManager resources;
+	project::Project document;
+	document.Register<project::ResourceComponent>(resources);
+	document.Register<project::SceneComponent>(scene, resources);
+
+	const std::string imagePath = "res/test_scene_nonexistent_image.png";
+	const std::string meshPath = "res/test_scene_nonexistent_geometry.obj";
+	auto image = resources.Load<ImageData>(imagePath);
+	auto geometry = resources.Load<MeshData>(meshPath);
+	const int imageUid = image->GetObjectID();
+	const int geometryUid = geometry->GetObjectID();
+
+	auto environment = resources.Load<Environment>();
+	environment->SetEquirectData(image);
+	scene.UseEnvironment(environment);
+	auto mesh = resources.Load<Mesh>();
+	mesh->o_mesh = geometry;
+	scene.UseMesh(mesh);
+	document.Save(first.path);
+
+	auto checkReferences = [&]()
+	{
+		ASSERT_EQ(scene.env_list.size(), 1u);
+		ASSERT_EQ(scene.mesh_list.size(), 1u);
+		const auto restoredImage = scene.env_list.begin()->second->GetEquirectData();
+		const auto& restoredMesh = scene.mesh_list.begin()->second->o_mesh;
+		ASSERT_TRUE(restoredImage);
+		ASSERT_TRUE(restoredMesh);
+		EXPECT_EQ(restoredImage, resources.Get<ImageData>(imageUid));
+		EXPECT_EQ(restoredMesh.shared(), resources.Get<MeshData>(geometryUid));
+		EXPECT_EQ(restoredImage->GetObjectID(), imageUid);
+		EXPECT_EQ(restoredMesh->GetObjectID(), geometryUid);
+		EXPECT_EQ(restoredImage->GetPath(), imagePath);
+		EXPECT_EQ(restoredMesh->GetPath(), meshPath);
+		EXPECT_FALSE(restoredImage->IsValid());
+		EXPECT_EQ(restoredMesh->GetIndexCount(), 0u);
+	};
+	document.Load(first.path);
+	checkReferences();
+	document.Save(second.path);
+	document.Load(second.path);
+	checkReferences();
 }
 
 // -----------------------------------------------------------------------

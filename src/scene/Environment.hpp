@@ -166,7 +166,7 @@ private:
 	float       o_intensity = 1.0f;   ///< IBL intensity multiplier
 	float       o_rotation  = 0.0f;   ///< Y-axis rotation in degrees
 
-	ResourceRef<ImageData, nullptr, MissingResource::KeepUid> o_equirectData;  ///< CPU-side equirectangular pixel data
+	ResourceRef<ImageData> o_equirectData;  ///< CPU-side equirectangular pixel data
 };
 
 } // namespace neurus

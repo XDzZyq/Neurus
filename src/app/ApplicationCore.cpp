@@ -70,7 +70,7 @@ void RegisterProjectComponents(project::Project& proj, Editor& editor, std::stri
 	// History, then editor view state: both are appended-last nodes, so legacy
 	// files that lack them load cleanly (each Load() falls back).
 	proj.Register<project::HistoryComponent>(editor.GetOperations());
-	proj.Register<project::EditorComponent>(editor.GetViewport());
+	proj.Register<project::EditorComponent>(editor.GetViewport(), resources);
 }
 
 const char* ScriptKindName(ScriptLineKind kind)

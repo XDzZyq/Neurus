@@ -181,15 +181,13 @@ public:
 	 * save/load; the camera object itself lives in the serialized pool.
 	 */
 	int CameraID() const { return v_camera.id(); }
-	const ResourceRef<Camera>& CameraReference() const { return v_camera; }
 
 	/**
-	 * @brief Restores the viewport camera's UID from a project file.
+	 * @brief Adopts the camera resolved from the project.
 	 *
-	 * Only records the id - the next EnsureCamera() resolves it against the pool
-	 * and creates a fresh camera when the id names nothing.
+	 * The next EnsureCamera() frames the camera or creates one if absent.
 	 */
-	void RestoreCamera(ResourceRef<Camera> camera) { v_camera = std::move(camera); }
+	void RestoreCamera(std::shared_ptr<Camera> camera) { v_camera = std::move(camera); }
 
 	/**
 	 * @brief The viewport's own camera, or nullptr before EnsureCamera().

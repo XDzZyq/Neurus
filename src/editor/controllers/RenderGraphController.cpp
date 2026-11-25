@@ -180,8 +180,8 @@ void ChangeNodeMembership(const ControllerContext& ctx, const GraphNodeMembershi
 	auto node = project::FromRecord(e.node, ctx.render->Defaults().Ports(), errors, &ctx.resources);
 	if (!errors.empty())
 		throw std::invalid_argument(errors.front());
-	if (e.node.shader.HasIdentity() && !node->data.shader)
-		throw std::invalid_argument("Missing or invalid pooled shader UID " + std::to_string(e.node.shader.id()));
+	if (e.node.shaderUid && !node->data.shader)
+		throw std::invalid_argument("Missing or invalid pooled shader UID " + std::to_string(*e.node.shaderUid));
 	if (node->data.shader)
 		ValidatePassShader(node->data.pass, *node->data.shader, ctx.render->Defaults());
 	graph.nodes.insert(graph.nodes.begin() + e.index, std::move(node));
@@ -220,8 +220,8 @@ void ChangeNodeShader(const ControllerContext& ctx, const GraphNodeShaderChanged
 	data.shader = nullptr;
 	if (e.shaderUid)
 	{
-		data.shader = PassShaderRef::FromId(e.shaderUid);
-		if (!data.shader.Resolve(ctx.resources))
+		data.shader = ctx.resources.Get<const ShaderData>(e.shaderUid);
+		if (!data.shader)
 			throw std::invalid_argument("Unknown pooled shader UID " + std::to_string(e.shaderUid));
 	}
 	if (data.shader)

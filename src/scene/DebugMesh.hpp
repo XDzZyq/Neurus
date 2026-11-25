@@ -41,7 +41,7 @@ public:
 	/**
 	 * @brief Pooled geometry drawn as wireframe (null = nothing to draw).
 	 */
-	ResourceRef<MeshData, nullptr, MissingResource::KeepUid> o_mesh;
+	ResourceRef<MeshData> o_mesh;
 
 	/** @brief Constructs an empty DebugMesh (no geometry). */
 	DebugMesh();

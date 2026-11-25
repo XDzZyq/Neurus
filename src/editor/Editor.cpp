@@ -77,16 +77,22 @@ namespace {
  */
 constexpr float kStarterMeshScale = 0.135f;
 
+bool HasMeshContent(const MeshData* data)
+{
+	return data && data->GetVertexCount() > 0 && data->GetIndexCount() > 0;
+}
+
 /**
  * @brief Posts a mesh geometry upload into the slot keyed by @p objectId.
  *
  * Shared by Mesh and DebugMesh, which carry the same MeshData and land in the
  * same slot. The renderer skips an already-resident slot, so the Editor no
- * longer checks residency - it cannot see it. Callers skip a null geometry.
+ * longer checks residency - it cannot see it. Skip empty geometry, including pooled meshes whose source file failed to load.
  */
 void PostMeshUpload(RenderRequestSink& renderer, int objectId, std::shared_ptr<const MeshData> data)
 {
-	renderer.Post(UploadMeshRequest{objectId, std::move(data)});
+	if (HasMeshContent(data.get()))
+		renderer.Post(UploadMeshRequest{objectId, std::move(data)});
 }
 
 /**
@@ -740,7 +746,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 		inst.objectId          = mesh->GetObjectID();
 		inst.model             = mesh->GetModelMatrix();
 		inst.normalMatrix      = mesh->GetNormalMatrix();
-		inst.hasGeometry       = static_cast<bool>(mesh->o_mesh);
+		inst.hasGeometry       = HasMeshContent(mesh->o_mesh.get());
 		inst.visibleInViewport = mesh->is_viewport;
 		inst.rendered          = mesh->is_rendered;
 		// The per-mesh pipeline is cached under the shader id plus the shader

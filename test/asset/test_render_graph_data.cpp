@@ -139,6 +139,7 @@ TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
 {
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<TestShader>();
+	const int shaderUid = shader->GetObjectID();
 	const std::weak_ptr<const neurus::ShaderData> lifetime = shader;
 	neurus::RenderGraphData graph;
 	neurus::CpuNode data;
@@ -153,7 +154,7 @@ TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
 	EXPECT_FALSE(lifetime.expired());
 	copy->nodes.clear();
 	EXPECT_TRUE(lifetime.expired()) << "A saved node keeps the shader UID without owning the shader";
-	EXPECT_FALSE(record.nodes.front().shader);
+	EXPECT_EQ(record.nodes.front().shaderUid, shaderUid);
 }
 
 TEST(RenderGraphData, HashIncludesShaderIdentityButExcludesShaderContentAndLayout)

@@ -68,7 +68,7 @@ glm::vec2 PixelOf(const glm::vec4& clip, const glm::vec2& size)
 
 void EditorViewport::EnsureCamera(ResourceManager& pool)
 {
-	if (v_camera.id() != 0 && v_camera.Resolve(pool))
+	if (v_camera)
 	{
 		// Window extent is local; the restored pose belongs to the project.
 		FrameCamera(v_camera.get());

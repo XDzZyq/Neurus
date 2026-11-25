@@ -85,7 +85,7 @@ void BuildProject(project::Project& proj, Editor& editor)
 	proj.Register<project::GraphComponent>(render.GraphData(), editor.GetResourceManager(), render.Problems());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::HistoryComponent>(editor.GetOperations());
-	proj.Register<project::EditorComponent>(editor.GetViewport());
+	proj.Register<project::EditorComponent>(editor.GetViewport(), editor.GetResourceManager());
 }
 
 void SaveProject(const std::string& path, Editor& editor)

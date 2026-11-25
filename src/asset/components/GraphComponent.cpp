@@ -20,12 +20,14 @@ struct GraphSelection
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
-		const auto uid = archive::PoolRefId(ar, "uid", graph, pool);
+		int uid = graph.id();
+		ar(cereal::make_nvp("uid", uid));
 		if constexpr (Archive::is_loading::value)
 		{
-			if (uid && !graph)
+			graph = pool.Get<RenderGraphData>(uid);
+			if (!graph)
 			{
-				diagnostics.push_back("Missing render graph UID " + std::to_string(*uid));
+				diagnostics.push_back("Missing render graph UID " + std::to_string(uid));
 				NEURUS_LOG("[GraphComponent] " << diagnostics.back());
 			}
 		}

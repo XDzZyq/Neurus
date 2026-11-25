@@ -105,13 +105,11 @@ public:
 		ar(cereal::base_class<UID>(this));
 		if constexpr (Archive::is_loading::value)
 		{
-			// Pass shader bindings target fields in this record until the archive
-			// completes. Keep the node storage alive through that callback.
 			auto record = std::make_shared<project::RenderGraphRecord>();
 			ar(cereal::make_nvp("topology", *record));
 			ArchiveResourceRefs::AfterLoad(ar, GetObjectID(),
-				[this, record = std::move(record)](const IResourceLookup&, const ResourceReadServices* services) {
-					return project::RestoreGraph(*this, *record, services);
+				[this, record = std::move(record)](const IResourceLookup& pool, const ResourceReadServices* services) {
+					return project::RestoreGraph(*this, *record, pool, services);
 				});
 		}
 		else

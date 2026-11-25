@@ -50,7 +50,7 @@ public:
 	std::shared_ptr<Material> o_material;
 
 	/// High-resolution geometry (vertex/index buffers)
-	ResourceRef<MeshData, nullptr, MissingResource::KeepUid> o_mesh;
+	ResourceRef<MeshData> o_mesh;
 
 	/// CPU-side shader for rendering this mesh (null = use default pass shader)
 	ResourceRef<ShaderData, AcceptShader> o_shader;

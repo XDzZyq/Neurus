@@ -23,7 +23,7 @@
 namespace neurus
 {
 class IPassShaderCatalog;
-using PassShaderRef = ResourceRef<const ShaderData, nullptr, MissingResource::KeepUid>;
+using PassShaderRef = ResourceRef<const ShaderData>;
 class IPortSource;
 class IResourceLookup;
 class RenderGraphData;
@@ -105,7 +105,7 @@ struct RenderGraphNodeRecord
 {
 	std::string                        name;
 	std::string                        pass;
-	PassShaderRef                      shader;
+	std::optional<int>                 shaderUid;
 	float                              x = 0.0f;
 	float                              y = 0.0f;
 	std::vector<RenderGraphPortRecord> outputs;
@@ -124,12 +124,17 @@ struct RenderGraphNodeRecord
 		   cereal::make_nvp("pass", pass));
 		if constexpr (Archive::is_loading::value)
 		{
-			shader.reset();
-			if (ReadOptionalGraphField(ar, "shader", shader) && !shader.HasIdentity())
-				throw cereal::Exception("Invalid graph shader UID");
+			shaderUid.reset();
+			int uid = 0;
+			if (ReadOptionalGraphField(ar, "shader", uid))
+			{
+				if (uid < 0)
+					throw cereal::Exception("Invalid graph shader UID");
+				shaderUid = uid;
+			}
 		}
-		else if (shader.HasIdentity())
-			ar(cereal::make_nvp("shader", shader));
+		else if (shaderUid)
+			ar(cereal::make_nvp("shader", *shaderUid));
 		ar(cereal::make_nvp("x", x),
 		   cereal::make_nvp("y", y),
 		   cereal::make_nvp("outputs", outputs));
@@ -219,7 +224,7 @@ std::shared_ptr<const ResourceReadServices> MakeGraphReadServices(
 
 /// Rebuilds a freshly deserialized graph once its references can resolve.
 bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
-                  const ResourceReadServices* services);
+                  const IResourceLookup& pool, const ResourceReadServices* services);
 
 /// Captures one node, including its shader UID, position and tagged outputs.
 RenderGraphNodeRecord ToRecord(const Node<CpuPort, CpuNode>& node);
@@ -253,6 +258,7 @@ RenderGraphRecord ToRecord(const RenderGraphData& graph);
  * @param problems  Receives one message per recoverable inconsistency.
  */
 std::unique_ptr<RenderGraphData> FromRecord(
-	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems);
+	const RenderGraphRecord& record, const IPortSource& ports, std::vector<std::string>& problems,
+	const IResourceLookup* resources = nullptr);
 
 } // namespace neurus::project

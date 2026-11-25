@@ -56,11 +56,9 @@ private:
 	const ResourceReadServices* m_services;
 };
 
-enum class MissingResource { Clear, KeepUid };
-
 /// Shared ownership in memory, a scalar UID in a project. A field can supply
 /// an acceptance predicate for restoring a narrower kind of resource.
-template<class T, bool (*Accept)(const T&) = nullptr, MissingResource Missing = MissingResource::Clear>
+template<class T, bool (*Accept)(const T&) = nullptr>
 class ResourceRef
 {
 public:
@@ -73,7 +71,6 @@ public:
 	{
 		if (value && value->GetObjectID() < 0)
 			throw std::invalid_argument("A resource reference requires a pooled object");
-		m_uid.reset();
 		m_value = std::move(value);
 		return *this;
 	}
@@ -83,27 +80,8 @@ public:
 		return *this = std::shared_ptr<T>(std::move(value));
 	}
 	ResourceRef& operator=(std::nullptr_t) { reset(); return *this; }
-	void reset() { m_uid.reset(); m_value.reset(); }
+	void reset() { m_value.reset(); }
 	const std::shared_ptr<T>& shared() const { return m_value; }
-
-	/// A document or undo record can carry an identity before it has a pool.
-	static ResourceRef FromId(int uid)
-	{
-		ResourceRef ref;
-		ref.m_uid = uid;
-		return ref;
-	}
-	/// Capture a UID for undo without prolonging the resource's lifetime.
-	ResourceRef IdentityOnly() const { return HasIdentity() ? FromId(id()) : ResourceRef{}; }
-	bool Resolve(const IResourceLookup& pool)
-	{
-		if (HasIdentity())
-		{
-			const int uid = id();
-			BindValue(pool.Get(uid), uid);
-		}
-		return static_cast<bool>(m_value);
-	}
 
 	T* get() const { return m_value.get(); }
 	T* operator->() const { return get(); }
@@ -111,7 +89,7 @@ public:
 	explicit operator bool() const { return static_cast<bool>(m_value); }
 	std::optional<int> identity() const
 	{
-		if (!m_value) return m_uid;
+		if (!m_value) return std::nullopt;
 		const int id = m_value->GetObjectID();
 		if (id < 0) return std::nullopt;
 		return id;
@@ -131,35 +109,18 @@ public:
 	{
 		reset();
 		if (uid < 0) return;
-		m_uid = uid;
-		// History records are read outside a pool and rebound when replayed.
 		if (!ArchiveResourceRefs::IsBound(ar)) return;
-		ArchiveResourceRefs::Bind(ar, uid, [this, uid](const std::shared_ptr<UID>& resource) {
-			BindValue(resource, uid);
+		ArchiveResourceRefs::Bind(ar, uid, [this](const std::shared_ptr<UID>& resource) {
+			auto value = std::dynamic_pointer_cast<T>(resource);
+			if constexpr (Accept != nullptr)
+				if (value && !Accept(*value)) value.reset();
+			m_value = std::move(value);
 		});
 	}
 
 	bool HasIdentity() const { return identity().has_value(); }
 
 private:
-	void BindValue(const std::shared_ptr<UID>& resource, int uid)
-	{
-		auto value = std::dynamic_pointer_cast<T>(resource);
-		if constexpr (Accept != nullptr)
-			if (value && !Accept(*value)) value.reset();
-		m_uid.reset();
-		if constexpr (Missing == MissingResource::KeepUid)
-		{
-			if (!value)
-			{
-				m_uid = uid;
-				NEURUS_ERR("[ResourceRef] Missing or incompatible pooled resource UID " << uid);
-			}
-		}
-		m_value = std::move(value);
-	}
-	// Only unresolved references store an integer. A live object owns its UID.
-	std::optional<int> m_uid;
 	std::shared_ptr<T> m_value;
 };
 
@@ -175,26 +136,6 @@ void OptionalRef(Archive& ar, const char* key, Ref& ref)
 	}
 	else if (!OptionalField(ar, cereal::make_nvp(key, ref)))
 		ref = nullptr;
-}
-
-/// Portable records can move before a pool is available. Transfer only the
-/// identity here and resolve the record when it is applied to the document.
-template<class Archive, class Ref>
-bool RefId(Archive& ar, const char* key, Ref& ref)
-{
-	int uid = ref.id();
-	if (!OptionalField(ar, cereal::make_nvp(key, uid))) return false;
-	if constexpr (Archive::is_loading::value) ref = Ref::FromId(uid);
-	return true;
-}
-
-template<class Archive, class Ref>
-std::optional<int> PoolRefId(Archive& ar, const char* key, Ref& ref, const IResourceLookup& pool)
-{
-	if (!RefId(ar, key, ref)) return std::nullopt;
-	const int uid = ref.id();
-	if constexpr (Archive::is_loading::value) ref.Resolve(pool);
-	return uid;
 }
 
 } // namespace archive

@@ -119,7 +119,7 @@ void BuildProject(project::Project& proj, Editor& editor)
 	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(editor.GetRenderManager().Defaults()));
 	proj.Register<project::SceneComponent>(editor.GetScene(),
 	                                       editor.GetResourceManager());
-	proj.Register<project::EditorComponent>(editor.GetViewport());
+	proj.Register<project::EditorComponent>(editor.GetViewport(), editor.GetResourceManager());
 }
 
 void SaveProject(const std::string& path, Editor& editor)

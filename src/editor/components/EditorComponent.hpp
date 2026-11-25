@@ -4,6 +4,7 @@
 
 namespace neurus {
 class EditorViewport;
+class IResourceLookup;
 }
 
 namespace neurus::project {
@@ -22,7 +23,7 @@ namespace neurus::project {
 class EditorComponent : public Serializable
 {
 public:
-	explicit EditorComponent(EditorViewport& viewport);
+	EditorComponent(EditorViewport& viewport, const IResourceLookup& resources);
 
 	const char* Key() const noexcept override { return "m_editor"; }
 
@@ -31,6 +32,7 @@ public:
 
 private:
 	EditorViewport* m_viewport;
+	const IResourceLookup& m_resources;
 };
 
 } // namespace neurus::project

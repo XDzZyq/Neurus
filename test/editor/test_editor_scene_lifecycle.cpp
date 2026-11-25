@@ -36,8 +36,10 @@
 
 #include <gtest/gtest.h>
 
+#include "asset/data/MeshData.hpp"
 #include "editor/Editor.hpp"
 #include "editor/viewport/EditorViewport.hpp"
+#include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
 #include "scene/DebugPoints.hpp"
@@ -70,6 +72,23 @@ void NewProject(Editor& editor)
 // ---------------------------------------------------------------------------
 // 2. NewScene() means EMPTY: no mesh, no light, no camera, nothing
 // ---------------------------------------------------------------------------
+
+TEST(EditorSceneLifecycleTest, MissingMeshFileKeepsTheObjectWithoutDrawableGeometry)
+{
+	Editor editor(nullptr);
+	editor.NewScene();
+	auto& resources = editor.GetResourceManager();
+	const auto data = resources.Load<MeshData>("res/test_scene_nonexistent_geometry.obj");
+	const auto mesh = resources.Load<Mesh>(data);
+	editor.GetScene().UseMesh(mesh);
+
+	RenderFrameSnapshot frame;
+	editor.BuildSnapshot(frame);
+	ASSERT_EQ(frame.meshes.size(), 1u);
+	EXPECT_EQ(frame.meshes.front().objectId, mesh->GetObjectID());
+	EXPECT_FALSE(frame.meshes.front().hasGeometry);
+	EXPECT_EQ(mesh->o_mesh.shared(), resources.Get<MeshData>(data->GetObjectID()));
+}
 
 TEST(EditorSceneLifecycleTest, NewScene_LeavesTheSceneEmpty)
 {

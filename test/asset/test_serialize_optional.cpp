@@ -709,7 +709,7 @@ TEST(SerializeOptional, ShippedProjectResavesWithAuthoredKeys)
 			p.Register<project::ConfigComponent>(config);
 			p.Register<project::UIComponent>(ui);
 			p.Register<project::HistoryComponent>(ops);
-			p.Register<project::EditorComponent>(viewport);
+			p.Register<project::EditorComponent>(viewport, resources);
 			ASSERT_NO_THROW(p.Load(src));
 			ASSERT_NO_THROW(p.Save(out.path));
 		}
