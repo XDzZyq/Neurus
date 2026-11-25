@@ -42,20 +42,20 @@
 #include <sstream>
 #include <string>
 
-#include "asset/Project.hpp"
-#include "editor/components/EditorComponent.hpp"
-#include "shader/BuiltInRenderData.hpp"
-#include "editor/RenderManager.hpp"
-#include "asset/components/ResourceComponent.hpp"
-#include "asset/data/render_graph/RenderGraphRecord.hpp"
-#include "asset/components/SceneComponent.hpp"
-#include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
+#include "editor/RenderManager.hpp"
+#include "editor/components/EditorComponent.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/viewport/EditorViewport.hpp"
+#include "asset/Project.hpp"
+#include "asset/ResourceManager.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Scene.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
 #include "asset/registrations/DataRegistration.hpp"
