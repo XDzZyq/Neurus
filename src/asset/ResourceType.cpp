@@ -10,8 +10,7 @@ namespace
 
 auto& resourceTypes()
 {
-	// Keys reference static names from the corresponding cereal registration.
-	static std::map<std::string_view, const ResourceTypeRegistration*, std::less<>> types;
+	static std::map<std::string, const ResourceTypeRegistration*, std::less<>> types;
 	return types;
 }
 
@@ -23,9 +22,9 @@ auto& liveTypes()
 
 } // namespace
 
-void ResourceTypeRegistration::Register(const char* archiveName) const
+void ResourceTypeRegistration::Register() const
 {
-	resourceTypes().emplace(archiveName, this);
+	resourceTypes().emplace(name, this);
 	liveTypes().emplace(type, this);
 }
 
@@ -43,14 +42,14 @@ const ResourceTypeRegistration* ResourceTypeRegistration::Find(std::type_index t
 
 void WriteResourceName(UID& resource, const std::string& name)
 {
-	if (const auto* info = ResourceTypeRegistration::Find(typeid(resource)); info && info->writeName)
-		info->writeName(resource, name);
+	if (const auto* info = ResourceTypeRegistration::Find(typeid(resource)); info && info->WriteName)
+		info->WriteName(resource, name);
 }
 
 bool IsUsableResource(const UID& resource)
 {
 	const auto* info = ResourceTypeRegistration::Find(typeid(resource));
-	return !info || !info->usable || info->usable(resource);
+	return !info || !info->Usable || info->Usable(resource);
 }
 
 } // namespace neurus

@@ -44,22 +44,22 @@ std::pair<int, ResourceRecord> readRecord(const Json& entry)
 	const auto& key = entry.at("key");
 	if (!key.is_number_integer() || key < 0 || key >= std::numeric_limits<int>::max())
 		throw std::runtime_error("invalid resource UID");
-	const auto& typeName = entry.at("type").get_ref<const std::string&>();
-	const auto* type = ResourceTypeRegistration::Find(typeName);
+	const auto& type_name = entry.at("type").get_ref<const std::string&>();
+	const auto* type = ResourceTypeRegistration::Find(type_name);
 	if (!type)
-		throw std::runtime_error("unknown resource type: " + typeName);
+		throw std::runtime_error("unknown resource type: " + type_name);
 	const auto& data = entry.at("data");
-	if (!data.is_object() || (type->validPayload && !type->validPayload(data)))
+	if (!data.is_object() || (type->ValidPayload && !type->ValidPayload(data)))
 		throw std::runtime_error("invalid pooled resource payload");
 
 	std::string name;
-	if (type->nameField)
+	if (!type->name_field.empty())
 	{
-		const auto& fields = type->nameDepth == 0 ? data : data.at("value0");
+		const auto& fields = type->name_depth == 0 ? data : data.at("value0");
 		if (!fields.is_object())
 			throw std::runtime_error("invalid pooled name fields");
-		if (fields.contains(type->nameField))
-			name = fields.at(type->nameField).get<std::string>();
+		if (fields.contains(type->name_field))
+			name = fields.at(type->name_field).get<std::string>();
 	}
 	return {key.get<int>(), {type, std::move(name), entry.dump()}};
 }
@@ -74,7 +74,7 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 		{
 			std::istringstream stream(*payload);
 			ResourceInputArchive archive(stream, pool, services.get());
-			type->readBody(archive, resource);
+			type->ReadBody(archive, resource);
 			if (!IsUsableResource(resource))
 				return false;
 			WriteResourceName(resource, pool.RegisteredName(id));
@@ -86,7 +86,7 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 			return false;
 		}
 	};
-	pool.RegisterDeferred(id, record.type->type, record.type->create, payload, std::move(populate));
+	pool.RegisterDeferred(id, record.type->type, record.type->Create, payload, std::move(populate));
 }
 
 } // namespace

@@ -72,11 +72,11 @@ void ResourceManager::save(cereal::JSONOutputArchive& ar) const
 			if (!type)
 				throw cereal::Exception("Unknown deferred resource type for UID " + std::to_string(id));
 			const auto name = RegisteredName(id);
-			if (type->nameField && !name.empty())
+			if (!type->name_field.empty() && !name.empty())
 			{
 				auto& data = entry.at("data");
-				auto& fields = type->nameDepth == 0 ? data : data.at("value0");
-				fields[type->nameField] = name;
+				auto& fields = type->name_depth == 0 ? data : data.at("value0");
+				fields[type->name_field] = name;
 			}
 			writeJson(ar, entry);
 			continue;
@@ -89,8 +89,8 @@ void ResourceManager::save(cereal::JSONOutputArchive& ar) const
 		if (!type)
 			throw cereal::Exception("Unregistered pooled resource type for UID " + std::to_string(id));
 		ar.startNode();
-		ar(cereal::make_nvp("key", id), cereal::make_nvp("type", std::string(type->name)));
-		type->writeBody(ar, object);
+		ar(cereal::make_nvp("key", id), cereal::make_nvp("type", type->name));
+		type->WriteBody(ar, object);
 		ar.finishNode();
 	}
 	ar.finishNode();

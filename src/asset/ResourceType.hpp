@@ -5,11 +5,13 @@
 #include "core/UID.hpp"
 
 #include <cereal/archives/json.hpp>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <typeindex>
 #include <type_traits>
+#include <utility>
 
 namespace neurus
 {
@@ -20,49 +22,52 @@ bool IsUsableResource(const UID& resource);
 /// type with cereal.
 struct ResourceTypeRegistration
 {
-	using PayloadCheck = bool (*)(const nlohmann::ordered_json&);
-	using ObjectCheck = bool (*)(const UID&);
+	using PayloadCheck = std::function<bool(const nlohmann::ordered_json&)>;
+	using ObjectCheck = std::function<bool(const UID&)>;
 
 	std::type_index type;
-	const char* name;
-	int nameDepth;
-	void (*writeBody)(cereal::JSONOutputArchive&, const UID&);
-	std::shared_ptr<UID> (*create)();
-	void (*readBody)(cereal::JSONInputArchive&, UID&);
-	static const ResourceTypeRegistration* Find(std::string_view archiveName);
+	std::string name;
+	std::string name_field;
+	int name_depth;
+
+	std::function<void(UID&, const std::string&)> WriteName;
+	std::function<std::shared_ptr<UID>()> Create;
+	std::function<void(cereal::JSONOutputArchive&, const UID&)> WriteBody;
+	std::function<void(cereal::JSONInputArchive&, UID&)> ReadBody;
+	PayloadCheck ValidPayload;
+	ObjectCheck Usable;
+
+	static const ResourceTypeRegistration* Find(std::string_view archive_name);
 	static const ResourceTypeRegistration* Find(std::type_index type);
-	PayloadCheck validPayload;
-	ObjectCheck usable;
-	const char* nameField = nullptr;
-	void (*writeName)(UID&, const std::string&) = nullptr;
 
 	template<class T>
-	ResourceTypeRegistration(std::type_identity<T>, const char* archiveName, int nameDepth,
-	                         PayloadCheck valid = nullptr, ObjectCheck check = nullptr)
-		: type(typeid(T)), name(archiveName), nameDepth(nameDepth), validPayload(valid), usable(check)
+	ResourceTypeRegistration(std::type_identity<T>, std::string archive_name, int depth,
+	                         PayloadCheck valid = {}, ObjectCheck check = {})
+		: type(typeid(T)), name(std::move(archive_name)), name_depth(depth),
+		  ValidPayload(std::move(valid)), Usable(std::move(check))
 	{
-		create = []() -> std::shared_ptr<UID> { return std::make_shared<T>(); };
-		writeBody = [](cereal::JSONOutputArchive& ar, const UID& object) {
+		Create = []() -> std::shared_ptr<UID> { return std::make_shared<T>(); };
+		WriteBody = [](cereal::JSONOutputArchive& ar, const UID& object) {
 			ar(cereal::make_nvp("data", static_cast<const T&>(object)));
 		};
-		readBody = [](cereal::JSONInputArchive& ar, UID& object) {
+		ReadBody = [](cereal::JSONInputArchive& ar, UID& object) {
 			ar(cereal::make_nvp("data", static_cast<T&>(object)));
 		};
 		if constexpr (requires(T object) { object.o_name; })
 		{
-			nameField = "o_name";
-			writeName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).o_name = name; };
+			name_field = "o_name";
+			WriteName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).o_name = name; };
 		}
 		else if constexpr (requires(T object) { object.SetName(object.GetName()); })
 		{
-			nameField = "m_name";
-			writeName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).SetName(name); };
+			name_field = "m_name";
+			WriteName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).SetName(name); };
 		}
-		Register(archiveName);
+		Register();
 	}
 
 private:
-	void Register(const char* archiveName) const;
+	void Register() const;
 };
 
 } // namespace neurus
