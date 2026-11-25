@@ -166,6 +166,19 @@ void ResourceManager::ForEachUID(const std::function<void(const std::shared_ptr<
 			fn(resource);
 }
 
+void ResourceManager::ForEachRegistered(
+	const std::function<void(int id, std::type_index type)>& fn) const
+{
+	std::vector<std::pair<int, std::type_index>> entries;
+	entries.reserve(res_entries.size());
+	for (const auto& [id, entry] : res_entries)
+		entries.emplace_back(id, entry.type);
+	std::sort(entries.begin(), entries.end(),
+		[](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+	for (const auto& [id, type] : entries)
+		fn(id, type);
+}
+
 void ResourceManager::ForEachOfType(
 	std::type_index type,
 	const std::function<void(const std::shared_ptr<UID>&)>& fn) const

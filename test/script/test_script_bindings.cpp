@@ -19,13 +19,17 @@
 #include <glm/glm.hpp>
 
 #include <cstddef>
+#include <cereal/archives/json.hpp>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
 #include "core/Log.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/ResourceManager.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/data/ShaderData.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Environment.hpp"
 #include "scene/Light.hpp"
@@ -36,6 +40,13 @@
 #include "script/ScriptView.hpp"
 #include "script/proxies/ObjectProxy.hpp"
 #include "script/proxies/Transform3DProxy.hpp"
+#include "shader/RenderShader.hpp"
+
+// Force-link the polymorphic registration TUs (static libraries) so
+// ResourceComponent can resolve the saved pool's type names.
+#include "asset/registrations/DataRegistration.hpp"
+#include "scene/registrations/TypeRegistration.hpp"
+#include "shader/registrations/ShaderRegistration.hpp"
 
 namespace
 {
@@ -483,4 +494,55 @@ TEST(ScriptBindings, ProxiesResolveFromThePoolWithoutAScene)
 	neurus::script::ScriptView emptyView{&empty, nullptr};
 	neurus::script::ObjectProxy orphan{mesh->GetObjectID(), &emptyView};
 	EXPECT_THROW(orphan.Resolve(), std::runtime_error);
+}
+
+TEST(ScriptBindings, PoolCollectionsCountDeferredRecordsWithoutLoading)
+{
+	neurus::ResourceManager source;
+	const auto camera = source.Load<neurus::Camera>();
+	const auto mesh = source.Load<neurus::Mesh>();
+	const auto shader = source.Load<neurus::RenderShader>("DeferredShader",
+		neurus::ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.vert.glsl"),
+		neurus::ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.frag.glsl"));
+	ASSERT_TRUE(shader->ParseAndGenerate());
+	ASSERT_TRUE(shader->CompileToSpv());
+
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		neurus::project::ResourceComponent(source).Save(archive);
+	}
+
+	neurus::ResourceManager resources;
+	neurus::project::ResourceComponent(resources).LoadJson(output.str());
+
+	const int cameraId = camera->GetObjectID();
+	const int meshId = mesh->GetObjectID();
+	const int shaderId = shader->GetObjectID();
+	ASSERT_FALSE(resources.GetLive(cameraId));
+	ASSERT_FALSE(resources.GetLive(meshId));
+	ASSERT_FALSE(resources.GetLive(shaderId));
+
+	neurus::Scene scene;
+	neurus::RenderConfig cfg;
+	neurus::ScriptContext ctx;
+	ctx.scene = &scene;
+	ctx.config = &cfg;
+	ctx.resources = &resources;
+
+	neurus::ScriptEngine engine;
+	ASSERT_TRUE(engine.Initialize());
+	EXPECT_TRUE(RunCleanly(engine,
+		"import neurus\n"
+		"assert len(neurus.data.objects) == 2\n"
+		"assert len(list(neurus.data.objects)) == 2\n"
+		"assert len(neurus.data.meshes) == 1\n"
+		"assert len(list(neurus.data.meshes)) == 1\n"
+		"assert len(neurus.data.shaders) == 1\n"
+		"assert len(list(neurus.data.shaders)) == 1\n", ctx));
+	engine.Shutdown();
+
+	EXPECT_FALSE(resources.GetLive(cameraId));
+	EXPECT_FALSE(resources.GetLive(meshId));
+	EXPECT_FALSE(resources.GetLive(shaderId));
 }

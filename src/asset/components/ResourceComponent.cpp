@@ -81,13 +81,16 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record)
 			ResourceInputArchive archive(stream, pool);
 			type->ReadBody(archive, resource);
 			if (!IsUsableResource(resource))
+			{
+				NEURUS_ERR("[ResourceComponent] UID " << id << " is not usable; dropping it from the project");
 				return false;
+			}
 			WriteResourceName(resource, pool.RegisteredName(id));
 			return true;
 		}
 		catch (const std::exception& error)
 		{
-			NEURUS_LOG("[ResourceComponent] Could not restore UID " << id << ": " << error.what());
+			NEURUS_ERR("[ResourceComponent] Could not restore UID " << id << ": " << error.what());
 			return false;
 		}
 	};

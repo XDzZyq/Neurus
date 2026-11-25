@@ -515,7 +515,10 @@ void Editor::Initialize()
 		auto shader = ed_resources->Get<ShaderData>(e.shaderObjectId);
 		if (!shader) return;
 		bool usedByMesh = false;
-		ed_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
+		// Live meshes only: a deferred mesh reads its current shader when the
+		// pool materializes it, so it already sees this compile and must not be
+		// loaded merely to warm a pipeline.
+		ed_resources->ForEachLive<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
 		{
 			if (mesh && mesh->o_shader && mesh->o_shader->GetObjectID() == e.shaderObjectId)
 				usedByMesh = true;

@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cereal/archives/json.hpp>
+
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
 #include "editor/components/HistoryComponent.hpp"
@@ -27,6 +29,7 @@
 #include "shader/BuiltInRenderData.hpp"
 #include "shader/ComputeShader.hpp"
 #include "shader/RenderShader.hpp"
+#include "shader/registrations/ShaderRegistration.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -616,6 +619,43 @@ TEST(EditorRenderGraph, SharedMeshAndGraphShaderUploadsBeforeMappingAndPipelineW
 	EXPECT_TRUE(std::holds_alternative<neurus::EnsurePipelineRequest>(sink.posted[1]));
 }
 
+TEST(EditorRenderGraph, ShaderCompiledDoesNotMaterializeDeferredMeshes)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.Initialize();
+	editor.NewScene();
+
+	neurus::ResourceManager source;
+	const auto shader = source.Load<neurus::RenderShader>("DeferredProbe",
+		neurus::ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.vert.glsl"),
+		neurus::ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.frag.glsl"));
+	ASSERT_TRUE(shader->ParseAndGenerate());
+	ASSERT_TRUE(shader->CompileToSpv());
+	const auto mesh = source.Load<neurus::Mesh>();
+	mesh->o_shader = shader;
+	const int shaderId = shader->GetObjectID();
+	const int meshId = mesh->GetObjectID();
+
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		neurus::project::ResourceComponent(source).Save(archive);
+	}
+	auto& resources = editor.GetResourceManager();
+	neurus::project::ResourceComponent(resources).LoadJson(output.str());
+	ASSERT_FALSE(resources.GetLive(shaderId));
+	ASSERT_FALSE(resources.GetLive(meshId));
+
+	// Only the shader is requested; the mesh record must stay deferred.
+	ASSERT_TRUE(resources.Get<neurus::ShaderData>(shaderId));
+	ASSERT_FALSE(resources.GetLive(meshId));
+
+	sink.posted.clear();
+	editor.GetEventQueue().Emit(neurus::ShaderCompiled{shaderId});
+	EXPECT_TRUE(sink.posted.empty());
+	EXPECT_FALSE(resources.GetLive(meshId));
+}
 
 TEST(EditorRenderGraph, FailedScriptDiscardsGraphCreationAndPooledShader)
 {

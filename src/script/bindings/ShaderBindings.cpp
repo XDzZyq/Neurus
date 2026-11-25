@@ -31,6 +31,8 @@
 #include "script/bindings/ShaderBindings.hpp"
 #include "script/proxies/ProxyBase.hpp"
 #include "script/proxies/ShaderProxies.hpp"
+#include "shader/ComputeShader.hpp"
+#include "shader/RenderShader.hpp"
 
 namespace py = pybind11;
 
@@ -241,11 +243,12 @@ ShaderSlotProxy CreateShaderFromPython(const ShaderSlotProxy& slot, const py::ar
 }
 
 /**
- * @brief Pool-wide shader collection over the ShaderData base.
+ * @brief Pool-wide shader collection over the pooled shader leaves.
  *
- * Iteration and lookup go through ForEachUID because the per-type index keys
- * the exact dynamic type (RenderShader / ComputeShader), not the base. Names
- * are the ShaderData's registered name.
+ * Iteration reads registered keys and types through ForEachRegistered, so a
+ * deferred shader is listed without loading it; only the two concrete leaves
+ * (RenderShader / ComputeShader) are pooled. Name lookup resolves through the
+ * per-type registry for each leaf in turn.
  */
 struct ShaderCollection
 {
@@ -259,11 +262,12 @@ struct ShaderCollection
 		const IResourceLookup* pool = Pool();
 		if (pool == nullptr) return result;
 
-		pool->ForEachUID([&](const std::shared_ptr<UID>& resource)
+		pool->ForEachRegistered([&](int id, std::type_index type)
 		{
-			if (auto shader = std::dynamic_pointer_cast<ShaderData>(resource))
+			if (type == std::type_index(typeid(RenderShader))
+			    || type == std::type_index(typeid(ComputeShader)))
 			{
-				result.append(py::cast(ShaderProxy{shader->GetObjectID(), view}));
+				result.append(py::cast(ShaderProxy{id, view}));
 			}
 		});
 		return result;
@@ -275,9 +279,11 @@ struct ShaderCollection
 		const IResourceLookup* pool = Pool();
 		if (pool != nullptr)
 		{
-			pool->ForEachUID([&](const std::shared_ptr<UID>& resource)
+			pool->ForEachRegistered([&count](int, std::type_index type)
 			{
-				if (std::dynamic_pointer_cast<ShaderData>(resource)) ++count;
+				if (type == std::type_index(typeid(RenderShader))
+				    || type == std::type_index(typeid(ComputeShader)))
+					++count;
 			});
 		}
 		return count;
@@ -304,19 +310,11 @@ struct ShaderCollection
 		const IResourceLookup* pool = Pool();
 		if (pool == nullptr) return py::none();
 
-		py::object result = py::none();
-		pool->ForEachUID([&](const std::shared_ptr<UID>& resource)
-		{
-			if (!result.is_none()) return;
-			if (auto shader = std::dynamic_pointer_cast<ShaderData>(resource))
-			{
-				if (shader->GetName() == name)
-				{
-					result = py::cast(ShaderProxy{shader->GetObjectID(), view});
-				}
-			}
-		});
-		return result;
+		if (const std::shared_ptr<RenderShader> shader = pool->GetByName<RenderShader>(name))
+			return py::cast(ShaderProxy{shader->GetObjectID(), view});
+		if (const std::shared_ptr<ComputeShader> shader = pool->GetByName<ComputeShader>(name))
+			return py::cast(ShaderProxy{shader->GetObjectID(), view});
+		return py::none();
 	}
 
 	bool ContainsName(const std::string& name) const

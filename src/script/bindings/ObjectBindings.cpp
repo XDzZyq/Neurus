@@ -13,15 +13,26 @@
 
 #include <pybind11/pybind11.h>
 
+#include <algorithm>
+#include <array>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <typeindex>
 #include <utility>
 
 #include "core/IResourceLookup.hpp"
 #include "editor/events/SceneEvents.hpp"
+#include "scene/Camera.hpp"
+#include "scene/DebugLine.hpp"
+#include "scene/DebugMesh.hpp"
+#include "scene/DebugPoints.hpp"
+#include "scene/Environment.hpp"
+#include "scene/Light.hpp"
+#include "scene/Mesh.hpp"
 #include "scene/ObjectID.hpp"
+#include "scene/Sprite.hpp"
 #include "scene/Transform.hpp"
 #include "script/bindings/Bindings.hpp"
 #include "script/proxies/ObjectProxy.hpp"
@@ -43,6 +54,24 @@ py::tuple ToTuple(const glm::vec3& value)
 	return py::make_tuple(value.x, value.y, value.z);
 }
 
+/// True for the pooled types `neurus.data.objects` exposes.
+/// Keep in sync with scene/registrations/TypeRegistration.cpp.
+bool IsObjectType(std::type_index type)
+{
+	static const std::array<std::type_index, 9> objectTypes{
+		std::type_index(typeid(ObjectID)),
+		std::type_index(typeid(Camera)),
+		std::type_index(typeid(Mesh)),
+		std::type_index(typeid(Light)),
+		std::type_index(typeid(Sprite)),
+		std::type_index(typeid(DebugLine)),
+		std::type_index(typeid(DebugPoints)),
+		std::type_index(typeid(DebugMesh)),
+		std::type_index(typeid(Environment)),
+	};
+	return std::find(objectTypes.begin(), objectTypes.end(), type) != objectTypes.end();
+}
+
 /**
  * @brief `neurus.data.objects`: every pooled `ObjectID`, iterable and keyed by UID.
  *
@@ -52,9 +81,9 @@ py::tuple ToTuple(const glm::vec3& value)
  * the run has no resource lookup, and it cannot observe a finished run because
  * the view it holds is only populated for the run that built it.
  *
- * Enumeration goes through ForEachUID and casts, never ForEach<ObjectID>: the
- * latter keys the exact dynamic type, so a pooled base ObjectID would hide every
- * camera, mesh and light from the collection.
+ * Enumeration reads registered keys and types through ForEachRegistered, so a
+ * deferred object is listed without loading it; the proxy resolves the object
+ * only when it is first accessed.
  *
  * Deliberately UID-only (D2): one name can span several object types, so a
  * string key would be ambiguous and returns None; the typed collections resolve
@@ -80,10 +109,10 @@ struct ObjectCollection
 			return result;
 		}
 
-		pool->ForEachUID([this, &result](const std::shared_ptr<UID>& resource)
+		pool->ForEachRegistered([this, &result](int id, std::type_index type)
 		{
-			if (const auto obj = std::dynamic_pointer_cast<ObjectID>(resource))
-				result.append(py::cast(ObjectProxy{obj->GetObjectID(), view}));
+			if (IsObjectType(type))
+				result.append(py::cast(ObjectProxy{id, view}));
 		});
 		return result;
 	}
@@ -95,9 +124,9 @@ struct ObjectCollection
 		const IResourceLookup* pool = Pool();
 		if (pool != nullptr)
 		{
-			pool->ForEachUID([&count](const std::shared_ptr<UID>& resource)
+			pool->ForEachRegistered([&count](int, std::type_index type)
 			{
-				if (std::dynamic_pointer_cast<ObjectID>(resource))
+				if (IsObjectType(type))
 					++count;
 			});
 		}

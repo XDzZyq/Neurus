@@ -178,9 +178,23 @@ public:
 	std::string SetName(int id, const std::string& name) override;
 
 	/**
+	 * @brief Visits every registered key with its exact dynamic type.
+	 *
+	 * Ascending key order. Never runs a loader; deferred records stay deferred.
+	 *
+	 * @param fn Callback receiving each registered id and its dynamic type.
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
+	 */
+	void ForEachRegistered(
+		const std::function<void(int id, std::type_index type)>& fn) const override;
+
+	/**
 	 * @brief Invokes @p fn on every pooled resource, untyped.
 	 *
-	 * Always complete; this plus a cast is the base-class enumeration.
+	 * Always complete; this plus a cast is the base-class enumeration. It loads
+	 * every record it visits, and a record its populate step rejects is erased.
+	 * Production enumeration uses ForEachRegistered or ForEachLive<T> instead.
 	 *
 	 * @param fn Callback receiving each pooled object (any order).
 	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
@@ -196,6 +210,9 @@ public:
 	 * are skipped. A type with no instance at all falls back to the whole pool.
 	 * Use ForEachUID for base enumeration.
 	 *
+	 * Loads every record it visits, and a record its populate step rejects is
+	 * erased. Production enumeration uses ForEachRegistered or ForEachLive<T>.
+	 *
 	 * @param type Concrete dynamic type to enumerate (e.g. typeid(Mesh)).
 	 * @param fn Callback receiving each matching object (any order).
 	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
@@ -204,6 +221,39 @@ public:
 	void ForEachOfType(
 		std::type_index type,
 		const std::function<void(const std::shared_ptr<UID>&)>& fn) const override;
+
+	/**
+	 * @brief Visits live objects of type @p T without running any loader.
+	 *
+	 * The never-loading counterpart of `ForEach<T>`: it visits the same set of
+	 * objects minus deferred ones, so a deferred record stays deferred.
+	 *
+	 * @tparam T Exact dynamic type to visit (e.g. Mesh), or a base type.
+	 * @param fn Callback receiving each live matching shared_ptr (any order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
+	 */
+	template<class T>
+	void ForEachLive(const std::function<void(const std::shared_ptr<T>&)>& fn) const
+	{
+		static_assert(std::is_base_of_v<UID, T>, "ForEachLive<T>: T must derive from UID");
+
+		auto tracked = res_idsByType.find(std::type_index(typeid(T)));
+		if (tracked != res_idsByType.end())
+		{
+			const auto ids = tracked->second;
+			for (int id : ids)
+				if (auto live = std::dynamic_pointer_cast<T>(GetLive(id)))
+					fn(live);
+			return;
+		}
+
+		// Mirror ForEach<T>'s fallback: an unindexed base type scans the pool,
+		// and the cast keeps only live objects of T (or derived from it).
+		for (int id : RegisteredIds())
+			if (auto live = std::dynamic_pointer_cast<T>(GetLive(id)))
+				fn(live);
+	}
 
 	/**
 	 * @brief Removes a resource by ID.
