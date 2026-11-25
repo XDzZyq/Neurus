@@ -2,10 +2,8 @@
  * @file PassBindings.hpp
  * @brief Builds and writes the descriptor bindings a graph node owns.
  *
- * The plan is derived from the pass's ports; the writer resolves each image
- * from PassResources and each buffer/external image from the pass. RenderGraph
- * and the direct-pass test path share both functions, so a pass test exercises
- * exactly the descriptor writes production performs.
+ * The graph builds its plan from runtime sockets. Standalone pass tests
+ * build a plan from the shader ports. Both use the same descriptor rules.
  */
 
 #pragma once
@@ -33,8 +31,13 @@ struct GraphImageBinding
 	vk::ImageLayout   layout = vk::ImageLayout::eShaderReadOnlyOptimal;
 };
 
+/// Appends the graph-managed image descriptor for a single port, when applicable.
+void AppendImageBinding(std::vector<GraphImageBinding>& bindings, std::string_view name,
+                        PortDirection direction, std::string_view type, uint32_t binding,
+                        std::span<const uint32_t> selfManaged);
+
 /**
- * @brief Builds the image bindings for one pass.
+ * @brief Builds the image bindings for one standalone pass.
  *
  * Inputs are included when @p connected says so (an empty predicate includes
  * every sampler input, which is what a direct pass test wants). Outputs are

@@ -59,8 +59,8 @@ public:
 	/**
 	 * @brief Payload stored on each node in the underlying core Graph<>.
 	 *
-	 * The graph caches the pass's `PassIO` and port table at registration time
-	 * so Compile() and Connect() do not re-invoke `Pass::GetIO()`.
+	 * The graph caches `PassIO` at registration. The compiler reads image
+	 * bindings from the runtime sockets.
 	 */
 	struct PassBody
 	{
@@ -68,7 +68,6 @@ public:
 		std::shared_ptr<Pass>     ownedPass;          ///< Custom instance retained by this runtime node.
 		Pass*                    pass = nullptr;   ///< Provides Record().
 		PassIO                   io;               ///< Cached I/O declaration.
-		CpuPorts                ports;            ///< Ports from the shader.
 		std::vector<std::string> externalInputs;   ///< Declared out-of-graph inputs.
 		bool                     legacyExternal = false; ///< PassIO-only overlay node.
 
@@ -103,33 +102,20 @@ public:
 	/**
 	 * @brief Registers a pass with a precomputed port table.
 	 *
-	 * The compile path already holds the table the validator used, so passing it
-	 * here keeps the graph and the validator on exactly the same ports.
+	 * The supplied port table is used to create runtime sockets.
 	 *
-	 * @param pass            Non-null pointer to the pass instance.
-	 * @param ports           Ports the compiler validated.
-	 * @param externalInputs  Inputs the pass resolves outside the graph.
-	 * @param id              Document node id for resource keys.
-	 */
-	NodeT* AddPass(Pass* pass, CpuPorts ports,
-	               std::vector<std::string> externalInputs = {},
-	               std::string id = {});
-
-	/**
-	 * @brief Creates one pass node in a graph, with its sockets materialized.
-	 *
-	 * `Map()` builds its target with this, so a node created by the uploader is
-	 * identical to one created by AddPass().
-	 *
-	 * @param graph           Target graph.
 	 * @param pass            Non-null pointer to the pass instance.
 	 * @param ports           Ports to materialize.
 	 * @param externalInputs  Inputs the pass resolves outside the graph.
 	 * @param id              Document node id for resource keys.
 	 */
-	static NodeT* MakePassNode(GraphT& graph, Pass* pass, CpuPorts ports,
-	                           std::vector<std::string> externalInputs = {},
-	                           std::string id = {});
+	NodeT* AddPass(Pass* pass, const CpuPorts& ports,
+	               std::vector<std::string> externalInputs = {},
+	               std::string id = {});
+
+	/// Creates the payload for a pass node before it is added to a graph.
+	static PassBody MakePassBody(Pass& pass, std::vector<std::string> externalInputs,
+	                             std::string id, bool legacyExternal = false);
 
 	/**
 	 * @brief Adopts a graph built elsewhere, such as the uploader's target.

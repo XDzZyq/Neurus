@@ -46,7 +46,7 @@ The renderer uploads the document through `GraphUploader` (`src/render/render_gr
 
 1. Shader uploads populate the GPU cache before graph compilation.
 2. The uploader validates the document against the injected `IPortSource` and checks that each selected GPU shader preserves the pass's port, descriptor and push-constant contracts. The Editor uses the same port catalog.
-3. The morphism policy uses `PassFactory` to obtain a pass instance from the selected shader UID or the built-in recipe. It creates runtime sockets from the validated pass contract and maps document edges by socket name.
+3. The morphism policy uses `PassFactory` to obtain a pass instance from the selected shader UID or the built-in recipe. It returns a pass body for each node and a runtime port for each socket. The morphism adds those payloads to the graph and connects the mapped sockets.
 4. The morphism checks that the mapping is total and preserves edge endpoints. `RenderGraph::Compile()` caches the execution order and binding plan.
 
 A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. The renderer tracks a compile key made from the published topology hash and shader cache generation. An upload under the same shader UID refreshes the graph even without a new document. The public scene outputs select the live subgraph. Connecting Compose directly to scene color bypasses FXAA. Reconnecting the FXAA output restores it. Both edits retain all seven default nodes and their internal connections.
@@ -58,7 +58,7 @@ A failure leaves the previous graph drawing and is reported through `LastGraphRe
 - `PassFactory` resolves the node's shader UID through `RenderCache`, constructs pass-specific pipelines from GPU modules, with independent descriptor state for each node. Runtime graph/resource references retain resources needed by submitted work.
 - `AddPass(pass, ports, externals, id)` materializes one socket per port and keeps the document id in `PassBody::id` for resource keys. An overlay pass, which has no shader ports, keeps its historical `PassIO` sockets and is marked as a legacy node with external inputs.
 - `Connect(producer, fromPort, consumer, toPort)` is port to port. The overlay compatibility overload forwards to the same call with `AttachmentNameToString()`.
-- `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order of nodes reachable upstream from the selected outputs.
+- `Compile()` rejects an unconnected input unless the node declared it external, then caches the topological order of nodes reachable upstream from the selected outputs. It builds descriptor bindings directly from the runtime sockets.
 
 ```mermaid
 flowchart LR
@@ -69,12 +69,12 @@ flowchart LR
     cache["RenderCache<br/>uploaded ShaderGPU + metadata"] --> factory["PassFactory<br/>GPU modules → pass pipelines"]
     factory --> upload
     upload --> graph["RenderGraph<br/>PassPort sockets"]
-    graph --> plan["BuildImageBindings<br/>image binding plan"]
+    graph --> plan["RenderGraph::Compile<br/>image binding plan"]
     plan --> execute["Execute<br/>write descriptors, Record()"]
     execute --> frame["FrameProfile"]
 ```
 
-The mapping policy copies each authored `CpuPort` into a runtime `RenderGraph::PassPort`. Runtime sockets keep the authored names for edges and resource keys. Their payload keeps the canonical pass names used for descriptor binding. Each call to `GraphMorphism::Map(source)` returns its own target graph and a correspondence table for node and connection lookups. Each edge maps directly to the target graph's connection. The input socket owns the connection record, so its address survives graph moves. Rebuild the correspondence after rewiring or removing mapped sockets. The mapper retains only its construction policy. The uploader calls `mapping.images.Validate(source)` while both graphs are alive to check that every source element has an image and each connection joins the mapped owners. It then moves the validated target into the runtime graph. The upload plans one cache resource per tagged output, keyed by `ResourceKey(node, port)`.
+The mapping policy copies each authored `CpuPort` into a runtime `RenderGraph::PassPort`. Runtime sockets keep the authored names for edges and resource keys. Their payload keeps the canonical pass names used for descriptor binding. The policy callbacks receive a source node or socket and return a mapped payload. `GraphMorphism::Map(source)` creates target elements with those payloads and copies their source labels. It tracks correspondence by object identity and connects the mapped sockets. Each edge maps directly to the target graph's connection. The input socket owns the connection record, so its address survives graph moves. Rebuild the correspondence after rewiring or removing mapped sockets. The mapper retains only its construction policy. The uploader calls `mapping.images.Validate(source)` while both graphs are alive to check that every source element has an image and each connection joins the mapped sockets. It then moves the validated target into the runtime graph. The upload plans one cache resource per tagged output, keyed by `ResourceKey(node, port)`.
 
 `OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph and consumes the selected scene color, depth and object-ID resources. Picking uses the same object-ID selection.
 
@@ -99,7 +99,7 @@ The scene maps each selected output to a resource key for downstream consumers. 
 
 A pass no longer hand-writes its set layout. Renderer reflection reads the metadata copied by the shader upload request and merges binding numbers, descriptor kinds, stage masks and array counts into Vulkan bindings, including `PARTIALLY_BOUND` for the light SSBOs. Push-constant ranges derive from the same uploaded metadata. Values stay pass-owned; every current push constant is per-mesh, per-light, per-frame or per-selection. Scene pass constructors consume cached GPU shader modules and own their pipelines; graph mapping never reads mutable CPU shader IR or bytecode.
 
-The graph writes the descriptors. `BuildImageBindings` turns the node's connected input ports and storage-image output ports into `GraphImageBinding`s; `WritePassBindings` resolves each one through `PassResources`, then adds the pass's buffers (`CollectGraphBuffers`) and external images (`CollectGraphExternalImages`). A pass reads its images by port name from `PassFrame::resources`, never by `AttachmentName`.
+The graph writes the descriptors. Compilation turns the node's connected input sockets and storage-image output sockets into `GraphImageBinding`s; `WritePassBindings` resolves each one through `PassResources`, then adds the pass's buffers (`CollectGraphBuffers`) and external images (`CollectGraphExternalImages`). A pass reads its images by port name from `PassFrame::resources`, never by `AttachmentName`.
 
 Two exceptions are explicit:
 

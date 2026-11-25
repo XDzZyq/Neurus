@@ -52,37 +52,21 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 	const PassIO io = pass->GetIO();
 	const std::vector<const ShaderGPU*> shaders = pass->GetShaders();
 	CpuPorts ports = CollectUploadedPassPorts(io.name.empty() ? "Pass" : io.name, shaders);
-	return AddPass(pass, std::move(ports), PassExternalInputs(io.name));
+	return AddPass(pass, ports, PassExternalInputs(io.name));
 }
 
-RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, CpuPorts ports,
+RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, const CpuPorts& ports,
                                          std::vector<std::string> externalInputs,
                                          std::string id)
 {
-	NodeT* node = MakePassNode(m_graph, pass, std::move(ports),
-	                           std::move(externalInputs), std::move(id));
+	if (!pass)
+		throw std::runtime_error("RenderGraph::AddPass: pass must be non-null");
+
+	auto body = MakePassBody(*pass, std::move(externalInputs), std::move(id), ports.ports.empty());
+	auto nodeName = body.io.name.empty() ? std::string("Pass") : body.io.name;
+	auto* node = m_graph.AddNode(std::move(nodeName), std::move(body));
 	m_isCompiled = false;
 	m_compiled.clear();
-	return node;
-}
-
-RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, CpuPorts ports,
-                                              std::vector<std::string> externalInputs,
-                                              std::string id)
-{
-	if (!pass)
-		throw std::runtime_error("RenderGraph::MakePassNode: pass must be non-null");
-
-	PassBody entry;
-	entry.pass           = pass;
-	entry.io             = pass->GetIO();
-	entry.ports          = std::move(ports);
-	entry.externalInputs = std::move(externalInputs);
-
-	std::string nodeName = entry.io.name.empty() ? std::string("Pass") : entry.io.name;
-	entry.id             = id.empty() ? nodeName : std::move(id);
-	entry.legacyExternal = entry.ports.ports.empty();
-	auto* node = graph.AddNode(std::move(nodeName), std::move(entry));
 
 	if (node->data.legacyExternal)
 	{
@@ -103,7 +87,7 @@ RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, CpuPort
 	}
 	else
 	{
-		for (const CpuPort& port : node->data.ports.ports)
+		for (const CpuPort& port : ports.ports)
 		{
 			if (port.direction == PortDirection::Input)
 			{
@@ -119,6 +103,18 @@ RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, CpuPort
 	}
 
 	return node;
+}
+
+RenderGraph::PassBody RenderGraph::MakePassBody(Pass& pass, std::vector<std::string> externalInputs,
+                                                std::string id, bool legacyExternal)
+{
+	PassBody body;
+	body.pass = &pass;
+	body.io = pass.GetIO();
+	body.id = id.empty() ? (body.io.name.empty() ? "Pass" : body.io.name) : std::move(id);
+	body.externalInputs = std::move(externalInputs);
+	body.legacyExternal = legacyExternal;
+	return body;
 }
 
 void RenderGraph::Adopt(GraphT graph)
@@ -189,20 +185,18 @@ void RenderGraph::Compile(const std::set<std::string>* active)
 		if (node->data.legacyExternal)
 			continue;
 
-		const auto connected = [node](const std::string_view port)
+		const auto selfManaged = node->data.pass->SelfManagedBindings();
+		const auto append = [&](const PassPort& port)
 		{
-			for (const auto& input : node->inputs)
-			{
-				if (input->data.name == port && input->IsConnected())
-					return true;
-			}
-			return false;
+			AppendImageBinding(node->data.imageBindings, port.name, port.direction, port.type,
+			                   port.binding, selfManaged);
 		};
-
-		node->data.imageBindings =
-			BuildImageBindings(node->data.ports, *node->data.pass, connected);
+		for (const auto& input : node->inputs)
+			if (input->IsConnected())
+				append(input->data);
+		for (const auto& output : node->outputs)
+			append(output->data);
 	}
-
 
 	m_isCompiled = true;
 }

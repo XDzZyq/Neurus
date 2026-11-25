@@ -31,31 +31,7 @@ namespace neurus {
 
 namespace {
 
-using GpuNode   = RenderGraph::NodeT;
-using GpuOutput = RenderGraph::SocketOutT;
-using GpuInput  = RenderGraph::SocketInT;
-
 using RenderGraphMorphism = GraphMorphism<RenderGraphData, RenderGraph::GraphT>;
-
-GpuOutput* FindOutput(GpuNode& node, const std::string_view name)
-{
-	for (const auto& output : node.outputs)
-	{
-		if (output->name == name)
-			return output.get();
-	}
-	return nullptr;
-}
-
-GpuInput* FindInput(GpuNode& node, const std::string_view name)
-{
-	for (const auto& input : node.inputs)
-	{
-		if (input->name == name)
-			return input.get();
-	}
-	return nullptr;
-}
 
 /** @brief Compares interfaces by identity rather than unordered stage traversal order. */
 bool SamePorts(const CpuPorts& actual, const CpuPorts& expected)
@@ -101,73 +77,45 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 	                            : std::optional<AttachmentName>(it->second);
 }
 
-/// @brief Resolves pass instances and socket names during graph compilation.
 using PortContracts = std::unordered_map<int, CpuPorts>;
 
+/// @brief Resolves pass instances and socket names during graph compilation.
 RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog)
 {
 	RenderGraphMorphism::Policy policy;
 
-	policy.createNode = [&factory, &portCatalog](RenderGraph::GraphT& target,
-	                               const RenderGraphData::NodeType& node) -> GpuNode*
+	policy.createNode = [&factory, &portCatalog](const RenderGraphData::NodeType& node)
+		-> std::optional<RenderGraph::PassBody>
 	{
-		const CpuPorts* ports = portCatalog.FindPassPorts(node.data.pass);
-		if (!ports)
-		{
-			return nullptr;
-		}
 		const std::optional<int> shaderId = node.data.shader
 			? std::optional<int>(node.data.shader.id()) : std::nullopt;
 		auto owned = factory.Acquire(node.data.pass, node.name, shaderId);
-		Pass* pass = owned.get();
-		if (!pass)
-		{
-			return nullptr;
-		}
-		GpuNode* gpu = RenderGraph::MakePassNode(
-			target, pass, *ports, portCatalog.ExternalInputs(node.data.pass), node.name);
-		if (gpu)
-		{
-			// The runtime node keeps the document id so diagnostics and the
-			// resource keys name the graph the user edited.
-			gpu->name = node.name;
-			gpu->data.ownedPass = std::move(owned);
-			const auto mapSockets = [&](const auto& authored, auto& runtime)
-			{
-				for (const auto& socket : authored)
-				{
-					const auto* role = shaderId ? ports->FindRole(socket->data) : ports->Find(socket->name, socket->data.direction);
-					const auto mapped = std::ranges::find_if(runtime, [&](const auto& candidate) {
-						return role && candidate->data.name == role->name;
-					});
-					if (mapped == runtime.end())
-						throw std::runtime_error("no runtime role for socket '" + node.name + "." + socket->name + "'");
+		if (!owned)
+			return std::nullopt;
 
-					// Graph edges use the authored name. The runtime pass binds
-					// resources by the canonical name for this shader role.
-					(*mapped)->name = socket->name;
-					(*mapped)->data = RenderGraph::PassPort::FromCpuPort(socket->data);
-					(*mapped)->data.name = role->name;
-				}
-			};
-			mapSockets(node.inputs, gpu->inputs);
-			mapSockets(node.outputs, gpu->outputs);
-		}
-		return gpu;
+		auto body = RenderGraph::MakePassBody(*owned, portCatalog.ExternalInputs(node.data.pass), node.name);
+		body.ownedPass = std::move(owned);
+		return body;
 	};
 
-	policy.createOutput = [](GpuNode& node, const RenderGraphData::SocketOutT& port)
-		-> GpuOutput*
+	const auto mapSocket = [&portCatalog](const auto& source) -> std::optional<RenderGraph::PassPort>
 	{
-		return FindOutput(node, port.name);
-	};
+		const auto& node = *source.owner;
+		const auto* ports = portCatalog.FindPassPorts(node.data.pass);
+		if (!ports)
+			return std::nullopt;
+		const auto* role = node.data.shader ? ports->FindRole(source.data) : ports->Find(source.name, source.data.direction);
+		if (!role)
+			throw std::runtime_error("no runtime role for socket '" + node.name + "." + source.name + "'");
 
-	policy.createInput = [](GpuNode& node, const RenderGraphData::SocketInT& port)
-		-> GpuInput*
-	{
-		return FindInput(node, port.name);
+		// Graph edges use the authored name. The runtime pass binds
+		// resources by the canonical name for this shader role.
+		auto port = RenderGraph::PassPort::FromCpuPort(source.data);
+		port.name = role->name;
+		return port;
 	};
-
+	policy.createOutput = mapSocket;
+	policy.createInput = mapSocket;
 	return policy;
 }
 
