@@ -63,8 +63,9 @@ std::pair<int, ResourceRecord> readRecord(const Json& entry)
 		const auto& fields = type->name_depth == 0 ? data : data.at("value0");
 		if (!fields.is_object())
 			throw std::runtime_error("invalid pooled name fields");
-		if (fields.contains(type->name_field))
-			name = fields.at(type->name_field).get<std::string>();
+		name = fields.contains(type->name_field)
+			? fields.at(type->name_field).get<std::string>()
+			: type->DefaultName();
 	}
 	return {key.get<int>(), {type, std::move(name), entry.dump()}};
 }
@@ -143,7 +144,7 @@ void ResourceComponent::LoadJson(const std::string& object)
 	for (auto& [id, record] : records)
 	{
 		registerRecord(m_resources, id, record);
-		if (!record.name.empty())
+		if (!record.type->name_field.empty())
 			m_resources.SetName(id, record.name);
 	}
 }

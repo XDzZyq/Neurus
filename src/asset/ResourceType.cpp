@@ -52,4 +52,9 @@ bool IsUsableResource(const UID& resource)
 	return !info || !info->Usable || info->Usable(resource);
 }
 
+std::string ResourceTypeRegistration::DefaultName() const
+{
+	return ReadName ? ReadName(*Create()) : std::string{};
+}
+
 } // namespace neurus

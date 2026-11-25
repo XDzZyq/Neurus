@@ -3,7 +3,9 @@
 #include "asset/data/MeshData.hpp"
 #include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
+#include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
+#include "scene/Sprite.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/registrations/ShaderRegistration.hpp"
@@ -316,5 +318,78 @@ TEST(ProjectRoundtrip, UnknownResourceTypeFailsTheLoad)
 		EXPECT_NE(std::string(error.what()).find("unknown resource type"), std::string::npos)
 			<< error.what();
 	}
+}
+
+TEST(ProjectRoundtrip, RecordWithoutSavedNameRegistersItsDefaultName)
+{
+	ResourceManager source;
+	const auto firstMesh = source.Load<Mesh>();
+	const auto camera = source.Load<Camera>();
+	const auto light = source.Load<Light>();
+	const auto sprite = source.Load<Sprite>();
+	const auto secondMesh = source.Load<Mesh>();
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	for (auto& record : document.at("m_resources").at("resources_"))
+		record.at("data").at("value0").erase("o_name");
+
+	ResourceManager restored;
+	project::ResourceComponent(restored).LoadJson(document.dump());
+
+	// Defaults claim names in ascending UID order without materializing anything.
+	const int firstId = firstMesh->GetObjectID();
+	const int secondId = secondMesh->GetObjectID();
+	EXPECT_EQ(restored.RegisteredName(firstId), "Mesh");
+	EXPECT_EQ(restored.RegisteredName(secondId), "Mesh.001");
+	EXPECT_EQ(restored.RegisteredName(camera->GetObjectID()), "Camera");
+	EXPECT_EQ(restored.RegisteredName(light->GetObjectID()), "Light");
+	EXPECT_EQ(restored.RegisteredName(sprite->GetObjectID()), "Object");
+	for (const int id : { firstId, secondId, camera->GetObjectID(), light->GetObjectID(),
+		     sprite->GetObjectID() })
+		EXPECT_FALSE(restored.GetLive(id)) << id;
+
+	const auto resolved = restored.GetByName<Mesh>("Mesh");
+	ASSERT_TRUE(resolved);
+	EXPECT_EQ(resolved->GetObjectID(), firstId);
+	EXPECT_EQ(resolved->o_name, restored.RegisteredName(firstId));
+	EXPECT_EQ(resolved->o_name, "Mesh");
+}
+
+TEST(ProjectRoundtrip, ResavingNamelessDeferredRecordWritesItsDefaultName)
+{
+	ResourceManager source;
+	const auto mesh = source.Load<Mesh>();
+	source.Load<Camera>();
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	for (auto& record : document.at("m_resources").at("resources_"))
+		record.at("data").at("value0").erase("o_name");
+
+	ResourceManager restored;
+	project::ResourceComponent(restored).LoadJson(document.dump());
+
+	// Re-save without materializing: the deferred record must carry the default.
+	std::ostringstream resaved;
+	{
+		cereal::JSONOutputArchive archive(resaved);
+		project::ResourceComponent(restored).Save(archive);
+	}
+	const Json roundTrip = Json::parse(resaved.str());
+	const int meshId = mesh->GetObjectID();
+	for (const auto& record : roundTrip.at("m_resources").at("resources_"))
+		if (record.at("key") == meshId)
+		{
+			EXPECT_EQ(record.at("data").at("value0").at("o_name").get<std::string>(), "Mesh");
+			return;
+		}
+	FAIL() << "the mesh record must survive the resave";
 }
 } // namespace

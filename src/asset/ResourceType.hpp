@@ -31,6 +31,7 @@ struct ResourceTypeRegistration
 	int name_depth;
 
 	std::function<void(UID&, const std::string&)> WriteName;
+	std::function<std::string(const UID&)> ReadName;
 	std::function<std::shared_ptr<UID>()> Create;
 	std::function<void(cereal::JSONOutputArchive&, const UID&)> WriteBody;
 	std::function<void(cereal::JSONInputArchive&, UID&)> ReadBody;
@@ -39,6 +40,12 @@ struct ResourceTypeRegistration
 
 	static const ResourceTypeRegistration* Find(std::string_view archive_name);
 	static const ResourceTypeRegistration* Find(std::type_index type);
+
+	/**
+	 * @brief Constructor default name of the type, read from one throwaway
+	 *        default-constructed object; empty when the type has no name field.
+	 */
+	std::string DefaultName() const;
 
 	template<class T>
 	ResourceTypeRegistration(std::type_identity<T>, std::string archive_name, int depth,
@@ -57,11 +64,13 @@ struct ResourceTypeRegistration
 		{
 			name_field = "o_name";
 			WriteName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).o_name = name; };
+			ReadName = [](const UID& uid) { return static_cast<const T&>(uid).o_name; };
 		}
 		else if constexpr (requires(T object) { object.SetName(object.GetName()); })
 		{
 			name_field = "m_name";
 			WriteName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).SetName(name); };
+			ReadName = [](const UID& uid) { return static_cast<const T&>(uid).GetName(); };
 		}
 		Register();
 	}
