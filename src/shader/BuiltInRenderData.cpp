@@ -1,3 +1,8 @@
+/**
+ * @file BuiltInRenderData.cpp
+ * @brief Implementation of BuiltInRenderData.
+ */
+
 #include "shader/BuiltInRenderData.hpp"
 
 #include "shader/ComputeShader.hpp"

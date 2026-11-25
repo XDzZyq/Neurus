@@ -1,3 +1,8 @@
+/**
+ * @file UID.hpp
+ * @brief Base class for pooled objects; reports the key assigned by the owning ResourceManager.
+ */
+
 #pragma once
 
 #include <memory>

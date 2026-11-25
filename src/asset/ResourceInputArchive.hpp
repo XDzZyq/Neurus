@@ -1,3 +1,8 @@
+/**
+ * @file ResourceInputArchive.hpp
+ * @brief JSON input archive that carries the pool used to resolve resource references.
+ */
+
 #pragma once
 
 #include <cereal/archives/json.hpp>

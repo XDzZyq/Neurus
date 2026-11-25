@@ -1,3 +1,8 @@
+/**
+ * @file ResourceInputArchive.cpp
+ * @brief Implementation of ResourceInputArchive.
+ */
+
 #include "asset/ResourceInputArchive.hpp"
 
 namespace neurus

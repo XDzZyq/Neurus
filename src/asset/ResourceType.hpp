@@ -1,3 +1,8 @@
+/**
+ * @file ResourceType.hpp
+ * @brief Registration metadata for pooled resource types: archive name, name field, factory and payload checks.
+ */
+
 #pragma once
 
 #include <cereal/types/polymorphic.hpp>

@@ -1,3 +1,8 @@
+/**
+ * @file UID.cpp
+ * @brief Implementation of UID pool membership lookup.
+ */
+
 #include "core/UID.hpp"
 
 #include "core/Log.hpp"

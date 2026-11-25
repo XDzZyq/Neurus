@@ -1,3 +1,8 @@
+/**
+ * @file ResourceType.cpp
+ * @brief Resource type registry and default-name lookup.
+ */
+
 #include "asset/ResourceType.hpp"
 
 #include <map>

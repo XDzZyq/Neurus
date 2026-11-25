@@ -1,3 +1,8 @@
+/**
+ * @file ResourcePoolArchive.cpp
+ * @brief Writes the resource pool as next_uid plus typed {key, type, data} records.
+ */
+
 #include "asset/ResourceManager.hpp"
 #include "asset/ResourceType.hpp"
 

@@ -1,3 +1,8 @@
+/**
+ * @file BuiltInRenderData.hpp
+ * @brief Built-in scene shaders, pass ports and default render graph, held in a private pool.
+ */
+
 #pragma once
 
 #include "asset/data/render_graph/PassShaderCatalog.hpp"
