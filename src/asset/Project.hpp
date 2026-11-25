@@ -74,22 +74,13 @@ public:
 private:
 	friend class cereal::access;
 
-	// save/load cast to JSONArchive because Serializable's virtual interface
-	// is typed to JSON archives; safe because cereal calls these methods with
-	// the actual archive type used in Save()/Load().
+	// Serializable writes each component to the same JSON output archive.
 
 	template<class Archive>
 	void save(Archive& ar) const
 	{
 		for (auto& comp : m_components)
 			comp->Save(static_cast<cereal::JSONOutputArchive&>(ar));
-	}
-
-	template<class Archive>
-	void load(Archive& ar)
-	{
-		for (auto& comp : m_components)
-			comp->Load(static_cast<cereal::JSONInputArchive&>(ar));
 	}
 
 	std::vector<std::unique_ptr<Serializable>> m_components;

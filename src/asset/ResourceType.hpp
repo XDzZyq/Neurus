@@ -14,7 +14,6 @@
 namespace neurus
 {
 
-std::string ReadResourceName(const UID& resource);
 void WriteResourceName(UID& resource, const std::string& name);
 bool IsUsableResource(const UID& resource);
 /// Static metadata installed by the translation unit that registers the concrete
@@ -35,7 +34,6 @@ struct ResourceTypeRegistration
 	PayloadCheck validPayload;
 	ObjectCheck usable;
 	const char* nameField = nullptr;
-	std::string (*readName)(const UID&) = nullptr;
 	void (*writeName)(UID&, const std::string&) = nullptr;
 
 	template<class T>
@@ -53,13 +51,11 @@ struct ResourceTypeRegistration
 		if constexpr (requires(T object) { object.o_name; })
 		{
 			nameField = "o_name";
-			readName = [](const UID& uid) { return static_cast<const T&>(uid).o_name; };
 			writeName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).o_name = name; };
 		}
 		else if constexpr (requires(T object) { object.SetName(object.GetName()); })
 		{
 			nameField = "m_name";
-			readName = [](const UID& uid) { return static_cast<const T&>(uid).GetName(); };
 			writeName = [](UID& uid, const std::string& name) { static_cast<T&>(uid).SetName(name); };
 		}
 		Register(archiveName);

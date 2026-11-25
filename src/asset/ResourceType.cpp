@@ -41,12 +41,6 @@ const ResourceTypeRegistration* ResourceTypeRegistration::Find(std::type_index t
 	return it == liveTypes().end() ? nullptr : it->second;
 }
 
-std::string ReadResourceName(const UID& resource)
-{
-	const auto* info = ResourceTypeRegistration::Find(typeid(resource));
-	return info && info->readName ? info->readName(resource) : std::string{};
-}
-
 void WriteResourceName(UID& resource, const std::string& name)
 {
 	if (const auto* info = ResourceTypeRegistration::Find(typeid(resource)); info && info->writeName)

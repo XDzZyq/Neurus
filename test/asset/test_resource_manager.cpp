@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "asset/ResourceManager.hpp"
+#include "asset/components/ResourceComponent.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
@@ -324,7 +325,7 @@ TEST(ResourceManagerTest, DeferredCycleUnwindsAndDependenciesCanBeRetried)
 	EXPECT_EQ(childLoads, 2);
 }
 
-TEST(ResourceManagerTest, RawArchiveIncludesDeferredEntriesAndReplacesOldRegistry)
+TEST(ResourceManagerTest, ProjectArchiveIncludesDeferredEntriesAndReplacesOldRegistry)
 {
 	ResourceManager source;
 	auto camera = std::make_shared<Camera>();
@@ -334,7 +335,7 @@ TEST(ResourceManagerTest, RawArchiveIncludesDeferredEntriesAndReplacesOldRegistr
 	std::stringstream stream;
 	{
 		cereal::JSONOutputArchive archive(stream);
-		archive(source);
+		project::ResourceComponent(source).Save(archive);
 	}
 
 	ResourceManager target;
@@ -342,10 +343,8 @@ TEST(ResourceManagerTest, RawArchiveIncludesDeferredEntriesAndReplacesOldRegistr
 	int staleLoads = 0;
 	target.RegisterDeferred(365, typeid(Camera), [&] { ++staleLoads; return stale; });
 	target.SetName(365, "Previous");
-	{
-		cereal::JSONInputArchive archive(stream);
-		archive(target);
-	}
+	project::ResourceComponent(target).LoadJson(stream.str());
+	EXPECT_FALSE(target.GetLive(cameraId));
 	EXPECT_EQ(target.Size(), 1u);
 	EXPECT_FALSE(target.Contains(365));
 	EXPECT_EQ(target.GetByName<Camera>("Previous"), nullptr);
@@ -385,16 +384,12 @@ TEST(ResourceManagerTest, PoolSaveLoadRoundtrip)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(pool);
+		project::ResourceComponent(pool).Save(ar);
 	}
 
 	// --- Load ---
 	ResourceManager loaded;
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(loaded);
-	}
+	project::ResourceComponent(loaded).LoadJson(ss.str());
 
 	EXPECT_EQ(loaded.Size(), 4u);
 
@@ -456,16 +451,12 @@ TEST(ResourceManagerTest, PooledShaderRecompilesAfterLoad)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(pool);
+		project::ResourceComponent(pool).Save(ar);
 	}
 
 	// --- Load (the "reopen the app" step) ---
 	ResourceManager loaded;
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(loaded);
-	}
+	project::ResourceComponent(loaded).LoadJson(ss.str());
 
 	// The load lifecycle restores derived state: serialize(load) re-parses the
 	// stages and recompiles to SPIR-V, so GeometryPass can build the pipeline
@@ -624,29 +615,26 @@ TEST(ResourceTypeIndex, UntrackedTypeForEachFallsBackToEverything)
 }
 
 /**
- * @test The type index is derived state: a load rebuilds it from the restored
- *       objects, while names (never serialized) stay unseeded.
+ * @test The project reader indexes types and names before restoring objects.
  */
-TEST(ResourceTypeIndex, LoadRebuildsTypeIndexAndKeepsNamesUnseeded)
+TEST(ResourceTypeIndex, LoadIndexesTypesAndNamesBeforeRestoringObjects)
 {
 	ResourceManager pool;
 	auto cam = pool.Load<Camera>();
 	pool.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
-	ASSERT_EQ(pool.SetName(cam->GetObjectID(), "Cam"), "Cam");
+	cam->o_name = pool.SetName(cam->GetObjectID(), "Cam");
 
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(pool);
+		project::ResourceComponent(pool).Save(ar);
 	}
 
 	ResourceManager loaded;
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(loaded);
-	}
+	project::ResourceComponent(loaded).LoadJson(ss.str());
 
+	EXPECT_EQ(loaded.RegisteredName(cam->GetObjectID()), "Cam");
+	EXPECT_FALSE(loaded.GetLive(cam->GetObjectID()));
 	int cameras = 0;
 	int lights = 0;
 	loaded.ForEach<Camera>([&](const std::shared_ptr<Camera>&) { ++cameras; });
@@ -654,9 +642,9 @@ TEST(ResourceTypeIndex, LoadRebuildsTypeIndexAndKeepsNamesUnseeded)
 	EXPECT_EQ(cameras, 1);
 	EXPECT_EQ(lights, 1);
 
-	// Names live in the registry only, so a load leaves them for the caller to
-	// re-seed (ResourceComponent does that from o_name).
-	EXPECT_EQ(loaded.GetByName<Camera>("Cam"), nullptr);
+	const auto named = loaded.GetByName<Camera>("Cam");
+	ASSERT_TRUE(named);
+	EXPECT_EQ(named->GetObjectID(), cam->GetObjectID());
 }
 
 /**
@@ -673,18 +661,14 @@ TEST(ResourceNameRegistry, LoadIntoNonEmptyPoolDropsTheOldRegistry)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(source);
+		project::ResourceComponent(source).Save(ar);
 	}
 
 	ResourceManager target;
 	auto stale = target.Load<Camera>();
 	ASSERT_EQ(target.SetName(stale->GetObjectID(), "Stale"), "Stale");
 
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(target);
-	}
+	project::ResourceComponent(target).LoadJson(ss.str());
 
 	// The old object is gone with the replaced pool, and its name must be free.
 	EXPECT_EQ(target.GetByName<Camera>("Stale"), nullptr);

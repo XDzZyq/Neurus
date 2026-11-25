@@ -362,13 +362,6 @@ TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 	EXPECT_EQ(named->GetObjectID(), camera->GetObjectID());
 	EXPECT_EQ(ResourceManager::NextId(), nextUid);
 
-	ResourceManager direct;
-	std::istringstream stream(serialized.str());
-	cereal::JSONInputArchive archive(stream);
-	project::ResourceComponent(direct).Load(archive);
-	ASSERT_TRUE(direct.Get<UID>(plain->GetObjectID()));
-	ASSERT_TRUE(direct.Get<Camera>(camera->GetObjectID()));
-	EXPECT_EQ(ResourceManager::NextId(), nextUid);
 }
 
 TEST(ProjectRoundtrip, MixedPoolContentLoads)

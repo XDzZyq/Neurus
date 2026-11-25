@@ -28,7 +28,6 @@ public:
 
 	const char* Key() const noexcept override { return "m_resources"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
-	void Load(cereal::JSONInputArchive& ar) override;
 	void LoadJson(const std::string& object) override;
 
 private:

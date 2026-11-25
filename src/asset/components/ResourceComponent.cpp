@@ -7,6 +7,7 @@
 
 #include "core/Log.hpp"
 #include "asset/ResourceManager.hpp"
+#include "asset/ResourceInputArchive.hpp"
 #include "asset/ResourceType.hpp"
 
 // Force-link the polymorphic registration TUs (static libraries) so the pool's
@@ -16,14 +17,12 @@
 
 #include <nlohmann/json.hpp>
 
-#include <algorithm>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <map>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace neurus::project
 {
@@ -73,13 +72,9 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 	{
 		try
 		{
-			{
-				std::istringstream stream(*payload);
-				cereal::JSONInputArchive archive(stream);
-				ArchiveResourceRefs refs(archive, services.get());
-				type->readBody(archive, resource);
-				if (!refs.Resolve(pool).empty()) return false;
-			}
+			std::istringstream stream(*payload);
+			ResourceInputArchive archive(stream, pool, services.get());
+			type->readBody(archive, resource);
 			if (!IsUsableResource(resource))
 				return false;
 			WriteResourceName(resource, pool.RegisteredName(id));
@@ -106,39 +101,6 @@ void ResourceComponent::Save(cereal::JSONOutputArchive& ar) const
 	ar(cereal::make_nvp("m_resources", m_resources));
 }
 
-void ResourceComponent::Load(cereal::JSONInputArchive& ar)
-{
-	ArchiveResourceRefs scope(ar, m_services.get());
-	try
-	{
-		ar(cereal::make_nvp("m_resources", m_resources));
-	}
-	catch (const std::exception& e)
-	{
-		// A broken pool must not leave objects from the previous project active.
-		NEURUS_ERR("ResourceComponent::Load: " << e.what() << " - using empty resource pool.");
-		m_resources.Clear();
-	}
-
-	// The direct cereal reader already constructed these objects. Claim names
-	// in the same UID order as the deferred project reader.
-	auto ids = m_resources.RegisteredIds();
-	std::sort(ids.begin(), ids.end());
-	for (const int id : ids)
-	{
-		const auto resource = m_resources.GetLive(id);
-		if (!resource) continue;
-		if (!IsUsableResource(*resource))
-		{
-			m_resources.Remove(id);
-			continue;
-		}
-		const auto name = ReadResourceName(*resource);
-		if (!name.empty())
-			WriteResourceName(*resource, m_resources.SetName(id, name));
-	}
-}
-
 void ResourceComponent::LoadJson(const std::string& object)
 {
 	m_resources.Clear();
@@ -151,13 +113,14 @@ void ResourceComponent::LoadJson(const std::string& object)
 		return;
 	}
 
-	std::map<int, std::vector<ResourceRecord>> records;
+	std::map<int, ResourceRecord> records;
 	for (auto& entry : pool->at("resources_"))
 	{
 		try
 		{
 			auto [id, record] = readRecord(entry);
-			records[id].push_back(std::move(record));
+			if (!records.try_emplace(id, std::move(record)).second)
+				NEURUS_LOG("[ResourceComponent] Skipped duplicate resource UID " << id);
 		}
 		catch (const std::exception& error)
 		{
@@ -165,34 +128,12 @@ void ResourceComponent::LoadJson(const std::string& object)
 		}
 	}
 
-	// Every loader is registered before a duplicate check or root lookup can
-	// recursively request a dependency. Names are claimed in ascending UID order.
-	for (auto& [id, candidates] : records)
-		registerRecord(m_resources, id, candidates.front(), m_services);
-	// Only ambiguous records require a probe to select the first usable entry.
-	for (auto& [id, candidates] : records)
+	// Claim names in ascending UID order without loading any of the objects.
+	for (auto& [id, record] : records)
 	{
-		const ResourceRecord* accepted = &candidates.front();
-		if (candidates.size() > 1)
-		{
-			accepted = nullptr;
-			for (auto& candidate : candidates)
-			{
-				if (&candidate != &candidates.front())
-					registerRecord(m_resources, id, candidate, m_services);
-				if (m_resources.Get(id))
-				{
-					accepted = &candidate;
-					break;
-				}
-			}
-		}
-		if (accepted && !accepted->name.empty())
-		{
-			const auto name = m_resources.SetName(id, accepted->name);
-			if (const auto resource = m_resources.GetLive(id))
-				WriteResourceName(*resource, name);
-		}
+		registerRecord(m_resources, id, record, m_services);
+		if (!record.name.empty())
+			m_resources.SetName(id, record.name);
 	}
 }
 

@@ -67,6 +67,6 @@ void GraphComponent::LoadJson(const std::string& object)
 		NEURUS_LOG("[GraphComponent] Invalid graph selection");
 		return;
 	}
-	Serializable::LoadJson(object);
+	LoadComponentJson(object, *this);
 }
 } // namespace neurus::project

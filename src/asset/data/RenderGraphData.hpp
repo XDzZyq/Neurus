@@ -105,12 +105,13 @@ public:
 		ar(cereal::base_class<UID>(this));
 		if constexpr (Archive::is_loading::value)
 		{
-			auto record = std::make_shared<project::RenderGraphRecord>();
-			ar(cereal::make_nvp("topology", *record));
-			ArchiveResourceRefs::AfterLoad(ar, GetObjectID(),
-				[this, record = std::move(record)](const IResourceLookup& pool, const ResourceReadServices* services) {
-					return project::RestoreGraph(*this, *record, pool, services);
-				});
+			project::RenderGraphRecord record;
+			ar(cereal::make_nvp("topology", record));
+			const auto* input = dynamic_cast<const ResourceInputArchive*>(&ar);
+			if (!input)
+				throw cereal::Exception("Reading a render graph requires a resource pool");
+			if (!project::RestoreGraph(*this, record, input->Pool(), input->Services()))
+				throw cereal::Exception("Could not restore render graph topology");
 		}
 		else
 		{

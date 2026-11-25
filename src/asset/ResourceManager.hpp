@@ -229,13 +229,11 @@ public:
 	 * @brief Cereal serialization of the whole pool.
 	 *
 	 * Each record contains a UID key, the concrete resource type and its fields.
-	 * Saving retains deferred records. Direct archive loading constructs the
-	 * objects, rebuilds the type index and then resolves their references.
+	 * Saving retains deferred records. ResourceComponent indexes them on load.
 	 *
-	 * @param ar Archive to serialize to/from.
+	 * @param ar Output archive.
 	 */
 	void save(cereal::JSONOutputArchive& ar) const;
-	void load(cereal::JSONInputArchive& ar);
 
 private:
 	/// Reverse entry for one registered name: the object's dynamic type + name.

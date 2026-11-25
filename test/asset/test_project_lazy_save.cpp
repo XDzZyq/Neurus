@@ -78,11 +78,6 @@ TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 	EXPECT_FALSE(indexed.GetLive(shaderId));
 	check(indexed);
 
-	ResourceManager direct;
-	std::istringstream stream(saved);
-	cereal::JSONInputArchive archive(stream);
-	project::ResourceComponent(direct).Load(archive);
-	check(direct);
 }
 
 TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
@@ -190,11 +185,57 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 		EXPECT_EQ(entry.at("data").dump().find("\"o_id\""), std::string::npos);
 		EXPECT_TRUE(keys.insert(entry.at("key").get<int>()).second);
 	}
-	std::istringstream stream(component.dump());
-	cereal::JSONInputArchive archive(stream);
-	ResourceManager raw;
-	project::ResourceComponent(raw).Load(archive);
-	checkRestored(raw);
+}
+
+TEST(ProjectRoundtrip, RecursiveLookupRejectsSelfReferenceAndKeepsIndependentResource)
+{
+	ResourceManager source;
+	const auto mesh = source.Load<Mesh>();
+	const auto camera = source.Load<Camera>();
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	const int meshId = mesh->GetObjectID();
+	for (auto& record : document.at("m_resources").at("resources_"))
+		if (record.at("key") == meshId)
+			record.at("data")["o_meshDataId"] = meshId;
+
+	ResourceManager restored;
+	project::ResourceComponent(restored).LoadJson(document.dump());
+	ASSERT_TRUE(restored.Contains(meshId));
+	EXPECT_FALSE(restored.Get<Mesh>(meshId));
+	EXPECT_FALSE(restored.Contains(meshId));
+	EXPECT_TRUE(restored.Get<Camera>(camera->GetObjectID()));
+}
+
+TEST(ProjectRoundtrip, DuplicateUidsDoNotMaterializeTheirFirstRecord)
+{
+	ResourceManager source;
+	const auto camera = source.Load<Camera>();
+	camera->cam_pers = 37.0f;
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	auto& records = document.at("m_resources").at("resources_");
+	auto duplicate = records.front();
+	duplicate["data"]["cam_pers"] = 54.0f;
+	records.push_back(std::move(duplicate));
+
+	ResourceManager restored;
+	project::ResourceComponent(restored).LoadJson(document.dump());
+	const auto id = camera->GetObjectID();
+	EXPECT_EQ(restored.Size(), 1u);
+	EXPECT_TRUE(restored.Contains(id));
+	EXPECT_FALSE(restored.GetLive(id));
+	const auto loaded = restored.Get<Camera>(id);
+	ASSERT_TRUE(loaded);
+	EXPECT_FLOAT_EQ(loaded->cam_pers, 37.0f);
 }
 
 TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithInvalidKey)

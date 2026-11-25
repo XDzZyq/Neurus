@@ -108,11 +108,8 @@ TEST_F(ShaderCreateTest, LoadedNameSurvivesResourceComponentRoundTrip)
 		save.Save(out);
 	}
 	neurus::ResourceManager restored;
-	{
-		cereal::JSONInputArchive in(ss);
-		neurus::project::ResourceComponent load(restored, neurus::project::MakeGraphReadServices(m_editor.GetRenderManager().Defaults()));
-		load.Load(in);
-	}
+	neurus::project::ResourceComponent(restored, neurus::project::MakeGraphReadServices(m_editor.GetRenderManager().Defaults()))
+		.LoadJson(ss.str());
 
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));
 }

@@ -13,7 +13,8 @@ public:
 	explicit SceneComponent(Scene& scene, ResourceManager& resources);
 	const char* Key() const noexcept override { return "m_scene"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
-	void Load(cereal::JSONInputArchive& ar) override;
+	void Load(cereal::JSONInputArchive& ar);
+	void LoadJson(const std::string& object) override { LoadComponentJson(object, *this); }
 private:
 	Scene* m_scene;
 	ResourceManager* m_resources;

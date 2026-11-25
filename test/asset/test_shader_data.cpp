@@ -219,11 +219,7 @@ TEST(ShaderDataPersistence, ResourceComponentPreservesRenderAndComputeShadersByN
 		}
 	}
 	neurus::ResourceManager restored;
-	{
-		cereal::JSONInputArchive in(ss);
-		neurus::project::ResourceComponent load(restored);
-		load.Load(in);
-	}
+	neurus::project::ResourceComponent(restored).LoadJson(ss.str());
 
 	auto loaded = restored.GetByName<neurus::ComputeShader>("Comp");
 	ASSERT_TRUE(loaded);
@@ -284,11 +280,8 @@ TEST(ShaderDataPersistence, FailedShaderLoadClearsMeshReferenceAndIsOmittedOnSav
 	}
 
 	neurus::ResourceManager restored;
-	{
-		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
-		load.Load(archive);
-	}
+	neurus::project::ResourceComponent(restored).LoadJson(serialized.str());
+	EXPECT_FALSE(restored.Get(brokenId));
 	EXPECT_FALSE(restored.Contains(brokenId));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(meshId);
 	ASSERT_NE(restoredMesh, nullptr);
@@ -326,11 +319,8 @@ TEST(ShaderDataPersistence, MissingShaderSourceDoesNotCreatePersistedFallback)
 		save.Save(archive);
 	}
 	neurus::ResourceManager restored;
-	{
-		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
-		load.Load(archive);
-	}
+	neurus::project::ResourceComponent(restored).LoadJson(serialized.str());
+	EXPECT_FALSE(restored.Get(shaderId));
 	EXPECT_FALSE(restored.Contains(shaderId));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(meshId);
 	ASSERT_NE(restoredMesh, nullptr);
@@ -370,11 +360,7 @@ TEST(ShaderDataPersistence, NullPoolEntriesDoNotSurviveLoadOrSave)
 	neurus::ResourceManager restored;
 	std::stringstream serialized(
 		R"({"m_resources":{"resources_":[{"key":9123,"type":"neurus::RenderShader","data":null}]}})");
-	{
-		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
-		load.Load(archive);
-	}
+	neurus::project::ResourceComponent(restored).LoadJson(serialized.str());
 	EXPECT_EQ(restored.Size(), 0u);
 	std::stringstream saved;
 	{
@@ -490,6 +476,7 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 	loaded.Register<neurus::project::ResourceComponent>(restored);
 	ASSERT_NO_THROW(loaded.Load(path.string()));
 	EXPECT_EQ(restored.Size(), 4u);
+	EXPECT_FALSE(restored.Get(brokenId));
 	EXPECT_FALSE(restored.Contains(brokenId));
 	const int goodId = brokenId == first->GetObjectID() ? second->GetObjectID() : first->GetObjectID();
 	ASSERT_NE(restored.Get<neurus::ShaderData>(goodId), nullptr);
@@ -525,11 +512,7 @@ TEST(ShaderDataPersistence, ComputeShaderRemainsPooledButCannotBindToAMesh)
 		save.Save(archive);
 	}
 	neurus::ResourceManager restored;
-	{
-		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
-		load.Load(archive);
-	}
+	neurus::project::ResourceComponent(restored).LoadJson(serialized.str());
 	ASSERT_NE(restored.Get<neurus::ComputeShader>(compute->GetObjectID()), nullptr);
 	EXPECT_TRUE(restored.Get<neurus::ComputeShader>(compute->GetObjectID())->IsValid());
 	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
@@ -562,6 +545,7 @@ TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
 	neurus::ResourceManager restored;
 	neurus::project::ResourceComponent load(restored);
 	ASSERT_NO_THROW(load.LoadJson(document.dump()));
+	EXPECT_FALSE(restored.Get(shader->GetObjectID()));
 	EXPECT_FALSE(restored.Contains(shader->GetObjectID()));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
 	ASSERT_NE(restoredMesh, nullptr);
@@ -650,11 +634,8 @@ TEST(ShaderDataPersistence, IncompatibleCompiledStagesAreDiscardedOnLoad)
 		save.Save(archive);
 	}
 	neurus::ResourceManager restored;
-	{
-		cereal::JSONInputArchive archive(serialized);
-		neurus::project::ResourceComponent load(restored);
-		load.Load(archive);
-	}
+	neurus::project::ResourceComponent(restored).LoadJson(serialized.str());
+	EXPECT_FALSE(restored.Get(shader->GetObjectID()));
 	EXPECT_FALSE(restored.Contains(shader->GetObjectID()));
 	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
 	ASSERT_NE(restoredMesh, nullptr);

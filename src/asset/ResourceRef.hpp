@@ -1,60 +1,17 @@
 #pragma once
 
+#include "asset/ResourceInputArchive.hpp"
 #include "core/IResourceLookup.hpp"
 #include "core/Serialize.hpp"
 
-#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
-#include <vector>
-
-namespace cereal { class JSONInputArchive; }
 
 namespace neurus
 {
-
-/// Project-owned services used by resource types while reading their fields.
-struct ResourceReadServices
-{
-	virtual ~ResourceReadServices() = default;
-};
-
-/// Collects UID references while cereal constructs pooled objects. The reader
-/// resolves the fields once all targets are available. Fields must belong to
-/// objects with stable addresses until Resolve returns (as pooled UIDs do).
-class ArchiveResourceRefs
-{
-public:
-	explicit ArchiveResourceRefs(const cereal::JSONInputArchive& archive, const ResourceReadServices* services = nullptr);
-	~ArchiveResourceRefs();
-	ArchiveResourceRefs(const ArchiveResourceRefs&) = delete;
-	ArchiveResourceRefs& operator=(const ArchiveResourceRefs&) = delete;
-
-	using Assign = std::function<void(const std::shared_ptr<UID>&)>;
-	static void Bind(const cereal::JSONInputArchive& archive, int id, Assign assign);
-	static bool IsBound(const cereal::JSONInputArchive& archive);
-	static void BindOptional(const cereal::JSONInputArchive& archive, int id, Assign assign);
-	using Complete = std::function<bool(const IResourceLookup&, const ResourceReadServices*)>;
-	static void AfterLoad(const cereal::JSONInputArchive& archive, int ownerUid, Complete complete);
-	std::vector<int> Resolve(const IResourceLookup& pool);
-
-private:
-	const cereal::JSONInputArchive& m_archive;
-	ArchiveResourceRefs* m_previous;
-	struct Binding
-	{
-		int id;
-		Assign assign;
-		bool optional;
-	};
-	static ArchiveResourceRefs& For(const cereal::JSONInputArchive& archive);
-	std::vector<Binding> m_bindings;
-	std::vector<std::pair<int, Complete>> m_completions;
-	const ResourceReadServices* m_services;
-};
 
 /// Shared ownership in memory, a scalar UID in a project. A field can supply
 /// an acceptance predicate for restoring a narrower kind of resource.
@@ -109,13 +66,13 @@ public:
 	{
 		reset();
 		if (uid < 0) return;
-		if (!ArchiveResourceRefs::IsBound(ar)) return;
-		ArchiveResourceRefs::Bind(ar, uid, [this](const std::shared_ptr<UID>& resource) {
-			auto value = std::dynamic_pointer_cast<T>(resource);
+		if (const auto* input = dynamic_cast<const ResourceInputArchive*>(&ar))
+		{
+			auto value = input->Pool().Get<T>(uid);
 			if constexpr (Accept != nullptr)
 				if (value && !Accept(*value)) value.reset();
 			m_value = std::move(value);
-		});
+		}
 	}
 
 	bool HasIdentity() const { return identity().has_value(); }

@@ -28,7 +28,8 @@ public:
 	const char* Key() const noexcept override { return "m_editor"; }
 
 	void Save(cereal::JSONOutputArchive& ar) const override;
-	void Load(cereal::JSONInputArchive& ar) override;
+	void Load(cereal::JSONInputArchive& ar);
+	void LoadJson(const std::string& object) override { LoadComponentJson(object, *this); }
 
 private:
 	EditorViewport* m_viewport;

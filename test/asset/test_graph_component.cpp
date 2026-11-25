@@ -215,7 +215,7 @@ TEST_F(GraphComponent, InactiveGraphResolvesShadersStoredLaterInPool)
 	EXPECT_FALSE(loaded->nodes[4]->data.shader);
 }
 
-TEST_F(GraphComponent, StandaloneArchiveRestoresGraphAndShaderTogether)
+TEST_F(GraphComponent, LookingUpDeferredGraphRestoresItsShader)
 {
 	neurus::ResourceManager source;
 	const auto graph = source.Load<neurus::RenderGraphData>(catalog.Ports());
@@ -224,9 +224,10 @@ TEST_F(GraphComponent, StandaloneArchiveRestoresGraphAndShaderTogether)
 	graph->nodes[5]->data.shader = shader;
 
 	neurus::ResourceManager restored;
-	std::istringstream stream(SavePool(source).dump());
-	cereal::JSONInputArchive archive(stream);
-	neurus::project::ResourceComponent(restored, neurus::project::MakeGraphReadServices(catalog)).Load(archive);
+	neurus::project::ResourceComponent(restored, neurus::project::MakeGraphReadServices(catalog))
+		.LoadJson(SavePool(source).dump());
+	EXPECT_FALSE(restored.GetLive(graph->GetObjectID()));
+	EXPECT_FALSE(restored.GetLive(shader->GetObjectID()));
 
 	const auto loadedGraph = restored.Get<neurus::RenderGraphData>(graph->GetObjectID());
 	ASSERT_TRUE(loadedGraph);

@@ -19,7 +19,8 @@ public:
     explicit UIComponent(std::string& ui);
     const char* Key() const noexcept override { return "ui"; }
     void Save(cereal::JSONOutputArchive& ar) const override;
-    void Load(cereal::JSONInputArchive& ar) override;
+    void Load(cereal::JSONInputArchive& ar);
+    void LoadJson(const std::string& object) override { LoadComponentJson(object, *this); }
 private:
     std::string* m_ui;
 };

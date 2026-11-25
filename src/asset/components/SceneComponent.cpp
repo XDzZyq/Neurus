@@ -34,20 +34,30 @@ struct MemberList
 	{
 		cereal::size_type count = 0;
 		ar(cereal::make_size_tag(count));
-		for (cereal::size_type i = 0; i < count; ++i)
-		{
-			int id;
+		ids.resize(count);
+		for (auto& id : ids)
 			ar(id);
-			// Membership includes UID zero. Register directly into both scene maps
-			// once every array in this group has been read successfully.
-			ArchiveResourceRefs::BindOptional(ar, id, [&scene = scene, use = use, id](const auto& resource) {
-				if (auto member = std::dynamic_pointer_cast<T>(resource))
+	}
+
+	void AddToScene(const IResourceLookup& pool) const
+	{
+		for (const int id : ids)
+		{
+			try
+			{
+				if (auto member = pool.Get<T>(id))
 					(scene.*use)(std::move(member));
 				else
 					NEURUS_LOG("[SceneComponent] Missing scene member UID " << id);
-			});
+			}
+			catch (const std::exception& error)
+			{
+				NEURUS_ERR("[SceneComponent] Could not restore scene member UID " << id << ": " << error.what());
+			}
 		}
 	}
+
+	std::vector<int> ids;
 };
 
 struct SceneRecord
@@ -58,7 +68,7 @@ struct SceneRecord
 	template<class T>
 	auto Members(const char* key, const Scene::ResPool<T>& list, void (Scene::*use)(Scene::Resource<T>))
 	{
-		return cereal::make_nvp(key, MemberList<T>{scene, list, use});
+		return cereal::make_nvp(key, MemberList<T>{scene, list, use, {}});
 	}
 
 	template<class Archive, class... Fields>
@@ -66,9 +76,8 @@ struct SceneRecord
 	{
 		if constexpr (Archive::is_loading::value)
 		{
-			ArchiveResourceRefs refs(ar);
 			if (archive::OptionalBlock(ar, fields...))
-				refs.Resolve(pool);
+				(fields.value.AddToScene(pool), ...);
 		}
 		else
 			ar(fields...);

@@ -14,7 +14,7 @@ public:
     explicit ConfigComponent(std::shared_ptr<RenderConfig>& config);
     const char* Key() const noexcept override { return "proj_config"; }
     void Save(cereal::JSONOutputArchive& ar) const override;
-    void Load(cereal::JSONInputArchive& ar) override;
+    void Load(cereal::JSONInputArchive& ar);
     void LoadJson(const std::string& object) override;
 private:
     std::shared_ptr<RenderConfig>* m_config;

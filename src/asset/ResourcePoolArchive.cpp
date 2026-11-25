@@ -96,36 +96,4 @@ void ResourceManager::save(cereal::JSONOutputArchive& ar) const
 	ar.finishNode();
 }
 
-void ResourceManager::load(cereal::JSONInputArchive& ar)
-{
-	ResourceManager restored;
-	ArchiveResourceRefs refs(ar);
-	ar.setNextName("resources_");
-	ar.startNode();
-	cereal::size_type count = 0;
-	ar.loadSize(count);
-	for (cereal::size_type i = 0; i < count; ++i)
-	{
-		ar.startNode();
-		int id;
-		std::string typeName;
-		ar(cereal::make_nvp("key", id), cereal::make_nvp("type", typeName));
-		const auto* type = ResourceTypeRegistration::Find(typeName);
-		if (!type)
-			throw cereal::Exception("Unknown pooled resource type: " + typeName);
-		auto resource = type->create();
-		restored.RegisterAt(id, resource);
-		type->readBody(ar, *resource);
-		ar.finishNode();
-	}
-	ar.finishNode();
-
-	for (int uid : refs.Resolve(restored))
-		restored.Remove(uid);
-	Clear();
-	res_live.swap(restored.res_live);
-	res_entries.swap(restored.res_entries);
-	res_idsByType.swap(restored.res_idsByType);
-}
-
 } // namespace neurus

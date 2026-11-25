@@ -4,7 +4,8 @@ add_library(neurus_asset_data STATIC
 	ResourceManager.cpp
 	ResourcePoolArchive.cpp
 	ResourceRef.hpp
-	ResourceRef.cpp
+	ResourceInputArchive.hpp
+	ResourceInputArchive.cpp
 	ResourceType.hpp
 	ResourceType.cpp
 	PixelFormat.hpp
