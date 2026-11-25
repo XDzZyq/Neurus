@@ -447,6 +447,31 @@ TEST(SerializeOptional, AbsentResourcePathStillThrows)
 }
 
 /**
+ * @brief A positive reference needs the pool that resolves it.
+ *
+ * A scalar UID is meaningless without a pool, so a plain archive must not
+ * silently drop the reference and hand back a half-loaded object.
+ */
+TEST(SerializeOptional, ResourceReferenceOutsidePoolArchiveThrows)
+{
+	Mesh mesh;
+	auto shader = ShaderLibrary::LoadRenderShader("AuthoredShader",
+		"res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
+	ASSERT_NE(shader, nullptr);
+	ASSERT_TRUE(shader->CompileToSpv());
+	ResourceManager resources;
+	auto pooledShader = std::shared_ptr<RenderShader>(std::move(shader));
+	resources.Register(pooledShader);
+	mesh.SetObjShader(pooledShader);
+
+	const std::string authoredMeshJson = SaveOne("mesh", mesh);
+	ExpectKey(authoredMeshJson, "o_shaderId");
+
+	Mesh fresh;
+	EXPECT_THROW(LoadOne(authoredMeshJson, "mesh", fresh), std::logic_error);
+}
+
+/**
  * @brief An undo entry's endpoint nodes stay strict.
  *
  * A half-read operation is worse than a refused one: it replays a `m_before`

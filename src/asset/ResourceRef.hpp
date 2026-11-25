@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -65,14 +66,17 @@ public:
 	void load_minimal(const Archive& ar, const int& uid)
 	{
 		reset();
-		if (uid < 0) return;
-		if (const auto* input = dynamic_cast<const ResourceInputArchive*>(&ar))
-		{
-			auto value = input->Pool().Get<T>(uid);
-			if constexpr (Accept != nullptr)
-				if (value && !Accept(*value)) value.reset();
-			m_value = std::move(value);
-		}
+		// 0 and -1 both mean "no reference": old files wrote 0, and a null
+		// reference saves as -1.
+		if (uid <= 0) return;
+		const auto* input = dynamic_cast<const ResourceInputArchive*>(&ar);
+		if (!input)
+			throw std::logic_error("Reading resource reference " + std::to_string(uid) +
+				" requires a ResourceInputArchive");
+		auto value = input->Pool().Get<T>(uid);
+		if constexpr (Accept != nullptr)
+			if (value && !Accept(*value)) value.reset();
+		m_value = std::move(value);
 	}
 
 	bool HasIdentity() const { return identity().has_value(); }
