@@ -8,8 +8,8 @@ Two builds of the app rarely agree on a field list. An older build opening a new
 
 A catch around a whole component can discard valid neighbors after one field fails.
 Per-field helpers handle version drift. Disk project loading additionally isolates
-components and resource entries before invoking cereal, so recovery does not depend
-on a shared archive cursor.
+components before invoking cereal, so recovery does not depend on a shared archive
+cursor. An unreadable resource pool record is not recovered: it fails the open.
 
 ## The three helpers (`core/Serialize.hpp`)
 
@@ -47,9 +47,13 @@ Value fields are optional; identity and history are not. Absence there means a b
 
 - The pool record key identifies the object for every cross-reference. A standalone object carries only its fields, and its UID base serializes as an empty object.
 - The `cereal::base_class<>` hooks.
-- Resource identities and the Scene's ID lists. Individual disk pool entries are
-  isolated: a malformed or unknown entry is skipped and reported without losing
-  valid entries. Bare cereal pool loading still has its coarse failure behavior.
+- Resource identities and the Scene's ID lists. A project with no `m_resources`
+  node, a pool that is not an object, a missing or non-array `resources_`,
+  or an unreadable disk record fails the open. That covers a record that is not an
+  object, a legacy `{key, value}` record, an unknown pooled type, an invalid key
+  or payload, and a duplicate UID; the error names the record's index. The pool
+  is cleared only after every record validates, so a failed load leaves the
+  previous pool intact.
 - Mesh and image source paths, shader names and stage paths are required. Shader
   project keys keep their original spelling, including `m_name`, `m_vertPath`,
   `m_fragPath` and `m_compPath`.
@@ -70,7 +74,7 @@ What this does and does not buy an *older* build opening a *newer* file:
 | a field renamed since | defaults that one field, keeps the rest | `archive::Optional` |
 | a whole component node this build lacks | ignores it | disk `Project::Load` selects registered component keys |
 | an optional config or graph node the file lacks | keeps its stored slot null; effective reads use defaults | component recovery policy |
-| a pooled object type this build does not know | skips and reports that entry, retaining valid neighbors | disk `ResourceComponent::LoadJson` |
+| a pooled object type this build does not know | refuses to open the project and reports the record | disk `ResourceComponent::LoadJson` |
 | a malformed config field or out-of-range config enum | defaults that field, retaining valid neighbors | disk `ConfigComponent::LoadJson` |
 | an out-of-range enum through bare cereal loading | no general range validation | the helpers provide optionality, not domain validation |
 

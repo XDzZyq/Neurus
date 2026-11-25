@@ -87,4 +87,4 @@ A zero id is an already-handled, reported state, so an absent id costs that obje
 
 Each scene object serializes its `ObjectID` base and its `Transform3D` base (under the `"transform"` node) directly, then reads its own value fields with `archive::Optional`. Scene types are registered with cereal in `scene/registrations/TypeRegistration.cpp`, both as `CEREAL_REGISTER_TYPE`s and as polymorphic relations from `UID` and `ObjectID`, alongside typed factories for restoring pool entries. See [Serialization](../core/serialization.md).
 
-Legacy project files that use the pre-`m_scene` full-pool format fail to read the ID lists and degrade to an empty scene, with a default-camera fallback.
+Legacy project files that use the pre-`m_scene` full-pool format have no `m_resources` node and are refused at open instead of degrading to an empty scene.

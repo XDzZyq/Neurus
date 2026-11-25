@@ -18,6 +18,8 @@
 #include <iterator>
 #include <set>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 
 namespace
 {
@@ -211,7 +213,7 @@ TEST(ProjectRoundtrip, RecursiveLookupRejectsSelfReferenceAndKeepsIndependentRes
 	EXPECT_TRUE(restored.Get<Camera>(camera->GetObjectID()));
 }
 
-TEST(ProjectRoundtrip, DuplicateUidsDoNotMaterializeTheirFirstRecord)
+TEST(ProjectRoundtrip, DuplicateUidsFailTheLoad)
 {
 	ResourceManager source;
 	const auto camera = source.Load<Camera>();
@@ -228,17 +230,19 @@ TEST(ProjectRoundtrip, DuplicateUidsDoNotMaterializeTheirFirstRecord)
 	records.push_back(std::move(duplicate));
 
 	ResourceManager restored;
-	project::ResourceComponent(restored).LoadJson(document.dump());
-	const auto id = camera->GetObjectID();
-	EXPECT_EQ(restored.Size(), 1u);
-	EXPECT_TRUE(restored.Contains(id));
-	EXPECT_FALSE(restored.GetLive(id));
-	const auto loaded = restored.Get<Camera>(id);
-	ASSERT_TRUE(loaded);
-	EXPECT_FLOAT_EQ(loaded->cam_pers, 37.0f);
+	try
+	{
+		project::ResourceComponent(restored).LoadJson(document.dump());
+		FAIL() << "a duplicate UID must fail the load";
+	}
+	catch (const std::runtime_error& error)
+	{
+		EXPECT_NE(std::string(error.what()).find("duplicate resource UID"), std::string::npos)
+			<< error.what();
+	}
 }
 
-TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithInvalidKey)
+TEST(ProjectRoundtrip, InvalidKeyFailsTheLoad)
 {
 
 	ResourceManager source;
@@ -256,19 +260,61 @@ TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithInvalidKey)
 
 	ResourceManager pool;
 	project::ResourceComponent restored(pool);
-	restored.LoadJson(document.dump());
-	EXPECT_FALSE(pool.Contains(broken));
-	EXPECT_TRUE(pool.Contains(valid));
-	EXPECT_FALSE(pool.GetLive(valid));
-	std::ostringstream saved;
+	EXPECT_THROW(restored.LoadJson(document.dump()), std::runtime_error);
+	EXPECT_FALSE(pool.Contains(valid));
+}
+
+TEST(ProjectRoundtrip, LegacyKeyValueRecordFailsTheLoad)
+{
+	ResourceManager source;
+	source.Load<Camera>();
+	std::ostringstream output;
 	{
-		cereal::JSONOutputArchive archive(saved);
-		ASSERT_NO_THROW(restored.Save(archive));
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
 	}
-	EXPECT_FALSE(pool.GetLive(valid));
-	ResourceManager reopened;
-	project::ResourceComponent(reopened).LoadJson(saved.str());
-	ASSERT_EQ(reopened.Size(), 1u);
-	EXPECT_TRUE(reopened.Get<Camera>(valid));
+	auto document = Json::parse(output.str());
+	auto& records = document.at("m_resources").at("resources_");
+	Json legacy = Json::object();
+	legacy["key"] = records.front().at("key");
+	legacy["value"] = Json::object();
+	records.front() = legacy;
+
+	ResourceManager restored;
+	try
+	{
+		project::ResourceComponent(restored).LoadJson(document.dump());
+		FAIL() << "a legacy {key, value} record must fail the load";
+	}
+	catch (const std::runtime_error& error)
+	{
+		EXPECT_NE(std::string(error.what()).find("legacy"), std::string::npos) << error.what();
+	}
+}
+
+TEST(ProjectRoundtrip, UnknownResourceTypeFailsTheLoad)
+{
+	ResourceManager source;
+	source.Load<Camera>();
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	for (auto& record : document.at("m_resources").at("resources_"))
+		record.at("type") = "neurus::NoSuchType";
+
+	ResourceManager restored;
+	try
+	{
+		project::ResourceComponent(restored).LoadJson(document.dump());
+		FAIL() << "an unknown pooled type must fail the load";
+	}
+	catch (const std::runtime_error& error)
+	{
+		EXPECT_NE(std::string(error.what()).find("unknown resource type"), std::string::npos)
+			<< error.what();
+	}
 }
 } // namespace

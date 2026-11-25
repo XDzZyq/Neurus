@@ -8,7 +8,8 @@
  *   typed pools, obj_list, selection restore by ID, and data-resource wiring
  *   (Mesh -> MeshData + Shader, Environment -> ImageData).
  * - Legacy project files (no "m_resources" node, old full-pool "m_scene")
- *   degrade to an empty scene + default-camera fallback without throwing.
+ *   are refused: a project without a resource pool fails the open instead of
+ *   loading as a silently empty document.
  *
  * Pure CPU -- no GPU required.
  */
@@ -20,6 +21,7 @@
 #include <fstream>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "asset/Project.hpp"
@@ -314,17 +316,16 @@ TEST(SceneSerialize, MissingAssetFilesKeepPooledResourcesAcrossSaveAndReopen)
 }
 
 // -----------------------------------------------------------------------
-// Legacy project file degrades gracefully
+// Legacy project file without a resource pool is refused
 // -----------------------------------------------------------------------
 
 /**
  * @test An old-format project (no "m_resources" node, full-pool "m_scene"
- *       node) loads without throwing: the pool stays empty and the Scene fails
- *       to read its ID lists, leaving a camera-less document. Nothing is
- *       injected to repair it — the viewport looks through the Editor's own
- *       camera, so zero cameras is a legal, fully renderable scene.
+ *       node) is refused: opening without a resource pool must fail loudly
+ *       rather than leave an empty document that a later save would overwrite
+ *       the original with.
  */
-TEST(SceneSerialize, LegacyFileDegrades)
+TEST(SceneSerialize, LegacyFileWithoutResourcePoolFailsToOpen)
 {
 
 	TempFile tmp("test_scene_serialize_legacy.neurus.json");
@@ -342,25 +343,10 @@ TEST(SceneSerialize, LegacyFileDegrades)
 		})";
 	}
 
-	Scene loadedScene;
-	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
-	EXPECT_NO_THROW({
-		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources);
-		p.Register<project::SceneComponent>(loadedScene, loadedResources);
-		p.Register<project::ConfigComponent>(loadedConfig);
-		p.Load(tmp.path);
-	});
-
-	// No pooled objects survived, and none are conjured to stand in for them.
-	EXPECT_EQ(loadedResources.Size(), 0u);
-	EXPECT_TRUE(loadedScene.cam_list.empty());
-	EXPECT_EQ(loadedScene.ActiveCameraID(), 0);
-	EXPECT_EQ(loadedScene.GetActiveCamera(), nullptr);
-	EXPECT_TRUE(loadedScene.mesh_list.empty());
-	EXPECT_TRUE(loadedScene.light_list.empty());
-	EXPECT_EQ(loadedScene.selections.GetSelectionCount(), 0u);
+	project::Project p;
+	p.Register<project::ResourceComponent>(loadedResources);
+	EXPECT_THROW(p.Load(tmp.path), std::runtime_error);
 }
 
 /**

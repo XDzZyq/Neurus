@@ -42,6 +42,10 @@ struct ResourceRecord
 
 std::pair<int, ResourceRecord> readRecord(const Json& entry)
 {
+	if (!entry.is_object())
+		throw std::runtime_error("resource record must be an object");
+	if (entry.contains("value") && !entry.contains("data"))
+		throw std::runtime_error("legacy {key, value} resource record is not supported");
 	const auto& key = entry.at("key");
 	if (!key.is_number_integer() || key < 0 || key >= std::numeric_limits<int>::max())
 		throw std::runtime_error("invalid resource UID");
@@ -103,30 +107,37 @@ void ResourceComponent::Save(cereal::JSONOutputArchive& ar) const
 
 void ResourceComponent::LoadJson(const std::string& object)
 {
-	m_resources.Clear();
+	// Parse before touching the pool: a corrupt file must fail the open rather
+	// than leave the document empty.
 	auto document = Json::parse(object);
 	const auto pool = document.find("m_resources");
-	if (pool == document.end() || !pool->is_object()
-		|| !pool->contains("resources_") || !(*pool)["resources_"].is_array())
-	{
-		NEURUS_LOG("[ResourceComponent] No usable resource pool; keeping project resources absent");
-		return;
-	}
+	if (pool == document.end())
+		throw std::runtime_error("Project has no resource pool (m_resources)");
+	if (!pool->is_object())
+		throw std::runtime_error("Resource pool (m_resources) must be an object");
+	if (!pool->contains("resources_") || !(*pool)["resources_"].is_array())
+		throw std::runtime_error("Resource pool has no resources_ array");
 
 	std::map<int, ResourceRecord> records;
-	for (auto& entry : pool->at("resources_"))
+	int index = 0;
+	for (const auto& entry : pool->at("resources_"))
 	{
 		try
 		{
 			auto [id, record] = readRecord(entry);
 			if (!records.try_emplace(id, std::move(record)).second)
-				NEURUS_LOG("[ResourceComponent] Skipped duplicate resource UID " << id);
+				throw std::runtime_error("duplicate resource UID " + std::to_string(id));
 		}
 		catch (const std::exception& error)
 		{
-			NEURUS_LOG("[ResourceComponent] Skipped unusable resource: " << error.what());
+			throw std::runtime_error(
+				"Unreadable resource record #" + std::to_string(index) + ": " + error.what());
 		}
+		++index;
 	}
+
+	// Every record validated; only now replace the pool.
+	m_resources.Clear();
 
 	// Claim names in ascending UID order without loading any of the objects.
 	for (auto& [id, record] : records)

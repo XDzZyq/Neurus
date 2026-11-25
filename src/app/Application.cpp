@@ -262,6 +262,8 @@ int Application::Run()
 	}
 	const std::string objPath = kDefaultSceneObj;
 	std::string startupError;
+	std::error_code existsError;
+	const bool projectExists = std::filesystem::exists(projectPath, existsError);
 
 	try
 	{
@@ -277,17 +279,29 @@ int Application::Run()
 		app_savedUiState = app_mainWindow->ExportLayout();
 		NEURUS_LOG("[Application] Loaded project: " << projectPath);
 	}
-	catch ([[maybe_unused]] const std::exception& e)
+	catch (const std::exception& e)
 	{
-		NEURUS_LOG("[Application] Project file not found, creating default: " << e.what());
+		if (projectExists)
+		{
+			// An existing project failed to open. Never write the default over
+			// it: keep the document unsaved so the user can inspect or repair
+			// the file.
+			NEURUS_ERR("[Application] Could not open project " << projectPath
+				<< "; opening an unsaved default document: " << e.what());
+		}
+		else
+		{
+			NEURUS_LOG("[Application] Project file not found, creating default: " << e.what());
+		}
 		// Same two steps as File > New: an empty document, then the default
 		// content. The upload waits until after show(), below.
 		std::string defaultError;
 		if (!app_core->CreateDefaultDocument(*app_editor, objPath, defaultError))
 			NEURUS_ERR("[Application] Failed to create the default document: " << defaultError);
-		// Save for future runs (captures the current default UI layout too).
-		// This also rebases the dirty baseline.
-		OnProjectSave(projectPath);
+		// Save for future runs only when there was no file to read. A failed
+		// open of an existing project must leave that file untouched.
+		if (!projectExists)
+			OnProjectSave(projectPath);
 	}
 
 	app_mainWindow->show();

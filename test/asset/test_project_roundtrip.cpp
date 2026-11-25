@@ -21,8 +21,13 @@
 #include <gtest/gtest.h>
 #include <array>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 
 #include <cstdio>   // std::remove
 
@@ -442,6 +447,50 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 #if defined(_DEBUG) || !defined(NDEBUG)
 	ExpectContentLoads(since, "lookup", {0, 1, 1, 1});
 #endif
+}
+
+TEST(ProjectRoundtrip, UnreadablePoolFailsLoadProjectAndLeavesFileUntouched)
+{
+	TempFile projectFile("test_unreadable_pool.neurus.json");
+	ApplicationCore app;
+	Editor writer(nullptr, app.RenderDefaults());
+	writer.NewScene();
+	auto& source = writer.GetResourceManager();
+	auto& scene = writer.GetScene();
+	const auto camera = source.Load<Camera>();
+	scene.UseCamera(camera);
+	scene.ActivateCamera(camera->GetObjectID());
+	const auto geometry = source.Load<MeshData>("res/obj/sphere.obj");
+	const auto mesh = source.Load<Mesh>(geometry);
+	scene.UseMesh(mesh);
+
+	std::string error, layout;
+	ASSERT_TRUE(app.SaveProject(projectFile.path, writer, layout, error)) << error;
+
+	// Corrupt one record's type so the pool cannot be indexed.
+	{
+		nlohmann::ordered_json document;
+		{ std::ifstream file(projectFile.path); file >> document; }
+		auto& entries = document.at("project").at("m_resources").at("resources_");
+		ASSERT_FALSE(entries.empty());
+		entries.front().at("type") = "neurus::NoSuchType";
+		std::ofstream file(projectFile.path);
+		file << document;
+	}
+	const auto readBytes = [](const std::filesystem::path& path)
+	{
+		std::ifstream file(path);
+		return std::string((std::istreambuf_iterator<char>(file)),
+		                   std::istreambuf_iterator<char>());
+	};
+	const std::string beforeBytes = readBytes(projectFile.path);
+	const std::string beforePath = app.ProjectPath();
+
+	Editor reader(nullptr, app.RenderDefaults());
+	EXPECT_FALSE(app.LoadProject(projectFile.path, reader, layout, error));
+	EXPECT_NE(error.find("Unreadable resource record"), std::string::npos) << error;
+	EXPECT_EQ(app.ProjectPath(), beforePath);
+	EXPECT_EQ(readBytes(projectFile.path), beforeBytes);
 }
 
 TEST(ProjectRoundtrip, DuplicateCameraNamesAreClaimedInUidOrder)

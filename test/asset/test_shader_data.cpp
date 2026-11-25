@@ -18,8 +18,8 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <sstream>
+#include <stdexcept>
 #include <thread>
 #include <string>
 
@@ -354,21 +354,18 @@ TEST(ShaderDataPersistence, SavingLiveCompileFailurePreservesEditableSource)
 	EXPECT_NE(serialized.str().find("incomplete live edit"), std::string::npos);
 }
 
-TEST(ShaderDataPersistence, NullPoolEntriesDoNotSurviveLoadOrSave)
+TEST(ShaderDataPersistence, NullPoolEntryFailsTheLoad)
 {
 
 	neurus::ResourceManager restored;
+	const auto kept = restored.Load<neurus::RenderShader>("Kept");
+	const int keptId = kept->GetObjectID();
 	std::stringstream serialized(
 		R"({"m_resources":{"resources_":[{"key":9123,"type":"neurus::RenderShader","data":null}]}})");
-	neurus::project::ResourceComponent(restored).LoadJson(serialized.str());
-	EXPECT_EQ(restored.Size(), 0u);
-	std::stringstream saved;
-	{
-		cereal::JSONOutputArchive archive(saved);
-		neurus::project::ResourceComponent save(restored);
-		save.Save(archive);
-	}
-	EXPECT_EQ(saved.str().find("9123"), std::string::npos);
+	// Validation must fail the load before the pool is cleared.
+	EXPECT_THROW(neurus::project::ResourceComponent(restored).LoadJson(serialized.str()),
+	             std::runtime_error);
+	EXPECT_TRUE(restored.Contains(keptId));
 }
 
 TEST(ShaderDataPersistence, ConcurrentCompilationKeepsDiagnosticsWithTheirSource)
@@ -417,11 +414,9 @@ TEST(ShaderDataPersistence, ConcurrentCompilationKeepsDiagnosticsWithTheirSource
 	}
 }
 
-TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResources)
+TEST(ShaderDataPersistence, MalformedShaderEntryFailsTheProjectOpen)
 {
 
-	// Resource references reserve zero for absence; UID's first allocation is zero.
-	neurus::UID reserved;
 	neurus::ResourceManager resources;
 	auto geometry = resources.Load<neurus::MeshData>("res/obj/plane.obj");
 	ASSERT_NE(geometry->GetObjectID(), 0);
@@ -457,44 +452,19 @@ TEST(ShaderDataPersistence, MalformedShaderEntryDoesNotDiscardOtherProjectResour
 	{
 		if (entry.at("type") == "neurus::RenderShader")
 		{
-			// A malformed shader must leave its sibling of the same type loadable.
+			// One unreadable record fails the whole open; nothing is skipped.
 			brokenId = entry["key"].get<int>();
 			entry["data"] = nlohmann::ordered_json::object();
 			break;
 		}
 	}
 	ASSERT_NE(brokenId, 0);
-	for (auto& entry : entries)
-	{
-		if (entry["key"] == mesh->GetObjectID() || entry["key"] == otherMesh->GetObjectID())
-			entry["data"]["o_shaderId"] = brokenId;
-	}
 	{ std::ofstream file(path); file << document.dump(); }
 
 	neurus::ResourceManager restored;
 	neurus::project::Project loaded;
 	loaded.Register<neurus::project::ResourceComponent>(restored);
-	ASSERT_NO_THROW(loaded.Load(path.string()));
-	EXPECT_EQ(restored.Size(), 4u);
-	EXPECT_FALSE(restored.Get(brokenId));
-	EXPECT_FALSE(restored.Contains(brokenId));
-	const int goodId = brokenId == first->GetObjectID() ? second->GetObjectID() : first->GetObjectID();
-	ASSERT_NE(restored.Get<neurus::ShaderData>(goodId), nullptr);
-	EXPECT_TRUE(restored.Get<neurus::ShaderData>(goodId)->IsValid());
-	ASSERT_NE(restored.Get<neurus::MeshData>(geometry->GetObjectID()), nullptr);
-	EXPECT_GT(restored.Get<neurus::MeshData>(geometry->GetObjectID())->GetVertexCount(), 0u);
-	for (const int id : {mesh->GetObjectID(), otherMesh->GetObjectID()})
-	{
-		const auto restoredMesh = restored.Get<neurus::Mesh>(id);
-		ASSERT_NE(restoredMesh, nullptr);
-		EXPECT_FALSE(restoredMesh->o_shader);
-		EXPECT_EQ(restoredMesh->o_shader.id(), 0);
-		EXPECT_EQ(restoredMesh->o_mesh.shared(), restored.Get<neurus::MeshData>(geometry->GetObjectID()));
-	}
-	loaded.Save(path.string());
-	std::ifstream file(path);
-	const std::string saved((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-	EXPECT_EQ(saved.find("o_shaderId"), std::string::npos);
+	EXPECT_THROW(loaded.Load(path.string()), std::runtime_error);
 }
 
 TEST(ShaderDataPersistence, ComputeShaderRemainsPooledButCannotBindToAMesh)
@@ -521,15 +491,13 @@ TEST(ShaderDataPersistence, ComputeShaderRemainsPooledButCannotBindToAMesh)
 	EXPECT_EQ(restoredMesh->o_shader.id(), 0);
 }
 
-TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
+TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeFailsTheLoad)
 {
 
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>("Malformed");
 	shader->GetVertex().code = kMinimalVertex;
 	shader->GetFragment().code = kMinimalFragment;
-	auto mesh = resources.Load<neurus::Mesh>();
-	mesh->SetObjShader(shader);
 	std::stringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
@@ -543,14 +511,8 @@ TEST(ShaderDataPersistence, WrongShaderPrimitiveTypeIsIsolatedBeforeArchiveRead)
 			entry["data"]["m_vertPath"] = 42;
 	}
 	neurus::ResourceManager restored;
-	neurus::project::ResourceComponent load(restored);
-	ASSERT_NO_THROW(load.LoadJson(document.dump()));
-	EXPECT_FALSE(restored.Get(shader->GetObjectID()));
-	EXPECT_FALSE(restored.Contains(shader->GetObjectID()));
-	const auto restoredMesh = restored.Get<neurus::Mesh>(mesh->GetObjectID());
-	ASSERT_NE(restoredMesh, nullptr);
-	EXPECT_FALSE(restoredMesh->o_shader);
-	EXPECT_EQ(restoredMesh->o_shader.id(), 0);
+	EXPECT_THROW(neurus::project::ResourceComponent(restored).LoadJson(document.dump()),
+	             std::runtime_error);
 }
 
 TEST(ShaderInterface, IndependentlyCompiledStagesWithMissingOutputAreRejected)

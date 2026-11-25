@@ -300,7 +300,8 @@ TEST(EditorRenderGraph, DefaultReadsSnapshotsAndPublishDoNotMaterializeProjectDa
 TEST(EditorRenderGraph, PresentPartialConfigAndAbsentGraphRoundTripIndependently)
 {
 	neurus::Editor editor(nullptr);
-	LoadOptionalRenderState(editor, "{\"proj_config\": {\"r_gamma\": 1.5}}");
+	LoadOptionalRenderState(editor,
+		"{\"proj_config\": {\"r_gamma\": 1.5}, \"m_resources\": {\"resources_\": []}}");
 	ASSERT_TRUE(editor.GetRenderConfigData());
 	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_gamma, 1.5f);
 	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_shadow_bias, neurus::RenderConfig{}.r_shadow_bias);
@@ -317,7 +318,9 @@ TEST(EditorRenderGraph, PresentPartialConfigAndAbsentGraphRoundTripIndependently
 TEST(EditorRenderGraph, MalformedGraphDoesNotDiscardPresentConfigOrSerializeDefaults)
 {
 	neurus::Editor editor(nullptr);
-	LoadOptionalRenderState(editor, "{\"proj_config\": {\"r_shadow_bias\": 0.002}, \"proj_render_graph\": 42}");
+	LoadOptionalRenderState(editor,
+		"{\"proj_config\": {\"r_shadow_bias\": 0.002}, \"proj_render_graph\": 42, "
+		"\"m_resources\": {\"resources_\": []}}");
 	ASSERT_TRUE(editor.GetRenderConfigData());
 	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_shadow_bias, 0.002f);
 	EXPECT_FALSE(editor.GetRenderManager().GraphData());
