@@ -25,10 +25,10 @@ add_library(neurus_asset_data STATIC
 	data/render_graph/RenderGraphRecord.cpp
 	data/render_graph/PassShaderCatalog.hpp
 	data/render_graph/PortSource.hpp
-	data/render_graph/CpuGraphValidation.hpp
-	data/render_graph/CpuGraphValidation.cpp
-	data/render_graph/CpuPorts.hpp
-	data/render_graph/CpuPorts.cpp
+	data/render_graph/CPUGraphValidation.hpp
+	data/render_graph/CPUGraphValidation.cpp
+	data/render_graph/CPUPorts.hpp
+	data/render_graph/CPUPorts.cpp
 	data/render_graph/PassKinds.hpp
 	data/shader/ShaderStage.hpp
 	data/shader/ShaderInterface.hpp

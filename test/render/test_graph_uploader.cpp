@@ -18,7 +18,7 @@
 #include "render_api/RenderRequests.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "shader/BuiltInRenderData.hpp"
 
 #include <algorithm>
@@ -274,7 +274,7 @@ TEST_F(GraphUploaderTest, StaleSocketIsNamed)
 	neurus::RenderGraphData::NodeType* geometry = FindNode(*document, "geometry");
 	ASSERT_NE(geometry, nullptr);
 	geometry->AddOutput("ghost")->data =
-		neurus::CpuPort{"ghost", neurus::PortDirection::Output, "vec4", 0, 0,
+		neurus::CPUPort{"ghost", neurus::PortDirection::Output, "vec4", 0, 0,
 		                neurus::GraphOutputTag{neurus::GraphFormat::Rgba16f,
 		                                       neurus::GraphUsage::ColorSampled}};
 

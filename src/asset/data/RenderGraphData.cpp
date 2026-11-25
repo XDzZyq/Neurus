@@ -79,14 +79,14 @@ RenderGraphData::RenderGraphData(const IPortSource& ports)
 	const auto addNode = [this, &ports](
 		const std::string& name, const std::string& pass) -> NodeType*
 	{
-		const CpuPorts* passPorts = ports.FindPassPorts(pass);
+		const CPUPorts* passPorts = ports.FindPassPorts(pass);
 		if (!passPorts)
 		{
 			throw std::runtime_error(
 				"No ports for built-in pass '" + pass + "'");
 		}
 
-		CpuNode data;
+		CPUNode data;
 		data.pass = pass;
 		NodeType* node = AddNode(name, data);
 
@@ -192,7 +192,7 @@ std::uint64_t RenderGraphData::Hash() const
 		{
 			hashByte(0x09);
 		}
-		const auto hashPort = [&](const CpuPort& port)
+		const auto hashPort = [&](const CPUPort& port)
 		{
 			hashString(port.name);
 			hashString(port.type);
@@ -283,9 +283,9 @@ std::set<std::string> RenderGraphData::ActiveNodes() const
 	return active;
 }
 
-CpuPorts WithShaderPortNames(const CpuPorts& builtin, const CpuPorts& shaderPorts)
+CPUPorts WithShaderPortNames(const CPUPorts& builtin, const CPUPorts& shaderPorts)
 {
-	CpuPorts result;
+	CPUPorts result;
 	result.kind = builtin.kind;
 	result.problems = builtin.problems;
 	result.problems.insert(result.problems.end(), shaderPorts.problems.begin(), shaderPorts.problems.end());
@@ -303,7 +303,7 @@ CpuPorts WithShaderPortNames(const CpuPorts& builtin, const CpuPorts& shaderPort
 	return result;
 }
 
-CpuPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
+CPUPorts EffectivePassPorts(const CPUNode& node, const IPortSource& catalog)
 {
 	const auto* builtin = catalog.FindPassPorts(node.pass);
 	if (!builtin)
@@ -314,7 +314,7 @@ CpuPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
 	return WithShaderPortNames(*builtin, ExtractPassPorts(node.pass, shaders));
 }
 
-void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const CpuPorts& ports)
+void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const CPUPorts& ports)
 {
 	if (!ports.problems.empty())
 		throw std::invalid_argument(node.name + ": " + ports.problems.front());

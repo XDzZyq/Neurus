@@ -14,7 +14,7 @@
 #include "render_api/ProfilingData.hpp"
 #include "../RenderCache.hpp"
 #include "../passes/Pass.hpp"
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "core/Graph.hpp"
 #include "PassBindings.hpp"
 #include "PassResources.hpp"
@@ -50,7 +50,7 @@ public:
 		uint32_t location = 0;
 		std::optional<GraphOutputTag> tag = std::nullopt;
 
-		static PassPort FromCpuPort(const CpuPort& port)
+		static PassPort FromCPUPort(const CPUPort& port)
 		{
 			return {port.name, port.direction, port.type, port.binding, port.location, port.tag};
 		}
@@ -109,7 +109,7 @@ public:
 	 * @param externalInputs  Inputs the pass resolves outside the graph.
 	 * @param id              Document node id for resource keys.
 	 */
-	NodeT* AddPass(Pass* pass, const CpuPorts& ports,
+	NodeT* AddPass(Pass* pass, const CPUPorts& ports,
 	               std::vector<std::string> externalInputs = {},
 	               std::string id = {});
 

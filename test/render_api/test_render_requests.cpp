@@ -100,7 +100,7 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	EXPECT_EQ(uploaded.spv, (std::vector<uint32_t>{0x07230203, 11, 22}));
 	ASSERT_EQ(uploaded.parsed.uniform_list.size(), 1u);
 	EXPECT_EQ(uploaded.parsed.uniform_list[0].name, "target");
-	const CpuPort* output = upload.ports.Find("target", PortDirection::Output);
+	const CPUPort* output = upload.ports.Find("target", PortDirection::Output);
 	ASSERT_NE(output, nullptr);
 	EXPECT_EQ(output->binding, 3u);
 	EXPECT_EQ(output->type, "image2D");

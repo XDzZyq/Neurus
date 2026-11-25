@@ -1,6 +1,6 @@
 #include "Editor.hpp"
 #include "RenderManager.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 
 #include "editor/events/InputEvents.hpp"
 #include "editor/events/AssetEvents.hpp"
@@ -830,7 +830,7 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	ctx.configProvider = [this]() { return &GetRenderConfig(); };
 	ctx.resources = ed_resources.get();
 	ctx.graphDiagnostics = [this]() {
-		std::vector<CpuGraphDiagnostic> problems;
+		std::vector<CPUGraphDiagnostic> problems;
 		ed_eventBus.Emit(RenderGraphFlushRequested{&problems});
 		return problems.empty() ? ed_renderManager->Diagnostics() : problems;
 	};

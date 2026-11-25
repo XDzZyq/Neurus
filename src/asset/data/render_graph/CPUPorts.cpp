@@ -1,9 +1,9 @@
 /**
- * @file CpuPorts.cpp
+ * @file CPUPorts.cpp
  * @brief Port extraction from ShaderStruct.
  */
 
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
@@ -25,7 +25,7 @@ std::string UniformType(const S_Uniform& uniform)
 }
 
 /// @brief Adds the sampler and image uniforms of one stage.
-void AddUniformPorts(CpuPorts& result, const ShaderStruct& shader)
+void AddUniformPorts(CPUPorts& result, const ShaderStruct& shader)
 {
 	for (const S_Uniform& uniform : shader.uniform_list)
 	{
@@ -35,7 +35,7 @@ void AddUniformPorts(CpuPorts& result, const ShaderStruct& shader)
 
 		const std::string type = UniformType(uniform);
 
-		CpuPort port;
+		CPUPort port;
 		port.name      = uniform.name;
 		port.type      = type;
 		port.binding   = static_cast<uint32_t>(uniform.binding);
@@ -55,11 +55,11 @@ void AddUniformPorts(CpuPorts& result, const ShaderStruct& shader)
 }
 
 /// @brief Adds a fragment stage's layout(location = N) out declarations.
-void AddFragmentOutputs(CpuPorts& result, const ShaderStruct& shader)
+void AddFragmentOutputs(CPUPorts& result, const ShaderStruct& shader)
 {
 	for (const S_IO& output : shader.pass_list)
 	{
-		CpuPort port;
+		CPUPort port;
 		port.name      = output.name;
 		port.direction = PortDirection::Output;
 		port.type      = output.typeName.empty() ? ShaderStruct::ParseType(output.type)
@@ -72,10 +72,10 @@ void AddFragmentOutputs(CpuPorts& result, const ShaderStruct& shader)
 
 } // anonymous namespace
 
-const CpuPort* CpuPorts::Find(const std::string_view name,
+const CPUPort* CPUPorts::Find(const std::string_view name,
                                const PortDirection direction) const
 {
-	for (const CpuPort& port : ports)
+	for (const CPUPort& port : ports)
 	{
 		if (port.direction == direction && port.name == name)
 			return &port;
@@ -83,9 +83,9 @@ const CpuPort* CpuPorts::Find(const std::string_view name,
 	return nullptr;
 }
 
-const CpuPort* CpuPorts::FindRole(const CpuPort& role) const
+const CPUPort* CPUPorts::FindRole(const CPUPort& role) const
 {
-	for (const CpuPort& port : ports)
+	for (const CPUPort& port : ports)
 	{
 		if (port.direction == role.direction && port.type == role.type
 		    && port.binding == role.binding && port.location == role.location)
@@ -94,9 +94,9 @@ const CpuPort* CpuPorts::FindRole(const CpuPort& role) const
 	return nullptr;
 }
 
-void CpuPorts::Add(const CpuPort& port)
+void CPUPorts::Add(const CPUPort& port)
 {
-	const CpuPort* existing = Find(port.name, port.direction);
+	const CPUPort* existing = Find(port.name, port.direction);
 	if (!existing)
 	{
 		ports.push_back(port);
@@ -108,16 +108,16 @@ void CpuPorts::Add(const CpuPort& port)
 	}
 }
 
-void CpuPorts::Merge(const CpuPorts& other)
+void CPUPorts::Merge(const CPUPorts& other)
 {
-	for (const CpuPort& port : other.ports)
+	for (const CPUPort& port : other.ports)
 	{
 		Add(port);
 	}
 	problems.insert(problems.end(), other.problems.begin(), other.problems.end());
 }
 
-void AddDeclaredPassOutputs(CpuPorts& ports, const PassKindInfo& kind)
+void AddDeclaredPassOutputs(CPUPorts& ports, const PassKindInfo& kind)
 {
 	for (const DeclaredPort& port : kind.declaredOutputs)
 	{
@@ -135,10 +135,10 @@ std::vector<std::string> PassExternalInputs(const std::string_view passKind)
 	return {kind->externalInputs.begin(), kind->externalInputs.end()};
 }
 
-std::vector<CpuPort> CpuPorts::Inputs() const
+std::vector<CPUPort> CPUPorts::Inputs() const
 {
-	std::vector<CpuPort> inputs;
-	for (const CpuPort& port : ports)
+	std::vector<CPUPort> inputs;
+	for (const CPUPort& port : ports)
 	{
 		if (port.direction == PortDirection::Input)
 			inputs.push_back(port);
@@ -146,10 +146,10 @@ std::vector<CpuPort> CpuPorts::Inputs() const
 	return inputs;
 }
 
-std::vector<CpuPort> CpuPorts::Outputs() const
+std::vector<CPUPort> CPUPorts::Outputs() const
 {
-	std::vector<CpuPort> outputs;
-	for (const CpuPort& port : ports)
+	std::vector<CPUPort> outputs;
+	for (const CPUPort& port : ports)
 	{
 		if (port.direction == PortDirection::Output)
 			outputs.push_back(port);
@@ -167,11 +167,11 @@ bool IsStorageImagePortType(const std::string_view type)
 	return type.starts_with("image");
 }
 
-CpuPorts ExtractPassPorts(std::string kind,
+CPUPorts ExtractPassPorts(std::string kind,
                            const std::span<const ShaderData* const> shaders,
-                           const std::span<const CpuPort> declaredOutputs)
+                           const std::span<const CPUPort> declaredOutputs)
 {
-	CpuPorts result;
+	CPUPorts result;
 	result.kind = std::move(kind);
 
 	constexpr std::array<ShaderType, 4> kStages = {
@@ -202,7 +202,7 @@ CpuPorts ExtractPassPorts(std::string kind,
 		}
 	}
 
-	for (const CpuPort& declared : declaredOutputs)
+	for (const CPUPort& declared : declaredOutputs)
 		result.Add(declared);
 
 	return result;

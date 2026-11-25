@@ -30,7 +30,7 @@ class BuiltInRenderData;
 class RenderRequestSink;
 class ResourceManager;
 class ShaderData;
-struct CpuGraphDiagnostic;
+struct CPUGraphDiagnostic;
 
 /**
  * @brief Owns optional project render data and publishes topology plus owned GPU uploads.
@@ -69,7 +69,7 @@ public:
 	/// @brief Materializes the effective default once as a project-owned resource.
 	std::shared_ptr<RenderGraphData> CreateGraph(bool publish = true);
 	const BuiltInRenderData& Defaults() const { return *m_renderDefaults; }
-	std::vector<CpuGraphDiagnostic> Diagnostics() const;
+	std::vector<CPUGraphDiagnostic> Diagnostics() const;
 
 	/**
 	 * @brief Replaces the document and publishes it.

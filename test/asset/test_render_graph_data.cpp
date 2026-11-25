@@ -21,11 +21,11 @@ public:
 	neurus::ShaderType GetType() const override { return neurus::ShaderType::COMPUTE; }
 };
 
-neurus::CpuPort OutputPort(const std::string& name, const std::string& type,
+neurus::CPUPort OutputPort(const std::string& name, const std::string& type,
                            const neurus::GraphFormat format,
                            const neurus::GraphUsage usage)
 {
-	neurus::CpuPort port;
+	neurus::CPUPort port;
 	port.name      = name;
 	port.direction = neurus::PortDirection::Output;
 	port.type      = type;
@@ -35,9 +35,9 @@ neurus::CpuPort OutputPort(const std::string& name, const std::string& type,
 	return port;
 }
 
-neurus::CpuPort InputPort(const std::string& name, const std::uint32_t binding)
+neurus::CPUPort InputPort(const std::string& name, const std::uint32_t binding)
 {
-	neurus::CpuPort port;
+	neurus::CPUPort port;
 	port.name      = name;
 	port.direction = neurus::PortDirection::Input;
 	port.type      = "sampler2D";
@@ -45,12 +45,12 @@ neurus::CpuPort InputPort(const std::string& name, const std::uint32_t binding)
 	return port;
 }
 
-void SetInput(neurus::RenderGraphData::SocketInT* socket, const neurus::CpuPort& port)
+void SetInput(neurus::RenderGraphData::SocketInT* socket, const neurus::CPUPort& port)
 {
 	socket->data = port;
 }
 
-void SetOutput(neurus::RenderGraphData::SocketOutT* socket, const neurus::CpuPort& port)
+void SetOutput(neurus::RenderGraphData::SocketOutT* socket, const neurus::CPUPort& port)
 {
 	socket->data = port;
 }
@@ -61,7 +61,7 @@ TEST(RenderGraphData, SocketsCarryPassPorts)
 {
 	neurus::ResourceManager resources;
 	neurus::RenderGraphData graph;
-	neurus::CpuNode pass;
+	neurus::CPUNode pass;
 	pass.pass = "GeometryPass";
 	pass.shader = resources.Load<TestShader>();
 	pass.x = 40.0f;
@@ -96,14 +96,14 @@ TEST(RenderGraphData, ClonePreservesPortsAndTags)
 	neurus::ResourceManager resources;
 	neurus::RenderGraphData graph;
 
-	neurus::CpuNode geometry;
+	neurus::CPUNode geometry;
 	geometry.pass = "GeometryPass";
 	neurus::RenderGraphData::NodeType* source = graph.AddNode("geometry", geometry);
 	SetOutput(source->AddOutput("gPosition"),
 	          OutputPort("gPosition", "vec4",
 	                     neurus::GraphFormat::Rgba16f, neurus::GraphUsage::ColorSampled));
 
-	neurus::CpuNode ssao;
+	neurus::CPUNode ssao;
 	ssao.pass = "SSAOPass";
 	ssao.shader = resources.Load<TestShader>();
 	neurus::RenderGraphData::NodeType* consumer = graph.AddNode("ssao", ssao);
@@ -142,7 +142,7 @@ TEST(RenderGraphData, GraphAndCloneRetainShaderAfterPoolRemoval)
 	const int shaderUid = shader->GetObjectID();
 	const std::weak_ptr<const neurus::ShaderData> lifetime = shader;
 	neurus::RenderGraphData graph;
-	neurus::CpuNode data;
+	neurus::CPUNode data;
 	data.shader = shader;
 	graph.AddNode("custom", data);
 	auto copy = graph.Clone();

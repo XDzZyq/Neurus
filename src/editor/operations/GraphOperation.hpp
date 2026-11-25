@@ -15,7 +15,7 @@ public:
 	virtual bool ChangesTopology() const { return true; }
 };
 
-struct CpuGraphDiagnostic;
+struct CPUGraphDiagnostic;
 
 /// Short-lived view of the graph edits in one request, script run, or history entry.
 class GraphOperationBatch
@@ -25,7 +25,7 @@ public:
 	explicit GraphOperationBatch(std::span<const std::unique_ptr<Operation>> requests);
 
 	bool Empty() const { return m_edits.empty(); }
-	void FlushDrafts(IEventQueue& events, std::vector<CpuGraphDiagnostic>* diagnostics = nullptr) const;
+	void FlushDrafts(IEventQueue& events, std::vector<CPUGraphDiagnostic>* diagnostics = nullptr) const;
 	void Commit(IEventQueue& events) const;
 	void DiscardCreations(IEventQueue& events) const;
 	static bool IsNoOp(const Operation& op);

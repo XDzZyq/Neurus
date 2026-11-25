@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "shader/ComputeShader.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/ShaderLibrary.hpp"
@@ -33,7 +33,7 @@ std::unique_ptr<neurus::ComputeShader> LoadCompute(const char* name, const char*
 
 } // anonymous namespace
 
-TEST(CpuPorts, TypePredicates)
+TEST(CPUPorts, TypePredicates)
 {
 	EXPECT_TRUE(neurus::IsSamplerPortType("sampler2D"));
 	EXPECT_TRUE(neurus::IsSamplerPortType("sampler2DArray"));
@@ -45,7 +45,7 @@ TEST(CpuPorts, TypePredicates)
 	EXPECT_FALSE(neurus::IsStorageImagePortType("sampler2D"));
 }
 
-TEST(CpuPorts, GeometryOutputs)
+TEST(CPUPorts, GeometryOutputs)
 {
 	auto shader = LoadRender("GeometryPass",
 	                         "res/shaders/render/gbuffer.vert.glsl",
@@ -53,7 +53,7 @@ TEST(CpuPorts, GeometryOutputs)
 	ASSERT_TRUE(shader);
 
 	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const neurus::CpuPorts ports = neurus::ExtractPassPorts("GeometryPass", shaders);
+	const neurus::CPUPorts ports = neurus::ExtractPassPorts("GeometryPass", shaders);
 
 	EXPECT_TRUE(ports.problems.empty());
 	const auto outputs = ports.Outputs();
@@ -71,7 +71,7 @@ TEST(CpuPorts, GeometryOutputs)
 	EXPECT_TRUE(ports.Inputs().empty());
 }
 
-TEST(CpuPorts, GeometryDeclaredDepth)
+TEST(CPUPorts, GeometryDeclaredDepth)
 {
 	auto shader = LoadRender("GeometryPass",
 	                         "res/shaders/render/gbuffer.vert.glsl",
@@ -79,28 +79,28 @@ TEST(CpuPorts, GeometryDeclaredDepth)
 	ASSERT_TRUE(shader);
 
 	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const std::array<neurus::CpuPort, 1> declared = {
-		neurus::CpuPort{"depth", neurus::PortDirection::Output, "d32_sfloat", 0, 0},
+	const std::array<neurus::CPUPort, 1> declared = {
+		neurus::CPUPort{"depth", neurus::PortDirection::Output, "d32_sfloat", 0, 0},
 	};
-	const neurus::CpuPorts ports =
+	const neurus::CPUPorts ports =
 		neurus::ExtractPassPorts("GeometryPass", shaders, declared);
 
 	EXPECT_TRUE(ports.problems.empty());
 	ASSERT_EQ(ports.Outputs().size(), 6u);
 
-	const neurus::CpuPort* depth =
+	const neurus::CPUPort* depth =
 		ports.Find("depth", neurus::PortDirection::Output);
 	ASSERT_NE(depth, nullptr);
 	EXPECT_EQ(depth->type, "d32_sfloat");
 }
 
-TEST(CpuPorts, SsaoPorts)
+TEST(CPUPorts, SsaoPorts)
 {
 	auto shader = LoadCompute("ssao", "res/shaders/compute/ssao.comp.glsl");
 	ASSERT_TRUE(shader);
 
 	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const neurus::CpuPorts ports = neurus::ExtractPassPorts("SSAOPass", shaders);
+	const neurus::CPUPorts ports = neurus::ExtractPassPorts("SSAOPass", shaders);
 
 	EXPECT_TRUE(ports.problems.empty());
 	const auto inputs = ports.Inputs();
@@ -120,13 +120,13 @@ TEST(CpuPorts, SsaoPorts)
 	EXPECT_EQ(ports.Find("NoiseBuffer", neurus::PortDirection::Input), nullptr);
 }
 
-TEST(CpuPorts, LightingPorts)
+TEST(CPUPorts, LightingPorts)
 {
 	auto shader = LoadCompute("lighting", "res/shaders/compute/pbr_lighting.comp.glsl");
 	ASSERT_TRUE(shader);
 
 	const std::array<const neurus::ShaderData*, 1> shaders = {shader.get()};
-	const neurus::CpuPorts ports = neurus::ExtractPassPorts("LightingPass", shaders);
+	const neurus::CPUPorts ports = neurus::ExtractPassPorts("LightingPass", shaders);
 
 	EXPECT_TRUE(ports.problems.empty());
 	ASSERT_EQ(ports.Inputs().size(), 8u);
@@ -149,7 +149,7 @@ TEST(CpuPorts, LightingPorts)
 	EXPECT_EQ(ports.Find("SpotLightBuffer", neurus::PortDirection::Input), nullptr);
 }
 
-TEST(CpuPorts, PostProcessingPorts)
+TEST(CPUPorts, PostProcessingPorts)
 {
 	struct Case
 	{
@@ -180,7 +180,7 @@ TEST(CpuPorts, PostProcessingPorts)
 	}
 }
 
-TEST(CpuPorts, ShadowIntensityMergesBothShaders)
+TEST(CPUPorts, ShadowIntensityMergesBothShaders)
 {
 	auto point = LoadCompute("shadow_eval", "res/shaders/compute/shadow_eval.comp.glsl");
 	auto sun = LoadCompute("sun_shadow_eval", "res/shaders/compute/sun_shadow_eval.comp.glsl");
@@ -188,7 +188,7 @@ TEST(CpuPorts, ShadowIntensityMergesBothShaders)
 	ASSERT_TRUE(sun);
 
 	const std::array<const neurus::ShaderData*, 2> shaders = {point.get(), sun.get()};
-	const neurus::CpuPorts ports = neurus::ExtractPassPorts("ShadowIntensityPass", shaders);
+	const neurus::CPUPorts ports = neurus::ExtractPassPorts("ShadowIntensityPass", shaders);
 
 	EXPECT_TRUE(ports.problems.empty());
 	ASSERT_EQ(ports.Inputs().size(), 3u);
@@ -202,7 +202,7 @@ TEST(CpuPorts, ShadowIntensityMergesBothShaders)
 	          "image2DArray");
 }
 
-TEST(CpuPorts, ConflictingBindingIsReported)
+TEST(CPUPorts, ConflictingBindingIsReported)
 {
 	neurus::ComputeShader first("first");
 	first.GetStage(neurus::ShaderType::COMPUTE).parsed.SetUni(
@@ -213,7 +213,7 @@ TEST(CpuPorts, ConflictingBindingIsReported)
 		neurus::ParaType::CUSTOM, 1, "a", 1, "", "sampler2D", "");
 
 	const std::array<const neurus::ShaderData*, 2> shaders = {&first, &second};
-	const neurus::CpuPorts ports = neurus::ExtractPassPorts("ConflictPass", shaders);
+	const neurus::CPUPorts ports = neurus::ExtractPassPorts("ConflictPass", shaders);
 
 	EXPECT_EQ(ports.ports.size(), 1u);
 	ASSERT_EQ(ports.problems.size(), 1u);

@@ -196,7 +196,7 @@ void DiagnoseShader(const RenderGraphNodeRecord& saved, const NodeType& node, in
 		AddDeclaredPassOutputs(declared, *kind);
 	for (const auto& problem : declared.problems)
 		report(problem);
-	const auto check = [&](const std::vector<CpuPort>& sockets, const std::vector<CpuPort>& shaderPorts) {
+	const auto check = [&](const std::vector<CPUPort>& sockets, const std::vector<CPUPort>& shaderPorts) {
 		for (const auto& socket : sockets)
 		{
 			const auto* port = declared.Find(socket.name, socket.direction);
@@ -205,7 +205,7 @@ void DiagnoseShader(const RenderGraphNodeRecord& saved, const NodeType& node, in
 				report("saved socket '" + socket.name + "' differs from the shader declaration");
 		}
 		for (const auto& port : shaderPorts)
-			if (std::ranges::none_of(sockets, [&](const CpuPort& socket) { return socket.name == port.name; }))
+			if (std::ranges::none_of(sockets, [&](const CPUPort& socket) { return socket.name == port.name; }))
 				report("shader port '" + port.name + "' has no saved socket");
 	};
 	check(saved.inputs, declared.Inputs());

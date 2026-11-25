@@ -1,5 +1,5 @@
 /**
- * @file CpuGraphValidation.hpp
+ * @file CPUGraphValidation.hpp
  * @brief Validates the CPU render graph document against the shaders it names.
  *
  * Validation is collected, never thrown: the editor shows every problem and the
@@ -27,13 +27,13 @@ void ValidatePassShader(std::string_view passKind, const ShaderData& shader, con
 /**
  * @brief One named problem in the document.
  */
-struct CpuGraphDiagnostic
+struct CPUGraphDiagnostic
 {
 	std::string node;
 	std::string port;
 	std::string message;
 
-	bool operator==(const CpuGraphDiagnostic&) const = default;
+	bool operator==(const CPUGraphDiagnostic&) const = default;
 };
 
 /**
@@ -47,11 +47,11 @@ struct CpuGraphDiagnostic
  * @param ports  Pass-kind port source.
  * @return One entry per problem; empty when the document is valid.
  */
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
+std::vector<CPUGraphDiagnostic> ValidateCPUGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
-                                                 const std::function<CpuPorts(const CpuNode&)>& shaderPorts = {});
+                                                 const std::function<CPUPorts(const CPUNode&)>& shaderPorts = {});
 
 /// Checks the document topology and each assigned shader against its pass.
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog);
+std::vector<CPUGraphDiagnostic> ValidateCPUGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog);
 
 } // namespace neurus

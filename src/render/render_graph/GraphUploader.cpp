@@ -15,7 +15,7 @@
 
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
 #include "core/GraphMorphism.hpp"
@@ -34,13 +34,13 @@ namespace {
 using RenderGraphMorphism = GraphMorphism<RenderGraphData, RenderGraph::GraphT>;
 
 /** @brief Compares interfaces by identity rather than unordered stage traversal order. */
-bool SamePorts(const CpuPorts& actual, const CpuPorts& expected)
+bool SamePorts(const CPUPorts& actual, const CPUPorts& expected)
 {
 	if (actual.ports.size() != expected.ports.size())
 	{
 		return false;
 	}
-	for (const CpuPort& port : expected.ports)
+	for (const CPUPort& port : expected.ports)
 	{
 		if (!actual.FindRole(port))
 		{
@@ -77,7 +77,7 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 	                            : std::optional<AttachmentName>(it->second);
 }
 
-using PortContracts = std::unordered_map<int, CpuPorts>;
+using PortContracts = std::unordered_map<int, CPUPorts>;
 
 /// @brief Resolves pass instances and socket names during graph compilation.
 RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog)
@@ -110,7 +110,7 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 
 		// Graph edges use the authored name. The runtime pass binds
 		// resources by the canonical name for this shader role.
-		auto port = RenderGraph::PassPort::FromCpuPort(source.data);
+		auto port = RenderGraph::PassPort::FromCPUPort(source.data);
 		port.name = role->name;
 		return port;
 	};
@@ -205,12 +205,12 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 		return result;
 	}
 
-	const auto resolve = [&](const CpuNode& node)
+	const auto resolve = [&](const CPUNode& node)
 	{
-		const CpuPorts& builtin = *m_portCatalog.FindPassPorts(node.pass);
+		const CPUPorts& builtin = *m_portCatalog.FindPassPorts(node.pass);
 		return node.shader ? WithShaderPortNames(builtin, contracts.at(node.shader.id())) : builtin;
 	};
-	for (const auto& diagnostic : ValidateCpuGraph(document, m_portCatalog, resolve))
+	for (const auto& diagnostic : ValidateCPUGraph(document, m_portCatalog, resolve))
 		result.errors.push_back({diagnostic.node, diagnostic.port, diagnostic.message});
 	if (!result.errors.empty())
 		return result;

@@ -2,7 +2,7 @@
 
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/data/ShaderData.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 #include "core/Log.hpp"
 #include "asset/ResourceManager.hpp"
@@ -51,9 +51,9 @@ void RenderManager::ResetGraph(bool publish)
 		Publish();
 }
 
-std::vector<CpuGraphDiagnostic> RenderManager::Diagnostics() const
+std::vector<CPUGraphDiagnostic> RenderManager::Diagnostics() const
 {
-	return ValidateCpuGraph(Graph(), *m_renderDefaults);
+	return ValidateCPUGraph(Graph(), *m_renderDefaults);
 }
 
 std::shared_ptr<RenderGraphData> RenderManager::CreateGraph(bool publish)
@@ -79,7 +79,7 @@ bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 		return true;
 	}
 	m_problems.clear();
-	for (const auto& diagnostic : ValidateCpuGraph(*graph, *m_renderDefaults))
+	for (const auto& diagnostic : ValidateCPUGraph(*graph, *m_renderDefaults))
 		m_problems.push_back(diagnostic.node + (diagnostic.port.empty() ? "" : "." + diagnostic.port)
 		                      + ": " + diagnostic.message);
 	if (!m_problems.empty())
@@ -184,7 +184,7 @@ void RenderManager::Publish()
 			}
 		}
 
-		const auto errors = ValidateCpuGraph(*graph, ports);
+		const auto errors = ValidateCPUGraph(*graph, ports);
 		for (const auto& error : errors)
 			report(error.node + (error.port.empty() ? "" : "." + error.port) + ": " + error.message);
 		if (errors.empty())

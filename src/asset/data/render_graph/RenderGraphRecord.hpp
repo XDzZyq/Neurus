@@ -3,7 +3,7 @@
  */
 #pragma once
 
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "asset/ResourceRef.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "core/Serialize.hpp"
@@ -25,7 +25,7 @@ using PassShaderRef = ResourceRef<const ShaderData>;
 class IResourceLookup;
 class RenderGraphData;
 template<class, class> class Node;
-struct CpuNode;
+struct CPUNode;
 
 /// Stores the image declaration on each serialized output socket.
 template<class Archive>
@@ -49,7 +49,7 @@ void serialize(Archive& ar, GraphOutputTag& tag)
 }
 /// Stores a socket's metadata. Its direction comes from the input or output list.
 template<class Archive>
-void serialize(Archive& ar, CpuPort& port)
+void serialize(Archive& ar, CPUPort& port)
 {
 	ar(cereal::make_nvp("name", port.name),
 	   cereal::make_nvp("type", port.type),
@@ -85,8 +85,8 @@ struct RenderGraphNodeRecord
 	std::optional<int>                 shaderUid;
 	float                              x = 0.0f;
 	float                              y = 0.0f;
-	std::vector<CpuPort>               inputs;
-	std::vector<CpuPort>               outputs;
+	std::vector<CPUPort>               inputs;
+	std::vector<CPUPort>               outputs;
 
 	bool operator==(const RenderGraphNodeRecord&) const = default;
 
@@ -194,10 +194,10 @@ bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
                   const IResourceLookup& pool);
 
 /// Captures one node, including its shader UID, position and sockets.
-RenderGraphNodeRecord ToRecord(const Node<CpuPort, CpuNode>& node);
+RenderGraphNodeRecord ToRecord(const Node<CPUPort, CPUNode>& node);
 
 /// Rebuilds one node from its saved sockets and resolves its shader through the pool.
-std::unique_ptr<Node<CpuPort, CpuNode>> FromRecord(
+std::unique_ptr<Node<CPUPort, CPUNode>> FromRecord(
 	const RenderGraphNodeRecord& saved, const IResourceLookup& pool);
 
 /// Flattens the saved topology, including both input and output sockets.

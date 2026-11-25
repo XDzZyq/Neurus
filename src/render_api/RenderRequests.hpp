@@ -39,7 +39,7 @@
 #include <vector>
 
 #include "scene/Light.hpp"
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "asset/data/shader/ShaderStage.hpp"
 #include "asset/data/shader/ShaderStruct.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
@@ -139,7 +139,7 @@ struct UploadShaderRequest
 	int version = 0;
 	ShaderType primaryType = ShaderType::VERTEX;
 	std::unordered_map<ShaderType, ShaderStageUpload> stages;
-	CpuPorts ports;  ///< Image-port contract extracted on the CPU.
+	CPUPorts ports;  ///< Image-port contract extracted on the CPU.
 };
 
 /** @brief Copies compiled stages and descriptor metadata and derives the image ports. */

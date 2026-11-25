@@ -324,9 +324,9 @@ TEST_F(PassCountersTest, RecordReturnsStats)
 
 namespace {
 
-CpuPorts MakePorts(std::vector<CpuPort> ports)
+CPUPorts MakePorts(std::vector<CPUPort> ports)
 {
-	CpuPorts result;
+	CPUPorts result;
 	result.kind  = "PortPass";
 	result.ports = std::move(ports);
 	return result;
@@ -339,7 +339,7 @@ TEST(RenderGraphTest, AddPassDeclaresPortSockets)
 	MockPass pass("PortPass", {}, {});
 	RenderGraph g;
 
-	const CpuPorts ports = MakePorts({
+	const CPUPorts ports = MakePorts({
 		{"gWorld", PortDirection::Input, "sampler2D", 0, 0},
 		{"gOut",   PortDirection::Output, "image2D", 1, 0},
 	});

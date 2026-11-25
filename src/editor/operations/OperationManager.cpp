@@ -201,7 +201,7 @@ void OperationManager::BeginScriptScope(std::string name)
 	NEURUS_LOG("[OperationManager] BeginScriptScope: buffering edits into one undo step");
 }
 
-void OperationManager::FlushGraphDrafts(std::vector<CpuGraphDiagnostic>* diagnostics)
+void OperationManager::FlushGraphDrafts(std::vector<CPUGraphDiagnostic>* diagnostics)
 {
 	GraphOperationBatch(op_scriptOps).FlushDrafts(op_bus, diagnostics);
 }

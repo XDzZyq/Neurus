@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 
 #include <string>
 #include <string_view>
@@ -25,7 +25,7 @@ public:
 	virtual ~IPortSource() = default;
 
 	/// @brief Returns the pass's ports, or nullptr when the kind is unknown.
-	virtual const CpuPorts* FindPassPorts(std::string_view passKind) const = 0;
+	virtual const CPUPorts* FindPassPorts(std::string_view passKind) const = 0;
 
 	/// @brief Input ports the pass resolves outside the graph (IBL cubemaps).
 	virtual std::vector<std::string> ExternalInputs(std::string_view passKind) const

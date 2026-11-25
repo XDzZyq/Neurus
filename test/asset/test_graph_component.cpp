@@ -16,7 +16,7 @@
 #include "core/Log.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/data/RenderGraphData.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "shader/ComputeShader.hpp"
 
 #include <cereal/archives/json.hpp>
@@ -211,7 +211,7 @@ TEST_F(GraphComponent, InactiveGraphResolvesShadersStoredLaterInPool)
 	ASSERT_EQ(loaded->nodes.size(), 8u);
 	EXPECT_EQ(loaded->nodes[5]->data.shader.get(), loadedShader.get());
 	EXPECT_EQ(loaded->nodes[7]->data.shader.get(), loadedShader.get());
-	EXPECT_TRUE(neurus::ValidateCpuGraph(*loaded, ports).empty());
+	EXPECT_TRUE(neurus::ValidateCPUGraph(*loaded, ports).empty());
 	EXPECT_FALSE(loaded->nodes[4]->data.shader);
 }
 

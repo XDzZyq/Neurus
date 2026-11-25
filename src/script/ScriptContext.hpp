@@ -28,7 +28,7 @@ class Scene;
 class RenderConfig;
 class IResourceLookup;
 class RenderGraphData;
-struct CpuGraphDiagnostic;
+struct CPUGraphDiagnostic;
 
 /// @brief The current effective graph and the identity of its optional project resource.
 struct ScriptGraphView
@@ -51,7 +51,7 @@ struct ScriptContext
 	/// Re-query graph topology and identity after creation or undo in the same run.
 	std::function<ScriptGraphView()> graphProvider;
 	/// Named validation errors for the graph currently visible to the script.
-	std::function<std::vector<CpuGraphDiagnostic>()> graphDiagnostics;
+	std::function<std::vector<CPUGraphDiagnostic>()> graphDiagnostics;
 	/// Re-query optional config after writes within the same script run.
 	std::function<const RenderConfig*()> configProvider;
 };

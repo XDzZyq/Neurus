@@ -1,6 +1,6 @@
 #include "editor/operations/GraphOperation.hpp"
 
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "editor/events/GraphEvents.hpp"
 #include "editor/operations/PassShaderStageOperation.hpp"
 
@@ -29,7 +29,7 @@ bool GraphOperationBatch::IsNoOp(const Operation& op)
 	return stage && stage->IsNoOp();
 }
 
-void GraphOperationBatch::FlushDrafts(IEventQueue& events, std::vector<CpuGraphDiagnostic>* diagnostics) const
+void GraphOperationBatch::FlushDrafts(IEventQueue& events, std::vector<CPUGraphDiagnostic>* diagnostics) const
 {
 	// Several writes to the same stage can contain intermediate, incomplete GLSL.
 	// Keep the first before-image and compile the final source once.

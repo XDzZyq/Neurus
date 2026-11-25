@@ -5,7 +5,7 @@
 #pragma once
 
 #include "asset/data/render_graph/GraphEndpoint.hpp"
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "core/Graph.hpp"
 #include "core/UID.hpp"
@@ -37,21 +37,21 @@ class ShaderData;
  * selected CPU shader (null selects the built-in), and the position is layout that
  * the renderer never reads.
  */
-struct CpuNode
+struct CPUNode
 {
 	std::string pass;
 	PassShaderRef shader;
 	float       x = 0.0f;
 	float       y = 0.0f;
 
-	bool operator==(const CpuNode&) const = default;
+	bool operator==(const CPUNode&) const = default;
 };
 
 /** @brief CPU scene graph for editing, persistence and renderer publication. */
-class RenderGraphData : public UID, public Graph<CpuPort, CpuNode>
+class RenderGraphData : public UID, public Graph<CPUPort, CPUNode>
 {
 public:
-	using GraphT = Graph<CpuPort, CpuNode>;
+	using GraphT = Graph<CPUPort, CPUNode>;
 
 	RenderGraphData() = default;
 	/// Builds the built-in scene graph from the declared pass ports.
@@ -103,8 +103,8 @@ public:
 };
 
 std::optional<GraphOutputTag> BuiltInOutputTag(std::string_view kind, std::string_view port);
-CpuPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog);
-CpuPorts WithShaderPortNames(const CpuPorts& builtin, const CpuPorts& shaderPorts);
-void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const CpuPorts& ports);
+CPUPorts EffectivePassPorts(const CPUNode& node, const IPortSource& catalog);
+CPUPorts WithShaderPortNames(const CPUPorts& builtin, const CPUPorts& shaderPorts);
+void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const CPUPorts& ports);
 
 } // namespace neurus

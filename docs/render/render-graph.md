@@ -4,10 +4,10 @@ The deferred pipeline is a document the Editor owns and the renderer uploads ont
 
 ## The document
 
-The CPU document, `RenderGraphData`, derives from `UID` and `Graph<CpuPort, CpuNode>`. The editor keeps the authored graph in the resource pool. The built-in default and published snapshots use the same type and stay outside the pool.
+The CPU document, `RenderGraphData`, derives from `UID` and `Graph<CPUPort, CPUNode>`. The editor keeps the authored graph in the resource pool. The built-in default and published snapshots use the same type and stay outside the pool.
 
-- a node payload, `CpuNode`, holds the pass kind, a `PassShaderRef` and the graph-editor position. `Graph::Node::name` is the document id.
-- a socket payload, `CpuPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
+- a node payload, `CPUNode`, holds the pass kind, a `PassShaderRef` and the graph-editor position. `Graph::Node::name` is the document id.
+- a socket payload, `CPUPort`, mirrors one shader port (name, direction, GLSL type, binding, location), and an output additionally carries a `GraphOutputTag`;
 - an edge is an ordinary `Graph` connection, so there is no string reference between nodes. The saved form keys each edge by node name and port.
 
 `GraphOutputTag` (`src/asset/data/render_graph/GraphOutputTag.hpp`) is the closed set described in [Resources](#resources).
@@ -40,7 +40,7 @@ The editor checks the pass contract when assigning a shader and when publishing 
 
 ## Validation and upload
 
-`ValidateCpuGraph(document, ports)` (`src/asset/data/render_graph/CpuGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CpuGraphDiagnostic` naming the node and, when it has one, the port.
+`ValidateCPUGraph(document, ports)` (`src/asset/data/render_graph/CPUGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CPUGraphDiagnostic` naming the node and, when it has one, the port.
 
 The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`). It retains the published topology and maps it directly with a one-way morphism local to each compile. `Compile(cache)` prepares the runtime graph:
 
@@ -62,7 +62,7 @@ A failure leaves the previous graph drawing and is reported through `LastGraphRe
 
 ```mermaid
 flowchart LR
-    doc["Published RenderGraphData<br/>shared CPU shader references"] --> validate["ValidateCpuGraph<br/>named diagnostics"]
+    doc["Published RenderGraphData<br/>shared CPU shader references"] --> validate["ValidateCPUGraph<br/>named diagnostics"]
     catalog["BuiltInRenderData<br/>IPortSource"] --> validate
     validate --> upload["GraphUploader::Compile<br/>GraphMorphism::Map"]
     catalog --> upload
@@ -74,7 +74,7 @@ flowchart LR
     execute --> frame["FrameProfile"]
 ```
 
-The mapping policy copies each authored `CpuPort` into a runtime `RenderGraph::PassPort`. Runtime sockets keep the authored names for edges and resource keys. Their payload keeps the canonical pass names used for descriptor binding. The policy callbacks receive a source node or socket and return a mapped payload. `GraphMorphism::Map(source)` creates target elements with those payloads and copies their source labels. It tracks correspondence by object identity and connects the mapped sockets. Each edge maps directly to the target graph's connection. The input socket owns the connection record, so its address survives graph moves. Rebuild the correspondence after rewiring or removing mapped sockets. The mapper retains only its construction policy. The uploader calls `mapping.images.Validate(source)` while both graphs are alive to check that every source element has an image and each connection joins the mapped sockets. It then moves the validated target into the runtime graph. The upload plans one cache resource per tagged output, keyed by `ResourceKey(node, port)`.
+The mapping policy copies each authored `CPUPort` into a runtime `RenderGraph::PassPort`. Runtime sockets keep the authored names for edges and resource keys. Their payload keeps the canonical pass names used for descriptor binding. The policy callbacks receive a source node or socket and return a mapped payload. `GraphMorphism::Map(source)` creates target elements with those payloads and copies their source labels. It tracks correspondence by object identity and connects the mapped sockets. Each edge maps directly to the target graph's connection. The input socket owns the connection record, so its address survives graph moves. Rebuild the correspondence after rewiring or removing mapped sockets. The mapper retains only its construction policy. The uploader calls `mapping.images.Validate(source)` while both graphs are alive to check that every source element has an image and each connection joins the mapped sockets. It then moves the validated target into the runtime graph. The upload plans one cache resource per tagged output, keyed by `ResourceKey(node, port)`.
 
 `OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph and consumes the selected scene color, depth and object-ID resources. Picking uses the same object-ID selection.
 

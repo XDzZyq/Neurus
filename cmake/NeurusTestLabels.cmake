@@ -11,9 +11,9 @@ endfunction()
 # Suite defaults, shared by the full and CPU-only executables.
 neurus_test_labels(Application Medium AppArgs PreferencesTest)
 neurus_test_labels(Application High SessionCommand VulkanContextTest)
-neurus_test_labels(Asset Medium ImageDataTest MeshDataTest CpuPorts ShaderDataSourceTest
+neurus_test_labels(Asset Medium ImageDataTest MeshDataTest CPUPorts ShaderDataSourceTest
 	UIComponentRoundtrip)
-neurus_test_labels(Asset High CpuGraphValidation DefaultProject GraphComponent
+neurus_test_labels(Asset High CPUGraphValidation DefaultProject GraphComponent
 	RenderGraphData RenderGraphDocument SerializeOptional ShaderDataPersistence
 	ShaderInterface)
 neurus_test_labels(Asset Critical ProjectRoundtrip)

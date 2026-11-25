@@ -31,7 +31,7 @@ void AppendImageBinding(std::vector<GraphImageBinding>& bindings, std::string_vi
 }
 
 std::vector<GraphImageBinding> BuildImageBindings(
-	const CpuPorts& ports,
+	const CPUPorts& ports,
 	const Pass& pass,
 	const std::function<bool(std::string_view)>& connected)
 {

@@ -44,7 +44,9 @@ responsibility shared by callers, and keep it with the family that uses it.
 ## Naming
 
 - Use PascalCase for types, class filenames and member functions, including
-  private methods. Use lowerCamelCase for file-local free functions.
+  private methods. Use lowerCamelCase for file-local free functions. Keep
+  acronyms upper case in type, function and file names (`ShaderGPU`,
+  `CPUPorts.hpp`, `ValidateCPUGraph`).
 - Prefix direct private instance fields by declaring class. Use `r_` in
   DeferredRenderer and Swapchain, `ed_` in Editor, `ctx_` in VulkanContext,
   `app_` in Application and HeadlessApplication, and `win_` in UIManager.

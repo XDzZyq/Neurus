@@ -6,7 +6,7 @@
 #include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "editor/controllers/MutationNotify.hpp"
 #include "editor/events/ConfigEvents.hpp"
 #include "editor/events/SceneEvents.hpp"

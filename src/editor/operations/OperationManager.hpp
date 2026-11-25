@@ -34,7 +34,7 @@
 namespace neurus {
 
 class EventQueue;
-struct CpuGraphDiagnostic;
+struct CPUGraphDiagnostic;
 
 /**
  * @brief Owns the undo/redo history and drives synchronous replay.
@@ -69,7 +69,7 @@ public:
 	void BeginScriptScope(std::string name = {}) override;
 	std::string EndScriptScope(bool success = true) override;
 	/// Compile drafts already recorded in the open group before a graph query.
-	void FlushGraphDrafts(std::vector<CpuGraphDiagnostic>* diagnostics = nullptr);
+	void FlushGraphDrafts(std::vector<CPUGraphDiagnostic>* diagnostics = nullptr);
 	void RejectScope(const std::string& error);
 
 	/**

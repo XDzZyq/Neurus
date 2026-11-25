@@ -51,7 +51,7 @@
 #include "asset/data/ShaderData.hpp"
 #include "shader/ShaderLibrary.hpp"
 #include "shader/ShaderParser.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"

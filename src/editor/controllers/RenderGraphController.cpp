@@ -6,7 +6,7 @@
 #include "editor/events/GraphEvents.hpp"
 #include "editor/operations/GraphOperations.hpp"
 #include "editor/operations/GraphTopologyOperations.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "shader/BuiltInRenderData.hpp"
 
 #include <algorithm>

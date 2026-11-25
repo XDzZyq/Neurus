@@ -25,7 +25,7 @@ provider after edits or undo can replace the stored pointer.
 
 ## Graph shader ownership
 
-An authoring `CpuNode::shader` is a `PassShaderRef` with shared ownership of its
+An authoring `CPUNode::shader` is a `PassShaderRef` with shared ownership of its
 pooled CPU shader. An empty reference selects the pass default. The Editor retains mutable
 access to that resource. Publication clones graph topology, preserving shared
 shader ownership. The graph mapper reads only the stable shader UID from these

@@ -1,9 +1,9 @@
 /**
- * @file CpuGraphValidation.cpp
+ * @file CPUGraphValidation.cpp
  * @brief Document checks against the port source.
  */
 
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 
 #include "asset/data/render_graph/PassShaderCatalog.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
@@ -20,7 +20,7 @@ namespace neurus {
 
 namespace {
 
-bool Matches(const CpuPort& socket, const CpuPort& port)
+bool Matches(const CPUPort& socket, const CPUPort& port)
 {
 	return socket.name == port.name && socket.direction == port.direction && socket.type == port.type
 	    && socket.binding == port.binding && socket.location == port.location;
@@ -28,18 +28,18 @@ bool Matches(const CpuPort& socket, const CpuPort& port)
 
 } // anonymous namespace
 
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
+std::vector<CPUGraphDiagnostic> ValidateCPUGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
-                                                 const std::function<CpuPorts(const CpuNode&)>& shaderPorts)
+                                                 const std::function<CPUPorts(const CPUNode&)>& shaderPorts)
 {
-	std::vector<CpuGraphDiagnostic> diagnostics;
+	std::vector<CPUGraphDiagnostic> diagnostics;
 
 	const auto active = graph.ActiveNodes();
 	if (!graph.nodes.empty() && !graph.sceneOutputs.contains("color"))
 		diagnostics.push_back({{}, "color", "scene color output is not connected"});
 	for (const auto& [name, endpoint] : graph.sceneOutputs)
 	{
-		const CpuPort* producer = nullptr;
+		const CPUPort* producer = nullptr;
 		for (const auto& node : graph.nodes)
 			if (node->name == endpoint.node)
 				for (const auto& out : node->outputs)
@@ -72,7 +72,7 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 
 	for (const auto& node : graph.nodes)
 	{
-		const CpuPorts* builtin = ports.FindPassPorts(node->data.pass);
+		const CPUPorts* builtin = ports.FindPassPorts(node->data.pass);
 		if (!builtin)
 		{
 			diagnostics.push_back(
@@ -193,9 +193,9 @@ void ValidatePassShader(std::string_view passKind, const ShaderData& shader, con
 	}
 }
 
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog)
+std::vector<CPUGraphDiagnostic> ValidateCPUGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog)
 {
-	auto diagnostics = ValidateCpuGraph(graph, catalog.Ports());
+	auto diagnostics = ValidateCPUGraph(graph, catalog.Ports());
 	for (const auto& node : graph.nodes)
 	{
 		if (!node->data.shader)

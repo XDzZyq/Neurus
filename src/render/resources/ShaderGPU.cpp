@@ -40,9 +40,9 @@ const ShaderStageUpload* ShaderGPU::FindStage(const ShaderType stage) const
 	return found == m_stages.end() ? nullptr : &found->second;
 }
 
-CpuPorts CollectUploadedPassPorts(std::string kind, const std::span<const ShaderGPU* const> shaders)
+CPUPorts CollectUploadedPassPorts(std::string kind, const std::span<const ShaderGPU* const> shaders)
 {
-	CpuPorts result;
+	CPUPorts result;
 	result.kind = std::move(kind);
 	for (const ShaderGPU* shader : shaders)
 	{

@@ -28,7 +28,7 @@ namespace neurus::test {
 class FakePortSource : public IPortSource
 {
 public:
-	void Set(std::string kind, CpuPorts ports)
+	void Set(std::string kind, CPUPorts ports)
 	{
 		m_ports[std::move(kind)] = std::move(ports);
 	}
@@ -38,7 +38,7 @@ public:
 		m_externals[std::move(kind)] = std::move(names);
 	}
 
-	const CpuPorts* FindPassPorts(const std::string_view kind) const override
+	const CPUPorts* FindPassPorts(const std::string_view kind) const override
 	{
 		const auto it = m_ports.find(std::string(kind));
 		return it == m_ports.end() ? nullptr : &it->second;
@@ -51,7 +51,7 @@ public:
 	}
 
 private:
-	std::unordered_map<std::string, CpuPorts>                m_ports;
+	std::unordered_map<std::string, CPUPorts>                m_ports;
 	std::unordered_map<std::string, std::vector<std::string>> m_externals;
 };
 
@@ -69,14 +69,14 @@ inline FakePortSource MakeRealPortSource()
 	EXPECT_NE(geometry, nullptr);
 
 	const std::array<const ShaderData*, 1> geometryShaders = {geometry.get()};
-	const std::array<CpuPort, 1> geometryDeclared = {
-		CpuPort{"depth", PortDirection::Output, "d32_sfloat", 0, 0},
+	const std::array<CPUPort, 1> geometryDeclared = {
+		CPUPort{"depth", PortDirection::Output, "d32_sfloat", 0, 0},
 	};
 	source.Set("GeometryPass",
 	           ExtractPassPorts("GeometryPass", geometryShaders, geometryDeclared));
 
-	const std::array<CpuPort, 1> shadowDeclared = {
-		CpuPort{"shadow_depth", PortDirection::Output, "logical", 0, 0},
+	const std::array<CPUPort, 1> shadowDeclared = {
+		CPUPort{"shadow_depth", PortDirection::Output, "logical", 0, 0},
 	};
 	const std::span<const ShaderData* const> noShaders;
 	source.Set("ShadowDepthPass",

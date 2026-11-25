@@ -10,13 +10,13 @@
 
 namespace neurus {
 
-struct CpuGraphDiagnostic;
+struct CPUGraphDiagnostic;
 
 /// Reply slots and edit payloads are borrowed for synchronous dispatch. A
 /// controller writes a failure to error when supplied and throws otherwise.
 struct RenderGraphFlushRequested
 {
-	std::vector<CpuGraphDiagnostic>* diagnostics = nullptr;
+	std::vector<CPUGraphDiagnostic>* diagnostics = nullptr;
 	std::string* error = nullptr;
 };
 

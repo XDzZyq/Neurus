@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-#include "asset/data/render_graph/CpuPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "render/passes/Pass.hpp"
 #include "render/render_graph/RenderGraph.hpp"
 
@@ -27,7 +27,7 @@ class PlainPass : public Pass
 
 RenderGraph::NodeT* AddProducer(RenderGraph& graph, PlainPass& pass)
 {
-	CpuPorts ports;
+	CPUPorts ports;
 	ports.ports = {{"source", PortDirection::Output, "image2D", 0, 0}};
 	return graph.AddPass(&pass, ports);
 }
@@ -36,7 +36,7 @@ RenderGraph::NodeT* AddProducer(RenderGraph& graph, PlainPass& pass)
 
 TEST(PassBindings, BuildsImageInputsAndOutputs)
 {
-	CpuPorts ports;
+	CPUPorts ports;
 	ports.ports = {
 		{"selfManaged", PortDirection::Input, "sampler2D", 1, 0},
 		{"gIn",   PortDirection::Input,  "sampler2D", 0, 0},
@@ -73,7 +73,7 @@ TEST(PassBindings, BuildsImageInputsAndOutputs)
 
 TEST(PassBindings, UnconnectedExternalInputHasNoGraphBinding)
 {
-	CpuPorts ports;
+	CPUPorts ports;
 	ports.ports = {
 		{"gIn",  PortDirection::Input,  "sampler2D", 0, 0},
 		{"gOut", PortDirection::Output, "image2D",   2, 0},
@@ -93,7 +93,7 @@ TEST(PassBindings, UnconnectedExternalInputHasNoGraphBinding)
 
 TEST(PassBindings, DefaultPassHasNoSelfManagedBindings)
 {
-	CpuPorts ports;
+	CPUPorts ports;
 	ports.ports = {
 		{"gIn", PortDirection::Input, "sampler2D", 1, 0},
 	};
