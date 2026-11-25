@@ -47,7 +47,7 @@ std::pair<int, ResourceRecord> readRecord(const Json& entry)
 	if (entry.contains("value") && !entry.contains("data"))
 		throw std::runtime_error("legacy {key, value} resource record is not supported");
 	const auto& key = entry.at("key");
-	if (!key.is_number_integer() || key < 0 || key >= std::numeric_limits<int>::max())
+	if (!key.is_number_integer() || key < 1 || key >= std::numeric_limits<int>::max())
 		throw std::runtime_error("invalid resource UID");
 	const auto& type_name = entry.at("type").get_ref<const std::string&>();
 	const auto* type = ResourceTypeRegistration::Find(type_name);

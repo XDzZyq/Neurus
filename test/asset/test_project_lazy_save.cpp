@@ -266,6 +266,27 @@ TEST(ProjectRoundtrip, InvalidKeyFailsTheLoad)
 	EXPECT_FALSE(pool.Contains(valid));
 }
 
+TEST(ProjectRoundtrip, RecordWithKeyZeroFailsTheLoad)
+{
+
+	ResourceManager source;
+	const int valid = source.Load<Camera>()->GetObjectID();
+	std::ostringstream original;
+	{
+		cereal::JSONOutputArchive archive(original);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(original.str());
+	for (auto& entry : document.at("m_resources").at("resources_"))
+		if (entry.at("key") == valid)
+			entry.at("key") = 0;
+
+	ResourceManager pool;
+	project::ResourceComponent restored(pool);
+	EXPECT_THROW(restored.LoadJson(document.dump()), std::runtime_error);
+	EXPECT_FALSE(pool.Contains(valid));
+}
+
 TEST(ProjectRoundtrip, LegacyKeyValueRecordFailsTheLoad)
 {
 	ResourceManager source;

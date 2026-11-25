@@ -8,7 +8,7 @@ A default-constructed `UID` or derived object is ephemeral. It acquires a key wh
 
 - `GetObjectID()` returns the integer pool key. For an unpooled object it logs an error and returns `-1`.
 - Each entry owns its identity. The object observes membership through a weak reference, so external shared ownership can keep the object alive after its key expires.
-- `ResourceManager::Load<T>()` constructs and registers a fresh object. Fresh keys begin at one per manager and only increase; `Clear` keeps the counter. Save writes `m_resources.next_uid`; open raises the counter to it, so removed or rejected keys are never reused. A saved key can be zero. Managers reserve the saved keys when indexing a project.
+- `ResourceManager::Load<T>()` constructs and registers a fresh object. Fresh keys begin at one per manager and only increase; `Clear` keeps the counter. Save writes `m_resources.next_uid`; open raises the counter to it, so removed or rejected keys are never reused. Keys are >= 1; 0 means no reference. Managers reserve the saved keys when indexing a project.
 - Removing an object from a scene only releases its scene reference. The pool retains the object and its key for undo and project save.
 - Standalone cereal payloads contain only object fields. Reading a standalone payload into a newly constructed object leaves it ephemeral.
 - A UID-bearing object cannot be copied or moved. To duplicate one, create another pooled object and copy the required fields. Resource registration and lookup run on the main thread.

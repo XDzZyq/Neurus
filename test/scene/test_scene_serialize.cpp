@@ -60,29 +60,6 @@ struct TempFile
 
 } // anonymous namespace
 
-TEST(SceneSerialize, MembershipIncludesPooledUidZero)
-{
-	ResourceManager resources;
-	Scene source;
-	const int nextId = resources.NextId();
-	resources.RegisterDeferred(0, typeid(Light), [] { return std::make_shared<Light>(); });
-	const auto light = resources.Get<Light>(0);
-	ASSERT_EQ(light->GetObjectID(), 0);
-	EXPECT_EQ(resources.NextId(), nextId);
-	source.UseLight(light);
-	std::stringstream document;
-	{
-		cereal::JSONOutputArchive archive(document);
-		project::SceneComponent(source, resources).Save(archive);
-	}
-	Scene restored;
-	cereal::JSONInputArchive archive(document);
-	project::SceneComponent(restored, resources).Load(archive);
-	ASSERT_TRUE(restored.light_list.contains(0));
-	EXPECT_EQ(restored.light_list.at(0).get(), light.get());
-	EXPECT_EQ(restored.GetObjectID(0), light.get());
-}
-
 // -----------------------------------------------------------------------
 // Full round-trip: pool first, then Scene references
 // -----------------------------------------------------------------------

@@ -192,14 +192,24 @@ TEST(ResourceManagerTest, RejectedDeferredObjectLosesItsMembership)
 {
 	ResourceManager pool;
 	auto object = std::make_shared<TestResource>();
-	pool.RegisterDeferred(0, typeid(TestResource), [&] { return object; },
-		std::make_shared<const std::string>("record"), [](UID& candidate) {
-			EXPECT_EQ(candidate.GetObjectID(), 0);
+	const int id = pool.NextId();
+	pool.RegisterDeferred(id, typeid(TestResource), [&] { return object; },
+		std::make_shared<const std::string>("record"), [id](UID& candidate) {
+			EXPECT_EQ(candidate.GetObjectID(), id);
 			return false;
 		});
-	EXPECT_FALSE(pool.Get(0));
-	EXPECT_FALSE(pool.Contains(0));
+	EXPECT_FALSE(pool.Get(id));
+	EXPECT_FALSE(pool.Contains(id));
 	EXPECT_EQ(object->GetObjectID(), -1);
+}
+
+TEST(ResourceManagerTest, ZeroKeyIsRejected)
+{
+	ResourceManager pool;
+	EXPECT_THROW(pool.RegisterDeferred(0, typeid(TestResource),
+		[] { return std::make_shared<TestResource>(); }), std::out_of_range);
+	EXPECT_FALSE(pool.Contains(0));
+	EXPECT_EQ(pool.NextId(), 1);
 }
 
 TEST(ResourceManagerTest, DeferredMetadataAndNamedLookup)

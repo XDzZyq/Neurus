@@ -257,7 +257,7 @@ std::string ResourceManager::UniqueName(std::type_index type, const std::string&
 
 void ResourceManager::IndexType(int id, std::type_index type)
 {
-	if (id < 0 || id == std::numeric_limits<int>::max())
+	if (id < 1 || id == std::numeric_limits<int>::max())
 		throw std::out_of_range("Invalid resource UID");
 	if (!res_entries.emplace(id, Entry{type, std::make_shared<const int>(id)}).second)
 		throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
