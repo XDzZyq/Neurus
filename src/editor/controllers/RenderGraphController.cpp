@@ -176,10 +176,7 @@ void ChangeNodeMembership(const ControllerContext& ctx, const GraphNodeMembershi
 	CheckNewName(graph, e.node.name);
 	if (e.index > graph.nodes.size())
 		throw std::invalid_argument("Invalid graph node position in history");
-	std::vector<std::string> errors;
-	auto node = project::FromRecord(e.node, ctx.render->Defaults().Ports(), errors, &ctx.resources);
-	if (!errors.empty())
-		throw std::invalid_argument(errors.front());
+	auto node = project::FromRecord(e.node, ctx.resources);
 	if (e.node.shaderUid && !node->data.shader)
 		throw std::invalid_argument("Missing or invalid pooled shader UID " + std::to_string(*e.node.shaderUid));
 	if (node->data.shader)

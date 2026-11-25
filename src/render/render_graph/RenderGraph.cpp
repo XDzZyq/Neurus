@@ -51,11 +51,11 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 
 	const PassIO io = pass->GetIO();
 	const std::vector<const ShaderGPU*> shaders = pass->GetShaders();
-	PassPorts ports = CollectUploadedPassPorts(io.name.empty() ? "Pass" : io.name, shaders);
+	CpuPorts ports = CollectUploadedPassPorts(io.name.empty() ? "Pass" : io.name, shaders);
 	return AddPass(pass, std::move(ports), PassExternalInputs(io.name));
 }
 
-RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
+RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, CpuPorts ports,
                                          std::vector<std::string> externalInputs,
                                          std::string id)
 {
@@ -66,7 +66,7 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, PassPorts ports,
 	return node;
 }
 
-RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, PassPorts ports,
+RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, CpuPorts ports,
                                               std::vector<std::string> externalInputs,
                                               std::string id)
 {
@@ -103,17 +103,17 @@ RenderGraph::NodeT* RenderGraph::MakePassNode(GraphT& graph, Pass* pass, PassPor
 	}
 	else
 	{
-		for (const PassPort& port : node->data.ports.ports)
+		for (const CpuPort& port : node->data.ports.ports)
 		{
 			if (port.direction == PortDirection::Input)
 			{
 				auto* input = node->AddInput(port.name);
-				input->data = port;
+				input->data = PassPort::FromCpuPort(port);
 			}
 			else
 			{
 				auto* output = node->AddOutput(port.name);
-				output->data = port;
+				output->data = PassPort::FromCpuPort(port);
 			}
 		}
 	}

@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include "asset/data/render_graph/CpuPorts.hpp"
 #include "render/passes/Pass.hpp"
 #include "render/render_graph/PassBindings.hpp"
 
@@ -30,7 +31,7 @@ class PlainPass : public Pass
 
 TEST(PassBindings, BuildsImageInputsAndOutputs)
 {
-	PassPorts ports;
+	CpuPorts ports;
 	ports.ports = {
 		{"selfManaged", PortDirection::Input, "sampler2D", 1, 0},
 		{"gIn",   PortDirection::Input,  "sampler2D", 0, 0},
@@ -60,7 +61,7 @@ TEST(PassBindings, BuildsImageInputsAndOutputs)
 
 TEST(PassBindings, ConnectedPredicateFiltersInputs)
 {
-	PassPorts ports;
+	CpuPorts ports;
 	ports.ports = {
 		{"gIn",  PortDirection::Input,  "sampler2D", 0, 0},
 		{"gOut", PortDirection::Output, "image2D",   2, 0},
@@ -78,7 +79,7 @@ TEST(PassBindings, ConnectedPredicateFiltersInputs)
 
 TEST(PassBindings, DefaultPassHasNoSelfManagedBindings)
 {
-	PassPorts ports;
+	CpuPorts ports;
 	ports.ports = {
 		{"gIn", PortDirection::Input, "sampler2D", 1, 0},
 	};

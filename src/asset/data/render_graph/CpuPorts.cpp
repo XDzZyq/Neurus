@@ -1,9 +1,9 @@
 /**
- * @file PassPorts.cpp
+ * @file CpuPorts.cpp
  * @brief Port extraction from ShaderStruct.
  */
 
-#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/render_graph/CpuPorts.hpp"
 
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
@@ -25,7 +25,7 @@ std::string UniformType(const S_Uniform& uniform)
 }
 
 /// @brief Adds the sampler and image uniforms of one stage.
-void AddUniformPorts(PassPorts& result, const ShaderStruct& shader)
+void AddUniformPorts(CpuPorts& result, const ShaderStruct& shader)
 {
 	for (const S_Uniform& uniform : shader.uniform_list)
 	{
@@ -35,7 +35,7 @@ void AddUniformPorts(PassPorts& result, const ShaderStruct& shader)
 
 		const std::string type = UniformType(uniform);
 
-		PassPort port;
+		CpuPort port;
 		port.name      = uniform.name;
 		port.type      = type;
 		port.binding   = static_cast<uint32_t>(uniform.binding);
@@ -55,11 +55,11 @@ void AddUniformPorts(PassPorts& result, const ShaderStruct& shader)
 }
 
 /// @brief Adds a fragment stage's layout(location = N) out declarations.
-void AddFragmentOutputs(PassPorts& result, const ShaderStruct& shader)
+void AddFragmentOutputs(CpuPorts& result, const ShaderStruct& shader)
 {
 	for (const S_IO& output : shader.pass_list)
 	{
-		PassPort port;
+		CpuPort port;
 		port.name      = output.name;
 		port.direction = PortDirection::Output;
 		port.type      = output.typeName.empty() ? ShaderStruct::ParseType(output.type)
@@ -72,10 +72,10 @@ void AddFragmentOutputs(PassPorts& result, const ShaderStruct& shader)
 
 } // anonymous namespace
 
-const PassPort* PassPorts::Find(const std::string_view name,
-                                  const PortDirection direction) const
+const CpuPort* CpuPorts::Find(const std::string_view name,
+                               const PortDirection direction) const
 {
-	for (const PassPort& port : ports)
+	for (const CpuPort& port : ports)
 	{
 		if (port.direction == direction && port.name == name)
 			return &port;
@@ -83,9 +83,9 @@ const PassPort* PassPorts::Find(const std::string_view name,
 	return nullptr;
 }
 
-const PassPort* PassPorts::FindRole(const PassPort& role) const
+const CpuPort* CpuPorts::FindRole(const CpuPort& role) const
 {
-	for (const PassPort& port : ports)
+	for (const CpuPort& port : ports)
 	{
 		if (port.direction == role.direction && port.type == role.type
 		    && port.binding == role.binding && port.location == role.location)
@@ -94,29 +94,30 @@ const PassPort* PassPorts::FindRole(const PassPort& role) const
 	return nullptr;
 }
 
-void PassPorts::Add(const PassPort& port)
+void CpuPorts::Add(const CpuPort& port)
 {
-	const PassPort* existing = Find(port.name, port.direction);
+	const CpuPort* existing = Find(port.name, port.direction);
 	if (!existing)
 	{
 		ports.push_back(port);
 	}
-	else if (*existing != port)
+	else if (existing->type != port.type || existing->binding != port.binding
+	         || existing->location != port.location)
 	{
 		problems.push_back("port '" + port.name + "' is declared twice with different descriptor identity");
 	}
 }
 
-void PassPorts::Merge(const PassPorts& other)
+void CpuPorts::Merge(const CpuPorts& other)
 {
-	for (const PassPort& port : other.ports)
+	for (const CpuPort& port : other.ports)
 	{
 		Add(port);
 	}
 	problems.insert(problems.end(), other.problems.begin(), other.problems.end());
 }
 
-void AddDeclaredPassOutputs(PassPorts& ports, const PassKindInfo& kind)
+void AddDeclaredPassOutputs(CpuPorts& ports, const PassKindInfo& kind)
 {
 	for (const DeclaredPort& port : kind.declaredOutputs)
 	{
@@ -134,10 +135,10 @@ std::vector<std::string> PassExternalInputs(const std::string_view passKind)
 	return {kind->externalInputs.begin(), kind->externalInputs.end()};
 }
 
-std::vector<PassPort> PassPorts::Inputs() const
+std::vector<CpuPort> CpuPorts::Inputs() const
 {
-	std::vector<PassPort> inputs;
-	for (const PassPort& port : ports)
+	std::vector<CpuPort> inputs;
+	for (const CpuPort& port : ports)
 	{
 		if (port.direction == PortDirection::Input)
 			inputs.push_back(port);
@@ -145,10 +146,10 @@ std::vector<PassPort> PassPorts::Inputs() const
 	return inputs;
 }
 
-std::vector<PassPort> PassPorts::Outputs() const
+std::vector<CpuPort> CpuPorts::Outputs() const
 {
-	std::vector<PassPort> outputs;
-	for (const PassPort& port : ports)
+	std::vector<CpuPort> outputs;
+	for (const CpuPort& port : ports)
 	{
 		if (port.direction == PortDirection::Output)
 			outputs.push_back(port);
@@ -166,11 +167,11 @@ bool IsStorageImagePortType(const std::string_view type)
 	return type.starts_with("image");
 }
 
-PassPorts ExtractPassPorts(std::string kind,
+CpuPorts ExtractPassPorts(std::string kind,
                            const std::span<const ShaderData* const> shaders,
-                           const std::span<const PassPort> declaredOutputs)
+                           const std::span<const CpuPort> declaredOutputs)
 {
-	PassPorts result;
+	CpuPorts result;
 	result.kind = std::move(kind);
 
 	constexpr std::array<ShaderType, 4> kStages = {
@@ -201,7 +202,7 @@ PassPorts ExtractPassPorts(std::string kind,
 		}
 	}
 
-	for (const PassPort& declared : declaredOutputs)
+	for (const CpuPort& declared : declaredOutputs)
 		result.Add(declared);
 
 	return result;

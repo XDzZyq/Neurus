@@ -88,7 +88,7 @@ public:
 	ResourceRef<RenderGraphData>& GraphData() { return m_graph; }
 	const ResourceRef<RenderGraphData>& GraphData() const { return m_graph; }
 
-	/// @brief Uploads distinct selected shaders, then publishes cloned topology with shared references.
+	/// @brief Validates a graph clone and uploads its distinct custom shaders before publishing it.
 	void Publish();
 	void UploadShader(const ShaderData& shader);
 
@@ -99,10 +99,9 @@ public:
 	/// @brief Whether an explicit graph node references this pooled shader.
 	bool ReferencesShader(int uid) const;
 
-	/// @brief Diagnostics shared with the project loader and graph status queries.
-	std::weak_ptr<std::vector<std::string>> GraphDiagnostics() const { return m_problems; }
-	std::vector<std::string>& Problems() { return *m_problems; }
-	const std::vector<std::string>& Problems() const { return *m_problems; }
+	/// @brief Diagnostics for active graph selection and publication.
+	std::vector<std::string>& Problems() { return m_problems; }
+	const std::vector<std::string>& Problems() const { return m_problems; }
 
 private:
 	ResourceManager&   m_resources;
@@ -110,7 +109,7 @@ private:
 	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::shared_ptr<RenderConfig> m_config;
 	ResourceRef<RenderGraphData> m_graph;
-	std::shared_ptr<std::vector<std::string>> m_problems = std::make_shared<std::vector<std::string>>();
+	std::vector<std::string> m_problems;
 };
 
 } // namespace neurus

@@ -43,18 +43,6 @@ InSocket* FindInput(NodeType& node, const std::string_view name)
 	return nullptr;
 }
 
-CpuPort MakePort(const PassPort& port, std::optional<GraphOutputTag> tag = {})
-{
-	CpuPort payload;
-	payload.name      = port.name;
-	payload.direction = port.direction;
-	payload.type      = port.type;
-	payload.binding   = port.binding;
-	payload.location  = port.location;
-	payload.tag       = std::move(tag);
-	return payload;
-}
-
 } // anonymous namespace
 
 std::optional<GraphOutputTag> BuiltInOutputTag(std::string_view kind, std::string_view port)
@@ -91,7 +79,7 @@ RenderGraphData::RenderGraphData(const IPortSource& ports)
 	const auto addNode = [this, &ports](
 		const std::string& name, const std::string& pass) -> NodeType*
 	{
-		const PassPorts* passPorts = ports.FindPassPorts(pass);
+		const CpuPorts* passPorts = ports.FindPassPorts(pass);
 		if (!passPorts)
 		{
 			throw std::runtime_error(
@@ -102,11 +90,17 @@ RenderGraphData::RenderGraphData(const IPortSource& ports)
 		data.pass = pass;
 		NodeType* node = AddNode(name, data);
 
-		for (const PassPort& input : passPorts->Inputs())
-			node->AddInput(input.name)->data = MakePort(input);
+		for (auto input : passPorts->Inputs())
+		{
+			input.tag.reset();
+			node->AddInput(input.name)->data = std::move(input);
+		}
 
-		for (const PassPort& output : passPorts->Outputs())
-			node->AddOutput(output.name)->data = MakePort(output, BuiltInOutputTag(pass, output.name));
+		for (auto output : passPorts->Outputs())
+		{
+			output.tag = BuiltInOutputTag(pass, output.name);
+			node->AddOutput(output.name)->data = std::move(output);
+		}
 
 		return node;
 	};
@@ -289,9 +283,9 @@ std::set<std::string> RenderGraphData::ActiveNodes() const
 	return active;
 }
 
-PassPorts WithShaderPortNames(const PassPorts& builtin, const PassPorts& shaderPorts)
+CpuPorts WithShaderPortNames(const CpuPorts& builtin, const CpuPorts& shaderPorts)
 {
-	PassPorts result;
+	CpuPorts result;
 	result.kind = builtin.kind;
 	result.problems = builtin.problems;
 	result.problems.insert(result.problems.end(), shaderPorts.problems.begin(), shaderPorts.problems.end());
@@ -309,7 +303,7 @@ PassPorts WithShaderPortNames(const PassPorts& builtin, const PassPorts& shaderP
 	return result;
 }
 
-PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
+CpuPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
 {
 	const auto* builtin = catalog.FindPassPorts(node.pass);
 	if (!builtin)
@@ -320,14 +314,12 @@ PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
 	return WithShaderPortNames(*builtin, ExtractPassPorts(node.pass, shaders));
 }
 
-void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const PassPorts& ports)
+void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const CpuPorts& ports)
 {
 	if (!ports.problems.empty())
 		throw std::invalid_argument(node.name + ": " + ports.problems.front());
 	const auto roleFor = [&](const auto& socket) {
-		const auto& data = socket->data;
-		const PassPort role{data.name, data.direction, data.type, data.binding, data.location};
-		return ports.FindRole(role);
+		return ports.FindRole(socket->data);
 	};
 	const auto validate = [&](const auto& sockets) {
 		for (const auto& socket : sockets)

@@ -37,7 +37,7 @@ the contracts below. Only Editor and its controllers mutate the scene.
   state to supply an implicit current instance.
 - For resource loading, the
   [resource input archive](../../src/asset/ResourceInputArchive.hpp) receives an
-  `IResourceLookup` reference and any graph read services from the pooled loader.
+  `IResourceLookup` reference from the pooled loader.
   Each nested loader creates its own archive for the same pool. Serializable
   types declare their `ResourceRef` fields and the archive supplies the lookup.
 

@@ -20,7 +20,7 @@ namespace neurus {
 
 namespace {
 
-bool Matches(const CpuPort& socket, const PassPort& port)
+bool Matches(const CpuPort& socket, const CpuPort& port)
 {
 	return socket.name == port.name && socket.direction == port.direction && socket.type == port.type
 	    && socket.binding == port.binding && socket.location == port.location;
@@ -30,7 +30,7 @@ bool Matches(const CpuPort& socket, const PassPort& port)
 
 std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
-                                                 const std::function<PassPorts(const CpuNode&)>& shaderPorts)
+                                                 const std::function<CpuPorts(const CpuNode&)>& shaderPorts)
 {
 	std::vector<CpuGraphDiagnostic> diagnostics;
 
@@ -72,7 +72,7 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 
 	for (const auto& node : graph.nodes)
 	{
-		const PassPorts* builtin = ports.FindPassPorts(node->data.pass);
+		const CpuPorts* builtin = ports.FindPassPorts(node->data.pass);
 		if (!builtin)
 		{
 			diagnostics.push_back(

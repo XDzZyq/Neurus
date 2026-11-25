@@ -27,8 +27,8 @@ add_library(neurus_asset_data STATIC
 	data/render_graph/PortSource.hpp
 	data/render_graph/CpuGraphValidation.hpp
 	data/render_graph/CpuGraphValidation.cpp
-	data/render_graph/PassPorts.hpp
-	data/render_graph/PassPorts.cpp
+	data/render_graph/CpuPorts.hpp
+	data/render_graph/CpuPorts.cpp
 	data/render_graph/PassKinds.hpp
 	data/shader/ShaderStage.hpp
 	data/shader/ShaderInterface.hpp

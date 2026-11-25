@@ -34,9 +34,9 @@
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
 #include "render_api/RenderRequestSink.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/ComputeShader.hpp"
 #include "asset/components/SceneComponent.hpp"
-#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/components/ConfigComponent.hpp"
@@ -80,11 +80,10 @@ struct TempFile
  * @param resources ResourceManager pool (registered first).
  * @return Initialised project::Project ready for Save/Load.
  */
-static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources,
-                                    const BuiltInRenderData& catalog)
+static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources)
 {
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources, neurus::project::MakeGraphReadServices(catalog));
+	p.Register<project::ResourceComponent>(resources);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Register<project::ConfigComponent>(config);
 	return p;
@@ -102,20 +101,19 @@ static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>&
  */
 TEST(ProjectRoundtrip, EmptyScene)
 {
-	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_rt_empty.neurus.json");
 	{
 		Scene scene;
 		auto config = std::make_shared<RenderConfig>();
 		ResourceManager resources;
-		auto p = MakeProject(scene, config, resources, catalog);
+		auto p = MakeProject(scene, config, resources);
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
 	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
-		auto p = MakeProject(loadedScene, loadedConfig, loadedResources, catalog);
+		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
 		p.Load(tmp.path);
 	}
 	EXPECT_TRUE(loadedScene.cam_list.empty());
@@ -138,7 +136,6 @@ TEST(ProjectRoundtrip, EmptyScene)
  */
 TEST(ProjectRoundtrip, FullScene)
 {
-	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_rt_full.neurus.json");
 	int meshDataId = 0;
 	{
@@ -172,14 +169,14 @@ TEST(ProjectRoundtrip, FullScene)
 		light->SetRadius(0.1f);
 		scene.UseLight(light);
 
-		auto p = MakeProject(scene, config, resources, catalog);
+		auto p = MakeProject(scene, config, resources);
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
 	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
-		auto p = MakeProject(loadedScene, loadedConfig, loadedResources, catalog);
+		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
 		p.Load(tmp.path);
 	}
 
@@ -237,7 +234,6 @@ TEST(ProjectRoundtrip, FullScene)
  */
 TEST(ProjectRoundtrip, SelectionState)
 {
-	const neurus::BuiltInRenderData catalog;
 	TempFile tmp("test_rt_selection.neurus.json");
 	int meshUid = 0;
 	int lightUid = 0;
@@ -259,14 +255,14 @@ TEST(ProjectRoundtrip, SelectionState)
 		scene.selections.Select(mesh.get(), false);
 		scene.selections.Select(light.get(), true);
 
-		auto p = MakeProject(scene, config, resources, catalog);
+		auto p = MakeProject(scene, config, resources);
 		p.Save(tmp.path);
 	}
 	Scene loadedScene;
 	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	{
-		auto p = MakeProject(loadedScene, loadedConfig, loadedResources, catalog);
+		auto p = MakeProject(loadedScene, loadedConfig, loadedResources);
 		p.Load(tmp.path);
 	}
 
@@ -339,19 +335,18 @@ void ExpectContentLoads(uint64_t since, const char* phase, const std::array<int,
 
 TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 {
-	const BuiltInRenderData catalog;
 	ResourceManager source;
 	auto plain = source.Load<UID>();
 	auto camera = source.Load<Camera>();
 	std::ostringstream serialized;
 	{
 		cereal::JSONOutputArchive archive(serialized);
-		project::ResourceComponent(source, neurus::project::MakeGraphReadServices(catalog)).Save(archive);
+		project::ResourceComponent(source).Save(archive);
 	}
 
 	ResourceManager restored;
 	const int nextUid = ResourceManager::NextId();
-	project::ResourceComponent(restored, neurus::project::MakeGraphReadServices(catalog)).LoadJson(serialized.str());
+	project::ResourceComponent(restored).LoadJson(serialized.str());
 	ASSERT_EQ(restored.Size(), 2u);
 	const auto base = restored.Get(plain->GetObjectID());
 	ASSERT_TRUE(base);

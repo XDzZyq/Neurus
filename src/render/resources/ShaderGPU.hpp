@@ -6,7 +6,7 @@
 #pragma once
 
 #include "render_api/RenderRequests.hpp"
-#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/render_graph/CpuPorts.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
@@ -61,7 +61,7 @@ public:
 	vk::ShaderModule Module(ShaderType stage) const { return *m_modules.at(stage); }
 
 	/** @brief Image port interface carried by the upload request. */
-	const PassPorts& Ports() const { return m_ports; }
+	const CpuPorts& Ports() const { return m_ports; }
 
 private:
 	int m_id;
@@ -69,7 +69,7 @@ private:
 	ShaderType m_type;
 	std::unordered_map<ShaderType, ShaderStageUpload> m_stages;
 	std::unordered_map<ShaderType, vk::raii::ShaderModule> m_modules;
-	PassPorts m_ports;
+	CpuPorts m_ports;
 };
 
 /**
@@ -78,6 +78,6 @@ private:
  * @param shaders Uploaded shader resources; null entries are skipped.
  * @return Merged ports and diagnostics for conflicting declarations.
  */
-PassPorts CollectUploadedPassPorts(std::string kind, std::span<const ShaderGPU* const> shaders);
+CpuPorts CollectUploadedPassPorts(std::string kind, std::span<const ShaderGPU* const> shaders);
 
 } // namespace neurus

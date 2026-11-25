@@ -81,7 +81,7 @@ struct TempFile
 void BuildProject(project::Project& proj, Editor& editor)
 {
 	auto& render = editor.GetRenderManager();
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(render.Defaults(), render.GraphDiagnostics()));
+	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
 	proj.Register<project::GraphComponent>(render.GraphData(), editor.GetResourceManager(), render.Problems());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::HistoryComponent>(editor.GetOperations());

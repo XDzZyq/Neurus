@@ -116,7 +116,7 @@ struct TempFile
  */
 void BuildProject(project::Project& proj, Editor& editor)
 {
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(editor.GetRenderManager().Defaults()));
+	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
 	proj.Register<project::SceneComponent>(editor.GetScene(),
 	                                       editor.GetResourceManager());
 	proj.Register<project::EditorComponent>(editor.GetViewport(), editor.GetResourceManager());
@@ -383,7 +383,7 @@ TEST(ViewportCameraTest, ProjectWithoutTheSavedUid_MintsAFreshViewportCamera)
 		Editor editor(nullptr);
 		NewProject(editor);
 		project::Project proj;
-		proj.Register<project::ResourceComponent>(editor.GetResourceManager(), neurus::project::MakeGraphReadServices(editor.GetRenderManager().Defaults()));
+		proj.Register<project::ResourceComponent>(editor.GetResourceManager());
 		proj.Register<project::SceneComponent>(editor.GetScene(),
 		                                       editor.GetResourceManager());
 		proj.Save(tmp.path); // no EditorComponent: the node never gets written

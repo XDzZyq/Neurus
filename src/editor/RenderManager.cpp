@@ -3,14 +3,17 @@
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 #include "core/Log.hpp"
 #include "asset/ResourceManager.hpp"
 #include "scene/Mesh.hpp"
 #include "render_api/RenderRequestSink.hpp"
 #include "render_api/RenderRequests.hpp"
 
-#include <utility>
+#include <exception>
+#include <stdexcept>
 #include <unordered_set>
+#include <utility>
 
 namespace neurus {
 
@@ -43,7 +46,7 @@ void RenderManager::ResetConfig()
 void RenderManager::ResetGraph(bool publish)
 {
 	m_graph.reset();
-	m_problems->clear();
+	m_problems.clear();
 	if (publish)
 		Publish();
 }
@@ -61,7 +64,7 @@ std::shared_ptr<RenderGraphData> RenderManager::CreateGraph(bool publish)
 		auto pooled = std::shared_ptr<RenderGraphData>(std::move(graph));
 		m_resources.Register(pooled);
 		m_graph = pooled;
-		m_problems->clear();
+		m_problems.clear();
 		if (publish)
 			Publish();
 	}
@@ -75,13 +78,13 @@ bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 		ResetGraph();
 		return true;
 	}
-	m_problems->clear();
+	m_problems.clear();
 	for (const auto& diagnostic : ValidateCpuGraph(*graph, *m_renderDefaults))
-		m_problems->push_back(diagnostic.node + (diagnostic.port.empty() ? "" : "." + diagnostic.port)
+		m_problems.push_back(diagnostic.node + (diagnostic.port.empty() ? "" : "." + diagnostic.port)
 		                      + ": " + diagnostic.message);
-	if (!m_problems->empty())
+	if (!m_problems.empty())
 	{
-		for (const auto& problem : *m_problems)
+		for (const auto& problem : m_problems)
 			NEURUS_LOG("[RenderManager] Rejected graph edit: " << problem);
 		return false;
 	}
@@ -143,14 +146,58 @@ void RenderManager::Publish()
 	if (m_graph)
 	{
 		auto graph = m_graph->Clone();
-		std::unordered_set<int> uploaded;
+		const auto& ports = m_renderDefaults->Ports();
+		m_problems.clear();
+		const auto report = [this](std::string problem) {
+			NEURUS_LOG("[RenderManager] " << problem);
+			m_problems.push_back(std::move(problem));
+		};
+
 		for (const auto& node : graph->nodes)
 		{
-			if (const auto& shader = node->data.shader;
-			    shader && uploaded.insert(shader->GetObjectID()).second)
-				m_sink->Post(MakeUploadShaderRequest(*shader));
+			if (node->data.shader)
+			{
+				try
+				{
+					ValidatePassShader(node->data.pass, *node->data.shader, *m_renderDefaults);
+					continue;
+				}
+				catch (const std::exception& error)
+				{
+					report(node->name + " uses its built-in shader: " + error.what());
+					node->data.shader.reset();
+				}
+			}
+
+			// Saved sockets may use custom shader names. Match built-in sockets
+			// by their binding or location so the clone keeps its connections.
+			if (const auto* builtin = ports.FindPassPorts(node->data.pass))
+			{
+				try
+				{
+					ReconcilePassPorts(*graph, *node, *builtin);
+				}
+				catch (const std::invalid_argument&)
+				{
+					// The validation below reports sockets that have no compatible role.
+				}
+			}
 		}
-		published = std::move(graph);
+
+		const auto errors = ValidateCpuGraph(*graph, ports);
+		for (const auto& error : errors)
+			report(error.node + (error.port.empty() ? "" : "." + error.port) + ": " + error.message);
+		if (errors.empty())
+		{
+			std::unordered_set<int> uploaded;
+			for (const auto& node : graph->nodes)
+			{
+				if (const auto& shader = node->data.shader;
+				    shader && uploaded.insert(shader->GetObjectID()).second)
+					m_sink->Post(MakeUploadShaderRequest(*shader));
+			}
+			published = std::move(graph);
+		}
 	}
 	m_sink->Post(CompileRenderGraphRequest{std::move(published)});
 }

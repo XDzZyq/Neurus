@@ -12,7 +12,6 @@
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/components/UIComponent.hpp"
-#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "command/Commands.hpp"
 #include "core/Log.hpp"
 #include "editor/Editor.hpp"
@@ -61,7 +60,7 @@ void RegisterProjectComponents(project::Project& proj, Editor& editor, std::stri
 	// Resource pool first: the Scene's ID references resolve against it.
 	auto& render = editor.GetRenderManager();
 	auto& resources = editor.GetResourceManager();
-	proj.Register<project::ResourceComponent>(resources, neurus::project::MakeGraphReadServices(render.Defaults(), render.GraphDiagnostics()));
+	proj.Register<project::ResourceComponent>(resources);
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::ConfigComponent>(editor.GetRenderConfigData());
 

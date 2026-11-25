@@ -27,7 +27,6 @@ public:
 	BuiltInRenderData& operator=(const BuiltInRenderData&) = delete;
 
 	const std::shared_ptr<const RenderGraphData>& Graph() const;
-	std::shared_ptr<const IPassShaderCatalog> Share() const override;
 	const IPortSource& Ports() const override;
 	/** @brief Returns the compiled default shader for a recipe name, or null if unknown. */
 	std::shared_ptr<const ShaderData> ShaderFor(std::string_view name) const override;

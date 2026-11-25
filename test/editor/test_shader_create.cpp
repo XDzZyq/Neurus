@@ -104,11 +104,11 @@ TEST_F(ShaderCreateTest, LoadedNameSurvivesResourceComponentRoundTrip)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive out(ss);
-		neurus::project::ResourceComponent save(m_editor.GetResourceManager(), neurus::project::MakeGraphReadServices(m_editor.GetRenderManager().Defaults()));
+		neurus::project::ResourceComponent save(m_editor.GetResourceManager());
 		save.Save(out);
 	}
 	neurus::ResourceManager restored;
-	neurus::project::ResourceComponent(restored, neurus::project::MakeGraphReadServices(m_editor.GetRenderManager().Defaults()))
+	neurus::project::ResourceComponent(restored)
 		.LoadJson(ss.str());
 
 	EXPECT_TRUE(restored.GetByName<neurus::RenderShader>("MyFrag"));

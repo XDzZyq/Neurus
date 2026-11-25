@@ -14,18 +14,18 @@ The CPU document, `RenderGraphData`, derives from `UID` and `Graph<CpuPort, CpuN
 
 `RenderManager` holds a nullable `ResourceRef<RenderGraphData>` selecting the active graph. Without an authored graph, the effective topology comes from `BuiltInRenderData`. Reading the graph leaves the pointer null. Calling `neurus.render.graph.create()` copies the built-in topology into the pool and selects it. Its nodes initially use built-in shaders.
 
-The pool stores each authored graph's nodes, output tags, edges and selected scene outputs in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. When the pool reads a graph, the archive binds each pass shader field to the pooled resource. Once those bindings complete, `RenderGraphData` derives input sockets from the pass contracts, reconnects edges and validates the selected outputs. `GraphComponent` selects the resolved graph by UID. The editor publishes it at the end of loading. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
+The pool stores each authored graph's nodes, input and output sockets, output tags, edges and selected scene outputs in its `topology` record. `GraphComponent` saves the active UID in `proj_render_graph`, omitting that key when the pointer is null. `RenderGraphData` restores the saved sockets and connections, resolves shader UIDs through the pool, and reports missing shaders or discrepancies between saved sockets and shader declarations. A shader diagnostic preserves the saved topology. `GraphComponent` selects the graph by UID. The editor prepares it for rendering at the end of loading. See [Project Serialization](../asset/project-serialization.md#optional-config-and-render-graph).
 
 `RenderManager::ResetConfig()` clears the stored config pointer. `ResetGraph()`
 clears the stored graph pointer while preserving config. New-scene creation calls
 both explicitly. During project loading, present config fields are restored with
-per-field defaults; an absent config stays null. `FinishLoad()` restores a valid
-saved graph or keeps it null. Read-only queries and rendering never materialize
+per-field defaults; an absent config stays null. `FinishLoad()` publishes the selected graph or
+uses the built-in graph when there is no selection. Read-only queries and rendering never materialize
 project defaults. Explicit edits create stored data, and undo can restore absence.
 
 Explicit project shaders remain pooled, and live nodes own references to them. Publication creates an ephemeral clone that shares the pooled CPU shader references. The project selection keeps its original UID. CPU preparation deduplicates selected shaders by UID and posts owned `MakeUploadShaderRequest` payloads before graph compilation. The mapper reads only stable UIDs from the node references. The GPU cache supplies the selected shader modules and their uploaded metadata for compatibility checks. Null shader selections follow built-in recipes through CPU preparation, upload and caching. Rendering never calls back into the Editor or changes which project values are serialized.
 
-On project load the archive resolves each pass shader UID before the CPU graph rebuilds its sockets and edges. CPU graph validation compares the resolved shader to the pass contract supplied by the catalog. An incompatible shader selects the built-in ports during load. The editor uses the same compatibility check when assigning a shader.
+The editor checks the pass contract when assigning a shader and when publishing a graph. If the selected shader is missing or incompatible during publication, the editor reconciles socket names with built-in port roles on the snapshot and validates the result before upload.
 
 ## Ports from the shader
 
@@ -74,7 +74,7 @@ flowchart LR
     execute --> frame["FrameProfile"]
 ```
 
-Each call to `GraphMorphism::Map(source)` returns its own target graph and a correspondence table for node and connection lookups. Each edge maps directly to the target graph's connection. The input socket owns the connection record, so its address survives graph moves. Rebuild the correspondence after rewiring or removing mapped sockets. The mapper retains only its construction policy. The uploader calls `mapping.images.Validate(source)` while both graphs are alive to check that every source element has an image and each connection joins the mapped owners. It then moves the validated target into the runtime graph. The upload plans one cache resource per tagged output, keyed by `ResourceKey(node, port)`.
+The mapping policy copies each authored `CpuPort` into a runtime `RenderGraph::PassPort`. Runtime sockets keep the authored names for edges and resource keys. Their payload keeps the canonical pass names used for descriptor binding. Each call to `GraphMorphism::Map(source)` returns its own target graph and a correspondence table for node and connection lookups. Each edge maps directly to the target graph's connection. The input socket owns the connection record, so its address survives graph moves. Rebuild the correspondence after rewiring or removing mapped sockets. The mapper retains only its construction policy. The uploader calls `mapping.images.Validate(source)` while both graphs are alive to check that every source element has an image and each connection joins the mapped owners. It then moves the validated target into the runtime graph. The upload plans one cache resource per tagged output, keyed by `ResourceKey(node, port)`.
 
 `OverlayEngine` keeps a second `RenderGraph` for the selection outline, copy, debug and gizmo passes. It runs after the scene graph and consumes the selected scene color, depth and object-ID resources. Picking uses the same object-ID selection.
 

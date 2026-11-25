@@ -21,6 +21,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -64,16 +65,15 @@ std::pair<int, ResourceRecord> readRecord(const Json& entry)
 	return {key.get<int>(), {type, std::move(name), entry.dump()}};
 }
 
-void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
-                    const std::shared_ptr<const ResourceReadServices>& services)
+void registerRecord(ResourceManager& pool, int id, ResourceRecord& record)
 {
 	auto payload = std::make_shared<const std::string>(std::move(record.payload));
-	auto populate = [&pool, id, payload, services, type = record.type](UID& resource)
+	auto populate = [&pool, id, payload, type = record.type](UID& resource)
 	{
 		try
 		{
 			std::istringstream stream(*payload);
-			ResourceInputArchive archive(stream, pool, services.get());
+			ResourceInputArchive archive(stream, pool);
 			type->ReadBody(archive, resource);
 			if (!IsUsableResource(resource))
 				return false;
@@ -91,8 +91,8 @@ void registerRecord(ResourceManager& pool, int id, ResourceRecord& record,
 
 } // namespace
 
-ResourceComponent::ResourceComponent(ResourceManager& resources, std::shared_ptr<const ResourceReadServices> services)
-	: m_resources(resources), m_services(std::move(services))
+ResourceComponent::ResourceComponent(ResourceManager& resources)
+	: m_resources(resources)
 {
 }
 
@@ -131,7 +131,7 @@ void ResourceComponent::LoadJson(const std::string& object)
 	// Claim names in ascending UID order without loading any of the objects.
 	for (auto& [id, record] : records)
 	{
-		registerRecord(m_resources, id, record, m_services);
+		registerRecord(m_resources, id, record);
 		if (!record.name.empty())
 			m_resources.SetName(id, record.name);
 	}

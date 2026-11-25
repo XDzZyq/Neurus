@@ -58,13 +58,13 @@ GpuInput* FindInput(GpuNode& node, const std::string_view name)
 }
 
 /** @brief Compares interfaces by identity rather than unordered stage traversal order. */
-bool SamePorts(const PassPorts& actual, const PassPorts& expected)
+bool SamePorts(const CpuPorts& actual, const CpuPorts& expected)
 {
 	if (actual.ports.size() != expected.ports.size())
 	{
 		return false;
 	}
-	for (const PassPort& port : expected.ports)
+	for (const CpuPort& port : expected.ports)
 	{
 		if (!actual.FindRole(port))
 		{
@@ -102,17 +102,16 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 }
 
 /// @brief Resolves pass instances and socket names during graph compilation.
-using PortContracts = std::unordered_map<int, PassPorts>;
+using PortContracts = std::unordered_map<int, CpuPorts>;
 
-RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog,
-                                      const PortContracts& contracts)
+RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog)
 {
 	RenderGraphMorphism::Policy policy;
 
-	policy.createNode = [&factory, &portCatalog, &contracts](RenderGraph::GraphT& target,
+	policy.createNode = [&factory, &portCatalog](RenderGraph::GraphT& target,
 	                               const RenderGraphData::NodeType& node) -> GpuNode*
 	{
-		const PassPorts* ports = portCatalog.FindPassPorts(node.data.pass);
+		const CpuPorts* ports = portCatalog.FindPassPorts(node.data.pass);
 		if (!ports)
 		{
 			return nullptr;
@@ -133,16 +132,26 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 			// resource keys name the graph the user edited.
 			gpu->name = node.name;
 			gpu->data.ownedPass = std::move(owned);
-			if (shaderId)
+			const auto mapSockets = [&](const auto& authored, auto& runtime)
 			{
-				// Socket names follow the document. Payloads retain the canonical pass roles
-				// consumed by Record() and the built-in descriptor binding plan.
-				const auto contract = WithShaderPortNames(*ports, contracts.at(*shaderId));
-				for (auto& socket : gpu->inputs)
-					socket->name = contract.FindRole(socket->data)->name;
-				for (auto& socket : gpu->outputs)
-					socket->name = contract.FindRole(socket->data)->name;
-			}
+				for (const auto& socket : authored)
+				{
+					const auto* role = shaderId ? ports->FindRole(socket->data) : ports->Find(socket->name, socket->data.direction);
+					const auto mapped = std::ranges::find_if(runtime, [&](const auto& candidate) {
+						return role && candidate->data.name == role->name;
+					});
+					if (mapped == runtime.end())
+						throw std::runtime_error("no runtime role for socket '" + node.name + "." + socket->name + "'");
+
+					// Graph edges use the authored name. The runtime pass binds
+					// resources by the canonical name for this shader role.
+					(*mapped)->name = socket->name;
+					(*mapped)->data = RenderGraph::PassPort::FromCpuPort(socket->data);
+					(*mapped)->data.name = role->name;
+				}
+			};
+			mapSockets(node.inputs, gpu->inputs);
+			mapSockets(node.outputs, gpu->outputs);
 		}
 		return gpu;
 	};
@@ -250,7 +259,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 
 	const auto resolve = [&](const CpuNode& node)
 	{
-		const PassPorts& builtin = *m_portCatalog.FindPassPorts(node.pass);
+		const CpuPorts& builtin = *m_portCatalog.FindPassPorts(node.pass);
 		return node.shader ? WithShaderPortNames(builtin, contracts.at(node.shader.id())) : builtin;
 	};
 	for (const auto& diagnostic : ValidateCpuGraph(document, m_portCatalog, resolve))
@@ -262,7 +271,7 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	RenderGraph::GraphT target;
 	try
 	{
-		const RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog, contracts));
+		const RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog));
 		auto mapping = morphism.Map(document);
 		for (const auto& problem : mapping.images.Validate(document).problems)
 			result.errors.push_back({{}, {}, problem});
@@ -292,10 +301,8 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 	}
 
 	RenderCache::ResourcePlan plan;
-	for (const auto& node : document.nodes)
+	for (const auto* node : graph->CompiledOrder())
 	{
-		if (!active.contains(node->name))
-			continue;
 		for (const auto& output : node->outputs)
 		{
 			if (!output->data.tag)

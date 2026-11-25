@@ -1,5 +1,5 @@
 /**
- * @file PassPorts.hpp
+ * @file CpuPorts.hpp
  * @brief Derives a pass's image ports from its parsed shader IR.
  *
  * Stage 1 does not reflect SPIR-V: ShaderStruct already carries the fragment
@@ -9,7 +9,10 @@
 
 #pragma once
 
+#include "asset/data/render_graph/GraphOutputTag.hpp"
+
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -30,13 +33,14 @@ enum class PortDirection
 };
 
 /**
- * @brief One named image the graph can carry.
+ * @brief Port declaration or CPU graph socket payload.
  *
  * A fragment output has a @c location and binding 0; a compute image or sampler
  * has a @c binding and location 0. @c type is the GLSL type string, so the
  * renderer can choose a descriptor type without re-reading the shader.
+ * The image tag belongs to an output socket and is empty in shader declarations.
  */
-struct PassPort
+struct CpuPort
 {
 	std::string   name;
 	PortDirection direction = PortDirection::Input;
@@ -44,42 +48,44 @@ struct PassPort
 	uint32_t      binding = 0;   ///< set-0 binding; 0 for a fragment output
 	uint32_t      location = 0;  ///< fragment output location; 0 otherwise
 
-	bool operator==(const PassPort&) const = default;
+	std::optional<GraphOutputTag> tag = std::nullopt;
+
+	bool operator==(const CpuPort&) const = default;
 };
 
 /**
  * @brief The ports of one pass, merged over every stage of every shader it owns.
  */
-struct PassPorts
+struct CpuPorts
 {
 	std::string             kind;
-	std::vector<PassPort> ports;
+	std::vector<CpuPort>    ports;
 	std::vector<std::string> problems;  ///< conflicting duplicate declarations
 
 	/**
 	 * @brief Finds a port by name and direction.
 	 * @return Non-owning pointer, or nullptr when absent.
 	 */
-	const PassPort* Find(std::string_view name, PortDirection direction) const;
+	const CpuPort* Find(std::string_view name, PortDirection direction) const;
 
 	/// @brief Finds a shader port by binding or fragment location, type and direction.
-	const PassPort* FindRole(const PassPort& role) const;
+	const CpuPort* FindRole(const CpuPort& role) const;
 
 	/// @brief Includes a declaration, recording a conflict if the same port differs.
-	void Add(const PassPort& port);
+	void Add(const CpuPort& port);
 
 	/// @brief Includes another shader's ports and any diagnostics it carries.
-	void Merge(const PassPorts& other);
+	void Merge(const CpuPorts& other);
 
 	/// @brief Every input port, in declaration order.
-	std::vector<PassPort> Inputs() const;
+	std::vector<CpuPort> Inputs() const;
 
 	/// @brief Every output port, in declaration order.
-	std::vector<PassPort> Outputs() const;
+	std::vector<CpuPort> Outputs() const;
 };
 
 /// @brief Adds the kind's outputs without a shader binding, such as depth.
-void AddDeclaredPassOutputs(PassPorts& ports, const PassKindInfo& kind);
+void AddDeclaredPassOutputs(CpuPorts& ports, const PassKindInfo& kind);
 
 /// @brief Returns the kind's externally resolved inputs from the built-in catalog.
 std::vector<std::string> PassExternalInputs(std::string_view passKind);
@@ -106,8 +112,8 @@ bool IsStorageImagePortType(std::string_view type);
  * @param shaders          Shaders owned by the pass; null entries are skipped.
  * @param declaredOutputs  Extra outputs that have no shader declaration.
  */
-PassPorts ExtractPassPorts(std::string kind,
+CpuPorts ExtractPassPorts(std::string kind,
                            std::span<const ShaderData* const> shaders,
-                           std::span<const PassPort> declaredOutputs = {});
+                           std::span<const CpuPort> declaredOutputs = {});
 
 } // namespace neurus

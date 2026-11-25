@@ -11,7 +11,7 @@
 #pragma once
 
 #include "../passes/Pass.hpp"
-#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/render_graph/CpuPorts.hpp"
 
 #include <functional>
 #include <span>
@@ -45,7 +45,7 @@ struct GraphImageBinding
  * @param connected  Optional input-port predicate; empty means all connected.
  */
 std::vector<GraphImageBinding> BuildImageBindings(
-	const PassPorts& ports,
+	const CpuPorts& ports,
 	const Pass& pass,
 	const std::function<bool(std::string_view)>& connected = {});
 

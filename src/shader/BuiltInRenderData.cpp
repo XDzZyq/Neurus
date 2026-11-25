@@ -49,7 +49,7 @@ struct BuiltInRenderData::Impl final : IPortSource
 {
 	Impl();
 
-	const PassPorts* FindPassPorts(const std::string_view passKind) const override
+	const CpuPorts* FindPassPorts(const std::string_view passKind) const override
 	{
 		const auto found = ports.find(std::string(passKind));
 		return found == ports.end() ? nullptr : &found->second;
@@ -63,7 +63,7 @@ struct BuiltInRenderData::Impl final : IPortSource
 	ResourceManager resources;
 	std::shared_ptr<const RenderGraphData> graph;
 	std::unordered_map<std::string, std::shared_ptr<const ShaderData>> shaders;
-	std::unordered_map<std::string, PassPorts> ports;
+	std::unordered_map<std::string, CpuPorts> ports;
 };
 
 BuiltInRenderData::Impl::Impl()
@@ -84,7 +84,7 @@ BuiltInRenderData::Impl::Impl()
 			passShaders.push_back(entry->second.get());
 		}
 
-		PassPorts contract = ExtractPassPorts(std::string(kind.name), passShaders);
+		CpuPorts contract = ExtractPassPorts(std::string(kind.name), passShaders);
 		AddDeclaredPassOutputs(contract, kind);
 		if (!contract.problems.empty())
 		{
@@ -116,11 +116,6 @@ const BuiltInRenderData::Impl& BuiltInRenderData::Data() const
 const std::shared_ptr<const RenderGraphData>& BuiltInRenderData::Graph() const
 {
 	return Data().graph;
-}
-
-std::shared_ptr<const IPassShaderCatalog> BuiltInRenderData::Share() const
-{
-	return std::make_shared<const BuiltInRenderData>(*this);
 }
 
 const IPortSource& BuiltInRenderData::Ports() const

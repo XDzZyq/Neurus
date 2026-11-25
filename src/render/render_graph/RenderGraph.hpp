@@ -14,14 +14,16 @@
 #include "render_api/ProfilingData.hpp"
 #include "../RenderCache.hpp"
 #include "../passes/Pass.hpp"
-#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/render_graph/CpuPorts.hpp"
 #include "core/Graph.hpp"
 #include "PassBindings.hpp"
 #include "PassResources.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <set>
@@ -38,6 +40,22 @@ namespace neurus {
 class RenderGraph
 {
 public:
+	/// The shader interface metadata carried by a runtime socket.
+	struct PassPort
+	{
+		std::string name;
+		PortDirection direction = PortDirection::Input;
+		std::string type;
+		uint32_t binding = 0;
+		uint32_t location = 0;
+		std::optional<GraphOutputTag> tag = std::nullopt;
+
+		static PassPort FromCpuPort(const CpuPort& port)
+		{
+			return {port.name, port.direction, port.type, port.binding, port.location, port.tag};
+		}
+	};
+
 	/**
 	 * @brief Payload stored on each node in the underlying core Graph<>.
 	 *
@@ -50,7 +68,7 @@ public:
 		std::shared_ptr<Pass>     ownedPass;          ///< Custom instance retained by this runtime node.
 		Pass*                    pass = nullptr;   ///< Provides Record().
 		PassIO                   io;               ///< Cached I/O declaration.
-		PassPorts                ports;            ///< Ports from the shader.
+		CpuPorts                ports;            ///< Ports from the shader.
 		std::vector<std::string> externalInputs;   ///< Declared out-of-graph inputs.
 		bool                     legacyExternal = false; ///< PassIO-only overlay node.
 
@@ -93,7 +111,7 @@ public:
 	 * @param externalInputs  Inputs the pass resolves outside the graph.
 	 * @param id              Document node id for resource keys.
 	 */
-	NodeT* AddPass(Pass* pass, PassPorts ports,
+	NodeT* AddPass(Pass* pass, CpuPorts ports,
 	               std::vector<std::string> externalInputs = {},
 	               std::string id = {});
 
@@ -109,7 +127,7 @@ public:
 	 * @param externalInputs  Inputs the pass resolves outside the graph.
 	 * @param id              Document node id for resource keys.
 	 */
-	static NodeT* MakePassNode(GraphT& graph, Pass* pass, PassPorts ports,
+	static NodeT* MakePassNode(GraphT& graph, Pass* pass, CpuPorts ports,
 	                           std::vector<std::string> externalInputs = {},
 	                           std::string id = {});
 

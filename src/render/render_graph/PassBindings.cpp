@@ -13,7 +13,7 @@
 namespace neurus {
 
 std::vector<GraphImageBinding> BuildImageBindings(
-	const PassPorts& ports,
+	const CpuPorts& ports,
 	const Pass& pass,
 	const std::function<bool(std::string_view)>& connected)
 {
@@ -25,7 +25,7 @@ std::vector<GraphImageBinding> BuildImageBindings(
 		return std::find(selfManaged.begin(), selfManaged.end(), binding) != selfManaged.end();
 	};
 
-	for (const PassPort& input : ports.Inputs())
+	for (const CpuPort& input : ports.Inputs())
 	{
 		if (!IsSamplerPortType(input.type))
 			continue;
@@ -43,7 +43,7 @@ std::vector<GraphImageBinding> BuildImageBindings(
 		});
 	}
 
-	for (const PassPort& output : ports.Outputs())
+	for (const CpuPort& output : ports.Outputs())
 	{
 		if (!IsStorageImagePortType(output.type))
 			continue;

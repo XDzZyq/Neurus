@@ -19,9 +19,7 @@
 
 #include "asset/Project.hpp"
 #include "asset/components/SceneComponent.hpp"
-#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
-#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
@@ -66,11 +64,10 @@ static std::string DefaultProjectPath()
  *                  ID references against it).
  * @return Initialised project::Project ready for Load().
  */
-static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources,
-                                    const BuiltInRenderData& catalog)
+static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources)
 {
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources, neurus::project::MakeGraphReadServices(catalog));
+	p.Register<project::ResourceComponent>(resources);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Register<project::ConfigComponent>(config);
 	return p;
@@ -78,11 +75,10 @@ static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>&
 
 TEST(DefaultProject, LoadsExpectedSceneAndResources)
 {
-	const neurus::BuiltInRenderData catalog;
 	Scene scene;
 	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
-	auto project = MakeProject(scene, config, resources, catalog);
+	auto project = MakeProject(scene, config, resources);
 	ASSERT_NO_THROW(project.Load(DefaultProjectPath()));
 
 	ASSERT_GE(scene.cam_list.size(), 1u);

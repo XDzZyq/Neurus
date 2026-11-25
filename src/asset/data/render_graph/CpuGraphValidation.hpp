@@ -49,7 +49,7 @@ struct CpuGraphDiagnostic
  */
 std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
-                                                 const std::function<PassPorts(const CpuNode&)>& shaderPorts = {});
+                                                 const std::function<CpuPorts(const CpuNode&)>& shaderPorts = {});
 
 /// Checks the document topology and each assigned shader against its pass.
 std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog);

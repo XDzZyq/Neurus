@@ -10,10 +10,9 @@
 
 #include "asset/Serializable.hpp"
 
-#include <memory>
 #include <string>
 
-namespace neurus { class ResourceManager; struct ResourceReadServices; }
+namespace neurus { class ResourceManager; }
 
 namespace neurus::project
 {
@@ -24,7 +23,7 @@ namespace neurus::project
 class ResourceComponent : public Serializable
 {
 public:
-	explicit ResourceComponent(ResourceManager& resources, std::shared_ptr<const ResourceReadServices> services = {});
+	explicit ResourceComponent(ResourceManager& resources);
 
 	const char* Key() const noexcept override { return "m_resources"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
@@ -32,7 +31,6 @@ public:
 
 private:
 	ResourceManager& m_resources;
-	std::shared_ptr<const ResourceReadServices> m_services;
 };
 
 } // namespace neurus::project

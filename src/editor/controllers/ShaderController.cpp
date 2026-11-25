@@ -767,7 +767,7 @@ bool ReconcileStagePorts(const ControllerContext& ctx, const ShaderData& shader)
 	auto graph = ctx.render->GraphData();
 	if (!graph)
 		return false;
-	std::vector<std::pair<RenderGraphData::NodeType*, PassPorts>> changed;
+	std::vector<std::pair<RenderGraphData::NodeType*, CpuPorts>> changed;
 	for (const auto& node : graph->nodes)
 	{
 		if (node->data.shader.get() != &shader)

@@ -18,6 +18,7 @@
 #include "render_api/RenderRequests.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/CpuPorts.hpp"
 #include "shader/BuiltInRenderData.hpp"
 
 #include <algorithm>
@@ -244,10 +245,22 @@ TEST_F(GraphUploaderTest, UploadedShaderRenamesSocketByRoleAndPreservesItsUsers)
 	EXPECT_TRUE(HasError(stale.errors, "compose", "no longer declared"));
 
 	neurus::ReconcilePassPorts(*document, *compose, neurus::EffectivePassPorts(compose->data, m_defaults->Ports()));
+	const auto authored = compose->outputs.front()->data;
 	const auto upload = Compile(std::move(document));
 	ASSERT_NE(upload.graph, nullptr);
 	EXPECT_TRUE(upload.errors.empty());
 	EXPECT_EQ(upload.color, "compose/renamedOutput");
+	const auto& nodes = upload.graph->CompiledOrder();
+	const auto runtime = std::ranges::find_if(nodes, [](const auto* node) { return node->name == "compose"; });
+	ASSERT_NE(runtime, nodes.end());
+	ASSERT_EQ((*runtime)->outputs.size(), 1u);
+	const auto& socket = *(*runtime)->outputs.front();
+	EXPECT_EQ(socket.name, "renamedOutput");
+	EXPECT_EQ(socket.data.name, "outputComposed");
+	EXPECT_EQ(socket.data.type, authored.type);
+	EXPECT_EQ(socket.data.binding, authored.binding);
+	EXPECT_EQ(socket.data.location, authored.location);
+	EXPECT_EQ(socket.data.tag, authored.tag);
 	EXPECT_EQ(upload.graph->PassCount(), 6u);
 	EXPECT_TRUE(m_cache->HasResource(upload.color));
 }
