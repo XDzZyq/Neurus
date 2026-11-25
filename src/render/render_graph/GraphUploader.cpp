@@ -1,6 +1,6 @@
 /**
  * @file GraphUploader.cpp
- * @brief Document-to-runtime-graph service: mapping, validation and planning.
+ * @brief Document-to-runtime-graph service: mapping, shader checks and planning.
  */
 
 #include "render/render_graph/GraphUploader.hpp"
@@ -10,12 +10,9 @@
 #include "render/render_graph/RenderGraph.hpp"
 #include "render/render_graph/ResourceTag.hpp"
 #include "render/resources/ShaderGPU.hpp"
-#include "asset/data/shader/ShaderInterface.hpp"
 #include "render_api/RenderRequests.hpp"
 
 #include "asset/data/RenderGraphData.hpp"
-#include "asset/data/ShaderData.hpp"
-#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "asset/data/render_graph/PortSource.hpp"
 
 #include "core/GraphMorphism.hpp"
@@ -32,23 +29,6 @@ namespace neurus {
 namespace {
 
 using RenderGraphMorphism = GraphMorphism<RenderGraphData, RenderGraph::GraphT>;
-
-/** @brief Compares interfaces by identity rather than unordered stage traversal order. */
-bool SamePorts(const CPUPorts& actual, const CPUPorts& expected)
-{
-	if (actual.ports.size() != expected.ports.size())
-	{
-		return false;
-	}
-	for (const CPUPort& port : expected.ports)
-	{
-		if (!actual.FindRole(port))
-		{
-			return false;
-		}
-	}
-	return true;
-}
 
 /**
  * @brief Stage 1 bridge from a default document resource key to its legacy attachment.
@@ -77,18 +57,19 @@ std::optional<AttachmentName> LegacyAttachmentFor(const std::string& key)
 	                            : std::optional<AttachmentName>(it->second);
 }
 
-using PortContracts = std::unordered_map<int, CPUPorts>;
-
 /// @brief Resolves pass instances and socket names during graph compilation.
-RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog)
+RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& portCatalog,
+                                       const std::unordered_map<std::string, PublishedShader>& shaders)
 {
 	RenderGraphMorphism::Policy policy;
 
-	policy.createNode = [&factory, &portCatalog](const RenderGraphData::NodeType& node)
+	policy.createNode = [&factory, &portCatalog, &shaders](const RenderGraphData::NodeType& node)
 		-> std::optional<RenderGraph::PassBody>
 	{
-		const std::optional<int> shaderId = node.data.shader
-			? std::optional<int>(node.data.shader.id()) : std::nullopt;
+		const auto published = shaders.find(node.name);
+		const std::optional<int> shaderId = published == shaders.end()
+		                                        ? std::nullopt
+		                                        : std::optional<int>(published->second.uid);
 		auto owned = factory.Acquire(node.data.pass, node.name, shaderId);
 		if (!owned)
 			return std::nullopt;
@@ -98,13 +79,16 @@ RenderGraphMorphism::Policy MakePolicy(PassFactory& factory, const IPortSource& 
 		return body;
 	};
 
-	const auto mapSocket = [&portCatalog](const auto& source) -> std::optional<RenderGraph::PassPort>
+	const auto mapSocket = [&portCatalog, &shaders](const auto& source) -> std::optional<RenderGraph::PassPort>
 	{
 		const auto& node = *source.owner;
 		const auto* ports = portCatalog.FindPassPorts(node.data.pass);
 		if (!ports)
 			return std::nullopt;
-		const auto* role = node.data.shader ? ports->FindRole(source.data) : ports->Find(source.name, source.data.direction);
+		// A selected shader may rename its ports, so resolve it by descriptor role.
+		const auto* role = shaders.contains(node.name)
+		                       ? ports->FindRole(source.data)
+		                       : ports->Find(source.name, source.data.direction);
 		if (!role)
 			throw std::runtime_error("no runtime role for socket '" + node.name + "." + source.name + "'");
 
@@ -131,17 +115,24 @@ GraphUploader::GraphUploader(PassFactory& factory, const IPortSource& portCatalo
 	{
 		throw std::invalid_argument("GraphUploader requires a default graph");
 	}
+	// Hashing reads only plain document data, but the default lives on the
+	// constructing thread, so cache it here instead of touching it per compile.
+	m_defaultHash = m_defaultGraph->Hash();
 	SetPending(CompileRenderGraphRequest{});
 }
 
 void GraphUploader::SetPending(const CompileRenderGraphRequest& request)
 {
-	auto document = request.graph ? request.graph : m_defaultGraph;
-	if (m_document != document)
+	if (request.graph)
 	{
-		m_documentHash = document->Hash();
-		m_document = std::move(document);
+		m_document = request.graph;
+		m_shaders = request.shaders;
+		m_documentHash = request.hash;
+		return;
 	}
+	m_document = m_defaultGraph;
+	m_shaders.clear();
+	m_documentHash = m_defaultHash;
 }
 
 GraphUploadResult GraphUploader::Compile(RenderCache& cache)
@@ -150,49 +141,44 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 
 	const RenderGraphData& document = *m_document;
 
-	PortContracts contracts;
-	// Only the UID crosses from a live CPU shader reference into GPU mapping.
+	// The published clone must already be free of CPU shader references; a
+	// reference here would make the render thread read the main-thread pool.
 	for (const auto& node : document.nodes)
 	{
 		if (!node->data.shader)
-		{
 			continue;
-		}
+		result.errors.push_back({node->name, {}, "render graph node carries a CPU shader reference"});
+	}
+	if (!result.errors.empty())
+	{
+		return result;
+	}
+
+	// GPU-only guard: the published shader must name a resident upload of the
+	// same version, type and stage set as the pass's built-in shader. CPU port,
+	// descriptor and push-constant contracts are checked before publication.
+	for (const auto& node : document.nodes)
+	{
+		const auto published = m_shaders.find(node->name);
+		if (published == m_shaders.end())
+			continue;
 		try
 		{
-			const int shaderId = node->data.shader.id();
-			const auto selected = m_factory.ShaderFor(node->data.pass, shaderId);
+			const auto selected = m_factory.ShaderFor(node->data.pass, published->second.uid);
 			const auto expected = m_factory.ShaderFor(node->data.pass);
 			if (!selected || !expected)
 			{
 				continue;
 			}
-			contracts.try_emplace(shaderId, selected->Ports());
-			if (!SamePorts(selected->Ports(), expected->Ports()))
-			{
-				result.errors.push_back({node->name, {}, "uploaded shader changes the built-in port contract"});
-			}
+			if (selected->GetVersion() != published->second.version)
+				throw std::invalid_argument("published shader version does not match the resident upload");
 			if (selected->GetType() != expected->GetType())
 				throw std::invalid_argument("uploaded shader changes the pass stage");
-			for (const auto stage : {ShaderType::VERTEX, ShaderType::FRAGMENT, ShaderType::COMPUTE})
+			for (const auto stage : {ShaderType::VERTEX, ShaderType::FRAGMENT,
+			                         ShaderType::COMPUTE, ShaderType::GEOMETRY})
 			{
-				const auto* original = expected->FindStage(stage);
-				const auto* actual = selected->FindStage(stage);
-				if (!original && !actual)
-					continue;
-				if (!original || !actual)
+				if (selected->HasStage(stage) != expected->HasStage(stage))
 					throw std::invalid_argument("uploaded shader changes the pass stages");
-				const auto problem = PassShaderInterfaceProblem(original->parsed, original->spv,
-				                                              actual->parsed, actual->spv, stage);
-				if (!problem.empty())
-					throw std::invalid_argument(problem);
-			}
-			if (selected->GetType() == ShaderType::VERTEX)
-			{
-				std::string error;
-				if (!ValidateRenderShaderInterface(selected->GetStage(ShaderType::VERTEX).spv,
-				                                   selected->GetStage(ShaderType::FRAGMENT).spv, error))
-					throw std::invalid_argument(error);
 			}
 		}
 		catch (const std::exception& error)
@@ -205,21 +191,12 @@ GraphUploadResult GraphUploader::Compile(RenderCache& cache)
 		return result;
 	}
 
-	const auto resolve = [&](const CPUNode& node)
-	{
-		const CPUPorts& builtin = *m_portCatalog.FindPassPorts(node.pass);
-		return node.shader ? WithShaderPortNames(builtin, contracts.at(node.shader.id())) : builtin;
-	};
-	for (const auto& diagnostic : ValidateCPUGraph(document, m_portCatalog, resolve))
-		result.errors.push_back({diagnostic.node, diagnostic.port, diagnostic.message});
-	if (!result.errors.empty())
-		return result;
 	const auto active = document.ActiveNodes();
 
 	RenderGraph::GraphT target;
 	try
 	{
-		const RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog));
+		const RenderGraphMorphism morphism(MakePolicy(m_factory, m_portCatalog, m_shaders));
 		auto mapping = morphism.Map(document);
 		for (const auto& problem : mapping.images.Validate(document).problems)
 			result.errors.push_back({{}, {}, problem});

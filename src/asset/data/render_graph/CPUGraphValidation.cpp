@@ -11,6 +11,7 @@
 #include "asset/data/ShaderData.hpp"
 
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <set>
 #include <string>
@@ -174,6 +175,16 @@ void ValidatePassShader(std::string_view passKind, const ShaderData& shader, con
 	const auto expected = catalog.ShaderFor(kind->shaders.front().name);
 	if (!expected || shader.GetType() != expected->GetType() || !shader.IsValid())
 		throw std::invalid_argument(std::string(passKind) + ": incompatible or uncompiled shader stages");
+
+	const std::array<const ShaderData*, 1> selectedShaders = {&shader};
+	CPUPorts selectedPorts = ExtractPassPorts(std::string(passKind), selectedShaders);
+	if (!selectedPorts.problems.empty())
+		throw std::invalid_argument(std::string(passKind) + ": " + selectedPorts.problems.front());
+	const std::array<const ShaderData*, 1> expectedShaders = {expected.get()};
+	const CPUPorts expectedPorts = ExtractPassPorts(std::string(passKind), expectedShaders);
+	if (!selectedPorts.SameRoles(expectedPorts))
+		throw std::invalid_argument(std::string(passKind) + ": uploaded shader changes the built-in port contract");
+
 	for (const auto stage : {ShaderType::VERTEX, ShaderType::FRAGMENT, ShaderType::COMPUTE})
 	{
 		const auto* ref = expected->FindStage(stage);

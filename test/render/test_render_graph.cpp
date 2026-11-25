@@ -50,6 +50,23 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// ShaderPass - a MockPass that reports uploaded shaders, so the legacy
+// single-argument AddPass must refuse it instead of dropping its ports.
+// ---------------------------------------------------------------------------
+class ShaderPass : public MockPass
+{
+public:
+	ShaderPass(std::string name,
+	           std::vector<AttachmentName> reads,
+	           std::vector<AttachmentName> writes)
+	    : MockPass(std::move(name), std::move(reads), std::move(writes))
+	{
+	}
+
+	std::vector<const ShaderGPU*> GetShaders() const override { return {nullptr}; }
+};
+
+// ---------------------------------------------------------------------------
 // CounterPass - mirrors real passes: it reports draw/dispatch counts by
 // returning a PassStats from Record() (passes stay stateless).
 // ---------------------------------------------------------------------------
@@ -96,6 +113,24 @@ TEST(RenderGraphTest, AddPassDeclaresSockets)
 	EXPECT_EQ(node->InputCount(),  2u);
 	EXPECT_EQ(node->OutputCount(), 1u);
 	EXPECT_EQ(node->data.pass, static_cast<Pass*>(&p));
+}
+
+TEST(RenderGraphTest, AddPassRejectsUploadedShaderPassWithoutPorts)
+{
+	ShaderPass p("shader pass", {}, {});
+
+	RenderGraph g;
+	try
+	{
+		g.AddPass(&p);
+		FAIL() << "expected the single-argument AddPass to reject an uploaded-shader pass";
+	}
+	catch (const std::runtime_error& error)
+	{
+		const std::string message = error.what();
+		EXPECT_NE(message.find("explicit ports"), std::string::npos) << message;
+	}
+	EXPECT_EQ(g.PassCount(), 0u);
 }
 
 TEST(RenderGraphTest, ConnectRequiresMatchingDeclaredAttachments)

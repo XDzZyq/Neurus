@@ -1,6 +1,6 @@
 /**
  * @file PassBindings.cpp
- * @brief Binding-plan construction and descriptor writes shared by graph and tests.
+ * @brief Descriptor writes shared by the graph and its helper tests.
  */
 
 #include "render_graph/PassBindings.hpp"
@@ -28,21 +28,6 @@ void AppendImageBinding(std::vector<GraphImageBinding>& bindings, std::string_vi
 		bindings.push_back({std::string(name), direction, binding, vk::DescriptorType::eStorageImage,
 		                    vk::ImageLayout::eGeneral});
 	}
-}
-
-std::vector<GraphImageBinding> BuildImageBindings(
-	const CPUPorts& ports,
-	const Pass& pass,
-	const std::function<bool(std::string_view)>& connected)
-{
-	std::vector<GraphImageBinding> bindings;
-	const auto selfManaged = pass.SelfManagedBindings();
-	for (const auto& input : ports.Inputs())
-		if (IsSamplerPortType(input.type) && (!connected || connected(input.name)))
-			AppendImageBinding(bindings, input.name, input.direction, input.type, input.binding, selfManaged);
-	for (const auto& output : ports.Outputs())
-		AppendImageBinding(bindings, output.name, output.direction, output.type, output.binding, selfManaged);
-	return bindings;
 }
 
 void WritePassBindings(Pass& pass,

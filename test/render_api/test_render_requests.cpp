@@ -1,9 +1,11 @@
 #include "asset/ResourceManager.hpp"
 #include "render_api/RenderRequests.hpp"
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 
@@ -100,12 +102,41 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	EXPECT_EQ(uploaded.spv, (std::vector<uint32_t>{0x07230203, 11, 22}));
 	ASSERT_EQ(uploaded.parsed.uniform_list.size(), 1u);
 	EXPECT_EQ(uploaded.parsed.uniform_list[0].name, "target");
-	const CPUPort* output = upload.ports.Find("target", PortDirection::Output);
-	ASSERT_NE(output, nullptr);
-	EXPECT_EQ(output->binding, 3u);
-	EXPECT_EQ(output->type, "image2D");
-	EXPECT_EQ(upload.ports.Find("edited", PortDirection::Output), nullptr);
 	EXPECT_TRUE(uploaded.parsed.Main.empty());
+}
+
+TEST(RenderRequestValues, CompiledGraphRequestStripsShaderReferencesAndKeepsIdentity)
+{
+	ResourceManager resources;
+	auto shader = resources.Load<UploadTestShader>();
+	shader->BumpVersion();
+
+	RenderGraphData document;
+	auto* node = document.AddNode("compose", CPUNode{.pass = "ComposePass"});
+	ASSERT_NE(node, nullptr);
+	node->data.shader = shader;
+
+	const std::uint64_t originalHash = document.Hash();
+	const int uid = shader->GetObjectID();
+	const int version = shader->GetVersion();
+
+	const CompileRenderGraphRequest request = MakeCompileRenderGraphRequest(document);
+
+	ASSERT_TRUE(request.graph);
+	ASSERT_EQ(request.graph->nodes.size(), 1u);
+	EXPECT_FALSE(request.graph->nodes.front()->data.shader);
+	EXPECT_NE(request.graph->nodes.front().get(), document.nodes.front().get());
+	ASSERT_EQ(request.shaders.size(), 1u);
+	ASSERT_TRUE(request.shaders.contains("compose"));
+	EXPECT_EQ(request.shaders.at("compose").uid, uid);
+	EXPECT_EQ(request.shaders.at("compose").version, version);
+	EXPECT_EQ(request.hash, originalHash);
+	// The original document keeps its reference; only the clone was stripped.
+	EXPECT_TRUE(document.nodes.front()->data.shader);
+
+	// Later source edits cannot reach the request clone.
+	shader->BumpVersion();
+	EXPECT_EQ(request.shaders.at("compose").version, version);
 }
 
 } // namespace neurus

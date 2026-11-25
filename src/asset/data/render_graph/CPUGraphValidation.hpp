@@ -21,7 +21,13 @@ namespace neurus {
 
 class IPassShaderCatalog;
 
-/// Throws if the selected shader cannot satisfy the pass's compiled interface.
+/**
+ * @brief Throws if the selected shader cannot satisfy the pass's contract.
+ *
+ * Checks the built-in port roles, descriptor and push-constant interface, and
+ * the compiled vertex/fragment interface. A shader may rename its ports as long
+ * as every role keeps its direction, type, binding and location.
+ */
 void ValidatePassShader(std::string_view passKind, const ShaderData& shader, const IPassShaderCatalog& catalog);
 
 /**

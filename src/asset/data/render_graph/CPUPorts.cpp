@@ -94,6 +94,20 @@ const CPUPort* CPUPorts::FindRole(const CPUPort& role) const
 	return nullptr;
 }
 
+bool CPUPorts::SameRoles(const CPUPorts& other) const
+{
+	if (ports.size() != other.ports.size())
+	{
+		return false;
+	}
+	for (const CPUPort& port : other.ports)
+	{
+		if (!FindRole(port))
+			return false;
+	}
+	return true;
+}
+
 void CPUPorts::Add(const CPUPort& port)
 {
 	const CPUPort* existing = Find(port.name, port.direction);

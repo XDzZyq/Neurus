@@ -19,6 +19,7 @@
 
 #include "asset/data/RenderGraphData.hpp"
 #include "asset/data/render_graph/CPUPorts.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "shader/BuiltInRenderData.hpp"
 
 #include <algorithm>
@@ -46,6 +47,17 @@ bool HasError(const std::vector<neurus::GraphDiagnostic>& errors,
 {
 	return std::any_of(errors.begin(), errors.end(),
 		[&](const neurus::GraphDiagnostic& error)
+		{
+			return error.node == node
+			    && error.message.find(fragment) != std::string::npos;
+		});
+}
+
+bool HasCPUError(const std::vector<neurus::CPUGraphDiagnostic>& errors,
+                 const std::string& node, const std::string& fragment)
+{
+	return std::any_of(errors.begin(), errors.end(),
+		[&](const neurus::CPUGraphDiagnostic& error)
 		{
 			return error.node == node
 			    && error.message.find(fragment) != std::string::npos;
@@ -86,8 +98,11 @@ protected:
 
 	void SetPending(std::unique_ptr<neurus::RenderGraphData> document)
 	{
-		neurus::CompileRenderGraphRequest request;
-		request.graph = std::move(document);
+		m_uploader->SetPending(neurus::MakeCompileRenderGraphRequest(*document));
+	}
+
+	void SetPending(const neurus::CompileRenderGraphRequest& request)
+	{
 		m_uploader->SetPending(request);
 	}
 
@@ -172,7 +187,7 @@ TEST_F(GraphUploaderTest, UnknownPassIsNamed)
 	neurus::GraphUploadResult upload = Compile(std::move(document));
 
 	EXPECT_EQ(upload.graph, nullptr);
-	EXPECT_TRUE(HasError(upload.errors, "ssao", "unknown pass kind"));
+	EXPECT_TRUE(HasError(upload.errors, "", "node 'ssao' is not mapped"));
 }
 
 TEST_F(GraphUploaderTest, UncompiledSelectedShaderIsNamed)
@@ -197,7 +212,6 @@ TEST_F(GraphUploaderTest, CustomGeometryShaderPreservesPassDepthOutput)
 	auto shader = m_defaults->CreatePassShader("GeometryPass", "CustomGeometry");
 	m_resources.Register(shader);
 	const auto request = neurus::MakeUploadShaderRequest(*shader);
-	EXPECT_EQ(request.ports.Find("depth", neurus::PortDirection::Output), nullptr);
 	m_cache->UseShader(neurus::UploadManager::UploadShader(*m_device, request));
 
 	auto document = DefaultDocument();
@@ -240,9 +254,9 @@ TEST_F(GraphUploaderTest, UploadedShaderRenamesSocketByRoleAndPreservesItsUsers)
 	auto* compose = FindNode(*document, "compose");
 	compose->data.shader = shader;
 	document->sceneOutputs["color"] = {"compose", "outputComposed"};
-	const auto stale = Compile(document->Clone());
-	EXPECT_EQ(stale.graph, nullptr);
-	EXPECT_TRUE(HasError(stale.errors, "compose", "no longer declared"));
+	const auto stale = document->Clone();
+	const auto staleErrors = neurus::ValidateCPUGraph(*stale, m_defaults->Ports());
+	EXPECT_TRUE(HasCPUError(staleErrors, "compose", "no longer declared"));
 
 	neurus::ReconcilePassPorts(*document, *compose, neurus::EffectivePassPorts(compose->data, m_defaults->Ports()));
 	const auto authored = compose->outputs.front()->data;
@@ -278,10 +292,9 @@ TEST_F(GraphUploaderTest, StaleSocketIsNamed)
 		                neurus::GraphOutputTag{neurus::GraphFormat::Rgba16f,
 		                                       neurus::GraphUsage::ColorSampled}};
 
-	neurus::GraphUploadResult upload = Compile(std::move(document));
+	const auto errors = neurus::ValidateCPUGraph(*document, m_defaults->Ports());
 
-	EXPECT_EQ(upload.graph, nullptr);
-	EXPECT_TRUE(HasError(upload.errors, "geometry", "no longer declared"));
+	EXPECT_TRUE(HasCPUError(errors, "geometry", "no longer declared"));
 }
 
 TEST_F(GraphUploaderTest, EmptyDocumentCompiles)
@@ -317,9 +330,8 @@ TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
 		GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	const auto defaultHash = m_uploader->DocumentHash();
-	neurus::CompileRenderGraphRequest empty;
-	empty.graph = std::make_shared<const neurus::RenderGraphData>();
-	m_uploader->SetPending(empty);
+	auto emptyDocument = std::make_unique<neurus::RenderGraphData>();
+	m_uploader->SetPending(neurus::MakeCompileRenderGraphRequest(*emptyDocument));
 	EXPECT_NE(m_uploader->DocumentHash(), defaultHash);
 	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
 	ASSERT_TRUE(upload.errors.empty());
@@ -333,4 +345,62 @@ TEST_F(GraphUploaderTest, ExplicitEmptyDocumentStaysDistinctFromNullFallback)
 	ASSERT_TRUE(upload.errors.empty());
 	ASSERT_NE(upload.graph, nullptr);
 	EXPECT_EQ(upload.graph->PassCount(), 7u);
+}
+
+TEST_F(GraphUploaderTest, PublishedRequestSurvivesSourcePoolAndDocumentLifetime)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = m_defaults->CreatePassShader("GeometryPass", "CustomGeometry");
+	m_resources.Register(shader);
+	m_cache->UseShader(neurus::UploadManager::UploadShader(
+		*m_device, neurus::MakeUploadShaderRequest(*shader)));
+
+	neurus::CompileRenderGraphRequest request;
+	{
+		auto document = DefaultDocument();
+		FindNode(*document, "geometry")->data.shader = shader;
+		request = neurus::MakeCompileRenderGraphRequest(*document);
+	}
+	ASSERT_NE(request.graph, nullptr);
+
+	// The published request owns every value the render thread reads: neither the
+	// CPU pool nor the source document outlives it here.
+	shader.reset();
+	m_resources.Clear();
+
+	SetPending(request);
+	neurus::GraphUploadResult upload = m_uploader->Compile(*m_cache);
+	ASSERT_TRUE(upload.errors.empty()) << upload.errors.front().message;
+	ASSERT_NE(upload.graph, nullptr);
+	EXPECT_TRUE(upload.depth);
+	EXPECT_TRUE(m_cache->HasResource("geometry/depth"));
+}
+
+TEST_F(GraphUploaderTest, VersionMismatchBetweenRequestAndResidentShaderIsNamed)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+
+	auto shader = m_defaults->CreatePassShader("GeometryPass", "CustomGeometry");
+	m_resources.Register(shader);
+	m_cache->UseShader(neurus::UploadManager::UploadShader(
+		*m_device, neurus::MakeUploadShaderRequest(*shader)));
+
+	auto document = DefaultDocument();
+	FindNode(*document, "geometry")->data.shader = shader;
+	const auto request = neurus::MakeCompileRenderGraphRequest(*document);
+
+	// A newer resident upload must not silently satisfy an older published
+	// identity; the guard rejects the compile instead.
+	shader->BumpVersion();
+	m_cache->UseShader(neurus::UploadManager::UploadShader(
+		*m_device, neurus::MakeUploadShaderRequest(*shader)));
+
+	SetPending(request);
+	const auto upload = m_uploader->Compile(*m_cache);
+
+	EXPECT_EQ(upload.graph, nullptr);
+	EXPECT_TRUE(HasError(upload.errors, "geometry", "version does not match"));
 }

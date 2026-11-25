@@ -142,64 +142,78 @@ void RenderManager::Publish()
 {
 	if (!m_sink)
 		return;
-	std::shared_ptr<const RenderGraphData> published;
-	if (m_graph)
+
+	// No authored graph selects the renderer's built-in topology.
+	if (!m_graph)
 	{
-		auto graph = m_graph->Clone();
-		const auto& ports = m_renderDefaults->Ports();
-		m_problems.clear();
-		const auto report = [this](std::string problem) {
-			NEURUS_LOG("[RenderManager] " << problem);
-			m_problems.push_back(std::move(problem));
-		};
+		m_sink->Post(CompileRenderGraphRequest{});
+		return;
+	}
 
-		for (const auto& node : graph->nodes)
+	auto graph = m_graph->Clone();
+	const auto& ports = m_renderDefaults->Ports();
+	m_problems.clear();
+	const auto report = [this](std::string problem) {
+		NEURUS_LOG("[RenderManager] " << problem);
+		m_problems.push_back(std::move(problem));
+	};
+
+	for (const auto& node : graph->nodes)
+	{
+		if (node->data.shader)
 		{
-			if (node->data.shader)
+			try
 			{
-				try
-				{
-					ValidatePassShader(node->data.pass, *node->data.shader, *m_renderDefaults);
-					continue;
-				}
-				catch (const std::exception& error)
-				{
-					report(node->name + " uses its built-in shader: " + error.what());
-					node->data.shader.reset();
-				}
+				ValidatePassShader(node->data.pass, *node->data.shader, *m_renderDefaults);
+				continue;
 			}
-
-			// Saved sockets may use custom shader names. Match built-in sockets
-			// by their binding or location so the clone keeps its connections.
-			if (const auto* builtin = ports.FindPassPorts(node->data.pass))
+			catch (const std::exception& error)
 			{
-				try
-				{
-					ReconcilePassPorts(*graph, *node, *builtin);
-				}
-				catch (const std::invalid_argument&)
-				{
-					// The validation below reports sockets that have no compatible role.
-				}
+				report(node->name + " uses its built-in shader: " + error.what());
+				node->data.shader.reset();
 			}
 		}
 
-		const auto errors = ValidateCPUGraph(*graph, ports);
-		for (const auto& error : errors)
-			report(error.node + (error.port.empty() ? "" : "." + error.port) + ": " + error.message);
-		if (errors.empty())
+		// Saved sockets may use custom shader names. Match built-in sockets
+		// by their binding or location so the clone keeps its connections.
+		if (const auto* builtin = ports.FindPassPorts(node->data.pass))
 		{
-			std::unordered_set<int> uploaded;
-			for (const auto& node : graph->nodes)
+			try
 			{
-				if (const auto& shader = node->data.shader;
-				    shader && uploaded.insert(shader->GetObjectID()).second)
-					m_sink->Post(MakeUploadShaderRequest(*shader));
+				ReconcilePassPorts(*graph, *node, *builtin);
 			}
-			published = std::move(graph);
+			catch (const std::invalid_argument&)
+			{
+				// The validation below reports sockets that have no compatible role.
+			}
 		}
 	}
-	m_sink->Post(CompileRenderGraphRequest{std::move(published)});
+
+	const auto errors = ValidateCPUGraph(*graph, ports);
+	for (const auto& error : errors)
+	{
+		const std::string problem =
+			error.node + (error.port.empty() ? "" : "." + error.port) + ": " + error.message;
+		NEURUS_ERR("[RenderManager] Rejected graph publication: " << problem);
+		m_problems.push_back(problem);
+	}
+	if (!errors.empty())
+	{
+		// Keep the previous graph drawing: a null-graph request would fall back
+		// to the built-in default instead.
+		return;
+	}
+
+	std::unordered_set<int> uploaded;
+	for (const auto& node : graph->nodes)
+	{
+		if (const auto& shader = node->data.shader;
+		    shader && uploaded.insert(shader->GetObjectID()).second)
+			m_sink->Post(MakeUploadShaderRequest(*shader));
+	}
+	// The request strips the clone's shader references and carries their
+	// {uid, version} values; the render thread never reads pooled ShaderData.
+	m_sink->Post(MakeCompileRenderGraphRequest(*graph));
 }
 
 bool RenderManager::ReferencesShader(const int uid) const

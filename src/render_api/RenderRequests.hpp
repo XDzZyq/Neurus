@@ -18,8 +18,9 @@
  *
  * Payload rule, binding for every request type added here: a payload is a
  * value, or a `shared_ptr<const T>` to data nobody mutates after creation. It is
- * never a Scene or Mesh pointer. A graph retains shared shader references for
- * identity only: rendering reads their UID and uses separately uploaded GPU data.
+ * never a Scene or Mesh pointer. Published graphs carry shader identity as the
+ * plain `PublishedShader { uid, version }` values below, never as a live CPU
+ * reference; rendering resolves those UIDs against separately uploaded GPU data.
  * Requests never carry a callable, because a closure
  * capturing the Editor would run Editor code wherever the renderer runs.
  *
@@ -34,12 +35,12 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
 
 #include "scene/Light.hpp"
-#include "asset/data/render_graph/CPUPorts.hpp"
 #include "asset/data/shader/ShaderStage.hpp"
 #include "asset/data/shader/ShaderStruct.hpp"
 #include "render_api/RenderFrameSnapshot.hpp"
@@ -130,8 +131,8 @@ struct ShaderStageUpload
 /**
  * @brief Upload a shader version before graph mapping or mesh pipeline use.
  *
- * Owns compiled bytes, descriptor metadata and the extracted image ports.
- * Later CPU edits cannot alter a queued upload.
+ * Owns compiled bytes and descriptor metadata, including the uploaded stage
+ * reflection. Later CPU edits cannot alter a queued upload.
  */
 struct UploadShaderRequest
 {
@@ -139,10 +140,9 @@ struct UploadShaderRequest
 	int version = 0;
 	ShaderType primaryType = ShaderType::VERTEX;
 	std::unordered_map<ShaderType, ShaderStageUpload> stages;
-	CPUPorts ports;  ///< Image-port contract extracted on the CPU.
 };
 
-/** @brief Copies compiled stages and descriptor metadata and derives the image ports. */
+/** @brief Copies compiled stages and descriptor metadata per stage. */
 UploadShaderRequest MakeUploadShaderRequest(const ShaderData& shader);
 
 /**
@@ -193,6 +193,18 @@ struct RedrawOverlaysRequest
 };
 
 /**
+ * @brief Plain identity of one uploaded shader selected by a published node.
+ *
+ * A value, not a CPU resource reference: the render thread never reads pooled
+ * `ShaderData`. The version must match the resident `ShaderGPU`.
+ */
+struct PublishedShader
+{
+	int uid     = 0;
+	int version = 0;
+};
+
+/**
  * @brief Replace the scene graph document and compile it.
  *
  * Posted by the Editor when a project loads or the document changes. The
@@ -200,16 +212,29 @@ struct RedrawOverlaysRequest
  * diagnostics; the request still restarts accumulation.
  *
  * A null graph selects the cached built-in document; a nonnull empty graph
- * deliberately renders no scene passes. The document is immutable once posted
- * (`shared_ptr<const RenderGraphData>`). Each explicit node shader is a
- * shared CPU reference retained for identity; the renderer reads only its UID
- * and resolves uploaded GPU data. A null node shader selects a built-in.
- * Shader uploads precede this request in FIFO order.
+ * deliberately renders no scene passes. The graph is an owned, unpooled clone
+ * whose node shader references have already been stripped; `shaders` records
+ * each node's selected shader by node name as a plain {@c PublishedShader}.
+ * `hash` is the original document's topology hash, taken before stripping. A
+ * node absent from `shaders` selects a built-in. Shader uploads precede this
+ * request in FIFO order.
  */
 struct CompileRenderGraphRequest
 {
 	std::shared_ptr<const RenderGraphData> graph;
+	std::unordered_map<std::string, PublishedShader> shaders;
+	std::uint64_t hash = 0;
 };
+
+/**
+ * @brief Builds a render-thread-safe compile request from a CPU document.
+ *
+ * Called on the thread that owns the pool. Clones the document, records
+ * @c shaders for every node with a selected shader, hashes the original
+ * document, then resets every cloned node's shader reference so no
+ * `ResourceRef` reaches the render thread.
+ */
+CompileRenderGraphRequest MakeCompileRenderGraphRequest(const RenderGraphData& graph);
 
 /** @brief Copies one scene light into an owned request/frame value. */
 LightSnapshot MakeLightSnapshot(const Light& light);

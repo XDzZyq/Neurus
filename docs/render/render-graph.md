@@ -23,33 +23,33 @@ per-field defaults; an absent config stays null. `FinishLoad()` publishes the se
 uses the built-in graph when there is no selection. Read-only queries and rendering never materialize
 project defaults. Explicit edits create stored data, and undo can restore absence.
 
-Explicit project shaders remain pooled, and live nodes own references to them. Publication creates an ephemeral clone that shares the pooled CPU shader references. The project selection keeps its original UID. CPU preparation deduplicates selected shaders by UID and posts owned `MakeUploadShaderRequest` payloads before graph compilation. The mapper reads only stable UIDs from the node references. The GPU cache supplies the selected shader modules and their uploaded metadata for compatibility checks. Null shader selections follow built-in recipes through CPU preparation, upload and caching. Rendering never calls back into the Editor or changes which project values are serialized.
+Explicit project shaders remain pooled, and live nodes own references to them. Publication builds an owned, unpooled clone and records each node's selection as a plain `PublishedShader {uid, version}` value in `CompileRenderGraphRequest::shaders`, then clears every clone node's shader reference so no pooled `ResourceRef` reaches the render thread. The project selection keeps its original UID. CPU preparation deduplicates selected shaders by UID and posts owned `MakeUploadShaderRequest` payloads before graph compilation. The renderer resolves the published UIDs against the GPU cache and rejects a selection whose resident version, type or stage set fell behind the upload. Null shader selections follow built-in recipes through CPU preparation, upload and caching. Rendering never calls back into the Editor or changes which project values are serialized.
 
-The editor checks the pass contract when assigning a shader and when publishing a graph. If the selected shader is missing or incompatible during publication, the editor reconciles socket names with built-in port roles on the snapshot and validates the result before upload.
+The editor checks the pass contract - port roles, descriptor and push-constant interface - when assigning a shader and when publishing a graph, and it owns that CPU validation: the document `ValidateCPUGraph` run and the per-node `ValidatePassShader` calls happen before any request is posted. If the selected shader is missing or incompatible during publication, the editor reconciles socket names with built-in port roles on the snapshot and validates the result before upload. The renderer repeats only the GPU-resident checks the CPU cannot see: the uploaded shader must match the published version, type and stage set.
 
 ## Ports from the shader
 
-`BuiltInRenderData` owns the compiled default shaders by recipe and exposes their pass contracts through `IPortSource`. It uses the same Vulkan-free `ExtractPassPorts` routine as `MakeUploadShaderRequest`. The routine reads parsed `ShaderStruct` metadata to derive the shader's image ports:
+`BuiltInRenderData` owns the compiled default shaders by recipe and exposes their pass contracts through `IPortSource`. It uses the same Vulkan-free `ExtractPassPorts` routine the CPU validator and `ValidatePassShader` use. The routine reads parsed `ShaderStruct` metadata to derive the shader's image ports:
 
 - graphics: a fragment stage's `layout(location = N) out` entries become output ports;
 - bound `sampler*` uniforms become input ports and bound `image*` uniforms become output ports;
 - UBOs, SSBOs, plain uniforms and non-image arrays are not ports;
 - vertex attributes and inter-stage varyings are never ports.
 
-`PassKinds` (`src/asset/data/render_graph/PassKinds.hpp`) supplies the outputs without shader bindings, such as G-Buffer depth and the per-light shadow bundle, and the external inputs, currently the two IBL cubemaps. The built-in catalog merges ports across a kind's shader recipes and adds its declared outputs. `ShaderGPU` retains shader ports supplied by the upload for compatibility checks.
+`PassKinds` (`src/asset/data/render_graph/PassKinds.hpp`) supplies the outputs without shader bindings, such as G-Buffer depth and the per-light shadow bundle, and the external inputs, currently the two IBL cubemaps. The built-in catalog merges ports across a kind's shader recipes and adds its declared outputs. `ShaderGPU` carries only the uploaded GPU stages and their reflection metadata; port contracts live on the CPU side and are never read from the render thread.
 
 ## Validation and upload
 
 `ValidateCPUGraph(document, ports)` (`src/asset/data/render_graph/CPUGraphValidation.hpp`) is Vulkan-free and never throws for a bad document. It reports duplicate node ids, unknown pass kinds, an output with no tag or an inconsistent one, a socket the shader no longer declares, an input that is neither connected nor external, and a cycle. Every entry is a `CPUGraphDiagnostic` naming the node and, when it has one, the port.
 
-The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`). It retains the published topology and maps it directly with a one-way morphism local to each compile. `Compile(cache)` prepares the runtime graph:
+The renderer uploads the document through `GraphUploader` (`src/render/render_graph/GraphUploader.hpp`). It retains the published clone and its `{uid, version}` selections and maps them directly with a one-way morphism local to each compile. `Compile(cache)` prepares the runtime graph:
 
 1. Shader uploads populate the GPU cache before graph compilation.
-2. The uploader validates the document against the injected `IPortSource` and checks that each selected GPU shader preserves the pass's port, descriptor and push-constant contracts. The Editor uses the same port catalog.
+2. The uploader rejects a published clone that still carries a CPU shader reference, then runs the GPU-only guard: every published `{uid, version}` must name a resident upload of the same version, type and stage set as the pass's built-in shader. The CPU port, descriptor and push-constant contracts were checked before publication.
 3. The morphism policy uses `PassFactory` to obtain a pass instance from the selected shader UID or the built-in recipe. It returns a pass body for each node and a runtime port for each socket. The morphism adds those payloads to the graph and connects the mapped sockets.
 4. The morphism checks that the mapping is total and preserves edge endpoints. `RenderGraph::Compile()` caches the execution order and binding plan.
 
-A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. The renderer tracks a compile key made from the published topology hash and shader cache generation. An upload under the same shader UID refreshes the graph even without a new document. The public scene outputs select the live subgraph. Connecting Compose directly to scene color bypasses FXAA. Reconnecting the FXAA output restores it. Both edits retain all seven default nodes and their internal connections.
+A failure leaves the previous graph drawing and is reported through `LastGraphReport()`. The renderer tracks a compile key made from the published topology hash and shader cache generation. An upload under the same shader UID refreshes the graph even without a new document, but a changed version needs a matching republished request: the guard rejects a document whose published version no longer matches the resident upload. The public scene outputs select the live subgraph. Connecting Compose directly to scene color bypasses FXAA. Reconnecting the FXAA output restores it. Both edits retain all seven default nodes and their internal connections.
 
 ## The runtime graph
 
@@ -62,9 +62,9 @@ A failure leaves the previous graph drawing and is reported through `LastGraphRe
 
 ```mermaid
 flowchart LR
-    doc["Published RenderGraphData<br/>shared CPU shader references"] --> validate["ValidateCPUGraph<br/>named diagnostics"]
+    doc["RenderGraphData clone<br/>PublishedShader {uid, version}"] --> validate["Editor<br/>ValidateCPUGraph + ValidatePassShader"]
     catalog["BuiltInRenderData<br/>IPortSource"] --> validate
-    validate --> upload["GraphUploader::Compile<br/>GraphMorphism::Map"]
+    validate --> upload["GraphUploader::Compile<br/>GPU-only guard + GraphMorphism::Map"]
     catalog --> upload
     cache["RenderCache<br/>uploaded ShaderGPU + metadata"] --> factory["PassFactory<br/>GPU modules → pass pipelines"]
     factory --> upload
@@ -110,7 +110,7 @@ Barriers remain pass-owned: a pass transitions the resources it is about to use 
 
 ## Ownership boundary
 
-- The Editor owns the project pool and the nullable active graph and config pointers. `RenderManager` posts `CompileRenderGraphRequest{graph}` with a frozen topology or a null request for the built-in.
+- The Editor owns the project pool and the nullable active graph and config pointers. `RenderManager` posts `MakeCompileRenderGraphRequest` - an owned clone whose node shader references are replaced by a `{uid, version}` map - or a null request for the built-in. A document that fails CPU validation posts nothing, so the previous graph keeps drawing.
 - Renderer: owns `PassFactory`, the uploader, the runtime `RenderGraph`, the compiled binding plan and every GPU resource. It never calls back into the Editor and never reads the Editor's pool.
 - Overlay: still uses `AttachmentName` and `PassIO`; it is not part of the document yet.
 - `RenderConfig` is copied into every published frame and supplies per-frame pass parameters; it no longer decides the graph topology, and the graph document never lives in `RenderConfig` or `RenderFrameSnapshot`.
@@ -130,11 +130,11 @@ invalidates project-specific caches because another file may reuse shader UIDs.
 - `test/asset/test_pass_ports.cpp`, `test/asset/test_shader_data.cpp` - ports from real shaders, the pass-kind table and CPU shader data.
 - `test/render/test_shader_reflection.cpp` - binding and push-range reflection from every main shader.
 - `test/render/test_render_cache_resources.cpp` - tag-planned images, logical resources, legacy aliases.
-- `test/render/test_graph_uploader.cpp` - null resolves the cached default, repeated null requests do not invalidate it, explicit empty graphs remain distinct, and unknown passes, invalid selected shaders and stale sockets have named failures.
+- `test/render/test_graph_uploader.cpp` - null resolves the cached default, repeated null requests do not invalidate it, explicit empty graphs remain distinct, a published request survives the source pool and document, and unknown passes and unuploaded or version-mismatched shaders have named failures; stale sockets are rejected by the CPU validator.
 - `test/render/test_render_graph.cpp`, `test_pass_factory.cpp`, `test_pass_bindings.cpp` - port sockets, factory, binding plan.
 - `test/render/test_render_graph_pipeline.cpp` - the first frame without a project document uses the cached built-in seven-pass pipeline; explicit documents remain renderable, edited topology is followed, and a bad upload keeps the last good graph.
 - `test/render/test_pass_*` - direct pass tests now use `RecordPass`, which writes the same graph-owned bindings production writes.
-- `test/asset/test_graph_component.cpp`, `test/editor/test_editor_render_graph.cpp` - persistence, shared shader ownership, topology publication and upload-before-map ordering.
+- `test/asset/test_graph_component.cpp`, `test/editor/test_editor_render_graph.cpp` - persistence, plain published shader identity, topology publication, invalid documents posting nothing, and upload-before-map ordering.
 
 ## Profiling
 

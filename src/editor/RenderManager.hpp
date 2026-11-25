@@ -88,7 +88,13 @@ public:
 	ResourceRef<RenderGraphData>& GraphData() { return m_graph; }
 	const ResourceRef<RenderGraphData>& GraphData() const { return m_graph; }
 
-	/// @brief Validates a graph clone and uploads its distinct custom shaders before publishing it.
+	/**
+	 * @brief Validates a graph clone, uploads its distinct custom shaders and posts a compile request.
+	 *
+	 * A document that fails CPU validation posts nothing and keeps the previous
+	 * graph drawing; a node whose shader fails @c ValidatePassShader falls back to
+	 * the built-in shader.
+	 */
 	void Publish();
 	void UploadShader(const ShaderData& shader);
 

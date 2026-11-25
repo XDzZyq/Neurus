@@ -411,32 +411,42 @@ TEST(EditorRenderGraph, PublicationRetainsShaderIdentityAndUploadsBeforeMapping)
 	const auto firstBytes = firstUpload->stages.at(neurus::ShaderType::COMPUTE).spv;
 	EXPECT_EQ(firstUpload->shaderId, shader->GetObjectID());
 	EXPECT_EQ(firstUpload->primaryType, neurus::ShaderType::COMPUTE);
-	const auto first = sink.LastGraphRequest()->graph;
-	ASSERT_TRUE(first);
-	EXPECT_EQ(first->nodes[5]->data.shader.get(), shader.get());
+	const auto* firstRequest = sink.LastGraphRequest();
+	ASSERT_NE(firstRequest, nullptr);
+	ASSERT_TRUE(firstRequest->graph);
+	const auto first = firstRequest->graph;
+	// The render thread receives a plain identity, never a live CPU reference.
+	EXPECT_FALSE(first->nodes[5]->data.shader);
+	EXPECT_EQ(firstRequest->shaders.at("compose").uid, shader->GetObjectID());
+	EXPECT_EQ(firstRequest->shaders.at("compose").version, shader->GetVersion());
 	EXPECT_NE(first.get(), editor.GetRenderManager().GraphData().get());
-	const auto firstHash = first->Hash();
+	const auto firstHash = firstRequest->hash;
 
 	shader->GetStage(neurus::ShaderType::COMPUTE).spv.back() ^= 1;
 	EXPECT_EQ(firstUpload->stages.at(neurus::ShaderType::COMPUTE).spv, firstBytes);
-	EXPECT_EQ(first->Hash(), firstHash);
+	EXPECT_EQ(editor.GetRenderGraph().Hash(), firstHash);
 	editor.GetRenderManager().Publish();
 	ASSERT_EQ(sink.posted.size(), 4u);
 	const auto* secondUpload = std::get_if<neurus::UploadShaderRequest>(&sink.posted[2]);
 	ASSERT_NE(secondUpload, nullptr);
 	EXPECT_NE(secondUpload->stages.at(neurus::ShaderType::COMPUTE).spv, firstBytes);
-	EXPECT_EQ(sink.LastGraphRequest()->graph->nodes[5]->data.shader.get(), shader.get());
+	const auto* secondRequest = sink.LastGraphRequest();
+	ASSERT_NE(secondRequest, nullptr);
+	ASSERT_TRUE(secondRequest->graph);
+	EXPECT_FALSE(secondRequest->graph->nodes[5]->data.shader);
+	EXPECT_EQ(secondRequest->shaders.at("compose").version, shader->GetVersion());
 
-	// Publication owns the shared reference even after the project drops it.
+	// Publication carries no CPU reference: the project may drop the shader while
+	// the published request keeps only the plain identity the renderer resolves.
 	editor.GetRenderManager().ResetGraph();
 	editor.GetResourceManager().Clear();
 	const std::weak_ptr<const neurus::ShaderData> lifetime = shader;
 	shader.reset();
-	EXPECT_FALSE(lifetime.expired());
-	EXPECT_TRUE(first->nodes[5]->data.shader);
+	EXPECT_TRUE(lifetime.expired());
+	EXPECT_FALSE(first->nodes[5]->data.shader);
 }
 
-TEST(EditorRenderGraph, PublicationUploadsEachSelectedShaderOnce)
+TEST(EditorRenderGraph, PublicationUploadsValidSelectionAndFallsBackOnPortMismatch)
 {
 	RecordingSink sink;
 	neurus::ResourceManager resources;
@@ -445,15 +455,39 @@ TEST(EditorRenderGraph, PublicationUploadsEachSelectedShaderOnce)
 		"Shared", "res/shaders/compute/compose.comp.glsl");
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());
-	// Use direct stored data to exercise publication independently of pass validation.
+	// Use direct stored data to exercise publication independently of controller validation.
 	const auto graph = render.CreateGraph();
 	graph->nodes[5]->data.shader = shader;
+	// The compose shader changes the FXAA port contract, so that node falls back.
 	graph->nodes[6]->data.shader = shader;
 	sink.posted.clear();
 	render.Publish();
 	ASSERT_EQ(sink.posted.size(), 2u);
 	EXPECT_TRUE(std::holds_alternative<neurus::UploadShaderRequest>(sink.posted[0]));
-	EXPECT_TRUE(std::holds_alternative<neurus::CompileRenderGraphRequest>(sink.posted[1]));
+	const auto* compile = std::get_if<neurus::CompileRenderGraphRequest>(&sink.posted[1]);
+	ASSERT_NE(compile, nullptr);
+	ASSERT_EQ(compile->shaders.size(), 1u);
+	EXPECT_EQ(compile->shaders.at(graph->nodes[5]->name).uid, shader->GetObjectID());
+	EXPECT_FALSE(render.Problems().empty());
+}
+
+TEST(EditorRenderGraph, InvalidGraphPostsNoCompileRequest)
+{
+	RecordingSink sink;
+	neurus::Editor editor(&sink);
+	editor.NewScene();
+	auto& render = editor.GetRenderManager();
+	const auto graph = render.CreateGraph();
+	ASSERT_TRUE(graph);
+	// A graph without a color scene output keeps the previous graph drawing
+	// rather than falling back to the built-in default.
+	graph->sceneOutputs.erase("color");
+	sink.posted.clear();
+
+	render.Publish();
+
+	EXPECT_TRUE(sink.posted.empty());
+	EXPECT_FALSE(render.Problems().empty());
 }
 
 TEST(EditorRenderGraph, ReopenPreservesAuthoredSocketsAndPublishesBuiltInShaderFallback)
@@ -521,7 +555,8 @@ TEST(EditorRenderGraph, ComputeCompileNotificationRepublishesReferencedShaderWit
 	ASSERT_EQ(sink.posted.size(), 2u);
 	ASSERT_TRUE(std::holds_alternative<neurus::UploadShaderRequest>(sink.posted.front()));
 	ASSERT_TRUE(std::holds_alternative<neurus::CompileRenderGraphRequest>(sink.posted.back()));
-	ASSERT_TRUE(sink.LastGraphRequest()->graph->nodes[5]->data.shader);
+	ASSERT_TRUE(sink.LastGraphRequest()->graph->nodes[5]->data.shader == nullptr);
+	ASSERT_TRUE(sink.LastGraphRequest()->shaders.contains("compose"));
 }
 
 TEST(EditorRenderGraph, GraphOnlyVertexShaderDoesNotWarmAMeshPipeline)

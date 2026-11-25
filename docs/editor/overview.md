@@ -361,9 +361,10 @@ Live graph nodes own pooled shaders through `PassShaderRef`;
 null selects a built-in recipe. Script and Editor edits still target the mutable
 pooled resource. `MakeUploadShaderRequest` copies compiled SPIR-V and required
 reflection/port metadata on the CPU before an upload request crosses the boundary.
-`RenderManager` holds the active pooled `RenderGraphData`. Publication clones this document and posts `CompileRenderGraphRequest{graph}` after those uploads. The renderer reads only stable shader UIDs from node
-references and resolves `ShaderGPU` in its cache; it never reads mutable shader
-content through the graph.
+`RenderManager` holds the active pooled `RenderGraphData`. Publication validates this document and posts `MakeCompileRenderGraphRequest(graph)` after those uploads. The request carries an unpooled clone without
+shader references and a plain `{uid, version}` per node; the renderer resolves
+`ShaderGPU` in its cache and never reads CPU shader data. A document that fails
+validation posts nothing, so the previous graph keeps drawing.
 
 A successful compile uploads updated render or compute shader data before
 refreshing dependent passes/graphs. Reuploading a UID advances its GPU cache

@@ -100,15 +100,19 @@ responsibility shared by callers, and keep it with the family that uses it.
   generation, compilation and high-level RenderShader/ComputeShader belong under
   `shader/` in `neurus_shader`.
 - Keep authored `RenderGraphData` in the resource pool. `proj_render_graph` saves
-  its active UID. Publish an unpooled clone of the document. Nodes hold
-  `PassShaderRef` references, with null selecting a built-in. The
-  render thread reads the shader UID and consumes the uploaded GPU resource.
-  CPU `MakeUploadShaderRequest` copies SPIR-V and required reflection/port metadata
-  into owned typed requests before FIFO graph mapping. UploadManager constructs
-  ShaderGPU; RenderCache owns/indexes it; passes consume modules and own pipelines.
-  Reuploading a UID refreshes dependent GPU state by cache revision. Resource
-  references and fences preserve lifetime. Persist authored UID references only;
-  defaults follow recipes through CPU preparation/upload/cache outside the pool.
+  its active UID. Publish an unpooled clone of the document through
+  `MakeCompileRenderGraphRequest`, which records each node's selection as a plain
+  `PublishedShader {uid, version}` and clears the clone's `PassShaderRef`, so the
+  render thread never reads pooled `ShaderData`. Null selection uses a built-in.
+  CPU `MakeUploadShaderRequest` copies SPIR-V and reflection metadata into owned
+  typed requests before FIFO graph mapping; it carries no ports. UploadManager
+  constructs ShaderGPU; RenderCache owns/indexes it; passes consume modules and own
+  pipelines. The uploader's GPU-only guard requires the published version, type
+  and stage set to match the resident upload; the CPU port, descriptor and
+  push-constant contracts are checked before publication. A changed version needs
+  a matching republished request. Resource references and fences preserve lifetime.
+  Persist authored UID references only; defaults follow recipes through CPU
+  preparation/upload/cache outside the pool.
 - Asset data and persistence must not depend on Shader tooling. Shader cereal
   registrations belong under `shader/registrations/` and are force-linked by
   ApplicationCore; generic persistence uses its resource callback. Preserve

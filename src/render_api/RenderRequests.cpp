@@ -5,9 +5,8 @@
 
 #include "render_api/RenderRequests.hpp"
 
+#include "asset/data/RenderGraphData.hpp"
 #include "asset/data/ShaderData.hpp"
-
-#include <array>
 
 namespace neurus {
 
@@ -31,8 +30,29 @@ UploadShaderRequest MakeUploadShaderRequest(const ShaderData& shader)
 			request.stages.emplace(type, std::move(upload));
 		}
 	}
-	const std::array<const ShaderData*, 1> shaders = {&shader};
-	request.ports = ExtractPassPorts({}, shaders);
+	return request;
+}
+
+CompileRenderGraphRequest MakeCompileRenderGraphRequest(const RenderGraphData& graph)
+{
+	CompileRenderGraphRequest request;
+	// Hash the original document: the clone below loses the shader references,
+	// and the topology hash must still follow an edited shader selection.
+	request.hash = graph.Hash();
+
+	auto clone = graph.Clone();
+	for (const auto& node : clone->nodes)
+	{
+		if (!node->data.shader)
+			continue;
+		request.shaders[node->name] = PublishedShader{
+			node->data.shader.id(),
+			node->data.shader->GetVersion(),
+		};
+		// No CPU reference may reach the render thread.
+		node->data.shader.reset();
+	}
+	request.graph = std::shared_ptr<const RenderGraphData>(std::move(clone));
 	return request;
 }
 

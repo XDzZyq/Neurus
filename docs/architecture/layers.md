@@ -72,9 +72,9 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
   Null graph and config pointers select built-in defaults and omit their respective
   project keys on save. Reads preserve this state
 - Prepares owned shader upload requests on the CPU, then publishes optional
-  cloned graph topology through `CompileRenderGraphRequest{graph}` in FIFO order.
-  Live nodes own pooled shader references; graph mapping reads only their stable
-  UIDs and resolves cached GPU shaders. Built-in CPU preparation stays outside
+  cloned graph topology through `MakeCompileRenderGraphRequest` in FIFO order.
+  Live nodes own pooled shader references; the request strips them and carries
+  plain `{uid, version}` values that graph mapping resolves to cached GPU shaders. Built-in CPU preparation stays outside
   the project pool; Renderer owns the compiled graph and GPU resources
 - Explicit config edits materialize stored settings. Undo restores the previous
   presence state, including null. Frame snapshots copy effective config by value,

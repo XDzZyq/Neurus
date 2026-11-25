@@ -71,6 +71,16 @@ struct CPUPorts
 	/// @brief Finds a shader port by binding or fragment location, type and direction.
 	const CPUPort* FindRole(const CPUPort& role) const;
 
+	/**
+	 * @brief True when both sets declare the same descriptor roles.
+	 *
+	 * Compares by role, not by name: a shader may rename its ports as long as
+	 * every role keeps its direction, type, binding and location. A different
+	 * role count or a role missing from this set makes the contract differ.
+	 * @param other Contract to compare against.
+	 */
+	bool SameRoles(const CPUPorts& other) const;
+
 	/// @brief Includes a declaration, recording a conflict if the same port differs.
 	void Add(const CPUPort& port);
 

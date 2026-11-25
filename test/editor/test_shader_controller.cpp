@@ -668,3 +668,37 @@ TEST(PassShaderEditing, RejectsIncompatibleCompiledInterfacesAndAcceptsRenamedIm
 	ASSERT_TRUE(original);
 	EXPECT_EQ(original->GetStage(ShaderType::COMPUTE).code, source);
 }
+
+TEST(PassShaderEditing, RejectsChangedBuiltInPortContract)
+{
+	BuiltInRenderData catalog;
+	const auto shader = catalog.CreatePassShader("ComposePass", "editable");
+	auto& compute = shader->GetStage(ShaderType::COMPUTE);
+	const auto source = compute.code;
+
+	// Move the input sampler to another binding. The name and type are unchanged,
+	// so only the descriptor role differs: the port-contract check must reject it.
+	const std::string before = "binding = 0";
+	const std::string after  = "binding = 4";
+	std::string edited = source;
+	size_t pos = 0;
+	while ((pos = edited.find(before, pos)) != std::string::npos)
+	{
+		edited.replace(pos, before.size(), after);
+		pos += after.size();
+	}
+	ASSERT_NE(edited, source);
+	compute.code = edited;
+	ShaderLibrary::CompileEditedUnit(compute, ShaderType::COMPUTE, "editable", false);
+
+	try
+	{
+		neurus::ValidatePassShader("ComposePass", *shader, catalog);
+		FAIL() << "expected a changed descriptor binding to break the port contract";
+	}
+	catch (const std::invalid_argument& error)
+	{
+		const std::string message = error.what();
+		EXPECT_NE(message.find("port contract"), std::string::npos) << message;
+	}
+}

@@ -6,12 +6,9 @@
 #pragma once
 
 #include "render_api/RenderRequests.hpp"
-#include "asset/data/render_graph/CPUPorts.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 
-#include <span>
-#include <string>
 #include <unordered_map>
 
 namespace neurus
@@ -27,10 +24,10 @@ class ShaderGPU
 {
 public:
 	/**
-	 * @brief Creates modules and retains the CPU-derived image ports.
+	 * @brief Creates a module per uploaded stage.
 	 * @param device Device owning the resulting modules; must outlive this resource.
 	 * @param request Validated stage bytecode and reflection metadata.
-	 * @throws std::invalid_argument for empty stages or conflicting port declarations.
+	 * @throws std::invalid_argument for empty stages.
 	 */
 	ShaderGPU(const vk::raii::Device& device, const UploadShaderRequest& request);
 
@@ -60,24 +57,12 @@ public:
 	/** @brief Borrows a module handle; throws std::out_of_range if absent. */
 	vk::ShaderModule Module(ShaderType stage) const { return *m_modules.at(stage); }
 
-	/** @brief Image port interface carried by the upload request. */
-	const CPUPorts& Ports() const { return m_ports; }
-
 private:
 	int m_id;
 	int m_version;
 	ShaderType m_type;
 	std::unordered_map<ShaderType, ShaderStageUpload> m_stages;
 	std::unordered_map<ShaderType, vk::raii::ShaderModule> m_modules;
-	CPUPorts m_ports;
 };
-
-/**
- * @brief Collects uploaded ports and the kind's declared outputs for a standalone pass.
- * @param kind Pass kind used in the built-in catalog, or a label for a legacy pass.
- * @param shaders Uploaded shader resources; null entries are skipped.
- * @return Merged ports and diagnostics for conflicting declarations.
- */
-CPUPorts CollectUploadedPassPorts(std::string kind, std::span<const ShaderGPU* const> shaders);
 
 } // namespace neurus

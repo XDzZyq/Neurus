@@ -12,15 +12,18 @@
 
 CPU `MakeUploadShaderRequest` copies a shader UID, compile version, primary type,
 and per-stage `ShaderStageUpload{spv, parsed}` values. `UploadManager` constructs
-`ShaderGPU` modules and uploaded reflection/port metadata; `RenderCache` owns and
-indexes them. This copy isolates queued uploads from subsequent Editor edits.
-No source code or source paths cross the upload boundary.
+`ShaderGPU` modules carrying the uploaded stages and reflection metadata;
+`RenderCache` owns and indexes them. Port contracts stay on the CPU side and are
+never read from the render thread. This copy isolates queued uploads from
+subsequent Editor edits. No source code or source paths cross the upload boundary.
 
 Shader uploads precede graph compilation and pipeline selection in the FIFO.
 `EnsurePipelineRequest` selects an uploaded shader by identity and version;
-passes use cached GPU modules and own pass-specific pipelines. The graph mapper
-reads only stable CPU shader UIDs, then resolves GPU resources and metadata from
-the cache. It may read/write cache resources as part of one-way graph mapping.
+passes use cached GPU modules and own pass-specific pipelines. A published graph
+carries plain `{uid, version}` identities for selected shaders; the mapper
+resolves them against the cache and the uploader's GPU-only guard confirms the
+resident upload still matches the published identity. It may read/write cache
+resources as part of one-way graph mapping.
 
 Reuploading the same UID changes the GPU cache revision and refreshes dependent
 passes/graphs even when graph topology is unchanged. Cache/resource references
@@ -36,7 +39,7 @@ or deciding who owns its payload.
 | Use case | CPU producer and handoff | Render-side consumer |
 | --- | --- | --- |
 | Upload one resource | `PostMeshUpload` in `src/editor/Editor.cpp` posts `UploadMeshRequest` with the object UID and a `shared_ptr<const MeshData>`. The request keeps the geometry alive through the handoff. | `RenderRequestExecutor::handle(const UploadMeshRequest&)` checks residency, uploads the geometry through `UploadManager` and stores the result in `RenderCache`. |
-| Publish a graph with shader dependencies | `RenderManager::Publish` clones the authored graph, posts a shader upload for each distinct referenced shader UID, then posts `CompileRenderGraphRequest`. Each shader request owns its bytecode and metadata. | `RenderRequestProcessor` passes the graph to `GraphUploader`. When compiling, the mapper resolves shader UIDs against the GPU cache populated by the preceding uploads. |
+| Publish a graph with shader dependencies | `RenderManager::Publish` validates the authored document on the CPU, builds an owned clone through `MakeCompileRenderGraphRequest`, posts a shader upload for each distinct referenced shader UID, then posts that compile request. Each shader request owns its bytecode and metadata; the compile request owns its clone and a plain `{uid, version}` map. | `RenderRequestProcessor` passes the request to `GraphUploader`. When compiling, the mapper resolves the published shader identities against the GPU cache populated by the preceding uploads and rejects a mismatch in version, type or stage set. |
 
 ## Render request path
 
@@ -99,10 +102,11 @@ constructs renderer lighting structs.
 
 - **The payload rule.** Requests own the content the renderer reads. Shader
   uploads carry copied SPIR-V and reflection metadata; pipeline selection uses
-  the already-uploaded shader UID and version. Published graph topology retains
-  shared CPU shader references for ownership, but the mapper reads only their
-  stable UIDs, never mutable code, IR, bytecode or CPU versions. Requests never
-  capture Editor callables or dereference mutable scene objects on the render
+  the already-uploaded shader UID and version. A published graph is an owned clone
+  with no CPU shader references: its selected shaders travel as plain
+  `{uid, version}` values, and the render thread resolves them against the cache
+  instead of reading mutable code, IR, bytecode or pooled CPU versions. Requests
+  never capture Editor callables or dereference mutable scene objects on the render
   thread.
 
 - **Ordering against frames on the render thread.** A request does not reach the

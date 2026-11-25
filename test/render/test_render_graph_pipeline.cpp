@@ -97,9 +97,8 @@ protected:
 
 	void PostDocument(std::unique_ptr<neurus::RenderGraphData> graph)
 	{
-		neurus::CompileRenderGraphRequest request;
-		request.graph = std::move(graph);
-		m_renderer->Post(neurus::RenderRequest{std::move(request)});
+		m_renderer->Post(neurus::RenderRequest{
+			neurus::MakeCompileRenderGraphRequest(*graph)});
 	}
 
 	void DrawOneFrame(const neurus::RenderConfig* config = nullptr,
@@ -287,7 +286,7 @@ TEST_F(RenderGraphPipelineTest, BadDocumentKeepsPreviousGraph)
 	ASSERT_EQ(previousPasses, 7u);
 
 	auto bad = DefaultDocument();
-	bad->nodes[0]->outputs[0]->data.tag.reset();
+	bad->nodes[0]->data.pass = "NopePass";
 
 	ASSERT_NO_FATAL_FAILURE(PostDocument(std::move(bad)));
 	ASSERT_NO_FATAL_FAILURE(DrawOneFrame());
@@ -319,19 +318,21 @@ TEST_F(RenderGraphPipelineTest, UploadedCustomComposeShaderChangesPixelsAndRetai
 		unit.BumpVersion();
 		shader->BumpVersion();
 	};
-	compileColor("1.0, 0.0, 0.0");
-	ASSERT_FALSE(unit.spv.empty());
-	const auto redUpload = neurus::MakeUploadShaderRequest(*shader);
-	compileColor("0.0, 1.0, 0.0");
-	ASSERT_FALSE(unit.spv.empty());
-	const auto greenUpload = neurus::MakeUploadShaderRequest(*shader);
-	ASSERT_NE(redUpload.stages.at(neurus::ShaderType::COMPUTE).spv,
-	          greenUpload.stages.at(neurus::ShaderType::COMPUTE).spv);
 
-	auto document = DefaultDocument();
-	FindNode(*document, "compose")->data.shader = shader;
-	m_renderer->Post(neurus::RenderRequest{redUpload});
-	PostDocument(std::move(document));
+	// The published identity must name the resident version, so every upload is
+	// paired with a request built from the shader's current state. The request
+	// owns its cloned document: the CPU document is dropped before the draw.
+	const auto postUploadAndRequest = [&]
+	{
+		const auto upload = neurus::MakeUploadShaderRequest(*shader);
+		EXPECT_FALSE(upload.stages.at(neurus::ShaderType::COMPUTE).spv.empty());
+		auto document = DefaultDocument();
+		FindNode(*document, "compose")->data.shader = shader;
+		m_renderer->Post(neurus::RenderRequest{upload});
+		m_renderer->Post(neurus::RenderRequest{
+			neurus::MakeCompileRenderGraphRequest(*document)});
+		return upload;
+	};
 
 	const auto drawColor = [&](const uint16_t red, const uint16_t green)
 	{
@@ -346,10 +347,20 @@ TEST_F(RenderGraphPipelineTest, UploadedCustomComposeShaderChangesPixelsAndRetai
 		EXPECT_EQ(pixel[1], green);
 		EXPECT_EQ(pixel[2], 0u);
 	};
+
+	compileColor("1.0, 0.0, 0.0");
+	const auto redUpload = postUploadAndRequest();
 	drawColor(0x3c00, 0);
-	// Shader uploads alone invalidate the compiled graph.
-	m_renderer->Post(neurus::RenderRequest{greenUpload});
+
+	compileColor("0.0, 1.0, 0.0");
+	const auto greenUpload = postUploadAndRequest();
+	ASSERT_NE(redUpload.stages.at(neurus::ShaderType::COMPUTE).spv,
+	          greenUpload.stages.at(neurus::ShaderType::COMPUTE).spv);
 	drawColor(0, 0x3c00);
-	m_renderer->Post(neurus::RenderRequest{redUpload});
+
+	// Republishing at a fresh version is what lets the re-uploaded red payload
+	// take effect; an upload alone would leave the published identity stale.
+	compileColor("1.0, 0.0, 0.0");
+	postUploadAndRequest();
 	drawColor(0x3c00, 0);
 }

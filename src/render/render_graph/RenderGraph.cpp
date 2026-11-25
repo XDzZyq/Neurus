@@ -4,10 +4,6 @@
  */
 
 #include "RenderGraph.hpp"
-#include "resources/ShaderGPU.hpp"
-
-#include "../DescriptorManager.hpp"
-#include "../Image.hpp"
 #include "render_api/RenderContext.hpp"
 #include "ResourceTag.hpp"
 
@@ -48,11 +44,13 @@ RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass)
 {
 	if (!pass)
 		throw std::runtime_error("RenderGraph::AddPass: pass must be non-null");
+	// The legacy path materializes PassIO sockets. A pass with uploaded shaders
+	// needs its port table, so reject rather than silently drop its ports.
+	if (!pass->GetShaders().empty())
+		throw std::runtime_error("RenderGraph::AddPass: a pass with uploaded shaders requires explicit ports");
 
 	const PassIO io = pass->GetIO();
-	const std::vector<const ShaderGPU*> shaders = pass->GetShaders();
-	CPUPorts ports = CollectUploadedPassPorts(io.name.empty() ? "Pass" : io.name, shaders);
-	return AddPass(pass, ports, PassExternalInputs(io.name));
+	return AddPass(pass, {}, PassExternalInputs(io.name));
 }
 
 RenderGraph::NodeT* RenderGraph::AddPass(Pass* pass, const CPUPorts& ports,
