@@ -142,6 +142,7 @@ The shadow depth pass renders per-light depth into `RenderCache` via `GetShadowM
 ## Compose pass
 
 - **Inputs**: reads `HDRColor` (binding 0, `R16G16B16A16_SFLOAT`). The selection outline is not an input; it belongs to the overlay graph.
+- Transparent pixels show a camera-centered checkerboard. Compose maps each sample through the active camera's projection so the squares follow the field of view even while rendering into a padded target.
 - **Tone map / gamma**: the only tone mapping today is gamma correction -
   `pow(color, 1.0 / gamma)` where `gamma` is read from `RenderConfig::r_gamma`
   (default 1.0) via the push constant `float gamma`. A filmic curve, if added,

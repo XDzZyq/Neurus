@@ -177,7 +177,7 @@ the **rule** that prevents it. Design detail behind these lives in
 - **Accumulation attributed to the wrong pass.** The EMA
   `mix(prev, sample, alpha)` lives in the shadow-intensity compute shaders
   (`shadow_eval.comp.glsl`, `sun_shadow_eval.comp.glsl`), i.e. `ShadowIntensityPass` - not
-  `ComposePass`, which only blends the selection highlight and applies gamma.
+  `ComposePass`, which applies gamma and draws the checkerboard using the camera projection.
 
 ## Editor and viewport
 

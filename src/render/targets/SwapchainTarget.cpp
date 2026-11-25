@@ -12,9 +12,9 @@ SwapchainTarget::SwapchainTarget(const vk::raii::PhysicalDevice& physicalDevice,
                                  SharedQueue& presentQueue,
                                  const vk::raii::SurfaceKHR& surface,
                                  uint32_t width,
-                                 uint32_t height)
+                                 uint32_t height, bool maintenanceEnabled)
 	: m_swapchain(std::make_unique<Swapchain>(
-		physicalDevice, device, presentQueue, surface, width, height))
+		physicalDevice, device, presentQueue, surface, width, height, maintenanceEnabled))
 {
 	// The HDR composite blit writes into the swapchain image, so TRANSFER_DST
 	// must be one of the usages the surface actually granted. A headless target
@@ -31,6 +31,11 @@ SwapchainTarget::SwapchainTarget(const vk::raii::PhysicalDevice& physicalDevice,
 }
 
 SwapchainTarget::~SwapchainTarget() = default;
+
+bool SwapchainTarget::ScalesToSurface() const
+{
+	return m_swapchain->scalesToSurface();
+}
 
 vk::Extent2D SwapchainTarget::Extent() const
 {

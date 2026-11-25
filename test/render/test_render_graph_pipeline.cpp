@@ -102,10 +102,12 @@ protected:
 		m_renderer->Post(neurus::RenderRequest{std::move(request)});
 	}
 
-	void DrawOneFrame(const neurus::RenderConfig* config = nullptr)
+	void DrawOneFrame(const neurus::RenderConfig* config = nullptr,
+	                  std::shared_ptr<neurus::Camera> camera = nullptr)
 	{
 		neurus::Scene scene;
-		auto camera = CreateTestCamera(kWidth, kHeight);
+		if (!camera)
+			camera = CreateTestCamera(kWidth, kHeight);
 		scene.UseCamera(camera);
 		scene.ActivateCamera(camera->GetObjectID());
 
@@ -122,6 +124,45 @@ protected:
 	std::shared_ptr<const neurus::BuiltInRenderData> m_defaults =
 		std::make_shared<const neurus::BuiltInRenderData>();
 };
+
+TEST_F(RenderGraphPipelineTest, BackgroundCheckerFollowsProjectionOnRetainedTarget)
+{
+	if (!HasVulkan())
+		GTEST_SKIP() << "No Vulkan-capable GPU found.";
+	ASSERT_NO_FATAL_FAILURE(CreateRenderer());
+	auto camera = CreateTestCamera(kWidth, kHeight);
+	camera->ChangeCamPersp(8.0f);
+	neurus::RenderConfig config{};
+	config.r_transparent = true;
+
+	// Measure the first square right and down from the optical axis in the
+	// composed image. The attachment stays 96x64 for all three projections.
+	const auto checkTile = [&](int expectedWidth, int expectedHeight) {
+		m_renderer->Post(neurus::ResetAccumulationRequest{});
+		ASSERT_NO_FATAL_FAILURE(DrawOneFrame(&config, camera));
+		auto& output = m_renderer->GetRenderCache().GetAttachment(neurus::AttachmentName::ComposedOutput,
+		                                                         vk::Extent2D{kWidth, kHeight});
+		const auto image = output.ReadImageData(*m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
+		ASSERT_NE(image, nullptr);
+		const auto* pixels = reinterpret_cast<const uint16_t*>(image->GetPixelData().data());
+		const auto red = [&](int x, int y) { return pixels[4 * (y * kWidth + x)]; };
+		constexpr int cx = kWidth / 2, cy = kHeight / 2;
+		const auto center = red(cx, cy);
+		EXPECT_NE(center, red(cx - 1, cy));
+		EXPECT_NE(center, red(cx, cy - 1));
+		int w = 1, h = 1;
+		while (cx + w < static_cast<int>(kWidth) && red(cx + w, cy) == center) ++w;
+		while (cy + h < static_cast<int>(kHeight) && red(cx, cy + h) == center) ++h;
+		EXPECT_EQ(w, expectedWidth);
+		EXPECT_EQ(h, expectedHeight);
+	};
+
+	ASSERT_NO_FATAL_FAILURE(checkTile(15, 15));
+	camera->ChangeCamRatio(2 * kWidth, kHeight);
+	ASSERT_NO_FATAL_FAILURE(checkTile(8, 15));  // Wider view reveals more columns.
+	camera->ChangeCamPersp(16.0f);
+	ASSERT_NO_FATAL_FAILURE(checkTile(4, 8));   // Wider vertical FOV reveals more rows too.
+}
 
 TEST_F(RenderGraphPipelineTest, DefaultDocumentCompilesAndDraws)
 {

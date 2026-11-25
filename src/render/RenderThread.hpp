@@ -157,7 +157,7 @@ public:
 	void Post(RenderRequest&& request) override;
 
 	/** @brief Resize the swapchain; returns at once. Coalesced per batch. */
-	void PostResize(uint32_t width, uint32_t height);
+	void PostResize(uint32_t width, uint32_t height, ResizePhase phase = ResizePhase::Settled);
 
 	/**
 	 * @brief Rebuild the swapchain on @p surface.
@@ -176,7 +176,7 @@ public:
 
 	/**
 	 * @brief Write a screenshot (or every attachment) between frames.
-	 * @param allAttachments  False: the swapchain image. True: every attachment.
+	 * @param allAttachments  Capture every attachment when true, or the composited viewport when false.
 	 * @param directory       Destination root; the Application resolves it from
 	 *                        the executable directory, so the renderer never
 	 *                        depends on the process working directory.
@@ -190,7 +190,7 @@ public:
 	 * renderer runs on its own thread, so waiting here does not need a published
 	 * frame; it reads whatever was drawn last.
 	 *
-	 * @param allAttachments False: the swapchain image. True: every attachment.
+	 * @param allAttachments Capture every attachment when true, or the composited viewport when false.
 	 * @param directory Destination root, created on demand.
 	 * @return Future carrying true when the renderer returned; false is never
 	 *         produced, and a failed capture is detected by the caller checking

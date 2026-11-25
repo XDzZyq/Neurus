@@ -105,6 +105,7 @@ set(NEURUS_TEST_SOURCES
 	ui/test_dock_identity.cpp
 	ui/test_floating_window.cpp
 	ui/test_layout_restore.cpp
+	ui/test_viewport.cpp
 	ui/test_ui_context.cpp
 	ui/test_code_highlighter_python.cpp
 	ui/test_script_console_panel.cpp

@@ -26,11 +26,14 @@
 
 namespace neurus {
 
-/// @brief New window size in physical pixels. Only the last of a batch runs.
+enum class ResizePhase { Settled, Preview, MouseDrag };
+
+/// @brief Requested size in physical pixels. Surface capabilities determine the final extent.
 struct ResizeControl
 {
 	uint32_t width  = 0;
 	uint32_t height = 0;
+	ResizePhase phase = ResizePhase::Settled;
 };
 
 /**

@@ -66,7 +66,7 @@ neurus_test_labels(UI Low CodeHighlighterPython I18nTest LogFilterProxyTest LogM
 	POCatalogTest ScalarSliderModel)
 neurus_test_labels(UI Medium DebugPropertiesTest DockIdentityTest FloatingWindowTest
 	PreferencesDialogTest RenderConfigPanelModel RunScriptMenu ScriptConsolePanelTest
-	UIContextSettings UIContextShape UIEventsScript UIEventsTest)
+	UIContextSettings UIContextShape UIEventsScript UIEventsTest ViewportTest)
 neurus_test_labels(UI High LayoutRestoreTest ShaderEditorPanelTest)
 
 # Individual contracts whose owning layer or regression impact differs.

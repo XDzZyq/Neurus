@@ -57,6 +57,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -198,6 +199,8 @@ public:
 		// gives the renderer something to draw - otherwise the loop spins.
 		if (m_lastDrewNothing)
 			return FrameWork::Retry;
+		if (m_preview)
+			return m_pendingPreview ? FrameWork::Sample : FrameWork::Idle;
 		if (m_iteration < m_samplingCount)
 			return FrameWork::Sample;
 		if (m_overlayDirty)
@@ -254,7 +257,13 @@ public:
 			if (!m_drawNothing)
 			{
 				m_drawn += 1;
-				if (m_iteration < m_samplingCount)
+				if (m_pendingPreview)
+				{
+					m_extent = *m_pendingPreview;
+					m_pendingPreview.reset();
+					m_iteration = 1;
+				}
+				else if (m_iteration < m_samplingCount)
 					m_iteration += 1;  // one scene sample of the accumulation
 				else
 					m_overlayDirty = false;  // an overlay-only redraw
@@ -276,19 +285,25 @@ public:
 		return m_profile;
 	}
 
-	void HandleResize(uint32_t width, uint32_t height) override
+	void HandleResize(uint32_t width, uint32_t height, ResizePhase phase) override
 	{
 		{
 			std::lock_guard<std::mutex> lock(m_mutex);
 			if (m_inDraw)
 				m_drawViolations += 1;
-			m_extent      = vk::Extent2D{width, height};
 			m_resizeCalls += 1;
 			m_lastResizeW  = width;
 			m_lastResizeH  = height;
-			// A new swapchain restarts accumulation from scratch.
-			m_iteration    = 0;
-			m_overlayDirty = false;
+			m_preview = phase != ResizePhase::Settled;
+			if (m_preview)
+				m_pendingPreview = vk::Extent2D{width, height};
+			else
+			{
+				m_pendingPreview.reset();
+				m_extent = vk::Extent2D{width, height};
+				m_iteration = 0;
+				m_overlayDirty = false;
+			}
 		}
 		m_cv.notify_all();
 	}
@@ -502,6 +517,8 @@ private:
 	BatchQueue<RenderRequest> m_requests;  ///< Thread-safe; the one cross-thread call.
 
 	vk::Extent2D m_extent{100, 50};
+	bool m_preview = false;
+	std::optional<vk::Extent2D> m_pendingPreview;
 
 	bool m_slotReady   = true;
 	bool m_throwOnDraw = false;
@@ -684,6 +701,47 @@ TEST(RenderThreadTest, OnlyTheLastResizeInABatchIsApplied)
 	EXPECT_EQ(status.extent, (vk::Extent2D{3, 3})) << "the published extent must match the surviving resize";
 
 	thread.Stop();
+}
+
+TEST(RenderThreadTest, PreviewSamplesTheNewCameraOnceAndSettleRestartsAccumulation)
+{
+	FakeRenderer fake;
+	fake.SetSamplingCount(2);
+	RenderThread thread(fake);
+	thread.Start();
+	thread.Publish(MakeTaggedFrame(0));
+	ASSERT_TRUE(fake.WaitForDrawn(2));
+
+	// A resize invalidates the held projection. The resize handler publishes
+	// a snapshot immediately, even if the normal UI timer is busy.
+	thread.PostResize(160, 80, ResizePhase::MouseDrag);
+	ASSERT_TRUE(fake.WaitForResizeCalls(1));
+	thread.Post(RedrawOverlaysRequest{});
+	thread.Publish(MakeTaggedFrame(1));
+	ASSERT_TRUE(fake.WaitForDrawn(3));
+	EXPECT_EQ(fake.SampledIteration(), 1);
+
+	// This query runs after the draw and its status publication.
+	auto pick = thread.PostPick(0.5f, 0.5f);
+	ASSERT_EQ(pick.wait_for(WAIT_LIMIT), std::future_status::ready);
+	EXPECT_EQ(pick.get(), 80040u);
+	EXPECT_EQ(thread.Status().extent, (vk::Extent2D{160, 80}));
+
+	// Release at exactly the preview size still restarts the scene. The
+	// release snapshot carries tag 2.
+	thread.PostResize(160, 80);
+	ASSERT_TRUE(fake.WaitForResizeCalls(2));
+	thread.Post(RedrawOverlaysRequest{});
+	thread.Publish(MakeTaggedFrame(2));
+	ASSERT_TRUE(fake.WaitForDrawn(5));
+	thread.Stop();
+
+	const auto draws = fake.Draws();
+	ASSERT_EQ(draws.size(), 5u);
+	EXPECT_EQ(draws[2].tag, 1);
+	EXPECT_EQ(draws[3].tag, 2);
+	EXPECT_EQ(draws[4].tag, 2);
+	EXPECT_EQ(fake.SampledIteration(), 2);
 }
 
 // ============================================================================

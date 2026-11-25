@@ -66,30 +66,6 @@ static std::string AbsoluteForLog(const std::filesystem::path& path)
 }
 
 /**
- * @brief Converts a Vulkan vk::Format to the CPU-side PixelFormat equivalent.
- */
-static PixelFormat vkFormatToPixelFormat(vk::Format format)
-{
-	switch (format)
-	{
-	case vk::Format::eUndefined:            return PixelFormat::Undefined;
-	case vk::Format::eR8G8B8A8Unorm:        return PixelFormat::RGBA8U;
-	case vk::Format::eR8G8B8A8Srgb:         return PixelFormat::RGBA8S;
-	case vk::Format::eR32G32B32A32Sfloat:   return PixelFormat::RGBA32F;
-	case vk::Format::eR16G16B16A16Sfloat:   return PixelFormat::RGBA16F;
-	case vk::Format::eR8Unorm:              return PixelFormat::R8U;
-	case vk::Format::eD32Sfloat:            return PixelFormat::D32F;
-	case vk::Format::eB8G8R8A8Unorm:        return PixelFormat::BGRA8U;
-	case vk::Format::eB8G8R8A8Srgb:         return PixelFormat::BGRA8S;
-	case vk::Format::eR16G16B16A16Unorm:    return PixelFormat::RGBA16U;
-	case vk::Format::eR16G16B16A16Snorm:    return PixelFormat::RGBA16SN;
-	case vk::Format::eR8Srgb:               return PixelFormat::R8S;
-	case vk::Format::eR32Uint:              return PixelFormat::R32U;
-	default:                                return PixelFormat::Undefined;
-	}
-}
-
-/**
  * @brief Returns bytes per pixel for a Vulkan vk::Format.
  */
 static uint32_t vkFormatByteSize(vk::Format format)
@@ -138,7 +114,7 @@ Screenshot::Screenshot(const vk::raii::Device& device,
 // Instance method: TakeScreenshot
 // ===========================================================================
 
-bool Screenshot::TakeScreenshot(vk::Image swapchainImage,
+bool Screenshot::TakeScreenshot(Image& output,
                                 vk::Format swapchainFormat,
                                 vk::Extent2D swapchainExtent,
                                 const std::filesystem::path& directory)
@@ -146,10 +122,40 @@ bool Screenshot::TakeScreenshot(vk::Image swapchainImage,
 	const std::string path = Screenshot::timestampedFilename(
 		(directory / "swapchain").string(), ".png");
 
-	const bool saved = Screenshot::CaptureSwapchain(m_device, m_physicalDevice,
-	                                                *m_queue, m_queueFamilyIndex,
-	                                                swapchainImage, swapchainFormat,
-	                                                swapchainExtent, path);
+	// Replay the display blit so both the sRGB conversion and scaling match
+	// presentation when the scene image has a different extent.
+	const ImageState sourceState = output.State();
+	if (sourceState == ImageState::Undefined || sourceState == ImageState::Invalid)
+		return false;
+	Image capture(m_device, m_physicalDevice, swapchainExtent, swapchainFormat,
+	              vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst |
+	                  vk::ImageUsageFlagBits::eTransferSrc,
+	              1u, Image::ImageType::e2D, "ViewportCapture");
+	vk::raii::CommandPool pool(m_device,
+		vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eTransient, m_queueFamilyIndex));
+	vk::raii::CommandBuffers commands(m_device,
+		vk::CommandBufferAllocateInfo(*pool, vk::CommandBufferLevel::ePrimary, 1));
+	auto& cmd = commands.front();
+	cmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+	Barrier::Transition(*cmd, output, ImageState::TransferSrc);
+	Barrier::Transition(*cmd, capture, ImageState::TransferDst);
+
+	vk::ImageBlit region;
+	region.srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+	region.dstSubresource = region.srcSubresource;
+	region.srcOffsets[1] = vk::Offset3D(static_cast<int32_t>(output.Extent().width),
+	                                    static_cast<int32_t>(output.Extent().height), 1);
+	region.dstOffsets[1] = vk::Offset3D(static_cast<int32_t>(swapchainExtent.width),
+	                                    static_cast<int32_t>(swapchainExtent.height), 1);
+	cmd.blitImage(*output.ImageHandle(), vk::ImageLayout::eTransferSrcOptimal,
+	              *capture.ImageHandle(), vk::ImageLayout::eTransferDstOptimal, region, vk::Filter::eLinear);
+	Barrier::Transition(*cmd, output, sourceState);
+	Barrier::Transition(*cmd, capture, ImageState::TransferSrc);
+	cmd.end();
+	m_queue->SubmitAndWait(vk::SubmitInfo({}, {}, {}, 1, &(*cmd)));
+
+	const auto data = capture.ReadImageData(m_device, m_physicalDevice, *m_queue, m_queueFamilyIndex);
+	const bool saved = data && data->IsValid() && data->SavePNG(path);
 	if (saved)
 	{
 		NEURUS_LOG("[Screenshot] saved " << AbsoluteForLog(path));
@@ -522,183 +528,6 @@ std::string Screenshot::timestampedFilename(const std::string& prefix,
 	    << std::put_time(&tm, "%Y%m%d_%H%M%S")
 	    << suffix;
 	return oss.str();
-}
-
-// ===========================================================================
-// CaptureSwapchain
-// ===========================================================================
-
-bool Screenshot::CaptureSwapchain(const vk::raii::Device& device,
-                                   const vk::raii::PhysicalDevice& physicalDevice,
-                                   SharedQueue& queue,
-                                   uint32_t queueFamilyIndex,
-                                   vk::Image image,
-                                   vk::Format format,
-                                   vk::Extent2D extent,
-                                   const std::string& path)
-{
-	if (vkFormatByteSize(format) == 0)
-	{
-		// Silent before: an unsupported swapchain format looked like a no-op.
-		NEURUS_ERR("[Screenshot] CaptureSwapchain: format " << vk::to_string(format)
-		           << " cannot be read back; not writing " << AbsoluteForLog(path));
-		return false;
-	}
-
-	// --- 1. Transition PRESENT_SRC → TRANSFER_SRC ---
-	{
-		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
-		                                 queueFamilyIndex);
-		vk::raii::CommandPool cmdPool(device, poolCI);
-		vk::CommandBufferAllocateInfo allocInfo(*cmdPool, vk::CommandBufferLevel::ePrimary, 1);
-		vk::raii::CommandBuffers cmdBufs(device, allocInfo);
-
-		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-
-		vk::ImageMemoryBarrier barrier(
-			vk::AccessFlagBits::eMemoryRead,
-			vk::AccessFlagBits::eTransferRead,
-			vk::ImageLayout::ePresentSrcKHR,
-			vk::ImageLayout::eTransferSrcOptimal,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			image,
-			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-		cmdBufs[0].pipelineBarrier(vk::PipelineStageFlagBits::eBottomOfPipe,
-		                           vk::PipelineStageFlagBits::eTransfer,
-		                           {}, {}, {}, barrier);
-
-		cmdBufs[0].end();
-
-		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.SubmitAndWait(submitInfo);
-	}
-
-	// --- 2. Read back via staging buffer ---
-	const uint32_t bytesPerPixel = [&]() -> uint32_t {
-		switch (format)
-		{
-		case vk::Format::eR8G8B8A8Unorm:
-		case vk::Format::eR8G8B8A8Srgb:
-		case vk::Format::eB8G8R8A8Unorm:
-		case vk::Format::eB8G8R8A8Srgb:
-			return 4;
-		case vk::Format::eR16G16B16A16Sfloat:
-		case vk::Format::eR16G16B16A16Unorm:
-		case vk::Format::eR16G16B16A16Snorm:
-			return 8;
-		case vk::Format::eR32G32B32A32Sfloat:
-			return 16;
-		case vk::Format::eR8Unorm:
-		case vk::Format::eR8Srgb:
-			return 1;
-		default:
-			return 0;
-		}
-	}();
-
-	const vk::DeviceSize imageSize = static_cast<vk::DeviceSize>(extent.width) *
-	                                 extent.height * bytesPerPixel;
-
-	// --- Staging buffer ---
-	vk::BufferCreateInfo stagingCI({}, imageSize, vk::BufferUsageFlagBits::eTransferDst);
-	vk::raii::Buffer stagingBuffer(device, stagingCI);
-
-	auto stagingMemReqs = stagingBuffer.getMemoryRequirements();
-	uint32_t stagingMemType = [&]() -> uint32_t {
-		const auto memProps = physicalDevice.getMemoryProperties();
-		for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i)
-		{
-			if ((stagingMemReqs.memoryTypeBits & (1u << i)) &&
-			    (memProps.memoryTypes[i].propertyFlags &
-			     (vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)) ==
-			        (vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent))
-			{
-				return i;
-			}
-		}
-		NEURUS_ERR("[Screenshot] Failed to find memory type for staging buffer");
-		return 0;
-	}();
-
-	vk::MemoryAllocateInfo stagingAlloc(stagingMemReqs.size, stagingMemType);
-	vk::raii::DeviceMemory stagingMemory(device, stagingAlloc);
-	stagingBuffer.bindMemory(*stagingMemory, 0);
-
-	// --- Transient command buffer ---
-	{
-		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
-		                                 queueFamilyIndex);
-		vk::raii::CommandPool cmdPool(device, poolCI);
-		vk::CommandBufferAllocateInfo allocInfo(*cmdPool, vk::CommandBufferLevel::ePrimary, 1);
-		vk::raii::CommandBuffers cmdBufs(device, allocInfo);
-
-		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-
-		vk::BufferImageCopy copyRegion;
-		copyRegion.bufferOffset = 0;
-		copyRegion.bufferRowLength = 0;
-		copyRegion.bufferImageHeight = 0;
-		copyRegion.imageSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-		copyRegion.imageOffset = vk::Offset3D(0, 0, 0);
-		copyRegion.imageExtent = vk::Extent3D(extent.width, extent.height, 1);
-
-		cmdBufs[0].copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, *stagingBuffer, copyRegion);
-
-		vk::MemoryBarrier barrier(vk::AccessFlagBits::eTransferWrite,
-		                          vk::AccessFlagBits::eHostRead);
-		cmdBufs[0].pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-		                           vk::PipelineStageFlagBits::eHost,
-		                           {}, {barrier}, {}, {});
-
-		cmdBufs[0].end();
-
-		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.SubmitAndWait(submitInfo);
-	}
-
-	std::vector<uint8_t> rawData(static_cast<size_t>(imageSize));
-	void* mapped = stagingMemory.mapMemory(0, imageSize);
-	std::memcpy(rawData.data(), mapped, static_cast<size_t>(imageSize));
-	stagingMemory.unmapMemory();
-
-	// --- 3. Transition back TRANSFER_SRC → PRESENT_SRC ---
-	{
-		vk::CommandPoolCreateInfo poolCI(vk::CommandPoolCreateFlagBits::eTransient,
-		                                 queueFamilyIndex);
-		vk::raii::CommandPool cmdPool(device, poolCI);
-		vk::CommandBufferAllocateInfo allocInfo(*cmdPool, vk::CommandBufferLevel::ePrimary, 1);
-		vk::raii::CommandBuffers cmdBufs(device, allocInfo);
-
-		cmdBufs[0].begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-
-		vk::ImageMemoryBarrier barrier(
-			vk::AccessFlagBits::eTransferRead,
-			vk::AccessFlagBits::eMemoryRead,
-			vk::ImageLayout::eTransferSrcOptimal,
-			vk::ImageLayout::ePresentSrcKHR,
-			VK_QUEUE_FAMILY_IGNORED,
-			VK_QUEUE_FAMILY_IGNORED,
-			image,
-			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-		cmdBufs[0].pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-		                           vk::PipelineStageFlagBits::eBottomOfPipe,
-		                           {}, {}, {}, barrier);
-
-		cmdBufs[0].end();
-
-		vk::SubmitInfo submitInfo({}, {}, {}, 1, &(*cmdBufs[0]));
-		queue.SubmitAndWait(submitInfo);
-	}
-
-	// --- 4. Delegate PNG write to ImageData ---
-	ImageData imgData(rawData.data(), extent.width, extent.height, vkFormatToPixelFormat(format));
-	if (!imgData.SavePNG(path))
-	{
-		NEURUS_ERR("[Screenshot] CaptureSwapchain: failed to write " << AbsoluteForLog(path));
-		return false;
-	}
-	return true;
 }
 
 // ===========================================================================

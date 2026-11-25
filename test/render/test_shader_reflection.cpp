@@ -173,7 +173,7 @@ TEST(ShaderReflection, ComposeInterface)
 
 	const vk::PushConstantRange range = neurus::PushConstantRangeFromShaders(shaders, kCompute);
 
-	EXPECT_EQ(range.size, 4u);
+	EXPECT_EQ(range.size, 12u); // gamma, halfViewWidth, halfViewHeight
 }
 
 TEST(ShaderReflection, FxaaInterface)

@@ -20,15 +20,16 @@ The dock title is stored as a translation *key* (`nameKey`, default derived from
 
 `Viewport` (`src/ui/panels/Viewport.hpp`) is a `QWidget` that exposes a native window handle, which the Application uses to create the surface:
 
-- Sets `WA_NativeWindow` and `WA_OpaquePaintEvent`, so the widget has a dedicated native handle and Qt does not draw a background behind the Vulkan content.
-- Overrides `paintEvent()` to a no-op - all rendering is handled by Vulkan.
+- Uses `WA_NativeWindow` for its Vulkan surface and `WA_DontCreateNativeAncestors` to keep the surrounding dock containers in Qt's backing store. Splitter motion then needs to resize only the viewport's native child window.
+- When a splitter moves a dock at its minimum size, the viewport synchronizes its native child window's position with the dock layout. If the dock is shrinking and the current native window would extend past its edge, Qt's layout applies the new position and size together.
+- Uses `WA_PaintOnScreen` with a null Qt paint engine so dock repaints bypass the viewport's raster backing store. Its `paintEvent()` emits `exposed()` to request a Vulkan redraw.
 - Is focusable (`Qt::StrongFocus`) to receive keyboard input.
 - Owns no Vulkan resources. `hwnd()` returns the native handle; the Application
   creates the `VkSurfaceKHR` from it with `platform::CreateSurface()`.
 
 Signals:
 
-- `resized(int, int)` - lets the renderer recreate the swapchain with the new dimensions.
+- `resized(width, height, mouseDrag)` reports the logical size and whether the left mouse button is held. Application updates the native drawable and publishes the new camera aspect. The viewport emits `resizeSettled()` after mouse release or 120 ms of quiet for a buttonless resize. Application then requests exact-size attachments and resumes accumulation.
 - `mouseMoved`, `mousePressed`, `mouseReleased`, `mouseScrolled` - raw mouse-input intents translated to typed event structs. The viewport tracks its own button state and mouse position internally.
 - `deleteRequested(const DeleteRequested&)` on the Delete key - a pure intent; the Editor deletes all selected objects.
 - `keyPressed(const KeyPressEvent&)` - only keys the input layer recognises are forwarded, and auto-repeat is filtered at the Qt boundary so a held key arms a modal operator once. This is deliberately not a `QShortcut`: a `Qt::WindowShortcut` on G/R/S/X/Y/Z would steal those letters from the shader editor and from every property spinbox, and cannot filter auto-repeat.

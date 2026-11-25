@@ -101,11 +101,10 @@ void RenderThread::Post(RenderRequest&& request)
 	m_posted.push_back(std::move(request));
 }
 
-void RenderThread::PostResize(uint32_t width, uint32_t height)
+void RenderThread::PostResize(uint32_t width, uint32_t height, ResizePhase phase)
 {
-	// A resize restarts accumulation: the old frame's extent and camera are both
-	// stale, so the held frame must not be redrawn after it.
-	PostControl(ResizeControl{width, height}, true);
+	// Both the drag and its release need a snapshot with the new projection.
+	PostControl(ResizeControl{width, height, phase}, true);
 }
 
 std::future<void> RenderThread::PostSurfaceChange(const vk::raii::SurfaceKHR& surface)
@@ -245,9 +244,11 @@ void RenderThread::Run()
 			RenderContext ctx;
 			ctx.snapshot = &m_frame.snapshot;
 			const FrameProfile& profile = m_renderer.DrawFrame(ctx);
+			const auto extent = m_renderer.GetExtent();
 
 			std::lock_guard<std::mutex> lock(m_statusMutex);
 			m_status.profile = profile;
+			m_status.extent = extent;
 		}
 	}
 	catch (const std::exception& e)
@@ -313,7 +314,7 @@ void RenderThread::DrainControl()
 			// No promise to carry the failure, so report it and keep going.
 			try
 			{
-				m_renderer.HandleResize(resize->width, resize->height);
+				m_renderer.HandleResize(resize->width, resize->height, resize->phase);
 				PublishExtent();
 			}
 			catch (const std::exception& e)

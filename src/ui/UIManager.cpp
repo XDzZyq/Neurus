@@ -55,8 +55,7 @@ UIManager::UIManager(const QString& language, int targetFps,
 	setWindowTitle("Neurus");
 	resize(1600, 900);
 
-	// Non-opaque splitter resize plays better with the native viewport window.
-	ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, false);
+	ads::CDockManager::setConfigFlag(ads::CDockManager::OpaqueSplitterResize, true);
 	ads::CDockManager::setConfigFlag(ads::CDockManager::FocusHighlighting, true);
 
 	win_dockManager = new ads::CDockManager(this);
