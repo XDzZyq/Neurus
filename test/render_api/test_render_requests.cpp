@@ -80,9 +80,9 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	stage.parsed.Main = "editable function body";
 	shader->BumpVersion();
 	const int uid = shader->GetObjectID();
-	const int allocations = ResourceManager::NextId();
+	const int allocations = resources.NextId();
 	const UploadShaderRequest upload = MakeUploadShaderRequest(*shader);
-	EXPECT_EQ(ResourceManager::NextId(), allocations);
+	EXPECT_EQ(resources.NextId(), allocations);
 
 	stage.spv[1] = 99;
 	stage.parsed.uniform_list[0].name = "edited";

@@ -112,4 +112,6 @@ TEST(DefaultProject, LoadsExpectedSceneAndResources)
 	ASSERT_NE(env->GetEquirectData(), nullptr);
 	EXPECT_EQ(env->GetEquirectData()->GetPath(), "res/tex/hdr/room.hdr");
 	EXPECT_TRUE(env->GetEquirectData()->IsValid());
+
+	EXPECT_EQ(resources.NextId(), 125);
 }

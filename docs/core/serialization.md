@@ -48,12 +48,12 @@ Value fields are optional; identity and history are not. Absence there means a b
 - The pool record key identifies the object for every cross-reference. A standalone object carries only its fields, and its UID base serializes as an empty object.
 - The `cereal::base_class<>` hooks.
 - Resource identities and the Scene's ID lists. A project with no `m_resources`
-  node, a pool that is not an object, a missing or non-array `resources_`,
-  or an unreadable disk record fails the open. That covers a record that is not an
-  object, a legacy `{key, value}` record, an unknown pooled type, an invalid key
-  or payload, and a duplicate UID; the error names the record's index. The pool
-  is cleared only after every record validates, so a failed load leaves the
-  previous pool intact.
+  node, a pool that is not an object, a missing or non-array `resources_`, a
+  missing, non-integer or too-low `next_uid`, or an unreadable disk record fails
+  the open. That covers a record that is not an object, a legacy `{key, value}`
+  record, an unknown pooled type, an invalid key or payload, and a duplicate UID;
+  the error names the record's index. The pool is cleared only after every record
+  validates, so a failed load leaves the previous pool intact.
 - Mesh and image source paths, shader names and stage paths are required. Shader
   project keys keep their original spelling, including `m_name`, `m_vertPath`,
   `m_fragPath` and `m_compPath`.

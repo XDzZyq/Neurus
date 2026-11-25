@@ -11,8 +11,6 @@
 namespace neurus
 {
 
-int ResourceManager::res_nextId = 1;
-
 int ResourceManager::Register(std::shared_ptr<UID> obj)
 {
 	if (res_nextId == std::numeric_limits<int>::max())
@@ -273,6 +271,13 @@ void ResourceManager::IndexType(int id, std::type_index type)
 		throw;
 	}
 	res_nextId = std::max(res_nextId, id + 1);
+}
+
+void ResourceManager::RaiseNextId(int next)
+{
+	if (next < 1)
+		throw std::out_of_range("Invalid next resource UID");
+	res_nextId = std::max(res_nextId, next);
 }
 
 void ResourceManager::EraseName(int id) const

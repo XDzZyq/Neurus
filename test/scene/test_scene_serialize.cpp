@@ -64,11 +64,11 @@ TEST(SceneSerialize, MembershipIncludesPooledUidZero)
 {
 	ResourceManager resources;
 	Scene source;
-	const int nextId = ResourceManager::NextId();
+	const int nextId = resources.NextId();
 	resources.RegisterDeferred(0, typeid(Light), [] { return std::make_shared<Light>(); });
 	const auto light = resources.Get<Light>(0);
 	ASSERT_EQ(light->GetObjectID(), 0);
-	EXPECT_EQ(ResourceManager::NextId(), nextId);
+	EXPECT_EQ(resources.NextId(), nextId);
 	source.UseLight(light);
 	std::stringstream document;
 	{

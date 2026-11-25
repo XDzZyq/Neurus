@@ -361,7 +361,7 @@ TEST(ShaderDataPersistence, NullPoolEntryFailsTheLoad)
 	const auto kept = restored.Load<neurus::RenderShader>("Kept");
 	const int keptId = kept->GetObjectID();
 	std::stringstream serialized(
-		R"({"m_resources":{"resources_":[{"key":9123,"type":"neurus::RenderShader","data":null}]}})");
+		R"({"m_resources":{"next_uid":9124,"resources_":[{"key":9123,"type":"neurus::RenderShader","data":null}]}})");
 	// Validation must fail the load before the pool is cleared.
 	EXPECT_THROW(neurus::project::ResourceComponent(restored).LoadJson(serialized.str()),
 	             std::runtime_error);
@@ -579,8 +579,6 @@ TEST(ShaderInterface, BlocksArraysMatricesAndPackedComponentsMatch)
 
 TEST(ShaderDataPersistence, IncompatibleCompiledStagesAreDiscardedOnLoad)
 {
-
-	neurus::UID reserved;
 	neurus::ResourceManager resources;
 	auto shader = resources.Load<neurus::RenderShader>("Incompatible");
 	shader->GetVertex().code = kMinimalVertex;

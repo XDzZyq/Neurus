@@ -8,7 +8,7 @@ A default-constructed `UID` or derived object is ephemeral. It acquires a key wh
 
 - `GetObjectID()` returns the integer pool key. For an unpooled object it logs an error and returns `-1`.
 - Each entry owns its identity. The object observes membership through a weak reference, so external shared ownership can keep the object alive after its key expires.
-- `ResourceManager::Load<T>()` constructs and registers a fresh object. Fresh keys begin at one and increase across managers. A saved key can be zero. Managers reserve the saved keys when indexing a project.
+- `ResourceManager::Load<T>()` constructs and registers a fresh object. Fresh keys begin at one per manager and only increase; `Clear` keeps the counter. Save writes `m_resources.next_uid`; open raises the counter to it, so removed or rejected keys are never reused. A saved key can be zero. Managers reserve the saved keys when indexing a project.
 - Removing an object from a scene only releases its scene reference. The pool retains the object and its key for undo and project save.
 - Standalone cereal payloads contain only object fields. Reading a standalone payload into a newly constructed object leaves it ephemeral.
 - A UID-bearing object cannot be copied or moved. To duplicate one, create another pooled object and copy the required fields. Resource registration and lookup run on the main thread.
@@ -138,5 +138,6 @@ The pool stores `shared_ptr<UID>`. Each registered concrete type provides a fact
 - Each pooled type uses `NEURUS_REGISTER_RESOURCE_TYPE` in its owning registration translation unit. Registration binds the archive name to the C++ type, its field writer its reader, and its default constructor factory.
 - Scene types: `scene/registrations/TypeRegistration.cpp` registers the `UID` and `ObjectID` bases and every derived scene type, with factories for pool records and cereal polymorphic relations for standalone pointers.
 - Data resources: `asset/registrations/DataRegistration.cpp` registers `MeshData`, `ImageData` and `RenderGraphData`. The shader module registers `ComputeShader` and `RenderShader`.
+- The built-in render catalog (`shader/BuiltInRenderData.cpp`) owns a private `ResourceManager`. Its keys are never published: shaders are selected by recipe name, and its graph is cloned into the project pool with nodes that hold no shader UID, so no built-in key reaches the renderer keyed by UID.
 
 The registrations live in `.cpp` translation units, so static-library builds would dead-strip them unless a symbol is odr-used. The force-init headers `scene/registrations/TypeRegistration.hpp` and `asset/registrations/DataRegistration.hpp` (each a `CEREAL_FORCE_DYNAMIC_INIT`) must be included at every serialization site that touches the pool. See [Serialization](serialization.md).

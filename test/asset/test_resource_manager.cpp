@@ -14,6 +14,8 @@
  *   release on Remove/Clear, and a load into a non-empty pool dropping old names
  * - Per-type index: ForEach<T> visits only its exact dynamic type, while
  *   ForEachUID stays complete even with a base-typed instance pooled
+ * - Each manager owns its allocator, so managers allocate independently and
+ *   Clear keeps the counter monotonic
  * - Polymorphic save/load round-trip (Camera + Mesh + Light + MeshData via
  *   cereal JSON archives), including UID preservation and post-load counter
  *   bump (new objects never collide with restored IDs).
@@ -256,7 +258,7 @@ TEST(ResourceManagerTest, DeferredEnumerationLoadsMatchingResourcesOnce)
 TEST(ResourceManagerTest, DeferredIdsAreReservedUntilRemoveOrClear)
 {
 	ResourceManager pool;
-	const int futureId = ResourceManager::NextId() + 20;
+	const int futureId = pool.NextId() + 20;
 	int loads = 0;
 	auto loader = [&]() -> std::shared_ptr<UID> { ++loads; return nullptr; };
 	pool.RegisterDeferred(futureId, typeid(TestResource), loader);
@@ -274,6 +276,35 @@ TEST(ResourceManagerTest, DeferredIdsAreReservedUntilRemoveOrClear)
 	EXPECT_EQ(loads, 0);
 }
 
+/**
+ * @test Each manager owns its allocator, so two fresh managers both hand out 1.
+ */
+TEST(ResourceManagerTest, ManagersAllocateIndependently)
+{
+	ResourceManager first;
+	ResourceManager second;
+	EXPECT_EQ(first.Load<TestResource>()->GetObjectID(), 1);
+	EXPECT_EQ(second.Load<OtherTestResource>()->GetObjectID(), 1);
+	EXPECT_EQ(first.NextId(), 2);
+	EXPECT_EQ(second.NextId(), 2);
+}
+
+/**
+ * @test Clear drops the objects but keeps the allocator, so keys stay unique for
+ *       this manager's lifetime.
+ */
+TEST(ResourceManagerTest, ClearKeepsTheAllocatorMonotonic)
+{
+	ResourceManager pool;
+	const int firstId = pool.Load<TestResource>()->GetObjectID();
+	pool.Clear();
+	EXPECT_EQ(pool.Size(), 0u);
+	EXPECT_GT(pool.NextId(), firstId);
+	const int freshId = pool.Load<TestResource>()->GetObjectID();
+	EXPECT_GT(freshId, firstId);
+	EXPECT_EQ(pool.NextId(), freshId + 1);
+}
+
 TEST(ResourceManagerTest, RejectsIncompleteOrMismatchedDeferredObjects)
 {
 	ResourceManager pool;
@@ -281,7 +312,7 @@ TEST(ResourceManagerTest, RejectsIncompleteOrMismatchedDeferredObjects)
 	auto other = pool.Load<TestResource>();
 	auto wrongType = std::make_shared<OtherTestResource>();
 	std::shared_ptr<UID> result;
-	const int id = ResourceManager::NextId();
+	const int id = pool.NextId();
 	int attempts = 0;
 	pool.RegisterDeferred(id, typeid(TestResource), [&] { ++attempts; return result; });
 	EXPECT_THROW(pool.Get(id), std::exception);
@@ -305,7 +336,7 @@ TEST(ResourceManagerTest, DeferredCycleUnwindsAndDependenciesCanBeRetried)
 	int parentLoads = 0;
 	int childLoads = 0;
 	bool cyclic = true;
-	const int parentId = ResourceManager::NextId();
+	const int parentId = pool.NextId();
 	const int childId = parentId + 1;
 	pool.RegisterDeferred(parentId, typeid(TestResource), [&] {
 		++parentLoads;
@@ -688,7 +719,7 @@ TEST(ResourceManagerTest, ForEachRegisteredVisitsDeferredRecordsWithoutLoading)
 	ResourceManager pool;
 	const auto live = pool.Load<NamedResource>();
 	const int liveId = live->GetObjectID();
-	const int base = ResourceManager::NextId() + 50;
+	const int base = pool.NextId() + 50;
 	int loads = 0;
 	auto loader = [&loads] { ++loads; return std::make_shared<TestResource>(); };
 	pool.RegisterDeferred(base + 20, typeid(TestResource), loader);
@@ -724,7 +755,7 @@ TEST(ResourceManagerTest, ForEachLiveSkipsDeferredRecords)
 	ResourceManager pool;
 	const auto first = pool.Load<TestResource>();
 	pool.Load<OtherTestResource>();
-	const int deferredId = ResourceManager::NextId() + 10;
+	const int deferredId = pool.NextId() + 10;
 	int loads = 0;
 	pool.RegisterDeferred(deferredId, typeid(TestResource),
 		[&loads]

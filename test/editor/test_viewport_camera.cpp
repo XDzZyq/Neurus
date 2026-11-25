@@ -309,6 +309,8 @@ TEST(ViewportCameraTest, ViewportCameraSurvivesSaveAndReopen)
 	}
 
 	Editor editor(nullptr);
+	// Each pool allocates from one, so move this one past the saved keys first.
+	editor.GetResourceManager().RaiseNextId(savedUid + 100);
 	NewProject(editor); // a document is already open when File > Open runs
 	ASSERT_NE(editor.GetViewport().CameraID(), savedUid)
 		<< "precondition: a different camera";
@@ -359,6 +361,8 @@ TEST(ViewportCameraTest, UnrecognizedCameraKeyCreatesFreshCamera)
 	RewriteKey(tmp.path, "viewportCamUid", "editorCamUid");
 
 	Editor editor(nullptr);
+	// Each pool allocates from one, so move this one past the saved keys first.
+	editor.GetResourceManager().RaiseNextId(savedUid + 100);
 	NewProject(editor);
 	ASSERT_NE(editor.GetViewport().CameraID(), savedUid);
 	LoadProject(tmp.path, editor);

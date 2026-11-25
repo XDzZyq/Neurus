@@ -304,7 +304,7 @@ TEST(EditorRenderGraph, PresentPartialConfigAndAbsentGraphRoundTripIndependently
 {
 	neurus::Editor editor(nullptr);
 	LoadOptionalRenderState(editor,
-		"{\"proj_config\": {\"r_gamma\": 1.5}, \"m_resources\": {\"resources_\": []}}");
+		"{\"proj_config\": {\"r_gamma\": 1.5}, \"m_resources\": {\"next_uid\": 1, \"resources_\": []}}");
 	ASSERT_TRUE(editor.GetRenderConfigData());
 	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_gamma, 1.5f);
 	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_shadow_bias, neurus::RenderConfig{}.r_shadow_bias);
@@ -323,7 +323,7 @@ TEST(EditorRenderGraph, MalformedGraphDoesNotDiscardPresentConfigOrSerializeDefa
 	neurus::Editor editor(nullptr);
 	LoadOptionalRenderState(editor,
 		"{\"proj_config\": {\"r_shadow_bias\": 0.002}, \"proj_render_graph\": 42, "
-		"\"m_resources\": {\"resources_\": []}}");
+		"\"m_resources\": {\"next_uid\": 1, \"resources_\": []}}");
 	ASSERT_TRUE(editor.GetRenderConfigData());
 	EXPECT_FLOAT_EQ(editor.GetRenderConfig().r_shadow_bias, 0.002f);
 	EXPECT_FALSE(editor.GetRenderManager().GraphData());
@@ -655,6 +655,19 @@ TEST(EditorRenderGraph, ShaderCompiledDoesNotMaterializeDeferredMeshes)
 	editor.GetEventQueue().Emit(neurus::ShaderCompiled{shaderId});
 	EXPECT_TRUE(sink.posted.empty());
 	EXPECT_FALSE(resources.GetLive(meshId));
+}
+
+/**
+ * @test The built-in graph is a private, name-keyed catalog: its nodes carry no
+ *       project shader UID, so cloning it into the project pool cannot publish a
+ *       built-in UID to the renderer.
+ */
+TEST(EditorRenderGraph, BuiltInGraphNodesHoldNoShader)
+{
+	neurus::BuiltInRenderData defaults;
+	ASSERT_TRUE(defaults.Graph());
+	for (const auto& node : defaults.Graph()->nodes)
+		EXPECT_FALSE(node->data.shader) << node->name;
 }
 
 TEST(EditorRenderGraph, FailedScriptDiscardsGraphCreationAndPooledShader)

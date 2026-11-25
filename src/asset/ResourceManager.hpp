@@ -114,8 +114,20 @@ public:
 	 */
 	int Register(std::shared_ptr<UID> obj);
 
-	/// Next fresh key across live managers. Reserved file keys advance this bound.
-	static int NextId() { return res_nextId; }
+	/// Next fresh key for this manager; indexing and RaiseNextId only raise it.
+	int NextId() const { return res_nextId; }
+
+	/**
+	 * @brief Raises this manager's allocator to at least @p next.
+	 *
+	 * Never lowers it, so a stale or duplicate value cannot hand out a key that
+	 * this manager already issued. Project persistence calls it after loading
+	 * `next_uid`, which keeps removed or rejected keys out of later allocations.
+	 *
+	 * @param next Candidate next key; must be positive.
+	 * @throws std::out_of_range if @p next is less than one.
+	 */
+	void RaiseNextId(int next);
 
 	/**
 	 * @brief Reserves a record key and exact type until Get first needs the object.
@@ -267,6 +279,9 @@ public:
 
 	/**
 	 * @brief Drops every pooled object and its name/type indexes (project new/open).
+	 *
+	 * Keeps the allocator, so keys stay unique for this manager's lifetime even
+	 * after a clear.
 	 */
 	void Clear();
 
@@ -309,7 +324,7 @@ private:
 		std::shared_ptr<const int> membership;
 	};
 	mutable std::unordered_map<int, Entry> res_entries;
-	static int res_nextId;
+	int res_nextId = 1;
 	int RegisterAt(int id, const std::shared_ptr<UID>& object);
 
 	struct DeferredResource

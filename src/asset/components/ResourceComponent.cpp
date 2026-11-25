@@ -140,6 +140,18 @@ void ResourceComponent::LoadJson(const std::string& object)
 		++index;
 	}
 
+	// A fresh key must stay above every saved key, so a removed or rejected key
+	// can never be handed out again after this document is reopened.
+	const int floor = records.empty() ? 1 : records.rbegin()->first + 1;
+	const auto nextUidValue = pool->find("next_uid");
+	if (nextUidValue == pool->end() || !nextUidValue->is_number_integer())
+		throw std::runtime_error(
+			"Resource pool next_uid must be an integer of at least " + std::to_string(floor));
+	const auto nextUid = nextUidValue->get<Json::number_integer_t>();
+	if (nextUid < floor || nextUid > std::numeric_limits<int>::max())
+		throw std::runtime_error(
+			"Resource pool next_uid must be an integer of at least " + std::to_string(floor));
+
 	// Every record validated; only now replace the pool.
 	m_resources.Clear();
 
@@ -150,6 +162,7 @@ void ResourceComponent::LoadJson(const std::string& object)
 		if (!record.type->name_field.empty())
 			m_resources.SetName(id, record.name);
 	}
+	m_resources.RaiseNextId(static_cast<int>(nextUid));
 }
 
 } // namespace neurus::project

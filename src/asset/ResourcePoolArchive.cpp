@@ -60,6 +60,7 @@ void writeJson(cereal::JSONOutputArchive& ar, const Json& value)
 
 void ResourceManager::save(cereal::JSONOutputArchive& ar) const
 {
+	ar(cereal::make_nvp("next_uid", res_nextId));
 	ar.setNextName("resources_");
 	ar.startNode();
 	ar.makeArray();

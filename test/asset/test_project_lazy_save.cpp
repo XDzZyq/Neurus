@@ -392,4 +392,129 @@ TEST(ProjectRoundtrip, ResavingNamelessDeferredRecordWritesItsDefaultName)
 		}
 	FAIL() << "the mesh record must survive the resave";
 }
+
+/**
+ * @test Save persists the allocator, so a key removed before the save is never
+ *       handed out again after the document is reopened into a fresh manager.
+ */
+TEST(ProjectRoundtrip, SavedNextUidPreventsReuseOfRemovedKey)
+{
+	ResourceManager source;
+	const int keptId = source.Load<Camera>()->GetObjectID();
+	const int removedId = source.Load<Camera>()->GetObjectID();
+	EXPECT_LT(keptId, removedId);
+	ASSERT_TRUE(source.Remove(removedId));
+
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	const auto document = Json::parse(output.str());
+	EXPECT_EQ(document.at("m_resources").at("next_uid").get<int>(), removedId + 1);
+
+	ResourceManager reopened;
+	project::ResourceComponent(reopened).LoadJson(document.dump());
+	EXPECT_GT(reopened.Load<Camera>()->GetObjectID(), removedId);
+}
+
+/**
+ * @test A record rejected on first load disappears from the pool, but the
+ *       persisted allocator still excludes its key after a resave and reopen.
+ */
+TEST(ProjectRoundtrip, RejectedRecordKeyIsNotReusedAfterResave)
+{
+	ResourceManager source;
+	const int cameraId = source.Load<Camera>()->GetObjectID();
+	// A never-compiled shader is unusable, so Get rejects its record.
+	const int brokenId = source.Load<RenderShader>("Broken")->GetObjectID();
+	EXPECT_LT(cameraId, brokenId);
+
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+
+	ResourceManager pool;
+	project::ResourceComponent(pool).LoadJson(output.str());
+	EXPECT_FALSE(pool.Get<RenderShader>(brokenId))
+		<< "an uncompiled shader must be rejected on first load";
+	EXPECT_FALSE(pool.Contains(brokenId));
+
+	std::ostringstream resaved;
+	{
+		cereal::JSONOutputArchive archive(resaved);
+		project::ResourceComponent(pool).Save(archive);
+	}
+	const auto document = Json::parse(resaved.str());
+	EXPECT_GT(document.at("m_resources").at("next_uid").get<int>(), brokenId);
+
+	ResourceManager reopened;
+	project::ResourceComponent(reopened).LoadJson(document.dump());
+	EXPECT_GT(reopened.Load<Camera>()->GetObjectID(), brokenId);
+}
+
+/**
+ * @test A pool without next_uid fails the open instead of falling back to one.
+ */
+TEST(ProjectRoundtrip, MissingNextUidFailsTheLoad)
+{
+	ResourceManager source;
+	source.Load<Camera>();
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	document.at("m_resources").erase("next_uid");
+
+	ResourceManager pool;
+	const int kept = pool.Load<Camera>()->GetObjectID();
+	try
+	{
+		project::ResourceComponent(pool).LoadJson(document.dump());
+		FAIL() << "a pool without next_uid must fail the load";
+	}
+	catch (const std::runtime_error& error)
+	{
+		EXPECT_NE(std::string(error.what()).find("next_uid"), std::string::npos) << error.what();
+	}
+	EXPECT_TRUE(pool.Contains(kept));
+}
+
+/**
+ * @test A next_uid that does not exceed the highest saved key fails the open,
+ *       so reopening can never reuse a key already present in the file.
+ */
+TEST(ProjectRoundtrip, NextUidBelowAKeyFailsTheLoad)
+{
+	ResourceManager source;
+	source.Load<Camera>();
+	source.Load<Camera>();
+	std::ostringstream output;
+	{
+		cereal::JSONOutputArchive archive(output);
+		project::ResourceComponent(source).Save(archive);
+	}
+	auto document = Json::parse(output.str());
+	int maxKey = 0;
+	for (const auto& record : document.at("m_resources").at("resources_"))
+		maxKey = std::max(maxKey, record.at("key").get<int>());
+	document.at("m_resources")["next_uid"] = maxKey;
+
+	ResourceManager pool;
+	const int kept = pool.Load<Camera>()->GetObjectID();
+	try
+	{
+		project::ResourceComponent(pool).LoadJson(document.dump());
+		FAIL() << "next_uid equal to the highest key must fail the load";
+	}
+	catch (const std::runtime_error& error)
+	{
+		EXPECT_NE(std::string(error.what()).find("next_uid"), std::string::npos) << error.what();
+	}
+	EXPECT_TRUE(pool.Contains(kept));
+}
 } // namespace

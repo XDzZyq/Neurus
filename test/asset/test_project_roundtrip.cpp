@@ -350,7 +350,6 @@ TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 	}
 
 	ResourceManager restored;
-	const int nextUid = ResourceManager::NextId();
 	project::ResourceComponent(restored).LoadJson(serialized.str());
 	ASSERT_EQ(restored.Size(), 2u);
 	const auto base = restored.Get(plain->GetObjectID());
@@ -360,7 +359,7 @@ TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 	const auto named = restored.GetByName<Camera>(camera->o_name);
 	ASSERT_TRUE(named);
 	EXPECT_EQ(named->GetObjectID(), camera->GetObjectID());
-	EXPECT_EQ(ResourceManager::NextId(), nextUid);
+	EXPECT_EQ(restored.NextId(), source.NextId());
 
 }
 
