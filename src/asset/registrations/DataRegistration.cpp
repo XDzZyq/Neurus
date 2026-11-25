@@ -7,9 +7,7 @@
  */
 
 #include <cereal/archives/json.hpp>
-#include <nlohmann/json.hpp>
 #include "asset/ResourceType.hpp"
-#include "asset/components/GraphRecordJson.hpp"
 
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
@@ -19,9 +17,7 @@
 // --- Derived data-resource registration ---
 NEURUS_REGISTER_RESOURCE_TYPE(MeshData, 0)
 NEURUS_REGISTER_RESOURCE_TYPE(ImageData, 0)
-NEURUS_REGISTER_RESOURCE_TYPE(RenderGraphData, 0, [](const nlohmann::ordered_json& data) {
-	return data.contains("topology") && neurus::project::ValidGraphShape(data.at("topology"));
-})
+NEURUS_REGISTER_RESOURCE_TYPE(RenderGraphData, 0)
 
 // --- Polymorphic relations (UID base -> data resource leaves) ---
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::MeshData)

@@ -8,6 +8,7 @@
 #include "asset/data/ShaderData.hpp"
 #include "core/Serialize.hpp"
 
+#include <cereal/archives/json.hpp>
 #include <cereal/types/optional.hpp>
 #include <cereal/types/string.hpp>
 #include <cereal/types/vector.hpp>
@@ -18,8 +19,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-
-namespace cereal { class JSONInputArchive; }
 
 namespace neurus
 {
@@ -36,15 +35,39 @@ struct CpuNode;
 template<class Archive>
 void serialize(Archive& ar, GraphOutputTag& tag)
 {
-	ar(cereal::make_nvp("format", tag.format),
-	   cereal::make_nvp("usage", tag.usage),
-	   cereal::make_nvp("extent", tag.extent),
-	   cereal::make_nvp("layers", tag.layers));
+	auto field = [&]<class Enum>(const char* name, Enum& value, Enum last) {
+		// Check the archive value before narrowing it to the enum's byte.
+		auto raw = static_cast<std::uint32_t>(value);
+		ar(cereal::make_nvp(name, raw));
+		if constexpr (Archive::is_loading::value)
+		{
+			if (raw > static_cast<std::uint32_t>(last))
+				throw cereal::Exception(std::string("Invalid graph output tag field: ") + name);
+			value = static_cast<Enum>(raw);
+		}
+	};
+	field("format", tag.format, GraphFormat::D32Sfloat);
+	field("usage", tag.usage, GraphUsage::DepthSampled);
+	field("extent", tag.extent, GraphExtent::Shadow);
+	field("layers", tag.layers, GraphLayers::Lights);
 }
 }
 
 namespace neurus::project
 {
+
+/// These optional scalars may be absent. A present field with the wrong JSON type rejects the graph.
+template<class T>
+bool ReadOptionalGraphField(cereal::JSONInputArchive& ar, const char* name, T& value)
+{
+	try
+	{
+		ar(cereal::make_nvp(name, value));
+		return true;
+	}
+	catch (const cereal::RapidJSONException&) { throw; }
+	catch (const cereal::Exception&) { return false; }
+}
 
 /**
  * @brief One saved output socket.
@@ -99,7 +122,14 @@ struct RenderGraphNodeRecord
 	{
 		ar(cereal::make_nvp("name", name),
 		   cereal::make_nvp("pass", pass));
-		archive::OptionalRef(ar, "shader", shader);
+		if constexpr (Archive::is_loading::value)
+		{
+			shader.reset();
+			if (ReadOptionalGraphField(ar, "shader", shader) && !shader.HasIdentity())
+				throw cereal::Exception("Invalid graph shader UID");
+		}
+		else if (shader.HasIdentity())
+			ar(cereal::make_nvp("shader", shader));
 		ar(cereal::make_nvp("x", x),
 		   cereal::make_nvp("y", y),
 		   cereal::make_nvp("outputs", outputs));
@@ -136,7 +166,7 @@ struct RenderGraphEdgeRecord
 		   cereal::make_nvp("toPort", toPort));
 		if constexpr (Archive::is_loading::value)
 		{
-			if (archive::OptionalField(ar, cereal::make_nvp("inputType", inputType)))
+			if (ReadOptionalGraphField(ar, "inputType", inputType))
 				ar(cereal::make_nvp("inputBinding", inputBinding));
 		}
 		else if (!inputType.empty())

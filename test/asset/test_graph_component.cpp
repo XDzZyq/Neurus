@@ -291,12 +291,19 @@ TEST_F(GraphComponent, PoolReaderRejectsMalformedTopology)
 	corrupt.push_back(saved);
 	topology(corrupt.back())["nodes"][0]["outputs"][0]["tag"]["data"]["extent"] = 42;
 	corrupt.push_back(saved);
+	topology(corrupt.back())["nodes"][0]["outputs"][0]["tag"]["data"]["extent"] = 256;
+	corrupt.push_back(saved);
+	topology(corrupt.back())["nodes"][0]["shader"] = -1;
+	corrupt.push_back(saved);
 	topology(corrupt.back())["edges"][0]["from"] = 42;
 	for (const auto& document : corrupt)
 	{
 		SCOPED_TRACE(document.dump());
 		neurus::project::ResourceComponent(resources, neurus::project::MakeGraphReadServices(catalog)).LoadJson(document.dump());
-		EXPECT_FALSE(resources.Get<neurus::RenderGraphData>(graph->GetObjectID()));
+		const int id = graph->GetObjectID();
+		ASSERT_TRUE(resources.Contains(id));
+		EXPECT_FALSE(resources.Get<neurus::RenderGraphData>(id));
+		EXPECT_FALSE(resources.Contains(id));
 	}
 }
 

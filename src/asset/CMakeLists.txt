@@ -8,8 +8,6 @@ add_library(neurus_asset_data STATIC
 	ResourceType.hpp
 	ResourceType.cpp
 	PixelFormat.hpp
-	components/GraphRecordJson.hpp
-	components/GraphRecordJson.cpp
 	registrations/DataRegistration.hpp
 	registrations/DataRegistration.cpp
 	data/ImageData.hpp
