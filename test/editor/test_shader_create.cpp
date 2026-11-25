@@ -36,9 +36,9 @@ protected:
 		m_editor.Initialize();
 
 		auto mesh = m_editor.GetResourceManager().Load<neurus::Mesh>();
-		mesh->o_name = m_editor.GetResourceManager().SetName(mesh->RequireObjectID(), "Ground");
+		mesh->o_name = m_editor.GetResourceManager().SetName(mesh->GetObjectID(), "Ground");
 		m_editor.GetScene().UseMesh(mesh);
-		m_groundUid = mesh->RequireObjectID();
+		m_groundUid = mesh->GetObjectID();
 	}
 
 	int GroundUid() const { return m_groundUid; }

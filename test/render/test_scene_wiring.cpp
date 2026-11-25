@@ -253,7 +253,7 @@ TEST_F(SceneWiringTest, DrawFrame_EmptyScene_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->RequireObjectID());
+	scene.ActivateCamera(cam->GetObjectID());
 
 	// A snapshot pointer cannot live in a temporary that dies at the semicolon,
 	// so publish into named storage that outlives the DrawFrame call.
@@ -280,7 +280,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithOnlyCamera_NoCrash)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->RequireObjectID());
+	scene.ActivateCamera(cam->GetObjectID());
 
 	ASSERT_NE(scene.GetActiveCamera(), nullptr);
 
@@ -309,7 +309,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->RequireObjectID());
+	scene.ActivateCamera(cam->GetObjectID());
 
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
@@ -347,7 +347,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->RequireObjectID());
+	scene.ActivateCamera(cam->GetObjectID());
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
@@ -422,12 +422,12 @@ TEST_F(SceneWiringTest, AFrameHoldsItsMeshTableUntilItsFence)
 	Scene scene;
 	auto cam = CreateDefaultCamera();
 	scene.UseCamera(cam);
-	scene.ActivateCamera(cam->RequireObjectID());
+	scene.ActivateCamera(cam->GetObjectID());
 
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
-	const int meshId = mesh->RequireObjectID();
+	const int meshId = mesh->GetObjectID();
 
 	RenderFrameSnapshot snap{};
 	RenderContext ctx{};

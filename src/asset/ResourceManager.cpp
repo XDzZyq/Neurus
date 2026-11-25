@@ -22,7 +22,7 @@ int ResourceManager::Register(std::shared_ptr<UID> obj)
 
 int ResourceManager::RegisterAt(int id, const std::shared_ptr<UID>& object)
 {
-	if (!object || object->GetObjectID())
+	if (!object || !object->m_membership.expired())
 		throw std::runtime_error("Registration requires an unpooled object");
 	const UID& resource = *object;
 	IndexType(id, typeid(resource));
@@ -83,7 +83,7 @@ std::shared_ptr<UID> ResourceManager::Get(int id) const
 		if (object)
 		{
 			const UID& resource = *object;
-			if (object->GetObjectID() || std::type_index(typeid(resource)) != entry.type)
+			if (!object->m_membership.expired() || std::type_index(typeid(resource)) != entry.type)
 				throw std::runtime_error("Deferred resource has invalid membership or type");
 			object->m_membership = entry.membership;
 			attached = true;

@@ -117,9 +117,9 @@ TEST(ResourceManagerTest, LoadRegistrationIsRenameable)
 	EXPECT_EQ(cam->o_name, "Camera");
 	EXPECT_EQ(pool.GetByName<Camera>("Camera"), cam);
 
-	cam->o_name = pool.SetName(cam->RequireObjectID(), "ViewportCamera");
+	cam->o_name = pool.SetName(cam->GetObjectID(), "ViewportCamera");
 	EXPECT_EQ(cam->o_name, "ViewportCamera");
-	EXPECT_EQ(pool.SetName(cam->RequireObjectID(), "ViewportCamera"), "ViewportCamera");
+	EXPECT_EQ(pool.SetName(cam->GetObjectID(), "ViewportCamera"), "ViewportCamera");
 	EXPECT_EQ(pool.GetByName<Camera>("Camera"), nullptr);
 	EXPECT_EQ(pool.GetByName<Camera>("ViewportCamera"), cam);
 
@@ -135,10 +135,10 @@ TEST(ResourceManagerTest, GetTypeChecked)
 	ResourceManager pool;
 	auto cam = pool.Load<Camera>();
 
-	EXPECT_NE(pool.Get<Camera>(cam->RequireObjectID()), nullptr);
-	EXPECT_NE(pool.Get<ObjectID>(cam->RequireObjectID()), nullptr);
-	EXPECT_NE(pool.Get<UID>(cam->RequireObjectID()), nullptr);
-	EXPECT_EQ(pool.Get<Mesh>(cam->RequireObjectID()), nullptr); // wrong type
+	EXPECT_NE(pool.Get<Camera>(cam->GetObjectID()), nullptr);
+	EXPECT_NE(pool.Get<ObjectID>(cam->GetObjectID()), nullptr);
+	EXPECT_NE(pool.Get<UID>(cam->GetObjectID()), nullptr);
+	EXPECT_EQ(pool.Get<Mesh>(cam->GetObjectID()), nullptr); // wrong type
 	EXPECT_EQ(pool.Get<Camera>(123456), nullptr);           // missing ID
 }
 
@@ -152,8 +152,8 @@ TEST(ResourceManagerTest, RemoveClearSize)
 	auto light = pool.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
 	EXPECT_EQ(pool.Size(), 2u);
 
-	const int cameraId = cam->RequireObjectID();
-	const int lightId = light->RequireObjectID();
+	const int cameraId = cam->GetObjectID();
+	const int lightId = light->GetObjectID();
 	EXPECT_TRUE(pool.Remove(cameraId));
 	EXPECT_EQ(pool.Size(), 1u);
 	EXPECT_FALSE(pool.Contains(cameraId));
@@ -162,14 +162,14 @@ TEST(ResourceManagerTest, RemoveClearSize)
 	pool.Clear();
 	EXPECT_EQ(pool.Size(), 0u);
 	EXPECT_FALSE(pool.Contains(lightId));
-	EXPECT_FALSE(cam->GetObjectID());
-	EXPECT_FALSE(light->GetObjectID());
+	EXPECT_EQ(cam->GetObjectID(), -1);
+	EXPECT_EQ(light->GetObjectID(), -1);
 }
 
 TEST(ResourceManagerTest, MembershipBelongsExclusivelyToItsPool)
 {
 	auto resource = std::make_shared<TestResource>();
-	EXPECT_FALSE(resource->GetObjectID());
+	EXPECT_EQ(resource->GetObjectID(), -1);
 	ResourceManager other;
 	{
 		ResourceManager owner;
@@ -178,7 +178,7 @@ TEST(ResourceManagerTest, MembershipBelongsExclusivelyToItsPool)
 		EXPECT_THROW(other.Register(resource), std::runtime_error);
 		EXPECT_EQ(owner.Get(id), resource);
 	}
-	EXPECT_FALSE(resource->GetObjectID());
+	EXPECT_EQ(resource->GetObjectID(), -1);
 	const int newId = other.Register(resource);
 	EXPECT_EQ(resource->GetObjectID(), newId);
 }
@@ -194,7 +194,7 @@ TEST(ResourceManagerTest, RejectedDeferredObjectLosesItsMembership)
 		});
 	EXPECT_FALSE(pool.Get(0));
 	EXPECT_FALSE(pool.Contains(0));
-	EXPECT_FALSE(object->GetObjectID());
+	EXPECT_EQ(object->GetObjectID(), -1);
 }
 
 TEST(ResourceManagerTest, DeferredMetadataAndNamedLookup)
@@ -257,14 +257,14 @@ TEST(ResourceManagerTest, DeferredIdsAreReservedUntilRemoveOrClear)
 	int loads = 0;
 	auto loader = [&]() -> std::shared_ptr<UID> { ++loads; return nullptr; };
 	pool.RegisterDeferred(futureId, typeid(TestResource), loader);
-	EXPECT_GT(pool.Load<TestResource>()->RequireObjectID(), futureId);
+	EXPECT_GT(pool.Load<TestResource>()->GetObjectID(), futureId);
 	EXPECT_THROW(pool.RegisterDeferred(futureId, typeid(TestResource), loader), std::exception);
 	EXPECT_EQ(pool.SetName(futureId, "Spare"), "Spare");
 	EXPECT_TRUE(pool.Remove(futureId));
 	EXPECT_EQ(pool.GetByName<TestResource>("Spare"), nullptr);
 	auto live = pool.Load<TestResource>();
-	EXPECT_GT(live->RequireObjectID(), futureId);
-	EXPECT_THROW(pool.RegisterDeferred(live->RequireObjectID(), typeid(TestResource), loader), std::exception);
+	EXPECT_GT(live->GetObjectID(), futureId);
+	EXPECT_THROW(pool.RegisterDeferred(live->GetObjectID(), typeid(TestResource), loader), std::exception);
 	pool.Clear();
 	EXPECT_EQ(pool.Size(), 0u);
 	EXPECT_EQ(pool.Get(futureId), nullptr);
@@ -316,7 +316,7 @@ TEST(ResourceManagerTest, DeferredCycleUnwindsAndDependenciesCanBeRetried)
 		return child;
 	});
 	EXPECT_THROW(pool.Get(parentId), std::exception);
-	EXPECT_EQ(pool.Get(independent->RequireObjectID()), independent);
+	EXPECT_EQ(pool.Get(independent->GetObjectID()), independent);
 	cyclic = false;
 	EXPECT_EQ(pool.Get(parentId), parent);
 	EXPECT_EQ(pool.Get(childId), child);
@@ -350,7 +350,7 @@ TEST(ResourceManagerTest, RawArchiveIncludesDeferredEntriesAndReplacesOldRegistr
 	EXPECT_FALSE(target.Contains(365));
 	EXPECT_EQ(target.GetByName<Camera>("Previous"), nullptr);
 	EXPECT_EQ(staleLoads, 0);
-	auto restored = target.Get<Camera>(camera->RequireObjectID());
+	auto restored = target.Get<Camera>(camera->GetObjectID());
 	ASSERT_NE(restored, nullptr);
 	EXPECT_FLOAT_EQ(restored->cam_pers, 42.0f);
 }
@@ -399,19 +399,19 @@ TEST(ResourceManagerTest, PoolSaveLoadRoundtrip)
 	EXPECT_EQ(loaded.Size(), 4u);
 
 	// Type + identity preserved, and new IDs are allocated past restored ones.
-	auto cam2 = loaded.Get<Camera>(cam->RequireObjectID());
+	auto cam2 = loaded.Get<Camera>(cam->GetObjectID());
 	ASSERT_NE(cam2, nullptr);
 	EXPECT_EQ(cam2->o_name, "Cam1");
 	EXPECT_FLOAT_EQ(cam2->cam_pers, 42.0f);
 
-	auto mesh2 = loaded.Get<Mesh>(mesh->RequireObjectID());
+	auto mesh2 = loaded.Get<Mesh>(mesh->GetObjectID());
 	ASSERT_NE(mesh2, nullptr);
 	EXPECT_EQ(mesh2->o_name, "Mesh1");
 	EXPECT_FALSE(mesh2->using_shadow);
-	EXPECT_EQ(mesh2->o_mesh.shared(), loaded.Get<MeshData>(meshData->RequireObjectID()));
-	EXPECT_EQ(mesh2->o_mesh.id(), meshData->RequireObjectID());
+	EXPECT_EQ(mesh2->o_mesh.shared(), loaded.Get<MeshData>(meshData->GetObjectID()));
+	EXPECT_EQ(mesh2->o_mesh.id(), meshData->GetObjectID());
 
-	auto light2 = loaded.Get<Light>(light->RequireObjectID());
+	auto light2 = loaded.Get<Light>(light->GetObjectID());
 	ASSERT_NE(light2, nullptr);
 	EXPECT_EQ(light2->o_name, "Light1");
 	EXPECT_EQ(light2->light_type, POINTLIGHT);
@@ -419,14 +419,14 @@ TEST(ResourceManagerTest, PoolSaveLoadRoundtrip)
 	EXPECT_EQ(light2->light_color, glm::vec3(1.0f, 0.5f, 0.2f));
 
 	// Wrong-type lookups stay null after the round-trip.
-	EXPECT_EQ(loaded.Get<Mesh>(cam->RequireObjectID()), nullptr);
+	EXPECT_EQ(loaded.Get<Mesh>(cam->GetObjectID()), nullptr);
 
 	// The manager reserves restored record keys: fresh allocations never
 	// collide with the loaded ones.
 	auto fresh = loaded.Load<Camera>();
-	EXPECT_GT(fresh->RequireObjectID(), cam->RequireObjectID());
-	EXPECT_NE(fresh->RequireObjectID(), cam->RequireObjectID());
-	EXPECT_NE(fresh->RequireObjectID(), mesh->RequireObjectID());
+	EXPECT_GT(fresh->GetObjectID(), cam->GetObjectID());
+	EXPECT_NE(fresh->GetObjectID(), cam->GetObjectID());
+	EXPECT_NE(fresh->GetObjectID(), mesh->GetObjectID());
 }
 
 /**
@@ -470,7 +470,7 @@ TEST(ResourceManagerTest, PooledShaderRecompilesAfterLoad)
 	// The load lifecycle restores derived state: serialize(load) re-parses the
 	// stages and recompiles to SPIR-V, so GeometryPass can build the pipeline
 	// on the first frame (no per-frame "pipeline creation failed" fallback).
-	auto shader2 = loaded.Get<RenderShader>(shader->RequireObjectID());
+	auto shader2 = loaded.Get<RenderShader>(shader->GetObjectID());
 	ASSERT_NE(shader2, nullptr);
 	EXPECT_FALSE(shader2->GetStage(ShaderType::VERTEX).spv.empty());
 	EXPECT_FALSE(shader2->GetStage(ShaderType::FRAGMENT).spv.empty());
@@ -492,9 +492,9 @@ TEST(ResourceNameRegistry, SetAndGetByNamePerType)
 	auto b = rm.Load<TestResource>();
 	auto c = rm.Load<OtherTestResource>();
 
-	EXPECT_EQ(rm.SetName(a->RequireObjectID(), "Ground"), "Ground");
-	EXPECT_EQ(rm.SetName(b->RequireObjectID(), "Ground"), "Ground.001");
-	EXPECT_EQ(rm.SetName<OtherTestResource>(c->RequireObjectID(), "Ground"), "Ground");
+	EXPECT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	EXPECT_EQ(rm.SetName(b->GetObjectID(), "Ground"), "Ground.001");
+	EXPECT_EQ(rm.SetName<OtherTestResource>(c->GetObjectID(), "Ground"), "Ground");
 
 	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), a);          // first keeps the bare name
 	EXPECT_EQ(rm.GetByName<TestResource>("Ground.001"), b);      // second is suffixed
@@ -507,7 +507,7 @@ TEST(ResourceNameRegistry, TypedSetterRejectsWrongType)
 {
 	neurus::ResourceManager rm;
 	auto c = rm.Load<OtherTestResource>();
-	EXPECT_EQ(rm.SetName<TestResource>(c->RequireObjectID(), "Ground"), std::string{});
+	EXPECT_EQ(rm.SetName<TestResource>(c->GetObjectID(), "Ground"), std::string{});
 	EXPECT_EQ(rm.GetByName<OtherTestResource>("Ground"), nullptr);
 	EXPECT_TRUE(rm.SetName(123456, "Ground").empty());
 }
@@ -519,15 +519,15 @@ TEST(ResourceNameRegistry, RemoveFreesNameAndClearEmptiesIndex)
 {
 	neurus::ResourceManager rm;
 	auto a = rm.Load<TestResource>();
-	ASSERT_EQ(rm.SetName(a->RequireObjectID(), "Ground"), "Ground");
-	ASSERT_TRUE(rm.Remove(a->RequireObjectID()));
+	ASSERT_EQ(rm.SetName(a->GetObjectID(), "Ground"), "Ground");
+	ASSERT_TRUE(rm.Remove(a->GetObjectID()));
 	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
 	int remaining = 0;
 	rm.ForEach<TestResource>([&](const std::shared_ptr<TestResource>&) { ++remaining; });
 	EXPECT_EQ(remaining, 0);
 
 	auto b = rm.Load<TestResource>();
-	ASSERT_EQ(rm.SetName(b->RequireObjectID(), "Ground"), "Ground");
+	ASSERT_EQ(rm.SetName(b->GetObjectID(), "Ground"), "Ground");
 	rm.Clear();
 	EXPECT_EQ(rm.GetByName<TestResource>("Ground"), nullptr);
 	EXPECT_EQ(rm.Size(), 0u);
@@ -541,8 +541,8 @@ TEST(ResourceNameRegistry, EmptyNameBecomesObject)
 	neurus::ResourceManager rm;
 	auto a = rm.Load<TestResource>();
 	auto b = rm.Load<TestResource>();
-	EXPECT_EQ(rm.SetName(a->RequireObjectID(), ""), "Object");
-	EXPECT_EQ(rm.SetName(b->RequireObjectID(), ""), "Object.001");
+	EXPECT_EQ(rm.SetName(a->GetObjectID(), ""), "Object");
+	EXPECT_EQ(rm.SetName(b->GetObjectID(), ""), "Object.001");
 }
 
 // -----------------------------------------------------------------------
@@ -560,10 +560,10 @@ TEST(ResourceTypeIndex, ForEachTypedVisitsOnlyThatType)
 	std::vector<int> seen;
 	rm.ForEach<TestResource>([&](const std::shared_ptr<TestResource>& r)
 	{
-		seen.push_back(r->RequireObjectID());
+		seen.push_back(r->GetObjectID());
 	});
 	ASSERT_EQ(seen.size(), 1u);
-	EXPECT_EQ(seen.front(), a->RequireObjectID());
+	EXPECT_EQ(seen.front(), a->GetObjectID());
 }
 
 /**
@@ -586,10 +586,10 @@ TEST(ResourceTypeIndex, BaseInstanceDoesNotHideDerivedObjectsFromForEachUID)
 	std::vector<int> seen;
 	lookup.ForEachUID([&](const std::shared_ptr<neurus::UID>& obj)
 	{
-		seen.push_back(obj->RequireObjectID());
+		seen.push_back(obj->GetObjectID());
 	});
 	ASSERT_EQ(seen.size(), 4u) << "ForEachUID must be the complete walk";
-	for (const int id : {plain->RequireObjectID(), cam->RequireObjectID(), mesh->RequireObjectID()})
+	for (const int id : {plain->GetObjectID(), cam->GetObjectID(), mesh->GetObjectID()})
 	{
 		EXPECT_TRUE(std::find(seen.begin(), seen.end(), id) != seen.end())
 			<< "ForEachUID missed uid " << id;
@@ -601,7 +601,7 @@ TEST(ResourceTypeIndex, BaseInstanceDoesNotHideDerivedObjectsFromForEachUID)
 	rm.ForEach<neurus::ObjectID>([&](const std::shared_ptr<neurus::ObjectID>&) { ++objects; });
 	EXPECT_EQ(objects, 1) << "ForEach<T> is exact-dynamic-type, not a base walk";
 
-	ASSERT_TRUE(rm.Remove(plain->RequireObjectID()));
+	ASSERT_TRUE(rm.Remove(plain->GetObjectID()));
 	objects = 0;
 	rm.ForEach<neurus::ObjectID>([&](const auto&) { ++objects; });
 	EXPECT_EQ(objects, 2) << "removing the last exact match restores the base-type scan";
@@ -632,7 +632,7 @@ TEST(ResourceTypeIndex, LoadRebuildsTypeIndexAndKeepsNamesUnseeded)
 	ResourceManager pool;
 	auto cam = pool.Load<Camera>();
 	pool.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
-	ASSERT_EQ(pool.SetName(cam->RequireObjectID(), "Cam"), "Cam");
+	ASSERT_EQ(pool.SetName(cam->GetObjectID(), "Cam"), "Cam");
 
 	std::stringstream ss;
 	{
@@ -678,7 +678,7 @@ TEST(ResourceNameRegistry, LoadIntoNonEmptyPoolDropsTheOldRegistry)
 
 	ResourceManager target;
 	auto stale = target.Load<Camera>();
-	ASSERT_EQ(target.SetName(stale->RequireObjectID(), "Stale"), "Stale");
+	ASSERT_EQ(target.SetName(stale->GetObjectID(), "Stale"), "Stale");
 
 	{
 		std::stringstream is(ss.str());
@@ -689,6 +689,6 @@ TEST(ResourceNameRegistry, LoadIntoNonEmptyPoolDropsTheOldRegistry)
 	// The old object is gone with the replaced pool, and its name must be free.
 	EXPECT_EQ(target.GetByName<Camera>("Stale"), nullptr);
 	auto fresh = target.Load<Camera>();
-	EXPECT_EQ(target.SetName(fresh->RequireObjectID(), "Stale"), "Stale")
+	EXPECT_EQ(target.SetName(fresh->GetObjectID(), "Stale"), "Stale")
 		<< "the previous document's name must not survive the load";
 }

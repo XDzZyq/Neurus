@@ -94,7 +94,7 @@ struct OverlayFixture
 		editor.NewScene();
 
 		auto camera = editor.GetResourceManager().Load<Camera>();
-		uid = camera->RequireObjectID();
+		uid = camera->GetObjectID();
 		editor.GetScene().UseCamera(camera);
 
 		// Both builders start dirty, and NewScene() marks the overlays dirty too:

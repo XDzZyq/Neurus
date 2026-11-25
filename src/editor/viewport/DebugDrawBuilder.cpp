@@ -236,7 +236,7 @@ void DebugDrawBuilder::AppendDebugMesh(const DebugMesh& mesh)
 	// as lines, so the fragment stage gets no distance-to-edge to fade and the flag
 	// would advertise a behaviour no consumer implements.
 	wire.flags = mesh.GetXRay() ? DebugFlag::XRay : DebugFlag::None;
-	wire.meshObjectId = mesh.RequireObjectID();
+	wire.meshObjectId = mesh.GetObjectID();
 
 	// Wire meshes are not partitioned: there are few of them, and the consumer
 	// switches pipeline per mesh to honour its depth mode anyway.

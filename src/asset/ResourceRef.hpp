@@ -71,7 +71,7 @@ public:
 
 	ResourceRef& operator=(std::shared_ptr<T> value)
 	{
-		if (value && !value->GetObjectID().has_value())
+		if (value && value->GetObjectID() < 0)
 			throw std::invalid_argument("A resource reference requires a pooled object");
 		m_uid.reset();
 		m_value = std::move(value);
@@ -109,7 +109,13 @@ public:
 	T* operator->() const { return get(); }
 	T& operator*() const { return *m_value; }
 	explicit operator bool() const { return static_cast<bool>(m_value); }
-	std::optional<int> identity() const { return m_value ? m_value->GetObjectID() : m_uid; }
+	std::optional<int> identity() const
+	{
+		if (!m_value) return m_uid;
+		const int id = m_value->GetObjectID();
+		if (id < 0) return std::nullopt;
+		return id;
+	}
 	int id() const { return identity().value_or(0); }
 	bool operator==(const ResourceRef& other) const
 	{

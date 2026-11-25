@@ -163,7 +163,7 @@ TEST_F(GeometryPassTest, Record_SingleTriangle_NoValidationError)
 	// --- Camera ---
 	auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 	testScene.UseCamera(testCam);
-	testScene.ActivateCamera(testCam->RequireObjectID());
+	testScene.ActivateCamera(testCam->GetObjectID());
 
 	// --- Record ---
 	{
@@ -217,7 +217,7 @@ TEST_F(GeometryPassTest, Record_MultipleItems_NoValidationError)
 
 	auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 	testScene.UseCamera(testCam);
-	testScene.ActivateCamera(testCam->RequireObjectID());
+	testScene.ActivateCamera(testCam->GetObjectID());
 
 	{
 		auto& cmd = BeginCmd();
@@ -250,7 +250,7 @@ TEST_F(GeometryPassTest, Record_EmptyRenderItems_NoCrash)
 	Scene testScene;
 	auto testCam = VulkanTestShared::CreateTestCamera(kRenderWidth, kRenderHeight);
 	testScene.UseCamera(testCam);
-	testScene.ActivateCamera(testCam->RequireObjectID());
+	testScene.ActivateCamera(testCam->GetObjectID());
 
 	{
 		auto& cmd = BeginCmd();

@@ -41,7 +41,7 @@ void OnVisibilityChanged(const neurus::VisibilityChanged& e, const neurus::Contr
 	const neurus::VisibilityState before{ obj->is_viewport, obj->is_rendered };
 	obj->SetVisible(e.viewportVisible, e.renderVisible);
 	ctx.ops.Submit(std::make_unique<neurus::SetVisibilityOp>(
-		obj->RequireObjectID(), before, neurus::VisibilityState{ e.viewportVisible, e.renderVisible }));
+		obj->GetObjectID(), before, neurus::VisibilityState{ e.viewportVisible, e.renderVisible }));
 
 	// A light's visibility reaches the light dict rather than its entry, which
 	// neurus::notify::ObjectMutated knows.
@@ -63,7 +63,7 @@ void OnPositionChanged(const neurus::PositionChanged& e, const neurus::Controlle
 	const glm::vec3 before = transform->GetPosition();
 	const glm::vec3 after(e.posX, e.posY, e.posZ);
 	transform->SetPosition(after);
-	ctx.ops.Submit(std::make_unique<neurus::SetPositionOp>(obj->RequireObjectID(), before, after));
+	ctx.ops.Submit(std::make_unique<neurus::SetPositionOp>(obj->GetObjectID(), before, after));
 
 	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
@@ -79,7 +79,7 @@ void OnRotationChanged(const neurus::RotationChanged& e, const neurus::Controlle
 	const glm::vec3 before = transform->GetRotation();
 	const glm::vec3 after(e.rotX, e.rotY, e.rotZ);
 	transform->SetRotation(after);
-	ctx.ops.Submit(std::make_unique<neurus::SetRotationOp>(obj->RequireObjectID(), before, after));
+	ctx.ops.Submit(std::make_unique<neurus::SetRotationOp>(obj->GetObjectID(), before, after));
 
 	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
@@ -95,7 +95,7 @@ void OnScaleChanged(const neurus::ScaleChanged& e, const neurus::ControllerConte
 	const glm::vec3 before = transform->GetScale();
 	const glm::vec3 after(e.sclX, e.sclY, e.sclZ);
 	transform->SetScale(after);
-	ctx.ops.Submit(std::make_unique<neurus::SetScaleOp>(obj->RequireObjectID(), before, after));
+	ctx.ops.Submit(std::make_unique<neurus::SetScaleOp>(obj->GetObjectID(), before, after));
 
 	neurus::notify::ObjectMutated(*obj, ctx.events);
 }
@@ -136,7 +136,7 @@ void OnCameraTargetChanged(const neurus::CameraTargetChanged& e, const neurus::C
 	// Fold target edits into the coupled camera pose op (position unchanged) so
 	// the panel and viewport navigation share one undoable "Camera Transform".
 	ctx.ops.Submit(std::make_unique<neurus::CameraTransformOp>(
-		cam->RequireObjectID(),
+		cam->GetObjectID(),
 		neurus::CameraPose{ pos, before },
 		neurus::CameraPose{ pos, after }));
 	neurus::notify::Mutated(ctx.events);
@@ -150,7 +150,7 @@ void OnCameraFovChanged(const neurus::CameraFovChanged& e, const neurus::Control
 
 	const float before = cam->cam_pers;
 	cam->ChangeCamPersp(e.fov);
-	ctx.ops.Submit(std::make_unique<neurus::CameraFovOp>(cam->RequireObjectID(), before, e.fov));
+	ctx.ops.Submit(std::make_unique<neurus::CameraFovOp>(cam->GetObjectID(), before, e.fov));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -169,7 +169,7 @@ void OnCameraPoseChanged(const neurus::CameraPoseChanged& e, const neurus::Contr
 	                                glm::vec3(e.tarX, e.tarY, e.tarZ) };
 	cam->SetPosition(after.position);
 	cam->SetTarPos(after.target);
-	ctx.ops.Submit(std::make_unique<neurus::CameraTransformOp>(cam->RequireObjectID(), before, after));
+	ctx.ops.Submit(std::make_unique<neurus::CameraTransformOp>(cam->GetObjectID(), before, after));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -184,7 +184,7 @@ void OnMeshShadowChanged(const neurus::MeshShadowChanged& e, const neurus::Contr
 
 	const bool before = mesh->using_shadow;
 	mesh->EnableShadow(e.enabled);
-	ctx.ops.Submit(std::make_unique<neurus::SetMeshShadowOp>(mesh->RequireObjectID(), before, e.enabled));
+	ctx.ops.Submit(std::make_unique<neurus::SetMeshShadowOp>(mesh->GetObjectID(), before, e.enabled));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -195,7 +195,7 @@ void OnMeshMaterialChanged(const neurus::MeshMaterialChanged& e, const neurus::C
 
 	const bool before = mesh->using_material;
 	mesh->EnableMaterial(e.enabled);
-	ctx.ops.Submit(std::make_unique<neurus::SetMeshMaterialOp>(mesh->RequireObjectID(), before, e.enabled));
+	ctx.ops.Submit(std::make_unique<neurus::SetMeshMaterialOp>(mesh->GetObjectID(), before, e.enabled));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -210,7 +210,7 @@ void OnLightPowerChanged(const neurus::LightPowerChanged& e, const neurus::Contr
 
 	const float before = light->light_power;
 	light->SetPower(e.power);
-	ctx.ops.Submit(std::make_unique<neurus::SetLightPowerOp>(light->RequireObjectID(), before, e.power));
+	ctx.ops.Submit(std::make_unique<neurus::SetLightPowerOp>(light->GetObjectID(), before, e.power));
 	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
@@ -222,7 +222,7 @@ void OnLightColorChanged(const neurus::LightColorChanged& e, const neurus::Contr
 	const glm::vec3 before = light->light_color;
 	const glm::vec3 after(e.r, e.g, e.b);
 	light->SetColor(after);
-	ctx.ops.Submit(std::make_unique<neurus::SetLightColorOp>(light->RequireObjectID(), before, after));
+	ctx.ops.Submit(std::make_unique<neurus::SetLightColorOp>(light->GetObjectID(), before, after));
 	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
@@ -233,7 +233,7 @@ void OnLightRadiusChanged(const neurus::LightRadiusChanged& e, const neurus::Con
 
 	const float before = light->light_radius;
 	light->SetRadius(e.radius);
-	ctx.ops.Submit(std::make_unique<neurus::SetLightRadiusOp>(light->RequireObjectID(), before, e.radius));
+	ctx.ops.Submit(std::make_unique<neurus::SetLightRadiusOp>(light->GetObjectID(), before, e.radius));
 	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
@@ -244,7 +244,7 @@ void OnLightShadowChanged(const neurus::LightShadowChanged& e, const neurus::Con
 
 	const bool before = light->use_shadow;
 	light->SetShadow(e.enabled);
-	ctx.ops.Submit(std::make_unique<neurus::SetLightShadowOp>(light->RequireObjectID(), before, e.enabled));
+	ctx.ops.Submit(std::make_unique<neurus::SetLightShadowOp>(light->GetObjectID(), before, e.enabled));
 	neurus::notify::LightingRebuilt(ctx.events);
 
 	// Enabling shadow requires the LightGPU (shadow depth maps) to exist; it
@@ -260,7 +260,7 @@ void OnLightCutoffChanged(const neurus::LightCutoffChanged& e, const neurus::Con
 
 	const float before = light->spot_cutoff;
 	light->SetCutoff(e.cutoff);
-	ctx.ops.Submit(std::make_unique<neurus::SetLightCutoffOp>(light->RequireObjectID(), before, e.cutoff));
+	ctx.ops.Submit(std::make_unique<neurus::SetLightCutoffOp>(light->GetObjectID(), before, e.cutoff));
 	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
@@ -271,7 +271,7 @@ void OnLightOuterCutoffChanged(const neurus::LightOuterCutoffChanged& e, const n
 
 	const float before = light->spot_outer_cutoff;
 	light->SetOuterCutoff(e.outerCutoff);
-	ctx.ops.Submit(std::make_unique<neurus::SetLightOuterCutoffOp>(light->RequireObjectID(), before, e.outerCutoff));
+	ctx.ops.Submit(std::make_unique<neurus::SetLightOuterCutoffOp>(light->GetObjectID(), before, e.outerCutoff));
 	neurus::notify::LightStructChanged(e.objectUid, ctx.events);
 }
 
@@ -287,7 +287,7 @@ void OnEnvironmentIntensityChanged(const neurus::EnvironmentIntensityChanged& e,
 
 	const float before = env->GetIntensity();
 	env->SetIntensity(e.intensity);
-	ctx.ops.Submit(std::make_unique<neurus::SetEnvIntensityOp>(env->RequireObjectID(), before, e.intensity));
+	ctx.ops.Submit(std::make_unique<neurus::SetEnvIntensityOp>(env->GetObjectID(), before, e.intensity));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -299,7 +299,7 @@ void OnEnvironmentRotationChanged(const neurus::EnvironmentRotationChanged& e,
 
 	const float before = env->GetRotation();
 	env->SetRotation(e.rotation);
-	ctx.ops.Submit(std::make_unique<neurus::SetEnvRotationOp>(env->RequireObjectID(), before, e.rotation));
+	ctx.ops.Submit(std::make_unique<neurus::SetEnvRotationOp>(env->GetObjectID(), before, e.rotation));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -346,7 +346,7 @@ void OnDebugColorChanged(const neurus::DebugColorChanged& e, const neurus::Contr
 	const bool found = ForDebugObject(ctx.resources, e.objectUid, [&](auto& obj) {
 		const glm::vec4 before = obj.GetColor();
 		obj.SetColor(after);
-		ctx.ops.Submit(std::make_unique<neurus::SetDebugColorOp>(obj.RequireObjectID(), before, after));
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugColorOp>(obj.GetObjectID(), before, after));
 	});
 	if (found) neurus::notify::Mutated(ctx.events);
 }
@@ -356,7 +356,7 @@ void OnDebugOpacityChanged(const neurus::DebugOpacityChanged& e, const neurus::C
 	const bool found = ForDebugObject(ctx.resources, e.objectUid, [&](auto& obj) {
 		const float before = obj.GetOpacity();
 		obj.SetOpacity(e.opacity);
-		ctx.ops.Submit(std::make_unique<neurus::SetDebugOpacityOp>(obj.RequireObjectID(), before, e.opacity));
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugOpacityOp>(obj.GetObjectID(), before, e.opacity));
 	});
 	if (found) neurus::notify::Mutated(ctx.events);
 }
@@ -366,7 +366,7 @@ void OnDebugXRayChanged(const neurus::DebugXRayChanged& e, const neurus::Control
 	const bool found = ForDebugObject(ctx.resources, e.objectUid, [&](auto& obj) {
 		const bool before = obj.GetXRay();
 		obj.SetXRay(e.xray);
-		ctx.ops.Submit(std::make_unique<neurus::SetDebugXRayOp>(obj.RequireObjectID(), before, e.xray));
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugXRayOp>(obj.GetObjectID(), before, e.xray));
 	});
 	if (found) neurus::notify::Mutated(ctx.events);
 }
@@ -378,7 +378,7 @@ void OnDebugLineWidthChanged(const neurus::DebugLineWidthChanged& e, const neuru
 
 	const float before = line->GetWidth();
 	line->SetWidth(e.width);
-	ctx.ops.Submit(std::make_unique<neurus::SetDebugLineWidthOp>(line->RequireObjectID(), before, e.width));
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugLineWidthOp>(line->GetObjectID(), before, e.width));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -389,7 +389,7 @@ void OnDebugLineStippleChanged(const neurus::DebugLineStippleChanged& e, const n
 
 	const bool before = line->GetStipple();
 	line->SetStipple(e.stipple);
-	ctx.ops.Submit(std::make_unique<neurus::SetDebugStippleOp>(line->RequireObjectID(), before, e.stipple));
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugStippleOp>(line->GetObjectID(), before, e.stipple));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -400,7 +400,7 @@ void OnDebugPointTypeChanged(const neurus::DebugPointTypeChanged& e, const neuru
 
 	const int before = static_cast<int>(points->GetPointType());
 	points->SetPointType(static_cast<neurus::DebugPoints::PointType>(e.pointType));
-	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointTypeOp>(points->RequireObjectID(), before, e.pointType));
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointTypeOp>(points->GetObjectID(), before, e.pointType));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -411,7 +411,7 @@ void OnDebugPointScaleChanged(const neurus::DebugPointScaleChanged& e, const neu
 
 	const float before = points->GetScale();
 	points->SetScale(e.scale);
-	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointScaleOp>(points->RequireObjectID(), before, e.scale));
+	ctx.ops.Submit(std::make_unique<neurus::SetDebugPointScaleOp>(points->GetObjectID(), before, e.scale));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -424,7 +424,7 @@ void OnDebugProjectionModeChanged(const neurus::DebugProjectionModeChanged& e,
 	const int before = points->GetProjectionMode();
 	points->SetProjectionMode(e.projectionMode);
 	ctx.ops.Submit(
-		std::make_unique<neurus::SetDebugProjectionModeOp>(points->RequireObjectID(), before, e.projectionMode));
+		std::make_unique<neurus::SetDebugProjectionModeOp>(points->GetObjectID(), before, e.projectionMode));
 	neurus::notify::Mutated(ctx.events);
 }
 
@@ -446,7 +446,7 @@ void OnDebugPositionsChanged(const neurus::DebugPositionsChanged& e, const neuru
 	{
 		const std::vector<glm::vec3> before = line->GetVertices();
 		line->SetVertices(after);
-		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(line->RequireObjectID(), before, after));
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(line->GetObjectID(), before, after));
 		neurus::notify::Mutated(ctx.events);
 		return;
 	}
@@ -454,7 +454,7 @@ void OnDebugPositionsChanged(const neurus::DebugPositionsChanged& e, const neuru
 	{
 		const std::vector<glm::vec3> before = points->GetPoints();
 		points->SetPoints(after);
-		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(points->RequireObjectID(), before, after));
+		ctx.ops.Submit(std::make_unique<neurus::SetDebugPositionsOp>(points->GetObjectID(), before, after));
 		neurus::notify::Mutated(ctx.events);
 	}
 }

@@ -75,7 +75,7 @@ TEST_F(ObjectControllerTest, LightVisibilityAndPositionInvalidateLighting)
 {
 	int rebuilds = 0;
 	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { ++rebuilds; });
-	const int uid = m_light->RequireObjectID();
+	const int uid = m_light->GetObjectID();
 	m_eventBus.Emit(VisibilityChanged{uid, false, true});
 	EXPECT_FALSE(m_light->is_viewport);
 	EXPECT_TRUE(m_light->is_rendered);
@@ -89,14 +89,14 @@ TEST_F(ObjectControllerTest, LightVisibilityAndPositionInvalidateLighting)
 
 TEST_F(ObjectControllerTest, DetachedMeshAcceptsTransformEdits)
 {
-	m_eventBus.Emit(PositionChanged{ m_mesh->RequireObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	const glm::vec3& pos = m_mesh->GetPosition();
 	EXPECT_FLOAT_EQ(pos.x, 1.0f);
 	EXPECT_FLOAT_EQ(pos.y, 2.0f);
 	EXPECT_FLOAT_EQ(pos.z, 3.0f);
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
 
-	m_eventBus.Emit(ScaleChanged{ m_mesh->RequireObjectID(), 2.0f, 2.0f, 2.0f });
+	m_eventBus.Emit(ScaleChanged{ m_mesh->GetObjectID(), 2.0f, 2.0f, 2.0f });
 	const glm::vec3& scl = m_mesh->GetScale();
 	EXPECT_FLOAT_EQ(scl.x, 2.0f);
 	EXPECT_FLOAT_EQ(scl.y, 2.0f);
@@ -115,12 +115,12 @@ TEST_F(ObjectControllerTest, CameraPoseChanged_AppliesAndRecordsOneOperation)
 	const glm::vec3 before = m_camera->GetPosition();
 	ASSERT_NE(before, glm::vec3(5.0f, 1.0f, 0.0f)); // a real move, not a no-op write
 
-	m_eventBus.Emit(CameraPoseChanged{ m_camera->RequireObjectID(), 5.0f, 1.0f, 0.0f, 2.0f, 0.0f, 0.0f });
+	m_eventBus.Emit(CameraPoseChanged{ m_camera->GetObjectID(), 5.0f, 1.0f, 0.0f, 2.0f, 0.0f, 0.0f });
 
 	EXPECT_EQ(m_camera->GetPosition(), glm::vec3(5.0f, 1.0f, 0.0f));
 	EXPECT_EQ(m_camera->cam_tar, glm::vec3(2.0f, 0.0f, 0.0f));
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
-	m_eventBus.Emit(CameraTargetChanged{ m_camera->RequireObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(CameraTargetChanged{ m_camera->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	EXPECT_EQ(m_camera->cam_tar, glm::vec3(1.0f, 2.0f, 3.0f));
 }
 
@@ -128,10 +128,10 @@ TEST_F(ObjectControllerTest, CameraPoseChanged_AppliesAndRecordsOneOperation)
 
 TEST_F(ObjectControllerTest, DetachedMeshReceivesSurfaceEdits)
 {
-	m_eventBus.Emit(MeshMaterialChanged{ m_mesh->RequireObjectID(), false });
+	m_eventBus.Emit(MeshMaterialChanged{ m_mesh->GetObjectID(), false });
 	EXPECT_FALSE(m_mesh->using_material);
 
-	m_eventBus.Emit(MeshShadowChanged{ m_mesh->RequireObjectID(), false });
+	m_eventBus.Emit(MeshShadowChanged{ m_mesh->GetObjectID(), false });
 	EXPECT_FALSE(m_mesh->using_shadow);
 }
 
@@ -141,15 +141,15 @@ TEST_F(ObjectControllerTest, DetachedLightPropertiesReachThePoolAndInvalidateGpu
 {
 	int gpuObjectUid = 0;
 	m_eventBus.Subscribe<LightGpuChanged>([&](const LightGpuChanged& e) { gpuObjectUid = e.objectUid; });
-	m_eventBus.Emit(LightPowerChanged{ m_light->RequireObjectID(), 42.0f });
+	m_eventBus.Emit(LightPowerChanged{ m_light->GetObjectID(), 42.0f });
 	EXPECT_FLOAT_EQ(m_light->light_power, 42.0f);
-	EXPECT_EQ(gpuObjectUid, m_light->RequireObjectID());
+	EXPECT_EQ(gpuObjectUid, m_light->GetObjectID());
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
 
-	m_eventBus.Emit(LightRadiusChanged{ m_light->RequireObjectID(), 0.5f });
+	m_eventBus.Emit(LightRadiusChanged{ m_light->GetObjectID(), 0.5f });
 	EXPECT_FLOAT_EQ(m_light->light_radius, 0.5f);
 
-	m_eventBus.Emit(LightCutoffChanged{ m_light->RequireObjectID(), 0.7f });
+	m_eventBus.Emit(LightCutoffChanged{ m_light->GetObjectID(), 0.7f });
 	EXPECT_FLOAT_EQ(m_light->spot_cutoff, 0.7f);
 }
 
@@ -157,10 +157,10 @@ TEST_F(ObjectControllerTest, DetachedLightPropertiesReachThePoolAndInvalidateGpu
 
 TEST_F(ObjectControllerTest, DetachedEnvironmentReceivesItsLightingEdits)
 {
-	m_eventBus.Emit(EnvironmentIntensityChanged{ m_env->RequireObjectID(), 2.5f });
+	m_eventBus.Emit(EnvironmentIntensityChanged{ m_env->GetObjectID(), 2.5f });
 	EXPECT_FLOAT_EQ(m_env->GetIntensity(), 2.5f);
 
-	m_eventBus.Emit(EnvironmentRotationChanged{ m_env->RequireObjectID(), 90.0f });
+	m_eventBus.Emit(EnvironmentRotationChanged{ m_env->GetObjectID(), 90.0f });
 	EXPECT_FLOAT_EQ(m_env->GetRotation(), 90.0f);
 }
 
@@ -170,7 +170,7 @@ TEST_F(ObjectControllerTest, PropertyChange_EnqueuesSceneModified)
 {
 	int modified = 0;
 	m_eventBus.Subscribe<SceneModified>([&](const SceneModified&) { modified++; });
-	m_eventBus.Emit(CameraFovChanged{ m_camera->RequireObjectID(), 45.0f });
+	m_eventBus.Emit(CameraFovChanged{ m_camera->GetObjectID(), 45.0f });
 	EXPECT_EQ(modified, 1);
 	EXPECT_FLOAT_EQ(m_camera->cam_pers, 45.0f);
 }
@@ -183,7 +183,7 @@ TEST_F(ObjectControllerTest, ShadowChangesRebuildLightingAndOnlyEnablingUploads)
 	bool rebuilt = false;
 	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
 	m_eventBus.Subscribe<SceneObjectGpuUploadRequested>([&](const auto& event) { uploadedUid = event.objectUid; });
-	const int uid = m_light->RequireObjectID();
+	const int uid = m_light->GetObjectID();
 	for (const bool enabled : { false, true })
 	{
 		SCOPED_TRACE(enabled);
@@ -227,7 +227,7 @@ TEST_F(DebugPropertyTest, DebugAppearanceEditsApplyAndUndoForEveryShape)
 	auto checkAppearance = [&](const auto& shape, const char* name, glm::vec4 color, float opacity)
 	{
 		SCOPED_TRACE(name);
-		const int uid = shape->RequireObjectID();
+		const int uid = shape->GetObjectID();
 		const auto previousColor = shape->GetColor();
 		const bool previousXray = shape->GetXRay();
 		m_eventBus.Emit(DebugColorChanged{uid, color.r, color.g, color.b, color.a});
@@ -250,10 +250,10 @@ TEST_F(DebugPropertyTest, DebugAppearanceEditsApplyAndUndoForEveryShape)
 
 TEST_F(DebugPropertyTest, LineKnobsChanged_OnlyReachDebugLine)
 {
-	m_eventBus.Emit(DebugLineWidthChanged{ m_dline->RequireObjectID(), 4.0f });
-	m_eventBus.Emit(DebugLineStippleChanged{ m_dline->RequireObjectID(), true });
+	m_eventBus.Emit(DebugLineWidthChanged{ m_dline->GetObjectID(), 4.0f });
+	m_eventBus.Emit(DebugLineStippleChanged{ m_dline->GetObjectID(), true });
 	// Same events aimed at a DebugPoints must be ignored, not mis-applied.
-	m_eventBus.Emit(DebugLineWidthChanged{ m_dpoints->RequireObjectID(), 9.0f });
+	m_eventBus.Emit(DebugLineWidthChanged{ m_dpoints->GetObjectID(), 9.0f });
 
 	EXPECT_FLOAT_EQ(m_dline->GetWidth(), 4.0f);
 	EXPECT_TRUE(m_dline->GetStipple());
@@ -261,11 +261,11 @@ TEST_F(DebugPropertyTest, LineKnobsChanged_OnlyReachDebugLine)
 
 TEST_F(DebugPropertyTest, PointKnobsChanged_OnlyReachDebugPoints)
 {
-	m_eventBus.Emit(DebugPointTypeChanged{ m_dpoints->RequireObjectID(),
+	m_eventBus.Emit(DebugPointTypeChanged{ m_dpoints->GetObjectID(),
 	                                       static_cast<int>(DebugPoints::PointType::CIR) });
-	m_eventBus.Emit(DebugPointScaleChanged{ m_dpoints->RequireObjectID(), 12.0f });
-	m_eventBus.Emit(DebugProjectionModeChanged{ m_dpoints->RequireObjectID(), 1 });
-	m_eventBus.Emit(DebugPointScaleChanged{ m_dline->RequireObjectID(), 99.0f });
+	m_eventBus.Emit(DebugPointScaleChanged{ m_dpoints->GetObjectID(), 12.0f });
+	m_eventBus.Emit(DebugProjectionModeChanged{ m_dpoints->GetObjectID(), 1 });
+	m_eventBus.Emit(DebugPointScaleChanged{ m_dline->GetObjectID(), 99.0f });
 
 	EXPECT_EQ(m_dpoints->GetPointType(), DebugPoints::PointType::CIR);
 	EXPECT_FLOAT_EQ(m_dpoints->GetScale(), 12.0f);
@@ -277,7 +277,7 @@ TEST_F(DebugPropertyTest, PositionsChanged_ReplacesTheWholeLineVertexList)
 	m_dline->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f));
 
 	// Three triples: the absolute setter must shrink and grow alike.
-	m_eventBus.Emit(DebugPositionsChanged{ m_dline->RequireObjectID(),
+	m_eventBus.Emit(DebugPositionsChanged{ m_dline->GetObjectID(),
 	                                       { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f } });
 
 	ASSERT_EQ(m_dline->GetVertices().size(), 3u);
@@ -297,7 +297,7 @@ TEST_F(DebugPropertyTest, PositionsChanged_IsUndoableAndRedoable)
 {
 	m_dpoints->PushDebugPoint(glm::vec3(5.0f, 5.0f, 5.0f));
 
-	m_eventBus.Emit(DebugPositionsChanged{ m_dpoints->RequireObjectID(),
+	m_eventBus.Emit(DebugPositionsChanged{ m_dpoints->GetObjectID(),
 	                                       { 1.0f, 1.0f, 1.0f, 2.0f, 2.0f, 2.0f, 3.0f, 4.0f } });
 	ASSERT_EQ(m_dpoints->GetPoints().size(), 2u);
 

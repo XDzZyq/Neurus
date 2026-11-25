@@ -17,7 +17,7 @@ TEST(RenderRequestValues, LightSnapshotSurvivesSourceEditsAndDeletion)
 	light->spot_cutoff = 0.75f;
 	light->spot_outer_cutoff = 0.5f;
 	light->use_shadow = false;
-	const int uid = light->RequireObjectID();
+	const int uid = light->GetObjectID();
 	const UpdateLightRequest request{uid, MakeLightSnapshot(*light)};
 
 	light->SetPosition(glm::vec3(9.0f));
@@ -44,14 +44,14 @@ TEST(RenderRequestValues, LightingBatchOnlyIncludesVisibleRenderedLights)
 	auto excluded = resources.Load<Light>();
 	excluded->is_rendered = false;
 	const std::unordered_map<int, ResourceRef<Light>> lights = {
-		{visible->RequireObjectID(), visible},
-		{hidden->RequireObjectID(), hidden},
-		{excluded->RequireObjectID(), excluded},
+		{visible->GetObjectID(), visible},
+		{hidden->GetObjectID(), hidden},
+		{excluded->GetObjectID(), excluded},
 		{-1, nullptr},
 	};
 	const UpdateLightingRequest request = MakeUpdateLightingRequest(lights);
 	ASSERT_EQ(request.lights.size(), 1u);
-	EXPECT_EQ(request.lights.at(visible->RequireObjectID()).type, LightType::SUNLIGHT);
+	EXPECT_EQ(request.lights.at(visible->GetObjectID()).type, LightType::SUNLIGHT);
 }
 
 namespace {
@@ -77,7 +77,7 @@ TEST(RenderRequestValues, ShaderUploadOwnsBytesAndMetadataAfterSourceEditsAndDel
 	stage.code = "editable source";
 	stage.parsed.Main = "editable function body";
 	shader->BumpVersion();
-	const int uid = shader->RequireObjectID();
+	const int uid = shader->GetObjectID();
 	const int allocations = ResourceManager::NextId();
 	const UploadShaderRequest upload = MakeUploadShaderRequest(*shader);
 	EXPECT_EQ(ResourceManager::NextId(), allocations);

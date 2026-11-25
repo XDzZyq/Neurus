@@ -327,7 +327,7 @@ TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
 		spot->SetPower(3.0f);
 		spot->SetShadow(true);
 		shadowRes.scene->UseLight(spot);
-		lightUIDs.push_back(spot->RequireObjectID());
+		lightUIDs.push_back(spot->GetObjectID());
 	}
 	{
 		auto sun = m_resources.Load<Light>(LightType::SUNLIGHT, 5.0f, glm::vec3(1.0f));
@@ -336,7 +336,7 @@ TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
 		sun->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
 		sun->SetShadow(true);
 		shadowRes.scene->UseLight(sun);
-		lightUIDs.push_back(sun->RequireObjectID());
+		lightUIDs.push_back(sun->GetObjectID());
 	}
 	ASSERT_EQ(lightUIDs.size(), 5u);
 

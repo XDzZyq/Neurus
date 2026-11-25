@@ -96,7 +96,7 @@ TEST(EditorSceneLifecycleTest, NewScene_LeavesTheSceneEmpty)
 
 	// The view camera is the VIEWPORT camera, which is pooled but is not scene
 	// content — that is what makes an empty scene a renderable document.
-	EXPECT_EQ(cam->RequireObjectID(), editor.GetViewport().CameraID());
+	EXPECT_EQ(cam->GetObjectID(), editor.GetViewport().CameraID());
 	EXPECT_TRUE(editor.GetScene().cam_list.empty())
 		<< "NewScene() seeds no scene camera; CreateDefaultScene() does.";
 	EXPECT_EQ(editor.GetScene().GetActiveCamera(), nullptr);
@@ -152,12 +152,12 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededCameraIsRegisteredAndUsable)
 	// from the viewport camera until the user activates a scene camera.
 	EXPECT_EQ(scene.GetActiveCamera(), nullptr);
 	EXPECT_EQ(scene.ActiveCameraID(), 0);
-	EXPECT_NE(cam->RequireObjectID(), editor.GetViewport().CameraID());
-	EXPECT_EQ(editor.GetViewport().GetCamera()->RequireObjectID(), editor.GetViewport().CameraID());
+	EXPECT_NE(cam->GetObjectID(), editor.GetViewport().CameraID());
+	EXPECT_EQ(editor.GetViewport().GetCamera()->GetObjectID(), editor.GetViewport().CameraID());
 
 	// Registered in obj_list under its own type, so the Outliner and every
 	// UID-keyed lookup (selection, delete, serialization) can find it.
-	const ObjectID* obj = scene.GetObjectID(cam->RequireObjectID());
+	const ObjectID* obj = scene.GetObjectID(cam->GetObjectID());
 	ASSERT_NE(obj, nullptr) << "seeded camera missing from obj_list";
 	EXPECT_EQ(obj->o_type, ObjectID::GOType::GO_CAM);
 
@@ -227,19 +227,19 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededContentIsRegisteredByName)
 	ASSERT_NE(editor.GetViewport().ViewportCamera(), nullptr);
 	EXPECT_EQ(resources.GetByName<Camera>("ViewportCamera").get(),
 	          editor.GetViewport().ViewportCamera());
-	EXPECT_NE(editor.GetViewport().ViewportCamera()->RequireObjectID(),
+	EXPECT_NE(editor.GetViewport().ViewportCamera()->GetObjectID(),
 	          scene.cam_list.begin()->first);
 	auto line = resources.GetByName<DebugLine>("DebugLine");
 	auto line001 = resources.GetByName<DebugLine>("DebugLine.001");
 	ASSERT_NE(line, nullptr) << "the solid axis line was not registered";
 	ASSERT_NE(line001, nullptr) << "the x-ray axis line reused the bare name";
-	EXPECT_NE(line->RequireObjectID(), line001->RequireObjectID());
+	EXPECT_NE(line->GetObjectID(), line001->GetObjectID());
 
 	auto points = resources.GetByName<DebugPoints>("DebugPoints");
 	auto points001 = resources.GetByName<DebugPoints>("DebugPoints.001");
 	ASSERT_NE(points, nullptr) << "the axis-tip points were not registered";
 	ASSERT_NE(points001, nullptr) << "the light-cube points reused the bare name";
-	EXPECT_NE(points->RequireObjectID(), points001->RequireObjectID());
+	EXPECT_NE(points->GetObjectID(), points001->GetObjectID());
 
 	// The Outliner reads o_name, so the unique registry result has to be
 	// mirrored back into it - otherwise both rows still say "DebugLine".
@@ -251,10 +251,10 @@ TEST(EditorSceneLifecycleTest, NewProject_SeededContentIsRegisteredByName)
 	// The Outliner walks the scene pools, so the same strings must be there.
 	ASSERT_EQ(scene.dLine_list.size(), 2u);
 	ASSERT_EQ(scene.dPoints_list.size(), 2u);
-	EXPECT_EQ(scene.dLine_list.at(line->RequireObjectID())->o_name, "DebugLine");
-	EXPECT_EQ(scene.dLine_list.at(line001->RequireObjectID())->o_name, "DebugLine.001");
-	EXPECT_EQ(scene.dPoints_list.at(points->RequireObjectID())->o_name, "DebugPoints");
-	EXPECT_EQ(scene.dPoints_list.at(points001->RequireObjectID())->o_name, "DebugPoints.001");
+	EXPECT_EQ(scene.dLine_list.at(line->GetObjectID())->o_name, "DebugLine");
+	EXPECT_EQ(scene.dLine_list.at(line001->GetObjectID())->o_name, "DebugLine.001");
+	EXPECT_EQ(scene.dPoints_list.at(points->GetObjectID())->o_name, "DebugPoints");
+	EXPECT_EQ(scene.dPoints_list.at(points001->GetObjectID())->o_name, "DebugPoints.001");
 }
 
 // ---------------------------------------------------------------------------

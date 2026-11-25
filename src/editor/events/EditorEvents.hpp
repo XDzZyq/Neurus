@@ -27,7 +27,7 @@ struct RenderResetEvent
 struct EnvironmentChanged
 {
 	int sceneId = -1; ///< ID of the Scene containing the Environment
-	int envId   = -1; ///< ID of the Environment object (from UID::RequireObjectID())
+	int envId   = -1; ///< ID of the Environment object (from UID::GetObjectID())
 };
 
 /**

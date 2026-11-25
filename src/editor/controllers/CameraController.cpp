@@ -83,7 +83,7 @@ void RecordCameraPose(neurus::IOperationSink& ops, const neurus::Camera& camera,
 	if (afterPos == beforePos && afterTar == beforeTar) return;
 
 	ops.Submit(std::make_unique<Op>(
-		camera.RequireObjectID(),
+		camera.GetObjectID(),
 		neurus::CameraPose{ beforePos, beforeTar },
 		neurus::CameraPose{ afterPos, afterTar }));
 }

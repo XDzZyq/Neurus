@@ -68,7 +68,7 @@ int AddMesh(ResourceManager& resources, Scene& scene, const glm::vec3& pos, floa
 	mesh->SetPosition(pos);
 	mesh->SetScale(glm::vec3(scale));
 	scene.UseMesh(mesh);
-	return mesh->RequireObjectID();
+	return mesh->GetObjectID();
 }
 
 /**
@@ -81,7 +81,7 @@ int AddLight(ResourceManager& resources, Scene& scene, LightType type, const glm
 	light->SetPosition(pos);
 	light->SetRadius(radius);
 	scene.UseLight(light);
-	return light->RequireObjectID();
+	return light->GetObjectID();
 }
 
 /// @brief The snapshot's record for @p uid, or nullptr when it carries none.

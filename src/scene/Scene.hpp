@@ -430,10 +430,10 @@ inline void SnapshotSelectionUids(const Selections<const ObjectID*>& selections,
 	outSelectedUids.clear();
 	outSelectedUids.reserve(list.size());
 	for (const ObjectID* obj : list)
-		if (obj) outSelectedUids.push_back(obj->RequireObjectID());
+		if (obj) outSelectedUids.push_back(obj->GetObjectID());
 
 	const ObjectID* active = selections.GetActiveObject();
-	outActiveUid = active ? active->RequireObjectID() : 0;
+	outActiveUid = active ? active->GetObjectID() : 0;
 }
 
 inline void RestoreSelectionUids(Scene& scene, const std::vector<int>& selectedUids, int activeUid)

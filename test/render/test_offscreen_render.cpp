@@ -74,7 +74,7 @@ protected:
 		neurus::Scene scene;
 		auto camera = CreateTestCamera(kWidth, kHeight);
 		scene.UseCamera(camera);
-		scene.ActivateCamera(camera->RequireObjectID());
+		scene.ActivateCamera(camera->GetObjectID());
 
 		// The snapshot and the context must outlive the call: the renderer reads
 		// through ctx.snapshot while it records.

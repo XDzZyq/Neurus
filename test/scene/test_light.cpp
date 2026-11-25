@@ -42,7 +42,7 @@ TEST(Light, TypedLightsStartCleanWithCommonDefaults)
 	{
 		SCOPED_TRACE(static_cast<int>(type));
 		Light light(type);
-		EXPECT_FALSE(light.GetObjectID().has_value());
+		EXPECT_EQ(light.GetObjectID(), -1);
 		EXPECT_TRUE(light.use_shadow);
 		EXPECT_EQ(light.light_type, type);
 		EXPECT_EQ(light.o_type, ObjectID::GOType::GO_LIGHT);

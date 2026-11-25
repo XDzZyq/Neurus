@@ -6,7 +6,7 @@
 
 A default-constructed `UID` or derived object is ephemeral. It acquires a key when a `ResourceManager` registers it. A live object can belong to only one pool, and membership lasts until that pool removes the entry or is cleared or destroyed.
 
-- `GetObjectID()` returns `std::optional<int>`. `RequireObjectID()` returns the stored integer for callers that require a pooled object.
+- `GetObjectID()` returns the integer pool key. For an unpooled object it logs an error and returns `-1`.
 - Each entry owns its identity. The object observes membership through a weak reference, so external shared ownership can keep the object alive after its key expires.
 - `ResourceManager::Load<T>()` constructs and registers a fresh object. Fresh keys begin at one and increase across managers. A saved key can be zero. Managers reserve the saved keys when indexing a project.
 - Removing an object from a scene only releases its scene reference. The pool retains the object and its key for undo and project save.
@@ -16,8 +16,7 @@ A default-constructed `UID` or derived object is ephemeral. It acquires a key wh
 ```mermaid
 classDiagram
     class UID {
-        +GetObjectID() optional~int~
-        +RequireObjectID() int
+        +GetObjectID() int
         +serialize(ar)
     }
     class ObjectID {

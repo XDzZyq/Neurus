@@ -92,7 +92,7 @@ TEST_F(PassFactoryTest, CustomNodeInstancesCacheOnlyWhileOwned)
 	ASSERT_NE(shader, nullptr);
 	m_resources.Register(shader);
 	ASSERT_TRUE(shader->CompileToSpv());
-	const int shaderId = shader->RequireObjectID();
+	const int shaderId = shader->GetObjectID();
 	// UID zero is valid; absence is represented by nullopt.
 	auto builtin = factory.Acquire("ComposePass", "first", std::nullopt);
 	auto otherBuiltin = factory.Acquire("ComposePass", "second", std::nullopt);

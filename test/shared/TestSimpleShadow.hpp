@@ -151,7 +151,7 @@ inline SimpleShadowResources LoadSimpleShadow(
 		res.scene->UseCamera(cam);
 		// Registration no longer implies activation; the fixture renders through
 		// this camera, so it activates it explicitly.
-		res.scene->ActivateCamera(cam->RequireObjectID());
+		res.scene->ActivateCamera(cam->GetObjectID());
 	}
 
 	NEURUS_LOG("[LoadSimpleShadow] Built 2 meshes (cube + plane) + 1 point light + 1 camera");

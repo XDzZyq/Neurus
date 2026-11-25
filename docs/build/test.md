@@ -180,7 +180,7 @@ and stops there publishes a frame with no camera, and
 `LightingPass`/`SSAOPass`/`ShadowDepthPass`/`ShadowIntensityPass` see
 `ctx.Frame().HasCamera()` false and skip their work: a blank or shadowless
 reference image, not a crash. So pair every `UseCamera()` in a render test with
-`scene.ActivateCamera(cam->RequireObjectID())` (the shared shadow builders in
+`scene.ActivateCamera(cam->GetObjectID())` (the shared shadow builders in
 `test/shared/TestSimpleShadow.hpp` and `TestMultiShadow.hpp` already do).
 
 Usage example - replace 15+ lines of manual G-Buffer transitions with one call:

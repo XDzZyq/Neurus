@@ -112,10 +112,10 @@ protected:
 	ShaderUnit& VertexUnit() { return m_mesh->o_shader->GetStage(ShaderType::VERTEX); }
 
 	/** @brief The mesh's UID, used as the event payload. */
-	int MeshObj() const { return m_mesh->RequireObjectID(); }
+	int MeshObj() const { return m_mesh->GetObjectID(); }
 
 	/** @brief The mesh shader's pooled UID, used by the shader-keyed events. */
-	int ShaderUid() const { return m_mesh->o_shader->RequireObjectID(); }
+	int ShaderUid() const { return m_mesh->o_shader->GetObjectID(); }
 
 	EventQueue m_eventBus;
 	Scene m_scene; // real scene so event UIDs resolve at dispatch/replay
@@ -185,7 +185,7 @@ TEST_F(ShaderControllerTest, ShaderFieldRenameRecordsOnlyValidTargets)
 
 TEST_F(ShaderControllerTest, SetShaderCodeOp_Serialize_RoundTrip)
 {
-	const int uid = m_mesh->RequireObjectID();
+	const int uid = m_mesh->GetObjectID();
 	std::unique_ptr<Operation> op =
 		std::make_unique<SetShaderCodeOp>(uid, kVertex, "CODE_BEFORE", "CODE_AFTER");
 
@@ -209,7 +209,7 @@ TEST_F(ShaderControllerTest, SetShaderFieldOp_Serialize_RoundTrip)
 	VertexUnit().parsed.AB_list.push_back(
 		S_IO{ 0, "orig", ParaType::FLOAT, "", Interp::Smooth });
 
-	const int uid = m_mesh->RequireObjectID();
+	const int uid = m_mesh->GetObjectID();
 	ShaderFieldValue before = S_IO{ 0, "orig", ParaType::FLOAT, "", Interp::Smooth };
 	ShaderFieldValue after  = S_IO{ 0, "renamed", ParaType::FLOAT, "", Interp::Smooth };
 	std::unique_ptr<Operation> op = std::make_unique<SetShaderFieldOp>(
@@ -234,7 +234,7 @@ TEST_F(ShaderControllerTest, AddShaderFieldOp_Serialize_RoundTrip)
 {
 	ASSERT_TRUE(VertexUnit().parsed.AB_list.empty());
 
-	const int uid = m_mesh->RequireObjectID();
+	const int uid = m_mesh->GetObjectID();
 	std::unique_ptr<Operation> op = std::make_unique<AddShaderFieldOp>(
 		uid, kVertex, ShaderSection::Attributes, /*subFieldIndex*/ -1, /*add*/ true);
 
@@ -465,11 +465,11 @@ protected:
 
 TEST_F(ShaderCreateUndoTest, UndoDropsRedoRelinksSamePooledShader)
 {
-	const int shaderId = m_shader->RequireObjectID();
+	const int shaderId = m_shader->GetObjectID();
 
 	// Mirror Editor::OnCreateShader: link the pooled shader, then record.
 	m_mesh->SetObjShader(m_shader);
-	std::unique_ptr<Operation> op = std::make_unique<ShaderLinkOp>(m_mesh->RequireObjectID(), shaderId, true);
+	std::unique_ptr<Operation> op = std::make_unique<ShaderLinkOp>(m_mesh->GetObjectID(), shaderId, true);
 	auto restored = RoundTrip(op);
 	ASSERT_NE(dynamic_cast<ShaderLinkOp*>(restored.get()), nullptr);
 	EXPECT_EQ(restored->Label(), "Create Shader");
@@ -487,13 +487,13 @@ TEST_F(ShaderCreateUndoTest, UndoDropsRedoRelinksSamePooledShader)
 	m_operations.Redo();
 	ASSERT_TRUE(m_mesh->o_shader);
 	EXPECT_EQ(m_mesh->o_shader.id(), shaderId);
-	EXPECT_EQ(m_mesh->o_shader->RequireObjectID(), shaderId);
+	EXPECT_EQ(m_mesh->o_shader->GetObjectID(), shaderId);
 }
 
 TEST_F(ShaderCreateUndoTest, StaleMeshUidNoOps)
 {
 	// A mesh that no longer exists resolves to null and must no-op safely.
-	m_operations.Submit(std::make_unique<ShaderLinkOp>(123456, m_shader->RequireObjectID(), true));
+	m_operations.Submit(std::make_unique<ShaderLinkOp>(123456, m_shader->GetObjectID(), true));
 	EXPECT_NO_THROW(m_operations.Undo());
 	EXPECT_NO_THROW(m_operations.Redo());
 	// Stacks advance like any other op (stale-UID no-op does not alter them);
@@ -602,7 +602,7 @@ TEST_F(ShaderControllerTest, ComputeShaderUnitCompileNotifiesGraphConsumers)
 		"TestCompute", "res/shaders/compute/dummy.comp.glsl");
 	ASSERT_TRUE(compute);
 	ASSERT_TRUE(compute->ParseAndGenerate());
-	const int shaderUid = compute->RequireObjectID();
+	const int shaderUid = compute->GetObjectID();
 
 	const int stage = static_cast<int>(ShaderType::COMPUTE);
 	const std::string edited =
@@ -629,7 +629,7 @@ TEST(PassShaderEditing, MaterializedPrimaryShadersPreserveAllSevenPassInterfaces
 		const auto builtIn = catalog.ShaderFor(pass.shaders.front().name);
 		const auto editable = catalog.CreatePassShader(pass.name, "editable");
 		EXPECT_NE(editable.get(), builtIn.get());
-		EXPECT_FALSE(editable->GetObjectID());
+		EXPECT_EQ(editable->GetObjectID(), -1);
 		EXPECT_NO_THROW(neurus::ValidatePassShader(pass.name, *editable, catalog));
 	}
 }

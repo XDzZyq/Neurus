@@ -65,7 +65,7 @@ TEST(SceneSerialize, MembershipIncludesPooledUidZero)
 	const int nextId = ResourceManager::NextId();
 	resources.RegisterDeferred(0, typeid(Light), [] { return std::make_shared<Light>(); });
 	const auto light = resources.Get<Light>(0);
-	ASSERT_EQ(light->RequireObjectID(), 0);
+	ASSERT_EQ(light->GetObjectID(), 0);
 	EXPECT_EQ(ResourceManager::NextId(), nextId);
 	source.UseLight(light);
 	std::stringstream document;
@@ -109,10 +109,10 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto camera = resources.Load<Camera>();
 		camera->cam_tar = glm::vec3(0.0f, 1.0f, 0.0f);
 		scene.UseCamera(camera);
-		scene.ActivateCamera(camera->RequireObjectID());
+		scene.ActivateCamera(camera->GetObjectID());
 
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
-		meshDataUid = meshData->RequireObjectID();
+		meshDataUid = meshData->GetObjectID();
 		auto mesh = resources.Load<Mesh>(meshData);
 		auto shader = resources.Load<RenderShader>(
 			"TestShader", "res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
@@ -126,8 +126,8 @@ TEST(SceneSerialize, FullRoundtrip)
 		mesh->SetPosition(glm::vec3(1.0f, 2.0f, 3.0f));
 		mesh->SetRotation(glm::vec3(0.0f, 0.0f, 90.0f)); // yaw
 		mesh->SetScale(glm::vec3(2.0f));
-		meshUid = mesh->RequireObjectID();
-		shaderUid = shader->RequireObjectID();
+		meshUid = mesh->GetObjectID();
+		shaderUid = shader->GetObjectID();
 
 		auto light = resources.Load<Light>(SUNLIGHT, 3.0f, glm::vec3(1.0f));
 		scene.UseLight(light);
@@ -135,8 +135,8 @@ TEST(SceneSerialize, FullRoundtrip)
 		auto imageData = resources.Load<ImageData>("res/tex/hdr/room.hdr");
 		auto env = resources.Load<Environment>(imageData);
 		scene.UseEnvironment(env);
-		envUid = env->RequireObjectID();
-		imageDataUid = imageData->RequireObjectID();
+		envUid = env->GetObjectID();
+		imageDataUid = imageData->GetObjectID();
 
 		scene.selections.Select(mesh.get(), false);
 
@@ -175,7 +175,7 @@ TEST(SceneSerialize, FullRoundtrip)
 	EXPECT_EQ(loadedMesh->o_mesh.id(), meshDataUid);
 	EXPECT_NE(loadedMesh->o_mesh.id(), 0);
 	ASSERT_NE(loadedMesh->o_mesh.shared(), nullptr);
-	EXPECT_EQ(loadedMesh->o_mesh->RequireObjectID(), loadedMesh->o_mesh.id());
+	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), loadedMesh->o_mesh.id());
 	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u); // content reloaded from res/
 
 	// Transform: the raw TRS round-trips as data, and the cached model matrix -
@@ -202,7 +202,7 @@ TEST(SceneSerialize, FullRoundtrip)
 
 	EXPECT_EQ(loadedMesh->o_shader.id(), shaderUid);
 	ASSERT_TRUE(loadedMesh->o_shader);
-	EXPECT_EQ(loadedMesh->o_shader->RequireObjectID(), shaderUid);
+	EXPECT_EQ(loadedMesh->o_shader->GetObjectID(), shaderUid);
 	EXPECT_EQ(loadedMesh->o_shader->GetName(), "TestShader");
 
 	// Environment data-resource wiring: ImageData by pooled ID.
@@ -210,14 +210,14 @@ TEST(SceneSerialize, FullRoundtrip)
 	ASSERT_NE(loadedEnv, nullptr);
 	EXPECT_EQ(loadedEnv->GetEquirectDataId(), imageDataUid);
 	ASSERT_NE(loadedEnv->GetEquirectData(), nullptr);
-	EXPECT_EQ(loadedEnv->GetEquirectData()->RequireObjectID(), imageDataUid);
+	EXPECT_EQ(loadedEnv->GetEquirectData()->GetObjectID(), imageDataUid);
 	EXPECT_TRUE(loadedEnv->GetEquirectData()->IsValid()); // reloaded from res/
 
 	// Selection restored by UID against the rebuilt obj_list.
 	EXPECT_EQ(loadedScene.selections.GetSelectionCount(), 1u);
 	const ObjectID* selected = loadedScene.selections.GetActiveObject();
 	ASSERT_NE(selected, nullptr);
-	EXPECT_EQ(selected->RequireObjectID(), meshUid);
+	EXPECT_EQ(selected->GetObjectID(), meshUid);
 }
 
 // A missing image can still be identified when the project is saved again.
@@ -234,7 +234,7 @@ TEST(SceneSerialize, MissingEnvironmentImageKeepsItsUidAcrossSaveAndReopen)
 
 	auto environment = resources.Load<Environment>();
 	auto image = resources.Load<ImageData>();
-	const int imageUid = image->RequireObjectID();
+	const int imageUid = image->GetObjectID();
 	environment->SetEquirectData(image);
 	scene.UseEnvironment(environment);
 	document.Save(first.path);
@@ -334,7 +334,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
 		auto orphan = resources.Load<Mesh>(meshData);
-		orphanUid = orphan->RequireObjectID();
+		orphanUid = orphan->GetObjectID();
 		// NOTE: the orphan is deliberately NOT registered in the scene —
 		// simulating a deleted object whose pooled resource survives.
 
@@ -361,7 +361,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	ASSERT_NE(orphan, nullptr);
 	EXPECT_NE(orphan->o_mesh.id(), 0);        // persisted by the pool
 	ASSERT_TRUE(orphan->o_mesh);
-	EXPECT_EQ(orphan->o_mesh->RequireObjectID(), orphan->o_mesh.id());
+	EXPECT_EQ(orphan->o_mesh->GetObjectID(), orphan->o_mesh.id());
 }
 
 // -----------------------------------------------------------------------
@@ -398,7 +398,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 		line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 2.0f, 3.0f));
 		line->SetStipple(true);
 		line->SetWidth(4.0f);
-		lineUid = line->RequireObjectID();
+		lineUid = line->GetObjectID();
 		scene.UseDebugLine(line);
 
 		project::Project p;
@@ -475,12 +475,12 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 		auto first = resources.Load<Mesh>();
 		first->o_name = "Clash";
 		scene.UseMesh(first);
-		firstUid = first->RequireObjectID();
+		firstUid = first->GetObjectID();
 
 		auto second = resources.Load<Mesh>();
 		second->o_name = "Clash";
 		scene.UseMesh(second);
-		secondUid = second->RequireObjectID();
+		secondUid = second->GetObjectID();
 
 		// Both objects carry the same name on purpose (scene registration no
 		// longer touches names); the load path's registry seeding must
@@ -518,8 +518,8 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	auto clash001 = loadedResources.GetByName<Mesh>("Clash.001");
 	ASSERT_NE(clash, nullptr);
 	ASSERT_NE(clash001, nullptr);
-	EXPECT_EQ(clash->RequireObjectID(), firstUid);
-	EXPECT_EQ(clash001->RequireObjectID(), secondUid);
+	EXPECT_EQ(clash->GetObjectID(), firstUid);
+	EXPECT_EQ(clash001->GetObjectID(), secondUid);
 
 	// The per-type index is rebuilt with the pool, so typed enumeration is exact
 	// without scanning every resource.
@@ -544,7 +544,7 @@ TEST(SceneSerialize, BrokenMemberDoesNotHideSiblingOrPreservePreviousMembership)
 		project::SceneComponent(source, resources).Save(archive);
 	}
 
-	const int brokenUid = broken->RequireObjectID();
+	const int brokenUid = broken->GetObjectID();
 	ASSERT_TRUE(resources.Remove(brokenUid));
 	resources.RegisterDeferred(brokenUid, typeid(Mesh), []() -> std::shared_ptr<UID>
 	{
@@ -554,15 +554,15 @@ TEST(SceneSerialize, BrokenMemberDoesNotHideSiblingOrPreservePreviousMembership)
 	Scene restored;
 	const auto oldCamera = resources.Load<Camera>();
 	restored.UseCamera(oldCamera);
-	restored.ActivateCamera(oldCamera->RequireObjectID());
+	restored.ActivateCamera(oldCamera->GetObjectID());
 	project::SceneComponent(restored, resources).LoadJson(stream.str());
 
 	EXPECT_TRUE(restored.cam_list.empty());
 	EXPECT_EQ(restored.GetActiveCamera(), nullptr);
-	EXPECT_EQ(restored.GetObjectID(oldCamera->RequireObjectID()), nullptr);
+	EXPECT_EQ(restored.GetObjectID(oldCamera->GetObjectID()), nullptr);
 	EXPECT_EQ(restored.GetObjectID(brokenUid), nullptr);
 	ASSERT_EQ(restored.mesh_list.size(), 1u);
-	EXPECT_EQ(restored.GetObjectID(retained->RequireObjectID()), retained.get());
+	EXPECT_EQ(restored.GetObjectID(retained->GetObjectID()), retained.get());
 	EXPECT_EQ(restored.selections.GetSelectionCount(), 1u);
 	EXPECT_EQ(restored.selections.GetActiveObject(), retained.get());
 }

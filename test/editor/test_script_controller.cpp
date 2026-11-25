@@ -59,8 +59,8 @@ protected:
 TEST_F(ScriptControllerTest, RunBoundaryCreatesOneUndoableEdit)
 {
 	m_eventBus.Emit(ScriptRunStarted{});
-	m_eventBus.Emit(PositionChanged{ m_mesh->RequireObjectID(), 1.0f, 2.0f, 3.0f });
-	m_eventBus.Emit(PositionChanged{ m_mesh->RequireObjectID(), 4.0f, 5.0f, 6.0f });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
 	m_eventBus.Emit(ScriptRunFinished{});
 
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 1u);
@@ -79,15 +79,15 @@ TEST_F(ScriptControllerTest, RunBoundaryCreatesOneUndoableEdit)
 	EXPECT_EQ(m_operations.GetHistoryView().undo.back(), "Run Script");
 
 	// Finishing the run returns ordinary edits to independent history entries.
-	m_eventBus.Emit(PositionChanged{ m_mesh->RequireObjectID(), 1.0f, 2.0f, 3.0f });
-	m_eventBus.Emit(PositionChanged{ m_mesh->RequireObjectID(), 4.0f, 5.0f, 6.0f });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 4.0f, 5.0f, 6.0f });
 	EXPECT_EQ(m_operations.GetUndoStack().size(), 3u);
 }
 
 TEST_F(ScriptControllerTest, RunNameBecomesTheHistoryLabel)
 {
 	m_eventBus.Emit(ScriptRunStarted{ "Run demo.py" });
-	m_eventBus.Emit(PositionChanged{ m_mesh->RequireObjectID(), 1.0f, 2.0f, 3.0f });
+	m_eventBus.Emit(PositionChanged{ m_mesh->GetObjectID(), 1.0f, 2.0f, 3.0f });
 	m_eventBus.Emit(ScriptRunFinished{});
 
 	ASSERT_EQ(m_operations.GetHistoryView().undo.size(), 1u);

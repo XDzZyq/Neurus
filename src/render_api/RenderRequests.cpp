@@ -14,7 +14,7 @@ namespace neurus {
 UploadShaderRequest MakeUploadShaderRequest(const ShaderData& shader)
 {
 	UploadShaderRequest request;
-	request.shaderId = shader.RequireObjectID();
+	request.shaderId = shader.GetObjectID();
 	request.version = shader.GetVersion();
 	request.primaryType = shader.GetType();
 	for (const auto type : {ShaderType::VERTEX, ShaderType::FRAGMENT,
@@ -43,7 +43,7 @@ EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader)
 	// version cannot discriminate a mesh relinked between two shaders that
 	// happen to share a version.
 	EnsurePipelineRequest request;
-	request.shaderId = shader.RequireObjectID();
+	request.shaderId = shader.GetObjectID();
 	request.version  = shader.GetVersion();
 
 
@@ -53,7 +53,7 @@ EnsurePipelineRequest MakeEnsurePipelineRequest(const ShaderData& shader)
 LightSnapshot MakeLightSnapshot(const Light& light)
 {
 	LightSnapshot snapshot;
-	snapshot.objectId = light.RequireObjectID();
+	snapshot.objectId = light.GetObjectID();
 	snapshot.type = light.light_type;
 	snapshot.position = light.GetPosition();
 	snapshot.direction = light.GetDirection();

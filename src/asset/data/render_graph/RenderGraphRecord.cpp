@@ -262,7 +262,7 @@ bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
 	const auto* graphServices = dynamic_cast<const GraphReadServices*>(services);
 	if (!graphServices)
 	{
-		NEURUS_ERR("Missing pass catalog for graph UID " << graph.RequireObjectID());
+		NEURUS_ERR("Missing pass catalog for graph UID " << graph.GetObjectID());
 		return false;
 	}
 	const auto& catalog = *graphServices->catalog;
@@ -276,7 +276,7 @@ bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
 		}
 		catch (const std::exception& error)
 		{
-			diagnostics.push_back(kind + " shader UID " + std::to_string(shader.RequireObjectID())
+			diagnostics.push_back(kind + " shader UID " + std::to_string(shader.GetObjectID())
 			                      + " uses its built-in fallback: " + error.what());
 			return false;
 		}
@@ -292,7 +292,7 @@ bool RestoreGraph(RenderGraphData& graph, const RenderGraphRecord& record,
 	const auto sink = graphServices->diagnostics.lock();
 	for (const auto& message : diagnostics)
 	{
-		const auto text = "Graph UID " + std::to_string(graph.RequireObjectID()) + ": " + message;
+		const auto text = "Graph UID " + std::to_string(graph.GetObjectID()) + ": " + message;
 		NEURUS_LOG("[RenderGraphData] " << text);
 		if (sink) sink->push_back(text);
 	}

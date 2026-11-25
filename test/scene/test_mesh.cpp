@@ -55,7 +55,7 @@ TEST(Mesh, DefaultConstruction)
 	Mesh empty(data);
 	EXPECT_EQ(empty.o_type, mesh.o_type);
 	EXPECT_EQ(empty.o_mesh.shared(), data);
-	EXPECT_EQ(empty.o_mesh.id(), data->RequireObjectID());
+	EXPECT_EQ(empty.o_mesh.id(), data->GetObjectID());
 	EXPECT_EQ(mesh.GetMaterial(), nullptr);
 
 	EXPECT_EQ(mesh.GetShader(), nullptr);

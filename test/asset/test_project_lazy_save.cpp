@@ -47,7 +47,7 @@ TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 	}
 	auto document = Json::parse(output.str());
 	auto& records = document.at("m_resources").at("resources_");
-	const int shaderId = shader->RequireObjectID();
+	const int shaderId = shader->GetObjectID();
 	auto shaderRecord = std::find_if(records.begin(), records.end(),
 		[&](const Json& entry) { return entry.at("key") == shaderId; });
 	ASSERT_NE(shaderRecord, records.end());
@@ -56,7 +56,7 @@ TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 	for (auto record = records.begin(); record != std::prev(records.end()); ++record)
 	{
 		const auto& data = record->at("data");
-		if (record->at("key") == unbound->RequireObjectID())
+		if (record->at("key") == unbound->GetObjectID())
 			EXPECT_FALSE(data.contains("o_shaderId"));
 		else
 			EXPECT_EQ(data.at("o_shaderId"), shaderId);
@@ -64,9 +64,9 @@ TEST(ProjectRoundtrip, MeshShaderReferenceRoundTripsAsScalarUid)
 	const std::string saved = document.dump();
 	auto check = [&](const ResourceManager& pool)
 	{
-		const auto a = pool.Get<Mesh>(first->RequireObjectID());
-		const auto b = pool.Get<Mesh>(second->RequireObjectID());
-		const auto c = pool.Get<Mesh>(unbound->RequireObjectID());
+		const auto a = pool.Get<Mesh>(first->GetObjectID());
+		const auto b = pool.Get<Mesh>(second->GetObjectID());
+		const auto c = pool.Get<Mesh>(unbound->GetObjectID());
 		ASSERT_TRUE(a && b && c);
 		ASSERT_NE(a->GetShader(), nullptr);
 		EXPECT_EQ(a->GetShader(), b->GetShader());
@@ -108,18 +108,18 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 	int editedId, renamedId, removedLiveId, removedDeferredId, firstMeshId, secondMeshId, geometryId, plainId;
 	{
 		ResourceManager source;
-		editedId = source.Load<Camera>()->RequireObjectID();
-		renamedId = source.Load<Camera>()->RequireObjectID();
-		removedLiveId = source.Load<Camera>()->RequireObjectID();
-		removedDeferredId = source.Load<Camera>()->RequireObjectID();
+		editedId = source.Load<Camera>()->GetObjectID();
+		renamedId = source.Load<Camera>()->GetObjectID();
+		removedLiveId = source.Load<Camera>()->GetObjectID();
+		removedDeferredId = source.Load<Camera>()->GetObjectID();
 		const auto geometry = source.Load<MeshData>(obj.generic_string());
 		ASSERT_EQ(geometry->GetVertexCount(), 3u);
-		geometryId = geometry->RequireObjectID();
+		geometryId = geometry->GetObjectID();
 		const auto firstMesh = source.Load<Mesh>();
 		firstMesh->o_mesh = geometry;
-		firstMeshId = firstMesh->RequireObjectID();
-		secondMeshId = source.Load<Mesh>(geometry)->RequireObjectID();
-		plainId = source.Load<UID>()->RequireObjectID();
+		firstMeshId = firstMesh->GetObjectID();
+		secondMeshId = source.Load<Mesh>(geometry)->GetObjectID();
+		plainId = source.Load<UID>()->GetObjectID();
 		project::Project writer;
 		writer.Register<project::ResourceComponent>(source);
 		writer.Save(original.string());
@@ -160,7 +160,7 @@ TEST(ProjectRoundtrip, SaveAsPreservesLiveEditsAndUnloadedRecords)
 		const auto named = restored.GetByName<Camera>("Inspection camera");
 		ASSERT_TRUE(named);
 		EXPECT_EQ(named->o_name, "Inspection camera");
-		EXPECT_EQ(named->RequireObjectID(), renamedId);
+		EXPECT_EQ(named->GetObjectID(), renamedId);
 		EXPECT_EQ(named, restored.Get<Camera>(renamedId));
 		const auto first = restored.Get<Mesh>(firstMeshId);
 		const auto second = restored.Get<Mesh>(secondMeshId);
@@ -201,8 +201,8 @@ TEST(ProjectRoundtrip, ImmediateSaveOmitsCameraWithInvalidKey)
 {
 
 	ResourceManager source;
-	const int broken = source.Load<Camera>()->RequireObjectID();
-	const int valid = source.Load<Camera>()->RequireObjectID();
+	const int broken = source.Load<Camera>()->GetObjectID();
+	const int valid = source.Load<Camera>()->GetObjectID();
 	std::ostringstream original;
 	{
 		cereal::JSONOutputArchive archive(original);

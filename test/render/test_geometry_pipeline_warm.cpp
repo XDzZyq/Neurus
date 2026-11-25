@@ -103,7 +103,7 @@ protected:
 
 	bool UploadShader(const ShaderData& shader)
 	{
-		const auto resident = m_renderCache->GetShader(shader.RequireObjectID());
+		const auto resident = m_renderCache->GetShader(shader.GetObjectID());
 		if (resident && resident->GetVersion() == shader.GetVersion())
 			return true;
 		try
@@ -169,7 +169,7 @@ protected:
 	{
 		auto camera = CreateTestCamera(kWidth, kHeight);
 		scene.UseCamera(camera);
-		scene.ActivateCamera(camera->RequireObjectID());
+		scene.ActivateCamera(camera->GetObjectID());
 		for (const auto& m : meshes) scene.UseMesh(m);
 	}
 
@@ -194,7 +194,7 @@ TEST_F(GeometryPipelineWarmTest, Record_DoesNotCompile_WhenShaderUnwarmed)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = MakeShader("UnwarmedShader");
-	const int shaderId = shader->RequireObjectID();
+	const int shaderId = shader->GetObjectID();
 	const int version  = shader->GetVersion();
 
 	Scene scene;
@@ -222,7 +222,7 @@ TEST_F(GeometryPipelineWarmTest, EnsureMeshPipeline_WarmsThenRecordHits)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = MakeShader("WarmShader");
-	const int shaderId = shader->RequireObjectID();
+	const int shaderId = shader->GetObjectID();
 	const int version  = shader->GetVersion();
 
 	Scene scene;
@@ -249,7 +249,7 @@ TEST_F(GeometryPipelineWarmTest, PipelineKeyedOnShaderNotMesh)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = MakeShader("SharedShader");
-	const int shaderId = shader->RequireObjectID();
+	const int shaderId = shader->GetObjectID();
 	const int version  = shader->GetVersion();
 
 	auto meshA = MakeMesh(shader);
@@ -265,8 +265,8 @@ TEST_F(GeometryPipelineWarmTest, PipelineKeyedOnShaderNotMesh)
 	EXPECT_NE(warmed, nullptr);
 	// ... never on either mesh id. Keying on the mesh id (the bug the re-key
 	// fixed) would leave Get(shaderId) null and populate a mesh id instead.
-	EXPECT_EQ(pipelines.Get(meshA->RequireObjectID()), nullptr);
-	EXPECT_EQ(pipelines.Get(meshB->RequireObjectID()), nullptr);
+	EXPECT_EQ(pipelines.Get(meshA->GetObjectID()), nullptr);
+	EXPECT_EQ(pipelines.Get(meshB->GetObjectID()), nullptr);
 
 	// A second warm is a no-op: the same entry is returned, so no second compile
 	// happened and the single entry serves both meshes.
@@ -289,7 +289,7 @@ TEST_F(GeometryPipelineWarmTest, VersionBumpInvalidatesLookup)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = MakeShader("VersionedShader");
-	const int shaderId   = shader->RequireObjectID();
+	const int shaderId   = shader->GetObjectID();
 	const int oldVersion = shader->GetVersion();
 
 	EXPECT_TRUE(WarmShader(*shader));
@@ -323,14 +323,14 @@ TEST_F(GeometryPipelineWarmTest, NoUsableSpirv_WarmReturnsFalse_CacheStaysEmpty)
 	if (!m_hasVulkan) GTEST_SKIP() << "No Vulkan-capable GPU found.";
 
 	auto shader = MakeShader("UncompiledShader", /*compile=*/false);
-	const int shaderId = shader->RequireObjectID();
+	const int shaderId = shader->GetObjectID();
 	const int version  = shader->GetVersion();
 
 	Scene scene;
 	BuildScene(scene, {MakeMesh(shader)});
 
 	EXPECT_FALSE(UploadShader(*shader));
-	EXPECT_EQ(m_renderCache->GetShader(shader->RequireObjectID()), nullptr);
+	EXPECT_EQ(m_renderCache->GetShader(shader->GetObjectID()), nullptr);
 	EXPECT_FALSE(m_geometryPass->EnsureMeshPipeline(*m_renderCache, MakeEnsurePipelineRequest(*shader)));
 
 	PipelineCache& pipelines = m_renderCache->GetPipelineCache();
@@ -356,14 +356,14 @@ TEST_F(GeometryPipelineWarmTest, FragmentOnlySpirv_DoesNotBuildPipeline)
 	auto shader = MakeShader("FragmentOnlyShader");
 	shader->GetStage(ShaderType::VERTEX).spv.clear(); // mid-compile state
 	shader->BumpVersion();
-	const int shaderId = shader->RequireObjectID();
+	const int shaderId = shader->GetObjectID();
 	const int version  = shader->GetVersion();
 
 	Scene scene;
 	BuildScene(scene, {MakeMesh(shader)});
 
 	EXPECT_FALSE(UploadShader(*shader));
-	EXPECT_EQ(m_renderCache->GetShader(shader->RequireObjectID()), nullptr);
+	EXPECT_EQ(m_renderCache->GetShader(shader->GetObjectID()), nullptr);
 	EXPECT_FALSE(m_geometryPass->EnsureMeshPipeline(*m_renderCache, MakeEnsurePipelineRequest(*shader)));
 
 	PipelineCache& pipelines = m_renderCache->GetPipelineCache();
@@ -386,9 +386,9 @@ TEST_F(GeometryPipelineWarmTest, IncompatibleCompiledStagesUseDefaultWithoutCrea
 	shader->BumpVersion();
 
 	EXPECT_FALSE(UploadShader(*shader));
-	EXPECT_EQ(m_renderCache->GetShader(shader->RequireObjectID()), nullptr);
+	EXPECT_EQ(m_renderCache->GetShader(shader->GetObjectID()), nullptr);
 	EXPECT_FALSE(m_geometryPass->EnsureMeshPipeline(*m_renderCache, MakeEnsurePipelineRequest(*shader)));
-	EXPECT_EQ(m_renderCache->GetPipelineCache().Get(shader->RequireObjectID()), nullptr);
+	EXPECT_EQ(m_renderCache->GetPipelineCache().Get(shader->GetObjectID()), nullptr);
 
 	Scene scene;
 	BuildScene(scene, {MakeMesh(shader)});
@@ -410,11 +410,11 @@ TEST_F(GeometryPipelineWarmTest, UploadedMeshShaderWithDifferentCameraBindingRej
 
 	// Vertex/fragment linkage remains valid, so upload accepts both modules.
 	ASSERT_TRUE(UploadShader(*shader));
-	ASSERT_TRUE(m_renderCache->GetShader(shader->RequireObjectID()));
+	ASSERT_TRUE(m_renderCache->GetShader(shader->GetObjectID()));
 	// Mesh drawing binds GeometryPass's fixed camera set; reject the changed
 	// contract before pipeline creation instead of reaching Vulkan validation.
 	EXPECT_FALSE(m_geometryPass->EnsureMeshPipeline(*m_renderCache, MakeEnsurePipelineRequest(*shader)));
-	EXPECT_EQ(m_renderCache->GetPipelineCache().Get(shader->RequireObjectID()), nullptr);
+	EXPECT_EQ(m_renderCache->GetPipelineCache().Get(shader->GetObjectID()), nullptr);
 
 	Scene scene;
 	BuildScene(scene, {MakeMesh(shader)});

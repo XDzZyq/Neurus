@@ -109,7 +109,7 @@ public:
 			// completes. Keep the node storage alive through that callback.
 			auto record = std::make_shared<project::RenderGraphRecord>();
 			ar(cereal::make_nvp("topology", *record));
-			ArchiveResourceRefs::AfterLoad(ar, RequireObjectID(),
+			ArchiveResourceRefs::AfterLoad(ar, GetObjectID(),
 				[this, record = std::move(record)](const IResourceLookup&, const ResourceReadServices* services) {
 					return project::RestoreGraph(*this, *record, services);
 				});

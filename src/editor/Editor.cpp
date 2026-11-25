@@ -98,7 +98,7 @@ void PostMeshUpload(RenderRequestSink& renderer, int objectId, std::shared_ptr<c
 void PostLightUpload(RenderRequestSink& renderer, const Light& light)
 {
 	if (!light.use_shadow) return;
-	renderer.Post(CreateLightGpuRequest{light.RequireObjectID(), light.light_type});
+	renderer.Post(CreateLightGpuRequest{light.GetObjectID(), light.light_type});
 }
 
 /**
@@ -109,7 +109,7 @@ void PostLightUpload(RenderRequestSink& renderer, const Light& light)
  */
 void PostEnvironmentUpload(RenderRequestSink& renderer, const Environment& env, bool regenerate)
 {
-	renderer.Post(UploadEnvironmentRequest{env.RequireObjectID(), env.GetEquirectData(), regenerate});
+	renderer.Post(UploadEnvironmentRequest{env.GetObjectID(), env.GetEquirectData(), regenerate});
 }
 
 /**
@@ -121,7 +121,7 @@ void PostEnvironmentUpload(RenderRequestSink& renderer, const Environment& env, 
 int ActiveUid(const Scene& scene)
 {
 	const ObjectID* active = scene.selections.GetActiveObject();
-	return active ? active->RequireObjectID() : 0;
+	return active ? active->GetObjectID() : 0;
 }
 
 /**
@@ -382,11 +382,11 @@ void Editor::Initialize()
 		if (e.middleHeld)
 		{
 			if (e.modifiers & Input::Mod_Ctrl)
-				ed_eventBus.Emit(CameraPushEvent{cam->RequireObjectID(), e.delta.x, e.delta.y});
+				ed_eventBus.Emit(CameraPushEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
 			else if (e.modifiers & Input::Mod_Shift)
-				ed_eventBus.Emit(CameraSlideEvent{cam->RequireObjectID(), e.delta.x, e.delta.y});
+				ed_eventBus.Emit(CameraSlideEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
 			else
-				ed_eventBus.Emit(CameraRotateEvent{cam->RequireObjectID(), e.delta.x, e.delta.y});
+				ed_eventBus.Emit(CameraRotateEvent{cam->GetObjectID(), e.delta.x, e.delta.y});
 		}
 	});
 
@@ -399,12 +399,12 @@ void Editor::Initialize()
 		if (e.button == Input::Right) { ed_eventBus.Emit(GizmoCancelled{}); return; }
 		if (e.button != Input::Middle) return;
 		if (const Camera* cam = ed_viewport.GetCamera())
-			ed_eventBus.Emit(CameraDragBegin{cam->RequireObjectID()});
+			ed_eventBus.Emit(CameraDragBegin{cam->GetObjectID()});
 	});
 	ed_eventBus.Subscribe<MouseReleaseEvent>([this](const MouseReleaseEvent& e) {
 		if (e.button != Input::Middle) return;
 		if (const Camera* cam = ed_viewport.GetCamera())
-			ed_eventBus.Emit(CameraDragEnd{cam->RequireObjectID()});
+			ed_eventBus.Emit(CameraDragEnd{cam->GetObjectID()});
 	});
 
 	ed_eventBus.Subscribe<MouseScrollEvent>([this](const MouseScrollEvent& e) {
@@ -412,7 +412,7 @@ void Editor::Initialize()
 		if (!cam) return;
 
 		if (std::abs(e.delta) > 0.001f)
-			ed_eventBus.Emit(CameraZoomEvent{cam->RequireObjectID(), e.delta});
+			ed_eventBus.Emit(CameraZoomEvent{cam->GetObjectID(), e.delta});
 	});
 
 	// --- Pure UI->Editor intents: wrap the active scene, forward dedicated events ---
@@ -427,7 +427,7 @@ void Editor::Initialize()
 		for (const ObjectID* obj : GetScene().selections.GetSelectedList())
 		{
 			if (obj != nullptr)
-				selected.push_back(obj->RequireObjectID());
+				selected.push_back(obj->GetObjectID());
 		}
 		if (selected.empty()) return;
 		ed_eventBus.Emit(DeleteObjectsRequested{std::move(selected)});
@@ -511,7 +511,7 @@ void Editor::Initialize()
 		bool usedByMesh = false;
 		ed_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
 		{
-			if (mesh && mesh->o_shader && mesh->o_shader->RequireObjectID() == e.shaderObjectId)
+			if (mesh && mesh->o_shader && mesh->o_shader->GetObjectID() == e.shaderObjectId)
 				usedByMesh = true;
 		});
 		const bool usedByGraph = ed_renderManager->ReferencesShader(e.shaderObjectId);
@@ -648,7 +648,7 @@ void Editor::PublishActiveCamera(bool extentChanged)
 	if ((changed || extentChanged) && size.x != 0u && size.y != 0u)
 	{
 		ed_eventBus.Emit(CameraResizeEvent{
-			active->RequireObjectID(),
+			active->GetObjectID(),
 			static_cast<int>(size.x), static_cast<int>(size.y)});
 	}
 
@@ -737,7 +737,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 		if (!mesh) continue;
 
 		MeshInstanceSnapshot inst;
-		inst.objectId          = mesh->RequireObjectID();
+		inst.objectId          = mesh->GetObjectID();
 		inst.model             = mesh->GetModelMatrix();
 		inst.normalMatrix      = mesh->GetNormalMatrix();
 		inst.hasGeometry       = static_cast<bool>(mesh->o_mesh);
@@ -748,7 +748,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 		// object itself never travels.
 		if (mesh->o_shader)
 		{
-			inst.shaderObjectId = mesh->o_shader->RequireObjectID();
+			inst.shaderObjectId = mesh->o_shader->GetObjectID();
 			inst.shaderVersion  = mesh->o_shader->GetVersion();
 		}
 		out.meshes.push_back(inst);
@@ -760,7 +760,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 		if (!light) continue;
 
 		LightSnapshot ls;
-		ls.objectId          = light->RequireObjectID();
+		ls.objectId          = light->GetObjectID();
 		ls.type              = light->light_type;
 		ls.position          = light->GetPosition();
 		ls.direction         = light->GetDirection();
@@ -792,7 +792,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 	for (const auto& [id, env] : scene->env_list)
 	{
 		if (!env) continue;
-		const int envId = env->RequireObjectID();
+		const int envId = env->GetObjectID();
 		if (!out.hasEnvironment || envId < out.environmentId)
 		{
 			out.hasEnvironment = true;
@@ -803,7 +803,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 	// The selection travels as an id, and 0 means none - the same value the
 	// outline pass pushes when nothing is selected.
 	if (const ObjectID* active = scene->selections.GetActiveObject())
-		out.activeObjectId = active->RequireObjectID();
+		out.activeObjectId = active->GetObjectID();
 }
 
 RenderFrameSnapshot Editor::BuildSnapshot() const
@@ -831,9 +831,13 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	ctx.graphProvider = [this]() {
 		ed_eventBus.Emit(RenderGraphFlushRequested{});
 		const auto& authored = ed_renderManager->GraphData();
-		return ScriptGraphView{ &ed_renderManager->Graph(),
-		                        authored ? authored->GetObjectID() : std::nullopt,
-		                        ed_projectEpoch };
+		ScriptGraphView view{ &ed_renderManager->Graph(), std::nullopt, ed_projectEpoch };
+		if (authored)
+		{
+			const int id = authored->GetObjectID();
+			if (id >= 0) view.uid = id;
+		}
+		return view;
 	};
 }
 
@@ -1091,7 +1095,7 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 			// creates a fresh UID, so removing this one cannot evict an earlier
 			// successful load from the same path.
 			if (meshData)
-				ed_resources->Remove(meshData->RequireObjectID());
+				ed_resources->Remove(meshData->GetObjectID());
 			error = "Mesh file contains no geometry: " + storedPath;
 			return 0;
 		}
@@ -1099,13 +1103,13 @@ int Editor::ImportMeshObject(const std::string& path, const std::string& name,
 
 		if (!name.empty())
 		{
-			const std::string unique = ed_resources->SetName(mesh->RequireObjectID(), name);
+			const std::string unique = ed_resources->SetName(mesh->GetObjectID(), name);
 			mesh->o_name = unique.empty() ? name : unique;
 		}
 
-		ed_eventBus.Emit(SceneObjectAddRequested{mesh->RequireObjectID()});
+		ed_eventBus.Emit(SceneObjectAddRequested{mesh->GetObjectID()});
 		NEURUS_LOG("[Editor] Imported mesh: " << storedPath << " as " << mesh->o_name);
-		return mesh->RequireObjectID();
+		return mesh->GetObjectID();
 	}
 	catch (const std::exception& e) {
 		error = e.what();
@@ -1151,7 +1155,7 @@ void Editor::OnShaderCreate(const ShaderCreateRequested& e)
 
 	// Both stages are resolved first, so a shader is only pooled once it has
 	// compiled: a failure leaves no half-made entry and nothing to undo.
-	const std::string shaderName = "MeshShader_" + std::to_string(mesh->RequireObjectID());
+	const std::string shaderName = "MeshShader_" + std::to_string(mesh->GetObjectID());
 	auto shader = std::make_shared<RenderShader>(shaderName, std::move(*vert), std::move(*frag));
 
 	std::string compileError;
@@ -1260,12 +1264,12 @@ int Editor::AddCameraObject(const std::string& name, std::string& error)
 		camera->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		if (!name.empty())
 		{
-			const std::string unique = ed_resources->SetName(camera->RequireObjectID(), name);
+			const std::string unique = ed_resources->SetName(camera->GetObjectID(), name);
 			camera->o_name = unique.empty() ? name : unique;
 		}
-		ed_eventBus.Emit(SceneObjectAddRequested{camera->RequireObjectID()});
+		ed_eventBus.Emit(SceneObjectAddRequested{camera->GetObjectID()});
 		NEURUS_LOG("[Editor] Added camera at (0, -5, 2) as " << camera->o_name);
-		return camera->RequireObjectID();
+		return camera->GetObjectID();
 	}
 	catch (const std::exception& e) {
 		error = e.what();
@@ -1297,7 +1301,7 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 			copy->SetRotation(camera->GetRotation());
 			copy->SetScale(camera->GetScale());
 			copy->SetTarPos(camera->cam_tar);
-			uid = copy->RequireObjectID();
+			uid = copy->GetObjectID();
 		}
 		else if (auto* mesh = dynamic_cast<Mesh*>(source.get()))
 		{
@@ -1312,7 +1316,7 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 			copy->is_closure = mesh->is_closure;
 			copy->o_material = mesh->o_material;
 			copy->o_shader = mesh->o_shader;
-			uid = copy->RequireObjectID();
+			uid = copy->GetObjectID();
 		}
 		else
 		{
@@ -1358,7 +1362,7 @@ void Editor::OnLightAdd()
 		// The shadow-map upload happens on demand when the add is processed; the
 		// light SSBO rebuild happens via LightingRebuild after the controller
 		// registers the light in the scene.
-		ed_eventBus.Emit(SceneObjectAddRequested{light->RequireObjectID()});
+		ed_eventBus.Emit(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added point light at (3, 3, 3)");
 	}
 	catch (const std::exception& e) {
@@ -1376,7 +1380,7 @@ void Editor::OnSunLightAdd()
 		light->use_shadow = true;
 		// The shadow-map upload happens on demand when the add is processed; the
 		// SSBO rebuild via LightingRebuild.
-		ed_eventBus.Emit(SceneObjectAddRequested{light->RequireObjectID()});
+		ed_eventBus.Emit(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added sun light at (0, 0, 10)");
 	}
 	catch (const std::exception& e) {
@@ -1397,7 +1401,7 @@ void Editor::OnSpotLightAdd()
 		light->use_shadow = true;
 		// The shadow-map upload happens on demand when the add is processed; the
 		// SSBO rebuild via LightingRebuild.
-		ed_eventBus.Emit(SceneObjectAddRequested{light->RequireObjectID()});
+		ed_eventBus.Emit(SceneObjectAddRequested{light->GetObjectID()});
 		NEURUS_LOG("[Editor] Added spot light at (0, 0, 6) pointing down");
 	}
 	catch (const std::exception& e) {
@@ -1419,7 +1423,7 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 
 	if (auto mesh = ed_resources->Get<Mesh>(objectUid))
 	{
-		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->RequireObjectID(), mesh->o_mesh.shared());
+		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh.shared());
 	}
 	else if (auto light = ed_resources->Get<Light>(objectUid))
 	{
@@ -1433,7 +1437,7 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 	}
 	else if (auto dMesh = ed_resources->Get<DebugMesh>(objectUid))
 	{
-		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->RequireObjectID(), dMesh->o_mesh.shared());
+		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh.shared());
 	}
 }
 
@@ -1459,7 +1463,7 @@ void Editor::UploadEnvironmentIBL()
 	}
 
 	auto env = scene->env_list.begin()->second;
-	const int envId = env->RequireObjectID();
+	const int envId = env->GetObjectID();
 
 	// Posted with regenerate=false: the renderer skips an environment already
 	// resident, because regenerating cubemaps is by far the most expensive step
@@ -1490,7 +1494,7 @@ void Editor::UploadSceneResources()
 	for (const auto& [id, mesh] : ed_scene->mesh_list)
 	{
 		if (!mesh || !mesh->o_mesh) continue;
-		PostMeshUpload(*ed_renderer, mesh->RequireObjectID(), mesh->o_mesh.shared());
+		PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh.shared());
 
 		// Scene load compiles shaders inside cereal's hook, which cannot reach
 		// the event bus, so no ShaderCompiled fires. Warm each mesh's pipeline
@@ -1513,7 +1517,7 @@ void Editor::UploadSceneResources()
 	for (const auto& [uid, dMesh] : ed_scene->dMesh_list)
 	{
 		if (!dMesh || !dMesh->HasGeometry()) continue;
-		PostMeshUpload(*ed_renderer, dMesh->RequireObjectID(), dMesh->o_mesh.shared());
+		PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh.shared());
 	}
 
 	// The environment is scene content as well: without its cubemaps the scene

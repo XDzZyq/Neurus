@@ -230,7 +230,7 @@ TEST_F(ModelRenderTest, SphereMeshWithPBR_ProducesNonZeroOutput)
 	// -----------------------------------------------------------------------
 	Scene scene;
 	scene.UseCamera(camera);
-	scene.ActivateCamera(camera->RequireObjectID());
+	scene.ActivateCamera(camera->GetObjectID());
 	scene.UseMesh(mesh);
 	scene.UseLight(light);
 

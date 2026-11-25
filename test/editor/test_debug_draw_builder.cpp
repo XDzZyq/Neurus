@@ -531,7 +531,7 @@ TEST(DebugDrawBuilder, WireMesh_CarriesIdModelAndTint)
 
 	ASSERT_EQ(b.List().wireMeshes.size(), 1u);
 	const DebugWireMesh& w = b.List().wireMeshes[0];
-	EXPECT_EQ(w.meshObjectId, mesh->RequireObjectID());
+	EXPECT_EQ(w.meshObjectId, mesh->GetObjectID());
 	EXPECT_EQ(glm::vec3(w.model[3]), glm::vec3(4.0f, 0.0f, 0.0f));
 	EXPECT_EQ(w.rgba, 0xFF00FF00u) << "0xAABBGGRR: opaque green";
 	EXPECT_TRUE(Has(w.flags, DebugFlag::XRay));

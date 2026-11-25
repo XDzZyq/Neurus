@@ -209,7 +209,7 @@ inline MultiShadowResources LoadMultiShadow(
 			const glm::vec3 updated_dir = light->GetDirection();
 			NEURUS_LOG("[LoadMultiShadow] Sunlight " << i << " origin dir=" << dir.x << ", " << dir.y << ", " << dir.z << " updated=" << updated_dir.x << ", " << updated_dir.y << ", " << updated_dir.z);
 			res.scene->UseLight(light);
-			res.lightUIDs.push_back(light->RequireObjectID());
+			res.lightUIDs.push_back(light->GetObjectID());
 		}
 		else
 		{
@@ -223,7 +223,7 @@ inline MultiShadowResources LoadMultiShadow(
 			light->SetShadow(true);
 
 			res.scene->UseLight(light);
-			res.lightUIDs.push_back(light->RequireObjectID());
+			res.lightUIDs.push_back(light->GetObjectID());
 		}
 	}
 
@@ -240,7 +240,7 @@ inline MultiShadowResources LoadMultiShadow(
 		res.scene->UseCamera(cam);
 		// Registration no longer implies activation; the fixture renders through
 		// this camera, so it activates it explicitly.
-		res.scene->ActivateCamera(cam->RequireObjectID());
+		res.scene->ActivateCamera(cam->GetObjectID());
 	}
 
 	NEURUS_LOG("[LoadMultiShadow] Built 2 meshes (cube + plane) + "

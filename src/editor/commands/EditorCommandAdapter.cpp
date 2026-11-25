@@ -197,7 +197,7 @@ bool MatchesFilter(const ObjectID& object, const std::string& filter)
 Json ObjectJson(Scene& scene, ObjectID& object)
 {
 	Json json{
-		{"uid", object.RequireObjectID()},
+		{"uid", object.GetObjectID()},
 		{"name", object.o_name},
 		{"type", TypeName(object)},
 		{"viewport_visible", object.is_viewport},
@@ -232,7 +232,7 @@ Json ObjectJson(Scene& scene, ObjectID& object)
 	{
 		json["fov"] = camera->cam_pers;
 		json["target"] = Vec3Json(camera->cam_tar);
-		json["active"] = scene.ActiveCameraID() == camera->RequireObjectID();
+		json["active"] = scene.ActiveCameraID() == camera->GetObjectID();
 	}
 	else if (auto* environment = dynamic_cast<Environment*>(&object))
 	{
@@ -331,7 +331,7 @@ ObjectID* ResolveTarget(Scene& scene, const Json& args, std::string& error,
 	{
 		Json uids = Json::array();
 		for (ObjectID* match : matches)
-			uids.push_back(match->RequireObjectID());
+			uids.push_back(match->GetObjectID());
 		error = "Several scene objects are named '" + name + "'; pass 'type' or 'uid'.";
 		code = CommandErrorCode::AmbiguousObject;
 		return nullptr;
@@ -380,7 +380,7 @@ bool ResolveTargets(Scene& scene, const Json& args, std::vector<int>& uids,
 	ObjectID* object = ResolveTarget(scene, args, error, code);
 	if (object == nullptr)
 		return false;
-	uids.push_back(object->RequireObjectID());
+	uids.push_back(object->GetObjectID());
 	return true;
 }
 
@@ -575,7 +575,7 @@ private:
 void ApplyEditProperties(Editor& editor, Scene& scene, ObjectID& object,
                          const ObjectEdit& edit)
 {
-	const int uid = object.RequireObjectID();
+	const int uid = object.GetObjectID();
 	IEventQueue& events = editor.GetEventQueue();
 
 	if (edit.hasRename)
@@ -913,7 +913,7 @@ command::CommandResult EditorCommandAdapter::ExecuteSceneList(const command::Jso
 	}
 	std::sort(objects.begin(), objects.end(), [](const ObjectID* left, const ObjectID* right)
 	{
-		return left->RequireObjectID() < right->RequireObjectID();
+		return left->GetObjectID() < right->GetObjectID();
 	});
 
 	Json entries = Json::array();
@@ -1132,7 +1132,7 @@ command::CommandResult EditorCommandAdapter::ExecuteObjectDuplicate(const comman
 
 	CommandEditScope scope(m_editor.GetOperations(), "Duplicate Object");
 	std::string duplicateError;
-	const int uid = m_editor.DuplicateObject(source->RequireObjectID(),
+	const int uid = m_editor.DuplicateObject(source->GetObjectID(),
 	                                         hasRename ? rename : std::string{},
 	                                         duplicateError);
 	if (uid == 0)
@@ -1194,7 +1194,7 @@ command::CommandResult EditorCommandAdapter::ExecuteGraphStatus()
 	for (const auto& problem : manager.Problems())
 		diagnostics.push_back({{"message", problem}});
 	return CommandResult::Success({{"graph", {
-		{"source", selected ? "project" : "builtin"}, {"uid", selected ? Json(selected->RequireObjectID()) : Json(nullptr)},
+		{"source", selected ? "project" : "builtin"}, {"uid", selected ? Json(selected->GetObjectID()) : Json(nullptr)},
 		{"node_count", graph.nodes.size()}, {"edge_count", graph.Connections().size()},
 		{"outputs", std::move(outputs)}, {"diagnostics", std::move(diagnostics)}
 	}}});

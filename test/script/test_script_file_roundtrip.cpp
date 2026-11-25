@@ -132,7 +132,7 @@ TEST(ScriptFileRoundTripTest, HistoryLabelAndUndoSurviveProjectSaveAndLoad)
 	// script addresses it by the document name "Ground".
 	auto mesh = editor.GetResourceManager().GetByName<Mesh>("Mesh");
 	ASSERT_NE(mesh, nullptr);
-	mesh->o_name = editor.GetResourceManager().SetName(mesh->RequireObjectID(), "Ground");
+	mesh->o_name = editor.GetResourceManager().SetName(mesh->GetObjectID(), "Ground");
 
 	const glm::vec3 originalPosition = mesh->GetPosition();
 	const glm::vec3 originalScale = mesh->GetScale();
@@ -200,7 +200,7 @@ assert isinstance(g.uid, int)
 assert g.create().uid == g.uid
 )", &ctx));
 	ASSERT_TRUE(graph);
-	const int uid = graph->RequireObjectID();
+	const int uid = graph->GetObjectID();
 	EXPECT_EQ(resources.Get<RenderGraphData>(uid), graph);
 	EXPECT_EQ(resources.Size(), before + 1);
 	EXPECT_TRUE(editor.IsDirty());
@@ -215,7 +215,7 @@ assert g.create().uid == g.uid
 	SaveProject(tmp.path, editor);
 	LoadProject(tmp.path, editor);
 	ASSERT_TRUE(graph);
-	ASSERT_EQ(graph->RequireObjectID(), uid);
+	ASSERT_EQ(graph->GetObjectID(), uid);
 
 	editor.GetOperations().Undo();
 	ASSERT_FALSE(graph);
@@ -238,7 +238,7 @@ assert g.create().uid == g.uid
 	ASSERT_EQ(editor.GetHistory().redo.size(), 1u);
 	editor.GetOperations().Redo();
 	ASSERT_TRUE(graph);
-	EXPECT_EQ(graph->RequireObjectID(), uid);
+	EXPECT_EQ(graph->GetObjectID(), uid);
 	EXPECT_EQ(resources.Get<RenderGraphData>(uid), graph);
 	EXPECT_EQ(graph->nodes.size(), 7u);
 	for (const auto& node : graph->nodes)

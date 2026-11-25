@@ -113,7 +113,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, *cb.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	cb.scene->UseCamera(cb.camera);
-	cb.scene->ActivateCamera(cb.camera->RequireObjectID());
+	cb.scene->ActivateCamera(cb.camera->GetObjectID());
 
 	RenderFrameSnapshot frameSnapshot;
 	RenderContext ctx{

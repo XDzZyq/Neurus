@@ -320,7 +320,7 @@ TEST(RenderGraphDocument, SavedShaderUidResolvesToOwnedPoolResource)
 	const auto saved = Serialize(neurus::project::ToRecord(graph));
 	const auto record = Deserialize(saved);
 	EXPECT_FALSE(record.nodes[3].shader);
-	EXPECT_EQ(record.nodes[3].shader.id(), shader->RequireObjectID());
+	EXPECT_EQ(record.nodes[3].shader.id(), shader->GetObjectID());
 	EXPECT_EQ(record.nodes[0].shader.id(), 0);
 
 	std::vector<std::string> problems;
@@ -342,8 +342,8 @@ TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
 	const auto invalid = resources.Load<TestShader>();
 	const auto wrongType = resources.Load<neurus::UID>();
 	auto record = neurus::project::ToRecord(RenderGraphData(ports));
-	record.nodes[0].shader = neurus::PassShaderRef::FromId(invalid->RequireObjectID());
-	record.nodes[1].shader = neurus::PassShaderRef::FromId(wrongType->RequireObjectID());
+	record.nodes[0].shader = neurus::PassShaderRef::FromId(invalid->GetObjectID());
+	record.nodes[1].shader = neurus::PassShaderRef::FromId(wrongType->GetObjectID());
 	record.nodes[2].shader = neurus::PassShaderRef::FromId(2147483647);
 
 	std::vector<std::string> problems;
@@ -355,7 +355,7 @@ TEST(RenderGraphDocument, MissingWrongTypeAndInvalidShadersSelectDefaults)
 		EXPECT_EQ(node->data.shader.get(), nullptr);
 	for (const auto& node : neurus::project::ToRecord(*restored).nodes)
 		EXPECT_EQ(node.shader.id(), 0);
-	EXPECT_EQ(resources.Get<TestShader>(invalid->RequireObjectID()), invalid);
+	EXPECT_EQ(resources.Get<TestShader>(invalid->GetObjectID()), invalid);
 
 	const auto withoutPool = neurus::project::FromRecord(record, ports, problems);
 	for (const auto& node : withoutPool->nodes)

@@ -83,7 +83,7 @@ struct ObjectCollection
 		pool->ForEachUID([this, &result](const std::shared_ptr<UID>& resource)
 		{
 			if (const auto obj = std::dynamic_pointer_cast<ObjectID>(resource))
-				result.append(py::cast(ObjectProxy{obj->RequireObjectID(), view}));
+				result.append(py::cast(ObjectProxy{obj->GetObjectID(), view}));
 		});
 		return result;
 	}

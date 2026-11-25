@@ -107,7 +107,7 @@ protected:
 		neurus::Scene scene;
 		auto camera = CreateTestCamera(kWidth, kHeight);
 		scene.UseCamera(camera);
-		scene.ActivateCamera(camera->RequireObjectID());
+		scene.ActivateCamera(camera->GetObjectID());
 
 		neurus::RenderFrameSnapshot snapshot{};
 		neurus::RenderContext context{};

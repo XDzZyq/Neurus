@@ -147,7 +147,7 @@ void RenderManager::Publish()
 		for (const auto& node : graph->nodes)
 		{
 			if (const auto& shader = node->data.shader;
-			    shader && uploaded.insert(shader->RequireObjectID()).second)
+			    shader && uploaded.insert(shader->GetObjectID()).second)
 				m_sink->Post(MakeUploadShaderRequest(*shader));
 		}
 		published = std::move(graph);

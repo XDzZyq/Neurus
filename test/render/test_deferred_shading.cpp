@@ -148,7 +148,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
 	VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, *resources.scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 
 	resources.scene->UseCamera(resources.camera);
-	resources.scene->ActivateCamera(resources.camera->RequireObjectID());
+	resources.scene->ActivateCamera(resources.camera->GetObjectID());
 
 	// Snapshot storage must outlive ctx - the renderer half only; PublishFrame
 	// fills the Editor half and publishes the owned snapshot below.

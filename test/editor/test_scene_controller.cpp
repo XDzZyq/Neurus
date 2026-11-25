@@ -44,7 +44,7 @@ protected:
 		m_mesh   = m_resources.Load<Mesh>();
 		m_light  = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_scene.UseCamera(m_camera);
-		m_scene.ActivateCamera(m_camera->RequireObjectID());
+		m_scene.ActivateCamera(m_camera->GetObjectID());
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 	}
@@ -70,7 +70,7 @@ protected:
 TEST_F(SceneControllerTest, ObjectDeselected_RemovesFromSelection)
 {
 	m_scene.selections.Select(m_mesh.get(), false);
-	m_eventBus.Enqueue(ObjectDeselected{m_mesh->RequireObjectID()});
+	m_eventBus.Enqueue(ObjectDeselected{m_mesh->GetObjectID()});
 	Process();
 	EXPECT_FALSE(m_scene.selections.IsSelected(m_mesh.get()));
 }
@@ -81,7 +81,7 @@ TEST_F(SceneControllerTest, Selection_DoesNotEmitSceneModified)
 {
 	int modified = 0;
 	m_eventBus.Subscribe<SceneModified>([&](const SceneModified&) { modified++; });
-	m_eventBus.Enqueue(ObjectSelected{m_mesh->RequireObjectID(), 0});
+	m_eventBus.Enqueue(ObjectSelected{m_mesh->GetObjectID(), 0});
 	Process();
 	EXPECT_EQ(modified, 0);
 	m_eventBus.Enqueue(ObjectSelected{0, 0});
@@ -97,7 +97,7 @@ int LoadPooledMesh(ResourceManager& resources)
 {
 	auto meshData = resources.Load<MeshData>();
 	auto mesh = resources.Load<Mesh>(meshData);
-	return mesh->RequireObjectID();
+	return mesh->GetObjectID();
 }
 
 TEST_F(SceneControllerTest, SceneObjectAdd_RegistersSelectsAndRecordsOp)
@@ -189,10 +189,10 @@ TEST_F(SceneControllerTest, DeleteObjects_MultiSelection_RemovesAllAndRestores)
 TEST_F(SceneControllerTest, DeleteObjects_LastCamera_Allowed)
 {
 	m_scene.selections.Select(m_camera.get(), false);
-	m_eventBus.Enqueue(DeleteObjectsRequested{{m_camera->RequireObjectID()}});
+	m_eventBus.Enqueue(DeleteObjectsRequested{{m_camera->GetObjectID()}});
 	Process();
 
-	EXPECT_EQ(m_scene.cam_list.count(m_camera->RequireObjectID()), 0u);
+	EXPECT_EQ(m_scene.cam_list.count(m_camera->GetObjectID()), 0u);
 	EXPECT_TRUE(m_scene.cam_list.empty());
 	EXPECT_EQ(m_scene.GetActiveCamera(), nullptr);
 	EXPECT_TRUE(m_operations.CanUndo());
@@ -200,7 +200,7 @@ TEST_F(SceneControllerTest, DeleteObjects_LastCamera_Allowed)
 	// Undo re-adds the camera, which re-validates the untouched activation uid.
 	m_operations.Undo();
 	Process();
-	EXPECT_EQ(m_scene.cam_list.count(m_camera->RequireObjectID()), 1u);
+	EXPECT_EQ(m_scene.cam_list.count(m_camera->GetObjectID()), 1u);
 	EXPECT_EQ(m_scene.GetActiveCamera(), m_camera.get());
 }
 
@@ -217,15 +217,15 @@ TEST_F(SceneControllerTest, SceneObjectAdd_Light_EnqueuesLightingRebuild)
 	m_eventBus.Subscribe<LightingRebuild>([&](const LightingRebuild&) { rebuilt = true; });
 
 	auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-	m_eventBus.Enqueue(SceneObjectAddRequested{light->RequireObjectID()});
+	m_eventBus.Enqueue(SceneObjectAddRequested{light->GetObjectID()});
 	Process();
 	EXPECT_TRUE(rebuilt);
-	EXPECT_EQ(m_scene.light_list.count(light->RequireObjectID()), 1u);
+	EXPECT_EQ(m_scene.light_list.count(light->GetObjectID()), 1u);
 	rebuilt = false;
-	m_eventBus.Enqueue(DeleteObjectsRequested{{light->RequireObjectID()}});
+	m_eventBus.Enqueue(DeleteObjectsRequested{{light->GetObjectID()}});
 	Process();
 	EXPECT_TRUE(rebuilt);
-	EXPECT_EQ(m_scene.light_list.count(light->RequireObjectID()), 0u);
+	EXPECT_EQ(m_scene.light_list.count(light->GetObjectID()), 0u);
 }
 
 // --- Scene-scoped GPU upload on demand (SceneObjectGpuUploadRequested) ------
@@ -239,13 +239,13 @@ TEST_F(SceneControllerTest, SceneAddRequestsUploadsOnlyForGpuBackedObjectTypes)
 	const auto light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 	const auto env = m_resources.Load<Environment>(m_resources.Load<ImageData>(""));
 	const auto camera = m_resources.Load<Camera>();
-	for (const int uid : { mesh->RequireObjectID(), light->RequireObjectID(), env->RequireObjectID(), camera->RequireObjectID() })
+	for (const int uid : { mesh->GetObjectID(), light->GetObjectID(), env->GetObjectID(), camera->GetObjectID() })
 	{
 		SCOPED_TRACE(uid);
 		uploadedUid = 0;
 		m_eventBus.Enqueue(SceneObjectAddRequested{uid});
 		Process();
-		EXPECT_EQ(uploadedUid, uid == camera->RequireObjectID() ? 0 : uid);
+		EXPECT_EQ(uploadedUid, uid == camera->GetObjectID() ? 0 : uid);
 		EXPECT_NE(m_scene.GetObjectID(uid), nullptr);
 	}
 }

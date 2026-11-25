@@ -185,7 +185,7 @@ protected:
 
 	// Inline EnvironmentGPU creation (was RenderCache::CreateEnvironmentGPU)
 	{
-		const int envId = m_env->RequireObjectID();
+		const int envId = m_env->GetObjectID();
 
 		// 1. Upload equirect to GPU
 		auto equirectImage = std::make_shared<Image>(Image::FromImageData(
@@ -318,8 +318,8 @@ TEST_F(IBLRenderTest, IBLRender_MatchesReferenceImage)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
-				scene.ActivateCamera(camera->RequireObjectID());
-				scene.env_list[m_env->RequireObjectID()] = m_env;
+				scene.ActivateCamera(camera->GetObjectID());
+				scene.env_list[m_env->GetObjectID()] = m_env;
 
 	// Pre-register GPU resources before pass recording
 	VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
@@ -431,8 +431,8 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
-				scene.ActivateCamera(camera->RequireObjectID());
-				scene.env_list[m_env->RequireObjectID()] = m_env;
+				scene.ActivateCamera(camera->GetObjectID());
+				scene.env_list[m_env->GetObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
 				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
@@ -512,7 +512,7 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 	{
 		auto& device = *m_device;
 		auto& physDev = PhysicalDevice();
-		const int envId = m_env->RequireObjectID();
+		const int envId = m_env->GetObjectID();
 
 		// 1. Upload equirect to GPU
 		auto equirectImage = std::make_shared<Image>(Image::FromImageData(
@@ -579,8 +579,8 @@ TEST_F(IBLRenderTest, Reload_Environment_NoValidationErrors)
 				scene.UseMesh(mesh);
 				scene.UseLight(light);
 				scene.UseCamera(camera);
-				scene.ActivateCamera(camera->RequireObjectID());
-				scene.env_list[m_env->RequireObjectID()] = m_env;
+				scene.ActivateCamera(camera->GetObjectID());
+				scene.env_list[m_env->GetObjectID()] = m_env;
 				// Pre-register GPU resources before pass recording
 				VulkanTestShared::EnsureMeshesUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);
 				VulkanTestShared::EnsureLightShadowsUploaded(*m_renderCache, scene, *m_device, PhysicalDevice(), *m_queue, m_graphicsQueueFamily);

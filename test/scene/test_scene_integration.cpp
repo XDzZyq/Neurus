@@ -27,12 +27,12 @@ TEST(SceneIntegrationTest, RegisterAllObjectTypes)
 	auto dLine    = resources.Load<DebugLine>();
 	auto dPoints  = resources.Load<DebugPoints>();
 
-	int camId     = cam->RequireObjectID();
-	int lightId   = light->RequireObjectID();
-	int meshId    = mesh->RequireObjectID();
-	int spriteId  = sprite->RequireObjectID();
-	int dLineId   = dLine->RequireObjectID();
-	int dPointsId = dPoints->RequireObjectID();
+	int camId     = cam->GetObjectID();
+	int lightId   = light->GetObjectID();
+	int meshId    = mesh->GetObjectID();
+	int spriteId  = sprite->GetObjectID();
+	int dLineId   = dLine->GetObjectID();
+	int dPointsId = dPoints->GetObjectID();
 
 	scene.UseCamera(cam);
 	scene.UseLight(light);
@@ -156,9 +156,9 @@ TEST(SceneIntegrationTest, SharedOwnershipOutlivesScene)
 	auto light = resources.Load<Light>();
 	auto mesh  = resources.Load<Mesh>();
 
-	int camId   = cam->RequireObjectID();
-	int lightId = light->RequireObjectID();
-	int meshId  = mesh->RequireObjectID();
+	int camId   = cam->GetObjectID();
+	int lightId = light->GetObjectID();
+	int meshId  = mesh->GetObjectID();
 
 	{
 		Scene scene;
@@ -177,7 +177,7 @@ TEST(SceneIntegrationTest, SharedOwnershipOutlivesScene)
 	EXPECT_EQ(mesh.use_count(),  2);
 
 	// IDs are still valid
-	EXPECT_EQ(cam->RequireObjectID(),   camId);
-	EXPECT_EQ(light->RequireObjectID(), lightId);
-	EXPECT_EQ(mesh->RequireObjectID(),  meshId);
+	EXPECT_EQ(cam->GetObjectID(),   camId);
+	EXPECT_EQ(light->GetObjectID(), lightId);
+	EXPECT_EQ(mesh->GetObjectID(),  meshId);
 }

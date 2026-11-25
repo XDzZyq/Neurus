@@ -1,22 +1,16 @@
 #include "core/UID.hpp"
 
-#include <stdexcept>
+#include "core/Log.hpp"
 
 namespace neurus
 {
 
-std::optional<int> UID::GetObjectID() const noexcept
+int UID::GetObjectID() const
 {
 	if (const auto membership = m_membership.lock())
 		return *membership;
-	return std::nullopt;
-}
-
-int UID::RequireObjectID() const
-{
-	if (const auto id = GetObjectID())
-		return *id;
-	throw std::logic_error("Object has no resource pool membership");
+	NEURUS_ERR("Object has no resource pool membership");
+	return -1;
 }
 
 } // namespace neurus

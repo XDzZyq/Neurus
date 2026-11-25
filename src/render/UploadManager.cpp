@@ -292,7 +292,7 @@ EnvironmentGPU UploadManager::UploadEnvironment(std::shared_ptr<const ImageData>
 LightGPU UploadManager::UploadLight(const Light& light)
 {
 	// Only the uid and type are read; delegate so there is one allocation path.
-	return UploadLight(light.RequireObjectID(), light.light_type);
+	return UploadLight(light.GetObjectID(), light.light_type);
 }
 
 LightGPU UploadManager::UploadLight(int uid, LightType type)

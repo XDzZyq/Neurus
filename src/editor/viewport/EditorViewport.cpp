@@ -82,7 +82,7 @@ void EditorViewport::EnsureCamera(ResourceManager& pool)
 	// it would otherwise claim "Camera" from the document's own camera (which then
 	// reopened as "Camera.001"). A project written before this fix keeps the old
 	// label.
-	v_camera->o_name = pool.SetName(v_camera->RequireObjectID(), "ViewportCamera");
+	v_camera->o_name = pool.SetName(v_camera->GetObjectID(), "ViewportCamera");
 	v_camera->SetPosition(kDefaultEye);
 	v_camera->SetTarPos(kDefaultTarget);
 

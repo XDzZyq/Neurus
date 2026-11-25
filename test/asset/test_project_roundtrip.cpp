@@ -154,11 +154,11 @@ TEST(ProjectRoundtrip, FullScene)
 		camera->cam_near = 0.1f;
 		camera->cam_far = 100.0f;
 		scene.UseCamera(camera);
-		scene.ActivateCamera(camera->RequireObjectID());
+		scene.ActivateCamera(camera->GetObjectID());
 
 		// Mesh
 		auto meshData = resources.Load<MeshData>("res/obj/sphere.obj");
-		meshDataId = meshData->RequireObjectID();
+		meshDataId = meshData->GetObjectID();
 		auto mesh = resources.Load<Mesh>(meshData);
 		mesh->using_shadow = false;
 		mesh->using_sdf = false;
@@ -207,7 +207,7 @@ TEST(ProjectRoundtrip, FullScene)
 	EXPECT_FALSE(loadedMesh->using_sdf);
 	EXPECT_EQ(loadedMesh->o_name, "TestSphere");
 	ASSERT_NE(loadedMesh->o_mesh.shared(), nullptr);
-	EXPECT_EQ(loadedMesh->o_mesh->RequireObjectID(), meshDataId);
+	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), meshDataId);
 	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u);
 	EXPECT_EQ(loadedMesh->GetPosition(), glm::vec3(1.0f, 0.0f, 0.0f));
 	EXPECT_EQ(loadedMesh->o_type, ObjectID::GOType::GO_MESH);
@@ -249,11 +249,11 @@ TEST(ProjectRoundtrip, SelectionState)
 		auto meshData = resources.Load<MeshData>("obj/cube.obj");
 		auto mesh = resources.Load<Mesh>(meshData);
 		scene.UseMesh(mesh);
-		meshUid = mesh->RequireObjectID();
+		meshUid = mesh->GetObjectID();
 
 		auto light = resources.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
 		scene.UseLight(light);
-		lightUid = light->RequireObjectID();
+		lightUid = light->GetObjectID();
 
 		// Select mesh (replace), then add light — light becomes active.
 		scene.selections.Select(mesh.get(), false);
@@ -282,7 +282,7 @@ TEST(ProjectRoundtrip, SelectionState)
 
 	const ObjectID* active = loadedScene.selections.GetActiveObject();
 	ASSERT_NE(active, nullptr);
-	EXPECT_EQ(active->RequireObjectID(), lightUid);
+	EXPECT_EQ(active->GetObjectID(), lightUid);
 }
 
 namespace {
@@ -353,21 +353,21 @@ TEST(ProjectRoundtrip, IndexRestoresPlainUidAlongsideNamedDerivedTypes)
 	const int nextUid = ResourceManager::NextId();
 	project::ResourceComponent(restored, neurus::project::MakeGraphReadServices(catalog)).LoadJson(serialized.str());
 	ASSERT_EQ(restored.Size(), 2u);
-	const auto base = restored.Get(plain->RequireObjectID());
+	const auto base = restored.Get(plain->GetObjectID());
 	ASSERT_TRUE(base);
 	const UID& object = *base;
 	EXPECT_TRUE(typeid(object) == typeid(UID));
 	const auto named = restored.GetByName<Camera>(camera->o_name);
 	ASSERT_TRUE(named);
-	EXPECT_EQ(named->RequireObjectID(), camera->RequireObjectID());
+	EXPECT_EQ(named->GetObjectID(), camera->GetObjectID());
 	EXPECT_EQ(ResourceManager::NextId(), nextUid);
 
 	ResourceManager direct;
 	std::istringstream stream(serialized.str());
 	cereal::JSONInputArchive archive(stream);
 	project::ResourceComponent(direct).Load(archive);
-	ASSERT_TRUE(direct.Get<UID>(plain->RequireObjectID()));
-	ASSERT_TRUE(direct.Get<Camera>(camera->RequireObjectID()));
+	ASSERT_TRUE(direct.Get<UID>(plain->GetObjectID()));
+	ASSERT_TRUE(direct.Get<Camera>(camera->GetObjectID()));
 	EXPECT_EQ(ResourceManager::NextId(), nextUid);
 }
 
@@ -382,7 +382,7 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 	auto& scene = writer.GetScene();
 	const auto camera = source.Load<Camera>();
 	scene.UseCamera(camera);
-	scene.ActivateCamera(camera->RequireObjectID());
+	scene.ActivateCamera(camera->GetObjectID());
 	const auto geometry = source.Load<MeshData>("res/obj/sphere.obj");
 	const auto first = source.Load<Mesh>(geometry);
 	const auto second = source.Load<Mesh>(geometry);
@@ -420,16 +420,16 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 #endif
 	const auto& restored = reader.GetScene();
 	ASSERT_EQ(restored.mesh_list.size(), 2u);
-	const auto& firstGeometry = restored.mesh_list.at(first->RequireObjectID())->o_mesh;
+	const auto& firstGeometry = restored.mesh_list.at(first->GetObjectID())->o_mesh;
 	ASSERT_TRUE(firstGeometry);
 	EXPECT_GT(firstGeometry->GetVertexCount(), 0u);
-	EXPECT_EQ(firstGeometry.get(), restored.mesh_list.at(second->RequireObjectID())->o_mesh.get());
-	EXPECT_EQ(restored.ActiveCameraID(), camera->RequireObjectID());
-	EXPECT_EQ(restored.selections.GetActiveObject(), restored.mesh_list.at(second->RequireObjectID()).get());
+	EXPECT_EQ(firstGeometry.get(), restored.mesh_list.at(second->GetObjectID())->o_mesh.get());
+	EXPECT_EQ(restored.ActiveCameraID(), camera->GetObjectID());
+	EXPECT_EQ(restored.selections.GetActiveObject(), restored.mesh_list.at(second->GetObjectID()).get());
 	ASSERT_TRUE(sink.publishedGraph);
 	EXPECT_EQ(project::ToRecord(*activeGraph), project::ToRecord(*sink.publishedGraph));
 	ASSERT_TRUE(reader.GetRenderManager().GraphData());
-	EXPECT_EQ(reader.GetRenderManager().GraphData()->RequireObjectID(), activeGraph->RequireObjectID());
+	EXPECT_EQ(reader.GetRenderManager().GraphData()->GetObjectID(), activeGraph->GetObjectID());
 
 	since = log.HeadSeq();
 	ASSERT_TRUE(app.SaveProject(savedCopy.path, reader, layout, error)) << error;
@@ -438,16 +438,16 @@ TEST(ProjectRoundtrip, MixedPoolContentLoads)
 #endif
 	since = log.HeadSeq();
 	const auto& pool = reader.GetResourceManager();
-	const auto mesh = pool.Get<MeshData>(unusedMesh->RequireObjectID());
+	const auto mesh = pool.Get<MeshData>(unusedMesh->GetObjectID());
 	ASSERT_TRUE(mesh);
 	EXPECT_GT(mesh->GetVertexCount(), 0u);
-	EXPECT_EQ(mesh, pool.Get<MeshData>(unusedMesh->RequireObjectID()));
-	const auto image = pool.Get<ImageData>(unusedImage->RequireObjectID());
+	EXPECT_EQ(mesh, pool.Get<MeshData>(unusedMesh->GetObjectID()));
+	const auto image = pool.Get<ImageData>(unusedImage->GetObjectID());
 	ASSERT_TRUE(image);
 	EXPECT_TRUE(image->IsValid());
-	const auto graph = pool.Get<RenderGraphData>(inactiveGraph->RequireObjectID());
+	const auto graph = pool.Get<RenderGraphData>(inactiveGraph->GetObjectID());
 	ASSERT_TRUE(graph);
-	const auto loadedShader = pool.Get<ComputeShader>(shader->RequireObjectID());
+	const auto loadedShader = pool.Get<ComputeShader>(shader->GetObjectID());
 	ASSERT_TRUE(loadedShader);
 	EXPECT_FALSE(loadedShader->GetStage(ShaderType::COMPUTE).spv.empty());
 	EXPECT_EQ(graph->nodes.at(5)->data.shader.get(), loadedShader.get());
@@ -475,8 +475,8 @@ TEST(ProjectRoundtrip, DuplicateCameraNamesAreClaimedInUidOrder)
 	const auto second = restored.GetByName<Camera>("Camera.001");
 	ASSERT_TRUE(first);
 	ASSERT_TRUE(second);
-	EXPECT_EQ(first->RequireObjectID(), older->RequireObjectID());
-	EXPECT_EQ(second->RequireObjectID(), newer->RequireObjectID());
+	EXPECT_EQ(first->GetObjectID(), older->GetObjectID());
+	EXPECT_EQ(second->GetObjectID(), newer->GetObjectID());
 	EXPECT_EQ(first->o_name, "Camera");
 	EXPECT_EQ(second->o_name, "Camera.001");
 }

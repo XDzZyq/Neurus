@@ -413,7 +413,7 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 	EXPECT_FLOAT_EQ(loaded.area_ratio, fresh.area_ratio);
 
 	// The two keys the archive kept still land.
-	EXPECT_FALSE(loaded.GetObjectID().has_value());
+	EXPECT_EQ(loaded.GetObjectID(), -1);
 	EXPECT_EQ(loaded.light_type, SUNLIGHT);
 }
 

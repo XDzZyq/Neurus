@@ -71,8 +71,8 @@ TEST(ObjectIDTest, StandaloneObjectsHaveNoIdentity)
 {
 	neurus::ObjectID object;
 	neurus::Camera camera;
-	EXPECT_FALSE(object.GetObjectID());
-	EXPECT_FALSE(camera.GetObjectID());
+	EXPECT_EQ(object.GetObjectID(), -1);
+	EXPECT_EQ(camera.GetObjectID(), -1);
 }
 
 // --- Identity Special Members -------------------------------------------

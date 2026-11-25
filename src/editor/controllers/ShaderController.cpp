@@ -226,7 +226,7 @@ void OnCodeEdited(const neurus::ShaderCodeEdited& e, const neurus::ControllerCon
 
 	unit.code = e.code;
 
-	NEURUS_LOG("[ShaderController] Code updated for mesh " << mesh->RequireObjectID()
+	NEURUS_LOG("[ShaderController] Code updated for mesh " << mesh->GetObjectID()
 	           << " (" << unit.code.size() << " bytes)");
 }
 
@@ -269,16 +269,16 @@ void OnCompileShader(const neurus::ShaderCompileRequested& e, const neurus::Cont
 		unit.spv = neurus::ShaderLibrary::Compile(unit, type, shader.GetName());
 		if (unit.spv.empty())
 		{
-			NEURUS_ERR("[ShaderController] Compile failed for mesh " << mesh->RequireObjectID());
+			NEURUS_ERR("[ShaderController] Compile failed for mesh " << mesh->GetObjectID());
 			return;
 		}
 		unit.BumpVersion();
 		shader.BumpVersion();
 
 		// The pipeline cache is keyed on the shader, so hand the Editor its id to warm.
-		ctx.events.Emit(neurus::ShaderCompiled{ shader.RequireObjectID() });
+		ctx.events.Emit(neurus::ShaderCompiled{ shader.GetObjectID() });
 
-		NEURUS_LOG("[ShaderController] Compiled shader for mesh " << mesh->RequireObjectID()
+		NEURUS_LOG("[ShaderController] Compiled shader for mesh " << mesh->GetObjectID()
 		           << " (unitType=" << e.unitType << ")");
 		// Compiling from code/IR regenerates the persisted source, and from
 		// struct regenerates the code: the document changed even without an op.
@@ -438,7 +438,7 @@ void OnUnitCompile(const neurus::ShaderUnitCompileRequested& e,
 		neurus::notify::Mutated(ctx.events);
 
 		shader->BumpVersion();
-		ctx.events.Emit(neurus::ShaderCompiled{ shader->RequireObjectID() });
+		ctx.events.Emit(neurus::ShaderCompiled{ shader->GetObjectID() });
 
 		if (e.result != nullptr) e.result->ok = true;
 		NEURUS_LOG("[ShaderController] Unit compiled: shader=" << e.shaderUid
@@ -938,7 +938,7 @@ void ShaderController::Init(ControllerContext& ctx)
 			if (after == m_beforeCode) return; // no net change -> no op
 
 			ctx.ops.Submit(std::make_unique<SetShaderCodeOp>(
-				mesh->RequireObjectID(), stage, std::move(m_beforeCode), std::move(after)));
+				mesh->GetObjectID(), stage, std::move(m_beforeCode), std::move(after)));
 			neurus::notify::Mutated(ctx.events);
 		});
 
@@ -965,7 +965,7 @@ void ShaderController::Init(ControllerContext& ctx)
 			neurus::Mesh* mesh = ResolveMesh(ctx, e.objectUid);
 			if (!mesh) return;
 			ctx.ops.Submit(std::make_unique<SetShaderFieldOp>(
-				mesh->RequireObjectID(), e.stage, e.section, e.fieldIndex,
+				mesh->GetObjectID(), e.stage, e.section, e.fieldIndex,
 				std::move(before), std::move(after)));
 			neurus::notify::Mutated(ctx.events);
 		});
@@ -978,7 +978,7 @@ void ShaderController::Init(ControllerContext& ctx)
 			neurus::Mesh* mesh = ResolveMesh(ctx, e.objectUid);
 			if (!mesh) return;
 			ctx.ops.Submit(std::make_unique<AddShaderFieldOp>(
-				mesh->RequireObjectID(), e.stage, e.section, e.subFieldIndex, /*add=*/true));
+				mesh->GetObjectID(), e.stage, e.section, e.subFieldIndex, /*add=*/true));
 			neurus::notify::Mutated(ctx.events);
 		});
 

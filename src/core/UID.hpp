@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 
 namespace neurus
 {
@@ -20,9 +19,8 @@ public:
 	UID(UID&&) = delete;
 	UID& operator=(UID&&) = delete;
 
-	std::optional<int> GetObjectID() const noexcept;
-	/// Returns the pool key or throws if the caller supplied an ephemeral object.
-	int RequireObjectID() const;
+	/// Returns the pool key, or logs an error and returns -1 for an unpooled object.
+	int GetObjectID() const;
 
 	// The owning pool persists identity in its record key.
 	template<class Archive>

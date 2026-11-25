@@ -192,7 +192,7 @@ std::uint64_t RenderGraphData::Hash() const
 		if (const auto& shader = node->data.shader)
 		{
 			hashByte(0x08);
-			hashString(std::to_string(shader->RequireObjectID()));
+			hashString(std::to_string(shader->GetObjectID()));
 		}
 		else
 		{
