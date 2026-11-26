@@ -4,11 +4,11 @@
  */
 
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 #include "asset/data/ShaderData.hpp"
 
 #include "asset/data/render_graph/PassKinds.hpp"
-#include "asset/data/render_graph/PassShaderCatalog.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -41,18 +41,6 @@ InSocket* FindInput(NodeType& node, const std::string_view name)
 			return input.get();
 	}
 	return nullptr;
-}
-
-CpuPort MakePort(const PassPort& port, std::optional<GraphOutputTag> tag = {})
-{
-	CpuPort payload;
-	payload.name      = port.name;
-	payload.direction = port.direction;
-	payload.type      = port.type;
-	payload.binding   = port.binding;
-	payload.location  = port.location;
-	payload.tag       = std::move(tag);
-	return payload;
 }
 
 } // anonymous namespace
@@ -91,22 +79,28 @@ RenderGraphData::RenderGraphData(const IPortSource& ports)
 	const auto addNode = [this, &ports](
 		const std::string& name, const std::string& pass) -> NodeType*
 	{
-		const PassPorts* passPorts = ports.FindPassPorts(pass);
+		const CPUPorts* passPorts = ports.FindPassPorts(pass);
 		if (!passPorts)
 		{
 			throw std::runtime_error(
 				"No ports for built-in pass '" + pass + "'");
 		}
 
-		CpuNode data;
+		CPUNode data;
 		data.pass = pass;
 		NodeType* node = AddNode(name, data);
 
-		for (const PassPort& input : passPorts->Inputs())
-			node->AddInput(input.name)->data = MakePort(input);
+		for (auto input : passPorts->Inputs())
+		{
+			input.tag.reset();
+			node->AddInput(input.name)->data = std::move(input);
+		}
 
-		for (const PassPort& output : passPorts->Outputs())
-			node->AddOutput(output.name)->data = MakePort(output, BuiltInOutputTag(pass, output.name));
+		for (auto output : passPorts->Outputs())
+		{
+			output.tag = BuiltInOutputTag(pass, output.name);
+			node->AddOutput(output.name)->data = std::move(output);
+		}
 
 		return node;
 	};
@@ -152,7 +146,9 @@ RenderGraphData::RenderGraphData(const IPortSource& ports)
 	connect(*lighting, "outputImage", *compose, "gHDRColor");
 	connect(*compose, "outputComposed", *fxaa, "gInput");
 
-	InferLegacyOutputs();
+	sceneOutputs["color"] = {fxaa->name, "outputFXAA"};
+	sceneOutputs["depth"] = {geometry->name, "depth"};
+	sceneOutputs["object_id"] = {geometry->name, "gObjectID"};
 }
 
 std::uint64_t RenderGraphData::Hash() const
@@ -196,7 +192,7 @@ std::uint64_t RenderGraphData::Hash() const
 		{
 			hashByte(0x09);
 		}
-		const auto hashPort = [&](const CpuPort& port)
+		const auto hashPort = [&](const CPUPort& port)
 		{
 			hashString(port.name);
 			hashString(port.type);
@@ -255,7 +251,6 @@ std::unique_ptr<RenderGraphData> RenderGraphData::Clone() const
 	auto copy = std::make_unique<RenderGraphData>();
 	copy->nodes = CloneGraph<GraphT>(*this).nodes;
 	copy->sceneOutputs = sceneOutputs;
-	copy->m_pending = m_pending;
 	return copy;
 }
 
@@ -263,24 +258,6 @@ void RenderGraphData::SwapContents(RenderGraphData& other) noexcept
 {
 	nodes.swap(other.nodes);
 	sceneOutputs.swap(other.sceneOutputs);
-	m_pending.swap(other.m_pending);
-}
-
-void RenderGraphData::InferLegacyOutputs()
-{
-	sceneOutputs.clear();
-	for (const auto& node : nodes)
-	{
-		if (node->data.pass == "FXAAPass")
-			sceneOutputs["color"] = {node->name, "outputFXAA"};
-		else if (node->data.pass == "ComposePass")
-			sceneOutputs.try_emplace("color", GraphEndpoint{node->name, "outputComposed"});
-		else if (node->data.pass == "GeometryPass")
-		{
-			sceneOutputs["depth"] = {node->name, "depth"};
-			sceneOutputs["object_id"] = {node->name, "gObjectID"};
-		}
-	}
 }
 
 std::set<std::string> RenderGraphData::ActiveNodes() const
@@ -306,9 +283,9 @@ std::set<std::string> RenderGraphData::ActiveNodes() const
 	return active;
 }
 
-PassPorts WithShaderPortNames(const PassPorts& builtin, const PassPorts& shaderPorts)
+CPUPorts WithShaderPortNames(const CPUPorts& builtin, const CPUPorts& shaderPorts)
 {
-	PassPorts result;
+	CPUPorts result;
 	result.kind = builtin.kind;
 	result.problems = builtin.problems;
 	result.problems.insert(result.problems.end(), shaderPorts.problems.begin(), shaderPorts.problems.end());
@@ -326,7 +303,7 @@ PassPorts WithShaderPortNames(const PassPorts& builtin, const PassPorts& shaderP
 	return result;
 }
 
-PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
+CPUPorts EffectivePassPorts(const CPUNode& node, const IPortSource& catalog)
 {
 	const auto* builtin = catalog.FindPassPorts(node.pass);
 	if (!builtin)
@@ -337,14 +314,12 @@ PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog)
 	return WithShaderPortNames(*builtin, ExtractPassPorts(node.pass, shaders));
 }
 
-void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const PassPorts& ports)
+void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const CPUPorts& ports)
 {
 	if (!ports.problems.empty())
 		throw std::invalid_argument(node.name + ": " + ports.problems.front());
 	const auto roleFor = [&](const auto& socket) {
-		const auto& data = socket->data;
-		const PassPort role{data.name, data.direction, data.type, data.binding, data.location};
-		return ports.FindRole(role);
+		return ports.FindRole(socket->data);
 	};
 	const auto validate = [&](const auto& sockets) {
 		for (const auto& socket : sockets)
@@ -371,51 +346,6 @@ void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node,
 	};
 	reconcile(node.inputs);
 	reconcile(node.outputs);
-}
-
-RenderGraphData::RenderGraphData(project::RenderGraphRecord record)
-	: m_pending(std::move(record))
-{
-}
-
-bool RenderGraphData::Resolve(const IPassShaderCatalog& catalog, const IResourceLookup& resources,
-                              std::vector<std::string>& diagnostics)
-{
-	if (!m_pending)
-		return true;
-
-	const auto acceptsShader = [&](const std::string& kind, const ShaderData& shader)
-	{
-		try
-		{
-			catalog.ValidatePassShader(kind, shader);
-			return true;
-		}
-		catch (const std::exception& error)
-		{
-			diagnostics.push_back(kind + " shader UID " + std::to_string(shader.GetObjectID())
-			                      + " uses its built-in fallback: " + error.what());
-			return false;
-		}
-	};
-
-	const auto& ports = catalog.Ports();
-	std::vector<std::string> errors;
-	auto topology = project::FromRecord(*m_pending, ports, errors, &resources, acceptsShader);
-	if (errors.empty())
-	{
-		for (const auto& diagnostic : ValidateCpuGraph(*topology, ports))
-			errors.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
-	}
-	if (!errors.empty())
-	{
-		diagnostics.insert(diagnostics.end(), errors.begin(), errors.end());
-		return false;
-	}
-
-	// The resolved document has no pending record. The old record leaves with the temporary.
-	SwapContents(*topology);
-	return true;
 }
 
 } // namespace neurus

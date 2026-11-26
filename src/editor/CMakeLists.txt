@@ -1,10 +1,10 @@
 # src/editor/CMakeLists.txt - Editor Layer
 
 add_library(neurus_editor STATIC
-	project/HistoryComponent.hpp
-	project/EditorComponent.hpp
-	project/HistoryComponent.cpp
-	project/EditorComponent.cpp
+	components/HistoryComponent.hpp
+	components/EditorComponent.hpp
+	components/HistoryComponent.cpp
+	components/EditorComponent.cpp
 	Editor.hpp
 	Editor.cpp
 	RenderManager.hpp

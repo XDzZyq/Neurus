@@ -9,12 +9,8 @@ namespace neurus
 {
 
 Light::Light()
-	: ObjectID()
-	, Transform3D()
+	: ObjectID(Type, "Light")
 {
-	o_type = ObjectID::GOType::GO_LIGHT;
-	// Default name instead of ParseLightName()'s "None"; a load overwrites it.
-	o_name = "Light";
 }
 
 Light::Light(LightType type, float power, glm::vec3 color)

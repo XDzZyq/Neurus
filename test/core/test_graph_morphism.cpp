@@ -7,6 +7,7 @@
 
 #include "core/GraphMorphism.hpp"
 
+#include <optional>
 #include <string>
 
 namespace {
@@ -80,31 +81,17 @@ GraphI MakeFanOut()
 	return graph;
 }
 
-/// @brief Creates a target node with the same name, payload and sockets.
-GraphI::NodeType* CopyNode(GraphI& target, const GraphI::NodeType& source)
-{
-	GraphI::NodeType* node = target.AddNode(source.name, source.data);
-	for (const auto& input : source.inputs)
-		node->AddInput(input->name)->data = input->data;
-	for (const auto& output : source.outputs)
-		node->AddOutput(output->name)->data = output->data;
-	return node;
-}
-
 Morphism::Policy CopyPolicy()
 {
 	Morphism::Policy policy;
-	policy.createNode = [](GraphI& target, const GraphI::NodeType& node)
-	{
-		return CopyNode(target, node);
+	policy.createNode = [](const GraphI::NodeType& node) {
+		return node.data;
 	};
-	policy.createOutput = [](GraphI::NodeType& node, const GraphI::SocketOutT& port)
-	{
-		return FindOutput(&node, port.name);
+	policy.createOutput = [](const GraphI::SocketOutT& port) {
+		return port.data;
 	};
-	policy.createInput = [](GraphI::NodeType& node, const GraphI::SocketInT& port)
-	{
-		return FindInput(&node, port.name);
+	policy.createInput = [](const GraphI::SocketInT& port) {
+		return port.data;
 	};
 	return policy;
 }
@@ -143,15 +130,14 @@ TEST(GraphMorphism, MapBuildsTheTarget)
 	EXPECT_EQ(FindNode(mapping.target, "B")->data, 2);
 }
 
-TEST(GraphMorphism, MapReportsNullFactory)
+TEST(GraphMorphism, MapReportsDeclinedNode)
 {
 	const GraphI source = MakeChain();
 	auto policy = CopyPolicy();
-	policy.createNode = [](GraphI& target, const GraphI::NodeType& node)
-	{
+	policy.createNode = [](const GraphI::NodeType& node) -> std::optional<int> {
 		if (node.name == "C")
-			return static_cast<GraphI::NodeType*>(nullptr);
-		return CopyNode(target, node);
+			return std::nullopt;
+		return node.data;
 	};
 
 	const Morphism mapper(std::move(policy));
@@ -163,6 +149,60 @@ TEST(GraphMorphism, MapReportsNullFactory)
 	EXPECT_NE(report.problems[0].find("C"), std::string::npos);
 }
 
+TEST(GraphMorphism, MapsEverySocketOnceAndUsesMappedValues)
+{
+	auto source = MakeFanOut();
+	FindOutput(FindNode(source, "A"), "out")->data = 20;
+	int inputsMapped = 0;
+	int outputsMapped = 0;
+	auto policy = CopyPolicy();
+	policy.createOutput = [&](const GraphI::SocketOutT& socket) {
+		++outputsMapped;
+		return socket.data + 10;
+	};
+	policy.createInput = [&](const GraphI::SocketInT& socket) {
+		++inputsMapped;
+		return socket.data + 10;
+	};
+
+	const auto mapping = Morphism(std::move(policy)).Map(source);
+
+	EXPECT_TRUE(mapping.images.IsTotal(source));
+	EXPECT_EQ(inputsMapped, 3);
+	EXPECT_EQ(outputsMapped, 3);
+	const auto* original = FindOutput(FindNode(source, "A"), "out");
+	const auto* mapped = mapping.images.ImageOf(original);
+	ASSERT_NE(mapped, nullptr);
+	EXPECT_EQ(mapped->name, "out");
+	EXPECT_EQ(mapped->data, 30);
+	EXPECT_EQ(mapped->FanOut(), 2u);
+	EXPECT_EQ(original->name, "out");
+	EXPECT_EQ(original->data, 20);
+	const auto* unconnected = mapping.images.ImageOf(FindInput(FindNode(source, "A"), "in"));
+	ASSERT_NE(unconnected, nullptr);
+	EXPECT_EQ(unconnected->name, "in");
+	EXPECT_FALSE(unconnected->IsConnected());
+}
+
+TEST(GraphMorphism, ReportsDeclinedUnconnectedSocket)
+{
+	auto source = MakeChain();
+	auto policy = CopyPolicy();
+	policy.createInput = [](const GraphI::SocketInT& input) -> std::optional<int> {
+		if (input.owner->name == "A")
+			return std::nullopt;
+		return input.data;
+	};
+
+	const auto mapping = Morphism(std::move(policy)).Map(source);
+
+	EXPECT_FALSE(mapping.images.IsTotal(source));
+	EXPECT_EQ(mapping.images.MappedConnectionCount(), 2u);
+	const auto report = mapping.images.Validate(source);
+	ASSERT_EQ(report.problems.size(), 1u);
+	EXPECT_NE(report.problems.front().find("A.in"), std::string::npos);
+}
+
 TEST(GraphMorphism, TotalRejectsUnmappedConnection)
 {
 	GraphI source = MakeChain();
@@ -170,13 +210,18 @@ TEST(GraphMorphism, TotalRejectsUnmappedConnection)
 
 	auto mapping = mapper.Map(source);
 
-	// Record just the node images to exercise missing-edge diagnostics.
-	Morphism::Correspondence nodesOnly;
+	Morphism::Correspondence withoutEdges;
 	for (const auto& node : source.nodes)
-		EXPECT_TRUE(nodesOnly.RecordNode(*node, *FindNode(mapping.target, node->name)));
+	{
+		EXPECT_TRUE(withoutEdges.RecordNode(*node, *mapping.images.ImageOf(node.get())));
+		for (const auto& input : node->inputs)
+			EXPECT_TRUE(withoutEdges.RecordSocket(*input, *mapping.images.ImageOf(input.get())));
+		for (const auto& output : node->outputs)
+			EXPECT_TRUE(withoutEdges.RecordSocket(*output, *mapping.images.ImageOf(output.get())));
+	}
 
-	EXPECT_FALSE(nodesOnly.IsTotal(source));
-	const auto report = nodesOnly.Validate(source);
+	EXPECT_FALSE(withoutEdges.IsTotal(source));
+	const auto report = withoutEdges.Validate(source);
 	ASSERT_FALSE(report.Ok());
 	EXPECT_NE(report.problems[0].find("A.out"), std::string::npos);
 	EXPECT_NE(report.problems[0].find("B.in"), std::string::npos);
@@ -219,6 +264,20 @@ TEST(GraphMorphism, IncidenceRejectsCrossedEdge)
 	EXPECT_FALSE(images.PreservesIncidence());
 }
 
+TEST(GraphMorphism, IncidenceRejectsWrongSocketOnMappedOwner)
+{
+	GraphI source = MakeChain();
+	auto mapping = Morphism{CopyPolicy()}.Map(source);
+	const auto* edge = source.Connections().front();
+	auto* input = mapping.images.ImageOf(edge->to);
+	auto* output = mapping.images.ImageOf(edge->from);
+	auto* other = output->owner->AddOutput("other");
+	ASSERT_TRUE(mapping.target.Connect(other, input));
+
+	EXPECT_FALSE(mapping.images.PreservesIncidence());
+	EXPECT_FALSE(mapping.images.Validate(source).Ok());
+}
+
 TEST(GraphMorphism, FanOutMapsToDistinctTargetConnectionsAfterMove)
 {
 	GraphI source = MakeFanOut();
@@ -257,24 +316,58 @@ TEST(GraphMorphism, IncrementalMapCreatesEachNodeAndConnectionOnce)
 	EXPECT_EQ(FindInput(FindNode(mapping.target, "B"), "in")->incoming.from->owner->name, "A");
 }
 
+TEST(GraphMorphism, SocketLabelsDoNotDetermineCorrespondence)
+{
+	GraphI source;
+	auto* producer = source.AddNode("pass");
+	auto* consumer = source.AddNode("pass");
+	auto* left = producer->AddOutput("port");
+	auto* right = producer->AddOutput("port");
+	auto* first = consumer->AddInput("port");
+	auto* second = consumer->AddInput("port");
+	ASSERT_TRUE(source.Connect(left, first));
+	ASSERT_TRUE(source.Connect(right, second));
+
+	const auto mapping = Morphism{CopyPolicy()}.Map(source);
+
+	EXPECT_NE(mapping.images.ImageOf(producer), mapping.images.ImageOf(consumer));
+	EXPECT_NE(mapping.images.ImageOf(left), mapping.images.ImageOf(right));
+	EXPECT_NE(mapping.images.ImageOf(first), mapping.images.ImageOf(second));
+	const auto* firstEdge = mapping.images.ImageOf(&first->incoming);
+	const auto* secondEdge = mapping.images.ImageOf(&second->incoming);
+	ASSERT_NE(firstEdge, nullptr);
+	ASSERT_NE(secondEdge, nullptr);
+	EXPECT_EQ(firstEdge->from, mapping.images.ImageOf(left));
+	EXPECT_EQ(secondEdge->from, mapping.images.ImageOf(right));
+	EXPECT_TRUE(mapping.images.Validate(source).Ok());
+}
+
 TEST(GraphMorphism, ConflictingProducersCannotOverwriteAMappedConnection)
 {
 	GraphI source;
 	auto* producer = source.AddNode("producer");
 	auto* consumer = source.AddNode("consumer");
-	ASSERT_TRUE(source.Connect(producer->AddOutput("left"), consumer->AddInput("first")));
-	ASSERT_TRUE(source.Connect(producer->AddOutput("right"), consumer->AddInput("second")));
+	auto* first = consumer->AddInput("first");
+	auto* second = consumer->AddInput("second");
+	ASSERT_TRUE(source.Connect(producer->AddOutput("left"), first));
+	ASSERT_TRUE(source.Connect(producer->AddOutput("right"), second));
 
-	auto policy = CopyPolicy();
-	policy.createInput = [](GraphI::NodeType& node, const GraphI::SocketInT&) {
-		return node.inputs.front().get();
-	};
-	const auto mapping = Morphism(std::move(policy)).Map(source);
-	const auto edges = source.Connections();
-	const auto* image = mapping.images.ImageOf(edges[0]);
+	const Morphism mapper{CopyPolicy()};
+	Morphism::Result mapping;
+	mapper.MapNode(mapping, *producer);
+	auto* target = mapping.target.AddNode("consumer");
+	auto* shared = target->AddInput("shared");
+	ASSERT_TRUE(mapping.images.RecordNode(*consumer, *target));
+	ASSERT_TRUE(mapping.images.RecordSocket(*first, *shared));
+	ASSERT_TRUE(mapping.images.RecordSocket(*second, *shared));
+
+	EXPECT_TRUE(mapper.MapConnect(mapping, first->incoming));
+	EXPECT_FALSE(mapper.MapConnect(mapping, second->incoming));
+	const auto* image = mapping.images.ImageOf(&first->incoming);
 	ASSERT_NE(image, nullptr);
+	EXPECT_EQ(image->to, shared);
 	EXPECT_EQ(image->from->name, "left");
-	EXPECT_EQ(mapping.images.ImageOf(edges[1]), nullptr);
+	EXPECT_EQ(mapping.images.ImageOf(&second->incoming), nullptr);
 	EXPECT_FALSE(mapping.images.Validate(source).Ok());
 }
 

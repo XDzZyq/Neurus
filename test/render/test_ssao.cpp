@@ -96,7 +96,7 @@ TEST_F(SSAOTest, SSAOAttachment_MatchesReferenceImage)
 	// -------------------------------------------------------------------
 	// Step 1: Load Cornell Box scene
 	// -------------------------------------------------------------------
-	auto cb = test::LoadCornellBox(*m_device, pd, *m_queue, m_graphicsQueueFamily);
+	auto cb = test::LoadCornellBox(m_resources, *m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_GT(cb.scene->mesh_list.size(), 0u) << "No meshes loaded for Cornell Box";
 
 	// Adjust camera aspect ratio to match the render target

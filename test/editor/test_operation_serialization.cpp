@@ -25,27 +25,27 @@
 
 #include "glm/glm.hpp"
 
+#include "editor/Input.hpp"
+#include "editor/components/HistoryComponent.hpp"
 #include "editor/controllers/ObjectController.hpp"
 #include "editor/controllers/SceneController.hpp"
 #include "editor/events/EventBus.hpp"
 #include "editor/events/SceneEvents.hpp"
-#include "editor/Input.hpp"
-#include "editor/project/HistoryComponent.hpp"
-#include "core/ResourceManager.hpp"
-#include "core/RenderConfig.hpp"
-#include "asset/data/MeshData.hpp"
-#include "shared/OperationTestAccess.hpp"
+#include "editor/events/ShaderEvents.hpp"
 #include "editor/operations/OperationManager.hpp"
-#include "editor/operations/registrations/OperationRegistration.hpp"
 #include "editor/operations/SceneOperations.hpp"
 #include "editor/operations/ScriptOperations.hpp"
-#include "editor/events/ShaderEvents.hpp"
 #include "editor/operations/ShaderOperations.hpp"
-#include "shader/RenderShader.hpp"
+#include "editor/operations/registrations/OperationRegistration.hpp"
+#include "asset/ResourceManager.hpp"
+#include "asset/data/MeshData.hpp"
+#include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
+#include "shader/RenderShader.hpp"
+#include "shared/OperationTestAccess.hpp"
 
 using namespace neurus;
 
@@ -75,22 +75,14 @@ protected:
 		m_controller.Init(m_ctx);
 		m_objectController.Init(m_ctx);
 
-		m_mesh   = std::make_shared<Mesh>();
-		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+		m_mesh   = m_resources.Load<Mesh>();
+		m_light  = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_camera = m_resources.Load<Camera>();
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 		m_scene.UseCamera(m_camera);
 		m_scene.ActivateCamera(m_camera->GetObjectID());
 
-		// The ShaderLinkOp restore handlers resolve the mesh via the POOL (the
-		// Editor pattern), so the fixture mesh must also be pooled. The camera is
-		// pooled the same way, for the same reason: camera-property ops replay
-		// through ctx.resources. The light joins them because ObjectController
-		// resolves every property write - and therefore every op replay - through
-		// the pool.
-		m_resources.Register(m_mesh);
-		m_resources.Register(m_light);
 	}
 
 	void Process() { m_eventBus.Process(); }
@@ -223,11 +215,11 @@ TEST_F(OperationSerializationTest, ShaderLinkOp_RoundTrip)
 
 	auto ctx = OperationTestAccess::Context(m_eventBus);
 	restored->Apply(ctx);
-	EXPECT_EQ(m_mesh->o_shaderId, shaderId); // link + shaderId survived
+	EXPECT_EQ(m_mesh->o_shader.id(), shaderId); // link + shaderId survived
 
 	restored->Inverse()->Apply(ctx);
-	EXPECT_EQ(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, 0);        // uid + flag survived
+	EXPECT_FALSE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), 0);        // uid + flag survived
 }
 
 TEST_F(OperationSerializationTest, CompositeOp_RoundTrip)

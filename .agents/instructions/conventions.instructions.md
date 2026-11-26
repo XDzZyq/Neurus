@@ -38,13 +38,15 @@ responsibility shared by callers, and keep it with the family that uses it.
 | Editor events | Group related typed payloads in a domain header such as [SceneEvents.hpp](../../src/editor/events/SceneEvents.hpp). Plain event structs need no base class. |
 | Undo operations | [Operation.hpp](../../src/editor/operations/Operation.hpp) defines the replay contract. Group related concrete edits in a domain header such as [SceneOperations.hpp](../../src/editor/operations/SceneOperations.hpp). |
 | CLI commands | [SubCommand.hpp](../../src/cli/SubCommand.hpp) defines the CLI interface. Each command family has a sibling implementation under `src/cli/subcommands/`, such as [SceneCommand.hpp](../../src/cli/subcommands/SceneCommand.hpp). |
-| Project components | Keep persistence with the layer that owns the data. Asset components include [SceneComponent.hpp](../../src/asset/components/SceneComponent.hpp). Editor-owned history lives in [HistoryComponent.hpp](../../src/editor/project/HistoryComponent.hpp). |
+| Project components | Keep persistence with the layer that owns the data. Asset components include [SceneComponent.hpp](../../src/asset/components/SceneComponent.hpp). Editor-owned history lives in [HistoryComponent.hpp](../../src/editor/components/HistoryComponent.hpp). |
 | Type registrations | Add serialization registrations to the owning family's `registrations/` directory. For an undo operation, extend [OperationRegistration.cpp](../../src/editor/operations/registrations/OperationRegistration.cpp). |
 
 ## Naming
 
 - Use PascalCase for types, class filenames and member functions, including
-  private methods. Use lowerCamelCase for file-local free functions.
+  private methods. Use lowerCamelCase for file-local free functions. Keep
+  acronyms upper case in type, function and file names (`ShaderGPU`,
+  `CPUPorts.hpp`, `ValidateCPUGraph`).
 - Prefix direct private instance fields by declaring class. Use `r_` in
   DeferredRenderer and Swapchain, `ed_` in Editor, `ctx_` in VulkanContext,
   `app_` in Application and HeadlessApplication, and `win_` in UIManager.
@@ -79,7 +81,7 @@ responsibility shared by callers, and keep it with the family that uses it.
 ## Core Layer
 
 - `src/core/` holds generic, layer-agnostic primitives only: identity (`UID`),
-  pools (`ResourceManager`), traversal (`Graph`, `GraphMorphism`), logging,
+  resource lookup (`IResourceLookup`), traversal (`Graph`, `GraphMorphism`), logging,
   serialization helpers, `RenderConfig`.
 - A concrete document or data type that names this product's features belongs
   to the layer that owns it. A render graph document lives in `asset/data/`,
@@ -98,15 +100,19 @@ responsibility shared by callers, and keep it with the family that uses it.
   generation, compilation and high-level RenderShader/ComputeShader belong under
   `shader/` in `neurus_shader`.
 - Keep authored `RenderGraphData` in the resource pool. `proj_render_graph` saves
-  its active UID. Publish an unpooled clone of the document. Nodes hold
-  `shared_ptr<const ShaderData>` references, with null selecting a built-in. The
-  render thread reads the shader UID and consumes the uploaded GPU resource.
-  CPU `MakeUploadShaderRequest` copies SPIR-V and required reflection/port metadata
-  into owned typed requests before FIFO graph mapping. UploadManager constructs
-  ShaderGPU; RenderCache owns/indexes it; passes consume modules and own pipelines.
-  Reuploading a UID refreshes dependent GPU state by cache revision. Resource
-  references and fences preserve lifetime. Persist authored UID references only;
-  defaults follow recipes through CPU preparation/upload/cache outside the pool.
+  its active UID. Publish an unpooled clone of the document through
+  `MakeCompileRenderGraphRequest`, which records each node's selection as a plain
+  `PublishedShader {uid, version}` and clears the clone's `PassShaderRef`, so the
+  render thread never reads pooled `ShaderData`. Null selection uses a built-in.
+  CPU `MakeUploadShaderRequest` copies SPIR-V and reflection metadata into owned
+  typed requests before FIFO graph mapping; it carries no ports. UploadManager
+  constructs ShaderGPU; RenderCache owns/indexes it; passes consume modules and own
+  pipelines. The uploader's GPU-only guard requires the published version, type
+  and stage set to match the resident upload; the CPU port, descriptor and
+  push-constant contracts are checked before publication. A changed version needs
+  a matching republished request. Resource references and fences preserve lifetime.
+  Persist authored UID references only; defaults follow recipes through CPU
+  preparation/upload/cache outside the pool.
 - Asset data and persistence must not depend on Shader tooling. Shader cereal
   registrations belong under `shader/registrations/` and are force-linked by
   ApplicationCore; generic persistence uses its resource callback. Preserve
@@ -114,7 +120,7 @@ responsibility shared by callers, and keep it with the family that uses it.
 - Editor light requests carry scene-light snapshots; GPU layout conversion
   belongs to the Renderer. Never include UploadManager just to prepare a request.
 - Asset and scene targets must not link Renderer. Editor-specific persistence
-  adapters live under `editor/project/`; Qt UIEvents and input translations live
+  adapters live under `editor/components/`; Qt UIEvents and input translations live
   under `ui/`.
 - Run `python scripts/check_layer_boundaries.py` when changing layer includes;
   `neurus_cpu_test` verifies CPU document/shader/Editor behavior without GPU or

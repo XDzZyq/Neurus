@@ -15,9 +15,8 @@ namespace neurus
 // -----------------------------------------------------------------------
 
 Environment::Environment()
+	: ObjectID(Type, "Environment")
 {
-	o_type = ObjectID::GOType::GO_ENVIR;
-	o_name = "Environment";
 }
 
 Environment::Environment(std::shared_ptr<ImageData> data)
@@ -32,7 +31,6 @@ Environment::~Environment() = default;
 void Environment::SetEquirectData(std::shared_ptr<ImageData> data)
 {
 	o_equirectData = std::move(data);
-	o_imageDataId = o_equirectData ? o_equirectData->GetObjectID() : 0;
 }
 
 } // namespace neurus

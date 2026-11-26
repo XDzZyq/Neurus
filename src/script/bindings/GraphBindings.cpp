@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "editor/events/GraphEvents.hpp"
 #include "script/bindings/Bindings.hpp"
 #include "script/proxies/ShaderProxies.hpp"
@@ -17,7 +17,7 @@ namespace neurus::script {
 
 namespace {
 
-using CpuGraphNode = RenderGraphData::NodeType;
+using CPUGraphNode = RenderGraphData::NodeType;
 
 // A fresh generation after remove protects a saved handle even if the allocator
 // reuses the old node's address for another node with the same name.
@@ -60,7 +60,7 @@ struct GraphProxy : ProxyBase
 		return *current.topology;
 	}
 
-	const CpuGraphNode& FindNode(const std::string& name) const
+	const CPUGraphNode& FindNode(const std::string& name) const
 	{
 		for (const auto& node : Topology().nodes)
 			if (node->name == name)
@@ -81,11 +81,11 @@ struct NodeProxy
 {
 	GraphProxy graph;
 	std::string name;
-	const CpuGraphNode* identity = nullptr;
+	const CPUGraphNode* identity = nullptr;
 	ScriptGraphView document;
 	std::size_t generation;
 
-	NodeProxy(const GraphProxy& g, const CpuGraphNode* node)
+	NodeProxy(const GraphProxy& g, const CPUGraphNode* node)
 		: graph(g), name(node ? node->name : ""), identity(node),
 		  document(g.Read()), generation(g.generations->Get(name, document.projectEpoch))
 	{}
@@ -97,10 +97,10 @@ struct NodeProxy
 			throw py::value_error("This graph handle belongs to a previous document");
 	}
 
-	const CpuGraphNode& Get() const
+	const CPUGraphNode& Get() const
 	{
 		CheckDocument();
-		const CpuGraphNode& node = graph.FindNode(name);
+		const CPUGraphNode& node = graph.FindNode(name);
 		if (identity != &node || generation != graph.generations->Get(name, document.projectEpoch))
 			throw py::value_error("Stale graph node '" + name + "'");
 		return node;
@@ -115,12 +115,12 @@ struct SocketProxy
 	std::string name;
 	SocketKind kind;
 
-	const CpuPort* Port() const
+	const CPUPort* Port() const
 	{
 		owner.CheckDocument();
 		if (kind == SocketKind::SceneOutput)
 			return nullptr;
-		const CpuGraphNode& node = owner.Get();
+		const CPUGraphNode& node = owner.Get();
 		if (kind == SocketKind::Output)
 		{
 			for (const auto& socket : node.outputs)
@@ -224,10 +224,10 @@ void RegisterGraphBindings(py::module_& render)
 	py::class_<Edge>(render, "GraphEdge")
 		.def_readonly("from_node", &Edge::fromNode).def_readonly("from_port", &Edge::fromPort)
 		.def_readonly("to_node", &Edge::toNode).def_readonly("to_port", &Edge::toPort);
-	py::class_<CpuGraphDiagnostic>(render, "GraphDiagnostic")
-		.def_readonly("node", &CpuGraphDiagnostic::node)
-		.def_readonly("port", &CpuGraphDiagnostic::port)
-		.def_readonly("message", &CpuGraphDiagnostic::message);
+	py::class_<CPUGraphDiagnostic>(render, "GraphDiagnostic")
+		.def_readonly("node", &CPUGraphDiagnostic::node)
+		.def_readonly("port", &CPUGraphDiagnostic::port)
+		.def_readonly("message", &CPUGraphDiagnostic::message);
 	py::class_<SocketProxy>(render, "GraphSocket")
 		.def_property_readonly("name", [](const SocketProxy& s) { return s.Endpoint().port; })
 		.def_property_readonly("node", [](const SocketProxy& s) { return s.Endpoint().node; })

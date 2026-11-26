@@ -1,6 +1,6 @@
 /**
  * @file test_resource_manager.cpp
- * @brief Tests for the core ResourceManager (UID object pool + factory).
+ * @brief Tests for the asset ResourceManager (UID object pool + factory).
  *
  * Covers:
  * - Load<T> constructs + registers + returns a typed shared_ptr
@@ -14,6 +14,8 @@
  *   release on Remove/Clear, and a load into a non-empty pool dropping old names
  * - Per-type index: ForEach<T> visits only its exact dynamic type, while
  *   ForEachUID stays complete even with a base-typed instance pooled
+ * - Each manager owns its allocator, so managers allocate independently and
+ *   Clear keeps the counter monotonic
  * - Polymorphic save/load round-trip (Camera + Mesh + Light + MeshData via
  *   cereal JSON archives), including UID preservation and post-load counter
  *   bump (new objects never collide with restored IDs).
@@ -28,7 +30,8 @@
 #include <sstream>
 #include <vector>
 
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
+#include "asset/components/ResourceComponent.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
@@ -152,14 +155,244 @@ TEST(ResourceManagerTest, RemoveClearSize)
 	auto light = pool.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
 	EXPECT_EQ(pool.Size(), 2u);
 
-	EXPECT_TRUE(pool.Remove(cam->GetObjectID()));
+	const int cameraId = cam->GetObjectID();
+	const int lightId = light->GetObjectID();
+	EXPECT_TRUE(pool.Remove(cameraId));
 	EXPECT_EQ(pool.Size(), 1u);
-	EXPECT_FALSE(pool.Contains(cam->GetObjectID()));
-	EXPECT_FALSE(pool.Remove(cam->GetObjectID())); // already gone
+	EXPECT_FALSE(pool.Contains(cameraId));
+	EXPECT_FALSE(pool.Remove(cameraId)); // already gone
 
 	pool.Clear();
 	EXPECT_EQ(pool.Size(), 0u);
-	EXPECT_FALSE(pool.Contains(light->GetObjectID()));
+	EXPECT_FALSE(pool.Contains(lightId));
+	EXPECT_EQ(cam->GetObjectID(), -1);
+	EXPECT_EQ(light->GetObjectID(), -1);
+}
+
+TEST(ResourceManagerTest, MembershipBelongsExclusivelyToItsPool)
+{
+	auto resource = std::make_shared<TestResource>();
+	EXPECT_EQ(resource->GetObjectID(), -1);
+	ResourceManager other;
+	{
+		ResourceManager owner;
+		const int id = owner.Register(resource);
+		EXPECT_EQ(resource->GetObjectID(), id);
+		EXPECT_THROW(other.Register(resource), std::runtime_error);
+		EXPECT_EQ(owner.Get(id), resource);
+	}
+	EXPECT_EQ(resource->GetObjectID(), -1);
+	const int newId = other.Register(resource);
+	EXPECT_EQ(resource->GetObjectID(), newId);
+}
+
+TEST(ResourceManagerTest, RejectedDeferredObjectLosesItsMembership)
+{
+	ResourceManager pool;
+	auto object = std::make_shared<TestResource>();
+	const int id = pool.NextId();
+	pool.RegisterDeferred(id, typeid(TestResource), [&] { return object; },
+		std::make_shared<const std::string>("record"), [id](UID& candidate) {
+			EXPECT_EQ(candidate.GetObjectID(), id);
+			return false;
+		});
+	EXPECT_FALSE(pool.Get(id));
+	EXPECT_FALSE(pool.Contains(id));
+	EXPECT_EQ(object->GetObjectID(), -1);
+}
+
+TEST(ResourceManagerTest, ZeroKeyIsRejected)
+{
+	ResourceManager pool;
+	EXPECT_THROW(pool.RegisterDeferred(0, typeid(TestResource),
+		[] { return std::make_shared<TestResource>(); }), std::out_of_range);
+	EXPECT_FALSE(pool.Contains(0));
+	EXPECT_EQ(pool.NextId(), 1);
+}
+
+TEST(ResourceManagerTest, DeferredMetadataAndNamedLookup)
+{
+	ResourceManager pool;
+	auto resource = std::make_shared<TestResource>();
+	const int id = 42;
+	int loads = 0;
+	pool.RegisterDeferred(id, typeid(TestResource), [&] { ++loads; return resource; });
+
+	EXPECT_TRUE(pool.Contains(id));
+	EXPECT_EQ(pool.Size(), 1u);
+	EXPECT_EQ(pool.SetName(id, "Original"), "Original");
+	EXPECT_EQ(pool.SetName(id, "Renamed"), "Renamed");
+	EXPECT_EQ(pool.GetByName<TestResource>("Original"), nullptr);
+	EXPECT_EQ(pool.GetByName<OtherTestResource>("Renamed"), nullptr);
+	EXPECT_EQ(pool.Get(-1), nullptr);
+	EXPECT_EQ(loads, 0);
+
+	const IResourceLookup& lookup = pool;
+	EXPECT_EQ(lookup.GetByName<TestResource>("Renamed"), resource);
+	EXPECT_EQ(lookup.Get<TestResource>(id), resource);
+	EXPECT_EQ(lookup.Get<OtherTestResource>(id), nullptr);
+	EXPECT_EQ(pool.Size(), 1u);
+	EXPECT_EQ(loads, 1);
+}
+
+TEST(ResourceManagerTest, DeferredEnumerationLoadsMatchingResourcesOnce)
+{
+	ResourceManager pool;
+	auto first = std::make_shared<TestResource>();
+	auto second = std::make_shared<OtherTestResource>();
+	int firstLoads = 0;
+	int secondLoads = 0;
+	pool.RegisterDeferred(10, typeid(TestResource), [&] { ++firstLoads; return first; });
+	pool.RegisterDeferred(20, typeid(OtherTestResource), [&] { ++secondLoads; return second; });
+
+	int visits = 0;
+	pool.ForEach<TestResource>([&](const std::shared_ptr<TestResource>& obj) {
+		EXPECT_EQ(obj, first);
+		++visits;
+	});
+	EXPECT_EQ(visits, 1);
+	EXPECT_EQ(firstLoads, 1);
+	EXPECT_EQ(secondLoads, 0);
+
+	std::vector<std::shared_ptr<UID>> seen;
+	pool.ForEachUID([&](const std::shared_ptr<UID>& obj) { seen.push_back(obj); });
+	EXPECT_EQ(seen.size(), 2u);
+	EXPECT_EQ(std::count(seen.begin(), seen.end(), first), 1);
+	EXPECT_EQ(std::count(seen.begin(), seen.end(), second), 1);
+	EXPECT_EQ(firstLoads, 1);
+	EXPECT_EQ(secondLoads, 1);
+}
+
+TEST(ResourceManagerTest, DeferredIdsAreReservedUntilRemoveOrClear)
+{
+	ResourceManager pool;
+	const int futureId = pool.NextId() + 20;
+	int loads = 0;
+	auto loader = [&]() -> std::shared_ptr<UID> { ++loads; return nullptr; };
+	pool.RegisterDeferred(futureId, typeid(TestResource), loader);
+	EXPECT_GT(pool.Load<TestResource>()->GetObjectID(), futureId);
+	EXPECT_THROW(pool.RegisterDeferred(futureId, typeid(TestResource), loader), std::exception);
+	EXPECT_EQ(pool.SetName(futureId, "Spare"), "Spare");
+	EXPECT_TRUE(pool.Remove(futureId));
+	EXPECT_EQ(pool.GetByName<TestResource>("Spare"), nullptr);
+	auto live = pool.Load<TestResource>();
+	EXPECT_GT(live->GetObjectID(), futureId);
+	EXPECT_THROW(pool.RegisterDeferred(live->GetObjectID(), typeid(TestResource), loader), std::exception);
+	pool.Clear();
+	EXPECT_EQ(pool.Size(), 0u);
+	EXPECT_EQ(pool.Get(futureId), nullptr);
+	EXPECT_EQ(loads, 0);
+}
+
+/**
+ * @test Each manager owns its allocator, so two fresh managers both hand out 1.
+ */
+TEST(ResourceManagerTest, ManagersAllocateIndependently)
+{
+	ResourceManager first;
+	ResourceManager second;
+	EXPECT_EQ(first.Load<TestResource>()->GetObjectID(), 1);
+	EXPECT_EQ(second.Load<OtherTestResource>()->GetObjectID(), 1);
+	EXPECT_EQ(first.NextId(), 2);
+	EXPECT_EQ(second.NextId(), 2);
+}
+
+/**
+ * @test Clear drops the objects but keeps the allocator, so keys stay unique for
+ *       this manager's lifetime.
+ */
+TEST(ResourceManagerTest, ClearKeepsTheAllocatorMonotonic)
+{
+	ResourceManager pool;
+	const int firstId = pool.Load<TestResource>()->GetObjectID();
+	pool.Clear();
+	EXPECT_EQ(pool.Size(), 0u);
+	EXPECT_GT(pool.NextId(), firstId);
+	const int freshId = pool.Load<TestResource>()->GetObjectID();
+	EXPECT_GT(freshId, firstId);
+	EXPECT_EQ(pool.NextId(), freshId + 1);
+}
+
+TEST(ResourceManagerTest, RejectsIncompleteOrMismatchedDeferredObjects)
+{
+	ResourceManager pool;
+	auto expected = std::make_shared<TestResource>();
+	auto other = pool.Load<TestResource>();
+	auto wrongType = std::make_shared<OtherTestResource>();
+	std::shared_ptr<UID> result;
+	const int id = pool.NextId();
+	int attempts = 0;
+	pool.RegisterDeferred(id, typeid(TestResource), [&] { ++attempts; return result; });
+	EXPECT_THROW(pool.Get(id), std::exception);
+	result = other;
+	EXPECT_THROW(pool.Get(id), std::exception);
+	result = expected;
+	EXPECT_EQ(pool.Get(id), expected);
+	EXPECT_EQ(pool.Get(id), expected);
+	EXPECT_EQ(attempts, 3);
+
+	pool.RegisterDeferred(id + 1, typeid(TestResource), [&] { return wrongType; });
+	EXPECT_THROW(pool.Get(id + 1), std::exception);
+}
+
+TEST(ResourceManagerTest, DeferredCycleUnwindsAndDependenciesCanBeRetried)
+{
+	ResourceManager pool;
+	auto parent = std::make_shared<TestResource>();
+	auto child = std::make_shared<OtherTestResource>();
+	auto independent = pool.Load<TestResource>();
+	int parentLoads = 0;
+	int childLoads = 0;
+	bool cyclic = true;
+	const int parentId = pool.NextId();
+	const int childId = parentId + 1;
+	pool.RegisterDeferred(parentId, typeid(TestResource), [&] {
+		++parentLoads;
+		EXPECT_EQ(pool.Get(childId), child);
+		return parent;
+	});
+	pool.RegisterDeferred(childId, typeid(OtherTestResource), [&] {
+		++childLoads;
+		if (cyclic)
+			pool.Get(parentId);
+		return child;
+	});
+	EXPECT_THROW(pool.Get(parentId), std::exception);
+	EXPECT_EQ(pool.Get(independent->GetObjectID()), independent);
+	cyclic = false;
+	EXPECT_EQ(pool.Get(parentId), parent);
+	EXPECT_EQ(pool.Get(childId), child);
+	EXPECT_EQ(parentLoads, 2);
+	EXPECT_EQ(childLoads, 2);
+}
+
+TEST(ResourceManagerTest, ProjectArchiveIncludesDeferredEntriesAndReplacesOldRegistry)
+{
+	ResourceManager source;
+	auto camera = std::make_shared<Camera>();
+	camera->cam_pers = 42.0f;
+	const int cameraId = 257;
+	source.RegisterDeferred(cameraId, typeid(Camera), [camera] { return camera; });
+	std::stringstream stream;
+	{
+		cereal::JSONOutputArchive archive(stream);
+		project::ResourceComponent(source).Save(archive);
+	}
+
+	ResourceManager target;
+	auto stale = std::make_shared<Camera>();
+	int staleLoads = 0;
+	target.RegisterDeferred(365, typeid(Camera), [&] { ++staleLoads; return stale; });
+	target.SetName(365, "Previous");
+	project::ResourceComponent(target).LoadJson(stream.str());
+	EXPECT_FALSE(target.GetLive(cameraId));
+	EXPECT_EQ(target.Size(), 1u);
+	EXPECT_FALSE(target.Contains(365));
+	EXPECT_EQ(target.GetByName<Camera>("Previous"), nullptr);
+	EXPECT_EQ(staleLoads, 0);
+	auto restored = target.Get<Camera>(camera->GetObjectID());
+	ASSERT_NE(restored, nullptr);
+	EXPECT_FLOAT_EQ(restored->cam_pers, 42.0f);
 }
 
 // -----------------------------------------------------------------------
@@ -192,16 +425,12 @@ TEST(ResourceManagerTest, PoolSaveLoadRoundtrip)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(pool);
+		project::ResourceComponent(pool).Save(ar);
 	}
 
 	// --- Load ---
 	ResourceManager loaded;
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(loaded);
-	}
+	project::ResourceComponent(loaded).LoadJson(ss.str());
 
 	EXPECT_EQ(loaded.Size(), 4u);
 
@@ -215,10 +444,8 @@ TEST(ResourceManagerTest, PoolSaveLoadRoundtrip)
 	ASSERT_NE(mesh2, nullptr);
 	EXPECT_EQ(mesh2->o_name, "Mesh1");
 	EXPECT_FALSE(mesh2->using_shadow);
-	// The data-resource ID reference survives the round-trip. The o_mesh
-	// pointer is wired by Scene::ResolveDataReferences (Scene-level), not by
-	// the pool's own deserialization, so it stays null in a raw pool test.
-	EXPECT_EQ(mesh2->o_meshDataId, meshData->GetObjectID());
+	EXPECT_EQ(mesh2->o_mesh.shared(), loaded.Get<MeshData>(meshData->GetObjectID()));
+	EXPECT_EQ(mesh2->o_mesh.id(), meshData->GetObjectID());
 
 	auto light2 = loaded.Get<Light>(light->GetObjectID());
 	ASSERT_NE(light2, nullptr);
@@ -230,7 +457,7 @@ TEST(ResourceManagerTest, PoolSaveLoadRoundtrip)
 	// Wrong-type lookups stay null after the round-trip.
 	EXPECT_EQ(loaded.Get<Mesh>(cam->GetObjectID()), nullptr);
 
-	// UID::serialize bumps s_count past restored IDs: fresh allocations never
+	// The manager reserves restored record keys: fresh allocations never
 	// collide with the loaded ones.
 	auto fresh = loaded.Load<Camera>();
 	EXPECT_GT(fresh->GetObjectID(), cam->GetObjectID());
@@ -265,16 +492,12 @@ TEST(ResourceManagerTest, PooledShaderRecompilesAfterLoad)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(pool);
+		project::ResourceComponent(pool).Save(ar);
 	}
 
 	// --- Load (the "reopen the app" step) ---
 	ResourceManager loaded;
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(loaded);
-	}
+	project::ResourceComponent(loaded).LoadJson(ss.str());
 
 	// The load lifecycle restores derived state: serialize(load) re-parses the
 	// stages and recompiles to SPIR-V, so GeometryPass can build the pipeline
@@ -409,6 +632,11 @@ TEST(ResourceTypeIndex, BaseInstanceDoesNotHideDerivedObjectsFromForEachUID)
 	int objects = 0;
 	rm.ForEach<neurus::ObjectID>([&](const std::shared_ptr<neurus::ObjectID>&) { ++objects; });
 	EXPECT_EQ(objects, 1) << "ForEach<T> is exact-dynamic-type, not a base walk";
+
+	ASSERT_TRUE(rm.Remove(plain->GetObjectID()));
+	objects = 0;
+	rm.ForEach<neurus::ObjectID>([&](const auto&) { ++objects; });
+	EXPECT_EQ(objects, 2) << "removing the last exact match restores the base-type scan";
 }
 
 /**
@@ -428,29 +656,26 @@ TEST(ResourceTypeIndex, UntrackedTypeForEachFallsBackToEverything)
 }
 
 /**
- * @test The type index is derived state: a load rebuilds it from the restored
- *       objects, while names (never serialized) stay unseeded.
+ * @test The project reader indexes types and names before restoring objects.
  */
-TEST(ResourceTypeIndex, LoadRebuildsTypeIndexAndKeepsNamesUnseeded)
+TEST(ResourceTypeIndex, LoadIndexesTypesAndNamesBeforeRestoringObjects)
 {
 	ResourceManager pool;
 	auto cam = pool.Load<Camera>();
 	pool.Load<Light>(POINTLIGHT, 5.0f, glm::vec3(1.0f));
-	ASSERT_EQ(pool.SetName(cam->GetObjectID(), "Cam"), "Cam");
+	cam->o_name = pool.SetName(cam->GetObjectID(), "Cam");
 
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(pool);
+		project::ResourceComponent(pool).Save(ar);
 	}
 
 	ResourceManager loaded;
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(loaded);
-	}
+	project::ResourceComponent(loaded).LoadJson(ss.str());
 
+	EXPECT_EQ(loaded.RegisteredName(cam->GetObjectID()), "Cam");
+	EXPECT_FALSE(loaded.GetLive(cam->GetObjectID()));
 	int cameras = 0;
 	int lights = 0;
 	loaded.ForEach<Camera>([&](const std::shared_ptr<Camera>&) { ++cameras; });
@@ -458,9 +683,9 @@ TEST(ResourceTypeIndex, LoadRebuildsTypeIndexAndKeepsNamesUnseeded)
 	EXPECT_EQ(cameras, 1);
 	EXPECT_EQ(lights, 1);
 
-	// Names live in the registry only, so a load leaves them for the caller to
-	// re-seed (ResourceComponent does that from o_name).
-	EXPECT_EQ(loaded.GetByName<Camera>("Cam"), nullptr);
+	const auto named = loaded.GetByName<Camera>("Cam");
+	ASSERT_TRUE(named);
+	EXPECT_EQ(named->GetObjectID(), cam->GetObjectID());
 }
 
 /**
@@ -477,22 +702,48 @@ TEST(ResourceNameRegistry, LoadIntoNonEmptyPoolDropsTheOldRegistry)
 	std::stringstream ss;
 	{
 		cereal::JSONOutputArchive ar(ss);
-		ar(source);
+		project::ResourceComponent(source).Save(ar);
 	}
 
 	ResourceManager target;
 	auto stale = target.Load<Camera>();
 	ASSERT_EQ(target.SetName(stale->GetObjectID(), "Stale"), "Stale");
 
-	{
-		std::stringstream is(ss.str());
-		cereal::JSONInputArchive ar(is);
-		ar(target);
-	}
+	project::ResourceComponent(target).LoadJson(ss.str());
 
 	// The old object is gone with the replaced pool, and its name must be free.
 	EXPECT_EQ(target.GetByName<Camera>("Stale"), nullptr);
 	auto fresh = target.Load<Camera>();
 	EXPECT_EQ(target.SetName(fresh->GetObjectID(), "Stale"), "Stale")
 		<< "the previous document's name must not survive the load";
+}
+
+/**
+ * @test ForEachLive visits only materialized objects; a deferred record of the
+ *       same type stays deferred and its loader never runs.
+ */
+TEST(ResourceManagerTest, ForEachLiveSkipsDeferredRecords)
+{
+	ResourceManager pool;
+	const auto first = pool.Load<TestResource>();
+	pool.Load<OtherTestResource>();
+	const int deferredId = pool.NextId() + 10;
+	int loads = 0;
+	pool.RegisterDeferred(deferredId, typeid(TestResource),
+		[&loads]
+		{
+			++loads;
+			return std::make_shared<TestResource>();
+		});
+
+	std::vector<int> seen;
+	pool.ForEachLive<TestResource>([&seen](const std::shared_ptr<TestResource>& obj)
+	{
+		seen.push_back(obj->GetObjectID());
+	});
+
+	ASSERT_EQ(seen.size(), 1u);
+	EXPECT_EQ(seen.front(), first->GetObjectID());
+	EXPECT_EQ(loads, 0);
+	EXPECT_FALSE(pool.GetLive(deferredId));
 }

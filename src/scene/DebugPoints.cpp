@@ -13,10 +13,8 @@ namespace neurus
 // ---------------------------------------------------------------------------
 
 DebugPoints::DebugPoints()
-	: ObjectID()
+	: ObjectID(GOType::GO_DP, "DebugPoints")
 {
-	o_type = GOType::GO_DP;
-	o_name = "DebugPoints";
 }
 
 // ---------------------------------------------------------------------------

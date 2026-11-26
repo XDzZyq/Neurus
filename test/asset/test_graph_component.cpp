@@ -9,12 +9,14 @@
 #include "asset/components/ConfigComponent.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "asset/data/MeshData.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "asset/Project.hpp"
+#include "core/Log.hpp"
 #include "core/RenderConfig.hpp"
 #include "asset/data/RenderGraphData.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "shader/ComputeShader.hpp"
 
 #include <cereal/archives/json.hpp>
@@ -37,24 +39,24 @@ class GraphComponent : public ::testing::Test
 protected:
 	neurus::BuiltInRenderData catalog;
 	neurus::ResourceManager resources;
-	std::shared_ptr<neurus::RenderGraphData> selected;
+	neurus::ResourceRef<neurus::RenderGraphData> selected;
 	std::vector<std::string> diagnostics;
 
-	std::string Save(std::shared_ptr<neurus::RenderGraphData> graph)
+	std::string Save(neurus::ResourceRef<neurus::RenderGraphData> graph)
 	{
 		std::ostringstream stream;
 		{
 			cereal::JSONOutputArchive archive(stream);
 			const bool fixture = true;
 			archive(cereal::make_nvp("fixture", fixture));
-			neurus::project::GraphComponent(graph, resources, catalog, diagnostics).Save(archive);
+			neurus::project::GraphComponent(graph, resources, diagnostics).Save(archive);
 		}
 		return stream.str();
 	}
 
 	void Load(const std::string& text)
 	{
-		neurus::project::GraphComponent(selected, resources, catalog, diagnostics).LoadJson(text);
+		neurus::project::GraphComponent(selected, resources, diagnostics).LoadJson(text);
 	}
 
 	nlohmann::ordered_json SavePool(neurus::ResourceManager& pool)
@@ -62,21 +64,11 @@ protected:
 		std::ostringstream stream;
 		{
 			cereal::JSONOutputArchive archive(stream);
-			neurus::project::ResourceComponent(pool, catalog).Save(archive);
+			neurus::project::ResourceComponent(pool).Save(archive);
 		}
 		return nlohmann::ordered_json::parse(stream.str());
 	}
 };
-
-nlohmann::ordered_json SaveInline(const neurus::RenderGraphData& topology)
-{
-	std::ostringstream stream;
-	{
-		cereal::JSONOutputArchive archive(stream);
-		archive(cereal::make_nvp("proj_render_graph", neurus::project::ToRecord(topology)));
-	}
-	return nlohmann::ordered_json::parse(stream.str());
-}
 
 } // anonymous namespace
 
@@ -97,11 +89,13 @@ TEST_F(GraphComponent, ActiveUidSelectsOnePooledPayload)
 	const auto savedPool = SavePool(pool);
 	const auto& entries = savedPool.at("m_resources").at("resources_");
 	ASSERT_EQ(entries.size(), 1u);
-	const auto& payload = entries[0].at("value").at("ptr_wrapper").at("data").at("topology");
+	const auto& payload = entries[0].at("data").at("topology");
 	EXPECT_EQ(payload.at("nodes").size(), expected.nodes.size());
+	ASSERT_EQ(payload.at("nodes")[5].at("inputs").size(), expected.nodes[5].inputs.size());
+	EXPECT_EQ(payload.at("nodes")[5].at("inputs")[0].at("binding"), expected.nodes[5].inputs[0].binding);
 	EXPECT_EQ(payload.at("edges").size(), expected.edges.size());
 
-	neurus::project::ResourceComponent(resources, catalog).LoadJson(savedPool.dump());
+	neurus::project::ResourceComponent(resources).LoadJson(savedPool.dump());
 	Load(project.dump());
 	ASSERT_TRUE(selected);
 	EXPECT_EQ(selected, resources.Get<neurus::RenderGraphData>(graph->GetObjectID()));
@@ -110,7 +104,7 @@ TEST_F(GraphComponent, ActiveUidSelectsOnePooledPayload)
 	// A save after editing must read the live topology, not the original record.
 	selected->nodes.front()->data.x = 32.0f;
 	const auto edited = SavePool(resources);
-	EXPECT_EQ(edited.at("m_resources").at("resources_")[0].at("value").at("ptr_wrapper")
+	EXPECT_EQ(edited.at("m_resources").at("resources_")[0]
 	              .at("data").at("topology").at("nodes")[0].at("x"), 32.0f);
 }
 
@@ -125,17 +119,16 @@ TEST_F(GraphComponent, CorruptFirstGraphDoesNotDiscardSiblingResources)
 	int rejected = -1;
 	for (auto& entry : saved.at("m_resources").at("resources_"))
 	{
-		auto& value = entry.at("value");
-		if (value.value("polymorphic_name", "") == "neurus::RenderGraphData")
+		if (entry.at("type") == "neurus::RenderGraphData")
 		{
 			rejected = entry.at("key").get<int>();
-			value.at("ptr_wrapper").at("data").at("topology")["edges"] = 42;
+			entry.at("data").at("topology")["edges"] = 42;
 			break;
 		}
 	}
 	ASSERT_GE(rejected, 0);
 	neurus::ResourceManager restored;
-	neurus::project::ResourceComponent(restored, catalog).LoadJson(saved.dump());
+	neurus::project::ResourceComponent(restored).LoadJson(saved.dump());
 	EXPECT_FALSE(restored.Get<neurus::RenderGraphData>(rejected));
 	EXPECT_TRUE(restored.Get<neurus::MeshData>(mesh->GetObjectID()));
 	EXPECT_EQ(restored.Size(), 2u);
@@ -151,10 +144,9 @@ TEST_F(GraphComponent, NullGraphIsOmittedOnSave)
 
 TEST_F(GraphComponent, ExplicitEmptyGraphRemainsPresent)
 {
-	const auto graph = std::make_shared<neurus::RenderGraphData>();
+	const auto graph = resources.Load<neurus::RenderGraphData>();
 	const std::string saved = Save(graph);
 	EXPECT_NE(saved.find("proj_render_graph"), std::string::npos);
-	resources.Register(graph);
 	Load(saved);
 	EXPECT_EQ(selected, graph);
 }
@@ -164,7 +156,7 @@ TEST_F(GraphComponent, MissingOrCorruptGraphClearsPreviousSelection)
 	for (const std::string text : {"{}", "{\"proj_render_graph\": 42}"})
 	{
 		SCOPED_TRACE(text);
-		selected = std::make_shared<neurus::RenderGraphData>();
+		selected = resources.Load<neurus::RenderGraphData>();
 		Load(text);
 		EXPECT_FALSE(selected);
 	}
@@ -173,12 +165,14 @@ TEST_F(GraphComponent, MissingOrCorruptGraphClearsPreviousSelection)
 TEST_F(GraphComponent, NullShaderReferencesAreOmittedAndLoadAsDefaults)
 {
 	const auto& ports = catalog.Ports();
-	const neurus::RenderGraphData graph(ports);
-	const std::string saved = SaveInline(graph).dump();
+	neurus::ResourceManager source;
+	const auto graph = source.Load<neurus::RenderGraphData>(ports);
+	const std::string saved = SavePool(source).dump();
 	EXPECT_EQ(saved.find("\"shader\""), std::string::npos);
-	Load(saved);
+	neurus::project::ResourceComponent(resources).LoadJson(saved);
+	Load(Save(graph));
 	ASSERT_TRUE(selected);
-	ASSERT_EQ(selected->nodes.size(), graph.nodes.size());
+	ASSERT_EQ(selected->nodes.size(), graph->nodes.size());
 	for (const auto& node : selected->nodes)
 		EXPECT_FALSE(node->data.shader);
 }
@@ -208,20 +202,75 @@ TEST_F(GraphComponent, InactiveGraphResolvesShadersStoredLaterInPool)
 	ASSERT_EQ(entries.size(), 2u);
 	if (entries[0].at("key") != graph->GetObjectID())
 		std::swap(entries[0], entries[1]);
-	neurus::project::ResourceComponent(restored, catalog).LoadJson(saved.dump());
+	neurus::project::ResourceComponent(restored).LoadJson(saved.dump());
 	ASSERT_EQ(restored.Size(), 2u);
 	const auto loaded = restored.Get<neurus::RenderGraphData>(graph->GetObjectID());
 	ASSERT_TRUE(loaded);
 	const auto loadedShader = restored.Get<neurus::ComputeShader>(shader->GetObjectID());
 	ASSERT_TRUE(loadedShader);
 	ASSERT_EQ(loaded->nodes.size(), 8u);
-	EXPECT_EQ(loaded->nodes[5]->data.shader, loadedShader);
-	EXPECT_EQ(loaded->nodes[7]->data.shader, loadedShader);
-	EXPECT_TRUE(neurus::ValidateCpuGraph(*loaded, ports).empty());
+	EXPECT_EQ(loaded->nodes[5]->data.shader.get(), loadedShader.get());
+	EXPECT_EQ(loaded->nodes[7]->data.shader.get(), loadedShader.get());
+	EXPECT_TRUE(neurus::ValidateCPUGraph(*loaded, ports).empty());
 	EXPECT_FALSE(loaded->nodes[4]->data.shader);
 }
 
-TEST_F(GraphComponent, ProjectLoadRejectsMalformedNodeWithoutDiscardingLaterConfig)
+TEST_F(GraphComponent, ReportsSocketMismatchWithoutChangingSavedGraph)
+{
+	neurus::ResourceManager pool;
+	const auto graph = pool.Load<neurus::RenderGraphData>(catalog.Ports());
+	const auto shader = catalog.CreatePassShader(graph->nodes.at(5)->data.pass, "ArchivedCompose");
+	pool.Register(shader);
+	graph->nodes[5]->data.shader = shader;
+	graph->nodes[5]->inputs.front()->data.binding = 29;
+	const auto graphUid = graph->GetObjectID();
+	const auto socketName = graph->nodes[5]->inputs.front()->name;
+
+	neurus::project::ResourceComponent(resources).LoadJson(SavePool(pool).dump());
+	ASSERT_FALSE(resources.GetLive(graphUid));
+	auto& log = neurus::LogBuffer::instance();
+	const auto first = log.HeadSeq() + 1;
+	const auto loaded = resources.Get<neurus::RenderGraphData>(graphUid);
+	ASSERT_TRUE(loaded);
+	EXPECT_EQ(loaded->nodes[5]->inputs.front()->data.binding, 29u);
+	ASSERT_TRUE(loaded->nodes[5]->data.shader);
+	EXPECT_EQ(loaded->nodes[5]->data.shader->GetObjectID(), shader->GetObjectID());
+
+	bool diagnosed = false;
+	for (auto seq = first; seq <= log.HeadSeq(); ++seq)
+	{
+		neurus::LogEntry entry{};
+		if (log.BySeq(seq, entry) && entry.level == neurus::LogLevel::Error
+			&& entry.message.find("saved socket '" + socketName + "' differs from the shader declaration") != std::string::npos)
+			diagnosed = true;
+	}
+	EXPECT_TRUE(diagnosed);
+}
+
+TEST_F(GraphComponent, LookingUpDeferredGraphRestoresItsShader)
+{
+	neurus::ResourceManager source;
+	const auto graph = source.Load<neurus::RenderGraphData>(catalog.Ports());
+	const auto shader = catalog.CreatePassShader(graph->nodes.at(5)->data.pass, "ArchivedCompose");
+	source.Register(shader);
+	graph->nodes[5]->data.shader = shader;
+
+	neurus::ResourceManager restored;
+	neurus::project::ResourceComponent(restored)
+		.LoadJson(SavePool(source).dump());
+	EXPECT_FALSE(restored.GetLive(graph->GetObjectID()));
+	EXPECT_FALSE(restored.GetLive(shader->GetObjectID()));
+
+	const auto loadedGraph = restored.Get<neurus::RenderGraphData>(graph->GetObjectID());
+	ASSERT_TRUE(loadedGraph);
+	ASSERT_EQ(loadedGraph->nodes.size(), graph->nodes.size());
+	const auto loadedShader = restored.Get<neurus::ShaderData>(shader->GetObjectID());
+	ASSERT_TRUE(loadedShader);
+	EXPECT_EQ(loadedGraph->nodes[5]->data.shader.get(), loadedShader.get());
+	EXPECT_EQ(neurus::project::ToRecord(*loadedGraph), neurus::project::ToRecord(*graph));
+}
+
+TEST_F(GraphComponent, ProjectLoadRejectsMalformedSelectionWithoutDiscardingLaterConfig)
 {
 	struct TemporaryProject
 	{
@@ -237,14 +286,14 @@ TEST_F(GraphComponent, ProjectLoadRejectsMalformedNodeWithoutDiscardingLaterConf
 	{
 		std::ofstream file(temporary.path);
 		ASSERT_TRUE(file.is_open());
-		file << R"({"project":{"proj_render_graph":{"nodes":[42],"edges":[]},
+		file << R"({"project":{"proj_render_graph":{"uid":"bad"},
 			"proj_config":{"r_gamma":1.5,"r_shadow_bias":0.002}}})";
 	}
-	selected = std::make_shared<neurus::RenderGraphData>();
+	selected = resources.Load<neurus::RenderGraphData>();
 	std::shared_ptr<neurus::RenderConfig> config;
 	neurus::project::Project project;
 	// Loading graph before config verifies malformed data cannot poison its sibling.
-	project.Register<neurus::project::GraphComponent>(selected, resources, catalog, diagnostics);
+	project.Register<neurus::project::GraphComponent>(selected, resources, diagnostics);
 	project.Register<neurus::project::ConfigComponent>(config);
 	ASSERT_NO_THROW(project.Load(temporary.path.string()));
 	EXPECT_FALSE(selected);
@@ -253,39 +302,47 @@ TEST_F(GraphComponent, ProjectLoadRejectsMalformedNodeWithoutDiscardingLaterConf
 	EXPECT_FLOAT_EQ(config->r_shadow_bias, 0.002f);
 }
 
-TEST_F(GraphComponent, LoadJsonGuardsNestedTypesAndKeepsNullInsteadOfAllocatingDefaults)
+TEST_F(GraphComponent, PoolReaderRejectsMalformedTopology)
 {
-	const auto& ports = catalog.Ports();
-	const auto saved = SaveInline(neurus::RenderGraphData(ports));
+	neurus::ResourceManager source;
+	const auto graph = source.Load<neurus::RenderGraphData>(catalog.Ports());
+	const auto saved = SavePool(source);
+	auto topology = [](auto& pool) -> auto& {
+		return pool.at("m_resources").at("resources_")[0].at("data").at("topology");
+	};
 	std::vector<nlohmann::ordered_json> corrupt;
 	corrupt.push_back(saved);
-	corrupt.back()["proj_render_graph"]["nodes"][0]["pass"] = 42;
+	topology(corrupt.back())["nodes"][0]["pass"] = 42;
 	corrupt.push_back(saved);
-	corrupt.back()["proj_render_graph"]["nodes"][0]["shader"] = "bad";
+	topology(corrupt.back())["nodes"][0]["shader"] = "bad";
 	corrupt.push_back(saved);
-	corrupt.back()["proj_render_graph"]["nodes"][0]["x"] = "bad";
+	topology(corrupt.back())["nodes"][0]["x"] = "bad";
 	corrupt.push_back(saved);
-	corrupt.back()["proj_render_graph"]["nodes"][0]["outputs"][0]["binding"] = -1;
+	topology(corrupt.back())["nodes"][0]["outputs"][0]["binding"] = -1;
 	corrupt.push_back(saved);
-	corrupt.back()["proj_render_graph"]["nodes"][0]["outputs"][0]["tag"]["nullopt"] = "bad";
+	topology(corrupt.back())["nodes"][0]["outputs"][0]["tag"]["nullopt"] = "bad";
 	corrupt.push_back(saved);
-	corrupt.back()["proj_render_graph"]["nodes"][0]["outputs"][0]["tag"]["data"]["extent"] = 42;
+	topology(corrupt.back())["nodes"][0]["outputs"][0]["tag"]["data"]["extent"] = 42;
 	corrupt.push_back(saved);
-	corrupt.back()["proj_render_graph"]["edges"][0]["from"] = 42;
+	topology(corrupt.back())["nodes"][0]["outputs"][0]["tag"]["data"]["extent"] = 256;
+	corrupt.push_back(saved);
+	topology(corrupt.back())["nodes"][0]["shader"] = -1;
+	corrupt.push_back(saved);
+	topology(corrupt.back())["edges"][0]["from"] = 42;
 	for (const auto& document : corrupt)
 	{
 		SCOPED_TRACE(document.dump());
-		selected = std::make_shared<neurus::RenderGraphData>();
-		EXPECT_NO_THROW(Load(document.dump()));
-		EXPECT_FALSE(selected);
+		neurus::project::ResourceComponent(resources).LoadJson(document.dump());
+		const int id = graph->GetObjectID();
+		ASSERT_TRUE(resources.Contains(id));
+		EXPECT_FALSE(resources.Get<neurus::RenderGraphData>(id));
+		EXPECT_FALSE(resources.Contains(id));
 	}
 }
 
-TEST_F(GraphComponent, LoadJsonAcceptsExplicitEmptyGraph)
+TEST_F(GraphComponent, InlineTopologyIsNotAnActiveUid)
 {
 	Load(R"({"proj_render_graph":{"nodes":[],"edges":[]}})");
-	ASSERT_TRUE(selected);
-	EXPECT_TRUE(selected->nodes.empty());
-	EXPECT_TRUE(selected->Connections().empty());
-	EXPECT_EQ(resources.Get<neurus::RenderGraphData>(selected->GetObjectID()), selected);
+	EXPECT_FALSE(selected);
+	EXPECT_EQ(resources.Size(), 0u);
 }

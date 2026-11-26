@@ -1,6 +1,6 @@
 /**
  * @file PassBindings.cpp
- * @brief Binding-plan construction and descriptor writes shared by graph and tests.
+ * @brief Descriptor writes shared by the graph and its helper tests.
  */
 
 #include "render_graph/PassBindings.hpp"
@@ -12,54 +12,22 @@
 
 namespace neurus {
 
-std::vector<GraphImageBinding> BuildImageBindings(
-	const PassPorts& ports,
-	const Pass& pass,
-	const std::function<bool(std::string_view)>& connected)
+void AppendImageBinding(std::vector<GraphImageBinding>& bindings, std::string_view name,
+                        PortDirection direction, std::string_view type, uint32_t binding,
+                        std::span<const uint32_t> selfManaged)
 {
-	std::vector<GraphImageBinding> bindings;
-	const std::vector<uint32_t> selfManaged = pass.SelfManagedBindings();
-
-	const auto isSelfManaged = [&selfManaged](const uint32_t binding)
+	if (std::ranges::find(selfManaged, binding) != selfManaged.end())
+		return;
+	if (direction == PortDirection::Input && IsSamplerPortType(type))
 	{
-		return std::find(selfManaged.begin(), selfManaged.end(), binding) != selfManaged.end();
-	};
-
-	for (const PassPort& input : ports.Inputs())
-	{
-		if (!IsSamplerPortType(input.type))
-			continue;
-		if (connected && !connected(input.name))
-			continue;
-		if (isSelfManaged(input.binding))
-			continue;
-
-		bindings.push_back({
-			input.name,
-			PortDirection::Input,
-			input.binding,
-			vk::DescriptorType::eCombinedImageSampler,
-			vk::ImageLayout::eShaderReadOnlyOptimal,
-		});
+		bindings.push_back({std::string(name), direction, binding, vk::DescriptorType::eCombinedImageSampler,
+		                    vk::ImageLayout::eShaderReadOnlyOptimal});
 	}
-
-	for (const PassPort& output : ports.Outputs())
+	else if (direction == PortDirection::Output && IsStorageImagePortType(type))
 	{
-		if (!IsStorageImagePortType(output.type))
-			continue;
-		if (isSelfManaged(output.binding))
-			continue;
-
-		bindings.push_back({
-			output.name,
-			PortDirection::Output,
-			output.binding,
-			vk::DescriptorType::eStorageImage,
-			vk::ImageLayout::eGeneral,
-		});
+		bindings.push_back({std::string(name), direction, binding, vk::DescriptorType::eStorageImage,
+		                    vk::ImageLayout::eGeneral});
 	}
-
-	return bindings;
 }
 
 void WritePassBindings(Pass& pass,

@@ -1,5 +1,13 @@
 # Passive CPU resource data and file access do not depend on shader tooling.
 add_library(neurus_asset_data STATIC
+	ResourceManager.hpp
+	ResourceManager.cpp
+	ResourcePoolArchive.cpp
+	ResourceRef.hpp
+	ResourceInputArchive.hpp
+	ResourceInputArchive.cpp
+	ResourceType.hpp
+	ResourceType.cpp
 	PixelFormat.hpp
 	registrations/DataRegistration.hpp
 	registrations/DataRegistration.cpp
@@ -17,12 +25,14 @@ add_library(neurus_asset_data STATIC
 	data/render_graph/RenderGraphRecord.cpp
 	data/render_graph/PassShaderCatalog.hpp
 	data/render_graph/PortSource.hpp
-	data/render_graph/CpuGraphValidation.hpp
-	data/render_graph/CpuGraphValidation.cpp
-	data/render_graph/PassPorts.hpp
-	data/render_graph/PassPorts.cpp
+	data/render_graph/CPUGraphValidation.hpp
+	data/render_graph/CPUGraphValidation.cpp
+	data/render_graph/CPUPorts.hpp
+	data/render_graph/CPUPorts.cpp
 	data/render_graph/PassKinds.hpp
 	data/shader/ShaderStage.hpp
+	data/shader/ShaderInterface.hpp
+	data/shader/ShaderInterface.cpp
 	data/shader/ShaderStruct.hpp
 	data/shader/ShaderStruct.cpp
 	data/shader/ShaderStructSerialize.hpp
@@ -30,9 +40,9 @@ add_library(neurus_asset_data STATIC
 	data/ShaderData.hpp
 	data/ShaderData.cpp
 )
-target_link_libraries(neurus_asset_data PUBLIC glm stb neurus_core cereal)
+target_link_libraries(neurus_asset_data PUBLIC glm stb neurus_core cereal nlohmann_json)
 target_include_directories(neurus_asset_data PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(neurus_asset_data PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_include_directories(neurus_asset_data PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.. ${Vulkan_INCLUDE_DIRS}) # SPIR-V enums
 target_compile_definitions(neurus_asset_data PRIVATE
 	NEURUS_RES_DIR="${CMAKE_SOURCE_DIR}/res/"
 	NEURUS_SHADER_DIR="${CMAKE_SOURCE_DIR}/res/shaders/"
@@ -47,7 +57,6 @@ add_library(neurus_asset STATIC
 	components/ConfigComponent.hpp
 	components/ConfigComponent.cpp
 	components/GraphComponent.hpp
-	components/GraphRecordJson.hpp
 	components/GraphComponent.cpp
 	components/SceneComponent.hpp
 	components/SceneComponent.cpp

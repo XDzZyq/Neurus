@@ -40,7 +40,7 @@
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/data/MeshData.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
@@ -61,7 +61,7 @@ struct TempFile
 	~TempFile() { std::remove(path.c_str()); }
 };
 
-/// @brief Reads a whole file, for the legacy-migration test's JSON surgery.
+/// @brief Reads a whole file, for the absent-selection test.
 std::string ReadAll(const std::string& path)
 {
 	std::ifstream in(path);
@@ -72,7 +72,7 @@ std::string ReadAll(const std::string& path)
 
 /**
  * @brief Deletes the `"activeCamUid": N` entry from a saved project, producing
- *        the exact file an older build would have written.
+ *        a document without a saved activation.
  *
  * Done by editing a real save rather than hand-authoring JSON: the field is the
  * last one in the m_scene node and its position in the archive is frozen
@@ -166,6 +166,8 @@ TEST(SceneCameraActivation, ReAddingTheRemovedCamera_RestoresTheActivation)
 	scene.UseCamera(cam);
 	ASSERT_TRUE(scene.ActivateCamera(uid));
 	ASSERT_TRUE(scene.RemoveCamera(uid));
+	EXPECT_EQ(resources.Get<Camera>(uid), cam);
+	EXPECT_EQ(cam->GetObjectID(), uid);
 	EXPECT_TRUE(scene.cam_list.empty());
 	EXPECT_EQ(scene.ActiveCameraID(), uid);
 	ASSERT_EQ(scene.GetActiveCamera(), nullptr);
@@ -218,7 +220,7 @@ namespace
 void SaveTwoCameraScene(const std::string& path, bool activateSecond,
                         int& outFirstUid, int& outSecondUid)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	Scene scene;
 	ResourceManager resources;
 
@@ -233,7 +235,7 @@ void SaveTwoCameraScene(const std::string& path, bool activateSecond,
 		ASSERT_TRUE(scene.ActivateCamera(outSecondUid));
 
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources, catalog);
+	p.Register<project::ResourceComponent>(resources);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Save(path);
 }
@@ -241,9 +243,9 @@ void SaveTwoCameraScene(const std::string& path, bool activateSecond,
 /// @brief Loads a project into @p scene, which must outlive @p resources' users.
 void LoadProject(const std::string& path, Scene& scene, ResourceManager& resources)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources, catalog);
+	p.Register<project::ResourceComponent>(resources);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Load(path);
 }
@@ -276,14 +278,8 @@ TEST(SceneCameraActivation, ActivationRoundTripsThroughAProjectFile)
 	EXPECT_EQ(cam->GetObjectID(), secondUid);
 }
 
-/**
- * @test A scene saved with nothing activated loads with nothing activated, even
- *       though it contains cameras. "Explicitly none" and "field absent" are
- *       different states and only the latter migrates — otherwise every
- *       camera-bearing scene would silently reacquire a scene camera on reload
- *       and the viewport camera would be unreachable in practice.
- */
-TEST(SceneCameraActivation, ExplicitNoneRoundTripsAsNoneAndNeverMigrates)
+/// An explicitly unselected scene camera keeps the viewport active.
+TEST(SceneCameraActivation, ExplicitNoneRoundTripsAsNone)
 {
 	TempFile tmp("test_scene_camera_activation_none.neurus.json");
 
@@ -300,13 +296,7 @@ TEST(SceneCameraActivation, ExplicitNoneRoundTripsAsNoneAndNeverMigrates)
 	EXPECT_EQ(loaded.GetActiveCamera(), nullptr);
 }
 
-/**
- * @test A project written before the field existed migrates once, activating the
- *       camera the old positional lookup would have returned, so an upgraded
- *       project still opens through the camera it was saved with. The file is a
- *       real save with the field surgically removed — see StripActiveCamUid.
- */
-TEST(SceneCameraActivation, LegacyFileWithoutTheFieldMigratesToACamera)
+TEST(SceneCameraActivation, AbsentSelectionLeavesViewportActive)
 {
 	TempFile tmp("test_scene_camera_activation_legacy.neurus.json");
 
@@ -320,24 +310,13 @@ TEST(SceneCameraActivation, LegacyFileWithoutTheFieldMigratesToACamera)
 	LoadProject(tmp.path, loaded, loadedResources);
 
 	ASSERT_EQ(loaded.cam_list.size(), 2u);
-	// Which one is hash order's business, as it was before the feature existed;
-	// what matters is that the migration leaves a usable camera in use rather
-	// than silently blanking a project that used to render.
-	EXPECT_NE(loaded.ActiveCameraID(), 0);
-	Camera* cam = loaded.GetActiveCamera();
-	ASSERT_NE(cam, nullptr);
-	EXPECT_EQ(cam->GetObjectID(), loaded.ActiveCameraID());
-	EXPECT_EQ(cam->GetObjectID(), loaded.cam_list.begin()->first);
+	EXPECT_EQ(loaded.ActiveCameraID(), 0);
+	EXPECT_EQ(loaded.GetActiveCamera(), nullptr);
 }
 
-/**
- * @test A legacy file with no cameras at all migrates to "none" rather than to a
- *       conjured camera. Nothing is injected to repair a camera-less document:
- *       zero cameras is legal, because the Editor always has its own.
- */
-TEST(SceneCameraActivation, LegacyCameraLessFileMigratesToNone)
+TEST(SceneCameraActivation, AbsentSelectionWithNoCamerasLeavesViewportActive)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_camera_activation_legacy_empty.neurus.json");
 
 	{
@@ -346,7 +325,7 @@ TEST(SceneCameraActivation, LegacyCameraLessFileMigratesToNone)
 		scene.UseMesh(resources.Load<Mesh>(resources.Load<MeshData>("res/obj/sphere.obj")));
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Save(tmp.path);
 	}

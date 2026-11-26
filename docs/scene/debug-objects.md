@@ -38,10 +38,10 @@ See [Overlays](overlays.md) and [Viewport](../editor/viewport.md).
 
 `scene/DebugMesh.hpp` draws pooled geometry as a wireframe overlay instead of a shaded surface, completing the debug-object family. It inherits `ObjectID` and `Transform3D`.
 
-- References a pooled `MeshData` exactly like `Mesh` does (`o_mesh` plus `o_meshDataId`), so it reuses the existing `MeshGPU` upload path and the `ResourceComponent` re-wiring on project load.
+- References pooled `MeshData` through `o_mesh` and shares the `MeshGPU` upload path with `Mesh`. Its project field is `m_meshDataId`.
 - Has no `Material` and no per-object `Shader`; its appearance is fully described by color, opacity and x-ray.
 - Line width is deliberately absent: the wireframe is rasterized with `polygonMode = eLine`, whose width is fixed at 1 px wherever the wide-lines feature is unavailable (notably MoltenVK/Metal, which clamps `lineWidthRange` to `[1, 1]`). Use `DebugLine` when thickness is required.
-- `SetMeshData(...)` points it at pooled geometry and keeps `o_meshDataId` in sync; `HasGeometry()` reports whether anything will be drawn.
+- `SetMeshData(...)` assigns the geometry reference. `HasGeometry()` reports whether the geometry is available to draw.
 - A `DebugMesh` wireframe never gets the `Smooth` flag, so its fragment stage has no branch on it.
 
 ## Upload

@@ -55,15 +55,14 @@ addresses. Its supporting IR/unit headers live under `asset/data/shader/`
   each leaf then serializes the stage map (`path`/`code`/`parsed`) through the
   `ShaderData` helpers.
 - SPIR-V and the version are runtime state: they are never serialized and are
-  rebuilt on load. A stage with restored code keeps it; a path-only legacy
-  shader re-parses from disk.
+  rebuilt on load. The saved `stages` map is required. A source-backed shader
+  whose saved stages have empty code re-parses its files.
 - `ShaderUnit` is a stage value, not a pooled resource. `ShaderStruct` is the
   parsed GLSL IR; `ShaderStructSerialize.hpp` provides its cereal overloads.
 - `ShaderStage.hpp` holds `ShaderType`, `ShaderTypeFromPath` and the default
   G-buffer source paths.
 - Pooled shader names are addressed by name (`neurus.data.shaders["Name"]`),
-  so `ResourceComponent::Load` re-seeds the registry from `ShaderData::GetName`
-  after loading the pool.
+  so project open indexes the serialized shader names before compiling any requested shader.
 
 The Script Console exposes the data as `neurus.shader` (stage constants,
 `load_shader`, IR classes), `neurus.data.shaders` (pooled shaders by UID/name)
@@ -138,8 +137,10 @@ include; undo may restore null.
 
 ## Graph shader ownership
 
-Each `CpuNode` owns a `shared_ptr<const ShaderData>`; null selects a built-in
-recipe for its pass kind. The Editor may hold a mutable alias to the pooled
+Each `CPUNode` holds a `PassShaderRef` (`ResourceRef<const ShaderData>`).
+An empty reference selects the built-in recipe for its pass kind. Portable graph
+and undo records keep the shader UID until the graph is restored against a pool.
+The Editor may hold a mutable alias to the pooled
 shader. Cloning a graph copies topology and shares shader ownership, so pool
 removal cannot leave dangling graph references. It does not capture shader
 contents or allocate another identity.

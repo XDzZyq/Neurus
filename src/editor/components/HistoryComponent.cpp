@@ -3,7 +3,7 @@
  * @brief Undo/redo stack (de)serialization for project persistence.
  */
 
-#include "editor/project/HistoryComponent.hpp"
+#include "editor/components/HistoryComponent.hpp"
 
 #include <memory>
 #include <vector>

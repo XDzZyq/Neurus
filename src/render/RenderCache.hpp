@@ -360,7 +360,7 @@ public:
 	 *        the shadow bookkeeping derived from them.
 	 *
 	 * Called when the scene is replaced. The caches are keyed by object UID and
-	 * UIDs are restored from the project file (UID::serialize re-reads o_id), so
+	 * UIDs are restored from the project file (the pool restores its saved keys), so
 	 * an entry left behind shadows whatever returns under the same id: load
 	 * project A, then project B, and B draws A's geometry, shadow maps and
 	 * cubemaps while B's own properties are displayed correctly beside them.

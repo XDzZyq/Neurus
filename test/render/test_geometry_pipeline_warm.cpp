@@ -89,7 +89,7 @@ protected:
 	// as a non-error miss.
 	std::shared_ptr<RenderShader> MakeShader(const char* name, bool compile = true)
 	{
-		auto shader = std::make_shared<RenderShader>(
+		auto shader = m_resources.Load<RenderShader>(
 			name,
 			ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl"),
 			ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl"));
@@ -127,10 +127,10 @@ protected:
 	// A sphere mesh carrying @p shader as its per-mesh Shader.
 	std::shared_ptr<Mesh> MakeMesh(std::shared_ptr<ShaderData> shader)
 	{
-		auto meshData = std::make_shared<MeshData>();
+		auto meshData = m_resources.Load<MeshData>();
 		meshData->LoadObj(ResolveAssetPath("res/obj/sphere.obj"));
 
-		auto mesh = std::make_shared<Mesh>();
+		auto mesh = m_resources.Load<Mesh>();
 		mesh->o_mesh = meshData;
 		mesh->o_shader = std::move(shader);
 		return mesh;

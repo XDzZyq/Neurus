@@ -19,7 +19,7 @@
  *     against a *default-constructed object*, never against a literal, so the
  *     test cannot drift from the member initializer the way a second copy of
  *     the value could.
- *  4. Identity and history stay strict. `UID::o_id`, a resource path, a scene
+ *  4. Identity and history stay strict. the pool key, a resource path, a scene
  *     object's discriminator and an operation's endpoint nodes still throw when
  *     missing, because defaulting them would silently corrupt cross-references
  *     or replay a wrong undo step.
@@ -48,29 +48,29 @@
 #include <nlohmann/json.hpp>
 
 #include "app/Preferences.hpp"
+#include "editor/components/EditorComponent.hpp"
+#include "editor/components/HistoryComponent.hpp"
+#include "editor/events/EventBus.hpp"
+#include "editor/operations/ConfigOperations.hpp"
+#include "editor/operations/OperationManager.hpp"
+#include "editor/viewport/EditorViewport.hpp"
 #include "asset/Project.hpp"
+#include "asset/ResourceManager.hpp"
 #include "asset/components/ConfigComponent.hpp"
-#include "editor/project/EditorComponent.hpp"
-#include "editor/project/HistoryComponent.hpp"
-#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/components/UIComponent.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
-#include "core/ResourceManager.hpp"
-#include "core/Serialize.hpp"
-#include "editor/events/EventBus.hpp"
-#include "editor/operations/ConfigOperations.hpp"
-#include "editor/operations/OperationManager.hpp"
-#include "editor/viewport/EditorViewport.hpp"
 #include "core/RenderConfig.hpp"
+#include "core/Serialize.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Environment.hpp"
 #include "scene/GlmSerialization.hpp"
 #include "scene/Light.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
+#include "shader/BuiltInRenderData.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/ShaderLibrary.hpp"
 
@@ -176,32 +176,18 @@ std::set<std::string> KeyNames(const std::string& json)
 	return keys;
 }
 
-void CollectAuthoredShaderBindings(const nlohmann::json& value, std::map<int, int>& bindings)
+std::map<int, int> AuthoredShaderBindings(const nlohmann::json& document)
 {
-	if (value.is_object())
+	std::map<int, int> bindings;
+	for (const auto& record : document.at("project").at("m_resources").at("resources_"))
 	{
-		if (const auto shader = value.find("o_shaderId"); shader != value.end())
-		{
-			EXPECT_TRUE(shader->is_number_integer());
-			if (shader->is_number_integer() && shader->get<int>() != 0)
-			{
-				const nlohmann::json* identity = &value;
-				while (!identity->contains("o_id") && identity->contains("value0")
-				       && (*identity)["value0"].is_object())
-					identity = &(*identity)["value0"];
-				EXPECT_TRUE(identity->contains("o_id")) << "nonzero shader reference has no owning mesh UID";
-				if (identity->contains("o_id"))
-					bindings.emplace((*identity)["o_id"].get<int>(), shader->get<int>());
-			}
-		}
-		for (const auto& child : value.items())
-			CollectAuthoredShaderBindings(child.value(), bindings);
+		if (record.at("type") != "neurus::Mesh")
+			continue;
+		const int shader = record.at("data").value("o_shaderId", 0);
+		if (shader != 0)
+			bindings.emplace(record.at("key").get<int>(), shader);
 	}
-	else if (value.is_array())
-	{
-		for (const auto& child : value)
-			CollectAuthoredShaderBindings(child, bindings);
-	}
+	return bindings;
 }
 
 } // namespace
@@ -222,7 +208,7 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 {
 	Light             light;
 	const std::string lightJson = SaveOne("light", light);
-	for (const char* key : {"o_id", "o_name", "o_type", "is_viewport", "is_rendered",
+	for (const char* key : {"o_name", "o_type", "is_viewport", "is_rendered",
 	                        "transform", "m_position", "m_rotation", "m_scale",
 	                        "use_shadow", "light_type", "light_power", "light_color",
 	                        "light_radius", "spot_cutoff", "spot_outer_cutoff",
@@ -236,7 +222,7 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 
 	Mesh              mesh;
 	const std::string meshJson = SaveOne("mesh", mesh);
-	for (const char* key : {"o_id", "o_name", "o_type", "is_viewport", "is_rendered",
+	for (const char* key : {"o_name", "o_type", "is_viewport", "is_rendered",
 	                        "transform", "m_position", "m_rotation", "m_scale",
 	                        "o_meshDataId", "using_shadow",
 	                        "using_material", "using_sdf", "is_closure"})
@@ -248,15 +234,17 @@ TEST(SerializeOptional, SavedKeysAreUnchanged)
 		"res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_NE(shader, nullptr);
 	ASSERT_TRUE(shader->CompileToSpv());
-	const int shaderUid = shader->GetObjectID();
-	mesh.SetObjShader(std::shared_ptr<RenderShader>(std::move(shader)));
+	ResourceManager resources;
+	auto pooledShader = std::shared_ptr<RenderShader>(std::move(shader));
+	const int shaderUid = resources.Register(pooledShader);
+	mesh.SetObjShader(pooledShader);
 	const std::string authoredMeshJson = SaveOne("mesh", mesh);
 	ExpectKey(authoredMeshJson, "o_shaderId");
 	EXPECT_EQ(nlohmann::json::parse(authoredMeshJson)["mesh"]["o_shaderId"], shaderUid);
 
 	Camera            camera;
 	const std::string cameraJson = SaveOne("camera", camera);
-	for (const char* key : {"o_id", "transform", "m_position", "cam_w", "cam_h",
+	for (const char* key : {"transform", "m_position", "cam_w", "cam_h",
 	                        "cam_pers", "cam_near", "cam_far", "cam_tar",
 	                        "cam_floatData"})
 		ExpectKey(cameraJson, key);
@@ -376,8 +364,7 @@ TEST(SerializeOptional, AbsentMiddleAndTrailingFieldsKeepDefaults)
  * disagrees with the member initializer, this fails.
  *
  * The archive is produced by a real save rather than hand-written, so the test
- * does not depend on the nesting cereal gives `base_class` (`o_id` actually
- * lives two "value0" nodes deep).
+ * does not depend on the nesting cereal gives `base_class`.
  */
 TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 {
@@ -397,7 +384,7 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 	light.spot_outer_cutoff = 0.44f;
 	light.area_ratio        = 1.75f;
 
-	// Everything except the three strict keys: UID's o_id, the transform node
+	// Everything except the two strict keys: the transform node
 	// (its own contents are renamed below) and Light's discriminator.
 	std::string json = SaveOne("light", light);
 	for (const char* key : {"o_name", "o_type", "is_viewport", "is_rendered",
@@ -426,7 +413,7 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 	EXPECT_FLOAT_EQ(loaded.area_ratio, fresh.area_ratio);
 
 	// The two keys the archive kept still land.
-	EXPECT_EQ(loaded.GetObjectID(), light.GetObjectID());
+	EXPECT_EQ(loaded.GetObjectID(), -1);
 	EXPECT_EQ(loaded.light_type, SUNLIGHT);
 }
 
@@ -434,11 +421,11 @@ TEST(SerializeOptional, EveryOptionalFieldAbsentEqualsDefaultConstructed)
 // 4. Identity and history stay strict
 // =======================================================================
 
-TEST(SerializeOptional, MissingLightIdentityOrDiscriminatorRejectsLoad)
+TEST(SerializeOptional, MissingLightDiscriminatorRejectsLoad)
 {
 	Light light;
 	light.light_type = POINTLIGHT;
-	for (const char* required : {"o_id", "light_type"})
+	for (const char* required : {"light_type"})
 	{
 		SCOPED_TRACE(required);
 		std::string json = SaveOne("light", light);
@@ -457,6 +444,31 @@ TEST(SerializeOptional, AbsentResourcePathStillThrows)
 
 	MeshData loaded;
 	EXPECT_THROW(LoadOne(json, "mesh_data", loaded), cereal::Exception);
+}
+
+/**
+ * @brief A positive reference needs the pool that resolves it.
+ *
+ * A scalar UID is meaningless without a pool, so a plain archive must not
+ * silently drop the reference and hand back a half-loaded object.
+ */
+TEST(SerializeOptional, ResourceReferenceOutsidePoolArchiveThrows)
+{
+	Mesh mesh;
+	auto shader = ShaderLibrary::LoadRenderShader("AuthoredShader",
+		"res/shaders/render/gbuffer.vert.glsl", "res/shaders/render/gbuffer.frag.glsl");
+	ASSERT_NE(shader, nullptr);
+	ASSERT_TRUE(shader->CompileToSpv());
+	ResourceManager resources;
+	auto pooledShader = std::shared_ptr<RenderShader>(std::move(shader));
+	resources.Register(pooledShader);
+	mesh.SetObjShader(pooledShader);
+
+	const std::string authoredMeshJson = SaveOne("mesh", mesh);
+	ExpectKey(authoredMeshJson, "o_shaderId");
+
+	Mesh fresh;
+	EXPECT_THROW(LoadOne(authoredMeshJson, "mesh", fresh), std::logic_error);
 }
 
 /**
@@ -681,28 +693,17 @@ TEST(SerializeOptional, PreferencesCorruptFileKeepsLiveValues)
 }
 
 // =======================================================================
-// 8. A real file written by an earlier build survives a write round trip
+// 8. Current-format project files survive a write round trip
 // =======================================================================
 
 /**
- * @test Re-saving a shipped example project drops none of the keys it arrived with.
- *
- * Every other test here builds its archive in memory, so none of them can tell
- * whether a *file on disk* comes back out intact - the whole
- * backward-compatibility claim: open an older project, save it, and the file is
- * still the same format rather than one quietly short a field.
- *
- * The examples are fixed, test-only files under test/asset/projects/ (an
- * application run cannot perturb them): one already carries the trailing
- * `m_editor` node, one predates it. The comparison is one-directional on
- * purpose - the new file may have *more* keys (it may gain a field a newer
- * build writes). Only old zero shader bindings may disappear; every nonzero
- * binding must survive on the same mesh. EditorComponent is registered (last, as the
- * application does) so the `m_editor` node round-trips either way.
+ * @test Files with and without optional editor state preserve their authored
+ * fields. Null shader bindings may be omitted. Nonzero bindings must still
+ * refer to the same shader from the same mesh after a save.
  */
-TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
+TEST(SerializeOptional, ShippedProjectResavesWithAuthoredKeys)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	const std::string base = std::string(TEST_SOURCE_DIR) + "/test/asset/projects/";
 	const std::vector<std::string> fixtures = {
 		"with_editor.neurus.json",
@@ -728,12 +729,12 @@ TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 		ScratchFile out("test_serialize_optional_resave.neurus.json");
 		{
 			project::Project p;
-			p.Register<project::ResourceComponent>(resources, catalog);
+			p.Register<project::ResourceComponent>(resources);
 			p.Register<project::SceneComponent>(scene, resources);
 			p.Register<project::ConfigComponent>(config);
 			p.Register<project::UIComponent>(ui);
 			p.Register<project::HistoryComponent>(ops);
-			p.Register<project::EditorComponent>(viewport);
+			p.Register<project::EditorComponent>(viewport, resources);
 			ASSERT_NO_THROW(p.Load(src));
 			ASSERT_NO_THROW(p.Save(out.path));
 		}
@@ -744,10 +745,8 @@ TEST(SerializeOptional, ShippedProjectResavesWithEveryOldKey)
 		const auto oldKeys = KeyNames(before);
 		const auto newKeys = KeyNames(after);
 		ASSERT_FALSE(oldKeys.empty());
-		std::map<int, int> oldShaderBindings;
-		std::map<int, int> newShaderBindings;
-		CollectAuthoredShaderBindings(nlohmann::json::parse(before), oldShaderBindings);
-		CollectAuthoredShaderBindings(nlohmann::json::parse(after), newShaderBindings);
+		const auto oldShaderBindings = AuthoredShaderBindings(nlohmann::json::parse(before));
+		const auto newShaderBindings = AuthoredShaderBindings(nlohmann::json::parse(after));
 		for (const auto& [meshUid, shaderUid] : oldShaderBindings)
 		{
 			const auto restored = newShaderBindings.find(meshUid);

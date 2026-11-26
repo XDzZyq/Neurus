@@ -506,7 +506,7 @@ make check FILTER="-L Severity::Critical"
 | Medium | A localized feature or input behaves incorrectly |
 | Low | Presentation, logging, or diagnostic details degrade |
 
-Assign new Google Test suites in [NeurusTestLabels.cmake](../../cmake/NeurusTestLabels.cmake). Cases inherit the suite's labels. Use a `Suite.Case` entry when a case has a different owner or impact. CTest applies the mapping after discovery through `TEST_INCLUDE_FILES`. The two Python checks receive their labels at registration.
+Assign new Google Test suites in [NeurusTestLabels.cmake](https://github.com/XDzZyq/Neurus/blob/master/cmake/NeurusTestLabels.cmake). Cases inherit the suite's labels. Use a `Suite.Case` entry when a case has a different owner or impact. CTest applies the mapping after discovery through `TEST_INCLUDE_FILES`. The two Python checks receive their labels at registration.
 
 `make check` resolves the single-config `build/debug` tree whenever it exists and
 falls back to the multi-config `build/` tree otherwise, running `ctest` in

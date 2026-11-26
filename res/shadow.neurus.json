@@ -1,475 +1,385 @@
 {
     "project": {
         "m_resources": {
+            "next_uid": 109,
             "resources_": [
                 {
                     "key": 4,
-                    "value": {
-                        "polymorphic_id": 2147483649,
-                        "polymorphic_name": "neurus::Light",
-                        "ptr_wrapper": {
-                            "id": 2147483649,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 4
-                                    },
-                                    "o_name": "Point Light 1",
-                                    "o_type": 2,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": 3.0,
-                                        "y": 0.0,
-                                        "z": 4.0
-                                    },
-                                    "m_rotation": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "use_shadow": true,
-                                "light_type": 0,
-                                "light_power": 10.0,
-                                "light_color": {
-                                    "x": 0.30000001192092898,
-                                    "y": 0.30000001192092898,
-                                    "z": 1.0
-                                },
-                                "light_radius": 0.009999999776482582,
-                                "spot_cutoff": 0.8999999761581421,
-                                "spot_outer_cutoff": 0.800000011920929,
-                                "area_ratio": 1.0
+                    "type": "neurus::Light",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Point Light 1",
+                            "o_type": 2,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": 3.0,
+                                "y": 0.0,
+                                "z": 4.0
+                            },
+                            "m_rotation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "use_shadow": true,
+                        "light_type": 0,
+                        "light_power": 10.0,
+                        "light_color": {
+                            "x": 0.30000001192092896,
+                            "y": 0.30000001192092896,
+                            "z": 1.0
+                        },
+                        "light_radius": 0.009999999776482582,
+                        "spot_cutoff": 0.8999999761581421,
+                        "spot_outer_cutoff": 0.800000011920929,
+                        "area_ratio": 1.0
                     }
                 },
                 {
                     "key": 5,
-                    "value": {
-                        "polymorphic_id": 1,
-                        "ptr_wrapper": {
-                            "id": 2147483650,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 5
-                                    },
-                                    "o_name": "Point Light 2",
-                                    "o_type": 2,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": -3.0,
-                                        "y": 0.0,
-                                        "z": 4.0
-                                    },
-                                    "m_rotation": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "use_shadow": true,
-                                "light_type": 0,
-                                "light_power": 10.0,
-                                "light_color": {
-                                    "x": 0.30000001192092898,
-                                    "y": 1.0,
-                                    "z": 0.30000001192092898
-                                },
-                                "light_radius": 0.009999999776482582,
-                                "spot_cutoff": 0.8999999761581421,
-                                "spot_outer_cutoff": 0.800000011920929,
-                                "area_ratio": 1.0
+                    "type": "neurus::Light",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Point Light 2",
+                            "o_type": 2,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": -3.0,
+                                "y": 0.0,
+                                "z": 4.0
+                            },
+                            "m_rotation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "use_shadow": true,
+                        "light_type": 0,
+                        "light_power": 10.0,
+                        "light_color": {
+                            "x": 0.30000001192092896,
+                            "y": 1.0,
+                            "z": 0.30000001192092896
+                        },
+                        "light_radius": 0.009999999776482582,
+                        "spot_cutoff": 0.8999999761581421,
+                        "spot_outer_cutoff": 0.800000011920929,
+                        "area_ratio": 1.0
                     }
                 },
                 {
                     "key": 102,
-                    "value": {
-                        "polymorphic_id": 2147483650,
-                        "polymorphic_name": "neurus::MeshData",
-                        "ptr_wrapper": {
-                            "id": 2147483651,
-                            "data": {
-                                "value0": {
-                                    "o_id": 102
-                                },
-                                "m_path": "res/obj/shadow/grid1.obj"
-                            }
-                        }
+                    "type": "neurus::MeshData",
+                    "data": {
+                        "value0": {},
+                        "m_path": "res/obj/shadow/grid1.obj"
                     }
                 },
                 {
                     "key": 6,
-                    "value": {
-                        "polymorphic_id": 1,
-                        "ptr_wrapper": {
-                            "id": 2147483652,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 6
-                                    },
-                                    "o_name": "Sun Light",
-                                    "o_type": 2,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 10.0
-                                    },
-                                    "m_rotation": {
-                                        "x": -90.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "use_shadow": true,
-                                "light_type": 1,
-                                "light_power": 0.5,
-                                "light_color": {
-                                    "x": 1.0,
-                                    "y": 0.30000001192092898,
-                                    "z": 0.30000001192092898
-                                },
-                                "light_radius": 0.009999999776482582,
-                                "spot_cutoff": 0.8999999761581421,
-                                "spot_outer_cutoff": 0.800000011920929,
-                                "area_ratio": 1.0
+                    "type": "neurus::Light",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Sun Light",
+                            "o_type": 2,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 10.0
+                            },
+                            "m_rotation": {
+                                "x": -90.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "use_shadow": true,
+                        "light_type": 1,
+                        "light_power": 0.5,
+                        "light_color": {
+                            "x": 1.0,
+                            "y": 0.30000001192092896,
+                            "z": 0.30000001192092896
+                        },
+                        "light_radius": 0.009999999776482582,
+                        "spot_cutoff": 0.8999999761581421,
+                        "spot_outer_cutoff": 0.800000011920929,
+                        "area_ratio": 1.0
                     }
                 },
                 {
                     "key": 8,
-                    "value": {
-                        "polymorphic_id": 2147483651,
-                        "polymorphic_name": "neurus::Mesh",
-                        "ptr_wrapper": {
-                            "id": 2147483653,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 8
-                                    },
-                                    "o_name": "Grid 1",
-                                    "o_type": 1,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_rotation": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "o_meshDataId": 102,
-                                "o_shaderId": 0,
-                                "using_shadow": true,
-                                "using_material": true,
-                                "using_sdf": true,
-                                "is_closure": true
+                    "type": "neurus::Mesh",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Grid 1",
+                            "o_type": 1,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_rotation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "o_meshDataId": 102,
+                        "using_shadow": true,
+                        "using_material": true,
+                        "using_sdf": true,
+                        "is_closure": true
                     }
                 },
                 {
                     "key": 3,
-                    "value": {
-                        "polymorphic_id": 1,
-                        "ptr_wrapper": {
-                            "id": 2147483654,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 3
-                                    },
-                                    "o_name": "Spot Light",
-                                    "o_type": 2,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": 2.0,
-                                        "y": -2.0,
-                                        "z": 6.0
-                                    },
-                                    "m_rotation": {
-                                        "x": -60.0,
-                                        "y": 0.0,
-                                        "z": 45.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "use_shadow": true,
-                                "light_type": 2,
-                                "light_power": 30.0,
-                                "light_color": {
-                                    "x": 0.699999988079071,
-                                    "y": 0.4000000059604645,
-                                    "z": 1.0
-                                },
-                                "light_radius": 0.009999999776482582,
-                                "spot_cutoff": 0.949999988079071,
-                                "spot_outer_cutoff": 0.8500000238418579,
-                                "area_ratio": 1.0
+                    "type": "neurus::Light",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Spot Light",
+                            "o_type": 2,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": 2.0,
+                                "y": -2.0,
+                                "z": 6.0
+                            },
+                            "m_rotation": {
+                                "x": -60.0,
+                                "y": 0.0,
+                                "z": 45.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "use_shadow": true,
+                        "light_type": 2,
+                        "light_power": 30.0,
+                        "light_color": {
+                            "x": 0.699999988079071,
+                            "y": 0.4000000059604645,
+                            "z": 1.0
+                        },
+                        "light_radius": 0.009999999776482582,
+                        "spot_cutoff": 0.949999988079071,
+                        "spot_outer_cutoff": 0.8500000238418579,
+                        "area_ratio": 1.0
                     }
                 },
                 {
                     "key": 9,
-                    "value": {
-                        "polymorphic_id": 3,
-                        "ptr_wrapper": {
-                            "id": 2147483655,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 9
-                                    },
-                                    "o_name": "Grid 2",
-                                    "o_type": 1,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_rotation": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "o_meshDataId": 101,
-                                "o_shaderId": 0,
-                                "using_shadow": true,
-                                "using_material": true,
-                                "using_sdf": true,
-                                "is_closure": true
+                    "type": "neurus::Mesh",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Grid 2",
+                            "o_type": 1,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_rotation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "o_meshDataId": 101,
+                        "using_shadow": true,
+                        "using_material": true,
+                        "using_sdf": true,
+                        "is_closure": true
                     }
                 },
                 {
                     "key": 2,
-                    "value": {
-                        "polymorphic_id": 2147483652,
-                        "polymorphic_name": "neurus::Camera",
-                        "ptr_wrapper": {
-                            "id": 2147483656,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 2
-                                    },
-                                    "o_name": "Camera",
-                                    "o_type": 0,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": -3.941206932067871,
-                                        "y": 6.702083587646484,
-                                        "z": 3.398374319076538
-                                    },
-                                    "m_rotation": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "cam_w": 1012.0,
-                                "cam_h": 730.0,
-                                "cam_pers": 60.0,
-                                "cam_near": 0.10000000149011612,
-                                "cam_far": 100.0,
-                                "cam_tar": {
-                                    "x": 0.0,
-                                    "y": 0.0,
-                                    "z": 0.0
-                                },
-                                "cam_floatData": []
+                    "type": "neurus::Camera",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Camera",
+                            "o_type": 0,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": -3.941206932067871,
+                                "y": 6.702083587646484,
+                                "z": 3.398374319076538
+                            },
+                            "m_rotation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "cam_w": 849.0,
+                        "cam_h": 553.0,
+                        "cam_pers": 60.0,
+                        "cam_near": 0.10000000149011612,
+                        "cam_far": 100.0,
+                        "cam_tar": {
+                            "x": 0.0,
+                            "y": 0.0,
+                            "z": 0.0
+                        },
+                        "cam_floatData": []
                     }
                 },
                 {
                     "key": 101,
-                    "value": {
-                        "polymorphic_id": 2,
-                        "ptr_wrapper": {
-                            "id": 2147483657,
-                            "data": {
-                                "value0": {
-                                    "o_id": 101
-                                },
-                                "m_path": "res/obj/shadow/grid2.obj"
-                            }
-                        }
+                    "type": "neurus::MeshData",
+                    "data": {
+                        "value0": {},
+                        "m_path": "res/obj/shadow/grid2.obj"
                     }
                 },
                 {
                     "key": 10,
-                    "value": {
-                        "polymorphic_id": 3,
-                        "ptr_wrapper": {
-                            "id": 2147483658,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 10
-                                    },
-                                    "o_name": "Ground",
-                                    "o_type": 1,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_rotation": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "o_meshDataId": 100,
-                                "o_shaderId": 0,
-                                "using_shadow": true,
-                                "using_material": true,
-                                "using_sdf": true,
-                                "is_closure": true
+                    "type": "neurus::Mesh",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Ground",
+                            "o_type": 1,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_rotation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "o_meshDataId": 100,
+                        "using_shadow": true,
+                        "using_material": true,
+                        "using_sdf": true,
+                        "is_closure": true
                     }
                 },
                 {
                     "key": 100,
-                    "value": {
-                        "polymorphic_id": 2,
-                        "ptr_wrapper": {
-                            "id": 2147483659,
-                            "data": {
-                                "value0": {
-                                    "o_id": 100
-                                },
-                                "m_path": "res/obj/shadow/ground.obj"
-                            }
-                        }
+                    "type": "neurus::MeshData",
+                    "data": {
+                        "value0": {},
+                        "m_path": "res/obj/shadow/ground.obj"
                     }
                 },
                 {
                     "key": 108,
-                    "value": {
-                        "polymorphic_id": 4,
-                        "ptr_wrapper": {
-                            "id": 2147483660,
-                            "data": {
-                                "value0": {
-                                    "value0": {
-                                        "o_id": 108
-                                    },
-                                    "o_name": "Camera",
-                                    "o_type": 0,
-                                    "is_viewport": true,
-                                    "is_rendered": true
-                                },
-                                "transform": {
-                                    "m_position": {
-                                        "x": 0.0,
-                                        "y": -5.0,
-                                        "z": 2.0
-                                    },
-                                    "m_rotation": {
-                                        "x": 0.0,
-                                        "y": 0.0,
-                                        "z": 0.0
-                                    },
-                                    "m_scale": {
-                                        "x": 1.0,
-                                        "y": 1.0,
-                                        "z": 1.0
-                                    }
-                                },
-                                "cam_w": 1012.0,
-                                "cam_h": 730.0,
-                                "cam_pers": 60.0,
-                                "cam_near": 0.10000000149011612,
-                                "cam_far": 100.0,
-                                "cam_tar": {
-                                    "x": 0.0,
-                                    "y": 0.0,
-                                    "z": 0.0
-                                },
-                                "cam_floatData": []
+                    "type": "neurus::Camera",
+                    "data": {
+                        "value0": {
+                            "value0": {},
+                            "o_name": "Camera.001",
+                            "o_type": 0,
+                            "is_viewport": true,
+                            "is_rendered": true
+                        },
+                        "transform": {
+                            "m_position": {
+                                "x": 0.0,
+                                "y": -5.0,
+                                "z": 2.0
+                            },
+                            "m_rotation": {
+                                "x": 0.0,
+                                "y": 0.0,
+                                "z": 0.0
+                            },
+                            "m_scale": {
+                                "x": 1.0,
+                                "y": 1.0,
+                                "z": 1.0
                             }
-                        }
+                        },
+                        "cam_w": 1012.0,
+                        "cam_h": 730.0,
+                        "cam_pers": 60.0,
+                        "cam_near": 0.10000000149011612,
+                        "cam_far": 100.0,
+                        "cam_tar": {
+                            "x": 0.0,
+                            "y": 0.0,
+                            "z": 0.0
+                        },
+                        "cam_floatData": []
                     }
                 }
             ]
@@ -479,15 +389,15 @@
                 2
             ],
             "meshIds": [
-                8,
+                10,
                 9,
-                10
+                8
             ],
             "lightIds": [
-                3,
-                4,
+                6,
                 5,
-                6
+                4,
+                3
             ],
             "spriteIds": [],
             "dLineIds": [],
@@ -505,18 +415,19 @@
             "r_shadow": 1,
             "r_ssr": 0,
             "r_gamma": 1.0,
-            "r_shadow_bias": 0.0020000000949949028,
+            "r_shadow_bias": 0.0020000000949949026,
             "r_ao_ksize": 16,
             "r_ao_radius": 0.5,
             "r_sample_pf": 128,
             "r_transparent": true,
             "r_fxaa_subpix": 0.75,
-            "r_fxaa_edge_threshold": 0.16599999368190766,
+            "r_fxaa_edge_threshold": 0.16599999368190765,
             "r_fxaa_edge_threshold_min": 0.08330000191926956,
             "r_sampling_mode": 0,
-            "r_debug_draw": true
+            "r_debug_draw": true,
+            "r_sampling_count": 64
         },
-        "ui": "AdnQywADAAAAAAAA////+QAABqoAAAP6AAAAAQAAADsAAAWeAAADKAAAAAACAAAABqsAAAAAAAAAFwAABqoAAAP6\nAAAD+HjajVNNb8IwDL3vV0S9Qwsdg0mlCLFx3IcY7Jw1posWkipxGUz78XPZVKkQ6E6N7dfn9xwnmew2im3BOmn0OOh1o4CBzoyQOh8Hy5d5ZxRM0uQZp2LLdQbizmQfVFvsHcKGreofA7Z0YOuYaGZGI5eaMlU5TeqYzZXheGgQUX5RKIlI6UcrgSB4IOhUBKXGcdA/i/muMfE/eaYWOHvhbwdJbFZaC1VJkKmuKVFV8gj2KkUOyB74Bo6LbKaMA1FJD9MkrAgv0xbWFGBx/8Q1KC93E+FtsJBf4NJ4eMPi4YAl4W9M3z/PlyVsJXwWxqK3e11sc9Y/pqWjAEvXupa5l7oBaNKfgt07J/C9kGhs2xB6Ua/P4ui2bRLXx5JdZmWBpMgZBV7NTUSbaGXajSHssLSwojmf7I93GdaSVi2/NIPhgGYwirz2w/qd0fnMu02vfgDOulIW",
+        "ui": "AdnQywADAAAAAAABAAAAHwAABZ4AAAMoAAAAAQAAADsAAAWeAAADKAAAAAACAAAABaAAAAABAAAAOwAABZ4AAAMo\nAAAD93jajVNNb8IwDL3vV0S9Q6HAAKkUITaO+xAfO2eN6aKFpEpcBtN+/FyYKhVKu0PV2O/1+dl1wulhp9gerJNGT7xuu+Mx0LERUicTb71atEbeNApfcSb2XMcgHkz8Sdjy6BB2bFN86LG1A1vEJDM3GrnUlMnhKCxitlCG46lAh/LLVElESj9bCUTBk0ArF8g0TrzgJuen4PT+qTOzwNmKv58ssXlmLeSQoKbaJkOV2yPamxQJIHviO7gE2VwZByK37kehnwvWy6bWpGDx+MI1qErtMqOywFJ+g4uC0YDlT+ifY3r/9VxvYS/hKzUWK6sXYFNnwaUsHQVY+q1bmVRKlwhl+Wuy++BEfhQSja0bQq97z0b9MQsG46ZB9C8du9jKFMmQMwoqLZcZTZ6Vae4L4YCZhQ2N+Wp9KndhK2nTkroRDIZD1u0NK9v3i2tG5xvXNrr7Bbw6Ufc=",
         "m_history": {
             "undo": [],
             "redo": []

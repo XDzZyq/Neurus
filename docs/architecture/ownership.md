@@ -4,6 +4,10 @@ Vulkan resources are owned by exactly one layer: the Application owns the
 instance, device, queues and surface, the Renderer owns the swapchain and every
 resource below it, and the UI owns only the native window.
 
+## Pooled object identity
+
+`ResourceManager` owns the identity of each registered object. A scene owns references to the pooled objects it currently uses. Removing a scene member releases that reference while the manager retains the object under its original key. Undo resolves the key and restores scene membership. A standalone object, including a render graph clone used for publication, can exist without any pool identity.
+
 ## Optional project render data
 
 Editor owns nullable `shared_ptr` config and graph slots; explicit shader data
@@ -21,19 +25,25 @@ provider after edits or undo can replace the stored pointer.
 
 ## Graph shader ownership
 
-An authoring `CpuNode::shader` is a `shared_ptr<const ShaderData>` owning its
-pooled CPU shader; null selects the pass default. The Editor retains mutable
-access to that resource. Publication clones graph topology, preserving shared
-shader ownership. The graph mapper reads only the stable shader UID from these
-references, never mutable source, parsed IR, SPIR-V or version fields.
+An authoring `CPUNode::shader` is a `PassShaderRef` with shared ownership of its
+pooled CPU shader. An empty reference selects the pass default. The Editor retains mutable
+access to that resource. Publication builds an owned clone and records each
+selection as a plain `PublishedShader {uid, version}` value, then clears the
+clone's reference, so the render thread never reads pooled `ShaderData` and no
+shared CPU shader ownership crosses the boundary.
 
-CPU preparation copies SPIR-V and required reflection/port metadata into owned
-`UploadShaderRequest` values through `MakeUploadShaderRequest`. FIFO execution
-uploads these before mapping the graph. `UploadManager` constructs `ShaderGPU`;
-`RenderCache` owns and indexes it. Passes consume GPU shader modules and own their
-pass-specific pipelines. Reuploading the same UID changes its GPU cache revision
-and refreshes dependent passes and graphs. Retained resource references and
-frame fences keep resources alive until recorded GPU work has finished.
+CPU preparation copies SPIR-V and reflection metadata into owned
+`UploadShaderRequest` values through `MakeUploadShaderRequest`; the request
+carries no ports. FIFO execution uploads these before mapping the graph.
+`UploadManager` constructs `ShaderGPU`; `RenderCache` owns and indexes it. The
+uploader's GPU-only guard confirms each published `{uid, version}` matches the
+resident upload's version, type and stage set; the CPU port, descriptor and
+push-constant contracts are checked by the Editor before publication. Passes
+consume GPU shader modules and own their pass-specific pipelines. Reuploading the
+same UID changes its GPU cache revision and refreshes dependent passes and graphs,
+but a changed version needs a matching republished request. Retained resource
+references and frame fences keep resources alive until recorded GPU work has
+finished.
 
 Defaults follow the same path: built-in recipes are prepared on the CPU, uploaded,
 cached and consumed by passes. CPU defaults stay outside the project pool;

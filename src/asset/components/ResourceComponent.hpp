@@ -2,11 +2,8 @@
  * @file ResourceComponent.hpp
  * @brief Serializes a ResourceManager's UID pool into a project file.
  *
- * Save writes the whole pool polymorphically; Load restores it and wires the
- * per-object data references (mesh -> MeshData/Shader, environment ->
- * ImageData) so the pool is uploadable after a reload. Failed shaders are
- * removed on load and their mesh references become null; runtime built-ins are
- * supplied separately and are never inserted into the serialized pool.
+ * Opening a project registers each pooled UID with its name, concrete type
+ * and serialized record. A lookup restores the CPU object and its dependencies.
  */
 
 #pragma once
@@ -14,9 +11,8 @@
 #include "asset/Serializable.hpp"
 
 #include <string>
-#include <vector>
 
-namespace neurus { class ResourceManager; class IPassShaderCatalog; }
+namespace neurus { class ResourceManager; }
 
 namespace neurus::project
 {
@@ -27,20 +23,14 @@ namespace neurus::project
 class ResourceComponent : public Serializable
 {
 public:
-	ResourceComponent(ResourceManager& resources, const IPassShaderCatalog& catalog,
-	                  std::vector<std::string>* diagnostics = nullptr);
+	explicit ResourceComponent(ResourceManager& resources);
 
 	const char* Key() const noexcept override { return "m_resources"; }
 	void Save(cereal::JSONOutputArchive& ar) const override;
-	void Load(cereal::JSONInputArchive& ar) override;
 	void LoadJson(const std::string& object) override;
 
 private:
-	void RestoreReferences();
-
-	ResourceManager* m_resources;
-	const IPassShaderCatalog& m_catalog;
-	std::vector<std::string>* m_diagnostics;
+	ResourceManager& m_resources;
 };
 
 } // namespace neurus::project

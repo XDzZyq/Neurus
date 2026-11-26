@@ -110,7 +110,7 @@ if(WIN32)
 			--no-system-d3d-compiler
 			--no-compiler-runtime
 			--verbose 0
-			$<TARGET_FILE_DIR:Neurus>
+			$<TARGET_FILE:Neurus>
 		COMMENT "Deploying Qt DLLs via windeployqt"
 	)
 

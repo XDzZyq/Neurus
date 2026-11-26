@@ -8,6 +8,8 @@
 #include "core/Graph.hpp"
 
 #include <functional>
+#include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -29,12 +31,12 @@ public:
 	using ConnectionA = typename GraphA::ConnectionT;
 	using ConnectionB = typename GraphB::ConnectionT;
 
-	/** A factory may return nullptr to decline an element. Validation names each missing image. */
+	/** Maps source elements to target payloads. An empty result declines the mapping. */
 	struct Policy
 	{
-		std::function<NodeB*(GraphB&, const NodeA&)>          createNode;
-		std::function<SocketOutB*(NodeB&, const SocketOutA&)> createOutput;
-		std::function<SocketInB*(NodeB&, const SocketInA&)>   createInput;
+		std::function<std::optional<decltype(NodeB::data)>(const NodeA&)> createNode;
+		std::function<std::optional<decltype(SocketOutB::data)>(const SocketOutA&)> createOutput;
+		std::function<std::optional<decltype(SocketInB::data)>(const SocketInA&)> createInput;
 	};
 
 	struct Report
@@ -44,7 +46,7 @@ public:
 	};
 
 	/**
-	 * @brief Images of nodes and connections for one mapping.
+	 * @brief Images of nodes, sockets and connections for one mapping.
 	 *
 	 * The correspondence borrows graph-owned nodes and incoming connections. Keep
 	 * mapped sockets and nodes alive. Rebuild the mapping after rewiring them.
@@ -55,6 +57,16 @@ public:
 		bool RecordNode(const NodeA& from, NodeB& to)
 		{
 			return m_nodes.emplace(&from, &to).second;
+		}
+
+		bool RecordSocket(const SocketInA& source, SocketInB& image)
+		{
+			return m_inputs.emplace(&source, &image).second;
+		}
+
+		bool RecordSocket(const SocketOutA& source, SocketOutB& image)
+		{
+			return m_outputs.emplace(&source, &image).second;
 		}
 
 		bool RecordConnection(const ConnectionA& edge, const ConnectionB& image)
@@ -74,6 +86,11 @@ public:
 			return it == m_nodes.end() ? nullptr : it->second;
 		}
 
+		SocketInB* ImageOf(const SocketInA* socket) { return FindSocket(m_inputs, socket); }
+		const SocketInB* ImageOf(const SocketInA* socket) const { return FindSocket(m_inputs, socket); }
+		SocketOutB* ImageOf(const SocketOutA* socket) { return FindSocket(m_outputs, socket); }
+		const SocketOutB* ImageOf(const SocketOutA* socket) const { return FindSocket(m_outputs, socket); }
+
 		const ConnectionB* ImageOf(const ConnectionA* edge) const
 		{
 			const auto it = m_edges.find(edge);
@@ -86,8 +103,16 @@ public:
 		bool IsTotal(const GraphA& source) const
 		{
 			for (const auto& node : source.nodes)
+			{
 				if (!ImageOf(node.get()))
 					return false;
+				for (const auto& input : node->inputs)
+					if (!ImageOf(input.get()))
+						return false;
+				for (const auto& output : node->outputs)
+					if (!ImageOf(output.get()))
+						return false;
+			}
 			for (const auto* edge : source.Connections())
 				if (!ImageOf(edge))
 					return false;
@@ -106,8 +131,19 @@ public:
 		{
 			Report report;
 			for (const auto& node : source.nodes)
+			{
 				if (!ImageOf(node.get()))
+				{
 					report.problems.push_back("node '" + node->name + "' is not mapped");
+					continue;
+				}
+				for (const auto& input : node->inputs)
+					if (!ImageOf(input.get()))
+						report.problems.push_back("input socket '" + node->name + "." + input->name + "' is not mapped");
+				for (const auto& output : node->outputs)
+					if (!ImageOf(output.get()))
+						report.problems.push_back("output socket '" + node->name + "." + output->name + "' is not mapped");
+			}
 
 			for (const auto* edge : source.Connections())
 			{
@@ -124,14 +160,25 @@ public:
 		}
 
 	private:
+		template<class SocketA, class SocketB>
+		static SocketB* FindSocket(const std::unordered_map<const SocketA*, SocketB*>& sockets, const SocketA* source)
+		{
+			const auto it = sockets.find(source);
+			return it == sockets.end() ? nullptr : it->second;
+		}
+
 		bool MatchesEndpoints(const ConnectionA& edge, const ConnectionB& image) const
 		{
 			return edge.from && image.from
+			    && ImageOf(edge.from) == image.from
+			    && ImageOf(edge.to) == image.to
 			    && ImageOf(edge.from->owner) == image.from->owner
 			    && ImageOf(edge.to->owner) == image.to->owner;
 		}
 
 		std::unordered_map<const NodeA*, NodeB*> m_nodes;
+		std::unordered_map<const SocketInA*, SocketInB*> m_inputs;
+		std::unordered_map<const SocketOutA*, SocketOutB*> m_outputs;
 		std::unordered_map<const ConnectionA*, const ConnectionB*> m_edges;
 	};
 
@@ -148,26 +195,27 @@ public:
 	{
 		if (!m_policy.createNode || result.images.ImageOf(&node))
 			return nullptr;
-		NodeB* image = m_policy.createNode(result.target, node);
-		if (image)
-			result.images.RecordNode(node, *image);
+		auto value = m_policy.createNode(node);
+		if (!value)
+			return nullptr;
+
+		NodeB* image = result.target.AddNode(node.name, std::move(*value));
+		result.images.RecordNode(node, *image);
+		MapSockets(node.inputs, m_policy.createInput, result.images,
+		           [image](std::string name) { return image->AddInput(std::move(name)); });
+		MapSockets(node.outputs, m_policy.createOutput, result.images,
+		           [image](std::string name) { return image->AddOutput(std::move(name)); });
 		return image;
 	}
 
 	/** @brief Resolves both owners and records a connected pair of target sockets. */
 	bool MapConnect(Result& result, const ConnectionA& edge) const
 	{
-		if (!edge.from || result.images.ImageOf(&edge)
-		    || !m_policy.createOutput || !m_policy.createInput)
+		if (!edge.from || result.images.ImageOf(&edge))
 			return false;
 
-		NodeB* fromNode = result.images.ImageOf(edge.from->owner);
-		NodeB* toNode = result.images.ImageOf(edge.to->owner);
-		if (!fromNode || !toNode)
-			return false;
-
-		SocketOutB* output = m_policy.createOutput(*fromNode, *edge.from);
-		SocketInB* input = m_policy.createInput(*toNode, *edge.to);
+		SocketOutB* output = result.images.ImageOf(edge.from);
+		SocketInB* input = result.images.ImageOf(edge.to);
 		if (!output || !input)
 			return false;
 		// Two source edges can share an image, provided they resolve to the same producer.
@@ -191,6 +239,24 @@ public:
 	}
 
 private:
+	template<class SocketA, class CreateSocket, class AddSocket>
+	static void MapSockets(const std::vector<std::unique_ptr<SocketA>>& source,
+	                       const CreateSocket& create, Correspondence& images, AddSocket add)
+	{
+		if (!create)
+			return;
+		for (const auto& socket : source)
+		{
+			auto value = create(*socket);
+			if (!value)
+				continue;
+
+			auto* image = add(socket->name);
+			image->data = std::move(*value);
+			images.RecordSocket(*socket, *image);
+		}
+	}
+
 	Policy m_policy;
 };
 
@@ -200,7 +266,13 @@ auto IdentityMorphism(GraphT& graph)
 {
 	typename GraphMorphism<GraphT, GraphT>::Correspondence images;
 	for (const auto& node : graph.nodes)
+	{
 		images.RecordNode(*node, *node);
+		for (const auto& input : node->inputs)
+			images.RecordSocket(*input, *input);
+		for (const auto& output : node->outputs)
+			images.RecordSocket(*output, *output);
+	}
 	for (const auto* edge : graph.Connections())
 		images.RecordConnection(*edge, *edge);
 	return images;

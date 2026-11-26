@@ -158,9 +158,11 @@ never executes an Editor callable, so later edits cannot alter queued upload dat
 ### Shader uploads and graph publication
 
 CPU preparation calls `MakeUploadShaderRequest` while shader data is safe to
-read, copying SPIR-V and required reflection/port metadata into an owned typed
-request. `RenderManager::Publish()` clones the active `RenderGraphData` and posts
-`CompileRenderGraphRequest{graph}` after the required shader uploads. FIFO
+read, copying SPIR-V and required reflection metadata into an owned typed
+request. `RenderManager::Publish()` validates the active `RenderGraphData` and
+posts `MakeCompileRenderGraphRequest(graph)` after the required shader uploads:
+an unpooled clone without shader references plus a plain `{uid, version}` per
+node. A document that fails validation posts nothing. FIFO
 execution gives the mapper a populated GPU cache. Null graph or shader selections
 use built-in recipes through the same CPU preparation, upload and cache path.
 Defaults do not materialize project data.

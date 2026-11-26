@@ -17,6 +17,7 @@
 #pragma once
 
 #include "asset/data/RenderGraphData.hpp"
+#include "asset/ResourceRef.hpp"
 #include "core/RenderConfig.hpp"
 
 #include <memory>
@@ -29,7 +30,7 @@ class BuiltInRenderData;
 class RenderRequestSink;
 class ResourceManager;
 class ShaderData;
-struct CpuGraphDiagnostic;
+struct CPUGraphDiagnostic;
 
 /**
  * @brief Owns optional project render data and publishes topology plus owned GPU uploads.
@@ -68,11 +69,7 @@ public:
 	/// @brief Materializes the effective default once as a project-owned resource.
 	std::shared_ptr<RenderGraphData> CreateGraph(bool publish = true);
 	const BuiltInRenderData& Defaults() const { return *m_renderDefaults; }
-	std::vector<CpuGraphDiagnostic> Diagnostics() const;
-
-	/// @brief Replays membership of the resource retained by a graph creation operation.
-	void RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish = true);
-	void RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish = true);
+	std::vector<CPUGraphDiagnostic> Diagnostics() const;
 
 	/**
 	 * @brief Replaces the document and publishes it.
@@ -88,22 +85,27 @@ public:
 
 	/// @brief Effective read-only graph; reading a default never materializes project data.
 	const RenderGraphData& Graph() const;
-	std::shared_ptr<RenderGraphData>& GraphData() { return m_graph; }
-	const std::shared_ptr<RenderGraphData>& GraphData() const { return m_graph; }
+	ResourceRef<RenderGraphData>& GraphData() { return m_graph; }
+	const ResourceRef<RenderGraphData>& GraphData() const { return m_graph; }
 
-	/// @brief Uploads distinct selected shaders, then publishes cloned topology with shared references.
+	/**
+	 * @brief Validates a graph clone, uploads its distinct custom shaders and posts a compile request.
+	 *
+	 * A document that fails CPU validation posts nothing and keeps the previous
+	 * graph drawing; a node whose shader fails @c ValidatePassShader falls back to
+	 * the built-in shader.
+	 */
 	void Publish();
 	void UploadShader(const ShaderData& shader);
 
 	/// Takes ownership of a pass shader created by an edit or restored from history.
 	void RegisterShader(const std::shared_ptr<ShaderData>& shader);
-	/// Releases a shader only after no pooled graph or mesh references it.
-	std::shared_ptr<ShaderData> RemoveUnusedShader(int uid);
+	void DiscardCreation(int uid);
 
 	/// @brief Whether an explicit graph node references this pooled shader.
 	bool ReferencesShader(int uid) const;
 
-	/// @brief Diagnostics shared with the project loader and graph status queries.
+	/// @brief Diagnostics for active graph selection and publication.
 	std::vector<std::string>& Problems() { return m_problems; }
 	const std::vector<std::string>& Problems() const { return m_problems; }
 
@@ -112,7 +114,7 @@ private:
 	RenderRequestSink* m_sink;
 	std::shared_ptr<const BuiltInRenderData> m_renderDefaults;
 	std::shared_ptr<RenderConfig> m_config;
-	std::shared_ptr<RenderGraphData> m_graph;
+	ResourceRef<RenderGraphData> m_graph;
 	std::vector<std::string> m_problems;
 };
 

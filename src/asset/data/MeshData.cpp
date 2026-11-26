@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -30,9 +31,16 @@ void MeshData::ReloadContent()
 		return;
 
 	const std::string resolved = ResolveAssetPath(m_path);
-	if (!LoadObj(resolved))
+	me_meshData = {};
+	try
 	{
-		NEURUS_ERR("[MeshData] ReloadContent failed to load: " << resolved);
+		LoadObj(resolved);
+	}
+	catch (const std::logic_error& error)
+	{
+		// Malformed numeric tokens can leave a partially parsed mesh.
+		me_meshData = {};
+		NEURUS_ERR("[MeshData] Failed to parse " << resolved << ": " << error.what());
 	}
 }
 

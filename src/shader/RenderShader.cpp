@@ -10,7 +10,7 @@
 #include "shader/RenderShader.hpp"
 
 #include "shader/ShaderLibrary.hpp"
-#include "shader/ShaderInterface.hpp"
+#include "asset/data/shader/ShaderInterface.hpp"
 #include "shader/ShaderParser.hpp"
 #include "shader/ShaderGenerator.hpp"
 #include "core/Log.hpp"

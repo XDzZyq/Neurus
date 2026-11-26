@@ -146,7 +146,7 @@ void ImageData::SwizzleBGRtoRGB(void* data, uint32_t width,
 ImageData::ImageData(const std::string& path)
 	: m_path(path)
 {
-	LoadFromPath(ResolveAssetPath(path));
+	ReloadContent();
 }
 
 void ImageData::ReloadContent()
@@ -154,6 +154,10 @@ void ImageData::ReloadContent()
 	if (m_path.empty())
 		return;
 
+	im_pixelData.clear();
+	im_width = 0;
+	im_height = 0;
+	im_format = {};
 	LoadFromPath(ResolveAssetPath(m_path));
 }
 

@@ -17,7 +17,7 @@
 #include "editor/events/EditorEvents.hpp"
 #include "editor/operations/OperationManager.hpp"
 #include "editor/Input.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
 #include "scene/Camera.hpp"
@@ -41,8 +41,8 @@ protected:
 		// UID through ctx.resources, so a non-pooled object would be invisible to
 		// the add/delete flow.
 		m_camera = m_resources.Load<Camera>();
-		m_mesh   = std::make_shared<Mesh>();
-		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+		m_mesh   = m_resources.Load<Mesh>();
+		m_light  = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_scene.UseCamera(m_camera);
 		m_scene.ActivateCamera(m_camera->GetObjectID());
 		m_scene.UseMesh(m_mesh);
@@ -121,6 +121,8 @@ TEST_F(SceneControllerTest, SceneObjectAdd_RegistersSelectsAndRecordsOp)
 
 	// Undo: object removed, selection restored to the pre-add (empty) set.
 	m_operations.Undo();
+	EXPECT_EQ(m_resources.Get<Mesh>(uid), mesh);
+	EXPECT_EQ(mesh->GetObjectID(), uid);
 	EXPECT_EQ(m_scene.mesh_list.count(uid), 0u);
 	EXPECT_EQ(m_scene.selections.GetSelectionCount(), 0u);
 

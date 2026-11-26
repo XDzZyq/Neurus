@@ -8,7 +8,7 @@
  */
 
 #include <cereal/archives/json.hpp>
-#include <cereal/types/polymorphic.hpp>
+#include "asset/ResourceType.hpp"
 
 #include "core/UID.hpp"
 #include "scene/Camera.hpp"
@@ -22,18 +22,18 @@
 #include "scene/Sprite.hpp"
 
 // --- Base type registration ---
-CEREAL_REGISTER_TYPE(neurus::UID)
-CEREAL_REGISTER_TYPE(neurus::ObjectID)
+NEURUS_REGISTER_RESOURCE_TYPE(UID, 0)
+NEURUS_REGISTER_RESOURCE_TYPE(ObjectID, 0)
 
 // --- Derived type registration ---
-CEREAL_REGISTER_TYPE(neurus::Camera)
-CEREAL_REGISTER_TYPE(neurus::Mesh)
-CEREAL_REGISTER_TYPE(neurus::Light)
-CEREAL_REGISTER_TYPE(neurus::Sprite)
-CEREAL_REGISTER_TYPE(neurus::DebugLine)
-CEREAL_REGISTER_TYPE(neurus::DebugPoints)
-CEREAL_REGISTER_TYPE(neurus::DebugMesh)
-CEREAL_REGISTER_TYPE(neurus::Environment)
+NEURUS_REGISTER_RESOURCE_TYPE(Camera, 1)
+NEURUS_REGISTER_RESOURCE_TYPE(Mesh, 1)
+NEURUS_REGISTER_RESOURCE_TYPE(Light, 1)
+NEURUS_REGISTER_RESOURCE_TYPE(Sprite, 1)
+NEURUS_REGISTER_RESOURCE_TYPE(DebugLine, 1)
+NEURUS_REGISTER_RESOURCE_TYPE(DebugPoints, 1)
+NEURUS_REGISTER_RESOURCE_TYPE(DebugMesh, 1)
+NEURUS_REGISTER_RESOURCE_TYPE(Environment, 1)
 
 // --- Polymorphic relations (UID base -> all pooled scene types) ---
 // The pool stores shared_ptr<UID>, so every level of the hierarchy that can

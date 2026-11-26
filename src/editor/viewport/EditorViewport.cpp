@@ -13,7 +13,7 @@
 #include <cmath>
 
 #include "core/Log.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "scene/ObjectID.hpp"
 #include "scene/Scene.hpp"
@@ -68,21 +68,15 @@ glm::vec2 PixelOf(const glm::vec4& clip, const glm::vec2& size)
 
 void EditorViewport::EnsureCamera(ResourceManager& pool)
 {
-	if (v_camUid != 0)
+	if (v_camera)
 	{
-		v_camera = pool.Get<Camera>(v_camUid);
-		if (v_camera)
-		{
-			// A loaded project: the pose is the user's, so only the framing is
-			// (re-)applied. The extent is a property of this window, never of the file.
-			FrameCamera(v_camera.get());
-			return;
-		}
+		// Window extent is local; the restored pose belongs to the project.
+		FrameCamera(v_camera.get());
+		return;
 	}
 
 	// No id, or an id this pool does not know. Mint one at the default framing.
 	v_camera = pool.Load<Camera>();
-	v_camUid = v_camera->GetObjectID();
 	// Load already registered the constructor name "Camera"; rename immediately to
 	// the reserved viewport name. The viewport camera is pooled and serialized, so
 	// it would otherwise claim "Camera" from the document's own camera (which then
@@ -96,13 +90,12 @@ void EditorViewport::EnsureCamera(ResourceManager& pool)
 	// and a projection against that is squashed rather than merely unframed.
 	FrameCamera(v_camera.get());
 
-	NEURUS_LOG("[Viewport] Viewport camera created (UID " << v_camUid << ")");
+	NEURUS_LOG("[Viewport] Viewport camera created (UID " << v_camera.id() << ")");
 }
 
 void EditorViewport::ForgetCamera()
 {
 	v_camera.reset();
-	v_camUid = 0;
 
 	// The published pointer went with it. Leaving it would hand the next frame a
 	// camera the pool has already dropped.

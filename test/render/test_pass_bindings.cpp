@@ -1,15 +1,14 @@
 /**
  * @file test_pass_bindings.cpp
- * @brief Binding-plan construction from a pass's ports.
+ * @brief Binding-plan construction from runtime graph sockets.
  */
 
 #include <gtest/gtest.h>
 
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "render/passes/Pass.hpp"
-#include "render/render_graph/PassBindings.hpp"
+#include "render/render_graph/RenderGraph.hpp"
 
-#include <string>
-#include <string_view>
 #include <vector>
 
 using namespace neurus;
@@ -26,11 +25,18 @@ class PlainPass : public Pass
 {
 };
 
+RenderGraph::NodeT* AddProducer(RenderGraph& graph, PlainPass& pass)
+{
+	CPUPorts ports;
+	ports.ports = {{"source", PortDirection::Output, "image2D", 0, 0}};
+	return graph.AddPass(&pass, ports);
+}
+
 } // anonymous namespace
 
 TEST(PassBindings, BuildsImageInputsAndOutputs)
 {
-	PassPorts ports;
+	CPUPorts ports;
 	ports.ports = {
 		{"selfManaged", PortDirection::Input, "sampler2D", 1, 0},
 		{"gIn",   PortDirection::Input,  "sampler2D", 0, 0},
@@ -39,9 +45,16 @@ TEST(PassBindings, BuildsImageInputsAndOutputs)
 		{"gBuf",  PortDirection::Input,  "uniform",   3, 0},
 	};
 
+	PlainPass producer;
 	SelfManagedPass pass;
-	const std::vector<GraphImageBinding> bindings =
-		BuildImageBindings(ports, pass);
+	RenderGraph graph;
+	auto* source = AddProducer(graph, producer);
+	auto* node = graph.AddPass(&pass, ports, {"gBuf"});
+	ASSERT_TRUE(graph.Connect(source, "source", node, "selfManaged"));
+	ASSERT_TRUE(graph.Connect(source, "source", node, "gIn"));
+	graph.Compile();
+
+	const auto& bindings = node->data.imageBindings;
 
 	ASSERT_EQ(bindings.size(), 2u);
 
@@ -58,18 +71,20 @@ TEST(PassBindings, BuildsImageInputsAndOutputs)
 	EXPECT_EQ(bindings[1].layout, vk::ImageLayout::eGeneral);
 }
 
-TEST(PassBindings, ConnectedPredicateFiltersInputs)
+TEST(PassBindings, UnconnectedExternalInputHasNoGraphBinding)
 {
-	PassPorts ports;
+	CPUPorts ports;
 	ports.ports = {
 		{"gIn",  PortDirection::Input,  "sampler2D", 0, 0},
 		{"gOut", PortDirection::Output, "image2D",   2, 0},
 	};
 
-	SelfManagedPass pass;
-	const std::vector<GraphImageBinding> bindings =
-		BuildImageBindings(ports, pass,
-		                   [](const std::string_view port) { return port == "other"; });
+	PlainPass pass;
+	RenderGraph graph;
+	auto* node = graph.AddPass(&pass, ports, {"gIn"});
+	graph.Compile();
+
+	const auto& bindings = node->data.imageBindings;
 
 	ASSERT_EQ(bindings.size(), 1u);
 	EXPECT_EQ(bindings[0].port, "gOut");
@@ -78,14 +93,20 @@ TEST(PassBindings, ConnectedPredicateFiltersInputs)
 
 TEST(PassBindings, DefaultPassHasNoSelfManagedBindings)
 {
-	PassPorts ports;
+	CPUPorts ports;
 	ports.ports = {
 		{"gIn", PortDirection::Input, "sampler2D", 1, 0},
 	};
 
+	PlainPass producer;
 	PlainPass pass;
-	const std::vector<GraphImageBinding> bindings =
-		BuildImageBindings(ports, pass);
+	RenderGraph graph;
+	auto* source = AddProducer(graph, producer);
+	auto* node = graph.AddPass(&pass, ports);
+	ASSERT_TRUE(graph.Connect(source, "source", node, "gIn"));
+	graph.Compile();
+
+	const auto& bindings = node->data.imageBindings;
 
 	ASSERT_EQ(bindings.size(), 1u);
 	EXPECT_EQ(bindings[0].port, "gIn");

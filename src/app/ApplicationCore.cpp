@@ -5,10 +5,10 @@
 #include "asset/Project.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "shader/registrations/ShaderRegistration.hpp"
+#include "editor/components/EditorComponent.hpp"
+#include "editor/components/HistoryComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
-#include "editor/project/EditorComponent.hpp"
 #include "asset/components/GraphComponent.hpp"
-#include "editor/project/HistoryComponent.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/SceneComponent.hpp"
 #include "asset/components/UIComponent.hpp"
@@ -60,16 +60,16 @@ void RegisterProjectComponents(project::Project& proj, Editor& editor, std::stri
 	// Resource pool first: the Scene's ID references resolve against it.
 	auto& render = editor.GetRenderManager();
 	auto& resources = editor.GetResourceManager();
-	proj.Register<project::ResourceComponent>(resources, render.Defaults(), &render.Problems());
+	proj.Register<project::ResourceComponent>(resources);
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::ConfigComponent>(editor.GetRenderConfigData());
 
-	proj.Register<project::GraphComponent>(render.GraphData(), resources, render.Defaults(), render.Problems());
+	proj.Register<project::GraphComponent>(render.GraphData(), resources, render.Problems());
 	proj.Register<project::UIComponent>(uiLayout);
 	// History, then editor view state: both are appended-last nodes, so legacy
 	// files that lack them load cleanly (each Load() falls back).
 	proj.Register<project::HistoryComponent>(editor.GetOperations());
-	proj.Register<project::EditorComponent>(editor.GetViewport());
+	proj.Register<project::EditorComponent>(editor.GetViewport(), resources);
 }
 
 const char* ScriptKindName(ScriptLineKind kind)

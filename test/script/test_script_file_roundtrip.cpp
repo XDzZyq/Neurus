@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <algorithm>
 #include <fstream>
 #include <string>
 #include <utility>
@@ -25,21 +26,22 @@
 
 #include "glm/glm.hpp"
 
-#include "asset/Project.hpp"
-#include "editor/project/EditorComponent.hpp"
-#include "editor/project/HistoryComponent.hpp"
-#include "shader/BuiltInRenderData.hpp"
-#include "asset/components/ResourceComponent.hpp"
-#include "asset/components/GraphComponent.hpp"
-#include "asset/components/SceneComponent.hpp"
-#include "core/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/RenderManager.hpp"
+#include "editor/components/EditorComponent.hpp"
+#include "editor/components/HistoryComponent.hpp"
 #include "editor/operations/ScriptOperations.hpp"
+#include "asset/Project.hpp"
+#include "asset/ResourceManager.hpp"
+#include "asset/components/GraphComponent.hpp"
+#include "asset/components/ResourceComponent.hpp"
+#include "asset/components/SceneComponent.hpp"
+#include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
 #include "script/ScriptContext.hpp"
 #include "script/ScriptEngine.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 // Force-link the polymorphic registration TUs (static libs).
 #include "asset/registrations/DataRegistration.hpp"
@@ -79,11 +81,11 @@ struct TempFile
 void BuildProject(project::Project& proj, Editor& editor)
 {
 	auto& render = editor.GetRenderManager();
-	proj.Register<project::ResourceComponent>(editor.GetResourceManager(), render.Defaults(), &render.Problems());
-	proj.Register<project::GraphComponent>(render.GraphData(), editor.GetResourceManager(), render.Defaults(), render.Problems());
+	proj.Register<project::ResourceComponent>(editor.GetResourceManager());
+	proj.Register<project::GraphComponent>(render.GraphData(), editor.GetResourceManager(), render.Problems());
 	proj.Register<project::SceneComponent>(editor.GetScene(), editor.GetResourceManager());
 	proj.Register<project::HistoryComponent>(editor.GetOperations());
-	proj.Register<project::EditorComponent>(editor.GetViewport());
+	proj.Register<project::EditorComponent>(editor.GetViewport(), editor.GetResourceManager());
 }
 
 void SaveProject(const std::string& path, Editor& editor)
@@ -217,20 +219,22 @@ assert g.create().uid == g.uid
 
 	editor.GetOperations().Undo();
 	ASSERT_FALSE(graph);
-	EXPECT_FALSE(resources.Contains(uid));
+	EXPECT_TRUE(resources.Contains(uid));
 	EXPECT_EQ(editor.GetHistory().redo.size(), 1u);
 	SaveProject(tmp.path, editor);
 	{
 		std::ifstream saved(tmp.path);
 		const auto project = nlohmann::json::parse(saved).at("project");
 		EXPECT_FALSE(project.contains("proj_render_graph"));
-		for (const auto& entry : project.at("m_resources").at("resources_"))
-			EXPECT_NE(entry.at("key").get<int>(), uid);
+		const auto& records = project.at("m_resources").at("resources_");
+		EXPECT_EQ(std::count_if(records.begin(), records.end(), [&](const auto& entry) {
+			return entry.at("key") == uid;
+		}), 1);
 	}
 
 	LoadProject(tmp.path, editor);
 	ASSERT_FALSE(graph);
-	ASSERT_FALSE(resources.Contains(uid));
+	ASSERT_TRUE(resources.Contains(uid));
 	ASSERT_EQ(editor.GetHistory().redo.size(), 1u);
 	editor.GetOperations().Redo();
 	ASSERT_TRUE(graph);

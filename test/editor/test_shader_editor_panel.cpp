@@ -27,7 +27,7 @@
 #include "editor/events/EventBus.hpp"
 #include "editor/events/ShaderEvents.hpp"
 #include "editor/operations/OperationManager.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "shader/RenderShader.hpp"
 #include "asset/data/ShaderData.hpp"
@@ -109,8 +109,8 @@ protected:
 	{
 		m_controller.Init(m_ctx);
 
-		m_mesh = std::make_shared<Mesh>();
-		auto shader = std::make_shared<RenderShader>("TestShader", "v.vert.glsl", "f.frag.glsl");
+		m_mesh = m_resources.Load<Mesh>();
+		auto shader = m_resources.Load<RenderShader>("TestShader", "v.vert.glsl", "f.frag.glsl");
 		shader->GetStage(ShaderType::VERTEX).code = "VERT_V0";
 		shader->GetStage(ShaderType::FRAGMENT).code = "FRAG_V0";
 		SeedRealisticIR(shader->GetStage(ShaderType::VERTEX).parsed);

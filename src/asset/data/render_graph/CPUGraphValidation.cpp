@@ -1,11 +1,18 @@
 /**
- * @file CpuGraphValidation.cpp
+ * @file CPUGraphValidation.cpp
  * @brief Document checks against the port source.
  */
 
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
+
+#include "asset/data/render_graph/PassShaderCatalog.hpp"
+#include "asset/data/render_graph/PassKinds.hpp"
+#include "asset/data/shader/ShaderInterface.hpp"
+#include "asset/data/ShaderData.hpp"
 
 #include <algorithm>
+#include <array>
+#include <stdexcept>
 #include <set>
 #include <string>
 #include <vector>
@@ -14,7 +21,7 @@ namespace neurus {
 
 namespace {
 
-bool Matches(const CpuPort& socket, const PassPort& port)
+bool Matches(const CPUPort& socket, const CPUPort& port)
 {
 	return socket.name == port.name && socket.direction == port.direction && socket.type == port.type
 	    && socket.binding == port.binding && socket.location == port.location;
@@ -22,18 +29,18 @@ bool Matches(const CpuPort& socket, const PassPort& port)
 
 } // anonymous namespace
 
-std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
+std::vector<CPUGraphDiagnostic> ValidateCPUGraph(const RenderGraphData& graph,
                                                  const IPortSource& ports,
-                                                 const std::function<PassPorts(const CpuNode&)>& shaderPorts)
+                                                 const std::function<CPUPorts(const CPUNode&)>& shaderPorts)
 {
-	std::vector<CpuGraphDiagnostic> diagnostics;
+	std::vector<CPUGraphDiagnostic> diagnostics;
 
 	const auto active = graph.ActiveNodes();
 	if (!graph.nodes.empty() && !graph.sceneOutputs.contains("color"))
 		diagnostics.push_back({{}, "color", "scene color output is not connected"});
 	for (const auto& [name, endpoint] : graph.sceneOutputs)
 	{
-		const CpuPort* producer = nullptr;
+		const CPUPort* producer = nullptr;
 		for (const auto& node : graph.nodes)
 			if (node->name == endpoint.node)
 				for (const auto& out : node->outputs)
@@ -66,7 +73,7 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 
 	for (const auto& node : graph.nodes)
 	{
-		const PassPorts* builtin = ports.FindPassPorts(node->data.pass);
+		const CPUPorts* builtin = ports.FindPassPorts(node->data.pass);
 		if (!builtin)
 		{
 			diagnostics.push_back(
@@ -157,6 +164,62 @@ std::vector<CpuGraphDiagnostic> ValidateCpuGraph(const RenderGraphData& graph,
 		diagnostics.push_back({{}, {}, "cycle detected involving: " + names});
 	}
 
+	return diagnostics;
+}
+
+void ValidatePassShader(std::string_view passKind, const ShaderData& shader, const IPassShaderCatalog& catalog)
+{
+	const auto* kind = FindPassKind(passKind);
+	if (!kind || kind->shaders.empty())
+		throw std::invalid_argument("Unknown pass shader recipe: " + std::string(passKind));
+	const auto expected = catalog.ShaderFor(kind->shaders.front().name);
+	if (!expected || shader.GetType() != expected->GetType() || !shader.IsValid())
+		throw std::invalid_argument(std::string(passKind) + ": incompatible or uncompiled shader stages");
+
+	const std::array<const ShaderData*, 1> selectedShaders = {&shader};
+	CPUPorts selectedPorts = ExtractPassPorts(std::string(passKind), selectedShaders);
+	if (!selectedPorts.problems.empty())
+		throw std::invalid_argument(std::string(passKind) + ": " + selectedPorts.problems.front());
+	const std::array<const ShaderData*, 1> expectedShaders = {expected.get()};
+	const CPUPorts expectedPorts = ExtractPassPorts(std::string(passKind), expectedShaders);
+	if (!selectedPorts.SameRoles(expectedPorts))
+		throw std::invalid_argument(std::string(passKind) + ": uploaded shader changes the built-in port contract");
+
+	for (const auto stage : {ShaderType::VERTEX, ShaderType::FRAGMENT, ShaderType::COMPUTE})
+	{
+		const auto* ref = expected->FindStage(stage);
+		if (!ref)
+			continue;
+		const auto& selected = shader.GetStage(stage);
+		const auto problem = PassShaderInterfaceProblem(*ref, selected, stage);
+		if (!problem.empty())
+			throw std::invalid_argument(std::string(passKind) + " " + ShaderData::TypeToString(stage) + ": " + problem);
+	}
+	if (shader.GetType() == ShaderType::VERTEX)
+	{
+		std::string error;
+		if (!ValidateRenderShaderInterface(shader.GetStage(ShaderType::VERTEX).spv,
+		                                  shader.GetStage(ShaderType::FRAGMENT).spv, error))
+			throw std::invalid_argument(std::string(passKind) + ": " + error);
+	}
+}
+
+std::vector<CPUGraphDiagnostic> ValidateCPUGraph(const RenderGraphData& graph, const IPassShaderCatalog& catalog)
+{
+	auto diagnostics = ValidateCPUGraph(graph, catalog.Ports());
+	for (const auto& node : graph.nodes)
+	{
+		if (!node->data.shader)
+			continue;
+		try
+		{
+			ValidatePassShader(node->data.pass, *node->data.shader, catalog);
+		}
+		catch (const std::exception& error)
+		{
+			diagnostics.push_back({node->name, {}, error.what()});
+		}
+	}
 	return diagnostics;
 }
 

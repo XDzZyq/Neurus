@@ -7,17 +7,14 @@ namespace neurus
 {
 
 Mesh::Mesh()
+	: ObjectID(Type, "Mesh")
 {
-	o_type = ObjectID::GOType::GO_MESH;
-	o_name = "Mesh";
 }
 
 Mesh::Mesh(std::shared_ptr<MeshData> meshData)
 	: Mesh()
 {
 	o_mesh = std::move(meshData);
-	if (o_mesh)
-		o_meshDataId = o_mesh->GetObjectID();
 }
 
 Mesh::~Mesh()
@@ -27,7 +24,11 @@ Mesh::~Mesh()
 void Mesh::SetObjShader(std::shared_ptr<ShaderData> shader)
 {
 	o_shader = std::move(shader);
-	o_shaderId = o_shader ? o_shader->GetObjectID() : 0;
+}
+
+bool Mesh::AcceptShader(const ShaderData& shader)
+{
+	return shader.GetType() == ShaderType::VERTEX && shader.IsValid();
 }
 
 const ShaderUnit* Mesh::GetShaderUnit(int shaderType) const

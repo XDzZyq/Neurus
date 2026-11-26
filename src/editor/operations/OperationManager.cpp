@@ -62,6 +62,7 @@ void OperationManager::Submit(std::unique_ptr<Operation> op)
 	catch (...)
 	{
 		Apply(*op->Inverse(), false);
+		GraphOperationBatch(*op).DiscardCreations(op_bus);
 		throw;
 	}
 	if (!GraphOperationBatch::IsNoOp(*op))
@@ -200,7 +201,7 @@ void OperationManager::BeginScriptScope(std::string name)
 	NEURUS_LOG("[OperationManager] BeginScriptScope: buffering edits into one undo step");
 }
 
-void OperationManager::FlushGraphDrafts(std::vector<CpuGraphDiagnostic>* diagnostics)
+void OperationManager::FlushGraphDrafts(std::vector<CPUGraphDiagnostic>* diagnostics)
 {
 	GraphOperationBatch(op_scriptOps).FlushDrafts(op_bus, diagnostics);
 }
@@ -212,6 +213,7 @@ void OperationManager::RollbackGraphRequests()
 		if (GraphOperationBatch(**it).Empty())
 			continue;
 		Apply(*(*it)->Inverse(), false);
+		GraphOperationBatch(**it).DiscardCreations(op_bus);
 		it->reset();
 	}
 	std::erase(op_scriptOps, nullptr);

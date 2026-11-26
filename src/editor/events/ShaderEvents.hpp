@@ -18,7 +18,7 @@
 
 namespace neurus {
 
-struct CpuGraphDiagnostic;
+struct CPUGraphDiagnostic;
 struct ShaderUnit;
 enum class ShaderType;
 
@@ -339,7 +339,7 @@ struct PassShaderDraftCompileRequested
 	const ShaderUnit& before;
 	const ShaderUnit*& changed;
 	bool& portsChanged;
-	std::vector<CpuGraphDiagnostic>* diagnostics = nullptr;
+	std::vector<CPUGraphDiagnostic>* diagnostics = nullptr;
 };
 
 /// Sets one live stage from a draft or a previously compiled value.

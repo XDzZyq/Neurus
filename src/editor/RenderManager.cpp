@@ -2,15 +2,18 @@
 
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/data/ShaderData.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 #include "core/Log.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Mesh.hpp"
 #include "render_api/RenderRequestSink.hpp"
 #include "render_api/RenderRequests.hpp"
 
-#include <utility>
+#include <exception>
+#include <stdexcept>
 #include <unordered_set>
+#include <utility>
 
 namespace neurus {
 
@@ -48,69 +51,24 @@ void RenderManager::ResetGraph(bool publish)
 		Publish();
 }
 
-namespace {
-
-void CheckTopology(RenderGraphData& graph, const IPortSource& ports, std::vector<std::string>& problems)
+std::vector<CPUGraphDiagnostic> RenderManager::Diagnostics() const
 {
-	for (const auto& node : graph.nodes)
-	{
-		if (node->data.shader && !node->data.shader->IsValid())
-			node->data.shader.reset();
-	}
-	for (const auto& diagnostic : ValidateCpuGraph(graph, ports))
-		problems.push_back(diagnostic.node + "." + diagnostic.port + ": " + diagnostic.message);
-}
-
-} // namespace
-
-std::vector<CpuGraphDiagnostic> RenderManager::Diagnostics() const
-{
-	const auto& graph = Graph();
-	auto diagnostics = ValidateCpuGraph(graph, m_renderDefaults->Ports());
-	for (const auto& node : graph.nodes)
-	{
-		if (!node->data.shader)
-			continue;
-		try
-		{
-			m_renderDefaults->ValidatePassShader(node->data.pass, *node->data.shader);
-		}
-		catch (const std::exception& error)
-		{
-			diagnostics.push_back({node->name, {}, error.what()});
-		}
-	}
-	return diagnostics;
+	return ValidateCPUGraph(Graph(), *m_renderDefaults);
 }
 
 std::shared_ptr<RenderGraphData> RenderManager::CreateGraph(bool publish)
 {
 	if (!m_graph)
-		RestoreCreatedGraph(std::make_shared<RenderGraphData>(), publish);
-	return m_graph;
-}
-
-void RenderManager::RemoveCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish)
-{
-	if (graph && m_graph == graph)
 	{
-		m_resources.Remove(graph->GetObjectID());
-		ResetGraph(publish);
+		auto graph = m_renderDefaults->Graph()->Clone();
+		auto pooled = std::shared_ptr<RenderGraphData>(std::move(graph));
+		m_resources.Register(pooled);
+		m_graph = pooled;
+		m_problems.clear();
+		if (publish)
+			Publish();
 	}
-}
-
-void RenderManager::RestoreCreatedGraph(const std::shared_ptr<RenderGraphData>& graph, bool publish)
-{
-	if (!graph || m_graph)
-		return;
-	// A creation restored from redo history carries only its original UID.
-	if (graph->nodes.empty())
-		graph->SwapContents(*m_renderDefaults->Graph()->Clone());
-	m_resources.Register(graph);
-	m_graph = graph;
-	m_problems.clear();
-	if (publish)
-		Publish();
+	return m_graph.shared();
 }
 
 bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
@@ -121,7 +79,9 @@ bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 		return true;
 	}
 	m_problems.clear();
-	CheckTopology(*graph, m_renderDefaults->Ports(), m_problems);
+	for (const auto& diagnostic : ValidateCPUGraph(*graph, *m_renderDefaults))
+		m_problems.push_back(diagnostic.node + (diagnostic.port.empty() ? "" : "." + diagnostic.port)
+		                      + ": " + diagnostic.message);
 	if (!m_problems.empty())
 	{
 		for (const auto& problem : m_problems)
@@ -132,8 +92,9 @@ bool RenderManager::SetGraph(std::unique_ptr<RenderGraphData> graph)
 		m_graph->SwapContents(*graph);
 	else
 	{
-		m_graph = std::move(graph);
-		m_resources.Register(m_graph);
+		auto pooled = std::shared_ptr<RenderGraphData>(std::move(graph));
+		m_resources.Register(pooled);
+		m_graph = std::move(pooled);
 	}
 	Publish();
 	return true;
@@ -145,24 +106,30 @@ void RenderManager::RegisterShader(const std::shared_ptr<ShaderData>& shader)
 	shader->SetName(m_resources.SetName(uid, shader->GetName()));
 }
 
-std::shared_ptr<ShaderData> RenderManager::RemoveUnusedShader(int uid)
+void RenderManager::DiscardCreation(int uid)
 {
-	bool used = false;
-	m_resources.ForEach<RenderGraphData>([&](const std::shared_ptr<RenderGraphData>& graph) {
-		for (const auto& node : graph->nodes)
-			if (node->data.shader && node->data.shader->GetObjectID() == uid)
-				used = true;
-	});
-	m_resources.ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh) {
-		if (mesh->o_shader && mesh->o_shader->GetObjectID() == uid)
-			used = true;
-	});
-	if (used)
-		return nullptr;
-	auto shader = m_resources.Get<ShaderData>(uid);
-	if (shader)
+	if (m_resources.Get<RenderGraphData>(uid))
+	{
 		m_resources.Remove(uid);
-	return shader;
+		return;
+	}
+	// Only live objects could have acquired this new shader during the failed edit.
+	for (const int id : m_resources.RegisteredIds())
+	{
+		const auto object = m_resources.GetLive(id);
+		if (const auto graph = std::dynamic_pointer_cast<RenderGraphData>(object))
+		{
+			for (const auto& node : graph->nodes)
+				if (node->data.shader && node->data.shader.id() == uid)
+					return;
+		}
+		else if (const auto mesh = std::dynamic_pointer_cast<Mesh>(object))
+		{
+			if (mesh->o_shader && mesh->o_shader.id() == uid)
+				return;
+		}
+	}
+	m_resources.Remove(uid);
 }
 
 void RenderManager::UploadShader(const ShaderData& shader)
@@ -175,20 +142,78 @@ void RenderManager::Publish()
 {
 	if (!m_sink)
 		return;
-	std::shared_ptr<const RenderGraphData> published;
-	if (m_graph)
+
+	// No authored graph selects the renderer's built-in topology.
+	if (!m_graph)
 	{
-		auto graph = m_graph->Clone();
-		std::unordered_set<int> uploaded;
-		for (const auto& node : graph->nodes)
-		{
-			if (const auto& shader = node->data.shader;
-			    shader && uploaded.insert(shader->GetObjectID()).second)
-				m_sink->Post(MakeUploadShaderRequest(*shader));
-		}
-		published = std::move(graph);
+		m_sink->Post(CompileRenderGraphRequest{});
+		return;
 	}
-	m_sink->Post(CompileRenderGraphRequest{std::move(published)});
+
+	auto graph = m_graph->Clone();
+	const auto& ports = m_renderDefaults->Ports();
+	m_problems.clear();
+	const auto report = [this](std::string problem) {
+		NEURUS_LOG("[RenderManager] " << problem);
+		m_problems.push_back(std::move(problem));
+	};
+
+	for (const auto& node : graph->nodes)
+	{
+		if (node->data.shader)
+		{
+			try
+			{
+				ValidatePassShader(node->data.pass, *node->data.shader, *m_renderDefaults);
+				continue;
+			}
+			catch (const std::exception& error)
+			{
+				report(node->name + " uses its built-in shader: " + error.what());
+				node->data.shader.reset();
+			}
+		}
+
+		// Saved sockets may use custom shader names. Match built-in sockets
+		// by their binding or location so the clone keeps its connections.
+		if (const auto* builtin = ports.FindPassPorts(node->data.pass))
+		{
+			try
+			{
+				ReconcilePassPorts(*graph, *node, *builtin);
+			}
+			catch (const std::invalid_argument&)
+			{
+				// The validation below reports sockets that have no compatible role.
+			}
+		}
+	}
+
+	const auto errors = ValidateCPUGraph(*graph, ports);
+	for (const auto& error : errors)
+	{
+		const std::string problem =
+			error.node + (error.port.empty() ? "" : "." + error.port) + ": " + error.message;
+		NEURUS_ERR("[RenderManager] Rejected graph publication: " << problem);
+		m_problems.push_back(problem);
+	}
+	if (!errors.empty())
+	{
+		// Keep the previous graph drawing: a null-graph request would fall back
+		// to the built-in default instead.
+		return;
+	}
+
+	std::unordered_set<int> uploaded;
+	for (const auto& node : graph->nodes)
+	{
+		if (const auto& shader = node->data.shader;
+		    shader && uploaded.insert(shader->GetObjectID()).second)
+			m_sink->Post(MakeUploadShaderRequest(*shader));
+	}
+	// The request strips the clone's shader references and carries their
+	// {uid, version} values; the render thread never reads pooled ShaderData.
+	m_sink->Post(MakeCompileRenderGraphRequest(*graph));
 }
 
 bool RenderManager::ReferencesShader(const int uid) const
@@ -197,7 +222,7 @@ bool RenderManager::ReferencesShader(const int uid) const
 		return false;
 	for (const auto& node : m_graph->nodes)
 	{
-		if (node->data.shader && node->data.shader->GetObjectID() == uid)
+		if (node->data.shader && node->data.shader.id() == uid)
 			return true;
 	}
 	return false;

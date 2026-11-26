@@ -22,7 +22,7 @@
 #include "editor/events/EventBus.hpp"
 #include "editor/events/SceneEvents.hpp"
 #include "editor/Input.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "shared/OperationTestAccess.hpp"
 #include "editor/operations/OperationManager.hpp"
 #include "editor/operations/SceneOperations.hpp"
@@ -55,13 +55,8 @@ protected:
 		m_controller.Init(m_ctx);
 		m_objectController.Init(m_ctx);
 
-		m_mesh   = std::make_shared<Mesh>();
-		m_light  = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
-		// Pooled: property writes and their op replay resolve through
-		// ctx.resources, so a non-pooled object would drop every edit.
-		m_resources.Register(m_mesh);
-		m_resources.Register(m_light);
-		// Pooled: camera ops are replayed against ctx.resources, not cam_list.
+		m_mesh   = m_resources.Load<Mesh>();
+		m_light  = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_camera = m_resources.Load<Camera>();
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);

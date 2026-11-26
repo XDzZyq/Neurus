@@ -29,10 +29,11 @@ std::string ResolveAssetPath(const std::string& path)
 
 	// Strip a leading "res/" prefix: "res/obj/sphere.obj" resolves to
 	// NEURUS_RES_DIR + "obj/sphere.obj".
+	std::error_code error;
 	if (path.rfind("res/", 0) == 0)
 	{
 		std::string resolved = std::string(NEURUS_RES_DIR) + path.substr(4);
-		if (std::filesystem::exists(resolved))
+		if (std::filesystem::exists(resolved, error))
 			return resolved;
 	}
 
@@ -41,7 +42,7 @@ std::string ResolveAssetPath(const std::string& path)
 	for (const auto& prefix : {"", "../", "../../", "../../../"})
 	{
 		std::string resolved = std::string(prefix) + path;
-		if (std::filesystem::exists(resolved))
+		if (std::filesystem::exists(resolved, error))
 			return resolved;
 	}
 

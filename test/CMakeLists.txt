@@ -91,13 +91,13 @@ set(NEURUS_TEST_SOURCES
 	scene/test_scene_camera_activation.cpp
 	scene/test_debug.cpp
 	asset/test_project_roundtrip.cpp
+	asset/test_resource_manager.cpp
 	asset/test_default_project.cpp
 	asset/test_serialize_optional.cpp
 	asset/test_ui_component.cpp
 	core/test_selections.cpp
 	core/test_log_buffer.cpp
 	core/test_uid.cpp
-	core/test_resource_manager.cpp
 	ui/test_log_model.cpp
 	ui/test_debug_properties.cpp
 	ui/test_i18n.cpp
@@ -254,7 +254,7 @@ if(WIN32 AND WINDEPLOYQT)
 			--no-system-d3d-compiler
 			--no-compiler-runtime
 			--verbose 0
-			$<TARGET_FILE_DIR:neurus_test>
+			$<TARGET_FILE:neurus_test>
 		COMMAND ${CMAKE_COMMAND} -E copy
 			"${_qt6_bin_dir}/$<IF:$<CONFIG:Debug>,Qt6Testd.dll,Qt6Test.dll>"
 			$<TARGET_FILE_DIR:neurus_test>
@@ -316,6 +316,7 @@ add_executable(neurus_cpu_test
 	asset/test_imagedata.cpp
 	asset/test_pass_ports.cpp
 	asset/test_graph_component.cpp
+	asset/test_project_lazy_save.cpp
 	asset/test_shader_data.cpp
 	asset/test_shader_data_source.cpp
 	asset/test_render_graph_data.cpp

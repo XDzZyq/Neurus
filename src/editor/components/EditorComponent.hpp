@@ -4,6 +4,7 @@
 
 namespace neurus {
 class EditorViewport;
+class IResourceLookup;
 }
 
 namespace neurus::project {
@@ -22,15 +23,17 @@ namespace neurus::project {
 class EditorComponent : public Serializable
 {
 public:
-	explicit EditorComponent(EditorViewport& viewport);
+	EditorComponent(EditorViewport& viewport, const IResourceLookup& resources);
 
 	const char* Key() const noexcept override { return "m_editor"; }
 
 	void Save(cereal::JSONOutputArchive& ar) const override;
-	void Load(cereal::JSONInputArchive& ar) override;
+	void Load(cereal::JSONInputArchive& ar);
+	void LoadJson(const std::string& object) override { LoadComponentJson(object, *this); }
 
 private:
 	EditorViewport* m_viewport;
+	const IResourceLookup& m_resources;
 };
 
 } // namespace neurus::project

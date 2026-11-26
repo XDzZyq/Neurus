@@ -44,19 +44,20 @@
 #include "editor/operations/OperationManager.hpp"
 #include "editor/operations/registrations/OperationRegistration.hpp"
 #include "editor/operations/ShaderOperations.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/ComputeShader.hpp"
 #include "asset/data/ShaderData.hpp"
 #include "shader/ShaderLibrary.hpp"
 #include "shader/ShaderParser.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/data/render_graph/PassKinds.hpp"
 #include "asset/data/shader/ShaderUnit.hpp"
 #include "scene/Mesh.hpp"
 #include "scene/Scene.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -96,11 +97,11 @@ protected:
 
 		// Build a mesh with a CPU-only shader carrying seeded vertex+fragment
 		// stages. GetStage() default-inserts the stage, so HasStage() is true.
-		m_mesh = std::make_shared<Mesh>();
-		auto shader = std::make_shared<RenderShader>("TestShader", "v.vert.glsl", "f.frag.glsl");
+		m_mesh = m_resources.Load<Mesh>();
+		auto shader = m_resources.Load<RenderShader>("TestShader", "v.vert.glsl", "f.frag.glsl");
 		shader->GetStage(ShaderType::VERTEX).code = "VERT_V0";
 		shader->GetStage(ShaderType::FRAGMENT).code = "FRAG_V0";
-		m_resources.Register(shader); // the shader-keyed events resolve it by UID
+
 		m_mesh->o_shader = shader;
 		m_scene.UseMesh(m_mesh);
 	}
@@ -474,18 +475,18 @@ TEST_F(ShaderCreateUndoTest, UndoDropsRedoRelinksSamePooledShader)
 	EXPECT_EQ(restored->Label(), "Create Shader");
 	m_operations.Submit(std::move(restored));
 
-	EXPECT_EQ(m_mesh->o_shaderId, shaderId);
+	EXPECT_EQ(m_mesh->o_shader.id(), shaderId);
 
 	// Undo: reference dropped, pool keeps the shader.
 	m_operations.Undo();
-	EXPECT_EQ(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, 0);
+	EXPECT_FALSE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), 0);
 	EXPECT_NE(m_pool.Get<RenderShader>(shaderId), nullptr);
 
 	// Redo: same pooled shader relinked (no new pooled object minted).
 	m_operations.Redo();
-	ASSERT_NE(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, shaderId);
+	ASSERT_TRUE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), shaderId);
 	EXPECT_EQ(m_mesh->o_shader->GetObjectID(), shaderId);
 }
 
@@ -499,8 +500,8 @@ TEST_F(ShaderCreateUndoTest, StaleMeshUidNoOps)
 	// the unresolved mesh is never linked.
 	EXPECT_TRUE(m_operations.CanUndo());
 	EXPECT_FALSE(m_operations.CanRedo());
-	EXPECT_EQ(m_mesh->o_shader, nullptr);
-	EXPECT_EQ(m_mesh->o_shaderId, 0);
+	EXPECT_FALSE(m_mesh->o_shader);
+	EXPECT_EQ(m_mesh->o_shader.id(), 0);
 }
 
 // --- Compile emits ShaderCompiled (device-free: shaderc only, no GPU) --------
@@ -508,13 +509,13 @@ TEST_F(ShaderCreateUndoTest, StaleMeshUidNoOps)
 TEST_F(ShaderControllerTest, Compile_Success_EmitsShaderCompiledWithShaderId)
 {
 	// Real gbuffer source parses + compiles with shaderc alone (no device).
-	auto shader = ShaderLibrary::LoadRenderShader(
+	std::shared_ptr<RenderShader> shader = ShaderLibrary::LoadRenderShader(
 		"CompileEmitShader",
 		"res/shaders/render/gbuffer.vert.glsl",
 		"res/shaders/render/gbuffer.frag.glsl");
 	ASSERT_NE(shader, nullptr);
+	const int shaderId = m_resources.Register(shader);
 	m_mesh->o_shader = std::move(shader);
-	const int shaderId = m_mesh->o_shader->GetObjectID();
 
 	bool fired = false;
 	int captured = -1;
@@ -541,7 +542,7 @@ TEST_F(ShaderControllerTest, Compile_Failure_DoesNotEmitShaderCompiled)
 	// The type must be CUSTOM for the generator to emit `typeName` verbatim -
 	// ShaderGenerator.cpp:64 falls back to ParseType(type) for every builtin,
 	// so a bogus name on a VEC3 would be discarded and the source would compile.
-	auto shader = std::make_shared<RenderShader>("BadCompileShader", "v.vert.glsl", "f.frag.glsl");
+	auto shader = m_resources.Load<RenderShader>("BadCompileShader", "v.vert.glsl", "f.frag.glsl");
 	shader->GetStage(ShaderType::VERTEX).parsed.AB_list.push_back(
 		S_IO{ 0, "bad", ParaType::CUSTOM, "not_a_glsl_type", Interp::Smooth });
 	m_mesh->o_shader = shader;
@@ -627,8 +628,9 @@ TEST(PassShaderEditing, MaterializedPrimaryShadersPreserveAllSevenPassInterfaces
 		SCOPED_TRACE(std::string(pass.name));
 		const auto builtIn = catalog.ShaderFor(pass.shaders.front().name);
 		const auto editable = catalog.CreatePassShader(pass.name, "editable");
-		EXPECT_NE(editable->GetObjectID(), builtIn->GetObjectID());
-		EXPECT_NO_THROW(catalog.ValidatePassShader(pass.name, *editable));
+		EXPECT_NE(editable.get(), builtIn.get());
+		EXPECT_EQ(editable->GetObjectID(), -1);
+		EXPECT_NO_THROW(neurus::ValidatePassShader(pass.name, *editable, catalog));
 	}
 }
 
@@ -636,7 +638,7 @@ TEST(PassShaderEditing, RejectsIncompatibleCompiledInterfacesAndAcceptsRenamedIm
 {
 	BuiltInRenderData catalog;
 	const auto shader = catalog.CreatePassShader("ComposePass", "editable");
-	EXPECT_THROW(catalog.ValidatePassShader("GeometryPass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("GeometryPass", *shader, catalog), std::invalid_argument);
 	auto& compute = shader->GetStage(ShaderType::COMPUTE);
 	const auto source = compute.code;
 	auto edit = [&](std::string_view before, std::string_view after) {
@@ -651,18 +653,52 @@ TEST(PassShaderEditing, RejectsIncompatibleCompiledInterfacesAndAcceptsRenamedIm
 		ShaderLibrary::CompileEditedUnit(compute, ShaderType::COMPUTE, "editable", false);
 	};
 	edit("outputComposed", "tintedOutput");
-	EXPECT_NO_THROW(catalog.ValidatePassShader("ComposePass", *shader));
+	EXPECT_NO_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog));
 	edit("local_size_x = 16", "local_size_x = 8");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("local_size_x = 16", "local_size_x = 16 / 2");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("rgba16f", "rgba32f");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("float gamma;", "layout(offset = 16) float gamma;");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	edit("binding = 0", "set = 1, binding = 0");
-	EXPECT_THROW(catalog.ValidatePassShader("ComposePass", *shader), std::invalid_argument);
+	EXPECT_THROW(neurus::ValidatePassShader("ComposePass", *shader, catalog), std::invalid_argument);
 	const auto original = catalog.ShaderFor(FindPassKind("ComposePass")->shaders.front().name);
 	ASSERT_TRUE(original);
 	EXPECT_EQ(original->GetStage(ShaderType::COMPUTE).code, source);
+}
+
+TEST(PassShaderEditing, RejectsChangedBuiltInPortContract)
+{
+	BuiltInRenderData catalog;
+	const auto shader = catalog.CreatePassShader("ComposePass", "editable");
+	auto& compute = shader->GetStage(ShaderType::COMPUTE);
+	const auto source = compute.code;
+
+	// Move the input sampler to another binding. The name and type are unchanged,
+	// so only the descriptor role differs: the port-contract check must reject it.
+	const std::string before = "binding = 0";
+	const std::string after  = "binding = 4";
+	std::string edited = source;
+	size_t pos = 0;
+	while ((pos = edited.find(before, pos)) != std::string::npos)
+	{
+		edited.replace(pos, before.size(), after);
+		pos += after.size();
+	}
+	ASSERT_NE(edited, source);
+	compute.code = edited;
+	ShaderLibrary::CompileEditedUnit(compute, ShaderType::COMPUTE, "editable", false);
+
+	try
+	{
+		neurus::ValidatePassShader("ComposePass", *shader, catalog);
+		FAIL() << "expected a changed descriptor binding to break the port contract";
+	}
+	catch (const std::invalid_argument& error)
+	{
+		const std::string message = error.what();
+		EXPECT_NE(message.find("port contract"), std::string::npos) << message;
+	}
 }

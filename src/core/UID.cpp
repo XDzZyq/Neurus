@@ -1,22 +1,21 @@
 /**
  * @file UID.cpp
- * @brief Implementation of the UID base class.
+ * @brief Implementation of UID pool membership lookup.
  */
 
 #include "core/UID.hpp"
 
+#include "core/Log.hpp"
+
 namespace neurus
 {
 
-// --- Static member definition --------------------------------------------
-
-int UID::s_count = 0;
-
-// --- UID -----------------------------------------------------------------
-
-UID::UID()
-	: o_id(s_count++)
+int UID::GetObjectID() const
 {
+	if (const auto membership = m_membership.lock())
+		return *membership;
+	NEURUS_ERR("Object has no resource pool membership");
+	return -1;
 }
 
 } // namespace neurus

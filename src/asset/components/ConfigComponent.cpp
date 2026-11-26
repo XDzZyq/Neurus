@@ -90,7 +90,7 @@ void ConfigComponent::LoadJson(const std::string& object)
 		enumeration("r_ao", static_cast<int>(AOAlg::SSAO));
 		enumeration("r_shadow", static_cast<int>(ShadowAlg::VSSM));
 		enumeration("r_ssr", static_cast<int>(SSRAlg::SDFResolvedRayMarching));
-		Serializable::LoadJson(document.dump());
+		LoadComponentJson(document.dump(), *this);
 	}
 	catch (const nlohmann::json::exception& error)
 	{

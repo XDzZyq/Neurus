@@ -7,7 +7,7 @@
  * - UID identity inheritance
  * - SetVisible / polymorphic accessors
  * - Name and type assignment
- * - Mixed UID/ObjectID counter increments
+ * - Standalone objects have no pool identity
  * - Deleted copy and move on every UID-derived identity type (compile time)
  */
 
@@ -67,24 +67,12 @@ TEST(ObjectIDTest, SetVisible)
 	EXPECT_FALSE(obj.is_rendered);
 }
 
-/**
- * @test UID counter increments across UID and ObjectID instances.
- */
-TEST(ObjectIDTest, CounterIncrementsMixed)
+TEST(ObjectIDTest, StandaloneObjectsHaveNoIdentity)
 {
-	int before = neurus::UID::GetTotalAllocated();
-
-	{
-		neurus::UID a;
-		neurus::ObjectID b;
-		neurus::UID c;
-		(void)a;
-		(void)b;
-		(void)c;
-	}
-
-	int after = neurus::UID::GetTotalAllocated();
-	EXPECT_GE(after, before + 3);
+	neurus::ObjectID object;
+	neurus::Camera camera;
+	EXPECT_EQ(object.GetObjectID(), -1);
+	EXPECT_EQ(camera.GetObjectID(), -1);
 }
 
 // --- Identity Special Members -------------------------------------------

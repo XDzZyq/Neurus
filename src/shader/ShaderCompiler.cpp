@@ -29,6 +29,7 @@ std::vector<uint32_t> ShaderCompiler::CompileGlslToSpv(
 	const std::string& inputName)
 {
 	m_lastError.clear();
+	NEURUS_LOG("[ShaderCompiler] Compiling " << inputName);
 
 	shaderc::SpvCompilationResult result = m_compiler.CompileGlslToSpv(
 		source.c_str(),

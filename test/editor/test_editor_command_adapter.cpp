@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 
 #include "command/Commands.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "editor/Editor.hpp"
 #include "editor/commands/EditorCommandAdapter.hpp"
 #include "scene/Camera.hpp"

@@ -22,6 +22,9 @@ live in the [product documentation](docs/README.md).
   `OperationContext` and call `Operation::Apply`.
 - Trace Mesh or RenderGraph before adding a GPU upload. Application owns the
   Vulkan device and surface. Renderer owns the swapchain and GPU resources.
+- Singletons are forbidden for every stateful system, including resource
+  management and script contexts. Give state an explicit owner and pass
+  dependencies directly. The existing logging system is the sole exception.
 - Keep command, IPC and CLI targets Qt-free and Vulkan-free. Execute session
   commands on the application main thread.
 

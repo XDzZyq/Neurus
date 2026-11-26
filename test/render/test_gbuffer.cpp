@@ -144,7 +144,7 @@ TEST_F(GeometryPassTest, Record_SingleTriangle_NoValidationError)
 	VulkanTestShared::TransitionGbufferToColorAttachment(*m_renderCache, {kRenderWidth, kRenderHeight}, *this);
 
 	// --- Create mesh from OBJ string ---
-	auto meshData = std::make_shared<MeshData>();
+	auto meshData = m_resources.Load<MeshData>();
 	const std::string objStr =
 		"v 0.0 -0.5 0.0\n"
 		"v 0.5 0.5 0.0\n"
@@ -153,7 +153,7 @@ TEST_F(GeometryPassTest, Record_SingleTriangle_NoValidationError)
 		"f 1//1 2//1 3//1\n";
 	ASSERT_TRUE(meshData->LoadObjFromString(objStr));
 
-	auto mesh = std::make_shared<Mesh>();
+	auto mesh = m_resources.Load<Mesh>();
 	mesh->o_mesh = meshData;
 
 	// Register mesh in Scene so GeometryPass can iterate mesh_list
@@ -195,7 +195,7 @@ TEST_F(GeometryPassTest, Record_MultipleItems_NoValidationError)
 	VulkanTestShared::TransitionGbufferToColorAttachment(*m_renderCache, {kRenderWidth, kRenderHeight}, *this);
 
 	// --- Create mesh from OBJ string ---
-	auto meshData = std::make_shared<MeshData>();
+	auto meshData = m_resources.Load<MeshData>();
 	const std::string objStr =
 		"v 0.0 -0.5 0.0\n"
 		"v 0.5 0.5 0.0\n"
@@ -205,9 +205,9 @@ TEST_F(GeometryPassTest, Record_MultipleItems_NoValidationError)
 	ASSERT_TRUE(meshData->LoadObjFromString(objStr));
 
 	// Create two Mesh instances with different transforms sharing the same MeshData.
-	auto mesh0 = std::make_shared<Mesh>();
+	auto mesh0 = m_resources.Load<Mesh>();
 	mesh0->o_mesh = meshData;
-	auto mesh1 = std::make_shared<Mesh>();
+	auto mesh1 = m_resources.Load<Mesh>();
 	mesh1->o_mesh = meshData;
 	mesh1->SetPosition(glm::vec3(1.0f, 0.0f, 0.0f));
 

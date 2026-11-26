@@ -11,7 +11,7 @@
 #include "editor/events/EventBus.hpp"
 #include "editor/operations/HistoryView.hpp"
 #include "editor/operations/OperationManager.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 
 // The one render header Editor.hpp needs: BuildSnapshot() returns a

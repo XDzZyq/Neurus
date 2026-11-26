@@ -2,15 +2,19 @@
  * @file GraphUploader.hpp
  * @brief Render-side service that maps the Editor's document onto pass instances.
  *
- * Retains the published CPU document. Each compile maps it onto a runtime
- * graph and plans the resources declared by its output tags.
+ * Retains the published CPU document together with its plain shader identities.
+ * Each compile maps it onto a runtime graph and plans the resources declared by
+ * its output tags.
  */
 
 #pragma once
 
+#include "render_api/RenderRequests.hpp"
+
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace neurus {
@@ -20,7 +24,6 @@ class PassFactory;
 class RenderCache;
 class RenderGraph;
 class RenderGraphData;
-struct CompileRenderGraphRequest;
 
 /**
  * @brief One upload or document problem, named by node and port.
@@ -75,21 +78,23 @@ public:
 	GraphUploader& operator=(GraphUploader&&)      = delete;
 
 	/**
-	 * @brief Replaces the current topology with a published document.
+	 * @brief Replaces the current topology with a published request.
 	 *
-	 * The request is copied in; the caller may drop its own reference.
+	 * The request is copied in; the caller may drop its own reference. A null
+	 * graph selects the cached built-in topology and has no shader selections.
 	 */
 	void SetPending(const CompileRenderGraphRequest& request);
 
-	/// @brief Cached hash of the published topology and selected shader UIDs.
+	/// @brief Published topology hash carried by the last accepted request.
 	std::uint64_t DocumentHash() const { return m_documentHash; }
 
 	/**
 	 * @brief Compiles the current document into a candidate runtime graph.
 	 *
-	 * Validates the document against the port catalog, maps and compiles the
-	 * runtime graph, and plans images from the document's tags. On failure the
-	 * result carries diagnostics and no graph.
+	 * Rejects a document that still carries a CPU shader reference, checks that
+	 * every published shader selection matches its resident GPU resource, maps
+	 * and compiles the runtime graph, and plans images from the document's tags.
+	 * On failure the result carries diagnostics and no graph.
 	 *
 	 * @param cache  Resource cache whose plans follow the document.
 	 */
@@ -100,6 +105,8 @@ private:
 	const IPortSource& m_portCatalog;
 	const std::shared_ptr<const RenderGraphData> m_defaultGraph;
 	std::shared_ptr<const RenderGraphData> m_document;
+	std::unordered_map<std::string, PublishedShader> m_shaders;
+	std::uint64_t m_defaultHash = 0;
 	std::uint64_t m_documentHash = 0;
 };
 

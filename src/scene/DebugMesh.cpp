@@ -6,10 +6,8 @@ namespace neurus
 {
 
 DebugMesh::DebugMesh()
-	: ObjectID()
+	: ObjectID(GOType::GO_DM, "DebugMesh")
 {
-	o_type = ObjectID::GOType::GO_DM;
-	o_name = "DebugMesh";
 }
 
 DebugMesh::DebugMesh(std::shared_ptr<MeshData> meshData)
@@ -21,8 +19,6 @@ DebugMesh::DebugMesh(std::shared_ptr<MeshData> meshData)
 void DebugMesh::SetMeshData(std::shared_ptr<MeshData> meshData)
 {
 	o_mesh = std::move(meshData);
-	// Keep the serialized ID in lockstep with the pointer; 0 means "no geometry".
-	o_meshDataId = o_mesh ? o_mesh->GetObjectID() : 0;
 }
 
 } // namespace neurus

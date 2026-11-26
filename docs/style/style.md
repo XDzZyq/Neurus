@@ -25,6 +25,7 @@ RAII throughout.
 | New declaration | Spelling | Neurus example |
 | --- | --- | --- |
 | Type and its class files | PascalCase | `VulkanContext`, `VulkanContext.hpp`, `VulkanContext.cpp` |
+| Acronym in a type, function or file name | Upper case | `ShaderGPU`, `CPUPorts.hpp`, `ValidateCPUGraph`, `UID` |
 | Public or private member function | PascalCase at either access level | Public `DeferredRenderer::DrawFrame`, private `DeferredRenderer::CompileDocument` |
 | File-local free function | lowerCamelCase | `vkFormatToPixelFormat` in `Screenshot.cpp` |
 | Private instance field | Owner prefix below, followed by lowerCamelCase. The default is `m_`. | `Editor::ed_eventBus`, `IpcServer::m_impl` |

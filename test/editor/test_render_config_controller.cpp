@@ -34,7 +34,7 @@
 #include "editor/operations/ConfigOperations.hpp"
 #include "shared/OperationTestAccess.hpp"
 #include "editor/operations/OperationManager.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Scene.hpp"
 

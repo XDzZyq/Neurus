@@ -41,10 +41,12 @@ The module is split by subject, not by layer:
   - `neurus.data.objects` - every pooled `ObjectID`, iterable and keyed by UID
     only (a name spans several object types, so a string key is ambiguous). Data
     resources (`MeshData`, `ImageData`, `Shader`) are not objects and are not
-    listed.
+    listed. Iteration and `len()` load every deferred record they visit; a
+    record that fails to load is dropped.
   - `neurus.data.cameras`, `.lights`, `.meshes`, `.environments` - the whole
     resource pool filtered to one type, keyed by UID or registered name; a name
-    lookup returns the typed proxy.
+    lookup returns the typed proxy. Iteration and `len()` likewise load the
+    deferred records they visit.
   - `neurus.data.scene` - the **same module object** as `neurus.scene`, not a
     second proxy, so `neurus.data.scene.meshes` reads naturally.
 - `neurus.scene` - the scene currently being edited:
@@ -313,7 +315,9 @@ mesh.shader.remove()
 - `load_shader` pools a `RenderShader` (`.vert.glsl` / `.frag.glsl`) or a `ComputeShader`
   (`.comp.glsl`). A `.frag.glsl` load uses the default G-buffer vertex; a `.vert.glsl` load
   uses the default fragment. The default name is the path as given.
-- `neurus.data.shaders` lists pooled shaders by UID or registered name.
+- `neurus.data.shaders` lists pooled shaders by UID or registered name. Iteration
+  and `len()` load every deferred shader they visit; a shader that fails its
+  usability check is dropped.
 - A `ShaderUnit` exposes `.stage`, `.code`, `.parsed` and
   `.compile(by="code")`. `by="code"` parses the text into the IR before
   compiling; `by="struct"` regenerates GLSL from the IR. `.parsed` returns a

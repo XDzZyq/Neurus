@@ -123,6 +123,11 @@ public:
 	 */
 	ObjectID() = default;
 
+protected:
+	ObjectID(GOType type, const char* name) : o_name(name), o_type(type) {}
+
+public:
+
 	/**
 	 * @brief Destroys the ObjectID.
 	 */

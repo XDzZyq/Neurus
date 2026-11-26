@@ -134,7 +134,7 @@ TEST_F(MultiLightShadowTest, TwoShadowLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	// Step 1: Load multi-shadow scene (2 lights by default)
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected cube + plane (2 meshes)";
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 shadow-casting lights";
@@ -247,7 +247,7 @@ TEST_F(MultiLightShadowTest, TwoLights_NoVUID)
 	// -------------------------------------------------------------------
 	// Load scene
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_FALSE(shadowRes.scene->cam_list.empty());
 
@@ -312,7 +312,7 @@ TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
 	// -------------------------------------------------------------------
 	// Scene: 3 point lights from the shared builder, plus a spot and a sun
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily, 3);
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 point lights";
 
@@ -320,7 +320,7 @@ TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
 
 	// Direction (0,0,-1): GetDirection() maps pitch = -90, yaw = 0 to straight down.
 	{
-		auto spot = std::make_shared<Light>(LightType::SPOTLIGHT, 5.0f, glm::vec3(1.0f));
+		auto spot = m_resources.Load<Light>(LightType::SPOTLIGHT, 5.0f, glm::vec3(1.0f));
 		spot->o_name = "OverflowSpotLight";
 		spot->SetPosition(glm::vec3(1.0f, 0.0f, 3.0f));
 		spot->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
@@ -330,7 +330,7 @@ TEST_F(MultiLightShadowTest, MoreShadowLightsThanLayers_OverflowCastsNoShadow)
 		lightUIDs.push_back(spot->GetObjectID());
 	}
 	{
-		auto sun = std::make_shared<Light>(LightType::SUNLIGHT, 5.0f, glm::vec3(1.0f));
+		auto sun = m_resources.Load<Light>(LightType::SUNLIGHT, 5.0f, glm::vec3(1.0f));
 		sun->o_name = "OverflowSunLight";
 		sun->SetPower(0.5f);
 		sun->SetRotation(glm::vec3(-90.0f, 0.0f, 0.0f));
@@ -429,7 +429,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityReadback_VerifyNonZero)
 	// -------------------------------------------------------------------
 	// Load scene
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily, 3 /*numLights*/);
 	ASSERT_FALSE(shadowRes.scene->cam_list.empty());
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 shadow-casting lights";
@@ -565,7 +565,7 @@ TEST_F(MultiLightShadowTest, ShadowIntensityPerLight_ReferenceImage)
 	// -------------------------------------------------------------------
 	// Load scene (2 lights by default)
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily);
 	ASSERT_EQ(shadowRes.lightUIDs.size(), 3u) << "Expected 3 shadow-casting lights";
 
@@ -740,7 +740,7 @@ TEST_F(MultiLightShadowTest, SunLights_HDRColorReference)
 	// -------------------------------------------------------------------
 	// Step 1: Load multi-shadow scene with SUNLIGHT (3 lights)
 	// -------------------------------------------------------------------
-	auto shadowRes = neurus::test::LoadMultiShadow(
+	auto shadowRes = neurus::test::LoadMultiShadow(m_resources,
 		*m_device, pd, *m_queue, m_graphicsQueueFamily,
 		3, LightType::SUNLIGHT);
 	ASSERT_EQ(shadowRes.scene->mesh_list.size(), 2u) << "Expected cube + plane (2 meshes)";

@@ -7,7 +7,7 @@
  */
 
 #include <cereal/archives/json.hpp>
-#include <cereal/types/polymorphic.hpp>
+#include "asset/ResourceType.hpp"
 
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
@@ -15,9 +15,9 @@
 #include "core/UID.hpp"
 
 // --- Derived data-resource registration ---
-CEREAL_REGISTER_TYPE(neurus::MeshData)
-CEREAL_REGISTER_TYPE(neurus::ImageData)
-CEREAL_REGISTER_TYPE(neurus::RenderGraphData)
+NEURUS_REGISTER_RESOURCE_TYPE(MeshData, 0)
+NEURUS_REGISTER_RESOURCE_TYPE(ImageData, 0)
+NEURUS_REGISTER_RESOURCE_TYPE(RenderGraphData, 0)
 
 // --- Polymorphic relations (UID base -> data resource leaves) ---
 CEREAL_REGISTER_POLYMORPHIC_RELATION(neurus::UID, neurus::MeshData)

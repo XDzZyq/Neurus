@@ -27,6 +27,20 @@ the contracts below. Only Editor and its controllers mutate the scene.
 - **Scene** (`src/scene/`): Vulkan-free logical objects (Camera, Light, Mesh,
   Transform, overlays).
 
+## Stateful systems
+
+- Do not use singletons for stateful systems. The existing logging system
+  (`LogBuffer::instance()`) is the sole exception.
+- Give state an explicit owner and pass the relevant instance, context or
+  interface to its consumers. This applies to script contexts, resource pools,
+  caches and loading contexts. Do not use mutable globals or thread-local
+  state to supply an implicit current instance.
+- For resource loading, the
+  [resource input archive](../../src/asset/ResourceInputArchive.hpp) receives an
+  `IResourceLookup` reference from the pooled loader.
+  Each nested loader creates its own archive for the same pool. Serializable
+  types declare their `ResourceRef` fields and the archive supplies the lookup.
+
 ## Communication
 
 | Intent | Required interface | Who handles it |

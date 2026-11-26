@@ -13,15 +13,13 @@
 #pragma once
 
 #include <memory>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
-#include <cereal/types/memory.hpp>
-#include <cereal/types/unordered_map.hpp>
-
 #include "scene/ObjectID.hpp"
+#include "asset/ResourceRef.hpp"
 #include "core/Selections.hpp"
-#include "core/Serialize.hpp"
 
 #include "Camera.hpp"
 #include "DebugLine.hpp"
@@ -36,7 +34,6 @@ namespace neurus
 {
 
 class Scene;
-class ResourceManager;
 
 /**
  * @brief Snapshots a pointer-based selection set as absolute object UIDs.
@@ -74,12 +71,12 @@ public:
 	 * @tparam Object Scene object type (Camera, Mesh, Light, etc.)
 	 */
 	template<class Object>
-	using Resource = std::shared_ptr<Object>;
+	using Resource = ResourceRef<Object>;
 
 	/**
 	 * @brief Typed object pool indexed by unique object ID.
 	 *
-	 * Maps an object's UID to its shared_ptr, enabling O(1) lookup and removal.
+	 * Maps an object's UID to its pooled reference, enabling O(1) lookup and removal.
 	 *
 	 * @tparam Object Scene object type stored in this pool.
 	 */
@@ -120,110 +117,6 @@ public:
 
 	/** @brief Destroys the scene and all owned objects. */
 	~Scene();
-
-	/**
-	 * @brief Cereal serialization for scene ID references and selection state.
-	 * @tparam Archive Cereal archive type (input or output).
-	 * @param ar Archive to serialize to/from.
-	 * @note Scene owns no pooled objects: it serializes only typed ID lists
-	 *       (the ResourceManager pool owns and serializes the real objects),
-	 *       which ResolveReferences later restores into the pools.
-	 * @note Selection is persisted as object UIDs and restored after obj_list
-	 *       is rebuilt; legacy files without the block load with none.
-	 */
-	template<class Archive>
-	void serialize(Archive& ar)
-	{
-		if constexpr (Archive::is_saving::value)
-		{
-			// Save each typed pool as an ID list (objects live in the pool).
-			std::vector<int> camIds, meshIds, lightIds, spriteIds, dLineIds, dPointsIds, envIds;
-			for (const auto& [id, obj] : cam_list)     { (void)obj; camIds.push_back(id); }
-			for (const auto& [id, obj] : mesh_list)    { (void)obj; meshIds.push_back(id); }
-			for (const auto& [id, obj] : light_list)   { (void)obj; lightIds.push_back(id); }
-			for (const auto& [id, obj] : sprite_list)  { (void)obj; spriteIds.push_back(id); }
-			for (const auto& [id, obj] : dLine_list)   { (void)obj; dLineIds.push_back(id); }
-			for (const auto& [id, obj] : dPoints_list) { (void)obj; dPointsIds.push_back(id); }
-			for (const auto& [id, obj] : env_list)     { (void)obj; envIds.push_back(id); }
-			ar(CEREAL_NVP(camIds), CEREAL_NVP(meshIds), CEREAL_NVP(lightIds),
-			   CEREAL_NVP(spriteIds), CEREAL_NVP(dLineIds), CEREAL_NVP(dPointsIds),
-			   CEREAL_NVP(envIds));
-
-			// Persist selection as UIDs (pointers are not serializable).
-			std::vector<int> selectedUids;
-			int activeUid = 0;
-			SnapshotSelectionUids(selections, selectedUids, activeUid);
-			ar(CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid));
-
-			// DebugMesh arrived after the block above; it is written last and
-			// read back optionally so files predating it still load.
-			std::vector<int> dMeshIds;
-			for (const auto& [id, obj] : dMesh_list) { (void)obj; dMeshIds.push_back(id); }
-			ar(CEREAL_NVP(dMeshIds));
-
-			// Which scene camera the viewport looks through (0 = none is
-			// legal). Written even when stale; the load path re-validates it
-			// against cam_list.
-			int activeCamUid = m_activeCamUid;
-			ar(CEREAL_NVP(activeCamUid));
-		}
-		else
-		{
-			// Read ID lists into pending members; SceneComponent drives
-			// ResolveReferences() afterwards to fill the typed pools.
-			std::vector<int> camIds, meshIds, lightIds, spriteIds, dLineIds, dPointsIds, envIds;
-			if (!archive::OptionalBlock(ar,
-			        CEREAL_NVP(camIds), CEREAL_NVP(meshIds), CEREAL_NVP(lightIds),
-			        CEREAL_NVP(spriteIds), CEREAL_NVP(dLineIds), CEREAL_NVP(dPointsIds),
-			        CEREAL_NVP(envIds)))
-			{
-				// Legacy file (old full-pool format): degrade to an empty scene.
-				camIds.clear(); meshIds.clear(); lightIds.clear();
-				spriteIds.clear(); dLineIds.clear(); dPointsIds.clear(); envIds.clear();
-			}
-			m_pendingCamIds = std::move(camIds);
-			m_pendingMeshIds = std::move(meshIds);
-			m_pendingLightIds = std::move(lightIds);
-			m_pendingSpriteIds = std::move(spriteIds);
-			m_pendingDLineIds = std::move(dLineIds);
-			m_pendingDPointsIds = std::move(dPointsIds);
-			m_pendingEnvIds = std::move(envIds);
-
-			// Restore selection UIDs (missing block = legacy file -> no selection).
-			// Keys must match the save branch ("selectedUids"/"activeUid").
-			std::vector<int> selectedUids;
-			int activeUid = 0;
-			if (!archive::OptionalBlock(ar, CEREAL_NVP(selectedUids), CEREAL_NVP(activeUid)))
-			{
-				selectedUids.clear();
-				activeUid = 0;
-			}
-			m_pendingSelectedUids = std::move(selectedUids);
-			m_pendingActiveUid = activeUid;
-
-			// Optional trailing block (see the save branch): absent in files
-			// written before DebugMesh existed, which load with no debug meshes.
-			std::vector<int> dMeshIds;
-			if (!archive::OptionalBlock(ar, CEREAL_NVP(dMeshIds)))
-			{
-				dMeshIds.clear();
-			}
-			m_pendingDMeshIds = std::move(dMeshIds);
-
-			// Activated camera. Three states must stay distinguishable, so this
-			// reads the raw OptionalBlock rather than a defaulting helper:
-			//   >0  an explicit camera UID
-			//    0  explicitly "no scene camera activated"
-			//   -1  field absent -> file predates activation; ResolveReferences
-			//       migrates it once by activating the first camera it finds.
-			int activeCamUid = -1;
-			if (!archive::OptionalBlock(ar, CEREAL_NVP(activeCamUid)))
-			{
-				activeCamUid = -1;
-			}
-			m_pendingActiveCamUid = activeCamUid;
-		}
-	}
 
 	// -------------------------------------------------------------------
 	// Status tracking
@@ -267,20 +160,12 @@ public:
 	ResPool<DebugMesh>   dMesh_list;    ///< Debug wireframe-mesh primitives
 	ResPool<Environment> env_list;      ///< Environment objects (IBL)
 
-	/// Selection state. Persisted as UIDs by serialize() and resolved to
+	/// Selection state. Persisted as UIDs by project persistence and resolved to
 	/// pointers on load.
 	Selections<const ObjectID*> selections;
 
-	/**
-	 * @brief Resolves the pending ID references against the resource pool.
-	 *
-	 * Fills the typed pools from the ResourceManager (fetch by ID and cast),
-	 * rebuilds obj_list and restores the selection. Must run after the pool
-	 * has been deserialized (pool first, then Scene).
-	 *
-	 * @param resources The ResourceManager pool (transient parameter, never a member).
-	 */
-	void ResolveReferences(ResourceManager& resources);
+	/// Clears membership, selection and camera activation before replacing scene content.
+	void ClearObjects();
 
 	// -------------------------------------------------------------------
 	// Registration - store in both type-specific pool AND obj_list
@@ -323,6 +208,9 @@ public:
 	 *          GetActiveCamera(), which validates against cam_list.
 	 */
 	int ActiveCameraID() const { return m_activeCamUid; }
+
+	/// Restores the document UID, including stale references needed by undo.
+	void RestoreActiveCameraID(int uid) { m_activeCamUid = uid; }
 
 	/**
 	 * @brief Registers a mesh in the scene (mesh_list and obj_list).
@@ -510,46 +398,24 @@ private:
 	/// camera is removed — see ActiveCameraID().
 	int m_activeCamUid = 0;
 
-	// -------------------------------------------------------------------
-	// Pending ID references (populated by serialize(load), consumed by
-	// ResolveReferences).
-	// -------------------------------------------------------------------
-
-	std::vector<int> m_pendingCamIds;        ///< Pending camera UIDs (from project file)
-	std::vector<int> m_pendingMeshIds;       ///< Pending mesh UIDs
-	std::vector<int> m_pendingLightIds;      ///< Pending light UIDs
-	std::vector<int> m_pendingSpriteIds;     ///< Pending sprite UIDs
-	std::vector<int> m_pendingDLineIds;      ///< Pending debug-line UIDs
-	std::vector<int> m_pendingDPointsIds;    ///< Pending debug-point UIDs
-	std::vector<int> m_pendingDMeshIds;      ///< Pending debug-mesh UIDs
-	std::vector<int> m_pendingEnvIds;        ///< Pending environment UIDs
-	std::vector<int> m_pendingSelectedUids;  ///< Pending selection UIDs
-	int             m_pendingActiveUid = 0;  ///< Pending active-object UID
-	int             m_pendingActiveCamUid = -1; ///< Pending activated-camera UID (-1 = field absent)
-
-	/** @brief Clears all pending reference lists (legacy-file fallback). */
-	void ClearPendingReferences();
-
-	/**
-	 * @brief Rebuilds obj_list from all typed pools after deserialization.
-	 */
-	void RebuildObjList();
+	// Scene persistence needs the resource pool and is owned by SceneComponent.
+	using UID::serialize;
 
 	/**
 	 * @brief Registers an object in both its type-specific pool and the master obj_list.
 	 * @tparam T Object type (Camera, Mesh, Light, Sprite, DebugLine, DebugPoints).
 	 * @param obj Shared pointer to the object.
 	 * @param typePool Type-specific pool to register in.
-	 * @note Stores an aliasing shared_ptr<ObjectID> in obj_list, sharing
-	 *       ownership with the typed shared_ptr.
+	 * @note The typed and master maps refer to the same pooled object.
 	 */
 	template<typename T>
 	void RegisterObject(Resource<T> obj, ResPool<T>& typePool)
 	{
-		auto* basePtr = static_cast<ObjectID*>(obj.get());
-		int id = basePtr->GetObjectID();
-		typePool[id] = obj;
-		obj_list[id] = Resource<ObjectID>(obj, basePtr);
+		if (!obj)
+			throw std::invalid_argument("Scene membership requires a live object");
+		const int id = obj.id();
+		obj_list[id] = obj.shared();
+		typePool[id] = std::move(obj);
 	}
 };
 

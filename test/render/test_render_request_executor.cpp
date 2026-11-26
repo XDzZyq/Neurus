@@ -130,7 +130,7 @@ protected:
 	// Editor's create-shader flow runs. Mirrors GeometryPipelineWarmTest.
 	std::shared_ptr<RenderShader> MakeShader(const char* name)
 	{
-		auto shader = std::make_shared<RenderShader>(
+		auto shader = m_resources.Load<RenderShader>(
 			name,
 			ResolveAssetPath("res/shaders/render/gbuffer.vert.glsl"),
 			ResolveAssetPath("res/shaders/render/gbuffer.frag.glsl"));

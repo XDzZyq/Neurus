@@ -26,7 +26,7 @@
 #include "editor/controllers/CameraController.hpp"
 #include "editor/events/CameraEvents.hpp"
 #include "editor/operations/OperationManager.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Scene.hpp"
 #include "core/RenderConfig.hpp"

@@ -71,20 +71,20 @@ A scene containing zero cameras is a legal document, and deleting the last camer
 
 ## Display names
 
-`o_name` is the display name shown by the editor UI. Name uniqueness, suffixing and lookup are owned by the `ResourceManager` name registry, not by the scene: see [Resource names](../core/uid-and-resources.md#resource-names). Registering or removing a scene object only updates the typed pools and `obj_list`.
+`o_name` is the display name shown by the editor UI. Name uniqueness, suffixing and lookup are owned by the `ResourceManager` name registry, not by the scene: see [Resource names](../core/uid-and-resources.md#resource-names). Adding or removing a scene member updates the typed maps and `obj_list`. The resource manager retains removed scene objects under the same UID for save and undo.
 
 ## Pooled data references
 
-Scene objects never hold file paths. They reference pooled data resources through integer IDs, which the loader re-wires after deserialization:
+Scene objects reference pooled resources. The project stores those references as integer UIDs.
 
-- `Mesh` - `o_meshDataId` (pooled `MeshData`) and `o_shaderId` (pooled `Shader` / `RenderShader`); `o_mesh` and `o_shader` are the live pointers.
-- `Environment` - `o_imageDataId` (pooled `ImageData`); `o_equirectData` is the live pointer.
-- `DebugMesh` - `o_meshDataId` (pooled `MeshData`); `o_mesh` is the live pointer.
+- `Mesh` holds its geometry in `o_mesh` and saves its UID as `o_meshDataId`. Its shader field, `o_shader`, is a typed `ResourceRef`. Assigning a shader also determines the value of the project key `o_shaderId`. An empty shader reference selects the default pass shader.
+- `Environment` stores its image reference as `o_imageDataId`. `GetEquirectData()` returns the shared image.
+- `DebugMesh` stores its geometry reference as `m_meshDataId`. Mesh geometry and environment image references retain a missing target's UID across saves.
 
-A zero id is an already-handled, reported state, so an absent id costs that object its data and nothing else in the pool. `Scene::ResolveReferences` / `ResolveDataReferences` restore the pointers on load; see [Project Serialization](../asset/project-serialization.md) and [Data Resources](../asset/data-resources.md).
+A zero id is an already-handled, reported state, so an absent id costs that object its data and nothing else in the pool. The project readers resolve pointers when each resource is materialized; see [Project Serialization](../asset/project-serialization.md) and [Data Resources](../asset/data-resources.md).
 
 ## Serialization and registration
 
-Each scene object serializes its `ObjectID` base and its `Transform3D` base (under the `"transform"` node) directly, then reads its own value fields with `archive::Optional`. Scene types are registered with cereal in `scene/registrations/TypeRegistration.cpp`, both as `CEREAL_REGISTER_TYPE`s and as polymorphic relations from `UID` and `ObjectID`, which is what lets the pool serialize them through a base pointer. See [Serialization](../core/serialization.md).
+Each scene object serializes its `ObjectID` base and its `Transform3D` base (under the `"transform"` node) directly, then reads its own value fields with `archive::Optional`. Scene types are registered with cereal in `scene/registrations/TypeRegistration.cpp`, both as `CEREAL_REGISTER_TYPE`s and as polymorphic relations from `UID` and `ObjectID`, alongside typed factories for restoring pool entries. See [Serialization](../core/serialization.md).
 
-Legacy project files that use the pre-`m_scene` full-pool format fail to read the ID lists and degrade to an empty scene, with a default-camera fallback.
+Legacy project files that use the pre-`m_scene` full-pool format have no `m_resources` node and are refused at open instead of degrading to an empty scene.

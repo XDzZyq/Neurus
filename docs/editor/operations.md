@@ -80,7 +80,7 @@ label is the same in the undo list, the redo list and after a save/reload. See a
   selection appends to undo without discarding a pending redo, which is safe
   because ops are absolute. Selection is scene-level SET state, so it replays via
   the absolute `SelectionChanged` event + `Selections::RestoreState`. The live
-  selection is also persisted independently of history by `Scene::serialize` (as
+  selection is also persisted independently of history by `SceneComponent` (as
   UIDs), so a reopened project restores its selection even with an empty
   undo/redo history.
 - `SetActiveCameraOp` (`SceneOperations.hpp`) makes "look through this camera"
@@ -94,7 +94,7 @@ label is the same in the undo list, the redo list and after a save/reload. See a
   real edit that branches history, unlike selection. The handler records it only
   when the value actually changed, so a checkbox toggled to the state it already
   holds is not an undo entry. The activation UID itself is persisted independently
-  of history by `Scene::serialize`, so a reopened project looks through the camera
+  of history by `SceneComponent`, so a reopened project looks through the camera
   it was saved with even with an empty undo stack.
 - `CompositeOp` (in `Operation.hpp`, a general-purpose core op) composes any
   sequence of `Operation`s into one undo entry. Group-theoretic inverse: it replays
@@ -204,7 +204,7 @@ duplicate pooled shader). Compile stays non-undoable.
 ## Persisting the history stacks
 
 The undo/redo stacks are saved into the project file via `HistoryComponent`
-(`src/editor/project/HistoryComponent.hpp/cpp`), a `project::Serializable` adapter
+(`src/editor/components/HistoryComponent.hpp/cpp`), a `project::Serializable` adapter
 keyed `"m_history"` that wraps `OperationManager`. `Save` writes the `undo`/`redo`
 vectors of `std::unique_ptr<Operation>`; `Load` decodes them and calls
 `OperationManager::RestoreHistory`. `Application::BuildProject` registers it last,

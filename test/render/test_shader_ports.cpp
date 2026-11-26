@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "asset/data/render_graph/PassKinds.hpp"
-#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "shader/ComputeShader.hpp"
 #include "shader/RenderShader.hpp"
 #include "shader/ShaderLibrary.hpp"
@@ -34,7 +34,7 @@ std::unique_ptr<neurus::ComputeShader> LoadCompute(const char* name, const char*
 	return shader;
 }
 
-neurus::PassPorts Ports(const neurus::ShaderData& shader)
+neurus::CPUPorts Ports(const neurus::ShaderData& shader)
 {
 	const std::array<const neurus::ShaderData*, 1> shaders = {&shader};
 	return neurus::ExtractPassPorts(shader.GetName(), shaders);
@@ -136,6 +136,6 @@ TEST(ShaderPorts, PortRenameBreaksEdge)
 		output.name = "renamed_" + output.name;
 
 	const auto ports = Ports(*shader);
-	for (const neurus::PassPort& port : ports.ports)
+	for (const neurus::CPUPort& port : ports.ports)
 		EXPECT_EQ(port.name.rfind("renamed_", 0), 0u) << port.name;
 }

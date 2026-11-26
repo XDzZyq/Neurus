@@ -21,11 +21,14 @@
 #include "render/SharedQueue.hpp"
 #include "render/UploadManager.hpp"
 #include "render/passes/GeometryPass.hpp"
+#include "asset/ResourceManager.hpp"
+#include "asset/data/render_graph/PortSource.hpp"
 #include "scene/Camera.hpp"
 #include "render_api/RenderContext.hpp"
 #include "render/render_graph/PassBindings.hpp"
 #include "render/render_graph/PassResources.hpp"
 #include "scene/Scene.hpp"
+#include "shader/BuiltInRenderData.hpp"
 
 #include <array>
 #include <cstdint>
@@ -37,6 +40,34 @@
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
+
+namespace neurus::test {
+
+/**
+ * @brief Builds the image bindings for one standalone pass in a test.
+ *
+ * Mirrors the graph's binding rules from the pass's declared ports, so a direct
+ * pass test writes the same descriptors production writes.
+ *
+ * @param ports  Ports the pass declares.
+ * @param pass   Pass whose SelfManagedBindings() applies.
+ */
+inline std::vector<neurus::GraphImageBinding> BuildTestImageBindings(
+	const neurus::CPUPorts& ports, const neurus::Pass& pass)
+{
+	std::vector<neurus::GraphImageBinding> bindings;
+	const auto selfManaged = pass.SelfManagedBindings();
+	for (const auto& input : ports.Inputs())
+		if (neurus::IsSamplerPortType(input.type))
+			neurus::AppendImageBinding(bindings, input.name, input.direction, input.type,
+			                           input.binding, selfManaged);
+	for (const auto& output : ports.Outputs())
+		neurus::AppendImageBinding(bindings, output.name, output.direction, output.type,
+		                           output.binding, selfManaged);
+	return bindings;
+}
+
+} // namespace neurus::test
 
 // ---------------------------------------------------------------------------
 // Test vertex structure (matches BufferLayout: pos(3) + normal(3) + uv(2))
@@ -114,7 +145,7 @@ protected:
 	 * @param width  Render target width (for aspect ratio).
 	 * @param height Render target height (for aspect ratio).
 	 */
-	static neurus::CameraUBOData MakeTestCamera(uint32_t width, uint32_t height);
+	neurus::CameraUBOData MakeTestCamera(uint32_t width, uint32_t height);
 
 	/**
 	 * @brief Creates a test Camera object with 60° FOV, positioned at (0,-2,0)
@@ -123,7 +154,7 @@ protected:
 	 * @param height Render target height (for aspect ratio).
 	 * @return Non-null shared_ptr to a configured Camera.
 	 */
-	static std::shared_ptr<neurus::Camera> CreateTestCamera(uint32_t width, uint32_t height);
+	std::shared_ptr<neurus::Camera> CreateTestCamera(uint32_t width, uint32_t height);
 
 	/**
 	 * @brief Creates a test triangle in the XY plane facing +Z.
@@ -336,10 +367,14 @@ protected:
 		resources.SetInput("U_ShadowArray", &intensity);
 		resources.SetOutput("outputShadow", &intensity);
 
-		const std::vector<const neurus::ShaderGPU*> shaders = pass.GetShaders();
-		const neurus::PassPorts ports = neurus::CollectUploadedPassPorts(pass.GetIO().name, shaders);
+		// The built-in catalog already derives the pass's ports from its shaders.
+		// Overlay-only passes are absent; they carry no ports and write no bindings.
+		static const neurus::BuiltInRenderData catalog;
+		static const neurus::CPUPorts noPorts;
+		const neurus::CPUPorts* declared = catalog.Ports().FindPassPorts(pass.GetIO().name);
+		const neurus::CPUPorts& ports = declared ? *declared : noPorts;
 		const std::vector<neurus::GraphImageBinding> bindings =
-			neurus::BuildImageBindings(ports, pass);
+			neurus::test::BuildTestImageBindings(ports, pass);
 		neurus::WritePassBindings(pass, cache, ctx, resources, bindings);
 
 		const neurus::PassFrame frame{cache, ctx, std::move(resources), ctx.frameIndex};
@@ -428,6 +463,8 @@ protected:
 	vk::raii::PhysicalDevices m_physicalDevices = nullptr;
 	uint32_t m_selectedPdIndex = 0;
 	std::unique_ptr<vk::raii::Device> m_device;
+	// Pooled materials may own texture samplers. Release them before the device.
+	neurus::ResourceManager m_resources;
 	uint32_t m_graphicsQueueFamily = 0;
 
 	/**

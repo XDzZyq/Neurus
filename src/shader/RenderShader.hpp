@@ -85,8 +85,8 @@ public:
 	/**
 	 * @brief Cereal serialization - base content + both source paths.
 	 *
-	 * On load, a restored stage with code keeps it; a legacy path-only shader
-	 * reloads from disk. CompileToSpv() then rebuilds the runtime SPIR-V, so
+	 * Source-backed stages with empty code reload from their paths.
+	 * CompileToSpv() then rebuilds the runtime SPIR-V, so
 	 * pipelines are ready immediately after a project load.
 	 *
 	 * @tparam Archive Cereal archive type (input or output).
@@ -97,14 +97,10 @@ public:
 	{
 		ar(cereal::base_class<ShaderData>(this),
 		   cereal::make_nvp("m_vertPath", sh_vertPath),
-		   cereal::make_nvp("m_fragPath", sh_fragPath));
-		if constexpr (Archive::is_saving::value)
+		   cereal::make_nvp("m_fragPath", sh_fragPath),
+		   cereal::make_nvp("stages", sh_stages));
+		if constexpr (Archive::is_loading::value)
 		{
-			SerializeStages(ar);
-		}
-		else
-		{
-			DeserializeStages(ar);
 			const bool hasContent =
 				!sh_stages[ShaderType::VERTEX].code.empty() ||
 				!sh_stages[ShaderType::FRAGMENT].code.empty();

@@ -38,21 +38,26 @@ not overwrite editable/generated stage code or trigger compilation. Shader tooli
 consumes source text; existing file-loading convenience methods remain
 compatibility facades that delegate IO to Asset.
 
-Authoring graph nodes own pooled shaders through `shared_ptr<const ShaderData>`;
-the Editor retains mutable access to the originals. Publication clones topology
-and shares those references. The render thread reads only their stable shader
-UIDs, never mutable source, parsed IR, bytecode or version fields. Ordinary UID
+Authoring graph nodes own pooled shaders through `PassShaderRef`;
+the Editor retains mutable access to the originals. Publication builds an owned
+clone and records each selection as a plain `PublishedShader {uid, version}`
+value before clearing the clone's references. The render thread never reads
+mutable source, parsed IR, bytecode or the pooled objects; it resolves the plain
+identities against the GPU cache. Ordinary UID
 copy/move stays deleted; no shader data clones or secondary identities are needed.
 
 `MakeUploadShaderRequest` copies shader identity, stage SPIR-V and the metadata
-needed to reflect Vulkan descriptors and push constants. It also derives owned
-image ports with the Vulkan-free `ExtractPassPorts`, which `BuiltInRenderData`
-uses to build the default pass contracts. Uploads execute before
-`CompileRenderGraphRequest{graph}` in FIFO order. `UploadManager` constructs
-`ShaderGPU` with the uploaded ports, and `RenderCache` owns and indexes it. Passes
-consume cached GPU modules and own their pass-specific pipelines. The graph
-uploader checks custom shaders against the built-in contracts before mapping
-the runtime graph.
+needed to reflect Vulkan descriptors and push constants; it carries no ports.
+`BuiltInRenderData` and the CPU validator derive image ports with the Vulkan-free
+`ExtractPassPorts` to build the default pass contracts, and `ValidatePassShader`
+rejects a shader whose port roles, descriptor interface or push constants differ
+from the built-in. The Editor runs that CPU validation before publishing. Uploads
+execute before the compile request in FIFO order. `UploadManager` constructs
+`ShaderGPU` with the uploaded stages and reflection metadata, and `RenderCache`
+owns and indexes it. Passes consume cached GPU modules and own their pass-specific
+pipelines. The graph uploader then runs the GPU-only guard that the published
+version, type and stage set match the resident upload before mapping the runtime
+graph.
 
 A same-UID upload changes the GPU cache revision and refreshes dependent
 passes/graphs even when topology is unchanged. Resource references and frame
@@ -65,7 +70,7 @@ flowchart TD
     library["ShaderLibrary::LoadRenderShader(name, vertPath, fragPath)"]
     data["RenderShader : ShaderData<br/>UID + name + stages"]
     unit["ShaderUnit per stage<br/>path + code + parsed IR + SPIR-V + version"]
-    upload["MakeUploadShaderRequest<br/>owned SPIR-V + Vulkan reflection IR + image ports"]
+    upload["MakeUploadShaderRequest<br/>owned SPIR-V + Vulkan reflection IR"]
     gpu["UploadManager -> RenderCache<br/>ShaderGPU by UID + cache revision"]
     pipeline["Pass-specific pipelines<br/>consume cached GPU modules"]
 
@@ -123,8 +128,8 @@ Mesh startup and successful compilation use the same owned shader upload path.
 two source paths; `ComputeShader` adds its source path and default-uniform
 entries. SPIR-V and versions are runtime state and are rebuilt on load.
 
-A stage with restored code keeps it; a legacy path-only shader (no `stages`
-key) re-parses from disk. Pooled shader names are re-seeded after a project
+The project stores a required `stages` map. A source-backed shader whose
+saved stages have empty code re-parses its files. Pooled shader names are re-seeded after a project
 load, so `neurus.data.shaders["Name"]` still resolves.
 
 ApplicationCore force-links Shader module registration before project loading.
@@ -141,8 +146,9 @@ The renderer applies the same interface requirements to uploaded stage data
 before creating dependent GPU pipelines.
 
 `BuiltInRenderData` uses `ShaderLibrary` to load and compile the recipes in
-`PassKinds`, then owns the results directly by recipe name. It builds the port
-catalog from those shaders and uses the catalog to construct the fallback graph.
+`PassKinds`. Its private resource pool owns the compiled shaders and fallback
+graph, giving them stable UIDs for the lifetime of the catalog. Recipe names
+select those shaders independently of project resources.
 Default and custom scene passes get their GPU shader modules from `RenderCache`.
 Pass reuse depends on the selected shader UID and GPU cache revision. Scene
 replacement invalidates project shader and pipeline cache entries because

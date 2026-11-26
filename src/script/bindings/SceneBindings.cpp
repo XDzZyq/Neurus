@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -71,7 +70,7 @@ namespace
 template <typename Proxy, typename T>
 struct SceneCollection
 {
-	using Pool = std::unordered_map<int, std::shared_ptr<T>>;
+	using Pool = Scene::ResPool<T>;
 
 	const ScriptView* view = nullptr;  ///< Constructing run's view.
 	Pool Scene::*     pool = nullptr;  ///< Scene pool this collection reads.

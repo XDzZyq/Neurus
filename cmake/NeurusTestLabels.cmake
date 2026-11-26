@@ -11,9 +11,9 @@ endfunction()
 # Suite defaults, shared by the full and CPU-only executables.
 neurus_test_labels(Application Medium AppArgs PreferencesTest)
 neurus_test_labels(Application High SessionCommand VulkanContextTest)
-neurus_test_labels(Asset Medium ImageDataTest MeshDataTest PassPorts ShaderDataSourceTest
+neurus_test_labels(Asset Medium ImageDataTest MeshDataTest CPUPorts ShaderDataSourceTest
 	UIComponentRoundtrip)
-neurus_test_labels(Asset High CpuGraphValidation DefaultProject GraphComponent
+neurus_test_labels(Asset High CPUGraphValidation DefaultProject GraphComponent
 	RenderGraphData RenderGraphDocument SerializeOptional ShaderDataPersistence
 	ShaderInterface)
 neurus_test_labels(Asset Critical ProjectRoundtrip)
@@ -80,7 +80,7 @@ neurus_test_labels(Application Medium
 neurus_test_labels(Asset Critical
 	GraphComponent.CorruptFirstGraphDoesNotDiscardSiblingResources
 	SerializeOptional.ShippedProjectResavesWithEveryOldKey
-	ShaderDataPersistence.MalformedShaderEntryDoesNotDiscardOtherProjectResources
+	ShaderDataPersistence.MalformedShaderEntryFailsTheProjectOpen
 	ShaderDataPersistence.SavingLiveCompileFailurePreservesEditableSource)
 neurus_test_labels(Core Critical ResourceManagerTest.PoolSaveLoadRoundtrip)
 neurus_test_labels(Editor Critical
@@ -97,6 +97,7 @@ neurus_test_labels(Renderer Critical
 	RenderRequestExecutorTest.HeldEnvironmentTable_KeepsTheReplacedEnvironmentAlive
 	RenderThreadTest.AnExceptionInDrawFrameEndsTheLoopAndBreaksPendingPromises
 	RenderThreadTest.ControlsNeverRunWhileAFrameIsBeingDrawn)
+neurus_test_labels(Script High ScriptBindings.PoolCollectionsListDeferredRecords)
 neurus_test_labels(Shader High ShaderParserTest.GenerateShader_Idempotent_AllFiles)
 
 foreach(test_name IN LISTS neurus_test_TESTS neurus_cpu_test_TESTS)

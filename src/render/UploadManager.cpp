@@ -5,7 +5,7 @@
 
 #include "UploadManager.hpp"
 #include "resources/ShaderGPU.hpp"
-#include "shader/ShaderInterface.hpp"
+#include "asset/data/shader/ShaderInterface.hpp"
 #include "render_api/RenderRequests.hpp"
 
 #include "Image.hpp"
@@ -358,7 +358,7 @@ LightGPU UploadManager::UploadLight(int uid, LightType type)
 // ---------------------------------------------------------------------------
 
 std::unordered_map<int, std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>>
-UploadManager::UploadLighting(const std::unordered_map<int, std::shared_ptr<Light>>& lights)
+UploadManager::UploadLighting(const std::unordered_map<int, ResourceRef<Light>>& lights)
 {
 	std::unordered_map<int, std::variant<PointLightStruct, SunLightStruct, SpotLightStruct>> result;
 

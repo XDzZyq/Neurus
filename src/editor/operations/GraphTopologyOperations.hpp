@@ -121,14 +121,15 @@ class SetGraphShaderOp : public GraphOperation
 {
 public:
 	SetGraphShaderOp() = default;
-	SetGraphShaderOp(int uid, std::string node, int before, int after)
-		: m_uid(uid), m_node(std::move(node)), m_before(before), m_after(after) {}
+	SetGraphShaderOp(int uid, std::string node, int before, int after, bool created = false)
+		: m_uid(uid), m_node(std::move(node)), m_before(before), m_after(after), m_created(created) {}
 
 	void Apply(OperationContext& ctx) override { ctx.events.Emit(GraphNodeShaderChanged{m_uid, m_node, m_after}); }
 	std::unique_ptr<Operation> Inverse() const override
 	{
 		return std::make_unique<SetGraphShaderOp>(m_uid, m_node, m_after, m_before);
 	}
+	std::optional<int> CreatedResource() const override { return m_created ? std::optional{m_after} : std::nullopt; }
 	std::string Label() const override { return "Set Graph Node Shader"; }
 	template<class Archive> void serialize(Archive& ar)
 	{
@@ -139,6 +140,7 @@ private:
 	int m_uid = 0;
 	std::string m_node;
 	int m_before = 0, m_after = 0;
+	bool m_created = false; // Only used while this edit is uncommitted.
 };
 
 } // namespace neurus

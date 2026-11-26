@@ -12,7 +12,7 @@
 #include "../Pipeline.hpp"
 #include "../RenderCache.hpp"
 #include "render_api/RenderContext.hpp"
-#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "render_graph/PassResources.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -211,7 +211,7 @@ public:
 	 */
 	virtual PassIO GetIO() const { return {}; }
 
-	/** @brief Uploaded shaders used to assemble ports when adding a standalone pass. */
+	/** @brief Uploaded shaders; the legacy single-argument AddPass rejects a non-empty set. */
 	virtual std::vector<const ShaderGPU*> GetShaders() const { return {}; }
 
 	// --- Pass type queries ---

@@ -5,7 +5,7 @@
 #pragma once
 
 #include "asset/data/render_graph/GraphEndpoint.hpp"
-#include "asset/data/render_graph/PassPorts.hpp"
+#include "asset/data/render_graph/CPUPorts.hpp"
 #include "asset/data/render_graph/RenderGraphRecord.hpp"
 #include "core/Graph.hpp"
 #include "core/UID.hpp"
@@ -30,25 +30,6 @@ class IPortSource;
 class ShaderData;
 
 /**
- * @brief Socket payload of the CPU graph: one shader port.
- *
- * Mirrors @ref PassPort, plus the resource declaration an output owns. The
- * declaration is user data: a shader names a GLSL type, never an image format.
- * An input never carries one; @c tag is only meaningful for an output.
- */
-struct CpuPort
-{
-	std::string    name;
-	PortDirection  direction = PortDirection::Input;
-	std::string    type;          ///< "sampler2D", "image2D", "vec4", "uint"
-	uint32_t       binding = 0;   ///< set-0 binding; 0 for a fragment output
-	uint32_t       location = 0;  ///< fragment output location; 0 otherwise
-	std::optional<GraphOutputTag> tag;   ///< outputs only
-
-	bool operator==(const CpuPort&) const = default;
-};
-
-/**
  * @brief Node payload of the CPU graph: one pass instance plus its editor state.
  *
  * The node's document id is `Graph::Node::name`, which the graph editor and the
@@ -56,28 +37,25 @@ struct CpuPort
  * selected CPU shader (null selects the built-in), and the position is layout that
  * the renderer never reads.
  */
-struct CpuNode
+struct CPUNode
 {
 	std::string pass;
-	std::shared_ptr<const ShaderData> shader;
+	PassShaderRef shader;
 	float       x = 0.0f;
 	float       y = 0.0f;
 
-	bool operator==(const CpuNode&) const = default;
+	bool operator==(const CPUNode&) const = default;
 };
 
-class IPassShaderCatalog;
-
 /** @brief CPU scene graph for editing, persistence and renderer publication. */
-class RenderGraphData : public UID, public Graph<CpuPort, CpuNode>
+class RenderGraphData : public UID, public Graph<CPUPort, CPUNode>
 {
 public:
-	using GraphT = Graph<CpuPort, CpuNode>;
+	using GraphT = Graph<CPUPort, CPUNode>;
 
 	RenderGraphData() = default;
 	/// Builds the built-in scene graph from the declared pass ports.
 	explicit RenderGraphData(const IPortSource& ports);
-	explicit RenderGraphData(project::RenderGraphRecord record);
 
 	RenderGraphData(const RenderGraphData&) = delete;
 	RenderGraphData& operator=(const RenderGraphData&) = delete;
@@ -92,7 +70,6 @@ public:
 
 	std::map<std::string, GraphEndpoint> sceneOutputs;
 	std::set<std::string> ActiveNodes() const;
-	void InferLegacyOutputs();
 
 	/**
 	 * @brief Stable hash of the topology-affecting content.
@@ -103,21 +80,19 @@ public:
 	 */
 	std::uint64_t Hash() const;
 
-	/// Restores sockets and shader references once the entire pool is available.
-	bool Resolve(const IPassShaderCatalog& catalog, const IResourceLookup& resources,
-	             std::vector<std::string>& diagnostics);
-
 	template<class Archive>
 	void serialize(Archive& ar)
 	{
 		ar(cereal::base_class<UID>(this));
 		if constexpr (Archive::is_loading::value)
 		{
-			ar(cereal::make_nvp("topology", m_pending.emplace()));
-		}
-		else if (m_pending)
-		{
-			ar(cereal::make_nvp("topology", *m_pending));
+			project::RenderGraphRecord record;
+			ar(cereal::make_nvp("topology", record));
+			const auto* input = dynamic_cast<const ResourceInputArchive*>(&ar);
+			if (!input)
+				throw cereal::Exception("Reading a render graph requires a resource pool");
+			if (!project::RestoreGraph(*this, record, input->Pool()))
+				throw cereal::Exception("Could not restore render graph topology");
 		}
 		else
 		{
@@ -125,13 +100,11 @@ public:
 		}
 	}
 
-private:
-	std::optional<project::RenderGraphRecord> m_pending;
 };
 
 std::optional<GraphOutputTag> BuiltInOutputTag(std::string_view kind, std::string_view port);
-PassPorts EffectivePassPorts(const CpuNode& node, const IPortSource& catalog);
-PassPorts WithShaderPortNames(const PassPorts& builtin, const PassPorts& shaderPorts);
-void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const PassPorts& ports);
+CPUPorts EffectivePassPorts(const CPUNode& node, const IPortSource& catalog);
+CPUPorts WithShaderPortNames(const CPUPorts& builtin, const CPUPorts& shaderPorts);
+void ReconcilePassPorts(RenderGraphData& graph, RenderGraphData::NodeType& node, const CPUPorts& ports);
 
 } // namespace neurus

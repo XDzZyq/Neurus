@@ -49,18 +49,18 @@ TEST(BuiltInRenderDataTest, PortsComeFromTheShaders)
 	const BuiltInRenderData defaults;
 	const IPortSource& catalog = defaults.Ports();
 
-	const PassPorts* geometry = catalog.FindPassPorts("GeometryPass");
+	const CPUPorts* geometry = catalog.FindPassPorts("GeometryPass");
 	ASSERT_NE(geometry, nullptr);
 	EXPECT_EQ(geometry->Outputs().size(), 6u);  // five fragment outputs + depth
 	EXPECT_TRUE(geometry->Inputs().empty());
 	ASSERT_NE(geometry->Find("depth", PortDirection::Output), nullptr);
 
-	const PassPorts* ssao = catalog.FindPassPorts("SSAOPass");
+	const CPUPorts* ssao = catalog.FindPassPorts("SSAOPass");
 	ASSERT_NE(ssao, nullptr);
 	EXPECT_EQ(ssao->Inputs().size(), 3u);
 	EXPECT_EQ(ssao->Outputs().size(), 1u);
 
-	const PassPorts* lighting = catalog.FindPassPorts("LightingPass");
+	const CPUPorts* lighting = catalog.FindPassPorts("LightingPass");
 	ASSERT_NE(lighting, nullptr);
 	EXPECT_EQ(lighting->Inputs().size(), 8u);
 	EXPECT_EQ(lighting->Outputs().size(), 1u);
@@ -70,12 +70,12 @@ TEST(BuiltInRenderDataTest, PortsComeFromTheShaders)
 	EXPECT_EQ(externals[0], "U_Irradiance");
 	EXPECT_EQ(externals[1], "U_Prefiltered");
 
-	const PassPorts* shadowIntensity = catalog.FindPassPorts("ShadowIntensityPass");
+	const CPUPorts* shadowIntensity = catalog.FindPassPorts("ShadowIntensityPass");
 	ASSERT_NE(shadowIntensity, nullptr);
 	EXPECT_EQ(shadowIntensity->Inputs().size(), 3u);
 	EXPECT_EQ(shadowIntensity->Outputs().size(), 1u);
 
-	const PassPorts* shadowDepth = catalog.FindPassPorts("ShadowDepthPass");
+	const CPUPorts* shadowDepth = catalog.FindPassPorts("ShadowDepthPass");
 	ASSERT_NE(shadowDepth, nullptr);
 	EXPECT_EQ(shadowDepth->Outputs().size(), 1u);
 	EXPECT_EQ(shadowDepth->Outputs()[0].name, "shadow_depth");
@@ -88,8 +88,9 @@ TEST_F(PassFactoryTest, CustomNodeInstancesCacheOnlyWhileOwned)
 	const auto defaults = std::make_shared<const BuiltInRenderData>();
 	RenderCache cache(*m_device, PhysicalDevice(), defaults);
 	PassFactory factory(*m_device, PhysicalDevice(), 2, *m_queue, m_graphicsQueueFamily, cache);
-	auto shader = neurus::ShaderLibrary::LoadComputeShader("custom compose", "res/shaders/compute/compose.comp.glsl");
+	std::shared_ptr<neurus::ComputeShader> shader = neurus::ShaderLibrary::LoadComputeShader("custom compose", "res/shaders/compute/compose.comp.glsl");
 	ASSERT_NE(shader, nullptr);
+	m_resources.Register(shader);
 	ASSERT_TRUE(shader->CompileToSpv());
 	const int shaderId = shader->GetObjectID();
 	// UID zero is valid; absence is represented by nullopt.

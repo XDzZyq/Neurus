@@ -19,12 +19,11 @@
 
 #include "asset/Project.hpp"
 #include "asset/components/SceneComponent.hpp"
-#include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
 #include "asset/data/ImageData.hpp"
 #include "asset/data/MeshData.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/Environment.hpp"
@@ -65,11 +64,10 @@ static std::string DefaultProjectPath()
  *                  ID references against it).
  * @return Initialised project::Project ready for Load().
  */
-static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources,
-                                    const BuiltInRenderData& catalog)
+static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>& config, ResourceManager& resources)
 {
 	project::Project p;
-	p.Register<project::ResourceComponent>(resources, catalog);
+	p.Register<project::ResourceComponent>(resources);
 	p.Register<project::SceneComponent>(scene, resources);
 	p.Register<project::ConfigComponent>(config);
 	return p;
@@ -77,11 +75,10 @@ static project::Project MakeProject(Scene& scene, std::shared_ptr<RenderConfig>&
 
 TEST(DefaultProject, LoadsExpectedSceneAndResources)
 {
-	const neurus::BuiltInRenderData catalog;
 	Scene scene;
 	auto config = std::make_shared<RenderConfig>();
 	ResourceManager resources;
-	auto project = MakeProject(scene, config, resources, catalog);
+	auto project = MakeProject(scene, config, resources);
 	ASSERT_NO_THROW(project.Load(DefaultProjectPath()));
 
 	ASSERT_GE(scene.cam_list.size(), 1u);
@@ -97,9 +94,9 @@ TEST(DefaultProject, LoadsExpectedSceneAndResources)
 	ASSERT_NE(mesh, nullptr);
 	EXPECT_EQ(mesh->o_type, ObjectID::GOType::GO_MESH);
 	// Geometry is a pooled MeshData reference in the new format.
-	EXPECT_NE(mesh->o_meshDataId, 0);
-	ASSERT_NE(mesh->o_mesh, nullptr);
-	EXPECT_EQ(mesh->o_mesh->GetObjectID(), mesh->o_meshDataId);
+	EXPECT_NE(mesh->o_mesh.id(), 0);
+	ASSERT_NE(mesh->o_mesh.shared(), nullptr);
+	EXPECT_EQ(mesh->o_mesh->GetObjectID(), mesh->o_mesh.id());
 
 	ASSERT_GE(scene.light_list.size(), 1u);
 	auto* light = scene.light_list.begin()->second.get();
@@ -109,10 +106,12 @@ TEST(DefaultProject, LoadsExpectedSceneAndResources)
 
 	ASSERT_FALSE(scene.env_list.empty());
 	auto env = scene.env_list.begin()->second;
-	ASSERT_NE(env, nullptr);
+	ASSERT_TRUE(env);
 	// The Environment wraps the pooled ImageData; the path lives in the
 	// data layer (ImageData::GetPath), not on the scene object.
 	ASSERT_NE(env->GetEquirectData(), nullptr);
 	EXPECT_EQ(env->GetEquirectData()->GetPath(), "res/tex/hdr/room.hdr");
 	EXPECT_TRUE(env->GetEquirectData()->IsValid());
+
+	EXPECT_EQ(resources.NextId(), 125);
 }

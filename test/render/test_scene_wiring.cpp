@@ -211,17 +211,17 @@ protected:
 
 	std::shared_ptr<Mesh> CreateAndUploadTriangleMesh()
 	{
-		auto md = std::make_shared<MeshData>();
+		auto md = m_resources.Load<MeshData>();
 		EXPECT_TRUE(md->LoadObjFromString(kTriangleObj));
 
-		auto mesh = std::make_shared<Mesh>();
+		auto mesh = m_resources.Load<Mesh>();
 		mesh->o_mesh = md;
 		return mesh;
 	}
 
 	std::shared_ptr<Camera> CreateDefaultCamera()
 	{
-		auto cam = std::make_shared<Camera>();
+		auto cam = m_resources.Load<Camera>();
 		cam->SetPosition(glm::vec3(0.0f, -5.0f, 2.0f));
 		cam->SetTarPos(glm::vec3(0.0f, 0.0f, 0.0f));
 		cam->ChangeCamRatio(static_cast<float>(kRenderWidth), static_cast<float>(kRenderHeight));
@@ -315,7 +315,7 @@ TEST_F(SceneWiringTest, DrawFrame_SceneWithCameraAndMesh_RendersFrame)
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
 
-	auto light = std::make_shared<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
+	auto light = m_resources.Load<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 
@@ -351,7 +351,7 @@ TEST_F(SceneWiringTest, ProfilingEnabled_PopulatesFrameProfile)
 	auto mesh = CreateAndUploadTriangleMesh();
 	ASSERT_NE(mesh, nullptr);
 	scene.UseMesh(mesh);
-	auto light = std::make_shared<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
+	auto light = m_resources.Load<Light>(LightType::POINTLIGHT, 30.0f, glm::vec3(1.0f));
 	light->SetPosition(glm::vec3(2.0f, 2.0f, 5.0f));
 	scene.UseLight(light);
 

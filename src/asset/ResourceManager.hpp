@@ -9,10 +9,9 @@
  *
  * Design:
  * - UID is the ONLY resource base - every pooled object derives from it and
- *   serializes itself (identity + own fields); no reload hook interface.
+ *   serializes its own fields; no reload hook interface.
  * - Load<T>(args...) constructs + registers in one step.
- * - Scene neither owns nor references the pool; it holds plain typed pools and
- *   resolves references against the pool via Scene::ResolveReferences.
+ * - Scene holds typed collections. SceneComponent resolves their members by UID.
  * - No UID object knows the ResourceManager and no UID object constructs
  *   another UID object internally - construction happens through Load<T>.
  * - The pool serializes the real objects (polymorphically); Scene serializes
@@ -26,6 +25,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -42,7 +42,10 @@
 #include <cereal/types/unordered_map.hpp>
 
 #include "core/IResourceLookup.hpp"
+#include "asset/ResourceRef.hpp"
 #include "core/UID.hpp"
+
+namespace cereal { class JSONOutputArchive; class JSONInputArchive; }
 
 namespace neurus
 {
@@ -69,7 +72,7 @@ public:
 	ResourceManager& operator=(const ResourceManager&) = delete;
 
 	/**
-	 * @brief Constructs a resource and registers it by its UID.
+	 * @brief Constructs a resource and assigns its UID through registration.
 	 *
 	 * When @p T exposes a public `o_name` (every scene object does, through
 	 * ObjectID), the constructor's default name is registered as the object's
@@ -91,14 +94,7 @@ public:
 		static_assert(std::is_base_of_v<UID, T>, "Load<T>: T must derive from UID");
 
 		auto resource = std::make_shared<T>(std::forward<Args>(args)...);
-		const int id = resource->GetObjectID();
-		// The copy stays alive for the naming step below; the map is the owner.
-		auto [it, inserted] = resources_.emplace(id, resource);
-		if (!inserted)
-		{
-			throw std::runtime_error("Resource UID already exists: " + std::to_string(id));
-		}
-		IndexType(it->second.get());
+		const int id = Register(resource);
 
 		// Registry-owned uniqueness, mirrored back so the Outliner, the project
 		// file and name lookups agree. Duck-typed on o_name to keep core free of
@@ -112,12 +108,48 @@ public:
 	}
 
 	/**
-	 * @brief Registers an already-constructed object (tests, legacy paths).
+	 * @brief Adopts an ephemeral object and assigns a fresh pool key.
 	 * @param obj Shared pointer to the UID object.
 	 * @return The registered object's UID.
 	 * @throws std::runtime_error if the UID is already registered.
 	 */
 	int Register(std::shared_ptr<UID> obj);
+
+	/// Next fresh key for this manager; indexing and RaiseNextId only raise it.
+	int NextId() const { return res_nextId; }
+
+	/**
+	 * @brief Raises this manager's allocator to at least @p next.
+	 *
+	 * Never lowers it, so a stale or duplicate value cannot hand out a key that
+	 * this manager already issued. Project persistence calls it after loading
+	 * `next_uid`, which keeps removed or rejected keys out of later allocations.
+	 *
+	 * @param next Candidate next key; must be positive.
+	 * @throws std::out_of_range if @p next is less than one.
+	 */
+	void RaiseNextId(int next);
+
+	/**
+	 * @brief Reserves a record key and exact type until Get first needs the object.
+	 * The factory returns an unpooled object of the registered type. Get attaches
+	 * membership before populate reads its fields and dependencies. Returning
+	 * false from populate rejects an archived record and releases its name and
+	 * type entries. An exception escaping either callback leaves it retryable.
+	 */
+	void RegisterDeferred(int id, std::type_index type, std::function<std::shared_ptr<UID>()> loader,
+	                      std::shared_ptr<const std::string> archivedRecord = {},
+	                      std::function<bool(UID&)> populate = {});
+
+	/// Registry name of a live or deferred resource, or an empty string for an unnamed UID.
+	std::string RegisteredName(int id) const;
+
+	/// Snapshot registered identities for project persistence without running their loaders.
+	std::vector<int> RegisteredIds() const;
+	std::shared_ptr<const std::string> ArchivedRecord(int id) const;
+
+	/// Returns a cached object without invoking a loader.
+	std::shared_ptr<UID> GetLive(int id) const;
 
 	// --- IResourceLookup ---
 
@@ -130,18 +162,12 @@ public:
 	 * @param id Resource UID.
 	 * @return Shared pointer to the UID base, or nullptr if absent.
 	 */
-	std::shared_ptr<UID> Get(int id) const override
-	{
-		auto it = resources_.find(id);
-		if (it == resources_.end())
-			return nullptr;
-		return it->second;
-	}
+	std::shared_ptr<UID> Get(int id) const override;
 
 	/**
 	 * @brief True if a resource with the given ID is registered.
 	 */
-	bool Contains(int id) const override { return resources_.count(id) != 0; }
+	bool Contains(int id) const override { return res_entries.contains(id); }
 
 	/**
 	 * @brief Looks up a resource by its registered name within one concrete type.
@@ -193,6 +219,32 @@ public:
 		const std::function<void(const std::shared_ptr<UID>&)>& fn) const override;
 
 	/**
+	 * @brief Visits live objects of type @p T without running any loader.
+	 *
+	 * Walks the registered keys in ascending order and visits every materialized
+	 * object that is a @p T or derives from it, so a deferred record stays
+	 * deferred and its loader never runs. The editor's ShaderCompiled handler
+	 * uses this so a deferred mesh is not loaded merely to warm a pipeline.
+	 *
+	 * @tparam T Type to visit (e.g. Mesh), or one of its bases.
+	 * @param fn Callback receiving each live matching shared_ptr (ascending key
+	 *           order).
+	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
+	 *       while it is being iterated invalidates the walk.
+	 */
+	template<class T>
+	void ForEachLive(const std::function<void(const std::shared_ptr<T>&)>& fn) const
+	{
+		static_assert(std::is_base_of_v<UID, T>, "ForEachLive<T>: T must derive from UID");
+
+		std::vector<int> ids = RegisteredIds();
+		std::sort(ids.begin(), ids.end());
+		for (int id : ids)
+			if (auto live = std::dynamic_pointer_cast<T>(GetLive(id)))
+				fn(live);
+	}
+
+	/**
 	 * @brief Removes a resource by ID.
 	 *
 	 * Frees the registered name and the per-type index entry with the object, so
@@ -204,43 +256,26 @@ public:
 
 	/**
 	 * @brief Drops every pooled object and its name/type indexes (project new/open).
+	 *
+	 * Keeps the allocator, so keys stay unique for this manager's lifetime even
+	 * after a clear.
 	 */
 	void Clear();
 
 	/**
 	 * @brief Number of pooled resources.
 	 */
-	size_t Size() const { return resources_.size(); }
+	size_t Size() const { return res_entries.size(); }
 
 	/**
 	 * @brief Cereal serialization of the whole pool.
 	 *
-	 * Save writes every pooled UID object polymorphically; load restores them,
-	 * and each object's own serialize(load) restores its content. Names and the
-	 * per-type index are derived state, never serialized: a load replaces the
-	 * pool, so it drops the old registry, rebuilds the type index from the
-	 * restored objects, and leaves names for the caller to re-seed.
+	 * Each record contains a UID key, the concrete resource type and its fields.
+	 * Saving retains deferred records. ResourceComponent indexes them on load.
 	 *
-	 * @tparam Archive Cereal archive type (input or output).
-	 * @param ar Archive to serialize to/from.
+	 * @param ar Output archive.
 	 */
-	template<class Archive>
-	void serialize(Archive& ar)
-	{
-		ar(CEREAL_NVP(resources_));
-		if constexpr (Archive::is_loading::value)
-		{
-			// Null references select runtime defaults; they are not pooled project
-			// objects and must not survive into a later save.
-			std::erase_if(resources_, [](const auto& entry) { return !entry.second; });
-			// Not derived state a rebuild can recover: names are only in the
-			// registry, so an old entry would survive its object and keep
-			// stealing the bare name from a later resource.
-			m_names.clear();
-			m_nameOf.clear();
-			RebuildTypeIndex();
-		}
-	}
+	void save(cereal::JSONOutputArchive& ar) const;
 
 private:
 	/// Reverse entry for one registered name: the object's dynamic type + name.
@@ -250,18 +285,36 @@ private:
 		std::string name;
 	};
 
+	// Main-thread-only lookup can reject a deferred record and remove it from
+	// every index. Even const pool lookups require exclusive access.
 	/// Per-type name -> UID registry, keyed by the object's dynamic type.
-	std::unordered_map<std::type_index, std::unordered_map<std::string, int>> m_names;
+	mutable std::unordered_map<std::type_index, std::unordered_map<std::string, int>> res_namesByType;
 
 	/// Reverse lookup: UID -> (dynamic type, registered name).
-	std::unordered_map<int, NameEntry> m_nameOf;
+	mutable std::unordered_map<int, NameEntry> res_nameById;
 
 	/// Per-type enumeration, so ForEach<Mesh> does not scan every UID object.
-	std::unordered_map<std::type_index, std::vector<int>> m_byType;
-	std::unordered_map<int, std::type_index> m_typeOf;
+	mutable std::unordered_map<std::type_index, std::vector<int>> res_idsByType;
+	struct Entry
+	{
+		std::type_index type;
+		std::shared_ptr<const int> membership;
+	};
+	mutable std::unordered_map<int, Entry> res_entries;
+	int res_nextId = 1;
+	int RegisterAt(int id, const std::shared_ptr<UID>& object);
 
-	/// Pool of every registered UID object, keyed by UID.
-	std::unordered_map<int, std::shared_ptr<UID>> resources_;
+	struct DeferredResource
+	{
+		std::function<std::shared_ptr<UID>()> load;
+		std::shared_ptr<const std::string> archivedRecord;
+		std::function<bool(UID&)> populate;
+		bool loading = false;
+	};
+
+	/// Logical-const Get materializes a deferred resource on the main thread.
+	mutable std::unordered_map<int, DeferredResource> res_deferred;
+	mutable std::unordered_map<int, std::shared_ptr<UID>> res_live;
 
 	/**
 	 * @brief Returns @p base or the first free "base.NNN" for @p type.
@@ -271,19 +324,16 @@ private:
 	std::string UniqueName(std::type_index type, const std::string& base) const;
 
 	/**
-	 * @brief Records @p obj's dynamic type in the per-type index.
+	 * @brief Records the exact dynamic type in the per-type index.
 	 */
-	void IndexType(UID* obj);
+	void IndexType(int id, std::type_index type);
 
 	/**
 	 * @brief Drops the registered name of @p id, if any.
 	 */
-	void EraseName(int id);
+	void EraseName(int id) const;
+	bool EraseResource(int id) const;
 
-	/**
-	 * @brief Rebuilds the per-type index from the current pool (after load).
-	 */
-	void RebuildTypeIndex();
 };
 
 } // namespace neurus

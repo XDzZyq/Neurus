@@ -3,6 +3,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "asset/ResourceManager.hpp"
 
 #include <scene/Camera.hpp>
 #include <scene/DebugLine.hpp>
@@ -16,14 +17,15 @@ using namespace neurus;
 
 TEST(SceneIntegrationTest, RegisterAllObjectTypes)
 {
+	ResourceManager resources;
 	Scene scene;
 
-	auto cam      = std::make_shared<Camera>();
-	auto light    = std::make_shared<Light>(LightType::POINTLIGHT, 20.0f, glm::vec3(1.0f, 0.5f, 0.2f));
-	auto mesh     = std::make_shared<Mesh>();
-	auto sprite   = std::make_shared<Sprite>();
-	auto dLine    = std::make_shared<DebugLine>();
-	auto dPoints  = std::make_shared<DebugPoints>();
+	auto cam      = resources.Load<Camera>();
+	auto light    = resources.Load<Light>(LightType::POINTLIGHT, 20.0f, glm::vec3(1.0f, 0.5f, 0.2f));
+	auto mesh     = resources.Load<Mesh>();
+	auto sprite   = resources.Load<Sprite>();
+	auto dLine    = resources.Load<DebugLine>();
+	auto dPoints  = resources.Load<DebugPoints>();
 
 	int camId     = cam->GetObjectID();
 	int lightId   = light->GetObjectID();
@@ -41,18 +43,18 @@ TEST(SceneIntegrationTest, RegisterAllObjectTypes)
 
 	// --- Master obj_list contains all six ---
 	EXPECT_EQ(scene.obj_list.size(), 6u);
-	EXPECT_EQ(scene.obj_list.at(camId), cam);
-	EXPECT_EQ(scene.cam_list.at(camId), cam);
-	EXPECT_EQ(scene.obj_list.at(lightId), light);
-	EXPECT_EQ(scene.light_list.at(lightId), light);
-	EXPECT_EQ(scene.obj_list.at(meshId), mesh);
-	EXPECT_EQ(scene.mesh_list.at(meshId), mesh);
-	EXPECT_EQ(scene.obj_list.at(spriteId), sprite);
-	EXPECT_EQ(scene.sprite_list.at(spriteId), sprite);
-	EXPECT_EQ(scene.obj_list.at(dLineId), dLine);
-	EXPECT_EQ(scene.dLine_list.at(dLineId), dLine);
-	EXPECT_EQ(scene.obj_list.at(dPointsId), dPoints);
-	EXPECT_EQ(scene.dPoints_list.at(dPointsId), dPoints);
+	EXPECT_EQ(scene.obj_list.at(camId).shared(), cam);
+	EXPECT_EQ(scene.cam_list.at(camId).shared(), cam);
+	EXPECT_EQ(scene.obj_list.at(lightId).shared(), light);
+	EXPECT_EQ(scene.light_list.at(lightId).shared(), light);
+	EXPECT_EQ(scene.obj_list.at(meshId).shared(), mesh);
+	EXPECT_EQ(scene.mesh_list.at(meshId).shared(), mesh);
+	EXPECT_EQ(scene.obj_list.at(spriteId).shared(), sprite);
+	EXPECT_EQ(scene.sprite_list.at(spriteId).shared(), sprite);
+	EXPECT_EQ(scene.obj_list.at(dLineId).shared(), dLine);
+	EXPECT_EQ(scene.dLine_list.at(dLineId).shared(), dLine);
+	EXPECT_EQ(scene.obj_list.at(dPointsId).shared(), dPoints);
+	EXPECT_EQ(scene.dPoints_list.at(dPointsId).shared(), dPoints);
 
 	// --- Each type-specific pool has exactly one entry ---
 	EXPECT_EQ(scene.cam_list.size(),      1u);
@@ -74,17 +76,18 @@ TEST(SceneIntegrationTest, RegisterAllObjectTypes)
 
 TEST(SceneIntegrationTest, UpdateObjTransformsIteratesAll)
 {
+	ResourceManager resources;
 	Scene scene;
 	EXPECT_NO_THROW(scene.UpdateObjTransforms());
-	scene.UseSprite(std::make_shared<Sprite>());
+	scene.UseSprite(resources.Load<Sprite>());
 	EXPECT_NO_THROW(scene.UpdateObjTransforms());
 
 	// Register objects with transforms
-	auto cam     = std::make_shared<Camera>();
-	auto light   = std::make_shared<Light>(LightType::SUNLIGHT);
-	auto mesh    = std::make_shared<Mesh>();
-	auto dLine   = std::make_shared<DebugLine>();
-	auto dPoints = std::make_shared<DebugPoints>();
+	auto cam     = resources.Load<Camera>();
+	auto light   = resources.Load<Light>(LightType::SUNLIGHT);
+	auto mesh    = resources.Load<Mesh>();
+	auto dLine   = resources.Load<DebugLine>();
+	auto dPoints = resources.Load<DebugPoints>();
 
 	// Edits through each polymorphic transform must update its owning object.
 	ASSERT_EQ(dLine->GetTransform(), static_cast<Transform3D*>(dLine.get()));
@@ -148,9 +151,10 @@ TEST(SceneIntegrationTest, UpdateObjTransformsIteratesAll)
  */
 TEST(SceneIntegrationTest, SharedOwnershipOutlivesScene)
 {
-	auto cam   = std::make_shared<Camera>();
-	auto light = std::make_shared<Light>();
-	auto mesh  = std::make_shared<Mesh>();
+	ResourceManager resources;
+	auto cam   = resources.Load<Camera>();
+	auto light = resources.Load<Light>();
+	auto mesh  = resources.Load<Mesh>();
 
 	int camId   = cam->GetObjectID();
 	int lightId = light->GetObjectID();
@@ -162,15 +166,15 @@ TEST(SceneIntegrationTest, SharedOwnershipOutlivesScene)
 		scene.UseLight(light);
 		scene.UseMesh(mesh);
 
-		EXPECT_EQ(cam.use_count(),   3); // original + cam_list + obj_list (aliasing)
-		EXPECT_EQ(light.use_count(), 3);
-		EXPECT_EQ(mesh.use_count(),  3);
+		EXPECT_EQ(cam.use_count(),   4); // pool + local + cam_list + obj_list
+		EXPECT_EQ(light.use_count(), 4);
+		EXPECT_EQ(mesh.use_count(),  4);
 	}
 
-	// After scene destruction, objects are still alive (original reference)
-	EXPECT_EQ(cam.use_count(),   1);
-	EXPECT_EQ(light.use_count(), 1);
-	EXPECT_EQ(mesh.use_count(),  1);
+	// After scene destruction, objects are still owned by the pool and local references
+	EXPECT_EQ(cam.use_count(),   2);
+	EXPECT_EQ(light.use_count(), 2);
+	EXPECT_EQ(mesh.use_count(),  2);
 
 	// IDs are still valid
 	EXPECT_EQ(cam->GetObjectID(),   camId);

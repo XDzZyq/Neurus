@@ -3,7 +3,6 @@
 #include "asset/data/render_graph/GraphEndpoint.hpp"
 #include "asset/data/render_graph/GraphOutputTag.hpp"
 
-#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -11,15 +10,13 @@
 
 namespace neurus {
 
-class RenderGraphData;
-struct CpuGraphDiagnostic;
-class ShaderData;
+struct CPUGraphDiagnostic;
 
 /// Reply slots and edit payloads are borrowed for synchronous dispatch. A
 /// controller writes a failure to error when supplied and throws otherwise.
 struct RenderGraphFlushRequested
 {
-	std::vector<CpuGraphDiagnostic>* diagnostics = nullptr;
+	std::vector<CPUGraphDiagnostic>* diagnostics = nullptr;
 	std::string* error = nullptr;
 };
 
@@ -74,13 +71,8 @@ struct RenderGraphCreateShaderRequested
 	int* uid;
 	std::string* error = nullptr;
 };
-/// Undo retains a detached shader for redo, including across a save and reload.
-struct PassShaderMembershipChanged
-{
-	int uid;
-	bool present;
-	std::shared_ptr<ShaderData>& detached;
-};
+/// Releases a newly allocated resource if its creating edit fails to commit.
+struct GraphCreationDiscarded { int uid; };
 
 /// @brief Materializes the effective default graph as a project resource.
 struct RenderGraphCreateRequested { std::string* error = nullptr; };
@@ -88,14 +80,12 @@ struct RenderGraphCreateRequested { std::string* error = nullptr; };
 /**
  * @brief Adds or removes the authored graph from the project.
  *
- * Undo returns the detached graph and redo consumes it synchronously. The
- * history entry owns the detached resource while the project uses its default.
+ * The graph remains pooled while the project uses its default.
  */
 struct RenderGraphMembershipChanged
 {
 	int uid;
 	bool present;
-	std::shared_ptr<RenderGraphData>& detached;
 };
 
 } // namespace neurus

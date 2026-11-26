@@ -1,6 +1,6 @@
 #include "Editor.hpp"
 #include "RenderManager.hpp"
-#include "asset/data/render_graph/CpuGraphValidation.hpp"
+#include "asset/data/render_graph/CPUGraphValidation.hpp"
 
 #include "editor/events/InputEvents.hpp"
 #include "editor/events/AssetEvents.hpp"
@@ -77,16 +77,22 @@ namespace {
  */
 constexpr float kStarterMeshScale = 0.135f;
 
+bool HasMeshContent(const MeshData* data)
+{
+	return data && data->GetVertexCount() > 0 && data->GetIndexCount() > 0;
+}
+
 /**
  * @brief Posts a mesh geometry upload into the slot keyed by @p objectId.
  *
  * Shared by Mesh and DebugMesh, which carry the same MeshData and land in the
  * same slot. The renderer skips an already-resident slot, so the Editor no
- * longer checks residency - it cannot see it. Callers skip a null geometry.
+ * longer checks residency - it cannot see it. Skip empty geometry, including pooled meshes whose source file failed to load.
  */
 void PostMeshUpload(RenderRequestSink& renderer, int objectId, std::shared_ptr<const MeshData> data)
 {
-	renderer.Post(UploadMeshRequest{objectId, std::move(data)});
+	if (HasMeshContent(data.get()))
+		renderer.Post(UploadMeshRequest{objectId, std::move(data)});
 }
 
 /**
@@ -509,7 +515,10 @@ void Editor::Initialize()
 		auto shader = ed_resources->Get<ShaderData>(e.shaderObjectId);
 		if (!shader) return;
 		bool usedByMesh = false;
-		ed_resources->ForEach<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
+		// Live meshes only: a deferred mesh reads its current shader when the
+		// pool materializes it, so it already sees this compile and must not be
+		// loaded merely to warm a pipeline.
+		ed_resources->ForEachLive<Mesh>([&](const std::shared_ptr<Mesh>& mesh)
 		{
 			if (mesh && mesh->o_shader && mesh->o_shader->GetObjectID() == e.shaderObjectId)
 				usedByMesh = true;
@@ -740,7 +749,7 @@ void Editor::BuildSnapshot(const Scene* scene,
 		inst.objectId          = mesh->GetObjectID();
 		inst.model             = mesh->GetModelMatrix();
 		inst.normalMatrix      = mesh->GetNormalMatrix();
-		inst.hasGeometry       = (mesh->o_mesh != nullptr);
+		inst.hasGeometry       = HasMeshContent(mesh->o_mesh.get());
 		inst.visibleInViewport = mesh->is_viewport;
 		inst.rendered          = mesh->is_rendered;
 		// The per-mesh pipeline is cached under the shader id plus the shader
@@ -824,16 +833,20 @@ void Editor::UpdateScriptContext(ScriptContext& ctx)
 	ctx.configProvider = [this]() { return &GetRenderConfig(); };
 	ctx.resources = ed_resources.get();
 	ctx.graphDiagnostics = [this]() {
-		std::vector<CpuGraphDiagnostic> problems;
+		std::vector<CPUGraphDiagnostic> problems;
 		ed_eventBus.Emit(RenderGraphFlushRequested{&problems});
 		return problems.empty() ? ed_renderManager->Diagnostics() : problems;
 	};
 	ctx.graphProvider = [this]() {
 		ed_eventBus.Emit(RenderGraphFlushRequested{});
 		const auto& authored = ed_renderManager->GraphData();
-		return ScriptGraphView{ &ed_renderManager->Graph(),
-		                        authored ? std::optional<int>(authored->GetObjectID()) : std::nullopt,
-		                        ed_projectEpoch };
+		ScriptGraphView view{ &ed_renderManager->Graph(), std::nullopt, ed_projectEpoch };
+		if (authored)
+		{
+			const int id = authored->GetObjectID();
+			if (id >= 0) view.uid = id;
+		}
+		return view;
 	};
 }
 
@@ -1301,7 +1314,8 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 		}
 		else if (auto* mesh = dynamic_cast<Mesh*>(source.get()))
 		{
-			auto copy = ed_resources->Load<Mesh>(mesh->o_mesh);
+			auto copy = ed_resources->Load<Mesh>();
+			copy->o_mesh = mesh->o_mesh;
 			copy->SetPosition(mesh->GetPosition());
 			copy->SetRotation(mesh->GetRotation());
 			copy->SetScale(mesh->GetScale());
@@ -1310,8 +1324,7 @@ int Editor::DuplicateObject(int sourceUid, const std::string& name, std::string&
 			copy->using_sdf = mesh->using_sdf;
 			copy->is_closure = mesh->is_closure;
 			copy->o_material = mesh->o_material;
-			if (mesh->o_shader)
-				copy->SetObjShader(mesh->o_shader);
+			copy->o_shader = mesh->o_shader;
 			uid = copy->GetObjectID();
 		}
 		else
@@ -1419,7 +1432,7 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 
 	if (auto mesh = ed_resources->Get<Mesh>(objectUid))
 	{
-		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
+		if (mesh->o_mesh) PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh.shared());
 	}
 	else if (auto light = ed_resources->Get<Light>(objectUid))
 	{
@@ -1433,7 +1446,7 @@ void Editor::OnSceneObjectGpuUpload(int objectUid)
 	}
 	else if (auto dMesh = ed_resources->Get<DebugMesh>(objectUid))
 	{
-		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
+		if (dMesh->HasGeometry()) PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh.shared());
 	}
 }
 
@@ -1490,7 +1503,7 @@ void Editor::UploadSceneResources()
 	for (const auto& [id, mesh] : ed_scene->mesh_list)
 	{
 		if (!mesh || !mesh->o_mesh) continue;
-		PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh);
+		PostMeshUpload(*ed_renderer, mesh->GetObjectID(), mesh->o_mesh.shared());
 
 		// Scene load compiles shaders inside cereal's hook, which cannot reach
 		// the event bus, so no ShaderCompiled fires. Warm each mesh's pipeline
@@ -1513,7 +1526,7 @@ void Editor::UploadSceneResources()
 	for (const auto& [uid, dMesh] : ed_scene->dMesh_list)
 	{
 		if (!dMesh || !dMesh->HasGeometry()) continue;
-		PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh);
+		PostMeshUpload(*ed_renderer, dMesh->GetObjectID(), dMesh->o_mesh.shared());
 	}
 
 	// The environment is scene content as well: without its cubemaps the scene

@@ -8,17 +8,20 @@
  *   typed pools, obj_list, selection restore by ID, and data-resource wiring
  *   (Mesh -> MeshData + Shader, Environment -> ImageData).
  * - Legacy project files (no "m_resources" node, old full-pool "m_scene")
- *   degrade to an empty scene + default-camera fallback without throwing.
+ *   are refused: a project without a resource pool fails the open instead of
+ *   loading as a silently empty document.
  *
  * Pure CPU -- no GPU required.
  */
 
 #include <gtest/gtest.h>
 
+#include <nlohmann/json.hpp>
 #include <cstdio>
 #include <fstream>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "asset/Project.hpp"
@@ -26,7 +29,7 @@
 #include "shader/BuiltInRenderData.hpp"
 #include "asset/components/ResourceComponent.hpp"
 #include "asset/components/ConfigComponent.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
@@ -68,7 +71,7 @@ struct TempFile
  */
 TEST(SceneSerialize, FullRoundtrip)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_rt.neurus.json");
 
 	int meshUid = 0;
@@ -117,7 +120,7 @@ TEST(SceneSerialize, FullRoundtrip)
 		scene.selections.Select(mesh.get(), false);
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -129,7 +132,7 @@ TEST(SceneSerialize, FullRoundtrip)
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -148,10 +151,10 @@ TEST(SceneSerialize, FullRoundtrip)
 	// Mesh data-resource wiring: MeshData + Shader by pooled ID.
 	auto* loadedMesh = loadedScene.mesh_list.begin()->second.get();
 	ASSERT_NE(loadedMesh, nullptr);
-	EXPECT_EQ(loadedMesh->o_meshDataId, meshDataUid);
-	EXPECT_NE(loadedMesh->o_meshDataId, 0);
-	ASSERT_NE(loadedMesh->o_mesh, nullptr);
-	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), loadedMesh->o_meshDataId);
+	EXPECT_EQ(loadedMesh->o_mesh.id(), meshDataUid);
+	EXPECT_NE(loadedMesh->o_mesh.id(), 0);
+	ASSERT_NE(loadedMesh->o_mesh.shared(), nullptr);
+	EXPECT_EQ(loadedMesh->o_mesh->GetObjectID(), loadedMesh->o_mesh.id());
 	EXPECT_GT(loadedMesh->o_mesh->GetVertexCount(), 0u); // content reloaded from res/
 
 	// Transform: the raw TRS round-trips as data, and the cached model matrix -
@@ -176,15 +179,15 @@ TEST(SceneSerialize, FullRoundtrip)
 	                      glm::vec3(0.0f, 0.0f, 1.0f)))
 	    << "the loaded camera's view matrix must match its loaded position/target";
 
-	EXPECT_EQ(loadedMesh->o_shaderId, shaderUid);
-	ASSERT_NE(loadedMesh->o_shader, nullptr);
+	EXPECT_EQ(loadedMesh->o_shader.id(), shaderUid);
+	ASSERT_TRUE(loadedMesh->o_shader);
 	EXPECT_EQ(loadedMesh->o_shader->GetObjectID(), shaderUid);
 	EXPECT_EQ(loadedMesh->o_shader->GetName(), "TestShader");
 
 	// Environment data-resource wiring: ImageData by pooled ID.
 	auto* loadedEnv = loadedScene.env_list.begin()->second.get();
 	ASSERT_NE(loadedEnv, nullptr);
-	EXPECT_EQ(loadedEnv->o_imageDataId, imageDataUid);
+	EXPECT_EQ(loadedEnv->GetEquirectDataId(), imageDataUid);
 	ASSERT_NE(loadedEnv->GetEquirectData(), nullptr);
 	EXPECT_EQ(loadedEnv->GetEquirectData()->GetObjectID(), imageDataUid);
 	EXPECT_TRUE(loadedEnv->GetEquirectData()->IsValid()); // reloaded from res/
@@ -196,20 +199,112 @@ TEST(SceneSerialize, FullRoundtrip)
 	EXPECT_EQ(selected->GetObjectID(), meshUid);
 }
 
+TEST(SceneSerialize, MissingEnvironmentResourceClearsItsReferenceAcrossSaveAndReopen)
+{
+
+	TempFile first("test_scene_missing_image.neurus.json");
+	TempFile second("test_scene_missing_image_resaved.neurus.json");
+	Scene scene;
+	ResourceManager resources;
+	project::Project document;
+	document.Register<project::ResourceComponent>(resources);
+	document.Register<project::SceneComponent>(scene, resources);
+
+	auto environment = resources.Load<Environment>();
+	auto image = resources.Load<ImageData>();
+	const int imageUid = image->GetObjectID();
+	environment->SetEquirectData(image);
+	scene.UseEnvironment(environment);
+	document.Save(first.path);
+	// Simulate a project file whose referenced image is missing.
+	nlohmann::ordered_json saved;
+	std::ifstream(first.path) >> saved;
+	auto& entries = saved.at("project").at("m_resources").at("resources_");
+	const auto missing = std::find_if(entries.begin(), entries.end(), [&](const auto& entry) {
+		return entry.at("key") == imageUid;
+	});
+	ASSERT_NE(missing, entries.end());
+	entries.erase(missing);
+	std::ofstream(first.path) << saved;
+
+	auto checkMissingImage = [&]()
+	{
+		ASSERT_EQ(scene.env_list.size(), 1u);
+		const auto& restored = scene.env_list.begin()->second;
+		ASSERT_TRUE(restored);
+		EXPECT_EQ(restored->GetEquirectData(), nullptr);
+		EXPECT_EQ(restored->GetEquirectDataId(), 0);
+		EXPECT_FALSE(resources.Contains(imageUid));
+	};
+	document.Load(first.path);
+	checkMissingImage();
+	document.Save(second.path);
+	document.Load(second.path);
+	checkMissingImage();
+}
+
+TEST(SceneSerialize, MissingAssetFilesKeepPooledResourcesAcrossSaveAndReopen)
+{
+	TempFile first("test_scene_missing_asset_files.neurus.json");
+	TempFile second("test_scene_missing_asset_files_resaved.neurus.json");
+	Scene scene;
+	ResourceManager resources;
+	project::Project document;
+	document.Register<project::ResourceComponent>(resources);
+	document.Register<project::SceneComponent>(scene, resources);
+
+	const std::string imagePath = "res/test_scene_nonexistent_image.png";
+	const std::string meshPath = "res/test_scene_nonexistent_geometry.obj";
+	auto image = resources.Load<ImageData>(imagePath);
+	auto geometry = resources.Load<MeshData>(meshPath);
+	const int imageUid = image->GetObjectID();
+	const int geometryUid = geometry->GetObjectID();
+
+	auto environment = resources.Load<Environment>();
+	environment->SetEquirectData(image);
+	scene.UseEnvironment(environment);
+	auto mesh = resources.Load<Mesh>();
+	mesh->o_mesh = geometry;
+	scene.UseMesh(mesh);
+	document.Save(first.path);
+
+	auto checkReferences = [&]()
+	{
+		ASSERT_EQ(scene.env_list.size(), 1u);
+		ASSERT_EQ(scene.mesh_list.size(), 1u);
+		const auto restoredImage = scene.env_list.begin()->second->GetEquirectData();
+		const auto& restoredMesh = scene.mesh_list.begin()->second->o_mesh;
+		ASSERT_TRUE(restoredImage);
+		ASSERT_TRUE(restoredMesh);
+		EXPECT_EQ(restoredImage, resources.Get<ImageData>(imageUid));
+		EXPECT_EQ(restoredMesh.shared(), resources.Get<MeshData>(geometryUid));
+		EXPECT_EQ(restoredImage->GetObjectID(), imageUid);
+		EXPECT_EQ(restoredMesh->GetObjectID(), geometryUid);
+		EXPECT_EQ(restoredImage->GetPath(), imagePath);
+		EXPECT_EQ(restoredMesh->GetPath(), meshPath);
+		EXPECT_FALSE(restoredImage->IsValid());
+		EXPECT_EQ(restoredMesh->GetIndexCount(), 0u);
+	};
+	document.Load(first.path);
+	checkReferences();
+	document.Save(second.path);
+	document.Load(second.path);
+	checkReferences();
+}
+
 // -----------------------------------------------------------------------
-// Legacy project file degrades gracefully
+// Legacy project file without a resource pool is refused
 // -----------------------------------------------------------------------
 
 /**
  * @test An old-format project (no "m_resources" node, full-pool "m_scene"
- *       node) loads without throwing: the pool stays empty and the Scene fails
- *       to read its ID lists, leaving a camera-less document. Nothing is
- *       injected to repair it — the viewport looks through the Editor's own
- *       camera, so zero cameras is a legal, fully renderable scene.
+ *       node) is refused: opening without a resource pool must fail loudly
+ *       rather than leave an empty document that a later save would overwrite
+ *       the original with.
  */
-TEST(SceneSerialize, LegacyFileDegrades)
+TEST(SceneSerialize, LegacyFileWithoutResourcePoolFailsToOpen)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_legacy.neurus.json");
 
 	// Simulate an old-format file: no m_resources, m_scene with old keys.
@@ -225,25 +320,10 @@ TEST(SceneSerialize, LegacyFileDegrades)
 		})";
 	}
 
-	Scene loadedScene;
-	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
-	EXPECT_NO_THROW({
-		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
-		p.Register<project::SceneComponent>(loadedScene, loadedResources);
-		p.Register<project::ConfigComponent>(loadedConfig);
-		p.Load(tmp.path);
-	});
-
-	// No pooled objects survived, and none are conjured to stand in for them.
-	EXPECT_EQ(loadedResources.Size(), 0u);
-	EXPECT_TRUE(loadedScene.cam_list.empty());
-	EXPECT_EQ(loadedScene.ActiveCameraID(), 0);
-	EXPECT_EQ(loadedScene.GetActiveCamera(), nullptr);
-	EXPECT_TRUE(loadedScene.mesh_list.empty());
-	EXPECT_TRUE(loadedScene.light_list.empty());
-	EXPECT_EQ(loadedScene.selections.GetSelectionCount(), 0u);
+	project::Project p;
+	p.Register<project::ResourceComponent>(loadedResources);
+	EXPECT_THROW(p.Load(tmp.path), std::runtime_error);
 }
 
 /**
@@ -254,7 +334,7 @@ TEST(SceneSerialize, LegacyFileDegrades)
  */
 TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_orphan.neurus.json");
 
 	int orphanUid = 0;
@@ -270,7 +350,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 		// simulating a deleted object whose pooled resource survives.
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -281,7 +361,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		p.Load(tmp.path);
@@ -290,9 +370,9 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
 	ASSERT_TRUE(loadedScene.mesh_list.empty()); // orphan is NOT in the scene
 	auto orphan = loadedResources.Get<Mesh>(orphanUid);
 	ASSERT_NE(orphan, nullptr);
-	EXPECT_NE(orphan->o_meshDataId, 0);        // persisted by the pool
-	ASSERT_NE(orphan->o_mesh, nullptr);        // wired by the pool scan
-	EXPECT_EQ(orphan->o_mesh->GetObjectID(), orphan->o_meshDataId);
+	EXPECT_NE(orphan->o_mesh.id(), 0);        // persisted by the pool
+	ASSERT_TRUE(orphan->o_mesh);
+	EXPECT_EQ(orphan->o_mesh->GetObjectID(), orphan->o_mesh.id());
 }
 
 // -----------------------------------------------------------------------
@@ -316,7 +396,7 @@ TEST(SceneSerialize, PooledOrphanMesh_DataRefWiredAfterLoad)
  */
 TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_serialize_legacy_smooth.neurus.json");
 
 	int lineUid = 0;
@@ -333,7 +413,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 		scene.UseDebugLine(line);
 
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -363,7 +443,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
 	ResourceManager loadedResources;
 	{
 		project::Project p;
-		p.Register<project::ResourceComponent>(loadedResources, catalog);
+		p.Register<project::ResourceComponent>(loadedResources);
 		p.Register<project::SceneComponent>(loadedScene, loadedResources);
 		p.Register<project::ConfigComponent>(loadedConfig);
 		ASSERT_NO_THROW(p.Load(tmp.path));
@@ -392,7 +472,7 @@ TEST(SceneSerialize, LegacyDebugLineWithSmoothFieldLoads)
  */
 TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 {
-	const neurus::BuiltInRenderData catalog;
+
 	TempFile tmp("test_scene_duplicate_names.neurus.json");
 
 	int firstUid = 0;
@@ -417,7 +497,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 		// longer touches names); the load path's registry seeding must
 		// disambiguate them.
 		project::Project p;
-		p.Register<project::ResourceComponent>(resources, catalog);
+		p.Register<project::ResourceComponent>(resources);
 		p.Register<project::SceneComponent>(scene, resources);
 		p.Register<project::ConfigComponent>(config);
 		p.Save(tmp.path);
@@ -429,7 +509,7 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	auto loadedConfig = std::make_shared<RenderConfig>();
 	ResourceManager loadedResources;
 	project::Project p;
-	p.Register<project::ResourceComponent>(loadedResources, catalog);
+	p.Register<project::ResourceComponent>(loadedResources);
 	p.Register<project::SceneComponent>(loadedScene, loadedResources);
 	p.Register<project::ConfigComponent>(loadedConfig);
 	ASSERT_NO_THROW(p.Load(tmp.path));
@@ -457,4 +537,43 @@ TEST(SceneSerialize, DuplicateNamesAreSuffixedByUidOnLoad)
 	int meshCount = 0;
 	loadedResources.ForEach<Mesh>([&](const std::shared_ptr<Mesh>&) { ++meshCount; });
 	EXPECT_EQ(meshCount, 2);
+}
+
+TEST(SceneSerialize, BrokenMemberDoesNotHideSiblingOrPreservePreviousMembership)
+{
+	ResourceManager resources;
+	const auto broken = resources.Load<Mesh>();
+	const auto retained = resources.Load<Mesh>();
+	Scene source;
+	source.UseMesh(broken);
+	source.UseMesh(retained);
+	source.selections.Select(broken.get(), false);
+	source.selections.Select(retained.get(), true);
+	std::ostringstream stream;
+	{
+		cereal::JSONOutputArchive archive(stream);
+		project::SceneComponent(source, resources).Save(archive);
+	}
+
+	const int brokenUid = broken->GetObjectID();
+	ASSERT_TRUE(resources.Remove(brokenUid));
+	resources.RegisterDeferred(brokenUid, typeid(Mesh), []() -> std::shared_ptr<UID>
+	{
+		throw std::runtime_error("Unreadable test mesh");
+	});
+
+	Scene restored;
+	const auto oldCamera = resources.Load<Camera>();
+	restored.UseCamera(oldCamera);
+	restored.ActivateCamera(oldCamera->GetObjectID());
+	project::SceneComponent(restored, resources).LoadJson(stream.str());
+
+	EXPECT_TRUE(restored.cam_list.empty());
+	EXPECT_EQ(restored.GetActiveCamera(), nullptr);
+	EXPECT_EQ(restored.GetObjectID(oldCamera->GetObjectID()), nullptr);
+	EXPECT_EQ(restored.GetObjectID(brokenUid), nullptr);
+	ASSERT_EQ(restored.mesh_list.size(), 1u);
+	EXPECT_EQ(restored.GetObjectID(retained->GetObjectID()), retained.get());
+	EXPECT_EQ(restored.selections.GetSelectionCount(), 1u);
+	EXPECT_EQ(restored.selections.GetActiveObject(), retained.get());
 }

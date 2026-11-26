@@ -1,28 +1,14 @@
-/**
- * @file test_uid.cpp
- * @brief Tests for the core UID identity primitive.
- *
- * Covers:
- * - Unique ID generation across 1000 instances
- * - Counter increments correctly
- * - GetObjectID() returns assigned ID
- * - GetTotalAllocated() returns global count
- */
-
 #include <gtest/gtest.h>
-#include <core/UID.hpp>
+#include "core/Log.hpp"
+#include "core/UID.hpp"
 
-// --- UID Tests -----------------------------------------------------------
-
-TEST(UIDTest, AllocatedIdsAreNonnegativeAndStrictlyIncreasing)
+TEST(UIDTest, StandaloneObjectHasNoPoolIdentity)
 {
-	const int before = neurus::UID::GetTotalAllocated();
-	int previous = -1;
-	for (int index = 0; index < 1000; ++index)
-	{
-		neurus::UID object;
-		EXPECT_GT(object.GetObjectID(), previous) << "allocation " << index;
-		previous = object.GetObjectID();
-	}
-	EXPECT_GE(neurus::UID::GetTotalAllocated(), before + 1000);
+	neurus::UID object;
+	auto& log = neurus::LogBuffer::instance();
+	const auto next = log.HeadSeq() + 1;
+	EXPECT_EQ(object.GetObjectID(), -1);
+	neurus::LogEntry entry{};
+	ASSERT_TRUE(log.BySeq(next, entry));
+	EXPECT_EQ(entry.level, neurus::LogLevel::Error);
 }

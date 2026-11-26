@@ -111,9 +111,9 @@ protected:
 			"vt 0.0 0.0\n"
 			"f 1/1/1 2/2/2 3/3/3\n";
 
-		auto meshData = std::make_shared<MeshData>();
+		auto meshData = m_resources.Load<MeshData>();
 		meshData->LoadObjFromString(triObj);
-		auto mesh = std::make_shared<Mesh>();
+		auto mesh = m_resources.Load<Mesh>();
 		mesh->o_mesh = meshData;
 
 		Scene testScene;
@@ -208,7 +208,7 @@ TEST_F(LightingPassTest, SinglePointLight_ProducesNonZeroOutput)
 	// --- Step 2: Upload point light via UploadManager → RenderCache ---
 	{
 		Scene scene;
-		auto light = std::make_shared<Light>(LightType::POINTLIGHT, 50.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+		auto light = m_resources.Load<Light>(LightType::POINTLIGHT, 50.0f, glm::vec3(1.0f, 1.0f, 1.0f));
 		light->SetPosition(glm::vec3(0.0f, 0.0f, 3.0f));  // Z-up: above the triangle
 		scene.UseLight(light);
 

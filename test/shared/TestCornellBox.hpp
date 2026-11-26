@@ -8,7 +8,7 @@
  *
  * Usage:
  * @code
- *   auto cb = LoadCornellBox(device, pd, queue, qfi);
+ *   auto cb = LoadCornellBox(resources, device, pd, queue, qfi);
  *   // Meshes registered in cb.scene.mesh_list — passes iterate automatically
  * @endcode
  *
@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include "asset/ResourceManager.hpp"
 #include "core/Log.hpp"
 #include "scene/Material.hpp"
 #include "scene/Scene.hpp"
@@ -81,6 +82,7 @@ struct CornellBoxResources
  * @return Fully populated CornellBoxResources (move-only due to unique_ptr members).
  */
 inline CornellBoxResources LoadCornellBox(
+	ResourceManager& resources,
 	const vk::raii::Device& /*device*/,
 	const vk::raii::PhysicalDevice& /*physicalDevice*/,
 	neurus::SharedQueue& /*graphicsQueue*/,
@@ -108,7 +110,7 @@ inline CornellBoxResources LoadCornellBox(
 			else { f = std::ifstream(std::string("../../") + relPath); if (f.good()) objPath = std::string("../../") + relPath; }
 		}
 
-		auto meshData = std::make_shared<MeshData>();
+		auto meshData = resources.Load<MeshData>();
 		if (!meshData->LoadObj(objPath))
 		{
 			NEURUS_ERR("LoadCornellBox: Failed to load " << objPath);
@@ -127,7 +129,7 @@ inline CornellBoxResources LoadCornellBox(
 
 		// --- Create Mesh and register in scene ---
 		// GPU buffers created lazily by RenderCache::GetMeshGPU() on first use.
-		auto mesh = std::make_shared<Mesh>();
+		auto mesh = resources.Load<Mesh>();
 		mesh->o_name = std::string("CornellBox_") + filename;
 		mesh->o_mesh = meshData;
 		res.scene->UseMesh(mesh);
@@ -135,7 +137,7 @@ inline CornellBoxResources LoadCornellBox(
 
 	// --- Create default camera ---
 	// Positioned to view the interior of the box from slightly above.
-	res.camera = std::make_shared<Camera>(
+	res.camera = resources.Load<Camera>(
 		static_cast<float>(256),  // width (placeholder, caller adjusts)
 		static_cast<float>(256),  // height
 		60.0f, 0.1f, 100.0f);
@@ -144,7 +146,7 @@ inline CornellBoxResources LoadCornellBox(
 	res.camera->SetRotation(glm::vec3(0.0f, 0.0f, 0.0f));  // no explicit rotation, lookAt handles it
 
 	// --- Create a point light near the ceiling ---
-	res.light = std::make_shared<Light>(LightType::POINTLIGHT, 30.0f,
+	res.light = resources.Load<Light>(LightType::POINTLIGHT, 30.0f,
 	                                    glm::vec3(1.0f, 0.95f, 0.8f));
 	res.light->SetPosition(glm::vec3(-0.3f, 1.0f, 0.8f));  // Z-up: near ceiling
 

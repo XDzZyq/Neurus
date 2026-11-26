@@ -329,8 +329,8 @@ the executor drains the in-flight frames first
 the last frame may still read) and then `RenderCache::RemoveSceneResources()`.
 What the Editor still guarantees is ORDER - this post precedes the new scene's upload
 posts, and FIFO execution evicts the old scene before the new one uploads. This
-is not housekeeping: the caches are keyed by object UID and `UID::serialize()`
-restores `o_id` from the file, so an entry left behind shadows whatever returns
+is not housekeeping: the caches are keyed by object UID and the pool
+restores that identity from its record key, so an entry left behind shadows whatever returns
 under the same id. Load project A, then project B, and B draws A's geometry,
 shadow maps and cubemaps while its own properties are displayed correctly beside
 them. The same reasoning is why the scene-upload environment post is
@@ -345,8 +345,7 @@ return null unless a scene-mutation path broke the viewport contract (see
 [Viewport](viewport.md)), and that path is the bug.
 `test/editor/test_viewport_camera.cpp` pins the whole contract (GPU-free, runs in
 CI): pooled-but-not-scene-content, seeded with a usable pose, rebuilt after every
-pool clear, identity and pose surviving save/reopen (including from a file
-written under the pre-rename `editorCamUid` key), a camera-less project loading
+pool clear, identity and pose surviving save/reopen, a camera-less project loading
 with nothing injected, deleting every scene camera, activation taking the view
 with deactivation handing it back at the pose it was left at, and the resize path.
 
@@ -358,13 +357,14 @@ each `RenderShader` re-parses and recompiles inside its own `serialize`.
 
 ## Graph shader publication
 
-Live graph nodes own pooled shaders through `shared_ptr<const ShaderData>`;
+Live graph nodes own pooled shaders through `PassShaderRef`;
 null selects a built-in recipe. Script and Editor edits still target the mutable
 pooled resource. `MakeUploadShaderRequest` copies compiled SPIR-V and required
 reflection/port metadata on the CPU before an upload request crosses the boundary.
-`RenderManager` holds the active pooled `RenderGraphData`. Publication clones this document and posts `CompileRenderGraphRequest{graph}` after those uploads. The renderer reads only stable shader UIDs from node
-references and resolves `ShaderGPU` in its cache; it never reads mutable shader
-content through the graph.
+`RenderManager` holds the active pooled `RenderGraphData`. Publication validates this document and posts `MakeCompileRenderGraphRequest(graph)` after those uploads. The request carries an unpooled clone without
+shader references and a plain `{uid, version}` per node; the renderer resolves
+`ShaderGPU` in its cache and never reads CPU shader data. A document that fails
+validation posts nothing, so the previous graph keeps drawing.
 
 A successful compile uploads updated render or compute shader data before
 refreshing dependent passes/graphs. Reuploading a UID advances its GPU cache

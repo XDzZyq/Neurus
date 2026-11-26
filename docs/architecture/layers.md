@@ -72,9 +72,9 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
   Null graph and config pointers select built-in defaults and omit their respective
   project keys on save. Reads preserve this state
 - Prepares owned shader upload requests on the CPU, then publishes optional
-  cloned graph topology through `CompileRenderGraphRequest{graph}` in FIFO order.
-  Live nodes own pooled shader references; graph mapping reads only their stable
-  UIDs and resolves cached GPU shaders. Built-in CPU preparation stays outside
+  cloned graph topology through `MakeCompileRenderGraphRequest` in FIFO order.
+  Live nodes own pooled shader references; the request strips them and carries
+  plain `{uid, version}` values that graph mapping resolves to cached GPU shaders. Built-in CPU preparation stays outside
   the project pool; Renderer owns the compiled graph and GPU resources
 - Explicit config edits materialize stored settings. Undo restores the previous
   presence state, including null. Frame snapshots copy effective config by value,
@@ -97,7 +97,7 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
   `RenderRequest`s posted through a `RenderRequestSink*`
 - Must NOT directly manipulate GPU resources
 - Owns the project adapters for undo history and viewport state under
-  `editor/project/`; asset persistence does not include Editor internals
+  `editor/components/`; asset persistence does not include Editor internals
 - Controller registry pattern: `Editor::RegisterController<T>()` creates the
   controller, calls `Init(ed_ctx)` and stores it in `ed_controllers`
 - Event-driven controller communication: a UI signal reaches
@@ -170,6 +170,7 @@ uses stable shader UIDs to resolve the uploaded GPU resources.
 
 ## Asset Layer (`src/asset/`)
 
+- `ResourceManager` owns the UID pool and constructs resources. `ResourceType` maps cereal archive names to registered resource types.
 - Vulkan-free and independent of Renderer and Editor implementation targets
 - OBJ mesh loading and parsing into MeshData (pure CPU struct)
 - PNG/HDR image decoding into ImageData (pure CPU struct, owning pixel vector)
@@ -240,8 +241,6 @@ they do not depend on the Shader module.
 Vulkan-free utilities shared across the other layers:
 
 - `UID` - generic unique identifier primitive (resource base)
-- `ResourceManager` - single factory + UID pool (`Load<T>`, polymorphic
-  serialize)
 - `IResourceLookup` - pool fetch/lookup and name-registry interface
 - `Log` - `NEURUS_LOG` / `NEURUS_ERR` macros
 - `RenderConfig` - user-settable pipeline options (Vulkan-free; read by four

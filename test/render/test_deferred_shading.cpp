@@ -135,7 +135,7 @@ TEST_F(DeferredShadingTest, GbufferAttachments_MatchReferenceImages)
  	// -------------------------------------------------------------------
 	// Step 1: Load sphere scene (shared helper)
 	// -------------------------------------------------------------------
-	auto resources = neurus::test::BuildDeferredScene(
+	auto resources = neurus::test::BuildDeferredScene(m_resources,
 		ResolveAssetPath("res/obj/sphere.obj"));
 
 	// -------------------------------------------------------------------

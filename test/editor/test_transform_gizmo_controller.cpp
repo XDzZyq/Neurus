@@ -41,7 +41,7 @@
 #include "editor/operations/OperationManager.hpp"
 #include "editor/viewport/EditorViewport.hpp"
 #include "editor/viewport/TransformGizmo.hpp"
-#include "core/ResourceManager.hpp"
+#include "asset/ResourceManager.hpp"
 #include "core/RenderConfig.hpp"
 #include "scene/Camera.hpp"
 #include "scene/DebugLine.hpp"
@@ -88,8 +88,8 @@ protected:
 		m_viewport.SetViewportSize(glm::uvec2(kW, kH), glm::uvec2(kW, kH));
 		m_viewport.SetCamera(&m_cam);
 
-		m_mesh = std::make_shared<Mesh>();
-		m_light = std::make_shared<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
+		m_mesh = m_resources.Load<Mesh>();
+		m_light = m_resources.Load<Light>(POINTLIGHT, 10.0f, glm::vec3(1.0f));
 		m_scene.UseMesh(m_mesh);
 		m_scene.UseLight(m_light);
 
@@ -242,7 +242,7 @@ TEST_F(TransformGizmoControllerTest, DraggingALightUsesTheCheapSync)
  */
 TEST_F(TransformGizmoControllerTest, DebugLineIsGizmoTargetable)
 {
-	auto line = std::make_shared<DebugLine>();
+	auto line = m_resources.Load<DebugLine>();
 	line->PushDebugLine(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 	m_scene.UseDebugLine(line);
 

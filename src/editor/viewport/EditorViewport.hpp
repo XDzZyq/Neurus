@@ -37,6 +37,8 @@
 #include <glm/glm.hpp>
 
 #include "editor/viewport/DebugDrawBuilder.hpp"
+#include "asset/ResourceRef.hpp"
+#include "scene/Camera.hpp"
 #include "editor/viewport/GizmoDrawBuilder.hpp"
 #include "editor/viewport/TransformGizmo.hpp"
 
@@ -178,15 +180,14 @@ public:
 	 * Registered in the project file so the viewport camera's identity survives
 	 * save/load; the camera object itself lives in the serialized pool.
 	 */
-	int CameraID() const { return v_camUid; }
+	int CameraID() const { return v_camera.id(); }
 
 	/**
-	 * @brief Restores the viewport camera's UID from a project file.
+	 * @brief Adopts the camera resolved from the project.
 	 *
-	 * Only records the id - the next EnsureCamera() resolves it against the pool
-	 * and creates a fresh camera when the id names nothing.
+	 * The next EnsureCamera() frames the camera or creates one if absent.
 	 */
-	void RestoreCameraID(int uid) { v_camUid = uid; }
+	void RestoreCamera(std::shared_ptr<Camera> camera) { v_camera = std::move(camera); }
 
 	/**
 	 * @brief The viewport's own camera, or nullptr before EnsureCamera().
@@ -396,10 +397,7 @@ private:
 	 * A shared_ptr because the pool hands out shared ownership; a Clear() there is
 	 * why ForgetCamera()/EnsureCamera() exist.
 	 */
-	std::shared_ptr<Camera> v_camera;
-
-	/// @brief The pool UID of v_camera; 0 when there is none. Survives save/load.
-	int v_camUid = 0;
+	ResourceRef<Camera> v_camera;
 
 	/// @brief Logical (Qt) viewport size; the unit of every query result.
 	glm::uvec2 v_logical{0u, 0u};
