@@ -57,12 +57,10 @@ py::tuple ToTuple(const glm::vec3& value)
  * @brief Stateless typed collection over the run's whole resource pool.
  *
  * Iteration and lookups go through `ScriptContext::resources`, not the scene, so
- * a pooled object detached from the scene (undo history) is still reachable.
- * Iteration reads registered keys and types, so a deferred record is listed
- * without loading it. A name resolves through the pool's per-type registry, which
- * is authoritative for lookup; a proxy's display `name` still reads
- * `ObjectID::o_name`. Empty - never a null dereference - when the run has no
- * resource lookup.
+ * a pooled object detached from the scene (undo history) is still reachable. A
+ * name resolves through the pool's per-type registry, which is authoritative for
+ * lookup; a proxy's display `name` still reads `ObjectID::o_name`. Empty - never
+ * a null dereference - when the run has no resource lookup.
  *
  * @tparam Proxy Typed proxy handed out for each pooled object.
  * @tparam T Pooled type to enumerate and look up (Mesh, Camera, ...).
@@ -87,10 +85,9 @@ struct ResourceCollection
 		{
 			return result;
 		}
-		pool->ForEachRegistered([this, &result](int id, std::type_index type)
+		pool->ForEach<T>([this, &result](const std::shared_ptr<T>& obj)
 		{
-			if (type == std::type_index(typeid(T)))
-				result.append(py::cast(Proxy{id, view}));
+			result.append(py::cast(Proxy{obj->GetObjectID(), view}));
 		});
 		return result;
 	}
@@ -102,11 +99,7 @@ struct ResourceCollection
 		const IResourceLookup* pool = Pool();
 		if (pool != nullptr)
 		{
-			pool->ForEachRegistered([&count](int, std::type_index type)
-			{
-				if (type == std::type_index(typeid(T)))
-					++count;
-			});
+			pool->ForEach<T>([&count](const std::shared_ptr<T>&) { ++count; });
 		}
 		return count;
 	}

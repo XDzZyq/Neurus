@@ -97,6 +97,7 @@ neurus_test_labels(Renderer Critical
 	RenderRequestExecutorTest.HeldEnvironmentTable_KeepsTheReplacedEnvironmentAlive
 	RenderThreadTest.AnExceptionInDrawFrameEndsTheLoopAndBreaksPendingPromises
 	RenderThreadTest.ControlsNeverRunWhileAFrameIsBeingDrawn)
+neurus_test_labels(Script High ScriptBindings.PoolCollectionsListDeferredRecords)
 neurus_test_labels(Shader High ShaderParserTest.GenerateShader_Idempotent_AllFiles)
 
 foreach(test_name IN LISTS neurus_test_TESTS neurus_cpu_test_TESTS)

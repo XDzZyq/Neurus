@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -190,23 +191,9 @@ public:
 	std::string SetName(int id, const std::string& name) override;
 
 	/**
-	 * @brief Visits every registered key with its exact dynamic type.
-	 *
-	 * Ascending key order. Never runs a loader; deferred records stay deferred.
-	 *
-	 * @param fn Callback receiving each registered id and its dynamic type.
-	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
-	 *       while it is being iterated invalidates the walk.
-	 */
-	void ForEachRegistered(
-		const std::function<void(int id, std::type_index type)>& fn) const override;
-
-	/**
 	 * @brief Invokes @p fn on every pooled resource, untyped.
 	 *
-	 * Always complete; this plus a cast is the base-class enumeration. It loads
-	 * every record it visits, and a record its populate step rejects is erased.
-	 * Production enumeration uses ForEachRegistered or ForEachLive<T> instead.
+	 * Always complete; this plus a cast is the base-class enumeration.
 	 *
 	 * @param fn Callback receiving each pooled object (any order).
 	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
@@ -222,9 +209,6 @@ public:
 	 * are skipped. A type with no instance at all falls back to the whole pool.
 	 * Use ForEachUID for base enumeration.
 	 *
-	 * Loads every record it visits, and a record its populate step rejects is
-	 * erased. Production enumeration uses ForEachRegistered or ForEachLive<T>.
-	 *
 	 * @param type Concrete dynamic type to enumerate (e.g. typeid(Mesh)).
 	 * @param fn Callback receiving each matching object (any order).
 	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
@@ -237,11 +221,14 @@ public:
 	/**
 	 * @brief Visits live objects of type @p T without running any loader.
 	 *
-	 * The never-loading counterpart of `ForEach<T>`: it visits the same set of
-	 * objects minus deferred ones, so a deferred record stays deferred.
+	 * Walks the registered keys in ascending order and visits every materialized
+	 * object that is a @p T or derives from it, so a deferred record stays
+	 * deferred and its loader never runs. The editor's ShaderCompiled handler
+	 * uses this so a deferred mesh is not loaded merely to warm a pipeline.
 	 *
-	 * @tparam T Exact dynamic type to visit (e.g. Mesh), or a base type.
-	 * @param fn Callback receiving each live matching shared_ptr (any order).
+	 * @tparam T Type to visit (e.g. Mesh), or one of its bases.
+	 * @param fn Callback receiving each live matching shared_ptr (ascending key
+	 *           order).
 	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
 	 *       while it is being iterated invalidates the walk.
 	 */
@@ -250,19 +237,9 @@ public:
 	{
 		static_assert(std::is_base_of_v<UID, T>, "ForEachLive<T>: T must derive from UID");
 
-		auto tracked = res_idsByType.find(std::type_index(typeid(T)));
-		if (tracked != res_idsByType.end())
-		{
-			const auto ids = tracked->second;
-			for (int id : ids)
-				if (auto live = std::dynamic_pointer_cast<T>(GetLive(id)))
-					fn(live);
-			return;
-		}
-
-		// Mirror ForEach<T>'s fallback: an unindexed base type scans the pool,
-		// and the cast keeps only live objects of T (or derived from it).
-		for (int id : RegisteredIds())
+		std::vector<int> ids = RegisteredIds();
+		std::sort(ids.begin(), ids.end());
+		for (int id : ids)
 			if (auto live = std::dynamic_pointer_cast<T>(GetLive(id)))
 				fn(live);
 	}

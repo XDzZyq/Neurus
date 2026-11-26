@@ -73,29 +73,10 @@ public:
 	virtual std::string SetName(int id, const std::string& name) = 0;
 
 	/**
-	 * @brief Visits every registered key with its exact dynamic type.
-	 *
-	 * Visits in ascending key order and never runs a loader, so deferred records
-	 * stay deferred. Use this (or `ResourceManager::ForEachLive<T>`) to enumerate
-	 * metadata in production; the object-walking methods below load what they
-	 * visit.
-	 *
-	 * @param fn Callback receiving each registered id and its dynamic type.
-	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
-	 *       while it is being iterated invalidates the walk.
-	 */
-	virtual void ForEachRegistered(
-		const std::function<void(int id, std::type_index type)>& fn) const = 0;
-
-	/**
 	 * @brief Invokes @p fn on every pooled resource, untyped.
 	 *
 	 * Always complete, so this (plus a cast) is the base-class enumeration:
 	 * `ForEach<ObjectID>` is NOT, because it keys the exact dynamic type.
-	 *
-	 * Loads every record it visits, including deferred ones; a record its
-	 * populate step rejects is erased from the pool. Production code that only
-	 * needs metadata uses ForEachRegistered or `ForEachLive<T>` instead.
 	 *
 	 * @param fn Callback receiving each pooled object (any order).
 	 * @note @p fn must not call Load/Register/Remove/Clear - mutating the pool
@@ -111,10 +92,6 @@ public:
 	 * enumerate derived objects: once a base instance itself is pooled, that
 	 * instance owns the index entry and its derived types are skipped. Use
 	 * ForEachUID for base-class enumeration and cast.
-	 *
-	 * Loads every record it visits, including deferred ones; a record its
-	 * populate step rejects is erased from the pool. Production code that only
-	 * needs metadata uses ForEachRegistered or `ForEachLive<T>` instead.
 	 *
 	 * @param type Concrete dynamic type to enumerate (e.g. typeid(Mesh)).
 	 * @param fn Callback receiving each matching object (any order).
@@ -170,9 +147,6 @@ public:
 	 * itself pooled, the per-type index holds only that instance, so a derived
 	 * camera/mesh/light is not visited. Enumerate a base class with ForEachUID
 	 * and cast instead.
-	 *
-	 * Loads every record it visits (a rejected record is erased); use
-	 * `ForEachLive<T>` for a never-loading walk of the same objects.
 	 *
 	 * @tparam T Exact dynamic type to visit (e.g. Mesh).
 	 * @param fn Callback receiving each matching shared_ptr (any order).

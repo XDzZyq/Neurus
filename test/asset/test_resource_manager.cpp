@@ -28,8 +28,6 @@
 #include <cereal/archives/json.hpp>
 #include <algorithm>
 #include <sstream>
-#include <typeindex>
-#include <utility>
 #include <vector>
 
 #include "asset/ResourceManager.hpp"
@@ -718,42 +716,6 @@ TEST(ResourceNameRegistry, LoadIntoNonEmptyPoolDropsTheOldRegistry)
 	auto fresh = target.Load<Camera>();
 	EXPECT_EQ(target.SetName(fresh->GetObjectID(), "Stale"), "Stale")
 		<< "the previous document's name must not survive the load";
-}
-
-/**
- * @test ForEachRegistered reports every reserved key with its exact dynamic type
- *       in ascending order and never runs a deferred loader.
- */
-TEST(ResourceManagerTest, ForEachRegisteredVisitsDeferredRecordsWithoutLoading)
-{
-	ResourceManager pool;
-	const auto live = pool.Load<NamedResource>();
-	const int liveId = live->GetObjectID();
-	const int base = pool.NextId() + 50;
-	int loads = 0;
-	auto loader = [&loads] { ++loads; return std::make_shared<TestResource>(); };
-	pool.RegisterDeferred(base + 20, typeid(TestResource), loader);
-	pool.RegisterDeferred(base, typeid(OtherTestResource), loader);
-	pool.RegisterDeferred(base + 10, typeid(TestResource), loader);
-
-	std::vector<std::pair<int, std::type_index>> seen;
-	pool.ForEachRegistered([&seen](int id, std::type_index type)
-	{
-		seen.emplace_back(id, type);
-	});
-
-	ASSERT_EQ(seen.size(), 4u);
-	ASSERT_LT(liveId, base);
-	EXPECT_EQ(seen[0].first, liveId);
-	EXPECT_EQ(seen[0].second, std::type_index(typeid(NamedResource)));
-	EXPECT_EQ(seen[1].first, base);
-	EXPECT_EQ(seen[1].second, std::type_index(typeid(OtherTestResource)));
-	EXPECT_EQ(seen[2].first, base + 10);
-	EXPECT_EQ(seen[2].second, std::type_index(typeid(TestResource)));
-	EXPECT_EQ(seen[3].first, base + 20);
-	EXPECT_EQ(seen[3].second, std::type_index(typeid(TestResource)));
-	EXPECT_EQ(loads, 0);
-	EXPECT_FALSE(pool.GetLive(base));
 }
 
 /**

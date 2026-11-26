@@ -40,6 +40,7 @@
 #include "script/ScriptView.hpp"
 #include "script/proxies/ObjectProxy.hpp"
 #include "script/proxies/Transform3DProxy.hpp"
+#include "shader/ComputeShader.hpp"
 #include "shader/RenderShader.hpp"
 
 // Force-link the polymorphic registration TUs (static libraries) so
@@ -496,16 +497,27 @@ TEST(ScriptBindings, ProxiesResolveFromThePoolWithoutAScene)
 	EXPECT_THROW(orphan.Resolve(), std::runtime_error);
 }
 
-TEST(ScriptBindings, PoolCollectionsCountDeferredRecordsWithoutLoading)
+/**
+ * @test The pool collections list deferred records and their counts match once
+ *       iteration materializes them: objects == 3, meshes == 1, lights == 1,
+ *       shaders == 2, for both len() and list().
+ */
+TEST(ScriptBindings, PoolCollectionsListDeferredRecords)
 {
 	neurus::ResourceManager source;
 	const auto camera = source.Load<neurus::Camera>();
 	const auto mesh = source.Load<neurus::Mesh>();
+	// One object of each kind exercises every pool-collection filter.
+	const auto light = source.Load<neurus::Light>(neurus::LightType::POINTLIGHT, 3.0f, glm::vec3(1.0f));
 	const auto shader = source.Load<neurus::RenderShader>("DeferredShader",
 		neurus::ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.vert.glsl"),
 		neurus::ShaderData::ResolveSourcePath("res/shaders/render/gbuffer.frag.glsl"));
 	ASSERT_TRUE(shader->ParseAndGenerate());
 	ASSERT_TRUE(shader->CompileToSpv());
+	const auto compute = source.Load<neurus::ComputeShader>("DeferredCompute",
+		neurus::ShaderData::ResolveSourcePath("res/shaders/compute/dummy.comp.glsl"));
+	ASSERT_TRUE(compute->ParseAndGenerate());
+	ASSERT_TRUE(compute->CompileToSpv());
 
 	std::ostringstream output;
 	{
@@ -518,10 +530,11 @@ TEST(ScriptBindings, PoolCollectionsCountDeferredRecordsWithoutLoading)
 
 	const int cameraId = camera->GetObjectID();
 	const int meshId = mesh->GetObjectID();
+	const int lightId = light->GetObjectID();
 	const int shaderId = shader->GetObjectID();
-	ASSERT_FALSE(resources.GetLive(cameraId));
-	ASSERT_FALSE(resources.GetLive(meshId));
-	ASSERT_FALSE(resources.GetLive(shaderId));
+	const int computeId = compute->GetObjectID();
+	for (int id : {cameraId, meshId, lightId, shaderId, computeId})
+		ASSERT_FALSE(resources.GetLive(id)) << "UID " << id;
 
 	neurus::Scene scene;
 	neurus::RenderConfig cfg;
@@ -534,15 +547,17 @@ TEST(ScriptBindings, PoolCollectionsCountDeferredRecordsWithoutLoading)
 	ASSERT_TRUE(engine.Initialize());
 	EXPECT_TRUE(RunCleanly(engine,
 		"import neurus\n"
-		"assert len(neurus.data.objects) == 2\n"
-		"assert len(list(neurus.data.objects)) == 2\n"
+		"assert len(neurus.data.objects) == 3\n"
+		"assert len(list(neurus.data.objects)) == 3\n"
 		"assert len(neurus.data.meshes) == 1\n"
 		"assert len(list(neurus.data.meshes)) == 1\n"
-		"assert len(neurus.data.shaders) == 1\n"
-		"assert len(list(neurus.data.shaders)) == 1\n", ctx));
+		"assert len(neurus.data.lights) == 1\n"
+		"assert len(list(neurus.data.lights)) == 1\n"
+		"assert len(neurus.data.shaders) == 2\n"
+		"assert len(list(neurus.data.shaders)) == 2\n", ctx));
 	engine.Shutdown();
 
-	EXPECT_FALSE(resources.GetLive(cameraId));
-	EXPECT_FALSE(resources.GetLive(meshId));
-	EXPECT_FALSE(resources.GetLive(shaderId));
+	// Enumeration loads every record it visits.
+	for (int id : {cameraId, meshId, lightId, shaderId, computeId})
+		EXPECT_TRUE(resources.GetLive(id)) << "UID " << id;
 }
