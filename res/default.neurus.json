@@ -9,7 +9,7 @@
                     "data": {
                         "value0": {
                             "value0": {},
-                            "o_name": "Camera",
+                            "o_name": "ViewportCamera",
                             "o_type": 0,
                             "is_viewport": true,
                             "is_rendered": true
@@ -31,8 +31,8 @@
                                 "z": 1.0
                             }
                         },
-                        "cam_w": 1012.0,
-                        "cam_h": 746.0,
+                        "cam_w": 849.0,
+                        "cam_h": 553.0,
                         "cam_pers": 60.0,
                         "cam_near": 0.10000000149011612,
                         "cam_far": 100.0,
@@ -289,7 +289,7 @@
                     "data": {
                         "value0": {
                             "value0": {},
-                            "o_name": "DebugLine",
+                            "o_name": "DebugLine.001",
                             "o_type": 6,
                             "is_viewport": true,
                             "is_rendered": true
@@ -419,7 +419,7 @@
                     "data": {
                         "value0": {
                             "value0": {},
-                            "o_name": "DebugPoints",
+                            "o_name": "DebugPoints.001",
                             "o_type": 7,
                             "is_viewport": true,
                             "is_rendered": true
@@ -514,12 +514,12 @@
             ],
             "spriteIds": [],
             "dLineIds": [
-                120,
-                121
+                121,
+                120
             ],
             "dPointsIds": [
-                122,
-                123
+                123,
+                122
             ],
             "envIds": [
                 119
@@ -538,18 +538,18 @@
             "r_shadow": 1,
             "r_ssr": 0,
             "r_gamma": 1.0,
-            "r_shadow_bias": 0.019999999552965165,
+            "r_shadow_bias": 0.019999999552965164,
             "r_ao_ksize": 16,
             "r_ao_radius": 0.5,
             "r_sample_pf": 128,
             "r_transparent": false,
             "r_fxaa_subpix": 0.75,
-            "r_fxaa_edge_threshold": 0.16599999368190766,
+            "r_fxaa_edge_threshold": 0.16599999368190765,
             "r_fxaa_edge_threshold_min": 0.08330000191926956,
             "r_sampling_mode": 0,
             "r_debug_draw": true
         },
-        "ui": "AdnQywADAAAAAAAA////+QAABqoAAAP6AAAAAQAAADsAAAWeAAADKAAAAAACAAAABqsAAAAAAAAAFwAABqoAAAP6\nAAAD+HjajVNNb8IwDL3vV0S9Q2mLBpNKEWLjuA/xsXPWmC5aSKrEZTDtx89lU6VCaXdq7Pf6/Ow48fSwU2wP1kmjJ17QH3gMdGqE1NnEW68WvbE3TeIXnIk91ymIe5N+ELY8OoQd21Q/emztwFYxycyNRi41ZUo4iauYLZTheCowoPwyVxKR0k9WAlHwJNArBQqNEy+8yvmuONE/dWYWOFvxt5MlNi+shRIS1FTfFKhKe0R7lSIDZI98B+cgmyvjQJTW/ST2S8F22dyaHCwen7kG1ahdZzQWWMovcEk0HrJoHLHY/43p+9dzu4W9hM/cWGysXoFdnYXnsnQUYOlatzJrlK4R6vKXZPfOifwgJBrbOoTRLQsGQciiwV3XJIbnll1qZY7kyBkFjZ7rjC7TynQ3hnDAwsKG5nyxP43LsJW0alnbDEajkAW0DE3t+9U7o/OVd5vc/ADKoFIW",
+        "ui": "AdnQywADAAAAAAABAAAAHwAABZ4AAAMoAAAAAQAAADsAAAWeAAADKAAAAAACAAAABaAAAAABAAAAOwAABZ4AAAMo\nAAAD93jajVNNb8IwDL3vV0S9Q6HAAKkUITaO+xAfO2eN6aKFpEpcBtN+/FyYKhVKu0PV2O/1+dl1wulhp9gerJNGT7xuu+Mx0LERUicTb71atEbeNApfcSb2XMcgHkz8Sdjy6BB2bFN86LG1A1vEJDM3GrnUlMnhKCxitlCG46lAh/LLVElESj9bCUTBk0ArF8g0TrzgJuen4PT+qTOzwNmKv58ssXlmLeSQoKbaJkOV2yPamxQJIHviO7gE2VwZByK37kehnwvWy6bWpGDx+MI1qErtMqOywFJ+g4uC0YDlT+ifY3r/9VxvYS/hKzUWK6sXYFNnwaUsHQVY+q1bmVRKlwhl+Wuy++BEfhQSja0bQq97z0b9MQsG46ZB9C8du9jKFMmQMwoqLZcZTZ6Vae4L4YCZhQ2N+Wp9KndhK2nTkroRDIZD1u0NK9v3i2tG5xvXNrr7Bbw6Ufc=",
         "m_history": {
             "undo": [],
             "redo": []
